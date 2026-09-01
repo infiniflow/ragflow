@@ -1,7 +1,6 @@
 package models
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,7 +35,7 @@ func TestBaseModelDoRequestAuthorizationHeader(t *testing.T) {
 			defer server.Close()
 
 			model := &BaseModel{httpClient: server.Client(), AllowEmptyAPIKey: true}
-			if _, err := model.doRequest(context.Background(), server.URL, tt.apiConfig, map[string]any{"ok": true}, time.Second); err != nil {
+			if _, err := model.doRequest(t.Context(), server.URL, tt.apiConfig, map[string]any{"ok": true}, time.Second); err != nil {
 				t.Fatalf("doRequest() error = %v", err)
 			}
 		})
@@ -53,7 +52,7 @@ func TestBaseModelDoStreamRequestAllowsMissingAPIKey(t *testing.T) {
 	defer server.Close()
 
 	model := &BaseModel{httpClient: server.Client(), AllowEmptyAPIKey: true}
-	err := model.doStreamRequest(context.Background(), server.URL, nil, map[string]any{"ok": true}, time.Second, func(body io.ReadCloser) error {
+	err := model.doStreamRequest(t.Context(), server.URL, nil, map[string]any{"ok": true}, time.Second, func(body io.ReadCloser) error {
 		_, err := io.ReadAll(body)
 		return err
 	})

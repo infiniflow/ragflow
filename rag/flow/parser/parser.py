@@ -786,7 +786,9 @@ class Parser(ProcessBase):
             for b in bboxes:
                 if b.get("layout_type", "") == "title":
                     mkdn += "\n## "
-                if b.get("layout_type", "") == "figure":
+                # The current frontend uses JSON for PDF output. Keep this
+                # defensive guard for imported or API-authored Markdown flows.
+                if b.get("layout_type", "") == "figure" and b.get("image") is not None:
                     mkdn += "\n![Image]({})".format(VLM.image2base64(b["image"]))
                     continue
                 mkdn += b.get("text", "") + "\n"
@@ -878,9 +880,22 @@ class Parser(ProcessBase):
             spreadsheet_parser = ExcelParser()
             if conf.get("output_format") == "html":
                 htmls = spreadsheet_parser.html(blob, 1000000000)
-                self.set_output("html", htmls[0])
+                self.set_output("html", htmls[0][0] if htmls else "")
             elif conf.get("output_format") == "json":
-                self.set_output("json", [{"text": txt, "doc_type_kwd": "text"} for txt in spreadsheet_parser(blob) if txt])
+                self.set_output(
+                    "json",
+                    [
+                        {
+                            "text": txt,
+                            "doc_type_kwd": "text",
+                            # 0-based sheet. TaskExecutor and dataflow_service
+                            # call add_positions, which stores pn+1 (1-based).
+                            "positions": [[sheet, r1, r2, c1, c2]],
+                        }
+                        for txt, (sheet, r1, r2, c1, c2) in spreadsheet_parser(blob)
+                        if txt
+                    ],
+                )
             elif conf.get("output_format") == "markdown":
                 self.set_output("markdown", spreadsheet_parser.markdown(blob))
 

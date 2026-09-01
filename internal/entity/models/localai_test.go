@@ -132,7 +132,7 @@ func TestLocalAIEmbedHappyPath(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	vecs, err := l.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{}, nil, nil)
+	vecs, err := l.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestLocalAIEmbedRejectsDuplicateIndex(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	_, err := l.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := l.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -175,7 +175,7 @@ func TestLocalAIEmbedRejectsOutOfRangeIndex(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	_, err := l.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := l.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -191,7 +191,7 @@ func TestLocalAIEmbedRejectsMissingSlot(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	_, err := l.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := l.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index 1") {
 		t.Errorf("expected missing-slot error, got %v", err)
 	}
@@ -207,7 +207,7 @@ func TestLocalAIEmbedEmptyInputShortCircuits(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	vecs, err := l.Embed(ctx, &model, []string{}, &APIConfig{}, nil, nil)
+	vecs, err := l.Embed(ctx, &model, EmbedRequest{Texts: []string{}}, &APIConfig{}, nil, nil)
 	if err != nil || len(vecs) != 0 {
 		t.Errorf("Embed([])=(%v,%v) want ([],nil)", vecs, err)
 	}

@@ -122,9 +122,10 @@ class SkillNode:
 def skill_safe_name(text: str, max_len: int = 50) -> str:
     """Lowercase, hyphen-only, max-len-clamped slug. Mirrors
     Corpus2Skill ``_safe_name`` for cross-system stability of folder
-    names."""
+    names. Keeps CJK (Chinese) characters so Chinese labels survive
+    the slugification."""
     name = (text or "").lower().strip()
-    name = re.sub(r"[^a-z0-9\s-]", "", name)
+    name = re.sub(r"[^a-z0-9\s\u4e00-\u9fff-]", "", name)
     name = re.sub(r"\s+", "-", name)
     name = name.strip("-")[:max_len]
     return name
@@ -136,8 +137,8 @@ async def label_skill_node_one(
     semaphore: asyncio.Semaphore,
 ) -> str:
     """Generate a single fs-safe label: 2–5 word lowercase
-    hyphenated label, max_tokens=20, sanitized to [a-z0-9-], capped
-    at 50 chars, falls back to "cluster" on any failure.
+    hyphenated label, max_tokens=20, sanitized to [a-z0-9-\u4e00-\u9fff],
+    capped at 50 chars, falls back to "cluster" on any failure.
     """
     async with semaphore:
         try:
@@ -156,7 +157,7 @@ async def label_skill_node_one(
                 {"max_tokens": 20, "temperature": 0.0},
             )
             raw = (cnt or "").strip().lower()
-            label = re.sub(r"[^a-z0-9-]", "-", raw)
+            label = re.sub(r"[^a-z0-9\u4e00-\u9fff-]", "-", raw)
             label = re.sub(r"-+", "-", label).strip("-")[:50]
             return label or "cluster"
         except Exception:
@@ -220,22 +221,57 @@ async def doc_summary_for_skill(
     )
 
 
-def build_skill_md(node: "SkillNode") -> str:
+_SENTENCE_ENDINGS = "。！？!?；;"
+
+
+def _strip_md_headings(text: str) -> str:
+    """Convert ATX heading markers (``###`` at line start) into bold text,
+    keeping the heading text and the line structure. e.g. ``### 客户服务``
+    becomes ``**客户服务**``. Line breaks survive, so a multi-section
+    summary keeps its readability inside the YAML ``description`` field."""
+    if not text:
+        return text
+    return re.sub(r"^\s*#{1,6}\s+(.*?)\s*$", r"**\g<1>**", text, flags=re.MULTILINE)
+
+
+def _truncate_at_sentence_end(text: str, limit: int = 300) -> str:
+    """Clip ``text`` at the last sentence-ending punctuation (or line
+    break) within ``limit``, so a clipped summary never ends mid-sentence.
+    Falls back to a hard cut at ``limit`` when no good boundary occurs in
+    the first half of the budget."""
+    if len(text) <= limit:
+        return text
+    head = text[:limit]
+    cut = max(head.rfind(p) for p in _SENTENCE_ENDINGS + "\n")
+    if cut >= limit // 2:
+        return head[: cut + 1]
+    return head
+
+
+def _escape_md_text(text: str) -> str:
+    """Escape markdown metacharacters so a document name cannot break
+    the emphasis / inline-code / link syntax it is embedded in."""
+    return re.sub(r"([\\`*_\[\]])", r"\\\1", text)
+
+
+def build_skill_md(node: "SkillNode", doc_names: Optional[Dict] = None) -> str:
     """SKILL.md (depth 0) / INDEX.md (deeper) text. Mirrors
     Corpus2Skill's ``_format_skill_md`` (skill_builder.py:193): YAML
     frontmatter (name / description / level / num_documents), then
     ``## Overview`` with the full summary, then ``## Contents`` —
-    sub-groups for branches, ``- `doc_id`: <first 120 chars>`` for
-    leaves.
+    sub-groups for branches, ``- **doc_name** (`doc_id`): <first 120
+    chars>`` for leaves. ``doc_names`` maps doc_id → display name; a
+    missing entry falls back to the bare ``doc_id``.
     """
     depth = node.level
     name = node.folder_name or node.label or f"cluster-{depth}"
-    desc = (node.summary or "")[:300].replace("\n", " ").strip()
+    desc = _truncate_at_sentence_end(_strip_md_headings(node.summary or ""))
+    desc_block = "\n".join(f"  {ln}" if ln.strip() else "" for ln in desc.split("\n"))
     lines: list[str] = [
         "---",
         f"name: {name}",
-        "description: >",
-        f"  {desc}",
+        "description: |",
+        desc_block,
         f"level: {depth}",
         f"num_documents: {len(node.doc_ids)}",
         "---",
@@ -252,7 +288,7 @@ def build_skill_md(node: "SkillNode") -> str:
         lines.append("")
         for child in node.children:
             child_name = child.folder_name or child.label or "cluster"
-            summary_snip = (child.summary or "")[:200].replace("\n", " ").strip()
+            summary_snip = _truncate_at_sentence_end((child.summary or "").replace("\n", " ").strip(), limit=200)
             lines.append(f"- **{child_name}/** ({len(child.doc_ids)} docs): {summary_snip}")
         lines.append("")
     else:
@@ -260,13 +296,17 @@ def build_skill_md(node: "SkillNode") -> str:
         lines.append("")
         for doc_id in node.doc_ids:
             preview = node.doc_texts.get(doc_id, "")
-            first_line = (preview.split("\n", 1)[0] if preview else "").strip()[:120]
-            lines.append(f"- `{doc_id}`: {first_line}")
+            first_line = _truncate_at_sentence_end((preview.split("\n", 1)[0] if preview else "").strip(), limit=120)
+            doc_name = ((doc_names or {}).get(doc_id) or "").replace("\n", " ").strip()
+            if doc_name:
+                lines.append(f"- **{_escape_md_text(doc_name)}** (`{doc_id}`): {first_line}")
+            else:
+                lines.append(f"- `{doc_id}`: {first_line}")
         lines.append("")
     return "\n".join(lines)
 
 
-def skill_node_es_row(ctx: TaskContext, node: "SkillNode", parent_kwd: str = "") -> Dict:
+def skill_node_es_row(ctx: TaskContext, node: "SkillNode", parent_kwd: str = "", doc_names: Optional[Dict] = None) -> Dict:
     """Build the ES row for one tree node. Stable id from
     (kb_id, folder_name) so re-runs upsert cleanly."""
     kb_id_str = str(ctx.kb_id)
@@ -283,38 +323,38 @@ def skill_node_es_row(ctx: TaskContext, node: "SkillNode", parent_kwd: str = "")
         "depth_int": int(node.level),
         "children_kwd": [c.folder_name for c in node.children],
         "source_doc_ids": list(node.doc_ids),
-        "md_with_weight": build_skill_md(node),
+        "md_with_weight": build_skill_md(node, doc_names),
         "available_int": 1,
     }
 
 
-def _collect_skill_rows(ctx: TaskContext, node: "SkillNode", parent_kwd: str, out: list[dict]) -> None:
+def _collect_skill_rows(ctx: TaskContext, node: "SkillNode", parent_kwd: str, out: list[dict], doc_names: Optional[Dict] = None) -> None:
     """Depth-first traversal: build one ``skill`` row per node, passing
     ``parent_kwd`` down so every non-root node records its parent."""
-    out.append(skill_node_es_row(ctx, node, parent_kwd))
+    out.append(skill_node_es_row(ctx, node, parent_kwd, doc_names))
     for child in node.children:
-        _collect_skill_rows(ctx, child, node.folder_name, out)
+        _collect_skill_rows(ctx, child, node.folder_name, out, doc_names)
 
 
-def skill_tree_md_snippet(node: "SkillNode") -> str:
+def skill_tree_md_snippet(node: "SkillNode", doc_names: Optional[Dict] = None) -> str:
     """Return only the frontmatter/preamble before the Overview body.
 
     The one-shot tree browser needs enough metadata to render the skill
     directory without loading every full node body up front.
     """
-    md = build_skill_md(node)
+    md = build_skill_md(node, doc_names)
     return md.split("\n## Overview", 1)[0].strip()
 
 
-def skill_tree_node(node: "SkillNode") -> Dict:
+def skill_tree_node(node: "SkillNode", doc_names: Optional[Dict] = None) -> Dict:
     return {
         "skill_kwd": node.folder_name,
-        "md_with_weight": skill_tree_md_snippet(node),
-        "children_kwd": [skill_tree_node(child) for child in node.children],
+        "md_with_weight": skill_tree_md_snippet(node, doc_names),
+        "children_kwd": [skill_tree_node(child, doc_names) for child in node.children],
     }
 
 
-def skill_all_es_row(ctx: TaskContext, roots: list["SkillNode"]) -> Dict:
+def skill_all_es_row(ctx: TaskContext, roots: list["SkillNode"], doc_names: Optional[Dict] = None) -> Dict:
     """Build the aggregate tree row loaded by the Skills sidebar."""
     kb_id_str = str(ctx.kb_id)
     row_id = xxhash.xxh64(
@@ -326,7 +366,7 @@ def skill_all_es_row(ctx: TaskContext, roots: list["SkillNode"]) -> Dict:
         "doc_id": kb_id_str,
         "compile_kwd": "skill_all",
         "skill_with_weight": json.dumps(
-            [skill_tree_node(root) for root in roots],
+            [skill_tree_node(root, doc_names) for root in roots],
             ensure_ascii=False,
             indent=2,
         ),
@@ -356,32 +396,15 @@ async def run_corpus2skill(
     # much lives under ``api.db.services``.
     from api.db.services.document_service import DocumentService
     from api.db.services.llm_service import LLMBundle
-    from api.db.joint_services.tenant_model_service import (
-        get_tenant_default_model_by_type,
-    )
+    from api.db.joint_services.tenant_model_service import resolve_model_config
     from rag.advanced_rag.knowlege_compile.raptor import (
         RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor,
     )
+    from rag.svr.task_executor_refactor.dataset_wiki_generator import _pipeline_compiler_llm_id
 
     progress = ctx.progress_cb
     progress(0.0, "skill: loading documents")
 
-    # ---- Phase 0: chat model + RAPTOR instance for summarization/clustering.
-    chat_model_config = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
-    chat_mdl = LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language)
-
-    raptor = Raptor(
-        max_cluster=128,
-        llm_model=chat_mdl,
-        embd_model=embedding_model,
-        prompt="Please write a concise summary of the following texts:\n{cluster_content}",
-        max_token=512,
-        max_errors=3,
-        clustering_threshold=0.3,
-        clustering_ratio=0.5,
-    )
-
-    # ---- Phase 1: per-doc summaries.
     all_docs, _ = await thread_pool_exec(
         DocumentService.get_by_kb_id,
         kb_id=ctx.kb_id,
@@ -395,10 +418,46 @@ async def run_corpus2skill(
         suffix=[],
     )
     eligible_docs = [d for d in (all_docs or []) if d.get("id")]
+    doc_names = {d["id"]: (d.get("name") or "") for d in eligible_docs}
     if not eligible_docs:
         progress(1.0, "skill: no documents in KB")
         return
 
+    # ---- Phase 0: chat models + RAPTOR instances for summarization/clustering.
+    # Per-document summaries use each document's ingestion pipeline Compiler
+    # model. The first document's model deterministically owns KB-wide cluster
+    # summaries and labels.
+    chat_models: dict[str, LLMBundle] = {}
+    raptors: dict[str, Raptor] = {}
+    doc_llm_ids: dict[str, str] = {}
+    for doc in eligible_docs:
+        doc_id = str(doc["id"])
+        pipeline_id = str(doc.get("pipeline_id") or "").strip()
+        if not pipeline_id:
+            raise ValueError(f"Skill document {doc_id} must use a pipeline")
+        llm_id = _pipeline_compiler_llm_id(pipeline_id)
+        if not llm_id:
+            raise ValueError(f"Skill document {doc_id} pipeline Compiler must configure an LLM")
+        doc_llm_ids[doc_id] = llm_id
+        if llm_id in chat_models:
+            continue
+        chat_model_config = resolve_model_config(ctx.tenant_id, LLMType.CHAT, llm_id)
+        chat_models[llm_id] = LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language)
+        raptors[llm_id] = Raptor(
+            max_cluster=128,
+            llm_model=chat_models[llm_id],
+            embd_model=embedding_model,
+            prompt="Please write a concise summary of the following texts:\n{cluster_content}",
+            max_token=512,
+            max_errors=3,
+            clustering_threshold=0.3,
+            clustering_ratio=0.5,
+        )
+    first_llm_id = doc_llm_ids[str(eligible_docs[0]["id"])]
+    chat_mdl = chat_models[first_llm_id]
+    raptor = raptors[first_llm_id]
+
+    # ---- Phase 1: per-doc summaries.
     # Phase-1 gate: bail before spinning up N per-doc summarizations.
     if ctx.has_canceled_func(ctx.id):
         progress(-1, "skill: task has been canceled")
@@ -411,10 +470,11 @@ async def run_corpus2skill(
     async def _summarize_doc(d: Dict) -> Optional[SkillNode]:
         async with doc_sem:
             try:
+                llm_id = doc_llm_ids[str(d["id"])]
                 return await doc_summary_for_skill(
                     d["id"],
-                    raptor,
-                    chat_mdl,
+                    raptors[llm_id],
+                    chat_models[llm_id],
                     ctx,
                     load_chunks_for_doc,
                 )
@@ -577,8 +637,8 @@ async def run_corpus2skill(
 
     rows: list[dict] = []
     for r in roots:
-        _collect_skill_rows(ctx, r, "", rows)
-    rows.append(skill_all_es_row(ctx, roots))
+        _collect_skill_rows(ctx, r, "", rows, doc_names)
+    rows.append(skill_all_es_row(ctx, roots, doc_names))
     if not rows:
         progress(1.0, "skill: nothing to persist")
         return

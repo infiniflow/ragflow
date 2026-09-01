@@ -339,7 +339,7 @@ func TestPerplexityEmbedHappyPath(t *testing.T) {
 	out, err := newPerplexityForTest(srv.URL).Embed(
 		ctx,
 		&modelName,
-		[]string{"hello", "world"},
+		EmbedRequest{Texts: []string{"hello", "world"}},
 		&APIConfig{ApiKey: &apiKey},
 		&EmbeddingConfig{Dimension: 16},
 		nil,
@@ -363,7 +363,7 @@ func TestPerplexityEmbedEmptyTextsReturnsEmpty(t *testing.T) {
 	ctx := t.Context()
 	modelName := "pplx-embed-v1-0.6b"
 	apiKey := "test-key"
-	out, err := newPerplexityForTest("http://unused").Embed(ctx, &modelName, nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	out, err := newPerplexityForTest("http://unused").Embed(ctx, &modelName, EmbedRequest{Texts: nil}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -376,7 +376,7 @@ func TestPerplexityEmbedRequiresModelName(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
-	_, err := newPerplexityForTest("http://unused").Embed(ctx, nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newPerplexityForTest("http://unused").Embed(ctx, nil, EmbedRequest{Texts: []string{"x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
@@ -386,7 +386,7 @@ func TestPerplexityUnsupportedMethods(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newPerplexityForTest("http://unused")
-	if _, err := m.Rerank(ctx, nil, "", nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, nil, RerankRequest{Query: "", Documents: nil}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank error=%v", err)
 	}
 	if _, err := m.Balance(ctx, nil); err == nil || !strings.Contains(err.Error(), "no such method") {

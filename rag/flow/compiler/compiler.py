@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 import xxhash
 
-from agent.component.llm import LLMParam, LLM
+from agent.component.llm import LLM, LLMParam
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_tenant_default_model_by_type, resolve_model_config
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -28,7 +28,6 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
 from common.constants import LLMType
 from common.token_utils import num_tokens_from_string
-from rag.nlp import naive_merge
 from rag.advanced_rag.knowlege_compile.runner import (
     DOC_STRUCTURE_COMPILE_BATCH_CHUNKS,
     load_active_templates,
@@ -37,6 +36,7 @@ from rag.advanced_rag.knowlege_compile.runner import (
     split_tree_templates,
 )
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.nlp import naive_merge
 
 
 class CompilerParam(ProcessParamBase, LLMParam):
@@ -471,13 +471,23 @@ class Compiler(ProcessBase, LLM):
                 continue
 
             try:
-                from rag.advanced_rag.knowlege_compile.dataset_nav import upsert_dataset_nav_doc
+                from rag.advanced_rag.knowlege_compile.dataset_nav import (
+                    build_nav_graph_text,
+                    upsert_dataset_nav_doc,
+                )
 
+                # Carry the FULL entity descriptions into the parse-time
+                # nav_doc as graph_content (graph_text from the RAPTOR graph),
+                # without changing the nav clustering input. The `title` keeps
+                # using tree["title"] -- exactly what upsert_dataset_nav_doc
+                # used to derive from `tree` before this change -- so the parse
+                # cluster-title logic is unchanged.
+                _, nav_graph_text = build_nav_graph_text(after_graph)
                 await upsert_dataset_nav_doc(
                     tenant_id,
                     kb_id,
                     doc_id,
-                    tree,
+                    {"title": tree.get("title"), "graph_text": nav_graph_text},
                     embd_mdl=embedding_model,
                     chat_mdl=chat_mdl_by_tid[template_id],
                 )
@@ -542,52 +552,16 @@ class Compiler(ProcessBase, LLM):
             self.set_output("chunks", chunks)
             return
 
-        # Per-template chat model: a template may pin its own ``llm_id``;
-        # otherwise fall back to this component's configured chat model.
-        llm_bundle_cache: dict[str, LLMBundle] = {}
-        chat_mdl_by_tid: dict[str, LLMBundle] = {}
-        filtered_templates: list[tuple[str, dict]] = []
-        default_chat_mdl = None
-        for template_id, parser_cfg in active_templates:
-            tpl_llm_id = parser_cfg.get("llm_id") if isinstance(parser_cfg, dict) else None
-            if isinstance(tpl_llm_id, str) and tpl_llm_id.strip():
-                chat_llm_id = tpl_llm_id.strip()
-                if chat_llm_id not in llm_bundle_cache:
-                    try:
-                        cfg = resolve_model_config(tenant_id, LLMType.CHAT, chat_llm_id)
-                        llm_bundle_cache[chat_llm_id] = LLMBundle(
-                            tenant_id,
-                            cfg,
-                            lang=language,
-                            max_retries=self._param.max_retries,
-                            retry_interval=self._param.delay_after_error,
-                        )
-                    except Exception:
-                        logging.exception(
-                            "Compiler: cannot resolve chat model %s for template %s; skipping",
-                            chat_llm_id,
-                            template_id,
-                        )
-                        continue
-                chat_mdl_by_tid[template_id] = llm_bundle_cache[chat_llm_id]
-            else:
-                if default_chat_mdl is None:
-                    default_chat_mdl = LLMBundle(
-                        tenant_id,
-                        self.chat_mdl.model_config,
-                        lang=language,
-                        max_retries=self._param.max_retries,
-                        retry_interval=self._param.delay_after_error,
-                    )
-                chat_mdl_by_tid[template_id] = default_chat_mdl
-            filtered_templates.append((template_id, parser_cfg))
-
-        if not filtered_templates:
-            if chunks is None:
-                chunks = self._normalize_upstream_chunks(kwargs)
-            self.set_output("chunks", chunks)
-            return
-        active_templates = filtered_templates
+        # Compilation templates describe output structure, not model selection.
+        # Every template in this pipeline must use the Compiler component's LLM.
+        chat_mdl = LLMBundle(
+            tenant_id,
+            self.chat_mdl.model_config,
+            lang=language,
+            max_retries=self._param.max_retries,
+            retry_interval=self._param.delay_after_error,
+        )
+        chat_mdl_by_tid = {template_id: chat_mdl for template_id, _ in active_templates}
 
         def _template_requests_rechunk(cfg: dict) -> bool:
             if not isinstance(cfg, dict):
@@ -600,13 +574,7 @@ class Compiler(ProcessBase, LLM):
 
         should_rechunk = any(_template_requests_rechunk(cfg) for _, cfg in active_templates)
         target_token_size = self._PARSER_CANDIDATE_TOKEN_SIZE if should_rechunk else self._PARSER_TEXT_CHUNK_TOKEN_SIZE
-        if output_format == "chunks":
-            chunks = self._normalize_upstream_chunks(
-                kwargs,
-                split_json_text=should_rechunk,
-                target_token_size=target_token_size,
-            )
-        elif output_format in {"markdown", "text", "html"}:
+        if output_format == "chunks" or output_format in {"markdown", "text", "html"}:
             chunks = self._normalize_upstream_chunks(
                 kwargs,
                 split_json_text=should_rechunk,
@@ -627,7 +595,7 @@ class Compiler(ProcessBase, LLM):
 
         for idx, ck in enumerate(chunks):
             ck["doc_id"] = doc_id
-            ck["id"] = xxhash.xxh64(f"{ck['text']}\x00{ck['doc_id']}\x00{idx}".encode("utf-8")).hexdigest()
+            ck["id"] = xxhash.xxh64(f"{ck['text']}\x00{ck['doc_id']}\x00{idx}".encode()).hexdigest()
 
         if self._canvas._kb_id:
             e, kb = KnowledgebaseService.get_by_id(self._canvas._kb_id)

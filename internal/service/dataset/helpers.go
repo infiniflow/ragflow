@@ -46,19 +46,37 @@ const (
 	graphPhaseCommunityDone  = "community_done"
 )
 
-// validateParserID validates parser_id against the built-in pipeline registry.
-func validateParserID(chunkMethod string) error {
-	if chunkMethod == "knowledge_graph" {
-		return nil
+// canonicalDatasetParserID resolves a parser ID to its canonical builtin ID.
+// The registry retains legacy aliases such as naive -> general for old clients.
+func canonicalDatasetParserID(parserID string) (string, error) {
+	if parserID == "knowledge_graph" {
+		return parserID, nil
 	}
 	registry, err := pipelinepkg.DefaultRegistry()
 	if err != nil || registry == nil {
-		return errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
+		return "", errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
 	}
-	if registry.IsValid(chunkMethod) {
-		return nil
+	template, ok := registry.Get(parserID)
+	if ok {
+		return template.ParserID, nil
 	}
-	return parserIDError()
+	return "", parserIDError()
+}
+
+// validateParserID validates parser_id against the built-in pipeline registry.
+func validateParserID(parserID string) error {
+	_, err := canonicalDatasetParserID(parserID)
+	return err
+}
+
+// datasetParserIDForResponse returns the canonical parser ID when a legacy
+// persisted value remains resolvable. Unknown stored values are preserved.
+func datasetParserIDForResponse(parserID string) string {
+	canonicalID, err := canonicalDatasetParserID(parserID)
+	if err != nil {
+		return parserID
+	}
+	return canonicalID
 }
 
 func parserIDError() error {
@@ -223,10 +241,11 @@ func datasetUpdateParserID(req service.UpdateDatasetRequest) (string, bool, erro
 	if !provided {
 		return "", false, nil
 	}
-	if err := validateParserID(parserID); err != nil {
+	canonicalID, err := canonicalDatasetParserID(parserID)
+	if err != nil {
 		return "", true, err
 	}
-	return parserID, true, nil
+	return canonicalID, true, nil
 }
 
 func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, error) {
@@ -253,18 +272,19 @@ func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming
 	if next == nil {
 		next = entity.JSONMap{}
 	}
-	for _, key := range []string{"metadata", "built_in_metadata", "enable_metadata"} {
-		if incoming != nil {
-			if value, ok := incoming[key]; ok {
-				next[key] = value
-				continue
-			}
+	var mm map[string]any
+	if incoming != nil {
+		if v, ok := incoming["metadata"].(map[string]any); ok {
+			mm = v
 		}
-		if existing != nil {
-			if value, ok := existing[key]; ok {
-				next[key] = value
-			}
+	}
+	if mm == nil && existing != nil {
+		if v, ok := existing["metadata"].(map[string]any); ok {
+			mm = v
 		}
+	}
+	if mm != nil {
+		next["metadata"] = mm
 	}
 	return next
 }

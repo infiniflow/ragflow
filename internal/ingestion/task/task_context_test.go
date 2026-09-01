@@ -23,7 +23,7 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
-func TestLoadFromIngestionTask_FallsBackToKnowledgebasePipelineID(t *testing.T) {
+func TestLoadFromIngestionTask_DoesNotFallbackToKnowledgebasePipelineID(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -65,8 +65,8 @@ func TestLoadFromIngestionTask_FallsBackToKnowledgebasePipelineID(t *testing.T) 
 	if err != nil {
 		t.Fatalf("LoadFromIngestionTask: %v", err)
 	}
-	if taskCtx.PipelineID != kbPipelineID {
-		t.Fatalf("PipelineID = %q, want %q", taskCtx.PipelineID, kbPipelineID)
+	if taskCtx.PipelineID != "" {
+		t.Fatalf("PipelineID = %q, want empty document pipeline selection", taskCtx.PipelineID)
 	}
 }
 

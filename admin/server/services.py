@@ -504,6 +504,11 @@ class SandboxMgr:
             "description": "Tenki - Disposable microVM code sandboxes",
             "tags": ["saas", "cloud", "microvm", "isolated"],
         },
+        "ucloud_agent_sandbox": {
+            "name": "UCloud Agent Sandbox",
+            "description": "UCloud Agent Sandbox - Disposable cloud sandboxes for agent code execution",
+            "tags": ["saas", "cloud", "isolated", "ucloud"],
+        },
     }
 
     @staticmethod
@@ -524,6 +529,7 @@ class SandboxMgr:
             AliyunCodeInterpreterProvider,
             E2BProvider,
             TenkiProvider,
+            UCloudAgentSandboxProvider,
         )
 
         schemas = {
@@ -533,6 +539,7 @@ class SandboxMgr:
             "aliyun_codeinterpreter": AliyunCodeInterpreterProvider.get_config_schema(),
             "e2b": E2BProvider.get_config_schema(),
             "tenki": TenkiProvider.get_config_schema(),
+            "ucloud_agent_sandbox": UCloudAgentSandboxProvider.get_config_schema(),
         }
 
         if provider_id not in schemas:
@@ -599,6 +606,7 @@ class SandboxMgr:
             AliyunCodeInterpreterProvider,
             E2BProvider,
             TenkiProvider,
+            UCloudAgentSandboxProvider,
         )
 
         try:
@@ -644,6 +652,7 @@ class SandboxMgr:
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
                 "tenki": TenkiProvider,
+                "ucloud_agent_sandbox": UCloudAgentSandboxProvider,
             }
             provider = provider_classes[provider_type]()
             is_valid, error_msg = provider.validate_config(config)
@@ -692,6 +701,7 @@ class SandboxMgr:
                 AliyunCodeInterpreterProvider,
                 E2BProvider,
                 TenkiProvider,
+                UCloudAgentSandboxProvider,
             )
 
             # Instantiate provider based on type
@@ -702,6 +712,7 @@ class SandboxMgr:
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
                 "tenki": TenkiProvider,
+                "ucloud_agent_sandbox": UCloudAgentSandboxProvider,
             }
 
             if provider_type not in provider_classes:

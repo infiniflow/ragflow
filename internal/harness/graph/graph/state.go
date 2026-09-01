@@ -117,8 +117,8 @@ func parseAnnotation(tag string) (*Annotation, error) {
 		Metadata: make(map[string]interface{}),
 	}
 
-	pairs := strings.Split(tag, ",")
-	for _, pair := range pairs {
+	pairs := strings.SplitSeq(tag, ",")
+	for pair := range pairs {
 		kv := strings.SplitN(pair, "=", 2)
 		if len(kv) != 2 {
 			// Could be a boolean flag

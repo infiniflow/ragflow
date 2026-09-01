@@ -221,10 +221,17 @@ func (dao *ChatSessionDAO) ListAgentSessions(ctx context.Context, db *gorm.DB, p
 	if params.Keywords != "" {
 		keywords := strings.ToLower(params.Keywords)
 		escapedKeywords := strings.Trim(strconv.QuoteToASCII(keywords), `"`)
+		keywordPattern := "%" + keywords + "%"
 		if escapedKeywords == keywords {
-			query = query.Where("LOWER(message) LIKE ?", "%"+keywords+"%")
+			query = query.Where("(LOWER(id) LIKE ? OR LOWER(name) LIKE ? OR LOWER(message) LIKE ?)", keywordPattern, keywordPattern, keywordPattern)
 		} else {
-			query = query.Where("(LOWER(message) LIKE ? OR LOWER(message) LIKE ?)", "%"+keywords+"%", "%"+escapedKeywords+"%")
+			query = query.Where(
+				"(LOWER(id) LIKE ? OR LOWER(name) LIKE ? OR LOWER(message) LIKE ? OR LOWER(message) LIKE ?)",
+				keywordPattern,
+				keywordPattern,
+				keywordPattern,
+				"%"+escapedKeywords+"%",
+			)
 		}
 	}
 

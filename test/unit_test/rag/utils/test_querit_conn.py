@@ -111,13 +111,60 @@ def test_querit_retrieve_chunks_returns_ragflow_reference_shape(monkeypatch):
     ]
 
 
-def test_querit_search_redacts_api_key_from_failures(monkeypatch, caplog):
+def test_querit_search_keeps_the_key_out_of_failure_logs(monkeypatch, caplog):
     class _FailedResponse:
         def raise_for_status(self):
             raise ValueError("request failed with querit-secret")
 
     monkeypatch.setattr(querit_conn.requests, "post", lambda *_args, **_kwargs: _FailedResponse())
 
-    assert querit_conn.Querit("querit-secret").search("RAGFlow") == []
+    with caplog.at_level("ERROR"):
+        assert querit_conn.Querit("querit-secret").search("RAGFlow") == []
+
     assert "querit-secret" not in caplog.text
-    assert "[REDACTED]" in caplog.text
+    # Only the exception type survives into the log.
+    assert "ValueError" in caplog.text
+
+
+def test_querit_search_logs_only_the_status_on_http_errors(monkeypatch, caplog):
+    class _ErrorResponse:
+        status_code = 402
+        url = "https://api.querit.ai/v1/search"
+
+        def raise_for_status(self):
+            raise querit_conn.requests.HTTPError(
+                f"402 Client Error: Payment Required for url: {self.url}",
+                response=self,
+            )
+
+    monkeypatch.setattr(querit_conn.requests, "post", lambda *_args, **_kwargs: _ErrorResponse())
+
+    with caplog.at_level("ERROR"):
+        assert querit_conn.Querit("querit-secret").search("my private query") == []
+
+    assert "my private query" not in caplog.text
+    assert "querit-secret" not in caplog.text
+    assert "402" in caplog.text
+
+
+def test_querit_retrieve_chunks_never_logs_the_query_or_page_text(monkeypatch, caplog):
+    monkeypatch.setattr(
+        querit_conn.Querit,
+        "search",
+        lambda self, question: [
+            {
+                "url": "https://example.com/a",
+                "title": "A",
+                "content": "secret page body text",
+                "score": 1.0,
+            }
+        ],
+    )
+
+    with caplog.at_level("INFO"):
+        retrieved = querit_conn.Querit("k").retrieve_chunks("my private query")
+
+    assert len(retrieved["chunks"]) == 1
+    assert "my private query" not in caplog.text
+    assert "secret page body text" not in caplog.text
+    assert "1" in caplog.text

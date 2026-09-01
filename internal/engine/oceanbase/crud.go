@@ -201,6 +201,9 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 	if !exists {
 		return fmt.Errorf("%w: '%s'", types.ErrIndexNotFound, baseName)
 	}
+	if kind == "chunk" {
+		newValue = normalizeImportantKeywordFields(newValue)
+	}
 	whereSQL, args, err := buildFilter(condition, kind)
 	if err != nil {
 		return err
@@ -247,6 +250,11 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 			for column, item := range items {
 				if kind != "chunk" || !arrayColumns[column] {
 					return fmt.Errorf("column %s is not an array column", column)
+				}
+				if column == "important_kwd" {
+					if text, ok := item.(string); ok {
+						item, _ = sanitizeImportantKeyword(text)
+					}
 				}
 				setParts = append(setParts, fmt.Sprintf("%s = ARRAY_APPEND(%s, ?)", quoteIdentifier(column), quoteIdentifier(column)))
 				setArgs = append(setArgs, item)

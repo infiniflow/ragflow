@@ -28,6 +28,19 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 )
 
+func TestReportParserWarningsAsProgressMessages(t *testing.T) {
+	var got []string
+	ctx := runtime.WithProgressMessageCallback(t.Context(), func(component, message string) {
+		got = append(got, component+": "+message)
+	})
+
+	reportParserWarnings(ctx, []string{"sheet \"Summary\": unsupported image extension \"emf\""})
+
+	if len(got) != 1 || got[0] != "Parser: WARNING: sheet \"Summary\": unsupported image extension \"emf\"" {
+		t.Fatalf("progress warnings = %v", got)
+	}
+}
+
 // TestParserComponent_Registered asserts the factory lookup
 // succeeds for the canonical "Parser" name. This is the contract
 // the pipeline runner relies on (see plan §4 Phase 0, "category-

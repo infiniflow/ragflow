@@ -53,7 +53,12 @@ def _load_flow_utils(monkeypatch):
     ):
         _package(monkeypatch, package_name)
 
-    _module(monkeypatch, "api.db.services.llm_service", LLMBundle=Mock())
+    _module(
+        monkeypatch,
+        "api.db.services.llm_service",
+        LLMBundle=Mock(),
+        resolve_llm_setting=Mock(return_value={}),
+    )
     _module(
         monkeypatch,
         "api.db.joint_services.tenant_model_service",

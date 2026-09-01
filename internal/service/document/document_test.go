@@ -26,7 +26,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -48,6 +50,18 @@ import (
 type recordingTaskPublisher struct {
 	subject  string
 	messages []common.TaskMessage
+}
+
+type runningTaskPublisher struct {
+	db        *gorm.DB
+	published chan struct{}
+	once      sync.Once
+}
+
+func (p *runningTaskPublisher) PublishTaskMessage(_ string, msg common.TaskMessage) error {
+	p.once.Do(func() { close(p.published) })
+	return p.db.Model(&entity.IngestionTask{}).Where("id = ?", msg.TaskID).
+		Update("status", common.RUNNING).Error
 }
 
 func (r *recordingTaskPublisher) PublishTaskMessage(subject string, msg common.TaskMessage) error {
@@ -227,12 +241,37 @@ func (e *rerunDeleteDocEngine) ChunkStoreExists(context.Context, string, string)
 	return true, nil
 }
 
+func (e *rerunDeleteDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+	return &types.SearchResult{Chunks: []map[string]interface{}{
+		{"id": "source-1"},
+		{"id": "wiki-1", "compile_kwd": "wiki_page"},
+	}, Total: 2}, nil
+}
+
 func (e *rerunDeleteDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
 	e.deleteCalls++
 	e.condition = condition
 	e.indexName = indexName
 	e.datasetID = datasetID
 	return 3, nil
+}
+
+type sourceAvailabilityDocEngine struct {
+	fakeChatDocEngine
+	updateConditions []map[string]interface{}
+}
+
+func (e *sourceAvailabilityDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+	return &types.SearchResult{Chunks: []map[string]interface{}{
+		{"id": "source-1"},
+		{"id": "wiki-1", "compile_kwd": "wiki_page"},
+		{"id": "map-1", "compile_kwd": []interface{}{"wiki_map_active"}},
+	}, Total: 3}, nil
+}
+
+func (e *sourceAvailabilityDocEngine) UpdateChunks(_ context.Context, condition map[string]interface{}, _ map[string]interface{}, _, _ string) error {
+	e.updateConditions = append(e.updateConditions, condition)
+	return nil
 }
 
 type metadataDocEngine struct {
@@ -396,8 +435,19 @@ func (f *failingDeleteMetadataEngine) UpdateMetadata(ctx context.Context, docID 
 // setupServiceTestDB initializes an in-memory SQLite database for service tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	return setupServiceTestDBWithDSN(t, ":memory:")
+}
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+func setupConcurrentServiceTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
+	return setupServiceTestDBWithDSN(t, dsn)
+}
+
+func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		TranslateError: true,
 	})
 	if err != nil {
@@ -1240,8 +1290,8 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	if ingestionTask.UserID != "user-1" {
 		t.Fatalf("ingestion task user id = %q, want %q", ingestionTask.UserID, "user-1")
 	}
-	if ingestionTask.Status != common.CREATED {
-		t.Fatalf("ingestion task status = %q, want %q", ingestionTask.Status, common.CREATED)
+	if ingestionTask.Status != common.SCHEDULED {
+		t.Fatalf("ingestion task status = %q, want %q", ingestionTask.Status, common.SCHEDULED)
 	}
 
 	tasks, err := svc.taskDAO.GetByDocID(ctx, db, "doc-1")
@@ -1250,6 +1300,76 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	}
 	if len(tasks) != 0 {
 		t.Fatalf("expected no legacy task rows, got %d", len(tasks))
+	}
+}
+
+func TestStartParseDocumentsSerializesConcurrentReruns(t *testing.T) {
+	db := setupConcurrentServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
+		t.Fatalf("set document location: %v", err)
+	}
+
+	firstTaskLookup := make(chan struct{})
+	releaseFirstTaskLookup := make(chan struct{})
+	var blockFirstLookup sync.Once
+	const callbackName = "test:block-first-ingestion-task-lookup"
+	if err := db.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != (&entity.IngestionTask{}).TableName() {
+			return
+		}
+		blockFirstLookup.Do(func() {
+			close(firstTaskLookup)
+			<-releaseFirstTaskLookup
+		})
+	}); err != nil {
+		t.Fatalf("register query callback: %v", err)
+	}
+
+	firstService := testDocumentService(t)
+	firstService.ingestionTaskSvc.SetTaskPublisher(&recordingTaskPublisher{})
+	secondPublisher := &runningTaskPublisher{db: db, published: make(chan struct{})}
+	secondService := testDocumentService(t)
+	secondService.ingestionTaskSvc.SetTaskPublisher(secondPublisher)
+	ctx := t.Context()
+	kb, err := firstService.kbDAO.GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("load knowledgebase: %v", err)
+	}
+	doc, err := firstService.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- firstService.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true})
+	}()
+	<-firstTaskLookup
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- secondService.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true})
+	}()
+
+	secondPublishedBeforeFirstCompletes := false
+	select {
+	case <-secondPublisher.published:
+		secondPublishedBeforeFirstCompletes = true
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	close(releaseFirstTaskLookup)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first concurrent reparse: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second concurrent reparse: %v", err)
+	}
+	if secondPublishedBeforeFirstCompletes {
+		t.Fatal("second reparse published a task before the first reparse completed cleanup")
 	}
 }
 
@@ -1330,6 +1450,9 @@ func TestStopParseDocuments_NotRunningOrCancel(t *testing.T) {
 	errors, ok := result["errors"].([]string)
 	if !ok || len(errors) == 0 {
 		t.Fatal("expected errors in result")
+	}
+	if errors[0] != "Can't stop parsing document that has not started or already completed" {
+		t.Fatalf("unexpected error message: %q", errors[0])
 	}
 }
 
@@ -1948,8 +2071,25 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	if engine.deleteCalls != 1 {
 		t.Fatalf("deleteCalls = %d, want 1", engine.deleteCalls)
 	}
-	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || engine.condition["doc_id"] != "doc-1" {
+	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1"}) {
 		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
+	}
+}
+
+func TestUpdateSourceChunkAvailabilityExcludesCompiledProducts(t *testing.T) {
+	docEngine := &sourceAvailabilityDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = docEngine
+
+	if err := svc.updateSourceChunkAvailability(t.Context(), "tenant-1", "kb-1", "doc-1", 1); err != nil {
+		t.Fatalf("updateSourceChunkAvailability failed: %v", err)
+	}
+	if len(docEngine.updateConditions) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(docEngine.updateConditions))
+	}
+	ids, ok := docEngine.updateConditions[0]["id"].([]string)
+	if !ok || len(ids) != 1 || ids[0] != "source-1" {
+		t.Fatalf("updated ids = %#v, want only source-1", docEngine.updateConditions[0]["id"])
 	}
 }
 
@@ -2011,6 +2151,58 @@ func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T)
 				t.Fatalf("%s ingestion task must not be deleted", status)
 			}
 		})
+	}
+}
+
+func TestClearDocumentParseResultsDoesNotClearResultsWhenTaskStartsRunning(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
+
+	const callbackName = "test:start-ingestion-task-before-conditional-delete"
+	if err := db.Callback().Delete().Before("gorm:delete").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != (&entity.IngestionTask{}).TableName() {
+			return
+		}
+		if err := tx.Session(&gorm.Session{NewDB: true}).Model(&entity.IngestionTask{}).
+			Where("id = ?", "task-1").Update("status", common.RUNNING).Error; err != nil {
+			_ = tx.AddError(err)
+		}
+	}); err != nil {
+		t.Fatalf("register delete callback: %v", err)
+	}
+
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("get document: %v", err)
+	}
+	if err = testDocumentService(t).clearDocumentParseResults(ctx, doc, "tenant-1"); err == nil || !strings.Contains(err.Error(), "started running") {
+		t.Fatalf("expected reparse cleanup to reject a task that started running, got %v", err)
+	}
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("task status = %q, want %q", task.Status, common.RUNNING)
+	}
+
+	updatedDoc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if updatedDoc.TokenNum != 10 || updatedDoc.ChunkNum != 5 {
+		t.Fatalf("document counters = token:%d chunk:%d, want unchanged 10/5", updatedDoc.TokenNum, updatedDoc.ChunkNum)
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("reload knowledgebase: %v", err)
+	}
+	if kb.TokenNum != 10 || kb.ChunkNum != 5 {
+		t.Fatalf("knowledgebase counters = token:%d chunk:%d, want unchanged 10/5", kb.TokenNum, kb.ChunkNum)
 	}
 }
 
@@ -2978,10 +3170,124 @@ func TestIngest_CancelDoesNotDeleteIngestionTask(t *testing.T) {
 	}
 }
 
+// TestIngest_CancelUnstartedDocument mirrors the Python /documents/ingest
+// behavior: canceling a document whose parse never started (run=UNSTART, no
+// ingestion task) must be rejected with code 102 and the Python message, not
+// an internal "no ingestion task found" error.
+func TestIngest_CancelUnstartedDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err == nil {
+		t.Fatal("expected error when canceling an un-started document")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected code %v, got %v", common.CodeDataError, code)
+	}
+	if err.Error() != "Cannot cancel a task that is not in RUNNING status" {
+		t.Fatalf("unexpected error message: %q", err.Error())
+	}
+}
+
+// TestIngest_CancelCompletedDocument: canceling an already finished parse
+// (run=DONE, ingestion task COMPLETED) is rejected with the same Python
+// message as the un-started case.
+func TestIngest_CancelCompletedDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err == nil {
+		t.Fatal("expected error when canceling a completed document")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected code %v, got %v", common.CodeDataError, code)
+	}
+	if err.Error() != "Cannot cancel a task that is not in RUNNING status" {
+		t.Fatalf("unexpected error message: %q", err.Error())
+	}
+}
+
+// TestIngest_CancelUnstartedWithInFlightTask: run=UNSTART but an ingestion
+// task was just enqueued (CREATED) — cancel is allowed, matching the Python
+// has_unfinished_task branch.
+func TestIngest_CancelUnstartedWithInFlightTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err != nil {
+		t.Fatalf("Ingest(cancel) with in-flight task: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if doc == nil || doc.Run == nil || *doc.Run != string(entity.TaskStatusCancel) {
+		t.Fatalf("expected doc run=CANCEL, got %v", doc.Run)
+	}
+}
+
+// TestIngest_CancelAgainWithoutTask: re-canceling a document already in
+// CANCEL state is accepted even when its ingestion task is gone — Python
+// treats run=CANCEL as cancelable and cancel_all_task_of is a no-op.
+func TestIngest_CancelAgainWithoutTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusCancel), 10, 5)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err != nil {
+		t.Fatalf("Ingest(re-cancel) without task: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+}
+
 func TestUpdateRunProgressMirrorsFields(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	begin := time.Now().Add(-2 * time.Second)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("process_begin_at", begin).Error; err != nil {
+		t.Fatalf("set process_begin_at: %v", err)
+	}
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -3000,6 +3306,9 @@ func TestUpdateRunProgressMirrorsFields(t *testing.T) {
 	}
 	if doc.ProgressMsg == nil || *doc.ProgressMsg != "halfway" {
 		t.Fatalf("progress_msg = %v, want halfway", doc.ProgressMsg)
+	}
+	if doc.ProcessDuration <= 0 {
+		t.Fatalf("process_duration = %v, want positive live duration", doc.ProcessDuration)
 	}
 }
 

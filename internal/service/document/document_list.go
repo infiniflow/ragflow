@@ -223,6 +223,7 @@ func (s *DocumentService) toResponse(doc *entity.Document) *DocumentResponse {
 		ChunkNum:        doc.ChunkNum,
 		Progress:        doc.Progress,
 		ProgressMsg:     doc.ProgressMsg,
+		ProcessBeginAt:  doc.ProcessBeginAt,
 		ProcessDuration: doc.ProcessDuration,
 		Suffix:          doc.Suffix,
 		Run:             doc.Run,

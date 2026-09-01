@@ -122,12 +122,12 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(ctx context.Context, modelName
 	})
 }
 
-func (h *HuggingFaceModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (h *HuggingFaceModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -136,7 +136,7 @@ func (h *HuggingFaceModel) Embed(ctx context.Context, modelName *string, texts [
 	}
 
 	reqBody := map[string]interface{}{
-		"inputs": texts,
+		"inputs": request.Texts,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -192,7 +192,7 @@ func (h *HuggingFaceModel) Embed(ctx context.Context, modelName *string, texts [
 	return embeddings, nil
 }
 
-func (h *HuggingFaceModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (h *HuggingFaceModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 

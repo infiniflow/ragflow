@@ -530,8 +530,7 @@ func TestGPUStackEmbedHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	model := "bge-m3"
 	ctx := t.Context()
-	vecs, err := newGPUStackForTest(srv.URL).Embed(
-		ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 512}, nil)
+	vecs, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 512}, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -560,8 +559,7 @@ func TestGPUStackEmbedReordersByIndex(t *testing.T) {
 	apiKey := "test-key"
 	model := "bge-m3"
 	ctx := t.Context()
-	vecs, err := newGPUStackForTest(srv.URL).Embed(
-		ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -585,7 +583,7 @@ func TestGPUStackEmbedEmptyInputShortCircuits(t *testing.T) {
 	model := "bge-m3"
 	ctx := t.Context()
 	vecs, err := newGPUStackForTest(srv.URL).Embed(
-		ctx, &model, []string{}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+		ctx, &model, EmbedRequest{Texts: []string{}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed([]): %v", err)
 	}
@@ -599,7 +597,7 @@ func TestGPUStackEmbedAllowsEmptyAPIKey(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	model := "bge-m3"
-	_, err := newGPUStackForTest("http://unused").Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := newGPUStackForTest("http://unused").Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{}, nil, nil)
 	if err == nil || strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("self-hosted model should not require api key, got %v", err)
 	}
@@ -621,7 +619,7 @@ func TestGPUStackEmbedRejectsDuplicateIndex(t *testing.T) {
 	apiKey := "test-key"
 	model := "bge-m3"
 	ctx := t.Context()
-	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -642,7 +640,7 @@ func TestGPUStackEmbedRejectsOutOfRangeIndex(t *testing.T) {
 	apiKey := "test-key"
 	model := "bge-m3"
 	ctx := t.Context()
-	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -663,7 +661,7 @@ func TestGPUStackEmbedRejectsMissingIndex(t *testing.T) {
 	apiKey := "test-key"
 	model := "bge-m3"
 	ctx := t.Context()
-	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding index") {
 		t.Errorf("expected missing-index error, got %v", err)
 	}
@@ -684,7 +682,7 @@ func TestGPUStackEmbedRejectsEmptyVector(t *testing.T) {
 	apiKey := "test-key"
 	model := "bge-m3"
 	ctx := t.Context()
-	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "empty embedding vector") {
 		t.Errorf("expected empty-vector error, got %v", err)
 	}
@@ -705,7 +703,7 @@ func TestGPUStackEmbedRejectsMissingSlot(t *testing.T) {
 	apiKey := "test-key"
 	model := "bge-m3"
 	ctx := t.Context()
-	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index") {
 		t.Errorf("expected missing-slot error, got %v", err)
 	}
@@ -716,7 +714,7 @@ func TestGPUStackUnsupportedMethods(t *testing.T) {
 	ctx := t.Context()
 	m := newGPUStackForTest("http://unused")
 	model := "x"
-	if _, err := m.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{}, &RerankConfig{TopN: 1}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: %v", err)
 	}
 	if _, err := m.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {

@@ -54,7 +54,7 @@ func TestExecuteTask_AcksMessageOnCompletion(t *testing.T) {
 	)
 
 	ctx := t.Context()
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return nil
 	}
@@ -88,7 +88,7 @@ func TestExecuteTask_AcksMessageOnFailure(t *testing.T) {
 	)
 	ctx := t.Context()
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return errors.New("boom")
 	}
@@ -122,7 +122,7 @@ func TestExecuteTask_AcksMessageOnContextCancel(t *testing.T) {
 		testutil.WithTenantID("tenant-1"),
 	)
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	var runCalled bool
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		runCalled = true
@@ -158,7 +158,7 @@ func TestExecuteTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
 	)
 	ctx := t.Context()
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.heartbeatInterval = 5 * time.Millisecond
 
 	started := make(chan struct{})
@@ -202,7 +202,7 @@ func TestExecuteTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
 // succeed; a second claim while the first worker is still processing must
 // fail. This is the local guard that catches MQ redeliveries.
 func TestClaimTask_FirstTrueThenFalse(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 
 	if !ingestor.claimTask("task-1") {
 		t.Fatal("first claim should succeed")
@@ -222,7 +222,7 @@ func TestClaimTask_FirstTrueThenFalse(t *testing.T) {
 // TestClaimTask_AfterReleaseCanReclaim: after a worker finishes and releases
 // the task, a fresh claim (e.g. on restart) must succeed again.
 func TestClaimTask_AfterReleaseCanReclaim(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.claimTask("task-1")
 	ingestor.releaseTask("task-1")
 
@@ -244,7 +244,7 @@ func TestExecuteTask_ReleasesTaskFromCurrentTasks(t *testing.T) {
 		testutil.WithTenantID("tenant-1"),
 	)
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return nil
 	}
@@ -265,7 +265,7 @@ func TestExecuteTask_ReleasesTaskFromCurrentTasks(t *testing.T) {
 
 // TestSettleMessage_AckOnTerminal: body returns true -> Ack, no Nack.
 func TestSettleMessage_AckOnTerminal(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &fakeTaskHandle{}
 	ctx := t.Context()
 	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
@@ -279,7 +279,7 @@ func TestSettleMessage_AckOnTerminal(t *testing.T) {
 
 // TestSettleMessage_NackOnNonTerminal: body returns false -> Nack, no Ack.
 func TestSettleMessage_NackOnNonTerminal(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &fakeTaskHandle{}
 	ctx := t.Context()
 	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
@@ -305,7 +305,7 @@ func TestSettleMessage_RecoversPanicAndAcksWhenTaskTerminal(t *testing.T) {
 		testutil.WithTenantID("tenant-1"),
 	)
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &fakeTaskHandle{}
 	ctx := t.Context()
 	taskCtx := newAckTaskCtx(context.Background(), taskID, docID, handle)
@@ -340,7 +340,7 @@ func TestSettleMessage_RecoversPanicAndAcksWhenTaskTerminal(t *testing.T) {
 
 // TestAckOrNack_AckOnTerminal: terminal=true -> Ack called, Nack not called.
 func TestAckOrNack_AckOnTerminal(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &fakeTaskHandle{}
 	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
 
@@ -353,7 +353,7 @@ func TestAckOrNack_AckOnTerminal(t *testing.T) {
 
 // TestAckOrNack_NackOnNonTerminal: terminal=false -> Nack called, Ack not called.
 func TestAckOrNack_NackOnNonTerminal(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &fakeTaskHandle{}
 	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
 
@@ -366,7 +366,7 @@ func TestAckOrNack_NackOnNonTerminal(t *testing.T) {
 
 // TestAckOrNack_NoOpWhenNoHandle: nil handle -> no ack/nack, no panic.
 func TestAckOrNack_NoOpWhenNoHandle(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		context.Background(),
 		&entity.IngestionTask{ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", Status: common.RUNNING},
@@ -392,7 +392,7 @@ func TestSettleMessage_DBTruthOverridesBodyReturn(t *testing.T) {
 		testutil.WithTenantID("tenant-1"),
 	)
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &fakeTaskHandle{}
 	taskCtx := newAckTaskCtx(context.Background(), taskID, docID, handle)
 

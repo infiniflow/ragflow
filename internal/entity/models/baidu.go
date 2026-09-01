@@ -205,14 +205,14 @@ type baiduUsage struct {
 	TotalTokens  int `json:"total_tokens"`
 }
 
-func (b *BaiduModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (b *BaiduModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -224,7 +224,7 @@ func (b *BaiduModel) Embed(ctx context.Context, modelName *string, texts []strin
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -266,18 +266,18 @@ func (b *BaiduModel) Embed(ctx context.Context, modelName *string, texts []strin
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	if len(parsed.Data) != len(texts) {
-		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(parsed.Data))
+	if len(parsed.Data) != len(request.Texts) {
+		return nil, fmt.Errorf("expected %d embeddings, got %d", len(request.Texts), len(parsed.Data))
 	}
 
-	embeddings := make([]EmbeddingData, len(texts))
-	seen := make([]bool, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	seen := make([]bool, len(request.Texts))
 	for _, item := range parsed.Data {
 		if item.Index == nil {
 			return nil, fmt.Errorf("missing index field in embedding item")
 		}
 		idx := *item.Index
-		if idx < 0 || idx >= len(texts) {
+		if idx < 0 || idx >= len(request.Texts) {
 			return nil, fmt.Errorf("embedding index %d out of range", idx)
 		}
 		if seen[idx] {
@@ -302,11 +302,12 @@ func (b *BaiduModel) Embed(ctx context.Context, modelName *string, texts []strin
 	return embeddings, nil
 }
 
-func (b *BaiduModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (b *BaiduModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}

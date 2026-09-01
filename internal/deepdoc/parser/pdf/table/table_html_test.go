@@ -90,10 +90,15 @@ func TestRowsToHTML_HeaderRows(t *testing.T) {
 }
 
 func TestRowsToHTML_Colspan(t *testing.T) {
-	// Box spanning 2 columns: SP annotation with HLeft/HRight covering cols 0-1.
+	// Python's __cal_spans only spans boxes carrying an "SP" annotation
+	// (TSR "table spanning cell"). Here the SP box at column 1 has an X range
+	// (X0=10, X1=190) that covers column 0's center, so CalSpans must fold the
+	// covered "Name" cell into a colspan=2. This mirrors the real pipeline
+	// where GroupBoxesByRC labels an SP box "table spanning cell"; a plain
+	// "table header" must NOT trigger a span (see icbccs cross-page merge).
 	boxes := []pdf.TextBox{
-		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "Name", R: 0, C: 0, H: 1, HLeft: 10, HRight: 190},
-		{X0: 110, X1: 190, Top: 0, Bottom: 30, Text: "", R: 0, C: 1, SP: 1},
+		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "Name", R: 0, C: 0},
+		{X0: 10, X1: 190, Top: 0, Bottom: 30, Text: "", R: 0, C: 1, SP: 1},
 		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "John", R: 1, C: 0},
 		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "30", R: 1, C: 1},
 	}

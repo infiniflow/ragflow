@@ -258,7 +258,7 @@ func (c *SkillInstallCommand) uninstallSkill(ctx stdctx.Context, spaceID, skillN
 
 	// Return error if both failed
 	if indexErr != nil && folderErr != nil {
-		return fmt.Errorf("failed to uninstall: index (%v), folder (%v)", indexErr, folderErr)
+		return fmt.Errorf("failed to uninstall: index (%w), folder (%w)", indexErr, folderErr)
 	}
 
 	return nil

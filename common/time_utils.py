@@ -129,12 +129,14 @@ def delta_seconds(date_string: str):
     return (datetime.datetime.now() - dt).total_seconds()
 
 
-def format_iso_8601_to_ymd_hms(time_str: str) -> str:
+def format_iso_8601_to_ymd_hms(time_str: str, fallback: str | None = None) -> str:
     """
     Convert ISO 8601 formatted string to "YYYY-MM-DD HH:MM:SS" format.
 
     Args:
         time_str: ISO 8601 date string (e.g. "2024-01-01T12:00:00Z")
+        fallback: Value to return when ``time_str`` cannot be parsed. When omitted,
+            the original input is returned.
 
     Returns:
         str: Date string in "YYYY-MM-DD HH:MM:SS" format
@@ -148,6 +150,6 @@ def format_iso_8601_to_ymd_hms(time_str: str) -> str:
     try:
         dt = parser.isoparse(time_str)
         return dt.strftime("%Y-%m-%d %H:%M:%S")
-    except Exception as e:
-        logging.error(str(e))
-        return time_str
+    except (TypeError, ValueError, OverflowError) as e:
+        logging.error("Failed to parse ISO 8601 timestamp %r: %s", time_str, e)
+        return time_str if fallback is None else fallback

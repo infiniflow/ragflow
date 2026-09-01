@@ -99,7 +99,7 @@ func buildDenseExpr(ctx context.Context, embModel *modelModule.EmbeddingModel, q
 		return nil, nil
 	}
 	embCfg := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, []string{question}, embModel.APIConfig, embCfg, nil)
+	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, modelModule.EmbedRequest{Texts: []string{question}}, embModel.APIConfig, embCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("KG entity embed failed: %w", err)
 	}

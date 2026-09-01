@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/service"
+	syncerconnector "ragflow/internal/syncer/connector"
 	"sync"
 	"time"
 )
@@ -53,14 +54,16 @@ type syncJobFunc func(context.Context) (service.SyncStats, error)
 
 // syncJobResult the stats
 type syncJobResult struct {
-	stats service.SyncStats
-	err   error
+	stats      service.SyncStats
+	checkpoint *syncerconnector.SyncCheckpoint
+	err        error
 }
 
 type syncJob struct {
-	ctx  context.Context
-	fn   syncJobFunc
-	done chan syncJobResult
+	ctx        context.Context
+	fn         syncJobFunc
+	checkpoint *syncerconnector.SyncCheckpoint
+	done       chan syncJobResult
 }
 
 // SyncJobQueue is one Coordinator-owned queue feeding the fair dispatcher.
@@ -73,12 +76,16 @@ type SyncJobQueue struct {
 
 // Submit adds one BatchJob to this task's dispatcher queue.
 func (q *SyncJobQueue) Submit(ctx context.Context, fn syncJobFunc) (<-chan syncJobResult, error) {
+	return q.submit(ctx, fn, nil)
+}
+
+func (q *SyncJobQueue) submit(ctx context.Context, fn syncJobFunc, checkpoint *syncerconnector.SyncCheckpoint) (<-chan syncJobResult, error) {
 	if q == nil {
 		return nil, fmt.Errorf("sync job queue is nil")
 	}
 
 	done := make(chan syncJobResult, 1) // done channel
-	job := &syncJob{ctx: ctx, fn: fn, done: done}
+	job := &syncJob{ctx: ctx, fn: fn, checkpoint: checkpoint, done: done}
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -335,6 +342,6 @@ func (e *SyncJobExecutor) work() {
 			continue
 		}
 		stats, err := job.fn(job.ctx) // run the job
-		job.done <- syncJobResult{stats: stats, err: err}
+		job.done <- syncJobResult{stats: stats, checkpoint: job.checkpoint, err: err}
 	}
 }

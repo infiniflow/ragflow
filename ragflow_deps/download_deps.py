@@ -32,11 +32,19 @@
 
 import argparse
 import os
+import shutil
 import urllib.request
 from typing import Union
 
 import nltk
 from huggingface_hub import snapshot_download
+
+# mirrors internal/common.DeepDocORTVersion (Go in-process backend). Single
+# source for the onnxruntime native release: the download URL, .tgz name,
+# extracted dir name, and SONAME below are all derived from it. The pip
+# onnxruntime== pin (pyproject.toml) and the onnxruntime_go binding minor
+# (go.mod) must stay on the same minor line.
+ORT_VERSION = "1.23.2"
 
 
 def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
@@ -73,6 +81,18 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
             ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
             ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.8/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
+            # ONNX Runtime static archives for the Go in-process (DeepDoc)
+            # backend. Statically linked into the server binary (see build.sh:
+            # ONNX_RUNTIME_STATIC_DIR, --whole-archive + --export-dynamic), so
+            # no libonnxruntime.so is needed at runtime — OrtGetApiBase is
+            # resolved via dlopen(self). csukuangfj's static_lib build is
+            # CPU-only and glibc2_28-based, matching ORT_VERSION's C-API line
+            # (ABI-compatible with onnxruntime_go) and the onnxruntime the
+            # Python goldens were generated with.
+            [
+                f"https://github.com/csukuangfj/onnxruntime-libs/releases/download/v{ORT_VERSION}/onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip",
+                f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip",
+            ],
         ]
     else:
         return [
@@ -107,6 +127,18 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
             ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
             ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.8/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
+            # ONNX Runtime static archives for the Go in-process (DeepDoc)
+            # backend. Statically linked into the server binary (see build.sh:
+            # ONNX_RUNTIME_STATIC_DIR, --whole-archive + --export-dynamic), so
+            # no libonnxruntime.so is needed at runtime — OrtGetApiBase is
+            # resolved via dlopen(self). csukuangfj's static_lib build is
+            # CPU-only and glibc2_28-based, matching ORT_VERSION's C-API line
+            # (ABI-compatible with onnxruntime_go) and the onnxruntime the
+            # Python goldens were generated with.
+            [
+                f"https://github.com/csukuangfj/onnxruntime-libs/releases/download/v{ORT_VERSION}/onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip",
+                f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip",
+            ],
         ]
 
 
@@ -155,8 +187,27 @@ if __name__ == "__main__":
         ("pdfium-linux-x64-static.tgz", "pdfium-static"),
         ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide"),
         ("office_oxide-linux-x86_64.tar.gz", "office_oxide"),
+        (f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28.zip", os.path.join("onnxruntime", "static_lib")),
     ]
     import tarfile
+    import zipfile
+
+    def _prune_stale_onnxruntime(static_lib_dir, version):
+        """Remove ONNX Runtime version dirs under static_lib that do NOT match
+        `version`. Without this, a version bump leaves the stale dir next to
+        the new one and build.sh's `find ... -name '*.a'` links BOTH (duplicate
+        symbols / wrong version, silently)."""
+        if not os.path.isdir(static_lib_dir):
+            return
+        expected = f"onnxruntime-linux-x64-static_lib-{version}-glibc2_28"
+        for name in os.listdir(static_lib_dir):
+            if not name.startswith("onnxruntime-linux-x64-static_lib-"):
+                continue
+            if name == expected:
+                continue
+            stale = os.path.join(static_lib_dir, name)
+            print(f"  Removing stale ONNX Runtime dir: {stale}")
+            shutil.rmtree(stale)
 
     for archive, subdir in extractions:
         archive_path = os.path.join(os.getcwd(), archive)
@@ -164,13 +215,44 @@ if __name__ == "__main__":
             print(f"  Skipping extraction: {archive} not found")
             continue
         target = os.path.join(native_deps_dir, subdir)
-        if os.path.isdir(target):
+
+        # ONNX Runtime ships a version-stamped top-level dir inside the zip
+        # (onnxruntime-linux-x64-static_lib-<ORT_VERSION>-glibc2_28/). A plain
+        # "any .a present?" skip would keep a STALE version in place after a
+        # bump: the new zip downloads, but extraction is skipped because the
+        # old .a is still under static_lib, so the bump silently does nothing.
+        # Prune stale version dirs and only skip when the matching version is
+        # already extracted.
+        if subdir == os.path.join("onnxruntime", "static_lib"):
+            _prune_stale_onnxruntime(target, ORT_VERSION)
+            version_dir = os.path.join(target, f"onnxruntime-linux-x64-static_lib-{ORT_VERSION}-glibc2_28")
+            if os.path.isdir(version_dir) and any(f.endswith(".a") for _, _, files in os.walk(version_dir) for f in files):
+                print(f"  ✓ {subdir} ({ORT_VERSION}) already extracted to {version_dir}")
+                continue
+
+        if os.path.isdir(target) and any(f.endswith(".a") for _, _, files in os.walk(target) for f in files):
             print(f"  ✓ {subdir} already extracted to {target}")
             continue
         os.makedirs(target, exist_ok=True)
         print(f"  Extracting {archive} → {target}")
-        with tarfile.open(archive_path) as tf:
-            tf.extractall(target)
+        if archive_path.endswith(".zip"):
+            with zipfile.ZipFile(archive_path) as zf:
+                zf.extractall(target)
+        else:
+            with tarfile.open(archive_path) as tf:
+                tf.extractall(target)
+
+    # ONNX Runtime is statically linked into the server binary, so there is no
+    # runtime .so to surface. Log where build.sh (ONNXRUNTIME_STATIC_PREFIX) will
+    # find the archives — the .a files live under
+    # ~/ragflow-native-libs/onnxruntime/static_lib. The in-process backend
+    # resolves OrtGetApiBase via dlopen(NULL); there is no dynamic .so fallback.
+    ort_static_dir = os.path.join(native_deps_dir, "onnxruntime", "static_lib")
+    ort_a_files = [os.path.join(root, f) for root, _, files in os.walk(ort_static_dir) for f in files if f.endswith(".a")]
+    if ort_a_files:
+        print(f"  ✓ onnxruntime static archives ready: {len(ort_a_files)} .a under {ort_static_dir}")
+    else:
+        print(f"  Skipping onnxruntime static check: no .a found under {ort_static_dir}")
 
     local_dir = os.path.abspath("nltk_data")
     for data in ["wordnet", "punkt", "punkt_tab"]:

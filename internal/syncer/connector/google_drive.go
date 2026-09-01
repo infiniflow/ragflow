@@ -38,7 +38,7 @@ import (
 
 const (
 	defaultGoogleDriveBatchSize     = 32
-	defaultGoogleDriveSizeThreshold = 10 * 1024 * 1024
+	defaultGoogleDriveSizeThreshold = 64 * 1024 * 1024
 	googleDriveItemsPerPage         = 100
 	googleDriveRequestTimeout       = 60 * time.Second
 	googleDriveOAuthTokenURL        = "https://oauth2.googleapis.com/token"
@@ -138,20 +138,39 @@ func (c *GoogleDriveConnector) Validate(ctx context.Context) error {
 	return err
 }
 
+// ValidateConnectorSetting validates Google Drive settings from an unsaved config.
+func (c *GoogleDriveConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
+	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
+	defer cancel()
+	if err := c.Validate(ctx); err != nil {
+		return err
+	}
+	client, err := c.clientForUser(ctx, c.primaryAdminEmail)
+	if err != nil {
+		return err
+	}
+	var about map[string]any
+	return c.getJSON(ctx, client, "https://www.googleapis.com/drive/v3/about?fields=user", &about)
+}
+
 // OpenSync opens one Google Drive sync session.
 func (c *GoogleDriveConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
 	scopes, err := c.buildScopes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &googleDriveSyncSession{
+	session := &googleDriveSyncSession{
 		connector:   c,
 		scopes:      scopes,
 		scopeIndex:  0,
 		batchSize:   c.batchSize,
 		windowStart: request.WindowStart,
 		windowEnd:   request.WindowEnd,
-	}, nil
+	}
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 // OpenPrune opens one complete Google Drive prune snapshot session.
@@ -540,16 +559,19 @@ func (c *GoogleDriveConnector) getBytes(ctx context.Context, client *http.Client
 }
 
 type googleDriveSyncSession struct {
-	connector   *GoogleDriveConnector
-	scopes      []googleDriveScope
-	scopeIndex  int
-	pageToken   string
-	batchSize   int
-	windowStart *time.Time
-	windowEnd   time.Time
-	buffer      []SourceDocument
-	seen        map[string]struct{}
-	folderSeen  map[string]struct{}
+	connector        *GoogleDriveConnector
+	scopes           []googleDriveScope
+	scopeIndex       int
+	pageToken        string
+	batchSize        int
+	windowStart      *time.Time
+	windowEnd        time.Time
+	buffer           []googleDriveBufferedDocument
+	seen             map[string]struct{}
+	folderSeen       map[string]struct{}
+	resumePageToken  string
+	resumePageOffset int
+	resumeSourceID   string
 }
 
 // NextBatch returns the next Google Drive document batch.
@@ -561,9 +583,13 @@ func (s *googleDriveSyncSession) NextBatch(ctx context.Context) (SyncBatch, erro
 		s.folderSeen = map[string]struct{}{}
 	}
 	documents := make([]SourceDocument, 0, s.batchSize)
+	var checkpoint *SyncCheckpoint
 	if len(s.buffer) > 0 {
 		n := min(s.batchSize, len(s.buffer))
-		documents = append(documents, s.buffer[:n]...)
+		for _, buffered := range s.buffer[:n] {
+			documents = append(documents, buffered.document)
+			checkpoint = buffered.checkpoint
+		}
 		s.buffer = s.buffer[n:]
 	}
 	for len(documents) < s.batchSize {
@@ -579,18 +605,25 @@ func (s *googleDriveSyncSession) NextBatch(ctx context.Context) (SyncBatch, erro
 		}
 		remaining := s.batchSize - len(documents)
 		if len(batch) > remaining {
-			documents = append(documents, batch[:remaining]...)
+			for _, buffered := range batch[:remaining] {
+				documents = append(documents, buffered.document)
+				checkpoint = buffered.checkpoint
+			}
 			s.buffer = append(s.buffer, batch[remaining:]...)
 			break
 		}
-		documents = append(documents, batch...)
+		for _, buffered := range batch {
+			documents = append(documents, buffered.document)
+			checkpoint = buffered.checkpoint
+		}
 	}
-	return SyncBatch{Documents: documents}, nil
+	return SyncBatch{Documents: documents, Checkpoint: checkpoint}, nil
 }
 
-func (s *googleDriveSyncSession) nextDocumentPage(ctx context.Context) ([]SourceDocument, error) {
+func (s *googleDriveSyncSession) nextDocumentPage(ctx context.Context) ([]googleDriveBufferedDocument, error) {
 	scope := s.scopes[s.scopeIndex]
-	page, err := s.connector.listFilePageWithRetry(ctx, scope, s.pageToken, s.windowStart, s.windowEnd)
+	requestPageToken := s.pageToken
+	page, err := s.connector.listFilePageWithRetry(ctx, scope, requestPageToken, s.windowStart, s.windowEnd)
 	if err != nil {
 		if isGooglePermissionDeniedOrNotFound(err) {
 			s.advanceScope()
@@ -598,18 +631,25 @@ func (s *googleDriveSyncSession) nextDocumentPage(ctx context.Context) ([]Source
 		}
 		return nil, err
 	}
-	docs := make([]SourceDocument, 0, len(page.Files))
+	candidates := make([]googleDriveBufferedDocument, 0, len(page.Files))
+	pageOffset := 0
 	for _, file := range page.Files {
 		doc, ok := file.toSourceDocument(scope.userEmail, s.connector.allowImages)
 		if !ok {
 			continue
 		}
-		if _, ok = s.seen[doc.SourceID]; ok {
-			continue
-		}
-		s.seen[doc.SourceID] = struct{}{}
-		docs = append(docs, doc)
+		pageOffset++
+		candidates = append(candidates, googleDriveBufferedDocument{
+			document:   doc,
+			checkpoint: s.syncCheckpoint(scope, requestPageToken, pageOffset, doc),
+			offset:     pageOffset,
+		})
 	}
+	docs, err := s.filterResumedDocuments(requestPageToken, candidates)
+	if err != nil {
+		return nil, err
+	}
+	docs = s.filterSeenDocuments(docs)
 	if page.NextPageToken == "" {
 		if err = s.finishScope(ctx, scope); err != nil {
 			return nil, err
@@ -643,6 +683,7 @@ func (s *googleDriveSyncSession) finishScope(ctx context.Context, scope googleDr
 func (s *googleDriveSyncSession) advanceScope() {
 	s.scopeIndex++
 	s.pageToken = ""
+	s.clearResumeOffset()
 }
 
 // Close closes the Google Drive sync session.
@@ -653,6 +694,180 @@ func (s *googleDriveSyncSession) Close() error {
 // Fetch downloads a Google Drive file for this sync session.
 func (s *googleDriveSyncSession) Fetch(ctx context.Context, ref FetchReference) ([]byte, error) {
 	return s.connector.Fetch(ctx, ref)
+}
+
+func (s *googleDriveSyncSession) filterSeenDocuments(candidates []googleDriveBufferedDocument) []googleDriveBufferedDocument {
+	filtered := candidates[:0]
+	for _, candidate := range candidates {
+		if _, ok := s.seen[candidate.document.SourceID]; ok {
+			continue
+		}
+		s.seen[candidate.document.SourceID] = struct{}{}
+		filtered = append(filtered, candidate)
+	}
+	return filtered
+}
+
+// applyResume restores the Google Drive source anchor when a checkpoint is available.
+func (s *googleDriveSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("google drive sync cursor is missing: %w", ErrSyncResumeInvalid)
+	}
+	var cursor googleDriveSyncCursor
+	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
+		return fmt.Errorf("google drive sync cursor is invalid: %w", ErrSyncResumeInvalid)
+	}
+	sourceID := firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	if sourceID == "" {
+		return fmt.Errorf("google drive sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	if len(cursor.Scopes) > 0 && cursor.ScopeIndex >= 0 && cursor.ScopeIndex < len(cursor.Scopes) {
+		scopes := make([]googleDriveScope, 0, len(cursor.Scopes))
+		for _, scope := range cursor.Scopes {
+			scopes = append(scopes, scope.toScope())
+		}
+		s.scopes = scopes
+		s.scopeIndex = cursor.ScopeIndex
+		s.markFolderScopesSeen()
+	} else if scope, ok := cursor.Scope.toScopeIfValid(); ok {
+		if index := googleDriveScopeIndex(s.scopes, scope); index >= 0 {
+			s.scopeIndex = index
+		} else {
+			s.scopes = append(s.scopes, scope)
+			s.scopeIndex = len(s.scopes) - 1
+		}
+	} else {
+		return fmt.Errorf("google drive sync cursor has no valid scope: %w", ErrSyncResumeInvalid)
+	}
+	s.pageToken = cursor.PageToken
+	s.resumePageToken = cursor.PageToken
+	s.resumeSourceID = sourceID
+	if cursor.Offset > 0 {
+		s.resumePageOffset = cursor.Offset
+	}
+	return nil
+}
+
+func (s *googleDriveSyncSession) filterResumedDocuments(pageToken string, candidates []googleDriveBufferedDocument) ([]googleDriveBufferedDocument, error) {
+	if s.resumeSourceID == "" {
+		return candidates, nil
+	}
+	if pageToken != s.resumePageToken {
+		return nil, fmt.Errorf("google drive resume page %q no longer matches checkpoint page %q: %w", pageToken, s.resumePageToken, ErrSyncResumeInvalid)
+	}
+	for index, candidate := range candidates {
+		if candidate.document.SourceID == s.resumeSourceID {
+			s.clearResumeOffset()
+			return candidates[index+1:], nil
+		}
+	}
+	return nil, fmt.Errorf("google drive resume anchor %q was not found on page %q: %w", s.resumeSourceID, pageToken, ErrSyncResumeInvalid)
+}
+
+func (s *googleDriveSyncSession) clearResumeOffset() {
+	s.resumePageOffset = 0
+	s.resumePageToken = ""
+	s.resumeSourceID = ""
+}
+
+func (s *googleDriveSyncSession) syncCheckpoint(scope googleDriveScope, pageToken string, offset int, doc SourceDocument) *SyncCheckpoint {
+	scopes := make([]googleDriveScopeCursor, 0, len(s.scopes))
+	for _, scope := range s.scopes {
+		scopes = append(scopes, googleDriveScopeCursorFromScope(scope))
+	}
+	cursor, err := json.Marshal(googleDriveSyncCursor{
+		Scopes:     scopes,
+		Scope:      googleDriveScopeCursorFromScope(scope),
+		ScopeIndex: s.scopeIndex,
+		PageToken:  pageToken,
+		Offset:     offset,
+		SourceID:   doc.SourceID,
+	})
+	if err != nil {
+		return nil
+	}
+	updatedAt := doc.UpdatedAt
+	return &SyncCheckpoint{
+		Cursor:    string(cursor),
+		UpdatedAt: &updatedAt,
+		SourceID:  doc.SourceID,
+	}
+}
+
+func (s *googleDriveSyncSession) markFolderScopesSeen() {
+	if s.folderSeen == nil {
+		s.folderSeen = map[string]struct{}{}
+	}
+	for _, scope := range s.scopes {
+		if scope.corpora == "folder" && scope.folderID != "" {
+			s.folderSeen[scope.folderID] = struct{}{}
+		}
+	}
+}
+
+type googleDriveBufferedDocument struct {
+	document   SourceDocument
+	checkpoint *SyncCheckpoint
+	offset     int
+}
+
+type googleDriveSyncCursor struct {
+	Scopes     []googleDriveScopeCursor `json:"scopes,omitempty"`
+	Scope      googleDriveScopeCursor   `json:"scope"`
+	ScopeIndex int                      `json:"scope_index"`
+	PageToken  string                   `json:"page_token,omitempty"`
+	Offset     int                      `json:"offset"`
+	SourceID   string                   `json:"source_id,omitempty"`
+}
+
+type googleDriveScopeCursor struct {
+	UserEmail           string `json:"user_email"`
+	Corpora             string `json:"corpora"`
+	DriveID             string `json:"drive_id,omitempty"`
+	FolderID            string `json:"folder_id,omitempty"`
+	IncludeSharedWithMe bool   `json:"include_shared_with_me,omitempty"`
+	SharedWithMeOnly    bool   `json:"shared_with_me_only,omitempty"`
+}
+
+func googleDriveScopeCursorFromScope(scope googleDriveScope) googleDriveScopeCursor {
+	return googleDriveScopeCursor{
+		UserEmail:           scope.userEmail,
+		Corpora:             scope.corpora,
+		DriveID:             scope.driveID,
+		FolderID:            scope.folderID,
+		IncludeSharedWithMe: scope.includeSharedWithMe,
+		SharedWithMeOnly:    scope.sharedWithMeOnly,
+	}
+}
+
+func (c googleDriveScopeCursor) toScope() googleDriveScope {
+	return googleDriveScope{
+		userEmail:           c.UserEmail,
+		corpora:             c.Corpora,
+		driveID:             c.DriveID,
+		folderID:            c.FolderID,
+		includeSharedWithMe: c.IncludeSharedWithMe,
+		sharedWithMeOnly:    c.SharedWithMeOnly,
+	}
+}
+
+func (c googleDriveScopeCursor) toScopeIfValid() (googleDriveScope, bool) {
+	if c.UserEmail == "" || c.Corpora == "" {
+		return googleDriveScope{}, false
+	}
+	return c.toScope(), true
+}
+
+func googleDriveScopeIndex(scopes []googleDriveScope, target googleDriveScope) int {
+	for index, scope := range scopes {
+		if scope == target {
+			return index
+		}
+	}
+	return -1
 }
 
 type googleDrivePruneSession struct {
@@ -1041,7 +1256,7 @@ func (c *GoogleDriveConnector) effectiveIncludeSharedWithMe() bool {
 
 func splitCommaList(value string) []string {
 	values := []string{}
-	for _, part := range strings.Split(value, ",") {
+	for part := range strings.SplitSeq(value, ",") {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			values = append(values, part)

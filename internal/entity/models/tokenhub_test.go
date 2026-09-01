@@ -293,7 +293,7 @@ func TestTokenHubEmbedHappyPath(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	embeddings, err := newTokenHubForTest(srv.URL).Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	embeddings, err := newTokenHubForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -306,14 +306,14 @@ func TestTokenHubEmbedValidatesInputs(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
-	if embeddings, err := newTokenHubForTest("http://unused").Embed(ctx, nil, nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil || len(embeddings) != 0 {
+	if embeddings, err := newTokenHubForTest("http://unused").Embed(ctx, nil, EmbedRequest{Texts: nil}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil || len(embeddings) != 0 {
 		t.Fatalf("empty input should return empty embeddings, got %#v err=%v", embeddings, err)
 	}
-	if _, err := newTokenHubForTest("http://unused").Embed(ctx, nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := newTokenHubForTest("http://unused").Embed(ctx, nil, EmbedRequest{Texts: []string{"x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Fatalf("expected model-name error, got %v", err)
 	}
 	model := "text-embedding-3-small"
-	if _, err := newTokenHubForTest("http://unused").Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := newTokenHubForTest("http://unused").Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Fatalf("expected api-key error, got %v", err)
 	}
 }

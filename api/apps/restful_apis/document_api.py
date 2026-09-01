@@ -792,7 +792,7 @@ def list_docs(dataset_id, tenant_id):
         items:
           type: string
         required: false
-        description: Filter by document run status. Supports both numeric ("0", "1", "2", "3", "4") and text formats ("UNSTART", "RUNNING", "CANCEL", "DONE", "FAIL").
+        description: Filter by document run status. Supports both numeric ("0", "1", "2", "3", "4", "5") and text formats ("UNSTART", "RUNNING", "CANCEL", "DONE", "FAIL", "SCHEDULE").
       - in: header
         name: Authorization
         type: string

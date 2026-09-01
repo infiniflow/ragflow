@@ -13,14 +13,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import json
 import logging
-import aiohttp
 from abc import ABC
 from datetime import datetime, timezone
-from urllib.parse import urlparse
 from json.decoder import JSONDecodeError
 from typing import ClassVar
+from urllib.parse import urlparse
+
+import aiohttp
+from botocore import UNSIGNED
+from botocore.awsrequest import AWSRequest
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
+from botocore.utils import validate_region_name
 
 from common.aimlapi_utils import attribution_headers
 from common.constants import LLMType
@@ -33,6 +40,41 @@ class Base(ABC):
         self.base_url = base_url
 
     def _get_api_key(self):
+        # Shared JSON-decode resolution for every model-list verify path in
+        # this file. Mirrors the per-site pattern in VolcEngine (line 68),
+        # OpenRouter (line 365), NewAPI (line 928), LocalAI (line 221), and
+        # Ollama (line 125) -- but in the base class so the 6 providers that
+        # do not override this method (Xinference, HuggingFace, FunASR,
+        # NVIDIA, GreenPT, VLLM, LMStudio, RAGcon, AIMLAPI) get the same
+        # wire-correct behavior for free.
+        #
+        # When the API service stores the api_key as a JSON dict -- the
+        # format used by ``api/apps/services/provider_api_service.py:313``
+        # which calls ``json.dumps(api_key)`` for non-string values -- the
+        # raw ``self.api_key`` would render as
+        # ``Authorization: Bearer {"api_key": "sk-xxx", ...}``, which
+        # real-provider endpoints 401. Resolve the same way the per-site
+        # overrides do:
+        #   * JSON dict with an ``api_key`` field  -> the inner key.
+        #   * JSON dict without ``api_key``        -> ``""`` so the resolved
+        #     value is falsy and any ``if resolved_key:`` gate in the
+        #     subclass's ``get_model_list`` skips the Authorization header
+        #     entirely. For real-provider subclasses (NVIDIA, GreenPT,
+        #     AIMLAPI) this is no better than the pre-fix malformed Bearer --
+        #     they 401 either way -- but the LocalAI/Ollama subclass pattern
+        #     of "no-auth when api_key is absent" still works.
+        #   * Plain string (the common case)  -> returned as-is.
+        #   * JSON parse error, JSON non-object, or non-string api_key  ->
+        #     fall back to the pre-fix raw passthrough so we do not
+        #     regress any caller that depends on the historical behavior.
+        if not self.api_key:
+            return ""
+        try:
+            parsed = json.loads(self.api_key)
+        except (JSONDecodeError, TypeError, ValueError):
+            return self.api_key
+        if isinstance(parsed, dict):
+            return parsed.get("api_key", "") if "api_key" in parsed else ""
         return self.api_key
 
     def _get_model_list_url(self):
@@ -59,6 +101,86 @@ class Base(ABC):
         raw_model_list = await self._get_raw_model_list()
         if not raw_model_list:
             return []
+        return self._format_model_list(raw_model_list)
+
+
+class Bedrock(Base):
+    _FACTORY_NAME = "Bedrock"
+
+    def _get_config(self) -> tuple[str, str]:
+        config = self.api_key
+        if isinstance(config, str):
+            try:
+                config = json.loads(config)
+            except JSONDecodeError as error:
+                raise ValueError("Bedrock credentials must be a JSON object") from error
+        if not isinstance(config, dict) or config.get("auth_mode") != "bedrock_api_key":
+            raise ValueError("Bedrock API key authentication is required to list models")
+
+        api_key = config.get("bedrock_api_key")
+        if not isinstance(api_key, str) or not api_key.strip():
+            raise ValueError("Bedrock API key must be provided")
+        region = config.get("bedrock_region")
+        if not isinstance(region, str) or not region.strip():
+            raise ValueError("Bedrock region must be provided in the key")
+        validate_region_name(region)
+        return api_key.strip(), region
+
+    def _list_foundation_models(self, api_key: str, region: str) -> dict[str, object]:
+        import boto3
+
+        client = boto3.client(
+            service_name="bedrock",
+            region_name=region,
+            config=Config(
+                signature_version=UNSIGNED,
+                connect_timeout=10,
+                read_timeout=10,
+                retries={"mode": "standard", "max_attempts": 0},
+            ),
+        )
+
+        def add_bearer_token(request: AWSRequest, **_kwargs: object) -> None:
+            request.headers["Authorization"] = f"Bearer {api_key}"
+
+        client.meta.events.register("before-sign.bedrock.*", add_bearer_token)
+        return client.list_foundation_models(byInferenceType="ON_DEMAND")
+
+    def _format_model_list(self, raw_model_list: dict[str, object]) -> list[dict[str, object]]:
+        models: list[dict[str, object]] = []
+        for summary in raw_model_list.get("modelSummaries", []):
+            if not isinstance(summary, dict):
+                continue
+            model_id = summary.get("modelId")
+            input_modalities = summary.get("inputModalities", [])
+            output_modalities = summary.get("outputModalities", [])
+            inference_types = summary.get("inferenceTypesSupported", [])
+            lifecycle_status = (summary.get("modelLifecycle") or {}).get("status")
+            if not model_id or "TEXT" not in input_modalities or "rerank" in model_id.lower():
+                continue
+            if inference_types and "ON_DEMAND" not in inference_types:
+                continue
+            if lifecycle_status and lifecycle_status != "ACTIVE":
+                continue
+            if "EMBEDDING" in output_modalities and model_id.startswith(("amazon.titan-embed-text", "cohere.embed-")):
+                model_types = [LLMType.EMBEDDING.value]
+            elif "TEXT" in output_modalities:
+                model_types = [LLMType.CHAT.value]
+                if "IMAGE" in input_modalities:
+                    model_types.append(LLMType.VISION.value)
+            else:
+                continue
+            models.append({"name": model_id, "model_types": model_types, "max_tokens": 8192, "features": []})
+        return models
+
+    async def get_model_list(self) -> list[dict[str, object]]:
+        api_key, region = self._get_config()
+        try:
+            raw_model_list = await asyncio.to_thread(self._list_foundation_models, api_key, region)
+        except ClientError as error:
+            raise ValueError(f"Failed to list models from Amazon Bedrock in region '{region}'") from error
+        except BotoCoreError as error:
+            raise ValueError("Failed to list models from Amazon Bedrock") from error
         return self._format_model_list(raw_model_list)
 
 
@@ -122,6 +244,39 @@ class VolcEngine(Base):
 class Ollama(Base):
     _FACTORY_NAME = "Ollama"
 
+    def _get_api_key(self):
+        # Ollama typically does not require auth. The model-list verify path
+        # in get_model_list() only sends an Authorization header when the
+        # resolved key is truthy (see ``if resolved_key:`` in get_model_list).
+        # The base default returns self.api_key verbatim, which breaks when
+        # the API service stores the key as a JSON dict for consistency with
+        # other providers -- the Bearer header would be malformed as
+        # ``Authorization: Bearer {"api_key": "sk-xxx", ...}``. Ollama does
+        # not validate the token and accepts the malformed Bearer, but
+        # downstream Ollama setups that do validate (e.g. behind an
+        # authenticating reverse proxy) would reject it.
+        #
+        # Resolve to a plain string the same way LocalAI / VolcEngine /
+        # OpenRouter / NewAPI do for the model-list path:
+        #   * JSON dict with an "api_key" field -> the inner key.
+        #   * JSON dict without "api_key" -> "" so the no-auth path is kept
+        #     (Ollama's normal case; the verify endpoint will then call
+        #     /api/tags without an Authorization header, which Ollama
+        #     accepts by default).
+        #   * Plain string (the common case) -> returned as-is.
+        #   * JSON parse error, JSON non-object, or non-string api_key ->
+        #     fall back to the base default to avoid regressing any caller
+        #     that depends on the historical raw passthrough.
+        if not self.api_key:
+            return ""
+        try:
+            parsed = json.loads(self.api_key)
+        except (JSONDecodeError, TypeError, ValueError):
+            return self.api_key
+        if isinstance(parsed, dict):
+            return parsed.get("api_key", "") if "api_key" in parsed else ""
+        return self.api_key
+
     def _get_model_tags_url(self):
         return self.base_url.rstrip("/") + "/api/tags"
 
@@ -132,8 +287,15 @@ class Ollama(Base):
         if not self.base_url:
             return []
         headers = {}
-        if self.api_key:
-            headers.update({"Authorization": f"Bearer {self._get_api_key()}"})
+        # Use the resolved key (not raw self.api_key) so a JSON dict that
+        # has no inner ``api_key`` field resolves to ``""`` and the no-auth
+        # path is taken -- matches Ollama's normal case where no Authorization
+        # header is needed. Pre-fix this check used raw self.api_key, so a
+        # JSON-dict value (truthy) added a malformed ``Bearer {"api_key": ...}``
+        # header.
+        resolved_key = self._get_api_key()
+        if resolved_key:
+            headers.update({"Authorization": f"Bearer {resolved_key}"})
         async with aiohttp.ClientSession() as session:
             async with session.get(self._get_model_tags_url(), headers=headers) as resp:
                 if resp.status != 200:
@@ -218,6 +380,38 @@ class LocalAI(Base):
 
     _FACTORY_NAME = "LocalAI"
 
+    def _get_api_key(self):
+        # LocalAI typically does not require auth. The model-list verify path
+        # in get_model_list() only sends an Authorization header when the
+        # resolved key is truthy (see ``if resolved_key:`` in get_model_list).
+        # The base default returns self.api_key verbatim, which breaks when
+        # the API service stores the key as a JSON dict for consistency with
+        # other providers -- the Bearer header would be malformed as
+        # ``Authorization: Bearer {"api_key": "sk-xxx", ...}`` and the
+        # LocalAI server would 401, surfacing as
+        # "102 no models found for provider LocalAI" (issue #17757).
+        #
+        # Resolve to a plain string the same way VolcEngine / OpenRouter /
+        # NewAPI do for the model-list path:
+        #   * JSON dict with an "api_key" field -> the inner key.
+        #   * JSON dict without "api_key" -> "" so the no-auth path is kept
+        #     (LocalAI's normal case; the verify endpoint will then call
+        #     /api/tags without an Authorization header, which LocalAI
+        #     accepts by default).
+        #   * Plain string (the common case) -> returned as-is.
+        #   * JSON parse error, JSON non-object, or non-string api_key ->
+        #     fall back to the base default to avoid regressing any caller
+        #     that depends on the historical raw passthrough.
+        if not self.api_key:
+            return ""
+        try:
+            parsed = json.loads(self.api_key)
+        except (JSONDecodeError, TypeError, ValueError):
+            return self.api_key
+        if isinstance(parsed, dict):
+            return parsed.get("api_key", "") if "api_key" in parsed else ""
+        return self.api_key
+
     def _get_model_tags_url(self):
         return self.base_url.rstrip("/") + "/api/tags"
 
@@ -228,8 +422,16 @@ class LocalAI(Base):
         if not self.base_url:
             return []
         headers = {}
-        if self.api_key:
-            headers.update({"Authorization": f"Bearer {self._get_api_key()}"})
+        # Use the resolved key (not raw self.api_key) so a JSON dict that
+        # has no inner ``api_key`` field resolves to ``""`` and the no-auth
+        # path is taken -- matches LocalAI's normal case where no Authorization
+        # header is needed. Pre-fix this check used raw self.api_key, so a
+        # JSON-dict value (truthy) added a malformed ``Bearer {"api_key": ...}``
+        # header and the LocalAI server 401'd, surfacing as
+        # "102 no models found for provider LocalAI" (issue #17757).
+        resolved_key = self._get_api_key()
+        if resolved_key:
+            headers.update({"Authorization": f"Bearer {resolved_key}"})
         async with aiohttp.ClientSession() as session:
             async with session.get(self._get_model_tags_url(), headers=headers) as resp:
                 if resp.status != 200:
@@ -795,6 +997,46 @@ class GreenPT(OpenAIAPICompatible):
         return models
 
 
+class Synthorai(OpenAIAPICompatible):
+    """Synthorai catalog lister.
+
+    ``/v1/models`` returns the whole catalog, which includes image, audio,
+    video and realtime entries alongside chat ones. The inherited formatter
+    infers the type from the model id and falls back to ``chat``, so those
+    non-chat entries would be offered as chat models and fail at the
+    chat-completions endpoint. Only the ids declared in
+    ``conf/models/synthorai.json`` are surfaced.
+    """
+
+    _FACTORY_NAME = "Synthorai"
+
+    def _format_model_list(self, raw_model_list):
+        models = super()._format_model_list(raw_model_list)
+        allowed = self._allowed_model_names()
+        if not allowed:
+            return models
+        return [m for m in models if m.get("name") in allowed]
+
+    @staticmethod
+    def _allowed_model_names() -> set:
+        """Chat model ids declared for this provider, or an empty set."""
+        import json
+        import os
+
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "conf",
+            "models",
+            "synthorai.json",
+        )
+        try:
+            with open(path, encoding="utf-8") as f:
+                cfg = json.load(f)
+        except (OSError, ValueError):
+            return set()
+        return {m["name"] for m in cfg.get("models", []) if isinstance(m, dict) and m.get("name") and "chat" in (m.get("model_types") or [])}
+
+
 class HuggingFace(Base):
     """Discover models served by Hugging Face inference endpoints.
 
@@ -876,6 +1118,10 @@ class FunASR(Base):
 
 class VLLM(OpenAIAPICompatible):
     _FACTORY_NAME = "VLLM"
+
+
+class GPUStack(OpenAIAPICompatible):
+    _FACTORY_NAME = "GPUStack"
 
 
 class LMStudio(OpenAIAPICompatible):

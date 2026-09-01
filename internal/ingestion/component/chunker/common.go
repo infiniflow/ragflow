@@ -36,23 +36,29 @@ import (
 func newChunkerByName(name string, params map[string]any) (runtime.Component, error) {
 	switch name {
 	case ComponentNameTokenChunker:
+		// The DSL contract (shared by the web UI and the Python runtime)
+		// expresses single-chunk mode as TokenChunker delimiter_mode "one";
+		// in Go that behaviour lives in the OneChunker component.
+		if mode, _ := params["delimiter_mode"].(string); mode == "one" {
+			return NewOneChunker(params)
+		}
 		return NewTokenChunker(params)
 	case ComponentNameTitleChunker:
 		return NewTitleChunker(params)
 	case ComponentNameGroupTitleChunker:
 		return NewGroupTitleChunker(params)
+	case ComponentNameManualChunker:
+		return NewManualChunker(params)
 	case ComponentNameHierarchyTitleChunker:
 		return NewHierarchyTitleChunker(params)
 	case ComponentNameQAChunker:
 		return NewQAChunker(params)
 	case ComponentNameOneChunker:
 		return NewOneChunker(params)
-	case ComponentNameTagChunker:
-		return NewTagChunker(params)
 	case ComponentNameTableChunker:
 		return NewTableChunker(params)
-	case ComponentNamePresentationChunker:
-		return NewPresentationChunker(params)
+	case ComponentNamePageChunker:
+		return NewPageChunker(params)
 	default:
 		return nil, fmt.Errorf("chunker: unknown component %q", name)
 	}
@@ -77,13 +83,15 @@ func stringListFromAny(in []any) []string {
 // ---------------------------------------------------------------------------
 
 // compileDelimPattern compiles a TokenChunker-style []string delimiter list.
-// Only backtick-wrapped entries produce an active pattern (Python
-// token_chunker / rag/nlp/delim list helper); plain (non-backtick) entries
-// are ignored here. mergeByTokenSize uses its own hardcoded sentenceDelimiter,
-// not this list. Canonical single-string parser_config.delimiter parsing
-// lives in ragflow/internal/parser/chunk (ParseDelimiterField).
+// Every non-empty entry is active, including bare (non-backtick) delimiters,
+// mirroring Python naive_merge / rag/nlp/delim where bare single-character
+// delimiters still split. Backtick-wrapped entries contribute their inner
+// content. invokeTextPayload decides whether an active delimiter yields one
+// chunk per segment (custom/backtick, no merge) or splits into paragraphs that
+// are merged by token size (bare). Canonical single-string parser_config.delimiter
+// parsing lives in ragflow/internal/parser/chunk (ParseDelimiterField).
 func compileDelimPattern(delims []string) *regexp.Regexp {
-	return chunk.CompileDelimiterListPattern(delims)
+	return chunk.CompileDelimiterPatternList(delims, true)
 }
 
 // splitDroppingDelim mirrors Python's _split_text_by_pattern

@@ -12,7 +12,6 @@ import (
 type Config struct {
 	Count         int
 	Single        string
-	SkipOCR       bool // DLA+TSR but no image OCR
 	CompareOnly   bool
 	CompareFilter string
 	CSVOutput     string
@@ -29,7 +28,6 @@ func LoadConfig() Config {
 	return Config{
 		Count:         envInt(common.EnvBatchCount, 0),
 		Single:        common.GetEnv(common.EnvBatchSingle),
-		SkipOCR:       common.GetEnv(common.EnvBatchSkipOCR) == "1",
 		CompareOnly:   common.GetEnv(common.EnvBatchCompareOnly) == "1",
 		CompareFilter: common.GetEnv(common.EnvBatchCompareFilter),
 		CSVOutput:     envStr(common.EnvBatchCompareCSV, filepath.Join(td, "output", fmt.Sprintf("compare_%s.csv", time.Now().Format("20060102_150405")))),

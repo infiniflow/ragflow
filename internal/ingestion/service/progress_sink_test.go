@@ -18,9 +18,13 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -144,6 +148,51 @@ type stubDocProgressSvc struct {
 	gotRun      string
 	gotMsg      string
 	calls       int
+	doc         *document.DocumentResponse
+	docErr      error
+}
+
+func setProgressSinkTestClock(sink *progressSink) {
+	sink.now = func() time.Time {
+		return time.Date(2026, 8, 17, 3, 4, 5, 0, time.UTC)
+	}
+}
+
+type blockingDocProgressSvc struct {
+	mu           sync.Mutex
+	firstStarted chan struct{}
+	releaseFirst chan struct{}
+	messages     []string
+	updates      int
+}
+
+func (s *blockingDocProgressSvc) GetDocumentByID(context.Context, string) (*document.DocumentResponse, error) {
+	return nil, nil
+}
+
+func (s *blockingDocProgressSvc) UpdateRunState(context.Context, string, float64, string) error {
+	return nil
+}
+
+func (s *blockingDocProgressSvc) UpdateRunProgress(_ context.Context, _ string, _ float64, _ string, msg string) error {
+	s.mu.Lock()
+	s.updates++
+	update := s.updates
+	s.messages = append(s.messages, msg)
+	s.mu.Unlock()
+	if update == 1 {
+		close(s.firstStarted)
+		<-s.releaseFirst
+	}
+	return nil
+}
+
+func (s *stubDocProgressSvc) GetDocumentByID(ctx context.Context, docID string) (*document.DocumentResponse, error) {
+	return s.doc, s.docErr
+}
+
+func (s *stubDocProgressSvc) UpdateRunState(context.Context, string, float64, string) error {
+	return nil
 }
 
 func (s *stubDocProgressSvc) UpdateRunProgress(ctx context.Context, docID string, progress float64, run, progressMsg string) error {
@@ -166,6 +215,7 @@ func TestProgressSinkPersistsViaService(t *testing.T) {
 
 	ctx := t.Context()
 	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService())
+	setProgressSinkTestClock(sink)
 	stub := &stubDocProgressSvc{}
 	sink.docSvc = stub
 
@@ -210,8 +260,210 @@ func TestProgressSinkPersistsViaService(t *testing.T) {
 	if stub.gotRun != "1" {
 		t.Fatalf("run = %q, want 1 (RUNNING)", stub.gotRun)
 	}
-	if stub.gotMsg != "Parser Done" {
-		t.Fatalf("progress_msg = %q, want Parser Done", stub.gotMsg)
+	if stub.gotMsg != "03:04:05: Parser Done" {
+		t.Fatalf("progress_msg = %q, want timestamped Parser Done", stub.gotMsg)
+	}
+}
+
+// TestProgressSinkAccumulatesProgressLog pins the core fix: document.progress_msg
+// is the accumulated multi-line run log, not just the latest component line.
+// The document-details dialog renders progress_msg verbatim (whitespace-pre-line).
+func TestProgressSinkAccumulatesProgressLog(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ctx := t.Context()
+	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService())
+	setProgressSinkTestClock(sink)
+	stub := &stubDocProgressSvc{}
+	sink.docSvc = stub
+	sink.OnComponentTotal(ctx, taskID, 2)
+
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+		TaskID: taskID, DocumentID: docID, Component: "File", Phase: 1, Message: "File:naive Done",
+	})
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+		TaskID: taskID, DocumentID: docID, Component: "Parser", Phase: 1, Message: "Parser Done",
+	})
+
+	want := "03:04:05: File:naive Done\n03:04:05: Parser Done"
+	if stub.gotMsg != want {
+		t.Fatalf("progress_msg = %q, want multi-line log %q", stub.gotMsg, want)
+	}
+}
+
+// TestProgressSinkSeedsLogFromDocument verifies the accumulated log keeps the
+// lines already stored on the document row when a run resumes.
+func TestProgressSinkSeedsLogFromDocument(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ctx := t.Context()
+	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService())
+	setProgressSinkTestClock(sink)
+	seed := "File:naive Done"
+	stub := &stubDocProgressSvc{doc: &document.DocumentResponse{ProgressMsg: &seed}}
+	sink.docSvc = stub
+	sink.OnComponentTotal(ctx, taskID, 2)
+
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+		TaskID: taskID, DocumentID: docID, Component: "Parser", Phase: 1, Message: "Parser Done",
+	})
+
+	want := "File:naive Done\n03:04:05: Parser Done"
+	if stub.gotMsg != want {
+		t.Fatalf("progress_msg = %q, want seeded multi-line log %q", stub.gotMsg, want)
+	}
+}
+
+func TestProgressSinkRetriesSeedAfterReadFailure(t *testing.T) {
+	seed := "existing"
+	stub := &stubDocProgressSvc{docErr: errors.New("temporary read failure")}
+	sink := &progressSink{docSvc: stub}
+
+	if got := sink.accumulateLog(context.Background(), "doc-1", "pending"); got != "" {
+		t.Fatalf("log after failed seed = %q, want empty mirror value", got)
+	}
+
+	stub.docErr = nil
+	stub.doc = &document.DocumentResponse{ProgressMsg: &seed}
+	setProgressSinkTestClock(sink)
+	got := sink.accumulateLog(context.Background(), "doc-1", "current")
+	if want := "existing\n03:04:05: pending\n03:04:05: current"; got != want {
+		t.Fatalf("log after seed retry = %q, want %q", got, want)
+	}
+}
+
+func TestProgressSinkSerializesLogAndDocumentWrite(t *testing.T) {
+	stub := &blockingDocProgressSvc{
+		firstStarted: make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+	}
+	sink := &progressSink{docSvc: stub}
+	setProgressSinkTestClock(sink)
+
+	firstDone := make(chan struct{})
+	go func() {
+		defer close(firstDone)
+		if err := sink.updateDocumentProgress(context.Background(), "doc-1", 0.1, "1", "first"); err != nil {
+			t.Errorf("first update: %v", err)
+		}
+	}()
+	<-stub.firstStarted
+
+	secondDone := make(chan struct{})
+	go func() {
+		defer close(secondDone)
+		if err := sink.updateDocumentProgress(context.Background(), "doc-1", 0.2, "1", "second"); err != nil {
+			t.Errorf("second update: %v", err)
+		}
+	}()
+
+	select {
+	case <-secondDone:
+		t.Fatal("second update completed before the first document write was released")
+	default:
+	}
+	close(stub.releaseFirst)
+	<-firstDone
+	<-secondDone
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	if len(stub.messages) != 2 || stub.messages[1] != "03:04:05: first\n03:04:05: second" {
+		t.Fatalf("document writes = %q, want accumulated second write", stub.messages)
+	}
+}
+
+// TestProgressSinkTrimsLogHead verifies the accumulated log is head-trimmed at
+// line boundaries once it exceeds progressLogMaxChars, keeping the newest lines
+// while keeping the newest complete lines.
+func TestProgressSinkTrimsLogHead(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ctx := t.Context()
+	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService())
+	setProgressSinkTestClock(sink)
+	stub := &stubDocProgressSvc{}
+	sink.docSvc = stub
+	sink.OnComponentTotal(ctx, taskID, 2)
+
+	head := strings.Repeat("h", 2000)
+	tail := strings.Repeat("t", 2000)
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+		TaskID: taskID, DocumentID: docID, Component: "File", Phase: 1, Message: head,
+	})
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+		TaskID: taskID, DocumentID: docID, Component: "Parser", Phase: 1, Message: tail,
+	})
+
+	if len(stub.gotMsg) > progressLogMaxChars {
+		t.Fatalf("progress_msg len = %d, exceeds %d", len(stub.gotMsg), progressLogMaxChars)
+	}
+	if stub.gotMsg != "03:04:05: "+tail {
+		t.Fatalf("progress_msg keeps the newest line: got prefix %q, want %q", stub.gotMsg[:20], tail[:20])
+	}
+}
+
+// TestProgressSink_Log_NoDataRace hits the accumulated log buffer directly:
+// OnComponentProgress fires from concurrent parallel-branch goroutines, so the
+// lazy seed and the append must be mutex-guarded. The direct call avoids the
+// test-DB serialization inside OnComponentProgress that would mask the race.
+func TestProgressSink_Log_NoDataRace(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	ctx := t.Context()
+	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService())
+	sink.docSvc = &stubDocProgressSvc{}
+
+	const n = 30
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			sink.accumulateLog(ctx, "doc-1", fmt.Sprintf("line-%d", i))
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	got := sink.accumulateLog(ctx, "doc-1", "")
+	if lines := strings.Split(got, "\n"); len(lines) != n {
+		t.Fatalf("accumulated log lines = %d, want %d: %q", len(lines), n, got)
+	}
+}
+
+func TestTrimLogHead(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		max  int
+		want string
+	}{
+		{name: "short text unchanged", text: "a\nb", max: 10, want: "a\nb"},
+		{name: "exactly max unchanged", text: "a\nb", max: 3, want: "a\nb"},
+		{name: "drops head line", text: "l1\nl2\nl3", max: 6, want: "l2\nl3"},
+		{name: "keeps suffix at exact limit", text: "l1\nl2\nl3", max: 5, want: "l2\nl3"},
+		{name: "no fitting newline unchanged", text: "abcdef", max: 3, want: "abcdef"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := trimLogHead(tt.text, tt.max); got != tt.want {
+				t.Errorf("trimLogHead(%q, %d) = %q, want %q", tt.text, tt.max, got, tt.want)
+			}
+		})
 	}
 }
 

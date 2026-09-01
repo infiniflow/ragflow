@@ -1,7 +1,6 @@
 package elasticsearch
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/elastic/go-elasticsearch/v8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 )
 
@@ -41,6 +41,48 @@ func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
 	assertEqual(t, queryString["fields"], []string{"name^10"})
 }
 
+func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	var searchQuery map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
+			t.Errorf("decode search query: %v", err)
+		}
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"hits":{"total":{"value":0},"hits":[]}}`))
+	}))
+	defer server.Close()
+
+	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+	if err != nil {
+		t.Fatalf("new elasticsearch client: %v", err)
+	}
+	engine := &Engine{client: client}
+	_, err = engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant"},
+		Limit:      30,
+		MatchExprs: []interface{}{&types.MatchDenseExpr{
+			VectorColumnName: "q_2_vec",
+			EmbeddingData:    []float64{0.1, 0.2},
+			TopN:             128,
+			ExtraOptions:     map[string]interface{}{"num_candidates": 4096},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	knn, ok := searchQuery["knn"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("KNN query missing from %#v", searchQuery)
+	}
+	if knn["k"] != float64(128) || knn["num_candidates"] != float64(4096) {
+		t.Fatalf("KNN parameters = (%v, %v), want (128, 4096)", knn["k"], knn["num_candidates"])
+	}
+}
+
 func TestUpdateSingleMemoryMessageWaitsForRefresh(t *testing.T) {
 	var gotRefresh string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -62,9 +104,9 @@ func TestUpdateSingleMemoryMessageWaitsForRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new elasticsearch client: %v", err)
 	}
-
+	ctx := t.Context()
 	engine := &Engine{client: client}
-	if err = engine.updateSingleMemoryMessage(context.Background(), "memory_tenant", "memory-1_42", map[string]interface{}{"forget_at": "2026-07-27 10:00:00"}); err != nil {
+	if err = engine.updateSingleMemoryMessage(ctx, "memory_tenant", "memory-1_42", map[string]interface{}{"forget_at": "2026-07-27 10:00:00"}); err != nil {
 		t.Fatalf("updateSingleMemoryMessage: %v", err)
 	}
 	if gotRefresh != "wait_for" {
@@ -96,13 +138,13 @@ func TestDeleteChunksPreservesStringSliceCondition(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-
+	ctx := t.Context()
 	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
 	if err != nil {
 		t.Fatalf("new elasticsearch client: %v", err)
 	}
 	engine := &Engine{client: client}
-	deleted, err := engine.DeleteChunks(context.Background(), map[string]interface{}{
+	deleted, err := engine.DeleteChunks(ctx, map[string]interface{}{
 		"kb_id":       "kb-1",
 		"compile_kwd": []string{"wiki_entity", "wiki_relation"},
 	}, "ragflow_tenant", "kb-1")
@@ -157,13 +199,13 @@ func TestDeleteChunksIDStringSlice(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-
+	ctx := t.Context()
 	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
 	if err != nil {
 		t.Fatalf("new elasticsearch client: %v", err)
 	}
 	engine := &Engine{client: client}
-	if _, err = engine.DeleteChunks(context.Background(), map[string]interface{}{
+	if _, err = engine.DeleteChunks(ctx, map[string]interface{}{
 		"id": []string{"doc-a", "doc-b"},
 	}, "ragflow_tenant", "kb-1"); err != nil {
 		t.Fatalf("DeleteChunks: %v", err)

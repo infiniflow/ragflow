@@ -65,6 +65,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     isShowValueSwitch = false,
     isVerticalShowValue = true,
     builtInMetadata,
+    isLocalSave,
     success,
     documentIds,
     secondTitle,
@@ -102,6 +103,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     metadataType,
     otherData,
     documentIds,
+    isLocalSave,
   );
   // const { handleMenuClick } = useHandleMenuClick();
   const [shouldSave, setShouldSave] = useState(false);

@@ -157,8 +157,8 @@ func FilenameType(filename string) FileType {
 	}
 
 	visualExtensions := []string{
-		"jpg", "jpeg", "png", "tif", "gif", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
-		"pcd", "dxf", "ufo", "eps", "ai", "raw", "WMF", "webp", "avif", "apng", "icon", "ico",
+		"jpg", "jpeg", "png", "tif", "gif", "bmp", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
+		"pcd", "dxf", "ufo", "eps", "ai", "raw", "wmf", "webp", "avif", "apng", "icon", "ico",
 		"mpg", "mpeg", "avi", "rm", "rmvb", "mov", "wmv", "asf", "dat", "asx", "wvx", "mpe",
 		"mpa", "mp4", "mkv",
 	}
@@ -331,41 +331,61 @@ func GetContentType(ext string, fileType string) string {
 	return fallbackPrefix + "/" + normalizedExt
 }
 
-// SanitizeContentDispositionFilename sanitizes a filename for use in
-// Content-Disposition headers. Strips non-ASCII, path separators,
-// control characters, and quotes/percent signs. Falls back to "file"
-// when the result is empty. Mirrors Python file_response.py:
-// sanitize_content_disposition_filename().
+// contentDispositionBasename extracts the final path segment, treating both
+// "/" and "\" as separators. Mirrors Python file_response.py basename logic.
+func contentDispositionBasename(filename string) string {
+	base := filename
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	if idx := strings.LastIndex(base, "\\"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	return base
+}
+
+// rfc8187Encode percent-encodes a UTF-8 string for RFC 8187 filename*.
+// Mirrors Python urllib.parse.quote(s, safe="").
+func rfc8187Encode(s string) string {
+	var buf strings.Builder
+	for _, b := range []byte(s) {
+		if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') ||
+			b == '-' || b == '.' || b == '_' || b == '~' {
+			buf.WriteByte(b)
+		} else {
+			buf.WriteString(fmt.Sprintf("%%%02X", b))
+		}
+	}
+	return buf.String()
+}
+
+// SanitizeContentDispositionFilename builds the ASCII filename fallback for
+// Content-Disposition headers. Mirrors Python file_response.py:
+// ascii_content_disposition_filename().
 func SanitizeContentDispositionFilename(filename string) string {
 	if filename == "" {
 		return "file"
 	}
-	// Strip non-ASCII.
 	var asciiOnly strings.Builder
 	for _, r := range filename {
 		if r < 0x80 {
 			asciiOnly.WriteRune(r)
 		}
 	}
-	sanitized := asciiOnly.String()
-
-	// Replace path separators, special chars.
-	sanitized = strings.ReplaceAll(sanitized, "/", "_")
-	sanitized = strings.ReplaceAll(sanitized, "\\", "_")
-	sanitized = strings.ReplaceAll(sanitized, ":", "_")
-	sanitized = strings.ReplaceAll(sanitized, "\"", "")
-	sanitized = strings.ReplaceAll(sanitized, "'", "")
-	sanitized = strings.ReplaceAll(sanitized, "%", "")
-
-	// Strip remaining control characters.
-	ctrlRe := regexp.MustCompile(`[\x00-\x1f\x7f]`)
-	sanitized = ctrlRe.ReplaceAllString(sanitized, "")
-
-	sanitized = strings.TrimSpace(sanitized)
-	if sanitized == "" {
+	var sanitized strings.Builder
+	for _, r := range asciiOnly.String() {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') ||
+			r == '_' || r == '.' || r == '-' {
+			sanitized.WriteRune(r)
+		} else {
+			sanitized.WriteRune('_')
+		}
+	}
+	result := strings.Trim(sanitized.String(), "._")
+	if result == "" {
 		return "file"
 	}
-	return sanitized
+	return result
 }
 
 // ResolveAttachmentContentType resolves a content type and extension from
@@ -405,6 +425,18 @@ func ResolveAttachmentContentType(ext string, mimeType string) (string, string) 
 	return contentType, ext
 }
 
+// FormatContentDisposition builds a Content-Disposition value with an ASCII
+// filename fallback and an RFC 5987 UTF-8 filename* parameter.
+func FormatContentDisposition(disposition, filename string) string {
+	base := contentDispositionBasename(filename)
+	if base == "" {
+		return disposition
+	}
+	safe := SanitizeContentDispositionFilename(base)
+	encoded := rfc8187Encode(base)
+	return fmt.Sprintf(`%s; filename="%s"; filename*=UTF-8''%s`, disposition, safe, encoded)
+}
+
 // SetPreviewFileResponseHeaders sets response headers for inline file
 // preview. For force-attachment types (HTML, SVG, XML) it falls back to
 // attachment disposition with nosniff. Mirrors Python file_response.py:
@@ -414,11 +446,14 @@ func SetPreviewFileResponseHeaders(h http.Header, contentType, ext, filename str
 		h.Set("Content-Type", contentType)
 	}
 	if ShouldForceAttachment(ext, contentType) {
-		h.Set("Content-Disposition", "attachment")
 		h.Set("X-Content-Type-Options", "nosniff")
-	} else {
-		safe := SanitizeContentDispositionFilename(filename)
-		h.Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, safe))
+		if filename != "" {
+			h.Set("Content-Disposition", FormatContentDisposition("attachment", filename))
+		} else {
+			h.Set("Content-Disposition", "attachment")
+		}
+	} else if filename != "" {
+		h.Set("Content-Disposition", FormatContentDisposition("inline", filename))
 	}
 }
 
@@ -431,11 +466,18 @@ func SetDownloadFileResponseHeaders(h http.Header, contentType, ext, filename st
 	}
 	if ShouldForceAttachment(ext, contentType) {
 		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Content-Disposition", "attachment")
+		if filename != "" {
+			h.Set("Content-Disposition", FormatContentDisposition("attachment", filename))
+		} else {
+			h.Set("Content-Disposition", "attachment")
+		}
 		return
 	}
-	safe := SanitizeContentDispositionFilename(filename)
-	h.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, safe))
+	if filename != "" {
+		h.Set("Content-Disposition", FormatContentDisposition("attachment", filename))
+	} else {
+		h.Set("Content-Disposition", "attachment")
+	}
 }
 
 // AgentAttachmentPreviewPath builds the preview URL path for an agent

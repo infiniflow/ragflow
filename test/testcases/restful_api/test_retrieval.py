@@ -259,7 +259,7 @@ def test_retrieval_vector_similarity_and_top_k_contract(rest_client, ensure_pars
         ("top_k 10", {"top_k": 10}, 0, ""),
         ("top_k 1", {"top_k": 1}, 0, ""),
         ("top_k -1", {"top_k": -1}, 102, "`top_k` must be greater than 0"),
-        ("top_k alpha", {"top_k": "a"}, 100, "invalid literal for int()"),
+        ("top_k alpha", {"top_k": "a"}, 102, "`top_k` should be an integer"),
     ]
     for scenario_name, updates, expected_code, expected_message in cases:
         payload = {"question": "chunk", "dataset_ids": [dataset_id]}

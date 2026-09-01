@@ -92,10 +92,9 @@ class DataSet(Base):
             "create_time_from": create_time_from,
             "create_time_to": create_time_to,
         }
-        # Handle ids parameter - convert to multiple query params
+        # Handle ids parameter - requests expands list values into multiple query params
         if ids:
-            for doc_id in ids:
-                params.append(("ids", doc_id))
+            params["ids"] = ids
         res = self.get(f"/datasets/{self.id}/documents", params=params)
         res = res.json()
         documents = []

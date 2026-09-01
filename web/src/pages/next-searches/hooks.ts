@@ -203,6 +203,7 @@ export interface ISearchAppDetailProps {
     summary: boolean;
     llm_setting: IllmSettingProps & IllmSettingEnableProps;
     top_k: number;
+    rerank_candidates_count: number;
     use_kg: boolean;
     vector_similarity_weight: number;
     web_search: boolean;

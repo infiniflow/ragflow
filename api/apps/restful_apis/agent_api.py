@@ -1599,8 +1599,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                 code=RetCode.OPERATING_ERROR,
             )
 
-        # Keep the original workflow execution path, but assign a session_id so the
-        # response shape stays closer to the older agent completion contract.
+        # Load the caller's runtime replica as the workflow template. Session-owned
+        # history and execution state are reset after Canvas instantiation below.
         query = req.get("query", "") or req.get("question", "")
         files = req.get("files", [])
         inputs = req.get("inputs", {})
@@ -1691,7 +1691,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             from agent.canvas import Canvas
 
             canvas = Canvas(dsl_str, str(tenant_id), task_id=session_id, canvas_id=agent_id, custom_header=custom_header)
-            canvas.clear_history()
+            canvas.start_new_session()
         except Exception as exc:
             return server_error_response(exc)
         turn_id = get_uuid()

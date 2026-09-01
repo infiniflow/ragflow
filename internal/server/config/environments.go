@@ -66,13 +66,10 @@ type Environments struct {
 	GmailWebOAuthRedirectURL       string `mapstructure:"gmail_web_oauth_redirect_url"`        // GMAIL_WEB_OAUTH_REDIRECT_URI
 	GoogleDriveWebOAuthRedirectURL string `mapstructure:"google_drive_web_oauth_redirect_url"` // GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI
 
-	DeepDocURL                        string `mapstructure:"deep_doc_url"`
 	TensorRTDLAServer                 string `mapstructure:"tensorrt_dla_server"`
-	OSSDeepDocURL                     string `mapstructure:"oss_deep_doc_url"` // open source deepdoc URL
 	DeepDocBatchSingle                string `mapstructure:"deep_doc_batch_single"`
 	DeepDocBatchCount                 int    `mapstructure:"deep_doc_batch_count"`
 	DeepDocBatchLogLevel              string `mapstructure:"deep_doc_batch_log_level"`
-	DeepDocSkipOCR                    bool   `mapstructure:"deep_doc_skip_ocr"`
 	DeepDocCompareOnly                bool   `mapstructure:"deep_doc_compare_only"`
 	DeepDocCompareFilter              string `mapstructure:"deep_doc_compare_filter"`
 	DeepDocCompareCSV                 string `mapstructure:"deep_doc_compare_csv"`
@@ -334,19 +331,9 @@ func (c *Config) GetEnvironments() error {
 		c.environments.GoogleDriveWebOAuthRedirectURL = GoogleDriveWebOAuthRedirectURLStr
 	}
 
-	deepDocURLStr := common.GetEnv(common.EnvDeepDocURL)
-	if deepDocURLStr != "" {
-		c.environments.DeepDocURL = deepDocURLStr
-	}
-
 	tensorRTDLAServerStr := common.GetEnv(common.EnvTensorrtDLAServer)
 	if tensorRTDLAServerStr != "" {
 		c.environments.TensorRTDLAServer = tensorRTDLAServerStr
-	}
-
-	OSSDeepDocURLStr := common.GetEnv(common.EnvOSSDeepDocURL)
-	if OSSDeepDocURLStr != "" {
-		c.environments.OSSDeepDocURL = OSSDeepDocURLStr
 	}
 
 	DeepDocBatchSingleStr := common.GetEnv(common.EnvBatchSingle)
@@ -366,12 +353,6 @@ func (c *Config) GetEnvironments() error {
 	DeepDocBatchLogLevelStr := common.GetEnv(common.EnvBatchLogLevel)
 	if DeepDocBatchLogLevelStr != "" {
 		c.environments.DeepDocBatchLogLevel = DeepDocBatchLogLevelStr
-	}
-
-	DeepDocBatchSkipOCRStr := common.GetEnv(common.EnvBatchSkipOCR)
-	if DeepDocBatchSkipOCRStr != "" {
-		DeepDocBatchSkipOCR := strings.ToLower(DeepDocBatchSkipOCRStr) == "true"
-		c.environments.DeepDocSkipOCR = DeepDocBatchSkipOCR
 	}
 
 	DeepDocBatchCompareOnlyStr := common.GetEnv(common.EnvBatchCompareOnly)
@@ -675,16 +656,8 @@ func (c *Config) GetGoogleDriveWebOAuthRedirectURL() string {
 	return c.environments.GoogleDriveWebOAuthRedirectURL
 }
 
-func (c *Config) GetDeepDocURL() string {
-	return c.environments.DeepDocURL
-}
-
 func (c *Config) GetTensorRTDLAServer() string {
 	return c.environments.TensorRTDLAServer
-}
-
-func (c *Config) GetOSSDeepDocURL() string {
-	return c.environments.OSSDeepDocURL
 }
 
 func (c *Config) GetDeepDocBatchSingle() string {
@@ -697,10 +670,6 @@ func (c *Config) GetDeepDocBatchCount() int {
 
 func (c *Config) GetDeepDocBatchLogLevel() string {
 	return c.environments.DeepDocBatchLogLevel
-}
-
-func (c *Config) GetDeepDocBatchSkipOCR() bool {
-	return c.environments.DeepDocSkipOCR
 }
 
 func (c *Config) GetDeepDocCompareOnly() bool {

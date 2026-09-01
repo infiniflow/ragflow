@@ -396,7 +396,7 @@ export default {
         'Effectuez un test de récupération pour vérifier si RAGFlow peut retrouver le contenu pertinent pour le LLM. Si vous avez modifié les paramètres par défaut, comme le poids de similarité ou le seuil de similarité, ces changements ne seront pas automatiquement sauvegardés. Vous devez les appliquer dans les paramètres de votre assistant de chat ou dans le composant agent de récupération.',
       similarityThreshold: 'Seuil de similarité',
       similarityThresholdTip:
-        'RAGFlow utilise une combinaison de similarité par mots-clés pondérée et de similarité cosinus vectorielle, ou bien un score de réordonnancement pondéré. Ce paramètre fixe le seuil en dessous duquel un segment est exclu. Par défaut, le seuil est 0.2 (soit 20%).',
+        'RAGFlow utilise une combinaison de similarité par mots-clés pondérée et de similarité cosinus vectorielle, ou bien un score de réordonnancement pondéré. Ce paramètre fixe le seuil en dessous duquel un segment est exclu. Par défaut, le seuil est 20 (soit 20%).',
       vectorSimilarityWeight: 'Poids de similarité des mots-clés',
       vectorSimilarityWeightTip:
         "Définit l'importance de la similarité par mots-clés dans le score global. Le total des poids doit être de 1.0.",
@@ -708,7 +708,7 @@ export default {
       overlappedPercentTip:
         'Le pourcentage de chevauchement entre deux segments adjacents',
       globalIndexModelTip:
-        'Utilisé pour générer les graphes de connaissances, RAPTOR, les métadonnées automatiques, les mots-clés et questions automatiques. Les performances du modèle affectent la qualité de la génération.',
+        'Utilisé pour générer les métadonnées, mots-clés et questions automatiques. Les performances du modèle affectent la qualité de la génération.',
       globalIndexModel: "Modèle d'indexation",
       settings: 'Paramètres',
       autoMetadataTip:
@@ -738,9 +738,6 @@ export default {
       dataSource: 'Source de données',
       linkSourceSetTip: 'Gérer la liaison de source de données avec cette base',
       linkDataSource: 'Lier une source de données',
-      tocExtraction: 'IndexPage',
-      tocExtractionTip:
-        "Pour les segments existants, génère une table des matières hiérarchique (un répertoire par fichier). Lors des requêtes, avec la Mise en valeur des répertoires activée, le système utilise un grand modèle pour déterminer quels éléments du répertoire sont pertinents à la question de l'utilisateur.",
       deleteGenerateModalContent: `
   <p>La suppression des résultats générés <strong class='text-text-primary'>{{type}}</strong>
   supprimera toutes les entités et relations dérivées de cette base de connaissances.
@@ -800,6 +797,12 @@ export default {
         email: 'E-mail',
         tag: 'Étiquette',
       },
+      audio: `<p>Les formats de fichiers pris en charge sont <b>WAV, MP3, AAC, FLAC, OGG</b> et d'autres formats audio courants.</p>
+<p>Cette méthode transcrit les fichiers audio en texte à l'aide d'un modèle de reconnaissance vocale.</p>`,
+      email: `<p>Les formats de fichiers pris en charge sont <b>EML</b> et <b>MSG</b>.</p>
+<p>Cette méthode analyse les fichiers e-mail et extrait les champs d'en-tête (tels que De, À, CC, Objet et Date), le corps du message et les pièces jointes.</p>`,
+      knowledgeCompiler: `<p>Ce pipeline analyse et découpe les fichiers en chunks, puis compile ces chunks en unités de connaissances structurées (graphe de connaissances, wiki, RAPTOR, carte mentale ou navigation du jeu de données) via le composant Knowledge Compiler.</p>
+<p>Les unités de connaissances compilées sont émises sous forme de chunks fusionnés dans le flux de chunks, ce qui est idéal pour construire une couche de connaissances interrogeable au-dessus des documents découpés.</p>`,
       book: `<p>Les formats de fichiers pris en charge sont <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
 Pour chaque livre au format PDF, veuillez définir les <i>plages de pages</i> afin de supprimer les informations non souhaitées et de réduire le temps d'analyse.</p>`,
       laws: `<p>Les formats de fichiers pris en charge sont <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -968,7 +971,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       topNTip: `Tous les segments avec un score de similarité supérieur au 'seuil de similarité' ne seront pas forcément envoyés au LLM. Cela sélectionne les 'Top N' segments parmi ceux récupérés.`,
       variable: 'Variable',
       variableTip: `Utilisé avec les API de gestion d'assistant de chat de RAGFlow, les variables aident à développer des stratégies de prompt système plus flexibles. Les variables définies seront utilisées dans le 'Prompt système' comme partie des prompts pour le LLM. {knowledge
-      } est une variable spéciale réservée représentant les segments récupérés des bases de connaissances spécifiées. Toutes les variables doivent être entourées d'accolades {} dans le 'Prompt système'. Voir https: //ragflow.io/docs/dev/set_chat_variables pour plus de détails.`,
+      } est une variable spéciale réservée représentant les segments récupérés des bases de connaissances spécifiées. Toutes les variables doivent être entourées d'accolades {} dans le 'Prompt système'. Voir https://ragflow.io/docs/chat_configuration#system-prompt pour plus de détails.`,
       add: 'Ajouter',
       key: 'Clé',
       optional: 'Optionnel',
@@ -1026,6 +1029,9 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       created: 'Créé',
       action: 'Action',
       embedModalTitle: 'Intégrer dans une page web',
+      embedUserIdPlaceholder: 'ex. user-001',
+      embedUserIdTooltip:
+        "Chaîne de texte (255 caractères maximum) identifiant l'utilisateur final de la page intégrée. Elle est ajoutée à l'URL d'intégration comme paramètre userId.",
       comingSoon: 'Bientôt disponible',
       fullScreenTitle: 'Intégration complète',
       fullScreenDescription:
@@ -1498,6 +1504,8 @@ Exemple : Virtual Hosted Style`,
         'Connectez un site SharePoint via Microsoft Graph pour synchroniser ses bibliothèques de documents.',
       sharepointSiteUrlTip:
         'URL complète du site SharePoint à indexer, ex. : https://contoso.sharepoint.com/sites/MonSite. Nécessite une application Azure AD avec les permissions applicatives Sites.Read.All et Files.Read.All (consentement administrateur).',
+      azure_devopsDescription:
+        'Connectez Azure DevOps pour synchroniser les fichiers du dépôt et les pull requests.',
       bitbucketDescription:
         'Connectez Bitbucket pour synchroniser le contenu des PR.',
       bitbucketTopWorkspaceTip:
@@ -1798,7 +1806,7 @@ Exemple : Virtual Hosted Style`,
         chat: 'Chat',
         embedding: 'Embedding',
         rerank: 'Rerank',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
@@ -1812,6 +1820,8 @@ Exemple : Virtual Hosted Style`,
       listModelsLoading: 'Chargement des modèles…',
       selectModelBeforeVerify:
         'Veuillez sélectionner au moins un modèle avant la vérification.',
+      selectModelBeforeSave:
+        'Veuillez découvrir et sélectionner au moins un modèle avant l’enregistrement.',
       addCustomModel: 'Ajouter un modèle personnalisé',
       addCustomModelTitle: 'Ajouter un modèle personnalisé',
       editCustomModelTitle: 'Modifier le modèle',

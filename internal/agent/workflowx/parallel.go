@@ -264,7 +264,7 @@ func AddParallelNode[I, O any](
 	}
 	compiled, err := sub.Compile(ctx, compileOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %v", ErrParallelCompileFailed, key, err)
+		return nil, fmt.Errorf("%w: %s: %w", ErrParallelCompileFailed, key, err)
 	}
 
 	lambda, err := compose.AnyLambda[[]I, []O, struct{}](
@@ -329,7 +329,7 @@ func runParallelInvoke[I, O any](
 	if isResume && prev != nil {
 		var restored []I
 		if rErr := json.Unmarshal(prev.OriginalInputsJSON, &restored); rErr != nil {
-			return nil, fmt.Errorf("%w: decode original_inputs_json: %v", ErrParallelResumeStateInvalid, rErr)
+			return nil, fmt.Errorf("%w: decode original_inputs_json: %w", ErrParallelResumeStateInvalid, rErr)
 		}
 		effectiveItems = restored
 	}
@@ -515,7 +515,7 @@ func loadParallelSnapshot(ctx context.Context) (*ParallelInterruptState, bool, e
 	if raw, ok := ctx.Value(parallelResumeBackdoorKey{}).([]byte); ok && len(raw) > 0 {
 		var st ParallelInterruptState
 		if err := json.Unmarshal(raw, &st); err != nil {
-			return nil, false, fmt.Errorf("%w: decode state: %v", ErrParallelResumeStateInvalid, err)
+			return nil, false, fmt.Errorf("%w: decode state: %w", ErrParallelResumeStateInvalid, err)
 		}
 		if st.TotalCount < 0 {
 			return nil, false, fmt.Errorf("%w: negative total_count", ErrParallelResumeStateInvalid)
@@ -531,7 +531,7 @@ func loadParallelSnapshot(ctx context.Context) (*ParallelInterruptState, bool, e
 	}
 	var st ParallelInterruptState
 	if err := json.Unmarshal(payload, &st); err != nil {
-		return nil, false, fmt.Errorf("%w: decode state: %v", ErrParallelResumeStateInvalid, err)
+		return nil, false, fmt.Errorf("%w: decode state: %w", ErrParallelResumeStateInvalid, err)
 	}
 	if st.TotalCount < 0 {
 		return nil, false, fmt.Errorf("%w: negative total_count", ErrParallelResumeStateInvalid)

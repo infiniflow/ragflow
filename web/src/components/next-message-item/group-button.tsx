@@ -25,6 +25,7 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
 import { AgentChatContext } from '@/pages/agent/context';
 import { downloadAgentFile } from '@/services/file-manager-service';
+import { removeThinkSection } from '@/utils/chat';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import {
   DeleteOutlined,
@@ -35,7 +36,7 @@ import {
   SyncOutlined,
 } from '@ant-design/icons';
 import { Download, NotebookText } from 'lucide-react';
-import { useCallback, useContext } from 'react';
+import { useCallback, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import FeedbackDialog from '../feedback-dialog';
 import { PromptDialog } from '../prompt-dialog';
@@ -85,6 +86,8 @@ export const AssistantGroupButton = ({
 
   const { showLogSheet } = useContext(AgentChatContext);
 
+  const copyText = useMemo(() => removeThinkSection(content), [content]);
+
   const handleShowLogSheet = useCallback(() => {
     showLogSheet(messageId);
   }, [messageId, showLogSheet]);
@@ -99,7 +102,7 @@ export const AssistantGroupButton = ({
       >
         <ToggleGroupItem value="a">
           <CopyToClipboard
-            text={content}
+            text={copyText}
             className="border-none hover:!bg-transparent"
             avoidButtonWrapper
           ></CopyToClipboard>

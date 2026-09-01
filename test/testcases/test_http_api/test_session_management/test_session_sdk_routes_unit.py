@@ -422,6 +422,7 @@ def _load_session_module(monkeypatch):
             return "mock transcription"
 
     llm_service_mod.LLMBundle = _StubLLMBundle
+    llm_service_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     # Mock tenant_model_service to ensure it uses mocked services
@@ -568,6 +569,13 @@ def _load_session_module(monkeypatch):
     quart_mod.has_websocket_context = lambda: False
     quart_mod.websocket = SimpleNamespace()
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
+
+    api_apps_mod = ModuleType("api.apps")
+    api_apps_mod.__path__ = [str(repo_root / "api" / "apps")]
+    api_apps_mod.AUTH_BETA = False
+    api_apps_mod.current_user = SimpleNamespace(id="tenant-1")
+    api_apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
 
     quart_auth_mod = ModuleType("quart_auth")
 
@@ -1688,6 +1696,41 @@ def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
     assert res["code"] == 0
     assert res["data"]["has_web_search_provider"] is True
 
+    # Explicit Serply configuration also enables the provider-neutral flag.
+    serply_dialog = SimpleNamespace(
+        name="My Serply Bot",
+        icon="avatar.png",
+        tenant_id="tenant-1",
+        status="1",
+        llm_id="",
+        prompt_config={
+            "prologue": "Hello!",
+            "web_search_provider": "serply",
+            "serply_api_key": "serply-key123",
+        },
+    )
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (True, serply_dialog))
+    res = _run(inspect.unwrap(module.chatbots_inputs)("dialog-serply"))
+    assert res["code"] == 0
+    assert res["data"]["has_web_search_provider"] is True
+
+    # You.com is keyless, so selecting it enables the flag with no key set.
+    youcom_dialog = SimpleNamespace(
+        name="My You.com Bot",
+        icon="avatar.png",
+        tenant_id="tenant-1",
+        status="1",
+        llm_id="",
+        prompt_config={
+            "prologue": "Hello!",
+            "web_search_provider": "youcom",
+        },
+    )
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (True, youcom_dialog))
+    res = _run(inspect.unwrap(module.chatbots_inputs)("dialog-youcom"))
+    assert res["code"] == 0
+    assert res["data"]["has_web_search_provider"] is True
+
 
 @pytest.mark.p2
 def test_agentbot_routes_auth_stream_nonstream_unit(monkeypatch):
@@ -1939,7 +1982,7 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
     assert retrieval_capture["question"] == "translated-q-translated"
     assert retrieval_capture["similarity_threshold"] == 0.42
     assert retrieval_capture["vector_similarity_weight"] == 0.8
-    assert retrieval_capture["top"] == 7
+    assert retrieval_capture["knn_top_k"] == 7
     assert retrieval_capture["local_doc_ids"] == ["doc-filtered"]
     assert retrieval_capture["rank_feature"] == ["label-1"]
     assert retrieval_capture["rerank_mdl"] is not None
@@ -2263,7 +2306,10 @@ def _load_chat_api_module(monkeypatch):
     tenant_model_svc = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_svc.get_tenant_default_model_by_type = lambda *_a, **_k: {}
     tenant_model_svc.get_model_config_from_provider_instance = lambda **_k: {}
+    tenant_model_svc.get_model_config_by_id = lambda **_k: {}
     tenant_model_svc.resolve_model_config = lambda **_k: {}
+    tenant_model_svc.resolve_model_id = lambda *_a, **_k: "model-id"
+    tenant_model_svc.get_composite_model_name_by_id = lambda *_a, **_k: "composite-model-name"
     tenant_model_svc.get_api_key = lambda **_k: "fake-api-key"
     tenant_model_svc.split_model_name = lambda model_name: (model_name, "", "")
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_svc)
@@ -2318,6 +2364,7 @@ def _load_chat_api_module(monkeypatch):
     )
     dialog_svc_mod.async_chat = lambda *_a, **_k: None
     dialog_svc_mod.gen_mindmap = lambda *_a, **_k: None
+    dialog_svc_mod.rag_agent = lambda *_a, **_k: None
     monkeypatch.setitem(sys.modules, "api.db.services.dialog_service", dialog_svc_mod)
 
     kb_svc_mod = ModuleType("api.db.services.knowledgebase_service")
@@ -2331,6 +2378,7 @@ def _load_chat_api_module(monkeypatch):
 
     llm_svc_mod = ModuleType("api.db.services.llm_service")
     llm_svc_mod.LLMBundle = _FakeLLMBundle
+    llm_svc_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_svc_mod)
 
     search_svc_mod = ModuleType("api.db.services.search_service")

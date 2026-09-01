@@ -93,7 +93,7 @@ export function ExpandableSearchInput({
           size="icon"
           type="button"
           onClick={handleToggle}
-          aria-label={t('chunk.search', 'Search')}
+          aria-label={t('common.search')}
         >
           <Search className="h-5 w-5" />
         </Button>

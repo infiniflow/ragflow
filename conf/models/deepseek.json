@@ -27,6 +27,22 @@
       }
     },
     {
+      "name": "deepseek-v4-flash-vision-exp",
+      "content_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
       "name": "deepseek-v4-pro",
       "content_length": 1048576,
       "max_output": 393216,

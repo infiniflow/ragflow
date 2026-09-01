@@ -157,11 +157,31 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		deps.TenantID = tenantID
 		deps.DatasetID = datasetID
 
+		// Per-spec Inputs copy: each spec must get its own VariantSpecific map,
+		// otherwise specIn.VariantSpecific below would mutate the shared map and
+		// let a later template inherit the previous template's parser_config
+		// (a template with an empty config would then run with the wrong parser
+		// behavior). Copy the map (and preserve an empty map when nil).
 		specIn := in
-		if specIn.VariantSpecific == nil {
-			specIn.VariantSpecific = map[string]any{}
+		specIn.VariantSpecific = make(map[string]any, len(in.VariantSpecific)+1)
+		for k, v := range in.VariantSpecific {
+			specIn.VariantSpecific[k] = v
 		}
-		specIn.VariantSpecific["config"] = spec.Config
+		// The template config (flat: kind/entity/relation/plan/…) is delivered to
+		// the structure and wiki variants under the "parser_config" key — the SAME
+		// key those variants read (structure.Run / wikiPipeline.mapBatch do
+		// VariantSpecific["parser_config"]). Storing it as "config" left the
+		// variants with a nil config, so InferType saw no "kind" and fell back to
+		// "list" (breaking timeline: its compile_kwd became "list" instead of
+		// "timeline", so dropIsolatedTimelineEntities never ran and the timeline
+		// rendered every entity isolated).
+		//
+		// Only overwrite when the template actually carries a config: an empty
+		// template config (e.g. a resolver stub) must not clobber a parser_config
+		// the caller already supplied on the inputs.
+		if len(spec.Config) > 0 {
+			specIn.VariantSpecific["parser_config"] = spec.Config
+		}
 
 		var o common.Outputs
 		switch variant {
@@ -190,6 +210,9 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 			o.Products[i].Variant = variant
 		}
 		out.Products = append(out.Products, o.Products...)
+		out.AffectedPageSlugs = append(out.AffectedPageSlugs, o.AffectedPageSlugs...)
+		out.RemovedPageSlugs = append(out.RemovedPageSlugs, o.RemovedPageSlugs...)
+		out.WikiActiveStates = append(out.WikiActiveStates, o.WikiActiveStates...)
 	}
 
 	// Convert the compiled products into chunk-aligned docs (matching
@@ -226,7 +249,52 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		zap.Int("wiki_relation", relationCount),
 		zap.Int("chunk_docs", len(compiled)),
 	)
-	return mergeChunks(inputs, compiled), nil
+	result := mergeChunks(inputs, compiled)
+	if len(out.AffectedPageSlugs) > 0 {
+		result["wiki_affected_slugs"] = uniqueSorted(out.AffectedPageSlugs)
+	}
+	if len(out.RemovedPageSlugs) > 0 {
+		result["wiki_removed_slugs"] = uniqueSorted(out.RemovedPageSlugs)
+	}
+	if len(out.WikiActiveStates) > 0 {
+		result["wiki_active_map_states"] = wikiActiveStateValues(out.WikiActiveStates)
+	}
+	return result, nil
+}
+
+// wikiActiveStateValues keeps the component output checkpoint-safe. Pipeline
+// node outputs cross an eino serialization boundary, so package-specific Go
+// structs must not escape in map[string]any values.
+func wikiActiveStateValues(states []common.WikiMapActiveState) []map[string]any {
+	values := make([]map[string]any, 0, len(states))
+	for _, state := range states {
+		values = append(values, map[string]any{
+			"key":         state.Key,
+			"tenant_id":   state.TenantID,
+			"dataset_id":  state.DatasetID,
+			"document_id": state.DocumentID,
+			"payload":     string(state.Payload),
+		})
+	}
+	return values
+}
+
+func uniqueSorted(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // resolveTemplateSpecs resolves the configured compilation template spec(s) to
@@ -449,44 +517,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 	switch p.Variant {
 	case common.VariantStructure:
 		// knowledge_graph_kwd: "entity" | "relation" | "graph".
-		if kind != "" {
-			if err := doc.SetExtraValue("knowledge_graph_kwd", kind); err != nil {
-				return err
-			}
-		}
-		// Relations carry from/to entity endpoints (from_entity_kwd / to_entity_kwd).
-		if kind == "relation" {
-			if v := metaString(p.Meta, "from"); v != "" {
-				if err := doc.SetExtraValue("from_entity_kwd", v); err != nil {
-					return err
-				}
-			}
-			if v := metaString(p.Meta, "to"); v != "" {
-				if err := doc.SetExtraValue("to_entity_kwd", v); err != nil {
-					return err
-				}
-			}
-		}
-		// Entities carry their canonical name on name_kwd (lowercased, mirroring
-		// Python's _struct_to_doc_storage_doc; the structure-graph endpoints
-		// filter/sort on it) plus entity_type_kwd and mention_count_int.
-		if kind == "entity" {
-			if v := metaString(p.Meta, "name"); v != "" {
-				if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
-					return err
-				}
-			}
-			if v := metaString(p.Meta, "entity_type"); v != "" {
-				if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
-					return err
-				}
-			}
-		}
-		if v, ok := metaInt(p.Meta, "mention_count"); ok {
-			if err := doc.SetExtraValue("mention_count_int", v); err != nil {
-				return err
-			}
-		}
+		return applyStructureGraphColumns(doc, p, kind)
 
 	case common.VariantWiki:
 		// One artifact_page row per wiki page; section rows reuse the same
@@ -568,46 +599,96 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 		}
 
 	case common.VariantTree:
-		// raptor_kwd tags summary/root nodes; raptor_layer_int records tree depth.
-		if kind != "" {
-			if err := doc.SetExtraValue("raptor_kwd", kind); err != nil {
-				return err
+		switch kind {
+		case "entity", "relation", "graph":
+			// The tree is also projected onto the structure-graph shape (Python
+			// raptor_tree_to_graph + _struct_upsert_tree_graph_rows): entity /
+			// relation rows carry knowledge_graph_kwd and the compact graph blob
+			// (kind "graph") is the /structure/graph discovery row. This is the
+			// same storage contract as the structure variant, so both share
+			// applyStructureGraphColumns.
+			return applyStructureGraphColumns(doc, p, kind)
+		default:
+			// RAPTOR summary/root rows: raptor_kwd tags the node kind;
+			// raptor_layer_int records tree depth.
+			if kind != "" {
+				if err := doc.SetExtraValue("raptor_kwd", kind); err != nil {
+					return err
+				}
 			}
-		}
-		if v, ok := metaInt(p.Meta, "level"); ok {
-			if err := doc.SetExtraValue("raptor_layer_int", v); err != nil {
-				return err
+			if v, ok := metaInt(p.Meta, "level"); ok {
+				if err := doc.SetExtraValue("raptor_layer_int", v); err != nil {
+					return err
+				}
+				if err := doc.SetExtraValue("depth_int", v); err != nil {
+					return err
+				}
 			}
-			if err := doc.SetExtraValue("depth_int", v); err != nil {
-				return err
-			}
-		}
-		if v := metaStringSlice(p.Meta, "children"); len(v) > 0 {
-			if err := doc.SetExtraValue("children_kwd", v); err != nil {
-				return err
+			if v := metaStringSlice(p.Meta, "children"); len(v) > 0 {
+				if err := doc.SetExtraValue("children_kwd", v); err != nil {
+					return err
+				}
 			}
 		}
 
 	case common.VariantMindmap:
-		// Tree nodes: depth_int records the outline level.
-		if v, ok := metaInt(p.Meta, "level"); ok {
-			if err := doc.SetExtraValue("depth_int", v); err != nil {
+		// Mindmap now emits entity/relation rows (plan §1.2) so it participates in
+		// dataset-level merge exactly like graph/timeline: each node is an entity,
+		// each parent→child edge is a relation. Reuse the shared structure-graph
+		// column contract (knowledge_graph_kwd + from/to_entity_kwd + name_kwd +
+		// entity_type_kwd + mention_count_int). The relation type lives in the
+		// content_with_weight payload ({"from","to","type"}), matching Python —
+		// NOT a dedicated relation_type_kwd column.
+		return applyStructureGraphColumns(doc, p, kind)
+	}
+
+	return nil
+}
+
+// applyStructureGraphColumns emits the structure-graph row columns shared by the
+// structure and tree variants (Python _struct_to_doc_storage_doc contract):
+//   - knowledge_graph_kwd: "entity" | "relation" | "graph"
+//   - relations: from_entity_kwd / to_entity_kwd
+//   - entities: name_kwd (lowercased) / entity_type_kwd
+//   - mention_count_int
+//
+// Keeping this in one helper prevents the two variants' storage contracts from
+// diverging (review Major).
+func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind string) error {
+	if kind != "" {
+		if err := doc.SetExtraValue("knowledge_graph_kwd", kind); err != nil {
+			return err
+		}
+	}
+	if kind == "relation" {
+		if v := metaString(p.Meta, "from"); v != "" {
+			if err := doc.SetExtraValue("from_entity_kwd", v); err != nil {
 				return err
 			}
 		}
-		if v := metaString(p.Meta, "name"); v != "" {
-			if err := doc.SetExtraValue("title_kwd", v); err != nil {
-				return err
-			}
-			setTitleTokens(doc, v)
-		}
-		if v := metaStringSlice(p.Meta, "children"); len(v) > 0 {
-			if err := doc.SetExtraValue("children_kwd", v); err != nil {
+		if v := metaString(p.Meta, "to"); v != "" {
+			if err := doc.SetExtraValue("to_entity_kwd", v); err != nil {
 				return err
 			}
 		}
 	}
-
+	if kind == "entity" {
+		if v := metaString(p.Meta, "name"); v != "" {
+			if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
+				return err
+			}
+		}
+		if v := metaString(p.Meta, "entity_type"); v != "" {
+			if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
+				return err
+			}
+		}
+	}
+	if v, ok := metaInt(p.Meta, "mention_count"); ok {
+		if err := doc.SetExtraValue("mention_count_int", v); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

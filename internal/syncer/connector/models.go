@@ -16,7 +16,15 @@
 
 package connector
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrSyncResumeInvalid reports that a saved sync resume anchor no longer exists
+// in the current source listing. The runner treats this as invalid progress and
+// restarts the current task window instead of silently guessing a new offset.
+var ErrSyncResumeInvalid = errors.New("sync resume checkpoint is no longer valid")
 
 // SourceDocument is the normalized document emitted by datasource connectors.
 type SourceDocument struct {
@@ -37,19 +45,49 @@ type FetchReference struct {
 	SizeHint int64
 }
 
+// SyncCheckpoint is a connector-owned resume point.
+type SyncCheckpoint struct {
+	Cursor    string     `json:"cursor,omitempty"`
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+	SourceID  string     `json:"source_id,omitempty"`
+}
+
+// SyncCheckpointState is the running checkpoint for one sync task.
+type SyncCheckpointState struct {
+	Version       int             `json:"version"`
+	TaskID        string          `json:"task_id"`
+	ConnectorID   string          `json:"connector_id"`
+	KBID          string          `json:"kb_id"`
+	WindowStart   *time.Time      `json:"window_start,omitempty"`
+	WindowEnd     time.Time       `json:"window_end"`
+	NextCommitSeq int64           `json:"next_commit_seq"`
+	Checkpoint    *SyncCheckpoint `json:"checkpoint,omitempty"`
+	RestartCount  int             `json:"restart_count,omitempty"`
+	Added         int64           `json:"added,omitempty"`
+	Updated       int64           `json:"updated,omitempty"`
+	Skipped       int64           `json:"skipped,omitempty"`
+	ErrorCount    int64           `json:"error_count,omitempty"`
+	ErrorMsg      string          `json:"error_msg,omitempty"`
+}
+
 // SyncRequest describes one fixed sync window.
 type SyncRequest struct {
-	TaskID        string
-	ConnectorID   string
-	KBID          string
+	TaskID       string
+	ConnectorID  string
+	KBID         string
+	SourceType   string
+	Fingerprints map[string]string
+
 	FromBeginning bool
 	WindowStart   *time.Time
 	WindowEnd     time.Time
+	Resume        *SyncCheckpoint
 }
 
 // SyncBatch contains one serially processed batch.
 type SyncBatch struct {
-	Documents []SourceDocument
+	Documents  []SourceDocument
+	Checkpoint *SyncCheckpoint
 }
 
 // PruneRequest describes one complete prune snapshot request.

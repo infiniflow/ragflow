@@ -91,6 +91,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             bxs = _get_ocr()(np.array(img))
             txt = "\n".join([t[0] for _, t in bxs if t[0]])
 
+        txt = txt.strip()
         callback(0.4, "Finish OCR: (%s ...)" % txt[:12])
         if (eng and len(txt.split()) > 32) or len(txt) > 32:
             tokenize(doc, txt, eng, language=lang)
@@ -110,6 +111,11 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             tokenize(doc, txt, eng, language=lang)
             return attach_media_context([doc], 0, image_ctx)
         except Exception as e:
+            if txt:
+                logging.warning(f"CV LLM unavailable, indexing OCR text instead: {e}")
+                callback(msg=f"[WARN] CV LLM unavailable ({e}), indexing OCR text only.")
+                tokenize(doc, txt, eng, language=lang)
+                return attach_media_context([doc], 0, image_ctx)
             callback(prog=-1, msg=str(e))
 
     return []

@@ -324,7 +324,7 @@ func TestCometAPIBaseURLNormalizesSlashes(t *testing.T) {
 			path: "/v1/embeddings",
 			run: func(m *CometAPIModel, apiConfig *APIConfig) error {
 				model := "text-embedding-3-small"
-				_, err := m.Embed(ctx, &model, []string{"x"}, apiConfig, nil, nil)
+				_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, apiConfig, nil, nil)
 				return err
 			},
 		},
@@ -593,7 +593,7 @@ func TestCometAPIRerankReturnsNoSuchMethod(t *testing.T) {
 	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
 	q := "gpt-5"
-	_, err := m.Rerank(ctx, &q, "what is rag?", []string{"a", "b"}, &APIConfig{}, &RerankConfig{TopN: 2}, nil)
+	_, err := m.Rerank(ctx, &q, RerankRequest{Query: "what is rag?", Documents: []string{"a", "b"}}, &APIConfig{}, &RerankConfig{TopN: 2}, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected 'no such method', got %v", err)
 	}
@@ -626,7 +626,7 @@ func TestCometAPIEmbedHappyPath(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	vecs, err := m.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 256}, nil)
+	vecs, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 256}, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -657,7 +657,7 @@ func TestCometAPIEmbedReordersByIndex(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	vecs, err := m.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -682,7 +682,7 @@ func TestCometAPIEmbedEmptyInputShortCircuits(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	vecs, err := m.Embed(ctx, &model, []string{}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed([]): %v", err)
 	}
@@ -696,7 +696,7 @@ func TestCometAPIEmbedRequiresAPIKey(t *testing.T) {
 	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
 	model := "text-embedding-3-small"
-	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
@@ -707,12 +707,12 @@ func TestCometAPIEmbedRequiresModelName(t *testing.T) {
 	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.Embed(ctx, nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, nil, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
 	empty := ""
-	_, err = m.Embed(ctx, &empty, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err = m.Embed(ctx, &empty, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("empty model: expected model-name error, got %v", err)
 	}
@@ -736,7 +736,7 @@ func TestCometAPIEmbedRejectsDuplicateIndex(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	_, err := m.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -757,7 +757,7 @@ func TestCometAPIEmbedRejectsOutOfRangeIndex(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	_, err := m.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -779,7 +779,7 @@ func TestCometAPIEmbedRejectsMissingSlot(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	_, err := m.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index 1") {
 		t.Errorf("expected missing-embedding error for slot 1, got %v", err)
 	}
@@ -797,7 +797,7 @@ func TestCometAPIEmbedRejectsHTTPError(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "status 401") {
 		t.Errorf("expected embeddings API error for HTTP 401, got %v", err)
 	}

@@ -34,15 +34,9 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-func requireTokenizerPool(t *testing.T) {
+func requireTokenizerPool(t testing.TB) {
 	t.Helper()
-	if err := tokenizer.Init(&tokenizer.PoolConfig{
-		DictPath:       "/usr/share/infinity/resource",
-		MinSize:        1,
-		MaxSize:        2,
-		IdleTimeout:    30 * time.Second,
-		AcquireTimeout: 5 * time.Second,
-	}); err != nil {
+	if err := tokenizer.Init(nil); err != nil {
 		t.Skipf("tokenizer pool unavailable: %v", err)
 	}
 }

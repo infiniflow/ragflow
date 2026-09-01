@@ -14,8 +14,8 @@ import (
 
 // TestBatchCompareWithPython compares Go output against Python reference
 // across 4 dimensions (text, tables, DLA, TSR raw).  It is read-only —
-// no generation, no CGO/DeepDoc dependency.  Use BATCH_SKIP_OCR=1 to
-// compare the noocr variant; PY_OCR_SUFFIX to override the Python variant.
+// no generation, no CGO/DeepDoc dependency.  Use PY_OCR_SUFFIX to override
+// the Python variant.
 func TestBatchCompareWithPython(t *testing.T) {
 	level := slog.LevelInfo
 	if common.GetEnv(common.EnvBatchLogLevel) == "debug" {
@@ -27,9 +27,6 @@ func TestBatchCompareWithPython(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
 	goVariant := "ocr"
-	if common.GetEnv(common.EnvBatchSkipOCR) == "1" {
-		goVariant = "noocr"
-	}
 	pyVariant := common.GetEnv(common.EnvPYOCRSuffix)
 	if pyVariant == "" {
 		pyVariant = goVariant

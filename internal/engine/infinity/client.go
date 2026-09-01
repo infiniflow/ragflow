@@ -201,12 +201,14 @@ func (c *infinityClient) WaitForHealthy(ctx context.Context, timeout time.Durati
 
 		conn, release, err := c.checkoutConn(ctx, "WaitForHealthy")
 		if err != nil {
+			common.Warn("Failed to get Infinity connection", zap.Error(err))
 			time.Sleep(5 * time.Second)
 			continue
 		}
 		res, err := conn.ShowCurrentNode()
 		release()
 		if err != nil {
+			common.Warn("Failed to check Infinity health", zap.Error(err))
 			time.Sleep(5 * time.Second)
 			continue
 		}

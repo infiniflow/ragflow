@@ -261,14 +261,14 @@ type huaweiCloudRerankResponse struct {
 	} `json:"usage"`
 }
 
-func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -285,7 +285,7 @@ func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, texts [
 
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
-		"input":           texts,
+		"input":           request.Texts,
 		"encoding_format": "float",
 	}
 
@@ -322,18 +322,18 @@ func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, texts [
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-	if len(parsed.Data) != len(texts) {
-		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(parsed.Data))
+	if len(parsed.Data) != len(request.Texts) {
+		return nil, fmt.Errorf("expected %d embeddings, got %d", len(request.Texts), len(parsed.Data))
 	}
 
-	embeddings := make([]EmbeddingData, len(texts))
-	seen := make([]bool, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	seen := make([]bool, len(request.Texts))
 	for _, item := range parsed.Data {
 		if item.Index == nil {
 			return nil, fmt.Errorf("missing index field in embedding item")
 		}
 		idx := *item.Index
-		if idx < 0 || idx >= len(texts) {
+		if idx < 0 || idx >= len(request.Texts) {
 			return nil, fmt.Errorf("embedding index %d out of range", idx)
 		}
 		if seen[idx] {
@@ -362,13 +362,17 @@ func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, texts [
 	return embeddings, nil
 }
 
-func (h *HuaweiCloudModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (h *HuaweiCloudModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
+
+	documents := request.Documents
+	query := request.Query
+
 	if query == "" {
 		return nil, fmt.Errorf("query is required")
 	}

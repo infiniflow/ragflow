@@ -177,8 +177,23 @@ func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name stri
 
 // nodeFromRow converts an engine row into a NavNode.
 func (s *NavService) nodeFromRow(row map[string]interface{}, fallbackType string) nav.NavNode {
+	name := firstStringValue(row["title_kwd"])
+	// Prefer an explicit readable "name" column (Python rows carry one); fall
+	// back to title_kwd.
+	if n := firstStringValue(row["name"]); n != "" {
+		name = n
+	}
+	// A raw id (doc_id or "cluster_<hash>") is not a human-readable name; fall
+	// back to a title derived from the payload description. Cluster names are the
+	// child-lookup key (parent_kwd references them verbatim), so they must stay
+	// intact; only non-cluster (leaf) rows get the readable fallback, otherwise
+	// GET /navigation/{cluster}/children would no longer match (review Major).
+	isCluster := firstStringValue(row["type_kwd"]) == "nav_cluster"
+	if !isCluster && graphIsRawID(name) {
+		name = ""
+	}
 	node := nav.NavNode{
-		Name:     firstStringValue(row["title_kwd"]),
+		Name:     name,
 		DocCount: intValue(row["doc_count_int"]),
 		Type:     fallbackType,
 		DocID:    firstStringValue(row["doc_id"]),
@@ -196,6 +211,13 @@ func (s *NavService) nodeFromRow(row map[string]interface{}, fallbackType string
 			if d, ok := m["description"].(string); ok {
 				node.Description = d
 			}
+			if node.Name == "" {
+				if t, ok := m["title"].(string); ok && strings.TrimSpace(t) != "" {
+					node.Name = cleanTitle(t)
+				} else if d, ok := m["description"].(string); ok && strings.TrimSpace(d) != "" {
+					node.Name = cleanTitle(fallbackTitle(d))
+				}
+			}
 		}
 	}
 	node.HasChildren = node.Type == "cluster"
@@ -203,6 +225,31 @@ func (s *NavService) nodeFromRow(row map[string]interface{}, fallbackType string
 		node.DocCount = 1
 	}
 	return node
+}
+
+// graphIsRawID reports whether a name is a meaningless internal id (a doc id or
+// a "cluster_<hex>" key) rather than a human-readable title.
+func graphIsRawID(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return true
+	}
+	if strings.HasPrefix(name, "cluster_") && len(name) == len("cluster_")+8 {
+		return true
+	}
+	if len(name) == 32 && isHexString(name) {
+		return true
+	}
+	return false
+}
+
+func isHexString(s string) bool {
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 // Search runs query KNN over nav rows and returns routed doc ids.
@@ -343,8 +390,11 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"compile_kwd":   navCompileKwd,
 			"available_int": 0,
 			"type_kwd":      "nav_doc",
-			"title_kwd":     in.DocID,
-			"parent_kwd":    parent,
+			// The nav_doc's display name is a readable title derived from the summary
+			// (Python _clean_title/_fallback_title) — NOT the raw doc id, which is
+			// meaningless in the UI. The doc_id is still stored for lookups.
+			"title_kwd":  cleanTitle(fallbackTitle(in.Summary)),
+			"parent_kwd": parent,
 			// The nav_doc sits one level below its (possibly nested) parent
 			// cluster, so its depth is parentDepth+1 — not a hard-coded 1.
 			"depth_int":           bestDepth + 1,
@@ -376,6 +426,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	}
 	_, err = de.InsertChunks(ctx, []map[string]interface{}{{
 		"id":                  navClusterID(in.TenantID, in.KbID, name),
+		"doc_id":              in.KbID, // cluster rows carry the kb as doc_id (Python _build_nav_cluster_row), so ES InsertChunks does not skip them
 		"compile_kwd":         navCompileKwd,
 		"available_int":       0,
 		"type_kwd":            "nav_cluster",
@@ -385,6 +436,27 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"doc_count_int":       1,
 		"doc_ids_kwd":         []string{in.DocID},
 		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": summary}),
+		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
+	}}, idx, in.KbID)
+	if err != nil {
+		return err
+	}
+	// Always emit a nav_doc leaf under the (new) cluster, mirroring Python
+	// upsert_dataset_nav_doc (the merge branch does the same at its parent). A
+	// new root cluster that only folds the doc into doc_ids_kwd would leave the
+	// nav tree with a single cluster and no nav_doc child, so /children returns
+	// empty. The nav_doc carries a readable title + parent_kwd = the cluster name.
+	_, err = de.InsertChunks(ctx, []map[string]interface{}{{
+		"id":                  navDocID(in.TenantID, in.KbID, in.DocID),
+		"compile_kwd":         navCompileKwd,
+		"available_int":       0,
+		"type_kwd":            "nav_doc",
+		"title_kwd":           cleanTitle(fallbackTitle(in.Summary)),
+		"parent_kwd":          name,
+		"depth_int":           depth + 1,
+		"doc_id":              in.DocID,
+		"doc_count_int":       1,
+		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
 	}}, idx, in.KbID)
 	return err
@@ -775,16 +847,54 @@ func (s *NavService) llmMergeDescription(ctx context.Context, tenantID string, t
 	return strings.Join(texts, "\n")
 }
 
+// cleanTitle normalizes a raw title/summary into a one-line, length-capped
+// display name (mirroring Python dataset_nav._clean_title).
+func cleanTitle(title string) string {
+	return truncateString(strings.Join(strings.Fields(title), " "), 48)
+}
+
+// fallbackTitle derives a short readable title from a summary by taking the
+// first non-empty line and stripping Markdown emphasis/heading markers. The
+// tree-root summaries carry a one-line Markdown title ("**Title**" or
+// "## Title") on the first line, so this yields a clean, URL-friendly label —
+// far more readable than taking the first whitespace words of the body.
+func fallbackTitle(summary string) string {
+	line := summary
+	if idx := strings.IndexAny(line, "\n\r"); idx >= 0 {
+		line = line[:idx]
+	}
+	line = strings.TrimSpace(line)
+	// Strip Markdown emphasis and heading markers.
+	line = strings.Trim(line, "*# \t")
+	if line == "" {
+		return "Cluster"
+	}
+	return line
+}
+
+// readableClusterName returns a readable yet unique nav-cluster key of the form
+// "<title> <8-hex>" (mirroring Python dataset_nav._readable_cluster_name): the
+// title keeps the node name human-readable, the short hash of the seed keeps the
+// per-KB uniqueness that the tree keying relies on.
+func readableClusterName(title, seed string) string {
+	t := cleanTitle(title)
+	if t == "" {
+		t = "Cluster"
+	}
+	return t + " " + shortHash8(seed)
+}
+
 // llmCreateSummary builds a short cluster name + summary for a source text via
 // the optional LLM (mirroring Python _llm_create_summary); without an LLM it
-// falls back to a deterministic name from a content hash and the text itself.
+// falls back to a readable name derived from the summary's first words plus a
+// short hash, so nav clusters are human-readable instead of "cluster_<hash>".
 func (s *NavService) llmCreateSummary(ctx context.Context, tenantID, text string) (name, summary string) {
 	if s.llm != nil {
 		if n, sm, err := s.llm.CreateSummary(ctx, tenantID, text); err == nil && n != "" {
 			return n, sm
 		}
 	}
-	return "cluster_" + contentHash8(text), text
+	return readableClusterName(fallbackTitle(text), text), text
 }
 
 // appendDocToCluster appends a doc id to a cluster's doc_ids_kwd and bumps its
@@ -1013,6 +1123,20 @@ func payloadJSONNav(v map[string]interface{}) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+// truncateString caps s to n runes (not bytes).
+func truncateString(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n])
+}
+
+// shortHash8 is a stable 8-char hash suffix for readable nav names.
+func shortHash8(s string) string {
+	return contentHash8(s)
 }
 
 // contentHash8 is a stable 8-char hash.

@@ -243,8 +243,6 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 
 func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T) {
 	RequireTokenizerPool(t)
-	t.Setenv("DEEPDOC_URL", "")
-	t.Setenv("OSSDEEPDOC_URL", "")
 
 	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_one.json")
 	templateBytes, err := os.ReadFile(templatePath)
@@ -424,9 +422,9 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
-	chunkerState, ok := state["TitleChunker:NineInsectsFind"]
+	chunkerState, ok := state["ManualChunker:NineInsectsFind"]
 	if !ok {
-		t.Fatal("missing TitleChunker:NineInsectsFind state")
+		t.Fatal("missing ManualChunker:NineInsectsFind state")
 	}
 	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
 	if !ok || len(chunkerChunks) != len(wantChunkTexts) {
@@ -721,9 +719,6 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			}
 			if templateUsesComponent(t, templateBytes, "QAChunker") {
 				t.Skip("template uses QAChunker which requires Q&A-structured content; covered separately")
-			}
-			if templateUsesComponent(t, templateBytes, "TagChunker") {
-				t.Skip("template uses TagChunker which requires tag-structured content and parser setups not available for generic .md input; covered separately")
 			}
 			if templateUsesComponent(t, templateBytes, "Compiler") {
 				t.Skip("template uses Compiler which requires LLM/embedder/ES wiring not available in the headless smoke run; covered by the knowledge_compiler component E2E tests")

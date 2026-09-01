@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -907,5 +908,27 @@ func TestRunPlain_WithTracker_Error(t *testing.T) {
 	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 	if err == nil {
 		t.Fatal("expected stage error, got nil")
+	}
+}
+
+func TestValidatePipeline_DisallowMultipleExtractors(t *testing.T) {
+	dsl := []byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["Extractor:One"]},
+				"Extractor:One": {"obj": {"component_name": "Extractor", "params": {}}, "upstream": ["begin"], "downstream": ["Extractor:Two"]},
+				"Extractor:Two": {"obj": {"component_name": "Extractor", "params": {}}, "upstream": ["Extractor:One"]}
+			},
+			"path": ["begin", "Extractor:One", "Extractor:Two"],
+			"graph": {"nodes": []}
+		}
+	}`)
+
+	_, err := NewPipelineFromDSL(dsl, "test-task-dup-ext")
+	if err == nil {
+		t.Fatal("expected validation error for multiple Extractor components, got nil")
+	}
+	if !strings.Contains(err.Error(), "at most 1 Extractor component is allowed") {
+		t.Errorf("expected at most 1 Extractor error message, got: %v", err)
 	}
 }

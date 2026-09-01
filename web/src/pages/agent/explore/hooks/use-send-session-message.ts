@@ -63,6 +63,9 @@ export const useSendSessionMessage = () => {
     ...chatLogic
   } = useSendAgentMessage({
     beginParams,
+    // Gate streamed output so a stream started in another session never
+    // renders into the session the user switched to.
+    activeSessionId: sessionId ?? '',
   });
 
   const handleParametersOk = useCallback(

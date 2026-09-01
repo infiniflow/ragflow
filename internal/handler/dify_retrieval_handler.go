@@ -268,7 +268,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		DocIDs:              docIDs,
 		Page:                1,
 		PageSize:            pageSize,
-		Top:                 topK,
+		KNNTopK:             topK,
 		SimilarityThreshold: scoreThreshold,
 		EmbeddingModel:      embModel,
 	}

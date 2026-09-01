@@ -53,7 +53,7 @@ function buildTreeDataItems(
   relationTypes: string[],
   showEntityType = false,
 ): TreeDataItem[] {
-  const normalized = entities
+  const normalized = (entities ?? [])
     .map(normalizeEntity)
     .filter((entity) => entity.id);
   const map = new Map<string, TreeDataItem>(
@@ -69,7 +69,7 @@ function buildTreeDataItems(
   );
   const childIds = new Set<string>();
 
-  for (const relation of relations) {
+  for (const relation of relations ?? []) {
     if (!relationTypes.includes(relation.type ?? '')) continue;
     // Self-referencing relation (same entity as its own child) creates
     // an infinite recursion in the tree renderer.  This is a backend
@@ -99,7 +99,7 @@ function buildUniqueTreeDataItems(
 ): TreeDataItem[] {
   const normalized = [
     ...new Map(
-      entities
+      (entities ?? [])
         .map(normalizeEntity)
         .filter((entity) => entity.id)
         .map((entity) => [entity.id, entity]),
@@ -119,7 +119,7 @@ function buildUniqueTreeDataItems(
   const childIds = new Set<string>();
   const parentMap = new Map<string, string>();
 
-  for (const relation of relations) {
+  for (const relation of relations ?? []) {
     if (!relationTypes.includes(relation.type ?? '')) continue;
 
     const parent = map.get(relation.from);
@@ -172,7 +172,7 @@ export function adaptTreeToTreeData(
 export function adaptKnowledgeGraphToForceGraph(
   template: IStructureGraphTemplate,
 ): IArtifactGraph {
-  const entities: IArtifactGraphEntity[] = template.entities.map((entity) => {
+  const entities: IArtifactGraphEntity[] = (template.entities ?? []).map((entity) => {
     const normalized = normalizeEntity(entity);
     return {
       slug: normalized.id,
@@ -189,7 +189,7 @@ export function adaptKnowledgeGraphToForceGraph(
 
   return {
     entities,
-    relations: template.relations
+    relations: (template.relations ?? [])
       .filter(
         (relation) =>
           // Only keep relations whose source and target entities both exist in the graph.
@@ -284,7 +284,7 @@ export function adaptTimelineToX6Data(template: IStructureGraphTemplate): {
     };
   });
 
-  const edges = template.relations
+  const edges = (template.relations ?? [])
     .filter(
       (relation) => entityIds.has(relation.from) && entityIds.has(relation.to),
     )

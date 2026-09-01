@@ -1,5 +1,5 @@
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
-import { isEmpty } from 'lodash';
+import { isEmpty, omit } from 'lodash';
 import { useMemo } from 'react';
 import { initialRetrievalValues } from '../../constant';
 
@@ -18,7 +18,7 @@ export function useValues(node?: RAGFlowNodeType) {
       return defaultValues;
     }
 
-    return formData;
+    return omit(formData, 'top_k');
   }, [defaultValues, node?.data?.form]);
 
   return values;

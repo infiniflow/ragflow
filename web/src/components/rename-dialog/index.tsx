@@ -34,7 +34,12 @@ export function RenameDialog({
   onOk,
   loading,
   title,
-}: IModalProps<any> & { initialName?: string; title?: ReactNode }) {
+  forbidSlash,
+}: IModalProps<any> & {
+  initialName?: string;
+  title?: ReactNode;
+  forbidSlash?: boolean;
+}) {
   const { t } = useTranslation();
 
   return (
@@ -47,6 +52,7 @@ export function RenameDialog({
           initialName={initialName}
           hideModal={hideModal}
           onOk={onOk}
+          forbidSlash={forbidSlash}
         ></RenameForm>
         <DialogFooter>
           <ButtonLoading

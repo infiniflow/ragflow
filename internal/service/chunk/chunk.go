@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/service"
 	"strings"
 	"sync"
 	"time"
@@ -42,7 +43,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
-	"ragflow/internal/service"
+	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/service/document"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
@@ -192,11 +193,12 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		}
 	}
 
-	// Check if all kbs have the same embedding model
+	// Check if all kbs resolve to the same base embedding model
 	if len(kbRecords) > 1 {
-		firstEmbeddingKey := knowledgebaseEmbeddingKey(kbRecords[0], tenantIDs[0])
+		embdNameCache := make(map[string]string)
+		firstEmbeddingKey := knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[0], tenantIDs[0], embdNameCache)
 		for i := 1; i < len(kbRecords); i++ {
-			if knowledgebaseEmbeddingKey(kbRecords[i], tenantIDs[i]) != firstEmbeddingKey {
+			if knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[i], tenantIDs[i], embdNameCache) != firstEmbeddingKey {
 				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
 			}
 		}
@@ -206,6 +208,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	var chatID string
 	var chatModelForFilter *models.ChatModel
 	filter := req.Filter
+	rerankCandidatesCount := 64
+	if req.RerankCandidatesCount != nil {
+		rerankCandidatesCount = *req.RerankCandidatesCount
+	}
 
 	if req.SearchID != nil && *req.SearchID != "" {
 		// If search_id is set, get meta_data_filter and chat_id from search_config
@@ -213,6 +219,12 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		if err != nil {
 			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", *req.SearchID), zap.Error(err))
 		} else if searchConfig, ok := searchConfigMap(searchDetail["search_config"]); ok && searchConfig != nil {
+			if req.RerankCandidatesCount == nil || *req.RerankCandidatesCount == 0 {
+				rerankCandidatesCount = 100
+				if configuredRerankCandidatesCount, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
+					rerankCandidatesCount = configuredRerankCandidatesCount
+				}
+			}
 			if searchMetaFilter, ok := searchConfigMap(searchConfig["meta_data_filter"]); ok {
 				filter = searchMetaFilter
 			}
@@ -405,7 +417,8 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		DocIDs:                 docIDs,
 		Page:                   common.CoalesceInt(req.Page, 1),
 		PageSize:               common.CoalesceInt(req.Size, 30),
-		Top:                    req.TopK,
+		RerankCandidatesCount:  &rerankCandidatesCount,
+		KNNTopK:                req.TopK,
 		SimilarityThreshold:    req.SimilarityThreshold,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
 		RerankModel:            rerankModel,
@@ -444,14 +457,15 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	}, nil
 }
 
-func knowledgebaseEmbeddingKey(kb *entity.Knowledgebase, tenantID string) string {
-	if kb.TenantEmbdID != nil && *kb.TenantEmbdID != "" {
-		return fmt.Sprintf("tenant:%s", *kb.TenantEmbdID)
-	}
-	if kb.EmbdID == "" {
+// knowledgebaseEmbeddingKey groups datasets by their resolved base embedding
+// model name (e.g. "BAAI/bge-m3") so datasets pointing at the same model
+// through different provider instances or storage forms (tenant_model id vs
+// legacy composite name) retrieve together.
+func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, tenantID string, cache map[string]string) string {
+	if strings.TrimSpace(kb.EmbdID) == "" && (kb.TenantEmbdID == nil || strings.TrimSpace(*kb.TenantEmbdID) == "") {
 		return fmt.Sprintf("default:%s", tenantID)
 	}
-	return fmt.Sprintf("embd:%s", kb.EmbdID)
+	return "embd:" + dao.NewKnowledgebaseDAO().EmbeddingBaseName(ctx, db, kb, cache)
 }
 
 // hydrateChunkVectors replaces zero (placeholder) vectors in chunks with real
@@ -880,7 +894,8 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			"available_int",
 		},
 		Filter: map[string]interface{}{
-			"doc_id": req.DocID,
+			"doc_id":   req.DocID,
+			"must_not": map[string]interface{}{"exists": "compile_kwd"},
 		},
 	}
 
@@ -986,7 +1001,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		"process_duration": doc.ProcessDuration,
 		"content_hash":     doc.ContentHash,
 		"suffix":           doc.Suffix,
-		"run":              chunkDocRunText(doc.Run),
+		"run":              service.ChunkDocRunText(doc.Run),
 		"status":           doc.Status,
 		"create_time":      doc.CreateTime,
 		"create_date":      utility.FormatTimeToString(doc.CreateDate, timeFormat),
@@ -1058,6 +1073,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 			return err
 		}
 	}
+	s.markWikiDirty(ctx, targetTenantID, datasetID, documentID, chunkIDs)
 
 	return nil
 }
@@ -1198,6 +1214,9 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	if err != nil {
 		return fmt.Errorf("failed to update chunk: %w", err)
 	}
+	if req.Content != nil || req.Available != nil {
+		s.markWikiDirty(ctx, targetTenantID, req.DatasetID, req.DocumentID, []string{req.ChunkID})
+	}
 
 	return nil
 }
@@ -1270,6 +1289,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		if err = s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
 			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
 		}
+		s.markWikiDirty(ctx, targetTenantID, doc.KbID, req.DocID, req.ChunkIDs)
 	}
 
 	return deletedCount, nil
@@ -1382,7 +1402,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if len(questionKwd) > 0 {
 		embeddingText = strings.Join(questionKwd, "\n")
 	}
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, []string{docName, embeddingText}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{docName, embeddingText}}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("encode chunk embedding: %v", err)}
 	}
@@ -1405,6 +1425,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if err = s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("increment chunk stats: %v", err)}
 	}
+	s.markWikiDirty(ctx, kb.TenantID, req.DatasetID, req.DocumentID, []string{chunkID})
 
 	renamedChunk := map[string]interface{}{
 		"id":                 chunkID,
@@ -1425,6 +1446,15 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 
 	return &service.AddChunkResponse{Chunk: renamedChunk}, nil
+}
+
+func (s *ChunkService) markWikiDirty(ctx context.Context, tenantID, datasetID, documentID string, chunkIDs []string) {
+	markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	if err := knowledge_compile.MarkWikiDocumentDirty(markCtx, tenantID, datasetID, documentID, chunkIDs); err != nil {
+		common.Warn("chunk mutation: failed to schedule Wiki refresh",
+			zap.String("document_id", documentID), zap.Error(err))
+	}
 }
 
 type addChunkError struct {
@@ -1716,25 +1746,4 @@ func releaseChunkImageMergeLock(key string) {
 	if lock.refs == 0 {
 		delete(chunkImageMergeLocks.locks, key)
 	}
-}
-
-// chunkDocRunText maps the document run code to its text form, mirroring
-// Python's _map_doc run_mapping.
-func chunkDocRunText(run *string) interface{} {
-	if run == nil {
-		return nil
-	}
-	switch *run {
-	case "0":
-		return "UNSTART"
-	case "1":
-		return "RUNNING"
-	case "2":
-		return "CANCEL"
-	case "3":
-		return "DONE"
-	case "4":
-		return "FAIL"
-	}
-	return *run
 }

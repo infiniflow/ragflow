@@ -340,7 +340,7 @@ func TestAzureEmbedHappyPath(t *testing.T) {
 	embeddings, err := newAzureForTest(srv.URL).Embed(
 		ctx,
 		&modelName,
-		[]string{"hello"},
+		EmbedRequest{Texts: []string{"hello"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
 	)
 	if err != nil {

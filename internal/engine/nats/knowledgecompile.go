@@ -53,17 +53,18 @@ func (n *NatsEngine) InitKnowledgeCompileStream() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cfg := jetstream.StreamConfig{
+	stream, err := ensureStreamConfig(ctx, n.jetStream, jetstream.StreamConfig{
 		Name:      knowledgeCompileStreamName,
 		Subjects:  []string{knowledgeCompileSubjectPrefix},
 		Retention: jetstream.WorkQueuePolicy,
 		Storage:   jetstream.FileStorage,
 		MaxMsgs:   1024 * 1024,
 		MaxBytes:  1024 * 1024 * 64,
-	}
-	if _, err := n.jetStream.CreateStream(ctx, cfg); err != nil && !strings.Contains(err.Error(), "already exists") {
+	})
+	if err != nil {
 		return fmt.Errorf("knowledgecompile: create stream: %w", err)
 	}
+	n.knowledgeCompileStream = stream
 	return nil
 }
 

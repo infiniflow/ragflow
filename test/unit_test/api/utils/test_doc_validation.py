@@ -326,7 +326,7 @@ def test_validate_chunk_method_visual_not_supported():
     doc.name = "image.jpg"
 
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -337,7 +337,7 @@ def test_validate_chunk_method_ppt_not_supported():
     doc.name = "presentation.ppt"
 
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -348,7 +348,7 @@ def test_validate_chunk_method_pptx_not_supported():
     doc.name = "presentation.pptx"
 
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -359,7 +359,7 @@ def test_validate_chunk_method_pages_not_supported():
     doc.name = "document.pages"
 
     error_msg, error_code = validate_chunk_method(doc)
-    assert "Not supported yet!" in error_msg
+    assert "the automatically detected parser type cannot be changed" in error_msg
     assert error_code == RetCode.DATA_ERROR
 
 

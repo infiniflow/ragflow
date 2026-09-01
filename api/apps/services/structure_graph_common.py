@@ -47,6 +47,10 @@ GRAPH_TOP_ENTITIES = 256
 # Keyword search needs a small, relevant candidate set; the larger sampling
 # cap above is intended for rendering an entire large graph bucket.
 GRAPH_KEYWORD_CANDIDATES = 16
+# Semantic fallback is intentionally singular. KNN is only used after exact
+# name and BM25 lookup fail; returning several approximate tree nodes creates
+# unrelated sibling branches in an otherwise focused path response.
+GRAPH_KEYWORD_KNN_CANDIDATES = 1
 # Upper bound on the relation / neighbor-entity expansion so a hub node can't
 # blow up the response.
 GRAPH_EXPANSION_CAP = 4096
@@ -383,6 +387,7 @@ async def keyword_subgraph(
     ``knowledge_graph_kwd``).
     """
     from common.doc_store.doc_store_base import MatchDenseExpr, MatchTextExpr
+    from rag.advanced_rag.knowlege_compile._common import tokenize_for_search
 
     excluded_doc_ids = excluded_doc_ids or set()
 
@@ -408,17 +413,32 @@ async def keyword_subgraph(
         terms = [term for term in query.split() if term]
         return bool(terms) and all(term in name for term in terms)
 
-    # Entity names are identifiers in the graph. Prefer lexical matching so
-    # an exact title/entity name wins over a semantically similar row such as
-    # a navigation or summary record.
-    text_query = re.sub(r"[ :|\r\n\t,，。？?/`!！&^%()\[\]{}<>*~'\"\\=]+", " ", str(keywords)).strip()
+    # Entity names are identifiers in the graph. Check the exact normalized
+    # name first: BM25 searches the entity description and may miss a stored
+    # name even when the query equals it, which would otherwise trigger KNN
+    # and return an approximate result. Partial-name queries
+    # continue through BM25 so they can intentionally return multiple nodes.
+    text_query = re.sub(r"[ :|\r\n\t,，。？?/`!！&^%()\[\]{}<>*~'\"\\=]+", " ", str(keywords or "")).strip()
     candidates = []
-    if text_query:
+    exact_name = str(keywords or "").strip().lower()
+    if exact_name:
+        exact_map, _ = await graph_search(
+            index_name,
+            kb_id,
+            top_fields,
+            dict(base_entity_condition, name_kwd=[exact_name]),
+            OrderByExpr(),
+            GRAPH_KEYWORD_CANDIDATES,
+        )
+        candidates = _valid_top_nodes(exact_map)
+    if text_query and not candidates:
+        coarse_query, fine_query = tokenize_for_search(text_query)
+        tokenized_query = " ".join(dict.fromkeys(f"{coarse_query} {fine_query}".split())) or text_query
         text_expr = MatchTextExpr(
             ["content_ltks^10", "content_sm_ltks"],
-            text_query,
+            tokenized_query,
             GRAPH_KEYWORD_CANDIDATES,
-            {"original_query": keywords},
+            {"original_query": tokenized_query},
         )
         top_map, _ = await graph_search(index_name, kb_id, top_fields, base_entity_condition, OrderByExpr(), GRAPH_KEYWORD_CANDIDATES, match_expressions=[text_expr])
         candidates = [(row, node) for row, node in _valid_top_nodes(top_map) if _name_matches_query(node, text_query)]
@@ -447,10 +467,10 @@ async def keyword_subgraph(
             embedding_data=vec,
             embedding_data_type="float",
             distance_type="cosine",
-            topn=GRAPH_KEYWORD_CANDIDATES,
+            topn=GRAPH_KEYWORD_KNN_CANDIDATES,
             extra_options={"similarity": 0.3},
         )
-        top_map, _ = await graph_search(index_name, kb_id, top_fields, base_entity_condition, OrderByExpr(), GRAPH_KEYWORD_CANDIDATES, match_expressions=[match_expr])
+        top_map, _ = await graph_search(index_name, kb_id, top_fields, base_entity_condition, OrderByExpr(), GRAPH_KEYWORD_KNN_CANDIDATES, match_expressions=[match_expr])
         candidates = _valid_top_nodes(top_map)
 
     if not candidates:
@@ -508,43 +528,66 @@ async def keyword_subgraph(
 
     # Tree-like structures encode hierarchy as parent -> child. A keyword may
     # hit a leaf, but the UI needs the complete path back to the root in order
-    # to render that leaf in context. Walk the incoming edges until no new
-    # ancestor is found (or the global expansion cap is reached).
+    # to render that leaf in context. Resolve the path in this template one
+    # endpoint at a time. Document-level relation endpoints may
+    # retain their original case while dataset-level endpoints are lowercased;
+    # querying one spelling at a time also avoids store-specific multi-value
+    # keyword-filter semantics.
+    tree_entities: list[dict] = []
     if structure_kind in {"tree", "page_index", "pageindex"} and len(relations) < GRAPH_EXPANSION_CAP:
-        ancestor_frontier = set(matched_names)
+        ancestor_frontier = {str(node.get("name") or "").strip().lower(): str(node.get("name") or "").strip() for node in matched_nodes if str(node.get("name") or "").strip()}
         seen_ancestors = set(matched_names)
+        ancestor_names: dict[str, str] = {}
         while ancestor_frontier and len(relations) < GRAPH_EXPANSION_CAP:
-            next_frontier: set[str] = set()
-            rel_map, _ = await graph_search(
-                index_name,
-                kb_id,
-                GRAPH_RELATION_FIELDS,
-                dict(scope, knowledge_graph_kwd=["relation"], to_entity_kwd=sorted(ancestor_frontier)),
-                OrderByExpr(),
-                GRAPH_EXPANSION_CAP - len(relations),
-            )
-            for row in rel_map.values():
-                if not _row_has_enabled_source(row, excluded_doc_ids):
-                    continue
-                edge = project_relation(row)
-                if not edge:
-                    continue
-                key = (edge.get("from", ""), edge.get("to", ""), edge.get("type", ""))
-                if key in seen_rel:
-                    continue
-                seen_rel.add(key)
-                relations.append(edge)
-                parent = str(edge.get("from") or "").strip().lower()
-                if parent and parent not in seen_ancestors:
-                    seen_ancestors.add(parent)
-                    next_frontier.add(parent)
+            next_frontier: dict[str, str] = {}
+            for child_name in ancestor_frontier.values():
+                for child_term in _endpoint_terms(child_name):
+                    rel_map, _ = await graph_search(
+                        index_name,
+                        kb_id,
+                        GRAPH_RELATION_FIELDS,
+                        dict(scope, knowledge_graph_kwd=["relation"], to_entity_kwd=[child_term]),
+                        OrderByExpr(),
+                        GRAPH_EXPANSION_CAP - len(relations),
+                    )
+                    for row in rel_map.values():
+                        if not _row_has_enabled_source(row, excluded_doc_ids):
+                            continue
+                        edge = project_relation(row)
+                        if not edge:
+                            continue
+                        key = (edge.get("from", ""), edge.get("to", ""), edge.get("type", ""))
+                        if key in seen_rel:
+                            continue
+                        seen_rel.add(key)
+                        relations.append(edge)
+                        parent_name = str(edge.get("from") or "").strip()
+                        parent = parent_name.lower()
+                        if parent and parent not in seen_ancestors:
+                            seen_ancestors.add(parent)
+                            next_frontier[parent] = parent_name
+                            ancestor_names[parent] = parent_name
+                        if len(relations) >= GRAPH_EXPANSION_CAP:
+                            break
+                    if len(relations) >= GRAPH_EXPANSION_CAP:
+                        break
                 if len(relations) >= GRAPH_EXPANSION_CAP:
                     break
             ancestor_frontier = next_frontier
-            neighbor_names_lower.update(next_frontier)
+        neighbor_names_lower.update(seen_ancestors - matched_names)
+        for name in ancestor_names:
+            entity_map, _ = await graph_search(
+                index_name,
+                kb_id,
+                GRAPH_ENTITY_FIELDS,
+                dict(scope, knowledge_graph_kwd=["entity"], name_kwd=[name]),
+                OrderByExpr(),
+                GRAPH_EXPANSION_CAP,
+            )
+            tree_entities.extend(n for n in (project_entity(row) for row in entity_map.values() if _row_has_enabled_source(row, excluded_doc_ids)) if n)
 
-    entities = list(matched_nodes)
-    if neighbor_names_lower:
+    entities = list(matched_nodes) + tree_entities
+    if neighbor_names_lower and structure_kind not in {"tree", "page_index", "pageindex"}:
         nb_map, _ = await graph_search(index_name, kb_id, GRAPH_ENTITY_FIELDS, dict(scope, knowledge_graph_kwd=["entity"], name_kwd=sorted(neighbor_names_lower)), OrderByExpr(), GRAPH_EXPANSION_CAP)
         entities.extend(n for n in (project_entity(r) for r in nb_map.values() if _row_has_enabled_source(r, excluded_doc_ids)) if n)
 

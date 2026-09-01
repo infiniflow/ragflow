@@ -72,8 +72,10 @@ export const SVGIconMap = {
   [Operator.BGPT]: 'bgpt',
   [Operator.SearXNG]: 'searxng',
   [Operator.KeenableSearch]: 'keenable',
+  [Operator.YouComSearch]: 'youcom',
   [Operator.TavilyExtract]: 'tavily',
   [Operator.TavilySearch]: 'tavily',
+  [Operator.QueritContents]: 'querit',
   [Operator.QueritSearch]: 'querit',
   [Operator.Wikipedia]: 'wikipedia',
   [Operator.YahooFinance]: 'yahoo-finance',
@@ -123,7 +125,7 @@ const OperatorIcon = ({ name, className }: IProps) => {
   const svgIcon = SVGIconMap[name as keyof typeof SVGIconMap];
   const LucideIcon = LucideIconMap[name as keyof typeof LucideIconMap];
 
-  if (name === Operator.QueritSearch) {
+  if (name === Operator.QueritContents || name === Operator.QueritSearch) {
     return (
       <img
         src={queritLogo}

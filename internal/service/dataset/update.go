@@ -9,6 +9,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
@@ -170,6 +171,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	txCode := common.CodeSuccess
 	var updatedKB *entity.Knowledgebase
 	var linkedConnectors []*dao.ConnectorDatasetListItem
+	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
 		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(tx, datasetID, tenantID)
@@ -320,7 +322,8 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 
 		if connectorsProvided {
-			if err = d.connectorDAO.LinkDatasetConnectorsTx(ctx, tx, lockedKB.ID, lockedKB.TenantID, connectorLinks); err != nil {
+			scheduledTaskIDs, err = d.connectorDAO.LinkDatasetConnectorsTx(ctx, tx, lockedKB.ID, lockedKB.TenantID, connectorLinks)
+			if err != nil {
 				if dao.IsConnectorNotAccessibleErr(err) {
 					txCode = common.CodeDataError
 					return err
@@ -350,6 +353,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 		return nil, txCode, err
 	}
+	publishDatasetSyncerTasks(scheduledTaskIDs)
 
 	if pagerankUpdate != nil {
 		if err = d.updateDatasetPagerankChunks(ctx, *pagerankUpdate); err != nil {
@@ -377,6 +381,29 @@ func (d *DatasetService) updateDatasetPagerankChunks(ctx context.Context, update
 		return nil
 	}
 	return err
+}
+
+type datasetSyncTaskPublisher interface {
+	PublishSyncerTask(taskID string) error
+}
+
+func publishDatasetSyncerTasks(taskIDs []string) {
+	if len(taskIDs) == 0 {
+		return
+	}
+	publisher, ok := engine.GetMessageQueueEngine().(datasetSyncTaskPublisher)
+	if !ok {
+		common.Warn("syncer task publisher is not configured")
+		return
+	}
+	for _, taskID := range taskIDs {
+		if taskID == "" {
+			continue
+		}
+		if err := publisher.PublishSyncerTask(taskID); err != nil {
+			common.Warn("syncer task publish failed", zap.String("task_id", taskID), zap.Error(err))
+		}
+	}
 }
 
 func (d *DatasetService) lockAccessibleDatasetForUpdate(tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {

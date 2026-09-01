@@ -1,6 +1,44 @@
 {
     "factory_llm_infos": [
         {
+            "name": "Synthorai",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "rank": "50",
+            "url": "https://synthorai.io/v1",
+            "llm": [
+                {
+                    "llm_name": "claude-opus-5",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v4-pro",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-5.2",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k3",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                }
+            ]
+        },
+        {
             "name": "GreenPT",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,SPEECH2TEXT",
@@ -541,6 +579,22 @@
             "rank": "994",
             "url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
             "llm": [
+                {
+                    "llm_name": "qwen3.8-max",
+                    "max_tokens": 128000,
+                    "model_type": [
+                        "chat", "image2text"
+                    ],
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3.8-2.4t-a95b",
+                    "max_tokens": 128000,
+                    "model_type": [
+                        "chat"
+                    ],
+                    "is_tools": true
+                },
                 {
                     "llm_name": "qwen3-max-2026-01-23",
                     "max_tokens": 262144,
@@ -1994,6 +2048,16 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "deepseek-v4-flash-vision-exp",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true
+                },
+                {
                     "llm_name": "deepseek-v4-pro",
                     "tags": "LLM,CHAT,",
                     "max_tokens": 1000000,
@@ -3259,6 +3323,27 @@
             "url": "https://api.siliconflow.cn/v1",
             "llm": [
                 {
+                    "llm_name": "BAAI/bge-m3",
+                    "tags": "TEXT EMBEDDING,8k",
+                    "max_tokens": 8192,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "BAAI/bge-large-en-v1.5",
+                    "tags": "TEXT EMBEDDING,512",
+                    "max_tokens": 512,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "BAAI/bge-large-zh-v1.5",
+                    "tags": "TEXT EMBEDDING,512",
+                    "max_tokens": 512,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
                     "llm_name": "deepseek-ai/DeepSeek-V4-Pro",
                     "tags": "LLM,CHAT,1M",
                     "max_tokens": 1000000,
@@ -3728,27 +3813,6 @@
                     "llm_name": "Qwen/Qwen3-Embedding-0.6B",
                     "tags": "TEXT EMBEDDING,32k",
                     "max_tokens": 32000,
-                    "model_type": "embedding",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "BAAI/bge-m3",
-                    "tags": "TEXT EMBEDDING,8k",
-                    "max_tokens": 8192,
-                    "model_type": "embedding",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "BAAI/bge-large-en-v1.5",
-                    "tags": "TEXT EMBEDDING,512",
-                    "max_tokens": 512,
-                    "model_type": "embedding",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "BAAI/bge-large-zh-v1.5",
-                    "tags": "TEXT EMBEDDING,512",
-                    "max_tokens": 512,
                     "model_type": "embedding",
                     "is_tools": false
                 },
@@ -7663,13 +7727,6 @@
                     "llm_name": "mimo-v2.5",
                     "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "mimo-v2-flash",
-                    "tags": "LLM,CHAT,256K",
-                    "max_tokens": 262144,
                     "model_type": "chat",
                     "is_tools": true
                 }

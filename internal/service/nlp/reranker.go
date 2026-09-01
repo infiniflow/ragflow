@@ -134,12 +134,16 @@ func RerankByModel(
 		contentLtks := extractContentTokens(chunk, cfield)
 		titleTks := extractTitleTokens(chunk)
 		importantKwd := extractImportantKeywords(chunk)
+		questionTks := extractQuestionTokens(chunk)
 
-		// Combine tokens without repetition (simpler version for model reranking)
-		tks := make([]string, 0, len(contentLtks)+len(titleTks)+len(importantKwd))
+		// Unlike RerankStandard/RerankWithKNN, the fields are not repeated here:
+		// these tokens are joined back into `docs` for a cross-encoder, where
+		// duplicating a field would distort the model's own scoring.
+		tks := make([]string, 0, len(contentLtks)+len(titleTks)+len(importantKwd)+len(questionTks))
 		tks = append(tks, contentLtks...)
 		tks = append(tks, titleTks...)
 		tks = append(tks, importantKwd...)
+		tks = append(tks, questionTks...)
 		insTw = append(insTw, tks)
 
 		// Build document text for model reranking
@@ -151,7 +155,7 @@ func RerankByModel(
 	tsim = TokenSimilarity(keywords, insTw, qb)
 
 	// Get similarity scores from reranker model
-	rerankResponse, err := rerankModel.ModelDriver.Rerank(ctx, rerankModel.ModelName, query, docs, rerankModel.APIConfig, &models.RerankConfig{}, nil)
+	rerankResponse, err := rerankModel.ModelDriver.Rerank(ctx, rerankModel.ModelName, models.RerankRequest{Query: query, Documents: docs}, rerankModel.APIConfig, &models.RerankConfig{}, nil)
 	if err != nil {
 		common.Error("RerankByModel: rerankModel.Rerank failed; falling back to token-only similarity", err)
 		// If model fails, fall back to token similarity only
@@ -536,7 +540,7 @@ func extractContentTokens(fields map[string]interface{}, cfield string) []string
 	// Split by whitespace to get individual tokens
 	seen := make(map[string]bool)
 	var result []string
-	for _, t := range strings.Fields(v) {
+	for t := range strings.FieldsSeq(v) {
 		if !seen[t] {
 			seen[t] = true
 			result = append(result, t)
@@ -553,7 +557,7 @@ func extractTitleTokens(fields map[string]interface{}) []string {
 	}
 	// NOTE: Do NOT call RemoveRedundantSpaces here - it removes spaces between Chinese chars
 	var result []string
-	for _, t := range strings.Fields(v) {
+	for t := range strings.FieldsSeq(v) {
 		if t != "" {
 			result = append(result, t)
 		}
@@ -568,7 +572,7 @@ func extractQuestionTokens(fields map[string]interface{}) []string {
 		return []string{}
 	}
 	var result []string
-	for _, t := range strings.Fields(v) {
+	for t := range strings.FieldsSeq(v) {
 		if t != "" {
 			result = append(result, t)
 		}

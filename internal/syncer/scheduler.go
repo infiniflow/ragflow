@@ -20,9 +20,15 @@ import (
 	"context"
 	"errors"
 	"ragflow/internal/common"
-	"ragflow/internal/service"
+	"ragflow/internal/dao"
+	"ragflow/internal/utility"
+	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
+
+const scheduledTaskStartupPageSize = 4096
 
 // TaskEnvelope is the only payload sent through the task queue.
 type TaskEnvelope struct {
@@ -31,34 +37,36 @@ type TaskEnvelope struct {
 	stopHeartbeat func()
 }
 
-// SyncTaskBroker publishes and pulls syncer task wake-up messages.
+// SyncTaskBroker publishes and subscribes to syncer task wake-up messages.
 type SyncTaskBroker interface {
 	InitSyncerStream() error
 	InitSyncerConsumer() error
 	PublishSyncerTask(taskID string) error
-	FetchSyncerTasks(batchSize int) ([]common.TaskHandle, error)
+	PublishSyncerTaskWakeup(taskID string) error
+	SubscribeSyncerTasks(ctx context.Context, handler func(common.TaskHandle)) error
 }
 
 // Scheduler discovers due work and enqueues task IDs for workers.
 type Scheduler struct {
-	pollInterval time.Duration
-	queue        chan<- TaskEnvelope
-	taskService  *service.SyncTaskService
-	broker       SyncTaskBroker
+	queue   chan<- TaskEnvelope
+	taskDAO *dao.SyncTaskDAO
+	broker  SyncTaskBroker
+	timerMu sync.Mutex
+	timers  map[string]*time.Timer
 }
 
 // NewScheduler creates a global scheduler for datasource sync tasks.
-func NewScheduler(pollInterval time.Duration, queue chan<- TaskEnvelope, taskService *service.SyncTaskService) *Scheduler {
-	return &Scheduler{pollInterval: pollInterval, queue: queue, taskService: taskService}
+func NewScheduler(queue chan<- TaskEnvelope, taskDAO *dao.SyncTaskDAO) *Scheduler {
+	return &Scheduler{queue: queue, taskDAO: taskDAO, timers: map[string]*time.Timer{}}
 }
 
 // NewNATSScheduler creates a JetStream-driven scheduler with DB reconciliation.
-func NewNATSScheduler(pollInterval time.Duration, queue chan<- TaskEnvelope, taskService *service.SyncTaskService, broker SyncTaskBroker) *Scheduler {
+func NewNATSScheduler(queue chan<- TaskEnvelope, taskDAO *dao.SyncTaskDAO, broker SyncTaskBroker) *Scheduler {
 	return &Scheduler{
-		pollInterval: pollInterval,
-		queue:        queue,
-		taskService:  taskService,
-		broker:       broker,
+		queue:   queue,
+		taskDAO: taskDAO,
+		broker:  broker,
+		timers:  map[string]*time.Timer{},
 	}
 }
 
@@ -77,127 +85,155 @@ func (s *Scheduler) runNATS(ctx context.Context) error {
 	if err := s.broker.InitSyncerConsumer(); err != nil {
 		return err
 	}
+	if err := s.broker.SubscribeSyncerTasks(ctx, func(handle common.TaskHandle) {
+		if err := s.enqueueHandle(ctx, handle); err != nil && ctx.Err() == nil {
+			common.Error("syncer scheduler enqueue failed", err)
+		}
+	}); err != nil {
+		return err
+	}
 
 	// scan DB for first time run
 	if err := s.publishStartupTasks(ctx); err != nil && ctx.Err() == nil {
 		common.Error("syncer scheduler startup publish failed", err)
 	}
 
-	ticker := time.NewTicker(s.pollInterval)
-	defer ticker.Stop()
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C: // Run `publishDueTasks` periodically
-			if err := s.publishDueTasks(ctx); err != nil && ctx.Err() == nil {
-				common.Error("syncer scheduler due publish failed", err)
-			}
-			continue
-		default:
-		}
-
-		// check `scheduler`'s task queue's slot
-		available := s.queueAvailable()
-		if available <= 0 {
-			if err := waitNATSFetchCapacity(ctx); err != nil {
-				return err
-			}
-			continue
-		}
-
-		// pull `available` tasks from nats
-		handles, err := s.broker.FetchSyncerTasks(available)
-		if err != nil {
-			common.Error("syncer scheduler fetch failed", err)
-			if waitErr := waitNATSFetchCapacity(ctx); waitErr != nil {
-				return waitErr
-			}
-		} else if len(handles) == 0 {
-			if waitErr := waitNATSFetchCapacity(ctx); waitErr != nil {
-				return waitErr
-			}
-		} else if err = s.enqueueHandles(ctx, handles); err != nil { // put tasks to task queue
-			return err
-		}
-	}
+	<-ctx.Done()
+	s.stopTimers()
+	return ctx.Err()
 }
 
-func waitNATSFetchCapacity(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(100 * time.Millisecond):
+func (s *Scheduler) enqueueHandle(ctx context.Context, handle common.TaskHandle) error {
+	message := handle.GetMessage()
+	if message.TaskID == "" {
+		_ = handle.Ack()
 		return nil
 	}
-}
 
-// enqueueHandles put task to `scheduler`'s task queue
-func (s *Scheduler) enqueueHandles(ctx context.Context, handles []common.TaskHandle) error {
-	for index, handle := range handles {
-		message := handle.GetMessage()
-		if message.TaskID == "" {
-			_ = handle.Ack()
-			continue
-		}
-
-		stopHeartbeat := startHandleHeartbeat(ctx, handle)
-		select {
-		case <-ctx.Done():
-			stopHeartbeat()
-			for _, pending := range handles[index:] {
-				_ = pending.Nack()
-			}
-			return ctx.Err()
-		case s.queue <- TaskEnvelope{TaskID: message.TaskID, Handle: handle, stopHeartbeat: stopHeartbeat}:
-		}
+	stopHeartbeat := startHandleHeartbeat(ctx, handle)
+	select {
+	case <-ctx.Done():
+		stopHeartbeat()
+		_ = handle.Nack()
+		return ctx.Err()
+	case s.queue <- TaskEnvelope{TaskID: message.TaskID, Handle: handle, stopHeartbeat: stopHeartbeat}:
+		return nil
 	}
-	return nil
 }
 
 func (s *Scheduler) queueAvailable() int {
 	return cap(s.queue) - len(s.queue)
 }
 
-// publishStartupTasks scan DB for first time run
+// publishStartupTasks scans DB once for startup reconciliation.
 func (s *Scheduler) publishStartupTasks(ctx context.Context) error {
-	// TODO restores running tasks during syncer startup.
-	if err := s.taskService.RecoverRunning(ctx); err != nil {
+	if _, err := s.taskDAO.RecoverRunning(ctx); err != nil {
 		return err
 	}
 
-	tasks, err := s.taskService.ListStartupTasks(ctx)
-	if err != nil {
-		return err
-	}
-
-	// publish task to nats
-	var publishErr error
-	for _, task := range tasks {
-		if err = s.broker.PublishSyncerTask(task.ID); err != nil {
-			publishErr = errors.Join(publishErr, err)
+	var cursor *dao.ScheduledSyncTaskCursor
+	for {
+		tasks, err := s.taskDAO.ListScheduledTasks(ctx, scheduledTaskStartupPageSize, cursor)
+		if err != nil {
+			return err
 		}
+		if len(tasks) == 0 {
+			return nil
+		}
+
+		for _, task := range tasks {
+			if err = s.ScheduleTask(ctx, task); err != nil {
+				return err
+			}
+		}
+		if len(tasks) < scheduledTaskStartupPageSize {
+			return nil
+		}
+		nextCursor := tasks[len(tasks)-1].Cursor()
+		cursor = &nextCursor
 	}
-	return publishErr
 }
 
-// publishDueTasks publishes due scheduled DB tasks to nats
-func (s *Scheduler) publishDueTasks(ctx context.Context) error {
-	now := time.Now()
-	tasks, err := s.taskService.ListDueTasks(ctx, now)
-	if err != nil {
+// ScheduleTask publishes a due scheduled task or arms a one-shot timer.
+func (s *Scheduler) ScheduleTask(ctx context.Context, task dao.ScheduledSyncTask) error {
+	delay, schedule := s.taskDelay(task, time.Now())
+	if !schedule {
+		return nil
+	}
+	return s.ScheduleTaskAfter(ctx, task.ID, delay)
+}
+
+// ScheduleTaskAfter publishes a task after delay.
+func (s *Scheduler) ScheduleTaskAfter(ctx context.Context, taskID string, delay time.Duration) error {
+	if s == nil || s.broker == nil || taskID == "" {
+		return nil
+	}
+	if delay <= 0 {
+		return s.publish(ctx, taskID, false)
+	}
+	s.timerMu.Lock()
+	if existing := s.timers[taskID]; existing != nil {
+		existing.Stop()
+	}
+	timer := time.AfterFunc(delay, func() {
+		if err := s.publish(ctx, taskID, true); err != nil && ctx.Err() == nil {
+			common.Warn("syncer scheduler timer publish failed", zap.String("task_id", taskID), zap.Error(err))
+			_ = s.ScheduleTaskAfter(ctx, taskID, 3*time.Second)
+			return
+		}
+		s.timerMu.Lock()
+		delete(s.timers, taskID)
+		s.timerMu.Unlock()
+	})
+	s.timers[taskID] = timer
+	s.timerMu.Unlock()
+	return nil
+}
+
+func (s *Scheduler) publish(ctx context.Context, taskID string, wakeup bool) error {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-
-	var publishErr error
-	for _, task := range tasks {
-		if err = s.broker.PublishSyncerTask(task.ID); err != nil {
-			publishErr = errors.Join(publishErr, err)
-		}
+	var err error
+	if wakeup {
+		err = s.broker.PublishSyncerTaskWakeup(taskID)
+	} else {
+		err = s.broker.PublishSyncerTask(taskID)
 	}
-	return publishErr
+	if err != nil {
+		message := "syncer task publish failed"
+		if wakeup {
+			message = "syncer task wakeup publish failed"
+		}
+		common.Warn(message, zap.String("task_id", taskID), zap.Error(err))
+		return err
+	}
+	return nil
+}
+
+func (s *Scheduler) stopTimers() {
+	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
+	for taskID, timer := range s.timers {
+		timer.Stop()
+		delete(s.timers, taskID)
+	}
+}
+
+// taskDelay reports the delay before publication and whether the task must be scheduled at all.
+func (s *Scheduler) taskDelay(task dao.ScheduledSyncTask, now time.Time) (time.Duration, bool) {
+	freq := int64(0)
+	switch task.TaskType {
+	case dao.TaskTypeSync:
+		freq = task.ConnectorRefreshFreq
+	case dao.TaskTypePrune:
+		if !utility.ConfigBool(task.ConnectorConfig, "sync_deleted_files") {
+			return 0, false
+		}
+		freq = task.ConnectorPruneFreq
+	}
+	if freq <= 0 || task.UpdateDate == nil {
+		return 0, true
+	}
+	return task.UpdateDate.Add(time.Duration(freq) * time.Minute).Sub(now), true
 }

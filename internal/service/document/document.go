@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/ingestion/knowledge_compile"
 )
 
 // DocumentService document service
@@ -49,6 +50,10 @@ func NewDocumentService() *DocumentService {
 	publisher := service.NewMessageQueueTaskPublisher()
 	ingestionTaskSvc := service.NewIngestionTaskService()
 	ingestionTaskSvc.SetTaskPublisher(publisher)
+	// Document deletion is handled by the API process, while the dataset-level
+	// consumer is owned by the ingestor. Register the shared publisher here so
+	// knowledge_compile.PublishDeleted is effective in API processes as well.
+	knowledge_compile.InitializePublisher(dao.DB, engine.GetMessageQueueEngine())
 	return &DocumentService{
 		documentDAO:         dao.NewDocumentDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
@@ -77,26 +82,27 @@ type UpdateDocumentRequest struct {
 
 // DocumentResponse document response
 type DocumentResponse struct {
-	ID              string  `json:"id"`
-	Name            *string `json:"name,omitempty"`
-	KbID            string  `json:"kb_id"`
-	ParserID        string  `json:"parser_id"`
-	PipelineID      *string `json:"pipeline_id,omitempty"`
-	Type            string  `json:"type"`
-	SourceType      string  `json:"source_type"`
-	CreatedBy       string  `json:"created_by"`
-	Location        *string `json:"location,omitempty"`
-	Size            int64   `json:"size"`
-	TokenNum        int64   `json:"token_num"`
-	ChunkNum        int64   `json:"chunk_num"`
-	Progress        float64 `json:"progress"`
-	ProgressMsg     *string `json:"progress_msg,omitempty"`
-	ProcessDuration float64 `json:"process_duration"`
-	Suffix          string  `json:"suffix"`
-	Run             *string `json:"run,omitempty"`
-	Status          *string `json:"status,omitempty"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
+	ID              string     `json:"id"`
+	Name            *string    `json:"name,omitempty"`
+	KbID            string     `json:"kb_id"`
+	ParserID        string     `json:"parser_id"`
+	PipelineID      *string    `json:"pipeline_id,omitempty"`
+	Type            string     `json:"type"`
+	SourceType      string     `json:"source_type"`
+	CreatedBy       string     `json:"created_by"`
+	Location        *string    `json:"location,omitempty"`
+	Size            int64      `json:"size"`
+	TokenNum        int64      `json:"token_num"`
+	ChunkNum        int64      `json:"chunk_num"`
+	Progress        float64    `json:"progress"`
+	ProgressMsg     *string    `json:"progress_msg,omitempty"`
+	ProcessBeginAt  *time.Time `json:"process_begin_at,omitempty"`
+	ProcessDuration float64    `json:"process_duration"`
+	Suffix          string     `json:"suffix"`
+	Run             *string    `json:"run,omitempty"`
+	Status          *string    `json:"status,omitempty"`
+	CreatedAt       string     `json:"created_at"`
+	UpdatedAt       string     `json:"updated_at"`
 }
 
 type ThumbnailResponse struct {

@@ -85,11 +85,12 @@ func TestJSONGlobalMergeMatchesPython(t *testing.T) {
 	}
 }
 
-// TestJSONSingleItemNotSubSplitMatchesPython pins the TokenChunker json path's
-// handling of a single item that exceeds chunk_token_size: the over-budget
-// item is kept whole (no sub-split), yielding exactly one chunk whose text
-// equals the input verbatim.
-func TestJSONSingleItemNotSubSplitMatchesPython(t *testing.T) {
+// TestJSONSingleItemSubSplitUnderHardCap pins the TokenChunker json path's
+// hard-cap handling of a single item that exceeds chunk_token_size: the
+// over-budget item is re-split into <= budget chunks (sentence boundaries
+// first, hard token-split fallback) whose concatenated text reproduces the
+// input verbatim. This replaces the former #17799 "kept whole" contract.
+func TestJSONSingleItemSubSplitUnderHardCap(t *testing.T) {
 	const budget = 128
 	comp, err := NewTokenChunker(map[string]any{
 		"chunk_token_size": float64(budget),
@@ -116,10 +117,18 @@ func TestJSONSingleItemNotSubSplitMatchesPython(t *testing.T) {
 		t.Fatalf("TokenChunker returned _ERROR: %s", msg)
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) != 1 {
-		t.Fatalf("want 1 chunk (over-budget single item kept whole), got %d", len(chunks))
+	if len(chunks) < 2 {
+		t.Fatalf("over-budget item must be split, got %d chunk(s)", len(chunks))
 	}
-	if got := strings.TrimSpace(chunks[0]["text"].(string)); got != strings.TrimSpace(long) {
-		t.Errorf("over-budget item not kept whole:\n got=%q\nwant=%q", got, strings.TrimSpace(long))
+	var joined string
+	for i, ck := range chunks {
+		text, _ := ck["text"].(string)
+		if n := tokenizeStr(text); n > budget {
+			t.Errorf("chunk %d exceeds budget: tokens=%d (cap=%d)", i, n, budget)
+		}
+		joined += strings.TrimSpace(text)
+	}
+	if strings.ReplaceAll(joined, " ", "") != strings.ReplaceAll(strings.TrimSpace(long), " ", "") {
+		t.Errorf("split not lossless:\n got=%q\nwant=%q", joined, strings.TrimSpace(long))
 	}
 }

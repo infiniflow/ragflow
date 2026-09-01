@@ -2,8 +2,10 @@ package knowledge_compile
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
+	"time"
 )
 
 // TestRemoveEntriesMatchesByDocAndEventType locks the A0-1 contract: BacklogEntry
@@ -29,6 +31,77 @@ func TestRemoveEntriesMatchesByDocAndEventType(t *testing.T) {
 
 	if len(out) != 1 || out[0].DocID != "d2" {
 		t.Fatalf("removeEntries should keep only d2, got %+v", out)
+	}
+}
+
+func TestFakeSchedulerReclaimsInterruptedClaim(t *testing.T) {
+	f := NewFakeScheduler()
+	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), []string{"wiki"}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	first, ok, err := f.Claim(t.Context(), "kb1")
+	if err != nil || !ok {
+		t.Fatalf("initial claim: ok=%v err=%v", ok, err)
+	}
+	f.mu.Lock()
+	expired := time.Now().Add(-time.Second)
+	f.rows["kb1"].expires = &expired
+	f.mu.Unlock()
+	second, ok, err := f.TryClaim(t.Context())
+	if err != nil || !ok {
+		t.Fatalf("reclaimed claim: ok=%v err=%v", ok, err)
+	}
+	if second.Token == first.Token || len(second.Entries) != 1 || second.Entries[0].DocID != "d1" {
+		t.Fatalf("reclaimed claim did not replace the old lease: first=%+v second=%+v", first, second)
+	}
+}
+
+func TestFakeSchedulerProgressIsClaimScoped(t *testing.T) {
+	f := NewFakeScheduler()
+	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), nil); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	claim, ok, err := f.Claim(t.Context(), "kb1")
+	if err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	if err := f.UpdateProgress(t.Context(), "kb1", claim.Token, 0.5, "routing_pages", "Routing pages"); err != nil {
+		t.Fatalf("update progress: %v", err)
+	}
+	if err := f.UpdateProgress(t.Context(), "kb1", "stale-token", 0.9, "wrong", "Should be ignored"); err != nil {
+		t.Fatalf("stale update: %v", err)
+	}
+	f.mu.Lock()
+	row := f.rows["kb1"]
+	f.mu.Unlock()
+	if row.progress != 0.5 || row.currentPhase != "routing_pages" || row.progressMsg != "Routing pages" {
+		t.Fatalf("unexpected progress state: %+v", row)
+	}
+}
+
+func TestWithWriteLockRejectsSupersededClaim(t *testing.T) {
+	f := NewFakeScheduler()
+	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), []string{"wiki"}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	claim, ok, err := f.Claim(t.Context(), "kb1")
+	if err != nil || !ok {
+		t.Fatalf("claim: ok=%v err=%v", ok, err)
+	}
+	c := &Consumer{scheduler: f}
+	if err := f.CancelInflight(t.Context(), "kb1", claim.Token); err != nil {
+		t.Fatalf("cancel inflight: %v", err)
+	}
+	writes := 0
+	err = c.withWriteLock(t.Context(), "kb1", claim.Token, func() error {
+		writes++
+		return nil
+	})
+	if !errors.Is(err, errClaimSuperseded) {
+		t.Fatalf("withWriteLock error = %v, want errClaimSuperseded", err)
+	}
+	if writes != 0 {
+		t.Fatalf("superseded claim executed a write callback")
 	}
 }
 

@@ -153,6 +153,10 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		s.writeDataError(c, "You have to provide messages.")
 		return
 	}
+	if req.MaxTokens != nil && *req.MaxTokens <= 0 {
+		s.writeArgError(c, "`max_tokens` must be greater than 0.")
+		return
+	}
 
 	lastRole, _ := normalizedMessages[len(normalizedMessages)-1]["role"].(string)
 	if lastRole != "user" {
@@ -563,8 +567,9 @@ func extractGenerationConfig(req *OpenAIChatRequest) map[string]interface{} {
 	return cfg
 }
 
-// normalizeMessageContent coerces content to string (drops non-text parts).
-func normalizeMessageContent(content interface{}) (string, error) {
+// NormalizeOpenAIMessageContent coerces OpenAI message content to text and
+// drops unsupported non-text parts.
+func NormalizeOpenAIMessageContent(content interface{}) (string, error) {
 	if content == nil {
 		return "", nil
 	}
@@ -597,7 +602,7 @@ func normalizeOpenAIMessages(messages []map[string]interface{}) ([]map[string]in
 		for k, v := range m {
 			normalized[k] = v
 		}
-		c, err := normalizeMessageContent(m["content"])
+		c, err := NormalizeOpenAIMessageContent(m["content"])
 		if err != nil {
 			return nil, err
 		}

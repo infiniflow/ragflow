@@ -26,6 +26,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
 
 	"gorm.io/gorm"
 )
@@ -135,14 +136,13 @@ func fallbackRoute(question, modeLabel, reason string) RouteDecision {
 }
 
 var (
-	reThinkTag = regexp.MustCompile(`(?s)^.*</think>`)
-	reFence    = regexp.MustCompile("```(?:json)?\\s*|\\s*```")
+	reFence = regexp.MustCompile("```(?:json)?\\s*|\\s*```")
 )
 
 // unmarshalModelJSON mirrors Python's _extract_json: strip thinking preamble and
 // Markdown fences, then parse JSON.
 func unmarshalModelJSON(text string, out interface{}) error {
-	text = reThinkTag.ReplaceAllString(text, "")
+	text = common.StripThinkTrailing(text)
 	text = reFence.ReplaceAllString(text, "")
 	text = strings.TrimSpace(text)
 	if text == "" {

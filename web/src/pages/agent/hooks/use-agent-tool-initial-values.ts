@@ -23,6 +23,8 @@ export function useAgentToolInitialValues() {
           };
         case Operator.QueritSearch:
           return getQueritAgentInitialValues(initialValues);
+        case Operator.QueritContents:
+          return { api_key: '' };
         case Operator.ExeSQL:
           return omit(initialValues, 'sql');
         case Operator.Bing:
@@ -66,6 +68,8 @@ export function useAgentToolInitialValues() {
           return pick(initialValues, 'searxng_url', 'top_n');
         case Operator.KeenableSearch:
           return pick(initialValues, 'api_key', 'mode', 'site', 'top_n');
+        case Operator.YouComSearch:
+          return pick(initialValues, 'api_key', 'freshness', 'top_n');
 
         default:
           return initialValues;

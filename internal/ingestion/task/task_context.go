@@ -119,7 +119,7 @@ func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionT
 		return nil, fmt.Errorf("error when load tenant %s: %w", kb.TenantID, err)
 	}
 
-	pipelineID := resolvePipelineID(doc, kb)
+	pipelineID := resolvePipelineID(doc)
 
 	return &TaskContext{
 		Ctx:           ctx,
@@ -131,16 +131,10 @@ func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionT
 	}, nil
 }
 
-func resolvePipelineID(doc *entity.Document, kb *entity.Knowledgebase) string {
+// resolvePipelineID resolves the pipeline selected for a document.
+func resolvePipelineID(doc *entity.Document) string {
 	if doc != nil && doc.PipelineID != nil {
-		if pipelineID := strings.TrimSpace(*doc.PipelineID); pipelineID != "" {
-			return pipelineID
-		}
-	}
-	if kb != nil && kb.PipelineID != nil {
-		if pipelineID := strings.TrimSpace(*kb.PipelineID); pipelineID != "" {
-			return pipelineID
-		}
+		return strings.TrimSpace(*doc.PipelineID)
 	}
 	return ""
 }

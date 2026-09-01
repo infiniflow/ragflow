@@ -127,9 +127,17 @@ func mergeChunkMetadata(metadata map[string]any, ck map[string]any) map[string]a
 	if !exists {
 		return metadata
 	}
-	if metaMap, ok := metaVal.(map[string]any); ok {
-		metadata = utility.UpdateMetadataTo(metadata, metaMap)
+	metaMap, ok := metaVal.(map[string]any)
+	if !ok {
+		// Contract: ck["metadata"] is produced by the Extractor component and
+		// is always a map[string]any (the merge of enable_metadata + the
+		// field_name="metadata" extraction). A non-map value signals an
+		// upstream bug, not a value to guess-parse — record and drop it.
+		common.Warn(fmt.Sprintf("mergeChunkMetadata: chunk metadata is %T, want map[string]any; dropping", metaVal))
+		delete(ck, "metadata")
+		return metadata
 	}
+	metadata = utility.UpdateMetadataTo(metadata, metaMap)
 	delete(ck, "metadata")
 	return metadata
 }

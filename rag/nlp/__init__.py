@@ -151,14 +151,39 @@ all_codecs = [
 
 
 def find_codec(blob):
-    detected = chardet.detect(blob[:1024])
-    if detected["confidence"] > 0.5:
-        if detected["encoding"] == "ascii":
+    sample = blob[:1024]
+
+    # A blob that decodes as UTF-8 is UTF-8; nothing else needs to be guessed.
+    # Check this first because chardet can report a confident single-byte guess
+    # for short UTF-8 text, and callers decode with errors="ignore", so a wrong
+    # codec is silently lossy instead of raising. The second decode covers a
+    # multi-byte character that the 1024-byte sample cuts in half.
+    try:
+        sample.decode("utf-8")
+        return "utf-8"
+    except UnicodeDecodeError:
+        try:
+            blob.decode("utf-8")
             return "utf-8"
+        except UnicodeDecodeError:
+            pass
+
+    detected = chardet.detect(sample)
+    encoding = detected["encoding"]
+    if encoding:
+        # Honor the detection whenever it decodes the sample. The loop below
+        # returns the first codec that does not raise, and legacy single-byte
+        # codecs (cp037, utf_16) decode arbitrary bytes without error, so a
+        # low-confidence detection still beats the loop's first non-raising hit.
+        try:
+            sample.decode(encoding)
+            return encoding
+        except (UnicodeDecodeError, LookupError) as e:
+            logging.debug("find_codec: detection %r (%.2f) did not decode the sample: %s", encoding, detected["confidence"] or 0.0, e)
 
     for c in all_codecs:
         try:
-            blob[:1024].decode(c)
+            sample.decode(c)
             return c
         except Exception:
             pass
@@ -417,10 +442,31 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
             add_positions(d, [[ii] * 5])
 
         if child_delimiters_pattern:
-            d["mom_with_weight"] = ck
+            d["mom_with_weight"] = ck.removeprefix("\n")
             res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
             continue
 
+        tokenize(d, ck, eng, language=language)
+        res.append(d)
+    return res
+
+
+def tokenize_chunks_with_positions(chunks_with_pos, doc, eng, child_delimiters_pattern=None, language="English"):
+    """Tokenize chunks that already carry real positions (Excel sheet/row).
+
+    chunks_with_pos: iterable of (text, position) where position is a 5-tuple
+    suitable for add_positions (first component 0-based).
+    """
+    res = []
+    for ck, pos in chunks_with_pos:
+        if not ck or not str(ck).strip():
+            continue
+        d = copy.deepcopy(doc)
+        add_positions(d, [pos])
+        if child_delimiters_pattern:
+            d["mom_with_weight"] = ck.removeprefix("\n")
+            res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
+            continue
         tokenize(d, ck, eng, language=language)
         res.append(d)
     return res
@@ -440,7 +486,7 @@ def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=N
 
         if ck.get("ck_type") == "text":
             if child_delimiters_pattern:
-                d["mom_with_weight"] = text
+                d["mom_with_weight"] = text.removeprefix("\n")
                 res.extend(split_with_pattern(d, child_delimiters_pattern, text, eng, language=language))
                 continue
         elif ck.get("ck_type") == "image":
@@ -463,7 +509,7 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
         d["image"] = image
         add_positions(d, [[ii] * 5])
         if child_delimiters_pattern:
-            d["mom_with_weight"] = ck
+            d["mom_with_weight"] = ck.removeprefix("\n")
             res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
             continue
         tokenize(d, ck, eng, language=language)
@@ -477,15 +523,15 @@ def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
     for (img, rows), poss in tbls:
         if not rows:
             continue
+        # Media producers use strings for tables and lists for figures. Keep
+        # that contract explicit instead of guessing the type from HTML tags.
         if isinstance(rows, str):
             d = copy.deepcopy(doc)
             tokenize(d, rows, eng, language=language)
             d["content_with_weight"] = rows
             d["doc_type_kwd"] = "table"
-            if img:
+            if img is not None:
                 d["image"] = img
-                if d["content_with_weight"].find("<tr>") < 0:
-                    d["doc_type_kwd"] = "image"
             if poss:
                 add_positions(d, poss)
             res.append(d)
@@ -496,11 +542,9 @@ def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
             d = copy.deepcopy(doc)
             r = de.join(rows[i : i + batch_size])
             tokenize(d, r, eng, language=language)
-            d["doc_type_kwd"] = "table"
-            if img:
+            d["doc_type_kwd"] = "image"
+            if img is not None:
                 d["image"] = img
-                if d["content_with_weight"].find("<tr>") < 0:
-                    d["doc_type_kwd"] = "image"
             add_positions(d, poss)
             res.append(d)
     return res
@@ -803,7 +847,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
     return chunks
 
 
-def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0, return_context=False):
+def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0, return_context=False, section_page_offset: int = 0):
     from deepdoc.parser import PdfParser
 
     if table_context_size <= 0:
@@ -839,6 +883,7 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
         for page, left, right, top, bottom in poss:
             if isinstance(page, list):
                 page = page[0] if page else 0
+            page += section_page_offset
             page_bucket[page].append(((left, right, top, bottom), txt))
 
     def upper_context(page, i):
@@ -884,10 +929,21 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
     res = []
     contexts = []
     for (img, tb), poss in tabls:
+        # MinerU is expected to provide page_idx and bbox, but production
+        # fallbacks may still yield media without positions. Preserve it.
+        if not poss:
+            res.append(((img, tb), poss))
+            if return_context:
+                contexts.append(("", ""))
+            continue
+
         page, left, right, top, bott = poss[0]
         _page, _left, _right, _top, _bott = poss[-1]
-        if isinstance(tb, list):
-            tb = "\n".join(tb)
+        # Context extraction needs text, but list payloads identify images for
+        # tokenize_table; restore that shape before returning the media block.
+        image_rows = tb if isinstance(tb, list) else None
+        if image_rows is not None:
+            tb = "\n".join(image_rows)
 
         i = 0
         blks = page_bucket.get(page, [])
@@ -925,6 +981,8 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
             contexts.append((upper.strip(), lower.strip()))
         if len(contexts) < len(res) + 1:
             contexts.append(("", ""))
+        if image_rows is not None:
+            tb = image_rows if tb == _tb else [tb]
         res.append(((img, tb), poss))
     return contexts if return_context else res
 

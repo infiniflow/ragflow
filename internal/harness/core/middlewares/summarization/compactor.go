@@ -295,13 +295,13 @@ func ApplySupersede(msgs []*schema.Message) []*schema.Message {
 }
 
 func extractFilePath(content string) string {
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(content, "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "/") || strings.HasPrefix(line, "./") ||
 			strings.HasPrefix(line, "../") || strings.Contains(line, "/") {
-			parts := strings.Fields(line)
-			for _, p := range parts {
+			parts := strings.FieldsSeq(line)
+			for p := range parts {
 				if strings.Contains(p, ".") || strings.Contains(p, "/") {
 					return p
 				}

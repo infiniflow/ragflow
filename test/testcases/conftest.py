@@ -238,7 +238,30 @@ def add_model_instance(auth):
         # and BAAI/bge-reranker-v2-m3@CI@SILICONFLOW).
         instance_name = "CI"
         add_instance_api = HOST_ADDRESS + f"/api/v1/providers/{provider_name}/instances"
-        add_instance_response = requests.post(url=add_instance_api, headers=authorization, json={"instance_name": instance_name, "api_key": api_key, "region": "default", "base_url": ""})
+        # Bind and verify only the free models the suite actually uses.
+        # Without model_info the server binds/verifies the entire factory
+        # catalog for the provider, including paid chat models.
+        if provider_name == "SILICONFLOW":
+            instance_payload = {
+                "instance_name": instance_name,
+                "api_key": api_key,
+                "region": "default",
+                "base_url": "",
+                "model_info": [
+                    {"model_type": ["rerank"], "model_name": "BAAI/bge-reranker-v2-m3", "max_tokens": 8192},
+                    {"model_type": ["embedding"], "model_name": "BAAI/bge-m3", "max_tokens": 8192},
+                    {"model_type": ["embedding"], "model_name": "BAAI/bge-large-en-v1.5", "max_tokens": 512},
+                    {"model_type": ["embedding"], "model_name": "BAAI/bge-large-zh-v1.5", "max_tokens": 512},
+                ],
+            }
+        else:
+            instance_payload = {
+                "instance_name": instance_name,
+                "api_key": api_key,
+                "region": "default",
+                "base_url": "",
+            }
+        add_instance_response = requests.post(url=add_instance_api, headers=authorization, json=instance_payload)
         add_instance_res = add_instance_response.json()
         if add_instance_res.get("code") != 0:
             msg = add_instance_res.get("message", "")

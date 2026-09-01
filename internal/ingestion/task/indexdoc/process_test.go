@@ -178,6 +178,58 @@ func TestProcessChunksForPipeline_QuestionsProcessing(t *testing.T) {
 	}
 }
 
+// TestProcessChunksForPipeline_MetadataMapAggregated pins the normal contract:
+// ck["metadata"] produced by the Extractor (the merge of enable_metadata +
+// field_name="metadata") is a map[string]any and is aggregated into the
+// returned doc-level metadata.
+func TestProcessChunksForPipeline_MetadataMapAggregated(t *testing.T) {
+	chunks := []map[string]any{
+		{"text": "hello", "metadata": map[string]any{"category": "finance", "region": "east"}},
+	}
+	metadata, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
+	if err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+	if metadata["category"] != "finance" {
+		t.Errorf("category = %v, want finance", metadata["category"])
+	}
+	if metadata["region"] != "east" {
+		t.Errorf("region = %v, want east", metadata["region"])
+	}
+	// The consumed metadata key must not leak onto the persisted chunk.
+	if _, exists := chunks[0]["metadata"]; exists {
+		t.Error("metadata key should be removed from the chunk after aggregation")
+	}
+}
+
+// TestProcessChunksForPipeline_MetadataNonMapDropped pins the strict contract:
+// ck["metadata"] is Extractor-owned and always a map[string]any. A non-map
+// value (e.g. a JSON string, as field_name="metadata" used to emit before the
+// extractor unified to map) is a contract violation — it is dropped with a
+// warning, never guess-parsed, so an upstream bug surfaces instead of silently
+// producing document metadata.
+func TestProcessChunksForPipeline_MetadataNonMapDropped(t *testing.T) {
+	for name, value := range map[string]any{
+		"json_string": `{"category":"finance","region":"east"}`,
+		"fenced":      "```json\n{\"category\":\"law\"}\n```",
+		"not_json":    "this is not json",
+	} {
+		t.Run(name, func(t *testing.T) {
+			chunks := []map[string]any{{"text": "hello", "metadata": value}}
+			metadata, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
+			if err != nil {
+				t.Fatalf("ProcessChunksForPipeline: %v", err)
+			}
+			if len(metadata) != 0 {
+				t.Errorf("metadata = %v, want empty (non-map metadata dropped)", metadata)
+			}
+			if _, exists := chunks[0]["metadata"]; exists {
+				t.Error("metadata key should be removed from the chunk after aggregation")
+			}
+		})
+	}
+}
+
 func TestProcessChunksForPipeline_KeywordsProcessing(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "keywords": "kw1,kw2;kw3"}}
 	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())

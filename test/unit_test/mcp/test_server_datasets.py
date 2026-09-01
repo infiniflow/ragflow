@@ -39,8 +39,14 @@ class _FakeResponse:
         return self._payload
 
 
-def _datasets(count):
-    return [{"id": f"dataset-{idx}", "description": f"description-{idx}"} for idx in range(count)]
+def _datasets(count, *, with_name=True):
+    out = []
+    for idx in range(count):
+        row = {"id": f"dataset-{idx}", "description": f"description-{idx}"}
+        if with_name:
+            row["name"] = f"name-{idx}"
+        out.append(row)
+    return out
 
 
 @pytest.fixture()
@@ -115,3 +121,56 @@ async def test_list_datasets_clamps_explicit_page_size_to_rest_limit_and_preserv
         "id": "dataset-1",
         "name": "target",
     }
+
+
+@pytest.mark.asyncio
+async def test_list_datasets_includes_name_field(monkeypatch, mcp_server):
+    """``list_datasets`` must surface each dataset's ``name`` so MCP clients
+    can show a human-readable label next to the opaque ``id``.
+
+    Regression for #17133: pre-fix the per-row dict was
+    ``{"description": ..., "id": ...}`` and dropped the ``name`` that
+    the REST API returns. The sibling ``list_chats`` already
+    includes ``id`` / ``name`` / ``description`` — the datasets
+    branch was the inconsistency.
+    """
+    connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
+    _stub_dataset_pages(monkeypatch, connector, _datasets(3))
+
+    result = await connector.list_datasets(api_key="unit-key")
+
+    rows = [json.loads(line) for line in result.splitlines()]
+    assert len(rows) == 3
+    # Every row has the three fields the REST API returns.
+    for row in rows:
+        assert set(row.keys()) == {"id", "name", "description"}, f"row {row!r} is missing one of id/name/description"
+    # Names round-trip in document order.
+    assert [row["name"] for row in rows] == ["name-0", "name-1", "name-2"]
+    assert [row["id"] for row in rows] == ["dataset-0", "dataset-1", "dataset-2"]
+    assert [row["description"] for row in rows] == [
+        "description-0",
+        "description-1",
+        "description-2",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_list_datasets_name_omitted_when_missing(monkeypatch, mcp_server):
+    """If the REST API does not include ``name`` for some row (older
+    dataset rows, partial records, migration backlog), the per-row
+    dict must still serialise with ``name`` set to ``None`` so the
+    shape is stable. The client can then show a fallback label.
+    """
+    connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
+    # No ``name`` field on any row — matches a real API response
+    # where the field is absent.
+    _stub_dataset_pages(monkeypatch, connector, _datasets(2, with_name=False))
+
+    result = await connector.list_datasets(api_key="unit-key")
+
+    rows = [json.loads(line) for line in result.splitlines()]
+    assert len(rows) == 2
+    for row in rows:
+        assert "name" in row
+        assert row["name"] is None
+        assert set(row.keys()) == {"id", "name", "description"}

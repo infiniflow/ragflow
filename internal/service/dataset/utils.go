@@ -28,7 +28,7 @@ func datasetListItemToMap(kb *entity.KnowledgebaseListItem) map[string]interface
 		"document_count":  kb.DocNum,
 		"token_num":       kb.TokenNum,
 		"chunk_count":     kb.ChunkNum,
-		"parser_id":       kb.ParserID,
+		"parser_id":       datasetParserIDForResponse(kb.ParserID),
 		"parser_config":   jsonMapValue(kb.ParserConfig),
 		"pagerank":        kb.Pagerank,
 		"embedding_model": kb.EmbdID,
@@ -56,7 +56,7 @@ func datasetToMap(kb *entity.Knowledgebase) map[string]interface{} {
 		"chunk_count":              kb.ChunkNum,
 		"similarity_threshold":     kb.SimilarityThreshold,
 		"vector_similarity_weight": kb.VectorSimilarityWeight,
-		"parser_id":                kb.ParserID,
+		"parser_id":                datasetParserIDForResponse(kb.ParserID),
 		"parser_config":            kb.ParserConfig,
 		"pagerank":                 kb.Pagerank,
 		"create_time":              kb.CreateTime,
@@ -236,7 +236,7 @@ func datasetEncodeEmbedding(ctx context.Context, embeddingModel *modelModule.Emb
 		cleaned[i] = datasetCleanEmbeddingText(t)
 	}
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, cleaned, embeddingModel.APIConfig, embeddingConfig, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, modelModule.EmbedRequest{Texts: cleaned}, embeddingModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

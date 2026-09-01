@@ -135,12 +135,12 @@ func (d *DeepInfraModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	})
 }
 
-func (d *DeepInfraModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (d *DeepInfraModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, fmt.Errorf("texts is empty")
 	}
 
@@ -152,7 +152,7 @@ func (d *DeepInfraModel) Embed(ctx context.Context, modelName *string, texts []s
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 
 	if embeddingConfig != nil && embeddingConfig.Dimension >= 32 {
@@ -218,11 +218,12 @@ type deepinfraRerankResponse struct {
 }
 
 // Rerank scores documents against a query using DeepInfra's inference endpoint.
-func (d *DeepInfraModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (d *DeepInfraModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}

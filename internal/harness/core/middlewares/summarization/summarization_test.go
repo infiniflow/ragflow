@@ -50,7 +50,7 @@ func TestBeforeModelRewrite_NoTrigger(t *testing.T) {
 		schema.SystemMessage("System prompt"),
 	}
 	state := core.NewReActAgentState(msgs, nil, 10)
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	_, newState, err := mw.BeforeModelRewrite(t.Context(), state, nil)
 	if err != nil {
 		t.Fatalf("BeforeModelRewrite: %v", err)
 	}

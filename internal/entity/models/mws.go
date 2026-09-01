@@ -210,12 +210,12 @@ type mwsEmbeddingResponse struct {
 	Usage TokenUsage `json:"usage"`
 }
 
-func (m *MWSModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, _ *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (m *MWSModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, _ *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	endpoint, err := m.endpoint(apiConfig, "openai/v1/embeddings")
 	if err != nil {
 		return nil, err
 	}
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
@@ -224,7 +224,7 @@ func (m *MWSModel) Embed(ctx context.Context, modelName *string, texts []string,
 
 	body, err := m.baseModel.doRequest(ctx, endpoint, apiConfig, map[string]any{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}, nonStreamCallTimeout)
 	if err != nil {
 		return nil, err
@@ -234,15 +234,15 @@ func (m *MWSModel) Embed(ctx context.Context, modelName *string, texts []string,
 	if err = json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse MWS embedding response: %w", err)
 	}
-	if len(response.Data) != len(texts) {
-		return nil, fmt.Errorf("MWS embedding response returned %d vectors for %d inputs", len(response.Data), len(texts))
+	if len(response.Data) != len(request.Texts) {
+		return nil, fmt.Errorf("MWS embedding response returned %d vectors for %d inputs", len(response.Data), len(request.Texts))
 	}
 
-	embeddings := make([]EmbeddingData, len(texts))
-	seen := make([]bool, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	seen := make([]bool, len(request.Texts))
 	for _, item := range response.Data {
-		if item.Index < 0 || item.Index >= len(texts) || seen[item.Index] {
-			return nil, fmt.Errorf("unexpected MWS embedding index %d for %d inputs", item.Index, len(texts))
+		if item.Index < 0 || item.Index >= len(request.Texts) || seen[item.Index] {
+			return nil, fmt.Errorf("unexpected MWS embedding index %d for %d inputs", item.Index, len(request.Texts))
 		}
 		seen[item.Index] = true
 		embeddings[item.Index] = EmbeddingData{Index: item.Index, Embedding: item.Embedding}
@@ -264,11 +264,13 @@ type mwsRerankResponse struct {
 	} `json:"meta"`
 }
 
-func (m *MWSModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, _ *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (m *MWSModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, _ *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	endpoint, err := m.endpoint(apiConfig, "cohere/v2/rerank")
 	if err != nil {
 		return nil, err
 	}
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}

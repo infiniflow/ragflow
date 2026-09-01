@@ -63,8 +63,8 @@ export function buildApiKeyValue(
  *   1. a raw JSON string  `'{"api_key":"sk-x","group_id":"123"}'`
  *   2. an already-parsed object `{ api_key, group_id }`
  *   3. a plain bare key string `'sk-x'`
- * Normalise all three into the bare key plus any nested credential
- * fields so the form pre-fills group_id / api_version / provider_order.
+ * Normalise all three into the bare key plus the registered nested
+ * credential fields so provider forms can restore their inputs.
  */
 export function unwrapApiKey(raw: unknown): {
   apiKey: string;
@@ -165,8 +165,8 @@ export function useProviderBaseUrlOptions(providerName: string) {
  *   nested `spark_api_password`), use it to reverse the corresponding
  *   `submitTransform` so the provider-specific credential fields
  *   pre-fill. Otherwise fall back to the generic `unwrapApiKey` path
- *   which lifts the bare `api_key` plus `API_KEY_NESTED_FIELDS`
- *   (`group_id` / `api_version` / `provider_order`).
+ *   which lifts the bare `api_key` plus the provider-specific fields
+ *   registered in `API_KEY_NESTED_FIELDS`.
  */
 export function useProviderInitialValues(
   instance: IProviderInstance,
@@ -203,9 +203,8 @@ export function useProviderInitialValues(
     } else if (merged.api_key) {
       // api_key may come back as a JSON string, an already-parsed object,
       // or a plain bare key (see `unwrapApiKey`). Normalise it so the
-      // api_key text field shows the bare key and the nested credential
-      // fields (MiniMax group_id, Azure api_version, OpenRouter
-      // provider_order) pre-fill their own form inputs.
+      // api_key text field shows the bare key and registered nested
+      // credentials pre-fill their own form inputs.
       const { apiKey, nested } = unwrapApiKey(merged.api_key);
       values.api_key = apiKey;
       Object.assign(values, nested);
@@ -318,17 +317,30 @@ type VerifyTransform = (values: Record<string, any>) => {
  * `opendataloader_api_key`), it is used to build the verify args;
  * otherwise the generic `values.api_key` / `values.base_url` mapping
  * is used.
+ *
+ * `modelInfoRef` carries the models selected in the List-models picker
+ * (not registered as form fields). Without it, verify payloads for
+ * local providers often omit `model_info` and the backend falls back
+ * to an empty factory catalog.
  */
 export function useVerifyProvider(
   providerName: string,
   formRef: RefObject<DynamicFormRef>,
   verifyTransform?: VerifyTransform,
+  modelInfoRef?: { current: IModelInfo[] },
 ) {
   const { verifyProviderConnection } = useVerifyProviderConnection();
 
   return useCallback(
     async (params: any) => {
       const values = { ...(formRef.current?.getValues?.() ?? {}), ...params };
+      const selectedModels =
+        modelInfoRef?.current?.length && modelInfoRef.current.length > 0
+          ? modelInfoRef.current
+          : undefined;
+      if (selectedModels && !values.model_info) {
+        values.model_info = selectedModels;
+      }
       let verifyArgs: {
         api_key: string | object;
         base_url?: string;
@@ -340,14 +352,16 @@ export function useVerifyProvider(
         verifyArgs = {
           api_key: transformed.apiKey,
           base_url: transformed.baseUrl,
-          model_info: transformed.modelInfo ?? values.model_info,
+          model_info: transformed.modelInfo?.length
+            ? transformed.modelInfo
+            : (selectedModels ?? values.model_info),
           region: transformed.region,
         };
       } else {
         verifyArgs = {
           api_key: values.api_key ?? '',
           base_url: values.base_url,
-          model_info: values.model_info,
+          model_info: selectedModels ?? values.model_info,
         };
       }
       const ret = await verifyProviderConnection({
@@ -365,7 +379,13 @@ export function useVerifyProvider(
         logs: string;
       };
     },
-    [providerName, formRef, verifyProviderConnection, verifyTransform],
+    [
+      providerName,
+      formRef,
+      verifyProviderConnection,
+      verifyTransform,
+      modelInfoRef,
+    ],
   );
 }
 
@@ -438,9 +458,9 @@ interface UseInstanceSaveStateArgs {
  *   - `getSavePayload()`: return the body if dirty (or a draft with a
  *     name), else `null` so the parent can skip the redundant call.
  *   - `markSaved()`: re-baseline after a successful save.
- *   - `markModelsEdited()`: absorb a model PATCH into the baseline so
- *     the next top-save does not re-PUT the same model_info (the PATCH
- *     endpoint already persisted it).
+ *   - `markModelsEdited()`: absorb the authoritative saved model snapshot
+ *     into the baseline so the next top-save does not re-PUT model_info
+ *     that the backend already persisted.
  *
  * The dirty check compares a JSON signature of the current payload to
  * the baseline signature, mirroring the old `lastSavedPayloadRef`
@@ -660,15 +680,11 @@ export function useInstanceSaveState({
     }
   }, [buildPayload]);
 
-  // Absorb a model patch into the baseline. `patchInstanceModel` has
-  // already persisted the new max_tokens / model_type / features
-  // server-side, so the next top-save should NOT re-PUT the same
-  // model_info. By parsing the previously-saved baseline and overwriting
-  // ONLY model_info, the baseline now matches the current state and the
-  // signature check in `getSavePayload` short-circuits - while any
-  // in-flight edits to api_key / base_url / region remain in the
-  // baseline unchanged and will still trigger a save via signature
-  // mismatch.
+  // Absorb the latest backend-fetched model list into the baseline. By
+  // parsing the previously-saved baseline and overwriting ONLY model_info,
+  // the signature check in `getSavePayload` short-circuits for an unchanged
+  // card while any in-flight api_key / base_url / region edits still differ
+  // from the baseline and remain eligible for saving.
   //
   // Skipped for drafts (the baseline is empty there) and until the
   // baseline has been seeded.

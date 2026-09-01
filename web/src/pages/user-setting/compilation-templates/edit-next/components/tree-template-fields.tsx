@@ -29,14 +29,14 @@ export function TreeTemplateFields({ index }: TreeTemplateFieldsProps) {
   const { t } = useTranslation();
 
   return (
-    <Collapse defaultOpen title={t('setting.raptorTreeSettings')}>
+    <Collapse defaultOpen title={t('knowledgeCompilation.raptorTreeSettings')}>
       <div className="space-y-4">
         <RAGFlowFormItem
           name={`templates.${index}.config.raptor.prompt`}
-          label={t('setting.summarizationPrompt')}
+          label={t('knowledgeCompilation.summarizationPrompt')}
         >
           <Textarea
-            placeholder={t('setting.descriptionPlaceholder')}
+            placeholder={t('common.descriptionPlaceholder')}
             rows={8}
             resize="vertical"
           />
@@ -44,23 +44,23 @@ export function TreeTemplateFields({ index }: TreeTemplateFieldsProps) {
 
         <SliderInputFormField
           name={`templates.${index}.config.raptor.max_token`}
-          label={t('setting.maxToken')}
+          label={t('knowledgeCompilation.maxToken')}
           max={2048}
           min={512}
           step={1}
         />
         <SliderInputFormField
           name={`templates.${index}.config.raptor.clustering_threshold`}
-          label={t('setting.clusteringThreshold')}
-          tooltip={t('setting.clusteringThresholdTip')}
+          label={t('knowledgeCompilation.clusteringThreshold')}
+          tooltip={t('knowledgeCompilation.clusteringThresholdTip')}
           step={0.01}
           max={1}
           min={0}
         />
         <SliderInputFormField
           name={`templates.${index}.config.raptor.clustering_ratio`}
-          label={t('setting.clusteringRatio')}
-          tooltip={t('setting.clusteringRatioTip')}
+          label={t('knowledgeCompilation.clusteringRatio')}
+          tooltip={t('knowledgeCompilation.clusteringRatioTip')}
           step={0.01}
           max={1}
           min={0}
@@ -68,8 +68,8 @@ export function TreeTemplateFields({ index }: TreeTemplateFieldsProps) {
 
         <SwitchFormField
           name={`templates.${index}.config.raptor.rechunk`}
-          label={t('setting.rechunkByTreeLeaves')}
-          tooltip={t('setting.rechunkByTreeLeavesTip')}
+          label={t('knowledgeCompilation.rechunkByTreeLeaves')}
+          tooltip={t('knowledgeCompilation.rechunkByTreeLeavesTip')}
           vertical={false}
         />
       </div>

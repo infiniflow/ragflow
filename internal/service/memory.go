@@ -121,40 +121,51 @@ You are an expert at analyzing conversations to extract structured memory.
 6. Maximum {max_items} items per type
 `
 
-// TYPE_INSTRUCTIONS contains specific instructions for each memory type extraction
+// TYPE_INSTRUCTIONS contains specific instructions for each memory type extraction.
+// Kept in lockstep with Python's memory/utils/prompt_util.py TYPE_INSTRUCTIONS —
+// both implementations drive the same extraction contract, and a rule present on
+// only one side (e.g. the semantic Default line) drifts extraction behavior across
+// languages (see #18415).
 var TYPE_INSTRUCTIONS = map[string]string{
 	"semantic": `
 **EXTRACT SEMANTIC KNOWLEDGE:**
 - Universal facts, definitions, concepts, relationships
 - Time-invariant, generally true information
+- Examples: "The capital of France is Paris", "Water boils at 100°C"
 
-**Timestamp Rules:**
-- valid_at: When the fact became true
-- invalid_at: When it becomes false or empty if still true
+**Timestamp Rules for Semantic Knowledge:**
+- valid_at: When the fact became true (e.g., law enactment, discovery)
+- invalid_at: When it becomes false (e.g., repeal, disproven) or empty if still true
+- Default: valid_at = conversation time, invalid_at = "" for timeless facts
 `,
 	"episodic": `
 **EXTRACT EPISODIC KNOWLEDGE:**
 - Specific experiences, events, personal stories
 - Time-bound, person-specific, contextual
+- Examples: "Yesterday I fixed the bug", "User reported issue last week"
 
-**Timestamp Rules:**
+**Timestamp Rules for Episodic Knowledge:**
 - valid_at: Event start/occurrence time
 - invalid_at: Event end time or empty if instantaneous
+- Extract explicit times: "at 3 PM", "last Monday", "from X to Y"
 `,
 	"procedural": `
 **EXTRACT PROCEDURAL KNOWLEDGE:**
 - Processes, methods, step-by-step instructions
 - Goal-oriented, actionable, often includes conditions
+- Examples: "To reset password, click...", "Debugging steps: 1)..."
 
-**Timestamp Rules:**
+**Timestamp Rules for Procedural Knowledge:**
 - valid_at: When procedure becomes valid/effective
 - invalid_at: When it expires/becomes obsolete or empty if current
+- For version-specific: use release dates
+- For best practices: invalid_at = ""
 `,
 }
 
 // OUTPUT_TEMPLATES defines the output format for each memory type
 var OUTPUT_TEMPLATES = map[string]string{
-	"semantic":   `"semantic": [{"content": "Clear factual statement", "valid_at": "timestamp or empty", "invalid_at": "timestamp or empty"}]`,
+	"semantic":   `"semantic": [{"content": "Clear factual statement", "valid_at": "timestamp — use the conversation time when the fact has no date of its own", "invalid_at": "timestamp or empty"}]`,
 	"episodic":   `"episodic": [{"content": "Narrative event description", "valid_at": "event start timestamp", "invalid_at": "event end timestamp or empty"}]`,
 	"procedural": `"procedural": [{"content": "Actionable instructions", "valid_at": "procedure effective timestamp", "invalid_at": "procedure expiration timestamp or empty"}]`,
 }
@@ -847,7 +858,9 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 		return errors.New("message store is not initialized")
 	}
 
-	now := time.Now().UTC()
+	// forget_at is stamped as server-local wall clock, not UTC. forget_at_flt
+	// below is a Unix millisecond value and therefore zone-independent.
+	now := memoryNow()
 	forgetTime := now.Format("2006-01-02 15:04:05")
 	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
 	updates := map[string]interface{}{
@@ -1358,7 +1371,7 @@ func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question str
 		return nil, err
 	}
 	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, []string{question}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{question}}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, err
 	}

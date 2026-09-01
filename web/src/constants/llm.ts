@@ -85,7 +85,7 @@ export enum LLMFactory {
   MinerU = 'MinerU',
   MinerUNet = 'MinerU.Net',
   PaddleOCR = 'PaddleOCR',
-  PaddleOCRNet = 'PaddleOCR.Net',
+  PaddleOCRLocal = 'PaddleOCR.local',
   OpenDataLoader = 'OpenDataLoader',
   SoMark = 'SoMark',
   N1n = 'n1n',
@@ -106,6 +106,7 @@ export enum LLMFactory {
   FunASR = 'FunASR',
   AIMLAPI = 'aimlapi.com',
   GreenPT = 'GreenPT',
+  Synthorai = 'Synthorai',
 }
 
 // Please lowercase the file name
@@ -174,7 +175,7 @@ export const IconMap = {
   [LLMFactory.MinerU]: 'mineru',
   [LLMFactory.MinerUNet]: 'mineru',
   [LLMFactory.PaddleOCR]: 'paddleocr',
-  [LLMFactory.PaddleOCRNet]: 'paddleocr',
+  [LLMFactory.PaddleOCRLocal]: 'paddleocr',
   [LLMFactory.N1n]: 'n1n',
   [LLMFactory.Avian]: 'avian',
   [LLMFactory.RAGcon]: 'ragcon',
@@ -194,6 +195,7 @@ export const IconMap = {
   [LLMFactory.FunASR]: 'funasr',
   [LLMFactory.AIMLAPI]: 'aimlapi',
   [LLMFactory.GreenPT]: 'greenpt',
+  [LLMFactory.Synthorai]: 'synthorai',
   [LLMFactory.MWS]: 'mws',
 };
 
@@ -219,14 +221,16 @@ export const APIMapUrl = {
   [LLMFactory.OpenAI]: 'https://platform.openai.com/api-keys',
   [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app/keys',
   [LLMFactory.GreenPT]: 'https://greenpt.ai',
+  [LLMFactory.Synthorai]: 'https://synthorai.io',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
   [LLMFactory.Gemini]: 'https://aistudio.google.com/app/apikey',
   [LLMFactory.DeepSeek]: 'https://platform.deepseek.com/api_keys',
   [LLMFactory.Moonshot]: 'https://platform.moonshot.cn/console/api-keys',
-  [LLMFactory.TongYiQianWen]: 'https://dashscope.console.aliyun.com/apiKey',
-  [LLMFactory.ZhipuAI]: 'https://open.bigmodel.cn/usercenter/apikeys',
+  [LLMFactory.TongYiQianWen]:
+    'https://bailian.console.aliyun.com/?tab=model#/api-key',
+  [LLMFactory.ZhipuAI]: 'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',
   [LLMFactory.XAI]: 'https://x.ai/api/',
   [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',
   [LLMFactory.Mistral]: 'https://console.mistral.ai/api-keys/',
@@ -302,7 +306,7 @@ export const APIMapUrl = {
   [LLMFactory.JiekouAI]: 'https://jiekou.ai',
   [LLMFactory.MinerU]: 'https://mineru.net',
   [LLMFactory.MinerUNet]: 'https://mineru.net',
-  [LLMFactory.PaddleOCRNet]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.PaddleOCRLocal]: 'https://www.paddleocr.ai/latest/',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
 };

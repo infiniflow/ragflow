@@ -42,6 +42,7 @@ type ResolvedDocumentID struct {
 // DocumentStore reads existing connector documents.
 type DocumentStore interface {
 	ListIDs(ctx context.Context, kbID, sourceType string) (map[string]struct{}, error)
+	ListFingerprintsBySourceType(ctx context.Context, kbID, sourceType string) (map[string]string, error)
 	GetFingerprintsByIDs(ctx context.Context, kbID, sourceType string, ids []string) (map[string]string, error)
 }
 
@@ -53,6 +54,11 @@ type DocumentIDResolver struct {
 // NewDocumentIDResolver creates a document ID resolver.
 func NewDocumentIDResolver(store DocumentStore) *DocumentIDResolver {
 	return &DocumentIDResolver{store: store}
+}
+
+// ListFingerprintsBySourceType returns all fingerprints for one connector namespace.
+func (r *DocumentIDResolver) ListFingerprintsBySourceType(ctx context.Context, kbID, sourceType string) (map[string]string, error) {
+	return r.store.ListFingerprintsBySourceType(ctx, kbID, sourceType)
 }
 
 // Resolve chooses the legacy ID when already present in the KB.
@@ -97,6 +103,26 @@ func (s *GormDocumentStore) ListIDs(ctx context.Context, kbID, sourceType string
 		result[doc.ID] = struct{}{}
 	}
 
+	return result, nil
+}
+
+// ListFingerprintsBySourceType returns all existing fingerprints for one connector namespace.
+func (s *GormDocumentStore) ListFingerprintsBySourceType(ctx context.Context, kbID, sourceType string) (map[string]string, error) {
+	var docs []entity.Document
+	if err := dao.GetDB().WithContext(ctx).
+		Select("id", "content_hash").
+		Where("kb_id = ? AND source_type = ?", kbID, sourceType).
+		Find(&docs).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]string, len(docs))
+	for _, doc := range docs {
+		if doc.ContentHash == nil {
+			result[doc.ID] = ""
+			continue
+		}
+		result[doc.ID] = *doc.ContentHash
+	}
 	return result, nil
 }
 

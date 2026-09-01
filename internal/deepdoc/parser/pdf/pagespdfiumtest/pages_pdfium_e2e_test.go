@@ -86,7 +86,7 @@ func TestPagesRealPdf_PdfiumFilter(t *testing.T) {
 		cfg := deepdoctype.DefaultParserConfig()
 		cfg.Pages = [][]int{{1, 1}}
 		p := deepdocpdf.NewParser(cfg)
-		result, err := p.ParseRaw(context.Background(), eng, mock)
+		result, err := p.ParseRaw(t.Context(), eng, mock)
 		if err != nil {
 			t.Fatalf("ParseRaw: %v", err)
 		}
@@ -103,7 +103,7 @@ func TestPagesRealPdf_PdfiumFilter(t *testing.T) {
 	// Group 2: control — no Pages restriction -> all pages.
 	t.Run("no pages -> all pages (control)", func(t *testing.T) {
 		p := deepdocpdf.NewParser(deepdoctype.DefaultParserConfig())
-		result, err := p.ParseRaw(context.Background(), eng, mock)
+		result, err := p.ParseRaw(t.Context(), eng, mock)
 		if err != nil {
 			t.Fatalf("ParseRaw: %v", err)
 		}
@@ -119,7 +119,7 @@ func TestPagesRealPdf_PdfiumFilter(t *testing.T) {
 			cfg := deepdoctype.DefaultParserConfig()
 			cfg.Pages = [][]int{{1, 1}, {total, total}}
 			p := deepdocpdf.NewParser(cfg)
-			result, err := p.ParseRaw(context.Background(), eng, mock)
+			result, err := p.ParseRaw(t.Context(), eng, mock)
 			if err != nil {
 				t.Fatalf("ParseRaw: %v", err)
 			}

@@ -24,7 +24,6 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -180,7 +179,7 @@ def _load_file_api_module(monkeypatch):
 
     web_utils_mod = ModuleType("api.utils.web_utils")
     web_utils_mod.CONTENT_TYPE_MAP = {"txt": "text/plain"}
-    web_utils_mod.apply_safe_file_response_headers = lambda response, content_type, ext: response.headers.update({"content_type": content_type, "ext": ext})
+    web_utils_mod.apply_download_file_response_headers = lambda response, content_type, ext, filename=None: response.headers.update({"content_type": content_type, "ext": ext, "filename": filename})
     monkeypatch.setitem(sys.modules, "api.utils.web_utils", web_utils_mod)
 
     common_pkg = ModuleType("common")
@@ -329,6 +328,7 @@ def test_download_falls_back_to_document_storage(monkeypatch):
     assert res.data == b"fallback-blob"
     assert res.headers["content_type"] == "text/plain"
     assert res.headers["ext"] == "txt"
+    assert res.headers["filename"] == "doc.txt"
 
 
 @pytest.mark.p2
@@ -473,7 +473,7 @@ def _load_file2document_module(monkeypatch):
 
         @staticmethod
         def insert(_payload):
-            return SimpleNamespace(to_json=lambda: {})
+            return SimpleNamespace(to_json=dict)
 
     file2document_mod.File2DocumentService = _StubFile2DocumentService
     monkeypatch.setitem(sys.modules, "api.db.services.file2document_service", file2document_mod)
@@ -669,7 +669,7 @@ def test_convert_files_mode_add_and_replace_unit(monkeypatch):
     monkeypatch.setattr(module.File2DocumentService, "get_by_file_id", lambda file_id: [SimpleNamespace(document_id=f"doc-{file_id}")])
     monkeypatch.setattr(module.File2DocumentService, "delete_by_document_id", lambda doc_id: deleted_doc_links.append(doc_id))
     monkeypatch.setattr(module.File2DocumentService, "delete_by_file_id", lambda file_id: deleted_file_links.append(file_id))
-    monkeypatch.setattr(module.File2DocumentService, "insert", lambda payload: inserted.append(payload) or SimpleNamespace(to_json=lambda: {}))
+    monkeypatch.setattr(module.File2DocumentService, "insert", lambda payload: inserted.append(payload) or SimpleNamespace(to_json=dict))
     monkeypatch.setattr(module.DocumentService, "get_by_id", lambda doc_id: (True, SimpleNamespace(id=doc_id, kb_id="kb-old")))
     monkeypatch.setattr(module.DocumentService, "get_tenant_id", lambda _doc_id: "tenant-1")
     monkeypatch.setattr(module.DocumentService, "remove_document", lambda doc, tenant_id: removed.append((doc.id, tenant_id)) or True)
@@ -893,6 +893,15 @@ def test_create_folder_rejects_duplicate_name(monkeypatch):
 
 
 @pytest.mark.p2
+def test_create_folder_rejects_slash_in_name(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+
+    ok, message = _run(module.create_folder("tenant1", "/", "pf1", module.FileType.FOLDER.value))
+    assert ok is False
+    assert message == 'Folder name cannot contain "/"'
+
+
+@pytest.mark.p2
 def test_delete_files_checks_team_permission(monkeypatch):
     module = _load_file_api_service(monkeypatch)
     monkeypatch.setattr(
@@ -919,6 +928,20 @@ def test_move_files_rejects_extension_change_in_new_name(monkeypatch):
     ok, message = _run(module.move_files("tenant1", ["file1"], new_name="a.pdf"))
     assert ok is False
     assert message == "The extension of file can't be changed"
+
+
+@pytest.mark.p2
+def test_move_files_rejects_slash_in_new_name(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_ids",
+        lambda _ids: [_DummyFile("file1", module.FileType.FOLDER.value, name="old")],
+    )
+
+    ok, message = _run(module.move_files("tenant1", ["file1"], new_name="a/b"))
+    assert ok is False
+    assert message == 'Name cannot contain "/"'
 
 
 @pytest.mark.p2
@@ -999,3 +1022,48 @@ def test_get_file_content_checks_permission(monkeypatch):
     ok, file = module.get_file_content("tenant1", "file1")
     assert ok is True
     assert file.id == "file1"
+
+
+@pytest.mark.p2
+def test_move_folder_to_its_current_parent_does_not_delete_it(monkeypatch):
+    """Moving a folder into its current parent (i.e. to its current location)
+    must not delete the folder: _move_entry_recursive used to reuse the source
+    folder itself as the target and then delete it, making the folder vanish."""
+    module = _load_file_api_service(monkeypatch)
+    deleted = []
+
+    src = _DummyFile("folder-a", module.FileType.FOLDER.value, name="A", parent_id="parent")
+    dest = SimpleNamespace(id="parent", name="parent")
+
+    monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [src])
+    monkeypatch.setattr(module.FileService, "get_by_id", lambda _file_id: (True, dest))
+    # The folder already sits in the destination folder under the same name.
+    monkeypatch.setattr(module.FileService, "query", lambda **_kwargs: [src])
+    monkeypatch.setattr(
+        module.FileService,
+        "delete_by_id",
+        lambda file_id: deleted.append(file_id) or True,
+    )
+
+    ok, message = _run(module.move_files("tenant1", ["folder-a"], "parent"))
+    assert ok is False
+    assert message == "The folder is already in the target location. There is no need to move it."
+    assert deleted == []
+
+
+@pytest.mark.p2
+def test_move_folder_to_itself_is_rejected(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+    src = _DummyFile("folder-a", module.FileType.FOLDER.value, name="A", parent_id="parent")
+
+    monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [src])
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_id",
+        lambda _file_id: (True, SimpleNamespace(id="folder-a")),
+    )
+    monkeypatch.setattr(module.FileService, "get_all_parent_folders", lambda _file_id: [])
+
+    ok, message = _run(module.move_files("tenant1", ["folder-a"], "folder-a"))
+    assert ok is False
+    assert message == "Cannot move a folder to itself."

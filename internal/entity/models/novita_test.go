@@ -646,7 +646,7 @@ func TestNovitaRerankHappyPathReordersByIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "baai/bge-reranker-v2-m3"
-	resp, err := newNovitaForTest(srv.URL).Rerank(ctx, &model, "what is rag", []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	resp, err := newNovitaForTest(srv.URL).Rerank(ctx, &model, RerankRequest{Query: "what is rag", Documents: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -674,7 +674,7 @@ func TestNovitaRerankRespectsTopNConfig(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "baai/bge-reranker-v2-m3"
-	if _, err := newNovitaForTest(srv.URL).Rerank(ctx, &model, "q", []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}, nil); err != nil {
+	if _, err := newNovitaForTest(srv.URL).Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}, nil); err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
 }
@@ -684,7 +684,7 @@ func TestNovitaRerankEmptyDocumentsShortCircuits(t *testing.T) {
 	ctx := t.Context()
 	apiKey := "test-key"
 	model := "x"
-	resp, err := newNovitaForTest("http://unused").Rerank(ctx, &model, "q", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	resp, err := newNovitaForTest("http://unused").Rerank(ctx, &model, RerankRequest{Query: "q", Documents: nil}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("expected nil error for empty docs, got %v", err)
 	}
@@ -697,7 +697,7 @@ func TestNovitaRerankRequiresApiKey(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	model := "x"
-	_, err := newNovitaForTest("http://unused").Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := newNovitaForTest("http://unused").Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("got %v", err)
 	}
@@ -707,7 +707,7 @@ func TestNovitaRerankRequiresModelName(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
-	_, err := newNovitaForTest("http://unused").Rerank(ctx, nil, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newNovitaForTest("http://unused").Rerank(ctx, nil, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("got %v", err)
 	}
@@ -723,7 +723,7 @@ func TestNovitaRerankRejectsOutOfRangeIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "x"
-	_, err := newNovitaForTest(srv.URL).Rerank(ctx, &model, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newNovitaForTest(srv.URL).Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("got %v", err)
 	}
@@ -739,7 +739,7 @@ func TestNovitaRerankRejectsDuplicateIndex(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "x"
-	_, err := newNovitaForTest(srv.URL).Rerank(ctx, &model, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newNovitaForTest(srv.URL).Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Errorf("got %v", err)
 	}
@@ -756,7 +756,7 @@ func TestNovitaRerankSurfacesHTTPError(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "x"
-	_, err := newNovitaForTest(srv.URL).Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newNovitaForTest(srv.URL).Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "Novita rerank API error") {
 		t.Errorf("got %v", err)
 	}
@@ -771,7 +771,7 @@ func TestNovitaRerankRejectsMissingRerankSuffix(t *testing.T) {
 		map[string]string{"default": "http://unused"},
 		URLSuffix{Chat: "openai/v1/chat/completions"},
 	)
-	_, err := driver.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := driver.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no rerank URL suffix configured") {
 		t.Errorf("got %v", err)
 	}

@@ -14,7 +14,10 @@
  *  limitations under the License.
  */
 
+import { UploadResponseDataType } from '@/interfaces/database/chat';
+import { IDocumentInfo } from '@/interfaces/database/document';
 import { currentReg, parseCitationIndex } from '@/utils/chat';
+import { getExtension } from '@/utils/document-util';
 
 export const extractNumbersFromMessageContent = (content: string) => {
   const matches = content?.match(currentReg);
@@ -30,3 +33,37 @@ export const extractNumbersFromMessageContent = (content: string) => {
   }
   return [];
 };
+
+const ImageExtensions = [
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'bmp',
+  'webp',
+  'svg',
+  'ico',
+  'avif',
+];
+
+export function getFileMimeType(
+  file: File | IDocumentInfo | UploadResponseDataType,
+): string {
+  if (file instanceof File) {
+    return file.type;
+  }
+  if ('mime_type' in file && typeof file.mime_type === 'string') {
+    return file.mime_type;
+  }
+  return '';
+}
+
+export function isImageFile(
+  file: File | IDocumentInfo | UploadResponseDataType,
+): boolean {
+  const mimeType = getFileMimeType(file);
+  if (mimeType) {
+    return mimeType.startsWith('image/');
+  }
+  return ImageExtensions.includes(getExtension(file.name));
+}

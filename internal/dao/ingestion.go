@@ -120,15 +120,20 @@ func (dao *IngestionTaskDAO) Delete(ctx context.Context, db *gorm.DB, taskID str
 
 	taskStatus := tasks[0].Status
 	switch taskStatus {
-	case common.CREATED, common.STOPPED, common.COMPLETED, common.FAILED:
+	case common.CREATED, common.SCHEDULED, common.STOPPED, common.COMPLETED, common.FAILED:
 		// ingestion_task_log no longer carries file references (the old
 		// checkpoint JSON column was dropped in favor of typed columns), so
 		// there are no task-level files to delete here.
 		var filesToDelete []string
 
-		err = tx.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Delete(&entity.IngestionTask{}).Error
-		if err != nil {
-			return nil, err
+		result := tx.Model(&entity.IngestionTask{}).
+			Where("id = ? AND status IN ?", taskID, []string{common.CREATED, common.SCHEDULED, common.STOPPED, common.COMPLETED, common.FAILED}).
+			Delete(&entity.IngestionTask{})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil, fmt.Errorf("task %s status changed, cannot be removed", taskID)
 		}
 
 		taskInfo := &TaskInfo{
@@ -144,22 +149,24 @@ func (dao *IngestionTaskDAO) Delete(ctx context.Context, db *gorm.DB, taskID str
 
 func (dao *IngestionTaskDAO) GetAllTasks(ctx context.Context, db *gorm.DB, page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
+	query := db.WithContext(ctx)
 	var err error
 	if pageSize == 0 {
-		err = db.WithContext(ctx).Find(&tasks).Error
+		err = query.Find(&tasks).Error
 	} else {
-		err = db.WithContext(ctx).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
+		err = query.Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
 	}
 	return tasks, err
 }
 
 func (dao *IngestionTaskDAO) ListByUserID(ctx context.Context, db *gorm.DB, userID string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
+	query := db.WithContext(ctx).Where("user_id = ?", userID)
 	var err error
 	if pageSize == 0 {
-		err = db.WithContext(ctx).Where("user_id = ?", userID).Order("create_time DESC").Find(&tasks).Error
+		err = query.Order("create_time DESC").Find(&tasks).Error
 	} else {
-		err = db.WithContext(ctx).Where("user_id = ?", userID).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
+		err = query.Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
 	}
 
 	return tasks, err
@@ -167,13 +174,20 @@ func (dao *IngestionTaskDAO) ListByUserID(ctx context.Context, db *gorm.DB, user
 
 func (dao *IngestionTaskDAO) ListByUserIDAndDatasetID(ctx context.Context, db *gorm.DB, userID, datasetID string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
+	query := db.WithContext(ctx).Where("user_id = ? AND dataset_id = ?", userID, datasetID)
 	var err error
 	if pageSize == 0 {
-		err = db.WithContext(ctx).Where("user_id = ? AND dataset_id = ?", userID, datasetID).Order("create_time DESC").Find(&tasks).Error
+		err = query.Order("create_time DESC").Find(&tasks).Error
 	} else {
-		err = db.WithContext(ctx).Where("user_id = ? AND dataset_id = ?", userID, datasetID).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
+		err = query.Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
 	}
 
+	return tasks, err
+}
+
+func (dao *IngestionTaskDAO) ListByStatus(ctx context.Context, db *gorm.DB, status string) ([]*entity.IngestionTask, error) {
+	var tasks []*entity.IngestionTask
+	err := db.WithContext(ctx).Where("status = ?", status).Order("create_time ASC").Find(&tasks).Error
 	return tasks, err
 }
 
@@ -196,7 +210,8 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 }
 
 // DeleteIfTerminal deletes ingestion tasks for a document that are in a
-// terminal state (COMPLETED, STOPPED, FAILED) or still queued (CREATED).
+// terminal state (COMPLETED, STOPPED, FAILED), or not yet running
+// (CREATED, SCHEDULED).
 // RUNNING and STOPPING tasks are NOT deleted because an in-flight worker
 // would keep writing chunks and corrupt a new run's results.
 // Returns the number of rows deleted.
@@ -308,5 +323,25 @@ func (dao *IngestionTaskLogDAO) GetLogByLogID(ctx context.Context, db *gorm.DB, 
 
 func (dao *IngestionTaskLogDAO) DeleteByTaskID(ctx context.Context, db *gorm.DB, taskID string) (int64, error) {
 	result := db.WithContext(ctx).Unscoped().Where("task_id = ?", taskID).Delete(&entity.IngestionTaskLog{})
+	return result.RowsAffected, result.Error
+}
+
+// DeleteComponentLogsByTaskID removes component lifecycle rows from a new run
+// while preserving checkpoint rows such as run_count for task history.
+func (dao *IngestionTaskLogDAO) DeleteComponentLogsByTaskID(ctx context.Context, db *gorm.DB, taskID string) (int64, error) {
+	var logs []*entity.IngestionTaskLog
+	if err := db.WithContext(ctx).Where("task_id = ?", taskID).Find(&logs).Error; err != nil {
+		return 0, err
+	}
+	ids := make([]int, 0, len(logs))
+	for _, log := range logs {
+		if log != nil && len(log.Checkpoint) == 0 {
+			ids = append(ids, log.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := db.WithContext(ctx).Unscoped().Where("id IN ?", ids).Delete(&entity.IngestionTaskLog{})
 	return result.RowsAffected, result.Error
 }

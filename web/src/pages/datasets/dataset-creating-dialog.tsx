@@ -32,15 +32,18 @@ import { z } from 'zod';
 import {
   ChunkMethodItem,
   EmbeddingModelItem,
-} from '../dataset/dataset-setting/configuration/common-item';
-import { isGoBackend } from '@/utils/backend-runtime';
+} from '../dataset/setting/python/configuration/common-item';
+import { BackendVariant, pickByBackend } from '@/utils/backend-variant';
 
 const FormId = 'dataset-creating-form';
 
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
   const defaultModelDictionary = useFetchDefaultModelDictionary(true);
-  const ChunkMethodName = isGoBackend() ? 'parser_id' : 'chunk_method';
+  const ChunkMethodName = pickByBackend<'parser_id' | 'chunk_method'>({
+    go: 'parser_id',
+    python: 'chunk_method',
+  });
 
   const FormSchema = z
     .object({
@@ -57,15 +60,16 @@ export function InputForm({ onOk }: IModalProps<any>) {
           message: t('knowledgeConfiguration.embeddingModelPlaceholder'),
         })
         .trim(),
-      [ChunkMethodName]: z.string().optional(),
+      // Go registers parser_id, Python registers chunk_method; only the
+      // active key is set at runtime (see ChunkMethodName).
+      parser_id: z.string().optional(),
+      chunk_method: z.string().optional(),
       pipeline_id: z.string().optional(),
     })
     .superRefine((data, ctx) => {
+      const chunkMethod = data[ChunkMethodName];
       // When parseType === BuiltIn, chunk_method is required
-      if (
-        data.parseType === ParseType.BuiltIn &&
-        (!data[ChunkMethodName] || data[ChunkMethodName].trim() === '')
-      ) {
+      if (data.parseType === ParseType.BuiltIn && !chunkMethod?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.parserRequired'),
@@ -142,12 +146,12 @@ export function InputForm({ onOk }: IModalProps<any>) {
 
         <EmbeddingModelItem line={2} isEdit={false} />
         <ParseTypeItem />
-        {parseType === ParseType.BuiltIn &&
-          (isGoBackend() ? (
-            <BuiltinPipelineItem name={ChunkMethodName} />
-          ) : (
-            <ChunkMethodItem name={ChunkMethodName}></ChunkMethodItem>
-          ))}
+        {parseType === ParseType.BuiltIn && (
+          <BackendVariant
+            go={<BuiltinPipelineItem name={ChunkMethodName} />}
+            python={<ChunkMethodItem name={ChunkMethodName}></ChunkMethodItem>}
+          />
+        )}
         {parseType === ParseType.Pipeline && (
           <DataFlowSelect
             isMult={false}
@@ -173,7 +177,7 @@ export function DatasetCreatingDialog({
       <DialogContent
         className="sm:max-w-[425px] focus-visible:!outline-none flex flex-col"
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             const form = document.getElementById(FormId) as HTMLFormElement;
             form?.requestSubmit();

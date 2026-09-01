@@ -37,7 +37,7 @@ func TestFaultInjection_NodePanic(t *testing.T) {
 	g.AddEdge("panic_node", constants.End)
 
 	engine := NewEngine(g, WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := engine.RunSync(ctx, map[string]any{"value": "test"})
 	if err == nil {

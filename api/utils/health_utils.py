@@ -17,6 +17,7 @@ from datetime import datetime
 import json
 import logging
 import os
+import re
 import requests
 from timeit import default_timer as timer
 
@@ -25,7 +26,15 @@ from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.es_conn import ESConnection
 from rag.utils.infinity_conn import InfinityConnection
 from rag.utils.ob_conn import OBConnection
+from rag.utils.gaussdb_conn import GaussDBConnection
 from common import settings
+from common.doc_store.gaussdb_conn_base import mask_gaussdb_text
+
+
+_GAUSSDB_SENSITIVE_KEY_PATTERN = re.compile(
+    r"(?:^|[_-])(?:password|passwd|pwd|secret|token|api[_-]?key|dsn)$",
+    re.IGNORECASE,
+)
 
 
 def _ok_nok(ok: bool) -> str:
@@ -64,8 +73,8 @@ def check_doc_engine() -> tuple[bool, dict]:
 def check_storage() -> tuple[bool, dict]:
     st = timer()
     try:
-        settings.STORAGE_IMPL.health()
-        return True, {"elapsed": f"{(timer() - st) * 1000.0:.1f}"}
+        health_result = settings.STORAGE_IMPL.health()
+        return health_result is not False, {"elapsed": f"{(timer() - st) * 1000.0:.1f}"}
     except Exception as e:
         return False, {"elapsed": f"{(timer() - st) * 1000.0:.1f}", "error": str(e)}
 
@@ -119,6 +128,113 @@ def get_oceanbase_status():
         return {
             "status": "timeout",
             "message": f"error: {str(e)}",
+        }
+
+
+def _mask_gaussdb_string(value: str) -> str:
+    return mask_gaussdb_text(value)
+
+
+def _log_gaussdb_error(context: str, exc: Exception) -> str:
+    masked_error = _mask_gaussdb_string(str(exc))
+    logging.error("%s (%s): %s", context, type(exc).__name__, masked_error)
+    return masked_error
+
+
+def _mask_gaussdb_secret(value):
+    if isinstance(value, dict):
+        return {key: "***" if isinstance(key, str) and _GAUSSDB_SENSITIVE_KEY_PATTERN.search(key) else _mask_gaussdb_secret(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_mask_gaussdb_secret(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_mask_gaussdb_secret(v) for v in value)
+    if isinstance(value, str):
+        return _mask_gaussdb_string(value)
+    return value
+
+
+def _get_gaussdb_connection():
+    conn = getattr(settings, "docStoreConn", None)
+    if conn is not None and getattr(conn, "db_type", lambda: None)() == "gaussdb":
+        return conn
+    return GaussDBConnection()
+
+
+def get_gaussdb_status():
+    doc_engine = os.getenv("DOC_ENGINE", "elasticsearch").lower()
+    if doc_engine != "gaussdb":
+        return {
+            "status": "not_configured",
+            "message": "GaussDB is not configured as the document engine",
+        }
+    try:
+        conn = _get_gaussdb_connection()
+        health_info = _mask_gaussdb_secret(conn.health())
+        performance_metrics = _mask_gaussdb_secret(conn.get_performance_metrics())
+        status = "alive" if health_info.get("status") == "healthy" else "timeout"
+        return {
+            "status": status,
+            "message": {
+                "health": health_info,
+                "performance": performance_metrics,
+            },
+        }
+    except Exception as e:
+        masked_error = _log_gaussdb_error("GaussDB status check failed", e)
+        return {
+            "status": "timeout",
+            "message": f"error: {masked_error}",
+        }
+
+
+def check_gaussdb_health() -> dict:
+    doc_engine = os.getenv("DOC_ENGINE", "elasticsearch").lower()
+    if doc_engine != "gaussdb":
+        return {
+            "status": "not_configured",
+            "details": {
+                "connection": "not_configured",
+                "message": "GaussDB is not configured as the document engine",
+            },
+        }
+
+    try:
+        conn = _get_gaussdb_connection()
+        health_info = _mask_gaussdb_secret(conn.health())
+        performance_metrics = _mask_gaussdb_secret(conn.get_performance_metrics())
+        connection_status = performance_metrics.get("connection", "unknown")
+        if connection_status == "disconnected" or health_info.get("status") != "healthy":
+            return {
+                "status": "unhealthy",
+                "details": {
+                    "connection": connection_status,
+                    "latency_ms": performance_metrics.get("latency_ms", 0),
+                    "uri": health_info.get("uri", "unknown"),
+                    "version": health_info.get("version_comment", "unknown"),
+                    "sql_compatibility": health_info.get("sql_compatibility", "unknown"),
+                    "error": health_info.get("error", performance_metrics.get("error", "")),
+                },
+            }
+
+        is_healthy = connection_status == "connected" and performance_metrics.get("latency_ms", float("inf")) < 1000
+        return {
+            "status": "healthy" if is_healthy else "degraded",
+            "details": {
+                "connection": connection_status,
+                "latency_ms": performance_metrics.get("latency_ms", 0),
+                "uri": health_info.get("uri", "unknown"),
+                "version": health_info.get("version_comment", "unknown"),
+                "sql_compatibility": health_info.get("sql_compatibility", "unknown"),
+            },
+        }
+    except Exception as e:
+        masked_error = _log_gaussdb_error("GaussDB health check failed", e)
+        return {
+            "status": "unhealthy",
+            "details": {
+                "connection": "disconnected",
+                "error": masked_error,
+            },
         }
 
 
@@ -193,6 +309,10 @@ def check_oceanbase_health() -> dict:
 
 
 def get_mysql_status():
+    if settings.DATABASE_TYPE.lower() == "gaussdb":
+        # GaussDB cannot execute MySQL's SHOW PROCESSLIST.
+        return get_database_status()
+
     try:
         cursor = DB.execute_sql("SHOW PROCESSLIST;")
         res_rows = cursor.fetchall()
@@ -203,6 +323,29 @@ def get_mysql_status():
         return {
             "status": "timeout",
             "message": f"error: {str(e)}",
+        }
+
+
+def get_database_status():
+    try:
+        # SELECT 1 is the smallest probe supported by MySQL, PostgreSQL, and
+        # GaussDB. Admin uses it for a GaussDB metadata database instead of a
+        # MySQL-specific status query.
+        cursor = DB.execute_sql("SELECT 1;")
+        row = cursor.fetchone()
+        cursor.close()
+        return {
+            "status": "alive",
+            "message": {
+                "database": settings.DATABASE_TYPE.lower(),
+                "result": row[0] if row else None,
+            },
+        }
+    except Exception as e:
+        masked_error = _log_gaussdb_error("GaussDB metadata database status check failed", e)
+        return {
+            "status": "timeout",
+            "message": f"error: {masked_error}",
         }
 
 

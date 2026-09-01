@@ -381,7 +381,7 @@ func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 	}
 	var pageTokens []string
 
-	models, err := collectGoogleModelNames(context.Background(), func(_ context.Context, pageToken string) (googleModelPage, error) {
+	models, err := collectGoogleModelNames(t.Context(), func(_ context.Context, pageToken string) (googleModelPage, error) {
 		pageTokens = append(pageTokens, pageToken)
 		if len(pageTokens) > len(pages) {
 			t.Fatalf("unexpected extra page request with token %q", pageToken)
@@ -406,7 +406,7 @@ func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 }
 
 func TestCollectGoogleModelNamesPreservesEmptyResult(t *testing.T) {
-	models, err := collectGoogleModelNames(context.Background(), func(context.Context, string) (googleModelPage, error) {
+	models, err := collectGoogleModelNames(t.Context(), func(context.Context, string) (googleModelPage, error) {
 		return googleModelPage{}, nil
 	})
 	if err != nil {
@@ -421,7 +421,7 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 	pageErr := errors.New("next page failed")
 	calls := 0
 
-	_, err := collectGoogleModelNames(context.Background(), func(context.Context, string) (googleModelPage, error) {
+	_, err := collectGoogleModelNames(t.Context(), func(context.Context, string) (googleModelPage, error) {
 		calls++
 		if calls == 1 {
 			return googleModelPage{items: []ModelListItem{{ID: "Gemini 2.5 Flash", OwnedBy: "Google"}}, nextPageToken: "page-2"}, nil
