@@ -21,8 +21,8 @@ RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 STRIP_SYMBOLS=""
 
 # Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
-# If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
-# and skips the network (download_deps.py) fallback.
+# If the user cache is empty, build.sh seeds it from /opt/ragflow-native-libs/
+# when a CI runner image provides pre-built libraries.
 SYSTEM_DEPS="/opt/ragflow-native-libs"
 
 # office_oxide native library settings — static linking
@@ -35,7 +35,7 @@ PDFIUM_STATIC_VERSION="7809"
 
 # pdf_oxide native library settings — static linking (go-ffi tarball)
 PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
-PDF_OXIDE_VERSION="0.3.67"
+PDF_OXIDE_VERSION="0.3.73"
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
