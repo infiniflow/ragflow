@@ -37,9 +37,11 @@ import (
 
 // messageExportFormat normalizes the raw output_format value to a
 // supported export format. It returns "" when the value only selects a
-// text rendering style (plain / empty) or is not a file format.
-// Mirrors Python: anything outside {markdown, html, pdf, docx, xlsx}
-// (after aliasing "md") is treated as markdown.
+// text rendering style (plain / empty) or is not a file format, in
+// which case no attachment is exported. This deliberately deviates
+// from the Python runtime, which coerces any unrecognized non-empty
+// format to markdown: a plain rendering should not fabricate a
+// download, so only explicit file formats produce an attachment.
 func messageExportFormat(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "markdown", "md":

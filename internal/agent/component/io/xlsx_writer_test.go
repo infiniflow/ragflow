@@ -19,6 +19,7 @@ package io
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -82,6 +83,115 @@ func TestWriteXLSX_NoTableFallsBackToDataSheet(t *testing.T) {
 	}
 	v, err := f.GetCellValue("Data", "A1")
 	if err != nil || !strings.Contains(v, "Just plain text") {
+		t.Errorf("A1 = %q (%v), want the whole content", v, err)
+	}
+}
+
+func TestWriteXLSX_SheetNameTruncatesByCharacters(t *testing.T) {
+	// A CJK title (3 bytes per character) must be clamped to 31
+	// characters, not 31 bytes: byte slicing would split a rune and
+	// produce a garbled sheet name.
+	title := "## " + strings.Repeat("销", 40)
+	content := title + "\n\n| 列一 | 列二 |\n|---|---|\n| 值 | 1 |\n"
+
+	payload, err := WriteXLSX(content, XLSXOptions{})
+	if err != nil {
+		t.Fatalf("WriteXLSX: %v", err)
+	}
+	f, err := excelize.OpenReader(strings.NewReader(string(payload)))
+	if err != nil {
+		t.Fatalf("open workbook: %v", err)
+	}
+	defer f.Close()
+
+	sheets := f.GetSheetList()
+	if len(sheets) != 1 {
+		t.Fatalf("sheets = %v, want 1", sheets)
+	}
+	name := sheets[0]
+	if !utf8.ValidString(name) {
+		t.Errorf("sheet name %q is not valid UTF-8", name)
+	}
+	if got := utf8.RuneCountInString(name); got != 31 {
+		t.Errorf("sheet name %q has %d characters, want 31", name, got)
+	}
+	if want := strings.Repeat("销", 31); !strings.HasPrefix(name, want) {
+		t.Errorf("sheet name = %q, want the first 31 characters of the title (%q...)", name, want)
+	}
+	if v, err := f.GetCellValue(name, "A2"); err != nil || v != "值" {
+		t.Errorf("A2 = %q (%v), want 值", v, err)
+	}
+}
+
+func TestWriteXLSX_DuplicateSheetNamesGetUnderscoreSuffix(t *testing.T) {
+	content := "## Report\n\n| A |\n|---|\n| 1 |\n\n## Report\n\n| B |\n|---|\n| 2 |\n"
+
+	payload, err := WriteXLSX(content, XLSXOptions{})
+	if err != nil {
+		t.Fatalf("WriteXLSX: %v", err)
+	}
+	f, err := excelize.OpenReader(strings.NewReader(string(payload)))
+	if err != nil {
+		t.Fatalf("open workbook: %v", err)
+	}
+	defer f.Close()
+
+	sheets := f.GetSheetList()
+	if len(sheets) != 2 {
+		t.Fatalf("sheets = %v, want 2", sheets)
+	}
+	want := map[string]bool{"Report": false, "Report_1": false}
+	for _, s := range sheets {
+		if _, ok := want[s]; ok {
+			want[s] = true
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Errorf("sheet %q missing, got %v", name, sheets)
+		}
+	}
+}
+
+func TestWriteXLSX_EmptyTablesAreDropped(t *testing.T) {
+	// A header-only table with no data rows produces no sheet.
+	content := "## Empty\n\n| A | B |\n|---|---|\n\n## Full\n\n| C |\n|---|\n| 2 |\n"
+
+	payload, err := WriteXLSX(content, XLSXOptions{})
+	if err != nil {
+		t.Fatalf("WriteXLSX: %v", err)
+	}
+	f, err := excelize.OpenReader(strings.NewReader(string(payload)))
+	if err != nil {
+		t.Fatalf("open workbook: %v", err)
+	}
+	defer f.Close()
+
+	sheets := f.GetSheetList()
+	if len(sheets) != 1 || sheets[0] != "Full" {
+		t.Fatalf("sheets = %v, want [Full] (header-only table dropped)", sheets)
+	}
+}
+
+func TestWriteXLSX_AllTablesEmptyFallsBackToDataSheet(t *testing.T) {
+	content := "| A |\n|---|\n"
+
+	payload, err := WriteXLSX(content, XLSXOptions{})
+	if err != nil {
+		t.Fatalf("WriteXLSX: %v", err)
+	}
+	f, err := excelize.OpenReader(strings.NewReader(string(payload)))
+	if err != nil {
+		t.Fatalf("open workbook: %v", err)
+	}
+	defer f.Close()
+
+	sheets := f.GetSheetList()
+	if len(sheets) != 1 || sheets[0] != "Data" {
+		t.Fatalf("sheets = %v, want [Data]", sheets)
+	}
+	v, err := f.GetCellValue("Data", "A1")
+	if err != nil || !strings.Contains(v, "| A |") {
 		t.Errorf("A1 = %q (%v), want the whole content", v, err)
 	}
 }

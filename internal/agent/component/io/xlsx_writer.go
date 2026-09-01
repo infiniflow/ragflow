@@ -144,7 +144,8 @@ func parseMarkdownTables(content string) []xlsxTable {
 	}
 
 	out := make([]xlsxTable, 0, len(tables))
-	for idx, t := range tables {
+	kept := 0
+	for _, t := range tables {
 		var header []string
 		var rows [][]any
 		for i, line := range t.lines {
@@ -168,20 +169,28 @@ func parseMarkdownTables(content string) []xlsxTable {
 			}
 			rows = append(rows, row)
 		}
-		out = append(out, xlsxTable{sheetName: sanitizeSheetName(t.title, idx), header: header, rows: rows})
+		// A header-only table with no data rows yields no sheet: the
+		// parsed table is empty and is dropped, so the sheet-number
+		// fallback below only counts tables that actually land in the
+		// workbook.
+		if len(rows) == 0 {
+			continue
+		}
+		kept++
+		out = append(out, xlsxTable{sheetName: sanitizeSheetName(t.title, kept-1), header: header, rows: rows})
 	}
 	return out
 }
 
 // sanitizeSheetName clamps a title to Excel's sheet-name rules
-// (max 31 chars, no / \ * ? [ ] :) and falls back to "Table_N".
+// (max 31 characters, no / \ * ? [ ] :) and falls back to "Table_N".
 func sanitizeSheetName(title string, index int) string {
 	name := title
 	if name == "" {
 		name = fmt.Sprintf("Table_%d", index+1)
 	}
-	if len(name) > 31 {
-		name = name[:31]
+	if runes := []rune(name); len(runes) > 31 {
+		name = string(runes[:31])
 	}
 	name = strings.NewReplacer("/", "_", "\\", "_", "*", "", "?", "", "[", "", "]", "", ":", "").Replace(name)
 	if strings.TrimSpace(name) == "" {
@@ -201,24 +210,26 @@ func WriteXLSX(content string, _ XLSXOptions) ([]byte, error) {
 	if len(tables) == 0 {
 		tables = []xlsxTable{{sheetName: "Data", rows: [][]any{{content}}}}
 	}
-	used := make(map[string]int)
+	used := make(map[string]bool)
 	for _, t := range tables {
 		name := t.sheetName
-		// Ensure unique sheet names (Python appends _1, _2, ...).
-		if _, ok := used[name]; ok {
-			used[name]++
-			suffix := strconv.Itoa(used[name])
+		// Ensure unique sheet names: on collision append _1, _2, ...
+		// to the original name, truncating it in characters so the
+		// final name stays within the 31-character limit.
+		original := []rune(name)
+		for counter := 1; used[name]; counter++ {
+			suffix := "_" + strconv.Itoa(counter)
 			trim := 31 - len(suffix)
 			if trim < 1 {
 				trim = 1
 			}
-			base := name
+			base := original
 			if len(base) > trim {
 				base = base[:trim]
 			}
-			name = base + suffix
+			name = string(base) + suffix
 		}
-		used[name] = 1
+		used[name] = true
 		if _, err := f.NewSheet(name); err != nil {
 			return nil, fmt.Errorf("xlsx: new sheet %q: %w", name, err)
 		}
