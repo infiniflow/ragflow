@@ -468,7 +468,8 @@ async def grep_search(
             _e[1] += len(str(_c.get("content") or _c.get("content_with_weight") or ""))
         _LOG.info(
             '[Grep search] "%s" -> %d chunk(s): %s',
-            str(query)[:80], len(_g),
+            str(query)[:80],
+            len(_g),
             "; ".join(f"{d}:{n}chunk({sz}chars)" for d, (n, sz) in sorted(_gs.items())),
         )
     return res

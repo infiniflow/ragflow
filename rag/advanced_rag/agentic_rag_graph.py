@@ -881,14 +881,14 @@ def build_agentic_graph(
             return {}
         round_no = int(state.get("search_rounds", 0)) + 1
         pool_before = len(((getattr(tools, "kbinfos", None) or state.get("kbinfos") or {}).get("chunks")) or [])
-        unresolved_ids = [
-            str(getattr(v, "id", ""))
-            for v in getattr(state.get("slot_table"), "state", None) or []
-            if not getattr(v, "candidate", None)
-        ]
+        unresolved_ids = [str(getattr(v, "id", "")) for v in getattr(state.get("slot_table"), "state", None) or [] if not getattr(v, "candidate", None)]
         _LOG.info(
             "[RAGAgent] ROUND %d start (search_rounds=%d, time_left=%.0fs, pool=%d chunks, unresolved slots=%s)",
-            round_no, int(state.get("search_rounds", 0)), time_left, pool_before, unresolved_ids or "-",
+            round_no,
+            int(state.get("search_rounds", 0)),
+            time_left,
+            pool_before,
+            unresolved_ids or "-",
         )
         t = max(20.0, min(_PASS_TIMEOUT_S, time_left - 25.0))
         slot_result = await _bounded(
@@ -908,7 +908,9 @@ def build_agentic_graph(
         pool_after = len(((getattr(tools, "kbinfos", None) or state.get("kbinfos") or {}).get("chunks")) or [])
         _LOG.info(
             "[RAGAgent] ROUND %d end (+%d new chunks, pool=%d, unresolved=%d)",
-            round_no, pool_after - pool_before, pool_after,
+            round_no,
+            pool_after - pool_before,
+            pool_after,
             len(slot_result.get("unresolved_slots") or []),
         )
         return slot_result
