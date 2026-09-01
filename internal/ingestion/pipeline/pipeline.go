@@ -553,7 +553,6 @@ func (p *Pipeline) runPlain(runCtx context.Context, current map[string]any, comp
 func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, current map[string]any, compiled *canvas.CompiledCanvas, store canvas.CheckPointStore, tracker *canvas.RunTracker, runState *canvas.CanvasState) (map[string]any, error) {
 	cpID := compiled.CheckPointID
 	var localInterruptID string // in-process resume fallback when tracker is nil
-	invokeInput := current
 
 	const maxResumeRounds = 1000
 	for round := 0; round < maxResumeRounds; round++ {
@@ -568,24 +567,19 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 			resumeID = localInterruptID
 		}
 		if resumeID != "" {
-			// Only null out the input when the checkpoint this resume would
-			// rely on actually exists. eino silently starts a FRESH run from
-			// the entry node when the checkpoint is missing (load failure is
-			// not an error), so nil input would re-execute the source node
+			// Mark the resume target. Keep passing the full original input
+			// instead of nil: when eino loads the checkpoint it ignores the
+			// passed input entirely (restoreCheckPointState only restores
+			// channels/state, restoreTasks replays cp.Inputs), and when the
+			// checkpoint is missing it silently starts a FRESH run from the
+			// entry node — so nil input would re-execute the source node
 			// (File) without doc_id / file[0].name and fail with "inputs
-			// missing". This can happen when a cancel raced the checkpoint
-			// save/delete, leaving the interrupt id behind but the payload
-			// gone. Fall back to a plain run with the full original input.
-			if _, ok, _ := store.Get(ctx, cpID); ok {
-				runCtx = compose.ResumeWithData(runCtx, resumeID, nil)
-				invokeInput = nil // resume restores the graph input from checkpoint
-			} else {
-				resumeID = ""
-				invokeInput = current
-			}
+			// missing". Passing `current` covers both cases with no
+			// check-then-use race.
+			runCtx = compose.ResumeWithData(runCtx, resumeID, nil)
 		}
 
-		out, invokeErr := compiled.Workflow.Invoke(runCtx, invokeInput, compose.WithCheckPointID(cpID))
+		out, invokeErr := compiled.Workflow.Invoke(runCtx, current, compose.WithCheckPointID(cpID))
 		if invokeErr == nil {
 			if tracker != nil {
 				utility.BestEffort(fmt.Sprintf("ClearInterruptID for %s", p.taskID), func() error { return tracker.ClearInterruptID(ctx, cpID) })
@@ -606,8 +600,10 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 			// the cleanup + MarkCancelled actually land; otherwise a
 			// cancelled run leaks its checkpoint and interrupt id, and the
 			// next attempt misreads "interrupt pending + checkpoint missing"
-			// as a fresh run with nil input.
-			cleanupCtx := context.WithoutCancel(ctx)
+			// as a fresh run with nil input. Bound the detached ctx so a
+			// hung Redis cannot stall the cancel path indefinitely.
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cleanupCancel()
 			p.cleanupCheckpoint(cleanupCtx, store, tracker, cpID)
 			if tracker != nil {
 				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(cleanupCtx, cpID) })
