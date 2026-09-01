@@ -693,8 +693,6 @@ export const useTestDbConnect = () => {
       const ret = await agentService.testDbConnect(params);
       if (ret?.data?.code === 0) {
         message.success(ret?.data?.data);
-      } else {
-        message.error(ret?.data?.data);
       }
       return ret;
     },
