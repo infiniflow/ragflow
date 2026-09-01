@@ -292,7 +292,7 @@ class DataflowService:
             return None, token_consumption
 
     @classmethod
-    async def _encode_batch(cls, txts: List[str], embedding_model) -> Tuple[np.ndarray, int]:
+    def _encode_batch(cls, txts: List[str], embedding_model) -> Tuple[np.ndarray, int]:
         """Batch encode texts using the embedding model with truncation."""
         truncated = EmbeddingUtils.truncate_texts(txts, embedding_model.max_length)
         return embedding_model.encode(truncated)
@@ -307,9 +307,12 @@ class DataflowService:
             ck["docnm_kwd"] = ctx.name
             ck["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             ck["create_timestamp_flt"] = datetime.now().timestamp()
+            text = ck.get("text") or ck.get("content_with_weight") or ck.get("summary") or ck.get("questions") or ""
+            if not isinstance(text, str):
+                text = str(text)
 
             if not ck.get("id"):
-                ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
+                ck["id"] = xxhash.xxh64((text + str(ck["doc_id"])).encode("utf-8")).hexdigest()
 
             if "questions" in ck:
                 if "question_tks" not in ck:
@@ -334,8 +337,8 @@ class DataflowService:
                 del ck["metadata"]
 
             if "content_with_weight" not in ck:
-                ck["content_with_weight"] = ck["text"] or ""
-            del ck["text"]
+                ck["content_with_weight"] = text
+            ck.pop("text", None)
 
             if "positions" in ck:
                 add_positions(ck, ck["positions"])

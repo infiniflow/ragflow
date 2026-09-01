@@ -14,7 +14,7 @@
   "models": [
     {
       "name": "doubao-seed-2-0-pro-260215",
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 16384,
       "model_types": [
         "chat"
@@ -29,7 +29,7 @@
     },
     {
       "name": "doubao-seed-evolving",
-      "content_length": 1024000,
+      "context_length": 1024000,
       "max_output": 256000,
       "model_types": [
         "chat",
@@ -48,7 +48,7 @@
       "alias": [
         "doubao-seed-2-1-pro"
       ],
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 256000,
       "model_types": [
         "chat",
@@ -67,7 +67,7 @@
       "alias": [
         "doubao-seed-2-1-turbo"
       ],
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 256000,
       "model_types": [
         "chat",
@@ -86,7 +86,7 @@
       "alias": [
         "doubao-seed-2-0-lite"
       ],
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -105,7 +105,7 @@
       "alias": [
         "doubao-seed-2-0-mini"
       ],
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 128000,
       "model_types": [
         "chat",
@@ -124,7 +124,7 @@
       "alias": [
         "doubao-seed-character"
       ],
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 32000,
       "model_types": [
         "chat",
@@ -143,7 +143,7 @@
       "alias": [
         "doubao-seed-1-8"
       ],
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 262144,
       "model_types": [
         "chat",
@@ -162,7 +162,7 @@
       "alias": [
         "doubao-seed-1-6"
       ],
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 32000,
       "model_types": [
         "chat",
@@ -181,7 +181,7 @@
       "alias": [
         "doubao-seed-1-6-flash"
       ],
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 32000,
       "model_types": [
         "chat",
@@ -200,7 +200,7 @@
       "alias": [
         "doubao-seed-1-6-vision"
       ],
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 32000,
       "model_types": [
         "chat",
@@ -219,7 +219,7 @@
       "alias": [
         "deepseek-v4-pro"
       ],
-      "content_length": 1024000,
+      "context_length": 1024000,
       "max_output": 384000,
       "model_types": [
         "chat"
@@ -237,7 +237,7 @@
       "alias": [
         "deepseek-v4-flash"
       ],
-      "content_length": 1024000,
+      "context_length": 1024000,
       "max_output": 384000,
       "model_types": [
         "chat"
@@ -255,7 +255,7 @@
       "alias": [
         "glm-5-2"
       ],
-      "content_length": 1024000,
+      "context_length": 1024000,
       "max_output": 128000,
       "model_types": [
         "chat"

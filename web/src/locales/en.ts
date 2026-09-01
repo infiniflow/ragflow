@@ -537,7 +537,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 0.2. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
       vectorSimilarityWeight: 'Vector similarity weight',
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
@@ -2370,7 +2370,7 @@ Example: Virtual Hosted Style`,
       graph: 'Graph',
       structureMindmap: 'Mind map',
       structureTimeline: 'Timeline',
-      noWikiPages: 'No wiki pages yet',
+      noWikiPages: 'No wiki yet',
       noSkills: 'No skills yet',
       noStructureGraph: 'No graph yet',
       noStructureMindmap: 'No mind map yet',
@@ -2630,6 +2630,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
       script: 'Script',
       iterationItemDescription:
         'It represents the current element in the iteration, which can be referenced and manipulated in subsequent steps.',
+      maxConcurrency: 'Max concurrency',
+      maxConcurrencyTip:
+        '0 or 1 runs items one by one. Values greater than 1 run that many items at once.',
       guidingQuestion: 'Guidance question',
       onFailure: 'On failure',
       userPromptDefaultValue:
@@ -3133,6 +3136,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       optional: 'Optional',
       pasteFileLink: 'Paste file link',
       testRun: 'Test run',
+      debugRunLimits:
+        'A debug run verifies that the flow executes without errors: PDF parses only the first 2 pages (other formats parse all pages); if a chunker node is present, only the first 3 chunks are previewed; if a knowledge-compiler node is present, it runs locally only and does not trigger a dataset rebuild or notification.',
       template: 'Template',
       templateDescription:
         'A component that formats the output of other components.1. Supports Jinja2 templates, will first convert the input to an object and then render the template, 2. Simultaneously retains the original method of using {parameter} string replacement',
@@ -3367,6 +3372,8 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizerRequired: 'Please add the Indexer node first',
       nodeFormInvalid:
         'Cannot save: "{{name}}" has invalid settings. Please fix them first',
+      agentModelMissing:
+        'Cannot save: "{{name}}" has no model selected. Please choose one first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
       tokenChunker: 'Token Chunker',
@@ -3382,7 +3389,6 @@ This process aggregates variables from multiple branches into a single variable 
       compilerDescription:
         'Compiles document chunks using knowledge compilation templates into structured artifacts.',
       outputFormat: 'Output format',
-      fileFormats: 'File type',
       fileFormatOptions: {
         pdf: 'PDF',
         spreadsheet: 'Spreadsheet',
@@ -3398,7 +3404,6 @@ This process aggregates variables from multiple branches into a single variable 
         video: 'Video',
       },
       fields: 'Field',
-      addParser: 'Add Parser',
       rule: 'Rule',
       addRule: 'Add rule',
       group: 'Group',

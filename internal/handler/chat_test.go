@@ -25,7 +25,7 @@ func setupChatHandlerTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.Chat{}, &entity.Tenant{}, &entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.Chat{}, &entity.Tenant{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -34,7 +34,7 @@ func setupChatHandlerTestDB(t *testing.T) *gorm.DB {
 	t.Cleanup(func() { dao.DB = origDB })
 
 	status := string(entity.StatusValid)
-	if err := db.Create(&entity.Tenant{
+	if err = db.Create(&entity.Tenant{
 		ID:        "user-1",
 		LLMID:     "model-a",
 		EmbdID:    "embd-a",

@@ -28,7 +28,24 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 	imgW := float64(pageImg.Bounds().Dx()) / pdf.DlaScale
 	imgH := float64(pageImg.Bounds().Dy()) / pdf.DlaScale
 
-	var result []pdf.TextBox
+	// For each box, de-skew via WarpCrop (layer 1) and build the layer-2
+	// rotation candidates: short/wide crops get one candidate at 0 deg; tall
+	// crops (h >= 1.5x w) get three (0/CW90/CCW90) so the highest-confidence
+	// orientation wins. We remember each box's emitted PDF-point box and the
+	// span of its candidates in the flat crop slice so we can pick the best
+	// candidate per box after recognition.
+	type pendingBox struct {
+		x0, y0, x1, y1 float64
+		spanStart      int
+		spanLen        int
+		pageNum        int
+	}
+	var (
+		result     []pdf.TextBox
+		cropAcc    []image.Image
+		cropBoxIdx []int // box index each crop belongs to (for replay routing)
+		pending    []pendingBox
+	)
 	for i, b := range boxes {
 		x0 := int(math.Min(b.X0, math.Min(b.X1, math.Min(b.X2, b.X3))))
 		y0 := int(math.Min(b.Y0, math.Min(b.Y1, math.Min(b.Y2, b.Y3))))
@@ -37,29 +54,13 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		if x0 >= x1 || y0 >= y1 {
 			continue
 		}
-		// De-skew the quad with a perspective transform (WarpCrop, layer 1),
-		// then recognize via ocrRecognizeWithRotation which applies layer-2
-		// score-based 0/CW90/CCW90 selection for tall crops (get_rotate_crop_image
-		// parity), so the recognizer receives a rectangular, horizontal crop
-		// instead of the slanted detection region. The emitted box bounds below
-		// still use the axis-aligned detection bbox (x0..y1); only the crop fed
-		// to recognition is transformed.
 		cropped := util.WarpCrop(pageImg, [4]util.Pt{
 			{X: b.X0, Y: b.Y0},
 			{X: b.X1, Y: b.Y1},
 			{X: b.X2, Y: b.Y2},
 			{X: b.X3, Y: b.Y3},
 		})
-		// Stamp the detect-box index so a replay DocAnalyzer can route this
-		// recognition back to the Python-dumped text for the same box. The
-		// production analyzer ignores the key.
-		recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, i)
-		texts, recErr := p.ocrRecognizeWithRotation(recCtx, doc, cropped)
-		if recErr != nil {
-			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", recErr)
-			continue
-		}
-		// Convert crop bounds back to PDF-point space before emitting.
+		// Convert detection bounds to PDF-point space (mirrors detectBoxes).
 		px0 := float64(x0) / pdf.DlaScale
 		py0 := float64(y0) / pdf.DlaScale
 		px1 := float64(x1) / pdf.DlaScale
@@ -79,15 +80,72 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		if px0 >= px1 || py0 >= py1 {
 			continue
 		}
-		for _, t := range texts {
+		cb := cropped.Bounds()
+		spanStart := len(cropAcc)
+		if float64(cb.Dy()) < 1.5*float64(cb.Dx()) {
+			cropAcc = append(cropAcc, cropped)
+			cropBoxIdx = append(cropBoxIdx, i)
+		} else {
+			cropAcc = append(cropAcc, cropped,
+				util.RotateImageCW(cropped, 90),  // CW90
+				util.RotateImageCW(cropped, 270), // CCW90
+			)
+			cropBoxIdx = append(cropBoxIdx, i, i, i)
+		}
+		pending = append(pending, pendingBox{x0: px0, y0: py0, x1: px1, y1: py1, spanStart: spanStart, spanLen: len(cropAcc) - spanStart, pageNum: pageNum})
+	}
+
+	// Recognize. A batch-capable analyzer recognizes every crop in one
+	// forward pass; everyone else falls back to the per-crop canonical path
+	// (also required by the replay analyzer, which routes by box index in
+	// ctx and is inherently per-crop).
+	if len(cropAcc) == 0 {
+		return nil
+	}
+	allTexts := make([][]pdf.OCRText, len(cropAcc))
+	if p.docSupportsBatchOCR(doc) {
+		batch, berr := p.inferOCRRecognizeBatch(ctx, doc, cropAcc)
+		if berr != nil {
+			slog.Warn(logLabel+" OCR batch recognize failed", "page", pageNum, "err", berr)
+			return nil
+		}
+		allTexts = batch
+	} else {
+		for ci, c := range cropAcc {
+			// Stamp the detect-box index so a replay DocAnalyzer routes this
+			// recognition back to the Python-dumped text for the same box. The
+			// production analyzer ignores the key.
+			recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, cropBoxIdx[ci])
+			texts, rerr := p.ocrRecognizeWithRotation(recCtx, doc, c)
+			if rerr != nil {
+				slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", rerr)
+				return nil
+			}
+			allTexts[ci] = texts
+		}
+	}
+
+	// Per box: pick the highest-confidence candidate (layer-2 winner) and
+	// emit a TextBox for each non-empty recognized line.
+	for _, pb := range pending {
+		var best []pdf.OCRText
+		bestScore := -1.0
+		for k := 0; k < pb.spanLen; k++ {
+			texts := allTexts[pb.spanStart+k]
+			if s := ocrBestScore(texts); s > bestScore {
+				bestScore = s
+				best = texts
+			}
+		}
+		for _, t := range best {
 			if strings.TrimSpace(t.Text) != "" {
 				result = append(result, pdf.TextBox{
-					X0:         px0,
-					X1:         px1,
-					Top:        py0,
-					Bottom:     py1,
+					X0:         pb.x0,
+					X1:         pb.x1,
+					Top:        pb.y0,
+					Bottom:     pb.y1,
 					Text:       t.Text,
-					PageNumber: pageNum,
+					PageNumber: pb.pageNum,
 				})
 			}
 		}
@@ -462,37 +520,72 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 		result = append(result, tb)
 	}
 	if len(needOCR) > 0 && doc != nil && doc.Health() {
+		// Collect every OCR-hungry box's de-skewed crop and recognize them in
+		// one batched forward pass when the analyzer supports it; otherwise
+		// fall back to the per-crop canonical path (required by the replay
+		// analyzer, which routes by srcIdx in ctx and is inherently per-crop).
+		// Char/table-derived boxes are axis-aligned, so WarpCrop early-exits to
+		// FastCrop and each box yields exactly one 0-deg candidate here, while
+		// still inheriting WarpCrop's bounds-clamp / non-finite guard.
+		type ocrJob struct {
+			boxIdx    int // index into result
+			srcIdx    int // detect-box index for replay routing
+			spanStart int
+			spanLen   int
+		}
+		var crops []image.Image
+		var jobs []ocrJob
 		for _, idx := range needOCR {
-			// De-skew via WarpCrop and recognize via ocrRecognizeWithRotation
-			// the same way ocrDetectAndRecognize does, so all Go OCR paths feed
-			// the recognizer an identical geometry. Char/table-derived boxes are
-			// axis-aligned, so WarpCrop early-exits to FastCrop and
-			// ocrRecognizeWithRotation recognizes once at 0 deg here, while still
-			// inheriting WarpCrop's bounds-clamp / non-finite guard on the
-			// untrusted detector box.
 			cropped := util.WarpCrop(pageImg, [4]util.Pt{
 				{X: boxes[idx].x0 * scale, Y: boxes[idx].y0 * scale},
 				{X: boxes[idx].x1 * scale, Y: boxes[idx].y0 * scale},
 				{X: boxes[idx].x1 * scale, Y: boxes[idx].y1 * scale},
 				{X: boxes[idx].x0 * scale, Y: boxes[idx].y1 * scale},
 			})
-			// Stamp the source detect-box index so a replay DocAnalyzer routes
-			// this fallback to the same Python-dumped box (detectBoxes may have
-			// re-sorted, so use srcIdx, not the loop index). The production
-			// analyzer ignores the key.
-			recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, boxes[idx].srcIdx)
-			texts, err := p.ocrRecognizeWithRotation(recCtx, doc, cropped)
-			if err != nil {
-				slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", err)
-				continue
+			spanStart := len(crops)
+			crops = append(crops, cropped)
+			jobs = append(jobs, ocrJob{boxIdx: idx, srcIdx: boxes[idx].srcIdx, spanStart: spanStart, spanLen: 1})
+		}
+		allTexts := make([][]pdf.OCRText, len(crops))
+		if p.docSupportsBatchOCR(doc) {
+			batch, berr := p.inferOCRRecognizeBatch(ctx, doc, crops)
+			if berr != nil {
+				slog.Warn("ocr merge: batch recognize failed", "page", pageNum, "err", berr)
+				return nil
+			}
+			allTexts = batch
+		} else {
+			for ci, c := range crops {
+				// Stamp the source detect-box index so a replay DocAnalyzer
+				// routes this fallback to the same Python-dumped box
+				// (detectBoxes may have re-sorted, so use srcIdx, not the loop
+				// index). The production analyzer ignores the key.
+				recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, jobs[ci].srcIdx)
+				texts, rerr := p.ocrRecognizeWithRotation(recCtx, doc, c)
+				if rerr != nil {
+					slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", rerr)
+					continue
+				}
+				allTexts[ci] = texts
+			}
+		}
+		for _, j := range jobs {
+			var best []pdf.OCRText
+			bestScore := -1.0
+			for k := 0; k < j.spanLen; k++ {
+				texts := allTexts[j.spanStart+k]
+				if s := ocrBestScore(texts); s > bestScore {
+					bestScore = s
+					best = texts
+				}
 			}
 			var ocrParts []string
-			for _, t := range texts {
+			for _, t := range best {
 				if strings.TrimSpace(t.Text) != "" {
 					ocrParts = append(ocrParts, t.Text)
 				}
 			}
-			result[idx].Text = strings.TrimSpace(strings.Join(ocrParts, " "))
+			result[j.boxIdx].Text = strings.TrimSpace(strings.Join(ocrParts, " "))
 		}
 	}
 	filtered := result[:0]

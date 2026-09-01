@@ -5,28 +5,34 @@ package pdf
 import (
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	"testing"
 
-	inf "ragflow/internal/deepdoc/parser/pdf/inference"
+	"ragflow/internal/deepdoc/native"
+	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
 
-// mustConnectInferenceClient returns a InferenceClient for the OSS DeepDoc service.
-func mustConnectInferenceClient(t *testing.T) *inf.Client {
+// mustConnectInProcessAnalyzer builds the in-process NativeAnalyzer (real ONNX
+// inference). It replaces the former external Python service client: the
+// production path serves DeepDoc entirely in-process, so regression tests
+// should exercise the same backend. The test is skipped (not failed) when
+// MODEL_DIR is unset (ONNX Runtime is statically linked and resolved via
+// dlopen(NULL)); native.InitORT is idempotent across tests.
+func mustConnectInProcessAnalyzer(t *testing.T) deepdoctype.DocAnalyzer {
 	t.Helper()
-	url := common.GetEnv(common.EnvOSSDeepDocURL)
-	if url == "" {
-		url = "http://localhost:9390"
+	modelDir := os.Getenv("MODEL_DIR")
+	if modelDir == "" {
+		t.Skip("MODEL_DIR required (in-process backend integration)")
 	}
-	client, err := inf.NewClient(url)
+	if err := native.InitORT(); err != nil {
+		t.Fatalf("InitORT: %v", err)
+	}
+	a, err := infnative.NewAnalyzer(modelDir, infnative.DefaultDropScore)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("NewAnalyzer: %v", err)
 	}
-	if !client.Health() {
-		t.Fatalf("OssDeepDoc not available at %s", url)
-	}
-	return client
+	return a
 }
 
 // mustOpenEngine opens a PDF from testdata/pdfs/ and returns a pdf.PDFEngine.

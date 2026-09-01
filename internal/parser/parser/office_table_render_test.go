@@ -147,6 +147,38 @@ func TestRecordsToHTMLTableChunks_Chunking(t *testing.T) {
 	}
 }
 
+func TestRecordsToHTMLTableChunkList_RowRange(t *testing.T) {
+	records := make([][]string, 0, 25)
+	records = append(records, []string{"H"})
+	for i := 0; i < 24; i++ {
+		records = append(records, []string{"x"})
+	}
+	chunks := recordsToHTMLTableChunkList(records, 12, "S", 1)
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 chunks, got %d", len(chunks))
+	}
+	if chunks[0].RowStart != 2 || chunks[0].RowEnd != 13 {
+		t.Fatalf("chunk0 rows = %d-%d, want 2-13", chunks[0].RowStart, chunks[0].RowEnd)
+	}
+	if chunks[1].RowStart != 14 || chunks[1].RowEnd != 25 {
+		t.Fatalf("chunk1 rows = %d-%d, want 14-25", chunks[1].RowStart, chunks[1].RowEnd)
+	}
+}
+
+func TestRecordsToHTMLTableChunkList_ColEndUsesWidestRow(t *testing.T) {
+	records := [][]string{
+		{"H"},
+		{"a", "b", "c"},
+	}
+	chunks := recordsToHTMLTableChunkList(records, 12, "S", 1)
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0].ColEnd != 3 {
+		t.Fatalf("ColEnd = %d, want 3", chunks[0].ColEnd)
+	}
+}
+
 // TestXLSXParser_HeaderAndCaption asserts the XLSX parser emits a <caption> and
 // renders the first row as <th>, and that the header text appears only in <th>.
 func TestXLSXParser_HeaderAndCaption(t *testing.T) {

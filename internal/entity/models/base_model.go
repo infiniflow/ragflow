@@ -407,9 +407,14 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 			modelResponse.MaxDimension = modelEntity.MaxDimension
 			modelResponse.MaxBatchSize = modelEntity.MaxBatchSize
 			modelResponse.Dimensions = modelEntity.Dimensions
+			modelResponse.ContextLength = modelEntity.ContextLength
 			modelResponse.MaxOutput = modelEntity.MaxOutput
 			modelResponse.ModelTypes = modelEntity.ModelTypes
 			modelResponse.Thinking = modelEntity.Thinking
+		}
+
+		if model.ContextLength != nil && *model.ContextLength > 0 {
+			modelResponse.ContextLength = model.ContextLength
 		}
 
 		// The provider-list merge treats remote entries as authoritative

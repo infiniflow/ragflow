@@ -481,7 +481,7 @@ export default {
         '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
-        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 0.2，也就是说文本块的混合相似度得分至少 20 才会被召回。',
+        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 20，也就是说文本块的混合相似度得分至少 20 才会被召回。',
       vectorSimilarityWeight: '向量相似度权重',
       vectorSimilarityWeightTip:
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或 Rerank 得分（0〜1）。两个权重的总和为1.0。',
@@ -1995,7 +1995,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       graph: 'Graph',
       structureMindmap: 'Mindmap',
       structureTimeline: 'Timeline',
-      noWikiPages: '暂无 Wiki 页面',
+      noWikiPages: '暂无 Wiki',
       noSkills: '暂无 Skills',
       noStructureGraph: '暂无 Graph',
       noStructureMindmap: '暂无 Mindmap',
@@ -2242,11 +2242,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
       flattenMediaToText: '禁用视觉模型',
       flattenMediaToTextTip: '将图片和表格区块按普通文本处理，并跳过视觉增强。',
+      enableChildrenDelimiters: '子块用于检索',
       merge: '合并',
       split: '拆分',
       script: '脚本',
       iterationItemDescription:
         '它是迭代过程中的当前元素，可以被后续流程引用和操作。',
+      maxConcurrency: '最大并发数',
+      maxConcurrencyTip: '0 或 1 表示逐项串行。大于 1 时按该数量并行处理。',
       guidingQuestion: '引导问题',
       onFailure: '异常时',
       userPromptDefaultValue:
@@ -2752,6 +2755,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       optional: '可选项',
       pasteFileLink: '粘贴文件链接',
       testRun: '试运行',
+      debugRunLimits:
+        '调试运行用于验证流程能否正常执行：PDF 仅解析前 2 页（其他格式解析全部）；若含分块节点，仅取前 3 个分块预览；若含知识编译节点，仅本地验证、不会触发知识库重建或通知。',
       template: '模板转换',
       templateDescription:
         '该组件用于排版各种组件的输出。1、支持 Jinja2 模板,会先将输入转为对象后进行模版渲染2、同时保留原使用{参数}字符串替换的方式',
@@ -2927,6 +2932,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tokenizer: '分词器',
       tokenizerRequired: '请先添加 Tokenizer 节点',
       nodeFormInvalid: '无法保存：“{{name}}” 配置有误，请先修正',
+      agentModelMissing: '无法保存：“{{name}}” 未选择模型，请先选择',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       tokenChunker: '按 Token 分块',
@@ -2941,7 +2947,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       compiler: '编译器',
       compilerDescription: '使用知识编译模板将文档块编译为知识工件。',
       outputFormat: '输出格式',
-      fileFormats: '文件类型',
       fileFormatOptions: {
         pdf: 'PDF',
         spreadsheet: '表格',
@@ -2957,7 +2962,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         video: '视频',
       },
       fields: '字段',
-      addParser: '增加解析器',
       rule: '规则',
       addRule: '增加规则',
       addRegularExpressions: '增加正则表达式',

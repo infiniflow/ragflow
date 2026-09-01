@@ -206,6 +206,39 @@ func TestProcessMessage_TaskNotFoundAcks(t *testing.T) {
 	}
 }
 
+// TestProcessMessage_CreatedTaskStartsRunning verifies that a worker can claim
+// a task after NATS accepts its message but before the API records SCHEDULED.
+func TestProcessMessage_CreatedTaskStartsRunning(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.CREATED).Error; err != nil {
+		t.Fatalf("reset task to CREATED: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
+
+	ingestor.processMessage(handle)
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("CREATED task: expected 0 Ack/0 Nack (deferred), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 1 {
+		t.Fatalf("expected 1 task enqueued, got %d", len(ingestor.taskChan))
+	}
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("status = %q, want %q", task.Status, common.RUNNING)
+	}
+}
+
 // TestProcessMessage_AlreadyCompletedAcks: a task already in a terminal state
 // (COMPLETED) is acked and skipped — no enqueue, and the document is NOT
 // resurrected to RUNNING. A redelivered terminal task must not reset a

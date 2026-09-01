@@ -209,7 +209,117 @@ async function normalizeXlsxForExcelJS(data: ArrayBuffer): Promise<ArrayBuffer> 
   }
 }
 
-export const useFetchExcel = (filePath: string) => {
+type ExcelLocatePos = number[];
+
+/** x-spreadsheet Data instance used by @js-preview/excel (not a plain object). */
+type XsData = {
+  addStyle: (style: Record<string, unknown>) => number;
+  rows: {
+    setCell: (
+      ri: number,
+      ci: number,
+      cell: { style?: number; text?: string },
+      type?: 'all' | 'text' | 'format',
+    ) => void;
+    getCellOrNew: (
+      ri: number,
+      ci: number,
+    ) => { style?: number; text?: string };
+    getHeight?: (ri: number) => number;
+    len?: number;
+  };
+  cols?: { len?: number };
+  scroll?: { x: number; y: number };
+};
+
+type XsInstance = {
+  datas: XsData[];
+  reRender?: () => void;
+  sheet: {
+    resetData: (data: XsData) => void;
+    data?: XsData & { row?: { height?: number } };
+    reload?: () => void;
+    table?: { render?: () => void };
+  };
+  bottombar?: {
+    items: HTMLElement[];
+    clickSwap2?: (el: HTMLElement) => void;
+  };
+};
+
+/** Locate inside @js-preview/excel: switch sheet, paint range via Data API, scroll. */
+export function applyExcelSourceLocate(
+  previewer: ReturnType<typeof jsPreviewExcel.init>,
+  pos: ExcelLocatePos,
+) {
+  if (!pos || pos.length < 5) return;
+  const xs = (previewer as { xs?: XsInstance }).xs;
+  if (!xs?.datas?.length) return;
+
+  const sheetIdx = Math.min(
+    xs.datas.length - 1,
+    Math.max(0, (pos[0] || 1) - 1),
+  );
+  let r1 = Math.max(0, (pos[1] || 1) - 1);
+  let r2 = Math.max(r1, (pos[2] || pos[1] || 1) - 1);
+  let c1 = (pos[3] || 1) - 1;
+  let c2 = (pos[4] || pos[3] || 1) - 1;
+  if (c1 < 0) c1 = 0;
+  if (c2 < c1) c2 = c1;
+
+  const data = xs.datas[sheetIdx];
+  if (!data?.addStyle || !data.rows?.setCell) return;
+
+  if (typeof data.rows.len === 'number') {
+    const lastRow = Math.max(0, data.rows.len - 1);
+    r1 = Math.min(r1, lastRow);
+    r2 = Math.min(r2, lastRow);
+  }
+  if (typeof data.cols?.len === 'number') {
+    const lastCol = Math.max(0, data.cols.len - 1);
+    c1 = Math.min(c1, lastCol);
+    c2 = Math.min(c2, lastCol);
+  }
+
+  const theme = getComputedStyle(document.documentElement);
+  if (r2 >= r1 && c2 >= c1) {
+    const styleIdx = data.addStyle({
+      bgcolor:
+        theme.getPropertyValue('--background-highlight').trim() || '#ffe58f',
+      color: theme.getPropertyValue('--text-title').trim() || '#1a1a1a',
+    });
+    for (let r = r1; r <= r2; r++) {
+      for (let c = c1; c <= c2; c++) {
+        data.rows.setCell(r, c, { style: styleIdx }, 'format');
+      }
+    }
+  }
+
+  const tab = xs.bottombar?.items?.[sheetIdx];
+  if (tab && typeof xs.bottombar?.clickSwap2 === 'function') {
+    xs.bottombar.clickSwap2(tab);
+  } else {
+    xs.sheet.resetData(data);
+  }
+
+  const rowHeight = data.rows.getHeight?.(0) || xs.sheet.data?.row?.height || 24;
+  let y = 0;
+  for (let r = 0; r < r1; r++) {
+    y += data.rows.getHeight?.(r) ?? rowHeight;
+  }
+  data.scroll = { ...(data.scroll || { x: 0, y: 0 }), x: 0, y };
+  if (xs.sheet.data && xs.sheet.data !== data) {
+    xs.sheet.data.scroll = { ...(xs.sheet.data.scroll || { x: 0, y: 0 }), x: 0, y };
+  }
+  xs.reRender?.();
+  xs.sheet.table?.render?.();
+  xs.sheet.reload?.();
+}
+
+export const useFetchExcel = (
+  filePath: string,
+  positions?: number[][],
+) => {
   const [status, setStatus] = useState(true);
   const { fetchDocument } = useFetchDocument();
   const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
@@ -222,6 +332,10 @@ export const useFetchExcel = (filePath: string) => {
   // Cache the fetched ArrayBuffer so we don't re-fetch on every resize.
   const dataRef = useRef<ArrayBuffer | null>(null);
   const [dataReady, setDataReady] = useState(false);
+  const positionsRef = useRef(positions);
+  positionsRef.current = positions;
+  const locateKey = positions?.[0]?.join(',') ?? '';
+  const locateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // @js-preview/excel reads the container's width/height at init time and
   // exposes no public resize method, so the only way to make the spreadsheet
@@ -229,6 +343,10 @@ export const useFetchExcel = (filePath: string) => {
   const renderPreview = useCallback(async () => {
     if (!containerEl || !dataRef.current) return;
 
+    if (locateTimerRef.current != null) {
+      clearTimeout(locateTimerRef.current);
+      locateTimerRef.current = null;
+    }
     if (previewerRef.current) {
       previewerRef.current.destroy();
       previewerRef.current = null;
@@ -239,6 +357,18 @@ export const useFetchExcel = (filePath: string) => {
 
     try {
       await previewer.preview(dataRef.current);
+      const pos = positionsRef.current?.[0];
+      if (pos) {
+        // bottombar tabs are created during loadData; apply after paint.
+        const run = () => {
+          if (previewerRef.current !== previewer) return;
+          applyExcelSourceLocate(previewer, pos);
+        };
+        requestAnimationFrame(() => {
+          run();
+          locateTimerRef.current = setTimeout(run, 50);
+        });
+      }
       setStatus(true);
     } catch (e) {
       // oxlint-disable-next-line no-console
@@ -305,15 +435,26 @@ export const useFetchExcel = (filePath: string) => {
     };
   }, [filePath, fetchDocument]);
 
-  // Initial render + debounced re-render on container resize.
+  // Initial render + debounced re-render on container resize / locate target change.
   useEffect(() => {
     if (!dataReady || !containerEl) return;
     debouncedRender();
-  }, [dataReady, containerEl, size?.width, size?.height, debouncedRender]);
+  }, [
+    dataReady,
+    containerEl,
+    size?.width,
+    size?.height,
+    locateKey,
+    debouncedRender,
+  ]);
 
   // Tear down the previewer on unmount.
   useEffect(() => {
     return () => {
+      if (locateTimerRef.current != null) {
+        clearTimeout(locateTimerRef.current);
+        locateTimerRef.current = null;
+      }
       if (previewerRef.current) {
         previewerRef.current.destroy();
         previewerRef.current = null;

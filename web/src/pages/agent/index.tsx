@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSyncExternalStore } from 'react';
 import { useParams } from 'react-router';
 import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
@@ -72,6 +73,12 @@ import useGraphStore from './store';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
 import WebhookSheet from './webhook-sheet';
+import { RunTooltip } from './flow-tooltip';
+import {
+  debugRunLimitsTooltipKey,
+  isGoBackend,
+  subscribeBackendLanguage,
+} from '@/utils/backend-runtime';
 
 /**
  * Standardizes dropdown menu item styling for agent management actions.
@@ -103,6 +110,14 @@ export default function Agent() {
   } = useSetModalState();
   const { t } = useTranslation();
   useAgentHistoryManager();
+  // Resolves (and re-renders when it resolves) the i18n key for the canvas
+  // "Run" tooltip describing the Go-side debug preview limits. It is shown
+  // ONLY for a dataflow (ingestion pipeline) canvas on the golang backend —
+  // an agent canvas runs the agent, not an ingestion debug preview, so it
+  // must never show this tooltip.
+  const runTooltipKey = useSyncExternalStore(subscribeBackendLanguage, () =>
+    debugRunLimitsTooltipKey(isGoBackend(), isPipeline),
+  );
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
@@ -228,6 +243,19 @@ export default function Agent() {
     showWebhookTestSheet,
   ]);
 
+  // Single source for the Run button so the tooltip gating in the JSX below
+  // doesn't duplicate it.
+  const runButton = (
+    <Button
+      data-testid="agent-run"
+      variant={'secondary'}
+      onClick={handleButtonRunClick}
+    >
+      <CirclePlay />
+      {t('flow.run')}
+    </Button>
+  );
+
   const {
     run: runPipeline,
     loading: pipelineRunning,
@@ -294,14 +322,11 @@ export default function Agent() {
           >
             <LaptopMinimalCheck /> {t('flow.save')}
           </ButtonLoading>
-          <Button
-            data-testid="agent-run"
-            variant={'secondary'}
-            onClick={handleButtonRunClick}
-          >
-            <CirclePlay />
-            {t('flow.run')}
-          </Button>
+          {runTooltipKey ? (
+            <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
+          ) : (
+            runButton
+          )}
           {isConversationMode && (
             <Button
               variant={'secondary'}

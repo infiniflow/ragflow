@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -194,6 +195,34 @@ func TestOutlookGetJSONRetriesTransientStatus(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("calls = %d, want 2", calls)
+	}
+}
+
+func TestOutlookGetJSONReadsBodyBeforeCancel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		time.Sleep(50 * time.Millisecond)
+		w.Write([]byte(`{"value":[]}`))
+	}))
+	defer server.Close()
+
+	connector := &OutlookConnector{
+		tenantID:     "tenant",
+		clientID:     "client",
+		clientSecret: "secret",
+		batchSize:    1,
+		httpClient:   server.Client(),
+		acquireAccessToken: func(ctx context.Context) (string, error) {
+			return "token", nil
+		},
+	}
+	var page outlookDeltaPage
+	if err := connector.getJSON(context.Background(), server.URL+"/messages", &page); err != nil {
+		t.Fatalf("getJSON failed: %v", err)
 	}
 }
 

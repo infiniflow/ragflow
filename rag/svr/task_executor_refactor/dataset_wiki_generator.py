@@ -984,6 +984,7 @@ async def persist_wiki_pages(
         logging.warning(
             "wiki_persist: page insert returned %d error(s) for kb=%s",
             len(insert_errors),
+            kb_id_str,
         )
 
     # Verify the rows that are actually visible after the bulk operation. Some
