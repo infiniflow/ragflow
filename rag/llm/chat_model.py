@@ -507,6 +507,16 @@ class Base(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
+    def _tool_request_kwargs(self, tools: list | None = None) -> dict:
+        """Tool fields for a completion request, omitted when nothing is bound.
+
+        Providers that validate the request body reject `tools: []` outright.
+        """
+        tools = self.tools if tools is None else tools
+        if not tools:
+            return {}
+        return {"tools": tools, "tool_choice": "auto"}
+
     async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
@@ -516,6 +526,8 @@ class Base(ABC):
             gen_conf=gen_conf,
             request_kwargs={},
         )
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
@@ -539,7 +551,7 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf, **extra_request_kwargs)
+                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, **self._tool_request_kwargs(), **gen_conf, **extra_request_kwargs)
                     _add_round_usage(response)
                     if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -621,6 +633,8 @@ class Base(ABC):
             gen_conf=gen_conf,
             request_kwargs={},
         )
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
         tools = self.tools
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -651,7 +665,7 @@ class Base(ABC):
                     logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     response = await self.async_client.chat.completions.create(
-                        model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf, **extra_request_kwargs
+                        model=self.model_name, messages=history, stream=True, **self._tool_request_kwargs(tools), **gen_conf, **extra_request_kwargs
                     )
 
                     final_tool_calls = {}
@@ -761,8 +775,7 @@ class Base(ABC):
                     model=self.model_name,
                     messages=history,
                     stream=True,
-                    tools=tools,
-                    tool_choice="auto",
+                    **self._tool_request_kwargs(tools),
                     **gen_conf,
                     **extra_request_kwargs,
                 )
