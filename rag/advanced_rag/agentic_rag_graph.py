@@ -1250,6 +1250,10 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
     base = getattr(tools, "kbinfos", None) or state.get("kbinfos") or {"chunks": [], "doc_aggs": []}
     tools.kbinfos = dict(base)
 
+    # Shared cache across sessions to avoid duplicate retrievals
+    shared_tool_cache = {}
+    shared_search_queries = []
+
     async def _one(v):
         direction = v.question_clues[0] if v.question_clues else question
         async with sem:
@@ -1259,6 +1263,8 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
                 parent_state=slot_table,
                 deadline_left=max(20.0, deadline_left - 10.0),
                 base_summary="",
+                shared_tool_cache=shared_tool_cache,
+                shared_search_queries=shared_search_queries,
             )
 
     results = await asyncio.gather(

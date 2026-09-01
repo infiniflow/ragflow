@@ -1888,18 +1888,55 @@ async def run_nav_prefix(tools, direction: str, deadline_left: float, ctx: _NavC
 _SESSION_GRAPH = _build_session_graph()
 
 
+
+def _extract_relevant_evidence(tools, direction: str, max_chunks: int = 4) -> str:
+    """Extract chunks from tools.kbinfos relevant to direction, for seed_user injection."""
+    from rag.advanced_rag.harness.tools.search import _chunk_id, _chunk_text
+
+    kbinfos = getattr(tools, "kbinfos", None) or {}
+    chunks = kbinfos.get("chunks") or []
+    if not chunks:
+        return ""
+
+    dir_tokens = set(re.findall(r"[a-zA-Z0-9\u4e00-\u9fff]{2,}", (direction or "").lower()))
+    if not dir_tokens:
+        ranked = chunks[-max_chunks:]
+    else:
+        def _rel(c):
+            text = (_chunk_text(c) or "").lower()
+            return sum(1 for t in dir_tokens if t in text)
+        ranked = sorted(chunks, key=_rel, reverse=True)
+
+    lines = []
+    for c in ranked[:max_chunks]:
+        cid = _chunk_id(c)
+        text = (_chunk_text(c) or "")[:300].replace("\n", " ")
+        lines.append(f"[{cid}] {text}")
+    return "\n".join(lines)
+
+
 async def run_action_session(
     tools,
     direction: str,
     parent_state: State,
     deadline_left: float | None = None,
     base_summary: str = "",
+    shared_tool_cache: dict | None = None,
+    shared_search_queries: list | None = None,
 ) -> Result:
     """Bounded graph-edge session pursuing ONE direction."""
     from rag.prompts.template import load_prompt
 
     system = load_prompt("action_run")
     seed_user = f"Direction: {direction}\n\nState:\n{parent_state.render_slots()}"
+
+    existing = _extract_relevant_evidence(tools, direction, max_chunks=4)
+    if existing:
+        seed_user += (
+            "\n\nALREADY RETRIEVED (do NOT re-retrieve these — "
+            "use them to fill slots or identify gaps):\n" + existing
+        )
+
     if base_summary:
         seed_user += f"\n\nPrior round summary:\n{base_summary}"
 
@@ -1951,8 +1988,8 @@ async def run_action_session(
         "deadline_left": max(10.0, budget_left - spent),
         "_ctx_budget": _MAX_TOOL_RESPONSE_CHARS * 4,
         "_tool_chars": 0,
-        "_tool_cache": {},
-        "_search_queries": [],
+        "_tool_cache": shared_tool_cache or {},
+        "_search_queries": list(shared_search_queries or []),
         "_skipped_dup": 0,
         "_tool_strikes": {},
         "_tool_outcomes": list(prefix_outcomes),
