@@ -1054,7 +1054,11 @@ async def _acompletion(mdl, messages: list, tools_list=None, temperature: float 
         kwargs = {"model": mdl.model_name, "messages": oai_messages, "temperature": temperature}
         if tools_list:
             kwargs["tools"] = tools_list
-        return await create(**kwargs)
+        response = await create(**kwargs)
+        from rag.advanced_rag.harness.stats import record_external_response
+
+        record_external_response(response)
+        return response
     # LiteLLMBase path — construct args via its own public method so provider
     # prefix / api_key / retries all ride along; then swap OUR tool schema in.
     import litellm
@@ -1069,7 +1073,11 @@ async def _acompletion(mdl, messages: list, tools_list=None, temperature: float 
         args["tools"] = tools_list
         args["tool_choice"] = "auto"
     args.setdefault("num_retries", 0)
-    return await litellm.acompletion(**args, drop_params=True, timeout=timeout_s)
+    response = await litellm.acompletion(**args, drop_params=True, timeout=timeout_s)
+    from rag.advanced_rag.harness.stats import record_external_response
+
+    record_external_response(response)
+    return response
 
 
 async def _llm_once_with_tools(tools, mdl, messages: list):
