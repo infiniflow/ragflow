@@ -74,7 +74,7 @@ _LOG = logging.getLogger(__name__)
 # whatever evidence is on hand instead of starting another research round.
 _TOTAL_BUDGET_S = 900.0  # whole-graph wall-clock ceiling per question
 _MIN_ROUND_HEADROOM_S = 90.0  # need at least this much left to start a new round
-_PASS_TIMEOUT_S = 300.0  # slot research pass wall-clock
+_PASS_TIMEOUT_S = 600.0  # slot research pass wall-clock
 _PREFETCH_TIMEOUT_S = 240.0  # programmatic fan-out fetch
 _DRAFT_TIMEOUT_S = 180.0  # fallback draft synthesis
 _SCA_TIMEOUT_S = 180.0  # sufficient-context review call
