@@ -205,12 +205,41 @@ async def apply_meta_data_filter(
             cached_metas = metas_loader() if metas_loader else {}
         return cached_metas
 
+    # What the LLM is shown. Deliberately not ``_get_metas()``: that returns
+    # {key: {value: [doc_ids]}} built by paging the doc-meta index, and the page
+    # loop stops at the doc store's result window -- so on a dataset over ~10k
+    # documents the model is handed the metadata of an arbitrary prefix and
+    # asked to pick a value that may not be in it. It then either picks a wrong
+    # value (search scoped to the wrong documents) or picks nothing (filter
+    # dropped, whole-corpus search). Neither failure raises.
+    #
+    # An aggregation sees every document regardless of the result window, and
+    # gen_meta_filter only ever needs the values -- it discards the doc_ids at
+    # its first step. The doc_ids remain available through _get_metas() for the
+    # in-memory meta_filter fallback, which is the only caller that needs them.
+    cached_value_space: dict | None = None
+
+    def _get_value_space() -> dict:
+        nonlocal cached_value_space
+        if cached_value_space is None:
+            space = {}
+            if kb_ids:
+                try:
+                    # Local import: doc_metadata_service imports this module.
+                    from api.db.services.doc_metadata_service import DocMetadataService
+
+                    space = DocMetadataService.get_meta_value_space_by_kbs(kb_ids)
+                except Exception:
+                    logging.exception("Metadata value-space lookup failed; falling back to the paged scan")
+            cached_value_space = space or _get_metas()
+        return cached_value_space
+
     def _run_metadata_filter(conditions: list[dict], logic: str) -> list[str]:
         """Run conditions through ES/Infinity push-down when possible, in-memory otherwise."""
         return filter_doc_ids_by_metadata(kb_ids or [], conditions, logic, _get_metas)
 
     if method == "auto":
-        filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
+        filters: dict = await gen_meta_filter(chat_mdl, _get_value_space(), question)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
         doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
@@ -229,7 +258,7 @@ async def apply_meta_data_filter(
                     constraints[key] = op
 
         if selected_keys:
-            current_metas = _get_metas()
+            current_metas = _get_value_space()
             filtered_metas = {key: current_metas[key] for key in selected_keys if key in current_metas}
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
