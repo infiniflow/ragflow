@@ -54,6 +54,11 @@ uv run python3 ragflow_deps/download_deps.py
 > ```bash
 > RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_go_deps.py + download_deps.py
 > PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
+> # NOTE: the ONNX Runtime static lib fetched by download_go_deps.py is
+> # linux-x64 ONLY (onnxruntime-linux-x64-static_lib-*). On darwin_* / non-amd64
+> # PLATFORM values the production DeepDoc backend cannot be linked, so those
+> # PLATFORM examples cover office_oxide/pdfium/pdf_oxide only — ORT is a
+> # Linux-amd64 link dependency here.
 >
 > # Resolve the version-stamped ORT archive path FIRST, in its own unquoted
 > # assignment: the shell does not expand `*` inside the double-quoted
@@ -88,9 +93,10 @@ uv run python3 ragflow_deps/download_deps.py
 > `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
 > you see `Error: ONNX Runtime static libraries are not linked`, run
 > `uv run python3 ragflow_deps/download_go_deps.py` (or pre-seed
-> `/opt/ragflow-native-libs/onnxruntime` as the CI runner image does). A
-> non-cgo build path is only appropriate for binaries that intentionally omit
-> the native backend.
+> `/opt/ragflow-native-libs/onnxruntime` as the CI runner image does). There is
+> no ORT-free production build path — if ORT is absent the binary fails at
+> startup, so the remedy is always to seed the static lib above, never to build
+> without it.
 
 
 ### 1.5 Build RAGFlow

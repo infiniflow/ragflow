@@ -39,10 +39,13 @@ import zipfile
 
 import requests
 
-# Mirrors internal/common.DeepDocORTVersion (Go in-process backend). Single
-# source for the ONNX Runtime native release used by the statically-linked Go
-# DeepDoc backend. The pip onnxruntime== pin (pyproject.toml) and the
-# onnxruntime_go binding minor (go.mod) must stay on the same minor line.
+# Mirrors internal/common.DeepDocORTVersion (Go in-process backend). ONE OF
+# THREE places (with that Go constant and the ORT_VERSION in
+# ragflow_deps/download_deps.py) that must carry the same ONNX Runtime native
+# release for the statically-linked Go DeepDoc backend. There is no single
+# source of truth — keep all three equal. The pip onnxruntime== pin
+# (pyproject.toml) and the onnxruntime_go binding minor (go.mod) must stay on
+# the same minor line.
 ORT_VERSION = "1.23.2"
 
 

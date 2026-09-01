@@ -41,7 +41,8 @@ PDF_OXIDE_VERSION="0.3.73"
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
 # (--whole-archive + --export-dynamic); OrtGetApiBase is then resolved via
 # dlopen(self), so no libonnxruntime.so is needed at runtime. Downloaded by
-# ragflow_deps/download_deps.py into onnxruntime/static_lib.
+# ragflow_deps/download_go_deps.py (and ragflow_deps/download_deps.py) into
+# onnxruntime/static_lib.
 ONNXRUNTIME_STATIC_PREFIX="${HOME}/ragflow-native-libs/onnxruntime/static_lib"
 
 # Copy a dependency from the system pre-seed directory to the user cache.
@@ -388,8 +389,12 @@ build_go() {
         echo "  Fetch the static libs with:" >&2
         echo "    uv run python3 ragflow_deps/download_go_deps.py" >&2
         echo "  or pre-seed them at /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
-        echo "  If you intentionally build without the native backend, use a" >&2
-        echo "  non-cgo build path; this production binary must include ORT." >&2
+        echo "  This production binary must statically include ORT — there is no" >&2
+        echo "  ORT-free build path. ORT ends up unlinked only via one of:" >&2
+        echo "    - the ORT static_lib dir was never seeded: run" >&2
+        echo "      'uv run python3 ragflow_deps/download_go_deps.py', or pre-seed" >&2
+        echo "      /opt/ragflow-native-libs/onnxruntime as the CI image does;" >&2
+        echo "    - setup_cgo_env did not add libonnxruntime to CGO_LDFLAGS." >&2
         return 1
     fi
 
