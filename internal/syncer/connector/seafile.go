@@ -441,7 +441,17 @@ func (c *SeaFileConnector) defaultListLibraries(ctx context.Context) ([]seafileL
 	if err := c.getJSON(ctx, "repos/", false, nil, &libraries); err != nil {
 		return nil, err
 	}
-	if !c.includeShared && c.currentUserEmail != "" {
+func (c *SeaFileConnector) defaultListLibraries(ctx context.Context) ([]seafileLibrary, error) {
+	if !c.includeShared && c.currentUserEmail == "" {
+		if err := c.defaultValidateAccountToken(ctx); err != nil {
+			return nil, err
+		}
+	}
+	var libraries []seafileLibrary
+	if err := c.getJSON(ctx, "repos/", false, nil, &libraries); err != nil {
+		return nil, err
+	}
+	if !c.includeShared {
 		filtered := libraries[:0]
 		for _, library := range libraries {
 			if library.Owner == c.currentUserEmail || library.OwnerEmail == c.currentUserEmail {
