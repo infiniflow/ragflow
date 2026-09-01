@@ -1936,6 +1936,7 @@ async def run_nav_prefix(tools, direction: str, deadline_left: float, ctx: _NavC
 _SESSION_GRAPH = _build_session_graph()
 
 
+
 def _extract_relevant_evidence(tools, direction: str, max_chunks: int = 4) -> str:
     """Extract chunks from tools.kbinfos relevant to direction, for seed_user injection."""
     from rag.advanced_rag.harness.tools.search import _chunk_id, _chunk_text
@@ -1949,11 +1950,9 @@ def _extract_relevant_evidence(tools, direction: str, max_chunks: int = 4) -> st
     if not dir_tokens:
         ranked = chunks[-max_chunks:]
     else:
-
         def _rel(c):
             text = (_chunk_text(c) or "").lower()
             return sum(1 for t in dir_tokens if t in text)
-
         ranked = sorted(chunks, key=_rel, reverse=True)
 
     lines = []
