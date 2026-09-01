@@ -2,8 +2,10 @@ import {
   addTenantParams,
   buildModelValue,
   getEmbeddingBaseName,
+  isTenantModelId,
   parseModelUuid,
   parseModelValue,
+  resolveDefaultModelFormValue,
 } from '../llm-util';
 
 // Composite model keys are right-anchored:
@@ -185,5 +187,99 @@ describe('addTenantParams — clearing model selections', () => {
         '/api/v1/chats/chat-id',
       ),
     ).toEqual({ tenant_rerank_id: 'existing-tenant-model-id' });
+  });
+});
+
+// `tenant_model.id` is a 32-char lowercase hex string produced by
+// `common.misc_utils.get_uuid` (`uuid.uuid1().hex`). On a v0.26.x → v0.27.x
+// in-place upgrade, the `tenant.tenant_*_id` columns may still hold a legacy
+// integer from the pre-tenant_model world. The frontend uses this predicate
+// to decide whether a server-supplied `model_id` can be used as-is to look up
+// a tree node, or must be replaced with the composite "name@instance@provider"
+// key (see `resolveDefaultModelFormValue` below).
+describe('isTenantModelId — canonical 32-char lowercase hex', () => {
+  test('accepts a canonical 32-char lowercase hex string', () => {
+    expect(isTenantModelId('2d8ff0a97d75431c8c91526549939328')).toBe(true);
+    expect(isTenantModelId('00000000000000000000000000000000')).toBe(true);
+    expect(isTenantModelId('ffffffffffffffffffffffffffffffff')).toBe(true);
+  });
+
+  test('rejects legacy integer-shaped strings (v0.26.x upgrade residue)', () => {
+    expect(isTenantModelId('0')).toBe(false);
+    expect(isTenantModelId('23')).toBe(false);
+    expect(isTenantModelId('4294967295')).toBe(false);
+  });
+
+  test('rejects composite model keys (these carry "@", not hex)', () => {
+    expect(isTenantModelId('gpt-4@default@OpenAI')).toBe(false);
+    expect(isTenantModelId('gpt-4@OpenAI')).toBe(false);
+  });
+
+  test('rejects too-short / too-long / non-hex strings', () => {
+    expect(isTenantModelId('2d8ff0a97d75431c8c9152654993932')).toBe(false); // 31 chars
+    expect(isTenantModelId('2d8ff0a97d75431c8c915265499393280')).toBe(false); // 33 chars
+    expect(isTenantModelId('2D8FF0A97D75431C8C91526549939328')).toBe(false); // uppercase
+    expect(isTenantModelId('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz')).toBe(false); // non-hex
+  });
+
+  test('rejects empty, null, and undefined', () => {
+    expect(isTenantModelId('')).toBe(false);
+    expect(isTenantModelId(null)).toBe(false);
+    expect(isTenantModelId(undefined)).toBe(false);
+  });
+});
+
+describe('resolveDefaultModelFormValue — default-model form seeding', () => {
+  const fullModel = {
+    model_id: '2d8ff0a97d75431c8c91526549939328',
+    enable: true,
+    model_name: 'gpt-4',
+    model_instance: 'default',
+    model_provider: 'OpenAI',
+    model_type: 'chat',
+  };
+
+  test('returns the canonical 32-char hex model_id when present', () => {
+    expect(resolveDefaultModelFormValue(fullModel)).toBe(
+      '2d8ff0a97d75431c8c91526549939328',
+    );
+  });
+
+  test('falls back to the composite key when model_id is a legacy integer (v0.26.x upgrade)', () => {
+    expect(
+      resolveDefaultModelFormValue({
+        ...fullModel,
+        model_id: '23',
+      }),
+    ).toBe('gpt-4@default@OpenAI');
+  });
+
+  test('falls back to the composite key when model_id is empty', () => {
+    expect(
+      resolveDefaultModelFormValue({
+        ...fullModel,
+        model_id: '',
+      }),
+    ).toBe('gpt-4@default@OpenAI');
+  });
+
+  test('falls back to the composite key when model_id has an unexpected shape (uppercase hex)', () => {
+    expect(
+      resolveDefaultModelFormValue({
+        ...fullModel,
+        model_id: '2D8FF0A97D75431C8C91526549939328',
+      }),
+    ).toBe('gpt-4@default@OpenAI');
+  });
+
+  test('returns empty string when the slot is empty', () => {
+    expect(resolveDefaultModelFormValue(undefined)).toBe('');
+    expect(resolveDefaultModelFormValue(null)).toBe('');
+    expect(
+      resolveDefaultModelFormValue({
+        ...fullModel,
+        enable: false,
+      }),
+    ).toBe('');
   });
 });
