@@ -79,6 +79,7 @@ func (n *NatsEngine) Init() error {
 		Subjects:  []string{"tasks.>"},
 		Retention: jetstream.WorkQueuePolicy,
 		Storage:   jetstream.FileStorage,
+		Discard:   jetstream.DiscardNew,
 		MaxMsgs:   1024 * 128,
 		MaxBytes:  1024 * 1024 * 64,
 		// Server-side dedup window. Inert for task publishes: PublishTask
