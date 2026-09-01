@@ -434,6 +434,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 	if err = db.AutoMigrate(
 		&entity.Document{},
 		&entity.Knowledgebase{},
+		&entity.PipelineOperationLog{},
 		&entity.Task{},
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
@@ -470,6 +471,7 @@ func testDocumentService(t *testing.T) *DocumentService {
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
 		fileDAO:          dao.NewFileDAO(),
 		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
+		pipelineLogDAO:   dao.NewPipelineOperationLogDAO(),
 		ingestionTaskSvc: service.NewIngestionTaskService(),
 		docEngine:        nil,
 		metadataSvc:      nil, // nil engine → metadata ops skipped

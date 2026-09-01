@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	"ragflow/internal/service/document"
 	"ragflow/internal/tokenizer"
 )
 
@@ -1630,23 +1631,20 @@ func TestRerunAgent_RequiresAllFields(t *testing.T) {
 }
 
 // TestRerunAgent_AcceptsCompleteRequest covers the happy path: all
-// three required fields present + documentService wired with an
-// accessible document -> 200 / code 0.
-//
-// Round 6: now that RerunAgent fails closed when documentService is
-// nil, the happy path needs an accessible stub. We use the deny-all
-// stub flipped to accessible=true so the gate passes.
+// three required fields present + documentService wired with a
+// rerun that succeeds -> 200 / code 0, and the stub receives the
+// log id / dsl / component_id from the request verbatim.
 func TestRerunAgent_AcceptsCompleteRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
-		strings.NewReader(`{"id":"x","dsl":{"path":[]},"component_id":"c1"}`))
+		strings.NewReader(`{"id":"log-1","dsl":{"path":[]},"component_id":"c1"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	stub := &stubDocService{accessible: true}
+	stub := &stubDocService{}
 	ctx := t.Context()
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithDocumentService(stub)
@@ -1656,6 +1654,13 @@ func TestRerunAgent_AcceptsCompleteRequest(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	if code, _ := resp["code"].(float64); code != float64(common.CodeSuccess) {
 		t.Errorf("code = %v, want 0 (msg=%v)", code, resp["message"])
+	}
+	if stub.userID != "u1" || stub.logID != "log-1" || stub.componentID != "c1" {
+		t.Errorf("stub args = user %q log %q component %q, want u1/log-1/c1",
+			stub.userID, stub.logID, stub.componentID)
+	}
+	if _, ok := stub.dsl["path"]; !ok {
+		t.Errorf("stub dsl = %v, want the request dsl passed through", stub.dsl)
 	}
 }
 
@@ -1687,13 +1692,12 @@ func TestPromptsReturnsHardcodedFields(t *testing.T) {
 }
 
 // TestRerunAgent_RejectsInaccessibleDocument mirrors PR #15145:
-// POST /api/v1/agents/rerun gates on DocumentService.accessible
-// (the python "is the document reachable by this tenant" check)
-// before accepting the request. Without documentService wired,
-// the gate is skipped (existing behaviour, returns success). With
-// it wired, an inaccessible doc must return CodeDataError + "Document
-// not found." so a caller cannot probe whether a doc exists in
-// another tenant.
+// POST /api/v1/agents/rerun gates on the document service resolving
+// the log and enforcing DocumentService.accessible (the python "is
+// the document reachable by this tenant" check) before accepting the
+// request. A denial from the service must surface as CodeDataError +
+// "Document not found." so a caller cannot probe whether a document
+// exists in another tenant.
 func TestRerunAgent_RejectsInaccessibleDocument(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1704,11 +1708,9 @@ func TestRerunAgent_RejectsInaccessibleDocument(t *testing.T) {
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	// Wire a stub documentService that denies all access. The setter
-	// now accepts a narrow documentAccessChecker interface (PR review
-	// round 5), so the deny-all stub injects cleanly without standing
-	// up the real DocumentService (DB, storage, ...).
-	stub := &stubDocService{accessible: false}
+	// The stub models the service's deny path: unknown log or an
+	// inaccessible document both collapse to ErrRerunDocumentNotFound.
+	stub := &stubDocService{err: document.ErrRerunDocumentNotFound}
 	ctx := t.Context()
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithDocumentService(stub)
@@ -1725,13 +1727,12 @@ func TestRerunAgent_RejectsInaccessibleDocument(t *testing.T) {
 	}
 }
 
-// TestRerunAgent_NoDocumentServiceFailsClosed pins PR review round 6,
-// Major #2: a nil documentService is now treated as a wiring
-// misconfiguration that would create an auth bypass, NOT a
-// backward-compatible "skip the gate" state. The handler must
-// return 500 / "server misconfiguration" so a missing
-// dependency is loud and gets fixed, instead of silently
-// allowing any caller to rerun an arbitrary doc id.
+// TestRerunAgent_NoDocumentServiceFailsClosed pins the fail-closed
+// rule: a nil documentService is treated as a wiring misconfiguration
+// that would create an auth bypass, NOT a backward-compatible "skip
+// the gate" state. The handler must return 500 / "server
+// misconfiguration" so a missing dependency is loud and gets fixed,
+// instead of silently allowing any caller to rerun an arbitrary doc id.
 func TestRerunAgent_NoDocumentServiceFailsClosed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1745,9 +1746,9 @@ func TestRerunAgent_NoDocumentServiceFailsClosed(t *testing.T) {
 	ctx := t.Context()
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	// Note: no WithDocumentService call → documentService is nil.
-	// Production wiring (cmd/server_main.go) always calls
-	// WithDocumentService; a nil here means the handler was
-	// constructed without its required dependency.
+	// The production wiring (cmd/ragflow_server.go) chains
+	// WithDocumentService onto NewAgentHandler; a nil here means the
+	// handler was constructed without its required dependency.
 	h.RerunAgent(c)
 
 	var resp map[string]interface{}
@@ -1761,12 +1762,23 @@ func TestRerunAgent_NoDocumentServiceFailsClosed(t *testing.T) {
 	}
 }
 
+// stubDocService stubs the dataflowRerunService surface for handler
+// tests: it records the arguments and replays err (nil = success,
+// document.ErrRerunDocumentNotFound = deny).
 type stubDocService struct {
-	accessible bool
+	err         error
+	userID      string
+	logID       string
+	dsl         map[string]interface{}
+	componentID string
 }
 
-func (s *stubDocService) Accessible(_, _ string) bool {
-	return s.accessible
+func (s *stubDocService) RerunDataflow(_ context.Context, userID, logID string, dsl map[string]interface{}, componentID string) error {
+	s.userID = userID
+	s.logID = logID
+	s.dsl = dsl
+	s.componentID = componentID
+	return s.err
 }
 
 // TestAgentChatCompletions_FilesDeserialized verifies that the
