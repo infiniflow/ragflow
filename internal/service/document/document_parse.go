@@ -83,18 +83,24 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	// corrupt the new run's results. The caller must stop the task first
 	// and wait for a terminal state (COMPLETED/STOPPED/FAILED), CREATED, or
 	// SCHEDULED.
+	taskExisted := false
 	if task, _ := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID); task != nil {
 		if task.Status == common.RUNNING || task.Status == common.STOPPING {
 			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
 		}
+		taskExisted = true
 	}
 
 	// Delete terminal, CREATED, and SCHEDULED ingestion tasks atomically, leaving
 	// RUNNING/STOPPING tasks untouched so the check-then-delete window
-	// between GetByDocumentID and the delete above cannot delete a task
-	// that just transitioned to RUNNING.
-	if _, err := s.ingestionTaskDAO.DeleteIfTerminal(ctx, dao.DB, doc.ID); err != nil {
+	// between GetByDocumentID and the delete cannot delete a task that just
+	// transitioned to RUNNING. In that case, do not clear its parse results.
+	deleted, err := s.ingestionTaskDAO.DeleteIfTerminal(ctx, dao.DB, doc.ID)
+	if err != nil {
 		return err
+	}
+	if taskExisted && deleted == 0 {
+		return fmt.Errorf("document %s ingestion task started running; stop it before re-parsing", doc.ID)
 	}
 
 	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {

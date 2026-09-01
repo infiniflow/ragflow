@@ -2060,6 +2060,51 @@ func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T)
 	}
 }
 
+func TestClearDocumentParseResultsDoesNotClearResultsWhenTaskStartsRunning(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
+
+	const callbackName = "test:start-ingestion-task-before-conditional-delete"
+	if err := db.Callback().Delete().Before("gorm:delete").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != (&entity.IngestionTask{}).TableName() {
+			return
+		}
+		if err := tx.Session(&gorm.Session{NewDB: true}).Model(&entity.IngestionTask{}).
+			Where("id = ?", "task-1").Update("status", common.RUNNING).Error; err != nil {
+			_ = tx.AddError(err)
+		}
+	}); err != nil {
+		t.Fatalf("register delete callback: %v", err)
+	}
+
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("get document: %v", err)
+	}
+	if err = testDocumentService(t).clearDocumentParseResults(ctx, doc, "tenant-1"); err == nil {
+		t.Fatal("expected reparse cleanup to reject a task that started running")
+	}
+
+	updatedDoc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if updatedDoc.TokenNum != 10 || updatedDoc.ChunkNum != 5 {
+		t.Fatalf("document counters = token:%d chunk:%d, want unchanged 10/5", updatedDoc.TokenNum, updatedDoc.ChunkNum)
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("reload knowledgebase: %v", err)
+	}
+	if kb.TokenNum != 10 || kb.ChunkNum != 5 {
+		t.Fatalf("knowledgebase counters = token:%d chunk:%d, want unchanged 10/5", kb.TokenNum, kb.ChunkNum)
+	}
+}
+
 // TestClearDocumentParseResults_DeletesTerminalIngestionTask verifies
 // that a terminal ingestion task (STOPPED/COMPLETED/FAILED) and a CREATED
 // (queued) task are deleted so the new run can proceed.
