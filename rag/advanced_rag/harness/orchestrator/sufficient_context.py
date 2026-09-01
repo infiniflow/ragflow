@@ -126,7 +126,6 @@ def _bounded_excerpt(text: str, hints: str, max_chars: int = 300) -> str:
         return ""
     if _is_table_text(text):
         return text
-
     max_chars = max(80, int(max_chars))
     hint_tokens = [t for t in re.findall(r"[A-Za-z0-9_\u4e00-\u9fff]{3,}", str(hints or ""))]
     lower = text.lower()
