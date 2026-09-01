@@ -23,7 +23,8 @@ import (
 // KB config (ApplyKB), validates storage, and enqueues an ingestion task.
 // The document run status is NOT set here; service.IngestionTaskService.StartRunning
 // sets it to RUNNING when the worker picks up the task and transitions it from
-// CREATED. Extracted from Ingest so other entry points (e.g. ChunkService.Parse)
+// CREATED or the internal unpublished reservation. Extracted from Ingest so
+// other entry points (e.g. ChunkService.Parse)
 // can reuse the same start-parse flow.
 func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) error {
 	// Validate storage first so we don't clear prior results and then fail
@@ -80,14 +81,16 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	// Refuse to clear a non-terminal ingestion task. An in-flight worker
 	// (RUNNING) or one mid-stop (STOPPING) would keep writing chunks and
 	// corrupt the new run's results. The caller must stop the task first
-	// and wait for a terminal state (COMPLETED/STOPPED/FAILED) or CREATED.
+	// and wait for a terminal state (COMPLETED/STOPPED/FAILED) or CREATED. An
+	// unpublished reservation is also safe to clear because it has not been
+	// exposed as a task to the caller.
 	if task, _ := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID); task != nil {
 		if task.Status == common.RUNNING || task.Status == common.STOPPING {
 			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
 		}
 	}
 
-	// Delete terminal and CREATED ingestion tasks atomically, leaving
+	// Delete terminal, unpublished, and CREATED ingestion tasks atomically, leaving
 	// RUNNING/STOPPING tasks untouched so the check-then-delete window
 	// between GetByDocumentID and the delete above cannot delete a task
 	// that just transitioned to RUNNING.

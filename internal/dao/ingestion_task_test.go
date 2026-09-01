@@ -3,7 +3,6 @@ package dao
 import (
 	"errors"
 	"testing"
-	"time"
 
 	"fmt"
 	"ragflow/internal/common"
@@ -104,6 +103,110 @@ func TestIngestionTaskDAODocumentIDIsUniqueAtDBLevel(t *testing.T) {
 	}
 }
 
+func TestIngestionTaskDAODeleteAllowsUnpublishedTask(t *testing.T) {
+	db := setupTaskTestDB(t)
+	orig := DB
+	DB = db
+	t.Cleanup(func() { DB = orig })
+
+	task := &entity.IngestionTask{
+		ID:         "task-unpublished",
+		UserID:     "user-1",
+		DocumentID: "doc-unpublished",
+		DatasetID:  "kb-1",
+		Status:     "",
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create unpublished task: %v", err)
+	}
+
+	info, err := NewIngestionTaskDAO().Delete(t.Context(), db, task.ID, nil)
+	if err != nil {
+		t.Fatalf("delete unpublished task: %v", err)
+	}
+	if info == nil || info.TaskID != task.ID {
+		t.Fatalf("unexpected task info: %+v", info)
+	}
+}
+
+func TestIngestionTaskDAODeleteIfStatusOnlyDeletesMatchingTask(t *testing.T) {
+	db := setupTaskTestDB(t)
+	orig := DB
+	DB = db
+	t.Cleanup(func() { DB = orig })
+
+	task := &entity.IngestionTask{
+		ID:         "task-unpublished",
+		UserID:     "user-1",
+		DocumentID: "doc-unpublished",
+		DatasetID:  "kb-1",
+		Status:     "",
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create unpublished task: %v", err)
+	}
+
+	deleted, err := NewIngestionTaskDAO().DeleteIfStatus(t.Context(), db, task.ID, common.CREATED)
+	if err != nil {
+		t.Fatalf("delete with mismatched status: %v", err)
+	}
+	if deleted {
+		t.Fatal("delete should not remove a task with a mismatched status")
+	}
+	if _, err := NewIngestionTaskDAO().GetByID(t.Context(), db, task.ID); err != nil {
+		t.Fatalf("task should remain after mismatched delete: %v", err)
+	}
+
+	deleted, err = NewIngestionTaskDAO().DeleteIfStatus(t.Context(), db, task.ID, "")
+	if err != nil {
+		t.Fatalf("delete with matching status: %v", err)
+	}
+	if !deleted {
+		t.Fatal("delete should remove a task with a matching status")
+	}
+}
+
+func TestIngestionTaskDAOListsExcludeUnpublishedTasks(t *testing.T) {
+	db := setupTaskTestDB(t)
+	orig := DB
+	DB = db
+	t.Cleanup(func() { DB = orig })
+
+	for _, task := range []*entity.IngestionTask{
+		{ID: "task-unpublished", UserID: "user-1", DocumentID: "doc-unpublished", DatasetID: "kb-1", Status: ""},
+		{ID: "task-created", UserID: "user-1", DocumentID: "doc-created", DatasetID: "kb-1", Status: common.CREATED},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	d := NewIngestionTaskDAO()
+	tasks, err := d.ListByUserID(t.Context(), db, "user-1", 0, 0)
+	if err != nil {
+		t.Fatalf("list tasks by user: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != "task-created" {
+		t.Fatalf("listed tasks = %+v, want only task-created", tasks)
+	}
+
+	tasks, err = d.ListByUserIDAndDatasetID(t.Context(), db, "user-1", "kb-1", 0, 0)
+	if err != nil {
+		t.Fatalf("list tasks by user and dataset: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != "task-created" {
+		t.Fatalf("listed tasks by dataset = %+v, want only task-created", tasks)
+	}
+
+	tasks, err = d.GetAllTasks(t.Context(), db, 0, 0)
+	if err != nil {
+		t.Fatalf("list all tasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != "task-created" {
+		t.Fatalf("all listed tasks = %+v, want only task-created", tasks)
+	}
+}
+
 func TestIngestionTaskDAOUpdateStatusIfCurrentRejectsMismatchedStatus(t *testing.T) {
 	db := setupTaskTestDB(t)
 	orig := DB
@@ -139,96 +242,6 @@ func TestIngestionTaskDAOUpdateStatusIfCurrentRejectsMismatchedStatus(t *testing
 	}
 }
 
-// seedStaleTask inserts an ingestion task whose create/update timestamps are
-// aged back so ListStaleByStatus staleness windows can be asserted.
-func seedStaleTask(t *testing.T, db *gorm.DB, id, status string, age time.Duration) {
-	t.Helper()
-	ts := time.Now().Add(-age).UnixMilli()
-	task := &entity.IngestionTask{
-		ID:         id,
-		UserID:     "user-1",
-		DocumentID: "doc-" + id,
-		DatasetID:  "kb-1",
-		Status:     status,
-		BaseModel:  entity.BaseModel{CreateTime: &ts, UpdateTime: &ts},
-	}
-	if err := db.Create(task).Error; err != nil {
-		t.Fatalf("create task %s: %v", id, err)
-	}
-}
-
-// TestIngestionTaskDAOListStaleByStatus covers the three contract axes of the
-// startup-reconciliation query: status filtering, the staleness time window
-// (per column), and the result limit.
-func TestIngestionTaskDAOListStaleByStatus(t *testing.T) {
-	db := setupTaskTestDB(t)
-	orig := DB
-	DB = db
-	t.Cleanup(func() { DB = orig })
-
-	seedStaleTask(t, db, "run-stale", common.RUNNING, 20*time.Minute)
-	seedStaleTask(t, db, "run-fresh", common.RUNNING, 1*time.Minute)
-	seedStaleTask(t, db, "created-stale", common.CREATED, 20*time.Minute)
-	seedStaleTask(t, db, "created-fresh", common.CREATED, 1*time.Minute)
-	seedStaleTask(t, db, "completed-stale", common.COMPLETED, 20*time.Minute)
-
-	ctx := t.Context()
-	d := NewIngestionTaskDAO()
-	threshold := time.Now().Add(-15 * time.Minute)
-
-	// Status filter + update_time window: only the stale RUNNING row matches.
-	running, err := d.ListStaleByStatus(ctx, db, []string{common.RUNNING}, "update_time", threshold, 0)
-	if err != nil {
-		t.Fatalf("ListStaleByStatus(RUNNING): %v", err)
-	}
-	if len(running) != 1 || running[0].ID != "run-stale" {
-		t.Fatalf("RUNNING stale rows = %v, want [run-stale]", idsOfTasks(running))
-	}
-
-	// CREATED is judged by create_time: fresh CREATED rows stay outside the
-	// window even though their status is in the filter.
-	created, err := d.ListStaleByStatus(ctx, db, []string{common.CREATED}, "create_time", threshold, 0)
-	if err != nil {
-		t.Fatalf("ListStaleByStatus(CREATED): %v", err)
-	}
-	if len(created) != 1 || created[0].ID != "created-stale" {
-		t.Fatalf("CREATED stale rows = %v, want [created-stale]", idsOfTasks(created))
-	}
-
-	// Rows in unlisted statuses (COMPLETED) are never returned.
-	all, err := d.ListStaleByStatus(ctx, db, []string{common.RUNNING, common.CREATED}, "create_time", threshold, 0)
-	if err != nil {
-		t.Fatalf("ListStaleByStatus(RUNNING+CREATED): %v", err)
-	}
-	for _, task := range all {
-		if task.ID == "completed-stale" {
-			t.Fatal("COMPLETED row must not be returned for RUNNING/CREATED filter")
-		}
-	}
-
-	// Limit caps the (oldest-first) result set.
-	limited, err := d.ListStaleByStatus(ctx, db, []string{common.RUNNING, common.CREATED}, "create_time", threshold, 1)
-	if err != nil {
-		t.Fatalf("ListStaleByStatus(limit): %v", err)
-	}
-	if len(limited) != 1 {
-		t.Fatalf("limited rows = %v, want exactly 1", idsOfTasks(limited))
-	}
-
-	// An unsupported staleness column is rejected, not silently ignored.
-	if _, err = d.ListStaleByStatus(ctx, db, []string{common.RUNNING}, "status; --", threshold, 0); err == nil {
-		t.Fatal("expected error for unsupported staleness column")
-	}
-}
-
-func idsOfTasks(tasks []*entity.IngestionTask) []string {
-	ids := make([]string, 0, len(tasks))
-	for _, task := range tasks {
-		ids = append(ids, task.ID)
-	}
-	return ids
-}
-
 func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {
 	db := setupTaskTestDB(t)
 	orig := DB
@@ -236,7 +249,7 @@ func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {
 	t.Cleanup(func() { DB = orig })
 
 	// Create tasks in different statuses, each with a unique docID.
-	statuses := []string{common.CREATED, common.RUNNING, common.STOPPING, common.COMPLETED, common.STOPPED, common.FAILED}
+	statuses := []string{"", common.CREATED, common.RUNNING, common.STOPPING, common.COMPLETED, common.STOPPED, common.FAILED}
 	for i, status := range statuses {
 		docID := fmt.Sprintf("doc-%d", i)
 		task := &entity.IngestionTask{
@@ -253,7 +266,7 @@ func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {
 
 	ctx := t.Context()
 	// DeleteIfTerminal deletes everything except RUNNING and STOPPING.
-	// CREATED is safe to delete (no worker has claimed it yet);
+	// Unpublished and CREATED are safe to delete (no worker has claimed them yet);
 	// COMPLETED/STOPPED/FAILED are terminal.
 	// Call it for every doc and verify the negative cases survived.
 	for i := 0; i < len(statuses); i++ {
@@ -265,7 +278,7 @@ func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {
 	}
 
 	// RUNNING and STOPPING must survive.
-	for _, i := range []int{1, 2} {
+	for _, i := range []int{2, 3} {
 		docID := fmt.Sprintf("doc-%d", i)
 		task, err := NewIngestionTaskDAO().GetByDocumentID(ctx, db, docID)
 		if err != nil {
@@ -275,8 +288,8 @@ func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {
 			t.Fatalf("%s task (doc=%d) must not be deleted", statuses[i], i)
 		}
 	}
-	// CREATED, COMPLETED, STOPPED, FAILED must be gone.
-	for _, i := range []int{0, 3, 4, 5} {
+	// Unpublished, CREATED, COMPLETED, STOPPED, FAILED must be gone.
+	for _, i := range []int{0, 1, 4, 5, 6} {
 		docID := fmt.Sprintf("doc-%d", i)
 		task, err := NewIngestionTaskDAO().GetByDocumentID(ctx, db, docID)
 		if err != nil {

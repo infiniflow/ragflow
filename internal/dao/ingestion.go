@@ -23,7 +23,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
-	"time"
 
 	"gorm.io/gorm"
 )
@@ -64,6 +63,18 @@ func (dao *IngestionTaskDAO) UpdateStatusIfCurrent(ctx context.Context, db *gorm
 	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
 		Where("id = ? AND status = ?", taskID, fromStatus).
 		Update("status", toStatus)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// DeleteIfStatus deletes a task only when its current status matches. It is
+// used to remove an unpublished reservation without racing a consumer that
+// has already claimed the task.
+func (dao *IngestionTaskDAO) DeleteIfStatus(ctx context.Context, db *gorm.DB, taskID, status string) (bool, error) {
+	result := db.WithContext(ctx).Where("id = ? AND status = ?", taskID, status).
+		Delete(&entity.IngestionTask{})
 	if result.Error != nil {
 		return false, result.Error
 	}
@@ -121,7 +132,7 @@ func (dao *IngestionTaskDAO) Delete(ctx context.Context, db *gorm.DB, taskID str
 
 	taskStatus := tasks[0].Status
 	switch taskStatus {
-	case common.CREATED, common.STOPPED, common.COMPLETED, common.FAILED:
+	case "", common.CREATED, common.STOPPED, common.COMPLETED, common.FAILED:
 		// ingestion_task_log no longer carries file references (the old
 		// checkpoint JSON column was dropped in favor of typed columns), so
 		// there are no task-level files to delete here.
@@ -145,22 +156,24 @@ func (dao *IngestionTaskDAO) Delete(ctx context.Context, db *gorm.DB, taskID str
 
 func (dao *IngestionTaskDAO) GetAllTasks(ctx context.Context, db *gorm.DB, page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
+	query := db.WithContext(ctx).Where("status <> ?", "")
 	var err error
 	if pageSize == 0 {
-		err = db.WithContext(ctx).Find(&tasks).Error
+		err = query.Find(&tasks).Error
 	} else {
-		err = db.WithContext(ctx).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
+		err = query.Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
 	}
 	return tasks, err
 }
 
 func (dao *IngestionTaskDAO) ListByUserID(ctx context.Context, db *gorm.DB, userID string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
+	query := db.WithContext(ctx).Where("user_id = ? AND status <> ?", userID, "")
 	var err error
 	if pageSize == 0 {
-		err = db.WithContext(ctx).Where("user_id = ?", userID).Order("create_time DESC").Find(&tasks).Error
+		err = query.Order("create_time DESC").Find(&tasks).Error
 	} else {
-		err = db.WithContext(ctx).Where("user_id = ?", userID).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
+		err = query.Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
 	}
 
 	return tasks, err
@@ -168,11 +181,12 @@ func (dao *IngestionTaskDAO) ListByUserID(ctx context.Context, db *gorm.DB, user
 
 func (dao *IngestionTaskDAO) ListByUserIDAndDatasetID(ctx context.Context, db *gorm.DB, userID, datasetID string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
+	query := db.WithContext(ctx).Where("user_id = ? AND dataset_id = ? AND status <> ?", userID, datasetID, "")
 	var err error
 	if pageSize == 0 {
-		err = db.WithContext(ctx).Where("user_id = ? AND dataset_id = ?", userID, datasetID).Order("create_time DESC").Find(&tasks).Error
+		err = query.Order("create_time DESC").Find(&tasks).Error
 	} else {
-		err = db.WithContext(ctx).Where("user_id = ? AND dataset_id = ?", userID, datasetID).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
+		err = query.Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
 	}
 
 	return tasks, err
@@ -196,35 +210,9 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 	return tasks[0], nil
 }
 
-// ListStaleByStatus returns tasks in the given statuses whose timestamp column
-// is older than the threshold, for ingestor startup reconciliation. timeColumn
-// selects which staleness clock applies: "update_time" for RUNNING orphans
-// (frozen at the moment the previous process claimed them) or "create_time"
-// for CREATED orphans (never picked up). Results are ordered oldest first and
-// capped at limit when limit > 0.
-func (dao *IngestionTaskDAO) ListStaleByStatus(ctx context.Context, db *gorm.DB, statuses []string, timeColumn string, olderThan time.Time, limit int) ([]*entity.IngestionTask, error) {
-	switch timeColumn {
-	case "create_time", "update_time":
-	default:
-		return nil, fmt.Errorf("unsupported staleness column %q", timeColumn)
-	}
-	if len(statuses) == 0 {
-		return []*entity.IngestionTask{}, nil
-	}
-	query := db.WithContext(ctx).
-		Where("status IN ?", statuses).
-		Where(timeColumn+" < ?", olderThan.UnixMilli()).
-		Order(timeColumn + " ASC")
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
-	var tasks []*entity.IngestionTask
-	err := query.Find(&tasks).Error
-	return tasks, err
-}
-
 // DeleteIfTerminal deletes ingestion tasks for a document that are in a
-// terminal state (COMPLETED, STOPPED, FAILED) or still queued (CREATED).
+// terminal state (COMPLETED, STOPPED, FAILED), unpublished, or still queued
+// (CREATED).
 // RUNNING and STOPPING tasks are NOT deleted because an in-flight worker
 // would keep writing chunks and corrupt a new run's results.
 // Returns the number of rows deleted.

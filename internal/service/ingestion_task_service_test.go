@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -10,14 +11,18 @@ import (
 )
 
 type recordingTaskPublisher struct {
-	subject  string
-	messages []common.TaskMessage
-	err      error
+	subject      string
+	messages     []common.TaskMessage
+	err          error
+	beforeReturn func(taskID string)
 }
 
 func (p *recordingTaskPublisher) PublishTaskMessage(subject string, msg common.TaskMessage) error {
 	p.subject = subject
 	p.messages = append(p.messages, msg)
+	if p.beforeReturn != nil {
+		p.beforeReturn(msg.TaskID)
+	}
 	return p.err
 }
 
@@ -55,6 +60,95 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	}
 	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.UserID != "user-1" {
 		t.Fatalf("unexpected task: %+v", task)
+	}
+}
+
+func TestIngestionTaskServiceMarksTaskCreatedOnlyAfterPublish(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	statusDuringPublish := ""
+	publisher := &recordingTaskPublisher{
+		beforeReturn: func(taskID string) {
+			task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, taskID)
+			if err != nil {
+				t.Fatalf("load task during publish: %v", err)
+			}
+			statusDuringPublish = task.Status
+		},
+	}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	responses, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("CreateForDocuments failed: %v", err)
+	}
+	if statusDuringPublish != "" {
+		t.Fatalf("status during publish = %q, want empty unpublished status", statusDuringPublish)
+	}
+	if len(responses) != 1 || !strings.HasPrefix(responses[0].Result, "task_id: ") {
+		t.Fatalf("unexpected parse response: %+v", responses)
+	}
+
+	task, err := dao.NewIngestionTaskDAO().GetByDocumentID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.CREATED {
+		t.Fatalf("status after publish = %q, want %q", task.Status, common.CREATED)
+	}
+}
+
+func TestIngestionTaskServiceAcceptsConsumerWinningPublishRace(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	publisher := &recordingTaskPublisher{
+		beforeReturn: func(taskID string) {
+			if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+				Update("status", common.RUNNING).Error; err != nil {
+				t.Fatalf("simulate consumer start: %v", err)
+			}
+		},
+	}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	responses, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("CreateForDocuments failed: %v", err)
+	}
+	if len(responses) != 1 || !strings.HasPrefix(responses[0].Result, "task_id: ") {
+		t.Fatalf("unexpected parse response: %+v", responses)
+	}
+
+	task, err := dao.NewIngestionTaskDAO().GetByDocumentID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("status after consumer race = %q, want %q", task.Status, common.RUNNING)
+	}
+}
+
+func TestIngestionTaskServiceStartRunningAllowsUnpublishedTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", "")
+
+	task, err := NewIngestionTaskService().StartRunning(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("StartRunning failed: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("status = %q, want %q", task.Status, common.RUNNING)
 	}
 }
 
@@ -513,6 +607,43 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 				t.Fatalf("reloaded status = %q, want %q", reloaded.Status, common.CREATED)
 			}
 		})
+	}
+}
+
+func TestIngestionTaskServiceCreateAndEnqueueReplacesUnpublishedTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTaskWithStatus(t, "stale-task", "user-1", "doc-1", "kb-1", "")
+
+	publisher := &recordingTaskPublisher{}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	task, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1",
+		UserID:     "user-1",
+		DatasetID:  "kb-1",
+		Status:     common.CREATED,
+	})
+	if err != nil {
+		t.Fatalf("CreateAndEnqueue failed: %v", err)
+	}
+	if task.ID == "stale-task" {
+		t.Fatalf("expected a new task ID after replacing unpublished task, got %q", task.ID)
+	}
+	if task.Status != common.CREATED {
+		t.Fatalf("status = %q, want %q", task.Status, common.CREATED)
+	}
+	if len(publisher.messages) != 1 || publisher.messages[0].TaskID != task.ID {
+		t.Fatalf("unexpected published messages: %+v", publisher.messages)
+	}
+
+	oldTask, err := dao.NewIngestionTaskDAO().GetByDocumentID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load task after replacing unpublished task: %v", err)
+	}
+	if oldTask == nil || oldTask.ID == "stale-task" {
+		t.Fatalf("expected only the replacement task to remain, task=%+v", oldTask)
 	}
 }
 

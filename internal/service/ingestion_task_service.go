@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"ragflow/internal/common"
@@ -17,9 +18,11 @@ import (
 // Run-count key for IngestionTaskLog.Checkpoint, consumed by
 // ListAllForAdmin and IncrementRunCount to track how many times
 // the task has been picked up by a worker.
-const (
-	stepKeyRunCount = "run_count"
-)
+const stepKeyRunCount = "run_count"
+
+// unpublishedTaskStatus is the internal reservation state used between
+// inserting the task row and receiving a successful NATS publish result.
+const unpublishedTaskStatus = ""
 
 type InvalidTaskTransitionError struct {
 	TaskID string
@@ -48,6 +51,9 @@ type IngestionTaskService struct {
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
 	taskPublisher       TaskPublisher
+	// createMu prevents a concurrent parse request from deleting an
+	// unpublished reservation while its owner is publishing the task.
+	createMu sync.Mutex
 }
 
 func NewIngestionTaskService() *IngestionTaskService {
@@ -103,7 +109,7 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 			UserID:     userID,
 			DatasetID:  datasetID,
 			Schema:     nil,
-			Status:     common.CREATED,
+			Status:     unpublishedTaskStatus,
 		}
 		task, err = s.CreateAndEnqueue(ctx, task)
 		if err != nil {
@@ -206,7 +212,7 @@ func (s *IngestionTaskService) StartRunning(ctx context.Context, taskID string) 
 		return nil, err
 	}
 	switch task.Status {
-	case common.CREATED:
+	case unpublishedTaskStatus, common.CREATED:
 		task, err = s.transition(ctx, taskID, common.RUNNING)
 		if err != nil {
 			return nil, err
@@ -327,6 +333,10 @@ func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*ent
 
 func validateTransition(from, to string) error {
 	switch from {
+	case unpublishedTaskStatus:
+		if to == common.RUNNING {
+			return nil
+		}
 	case common.CREATED:
 		if to == common.RUNNING || to == common.STOPPED {
 			return nil
@@ -340,7 +350,7 @@ func validateTransition(from, to string) error {
 			return nil
 		}
 	case common.FAILED, common.STOPPED:
-		if to == common.CREATED {
+		if to == common.CREATED || to == unpublishedTaskStatus {
 			return nil
 		}
 	}
@@ -384,15 +394,36 @@ func (s *IngestionTaskService) transition(ctx context.Context, taskID string, to
 }
 
 func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entity.IngestionTask) (*entity.IngestionTask, error) {
+	s.createMu.Lock()
+	defer s.createMu.Unlock()
+
 	existing, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, task.DocumentID)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil {
 		switch existing.Status {
+		case unpublishedTaskStatus:
+			deleted, deleteErr := s.ingestionTaskDAO.DeleteIfStatus(ctx, dao.DB, existing.ID, unpublishedTaskStatus)
+			if deleteErr != nil {
+				return nil, deleteErr
+			}
+			if deleted {
+				existing = nil
+				break
+			}
+			// A consumer won the race and changed the reservation while it
+			// was being inspected. Treat the now-visible task as active.
+			existing, err = s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, task.DocumentID)
+			if err != nil {
+				return nil, err
+			}
+			if existing != nil {
+				return nil, fmt.Errorf("document id %s already exists, status: %s, task id: %s", task.DocumentID, existing.Status, existing.ID)
+			}
 		case common.FAILED, common.STOPPED:
 			originalStatus := existing.Status
-			existing, err = s.transition(ctx, existing.ID, common.CREATED)
+			existing, err = s.transition(ctx, existing.ID, unpublishedTaskStatus)
 			if err != nil {
 				return nil, err
 			}
@@ -407,11 +438,12 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 				}
 				return nil, err
 			}
-			return existing, nil
+			return s.markCreatedAfterPublish(ctx, existing.ID)
 		default:
 			return nil, fmt.Errorf("document id %s already exists, status: %s, task id: %s", task.DocumentID, existing.Status, existing.ID)
 		}
 	}
+	task.Status = unpublishedTaskStatus
 	created, err := s.ingestionTaskDAO.Create(ctx, dao.DB, task)
 	if err != nil {
 		return nil, err
@@ -422,16 +454,16 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 		}
 		return nil, err
 	}
-	return created, nil
+	return s.markCreatedAfterPublish(ctx, created.ID)
 }
 
 func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {
-	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, common.CREATED, status)
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, unpublishedTaskStatus, status)
 	if err != nil {
 		return err
 	}
 	if !updated {
-		return s.newTaskStatusConflictError(ctx, taskID, common.CREATED, status)
+		return s.newTaskStatusConflictError(ctx, taskID, unpublishedTaskStatus, status)
 	}
 	return nil
 }
@@ -439,6 +471,31 @@ func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, 
 func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID string) error {
 	_, err := s.ingestionTaskDAO.Delete(ctx, dao.DB, taskID, nil)
 	return err
+}
+
+// markCreatedAfterPublish records that the task's message was accepted by
+// NATS. A worker can win the race and move the task directly from the
+// unpublished state to RUNNING, in which case the later CREATED write is no
+// longer needed and is treated as successful.
+func (s *IngestionTaskService) markCreatedAfterPublish(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, unpublishedTaskStatus, common.CREATED)
+	if err != nil {
+		return nil, err
+	}
+	if updated {
+		return s.GetTask(ctx, taskID)
+	}
+
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	switch task.Status {
+	case common.RUNNING, common.STOPPING, common.COMPLETED, common.FAILED, common.STOPPED:
+		return task, nil
+	default:
+		return nil, s.newTaskStatusConflictError(ctx, taskID, unpublishedTaskStatus, common.CREATED)
+	}
 }
 
 // clearCancelFlag removes the Redis cancel marker ({task_id}-cancel) that
@@ -456,15 +513,6 @@ func (s *IngestionTaskService) enqueueTask(taskID string) error {
 		TaskType: common.TaskTypeIngestionTask,
 	}
 	return s.taskPublisher.PublishTaskMessage("tasks.RAGFLOW", taskMessage)
-}
-
-// EnqueueByID re-publishes the wake-up message for an existing task without
-// touching its status. Used by ingestor startup reconciliation to redeliver
-// CREATED orphans; duplicate delivery is made safe at the consumer level
-// (StartRunning CAS + in-process claim guard), not by broker dedup — see
-// NatsEngine.PublishTask for why publish-time MsgID dedup is harmful here.
-func (s *IngestionTaskService) EnqueueByID(taskID string) error {
-	return s.enqueueTask(taskID)
 }
 
 // UpdateComponentTotal records the number of components in the task's DSL
