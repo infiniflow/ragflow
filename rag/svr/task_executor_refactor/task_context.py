@@ -279,6 +279,11 @@ class TaskContext:
         self._write_interceptor = write_interceptor
         self._recording_context = recording_context
 
+        # Chat tokens spent on this document by the post-chunking LLM phases
+        # (keywords, questions, metadata, tagging), written to
+        # ``document.llm_token_num`` once indexing completes.
+        self.llm_token_num = 0
+
         # Prepare progress callback and set it on the context
         progress_cb = partial(
             callbacks.progress,
@@ -287,6 +292,11 @@ class TaskContext:
             self.to_page,
         )
         self._progress_cb = progress_cb
+
+    def add_llm_tokens(self, tokens: int) -> None:
+        """Credit *tokens* spent by one LLM phase to this document."""
+        if tokens > 0:
+            self.llm_token_num += tokens
 
     # =========================================================================
     # Core task identity properties

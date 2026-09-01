@@ -24,6 +24,7 @@ Provides post-processing functions for chunks:
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import random
@@ -47,6 +48,20 @@ from rag.svr.task_executor_refactor.task_context import TaskContext
 # 32766 bytes. Split oversized terms so ingestion never fails because a
 # malformed LLM response produced a single huge "keyword".
 _ES_KEYWORD_MAX_TERM_BYTES = 32766
+
+
+@contextlib.contextmanager
+def _counting_bundle(ctx: TaskContext, chat_model_config: dict):
+    """An ``LLMBundle`` whose token spend is credited to the document.
+
+    The credit happens on exit, so a phase that fails half-way through still
+    accounts for the tokens it already burned.
+    """
+    with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as bundle:
+        try:
+            yield bundle
+        finally:
+            ctx.add_llm_tokens(bundle.cumulated_tokens)
 
 
 def _sanitize_keyword_term(term: str) -> list[str]:
@@ -97,7 +112,7 @@ async def extract_keywords(docs: list[dict], ctx: TaskContext) -> None:
     st = timer()
     ctx.progress_cb(msg="Start to generate keywords for every chunk ...")
     chat_model_config = resolve_model_config(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
-    with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_model:
+    with _counting_bundle(ctx, chat_model_config) as chat_model:
 
         async def doc_keyword_extraction(chat_mdl, d, topn):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords", {"topn": topn})
@@ -139,7 +154,7 @@ async def generate_questions(docs: list[dict], ctx: TaskContext) -> None:
     st = timer()
     ctx.progress_cb(msg="Start to generate questions for every chunk ...")
     chat_model_config = resolve_model_config(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
-    with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_model:
+    with _counting_bundle(ctx, chat_model_config) as chat_model:
 
         async def doc_question_proposal(chat_mdl, d, topn):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question", {"topn": topn})
@@ -219,7 +234,7 @@ async def generate_metadata(docs: list[dict], ctx: TaskContext) -> None:
     st = timer()
     ctx.progress_cb(msg="Start to generate meta-data for every chunk ...")
     chat_model_config = resolve_model_config(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
-    with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_model:
+    with _counting_bundle(ctx, chat_model_config) as chat_model:
         metadata_conf = build_metadata_config(ctx.parser_config)
 
         async def gen_metadata_task(chat_mdl, d):
@@ -307,7 +322,7 @@ async def apply_tags(docs: list[dict], ctx: TaskContext) -> None:
     else:
         all_tags = json.loads(all_tags)
     chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, ctx.llm_id)
-    with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_model:
+    with _counting_bundle(ctx, chat_model_config) as chat_model:
         docs_to_tag = []
         for doc in docs:
             if ctx.has_canceled_func(ctx.id):
