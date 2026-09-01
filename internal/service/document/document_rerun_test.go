@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
@@ -103,6 +104,11 @@ func TestRerunDataflow_RerunsAndPersistsDSL(t *testing.T) {
 		t.Fatalf("RerunDataflow: %v", err)
 	}
 
+	// The caller's DSL map is not mutated in place.
+	if _, ok := dsl["path"]; ok {
+		t.Fatalf("caller dsl was mutated in place: %v", dsl)
+	}
+
 	// The edited DSL is persisted on the log with the rerun entry point.
 	updated, err := svc.pipelineLogDAO.GetByID(t.Context(), db, "log-1")
 	if err != nil {
@@ -124,7 +130,10 @@ func TestRerunDataflow_RerunsAndPersistsDSL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load ingestion task: %v", err)
 	}
-	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.Status != "CREATED" {
+	// CreateAndEnqueue marks the task SCHEDULED once its queue message has
+	// been published (the publisher here records instead of failing), so the
+	// persisted row is already past CREATED by the time we reload it.
+	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.Status != common.SCHEDULED {
 		t.Fatalf("ingestion task = %+v", task)
 	}
 
@@ -135,5 +144,39 @@ func TestRerunDataflow_RerunsAndPersistsDSL(t *testing.T) {
 	}
 	if doc.TokenNum != 0 || doc.ChunkNum != 0 {
 		t.Fatalf("doc counters after rerun = token %d chunk %d, want zeros", doc.TokenNum, doc.ChunkNum)
+	}
+}
+
+func TestRerunDataflow_EmptyDSLPersistsEntryPath(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 9, 4)
+	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
+	// GetDocumentStorageAddress requires a non-empty document location.
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
+		t.Fatalf("set location: %v", err)
+	}
+	insertTestPipelineLog(t, "log-1", "doc-1", "kb-1", "tenant-1", entity.JSONMap{"components": map[string]interface{}{}})
+
+	svc, publisher := rerunTestService(t)
+	if err := svc.RerunDataflow(t.Context(), "tenant-1", "log-1", entity.JSONMap{}, "c1"); err != nil {
+		t.Fatalf("RerunDataflow: %v", err)
+	}
+
+	// An empty but non-nil dsl is still persisted, with the rerun entry
+	// point recorded on the log row (Python update_by_id parity).
+	updated, err := svc.pipelineLogDAO.GetByID(t.Context(), db, "log-1")
+	if err != nil {
+		t.Fatalf("reload log: %v", err)
+	}
+	path, _ := updated.DSL["path"].([]interface{})
+	if len(path) != 1 || path[0] != "c1" {
+		t.Fatalf("log dsl path = %v, want [c1]", updated.DSL["path"])
+	}
+
+	// The rerun itself is still enqueued.
+	if len(publisher.messages) != 1 {
+		t.Fatalf("expected 1 published message, got %d", len(publisher.messages))
 	}
 }
