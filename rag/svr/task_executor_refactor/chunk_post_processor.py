@@ -933,7 +933,10 @@ async def run_tree_templates(
     doc. Each pair runs RAPTOR with ``is_tree=True`` via
     ``RaptorService.build_doc_tree`` and persists a single graph row
     via ``_struct_upsert_graph_json``."""
-    from rag.advanced_rag.knowlege_compile.structure import _struct_upsert_graph_json
+    from rag.advanced_rag.knowlege_compile.structure import (
+        _struct_upsert_graph_json,
+        _struct_upsert_tree_claim_rows,
+    )
     from rag.svr.task_executor_refactor.raptor_service import RaptorService
 
     ctx = handler._task_context
@@ -1012,6 +1015,11 @@ async def run_tree_templates(
                 )
 
         await rewrite_duplicate_tree_names(tree, chat_mdl_by_tid[template_id])
+        # Claims are keyed by chunk id on the tree dict (see
+        # RaptorService.build_doc_tree); pull them off before projecting so the
+        # graph blob stays a pure structure payload.
+        claims_by_chunk = tree.pop("claims_by_chunk", None) if isinstance(tree, dict) else None
+
         graph = raptor_tree_to_graph(tree)
         try:
             await _struct_upsert_graph_json(
@@ -1030,6 +1038,28 @@ async def run_tree_templates(
                 doc_id,
             )
             continue
+
+        # Claims get their own searchable rows (entity_type_kwd="claim") so they
+        # can be hit directly by global KNN instead of only via beam descent.
+        # This is best-effort: a failure here must not cost us the tree.
+        if claims_by_chunk:
+            try:
+                await _struct_upsert_tree_claim_rows(
+                    claims_by_chunk,
+                    ctx.tenant_id,
+                    ctx.kb_id,
+                    doc_id,
+                    doc_name,
+                    embedding_model,
+                    compile_kwd="tree",
+                    compilation_template_id=template_id,
+                )
+            except Exception:
+                logging.exception(
+                    "tree-template %s: claim rows upsert failed for doc %s",
+                    template_id,
+                    doc_id,
+                )
 
         # Persist the per-doc nav_doc right after the graph node, so parsing a
         # file yields a nav_doc with the FULL entity descriptions as

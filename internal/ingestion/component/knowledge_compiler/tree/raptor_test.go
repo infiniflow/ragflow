@@ -163,7 +163,7 @@ func TestBuildTreeNoPanicWhenAllSummariesFail(t *testing.T) {
 		{Text: "beta", Vector: []float32{0, 1, 0, 0}},
 	}
 	var products []common.Product
-	if err := buildTree(context.Background(), deps, "llm", "t", "d", chunks, 4, "", common.Param{}, &products); err != nil {
+	if err := buildTree(context.Background(), deps, "llm", "t", "d", chunks, 4, "", common.Param{}, &products, nil); err != nil {
 		t.Fatalf("buildTree returned unexpected error: %v", err)
 	}
 	if len(products) != 0 {

@@ -50,7 +50,8 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// chunk list). buildTree reads the texts, ids, and embeddings directly from
 	// the source chunks.
 	var products []common.Product
-	if err := buildTree(ctx, deps, llmID, tenantID, docID, inputs.Chunks, treeOrder, taskPrompt, param, &products); err != nil {
+	var claimsByChunk map[string][]Claim
+	if err := buildTree(ctx, deps, llmID, tenantID, docID, inputs.Chunks, treeOrder, taskPrompt, param, &products, &claimsByChunk); err != nil {
 		return common.Outputs{}, err
 	}
 
@@ -64,6 +65,15 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		log.Printf("tree: graph projection failed (best-effort, continuing): %v", err)
 	} else {
 		products = append(products, graphProds...)
+	}
+
+	// Claims become their own searchable rows so global KNN can hit them
+	// directly instead of only reaching them through beam descent. Also
+	// best-effort: a failure here must not cost us the tree.
+	if claimProds, err := buildTreeClaimProducts(ctx, deps, docID, claimsByChunk); err != nil {
+		log.Printf("tree: claim rows failed (best-effort, continuing): %v", err)
+	} else {
+		products = append(products, claimProds...)
 	}
 
 	out := common.Outputs{
@@ -153,7 +163,12 @@ func resolveMaxErrors(param common.Param) int {
 // never calls the embedder directly. treeOrder drives both the top-level
 // clustering (performed inside buildTree via watershed) and the recursive
 // sub-clustering, so the same method is used at every level of the tree.
-func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID string, chunks []common.Chunk, treeOrder int, taskPrompt string, param common.Param, products *[]common.Product) error {
+//
+// claimOut, when non-nil, receives the extracted claims keyed by chunk id so the
+// caller can persist them as their own rows (see buildTreeClaimProducts). It is
+// an out-param rather than a return value so buildTree keeps a single error
+// return for its existing callers.
+func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID string, chunks []common.Chunk, treeOrder int, taskPrompt string, param common.Param, products *[]common.Product, claimOut *map[string][]Claim) error {
 	maxToken := resolveMaxToken(param)
 	maxErrors := resolveMaxErrors(param)
 	errorCount := 0
@@ -173,6 +188,19 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		}
 		embeddings = toFloat64Matrix(vectors)
 	}
+	// Extract claims before clustering so each cluster can be summarised from
+	// its members' claims instead of their truncated raw text. Claims are far
+	// more compact than the source, so the per-chunk truncation in
+	// buildClusterContent no longer discards content, and the abstraction is
+	// guaranteed to agree with the claims attached to the same cluster.
+	claimsByChunk := ExtractClaimsForChunks(ctx, deps, llmID, chunks)
+	if len(claimsByChunk) > 0 {
+		log.Printf("tree: extracted claims for %d/%d chunk(s)", len(claimsByChunk), len(chunks))
+	}
+	if claimOut != nil {
+		*claimOut = claimsByChunk
+	}
+
 	labels, err := watershed(embeddings, treeOrder)
 	if err != nil {
 		return err
@@ -208,7 +236,19 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		// text to a per-chunk token budget so the cluster fits the LLM context
 		// (Python: len_per_chunk = (max_length - max_token) / len(texts);
 		// truncate(t, len_per_chunk), raptor.py:389-390).
-		content := buildClusterContent(texts, task.pointIdxs, deps.ModelContextLen, maxToken)
+		//
+		// At the bottom level, prefer the members' claims: BuildClaimContent
+		// returns "" when a cluster has none, so we fall through to the raw
+		// text path. Upper levels keep using raw text — they re-cluster the
+		// same original points, so claim-feeding them would only repeat what
+		// the level-0 summaries already compressed.
+		content := ""
+		if task.level == 0 {
+			content = BuildClaimContent(texts, chunkIDs, task.pointIdxs, claimsByChunk)
+		}
+		if content == "" {
+			content = buildClusterContent(texts, task.pointIdxs, deps.ModelContextLen, maxToken)
+		}
 		system := raptorSystemHelper + strings.Replace(taskPrompt, "{cluster_content}", content, 1)
 		summary, err := summarizeTexts(ctx, deps, llmID, system, raptorTitleInstruction, maxToken)
 		if err != nil {
