@@ -76,6 +76,10 @@ func TestParserComponent_Check(t *testing.T) {
 			name:   "pdf: monkeyocrv2 (whitelist) without lang → pass",
 			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "monkeyocrv2"}},
 		},
+		{
+			name:   "pdf: monkeyocr (whitelist) without lang → pass",
+			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "monkeyocr"}},
+		},
 
 		// --- image family (parser.py:283-287) ---
 		{
