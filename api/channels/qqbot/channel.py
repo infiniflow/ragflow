@@ -115,13 +115,17 @@ class QQBotChannel(Channel):
         except Exception:
             LOGGER.error("[qqbot:%s] websocket thread crashed", self.account_id, exc_info=True)
         finally:
-            if self._dispatch_tasks:
+            draining = set(self._dispatch_tasks)
+            if draining:
                 try:
-                    loop.run_until_complete(
-                        asyncio.wait(set(self._dispatch_tasks), timeout=DISPATCH_DRAIN_TIMEOUT)
-                    )
+                    _, pending = loop.run_until_complete(asyncio.wait(draining, timeout=DISPATCH_DRAIN_TIMEOUT))
+                    for task in pending:
+                        task.cancel()
+                    if pending:
+                        loop.run_until_complete(asyncio.wait(pending))
                 except Exception:
                     LOGGER.error("[qqbot:%s] failed to drain in-flight dispatches", self.account_id, exc_info=True)
+            self._dispatch_tasks.clear()
             try:
                 loop.close()
             except Exception:
