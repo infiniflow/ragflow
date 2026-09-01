@@ -170,10 +170,17 @@ func TestSeaFileScopeAndCredentialValidationErrors(t *testing.T) {
 			if err == nil {
 				t.Fatalf("NewSeaFileConnector unexpectedly succeeded")
 			}
-			var validationErr *ConnectorValidationError
-			var credentialErr *ConnectorMissingCredentialError
-			if !errors.As(err, &validationErr) && !errors.As(err, &credentialErr) {
-				t.Fatalf("error = %T %v, want %T", err, err, tc.wantErr)
+			switch tc.wantErr.(type) {
+			case *ConnectorMissingCredentialError:
+				var credentialErr *ConnectorMissingCredentialError
+				if !errors.As(err, &credentialErr) {
+					t.Fatalf("error = %T %v, want %T", err, err, tc.wantErr)
+				}
+			default:
+				var validationErr *ConnectorValidationError
+				if !errors.As(err, &validationErr) {
+					t.Fatalf("error = %T %v, want %T", err, err, tc.wantErr)
+				}
 			}
 		})
 	}
