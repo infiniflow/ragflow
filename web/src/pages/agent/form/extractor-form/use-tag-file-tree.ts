@@ -75,7 +75,12 @@ export function useTagFileTree(value?: string) {
         `${value}/ancestors`,
       );
       const folders: IFile[] = data?.data?.parent_folders?.toReversed() ?? [];
-      setTreeData((tree) => uniqBy(tree.concat(folders.map(toTreeNode)), 'id'));
+      // The root folder is its own parent (parent_id === id). Keeping it in
+      // the tree breaks AsyncTreeSelect's root detection (no node would count
+      // as top-level, so nothing renders), so drop it — its children then
+      // render as top-level nodes, same as a fresh listing.
+      const chain = folders.filter((x) => x.id !== x.parent_id);
+      setTreeData((tree) => uniqBy(tree.concat(chain.map(toTreeNode)), 'id'));
       for (const folder of folders) {
         const ret = await fetchList(folder.id);
         if (ret.code === 0) {
