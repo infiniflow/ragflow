@@ -37,8 +37,6 @@ import sys
 import requests
 from typing import Union
 
-PDF_OXIDE_VERSION = "0.3.73"
-
 
 def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
     if use_china_mirrors:
@@ -63,10 +61,7 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             # Used by build.sh's check_*_deps functions — pre-downloaded to avoid
             # network access during CI.
             ["https://gh-proxy.com/https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
-            [
-                f"https://gh-proxy.com/https://github.com/yfedoseev/pdf_oxide/releases/download/v{PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz",
-                f"pdf_oxide-go-ffi-linux-amd64-v{PDF_OXIDE_VERSION}.tar.gz",
-            ],
+            ["https://gh-proxy.com/https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
             ["https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v0.1.8/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
         ]
     else:
@@ -91,7 +86,7 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             # Used by build.sh's check_*_deps functions — pre-downloaded to avoid
             # network access during CI.
             ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
-            [f"https://github.com/yfedoseev/pdf_oxide/releases/download/v{PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz", f"pdf_oxide-go-ffi-linux-amd64-v{PDF_OXIDE_VERSION}.tar.gz"],
+            ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
             ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.8/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
         ]
 
@@ -146,7 +141,7 @@ if __name__ == "__main__":
     native_deps_dir = os.path.expanduser("~/ragflow-native-libs")
     extractions = [
         ("pdfium-linux-x64-static.tgz", "pdfium-static"),
-        (f"pdf_oxide-go-ffi-linux-amd64-v{PDF_OXIDE_VERSION}.tar.gz", "pdf_oxide"),
+        ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide"),
         ("office_oxide-linux-x86_64.tar.gz", "office_oxide"),
     ]
     import tarfile

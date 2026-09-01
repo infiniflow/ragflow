@@ -132,12 +132,18 @@ COPY cmd cmd
 COPY go.mod go.sum ./
 COPY build.sh ./
 
-# Pin pdf_oxide independently of the runner image's /opt pre-seed, which may
-# contain an older library with incompatible text extraction behavior.
-COPY ragflow_deps/pdf_oxide-go-ffi-linux-amd64-v0.3.73.tar.gz /tmp/pdf_oxide-go-ffi-linux-amd64-v0.3.73.tar.gz
-RUN echo "5114f6cea60caec0f3d7c0f408a805f55a3c6c05cedcc70cebd8ae4d0621ae2d  /tmp/pdf_oxide-go-ffi-linux-amd64-v0.3.73.tar.gz" | sha256sum -c - && \
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+
+# The runner image currently pre-seeds an older pdf_oxide library. Fetch the
+# verified archive during the Go build so the linked static library is stable.
+RUN curl --fail --location --retry 5 --retry-all-errors \
+        https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz \
+        --output /tmp/pdf_oxide.tar.gz && \
+    echo "5114f6cea60caec0f3d7c0f408a805f55a3c6c05cedcc70cebd8ae4d0621ae2d  /tmp/pdf_oxide.tar.gz" | sha256sum -c - && \
     mkdir -p "${HOME}/ragflow-native-libs/pdf_oxide" && \
-    tar -xzf /tmp/pdf_oxide-go-ffi-linux-amd64-v0.3.73.tar.gz -C "${HOME}/ragflow-native-libs/pdf_oxide"
+    tar -xzf /tmp/pdf_oxide.tar.gz -C "${HOME}/ragflow-native-libs/pdf_oxide"
 
 # Overwrite C++ build artifact from cpp-builder
 COPY --from=cpp-builder \
