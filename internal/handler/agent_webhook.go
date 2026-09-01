@@ -545,14 +545,20 @@ func (h *AgentHandler) runWebhookDetachedWithContext(
 			ev.SessionID = sessionID
 		}
 		terminal := isWebhookTerminalEvent(ev)
-		if isTest {
-			h.appendWebhookRunTrace(ctx, cv.ID, startTs, sanitizeWebhookTraceEvent(ev))
-		}
 		if terminal {
 			if isTest {
-				h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+				event := sanitizeWebhookTraceEvent(ev)
+				if ctx.Err() != nil {
+					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+				} else {
+					h.appendWebhookRunTrace(ctx, cv.ID, startTs, event)
+					h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+				}
 			}
 			return
+		}
+		if isTest {
+			h.appendWebhookRunTrace(ctx, cv.ID, startTs, sanitizeWebhookTraceEvent(ev))
 		}
 	}
 	if err = ctx.Err(); err != nil {
@@ -609,8 +615,13 @@ func (h *AgentHandler) runWebhookSync(
 		}
 		if result, terminal := webhookTerminalResult(ev, sessionID); terminal {
 			if isTest {
-				h.appendWebhookRunTrace(ctx, cv.ID, startTs, sanitizeWebhookTraceEvent(ev))
-				h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+				event := sanitizeWebhookTraceEvent(ev)
+				if ctx.Err() != nil {
+					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+				} else {
+					h.appendWebhookRunTrace(ctx, cv.ID, startTs, event)
+					h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+				}
 			}
 			return result
 		}
