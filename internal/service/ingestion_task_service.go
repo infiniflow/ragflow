@@ -489,15 +489,17 @@ func (s *IngestionTaskService) ScheduleCreatedTasks(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var recoveryErr error
 	for _, task := range tasks {
 		if err := s.enqueueTask(task.ID); err != nil {
-			return fmt.Errorf("schedule created task %s: %w", task.ID, err)
+			recoveryErr = errors.Join(recoveryErr, fmt.Errorf("schedule created task %s: %w", task.ID, err))
+			continue
 		}
 		if _, err := s.markScheduledAfterPublish(ctx, task.ID); err != nil {
-			return fmt.Errorf("mark task %s scheduled: %w", task.ID, err)
+			recoveryErr = errors.Join(recoveryErr, fmt.Errorf("mark task %s scheduled: %w", task.ID, err))
 		}
 	}
-	return nil
+	return recoveryErr
 }
 
 // clearCancelFlag removes the Redis cancel marker ({task_id}-cancel) that

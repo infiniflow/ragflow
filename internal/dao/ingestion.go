@@ -126,9 +126,14 @@ func (dao *IngestionTaskDAO) Delete(ctx context.Context, db *gorm.DB, taskID str
 		// there are no task-level files to delete here.
 		var filesToDelete []string
 
-		err = tx.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Delete(&entity.IngestionTask{}).Error
-		if err != nil {
-			return nil, err
+		result := tx.Model(&entity.IngestionTask{}).
+			Where("id = ? AND status IN ?", taskID, []string{common.CREATED, common.SCHEDULED, common.STOPPED, common.COMPLETED, common.FAILED}).
+			Delete(&entity.IngestionTask{})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil, fmt.Errorf("task %s status changed, cannot be removed", taskID)
 		}
 
 		taskInfo := &TaskInfo{

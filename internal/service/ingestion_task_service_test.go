@@ -17,6 +17,18 @@ type recordingTaskPublisher struct {
 	beforeReturn func(taskID string)
 }
 
+type failFirstTaskPublisher struct {
+	messages []common.TaskMessage
+}
+
+func (p *failFirstTaskPublisher) PublishTaskMessage(_ string, msg common.TaskMessage) error {
+	p.messages = append(p.messages, msg)
+	if len(p.messages) == 1 {
+		return errors.New("publish failed")
+	}
+	return nil
+}
+
 func (p *recordingTaskPublisher) PublishTaskMessage(subject string, msg common.TaskMessage) error {
 	p.subject = subject
 	p.messages = append(p.messages, msg)
@@ -664,6 +676,44 @@ func TestIngestionTaskServiceScheduleCreatedTasksKeepsTaskCreatedOnPublishFailur
 	}
 	if task.Status != common.CREATED {
 		t.Fatalf("status after failed recovery publish = %q, want %q", task.Status, common.CREATED)
+	}
+}
+
+func TestIngestionTaskServiceScheduleCreatedTasksContinuesAfterPublishFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.CREATED)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("create_time", 1).Error; err != nil {
+		t.Fatalf("set first task create time: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-2").Update("create_time", 2).Error; err != nil {
+		t.Fatalf("set second task create time: %v", err)
+	}
+
+	publisher := &failFirstTaskPublisher{}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+	if err := svc.ScheduleCreatedTasks(t.Context()); err == nil {
+		t.Fatal("expected ScheduleCreatedTasks to return publish error")
+	}
+	if len(publisher.messages) != 2 {
+		t.Fatalf("published messages = %d, want 2", len(publisher.messages))
+	}
+
+	first, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "task-1")
+	if err != nil {
+		t.Fatalf("reload first task: %v", err)
+	}
+	if first.Status != common.CREATED {
+		t.Fatalf("first task status = %q, want %q", first.Status, common.CREATED)
+	}
+	second, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "task-2")
+	if err != nil {
+		t.Fatalf("reload second task: %v", err)
+	}
+	if second.Status != common.SCHEDULED {
+		t.Fatalf("second task status = %q, want %q", second.Status, common.SCHEDULED)
 	}
 }
 

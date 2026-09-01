@@ -129,6 +129,45 @@ func TestIngestionTaskDAODeleteAllowsScheduledTask(t *testing.T) {
 	}
 }
 
+func TestIngestionTaskDAODeleteDoesNotRemoveTaskClaimedDuringDelete(t *testing.T) {
+	db := setupTaskTestDB(t)
+	task := &entity.IngestionTask{
+		ID:         "task-scheduled",
+		UserID:     "user-1",
+		DocumentID: "doc-scheduled",
+		DatasetID:  "kb-1",
+		Status:     common.SCHEDULED,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create scheduled task: %v", err)
+	}
+
+	const callbackName = "test:claim-ingestion-task-before-delete"
+	if err := db.Callback().Delete().Before("gorm:delete").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != task.TableName() {
+			return
+		}
+		if err := tx.Session(&gorm.Session{NewDB: true}).Model(&entity.IngestionTask{}).Where("id = ?", task.ID).
+			Update("status", common.RUNNING).Error; err != nil {
+			tx.AddError(err)
+		}
+	}); err != nil {
+		t.Fatalf("register delete callback: %v", err)
+	}
+
+	if _, err := NewIngestionTaskDAO().Delete(t.Context(), db, task.ID, nil); err == nil {
+		t.Fatal("expected delete to reject task claimed during delete")
+	}
+
+	reloaded, err := NewIngestionTaskDAO().GetByID(t.Context(), db, task.ID)
+	if err != nil {
+		t.Fatalf("reload task after rejected delete: %v", err)
+	}
+	if reloaded.Status != common.SCHEDULED {
+		t.Fatalf("status after rejected delete = %q, want %q", reloaded.Status, common.SCHEDULED)
+	}
+}
+
 func TestIngestionTaskDAOListByStatus(t *testing.T) {
 	db := setupTaskTestDB(t)
 	orig := DB
