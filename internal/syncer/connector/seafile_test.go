@@ -371,7 +371,7 @@ func TestSeaFileOpenSyncAccountRecursiveListing(t *testing.T) {
 		t.Fatalf("documents len = %d, want 2", len(batch.Documents))
 	}
 	first := batch.Documents[0]
-	if first.SourceID != "seafile:repo1:file-a" {
+	if first.SourceID != "seafile:repo1:/a.txt" {
 		t.Fatalf("first source id = %q", first.SourceID)
 	}
 	if first.SemanticIdentifier != "Docs/a.txt" || first.Extension != ".txt" {
@@ -390,14 +390,14 @@ func TestSeaFileOpenSyncAccountRecursiveListing(t *testing.T) {
 		t.Fatalf("metadata = %#v", first.Metadata)
 	}
 	second := batch.Documents[1]
-	if second.SourceID != "seafile:repo1:file-b" || second.SemanticIdentifier != "Docs/sub/b.pdf" || second.Extension != ".pdf" {
+	if second.SourceID != "seafile:repo1:/sub/b.pdf" || second.SemanticIdentifier != "Docs/sub/b.pdf" || second.Extension != ".pdf" {
 		t.Fatalf("second document = %#v", second)
 	}
 	third, err := session.NextBatch(context.Background())
 	if err != nil {
 		t.Fatalf("third NextBatch failed: %v", err)
 	}
-	if len(third.Documents) != 1 || third.Documents[0].SourceID != "seafile:repo2:file-c" {
+	if len(third.Documents) != 1 || third.Documents[0].SourceID != "seafile:repo2:/c.md" {
 		t.Fatalf("third batch = %#v", third.Documents)
 	}
 	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
@@ -502,7 +502,7 @@ func TestSeaFileIncludeDocumentWindowAndFingerprint(t *testing.T) {
 	start := seafileMustTime(t, "2026-01-02T00:00:00Z")
 	end := seafileMustTime(t, "2026-01-04T00:00:00Z")
 	document := SourceDocument{
-		SourceID:    "seafile:repo1:file-a",
+		SourceID:    "seafile:repo1:/a.txt",
 		UpdatedAt:   seafileMustTime(t, "2026-01-03T00:00:00Z"),
 		Fingerprint: "fingerprint",
 	}
@@ -587,23 +587,23 @@ func TestSeaFileSyncResume(t *testing.T) {
 	session := &seafileSyncSession{
 		connector: connector,
 		documents: []SourceDocument{
-			{SourceID: "seafile:repo1:file-a"},
-			{SourceID: "seafile:repo1:file-b"},
-			{SourceID: "seafile:repo1:file-c"},
+			{SourceID: "seafile:repo1:/a.txt"},
+			{SourceID: "seafile:repo1:/sub/b.pdf"},
+			{SourceID: "seafile:repo1:/c.txt"},
 		},
 		batchSize: 2,
 	}
-	if err := session.applyResume(&SyncCheckpoint{SourceID: "seafile:repo1:file-a"}); err != nil {
+	if err := session.applyResume(&SyncCheckpoint{SourceID: "seafile:repo1:/a.txt"}); err != nil {
 		t.Fatalf("applyResume failed: %v", err)
 	}
 	batch, err := session.NextBatch(context.Background())
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 2 || batch.Documents[0].SourceID != "seafile:repo1:file-b" {
+	if len(batch.Documents) != 2 || batch.Documents[0].SourceID != "seafile:repo1:/sub/b.pdf" {
 		t.Fatalf("resume batch = %#v", batch.Documents)
 	}
-	if batch.Checkpoint == nil || batch.Checkpoint.SourceID != "seafile:repo1:file-c" {
+	if batch.Checkpoint == nil || batch.Checkpoint.SourceID != "seafile:repo1:/c.txt" {
 		t.Fatalf("resume checkpoint = %#v", batch.Checkpoint)
 	}
 
@@ -656,14 +656,14 @@ func TestSeaFileOpenPruneRecursiveFilterAndBatching(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first prune batch failed: %v", err)
 	}
-	if len(first.Documents) != 2 || first.Documents[0].SourceID != "seafile:repo1:file-a" || first.Documents[1].SourceID != "seafile:repo1:file-b" {
+	if len(first.Documents) != 2 || first.Documents[0].SourceID != "seafile:repo1:/a.txt" || first.Documents[1].SourceID != "seafile:repo1:/sub/b.md" {
 		t.Fatalf("first prune batch = %#v", first.Documents)
 	}
 	second, err := session.NextBatch(context.Background())
 	if err != nil {
 		t.Fatalf("second prune batch failed: %v", err)
 	}
-	if len(second.Documents) != 1 || second.Documents[0].SourceID != "seafile:repo1:file-c" {
+	if len(second.Documents) != 1 || second.Documents[0].SourceID != "seafile:repo1:/sub/c.pdf" {
 		t.Fatalf("second prune batch = %#v", second.Documents)
 	}
 	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {

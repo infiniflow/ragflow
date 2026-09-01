@@ -234,7 +234,7 @@ func (c *SeaFileConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 		return nil, err
 	}
 	sort.Slice(files, func(i, j int) bool {
-		return seafileSourceID(files[i].repoID, files[i].fileID) < seafileSourceID(files[j].repoID, files[j].fileID)
+		return seafileSourceID(files[i].repoID, files[i].path) < seafileSourceID(files[j].repoID, files[j].path)
 	})
 
 	documents := make([]SourceDocument, 0, len(files))
@@ -276,7 +276,7 @@ func (c *SeaFileConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 		if file.size > c.sizeThreshold {
 			continue
 		}
-		documents = append(documents, SlimDocument{SourceID: seafileSourceID(file.repoID, file.fileID)})
+		documents = append(documents, SlimDocument{SourceID: seafileSourceID(file.repoID, file.path)})
 	}
 	sort.Slice(documents, func(i, j int) bool { return documents[i].SourceID < documents[j].SourceID })
 	return &seafilePruneSession{
@@ -726,7 +726,7 @@ func (c *SeaFileConnector) sourceDocument(file seafileFile) SourceDocument {
 		Size:         file.size,
 	})
 	return SourceDocument{
-		SourceID:           seafileSourceID(file.repoID, file.fileID),
+		SourceID:           seafileSourceID(file.repoID, file.path),
 		SemanticIdentifier: file.repoName + file.path,
 		Extension:          strings.ToLower(filepath.Ext(file.name)),
 		FetchRef:           &FetchReference{Key: string(fetch), SizeHint: file.size},
@@ -742,8 +742,8 @@ func (c *SeaFileConnector) sourceDocument(file seafileFile) SourceDocument {
 	}
 }
 
-func seafileSourceID(repoID, fileID string) string {
-	return "seafile:" + repoID + ":" + fileID
+func seafileSourceID(repoID, path string) string {
+	return "seafile:" + repoID + ":" + path
 }
 
 func seafileFingerprint(repoID, path, fileID string, size int64, updatedAt time.Time) string {
