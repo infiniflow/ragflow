@@ -52,7 +52,9 @@ def media_records_to_bboxes(media_records, source):
             box["image"] = image
         if positions:
             try:
-                box["positions"] = [[p[0] + 1, p[1], p[2], p[3], p[4]] for p in positions]
+                normalized_positions = [[p[0] + 1, p[1], p[2], p[3], p[4]] for p in positions]
+                box["positions"] = normalized_positions
+                box["page_number"] = normalized_positions[0][0]
             except (IndexError, TypeError):
                 skipped_positions += 1
         bboxes.append(box)
