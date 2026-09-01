@@ -815,27 +815,27 @@ func TestCleanupCheckpoint_DeletesStoreAndClearsTracker(t *testing.T) {
 	if err := store.Set(t.Context(), "cp-1"+dslKeySuffix, []byte("dslfp")); err != nil {
 		t.Fatalf("store.Set dsl: %v", err)
 	}
-	if err := store.Set(context.Background(), "cp-1"+ovfKeySuffix, []byte("ovrfp")); err != nil {
+	if err := store.Set(t.Context(), "cp-1"+ovfKeySuffix, []byte("ovrfp")); err != nil {
 		t.Fatalf("store.Set ovf: %v", err)
 	}
 	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
-	if err := tracker.AttachInterrupt(context.Background(), "cp-1", "interrupt-1"); err != nil {
+	if err := tracker.AttachInterrupt(t.Context(), "cp-1", "interrupt-1"); err != nil {
 		t.Fatalf("AttachInterrupt: %v", err)
 	}
 
 	p := &Pipeline{}
-	p.cleanupCheckpoint(context.Background(), store, tracker, "cp-1")
+	p.cleanupCheckpoint(t.Context(), store, tracker, "cp-1")
 
 	// checkpoint + dsl fingerprint + ovf fingerprint = 3 deletes.
 	if store.deleteCount() != 3 {
 		t.Fatalf("expected 3 store deletes (checkpoint + 2 fingerprints), got %d", store.deleteCount())
 	}
 	for _, k := range []string{"cp-1", "cp-1" + dslKeySuffix, "cp-1" + ovfKeySuffix} {
-		if _, found, _ := store.Get(context.Background(), k); found {
+		if _, found, _ := store.Get(t.Context(), k); found {
 			t.Fatalf("expected key %q to be deleted", k)
 		}
 	}
-	id, ok, err := tracker.GetInterruptID(context.Background(), "cp-1")
+	id, ok, err := tracker.GetInterruptID(t.Context(), "cp-1")
 	if err != nil {
 		t.Fatalf("GetInterruptID: %v", err)
 	}
@@ -874,7 +874,7 @@ func TestRunPlain_WithTracker_Success(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
+	_, err = pipe.Run(t.Context(), map[string]any{"name": "doc"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -905,7 +905,7 @@ func TestRunPlain_WithTracker_Error(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
+	_, err = pipe.Run(t.Context(), map[string]any{"name": "doc"}, nil)
 	if err == nil {
 		t.Fatal("expected stage error, got nil")
 	}

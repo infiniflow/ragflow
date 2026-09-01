@@ -434,7 +434,7 @@ func cleanupRealPipelineDocument(db *gorm.DB, stg storage.Storage, tenantID, kbI
 	_ = db.Where("id = ?", fileID).Delete(&entity.File{}).Error
 	_ = db.Where("id = ?", kbID).Delete(&entity.Knowledgebase{}).Error
 	_ = db.Where("id = ?", tenantID).Delete(&entity.Tenant{}).Error
-	_ = stg.Remove(t.Context(), bucket, objectPath)
+	_ = stg.Remove(context.Background(), bucket, objectPath)
 }
 
 func strPtr(s string) *string {
