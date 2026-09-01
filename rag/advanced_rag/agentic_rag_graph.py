@@ -72,13 +72,13 @@ _LOG = logging.getLogger(__name__)
 # one question's WHOLE pipeline comfortably under that line: when the budget
 # runs out the routing guards steer the graph straight to synthesis with
 # whatever evidence is on hand instead of starting another research round.
-_TOTAL_BUDGET_S = 900.0  # whole-graph wall-clock ceiling per question
-_MIN_ROUND_HEADROOM_S = 90.0  # need at least this much left to start a new round
-_PASS_TIMEOUT_S = 600.0  # slot research pass wall-clock
-_PREFETCH_TIMEOUT_S = 240.0  # programmatic fan-out fetch
-_DRAFT_TIMEOUT_S = 180.0  # fallback draft synthesis
-_SCA_TIMEOUT_S = 180.0  # sufficient-context review call
-_REWRITE_TIMEOUT_S = 120.0  # gap → query rewrite call
+_TOTAL_BUDGET_S = 180.0  # whole-graph wall-clock ceiling per question
+_MIN_ROUND_HEADROOM_S = 50.0  # need at least this much left to start a new round
+_PASS_TIMEOUT_S = 120.0  # slot research pass wall-clock
+_PREFETCH_TIMEOUT_S = 90.0  # programmatic fan-out fetch
+_DRAFT_TIMEOUT_S = 60.0  # fallback draft synthesis
+_SCA_TIMEOUT_S = 60.0  # sufficient-context review call
+_REWRITE_TIMEOUT_S = 45.0  # gap → query rewrite call
 
 
 def _snip(value: Any, limit: int = 240) -> str:
