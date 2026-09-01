@@ -75,9 +75,16 @@ func (s *DocumentService) RerunDataflow(ctx context.Context, userID, logID strin
 		return fmt.Errorf("`%s` is processing...", name)
 	}
 
-	if len(dsl) > 0 {
-		dsl["path"] = []interface{}{componentID}
-		if err := s.pipelineLogDAO.UpdateDSL(ctx, dao.DB, logID, entity.JSONMap(dsl)); err != nil {
+	if dsl != nil {
+		// Python persists the request dsl unconditionally, including an
+		// empty map, so gate on nil only. Copy before writing so the
+		// caller's DSL map is not mutated in place.
+		persisted := make(map[string]interface{}, len(dsl)+1)
+		for k, v := range dsl {
+			persisted[k] = v
+		}
+		persisted["path"] = []interface{}{componentID}
+		if err := s.pipelineLogDAO.UpdateDSL(ctx, dao.DB, logID, entity.JSONMap(persisted)); err != nil {
 			return fmt.Errorf("update pipeline log dsl: %w", err)
 		}
 	}
