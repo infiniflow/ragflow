@@ -145,6 +145,8 @@ class Result:
     new_states: list = field(default_factory=list)
     found_answer: str | None = None
     retrieved_evidence_ids: list = field(default_factory=list)
+    terminal_type: str | None = None
+    terminal_payload: dict | None = None
 
 
 # ── Unified tool-result contract ─────────────────────────────────────────
@@ -1136,7 +1138,7 @@ def _parse_terminal(content: str, parent_state: State) -> tuple:
             ns = apply_patch(parent_state, br.get("state", []) if isinstance(br, dict) else [])
             if ns is not None:
                 branches.append(ns)
-        return branches, None
+        return branches, None, "state", data
     if "<answer>" in content:
         block = extract_tag(content, "answer") or "{}"
         data = extract_json(block) or {}
@@ -1146,8 +1148,8 @@ def _parse_terminal(content: str, parent_state: State) -> tuple:
             patched = apply_patch(parent_state, data["new_state"])
             if patched is not None:
                 final_state = patched
-        return [final_state], answer
-    return [], None
+        return [final_state], answer, "answer", data
+    return [], None, None, None
 
 
 # ── LangGraph subgraph state ─────────────────────────────────────────────
@@ -1163,6 +1165,8 @@ class _SessionState(TypedDict, total=False):
     # terminal outputs
     new_states: list
     found_answer: Any
+    terminal_type: str | None
+    terminal_payload: dict | None
     retrieved_evidence_ids: list
     # budget
     attempts: int
@@ -1226,11 +1230,13 @@ async def _run_action_node(state: _SessionState) -> dict:
             "attempts": attempts,
         }
 
-    new_states, found_answer = _parse_terminal(content, state["parent_state"])
+    new_states, found_answer, terminal_type, terminal_payload = _parse_terminal(content, state["parent_state"])
     if found_answer is not None or new_states:
         return {
             "new_states": new_states,
             "found_answer": found_answer,
+            "terminal_type": terminal_type,
+            "terminal_payload": terminal_payload,
             "_done": True,
             "attempts": attempts,
         }
@@ -1440,6 +1446,7 @@ async def _finalize_node(state: _SessionState) -> dict:
     JSON, salvaging whatever the session learned."""
     parent = state["parent_state"]
     new_states, found_answer = [], None
+    terminal_type, terminal_payload = None, None
     evidence_ids = list(state.get("retrieved_evidence_ids") or [])
 
     budget_prompt = (
@@ -1462,7 +1469,7 @@ async def _finalize_node(state: _SessionState) -> dict:
                 timeout_s=150.0,
             )
         fcontent = fresp.choices[0].message.content or ""
-        new_states, found_answer = _parse_terminal(fcontent, parent)
+        new_states, found_answer, terminal_type, terminal_payload = _parse_terminal(fcontent, parent)
         if found_answer:
             _LOG.info("[Action Session] answer salvaged from exhausted session")
         elif new_states:
@@ -1493,7 +1500,14 @@ async def _finalize_node(state: _SessionState) -> dict:
                     new_states = [patched]
                     _LOG.warning("[Action Session] loose-clue patch (narrative)")
 
-    return {"new_states": new_states, "found_answer": found_answer, "_done": True, "retrieved_evidence_ids": evidence_ids}
+    return {
+        "new_states": new_states,
+        "found_answer": found_answer,
+        "terminal_type": terminal_type,
+        "terminal_payload": terminal_payload,
+        "_done": True,
+        "retrieved_evidence_ids": evidence_ids,
+    }
 
 
 def _strip_unpaired_tool_calls(messages: list) -> list:
@@ -1988,8 +2002,8 @@ async def run_action_session(
         "deadline_left": max(10.0, budget_left - spent),
         "_ctx_budget": _MAX_TOOL_RESPONSE_CHARS * 4,
         "_tool_chars": 0,
-        "_tool_cache": shared_tool_cache or {},
-        "_search_queries": list(shared_search_queries or []),
+        "_tool_cache": shared_tool_cache if shared_tool_cache is not None else {},
+        "_search_queries": shared_search_queries if shared_search_queries is not None else [],
         "_skipped_dup": 0,
         "_tool_strikes": {},
         "_tool_outcomes": list(prefix_outcomes),
@@ -2007,6 +2021,8 @@ async def run_action_session(
         new_states=final.get("new_states", []),
         found_answer=final.get("found_answer"),
         retrieved_evidence_ids=final.get("retrieved_evidence_ids", []),
+        terminal_type=final.get("terminal_type"),
+        terminal_payload=final.get("terminal_payload"),
     )
 
 

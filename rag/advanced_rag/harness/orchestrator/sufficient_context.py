@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from rag.advanced_rag.harness.stats import in_phase
 from rag.prompts.generator import PROMPT_JINJA_ENV, gen_json
@@ -94,6 +95,34 @@ def _render_reports(reports: list[tuple[str, str]]) -> str:
     return "\n".join(f"Claim {cid}: {rpt}" for cid, rpt in reports if rpt)
 
 
+def _bounded_excerpt(text: str, hints: str, max_chars: int = 300) -> str:
+    """Keep a bounded evidence window around a term from the current draft."""
+    text = str(text or "").strip()
+    if not text:
+        return ""
+    max_chars = max(80, int(max_chars))
+    hint_tokens = [t for t in re.findall(r"[A-Za-z0-9_\u4e00-\u9fff]{3,}", str(hints or ""))]
+    lower = text.lower()
+    start = None
+    for token in hint_tokens:
+        pos = lower.find(token.lower())
+        if pos >= 0:
+            start = pos
+            break
+    if start is None:
+        if len(text) <= max_chars:
+            return text
+        tail = max_chars // 2
+        return text[: max_chars - tail] + " … " + text[-tail:]
+    half = max_chars // 2
+    left = max(0, start - half)
+    right = min(len(text), left + max_chars)
+    left = max(0, right - max_chars)
+    prefix = "…" if left else ""
+    suffix = "…" if right < len(text) else ""
+    return prefix + text[left:right] + suffix
+
+
 def _render_claim_context(claims, question: str = "", kbinfos: dict | None = None) -> str:
     """Render per-claim context: each claim's report PLUS a brief evidence anchor.
 
@@ -128,13 +157,12 @@ def _render_claim_context(claims, question: str = "", kbinfos: dict | None = Non
                 ck = id2chunk.get(str(eid)) or id2chunk.get(eid)
                 if not ck:
                     continue
-                txt = str(ck.get("chunk") or "").strip()
+                txt = str(ck.get("content_with_weight") or ck.get("content") or ck.get("chunk") or "").strip()
                 if not txt:
                     continue
-                first = txt.split("\n")[0].strip()
-                if len(first) > _SCA_EVIDENCE_ANCHOR_CHARS:
-                    first = first[:_SCA_EVIDENCE_ANCHOR_CHARS] + "…"
-                anchors.append(first)
+                excerpt = _bounded_excerpt(txt, rpt, max_chars=_SCA_EVIDENCE_ANCHOR_CHARS)
+                if excerpt:
+                    anchors.append(excerpt)
                 if len(anchors) >= 2:
                     break
             if anchors:
