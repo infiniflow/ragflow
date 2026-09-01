@@ -23,6 +23,7 @@ documents after ingestion parsing phases).
 import asyncio
 import importlib.util
 import sys
+from contextvars import ContextVar
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -51,6 +52,9 @@ def _load_llm_service(monkeypatch):
 
     common_token_utils = ModuleType("common.token_utils")
     common_token_utils.num_tokens_from_string = lambda text: len(text.split())
+    common_token_utils.truncate = lambda text, *a, **k: text
+    common_token_utils.langfuse_run_attrs = ContextVar("langfuse_run_attrs", default={})
+    common_token_utils.record_run_token_usage = lambda prompt, completion, total: None
     monkeypatch.setitem(sys.modules, "common.token_utils", common_token_utils)
 
     # --- api.db ---

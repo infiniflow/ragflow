@@ -17,9 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useSelectFlatLlmList } from '@/hooks/use-llm-request';
+import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
+import { parseModelValue } from '@/utils/llm-util';
 import { PropsWithChildren, useMemo } from 'react';
+import { useOwnerTenantId } from '../../context';
 
 export function CardWithForm() {
   return (
@@ -80,18 +82,34 @@ export function LabelCard({ children, className, ...props }: LabelCardProps) {
 }
 
 export function LLMLabelCard({ llmId }: { llmId?: string }) {
-  const flatLlmList = useSelectFlatLlmList();
+  const ownerTenantId = useOwnerTenantId();
+  const { data: allAddedModels } = useFetchAllAddedModels(
+    undefined,
+    ownerTenantId,
+  );
 
   const isValidLlm = useMemo(() => {
     if (!llmId) return false;
-    return flatLlmList.some((llm) => llm.uuid === llmId);
-  }, [flatLlmList, llmId]);
+
+    const parsed = parseModelValue(llmId);
+    if (parsed) {
+      return allAddedModels.some(
+        (m) =>
+          m.name === parsed.model_name &&
+          m.instance_name === parsed.model_instance &&
+          m.provider_name === parsed.model_provider,
+      );
+    }
+
+    // value is a plain model_id rather than the composite string
+    return allAddedModels.some((m) => m.model_id === llmId);
+  }, [allAddedModels, llmId]);
 
   return (
     <LabelCard
       className={isValidLlm ? '' : 'bg-state-error-5 border-state-error border'}
     >
-      <LLMLabel value={llmId}></LLMLabel>
+      <LLMLabel value={llmId} ownerTenantId={ownerTenantId}></LLMLabel>
     </LabelCard>
   );
 }

@@ -18,15 +18,11 @@ package models
 
 import "strings"
 
-func GetThinkingAndAnswer(modelType *string, content *string) (*string, *string) {
-	switch *modelType {
-	case "qwen3":
-		return extractThinkContent(content)
-	}
-	return nil, content
-}
-
 func extractThinkContent(content *string) (*string, *string) {
+	if content == nil {
+		return nil, nil
+	}
+
 	startTag := "<think>"
 	endTag := "</think>"
 

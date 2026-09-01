@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -103,9 +119,11 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
   const [versionFiles, setVersionFiles] = useState<SkillFileEntry[]>([]);
   const [versionLoading, setVersionLoading] = useState(false);
 
-  // Check if skill has multiple versions
-  const hasVersions = skill?.versions && skill.versions.length > 0;
-  const availableVersions = skill?.versions || [];
+  const availableVersions = useMemo(
+    () => skill?.versions ?? [],
+    [skill?.versions],
+  );
+  const hasVersions = availableVersions.length > 0;
 
   // Reset state when skill changes or drawer opens/closes
   useEffect(() => {
@@ -128,20 +146,14 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
       setSelectedFile(null);
       setFileContent('');
     }
-  }, [
-    open,
-    skill?.id,
-    hasVersions,
-    skill?.metadata?.version,
-    availableVersions,
-  ]);
+  }, [open, skill, hasVersions, availableVersions]);
 
   const resolvedVersion = useMemo(() => {
     if (!skill) return '';
     return (
       selectedVersion || skill.metadata?.version || skill.versions?.[0] || ''
     );
-  }, [selectedVersion, skill?.id, skill?.metadata?.version, skill?.versions]);
+  }, [selectedVersion, skill]);
 
   // Load files when version or skill changes
   useEffect(() => {
@@ -204,16 +216,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
     return () => {
       isActive = false;
     };
-  }, [
-    skill?.id,
-    skill?.source_type,
-    skill?.metadata?.version,
-    skill?.versions,
-    (skill as any)?._folderId,
-    skill?.files,
-    resolvedVersion,
-    getVersionFiles,
-  ]);
+  }, [skill, resolvedVersion, getVersionFiles]);
 
   // Use version files if available, otherwise use skill.files
   const currentFiles = useMemo(() => {
@@ -248,7 +251,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
         );
         setFileContent(content || '');
       } catch (error) {
-        console.error('Failed to load file content');
+        console.error('Failed to load file content', error);
       } finally {
         setLoading(false);
       }
@@ -274,7 +277,7 @@ const SkillDetail: React.FC<SkillDetailProps> = ({
         handleSelect({ id: targetFile.path } as TreeDataItem);
       }
     }
-  }, [open, skill?.id, currentFiles.length]);
+  }, [open, skill, currentFiles, handleSelect, selectedFile]);
 
   const renderFileContent = () => {
     if (!selectedFile) {

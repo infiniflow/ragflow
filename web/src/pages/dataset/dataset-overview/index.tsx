@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/card';
 
 import WhatIsThis from '@/components/what-is-this';
-import { RunningStatusMap } from '@/constants/knowledge';
+import { RunningStatusMap, RunningStatusOld } from '@/constants/knowledge';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { FC, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -185,7 +185,7 @@ const FileLogsPage: FC = () => {
       {
         field: 'operation_status',
         label: t('knowledgeDetails.status'),
-        list: Object.values(RunningStatus).map((value) => {
+        list: Object.values(RunningStatusOld).map((value) => {
           // const value = key as RunningStatus;
           return {
             id: value,

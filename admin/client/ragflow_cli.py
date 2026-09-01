@@ -36,6 +36,7 @@ from user import login_user
 
 warnings.filterwarnings("ignore", category=getpass.GetPassWarning)
 
+
 def encrypt(input_string):
     pub = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/z8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOOUEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVKRNLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK6olN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs2wIDAQAB\n-----END PUBLIC KEY-----"
     pub_key = RSA.importKey(pub)
@@ -47,9 +48,6 @@ def encrypt(input_string):
 def encode_to_base64(input_string):
     base64_encoded = base64.b64encode(input_string.encode("utf-8"))
     return base64_encoded.decode("utf-8")
-
-
-
 
 
 class RAGFlowCLI(Cmd):
@@ -240,9 +238,9 @@ class RAGFlowCLI(Cmd):
             print(r"""
                 ____  ___   ______________                 ________    ____
                / __ \/   | / ____/ ____/ /___ _      __   / ____/ /   /  _/
-              / /_/ / /| |/ / __/ /_  / / __ \ | /| / /  / /   / /    / /  
-             / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / /___/ /____/ /   
-            /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/   \____/_____/___/   
+              / /_/ / /| |/ / __/ /_  / / __ \ | /| / /  / /   / /    / /
+             / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / /___/ /____/ /
+            /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/   \____/_____/___/
             """)
             self.cmdloop()
 
@@ -254,15 +252,13 @@ class RAGFlowCLI(Cmd):
             result = self.parse_command(command)
             self.execute_command(result)
 
-
     def parse_connection_args(self, args: List[str]) -> Dict[str, Any]:
         parser = argparse.ArgumentParser(description="RAGFlow CLI Client", add_help=False)
         parser.add_argument("-h", "--host", default="127.0.0.1", help="Admin or RAGFlow service host")
         parser.add_argument("-p", "--port", type=int, default=9381, help="Admin or RAGFlow service port")
         parser.add_argument("-w", "--password", default="admin", type=str, help="Superuser password")
         parser.add_argument("-t", "--type", default="admin", type=str, help="CLI mode, admin or user")
-        parser.add_argument("-u", "--username", default=None,
-                            help="Username (email). In admin mode defaults to admin@ragflow.io, in user mode required.")
+        parser.add_argument("-u", "--username", default=None, help="Username (email). In admin mode defaults to admin@ragflow.io, in user mode required.")
         parser.add_argument("command", nargs="?", help="Single command")
         try:
             parsed_args, remaining_args = parser.parse_known_args(args)
@@ -274,7 +270,7 @@ class RAGFlowCLI(Cmd):
 
             if remaining_args:
                 if remaining_args[0] == "command":
-                    command_str = ' '.join(remaining_args[1:]) + ';'
+                    command_str = " ".join(remaining_args[1:]) + ";"
                     auth = True
                     if remaining_args[1] == "register":
                         auth = False
@@ -282,28 +278,14 @@ class RAGFlowCLI(Cmd):
                         if username is None:
                             print("Error: username (-u) is required in user mode")
                             return {"error": "Username required"}
-                    return {
-                        "host": parsed_args.host,
-                        "port": parsed_args.port,
-                        "password": parsed_args.password,
-                        "type": parsed_args.type,
-                        "username": username,
-                        "command": command_str,
-                        "auth": auth
-                    }
+                    return {"host": parsed_args.host, "port": parsed_args.port, "password": parsed_args.password, "type": parsed_args.type, "username": username, "command": command_str, "auth": auth}
                 else:
                     return {"error": "Invalid command"}
             else:
                 auth = True
                 if username is None:
                     auth = False
-                return {
-                    "host": parsed_args.host,
-                    "port": parsed_args.port,
-                    "type": parsed_args.type,
-                    "username": username,
-                    "auth": auth
-                }
+                return {"host": parsed_args.host, "port": parsed_args.port, "type": parsed_args.type, "username": username, "auth": auth}
         except SystemExit:
             return {"error": "Invalid connection arguments"}
 
@@ -320,6 +302,7 @@ class RAGFlowCLI(Cmd):
 
         # print(f"Parsed command: {command_dict}")
         run_command(self.ragflow_client, command_dict)
+
 
 def main():
 

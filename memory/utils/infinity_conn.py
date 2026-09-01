@@ -42,7 +42,7 @@ class InfinityConnection(InfinityConnectionBase):
         return False
 
     @staticmethod
-    def convert_message_field_to_infinity(field_name: str, table_fields: list[str]=None):
+    def convert_message_field_to_infinity(field_name: str, table_fields: list[str] = None):
         match field_name:
             case "message_type":
                 return "message_type_kwd"
@@ -68,7 +68,7 @@ class InfinityConnection(InfinityConnectionBase):
             return "content_embed"
         return field_name
 
-    def convert_select_fields(self, output_fields: list[str], table_fields: list[str]=None) -> list[str]:
+    def convert_select_fields(self, output_fields: list[str], table_fields: list[str] = None) -> list[str]:
         return list({self.convert_message_field_to_infinity(f, table_fields) for f in output_fields})
 
     @staticmethod
@@ -277,7 +277,7 @@ class InfinityConnection(InfinityConnectionBase):
         self.logger.debug(f"INFINITY search final result: {str(res)}")
         return res, total_hits_count
 
-    def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int=512):
+    def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int = 512):
         condition = {"memory_id": memory_id, "exists": "forget_at_flt"}
         order_by = OrderByExpr()
         order_by.asc("forget_at_flt")
@@ -309,7 +309,7 @@ class InfinityConnection(InfinityConnectionBase):
             self.connPool.release_conn(inf_conn)
         return res
 
-    def get_missing_field_message(self, select_fields: list[str], index_name: str, memory_id: str, field_name: str, limit: int=512):
+    def get_missing_field_message(self, select_fields: list[str], index_name: str, memory_id: str, field_name: str, limit: int = 512):
         condition = {"memory_id": memory_id, "must_not": {"exists": field_name}}
         order_by = OrderByExpr()
         order_by.asc("valid_at_flt")

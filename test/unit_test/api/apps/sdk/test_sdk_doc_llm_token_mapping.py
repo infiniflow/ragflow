@@ -26,7 +26,7 @@ as a regression guard against drift.
 """
 
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 # Stub heavy / partially-installed third-party modules before any RAGFlow
 # import.  Without this, importing the module-under-test pulls in the
@@ -37,9 +37,50 @@ from types import ModuleType
 for _stub_name in ("xgboost", "umap"):
     sys.modules.setdefault(_stub_name, ModuleType(_stub_name))
 
+# ``api/apps/__init__.py`` calls ``settings.init_settings()`` at import time,
+# which opens connections to Elasticsearch/MinIO/Redis.  The mapping helpers
+# under test need none of that, so register namespace-only stand-ins for the
+# ``api.apps`` packages: Python then resolves the submodules below through
+# ``__path__`` without ever executing the real package ``__init__``.
+from pathlib import Path as _Path  # noqa: E402
+
+_APPS_DIR = _Path(__file__).resolve().parents[5] / "api" / "apps"
+for _pkg_name, _pkg_dir in (
+    ("api.apps", _APPS_DIR),
+    ("api.apps.services", _APPS_DIR / "services"),
+    ("api.apps.restful_apis", _APPS_DIR / "restful_apis"),
+):
+    if _pkg_name in sys.modules:
+        # The real package is already loaded: leave it — and its real
+        # ``login_required`` — untouched.
+        continue
+    _pkg = ModuleType(_pkg_name)
+    _pkg.__path__ = [str(_pkg_dir)]
+    if _pkg_name == "api.apps":
+        # Normally supplied by the real package ``__init__``.  The endpoints it
+        # decorates are not exercised here, so a pass-through will do; it is set
+        # only on our own stand-in, never on the real module.
+        _pkg.login_required = lambda fn: fn
+    sys.modules[_pkg_name] = _pkg
+
 import pytest  # noqa: E402
 
-from api.apps.restful_apis.chunk_api import _map_doc as chunk_map_doc  # noqa: E402
+
+
+def _load_chunk_api():
+    """Execute ``chunk_api.py`` with the ``manager`` blueprint global that the
+    app loader normally injects, so ``_map_doc`` is importable without booting
+    the API server."""
+    src_path = _APPS_DIR / "restful_apis" / "chunk_api.py"
+    module = ModuleType("_test_chunk_api")
+    module.__file__ = str(src_path)
+    module.manager = SimpleNamespace(route=lambda *a, **k: (lambda fn: fn))
+    exec(compile(src_path.read_text(), str(src_path), "exec"), module.__dict__)
+    return module
+
+
+chunk_map_doc = _load_chunk_api()._map_doc
+
 from api.apps.services.document_api_service import (  # noqa: E402
     _process_key_mappings,
     map_doc_keys,

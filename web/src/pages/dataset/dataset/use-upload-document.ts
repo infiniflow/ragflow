@@ -2,7 +2,7 @@ import { UploadFormSchemaType } from '@/components/file-upload-dialog';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useRunDocument,
-  useUploadNextDocument,
+  useUploadDocument,
 } from '@/hooks/use-document-request';
 import { getUnSupportedFilesCount } from '@/utils/document-util';
 import { useCallback } from 'react';
@@ -13,13 +13,31 @@ export const useHandleUploadDocument = () => {
     hideModal: hideDocumentUploadModal,
     showModal: showDocumentUploadModal,
   } = useSetModalState();
-  const { uploadDocument, loading } = useUploadNextDocument();
+  const { uploadDocument, loading } = useUploadDocument();
   const { runDocumentByIds } = useRunDocument();
 
   const onDocumentUploadOk = useCallback(
-    async ({ fileList, parseOnCreation }: UploadFormSchemaType) => {
+    async ({
+      fileList,
+      parseOnCreation,
+      tableColumnMode,
+      tableColumnRoles,
+    }: UploadFormSchemaType) => {
       if (fileList.length > 0) {
-        const ret = await uploadDocument(fileList);
+        // Build parser_config if column roles are configured
+        let parserConfig: Record<string, any> | undefined;
+        if (
+          tableColumnMode === 'manual' &&
+          tableColumnRoles &&
+          Object.keys(tableColumnRoles).length > 0
+        ) {
+          parserConfig = {
+            table_column_mode: 'manual',
+            table_column_roles: tableColumnRoles,
+          };
+        }
+
+        const ret = await uploadDocument(fileList as File[], parserConfig);
 
         // Check for success (code === 0) or partial success (code === 500 with some files)
         const isSuccess = ret?.code === 0;
@@ -29,11 +47,15 @@ export const useHandleUploadDocument = () => {
           return;
         }
 
-        if (isSuccess && parseOnCreation) {
+        // Trigger parsing for both full and partial success when parseOnCreation is enabled
+        if (
+          (isSuccess || isPartialSuccess) &&
+          parseOnCreation &&
+          ret.data?.length > 0
+        ) {
           runDocumentByIds({
             documentIds: ret.data.map((x: any) => x.id),
             run: 1,
-            shouldDelete: false,
           });
         }
 

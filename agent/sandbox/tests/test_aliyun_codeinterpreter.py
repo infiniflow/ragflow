@@ -45,11 +45,11 @@ class TestAliyunCodeInterpreterProvider:
         assert provider.timeout == 30
         assert not provider._initialized
 
-    @patch("agent.sandbox.providers.aliyun_codeinterpreter.Template")
+    @patch("agentrun.sandbox.Template")
     def test_initialize_success(self, mock_template):
         """Test successful initialization."""
         # Mock health check response
-        mock_template.list.return_value = []
+        mock_template.list_templates.return_value = []
 
         provider = AliyunCodeInterpreterProvider()
         result = provider.initialize(
@@ -89,10 +89,10 @@ class TestAliyunCodeInterpreterProvider:
         result = provider2.initialize({"access_key_id": "LTAI5tXXXXXXXXXX", "access_key_secret": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"})
         assert result is False
 
-    @patch("agent.sandbox.providers.aliyun_codeinterpreter.Template")
+    @patch("agentrun.sandbox.Template")
     def test_initialize_default_config(self, mock_template):
         """Test initialization with default config."""
-        mock_template.list.return_value = []
+        mock_template.list_templates.return_value = []
 
         provider = AliyunCodeInterpreterProvider()
         result = provider.initialize({"access_key_id": "LTAI5tXXXXXXXXXX", "access_key_secret": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", "account_id": "1234567890123456"})

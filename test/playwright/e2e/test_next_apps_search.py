@@ -86,9 +86,7 @@ def step_02_open_search_list(
     with step("open search list"):
         _goto_home(page, base_url)
         _nav_click(page, "nav-search")
-        expect(page.locator("[data-testid='search-list']")).to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
-        )
+        expect(page.locator("[data-testid='search-list']")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     snap("search_list_open")
 
 
@@ -129,9 +127,7 @@ def step_04_create_search(
     with step("create search app"):
         _fill_and_save_create_modal(page, search_name)
         _wait_for_url_or_testid(page, r"/next-search/", "search-detail")
-        expect(page.locator("[data-testid='search-detail']")).to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
-        )
+        expect(page.locator("[data-testid='search-detail']")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     flow_state["search_created"] = True
     snap("search_created")
 

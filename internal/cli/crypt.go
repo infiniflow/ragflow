@@ -29,13 +29,13 @@ import (
 
 // EncryptPassword encrypts a password using RSA public key
 // This matches the Python implementation in api/utils/crypt.py
-func EncryptPassword(password string) (string, error) {
+func EncryptPassword(password string, publicKeyPEM []byte) (string, error) {
 	// Read public key from conf/public.pem
-	publicKeyPath := filepath.Join(getProjectBaseDirectory(), "conf", "public.pem")
-	publicKeyPEM, err := os.ReadFile(publicKeyPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read public key: %w", err)
-	}
+	//publicKeyPath := filepath.Join(getProjectBaseDirectory(), "conf", "public.pem")
+	//publicKeyPEM, err := os.ReadFile(publicKeyPath)
+	//if err != nil {
+	//	return "", fmt.Errorf("failed to read public key: %w", err)
+	//}
 
 	// Parse public key
 	block, _ := pem.Decode(publicKeyPEM)

@@ -1,0 +1,22 @@
+{
+ "id": "token__json_two_item",
+ "component": "TokenChunker",
+ "notes": "Two json text items whose combined tokens still fit chunk_token_size. Minimal reproduction of the per-item vs global merge divergence (same class as json_multi_item_40, but small enough to read).",
+ "param": {
+  "chunk_token_size": 128
+ },
+ "input": {
+  "name": "t",
+  "output_format": "json",
+  "json": [
+   {
+    "text": "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "another long item with many words that should be merged when the token budget allows merging across items on the python side but stays separate on the go side",
+    "doc_type_kwd": "text"
+   }
+  ]
+ }
+}

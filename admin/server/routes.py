@@ -23,7 +23,7 @@ from datetime import datetime
 from flask import Blueprint, Response, request
 from flask_login import current_user, login_required, logout_user
 
-from auth import login_verify, login_admin, check_admin_auth
+from auth import login_admin, check_admin_auth
 from responses import success_response, error_response
 from services import UserMgr, ServiceMgr, UserServiceMgr, SettingsMgr, ConfigMgr, EnvironmentsMgr, SandboxMgr
 from roles import RoleMgr
@@ -52,7 +52,7 @@ def login():
         return error_response(str(e), 500)
 
 
-@admin_bp.route("/logout", methods=["GET"])
+@admin_bp.route("/logout", methods=["POST"])
 @login_required
 def logout():
     try:
@@ -60,15 +60,6 @@ def logout():
         current_user.save()
         logout_user()
         return success_response(True)
-    except Exception as e:
-        return error_response(str(e), 500)
-
-
-@admin_bp.route("/auth", methods=["GET"])
-@login_verify
-def auth_admin():
-    try:
-        return success_response(None, "Admin is authorized", 0)
     except Exception as e:
         return error_response(str(e), 500)
 
@@ -153,6 +144,8 @@ def change_password(username):
 def alter_user_activate_status(username):
     try:
         data = request.get_json()
+        if current_user.email == username:
+            return error_response(f"can't alter current user status: {username}", 409)
         if not data or "activate_status" not in data:
             return error_response("Activation status is required", 400)
         activate_status = data["activate_status"]
@@ -421,7 +414,7 @@ def get_user_permission(user_name: str):
 def set_variable():
     try:
         data = request.get_json()
-        if not data and "var_name" not in data:
+        if not data or "var_name" not in data:
             return error_response("Var name is required", 400)
 
         if "var_value" not in data:
@@ -449,7 +442,7 @@ def get_variable():
 
         # get var
         data = request.get_json()
-        if not data and "var_name" not in data:
+        if not data or "var_name" not in data:
             return error_response("Var name is required", 400)
         var_name: str = data["var_name"]
         res = SettingsMgr.get_by_name(var_name)

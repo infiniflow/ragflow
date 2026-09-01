@@ -1,0 +1,189 @@
+{
+  "name": "TokenPony",
+  "url": {
+    "default": "https://api.tokenpony.cn/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "tokenpony",
+  "models": [
+    {
+      "name": "qwen3-8b",
+      "context_length": 131072,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v3-0324",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen3-32b",
+      "context_length": 131072,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2-instruct-0905",
+      "context_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-r1-0528",
+      "context_length": 131072,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen3-coder-480b",
+      "context_length": 262144,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "hunyuan-a13b-instruct",
+      "context_length": 262144,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen3-next-80b-a3b-instruct",
+      "context_length": 262144,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v3.2-exp",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v3.1-terminus",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen3-vl-235b-a22b-instruct",
+      "context_length": 262144,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen3-vl-30b-a3b-instruct",
+      "context_length": 262144,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-ocr",
+      "context_length": 8000,
+      "max_output": 8000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen3-235b-a22b-instruct-2507",
+      "context_length": 262144,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.6",
+      "context_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "minimax-m2",
+      "context_length": 204800,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}

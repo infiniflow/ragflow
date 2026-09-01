@@ -85,17 +85,25 @@ def test_agents_crud_validation_contract(rest_client, create_agent_resource):
     assert "canvas" in list_empty_payload["data"], list_empty_payload
     assert "total" in list_empty_payload["data"], list_empty_payload
 
+    paged_list = rest_client.get(
+        "/agents",
+        params={"title": "missing_restful_agent", "desc": "true", "page_size": 1},
+    )
+    assert paged_list.status_code == 200
+    paged_list_payload = paged_list.json()
+    assert paged_list_payload["code"] == 0, paged_list_payload
+
     missing_dsl = rest_client.post("/agents", json={"title": "missing_dsl_agent"})
     assert missing_dsl.status_code == 200
     missing_dsl_payload = missing_dsl.json()
     assert missing_dsl_payload["code"] == 101, missing_dsl_payload
-    assert "No DSL data in request" in missing_dsl_payload["message"], missing_dsl_payload
+    assert "no dsl data in request" in missing_dsl_payload["message"].lower(), missing_dsl_payload
 
     missing_title = rest_client.post("/agents", json={"dsl": MINIMAL_DSL})
     assert missing_title.status_code == 200
     missing_title_payload = missing_title.json()
     assert missing_title_payload["code"] == 101, missing_title_payload
-    assert "No title in request" in missing_title_payload["message"], missing_title_payload
+    assert "no title in request" in missing_title_payload["message"].lower(), missing_title_payload
 
     agent_id = create_agent_resource("restful_agent_crud")
 
@@ -104,6 +112,12 @@ def test_agents_crud_validation_contract(rest_client, create_agent_resource):
     duplicate_payload = duplicate.json()
     assert duplicate_payload["code"] == 102, duplicate_payload
     assert "already exists" in duplicate_payload["message"], duplicate_payload
+
+    invalid_update = rest_client.put("/agents/invalid-agent-id", json={"title": "updated", "dsl": MINIMAL_DSL})
+    assert invalid_update.status_code == 200
+    invalid_update_payload = invalid_update.json()
+    assert invalid_update_payload["code"] == 103, invalid_update_payload
+    assert "Make sure you have permission to access the agent." in invalid_update_payload["message"], invalid_update_payload
 
     get_res = rest_client.get(f"/agents/{agent_id}")
     assert get_res.status_code == 200
@@ -121,6 +135,14 @@ def test_agents_crud_validation_contract(rest_client, create_agent_resource):
     list_after_update_payload = list_after_update.json()
     assert list_after_update_payload["code"] == 0, list_after_update_payload
     assert list_after_update_payload["data"]["total"] >= 1, list_after_update_payload
+
+    invalid_delete = rest_client.delete("/agents/invalid-agent-id")
+    assert invalid_delete.status_code == 200
+    invalid_delete_payload = invalid_delete.json()
+    # code=103 = permission denied (Python: "Only the owner of the agent..."; Go: "Make sure you have permission...")
+    assert invalid_delete_payload["code"] == 103, invalid_delete_payload
+    msg = invalid_delete_payload["message"]
+    assert "Only the owner of the agent is authorized" in msg or "Make sure you have permission" in msg, invalid_delete_payload
 
     delete_res = rest_client.delete(f"/agents/{agent_id}")
     assert delete_res.status_code == 200
@@ -188,8 +210,11 @@ def test_agent_chat_completion_nonstream(rest_client, create_agent_resource):
     payload = res.json()
     assert payload["code"] == 0, payload
     assert isinstance(payload["data"], dict), payload
+    assert payload["data"].get("session_id") == session_id, payload
     assert isinstance(payload["data"].get("data"), dict), payload
-    assert "content" in payload["data"]["data"], payload
+    content = payload["data"]["data"].get("content", "")
+    assert content, payload
+    assert "hello" in content, payload
 
 
 @pytest.mark.p2
@@ -252,6 +277,7 @@ def test_agent_openai_compatible_mode(rest_client, create_agent_resource):
     assert nonstream.status_code == 200
     nonstream_payload = nonstream.json()
     assert isinstance(nonstream_payload, dict), nonstream_payload
+    assert nonstream_payload.get("object") == "chat.completion", nonstream_payload
     assert "choices" in nonstream_payload, nonstream_payload
 
     stream = rest_client.post(

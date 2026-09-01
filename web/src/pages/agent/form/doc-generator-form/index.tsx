@@ -38,6 +38,10 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
     include_download_info_in_content: z.boolean(),
     font_size: z.coerce.number().min(12, 'Font size must be at least 12'),
     outputs: z.object({
+      doc_id: z.object({ type: z.string() }),
+      filename: z.object({ type: z.string() }),
+      mime_type: z.object({ type: z.string() }),
+      size: z.object({ type: z.string() }),
       download: z.object({ type: z.string() }),
     }),
   });

@@ -190,6 +190,7 @@ def _load_llm_app(monkeypatch):
             return []
 
     llm_service_mod.LLMService = _StubLLMService
+    llm_service_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     api_utils_mod = ModuleType("api.utils.api_utils")
@@ -210,7 +211,7 @@ def _load_llm_app(monkeypatch):
 
     api_utils_mod.get_request_json = _get_request_json
     api_utils_mod.server_error_response = lambda exc: {"code": 500, "message": str(exc), "data": None}
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda fn: fn)
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda fn: fn
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     constants_mod = ModuleType("common.constants")
@@ -218,8 +219,8 @@ def _load_llm_app(monkeypatch):
     constants_mod.LLMType = SimpleNamespace(
         CHAT=_StrEnum("chat"),
         EMBEDDING=_StrEnum("embedding"),
-        SPEECH2TEXT=_StrEnum("speech2text"),
-        IMAGE2TEXT=_StrEnum("image2text"),
+        ASR=_StrEnum("asr"),
+        VISION=_StrEnum("vision"),
         RERANK=_StrEnum("rerank"),
         TTS=_StrEnum("tts"),
         OCR=_StrEnum("ocr"),
@@ -269,7 +270,7 @@ def test_openai_catalog_contains_latest_gpt_models_unit():
         openai_models = json.load(f)["models"]
     model_file_names = {item["name"] for item in openai_models}
 
-    for model_name in ["gpt-5.5", "gpt-5.4"]:
+    for model_name in ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"]:
         assert model_name in factory_model_names
         assert model_name in model_file_names
 
@@ -819,7 +820,7 @@ def test_add_llm_model_type_probe_and_persistence_matrix_unit(monkeypatch):
     assert res["code"] == 0
     assert "Fail to access model(FRFail/m)." in res["data"]["message"]
 
-    res = _call({"llm_factory": "FImgFail", "llm_name": "m", "model_type": module.LLMType.IMAGE2TEXT.value, "verify": True})
+    res = _call({"llm_factory": "FImgFail", "llm_name": "m", "model_type": module.LLMType.VISION.value, "verify": True})
     assert res["code"] == 0
     assert "Fail to access model(FImgFail/m)." in res["data"]["message"]
 
@@ -831,7 +832,7 @@ def test_add_llm_model_type_probe_and_persistence_matrix_unit(monkeypatch):
     assert res["code"] == 0
     assert "Fail to access model(FOcrFail/m)." in res["data"]["message"]
 
-    res = _call({"llm_factory": "FSttFail", "llm_name": "m", "model_type": module.LLMType.SPEECH2TEXT.value, "verify": True})
+    res = _call({"llm_factory": "FSttFail", "llm_name": "m", "model_type": module.LLMType.ASR.value, "verify": True})
     assert res["code"] == 0
     assert "Fail to access model(FSttFail/m)." in res["data"]["message"]
 

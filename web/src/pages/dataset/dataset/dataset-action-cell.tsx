@@ -6,12 +6,15 @@ import {
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
 import { DocumentType } from '@/constants/knowledge';
+import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useRemoveDocument } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { downloadDatasetDocument } from '@/services/file-manager-service';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
-import { downloadDocument } from '@/utils/file-util';
+import { downloadFileFromBlob } from '@/utils/file-util';
 import { Download, Eye, PenLine, Trash2 } from 'lucide-react';
+import { omit } from 'lodash';
 import { useCallback } from 'react';
 import { UseRenameDocumentShowType } from './use-rename-document';
 import { isParserRunning } from './utils';
@@ -27,23 +30,38 @@ const FunctionMap = {
 export function DatasetActionCell({
   record,
   showRenameModal,
-}: { record: IDocumentInfo } & UseRenameDocumentShowType) {
+  setRowSelection,
+}: { record: IDocumentInfo } & UseRenameDocumentShowType &
+  Pick<UseRowSelectionType, 'setRowSelection'>) {
   const { id, run, type } = record;
   const isRunning = isParserRunning(run);
   const isVirtualDocument = type === DocumentType.Virtual;
 
   const { removeDocument } = useRemoveDocument();
 
-  const onDownloadDocument = useCallback(() => {
-    downloadDocument({
-      id,
-      filename: record.name,
-    });
-  }, [id, record.name]);
+  const onDownloadDocument = useCallback(async () => {
+    try {
+      const ext = record.name.split('.').pop()?.toLowerCase() || 'bin';
+      const response = await downloadDatasetDocument({
+        datasetId: record.dataset_id,
+        docId: id,
+        ext,
+      });
+      const blob = new Blob([response.data], {
+        type: response.data.type,
+      });
+      downloadFileFromBlob(blob, record.name);
+    } catch (error) {
+      console.error('Error downloading document:', error);
+    }
+  }, [id, record.dataset_id, record.name]);
 
-  const handleRemove = useCallback(() => {
-    removeDocument(id);
-  }, [id, removeDocument]);
+  const handleRemove = useCallback(async () => {
+    const code = await removeDocument(id);
+    if (code === 0) {
+      setRowSelection((prev) => omit(prev, [id]));
+    }
+  }, [id, removeDocument, setRowSelection]);
 
   const handleRename = useCallback(() => {
     showRenameModal(record);

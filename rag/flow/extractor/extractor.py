@@ -38,22 +38,25 @@ class Extractor(ProcessBase, LLM):
     component_name = "Extractor"
 
     async def _build_TOC(self, docs):
-        self.callback(0.2,message="Start to generate table of content ...")
-        docs = sorted(docs, key=lambda d:(
-            d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
-            d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
-        ))
+        self.callback(0.2, message="Start to generate table of content ...")
+        docs = sorted(
+            docs,
+            key=lambda d: (
+                d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
+                d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0),
+            ),
+        )
         toc = await run_toc_from_text([d["text"] for d in docs], self.chat_mdl)
-        logging.info("------------ T O C -------------\n"+json.dumps(toc, ensure_ascii=False, indent='  '))
+        logging.info("------------ T O C -------------\n" + json.dumps(toc, ensure_ascii=False, indent="  "))
         ii = 0
         while ii < len(toc):
             try:
                 idx = int(toc[ii]["chunk_id"])
                 del toc[ii]["chunk_id"]
                 toc[ii]["ids"] = [docs[idx]["id"]]
-                if ii == len(toc) -1:
+                if ii == len(toc) - 1:
                     break
-                for jj in range(idx+1, int(toc[ii+1]["chunk_id"])+1):
+                for jj in range(idx + 1, int(toc[ii + 1]["chunk_id"]) + 1):
                     toc[ii]["ids"].append(docs[jj]["id"])
             except Exception as e:
                 logging.exception(e)
@@ -62,6 +65,7 @@ class Extractor(ProcessBase, LLM):
         if toc:
             d = deepcopy(docs[-1])
             d["doc_id"] = self._canvas._doc_id
+            d["toc"] = json.dumps(toc, ensure_ascii=False)
             d["content_with_weight"] = json.dumps(toc, ensure_ascii=False)
             d["toc_kwd"] = "toc"
             d["available_int"] = 0
@@ -74,13 +78,23 @@ class Extractor(ProcessBase, LLM):
         self.set_output("output_format", "chunks")
         self.callback(random.randint(1, 5) / 100.0, "Start to generate.")
         inputs = self.get_input_elements()
-        chunks = []
+        output_format = kwargs.get("output_format")
+        if output_format == "chunks":
+            chunks = deepcopy(kwargs.get("chunks") or [])
+        elif output_format == "json":
+            chunks = deepcopy(kwargs.get("json") or [])
+        elif output_format in ["markdown", "text", "html"]:
+            payload = kwargs.get(output_format) or ""
+            chunks = [{"text": payload}] if payload else []
+        else:
+            chunks = []
         chunks_key = ""
         args = {}
         for k, v in inputs.items():
             args[k] = v["value"]
             if isinstance(args[k], list):
-                chunks = deepcopy(args[k])
+                if not chunks:
+                    chunks = deepcopy(args[k])
                 chunks_key = k
 
         if chunks:
@@ -88,24 +102,23 @@ class Extractor(ProcessBase, LLM):
                 for ck in chunks:
                     ck["doc_id"] = self._canvas._doc_id
                     ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
-                toc =await self._build_TOC(chunks)
+                toc = await self._build_TOC(chunks)
                 chunks.append(toc)
                 self.set_output("chunks", chunks)
                 return
 
             prog = 0
             for i, ck in enumerate(chunks):
-                args[chunks_key] = ck["text"]
+                if chunks_key:
+                    args[chunks_key] = ck.get("text") or ck.get("content_with_weight") or ""
                 msg, sys_prompt = self._sys_prompt_and_msg([], args)
                 msg.insert(0, {"role": "system", "content": sys_prompt})
                 ck[self._param.field_name] = await self._generate_async(msg)
-                prog += 1./len(chunks)
-                if i % (len(chunks)//100+1) == 1:
-                    self.callback(prog, f"{i+1} / {len(chunks)}")
+                prog += 1.0 / len(chunks)
+                if i % (len(chunks) // 100 + 1) == 1:
+                    self.callback(prog, f"{i + 1} / {len(chunks)}")
             self.set_output("chunks", chunks)
         else:
             msg, sys_prompt = self._sys_prompt_and_msg([], args)
             msg.insert(0, {"role": "system", "content": sys_prompt})
             self.set_output("chunks", [{self._param.field_name: await self._generate_async(msg)}])
-
-

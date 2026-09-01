@@ -25,6 +25,7 @@ The fix changed `if llm_token_num:` to `if llm_token_num > 0:` so that:
 - llm_token_num<0  → llm_token_num field is NOT added to the UPDATE (new)
 """
 
+import contextlib
 import functools
 import importlib.util
 import sys
@@ -91,6 +92,10 @@ def _load_document_service(monkeypatch):
                     return fn(*args, **kwargs)
                 return wrapper
             return decorator
+
+        @staticmethod
+        def atomic():
+            return contextlib.nullcontext()
 
     # Knowledgebase: increment_chunk_num updates KB counts as a side-effect;
     # stub it so it doesn't explode.
@@ -168,7 +173,14 @@ def _load_document_service(monkeypatch):
     common_constants.MAXIMUM_TASK_PAGE_NUMBER = 100000 * 1000
     monkeypatch.setitem(sys.modules, "common.constants", common_constants)
 
-    sys.modules["common.doc_store.doc_store_base"].OrderByExpr = type("OrderByExpr", (), {})
+    # setattr (not plain assignment): when the real module is already imported,
+    # a direct write would leak this stub into every later test in the session.
+    monkeypatch.setattr(
+        sys.modules["common.doc_store.doc_store_base"],
+        "OrderByExpr",
+        type("OrderByExpr", (), {}),
+        raising=False,
+    )
 
     common_settings = ModuleType("common.settings")
     monkeypatch.setitem(sys.modules, "common.settings", common_settings)
@@ -213,6 +225,7 @@ class _UpdateSpy:
             process_duration = _Expr()
             llm_token_num = _Expr()
             id = _Expr()
+            kb_id = _Expr()
 
             @classmethod
             def update(cls, **kwargs):

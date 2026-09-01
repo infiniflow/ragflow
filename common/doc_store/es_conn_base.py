@@ -21,7 +21,7 @@ import time
 import os
 from abc import abstractmethod
 
-from elasticsearch import NotFoundError
+from elasticsearch import BadRequestError, NotFoundError
 from elasticsearch_dsl import Index
 from elastic_transport import ConnectionTimeout
 from elasticsearch.client import IndicesClient
@@ -35,7 +35,7 @@ ATTEMPT_TIME = 2
 
 
 class ESConnectionBase(DocStoreConnection):
-    def __init__(self, mapping_file_name: str="mapping.json", logger_name: str='ragflow.es_conn'):
+    def __init__(self, mapping_file_name: str = "mapping.json", logger_name: str = "ragflow.es_conn"):
         from common.doc_store.es_conn_pool import ES_CONN
 
         self.logger = logging.getLogger(logger_name)
@@ -79,42 +79,34 @@ class ESConnectionBase(DocStoreConnection):
         raw_stats = self.es.cluster.stats()
         self.logger.debug(f"ESConnection.get_cluster_stats: {raw_stats}")
         try:
-            res = {
-                'cluster_name': raw_stats['cluster_name'],
-                'status': raw_stats['status']
-            }
-            indices_status = raw_stats['indices']
-            res.update({
-                'indices': indices_status['count'],
-                'indices_shards': indices_status['shards']['total']
-            })
-            doc_info = indices_status['docs']
-            res.update({
-                'docs': doc_info['count'],
-                'docs_deleted': doc_info['deleted']
-            })
-            store_info = indices_status['store']
-            res.update({
-                'store_size': convert_bytes(store_info['size_in_bytes']),
-                'total_dataset_size': convert_bytes(store_info['total_data_set_size_in_bytes'])
-            })
-            mappings_info = indices_status['mappings']
-            res.update({
-                'mappings_fields': mappings_info['total_field_count'],
-                'mappings_deduplicated_fields': mappings_info['total_deduplicated_field_count'],
-                'mappings_deduplicated_size': convert_bytes(mappings_info['total_deduplicated_mapping_size_in_bytes'])
-            })
-            node_info = raw_stats['nodes']
-            res.update({
-                'nodes': node_info['count']['total'],
-                'nodes_version': node_info['versions'],
-                'os_mem': convert_bytes(node_info['os']['mem']['total_in_bytes']),
-                'os_mem_used': convert_bytes(node_info['os']['mem']['used_in_bytes']),
-                'os_mem_used_percent': node_info['os']['mem']['used_percent'],
-                'jvm_versions': node_info['jvm']['versions'][0]['vm_version'],
-                'jvm_heap_used': convert_bytes(node_info['jvm']['mem']['heap_used_in_bytes']),
-                'jvm_heap_max': convert_bytes(node_info['jvm']['mem']['heap_max_in_bytes'])
-            })
+            res = {"cluster_name": raw_stats["cluster_name"], "status": raw_stats["status"]}
+            indices_status = raw_stats["indices"]
+            res.update({"indices": indices_status["count"], "indices_shards": indices_status["shards"]["total"]})
+            doc_info = indices_status["docs"]
+            res.update({"docs": doc_info["count"], "docs_deleted": doc_info["deleted"]})
+            store_info = indices_status["store"]
+            res.update({"store_size": convert_bytes(store_info["size_in_bytes"]), "total_dataset_size": convert_bytes(store_info["total_data_set_size_in_bytes"])})
+            mappings_info = indices_status["mappings"]
+            res.update(
+                {
+                    "mappings_fields": mappings_info["total_field_count"],
+                    "mappings_deduplicated_fields": mappings_info["total_deduplicated_field_count"],
+                    "mappings_deduplicated_size": convert_bytes(mappings_info["total_deduplicated_mapping_size_in_bytes"]),
+                }
+            )
+            node_info = raw_stats["nodes"]
+            res.update(
+                {
+                    "nodes": node_info["count"]["total"],
+                    "nodes_version": node_info["versions"],
+                    "os_mem": convert_bytes(node_info["os"]["mem"]["total_in_bytes"]),
+                    "os_mem_used": convert_bytes(node_info["os"]["mem"]["used_in_bytes"]),
+                    "os_mem_used_percent": node_info["os"]["mem"]["used_percent"],
+                    "jvm_versions": node_info["jvm"]["versions"][0]["vm_version"],
+                    "jvm_heap_used": convert_bytes(node_info["jvm"]["mem"]["heap_used_in_bytes"]),
+                    "jvm_heap_max": convert_bytes(node_info["jvm"]["mem"]["heap_max_in_bytes"]),
+                }
+            )
             return res
 
         except Exception as e:
@@ -130,9 +122,7 @@ class ESConnectionBase(DocStoreConnection):
         if self.index_exist(index_name, dataset_id):
             return True
         try:
-            return IndicesClient(self.es).create(index=index_name,
-                                                 settings=self.mapping["settings"],
-                                                 mappings=self.mapping["mappings"])
+            return IndicesClient(self.es).create(index=index_name, settings=self.mapping["settings"], mappings=self.mapping["mappings"])
         except Exception:
             self.logger.exception("ESConnection.createIndex error %s" % index_name)
 
@@ -153,9 +143,7 @@ class ESConnectionBase(DocStoreConnection):
 
             with open(fp_mapping, "r") as f:
                 doc_meta_mapping = json.load(f)
-            return IndicesClient(self.es).create(index=index_name,
-                                                 settings=doc_meta_mapping["settings"],
-                                                 mappings=doc_meta_mapping["mappings"])
+            return IndicesClient(self.es).create(index=index_name, settings=doc_meta_mapping["settings"], mappings=doc_meta_mapping["mappings"])
         except Exception as e:
             self.logger.exception(f"Error creating document metadata index {index_name}: {e}")
 
@@ -247,8 +235,11 @@ class ESConnectionBase(DocStoreConnection):
     def get(self, doc_id: str, index_name: str, dataset_ids: list[str]) -> dict | None:
         for i in range(ATTEMPT_TIME):
             try:
-                res = self.es.get(index=index_name,
-                                  id=doc_id, source=True, )
+                res = self.es.get(
+                    index=index_name,
+                    id=doc_id,
+                    source=True,
+                )
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
                 doc = res["_source"]
@@ -264,17 +255,18 @@ class ESConnectionBase(DocStoreConnection):
 
     @abstractmethod
     def search(
-            self, select_fields: list[str],
-            highlight_fields: list[str],
-            condition: dict,
-            match_expressions: list[MatchExpr],
-            order_by: OrderByExpr,
-            offset: int,
-            limit: int,
-            index_names: str | list[str],
-            dataset_ids: list[str],
-            agg_fields: list[str] | None = None,
-            rank_feature: dict | None = None
+        self,
+        select_fields: list[str],
+        highlight_fields: list[str],
+        condition: dict,
+        match_expressions: list[MatchExpr],
+        order_by: OrderByExpr,
+        offset: int,
+        limit: int,
+        index_names: str | list[str],
+        dataset_ids: list[str],
+        agg_fields: list[str] | None = None,
+        rank_feature: dict | None = None,
     ):
         raise NotImplementedError("Not implemented")
 
@@ -301,6 +293,21 @@ class ESConnectionBase(DocStoreConnection):
 
     def get_doc_ids(self, res):
         return [d["_id"] for d in res["hits"]["hits"]]
+
+    def get_scores(self, res) -> dict[str, float]:
+        """
+        Map hit `_id` to its raw `_score`. Used to recover the cosine
+        similarity returned by a KNN-only search without pulling the
+        chunk vectors out of the index.
+        """
+        out = {}
+        for d in res.get("hits", {}).get("hits", []):
+            doc_id = d.get("_id")
+            if doc_id is None:
+                continue
+            score = d.get("_score")
+            out[doc_id] = float(score) if score is not None else 0.0
+        return out
 
     def _get_source(self, res):
         rr = []
@@ -330,8 +337,7 @@ class ESConnectionBase(DocStoreConnection):
             txt_list = []
             for t in re.split(r"[.?!;\n]", txt):
                 for w in keywords:
-                    t = re.sub(r"(^|[ .?/'\"\(\)!,:;-])(%s)([ .?/'\"\(\)!,:;-])" % re.escape(w), r"\1<em>\2</em>\3", t,
-                               flags=re.IGNORECASE | re.MULTILINE)
+                    t = re.sub(r"(^|[ .?/'\"\(\)!,:;-])(%s)([ .?/'\"\(\)!,:;-])" % re.escape(w), r"\1<em>\2</em>\3", t, flags=re.IGNORECASE | re.MULTILINE)
                 if not re.search(r"<em>[^<>]+</em>", t, flags=re.IGNORECASE | re.MULTILINE):
                     continue
                 txt_list.append(t)
@@ -357,14 +363,8 @@ class ESConnectionBase(DocStoreConnection):
         replaces = []
         for r in re.finditer(r" ([a-z_]+_l?tks)( like | ?= ?)'([^']+)'", sql):
             fld, v = r.group(1), r.group(3)
-            match = " MATCH({}, '{}', 'operator=OR;minimum_should_match=30%') ".format(
-                fld, rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(v)))
-            replaces.append(
-                ("{}{}'{}'".format(
-                    r.group(1),
-                    r.group(2),
-                    r.group(3)),
-                 match))
+            match = " MATCH({}, '{}', 'operator=OR;minimum_should_match=30%') ".format(fld, rag_tokenizer.fine_grained_tokenize(rag_tokenizer.tokenize(v)))
+            replaces.append(("{}{}'{}'".format(r.group(1), r.group(2), r.group(3)), match))
 
         for p, r in replaces:
             sql = sql.replace(p, r, 1)
@@ -372,14 +372,21 @@ class ESConnectionBase(DocStoreConnection):
 
         for i in range(ATTEMPT_TIME):
             try:
-                res = self.es.sql.query(body={"query": sql, "fetch_size": fetch_size}, format=format,
-                                        request_timeout="2s")
+                res = self.es.sql.query(body={"query": sql, "fetch_size": fetch_size}, format=format, request_timeout="2s")
                 return res
             except ConnectionTimeout:
                 self.logger.exception("ES request timeout")
                 time.sleep(3)
                 self._connect()
                 continue
+            except BadRequestError as e:
+                # LLM-generated SQL routinely references columns that don't exist
+                # (e.g. unknown_column / verification_exception). The caller in
+                # api/db/services/dialog_service.py:use_sql catches this and either
+                # re-prompts the LLM with the error or falls back to vector search,
+                # so a full ERROR-level traceback is misleading — see #15409.
+                self.logger.warning(f"ESConnection.sql rejected by ES (likely invalid LLM-generated SQL). SQL:\n{sql}\nError: {e}")
+                raise Exception(f"SQL error: {e}\n\nSQL: {sql}")
             except Exception as e:
                 self.logger.exception(f"ESConnection.sql got exception. SQL:\n{sql}")
                 raise Exception(f"SQL error: {e}\n\nSQL: {sql}")

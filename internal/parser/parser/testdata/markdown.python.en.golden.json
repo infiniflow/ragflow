@@ -1,0 +1,61 @@
+{
+  "meta": {
+    "generator": "rag/flow/parser/parser.py:_markdown",
+    "sample": "internal/parser/parser/testdata/markdown.sample.en.md",
+    "delimiter": "\n!?;。；！？",
+    "separate_tables": false,
+    "accepted_divergences": ["table", "image"],
+    "python_engine": "deepdoc.parser.markdown_parser.RAGFlowMarkdownParser",
+    "note": "No generator script is committed. To regenerate: call _markdown on sample, then dump {meta, items}. The baseline is reproducible from this metadata alone (an AI or human can recreate the thin wrapper on demand)."
+  },
+  "items": [
+    {
+      "text": "# Health Check Plan Comparison\nThis document compares two health check plans, covering tables, lists, and code blocks",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "## Plan Details",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "<table>\n<thead>\n<tr>\n<th>Check Item</th>\n<th>Basic 699</th>\n<th>Advanced 1299</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Blood routine / Urine routine</td>\n<td>Included</td>\n<td>Included</td>\n</tr>\n<tr>\n<td>ECG</td>\n<td>Not included</td>\n<td>Included</td>\n</tr>\n</tbody>\n</table>",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "Note: all plans require fasting.",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "## Precautions",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "- Eat a light diet for three days before the exam?",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "- Avoid strenuous exercise!",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "Here is a sample configuration:",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "```yaml\nname: health-check\nversion: 1\n```",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "diagram",
+      "doc_type_kwd": "image"
+    },
+    {
+      "text": "\n| Check Item | Basic 699 | Advanced 1299 |\n| --- | --- | --- |\n| Blood routine / Urine routine | Included | Included |\n| ECG | Not included | Included |\n",
+      "doc_type_kwd": "table"
+    },
+    {
+      "text": "\n<table>\n<thead>\n<tr>\n<th>Check Item</th>\n<th>Basic 699</th>\n<th>Advanced 1299</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Blood routine / Urine routine</td>\n<td>Included</td>\n<td>Included</td>\n</tr>\n<tr>\n<td>ECG</td>\n<td>Not included</td>\n<td>Included</td>\n</tr>\n</tbody>\n</table>\n",
+      "doc_type_kwd": "table"
+    }
+  ]
+}

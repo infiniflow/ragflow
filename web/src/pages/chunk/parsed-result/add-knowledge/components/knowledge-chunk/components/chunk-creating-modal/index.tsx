@@ -116,7 +116,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
 
   return (
     <Modal
-      title={`${chunkId ? t('common.edit') : t('common.create')} ${t('chunk.chunk')}`}
+      title={`${chunkId ? t('chunk.editChunk') : t('chunk.createChunk')}`}
       open={true}
       onOk={handleOk}
       onCancel={hideModal}
@@ -128,11 +128,19 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
           <FormField
             control={form.control}
             name="content_with_weight"
+            rules={{
+              validate: (value: string) =>
+                value?.trim() ? true : t('chunk.chunkMessage'),
+            }}
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('chunk.chunk')}</FormLabel>
+                <FormLabel required>{t('chunk.chunk')}</FormLabel>
                 <FormControl>
-                  <Textarea {...field} autoSize={{ minRows: 4, maxRows: 10 }} resize="vertical" />
+                  <Textarea
+                    {...field}
+                    autoSize={{ minRows: 4, maxRows: 10 }}
+                    resize="vertical"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
