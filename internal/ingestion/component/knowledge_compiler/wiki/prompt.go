@@ -82,8 +82,17 @@ Rules:
 - source_chunk_id MUST be one of the chunk_id values listed above.
 - Do not invent opaque identifiers, hashes, or prompt scaffolding as names.
 - Extract entities and concepts from human-readable text only.
+- Document headers are content: when a chunk carries a work title and a byline
+  or attribution (BY <AUTHOR>, Author: <NAME>, 作者：<名字>, a signature, or a
+  credits page), extract the author as a person entity — title-case all-caps
+  byline names (BY OSCAR WILDE -> Oscar Wilde) — and extract the work title as
+  an entity too. Never skip the author just because the byline looks like a
+  header. When both title and author are present, ALWAYS emit the authorship
+  relation {"from": "<title entity name>", "to": "<author person name>",
+  "type": "author"} so every document connects to its author in the graph.
 - Claims should be liberal: every factual sentence about an entity or concept is a claim.
-- Relations should be explicit links only.
+- Relations should be explicit links only (ownership, part-of, regulation, and
+  byline authorship all count as explicit links).
 - Each topic.path must be a normalized navigation-path string. Use "/" as the
   hierarchy separator, keep each path to at most 3 segments, and do not use "/"
   inside a segment.

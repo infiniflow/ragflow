@@ -5627,6 +5627,37 @@ async def get_wiki_graph(
             break
         page += 1
 
+    # Final completeness sweep. Entities hydrated as to-targets in step 4 —
+    # and entities displaced by unstable weight-tie pagination between pages —
+    # never had their outgoing relations pulled, so low-weight hub nodes (an
+    # author entity mentioned once per document) can appear in the graph with
+    # their incoming edges but none of their outgoing edges, which the canvas
+    # renders as a missing connection. One extra in-memory-filtered pass over
+    # the complete loaded entity set guarantees every returned node shows its
+    # persisted outgoing edges (both endpoints must be loaded; a to-target
+    # beyond the entity cap would dangle).
+    final_slugs = list(entities.keys())
+    if final_slugs:
+        try:
+            final_rel_map = await _wiki_search_relations_from(
+                index_nm,
+                dataset_id,
+                final_slugs,
+            )
+        except Exception:
+            logging.exception(
+                "get_wiki_graph: final relation sweep failed kb=%s",
+                dataset_id,
+            )
+            final_rel_map = {}
+        for row in (final_rel_map or {}).values():
+            payload = _wiki_relation_payload(row)
+            if payload is None:
+                continue
+            if payload["to"] not in entities:
+                continue
+            _add_relation(payload)
+
     return True, _response(list(entities.values()), relations)
 
 

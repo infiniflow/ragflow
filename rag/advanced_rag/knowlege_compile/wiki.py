@@ -229,6 +229,17 @@ Rules:
 - ``confidence`` is ``"explicit"`` (directly stated) or ``"inferred"`` (implied
   by the text).
 - Be exhaustive — include all named entities, defined terms, and factual claims.
+- Document headers ARE content. When a chunk carries a work title and a byline
+  or attribution (``BY <AUTHOR>``, ``By <Author>``, ``Author: <NAME>``,
+  ``作者：<名字>``, a signature block, or a credits/copyright page), extract
+  the named author as a ``person`` entity — title-case the name when the
+  byline is printed in all caps (``BY OSCAR WILDE`` → ``Oscar Wilde``) — and
+  extract the work's title as an entity too. Never skip the author just
+  because the byline looks like a header or boilerplate.
+- When both a work title and its author are present in a chunk, ALWAYS emit
+  the authorship relation ``{"from": "<title entity name>", "to": "<author
+  person name>", "type": "author"}`` citing that chunk, so every document
+  connects to its author in the knowledge graph.
 - For ``concepts``, extract BOTH (a) named terms with definitions AND (b)
   coherent thematic sub-topics that could become their own wiki page.
 - Extract ``claims`` LIBERALLY: every factual sentence about an entity is a
@@ -238,8 +249,9 @@ Rules:
   mention it. An empty ``claims`` array is almost always wrong unless the
   chunks are pure boilerplate.
 - ``relations`` only fire when the text states an explicit link between two
-  named entities/concepts (``A owns B``, ``A is part of B``, ``A regulates B``).
-  Otherwise leave ``relations`` empty.
+  named entities/concepts (``A owns B``, ``A is part of B``, ``A regulates B``,
+  ``A was written by B`` / a byline attribution). Otherwise leave ``relations``
+  empty.
 - Return empty arrays ``[]`` for categories with no findings.
 - Return ONLY the JSON object, no markdown fences, no commentary.
 {custom_rules}"""

@@ -1126,13 +1126,6 @@ async def _wiki_load_pages_for_graph(
     # empty.  Page slugs remain the graph identities, while member names,
     # titles, and slug suffixes are accepted as relation endpoints.
     if pages:
-        name_to_slug: dict[str, str] = {}
-        for page in pages:
-            slug = page["slug"]
-            names = [slug.rsplit("/", 1)[-1], page.get("title", ""), *page.get("entity_names", [])]
-            for name in names:
-                if isinstance(name, str) and name.strip():
-                    name_to_slug.setdefault(name.strip(), slug)
         try:
             if excluded_doc_ids is None:
                 from api.db.services.document_service import DocumentService
@@ -1147,16 +1140,52 @@ async def _wiki_load_pages_for_graph(
         except Exception:
             logging.exception("wiki: failed to load MAP relations for graph fallback kb=%s", kb_id)
             map_relations = []
-        pages_by_slug = {page["slug"]: page for page in pages}
-        for relation in map_relations:
-            source = name_to_slug.get(str(relation.get("from") or "").strip())
-            target = name_to_slug.get(str(relation.get("to") or "").strip())
-            if not source or not target or source == target:
-                continue
-            outlinks = pages_by_slug[source].setdefault("outlinks", [])
-            if target not in outlinks:
-                outlinks.append(target)
+        _wiki_apply_map_relation_edges(pages, map_relations)
     return pages
+
+
+def _wiki_apply_map_relation_edges(pages: list[dict], map_relations: list[dict]) -> None:
+    """Backfill page-graph edges from grounded MAP relations (in place).
+
+    Page slugs remain the graph identities, while member names, titles, and
+    slug suffixes are accepted as relation endpoints. Endpoint matching is
+    exact-match first, then case-insensitive: a byline relation emitted as
+    ``OSCAR WILDE`` must still resolve to the page whose entity name is
+    ``Oscar Wilde`` (mirrors the Go compiler's ``normKey`` matching in
+    ``assembleWikiPlanRelatedPages``). Without the case fold, one document's
+    differently-cased endpoint silently loses its edge and its cluster shows
+    up disconnected from the shared entity in the wiki graph.
+    """
+    if not pages:
+        return
+    name_to_slug: dict[str, str] = {}
+    name_to_slug_ci: dict[str, str] = {}
+    for page in pages:
+        slug = page["slug"]
+        names = [slug.rsplit("/", 1)[-1], page.get("title", ""), *page.get("entity_names", [])]
+        for name in names:
+            if isinstance(name, str) and name.strip():
+                name_to_slug.setdefault(name.strip(), slug)
+                name_to_slug_ci.setdefault(name.strip().lower(), slug)
+
+    def _resolve(raw) -> str | None:
+        key = str(raw or "").strip()
+        if not key:
+            return None
+        slug = name_to_slug.get(key)
+        if slug is None:
+            slug = name_to_slug_ci.get(key.lower())
+        return slug
+
+    pages_by_slug = {page["slug"]: page for page in pages}
+    for relation in map_relations:
+        source = _resolve(relation.get("from"))
+        target = _resolve(relation.get("to"))
+        if not source or not target or source == target:
+            continue
+        outlinks = pages_by_slug[source].setdefault("outlinks", [])
+        if target not in outlinks:
+            outlinks.append(target)
 
 
 _WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
@@ -3164,9 +3193,18 @@ async def _wiki_finalize(
     )
     relation_edges: dict[str, set[str]] = {}  # pid → {target slug}
     if map_relations:
+        # Endpoint resolution is exact-match first, then case-insensitive —
+        # same rule as _wiki_apply_map_relation_edges. A byline relation
+        # emitted as ``OSCAR WILDE`` must still resolve to the page whose
+        # name/title/entity is ``Oscar Wilde``.
+        name_slug_ci: dict[str, str] = {}
+        for name, pid_ in name_slug.items():
+            name_slug_ci.setdefault(name.lower(), pid_)
         for rel in map_relations:
-            from_pg = name_slug.get(rel["from"])
-            to_pg = name_slug.get(rel["to"])
+            from_raw = str(rel.get("from") or "").strip()
+            to_raw = str(rel.get("to") or "").strip()
+            from_pg = name_slug.get(from_raw) or name_slug_ci.get(from_raw.lower())
+            to_pg = name_slug.get(to_raw) or name_slug_ci.get(to_raw.lower())
             if from_pg and to_pg and from_pg != to_pg:
                 relation_edges.setdefault(from_pg, set()).add(to_pg)
                 relation_edges.setdefault(to_pg, set()).add(from_pg)

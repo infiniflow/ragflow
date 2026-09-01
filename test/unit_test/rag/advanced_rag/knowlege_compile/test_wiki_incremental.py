@@ -1234,6 +1234,74 @@ async def test_load_pages_for_graph_outlink_fallback():
     assert pages[0]["outlinks"] == ["concept/B"]
 
 
+def test_apply_map_relation_edges_case_folded_endpoints():
+    """A byline relation emitted as ``OSCAR WILDE`` still resolves to the page
+    whose entity name is ``Oscar Wilde`` — exact match first, case fold second.
+
+    Pre-fix, the differently-cased endpoint silently dropped the edge, so the
+    document's cluster rendered disconnected from its author in the wiki graph.
+    """
+    pages = [
+        {
+            "slug": "entity/nightingale",
+            "title": "The Nightingale and the Rose",
+            "entity_names": ["Nightingale"],
+            "outlinks": [],
+        },
+        {
+            "slug": "entity/oscar-wilde",
+            "title": "Oscar Wilde",
+            "entity_names": ["Oscar Wilde"],
+            "outlinks": [],
+        },
+    ]
+    relations = [
+        {"from": "THE NIGHTINGALE AND THE ROSE", "to": "OSCAR WILDE", "type": "author"},
+    ]
+
+    _wiki._wiki_apply_map_relation_edges(pages, relations)
+
+    assert pages[0]["outlinks"] == ["entity/oscar-wilde"]
+
+
+def test_apply_map_relation_edges_exact_match_no_duplicates():
+    """Exact-name endpoints keep working and repeated relations deduplicate."""
+    pages = [
+        {"slug": "entity/A", "title": "A", "entity_names": [], "outlinks": ["entity/B"]},
+        {"slug": "entity/B", "title": "B", "entity_names": [], "outlinks": []},
+    ]
+    relations = [
+        {"from": "A", "to": "B", "type": "other"},
+        {"from": "A", "to": "B", "type": "other"},
+        {"from": "B", "to": "A", "type": "other"},
+    ]
+
+    _wiki._wiki_apply_map_relation_edges(pages, relations)
+
+    assert pages[0]["outlinks"] == ["entity/B"]
+    assert pages[1]["outlinks"] == ["entity/A"]
+
+
+def test_apply_map_relation_edges_skips_self_and_unknown_endpoints():
+    """Self-loops, unresolved endpoints, and empty page lists are ignored."""
+    pages = [
+        {"slug": "entity/A", "title": "A", "entity_names": [], "outlinks": []},
+        {"slug": "entity/oscar-wilde", "title": "Oscar Wilde", "entity_names": [], "outlinks": []},
+    ]
+    relations = [
+        {"from": "A", "to": "A", "type": "other"},
+        {"from": "A", "to": "Nobody", "type": "other"},
+        {"from": "Ghost", "to": "Oscar Wilde", "type": "other"},
+        {"from": "", "to": "A", "type": "other"},
+    ]
+
+    _wiki._wiki_apply_map_relation_edges(pages, relations)
+    assert pages[0]["outlinks"] == []
+    assert pages[1]["outlinks"] == []
+
+    _wiki._wiki_apply_map_relation_edges([], [{"from": "A", "to": "B"}])
+
+
 # ---- _load_canonical_entities: *_kwd scalar normalization ------------------
 
 
@@ -1355,6 +1423,73 @@ async def test_finalize_links_via_map_relations():
     # target slug so the graph can reconstruct edges from md_with_weight.
     body = xiaoliang_upd["md_with_weight"] or ""
     assert "entity/肖立" in body, body
+
+
+@pytest.mark.asyncio
+async def test_finalize_links_via_map_relations_case_folded():
+    """FINALIZE resolves MAP-relation endpoints case-insensitively too: a
+    byline relation emitted as ``OSCAR WILDE`` must link the novel page to the
+    page titled ``Oscar Wilde`` (exact match first, case fold second)."""
+    doc_store = make_doc_store(
+        [
+            {
+                "_source": {
+                    "slug_kwd": "entity/nightingale",
+                    "title_kwd": "The Nightingale and the Rose",
+                    "md_with_weight": "A story about a nightingale.",
+                    "page_type_kwd": "entity",
+                }
+            },
+            {
+                "_source": {
+                    "slug_kwd": "entity/oscar-wilde",
+                    "title_kwd": "Oscar Wilde",
+                    "md_with_weight": "Oscar Wilde is an author.",
+                    "page_type_kwd": "entity",
+                }
+            },
+            {
+                "_source": {
+                    "doc_id": "map1",
+                    "compile_kwd": "wiki_map_extract",
+                    "source_chunk_ids": ["chunk-1"],
+                    "chunk_hash_kwd": "hash-1",
+                    "content_with_weight": json.dumps(
+                        {
+                            "entities": [
+                                {"name": "The Nightingale and the Rose", "type": "work"},
+                                {"name": "Oscar Wilde", "type": "person"},
+                            ],
+                            "relations": [
+                                {"from": "THE NIGHTINGALE AND THE ROSE", "to": "OSCAR WILDE", "type": "author"}
+                            ],
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            },
+        ]
+    )
+
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(f"{_wiki.__name__}._load_canonical_entities", new_callable=AsyncMock, return_value={}),
+    ):
+        await _wiki._wiki_finalize(
+            tenant_id="t1",
+            kb_id="kb1",
+            embd_mdl=None,
+            chunk_state={"chunk-1": {"doc_id": "map1", "hash": "hash-1"}},
+        )
+
+    update_calls = doc_store.update.call_args_list
+    nightingale_upd = None
+    for args in update_calls:
+        if args[0][0].get("id") == "entity/nightingale":
+            nightingale_upd = args[0][1]
+            break
+    assert nightingale_upd is not None, "entity/nightingale not updated"
+    assert "entity/oscar-wilde" in (nightingale_upd["outlinks_kwd"] or []), nightingale_upd["outlinks_kwd"]
 
 
 @pytest.mark.asyncio
