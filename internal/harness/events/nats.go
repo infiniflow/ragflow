@@ -58,6 +58,7 @@ func NewNATSEventStore(conn *nats.Conn, stream string) (*NATSEventStore, error) 
 			MaxAge:    7 * 24 * time.Hour, // 7 days retention
 			Storage:   jetstream.FileStorage,
 			Retention: jetstream.LimitsPolicy,
+			Discard:   jetstream.DiscardNew,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("create jetstream stream: %w", err)
