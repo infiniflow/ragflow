@@ -45,7 +45,7 @@ func TestConfluenceConnectorSyncPagesCommentsAndAttachments(t *testing.T) {
 	if page.SourceID != server.URL+"/wiki/display/SPACE/Page" {
 		t.Fatalf("page SourceID = %q", page.SourceID)
 	}
-	if page.SemanticIdentifier != "Page" {
+	if page.SemanticIdentifier != "Engineering / Root / Page" {
 		t.Fatalf("page SemanticIdentifier = %q", page.SemanticIdentifier)
 	}
 	if !strings.Contains(string(page.Blob), "Hello Confluence") || !strings.Contains(string(page.Blob), "Comment text") {
@@ -339,5 +339,24 @@ func TestConfluenceCQLQuoteEscapesBackslashes(t *testing.T) {
 	want := `path\\name\'s`
 	if got != want {
 		t.Fatalf("confluenceCQLQuote() = %q, want %q", got, want)
+	}
+}
+
+func TestConfluenceSemanticIdentifierAlwaysUsesFullPath(t *testing.T) {
+	// First occurrence must already carry the full hierarchical path, not a
+	// bare title that only becomes qualified after a later duplicate (issue
+	// #16665).
+	got := confluenceSemanticIdentifier("Engineering", []string{"Root"}, "Page")
+	if got != "Engineering / Root / Page" {
+		t.Fatalf("first occurrence identifier = %q, want full path", got)
+	}
+	if again := confluenceSemanticIdentifier("Engineering", []string{"Root"}, "Page"); again != got {
+		t.Fatalf("later occurrence identifier = %q, want stable %q", again, got)
+	}
+	if bare := confluenceSemanticIdentifier("", nil, "Standalone"); bare != "Standalone" {
+		t.Fatalf("no-space identifier = %q, want title only", bare)
+	}
+	if unnamed := confluenceSemanticIdentifier("Space", nil, ""); unnamed != "Space / Untitled" {
+		t.Fatalf("untitled identifier = %q, want Space / Untitled", unnamed)
 	}
 }
