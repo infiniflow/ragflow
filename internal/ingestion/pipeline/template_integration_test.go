@@ -36,6 +36,8 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/deepdoc/parser/pdf"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
 	"ragflow/internal/ingestion/testutil"
@@ -104,7 +106,7 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}
-	wantChunkTexts := []string{"Alpha paragraph.", "Beta paragraph."}
+	wantChunkTexts := []string{"Alpha paragraph.\nBeta paragraph."}
 	if len(chunks) != len(wantChunkTexts) {
 		t.Fatalf("len(chunks) = %d, want %d", len(chunks), len(wantChunkTexts))
 	}
@@ -768,6 +770,18 @@ func attachFixedEmbedderFactory(t *testing.T, pipe *Pipeline) {
 
 func withRealTemplateDeps(t *testing.T) storage.Storage {
 	t.Helper()
+
+	// The production parse path must never degrade to a mock; install a
+	// test-only MockDocAnalyzer as the in-process DeepDoc backend via the
+	// public factory seam so the pipeline runs without a real DeepDoc
+	// service or ONNX Runtime models. Reset to nil on cleanup (this test
+	// binary registers no real backend). Text content is extracted by pdfium
+	// (the PDF text layer) and tokenized offline, independent of the analyzer,
+	// so a mock preserves the chunking/embedding assertions under test.
+	t.Cleanup(func() { doctype.SetNativeDocAnalyzerFactory(nil) })
+	doctype.SetNativeDocAnalyzerFactory(func() (doctype.DocAnalyzer, bool) {
+		return &pdf.MockDocAnalyzer{Healthy: true}, true
+	})
 
 	origStorage := storage.GetStorageFactory().GetStorage()
 	mem := storage.NewMemoryStorage()
