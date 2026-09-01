@@ -18,6 +18,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -209,6 +211,61 @@ func TestPollCancel_ExitsWhenDoneClosed(t *testing.T) {
 	}
 
 	close(released) // cleanup
+}
+
+// TestStartNilEngine verifies that Start returns an error instead of panicking
+// when the message queue engine has not been initialized.
+func TestStartNilEngine(t *testing.T) {
+	previousEngine := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(nil)
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
+
+	ingestor := newUnitIngestor("test-nil-engine", 1, []string{"pdf"})
+	defer ingestor.Stop(context.Background())
+
+	err := ingestor.Start()
+	if err == nil || !strings.Contains(err.Error(), "not initialized") {
+		t.Fatalf("Start() with nil engine: err = %v, want 'not initialized'", err)
+	}
+	if got := ingestor.activeWorkers.Load(); got != 0 {
+		t.Fatalf("activeWorkers after failed Start = %d, want 0", got)
+	}
+}
+
+// TestExecuteTask_MarkFailedAfterCtxCancelAcks verifies that a generic task
+// failure is persisted and acknowledged even after the task context is
+// cancelled by the pipeline.
+func TestExecuteTask_MarkFailedAfterCtxCancelAcks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	defer parentCancel()
+	handle := &fakeTaskHandle{}
+	taskCtx := taskpkg.NewTaskContextForScheduling(parentCtx, &entity.IngestionTask{
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+	})
+	taskCtx.Handle = handle
+	ingestor.runDocumentTask = func(_ context.Context, _ *entity.IngestionTask) error {
+		parentCancel()
+		return errors.New("boom")
+	}
+
+	ingestor.executeTask(context.Background(), taskCtx)
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.FAILED {
+		t.Fatalf("task status = %q, want %q", task.Status, common.FAILED)
+	}
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
 }
 
 // TestStart_FullPathReturnsAndStartsWorkers is a regression test for the

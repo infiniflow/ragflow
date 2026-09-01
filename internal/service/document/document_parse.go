@@ -7,6 +7,7 @@ import (
 	"ragflow/internal/service"
 	"strconv"
 	"strings"
+	"sync"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -17,6 +18,38 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+type documentParseLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+var documentParseLocks = struct {
+	sync.Mutex
+	locks map[string]*documentParseLock
+}{locks: make(map[string]*documentParseLock)}
+
+func lockDocumentParse(docID string) func() {
+	documentParseLocks.Lock()
+	lock := documentParseLocks.locks[docID]
+	if lock == nil {
+		lock = &documentParseLock{}
+		documentParseLocks.locks[docID] = lock
+	}
+	lock.refs++
+	documentParseLocks.Unlock()
+
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+		documentParseLocks.Lock()
+		lock.refs--
+		if lock.refs == 0 {
+			delete(documentParseLocks.locks, docID)
+		}
+		documentParseLocks.Unlock()
+	}
+}
 
 // StartParseDocuments starts parsing a document via the DSL ingestion
 // pipeline. It optionally clears prior results (RerunWithDelete), applies
@@ -33,6 +66,8 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	if _, _, err := s.GetDocumentStorageAddress(ctx, doc); err != nil {
 		return err
 	}
+	unlock := lockDocumentParse(doc.ID)
+	defer unlock()
 
 	if opts.RerunWithDelete {
 		if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID); err != nil {
@@ -83,8 +118,12 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	// corrupt the new run's results. The caller must stop the task first
 	// and wait for a terminal state (COMPLETED/STOPPED/FAILED), CREATED, or
 	// SCHEDULED.
-	taskExisted := false
-	if task, _ := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID); task != nil {
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+	if err != nil {
+		return fmt.Errorf("get ingestion task for document %s: %w", doc.ID, err)
+	}
+	taskExisted := task != nil
+	if task != nil {
 		if task.Status == common.RUNNING || task.Status == common.STOPPING {
 			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
 		}

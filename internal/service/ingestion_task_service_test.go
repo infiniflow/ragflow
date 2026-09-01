@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"ragflow/internal/common"
@@ -21,10 +22,36 @@ type failFirstTaskPublisher struct {
 	messages []common.TaskMessage
 }
 
+type duplicatePublishRecorder struct {
+	mu              sync.Mutex
+	messages        []common.TaskMessage
+	firstPublished  chan struct{}
+	secondPublished chan struct{}
+	releaseFirst    chan struct{}
+	releaseSecond   chan struct{}
+}
+
 func (p *failFirstTaskPublisher) PublishTaskMessage(_ string, msg common.TaskMessage) error {
 	p.messages = append(p.messages, msg)
 	if len(p.messages) == 1 {
 		return errors.New("publish failed")
+	}
+	return nil
+}
+
+func (p *duplicatePublishRecorder) PublishTaskMessage(_ string, msg common.TaskMessage) error {
+	p.mu.Lock()
+	p.messages = append(p.messages, msg)
+	publishNumber := len(p.messages)
+	p.mu.Unlock()
+
+	switch publishNumber {
+	case 1:
+		close(p.firstPublished)
+		<-p.releaseFirst
+	case 2:
+		close(p.secondPublished)
+		<-p.releaseSecond
 	}
 	return nil
 }
@@ -656,6 +683,72 @@ func TestIngestionTaskServiceCreateAndEnqueueSchedulesExistingCreatedTask(t *tes
 	}
 	if reloaded == nil || reloaded.ID != "stale-task" || reloaded.Status != common.SCHEDULED {
 		t.Fatalf("expected created task to be scheduled in place, task=%+v", reloaded)
+	}
+}
+
+func TestIngestionTaskServiceConcurrentCreatedTaskPublicationsConverge(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	publisher := &duplicatePublishRecorder{
+		firstPublished:  make(chan struct{}),
+		secondPublished: make(chan struct{}),
+		releaseFirst:    make(chan struct{}),
+		releaseSecond:   make(chan struct{}),
+	}
+	firstService := NewIngestionTaskService()
+	firstService.taskPublisher = publisher
+	secondService := NewIngestionTaskService()
+	secondService.taskPublisher = publisher
+
+	type result struct {
+		task *entity.IngestionTask
+		err  error
+	}
+	results := make(chan result, 2)
+	enqueue := func(svc *IngestionTaskService) {
+		task, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+			DocumentID: "doc-1",
+			UserID:     "user-1",
+			DatasetID:  "kb-1",
+			Status:     common.CREATED,
+		})
+		results <- result{task: task, err: err}
+	}
+
+	go enqueue(firstService)
+	<-publisher.firstPublished
+	go enqueue(secondService)
+	<-publisher.secondPublished
+
+	close(publisher.releaseFirst)
+	first := <-results
+	if first.err != nil {
+		t.Fatalf("first CreateAndEnqueue: %v", first.err)
+	}
+	close(publisher.releaseSecond)
+	second := <-results
+	if second.err != nil {
+		t.Fatalf("second CreateAndEnqueue: %v", second.err)
+	}
+	if first.task.ID != "task-1" || second.task.ID != "task-1" {
+		t.Fatalf("concurrent requests returned task IDs %q and %q, want task-1", first.task.ID, second.task.ID)
+	}
+
+	publisher.mu.Lock()
+	messages := append([]common.TaskMessage(nil), publisher.messages...)
+	publisher.mu.Unlock()
+	if len(messages) != 2 || messages[0].TaskID != "task-1" || messages[1].TaskID != "task-1" {
+		t.Fatalf("published messages = %+v, want two messages for task-1", messages)
+	}
+
+	task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "task-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.SCHEDULED {
+		t.Fatalf("task status after concurrent publication = %q, want %q", task.Status, common.SCHEDULED)
 	}
 }
 
