@@ -22,7 +22,7 @@ async def test_exec_calculate_returns_computed_value(monkeypatch):
     monkeypatch.setattr("rag.advanced_rag.harness.arithmetic.compute_from_facts", fake_compute_from_facts)
     tools = SimpleNamespace(chat_mdl=object())
 
-    results, evidence_ids = await _exec_calculate(
+    oc = await _exec_calculate(
         tools,
         {
             "question": "What is the total?",
@@ -30,5 +30,6 @@ async def test_exec_calculate_returns_computed_value(monkeypatch):
         },
     )
 
-    assert results == [{"kind": "calculate", "expression": "2 + 3", "result": "5"}]
-    assert evidence_ids == []
+    assert oc.status == "ok"
+    assert oc.payload == [{"kind": "calculate", "expression": "2 + 3", "result": "5"}]
+    assert oc.evidence_ids == []
