@@ -28,6 +28,12 @@ func TestValidateDynamicEntries(t *testing.T) {
 		componentDSL("Iteration", map[string]any{"outputs": map[string]any{
 			"result": map[string]any{"type": "string", "ref": "Iteration@result"},
 		}}),
+		componentDSL("TokenChunker", map[string]any{
+			// The canvas default chunker: whitespace-only delimiters are
+			// semantic split tokens and must save cleanly (#18979 follow-up).
+			"delimiters":          []any{"\n"},
+			"children_delimiters": []any{"\t"},
+		}),
 	)
 
 	if err := ValidateDynamicEntries(valid); err != nil {
@@ -40,6 +46,8 @@ func TestValidateDynamicEntries(t *testing.T) {
 		want      string
 	}{
 		{"string array", componentDSL("DataOperations", map[string]any{"select_keys": []any{"title", " "}}), "select_keys"},
+		{"empty delimiter entry", componentDSL("TokenChunker", map[string]any{"delimiters": []any{"\n", ""}}), "delimiters"},
+		{"empty children delimiter entry", componentDSL("TokenChunker", map[string]any{"children_delimiters": []any{""}}), "children_delimiters"},
 		{"tool name", componentDSL("Agent", map[string]any{"tools": []any{"web_search", ""}}), "tools"},
 		{"filter operator", componentDSL("DataOperations", map[string]any{"filter_values": []any{map[string]any{"key": "status", "operator": "", "value": "published"}}}), "filter_values[0]"},
 		{"invoke variable", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": "", "ref": "Begin@query", "value": "query"}}}), "variables[0]"},

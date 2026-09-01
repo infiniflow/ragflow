@@ -5,7 +5,11 @@ import (
 	"strings"
 )
 
-// ValidateDynamicEntries rejects blank values in repeatable Agent parameters.
+// ValidateDynamicEntries rejects empty values in repeatable Agent parameters.
+// Whitespace-only entries stay valid for delimiter lists: the TokenChunker
+// default delimiter is "\n", and "\t"/"\r"/" " are ordinary custom delimiters
+// (Python keeps every non-empty string there — rag/flow/chunker/token_chunker.py
+// drops only "" entries).
 func ValidateDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl)
 }
@@ -36,9 +40,17 @@ func validateDynamicEntries(value any) error {
 }
 
 func validateDynamicParams(component string, params map[string]any) error {
+	// Delimiter lists keep whitespace-only entries: they are semantic split
+	// tokens (the TokenChunker default is "\n"). Only truly empty strings are
+	// user-added blank rows and must fail the save.
+	for _, field := range []string{"delimiters", "children_delimiters"} {
+		if values, ok := params[field].([]any); ok && containsEmptyString(values) {
+			return fmt.Errorf("[%s] %s does not support empty entries", component, field)
+		}
+	}
 	for _, field := range []string{
 		"include_domains", "exclude_domains", "site_include", "site_exclude",
-		"country_include", "language_include", "delimiters", "children_delimiters",
+		"country_include", "language_include",
 	} {
 		if values, ok := params[field].([]any); ok && containsBlank(values) {
 			return fmt.Errorf("[%s] %s does not support empty entries", component, field)
@@ -162,6 +174,14 @@ func isBlank(value any) bool {
 	return ok && strings.TrimSpace(s) == ""
 }
 
+// isEmptyString reports a truly empty string. Unlike isBlank it does not
+// trim: "\n", "\t" or " " are valid delimiter entries (the TokenChunker
+// default is "\n"), so only "" counts as a user-added blank row.
+func isEmptyString(value any) bool {
+	s, ok := value.(string)
+	return ok && s == ""
+}
+
 func isNonBlankString(value any) bool {
 	s, ok := value.(string)
 	return ok && strings.TrimSpace(s) != ""
@@ -170,6 +190,15 @@ func isNonBlankString(value any) bool {
 func containsBlank(values []any) bool {
 	for _, value := range values {
 		if isBlank(value) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEmptyString(values []any) bool {
+	for _, value := range values {
+		if isEmptyString(value) {
 			return true
 		}
 	}

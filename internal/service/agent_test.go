@@ -1688,6 +1688,72 @@ func TestUpdateAgentPersistsDSLAsJSONMap(t *testing.T) {
 	}
 }
 
+func TestUpdateAgentAcceptsDefaultTokenChunkerDelimiters(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	ctx := t.Context()
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
+		ID:             "canvas-default-chunker",
+		UserID:         "user-1",
+		Title:          sptr("Default Chunker Agent"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	// The canvas-default Chunker node ("按 Token 分块"): its delimiters list
+	// ships as ["\n"] (web/src/pages/agent/constant/pipeline.tsx). Saving the
+	// freshly added node must succeed — "\n" is a semantic split token, not an
+	// empty user-added row.
+	defaultChunkerDSL := func(delimiters []interface{}) map[string]interface{} {
+		return map[string]interface{}{
+			"graph": map[string]interface{}{
+				"nodes": []interface{}{map[string]interface{}{"id": "chunker"}},
+				"edges": []interface{}{},
+			},
+			"components": map[string]interface{}{
+				"chunker": map[string]interface{}{
+					"obj": map[string]interface{}{
+						"component_name": "TokenChunker",
+						"params": map[string]interface{}{
+							"delimiter_mode":      "delimiter",
+							"chunk_token_size":    512,
+							"overlapped_percent":  0,
+							"delimiters":          delimiters,
+							"enable_children":     false,
+							"children_delimiters": []interface{}{},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	if err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-default-chunker", map[string]interface{}{
+		"dsl": defaultChunkerDSL([]interface{}{"\n"}),
+	}); err != nil {
+		t.Fatalf("UpdateAgent rejected the default TokenChunker delimiters: %v", err)
+	}
+
+	persisted, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-default-chunker")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if _, ok := persisted.DSL["components"]; !ok {
+		t.Fatalf("DSL components were not persisted: %#v", persisted.DSL)
+	}
+
+	// A genuinely empty delimiter row (user clicked "+ 添加" and left it blank)
+	// must still fail the save, preserving the intent of #18979.
+	err = NewAgentService().UpdateAgent(ctx, "user-1", "canvas-default-chunker", map[string]interface{}{
+		"dsl": defaultChunkerDSL([]interface{}{"\n", ""}),
+	})
+	if err == nil || !strings.Contains(err.Error(), "[TokenChunker] delimiters does not support empty entries") {
+		t.Fatalf("UpdateAgent error = %v, want [TokenChunker] delimiters does not support empty entries", err)
+	}
+}
+
 func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
