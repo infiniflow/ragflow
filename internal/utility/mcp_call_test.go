@@ -17,7 +17,6 @@
 package utility
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -136,7 +135,7 @@ func TestCallTool_StreamableHTTP(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	res, err := CallTool(context.Background(), CallOptions{
+	res, err := CallTool(t.Context(), CallOptions{
 		URL:        srv.URL,
 		ServerType: TransportStreamableHTTP,
 		ToolName:   "echo",
@@ -177,7 +176,7 @@ func TestCallTool_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := CallTool(context.Background(), CallOptions{
+	_, err := CallTool(t.Context(), CallOptions{
 		URL:        srv.URL,
 		ServerType: TransportStreamableHTTP,
 		ToolName:   "missing",
@@ -196,7 +195,7 @@ func TestCallTool_ServerError(t *testing.T) {
 // TestCallTool_MissingURL: an empty URL is rejected up front
 // before any network I/O.
 func TestCallTool_MissingURL(t *testing.T) {
-	_, err := CallTool(context.Background(), CallOptions{ToolName: "x"})
+	_, err := CallTool(t.Context(), CallOptions{ToolName: "x"})
 	if err == nil {
 		t.Fatalf("expected error for empty URL")
 	}
@@ -208,7 +207,7 @@ func TestCallTool_MissingURL(t *testing.T) {
 // TestCallTool_MissingToolName: an empty tool name is rejected
 // up front.
 func TestCallTool_MissingToolName(t *testing.T) {
-	_, err := CallTool(context.Background(), CallOptions{URL: "http://localhost:0"})
+	_, err := CallTool(t.Context(), CallOptions{URL: "http://localhost:0"})
 	if err == nil {
 		t.Fatalf("expected error for empty tool name")
 	}
@@ -226,7 +225,7 @@ func TestCallTool_InvalidArgumentsJSON(t *testing.T) {
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":0,"result":{}}`))
 	}))
 	defer srv.Close()
-	_, err := CallTool(context.Background(), CallOptions{
+	_, err := CallTool(t.Context(), CallOptions{
 		URL:        srv.URL,
 		ServerType: TransportStreamableHTTP,
 		ToolName:   "x",

@@ -145,6 +145,8 @@ class Result:
     new_states: list = field(default_factory=list)
     found_answer: str | None = None
     retrieved_evidence_ids: list = field(default_factory=list)
+    terminal_type: str | None = None
+    terminal_payload: dict | None = None
 
 
 # ── Unified tool-result contract ─────────────────────────────────────────
@@ -650,14 +652,23 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
     Imports the chunk helpers locally to keep ``tools.search`` (and its heavy
     deepdoc dependency chain) out of module-import time.
     """
-    from rag.advanced_rag.harness.tools.search import _chunk_id, _chunk_text, _doc_id
+    from rag.advanced_rag.harness.tools.search import _chunk_id, _chunk_text, _doc_id, _is_table_chunk
 
     cid = _chunk_id(c)
     if cid in seen:
         return False
     seen.add(cid)
     ids.append(cid)
-    entry = {"id": str(cid), "content": (_chunk_text(c) or "")[:1200]}
+    # Table chunks pass through UN-truncated: the 1200-char cap hides answer
+    # rows in the mid/late table (Q86: rank-19 row at char 5181 of a 8274-char
+    # standings table was cut, so the session model guessed the athlete). The
+    # pool (kbinfos) already stores the full chunk; only the model-facing
+    # session output was truncated here.
+    _ct = _chunk_text(c) or ""
+    if _is_table_chunk(c):
+        entry = {"id": str(cid), "content": _ct}
+    else:
+        entry = {"id": str(cid), "content": _ct[:1200]}
     if include_doc_id:
         entry["doc_id"] = _doc_id(c)
     out.append(entry)
@@ -1052,7 +1063,11 @@ async def _acompletion(mdl, messages: list, tools_list=None, temperature: float 
         kwargs = {"model": mdl.model_name, "messages": oai_messages, "temperature": temperature}
         if tools_list:
             kwargs["tools"] = tools_list
-        return await create(**kwargs)
+        response = await create(**kwargs)
+        from rag.advanced_rag.harness.stats import record_external_response
+
+        record_external_response(response)
+        return response
     # LiteLLMBase path — construct args via its own public method so provider
     # prefix / api_key / retries all ride along; then swap OUR tool schema in.
     import litellm
@@ -1067,7 +1082,11 @@ async def _acompletion(mdl, messages: list, tools_list=None, temperature: float 
         args["tools"] = tools_list
         args["tool_choice"] = "auto"
     args.setdefault("num_retries", 0)
-    return await litellm.acompletion(**args, drop_params=True, timeout=timeout_s)
+    response = await litellm.acompletion(**args, drop_params=True, timeout=timeout_s)
+    from rag.advanced_rag.harness.stats import record_external_response
+
+    record_external_response(response)
+    return response
 
 
 async def _llm_once_with_tools(tools, mdl, messages: list):
@@ -1136,7 +1155,7 @@ def _parse_terminal(content: str, parent_state: State) -> tuple:
             ns = apply_patch(parent_state, br.get("state", []) if isinstance(br, dict) else [])
             if ns is not None:
                 branches.append(ns)
-        return branches, None
+        return branches, None, "state", data
     if "<answer>" in content:
         block = extract_tag(content, "answer") or "{}"
         data = extract_json(block) or {}
@@ -1146,8 +1165,8 @@ def _parse_terminal(content: str, parent_state: State) -> tuple:
             patched = apply_patch(parent_state, data["new_state"])
             if patched is not None:
                 final_state = patched
-        return [final_state], answer
-    return [], None
+        return [final_state], answer, "answer", data
+    return [], None, None, None
 
 
 # ── LangGraph subgraph state ─────────────────────────────────────────────
@@ -1163,6 +1182,8 @@ class _SessionState(TypedDict, total=False):
     # terminal outputs
     new_states: list
     found_answer: Any
+    terminal_type: str | None
+    terminal_payload: dict | None
     retrieved_evidence_ids: list
     # budget
     attempts: int
@@ -1226,11 +1247,13 @@ async def _run_action_node(state: _SessionState) -> dict:
             "attempts": attempts,
         }
 
-    new_states, found_answer = _parse_terminal(content, state["parent_state"])
+    new_states, found_answer, terminal_type, terminal_payload = _parse_terminal(content, state["parent_state"])
     if found_answer is not None or new_states:
         return {
             "new_states": new_states,
             "found_answer": found_answer,
+            "terminal_type": terminal_type,
+            "terminal_payload": terminal_payload,
             "_done": True,
             "attempts": attempts,
         }
@@ -1440,6 +1463,7 @@ async def _finalize_node(state: _SessionState) -> dict:
     JSON, salvaging whatever the session learned."""
     parent = state["parent_state"]
     new_states, found_answer = [], None
+    terminal_type, terminal_payload = None, None
     evidence_ids = list(state.get("retrieved_evidence_ids") or [])
 
     budget_prompt = (
@@ -1453,16 +1477,16 @@ async def _finalize_node(state: _SessionState) -> dict:
     # (e.g. tool execution failed), else the provider rejects the history.
     finalize_msgs = _strip_unpaired_tool_calls(list(state["messages"])) + [HumanMessage(content=budget_prompt)]
     try:
-        async with asyncio.timeout(max(15.0, min(45.0, state.get("deadline_left") or 45.0))):
+        async with asyncio.timeout(max(15.0, min(150.0, state.get("deadline_left") or 150.0))):
             fresp = await _acompletion(
                 state["mdl"],
                 finalize_msgs,
                 tools_list=None,
                 temperature=0.3,
-                timeout_s=45.0,
+                timeout_s=150.0,
             )
         fcontent = fresp.choices[0].message.content or ""
-        new_states, found_answer = _parse_terminal(fcontent, parent)
+        new_states, found_answer, terminal_type, terminal_payload = _parse_terminal(fcontent, parent)
         if found_answer:
             _LOG.info("[Action Session] answer salvaged from exhausted session")
         elif new_states:
@@ -1493,7 +1517,14 @@ async def _finalize_node(state: _SessionState) -> dict:
                     new_states = [patched]
                     _LOG.warning("[Action Session] loose-clue patch (narrative)")
 
-    return {"new_states": new_states, "found_answer": found_answer, "_done": True, "retrieved_evidence_ids": evidence_ids}
+    return {
+        "new_states": new_states,
+        "found_answer": found_answer,
+        "terminal_type": terminal_type,
+        "terminal_payload": terminal_payload,
+        "_done": True,
+        "retrieved_evidence_ids": evidence_ids,
+    }
 
 
 def _strip_unpaired_tool_calls(messages: list) -> list:
@@ -1547,6 +1578,19 @@ def _route(state: _SessionState) -> str:
     return "run_action"  # nudge retry
 
 
+def _route_after_tool(state: _SessionState) -> str:
+    """Route after executing a tool batch: the turn budget is checked AFTER the
+    tool responses are appended (a pending tool_call must always receive its
+    matching tool response, but once the budget is spent we must NOT go back to
+    run_action — that was the Q86 infinite-loop: the model kept emitting
+    tool_calls, _pending_calls stayed non-empty, so the attempts check in
+    ``_route`` was never reached and the session burned the whole PASS_TIMEOUT).
+    """
+    if state.get("attempts", 0) >= _action_max_turns(state):
+        return "finalize"
+    return "run_action"
+
+
 def _build_session_graph():
     g = StateGraph(_SessionState)
     g.add_node("run_action", _run_action_node)
@@ -1558,7 +1602,11 @@ def _build_session_graph():
         _route,
         {"tool": "tool", "finalize": "finalize", END: END, "run_action": "run_action"},
     )
-    g.add_edge("tool", "run_action")
+    g.add_conditional_edges(
+        "tool",
+        _route_after_tool,
+        {"run_action": "run_action", "finalize": "finalize"},
+    )
     g.add_edge("finalize", END)
     return g.compile()
 
@@ -1888,18 +1936,53 @@ async def run_nav_prefix(tools, direction: str, deadline_left: float, ctx: _NavC
 _SESSION_GRAPH = _build_session_graph()
 
 
+def _extract_relevant_evidence(tools, direction: str, max_chunks: int = 4) -> str:
+    """Extract chunks from tools.kbinfos relevant to direction, for seed_user injection."""
+    from rag.advanced_rag.harness.tools.search import _chunk_id, _chunk_text
+
+    kbinfos = getattr(tools, "kbinfos", None) or {}
+    chunks = kbinfos.get("chunks") or []
+    if not chunks:
+        return ""
+
+    dir_tokens = set(re.findall(r"[a-zA-Z0-9\u4e00-\u9fff]{2,}", (direction or "").lower()))
+    if not dir_tokens:
+        ranked = chunks[-max_chunks:]
+    else:
+
+        def _rel(c):
+            text = (_chunk_text(c) or "").lower()
+            return sum(1 for t in dir_tokens if t in text)
+
+        ranked = sorted(chunks, key=_rel, reverse=True)
+
+    lines = []
+    for c in ranked[:max_chunks]:
+        cid = _chunk_id(c)
+        text = (_chunk_text(c) or "")[:300].replace("\n", " ")
+        lines.append(f"[{cid}] {text}")
+    return "\n".join(lines)
+
+
 async def run_action_session(
     tools,
     direction: str,
     parent_state: State,
     deadline_left: float | None = None,
     base_summary: str = "",
+    shared_tool_cache: dict | None = None,
+    shared_search_queries: list | None = None,
 ) -> Result:
     """Bounded graph-edge session pursuing ONE direction."""
     from rag.prompts.template import load_prompt
 
     system = load_prompt("action_run")
     seed_user = f"Direction: {direction}\n\nState:\n{parent_state.render_slots()}"
+
+    existing = _extract_relevant_evidence(tools, direction, max_chunks=4)
+    if existing:
+        seed_user += "\n\nALREADY RETRIEVED (do NOT re-retrieve these — use them to fill slots or identify gaps):\n" + existing
+
     if base_summary:
         seed_user += f"\n\nPrior round summary:\n{base_summary}"
 
@@ -1951,8 +2034,8 @@ async def run_action_session(
         "deadline_left": max(10.0, budget_left - spent),
         "_ctx_budget": _MAX_TOOL_RESPONSE_CHARS * 4,
         "_tool_chars": 0,
-        "_tool_cache": {},
-        "_search_queries": [],
+        "_tool_cache": shared_tool_cache if shared_tool_cache is not None else {},
+        "_search_queries": shared_search_queries if shared_search_queries is not None else [],
         "_skipped_dup": 0,
         "_tool_strikes": {},
         "_tool_outcomes": list(prefix_outcomes),
@@ -1970,6 +2053,8 @@ async def run_action_session(
         new_states=final.get("new_states", []),
         found_answer=final.get("found_answer"),
         retrieved_evidence_ids=final.get("retrieved_evidence_ids", []),
+        terminal_type=final.get("terminal_type"),
+        terminal_payload=final.get("terminal_payload"),
     )
 
 
@@ -2035,5 +2120,5 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
     elif not first_queries:
         first_queries = [question]
     root = State(state=slots, depth=0)
-    _LOG.info("[Action Session:init] %s", root.brief())
+    _LOG.info("[Action Session:init] %s\n%s", root.brief(), root.render_slots())
     return root, first_queries

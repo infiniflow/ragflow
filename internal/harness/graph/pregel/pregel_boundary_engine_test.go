@@ -24,7 +24,7 @@ func TestBoundary_EmptyStateGraph(t *testing.T) {
 	_ = sg.AddEdge(constants.Start, "nop")
 	_ = sg.AddEdge("nop", constants.End)
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestBoundary_EmptyStateGraph(t *testing.T) {
 func TestBoundary_NilConfig(t *testing.T) {
 	sg := newSimpleGraph(t)
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestBoundary_NoTasksStillCompletes(t *testing.T) {
 	_ = sg.AddEdge(constants.Start, "only")
 	_ = sg.AddEdge("only", constants.End)
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestBoundary_BinOpWithCheckpointer(t *testing.T) {
 		Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tid},
 	}
 	engine := NewEngine(sg, WithRecursionLimit(10), WithCheckpointer(ms), WithConfig(cfg))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestBoundary_ManyIndependentCheckpointers(t *testing.T) {
 				Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tid},
 			}
 			engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(10), WithCheckpointer(ms), WithConfig(cfg))
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 			if err != nil {
 				t.Errorf("engine %d: %v", idx, err)
 			}
@@ -122,7 +122,7 @@ func TestBoundary_NodeContextDeadline(t *testing.T) {
 	_ = sg.AddEdge(constants.Start, "slow")
 	_ = sg.AddEdge("slow", constants.End)
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
 	_, err := engine.RunSync(ctx, map[string]any{"value": "x"})
 	if err == nil {
@@ -145,7 +145,7 @@ func TestBoundary_SequentialChannelAccumulator(t *testing.T) {
 	_ = sg.AddEdge("a", "b")
 	_ = sg.AddEdge("b", constants.End)
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestBoundary_RetryInterruptCheckpointer(t *testing.T) {
 	rp := types.DefaultRetryPolicy()
 	rp.MaxAttempts = 5
 	engine := NewEngine(sg, WithRecursionLimit(10), WithCheckpointer(ms), WithConfig(cfg), WithRetryPolicy(&rp), WithInterrupts("*"))
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected interrupt")
 	}
@@ -186,7 +186,7 @@ func TestBoundary_RetryInterruptCheckpointer(t *testing.T) {
 
 func TestBoundary_MaxRecursionLimit(t *testing.T) {
 	engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(1<<31-1))
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}

@@ -98,7 +98,7 @@ func TestAskService_RetrievalError(t *testing.T) {
 	ret := &fakeRetriever{err: fmt.Errorf("engine down")}
 	llm := &fakeStreamLLM{chunks: []string{"answer"}}
 	svc := NewAskService(ret, nil, 0, 0)
-	deltas := collect(svc.Stream(context.Background(), llm, "user1", "test", []string{"kb1"}))
+	deltas := collect(svc.Stream(t.Context(), llm, "user1", "test", []string{"kb1"}))
 	if len(deltas) < 1 || deltas[0].Kind != AskDeltaError {
 		t.Fatalf("expected error delta, got %+v", deltas)
 	}
@@ -108,7 +108,7 @@ func TestAskService_EmptyResult(t *testing.T) {
 	ret := &fakeRetriever{result: &RetrievalTestResponse{Chunks: []map[string]interface{}{}}}
 	llm := &fakeStreamLLM{chunks: []string{"answer"}}
 	svc := NewAskService(ret, nil, 0, 0)
-	deltas := collect(svc.Stream(context.Background(), llm, "user1", "test", []string{"kb1"}))
+	deltas := collect(svc.Stream(t.Context(), llm, "user1", "test", []string{"kb1"}))
 	if len(deltas) < 1 || !strings.Contains(deltas[0].Value, "no relevant information") {
 		t.Fatalf("expected 'no relevant information', got %+v", deltas)
 	}
@@ -123,7 +123,7 @@ func TestAskService_StreamingFlow(t *testing.T) {
 	}}
 	llm := &fakeStreamLLM{chunks: []string{"Hello", " world"}}
 	svc := NewAskService(ret, nil, 0, 0)
-	deltas := collect(svc.Stream(context.Background(), llm, "user1", "test", []string{"kb1"}))
+	deltas := collect(svc.Stream(t.Context(), llm, "user1", "test", []string{"kb1"}))
 
 	var hasAnswer, hasFinal bool
 	for _, d := range deltas {
@@ -150,7 +150,7 @@ func TestAskService_EmptyLLMStreamReturnsError(t *testing.T) {
 	}}
 	llm := &fakeStreamLLM{}
 	svc := NewAskService(ret, nil, 0, 0)
-	deltas := collect(svc.Stream(context.Background(), llm, "user1", "test", []string{"kb1"}))
+	deltas := collect(svc.Stream(t.Context(), llm, "user1", "test", []string{"kb1"}))
 
 	if len(deltas) != 1 || deltas[0].Kind != AskDeltaError || !strings.Contains(deltas[0].Value, "LLM call failed") {
 		t.Fatalf("expected LLM error delta, got %+v", deltas)
@@ -166,7 +166,7 @@ func TestAskService_ThinkTags(t *testing.T) {
 	}}
 	llm := &fakeStreamLLM{chunks: []string{"<think>", "reasoning...", "</think>", "visible answer"}}
 	svc := NewAskService(ret, nil, 0, 0)
-	deltas := collect(svc.Stream(context.Background(), llm, "user1", "test", []string{"kb1"}))
+	deltas := collect(svc.Stream(t.Context(), llm, "user1", "test", []string{"kb1"}))
 
 	var hasMarker bool
 	for _, d := range deltas {
@@ -187,7 +187,7 @@ func TestAskService_LLMError(t *testing.T) {
 	}}
 	llm := &fakeStreamLLM{err: fmt.Errorf("model offline")}
 	svc := NewAskService(ret, nil, 0, 0)
-	deltas := collect(svc.Stream(context.Background(), llm, "user1", "test", []string{"kb1"}))
+	deltas := collect(svc.Stream(t.Context(), llm, "user1", "test", []string{"kb1"}))
 	if len(deltas) < 1 || deltas[0].Kind != AskDeltaError {
 		t.Fatalf("expected error delta, got %+v", deltas)
 	}
@@ -209,7 +209,7 @@ func TestAskService_TemperatureFromLLMSetting(t *testing.T) {
 			"temperature_enabled": true,
 		},
 	})
-	deltas := collect(svc.StreamWithOptions(context.Background(), llm, "user1", "test", []string{"kb1"}, opts))
+	deltas := collect(svc.StreamWithOptions(t.Context(), llm, "user1", "test", []string{"kb1"}, opts))
 
 	var hasFinal bool
 	for _, d := range deltas {
@@ -241,7 +241,7 @@ func TestAskService_TemperatureDisabledUsesDefault(t *testing.T) {
 			"temperature_enabled": false,
 		},
 	})
-	deltas := collect(svc.StreamWithOptions(context.Background(), llm, "user1", "test", []string{"kb1"}, opts))
+	deltas := collect(svc.StreamWithOptions(t.Context(), llm, "user1", "test", []string{"kb1"}, opts))
 
 	var hasFinal bool
 	for _, d := range deltas {
@@ -274,7 +274,7 @@ func TestAskService_TemperatureMissingUsesLLMSettingDefaults(t *testing.T) {
 			"temperature_enabled": true,
 		},
 	})
-	collect(svc.StreamWithOptions(context.Background(), llm, "user1", "test", []string{"kb1"}, opts))
+	collect(svc.StreamWithOptions(t.Context(), llm, "user1", "test", []string{"kb1"}, opts))
 
 	if llm.gotConfig == nil || llm.gotConfig.Temperature == nil || *llm.gotConfig.Temperature != DefaultAskTemperature {
 		t.Errorf("expected LLM_SETTING_DEFAULTS temperature %v, got %+v", DefaultAskTemperature, llm.gotConfig)
@@ -376,7 +376,7 @@ func TestAskService_AsyncLLMErrorSurfaces(t *testing.T) {
 	}}
 	llm := &asyncErrStreamLLM{fakeStreamLLM: fakeStreamLLM{chunks: []string{"partial"}}}
 	svc := NewAskService(ret, nil, 0, 0)
-	deltas := collect(svc.Stream(context.Background(), llm, "user1", "test", []string{"kb1"}))
+	deltas := collect(svc.Stream(t.Context(), llm, "user1", "test", []string{"kb1"}))
 
 	var errDelta *AskDelta
 	for i := range deltas {
@@ -401,7 +401,7 @@ func TestAskService_LLMErrorValueIsRealError(t *testing.T) {
 	}}
 	llm := &fakeStreamLLM{err: fmt.Errorf("provider name missing in model name: gpt-4o")}
 	svc := NewAskService(ret, nil, 0, 0)
-	deltas := collect(svc.Stream(context.Background(), llm, "user1", "test", []string{"kb1"}))
+	deltas := collect(svc.Stream(t.Context(), llm, "user1", "test", []string{"kb1"}))
 	if len(deltas) < 1 || deltas[0].Kind != AskDeltaError {
 		t.Fatalf("expected error delta, got %+v", deltas)
 	}
