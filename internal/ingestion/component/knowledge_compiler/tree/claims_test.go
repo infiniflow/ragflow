@@ -199,9 +199,10 @@ func TestExtractClaimsForChunksValidatesAndKeysByChunk(t *testing.T) {
 	}
 }
 
-func TestExtractClaimsForChunksDropsUnknownChunkIDs(t *testing.T) {
-	// A hallucinated chunk id must not survive: the gate can only validate
-	// against text the model actually saw.
+func TestExtractClaimsForChunksFillsSourceChunkIDByCode(t *testing.T) {
+	// The chunk id is filled by code, never trusted from the model: even when
+	// the model returns a source_chunk_ids that points elsewhere (or omits it),
+	// the claim is attributed to the single TARGET chunk.
 	reply, _ := json.Marshal(map[string]any{"items": []any{
 		map[string]any{
 			"name":             "a claim",
@@ -213,7 +214,7 @@ func TestExtractClaimsForChunksDropsUnknownChunkIDs(t *testing.T) {
 
 	got := ExtractClaimsForChunks(context.Background(), deps, "llm", chunks)
 	if len(got["c1"]) != 1 {
-		t.Fatalf("claim should be re-keyed to the batch's chunk: %+v", got)
+		t.Fatalf("claim should be attributed to the target chunk: %+v", got)
 	}
 	if id := got["c1"][0].SourceChunkIDs[0]; id != "c1" {
 		t.Fatalf("source chunk id = %q, want c1", id)

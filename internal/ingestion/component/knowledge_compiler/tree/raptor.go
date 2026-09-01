@@ -400,10 +400,11 @@ func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, us
 			}
 		}
 		resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-			LLMID:        llmID,
-			SystemPrompt: systemText,
-			UserPrompt:   userText,
-			MaxTokens:    &mt,
+			LLMID:           llmID,
+			SystemPrompt:    systemText,
+			UserPrompt:      userText,
+			MaxTokens:       &mt,
+			DisableThinking: true,
 		})
 		if err != nil {
 			continue

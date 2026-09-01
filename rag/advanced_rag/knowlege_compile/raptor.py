@@ -40,38 +40,85 @@ from ._common import knowledge_compile_gen_conf
 # §7). Claims are the atoms the tree is later read through; the raw text is only
 # used as a fallback when a chunk yields none.
 #
-# Claims are extracted in small contiguous batches: a single chunk often lacks
-# the context to state a claim self-containedly, and one LLM call per chunk is
-# both slow and loses cross-chunk grounding.
-_CLAIM_BATCH_CHUNKS = 4
+# Claims are extracted one chunk per call (see ``_pack_claim_batches``). Source
+# chunks average ~2000 tokens — large enough that packing several into one call
+# made the model drop or mis-attribute claims. Each chunk is marked as a TARGET,
+# and every claim is attributed to the chunk it was quoted from; the validation
+# gate then drops any quote that cannot be located in that chunk. One chunk per
+# call trades LLM-call count for per-target recall and exact quote validation.
 
+# The claim-extraction system prompt. ``extract_claims_for_chunks`` renders one
+# or more ``<TARGET>`` chunks; each is a chunk the model must harvest claims
+# from. Every claim carries the id of the chunk it was taken from, so quotes are
+# validated against the right text and cross-chunk contamination is caught by
+# the gate.
 _CLAIM_EXTRACTION_PROMPT = """## Task
-Extract the atomic factual claims the source text actually supports.
+You are a high-recall claim harvester for the TARGET chunks below. For EACH
+TARGET chunk, extract EVERY explicit atomic claim that chunk supports: factual
+assertions AND explicitly expressed opinions, beliefs, judgments, assessments,
+recommendations, preferences, intentions, predictions, and hypotheses. Do not
+rank claims, summarize, merge claims, or omit a claim because it seems minor.
 
 A claim must be:
 - Self-contained: readable without the surrounding text, with named subjects.
-- Faithful: stated only if the source supports it. Never infer or embellish.
+  Never write "the article", "the document", "it says", or a bare pronoun.
+  Resolve the referent to its name when attribution makes the claim clearer.
+- Faithful: stated only if that TARGET chunk supports it. Never invent,
+  strengthen, or infer. Preserve modality, uncertainty, negation, and
+  attribution exactly.
 - Atomic: exactly one fact. Split compound sentences.
 
 ## Response Format
-Reply with a single JSON object: {"items": [{"type": "claim", "name": "<the claim, one sentence>", "description": "<optional restatement for retrieval>", "source_chunk_ids": ["<source chunk id>"], "evidence": [{"quote": "<the verbatim source sentence supporting this claim>", "chunk_id": "<source chunk id>"}]}, ...]}.
+Reply with a single JSON object: {"items": [{"type": "claim", "name": "<the claim, one sentence>", "description": "<optional restatement for retrieval>", "evidence": [{"quote": "<the verbatim source sentence>", "chunk_id": "<CHUNK_ID it was taken from>"}]}, ...]}.
 
 Rules:
-- `evidence.quote` MUST be copied verbatim from the source: same words, same
-  order, no paraphrase, no truncation, no added words. A quote that cannot be
-  found verbatim in the source is rejected downstream, so never restate.
+- `evidence.quote` MUST be a CONTIGUOUS verbatim substring of the chunk cited
+  by `evidence.chunk_id`: same words, same order, no paraphrase, no truncation,
+  no added words. A quote that cannot be found verbatim is rejected downstream,
+  so never restate.
+- `evidence.chunk_id` MUST identify the exact chunk the claim and quote came
+  from. Never cross-attribute a quote to a different chunk.
+- Keep each quote concise and under 240 characters.
 - For tables, infoboxes and bullet lists, the quote MUST be the raw cell/row
   text exactly as it appears — keep its separators and order. Do NOT turn a
   table row like "Starring | Penn Badgley | Elizabeth Lail" into a sentence
   like "Starring Penn Badgley Elizabeth Lail"; that is a paraphrase and will
   be rejected.
-- `evidence.chunk_id` MUST be the id of the chunk the quote was taken from.
-- `source_chunk_ids` MUST list the chunk that supports the claim.
 - Preserve numbers, units, dates, names and qualifiers exactly.
-- Omit `evidence` only when no single source sentence supports the claim.
-- If the text contains no claim, return {"items": []}.
-- Keep the claim in the same language as the source.
+- Distribute claims across all TARGET chunks; do not skip a chunk because you
+  reached the cap — the cap is per chunk, not per batch.
+- If a TARGET chunk contains no extractable assertion, emit no claim for it.
+- Keep claims in the same language as the source.
 Return JSON only, no commentary."""
+
+
+def _render_claim_source(batch: list[tuple]) -> str:
+    """Render the user prompt body for one claim-extraction call.
+
+    Every chunk in the batch is marked as a TARGET, so the model harvests claims
+    for all of them in one call. Each chunk carries its own id, which both pins
+    the claim attribution and lets the validation gate check the quote against
+    the right text.
+    """
+    lines = ["## Source Text"]
+    for cid, text in batch:
+        lines.append(f"[CHUNK_ID: {cid} (TARGET)]")
+        lines.append(text)
+        lines.append("[END_CHUNK]")
+    lines.append("\n## Output (JSON only):")
+    return "\n".join(lines)
+
+
+def _pack_claim_batches(entries: list[tuple]) -> list[list[tuple]]:
+    """Turn each chunk into its own batch.
+
+    ``entries`` is ``(chunk_id, text)``. Source chunks average ~2000 tokens —
+    large enough that packing several of them into one call makes the model
+    drop or mis-attribute claims. So each chunk becomes a single batch and gets
+    its own LLM call, giving the extractor one clean target at a time and
+    making the validation gate's verbatim check trivially correct.
+    """
+    return [[entry] for entry in entries]
 
 
 async def extract_claims_for_chunks(
@@ -80,7 +127,6 @@ async def extract_claims_for_chunks(
     *,
     task_id: str = "",
     callback=None,
-    batch_size: int = _CLAIM_BATCH_CHUNKS,
 ) -> dict[str, list[dict]]:
     """Extract claim/evidence pairs for RAPTOR's layer-0 chunks.
 
@@ -89,11 +135,12 @@ async def extract_claims_for_chunks(
     claim came from, so the builder can look up a cluster's claims by its
     members' ids.
 
-    Every quote is run through the shared validation gate: a quote that cannot
-    be located in the chunk it cites is dropped (claim kept), which is what
-    makes the compiled form trustworthy.
+    Each chunk is extracted with its own LLM call (see ``_pack_claim_batches``),
+    so the call count equals the chunk count. Source chunks average ~2000 tokens,
+    which is why packing several together hurt recall. Every claim is attributed
+    to the chunk it was quoted from and run through the shared validation gate.
 
-    Best-effort: extraction never fails the build. On error the chunk simply
+    Best-effort: extraction never fails the build. On error a chunk simply
     contributes no claims and the tree falls back to raw text for it.
     """
     from rag.prompts.generator import gen_json
@@ -112,17 +159,32 @@ async def extract_claims_for_chunks(
     if not entries:
         return {}
 
-    size = max(1, int(batch_size))
+    # Every chunk is extracted on its own (see ``_pack_claim_batches``), so the
+    # LLM-call count equals the chunk count. Source chunks average ~2000 tokens,
+    # which is why packing them together hurt recall; one chunk per call keeps
+    # each target under the model's attention and the quote check exact.
+    batches = _pack_claim_batches(entries)
+
     text_by_id = {cid: text for cid, text in entries}
     claims_by_chunk: dict[str, list[dict]] = {}
 
-    for i in range(0, len(entries), size):
-        batch = entries[i : i + size]
-        body = "\n\n".join(f"[CHUNK_ID: {cid}]\n{text}\n[END_CHUNK]" for cid, text in batch)
+    total = len(batches)
+    for bi, batch in enumerate(batches):
+        # Report per-chunk progress *before* the LLM call so the UI moves
+        # during the long extraction loop instead of freezing at
+        # "building tree". With one chunk per call (see ``_pack_claim_batches``)
+        # this is what keeps the progress bar alive across the whole doc.
+        # ``prog`` advances with each chunk so the percentage bar moves too,
+        # not just the log text. Callers that accept only ``msg`` ignore the
+        # extra keyword harmlessly.
+        if callback:
+            callback(prog=(bi + 1) / total, msg=f"tree-template: extracting claims for chunk {bi + 1}/{total}")
+
+        user = _render_claim_source(batch)
         try:
             ans = await gen_json(
                 _CLAIM_EXTRACTION_PROMPT,
-                f"## Source Text\n{body}\n\n## Output (JSON only):",
+                user,
                 llm_model,
                 knowledge_compile_gen_conf(llm_model),
             )
@@ -136,8 +198,6 @@ async def extract_claims_for_chunks(
         if not isinstance(items, list):
             continue
 
-        # Keep only claims whose cited chunk is in this batch, then validate.
-        batch_ids = {cid for cid, _ in batch}
         claims = []
         for it in items:
             if not isinstance(it, dict):
@@ -145,11 +205,14 @@ async def extract_claims_for_chunks(
             name = str(it.get("name") or "").strip()
             if not name:
                 continue
-            src_ids = [str(s) for s in (it.get("source_chunk_ids") or []) if s]
-            src_ids = [s for s in src_ids if s in batch_ids] or [batch[0][0]]
+            # One chunk per call, so the claim is always attributed to that
+            # chunk — the chunk id is filled by code, never by the model (the
+            # model only sees a system-internal id it would otherwise have to
+            # guess). The evidence gate validates quotes against this chunk's
+            # text, so attribution stays exact.
             it["name"] = name
             it["type"] = "claim"
-            it["source_chunk_ids"] = src_ids
+            it["source_chunk_ids"] = [batch[0][0]]
             if not it.get("description"):
                 it["description"] = name
             claims.append(it)
@@ -161,19 +224,21 @@ async def extract_claims_for_chunks(
         emitted = sum(1 for cl in claims if cl.get("evidence"))
         verified, rejected = _struct_apply_evidence_gate(claims, text_by_id, "soft")
         logging.info(
-            "[RAPTOR] claim extraction batch: claims=%d emitted_evidence=%d verified=%d rejected=%d",
+            "[RAPTOR] claim extraction batch=%d/%d chunks=%d claims=%d emitted_evidence=%d verified=%d rejected=%d",
+            bi + 1,
+            total,
+            len(batch),
             len(claims),
             emitted,
             verified,
             rejected,
         )
         for cl in claims:
-            for cid in cl.get("source_chunk_ids") or []:
-                claims_by_chunk.setdefault(cid, []).append(cl)
-                break
+            cid = cl.get("source_chunk_ids") or [batch[0][0]]
+            claims_by_chunk.setdefault(cid[0], []).append(cl)
 
     if callback:
-        callback(msg=f"Extracted claims for {len(claims_by_chunk)} chunk(s)")
+        callback(prog=1.0, msg=f"Extracted claims for {len(claims_by_chunk)} chunk(s)")
     return claims_by_chunk
 
 

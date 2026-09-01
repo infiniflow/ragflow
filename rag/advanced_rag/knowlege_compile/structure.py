@@ -2689,7 +2689,7 @@ async def _struct_upsert_tree_claim_rows(
     from common import settings
     from rag.nlp import search as _rag_search
 
-    payloads: list[dict] = []
+    payloads: list[tuple[str, dict]] = []
     for chunk_id, claims in (claims_by_chunk or {}).items():
         if not isinstance(claims, list):
             continue
@@ -2707,7 +2707,7 @@ async def _struct_upsert_tree_claim_rows(
             }
             if claim.get("evidence"):
                 payload["evidence"] = claim["evidence"]
-            payloads.append(payload)
+            payloads.append((chunk_id, payload))
 
     if not payloads:
         return 0
@@ -2715,24 +2715,22 @@ async def _struct_upsert_tree_claim_rows(
     index = _rag_search.index_name(tenant_id)
     # Evidence is excluded from the embedding input, consistent with the
     # page_index claim path.
-    embeddings = await _struct_embed(embedding_model, [_struct_payload_description(p) for p in payloads])
+    embeddings = await _struct_embed(embedding_model, [_struct_payload_description(p) for _, p in payloads])
     if len(embeddings) != len(payloads):
         raise ValueError(f"Claim embedding count mismatch: {len(embeddings)} != {len(payloads)}")
 
     rows = []
-    for payload, vector in zip(payloads, embeddings):
+    for (chunk_id, payload), vector in zip(payloads, embeddings):
         rows.append(
             _struct_to_doc_storage_doc(
                 payload,
-                "claim",
-                vector,
-                tenant_id,
-                kb_id,
+                compile_kwd,
                 doc_id,
                 doc_name,
-                compile_kwd,
+                [chunk_id],
+                vector,
                 "entity",
-                compilation_template_id,
+                compilation_template_id=compilation_template_id,
             )
         )
 

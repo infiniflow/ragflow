@@ -7,14 +7,9 @@ import (
 	"log"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
-
-// claimBatchChunks is how many contiguous source chunks are fed to the LLM per
-// claim-extraction call. A single chunk often lacks the context to state a
-// claim self-containedly, and one call per chunk is both slow and loses
-// cross-chunk grounding.
-const claimBatchChunks = 4
 
 // claimExtractionPrompt mirrors the Python prompt in
 // rag/advanced_rag/knowlege_compile/raptor.py (_CLAIM_EXTRACTION_PROMPT). The
@@ -22,32 +17,62 @@ const claimBatchChunks = 4
 // summarised from, which then makes Python-derived and Go-derived trees
 // incomparable.
 const claimExtractionPrompt = `## Task
-Extract the atomic factual claims the source text actually supports.
+You are a high-recall claim harvester for the TARGET chunk below. Extract EVERY
+explicit atomic claim the TARGET supports: factual assertions AND explicitly
+expressed opinions, beliefs, judgments, assessments, recommendations,
+preferences, intentions, predictions, and hypotheses. Do not rank claims,
+summarize, merge claims, or omit a claim because it seems minor.
 
 A claim must be:
 - Self-contained: readable without the surrounding text, with named subjects.
-- Faithful: stated only if the source supports it. Never infer or embellish.
+  Never write "the article", "the document", "it says", or a bare pronoun.
+  Resolve the referent to its name when attribution makes the claim clearer.
+- Faithful: stated only if the TARGET supports it. Never invent, strengthen,
+  or infer. Preserve modality, uncertainty, negation, and attribution exactly.
 - Atomic: exactly one fact. Split compound sentences.
 
+CONTEXT chunks (if any) are provided only to resolve names and references;
+never extract a claim from them and never quote from them.
+
 ## Response Format
-Reply with a single JSON object: {"items": [{"type": "claim", "name": "<the claim, one sentence>", "description": "<optional restatement for retrieval>", "source_chunk_ids": ["<source chunk id>"], "evidence": [{"quote": "<the verbatim source sentence supporting this claim>", "chunk_id": "<source chunk id>"}]}, ...]}.
+Reply with a single JSON object: {"items": [{"type": "claim", "name": "<the claim, one sentence>", "description": "<optional restatement for retrieval>", "evidence": [{"quote": "<the verbatim source sentence supporting this claim>", "chunk_id": "TARGET_ID"}]}, ...]}.
 
 Rules:
-- ` + "`evidence.quote`" + ` MUST be copied verbatim from the source: same words, same
-  order, no paraphrase, no truncation, no added words. A quote that cannot be
-  found verbatim in the source is rejected downstream, so never restate.
+- ` + "`evidence.quote`" + ` MUST be a CONTIGUOUS verbatim substring of the TARGET chunk:
+  same words, same order, no paraphrase, no truncation, no added words. A
+  quote that cannot be found verbatim is rejected downstream, so never restate.
+- Keep each quote concise and under 240 characters.
 - For tables, infoboxes and bullet lists, the quote MUST be the raw cell/row
   text exactly as it appears — keep its separators and order. Do NOT turn a
   table row like "Starring | Penn Badgley | Elizabeth Lail" into a sentence
   like "Starring Penn Badgley Elizabeth Lail"; that is a paraphrase and will
   be rejected.
-- ` + "`evidence.chunk_id`" + ` MUST be the id of the chunk the quote was taken from.
-- ` + "`source_chunk_ids`" + ` MUST list the chunk that supports the claim.
+- ` + "`evidence.chunk_id`" + ` MUST be TARGET_ID, never a CONTEXT id.
 - Preserve numbers, units, dates, names and qualifiers exactly.
-- Omit ` + "`evidence`" + ` only when no single source sentence supports the claim.
-- If the text contains no claim, return {"items": []}.
+- Return at most 30 claims; do not omit a claim for importance.
+- If the TARGET contains no extractable assertion, return {"items": []}.
 - Keep the claim in the same language as the source.
 Return JSON only, no commentary.`
+
+// claimEntry is one (chunk id, text) pair in a claim-extraction batch.
+type claimEntry struct {
+	id   string
+	text string
+}
+
+// renderClaimSource builds the user prompt body for one claim-extraction call.
+// The target chunk is marked so the model knows what to extract and quote from;
+// context chunks (when any) are marked as reference-only.
+func renderClaimSource(targetID, targetText string, context []claimEntry) string {
+	var b strings.Builder
+	b.WriteString("## Source Text\n")
+	fmt.Fprintf(&b, "[CHUNK_ID: %s (TARGET)]\n%s\n[END_CHUNK]", targetID, targetText)
+	for _, c := range context {
+		fmt.Fprintf(&b, "\n\n[CHUNK_ID: %s (CONTEXT — reference only)]\n%s\n[END_CHUNK]", c.id, c.text)
+	}
+	b.WriteString("\n\n## Output (JSON only):")
+	return b.String()
+}
 
 // Claim is one extracted claim with the verbatim evidence that backs it.
 type Claim struct {
@@ -76,55 +101,50 @@ type EvidenceRef struct {
 // instead of from truncated raw text (see buildClusterContent vs
 // buildClaimContent).
 //
-// Extraction is best-effort: a failing batch is skipped and its chunks simply
-// contribute no claims, which makes the tree fall back to raw text for them.
-// A missing LLM client disables extraction entirely.
+// Each chunk is extracted with its own LLM call: source chunks average ~2000
+// tokens, so packing several together made the model drop or mis-attribute
+// claims. One chunk per call keeps every target under the model's attention and
+// the quote check exact (mirrors the Python extract_claims_for_chunks).
+//
+// Extraction is best-effort: a failing chunk is skipped and simply contributes
+// no claims, which makes the tree fall back to raw text for it. A missing LLM
+// client disables extraction entirely.
 func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string, chunks []common.Chunk) map[string][]Claim {
 	if deps.Chat == nil || len(chunks) == 0 {
 		return nil
 	}
 
-	textByID := make(map[string]string, len(chunks))
-	type entry struct {
-		id   string
-		text string
-	}
-	var entries []entry
+	var entries []claimEntry
 	for _, c := range chunks {
 		if c.ID == "" || strings.TrimSpace(c.Text) == "" {
 			continue
 		}
-		entries = append(entries, entry{id: c.ID, text: c.Text})
-		textByID[c.ID] = c.Text
+		entries = append(entries, claimEntry{id: c.ID, text: c.Text})
 	}
 	if len(entries) == 0 {
 		return nil
 	}
 
 	claimsByChunk := make(map[string][]Claim)
-	for i := 0; i < len(entries); i += claimBatchChunks {
-		end := i + claimBatchChunks
-		if end > len(entries) {
-			end = len(entries)
-		}
-		batch := entries[i:end]
+	total := len(entries)
+	for i, target := range entries {
+		// Report per-chunk progress *before* the LLM call so the UI moves during
+		// the long extraction loop instead of freezing at "building tree". One
+		// chunk per call keeps each target under the model's attention and the
+		// quote check exact (mirrors the Python extract_claims_for_chunks).
+		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: extracting claims for chunk %d/%d", i+1, total))
 
-		body := make([]string, 0, len(batch))
-		batchIDs := make(map[string]bool, len(batch))
-		for _, e := range batch {
-			body = append(body, fmt.Sprintf("[CHUNK_ID: %s]\n%s\n[END_CHUNK]", e.id, e.text))
-			batchIDs[e.id] = true
-		}
-		prompt := fmt.Sprintf("## Source Text\n%s\n\n## Output (JSON only):", strings.Join(body, "\n\n"))
+		prompt := renderClaimSource(target.id, target.text, nil)
 
 		resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-			LLMID:        llmID,
-			SystemPrompt: claimExtractionPrompt,
-			UserPrompt:   prompt,
-			JSONMode:     true,
+			LLMID:           llmID,
+			SystemPrompt:    claimExtractionPrompt,
+			UserPrompt:      prompt,
+			JSONMode:        true,
+			DisableThinking: true,
 		})
 		if err != nil {
-			log.Printf("tree: claim extraction skipped for batch of %d: %v", len(batch), err)
+			log.Printf("tree: claim extraction skipped for chunk %s: %v", target.id, err)
 			continue
 		}
 		var raw string
@@ -139,18 +159,12 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 		claims := make([]Claim, 0, len(items))
 		for _, it := range items {
 			it.Type = "claim"
-			// Keep only chunks from this batch, so a hallucinated id cannot
-			// point at text the model never saw.
-			kept := make([]string, 0, len(it.SourceChunkIDs))
-			for _, id := range it.SourceChunkIDs {
-				if batchIDs[id] {
-					kept = append(kept, id)
-				}
-			}
-			if len(kept) == 0 {
-				kept = []string{batch[0].id}
-			}
-			it.SourceChunkIDs = kept
+			// One chunk per call, so the claim is always attributed to that
+			// chunk — the chunk id is filled by code, never by the model (the
+			// model only sees a system-internal id it would otherwise have to
+			// guess). The evidence gate validates quotes against this chunk's
+			// text, so attribution stays exact.
+			it.SourceChunkIDs = []string{target.id}
 			if strings.TrimSpace(it.Description) == "" {
 				it.Description = it.Name
 			}
@@ -163,16 +177,12 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 				emitted++
 			}
 		}
-		verified, rejected := ValidateClaims(claims, textByID)
-		log.Printf("tree: claim extraction batch: claims=%d emitted_evidence=%d verified=%d rejected=%d",
-			len(claims), emitted, verified, rejected)
-
-		for _, c := range claims {
-			if len(c.SourceChunkIDs) == 0 {
-				continue
-			}
-			claimsByChunk[c.SourceChunkIDs[0]] = append(claimsByChunk[c.SourceChunkIDs[0]], c)
-		}
+		// Validate only against the target's text — context chunks were never
+		// supposed to be quoted.
+		verified, rejected := ValidateClaims(claims, map[string]string{target.id: target.text})
+		log.Printf("tree: claim extraction chunk=%s claims=%d emitted_evidence=%d verified=%d rejected=%d",
+			target.id, len(claims), emitted, verified, rejected)
+		claimsByChunk[target.id] = append(claimsByChunk[target.id], claims...)
 	}
 	if len(claimsByChunk) == 0 {
 		return nil

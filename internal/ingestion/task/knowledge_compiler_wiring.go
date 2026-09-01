@@ -572,7 +572,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// Python's knowledge compilation pins per-call-site temperatures
 	// (extraction 0.1, merge judging 0.0); nil leaves the driver default.
 	var config *models.ChatConfig
-	if req.Temperature != nil || req.MaxTokens != nil {
+	if req.Temperature != nil || req.MaxTokens != nil || req.DisableThinking {
 		config = &models.ChatConfig{}
 		if req.Temperature != nil {
 			config.Temperature = req.Temperature
@@ -581,6 +581,14 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		// {"max_tokens": max(self._max_token, 512)}, issue #10235).
 		if req.MaxTokens != nil {
 			config.MaxTokens = req.MaxTokens
+		}
+		// Reasoning models (MiniMax-M1/M3, kimi, qwen) spend the completion
+		// budget on visible COT before the structured reply; compilation should
+		// run with thinking off. MiniMaxModel maps Thinking=false to
+		// `thinking: {"type": "disabled"}` in the request body.
+		if req.DisableThinking {
+			off := false
+			config.Thinking = &off
 		}
 	}
 	// Retry transient transport/provider failures (HTTP timeout, reset,
