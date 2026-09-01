@@ -68,6 +68,9 @@ func TestConfluenceConnectorSyncPagesCommentsAndAttachments(t *testing.T) {
 	if attachment.Extension != ".txt" {
 		t.Fatalf("attachment Extension = %q", attachment.Extension)
 	}
+	if attachment.SemanticIdentifier != "Engineering / Root / Page / file.txt" {
+		t.Fatalf("attachment SemanticIdentifier = %q", attachment.SemanticIdentifier)
+	}
 	if string(attachment.Blob) != "attachment bytes" {
 		t.Fatalf("attachment Blob = %q", string(attachment.Blob))
 	}
@@ -343,9 +346,7 @@ func TestConfluenceCQLQuoteEscapesBackslashes(t *testing.T) {
 }
 
 func TestConfluenceSemanticIdentifierAlwaysUsesFullPath(t *testing.T) {
-	// First occurrence must already carry the full hierarchical path, not a
-	// bare title that only becomes qualified after a later duplicate (issue
-	// #16665).
+	// Every identifier carries the full hierarchical path: space, ancestors, title.
 	got := confluenceSemanticIdentifier("Engineering", []string{"Root"}, "Page")
 	if got != "Engineering / Root / Page" {
 		t.Fatalf("first occurrence identifier = %q, want full path", got)

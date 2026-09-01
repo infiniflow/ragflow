@@ -625,7 +625,7 @@ func (s *confluenceSyncSession) nextDocument(ctx context.Context) (*SourceDocume
 			continue
 		}
 		if s.fromBeginning || inConfluenceWindow(doc.UpdatedAt, s.windowStart, s.windowEnd) {
-			doc.SemanticIdentifier = confluenceSemanticIdentifier(firstNonEmpty(s.currentPage.Space.Name, attachment.Space.Name), nil, s.currentPage.Title+" / "+confluenceAttachmentTitle(attachment))
+			doc.SemanticIdentifier = confluenceSemanticIdentifier(firstNonEmpty(s.currentPage.Space.Name, attachment.Space.Name), s.currentPage.ancestorTitles(), s.currentPage.Title+" / "+confluenceAttachmentTitle(attachment))
 			return &doc, nil
 		}
 	}
