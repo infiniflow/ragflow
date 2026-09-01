@@ -426,7 +426,7 @@ async def _expand_fanouts(tools, question: str, answer_conf: dict) -> list[str]:
 _MAX_SNIPPET_POOL = 60
 _DRILL_RESERVE = 12  # slots kept free after the FIRST prefetch so the research
 #                       executor can top up evidence
-_SCA_VIEW_CAP = 24  # chunks shown to the Sufficient Context Agent per review
+_SCA_VIEW_CAP = 60  # chunks shown to the Sufficient Context Agent per review (24 -> 60: 24 of 225 hid the answer-bearing table chunk from the SCA)
 
 
 async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: int | None = None) -> int:

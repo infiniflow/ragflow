@@ -1569,6 +1569,19 @@ def _route(state: _SessionState) -> str:
     return "run_action"  # nudge retry
 
 
+def _route_after_tool(state: _SessionState) -> str:
+    """Route after executing a tool batch: the turn budget is checked AFTER the
+    tool responses are appended (a pending tool_call must always receive its
+    matching tool response, but once the budget is spent we must NOT go back to
+    run_action — that was the Q86 infinite-loop: the model kept emitting
+    tool_calls, _pending_calls stayed non-empty, so the attempts check in
+    ``_route`` was never reached and the session burned the whole PASS_TIMEOUT).
+    """
+    if state.get("attempts", 0) >= _action_max_turns(state):
+        return "finalize"
+    return "run_action"
+
+
 def _build_session_graph():
     g = StateGraph(_SessionState)
     g.add_node("run_action", _run_action_node)
@@ -1580,7 +1593,11 @@ def _build_session_graph():
         _route,
         {"tool": "tool", "finalize": "finalize", END: END, "run_action": "run_action"},
     )
-    g.add_edge("tool", "run_action")
+    g.add_conditional_edges(
+        "tool",
+        _route_after_tool,
+        {"run_action": "run_action", "finalize": "finalize"},
+    )
     g.add_edge("finalize", END)
     return g.compile()
 

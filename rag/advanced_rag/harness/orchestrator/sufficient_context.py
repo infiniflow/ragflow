@@ -50,10 +50,28 @@ SCA_REVIEW = load_prompt("sca_select")
 #     evidence and query_check enforces grounded facts.
 # Total cap for the rendered claims context (all per-claim reports + the overall
 # intermediate draft) keeps the SCA prompt well inside the model window.
-_SCA_CLAIMS_CONTEXT_MAX = 9000
+# Enlarged 9000 -> 48000 so a table-bearing evidence anchor (full table text)
+# plus several claim reports fit; matches _MAX_TOOL_RESPONSE_CHARS * 4 used by
+# the action-session context budget. Table chunks were structurally invisible
+# at 9000 (Q86: rank row at ~62% of a 14.7K-char table never entered the view).
+_SCA_CLAIMS_CONTEXT_MAX = 48000
 # Max chars of each cited snippet's first line appended as an evidence anchor so
 # the SCA can verify a draft against real retrieved text without a token blow-up.
 _SCA_EVIDENCE_ANCHOR_CHARS = 300
+# Table-structured chunks get their FULL text as the evidence anchor (bounded
+# only by _SCA_CLAIMS_CONTEXT_MAX): hint-token windowing is unreliable for
+# tables (the draft rarely contains the row's entity names), and truncating from
+# the head hides the answer rows that sit mid/late-table (Q86 rank-19 row).
+_SCA_EVIDENCE_TABLE_CHARS = None  # None = keep the whole chunk text
+
+
+def _is_table_text(text: str) -> bool:
+    """Corpus-neutral table detector: HTML table markup or >=3 pipe rows."""
+    t = str(text or "")
+    if "<table" in t.lower() or "<tr" in t.lower():
+        return True
+    pipe_rows = sum(1 for line in t.splitlines() if line.count("|") >= 2)
+    return pipe_rows >= 3
 
 
 def _clamp(value, lo: float = 0.0, hi: float = 1.0) -> float:
@@ -96,10 +114,18 @@ def _render_reports(reports: list[tuple[str, str]]) -> str:
 
 
 def _bounded_excerpt(text: str, hints: str, max_chars: int = 300) -> str:
-    """Keep a bounded evidence window around a term from the current draft."""
+    """Keep a bounded evidence window around a term from the current draft.
+
+    Table-structured text returns its FULL content (bounded only by the caller's
+    overall budget): hint-token windowing fails for tables because the draft
+    rarely contains the row's entity names, and head-truncation hides answer
+    rows in the mid/late table. Plain text keeps the bounded window.
+    """
     text = str(text or "").strip()
     if not text:
         return ""
+    if _is_table_text(text):
+        return text
     max_chars = max(80, int(max_chars))
     hint_tokens = [t for t in re.findall(r"[A-Za-z0-9_\u4e00-\u9fff]{3,}", str(hints or ""))]
     lower = text.lower()
@@ -151,6 +177,8 @@ def _render_claim_context(claims, question: str = "", kbinfos: dict | None = Non
         block = f"Claim {cid} (draft):\n{rpt}"
         used += len(block) + 2
         # Evidence anchor: first line of each cited snippet (guards the draft).
+        # Table chunks contribute their FULL text (see _bounded_excerpt), so
+        # account the actual joined length, not the 300-char estimate.
         if eids:
             anchors: list[str] = []
             for eid in eids:
@@ -163,11 +191,12 @@ def _render_claim_context(claims, question: str = "", kbinfos: dict | None = Non
                 excerpt = _bounded_excerpt(txt, rpt, max_chars=_SCA_EVIDENCE_ANCHOR_CHARS)
                 if excerpt:
                     anchors.append(excerpt)
-                if len(anchors) >= 2:
+                if len(anchors) >= 3:
                     break
             if anchors:
-                block += "\n  Evidence: " + " | ".join(anchors)
-                used += len(anchors) * (_SCA_EVIDENCE_ANCHOR_CHARS + 4)
+                anchor_text = " | ".join(anchors)
+                block += "\n  Evidence: " + anchor_text
+                used += len(anchor_text) + 4
         blocks.append(block)
         if used >= _SCA_CLAIMS_CONTEXT_MAX:
             break
