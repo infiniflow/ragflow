@@ -1913,7 +1913,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         return False, f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, session_essence, session_graph."
 
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
-    empty = {"kind": kind, "templates": []}
+    empty = {"kind": kind, "templates": [], "total_entities": 0, "total_relations": 0, "returned_entities": 0, "returned_relations": 0}
 
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
@@ -2042,6 +2042,25 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             template_scope_by_id[tid] = "doc"
             kind_template_ids.append(tid)
 
+    template_scopes: dict[str, dict] = {}
+    total_entities = 0
+    total_relations = 0
+    for tid in kind_template_ids:
+        scope_kwd = template_scope_by_id.get(tid, "dataset")
+        scope = {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]}
+        if scope_kwd == "doc":
+            scope["doc_id"] = sorted(active_doc_ids)
+        template_scopes[tid] = scope
+        try:
+            _, entity_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(scope, knowledge_graph_kwd=["entity"]), OrderByExpr(), 1)
+            _, relation_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(scope, knowledge_graph_kwd=["relation"]), OrderByExpr(), 1)
+            total_entities += entity_total
+            total_relations += relation_total
+        except Exception:
+            logging.exception("get_dataset_structure: bucket count failed for kb=%s template=%s", dataset_id, tid)
+    empty["total_entities"] = total_entities
+    empty["total_relations"] = total_relations
+
     # Detect datasets that have ONLY the legacy dataset_graph blob (no
     # entity/relation rows yet) so the fallback path below handles them.
     if not kind_template_ids and not has_templateless:
@@ -2115,20 +2134,24 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         bucket = dict(bucket_meta)
         bucket["entities"] = kw_entities
         bucket["relations"] = kw_relations
-        return True, {"kind": kind, "templates": [bucket]}
+        return True, {
+            "kind": kind,
+            "templates": [bucket],
+            "total_entities": total_entities,
+            "total_relations": total_relations,
+            "returned_entities": len(kw_entities),
+            "returned_relations": len(kw_relations),
+        }
 
     # ── normal mode: per-template subgraph sampling from raw KB-wide rows. ──
     templates_out: list[dict] = []
     for tid in kind_template_ids:
         scope_kwd = template_scope_by_id.get(tid, "dataset")
         try:
-            scope = {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]}
-            if scope_kwd == "doc":
-                scope["doc_id"] = sorted(active_doc_ids)
             entities, relations = await sgc.build_bucket(
                 index_nm,
                 dataset_id,
-                scope,
+                template_scopes[tid],
                 excluded_doc_ids=dataset_excluded_doc_ids if scope_kwd == "dataset" else disabled_doc_ids,
             )
         except Exception:
@@ -2178,14 +2201,19 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                     continue
                 reconstructed_compile_kwds.add(compile_kwd)
                 try:
+                    legacy_scope = {"compile_kwd": [compile_kwd], "doc_id": sorted(active_doc_ids)}
+                    _, entity_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(legacy_scope, knowledge_graph_kwd=["entity"]), OrderByExpr(), 1)
+                    _, relation_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(legacy_scope, knowledge_graph_kwd=["relation"]), OrderByExpr(), 1)
                     entities, relations = await sgc.build_bucket(
                         index_nm,
                         dataset_id,
-                        {"compile_kwd": [compile_kwd], "doc_id": sorted(active_doc_ids)},
+                        legacy_scope,
                         excluded_doc_ids=disabled_doc_ids,
                     )
                 except Exception:
                     continue
+                total_entities += entity_total
+                total_relations += relation_total
                 legacy_bucket["entities"].extend(entities)
                 legacy_bucket["relations"].extend(relations)
                 continue
@@ -2195,15 +2223,26 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                 continue
             if not isinstance(graph, dict):
                 continue
-            legacy_bucket["entities"].extend(item for item in (graph.get("entities") or []) if isinstance(item, dict))
-            legacy_bucket["relations"].extend(item for item in (graph.get("relations") or []) if isinstance(item, dict))
+            legacy_entities = [item for item in (graph.get("entities") or []) if isinstance(item, dict)]
+            legacy_relations = [item for item in (graph.get("relations") or []) if isinstance(item, dict)]
+            total_entities += len(legacy_entities)
+            total_relations += len(legacy_relations)
+            legacy_bucket["entities"].extend(legacy_entities)
+            legacy_bucket["relations"].extend(legacy_relations)
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             legacy_bucket["entities"] = sgc.filter_entities_with_relations(legacy_bucket["entities"], legacy_bucket["relations"])
         if legacy_bucket["entities"] or legacy_bucket["relations"]:
             if resolved_kind not in {"knowledge_graph", "mind_map", "timeline"} or legacy_bucket["entities"]:
                 templates_out.append(legacy_bucket)
 
-    return True, {"kind": kind, "templates": templates_out}
+    return True, {
+        "kind": kind,
+        "templates": templates_out,
+        "total_entities": total_entities,
+        "total_relations": total_relations,
+        "returned_entities": sum(len(template["entities"]) for template in templates_out),
+        "returned_relations": sum(len(template["relations"]) for template in templates_out),
+    }
 
 
 # ── artifacts/alteration: per-``kind`` provenance & eligibility mapping ──
@@ -4579,20 +4618,55 @@ async def get_wiki_graph(
       then pull the ``to`` entities. Capped at
       ``_WIKI_GRAPH_MAX_LOADING_ENTITY`` for hub-node safety.
 
-    Returns ``(True, {"entities": [...], "relations": [...]})`` shaped
-    exactly as the frontend ``ForceGraph`` adapter consumes, or
+    Returns ``(True, {"entities": [...], "relations": [...], "total_entities": int,
+    "total_relations": int, "returned_entities": int, "returned_relations": int})``
+    shaped exactly as the frontend ``ForceGraph`` adapter consumes, or
     ``(False, message)`` on authorization failure.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
-    empty = {"entities": [], "relations": []}
+    total_entities = 0
+    total_relations = 0
+
+    def _response(response_entities: list[dict], response_relations: list[dict]) -> dict:
+        return {
+            "entities": response_entities,
+            "relations": response_relations,
+            "total_entities": total_entities,
+            "total_relations": total_relations,
+            "returned_entities": len(response_entities),
+            "returned_relations": len(response_relations),
+        }
 
     pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
-        return True, empty
+        return True, _response([], [])
     index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    try:
+        for compile_kwd, count_name in ((_WIKI_GRAPH_ENTITY_KWD, "entities"), (_WIKI_GRAPH_RELATION_KWD, "relations")):
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id"],
+                [],
+                {"compile_kwd": [compile_kwd]},
+                [],
+                OrderByExpr(),
+                0,
+                1,
+                index_nm,
+                [dataset_id],
+            )
+            if count_name == "entities":
+                total_entities = int(settings.docStoreConn.get_total(res) or 0)
+            else:
+                total_relations = int(settings.docStoreConn.get_total(res) or 0)
+    except Exception:
+        logging.exception("get_wiki_graph: graph count failed for kb=%s", dataset_id)
 
     keywords = (keywords or "").strip()
     # Entity budget: caller-overridable, clamped to a sane range so a bad param
@@ -4644,7 +4718,7 @@ async def get_wiki_graph(
                 dataset_id,
                 center_slug,
             )
-            return True, empty
+            return True, _response([], [])
 
         for row in (field_map or {}).values():
             payload = _wiki_entity_payload(row)
@@ -4655,7 +4729,7 @@ async def get_wiki_graph(
         if center_slug not in entities:
             # Caller pointed at a slug that doesn't exist; return empty
             # rather than a confusing partial graph.
-            return True, empty
+            return True, _response([], [])
 
         # Outgoing edges from the centre, capped by MAX_LOADING_ENTITY.
         try:
@@ -4670,7 +4744,7 @@ async def get_wiki_graph(
                 dataset_id,
                 center_slug,
             )
-            return True, {"entities": list(entities.values()), "relations": []}
+            return True, _response(list(entities.values()), [])
 
         to_slugs: list[str] = []
         for row in (rel_map or {}).values():
@@ -4707,10 +4781,7 @@ async def get_wiki_graph(
                 if payload and len(entities) < cap * 2:
                     _add_entity(payload)
 
-        return True, {
-            "entities": list(entities.values()),
-            "relations": relations,
-        }
+        return True, _response(list(entities.values()), relations)
 
     # ---- Flow A — overview, top-weight paged with cumulative budget. ---
     cumulative_weight = 0
@@ -4816,10 +4887,7 @@ async def get_wiki_graph(
             break
         page += 1
 
-    return True, {
-        "entities": list(entities.values()),
-        "relations": relations,
-    }
+    return True, _response(list(entities.values()), relations)
 
 
 async def clear_wiki(dataset_id: str, tenant_id: str):
