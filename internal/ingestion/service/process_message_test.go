@@ -182,6 +182,56 @@ func TestExecuteMemoryTask_ReleasesClaim(t *testing.T) {
 	}
 }
 
+// TestExecuteMemoryTask_HeartbeatsInProgressDuringLongTask: a long-running
+// memory task (LLM extraction can take 10-65s) must call InProgress
+// periodically so the broker does not redeliver the unacked message mid-task
+// (AckWait timer stays fresh). Regression test for the redelivery storm that
+// re-ran the same memory extraction 5+ times and starved document parses.
+func TestExecuteMemoryTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+	ingestor.heartbeatInterval = 5 * time.Millisecond
+
+	started := make(chan struct{})
+	proceed := make(chan struct{})
+	ingestor.runMemoryTask = func(_ context.Context, _ map[string]any) error {
+		close(started) // heartbeat goroutine is running by now
+		<-proceed      // simulate a long LLM extraction
+		return nil
+	}
+
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-heartbeat-1", TaskType: common.TaskTypeMemory}}
+	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), map[string]any{
+		"id": "mem-heartbeat-1", "task_type": "memory", "memory_id": "mem-h", "source_id": 1,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	}, handle)
+
+	go ingestor.executeMemoryTask(context.Background(), taskCtx)
+	<-started
+
+	// Poll for heartbeats with a generous deadline so the test is resilient
+	// to slow CI schedulers.
+	heartbeatDeadline := time.Now().Add(2 * time.Second)
+	for handle.inProgress.Load() == 0 && time.Now().Before(heartbeatDeadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if handle.inProgress.Load() == 0 {
+		t.Fatal("expected InProgress heartbeats while runMemoryTask was blocked, got 0")
+	}
+
+	close(proceed) // release the long task — only after confirming heartbeats
+
+	// Poll for Ack completion.
+	deadline := time.Now().Add(2 * time.Second)
+	for handle.acks.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack on completion after heartbeat, got acks=%d nacks=%d inProgress=%d",
+			handle.acks.Load(), handle.nacks.Load(), handle.inProgress.Load())
+	}
+}
+
 // TestProcessMessage_MemoryTaskDisabledAcks verifies that when the memory
 // extractor is not installed (nil), a memory task is acked and skipped so it
 // does not loop forever on the worker pool.

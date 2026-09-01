@@ -88,6 +88,27 @@ func NewMemoryTaskContextForScheduling(ctx context.Context, payload map[string]a
 	}
 }
 
+// TaskID returns the task identifier for logging regardless of task kind:
+// the ingestion task id, or the memory payload's id/task_id. Empty for a
+// context that has neither (defensive).
+func (c *TaskContext) TaskID() string {
+	if c == nil {
+		return ""
+	}
+	if c.IngestionTask != nil {
+		return c.IngestionTask.ID
+	}
+	if c.MemoryPayload != nil {
+		if id, _ := c.MemoryPayload["id"].(string); id != "" {
+			return id
+		}
+		if id, _ := c.MemoryPayload["task_id"].(string); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
 // NewTaskContextForScheduling creates a lightweight TaskContext for queue scheduling.
 // This only sets the scheduling-related fields, not the full business data.
 func NewTaskContextForScheduling(ctx context.Context, task *entity.IngestionTask) *TaskContext {

@@ -571,6 +571,14 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 	// executeTask's defer e.releaseTask(task.ID).
 	defer e.releaseTask(taskID)
 
+	// Run under a heartbeat so a slow LLM-extraction task renews its AckWait
+	// and is not redelivered mid-run (mirrors settleMessage). The claim guard
+	// in processMessage already Ack-skips any redelivered copy; the heartbeat
+	// prevents the redelivery from happening in the first place so a long
+	// memory task does not generate repeated redelivery traffic.
+	stopHeartbeat := e.startHeartbeat(taskCtx)
+	defer stopHeartbeat()
+
 	// Recover a panic so a single poison memory task never crashes the worker
 	// (and, at max_concurrent_workers=1, the whole ingestor's only slot).
 	defer func() {
@@ -1066,7 +1074,7 @@ func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
 			select {
 			case <-ticker.C:
 				if err := taskCtx.Handle.InProgress(); err != nil {
-					common.Error(fmt.Sprintf("heartbeat task %s", taskCtx.IngestionTask.ID), err)
+					common.Error(fmt.Sprintf("heartbeat task %s", taskCtx.TaskID()), err)
 				}
 			case <-done:
 				return
