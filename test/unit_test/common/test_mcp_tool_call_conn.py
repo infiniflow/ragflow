@@ -1,12 +1,15 @@
 import asyncio
 import threading
 import time
+from concurrent.futures import CancelledError as FuturesCancelledError
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
 
 from common import mcp_tool_call_conn
+from common.constants import MCPServerType
 from common.mcp_tool_call_conn import MCPToolCallSession
 
 
@@ -14,6 +17,8 @@ def _make_session() -> MCPToolCallSession:
     session = object.__new__(MCPToolCallSession)
     session._queue = asyncio.Queue()
     session._close = False
+    session._pending_calls = {}
+    session._shutdown_lock = threading.Lock()
     return session
 
 
@@ -33,6 +38,756 @@ async def _stop_tasks(session: MCPToolCallSession, *tasks: asyncio.Task) -> None
             task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
     assert all(task.done() for task in tasks)
+
+
+@pytest.mark.parametrize("server_type", [MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP])
+def test_close_sync_waits_for_transport_context_cleanup(monkeypatch, server_type):
+    initialized = threading.Event()
+    client_closed = threading.Event()
+    transport_closed = threading.Event()
+
+    @asynccontextmanager
+    async def fake_sse_client(url, headers):
+        try:
+            yield object(), object()
+        finally:
+            transport_closed.set()
+
+    @asynccontextmanager
+    async def fake_streamable_http_client(url, headers):
+        try:
+            yield object(), object(), None
+        finally:
+            transport_closed.set()
+
+    class FakeClientSession:
+        def __init__(self, *streams):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            client_closed.set()
+
+        async def initialize(self):
+            initialized.set()
+
+    monkeypatch.setattr(mcp_tool_call_conn, "sse_client", fake_sse_client)
+    monkeypatch.setattr(mcp_tool_call_conn, "streamablehttp_client", fake_streamable_http_client)
+    monkeypatch.setattr(mcp_tool_call_conn, "ClientSession", FakeClientSession)
+
+    server = SimpleNamespace(id="server-1", url="http://mcp.test", headers={}, server_type=server_type)
+    session = MCPToolCallSession(server)
+
+    try:
+        assert initialized.wait(timeout=1)
+        session.close_sync(timeout=1)
+
+        assert client_closed.is_set()
+        assert transport_closed.is_set()
+        assert not session._event_loop.is_running()
+        assert session._event_loop.is_closed()
+        assert not asyncio.all_tasks(session._event_loop)
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+    finally:
+        session.close_sync(timeout=1)
+
+
+def test_close_sync_cancels_blocked_initialization(monkeypatch):
+    initialize_started = threading.Event()
+    initialize_cancelled = threading.Event()
+    client_closed = threading.Event()
+    transport_closed = threading.Event()
+
+    @asynccontextmanager
+    async def fake_sse_client(url, headers):
+        try:
+            yield object(), object()
+        finally:
+            transport_closed.set()
+
+    class FakeClientSession:
+        def __init__(self, *streams):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            client_closed.set()
+
+        async def initialize(self):
+            initialize_started.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                initialize_cancelled.set()
+                raise
+
+    monkeypatch.setattr(mcp_tool_call_conn, "sse_client", fake_sse_client)
+    monkeypatch.setattr(mcp_tool_call_conn, "ClientSession", FakeClientSession)
+
+    server = SimpleNamespace(id="server-1", url="http://mcp.test", headers={}, server_type=MCPServerType.SSE)
+    session = MCPToolCallSession(server)
+
+    try:
+        assert initialize_started.wait(timeout=1)
+        session.close_sync(timeout=1)
+
+        assert initialize_cancelled.is_set()
+        assert client_closed.is_set()
+        assert transport_closed.is_set()
+        assert session._event_loop.is_closed()
+    finally:
+        session.close_sync(timeout=1)
+
+
+def test_async_close_waits_for_thread_exit(monkeypatch):
+    server_started = threading.Event()
+    finalized = threading.Event()
+
+    async def fake_server_loop(self):
+        server_started.set()
+        try:
+            await asyncio.Future()
+        finally:
+            finalized.set()
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+
+    try:
+        assert server_started.wait(timeout=1)
+        asyncio.run(session.close())
+
+        assert finalized.is_set()
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+    finally:
+        session.close_sync(timeout=1)
+
+
+def test_async_close_runs_on_session_event_loop(monkeypatch):
+    server_started = threading.Event()
+    finalized = threading.Event()
+
+    async def fake_server_loop(self):
+        server_started.set()
+        try:
+            await asyncio.Future()
+        finally:
+            finalized.set()
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+
+    try:
+        assert server_started.wait(timeout=1)
+        close_future = asyncio.run_coroutine_threadsafe(session.close(), session._event_loop)
+        close_future.result(timeout=1)
+        session._thread.join(timeout=1)
+
+        assert finalized.is_set()
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+    finally:
+        session.close_sync(timeout=1)
+
+
+def test_late_owner_close_is_cancelled_when_event_loop_stops(monkeypatch):
+    server_started = threading.Event()
+    stop_scheduled = threading.Event()
+    release_stop_scheduler = threading.Event()
+
+    async def fake_server_loop(self):
+        server_started.set()
+        await asyncio.Future()
+
+    original_schedule_stop = MCPToolCallSession._schedule_event_loop_stop
+
+    def blocking_schedule_stop(self):
+        original_schedule_stop(self)
+        stop_scheduled.set()
+        release_stop_scheduler.wait(timeout=1)
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+    monkeypatch.setattr(MCPToolCallSession, "_schedule_event_loop_stop", blocking_schedule_stop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+    late_close = None
+
+    try:
+        assert server_started.wait(timeout=1)
+        shutdown_future = session._begin_shutdown()
+        shutdown_future.result(timeout=1)
+        assert stop_scheduled.wait(timeout=1)
+
+        late_close = asyncio.run_coroutine_threadsafe(session.close(), session._event_loop)
+        release_stop_scheduler.set()
+
+        with pytest.raises(FuturesCancelledError):
+            late_close.result(timeout=1)
+        session._thread.join(timeout=1)
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert not asyncio.all_tasks(session._event_loop)
+    finally:
+        release_stop_scheduler.set()
+        if late_close is not None and not late_close.done():
+            late_close.cancel()
+        session.close_sync(timeout=1)
+
+
+def test_owner_close_queued_by_stop_callback_is_drained(monkeypatch):
+    server_started = threading.Event()
+    late_close_submitted = threading.Event()
+    late_close_holder = {}
+
+    async def fake_server_loop(self):
+        server_started.set()
+        await asyncio.Future()
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+    original_stop = session._event_loop.stop
+    submitted = False
+
+    def submit_close_then_stop():
+        nonlocal submitted
+        if not submitted:
+            submitted = True
+            late_close_holder["future"] = asyncio.run_coroutine_threadsafe(session.close(), session._event_loop)
+            late_close_submitted.set()
+        original_stop()
+
+    monkeypatch.setattr(session._event_loop, "stop", submit_close_then_stop)
+
+    try:
+        assert server_started.wait(timeout=1)
+        session.close_sync(timeout=1)
+        assert late_close_submitted.is_set()
+
+        late_close = late_close_holder["future"]
+        with pytest.raises(FuturesCancelledError):
+            late_close.result(timeout=1)
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert not asyncio.all_tasks(session._event_loop)
+    finally:
+        session.close_sync(timeout=1)
+
+
+def test_close_sync_propagates_transport_cleanup_error(monkeypatch):
+    initialized = threading.Event()
+
+    @asynccontextmanager
+    async def fake_sse_client(url, headers):
+        try:
+            yield object(), object()
+        finally:
+            raise RuntimeError("transport cleanup failed")
+
+    class FakeClientSession:
+        def __init__(self, *streams):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            pass
+
+        async def initialize(self):
+            initialized.set()
+
+    monkeypatch.setattr(mcp_tool_call_conn, "sse_client", fake_sse_client)
+    monkeypatch.setattr(mcp_tool_call_conn, "ClientSession", FakeClientSession)
+
+    server = SimpleNamespace(id="server-1", url="http://mcp.test", headers={}, server_type=MCPServerType.SSE)
+    session = MCPToolCallSession(server)
+
+    assert initialized.wait(timeout=1)
+    with pytest.raises(RuntimeError, match="transport cleanup failed"):
+        session.close_sync(timeout=1)
+
+    assert not session._thread.is_alive()
+    assert session._event_loop.is_closed()
+    assert session not in MCPToolCallSession._ALL_INSTANCES
+
+
+def test_close_sync_cancels_in_flight_call_and_wakes_caller(monkeypatch):
+    call_started = threading.Event()
+    call_finalized = threading.Event()
+
+    class FakeClientSession:
+        async def call_tool(self, name, arguments):
+            call_started.set()
+            try:
+                await asyncio.Future()
+            finally:
+                call_finalized.set()
+
+    async def fake_server_loop(self):
+        await self._process_mcp_tasks(FakeClientSession())
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    server = SimpleNamespace(id="server-1")
+    session = MCPToolCallSession(server)
+    caller_pool = ThreadPoolExecutor(max_workers=1)
+    caller = caller_pool.submit(session.tool_call, "slow", {}, 3)
+
+    try:
+        assert call_started.wait(timeout=1)
+        session.close_sync(timeout=1)
+
+        result = caller.result(timeout=1)
+        assert "Session is closing" in result
+        assert "Timeout" not in result
+        assert call_finalized.is_set()
+    finally:
+        session.close_sync(timeout=1)
+        caller_pool.shutdown(wait=True)
+
+
+def test_close_sync_wakes_in_flight_get_tools(monkeypatch):
+    call_started = threading.Event()
+    call_finalized = threading.Event()
+
+    class FakeClientSession:
+        async def list_tools(self):
+            call_started.set()
+            try:
+                await asyncio.Future()
+            finally:
+                call_finalized.set()
+
+    async def fake_server_loop(self):
+        await self._process_mcp_tasks(FakeClientSession())
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+    caller_pool = ThreadPoolExecutor(max_workers=1)
+    caller = caller_pool.submit(session.get_tools, 3)
+
+    try:
+        assert call_started.wait(timeout=1)
+        session.close_sync(timeout=1)
+
+        with pytest.raises(ValueError, match="Session is closing"):
+            caller.result(timeout=1)
+        assert call_finalized.is_set()
+    finally:
+        session.close_sync(timeout=1)
+        caller_pool.shutdown(wait=True)
+
+
+def test_close_sync_wakes_queued_call_without_dispatching_it(monkeypatch):
+    first_started = threading.Event()
+    first_finalized = threading.Event()
+    queued_enqueued = threading.Event()
+    calls = []
+    queue_type = asyncio.Queue
+
+    class ObservedQueue(queue_type):
+        async def put(self, item):
+            await super().put(item)
+            if isinstance(item, tuple) and len(item) > 1 and item[1].get("name") == "queued":
+                queued_enqueued.set()
+
+    class FakeClientSession:
+        async def call_tool(self, name, arguments):
+            calls.append(name)
+            if name == "first":
+                first_started.set()
+                try:
+                    await asyncio.Future()
+                finally:
+                    first_finalized.set()
+            return SimpleNamespace(isError=False, content=[])
+
+    async def fake_server_loop(self):
+        await self._process_mcp_tasks(FakeClientSession())
+
+    monkeypatch.setattr(mcp_tool_call_conn.asyncio, "Queue", ObservedQueue)
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+    caller_pool = ThreadPoolExecutor(max_workers=2)
+    first = caller_pool.submit(session.tool_call, "first", {}, 3)
+    queued = None
+
+    try:
+        assert first_started.wait(timeout=1)
+        queued = caller_pool.submit(session.tool_call, "queued", {}, 3)
+        assert queued_enqueued.wait(timeout=1)
+
+        session.close_sync(timeout=1)
+
+        assert "Session is closing" in first.result(timeout=1)
+        assert "Session is closing" in queued.result(timeout=1)
+        assert calls == ["first"]
+        assert first_finalized.is_set()
+    finally:
+        session.close_sync(timeout=1)
+        caller_pool.shutdown(wait=True)
+
+
+def test_concurrent_close_is_idempotent(monkeypatch):
+    server_started = threading.Event()
+    finalized = threading.Event()
+    finalizer_count = 0
+    count_lock = threading.Lock()
+
+    async def fake_server_loop(self):
+        nonlocal finalizer_count
+        server_started.set()
+        try:
+            await asyncio.Future()
+        finally:
+            with count_lock:
+                finalizer_count += 1
+            finalized.set()
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+    barrier = threading.Barrier(4)
+
+    def close_at_barrier():
+        barrier.wait(timeout=1)
+        session.close_sync(timeout=1)
+
+    closer_pool = ThreadPoolExecutor(max_workers=3)
+    closers = [closer_pool.submit(close_at_barrier) for _ in range(3)]
+
+    try:
+        assert server_started.wait(timeout=1)
+        barrier.wait(timeout=1)
+        for closer in closers:
+            closer.result(timeout=2)
+
+        session.close_sync(timeout=1)
+        assert finalized.is_set()
+        assert finalizer_count == 1
+        assert session.tool_call("after-close", {}, timeout=1) == "Error: Session is closed"
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+    finally:
+        session.close_sync(timeout=1)
+        closer_pool.shutdown(wait=True)
+
+
+@pytest.mark.parametrize("operation", ["tool_call", "get_tools"])
+def test_close_waits_for_public_call_submission(monkeypatch, operation):
+    server_started = threading.Event()
+    submission_started = threading.Event()
+    release_submission = threading.Event()
+    close_started = threading.Event()
+
+    async def fake_server_loop(self):
+        server_started.set()
+        await asyncio.Future()
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+    real_run_coroutine_threadsafe = asyncio.run_coroutine_threadsafe
+    first_submission = True
+
+    def blocking_first_submission(coroutine, event_loop):
+        nonlocal first_submission
+        if first_submission:
+            first_submission = False
+            submission_started.set()
+            release_submission.wait(timeout=1)
+        return real_run_coroutine_threadsafe(coroutine, event_loop)
+
+    monkeypatch.setattr(mcp_tool_call_conn.asyncio, "run_coroutine_threadsafe", blocking_first_submission)
+
+    caller_pool = ThreadPoolExecutor(max_workers=2)
+    if operation == "tool_call":
+        caller = caller_pool.submit(session.tool_call, "queued", {}, 3)
+    else:
+        caller = caller_pool.submit(session.get_tools, 3)
+
+    def close_session():
+        close_started.set()
+        session.close_sync(timeout=1)
+
+    closer = None
+    try:
+        assert server_started.wait(timeout=1)
+        assert submission_started.wait(timeout=1)
+        closer = caller_pool.submit(close_session)
+        assert close_started.wait(timeout=1)
+        assert not session._close
+
+        release_submission.set()
+        closer.result(timeout=2)
+
+        if operation == "tool_call":
+            assert "Session is clos" in caller.result(timeout=1)
+        else:
+            with pytest.raises(ValueError, match="Session is clos"):
+                caller.result(timeout=1)
+        assert session._event_loop.is_closed()
+    finally:
+        release_submission.set()
+        if closer is not None:
+            closer.result(timeout=2)
+        session.close_sync(timeout=1)
+        caller_pool.shutdown(wait=True)
+
+
+def test_close_timeout_keeps_shared_shutdown_running(monkeypatch):
+    server_started = threading.Event()
+    finalizer_started = threading.Event()
+    finalizer_finished = threading.Event()
+    release_holder = {}
+
+    async def fake_server_loop(self):
+        server_started.set()
+        try:
+            await asyncio.Future()
+        finally:
+            release = asyncio.Event()
+            release_holder["release"] = release
+            finalizer_started.set()
+            await release.wait()
+            finalizer_finished.set()
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+
+    try:
+        assert server_started.wait(timeout=1)
+        session.close_sync(timeout=0.01)
+
+        assert finalizer_started.wait(timeout=1)
+        assert not session._shutdown_future.done()
+        assert session._thread.is_alive()
+        assert session in MCPToolCallSession._ALL_INSTANCES
+
+        shutdown_future = session._shutdown_future
+        session._event_loop.call_soon_threadsafe(release_holder["release"].set)
+        assert session._shutdown_complete.wait(timeout=1)
+        session.close_sync(timeout=1)
+
+        assert session._shutdown_future is shutdown_future
+        assert finalizer_finished.is_set()
+        assert session._event_loop.is_closed()
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+    finally:
+        release = release_holder.get("release")
+        if release and not session._event_loop.is_closed():
+            session._event_loop.call_soon_threadsafe(release.set)
+        session.close_sync(timeout=1)
+
+
+def test_close_keeps_session_active_until_default_executor_finishes(monkeypatch):
+    worker_started = threading.Event()
+    release_worker = threading.Event()
+    worker_finished = threading.Event()
+    worker_holder = {}
+
+    def blocking_worker():
+        worker_holder["thread"] = threading.current_thread()
+        worker_started.set()
+        release_worker.wait(timeout=2)
+        worker_finished.set()
+
+    async def fake_server_loop(self):
+        await asyncio.get_running_loop().run_in_executor(None, blocking_worker)
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+
+    try:
+        assert worker_started.wait(timeout=1)
+        session.close_sync(timeout=0.01)
+
+        assert session._thread.is_alive()
+        assert worker_holder["thread"].is_alive()
+        assert not session._shutdown_complete.is_set()
+        assert session in MCPToolCallSession._ALL_INSTANCES
+
+        release_worker.set()
+        session.close_sync(timeout=1)
+
+        assert worker_finished.is_set()
+        assert not worker_holder["thread"].is_alive()
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+    finally:
+        release_worker.set()
+        session.close_sync(timeout=1)
+
+
+def test_transport_cleanup_error_waits_for_default_executor(monkeypatch):
+    server_started = threading.Event()
+    worker_started = threading.Event()
+    release_worker = threading.Event()
+    worker_finished = threading.Event()
+    worker_holder = {}
+
+    def blocking_worker():
+        worker_holder["thread"] = threading.current_thread()
+        worker_started.set()
+        release_worker.wait(timeout=2)
+        worker_finished.set()
+
+    async def fake_server_loop(self):
+        asyncio.get_running_loop().run_in_executor(None, blocking_worker)
+        server_started.set()
+        try:
+            await asyncio.Future()
+        finally:
+            raise RuntimeError("transport cleanup failed")
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+
+    try:
+        assert server_started.wait(timeout=1)
+        assert worker_started.wait(timeout=1)
+        session.close_sync(timeout=0.01)
+
+        assert session._thread.is_alive()
+        assert worker_holder["thread"].is_alive()
+        assert not session._shutdown_complete.is_set()
+        assert session in MCPToolCallSession._ALL_INSTANCES
+
+        release_worker.set()
+        with pytest.raises(RuntimeError, match="transport cleanup failed"):
+            session.close_sync(timeout=1)
+
+        assert worker_finished.is_set()
+        assert not worker_holder["thread"].is_alive()
+        assert not session._thread.is_alive()
+        assert session._event_loop.is_closed()
+        assert session not in MCPToolCallSession._ALL_INSTANCES
+    finally:
+        release_worker.set()
+        if session._thread.is_alive():
+            try:
+                session.close_sync(timeout=1)
+            except RuntimeError as error:
+                assert str(error) == "transport cleanup failed"
+
+
+def test_close_multiple_deduplicates_sessions_and_waits_for_cleanup(monkeypatch):
+    started = {"server-1": threading.Event(), "server-2": threading.Event()}
+    finalized = {"server-1": threading.Event(), "server-2": threading.Event()}
+    finalizer_counts = {"server-1": 0, "server-2": 0}
+
+    async def fake_server_loop(self):
+        server_id = self._mcp_server.id
+        started[server_id].set()
+        try:
+            await asyncio.Future()
+        finally:
+            finalizer_counts[server_id] += 1
+            finalized[server_id].set()
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    first = MCPToolCallSession(SimpleNamespace(id="server-1"))
+    second = MCPToolCallSession(SimpleNamespace(id="server-2"))
+
+    try:
+        assert all(event.wait(timeout=1) for event in started.values())
+        mcp_tool_call_conn.close_multiple_mcp_toolcall_sessions([first, None, first, second])
+
+        assert all(event.is_set() for event in finalized.values())
+        assert finalizer_counts == {"server-1": 1, "server-2": 1}
+        assert all(session._event_loop.is_closed() for session in (first, second))
+        assert all(session not in MCPToolCallSession._ALL_INSTANCES for session in (first, second))
+    finally:
+        first.close_sync(timeout=1)
+        second.close_sync(timeout=1)
+
+
+def test_close_multiple_rejects_session_event_loop_thread(monkeypatch):
+    server_started = threading.Event()
+
+    async def fake_server_loop(self):
+        server_started.set()
+        await asyncio.Future()
+
+    async def close_from_owner_loop(session):
+        mcp_tool_call_conn.close_multiple_mcp_toolcall_sessions([session])
+
+    monkeypatch.setattr(MCPToolCallSession, "_mcp_server_loop", fake_server_loop)
+
+    session = MCPToolCallSession(SimpleNamespace(id="server-1"))
+
+    try:
+        assert server_started.wait(timeout=1)
+        future = asyncio.run_coroutine_threadsafe(close_from_owner_loop(session), session._event_loop)
+
+        with pytest.raises(RuntimeError, match="outside their event loop threads"):
+            future.result(timeout=1)
+        assert not session._close
+    finally:
+        session.close_sync(timeout=1)
+
+
+def test_shutdown_all_reports_sessions_still_shutting_down(monkeypatch, caplog):
+    session = SimpleNamespace()
+
+    monkeypatch.setattr(MCPToolCallSession, "_active_instances", classmethod(lambda cls: [session]))
+    monkeypatch.setattr(mcp_tool_call_conn, "close_multiple_mcp_toolcall_sessions", lambda sessions: 0)
+
+    with caplog.at_level("INFO"):
+        mcp_tool_call_conn.shutdown_all_mcp_sessions()
+
+    assert "1 MCPToolCallSession instances are still shutting down." in caplog.messages
+    assert "All MCPToolCallSession instances have been closed." not in caplog.messages
+
+
+def test_close_multiple_reports_transport_cleanup_error_once(caplog):
+    class FailingSession:
+        _thread = object()
+        _mcp_server = SimpleNamespace(id="server-1")
+        _shutdown_complete = threading.Event()
+
+        def close_sync(self):
+            self._shutdown_complete.set()
+            raise RuntimeError("transport cleanup failed")
+
+    with caplog.at_level("INFO"):
+        cleanup_errors = mcp_tool_call_conn.close_multiple_mcp_toolcall_sessions([FailingSession()])
+
+    assert cleanup_errors == 1
+    assert caplog.messages.count("Exception while closing MCP session for server server-1") == 1
+    assert any("1 MCP sessions stopped; transport cleanup failure count: 1" in message for message in caplog.messages)
+    assert not any("MCP sessions have been cleaned up" in message for message in caplog.messages)
+
+
+def test_shutdown_all_reports_transport_cleanup_errors(monkeypatch, caplog):
+    active_instances = iter([[SimpleNamespace()], []])
+
+    monkeypatch.setattr(MCPToolCallSession, "_active_instances", classmethod(lambda cls: next(active_instances)))
+    monkeypatch.setattr(mcp_tool_call_conn, "close_multiple_mcp_toolcall_sessions", lambda sessions: 1)
+
+    with caplog.at_level("INFO"):
+        mcp_tool_call_conn.shutdown_all_mcp_sessions()
+
+    assert "All MCPToolCallSession event loops stopped; transport cleanup failure count: 1." in caplog.messages
+    assert "All MCPToolCallSession instances have been closed." not in caplog.messages
 
 
 @pytest.mark.parametrize("task_type", ["tool_call", "list_tools"])
@@ -137,6 +892,7 @@ def timed_out_session(monkeypatch):
     session._close = False
     session._event_loop = object()
     session._mcp_server = SimpleNamespace(id="server-1")
+    session._shutdown_lock = threading.Lock()
     return session, timed_out_future
 
 
@@ -168,6 +924,8 @@ def test_public_tool_call_uses_one_absolute_deadline(monkeypatch):
     session = object.__new__(MCPToolCallSession)
     session._queue = asyncio.Queue()
     session._close = False
+    session._pending_calls = {}
+    session._shutdown_lock = threading.Lock()
     session._event_loop = loop
     session._mcp_server = SimpleNamespace(id="server-1")
 
