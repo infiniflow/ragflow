@@ -15,7 +15,10 @@
 #
 
 import importlib
-from unittest.mock import Mock
+from unittest.mock import Mock, call
+
+import pytest
+from botocore.exceptions import ClientError
 
 # rag.utils.s3_conn and common.settings import each other (s3_conn needs
 # settings.S3; settings re-imports RAGFlowS3). The cycle resolves only when
@@ -63,3 +66,69 @@ def test_s3_health_returns_false_on_client_error(monkeypatch):
     client.head_bucket.side_effect = ConnectionError("unavailable")
 
     assert storage.health() is False
+
+
+def test_s3_remove_bucket_deletes_every_page_before_deleting_bucket(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {})
+    paginator = client.get_paginator.return_value
+    paginator.paginate.return_value = [
+        {"Contents": [{"Key": "first"}, {"Key": "second"}]},
+        {},
+        {"Contents": [{"Key": "third"}]},
+    ]
+    client.delete_objects.side_effect = [{}, {}]
+
+    storage.remove_bucket("dataset-id")
+
+    client.head_bucket.assert_called_once_with(Bucket="dataset-id")
+    client.get_paginator.assert_called_once_with("list_objects_v2")
+    paginator.paginate.assert_called_once_with(Bucket="dataset-id", Prefix="")
+    assert client.delete_objects.call_args_list == [
+        call(Bucket="dataset-id", Delete={"Objects": [{"Key": "first"}, {"Key": "second"}]}),
+        call(Bucket="dataset-id", Delete={"Objects": [{"Key": "third"}]}),
+    ]
+    client.delete_bucket.assert_called_once_with(Bucket="dataset-id")
+
+
+def test_s3_remove_bucket_only_deletes_logical_prefix_in_single_bucket_mode(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {"bucket": "physical-bucket", "prefix_path": "ragflow"})
+    paginator = client.get_paginator.return_value
+    paginator.paginate.return_value = [{"Contents": [{"Key": "ragflow/dataset-id/document"}]}]
+    client.delete_objects.return_value = {}
+
+    storage.remove_bucket("dataset-id")
+
+    client.head_bucket.assert_not_called()
+    paginator.paginate.assert_called_once_with(Bucket="physical-bucket", Prefix="ragflow/dataset-id/")
+    client.delete_objects.assert_called_once_with(Bucket="physical-bucket", Delete={"Objects": [{"Key": "ragflow/dataset-id/document"}]})
+    client.delete_bucket.assert_not_called()
+
+
+def test_s3_remove_bucket_ignores_missing_bucket(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {})
+    client.head_bucket.side_effect = ClientError({"Error": {"Code": "404", "Message": "Not Found"}}, "HeadBucket")
+
+    storage.remove_bucket("missing")
+
+    client.get_paginator.assert_not_called()
+    client.delete_bucket.assert_not_called()
+
+
+def test_s3_remove_bucket_propagates_storage_errors(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {})
+    client.head_bucket.side_effect = ClientError({"Error": {"Code": "403", "Message": "Forbidden"}}, "HeadBucket")
+
+    with pytest.raises(ClientError):
+        storage.remove_bucket("dataset-id")
+
+
+def test_s3_remove_bucket_reports_partial_delete_failures(monkeypatch):
+    storage, client, _ = _new_storage(monkeypatch, {})
+    paginator = client.get_paginator.return_value
+    paginator.paginate.return_value = [{"Contents": [{"Key": "blocked"}]}]
+    client.delete_objects.return_value = {"Errors": [{"Key": "blocked", "Code": "AccessDenied"}]}
+
+    with pytest.raises(RuntimeError, match="blocked.*AccessDenied"):
+        storage.remove_bucket("dataset-id")
+
+    client.delete_bucket.assert_not_called()

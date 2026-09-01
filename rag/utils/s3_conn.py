@@ -15,13 +15,15 @@
 #
 
 import logging
-import boto3
-from botocore.exceptions import ClientError
-from botocore.config import Config
 import time
 from io import BytesIO
-from common.decorator import singleton
+
+import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
+
 from common import settings
+from common.decorator import singleton
 
 
 @singleton
@@ -232,15 +234,35 @@ class RAGFlowS3:
             logging.exception(f"Fail to move {src_bucket}/{src_path} -> {dest_bucket}/{dest_path}")
             return False
 
-    @use_default_bucket
-    def rm_bucket(self, bucket, *args, **kwargs):
-        for conn in self.conn:
-            try:
-                if not conn.bucket_exists(bucket):
-                    continue
-                for o in conn.list_objects_v2(Bucket=bucket):
-                    conn.delete_object(bucket, o.object_name)
-                conn.delete_bucket(Bucket=bucket)
+    def _delete_objects_by_prefix(self, bucket, prefix):
+        client = self.conn[0]
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            objects = [{"Key": item["Key"]} for item in page.get("Contents", [])]
+            if not objects:
+                continue
+
+            response = client.delete_objects(Bucket=bucket, Delete={"Objects": objects})
+            errors = (response or {}).get("Errors", [])
+            if errors:
+                details = ", ".join(f"{error.get('Key', '<unknown>')}: {error.get('Code', 'UnknownError')}" for error in errors)
+                raise RuntimeError(f"Failed to delete S3 objects from {bucket}: {details}")
+
+    def remove_bucket(self, bucket):
+        client = self.conn[0]
+        if self.bucket:
+            prefix = f"{self.prefix_path}/" if self.prefix_path else ""
+            self._delete_objects_by_prefix(self.bucket, f"{prefix}{bucket}/")
+            return
+
+        try:
+            client.head_bucket(Bucket=bucket)
+        except ClientError as error:
+            error_code = str(error.response.get("Error", {}).get("Code", ""))
+            status_code = error.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if error_code in {"404", "NoSuchBucket", "NotFound"} or status_code == 404:
                 return
-            except Exception as e:
-                logging.error(f"Fail rm {bucket}: " + str(e))
+            raise
+
+        self._delete_objects_by_prefix(bucket, "")
+        client.delete_bucket(Bucket=bucket)
