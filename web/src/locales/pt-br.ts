@@ -136,6 +136,8 @@ export default {
       runningStatus2: 'Cancelado',
       runningStatus3: 'Sucesso',
       runningStatus4: 'Falha',
+      runningStatusQueued: 'Na fila',
+      runningStatusStopping: 'Cancelando',
       pageRanges: 'Intervalos de páginas',
       pageRangesTip:
         'Intervalo de páginas a serem analisadas; páginas fora deste intervalo não serão processadas.',

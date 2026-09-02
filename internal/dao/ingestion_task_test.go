@@ -332,6 +332,8 @@ func TestIngestionTaskDAOCountActiveByDatasetID(t *testing.T) {
 	for _, task := range []*entity.IngestionTask{
 		{ID: "task-active-1", UserID: "user-1", DocumentID: "doc-active-1", DatasetID: "kb-1", Status: common.SCHEDULED},
 		{ID: "task-active-2", UserID: "user-1", DocumentID: "doc-active-2", DatasetID: "kb-1", Status: common.RUNNING},
+		{ID: "task-active-3", UserID: "user-1", DocumentID: "doc-active-3", DatasetID: "kb-1", Status: common.CREATED},
+		{ID: "task-active-4", UserID: "user-1", DocumentID: "doc-active-4", DatasetID: "kb-1", Status: common.STOPPING},
 		{ID: "task-terminal", UserID: "user-1", DocumentID: "doc-terminal", DatasetID: "kb-1", Status: common.COMPLETED},
 		{ID: "task-other-kb", UserID: "user-1", DocumentID: "doc-other", DatasetID: "kb-2", Status: common.SCHEDULED},
 	} {
@@ -345,8 +347,8 @@ func TestIngestionTaskDAOCountActiveByDatasetID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CountActiveByDatasetID: %v", err)
 	}
-	if count != 2 {
-		t.Fatalf("active count for kb-1 = %d, want 2", count)
+	if count != 4 {
+		t.Fatalf("active count for kb-1 = %d, want 4", count)
 	}
 	count, err = NewIngestionTaskDAO().CountActiveByDatasetID(ctx, db, "kb-2")
 	if err != nil {

@@ -197,6 +197,8 @@ func (dao *IngestionTaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string
 	return task, err
 }
 
+// GetByDocumentID returns the latest ingestion task for a document. Historical
+// retries are ordered by create_time and then ID to match document-list state.
 func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, documentId string) (*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
 	err := db.WithContext(ctx).
@@ -215,8 +217,9 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 }
 
 // CountActiveByDatasetID returns the number of ingestion tasks for the
-// dataset that are in a non-terminal state (CREATED/SCHEDULED/RUNNING/STOPPING).
-// The caller typically checks count > 0 to decide whether to keep polling.
+// dataset whose latest task is non-terminal (CREATED/SCHEDULED/RUNNING/STOPPING).
+// It uses the same create_time/ID ordering as document-list state so historical
+// retries cannot keep polling alive after a newer task becomes terminal.
 func (dao *IngestionTaskDAO) CountActiveByDatasetID(ctx context.Context, db *gorm.DB, datasetID string) (int64, error) {
 	var count int64
 	err := db.WithContext(ctx).Model(&entity.IngestionTask{}).

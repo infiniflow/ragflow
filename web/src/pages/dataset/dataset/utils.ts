@@ -6,6 +6,8 @@ export const isParserRunning = (text: RunningStatus) => {
   return isRunning;
 };
 
+// Go ingestion status can advance before the legacy document run field. The
+// Python endpoint omits ingestion_status, so run remains the compatibility path.
 export const isDocumentProcessing = (
   document: Pick<IDocumentInfo, 'run' | 'ingestion_status'>,
 ) =>

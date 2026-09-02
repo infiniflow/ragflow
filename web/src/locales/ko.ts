@@ -531,6 +531,8 @@ export default {
       runningStatus2: '취소됨',
       runningStatus3: '성공',
       runningStatus4: '실패',
+      runningStatusQueued: '대기 중',
+      runningStatusStopping: '취소 중',
       pageRanges: '페이지 범위',
       pageRangesTip:
         '파싱할 페이지 범위를 지정합니다. 범위 밖의 페이지는 처리되지 않습니다.',

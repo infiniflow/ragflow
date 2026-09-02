@@ -558,6 +558,8 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       runningStatus2: 'İptal edildi',
       runningStatus3: 'Başarılı',
       runningStatus4: 'Başarısız',
+      runningStatusQueued: 'Kuyrukta',
+      runningStatusStopping: 'İptal ediliyor',
       pageRanges: 'Sayfa aralıkları',
       pageRangesTip:
         'Ayrıştırılacak sayfa aralığı; bu aralığın dışındaki sayfalar işlenmeyecek.',

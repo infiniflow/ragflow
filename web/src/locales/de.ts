@@ -350,6 +350,8 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       runningStatus2: 'ABGEBROCHEN',
       runningStatus3: 'ERFOLGREICH',
       runningStatus4: 'FEHLGESCHLAGEN',
+      runningStatusQueued: 'In Warteschlange',
+      runningStatusStopping: 'Wird abgebrochen',
       pageRanges: 'Seitenbereiche',
       pageRangesTip:
         'Bereich der zu analysierenden Seiten; Seiten außerhalb dieses Bereichs werden nicht verarbeitet.',

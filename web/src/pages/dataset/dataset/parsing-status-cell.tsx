@@ -197,21 +197,14 @@ export function ParsingStatusCell({
                 size="icon-xs"
                 disabled={isStopping}
                 onClick={() => showReparseDialogModal()}
-                // onClick={
-                //   isZeroChunk || isRunning
-                //     ? handleOperationIconClick(false)
-                //     : () => {}
-                // }
               >
-                {isQueued ? (
+                {isStopping ? (
+                  <Loader2 className="size-[1em] animate-spin" />
+                ) : (
                   <CircleX
                     color="rgba(var(--state-error))"
                     className="size-[1em]"
                   />
-                ) : isStopping ? (
-                  <Loader2 className="size-[1em] animate-spin" />
-                ) : (
-                  operationIcon
                 )}
               </Button>
             </>
@@ -238,7 +231,6 @@ export function ParsingStatusCell({
             (isZeroChunk && !record?.parser_config?.enable_metadata) ||
             isRunning
           }
-          // hidden={false}
           enable_metadata={record?.parser_config?.enable_metadata}
           handleOperationIconClick={handleOperationIconClick}
           chunk_num={chunk_count}

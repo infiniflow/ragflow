@@ -128,6 +128,8 @@ export default {
       runningStatus2: 'CANCELADO',
       runningStatus3: 'ÉXITO',
       runningStatus4: 'FALLIDO',
+      runningStatusQueued: 'En cola',
+      runningStatusStopping: 'Cancelando',
       pageRanges: 'Rangos de páginas',
       pageRangesTip:
         'rango de páginas: Define los rangos de páginas que necesitan ser analizados. Las páginas que no estén incluidas en estos rangos serán ignoradas.',
