@@ -539,7 +539,26 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: di
         current_date=datetime.datetime.today().strftime("%Y-%m-%d"), metadata_keys=json.dumps(meta_data_structure), user_question=query, constraints=json.dumps(constraints) if constraints else None
     )
     user_prompt = "Generate filters:"
-    ans = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}])
+
+    # The metadata block is the whole value space of the dataset, so its size is
+    # set by the data rather than by anything here -- a high-cardinality key can
+    # push the system prompt past the model's context on its own. Bound it like
+    # the other generators in this module do, so an oversized value space costs
+    # a trimmed prompt (and, if the answer then fails to parse, no filter at
+    # all) instead of a failed model request.
+    #
+    # Unlike keyword_extraction/question_proposal above, the FITTED system
+    # content is what gets sent: they pass the original rendered prompt and keep
+    # only msg[1:], which silently discards the trim of the part that is large.
+    msg = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}]
+    used, msg = message_fit_in(msg, chat_mdl.max_length)
+    if msg[0]["content"] != sys_prompt:
+        logging.warning(
+            "gen_meta_filter trimmed its prompt to fit max_length=%s (used=%s, keys=%s): the metadata "
+            "value space did not fit, so the generated filter may be incomplete.",
+            chat_mdl.max_length, used, len(meta_data_structure),
+        )
+    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
     ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
     try:
         ans = json_repair.loads(ans)
