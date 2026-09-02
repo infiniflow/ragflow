@@ -33,7 +33,7 @@ from types import SimpleNamespace
 import pytest
 
 from common import settings
-from api.db.services.doc_metadata_service import DocMetadataService, ES_MAX_BUCKETS, META_VALUE_SPACE_PAGE_SIZE
+from api.db.services.doc_metadata_service import DocMetadataService, ES_MAX_BUCKETS, META_VALUE_SPACE_PAGE_SIZE, MetaValueSpaceIncomplete
 from api.db.db_models import DB
 
 pytestmark = pytest.mark.p2
@@ -55,11 +55,15 @@ class _FakeEs:
     hands back everything.
     """
 
-    def __init__(self, docs: list[dict], keys: list[str]):
+    def __init__(self, docs: list[dict], keys: list[str], shards: dict | None = None, timed_out: bool = False, drop_key: str | None = None):
         self._docs = docs
         self._keys = keys
         self.requested_sizes: dict[str, int] = {}
         self.searches = 0
+        self.partial_kwarg = None
+        self._shards = shards if shards is not None else {"total": 1, "successful": 1, "failed": 0}
+        self._timed_out = timed_out
+        self._drop_key = drop_key
 
     @property
     def indices(self):
@@ -71,8 +75,9 @@ class _FakeEs:
         values = {str(doc["_source"]["meta_fields"][key]) for doc in self._docs if doc["_source"]["meta_fields"].get(key) is not None}
         return sorted(values)
 
-    def search(self, index, body):
+    def search(self, index, body, allow_partial_search_results=None):
         self.searches += 1
+        self.partial_kwarg = allow_partial_search_results
         aggregations = {}
         for name, spec in (body.get("aggs") or {}).items():
             composite = spec["composite"]
@@ -88,7 +93,9 @@ class _FakeEs:
             aggregations[name] = {"buckets": [{"key": {key: value}} for value in page]}
             if len(page) == size and len(values) > size:
                 aggregations[name]["after_key"] = {key: page[-1]}
-        return {"aggregations": aggregations}
+        if self._drop_key is not None:
+            aggregations.pop(f"vs_{self._drop_key}", None)
+        return {"aggregations": aggregations, "_shards": self._shards, "timed_out": self._timed_out}
 
 
 class _FakeDocStoreConn:
@@ -99,15 +106,17 @@ class _FakeDocStoreConn:
     returns an empty page instead of raising.
     """
 
-    def __init__(self, docs: list[dict], keys: list[str], with_es: bool = True):
+    def __init__(self, docs: list[dict], keys: list[str], with_es: bool = True, **es_kwargs):
         self._docs = docs
+        self.paged_searches = 0
         if with_es:
-            self.es = _FakeEs(docs, keys)
+            self.es = _FakeEs(docs, keys, **es_kwargs)
 
     def index_exist(self, index_name, kb_id):
         return True
 
     def search(self, select_fields, highlight_fields, condition, match_expressions, order_by, offset, limit, index_names, knowledgebase_ids, agg_fields=None, rank_feature=None):
+        self.paged_searches += 1
         if offset >= RESULT_WINDOW:
             return {"hits": {"hits": [], "total": {"value": len(self._docs)}}}
         page = self._docs[offset : min(offset + limit, RESULT_WINDOW)]
@@ -196,6 +205,48 @@ def test_low_cardinality_keys_cost_a_single_request(monkeypatch):
     DocMetadataService.get_meta_value_space_by_kbs(["kb-1"])
 
     assert store.es.searches == 1
+
+
+def test_partial_search_results_are_refused_by_the_request(monkeypatch):
+    """The client's default permits partial results; this path must opt out."""
+    store = _FakeDocStoreConn(_docs(), ["phase", "project"])
+    _patch(monkeypatch, store)
+
+    DocMetadataService.get_meta_value_space_by_kbs(["kb-1"])
+
+    assert store.es.partial_kwarg is False
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"shards": {"total": 2, "successful": 1, "failed": 1}},
+        {"timed_out": True},
+        {"drop_key": "phase"},
+    ],
+    ids=["failed-shard", "timed-out", "aggregation-absent"],
+)
+def test_incomplete_responses_raise_rather_than_returning_a_partial_space(monkeypatch, kwargs):
+    """A value missing because its shard failed is indistinguishable from one
+    that does not exist, so filtering on the remainder would silently drop
+    matching documents. Refuse the answer instead."""
+    store = _FakeDocStoreConn(_docs(), ["phase", "project"], **kwargs)
+    _patch(monkeypatch, store)
+
+    with pytest.raises(MetaValueSpaceIncomplete):
+        DocMetadataService.get_meta_value_space_by_kbs(["kb-1"])
+
+
+def test_incomplete_response_does_not_degrade_to_the_paged_scan(monkeypatch):
+    """The result-window limited scan is incomplete in the same way, so it is
+    not an acceptable substitute for a partial aggregation."""
+    store = _FakeDocStoreConn(_docs(), ["phase", "project"], timed_out=True)
+    _patch(monkeypatch, store)
+
+    with pytest.raises(MetaValueSpaceIncomplete):
+        DocMetadataService.get_meta_value_space_by_kbs(["kb-1"])
+    # the paged path was never consulted
+    assert store.paged_searches == 0
 
 
 def test_falls_back_to_the_paged_path_without_an_es_client(monkeypatch):

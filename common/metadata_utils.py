@@ -217,18 +217,32 @@ async def apply_meta_data_filter(
     # gen_meta_filter only ever needs the values -- it discards the doc_ids at
     # its first step. The doc_ids remain available through _get_metas() for the
     # in-memory meta_filter fallback, which is the only caller that needs them.
-    cached_value_space: dict | None = None
+    _UNREAD = object()
+    cached_value_space = _UNREAD
 
-    def _get_value_space() -> dict:
+    def _get_value_space() -> dict | None:
+        """The value space, or None when it could not be read completely.
+
+        None is not the same as empty. It means the doc store answered with
+        partial results, so any filter generated from what did arrive could
+        exclude matching documents. The caller skips filtering entirely rather
+        than substituting the result-window limited scan, which is incomplete
+        in the same way.
+        """
         nonlocal cached_value_space
-        if cached_value_space is None:
+        if cached_value_space is _UNREAD:
             space = {}
             if kb_ids:
                 try:
                     # Local import: doc_metadata_service imports this module.
-                    from api.db.services.doc_metadata_service import DocMetadataService
+                    from api.db.services.doc_metadata_service import DocMetadataService, MetaValueSpaceIncomplete
 
-                    space = DocMetadataService.get_meta_value_space_by_kbs(kb_ids)
+                    try:
+                        space = DocMetadataService.get_meta_value_space_by_kbs(kb_ids)
+                    except MetaValueSpaceIncomplete:
+                        logging.warning("Metadata value space came back incomplete for kb_ids=%s; skipping metadata filtering", kb_ids)
+                        cached_value_space = None
+                        return None
                 except Exception:
                     logging.exception("Metadata value-space lookup failed; falling back to the paged scan")
             cached_value_space = space or _get_metas()
@@ -239,7 +253,10 @@ async def apply_meta_data_filter(
         return filter_doc_ids_by_metadata(kb_ids or [], conditions, logic, _get_metas)
 
     if method == "auto":
-        filters: dict = await gen_meta_filter(chat_mdl, _get_value_space(), question)
+        value_space = _get_value_space()
+        if value_space is None:
+            return None
+        filters: dict = await gen_meta_filter(chat_mdl, value_space, question)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
         doc_ids.extend(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
@@ -259,6 +276,8 @@ async def apply_meta_data_filter(
 
         if selected_keys:
             current_metas = _get_value_space()
+            if current_metas is None:
+                return None
             filtered_metas = {key: current_metas[key] for key in selected_keys if key in current_metas}
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
