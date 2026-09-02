@@ -1297,8 +1297,7 @@ func TestReadMailBody_DeclaredBodyCharsets(t *testing.T) {
 }
 
 // TestParseEML_SinglePartTransferEncoding verifies that a single-part body
-// is decoded by its Content-Transfer-Encoding, as a multipart part already is
-// and as Python's get_payload(decode=True) does in rag/flow/parser/parser.py.
+// is decoded by its Content-Transfer-Encoding, as a multipart part already is.
 func TestParseEML_SinglePartTransferEncoding(t *testing.T) {
 	const plain = "Quarterly revenue was 12.5 million.\n"
 	b64 := base64.StdEncoding.EncodeToString([]byte(plain))
