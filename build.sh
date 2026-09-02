@@ -27,7 +27,7 @@ SYSTEM_DEPS="/opt/ragflow-native-libs"
 
 # office_oxide native library settings — static linking
 OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
-OFFICE_OXIDE_VERSION="0.1.8"
+OFFICE_OXIDE_VERSION="0.1.9"
 
 # pdfium native library settings — static linking (kognitos/pdfium-static)
 PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
@@ -35,7 +35,7 @@ PDFIUM_STATIC_VERSION="7809"
 
 # pdf_oxide native library settings — static linking (go-ffi tarball)
 PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
-PDF_OXIDE_VERSION="0.3.67"
+PDF_OXIDE_VERSION="0.3.73"
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
@@ -229,6 +229,28 @@ check_pdf_oxide_deps() {
     local lib_path="${PDF_OXIDE_PREFIX}/lib/${platform_subdir}/libpdf_oxide.a"
 
     if [ -f "$lib_path" ]; then
+        # Verify the on-disk lib matches the pinned version. _seed_from_system
+        # accepts an existing user-cache directory without inspecting it, so a
+        # lib left over from an earlier pin is reused silently and the upgrade
+        # becomes a no-op.
+        #
+        # The marker here differs from office_oxide: instead of a standalone
+        # "0.1.9" line it is "pdf_oxide <version>" merged into Rust's string
+        # constant pool, so a whole-line match cannot be used. Extract the
+        # version and compare it exactly — a substring match would let a pin of
+        # "0.3.7" accept a 0.3.73 lib. The "pdf_oxide " prefix keeps bare
+        # version numbers of vendored dependencies out of the match.
+        local found_version
+        found_version=$(strings "$lib_path" 2>/dev/null \
+            | grep -oE "pdf_oxide [0-9]+\.[0-9]+\.[0-9]+" | head -1 | cut -d' ' -f2)
+        if [ "$found_version" != "$PDF_OXIDE_VERSION" ]; then
+            echo -e "${RED}Error: pdf_oxide native lib version mismatch${NC}"
+            echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
+            echo "  A stale lib silently reverts PDF parsing fixes. Refresh:"
+            echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/pdf_oxide-go-ffi-linux-amd64.tar.gz"
+            echo "    uv run python3 ragflow_deps/download_go_deps.py"
+            return 1
+        fi
         echo "  pdf_oxide (static) → ${PDF_OXIDE_PREFIX}"
         return 0
     fi
@@ -439,7 +461,16 @@ setup_cgo_env() {
             esac
             ;;
     esac
-    export CGO_LDFLAGS="$CGO_LDFLAGS ${PDF_OXIDE_PREFIX}/lib/${pdf_oxide_subdir}/libpdf_oxide.a"
+    # Version-stamp the archive path so an in-place .a upgrade invalidates
+    # Go's build cache. See the office_oxide block above for why the raw path
+    # is not enough: the cache key hashes CGO_LDFLAGS as a string, not the
+    # contents of the archives it names.
+    local pdf_oxide_lib_dir="${PDF_OXIDE_PREFIX}/lib/${pdf_oxide_subdir}"
+    local pdf_oxide_versioned_dir="${pdf_oxide_lib_dir}/v${PDF_OXIDE_VERSION}"
+    mkdir -p "$pdf_oxide_versioned_dir"
+    ln -sf "${pdf_oxide_lib_dir}/libpdf_oxide.a" \
+        "${pdf_oxide_versioned_dir}/libpdf_oxide.a"
+    export CGO_LDFLAGS="$CGO_LDFLAGS ${pdf_oxide_versioned_dir}/libpdf_oxide.a"
 
     # ── onnxruntime (static, resolved via dlopen(NULL)) ────────────────
     # macOS native builds of the in-process DeepDoc backend are not supported:
