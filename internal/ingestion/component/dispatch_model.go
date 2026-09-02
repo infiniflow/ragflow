@@ -188,8 +188,6 @@ func stringValue(value *string) string {
 	return *value
 }
 
-var resolveModelConfig = defaultResolveModelConfig
-
 func defaultResolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	modelDAO := dao.NewTenantModelDAO()
 	if _, err := modelDAO.GetByID(ctx, db, modelRef); err == nil {
