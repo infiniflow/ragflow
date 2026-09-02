@@ -44,10 +44,12 @@ from common import settings
 from common.constants import MAXIMUM_PAGE_NUMBER
 
 # tiktoken for long random string filtering (ref: SmartResume should_remove strategy).
-# The encoding is built on first use. encoding_for_model downloads the BPE table when
-# TIKTOKEN_CACHE_DIR is cold, so building it here raised an OSError subclass out of a
-# plain `import rag.app.resume` whenever the blob host was unreachable, which the
-# ImportError guard never caught.
+# The encoding is built on first use. `common.token_utils`, imported transitively above,
+# already registers cl100k_base, and encoding_for_model("gpt-3.5-turbo") resolves to that
+# same entry, so this is a redundant lookup at import rather than a second download.
+# Building it here also failed the whole module import once token_utils stops building
+# eagerly, because the ImportError guard never caught the OSError subclass a failed
+# fetch raises.
 try:
     import tiktoken
 except ImportError:

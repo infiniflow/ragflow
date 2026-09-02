@@ -39,7 +39,7 @@ def unbuilt_encoding(monkeypatch):
 
 @pytest.mark.p2
 def test_import_does_not_build_the_encoding(monkeypatch):
-    """Importing the module must not fetch the BPE table.
+    """Importing the module must not call encoding_for_model.
 
     Reloading with the build wired to fail is the only way to tell a lazy
     build from an eager one that merely swallows the error.
