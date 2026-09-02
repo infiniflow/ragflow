@@ -111,11 +111,14 @@ export function MemoryDatasetForm() {
       </RAGFlowFormItem>
       {retrievalFrom === RetrievalFrom.Memory ? (
         <>
-          <MemoriesFormField label={t('header.memories')}></MemoriesFormField>
+          <MemoriesFormField
+            label={t('header.memories')}
+            required
+          ></MemoriesFormField>
           <UserIdFormField></UserIdFormField>
         </>
       ) : (
-        <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
+        <KnowledgeBaseFormField showVariable required></KnowledgeBaseFormField>
       )}
     </>
   );
