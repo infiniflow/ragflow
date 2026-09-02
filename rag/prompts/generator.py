@@ -553,11 +553,19 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: di
     msg = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}]
     used, msg = message_fit_in(msg, chat_mdl.max_length)
     if msg[0]["content"] != sys_prompt:
+        # The conditions returned here are applied as a hard document scope, so
+        # a filter chosen from a value list that lost entries would exclude
+        # matching documents -- and the model cannot report that it only saw
+        # part of the metadata. Return no conditions instead, which leaves the
+        # search unscoped, and skip the model call that could only produce an
+        # answer we must not use.
         logging.warning(
-            "gen_meta_filter trimmed its prompt to fit max_length=%s (used=%s, keys=%s): the metadata "
-            "value space did not fit, so the generated filter may be incomplete.",
+            "gen_meta_filter: the metadata value space does not fit max_length=%s (needed>%s, keys=%s); "
+            "returning no conditions so the search stays unscoped rather than filtered on a partial value list.",
             chat_mdl.max_length, used, len(meta_data_structure),
         )
+        return {"logic": "and", "conditions": []}
+
     ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
     ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
     try:
