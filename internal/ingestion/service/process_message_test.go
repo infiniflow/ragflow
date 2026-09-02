@@ -69,6 +69,73 @@ func TestProcessMessage_MemoryTaskDispatches(t *testing.T) {
 	}
 }
 
+// TestProcessMessage_MemoryTaskHeartbeatsWhileQueued verifies that a claimed
+// memory message renews its broker lease before a worker starts it. Without
+// this, a task waiting in taskChan can exceed AckWait, have its redelivery
+// ack-skipped by the claim guard, and then be lost if this process exits.
+func TestProcessMessage_MemoryTaskHeartbeatsWhileQueued(t *testing.T) {
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+	ingestor.heartbeatInterval = 5 * time.Millisecond
+	ingestor.runMemoryTask = func(_ context.Context, _ map[string]any) error { return nil }
+
+	payload, err := json.Marshal(map[string]any{
+		"id": "mem-queued-heartbeat-1", "task_type": "memory", "memory_id": "mem-1", "source_id": 42,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-queued-heartbeat-1", TaskType: common.TaskTypeMemory, Payload: payload}}
+
+	ingestor.processMessage(handle)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for handle.inProgress.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if handle.inProgress.Load() == 0 {
+		t.Fatal("expected InProgress heartbeat while memory task was queued without a worker")
+	}
+
+	taskCtx := <-ingestor.taskChan
+	ingestor.executeMemoryTask(context.Background(), taskCtx)
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected queued task cleanup to Ack once, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// TestProcessMessage_MemoryTaskPayloadIDMismatchAcks verifies that the
+// envelope task id and payload task id cannot address different task rows.
+// The executor's durable task lookup uses the payload id, while claims use
+// the envelope id, so accepting a mismatch could run and update the wrong
+// task.
+func TestProcessMessage_MemoryTaskPayloadIDMismatchAcks(t *testing.T) {
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+
+	payload, err := json.Marshal(map[string]any{
+		"id": "payload-task-2", "task_type": "memory", "memory_id": "mem-1", "source_id": 42,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "envelope-task-1", TaskType: common.TaskTypeMemory, Payload: payload}}
+
+	ingestor.processMessage(handle)
+
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("mismatched memory task: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 0 {
+		t.Fatalf("mismatched memory task must not be enqueued, got %d tasks", len(ingestor.taskChan))
+	}
+	if _, claimed := ingestor.currentTasks["envelope-task-1"]; claimed {
+		t.Fatal("mismatched memory task must not claim the envelope id")
+	}
+}
+
 // TestProcessMessage_MemoryTaskRedeliveryAcksSkip verifies the claim guard on
 // the memory dispatch path: when a memory task is redelivered by the broker
 // while the first copy is still queued/in-flight, the duplicate must be Acked
@@ -234,44 +301,6 @@ func TestExecuteMemoryTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
 	handle.mu.Unlock()
 	if settledWithInProgress {
 		t.Fatal("Ack ran while an InProgress was still in flight — heartbeat must stop before settlement")
-	}
-}
-
-// TestExecuteMemoryTask_ReleasesClaimByEnvelopeID verifies that executeMemoryTask
-// releases the claim by the envelope task id (TaskMessage.TaskID), even when the
-// memory payload carries a different id. The claim is taken by processMessage
-// under the envelope id, so releasing by a payload-derived id would leak the
-// claim and permanently block redelivery of the task.
-func TestExecuteMemoryTask_ReleasesClaimByEnvelopeID(t *testing.T) {
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
-	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
-	ingestor.runMemoryTask = func(_ context.Context, _ map[string]any) error {
-		return nil
-	}
-
-	// Claim under the envelope id, as processMessage does.
-	if !ingestor.claimTask("envelope-id-1") {
-		t.Fatal("expected claim to succeed")
-	}
-
-	// Payload id deliberately differs from the envelope id.
-	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "envelope-id-1", TaskType: common.TaskTypeMemory}}
-	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), "envelope-id-1", map[string]any{
-		"id": "payload-id-different", "task_type": "memory", "memory_id": "mem-r", "source_id": 1,
-		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
-	}, handle)
-
-	ingestor.executeMemoryTask(context.Background(), taskCtx)
-
-	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
-		t.Fatalf("expected 1 Ack/0 Nack on success, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
-	}
-	// The claim taken under the envelope id must be released.
-	if _, stillClaimed := ingestor.currentTasks["envelope-id-1"]; stillClaimed {
-		t.Fatal("expected envelope-id claim released after executeMemoryTask finished")
-	}
-	if !ingestor.claimTask("envelope-id-1") {
-		t.Fatal("expected re-claim to succeed after release")
 	}
 }
 

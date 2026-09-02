@@ -43,8 +43,8 @@ import (
 	"github.com/cenkalti/backoff/v5"
 )
 
-// defaultHeartbeatInterval paces the InProgress() working pulse that keeps an
-// in-flight message's ack deadline renewed while a worker parses. It MUST stay
+// defaultHeartbeatInterval paces the InProgress() working pulse that keeps a
+// claimed message's ack deadline renewed while it waits or a worker parses. It MUST stay
 // comfortably below the consumer's ack deadline, which the server normalizes
 // to BackOff[0] = 5s (see NatsEngine.InitConsumer): a pulse slower than the
 // deadline lets the broker redeliver mid-run, and the redelivered copy is
@@ -65,7 +65,7 @@ type Ingestor struct {
 	heartbeatInterval time.Duration
 
 	// Runtime state
-	currentTasks  map[string]struct{} // set of task IDs currently claimed by a worker
+	currentTasks  map[string]taskClaim // set of task IDs currently claimed for queueing or execution
 	tasksMu       sync.RWMutex
 	activeWorkers atomic.Int32 // number of worker goroutines currently in workerLoop
 
@@ -140,7 +140,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		maxConcurrency:    maxConcurrency,
 		supportedDocTypes: supportedTypes,
 		version:           "1.0.0",
-		currentTasks:      make(map[string]struct{}),
+		currentTasks:      make(map[string]taskClaim),
 		taskChan:          make(chan *taskpkg.TaskContext, maxConcurrency*2),
 		ShutdownCh:        make(chan struct{}, 1),
 		ingestionTaskSvc:  servicepkg.NewIngestionTaskService(),
@@ -376,7 +376,6 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			}
 			return
 		}
-		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, taskMessage.TaskID, payload, handle)
 		// A memory task without an envelope id has no valid identity: claiming
 		// an empty key would strand a release-able no-op claim in currentTasks
 		// and block nothing useful, so Ack-skip it instead.
@@ -387,14 +386,20 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			}
 			return
 		}
+		if !hasMatchingMemoryTaskID(payload, taskMessage.TaskID) {
+			common.Warn(fmt.Sprintf("memory task %s has mismatched or missing payload task id, ack", taskMessage.TaskID))
+			if err := handle.Ack(); err != nil {
+				common.Error(fmt.Sprintf("error ack memory task %s with mismatched payload id", taskMessage.TaskID), err)
+			}
+			return
+		}
+		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, taskMessage.TaskID, payload, handle)
 		// Claim the task before enqueueing so a redelivered copy of the same
 		// memory task (NATS AckWait/BackOff redelivery, or a restart replay) is
 		// Ack-skipped instead of executed again. Memory tasks have no
-		// ingestion_task row / status CAS to dedupe against, so this in-process
-		// claim is the only guard against double execution of a slow
-		// LLM-extraction task (the ingestion path relies on the same
-		// claimTask/currentTasks guard). The claim is released by
-		// executeMemoryTask when the worker finishes.
+		// ingestion_task row / status CAS to dedupe against, so this claim
+		// guards duplicate execution within this ingestor. The claim is released
+		// by executeMemoryTask when the worker finishes.
 		if !e.claimTask(taskMessage.TaskID) {
 			common.Warn(fmt.Sprintf("memory task %s redelivered while worker still processing, ack skip", taskMessage.TaskID))
 			if err := handle.Ack(); err != nil {
@@ -402,6 +407,10 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			}
 			return
 		}
+		// Begin renewing the broker lease before the task can wait in taskChan.
+		// Starting only in executeMemoryTask leaves queued work unprotected until
+		// a worker becomes available.
+		e.startMemoryTaskHeartbeat(taskMessage.TaskID, taskCtx)
 		select {
 		case e.taskChan <- taskCtx:
 			common.Info(fmt.Sprintf("Memory task %s queued (channel: %d/%d)", taskMessage.TaskID, len(e.taskChan), cap(e.taskChan)))
@@ -588,6 +597,7 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 	common.Info(fmt.Sprintf("Starting memory task %s", taskID))
 	if taskCtx.Handle == nil {
 		common.Warn("memory task handle is nil, skip")
+		e.releaseTask(taskID)
 		return
 	}
 	if e.memorySvc == nil {
@@ -595,15 +605,14 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 		if err := taskCtx.Handle.Ack(); err != nil {
 			common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
 		}
+		e.releaseTask(taskID)
 		return
 	}
 
-	// Run under a heartbeat so a slow LLM-extraction task renews its AckWait
-	// and is not redelivered mid-run (mirrors settleMessage). The claim guard
-	// in processMessage already Ack-skips any redelivered copy; the heartbeat
-	// prevents the redelivery from happening in the first place so a long
-	// memory task does not generate repeated redelivery traffic.
-	stopHeartbeat := e.startHeartbeat(taskCtx)
+	// processMessage starts this heartbeat before queueing the task. Calling it
+	// here also covers direct execution in unit tests and other non-queued
+	// callers, where no claim exists yet.
+	localHeartbeatStop := e.startMemoryTaskHeartbeat(taskID, taskCtx)
 
 	// Settlement is deferred so every exit path (success, terminal/transient
 	// failure, panic) runs the same closed loop in a fixed order: stop the
@@ -614,7 +623,10 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 		settleNack bool
 	)
 	defer func() {
-		stopHeartbeat() // block until no in-flight InProgress on this message
+		if localHeartbeatStop != nil {
+			localHeartbeatStop()
+		}
+		e.stopMemoryTaskHeartbeat(taskID) // block until no InProgress is in flight
 		if r := recover(); r != nil {
 			// A panic is treated as a transient failure: Nack so the broker
 			// redelivers and retries the message.
@@ -1118,16 +1130,82 @@ func (e *Ingestor) claimTask(taskID string) bool {
 	if _, ok := e.currentTasks[taskID]; ok {
 		return false
 	}
-	e.currentTasks[taskID] = struct{}{}
+	e.currentTasks[taskID] = taskClaim{}
 	return true
+}
+
+type taskClaim struct {
+	heartbeatStop func()
+}
+
+// hasMatchingMemoryTaskID verifies that every task identifier carried by the
+// payload is the same non-empty identifier used by the broker envelope. The
+// memory executor loads its durable task row from the payload, while the
+// ingestor's claim uses the envelope, so accepting different values could run
+// and update unrelated tasks.
+func hasMatchingMemoryTaskID(payload map[string]any, taskID string) bool {
+	found := false
+	for _, key := range []string{"id", "task_id"} {
+		value, ok := payload[key]
+		if !ok {
+			continue
+		}
+		payloadTaskID, ok := value.(string)
+		if !ok || payloadTaskID == "" || payloadTaskID != taskID {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
+// startMemoryTaskHeartbeat keeps a claimed memory message leased from
+// admission through worker settlement. It returns a stop function only when
+// no claim exists, which is the direct-execution path used by unit tests.
+func (e *Ingestor) startMemoryTaskHeartbeat(taskID string, taskCtx *taskpkg.TaskContext) func() {
+	e.tasksMu.Lock()
+	claim, claimed := e.currentTasks[taskID]
+	if claimed && claim.heartbeatStop != nil {
+		e.tasksMu.Unlock()
+		return nil
+	}
+	stop := e.startHeartbeat(taskCtx)
+	if claimed {
+		claim.heartbeatStop = stop
+		e.currentTasks[taskID] = claim
+		e.tasksMu.Unlock()
+		return nil
+	}
+	e.tasksMu.Unlock()
+	return stop
+}
+
+// stopMemoryTaskHeartbeat stops the lease renewal registered for a claimed
+// memory task, waiting for any InProgress call before the message is settled.
+func (e *Ingestor) stopMemoryTaskHeartbeat(taskID string) {
+	e.tasksMu.Lock()
+	claim, claimed := e.currentTasks[taskID]
+	if !claimed || claim.heartbeatStop == nil {
+		e.tasksMu.Unlock()
+		return
+	}
+	stop := claim.heartbeatStop
+	claim.heartbeatStop = nil
+	e.currentTasks[taskID] = claim
+	e.tasksMu.Unlock()
+	stop()
 }
 
 // releaseTask removes the claim so a future redelivery (after process restart)
 // can re-claim the task.
 func (e *Ingestor) releaseTask(taskID string) {
 	e.tasksMu.Lock()
+	claim, claimed := e.currentTasks[taskID]
 	delete(e.currentTasks, taskID)
 	e.tasksMu.Unlock()
+	if claimed && claim.heartbeatStop != nil {
+		claim.heartbeatStop()
+	}
 }
 
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {
