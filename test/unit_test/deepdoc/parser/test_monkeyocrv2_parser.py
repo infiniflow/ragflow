@@ -39,6 +39,20 @@ def test_converts_json_only_archive_without_markdown(monkeypatch):
     assert tables == []
 
 
+def test_converts_canonical_root_json_archive(monkeypatch):
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr(
+            "doc/doc.json",
+            json.dumps({"layouts": [{"label": "Text", "content": "canonical", "bbox": [1, 2, 30, 40], "page_num": 1}]}),
+        )
+
+    monkeypatch.setattr("deepdoc.parser.monkeyocrv2_parser.requests.post", lambda *a, **k: Response(out.getvalue()))
+    sections, tables = MonkeyOCRv2Parser("http://parser").parse_pdf("doc.pdf", binary=b"pdf")
+    assert sections == [("canonical", "@@1\t1\t30\t2\t40##")]
+    assert tables == []
+
+
 def test_converts_all_results_only_archive(monkeypatch):
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w") as archive:

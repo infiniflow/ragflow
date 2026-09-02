@@ -71,9 +71,22 @@ class MonkeyOCRv2Parser:
             for info in infos:
                 if info.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
                     image_data[Path(info.filename).name] = archive.read(info)
-            roots = {name.split("/", 1)[0] for name in names if "/" in name and (name.endswith((".md", "/all_results.json")) or (name.endswith(".json") and "/jsons/" in name))}
+            roots = {
+                name.split("/", 1)[0]
+                for name in names
+                if "/" in name
+                and (
+                    name.endswith(".md")
+                    or name.endswith("/all_results.json")
+                    or name == f"{name.split('/', 1)[0]}/{name.split('/', 1)[0]}.json"
+                    or (name.endswith(".json") and "/jsons/" in name)
+                )
+            }
             for root in roots:
-                candidates = [n for n in names if n.startswith(root + "/jsons/") and n.endswith(".json")]
+                canonical = f"{root}/{root}.json"
+                candidates = [canonical] if canonical in names else []
+                if not candidates:
+                    candidates = [n for n in names if n.startswith(root + "/jsons/") and n.endswith(".json")]
                 records = []
                 for name in candidates:
                     try:
