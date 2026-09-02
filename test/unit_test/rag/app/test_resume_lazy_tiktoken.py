@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 
 import pytest
 
@@ -50,17 +51,23 @@ def test_import_does_not_build_the_encoding(monkeypatch):
         raise OSError("unreachable BPE table host")
 
     monkeypatch.setattr(resume.tiktoken, "encoding_for_model", boom)
-    reloaded = importlib.reload(resume)
+    # The reload resets the cache globals and the calls below fill them with
+    # the failed outcome; put them back so it cannot leak into later tests.
+    saved = (resume._tiktoken_encoding, resume._tiktoken_encoding_ready)
+    try:
+        reloaded = importlib.reload(resume)
 
-    assert calls == []
-    assert reloaded._tiktoken_encoding_ready is False
-    assert reloaded._get_tiktoken_encoding() is None
-    assert reloaded._get_tiktoken_encoding() is None
-    assert len(calls) == 1
+        assert calls == []
+        assert reloaded._tiktoken_encoding_ready is False
+        assert reloaded._get_tiktoken_encoding() is None
+        assert reloaded._get_tiktoken_encoding() is None
+        assert len(calls) == 1
+    finally:
+        resume._tiktoken_encoding, resume._tiktoken_encoding_ready = saved
 
 
 @pytest.mark.p2
-def test_failed_build_is_attempted_once(unbuilt_encoding, monkeypatch):
+def test_failed_build_is_attempted_once(unbuilt_encoding, monkeypatch, caplog):
     calls = []
 
     def boom(*args, **kwargs):
@@ -71,6 +78,24 @@ def test_failed_build_is_attempted_once(unbuilt_encoding, monkeypatch):
 
     assert resume._get_tiktoken_encoding() is None
     assert resume._get_tiktoken_encoding() is None
+    assert len(calls) == 1
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "tiktoken encoding unavailable" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+@pytest.mark.p2
+def test_successful_build_is_cached(unbuilt_encoding, monkeypatch):
+    calls = []
+    built = object()
+
+    def build(*args, **kwargs):
+        calls.append(args)
+        return built
+
+    monkeypatch.setattr(resume.tiktoken, "encoding_for_model", build)
+
+    assert resume._get_tiktoken_encoding() is built
+    assert resume._get_tiktoken_encoding() is built
     assert len(calls) == 1
 
 

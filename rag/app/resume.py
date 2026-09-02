@@ -301,6 +301,7 @@ def _should_remove_random_str(match: re.Match) -> bool:
     Uses tiktoken encoding to judge: if token count exceeds 50% of original char count,
     it indicates a meaningless random string (hash, token, tracking ID, etc.) that should be removed.
     Normal English words have high token encoding efficiency, with token count far less than char count.
+    Falls back to a case/digit alternation heuristic when the encoding is unavailable.
 
     Args:
         match: Regex match object
@@ -2773,7 +2774,7 @@ def _text_shingles(text: str, n: int = 5) -> set[tuple[int, ...]]:
         text: Original text
         n: Shingling window size, default 5
     Returns:
-        Set of n-gram shingles (each shingle is a tuple of token ids)
+        Set of n-gram shingles (each shingle is a tuple of token ids), empty when the encoding is unavailable
     """
     if not text:
         return set()
@@ -2796,7 +2797,7 @@ def _shingling_jaccard(text1: str, text2: str, n: int = 5) -> float:
         text2: Second text
         n: Shingling window size
     Returns:
-        Jaccard similarity [0.0, 1.0]
+        Jaccard similarity [0.0, 1.0], or 0.0 when the encoding is unavailable
     """
     if _get_tiktoken_encoding() is None:
         # Without an encoding every text shingles to the empty set, and the
