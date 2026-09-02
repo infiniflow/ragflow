@@ -44,6 +44,11 @@ TEST_CSV = b"""row_id,title,content,country,category
 TEST_DUPLICATE_COLUMNS_CSV = b"""name,name,name_2
 Alice,Engineer,Team A
 """
+TEST_PARTIAL_NUMERIC_CSV = b"""row_id,amount,note
+1,100,first
+2,N/A,second
+3,300,third
+"""
 
 FILENAME = "test.csv"
 KB_ID = "test_kb_id"
@@ -372,3 +377,35 @@ def test_chunk_infinity_field_map_non_ascii_columns_are_keys(table_module, mock_
     assert "\u59d3\u540d" in field_map  # 姓名
     assert "\u957f\u5ea6" in field_map  # 长度
     assert not any(k.endswith("_tks") for k in field_map.keys())
+
+
+@pytest.mark.parametrize(
+    ("column", "expected_type"),
+    [
+        (["1", "2", "3", "N/A"], "int"),
+        (["1.5", "2.5", "3.5", "see note"], "float"),
+        (["yes", "no", "yes", "unknown"], "bool"),
+        (["2025-01-01", "2025-02-01", "ongoing"], "datetime"),
+    ],
+)
+def test_column_data_type_keeps_cells_it_cannot_convert(table_module, column, expected_type):
+    converted, ty = table_module.column_data_type(list(column))
+    assert ty == expected_type
+    assert converted[-1] == column[-1]
+    assert None not in converted
+
+
+def test_chunk_keeps_unconvertible_cell_in_content(table_module, mock_update_kb: MagicMock):
+    chunks = table_module.chunk(
+        FILENAME,
+        binary=TEST_PARTIAL_NUMERIC_CSV,
+        callback=_noop_callback,
+        kb_id=KB_ID,
+        parser_config={},
+        lang="Chinese",
+    )
+    assert len(chunks) == 3
+    assert chunks[0]["amount_long"] == 100
+    assert chunks[2]["amount_long"] == 300
+    assert chunks[1].get("amount_long") != "N/A"
+    assert "- amount: N/A" in chunks[1]["content_with_weight"]
