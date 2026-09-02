@@ -326,3 +326,40 @@ func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {
 		}
 	}
 }
+
+func TestIngestionTaskDAOCountActiveByDatasetID(t *testing.T) {
+	db := setupTaskTestDB(t)
+	for _, task := range []*entity.IngestionTask{
+		{ID: "task-active-1", UserID: "user-1", DocumentID: "doc-active-1", DatasetID: "kb-1", Status: common.SCHEDULED},
+		{ID: "task-active-2", UserID: "user-1", DocumentID: "doc-active-2", DatasetID: "kb-1", Status: common.RUNNING},
+		{ID: "task-terminal", UserID: "user-1", DocumentID: "doc-terminal", DatasetID: "kb-1", Status: common.COMPLETED},
+		{ID: "task-other-kb", UserID: "user-1", DocumentID: "doc-other", DatasetID: "kb-2", Status: common.SCHEDULED},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	ctx := t.Context()
+	count, err := NewIngestionTaskDAO().CountActiveByDatasetID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("CountActiveByDatasetID: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("active count for kb-1 = %d, want 2", count)
+	}
+	count, err = NewIngestionTaskDAO().CountActiveByDatasetID(ctx, db, "kb-2")
+	if err != nil {
+		t.Fatalf("CountActiveByDatasetID kb-2: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("active count for kb-2 = %d, want 1", count)
+	}
+	count, err = NewIngestionTaskDAO().CountActiveByDatasetID(ctx, db, "kb-unknown")
+	if err != nil {
+		t.Fatalf("CountActiveByDatasetID unknown: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("active count for unknown = %d, want 0", count)
+	}
+}

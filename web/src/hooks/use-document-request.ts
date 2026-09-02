@@ -174,11 +174,16 @@ export const useFetchDocumentList = (loop = true) => {
   const { data, isFetching: loading } = useQuery<{
     docs: IDocumentInfo[];
     total: number;
+    has_active_tasks?: boolean;
   }>({
     queryKey: DocumentKeys.list(debouncedSearchString, pagination, filterValue),
-    initialData: { docs: [], total: 0 },
+    initialData: { docs: [], total: 0, has_active_tasks: false },
     refetchInterval: (query) =>
-      loop && query.state.data?.docs.some(isDocumentProcessing) ? 5000 : false,
+      loop &&
+      (query.state.data?.has_active_tasks ||
+        !!query.state.data?.docs.some(isDocumentProcessing))
+        ? 5000
+        : false,
     enabled: !!knowledgeId || !!id,
     queryFn: async () => {
       let run = [] as any;
@@ -219,6 +224,7 @@ export const useFetchDocumentList = (loop = true) => {
       return {
         docs: [],
         total: 0,
+        has_active_tasks: false,
       };
     },
   });

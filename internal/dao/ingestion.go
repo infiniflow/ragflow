@@ -209,6 +209,17 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 	return tasks[0], nil
 }
 
+// CountActiveByDatasetID returns the number of ingestion tasks for the
+// dataset that are in a non-terminal state (CREATED/SCHEDULED/RUNNING/STOPPING).
+// The caller typically checks count > 0 to decide whether to keep polling.
+func (dao *IngestionTaskDAO) CountActiveByDatasetID(ctx context.Context, db *gorm.DB, datasetID string) (int64, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where("dataset_id = ? AND status IN ?", datasetID, []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING}).
+		Count(&count).Error
+	return count, err
+}
+
 // DeleteIfTerminal deletes ingestion tasks for a document that are in a
 // terminal state (COMPLETED, STOPPED, FAILED), or not yet running
 // (CREATED, SCHEDULED).
