@@ -12,9 +12,7 @@ rag = RAGFlow(api_key=API_KEY, base_url=HOST_ADDRESS)
 dataset = rag.create_dataset(name="document_example_dataset")
 document = None
 try:
-    documents = dataset.upload_documents(
-        [{"display_name": "sample.txt", "blob": b"RAGFlow is an open-source RAG engine.\n"}]
-    )
+    documents = dataset.upload_documents([{"display_name": "sample.txt", "blob": b"RAGFlow is an open-source RAG engine.\n"}])
     document = documents[0]
     print(f"Uploaded {document.name} (id={document.id})")
 
