@@ -37,7 +37,7 @@ import (
 	"ragflow/internal/tokenizer"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
-	"github.com/json-iterator/go"
+	jsoniter "github.com/json-iterator/go"
 
 	"go.uber.org/zap"
 )
@@ -2986,51 +2986,6 @@ func getDefaultSkillMapping() map[string]interface{} {
 			},
 		},
 	}
-}
-
-// rerankWindow returns the candidate-window size shared by retrieval's
-// block fetch and slice. Mirrors Dealer._rerank_window in rag/nlp/search.py.
-//
-// `size` is the per-page size; the window MUST be an exact multiple of it,
-// otherwise the block fetched (offset // window) and the in-block page slice
-// (offset % window) drift apart and deep pagination silently drops results.
-//
-// The window targets a provider-friendly pool of ~64 candidates, bounded by
-// `topK` when given (i.e. when an external reranker is active), and is always
-// rounded UP to a whole number of pages to preserve the alignment invariant.
-func rerankWindow(size, topK int) int {
-	if size <= 1 {
-		if topK > 0 {
-			return min(30, topK)
-		}
-		return 30
-	}
-	window := ((64 + size - 1) / size) * size // ceil(64/size) * size
-	if topK > 0 {
-		if aligned := ((topK + size - 1) / size) * size; window > aligned {
-			window = aligned
-		}
-	}
-	return window
-}
-
-// calculatePagination calculates offset and limit based on page, size and topK
-func calculatePagination(page, size, topK int) (int, int) {
-	if page < 1 {
-		page = 1
-	}
-	if size <= 0 {
-		size = 30
-	}
-	if topK <= 0 {
-		topK = 1024
-	}
-
-	window := rerankWindow(size, topK)
-
-	offset := max((page-1)*window, 0)
-
-	return offset, window
 }
 
 // convertESResponse converts ES SearchResponse to unified chunks format
