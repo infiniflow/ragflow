@@ -77,10 +77,9 @@ class DuckDuckGo(ToolBase, ABC):
                 return
 
             try:
-                # The tool takes `channel`, not `topic`; `topic` is Tavily's parameter and no
-                # supported caller sends it here, so the news branch never ran. Branch on
-                # "not news" because three vocabularies reach this: the UI writes text|news,
-                # the LLM schema and debug form say general|news.
+                # Test for "news" rather than for a web-search value: callers send either
+                # "text" or "general" for the web search, so "news" is the only stable
+                # discriminator between the two branches.
                 if (kwargs.get("channel") or self._param.channel) != "news":
                     with DDGS() as ddgs:
                         if self.check_if_canceled("DuckDuckGo processing"):

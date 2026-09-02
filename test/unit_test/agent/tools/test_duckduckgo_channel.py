@@ -82,8 +82,7 @@ def test_news_channel_from_kwargs_runs_a_news_search():
 @pytest.mark.p2
 @pytest.mark.parametrize("channel", ["text", "general"])
 def test_non_news_channels_run_a_text_search(channel):
-    # Three vocabularies reach this branch: the UI writes text, the LLM schema and
-    # the debug input form say general. Both must keep the web search.
+    # Callers send either value for a web search; both must keep it.
     _make_tool(channel)._invoke(query="q")
     assert _FakeDDGS.calls == ["text"]
 
