@@ -79,6 +79,7 @@ def _load_bot_api(monkeypatch, *, accessible, calls, kb_accessible=True, search_
     _stub(monkeypatch, "api.db.services.canvas_service", UserCanvasService=user_canvas_service, completion=_completion)
     _stub(monkeypatch, "api.db.services.user_canvas_version", UserCanvasVersionService=SimpleNamespace())
     _stub(monkeypatch, "api.db.services.conversation_service", async_iframe_completion=lambda *_a, **_k: None)
+
     async def _ask(*_a, **_k):
         calls["async_ask"] = _k
         if False:
