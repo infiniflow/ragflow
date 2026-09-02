@@ -38,9 +38,17 @@ func validateDynamicEntries(value any) error {
 func validateDynamicParams(component string, params map[string]any) error {
 	for _, field := range []string{
 		"include_domains", "exclude_domains", "site_include", "site_exclude",
-		"country_include", "language_include", "delimiters", "children_delimiters",
+		"country_include", "language_include",
 	} {
 		if values, ok := params[field].([]any); ok && containsBlank(values) {
+			return fmt.Errorf("[%s] %s does not support empty entries", component, field)
+		}
+	}
+	// Delimiter entries are split tokens, not names: whitespace-only values
+	// ("\n", "\t") are valid delimiters — the chunker form's default row is a
+	// real newline — so only a zero-length string marks an incomplete row.
+	for _, field := range []string{"delimiters", "children_delimiters"} {
+		if values, ok := params[field].([]any); ok && containsEmpty(values) {
 			return fmt.Errorf("[%s] %s does not support empty entries", component, field)
 		}
 	}
@@ -170,6 +178,18 @@ func isNonBlankString(value any) bool {
 func containsBlank(values []any) bool {
 	for _, value := range values {
 		if isBlank(value) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsEmpty reports whether any entry is a zero-length string. Unlike
+// containsBlank it keeps whitespace-only entries, which are meaningful
+// delimiter values.
+func containsEmpty(values []any) bool {
+	for _, value := range values {
+		if s, ok := value.(string); ok && s == "" {
 			return true
 		}
 	}

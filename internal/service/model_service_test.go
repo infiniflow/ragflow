@@ -222,7 +222,7 @@ func TestVerifyProviderModelValidatesRemoteEmbeddingMetadata(t *testing.T) {
 		}},
 	}
 
-	result, err := verifyProviderModel(context.Background(), driver, nil, &modelModule.APIConfig{}, nil)
+	result, err := verifyProviderModel(t.Context(), driver, nil, &modelModule.APIConfig{}, nil)
 	if err == nil {
 		t.Fatal("verifyProviderModel() error = nil, want validation error")
 	}
@@ -672,7 +672,7 @@ func TestReconcileNvidiaInstanceModelsAddsUpdatesAndDeletes(t *testing.T) {
 		{Name: "nvidia/new-embed", MaxOutput: ptrService(8192), MaxDimension: &maxDimension, Dimensions: []int{1024, 2048}, ModelTypes: []string{"embedding"}},
 	}
 
-	err := NewModelProviderService().reconcileNvidiaInstanceModels(context.Background(), db, provider, instance, remote)
+	err := NewModelProviderService().reconcileNvidiaInstanceModels(t.Context(), db, provider, instance, remote)
 	if err != nil {
 		t.Fatalf("reconcileNvidiaInstanceModels() error = %v", err)
 	}
@@ -717,7 +717,7 @@ func TestReconcileNvidiaInstanceModelsRejectsEmptyDiscoveryWithoutMutation(t *te
 		}
 	}
 
-	err := NewModelProviderService().reconcileNvidiaInstanceModels(context.Background(), db, provider, instance, nil)
+	err := NewModelProviderService().reconcileNvidiaInstanceModels(t.Context(), db, provider, instance, nil)
 	if err == nil {
 		t.Fatal("reconcileNvidiaInstanceModels() error = nil, want empty discovery error")
 	}
@@ -753,7 +753,7 @@ func TestReconcileNvidiaInstanceModelsRollsBackPartialRefresh(t *testing.T) {
 		{Name: "nvidia/new", ModelTypes: []string{"chat"}},
 		{Name: "nvidia/keep", ModelTypes: []string{"chat"}},
 	}
-	err := NewModelProviderService().reconcileNvidiaInstanceModels(context.Background(), db, provider, instance, remote)
+	err := NewModelProviderService().reconcileNvidiaInstanceModels(t.Context(), db, provider, instance, remote)
 	if err == nil {
 		t.Fatal("reconcileNvidiaInstanceModels() error = nil, want metadata error")
 	}
