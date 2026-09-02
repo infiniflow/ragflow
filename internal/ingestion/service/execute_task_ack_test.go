@@ -30,9 +30,9 @@ type fakeTaskHandle struct {
 	nacks      atomic.Int64
 	inProgress atomic.Int64
 
-	mu                     sync.Mutex
-	inProgressActive       bool
-	settledWithInProgress  bool
+	mu                    sync.Mutex
+	inProgressActive      bool
+	settledWithInProgress bool
 }
 
 func (f *fakeTaskHandle) GetMessage() common.TaskMessage { return f.msg }
