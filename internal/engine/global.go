@@ -37,6 +37,7 @@ var (
 	globalEngine       DocEngine
 	engineType         string
 	messageQueueEngine MessageQueue
+	natsEngine         *nats.NatsEngine
 	once               sync.Once
 )
 
@@ -98,6 +99,22 @@ func GetMessageQueueEngine() MessageQueue {
 	return messageQueueEngine
 }
 
+// GetNatsEngine returns the global NATS engine, or nil when NATS is not the
+// configured message-queue backend. It is the NATS analogue of redis2.Get():
+// checkpoint and other NATS-backed features reach the engine through it
+// rather than through the MessageQueue interface (which hides the concrete
+// engine and its KV helpers).
+func GetNatsEngine() *nats.NatsEngine {
+	return natsEngine
+}
+
+// SetNatsEngine installs the global NATS engine. Production code sets it via
+// InitMessageQueue; it exists as a test seam so callers can drive features
+// backed by GetNatsEngine without a full server config.
+func SetNatsEngine(e *nats.NatsEngine) {
+	natsEngine = e
+}
+
 // SetMessageQueueEngine installs the global message-queue engine. It exists
 // primarily as a test seam so callers can drive Start() without a real server
 // config; production code uses InitMessageQueue.
@@ -111,7 +128,9 @@ func InitMessageQueue() error {
 	switch messageQueueType {
 	case "nats":
 		natsConfig := globalConfig.GetNATSConfig()
-		messageQueueEngine = nats.NewNatsEngine(natsConfig.Host, natsConfig.Port)
+		eng := nats.NewNatsEngine(natsConfig.Host, natsConfig.Port)
+		messageQueueEngine = eng
+		natsEngine = eng
 		err := messageQueueEngine.Init()
 		if err != nil {
 			return err
