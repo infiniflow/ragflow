@@ -172,13 +172,16 @@ func TestQAChunker_CSVStrictPairAcceptsTwoCells(t *testing.T) {
 	}
 }
 
-func TestQAChunker_XLSXThreeCellsKeepsFirstTwoNonEmpty(t *testing.T) {
+// Non-CSV names keep the old "first two non-empty cells" rule on the HTML
+// table path. Since #18800 an .xlsx file reaches the chunker as "json", not
+// "html", so this covers the shared HTML branch and not the XLSX pipeline.
+func TestQAChunker_NonCSVHTMLThreeCellsKeepsFirstTwo(t *testing.T) {
 	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	inputs := map[string]any{
-		"name":          "test.xlsx",
+		"name":          "test.xls",
 		"output_format": "html",
 		"html":          "<table><tr><td>question</td><td></td><td>extra</td></tr></table>",
 	}
