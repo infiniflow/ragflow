@@ -2,13 +2,19 @@
 
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
 
 import requests
+from PIL import Image
 
 
 class MonkeyOCRv2Parser:
+    _MAX_RESPONSE_BYTES = 512 * 1024 * 1024
+    _MAX_ZIP_MEMBERS = 10000
+    _MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
+
     def __init__(self, server_url: str, timeout: int = 1800):
         self.server_url = server_url.rstrip("/")
         self.timeout = timeout
@@ -24,16 +30,31 @@ class MonkeyOCRv2Parser:
         """Upload one document and convert the service's ZIP response."""
         payload = binary if binary is not None else Path(filepath).read_bytes()
         response = requests.post(
-            f"{self.server_url}/parse",
-            files={"files": (Path(filepath).name, payload, "application/pdf")},
-            data={"start_page_id": page_from, "end_page_id": page_to},
-            timeout=self.timeout,
+            f"{self.server_url}/parse", files={"files": (Path(filepath).name, payload, "application/pdf")}, data={"start_page_id": page_from, "end_page_id": page_to}, timeout=self.timeout, stream=True
         )
-        response.raise_for_status()
-        if "zip" not in response.headers.get("content-type", "").lower():
+        try:
+            response.raise_for_status()
+            chunks = []
+            size = 0
+            if hasattr(response, "iter_content"):
+                for chunk in response.iter_content(1024 * 1024):
+                    if chunk:
+                        size += len(chunk)
+                        if size > self._MAX_RESPONSE_BYTES:
+                            raise RuntimeError(f"MonkeyOCRv2 response exceeds {self._MAX_RESPONSE_BYTES} bytes")
+                        chunks.append(chunk)
+                archive_bytes = b"".join(chunks)
+            else:
+                archive_bytes = response.content
+                if len(archive_bytes) > self._MAX_RESPONSE_BYTES:
+                    raise RuntimeError(f"MonkeyOCRv2 response exceeds {self._MAX_RESPONSE_BYTES} bytes")
+        finally:
+            if hasattr(response, "close"):
+                response.close()
+        if "zip" not in response.headers.get("content-type", "").lower() and not zipfile.is_zipfile(io.BytesIO(archive_bytes)):
             raise RuntimeError("MonkeyOCRv2 /parse did not return a ZIP archive")
         try:
-            result = self._convert_zip(response.content)
+            result = self._convert_zip(archive_bytes)
         except (zipfile.BadZipFile, OSError, ValueError, TypeError, KeyError, IndexError) as exc:
             raise RuntimeError("Invalid MonkeyOCRv2 parse response") from exc
         return result
@@ -43,6 +64,13 @@ class MonkeyOCRv2Parser:
         sections, tables = [], []
         with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
             names = archive.namelist()
+            infos = archive.infolist()
+            if len(infos) > self._MAX_ZIP_MEMBERS or sum(info.file_size for info in infos) > self._MAX_UNCOMPRESSED_BYTES:
+                raise ValueError("MonkeyOCRv2 ZIP exceeds safety limits")
+            image_data = {}
+            for info in infos:
+                if info.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                    image_data[Path(info.filename).name] = archive.read(info)
             roots = {name.split("/", 1)[0] for name in names if "/" in name and (name.endswith((".md", "/all_results.json")) or (name.endswith(".json") and "/jsons/" in name))}
             for root in roots:
                 candidates = [n for n in names if n.startswith(root + "/jsons/") and n.endswith(".json")]
@@ -84,7 +112,19 @@ class MonkeyOCRv2Parser:
                         if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
                             continue
                         tag = f"@@{page + 1}\t{bbox[0]}\t{bbox[2]}\t{bbox[1]}\t{bbox[3]}##"
-                        if str(layout.get("label", "")).lower() == "table":
+                        label = str(layout.get("label", "")).lower()
+                        if label in {"picture", "figure", "image"}:
+                            match = re.search(r"!\[[^]]*\]\(([^)]+)\)", text)
+                            if match:
+                                image = image_data.get(Path(match.group(1).strip().strip("\"'")).name)
+                                if image:
+                                    try:
+                                        media = Image.open(io.BytesIO(image)).copy()
+                                        tables.append(((media, [""]), [(page, bbox[0], bbox[2], bbox[1], bbox[3])]))
+                                    except OSError:
+                                        pass
+                            continue
+                        if label == "table":
                             tables.append(((None, text), [(page, bbox[0], bbox[2], bbox[1], bbox[3])]))
                         else:
                             sections.append((text, tag))
