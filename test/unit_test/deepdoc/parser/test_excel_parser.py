@@ -141,8 +141,7 @@ def test_call_omits_a_blank_header_instead_of_labelling_it_none():
     # indexed and shown alongside the value it pretends to describe.
     lines = RAGFlowExcelParser()(_make_xlsx_with_values(["name", None, "city"], ["widget", "note-1", "paris"]))
     joined = " ".join(text for text, _ in lines)
-    assert "None" not in joined, lines
-    assert "note-1" in joined, lines
+    assert "name：widget; note-1; city：paris" in joined, lines
 
 
 @pytest.mark.p2
