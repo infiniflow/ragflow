@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { Operator } from '../constant';
 import { FormSchema as ParserFormSchema } from '../form/parser-form';
+import { FormSchema as RetrievalFormSchema } from '../form/retrieval-form/next';
 import useGraphStore from '../store';
 import { getEmptyMessageNodeNames } from '../utils';
 import { findAgentNodeWithoutModel } from '../utils/agent-node-model';
@@ -39,6 +40,36 @@ function findInvalidNode(
   );
   if (invalidParserNode) {
     return { node: invalidParserNode, messageKey: 'flow.nodeFormInvalid' };
+  }
+  // A Retrieval node sourcing from datasets must name at least one dataset,
+  // and one sourcing from memories must name at least one memory; the backend
+  // otherwise rejects the run with a `dataset_ids`/`memory_ids is required`
+  // error that only surfaces at runtime. Only nodes whose form carries the
+  // canonical `dataset_ids`/`memory_ids` field are checked, so legacy DSLs
+  // still keyed on `kb_ids` cannot wedge saving. The warning follows the
+  // field that actually failed, so a memory-mode node never reports a missing
+  // dataset.
+  for (const node of nodes) {
+    if (
+      node.data?.label !== Operator.Retrieval ||
+      (!Array.isArray(node.data?.form?.dataset_ids) &&
+        !Array.isArray(node.data?.form?.memory_ids))
+    ) {
+      continue;
+    }
+    const parsed = RetrievalFormSchema.safeParse(node.data?.form);
+    if (parsed.success) {
+      continue;
+    }
+    const memoryMissing = parsed.error.issues.some(
+      (issue) => issue.path[0] === 'memory_ids',
+    );
+    return {
+      node,
+      messageKey: memoryMissing
+        ? 'flow.retrievalMemoryMissing'
+        : 'flow.retrievalDatasetMissing',
+    };
   }
   // Unlike the schema re-check above, the missing-model check is not gated on
   // editedNodeIds: a canvas loaded from storage with an empty model must warn
