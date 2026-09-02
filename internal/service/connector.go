@@ -78,10 +78,14 @@ var (
 	ErrConnectorNotFound = errors.New("can't find this Connector")
 	// ErrConnectorNoAuth mirrors Python's "no authorization" denial.
 	ErrConnectorNoAuth = errors.New("no authorization")
+	// ErrConnectorIDRequired is returned when a connector ID is missing.
+	ErrConnectorIDRequired = errors.New("connector_id is required")
 	// ErrConnectorTestUnsupported is returned for connector sources without a settings validator.
 	ErrConnectorTestUnsupported = errors.New("connector test is not supported for this source")
 	// ErrConnectorSourceNotImplemented is returned for connector sources not registered in the Go syncer.
 	ErrConnectorSourceNotImplemented = errors.New("connector source is not implemented")
+	// ErrConnectorInternal is a generic, safe-to-expose internal failure.
+	ErrConnectorInternal = errors.New("Internal server error")
 )
 
 // ConnectorService connector service
@@ -325,34 +329,28 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 }
 
 // GetConnector returns one connector when the user can access its tenant.
-func (s *ConnectorService) GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, common.ErrorCode, error) {
-	if connectorID == "" {
-		return nil, common.CodeDataError, fmt.Errorf("connector_id is required")
+func (s *ConnectorService) GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, error) {
+	if strings.TrimSpace(connectorID) == "" {
+		return nil, ErrConnectorIDRequired
 	}
 
 	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeDataError, fmt.Errorf("can't find this Connector")
+			return nil, ErrConnectorNotFound
 		}
-		return nil, common.CodeServerError, err
+		common.Error("get connector failed", err, zap.String("connector_id", connectorID))
+		return nil, ErrConnectorInternal
 	}
 
-	if connector.TenantID == userID {
-		return connector, common.CodeSuccess, nil
-	}
-
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
+	canAccess, err := s.canAccessConnector(ctx, connector, userID)
 	if err != nil {
-		return nil, common.CodeServerError, err
+		return nil, err
 	}
-	for _, tenantID := range tenantIDs {
-		if tenantID == connector.TenantID {
-			return connector, common.CodeSuccess, nil
-		}
+	if !canAccess {
+		return nil, ErrConnectorNoAuth
 	}
-
-	return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	return connector, nil
 }
 
 // ListConnectors list connectors for a user
@@ -375,25 +373,14 @@ func (s *ConnectorService) ListConnectors(ctx context.Context, userID string) (*
 
 // accessible reports whether the user can access the connector's tenant.
 func (s *ConnectorService) accessible(ctx context.Context, connectorID, userID string) (bool, error) {
-	conn, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
+	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
-		return false, ErrConnectorNotFound
-	}
-
-	if conn.TenantID == userID {
-		return true, nil
-	}
-
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, ErrConnectorNotFound
+		}
 		return false, err
 	}
-	for _, tid := range tenantIDs {
-		if tid == conn.TenantID {
-			return true, nil
-		}
-	}
-	return false, nil
+	return s.canAccessConnector(ctx, connector, userID)
 }
 
 // TestConnector validates connector settings without persisting or syncing.

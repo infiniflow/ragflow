@@ -99,6 +99,8 @@ function Representation({ onNodeClick }: RepresentationProps) {
           template={selectedTemplate}
           onNodeClick={handleNodeClick}
           highlightNodeId={highlightNodeId}
+          totalEntities={data?.total_entities}
+          returnedEntities={data?.returned_entities}
         />
       )}
     </section>

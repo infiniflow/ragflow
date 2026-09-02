@@ -29,6 +29,7 @@ from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
 from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
+from api.db.joint_services.tenant_model_service import ensure_tenant_model_ids_for_params
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.misc_utils import download_img, get_uuid
 from common.constants import RetCode
@@ -172,7 +173,7 @@ async def oauth_login(channel):
     state = get_uuid()
     session["oauth_state"] = state
     auth_url = auth_cli.get_authorization_url(state)
-    logging.info("OAuth login initiated: channel='%s', state='%s'", channel, state)
+    logging.info("OAuth login initiated: channel='%s'", channel)
     return redirect(auth_url)
 
 
@@ -645,7 +646,11 @@ async def set_tenant_info():
     req = await get_request_json()
     try:
         tid = req.pop("tenant_id")
-        TenantService.update_by_id(tid, req)
+        if tid != current_user.id:
+            logging.warning("IDOR attempt blocked: user %s requested tenant_id %s on %s", current_user.id, tid, request.path)
+            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        update_dict = ensure_tenant_model_ids_for_params(tid, req)
+        TenantService.update_by_id(tid, update_dict)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

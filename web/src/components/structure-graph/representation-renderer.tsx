@@ -48,6 +48,8 @@ interface RepresentationRendererProps {
   template?: IStructureGraphTemplate;
   onNodeClick?: (node: ClickableNode) => void;
   highlightNodeId?: string | null;
+  totalEntities?: number;
+  returnedEntities?: number;
 }
 
 function UnsupportedPlaceholder({ kind }: { kind: StructureTemplateKind }) {
@@ -67,6 +69,8 @@ export function RepresentationRenderer({
   template,
   onNodeClick,
   highlightNodeId,
+  totalEntities,
+  returnedEntities,
 }: RepresentationRendererProps) {
   const handleTreeItemClick = useCallback(
     (item: TreeDataItem | undefined) => {
@@ -172,6 +176,8 @@ export function RepresentationRenderer({
             getNodeId={getArtifactNodeName}
             onNodeClick={handleArtifactNodeClick}
             highlightNodeId={highlightNodeId}
+            totalEntities={totalEntities}
+            returnedEntities={returnedEntities}
           />
         </div>
       );
@@ -203,6 +209,8 @@ export function RepresentationRenderer({
             show
             getNodeId={getArtifactNodeName}
             onNodeClick={handleArtifactNodeClick}
+            totalEntities={totalEntities}
+            returnedEntities={returnedEntities}
           />
         </div>
       );
@@ -224,6 +232,8 @@ export function RepresentationRenderer({
             show
             getNodeId={getArtifactNodeName}
             onNodeClick={handleArtifactNodeClick}
+            totalEntities={totalEntities}
+            returnedEntities={returnedEntities}
           />
         </div>
       );
