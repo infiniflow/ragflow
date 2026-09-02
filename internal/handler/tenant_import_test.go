@@ -14,6 +14,8 @@
 //  limitations under the License.
 //
 
+//go:build !integration && !e2e && !manual
+
 package handler
 
 import (

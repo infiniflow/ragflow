@@ -71,7 +71,7 @@ func validateDevImportPath(raw string) (string, error) {
 		return "", fmt.Errorf("file_path not allowed")
 	}
 	if !strings.HasPrefix(resolved, allowed+string(filepath.Separator)) && resolved != allowed {
-		return "", fmt.Errorf("file_path must be under %s", allowed)
+		return "", fmt.Errorf("file_path not allowed")
 	}
 	return resolved, nil
 }
