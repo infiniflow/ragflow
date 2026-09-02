@@ -34,7 +34,6 @@ import argparse
 import os
 import shutil
 import urllib.request
-from typing import Union
 
 import nltk
 from huggingface_hub import snapshot_download
@@ -47,7 +46,7 @@ from huggingface_hub import snapshot_download
 ORT_VERSION = "1.23.2"
 
 
-def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
+def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
     if use_china_mirrors:
         return [
             "http://mirrors.tuna.tsinghua.edu.cn/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb",
@@ -79,8 +78,8 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             # Used by build.sh's check_*_deps functions — pre-downloaded to avoid
             # network access during CI.
             ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
-            ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.8/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
+            ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
+            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             # ONNX Runtime static archives for the Go in-process (DeepDoc)
             # backend. Statically linked into the server binary (see build.sh:
             # ONNX_RUNTIME_STATIC_DIR, --whole-archive + --export-dynamic), so
@@ -125,8 +124,8 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             # Used by build.sh's check_*_deps functions — pre-downloaded to avoid
             # network access during CI.
             ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
-            ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.8/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
+            ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
+            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             # ONNX Runtime static archives for the Go in-process (DeepDoc)
             # backend. Statically linked into the server binary (see build.sh:
             # ONNX_RUNTIME_STATIC_DIR, --whole-archive + --export-dynamic), so
