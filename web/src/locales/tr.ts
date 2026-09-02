@@ -3333,6 +3333,9 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       retrievalDatasetRequired: 'Lütfen en az bir veri kümesi seçin',
       retrievalDatasetMissing:
         'Kaydedilemiyor: "{{name}}" için veri kümesi seçilmedi. Lütfen önce bir tane seçin',
+      retrievalMemoryRequired: 'Lütfen en az bir bellek seçin',
+      retrievalMemoryMissing:
+        'Kaydedilemiyor: "{{name}}" için bellek seçilmedi. Lütfen önce bir tane seçin',
       tokenizerDescription:
         'Metni seçilen arama yöntemine bağlı olarak gerekli veri yapısına dönüştürür.',
       tokenChunker: 'Token Parçalayıcı',

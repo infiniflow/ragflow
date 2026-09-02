@@ -41,21 +41,34 @@ function findInvalidNode(
   if (invalidParserNode) {
     return { node: invalidParserNode, messageKey: 'flow.nodeFormInvalid' };
   }
-  // A Retrieval node sourcing from datasets must name at least one dataset;
-  // the backend otherwise rejects the run with a `dataset_ids is required`
+  // A Retrieval node sourcing from datasets must name at least one dataset,
+  // and one sourcing from memories must name at least one memory; the backend
+  // otherwise rejects the run with a `dataset_ids`/`memory_ids is required`
   // error that only surfaces at runtime. Only nodes whose form carries the
-  // canonical `dataset_ids` field are checked, so legacy DSLs still keyed on
-  // `kb_ids` cannot wedge saving.
-  const invalidRetrievalNode = nodes.find(
-    (node) =>
-      node.data?.label === Operator.Retrieval &&
-      Array.isArray(node.data?.form?.dataset_ids) &&
-      !RetrievalFormSchema.safeParse(node.data?.form).success,
-  );
-  if (invalidRetrievalNode) {
+  // canonical `dataset_ids`/`memory_ids` field are checked, so legacy DSLs
+  // still keyed on `kb_ids` cannot wedge saving. The warning follows the
+  // field that actually failed, so a memory-mode node never reports a missing
+  // dataset.
+  for (const node of nodes) {
+    if (
+      node.data?.label !== Operator.Retrieval ||
+      (!Array.isArray(node.data?.form?.dataset_ids) &&
+        !Array.isArray(node.data?.form?.memory_ids))
+    ) {
+      continue;
+    }
+    const parsed = RetrievalFormSchema.safeParse(node.data?.form);
+    if (parsed.success) {
+      continue;
+    }
+    const memoryMissing = parsed.error.issues.some(
+      (issue) => issue.path[0] === 'memory_ids',
+    );
     return {
-      node: invalidRetrievalNode,
-      messageKey: 'flow.retrievalDatasetMissing',
+      node,
+      messageKey: memoryMissing
+        ? 'flow.retrievalMemoryMissing'
+        : 'flow.retrievalDatasetMissing',
     };
   }
   // Unlike the schema re-check above, the missing-model check is not gated on

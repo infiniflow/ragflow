@@ -63,9 +63,10 @@ export const FormSchema = z
     ...RetrievalPartialSchema,
   })
   .superRefine((data, ctx) => {
-    // A Retrieval node sourcing from datasets must name at least one dataset;
-    // the backend otherwise rejects the run with a `dataset_ids is required`
-    // error that only surfaces at runtime.
+    // A Retrieval node sourcing from datasets must name at least one dataset,
+    // and one sourcing from memories must name at least one memory. The
+    // backend otherwise rejects the run with a `dataset_ids`/`memory_ids is
+    // required` error that only surfaces at runtime.
     if (
       data.retrieval_from === RetrievalFrom.Dataset &&
       (data.dataset_ids ?? []).length === 0
@@ -74,6 +75,16 @@ export const FormSchema = z
         code: z.ZodIssueCode.custom,
         path: ['dataset_ids'],
         message: t('flow.retrievalDatasetRequired'),
+      });
+    }
+    if (
+      data.retrieval_from === RetrievalFrom.Memory &&
+      (data.memory_ids ?? []).length === 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['memory_ids'],
+        message: t('flow.retrievalMemoryRequired'),
       });
     }
   });
