@@ -835,7 +835,12 @@ def test_transfer_to_sections_tracks_image_coverage_for_captioned_image(monkeypa
         "images_described": 0,
         "images_unreadable_resource": 0,
     }
-    assert "image_coverage detected=1 chunked=1 described=0 dropped_no_text=0 unreadable=0" in caplog.text
+    # The intermediate INFO log that used to fire from
+    # _transfer_to_sections has been removed (PR #16978 review).
+    # The authoritative coverage is now emitted by parse_pdf only,
+    # after both transfer paths have run. The per-method counter
+    # assertions still cover that final path below.
+    assert "image_coverage detected=1 chunked=1 described=0 dropped_no_text=0 unreadable=0" not in caplog.text
 
 
 def test_transfer_to_sections_warns_when_embedded_image_has_no_text(monkeypatch, caplog):
@@ -954,7 +959,10 @@ def test_transfer_to_sections_mixed_image_lifecycle(monkeypatch, caplog):
         "images_described": 1,
         "images_unreadable_resource": 0,
     }
-    assert "image_coverage detected=3 chunked=2 described=1 dropped_no_text=1 unreadable=0" in caplog.text
+    # The intermediate INFO log was removed (PR #16978 review); the
+    # authoritative coverage summary now lives in parse_pdf. The
+    # per-image Dropped warning still fires from _transfer_to_sections.
+    assert "image_coverage detected=3" not in caplog.text
     assert "Dropped embedded image" in caplog.text
 
 

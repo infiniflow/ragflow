@@ -928,17 +928,18 @@ class MinerUParser(RAGFlowPdfParser):
             else:
                 sections.append((section, self._line_tag(output)))
         # Stash on the instance so callers (and parse_pdf) can inspect coverage
-        # for the most recent parse.
+        # for the most recent parse. The intermediate INFO log that used
+        # to fire from here was misleading for app-media modes: the
+        # per-section chunked/described counts only reflect the text
+        # path, while naive/manual/paper go on to _transfer_to_tables
+        # which increments them again for the table-image path. Two
+        # contradictory image_coverage detected=N lines appeared in the
+        # log for app-media modes. parse_pdf emits one authoritative
+        # `image_coverage final ...` summary after both paths have run,
+        # so the intermediate line loses no actionable info and is
+        # dropped. The per-image `Dropped embedded image` WARNING still
+        # fires from the textless branch so per-image loss stays visible.
         self.last_image_coverage = image_coverage
-        if image_coverage["images_detected"] > 0:
-            self.logger.info(
-                "[MinerU] image_coverage detected=%s chunked=%s described=%s dropped_no_text=%s unreadable=%s",
-                image_coverage["images_detected"],
-                image_coverage["images_chunked"],
-                image_coverage["images_described"],
-                image_coverage["images_dropped_no_text"],
-                image_coverage["images_unreadable_resource"],
-            )
         return sections
 
     def _transfer_to_tables(self, outputs: list[dict[str, Any]], table_enable: bool = True):
