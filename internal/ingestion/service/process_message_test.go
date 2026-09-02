@@ -267,6 +267,38 @@ func TestExecuteMemoryTask_ReleasesClaimByEnvelopeID(t *testing.T) {
 	}
 }
 
+// TestProcessMessage_MemoryTaskEmptyIDAcks verifies that a memory task with an
+// empty envelope task id is Acked and skipped before claiming — an empty claim
+// key would otherwise strand a no-op entry in currentTasks.
+func TestProcessMessage_MemoryTaskEmptyIDAcks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+
+	payload, err := json.Marshal(map[string]any{
+		"id": "payload-id", "task_type": "memory", "memory_id": "mem-1", "source_id": 42,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "", TaskType: common.TaskTypeMemory, Payload: payload}}
+
+	ingestor.processMessage(handle)
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("empty-id memory task: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 0 {
+		t.Fatalf("empty-id memory task must not be enqueued, got %d tasks", len(ingestor.taskChan))
+	}
+	if _, claimed := ingestor.currentTasks[""]; claimed {
+		t.Fatal("empty-id memory task must not claim the empty key")
+	}
+}
+
 // TestProcessMessage_MemoryTaskDisabledAcks verifies that when the memory
 // extractor is not installed (nil), a memory task is acked and skipped so it
 // does not loop forever on the worker pool.

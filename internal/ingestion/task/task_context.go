@@ -62,12 +62,13 @@ type TaskContext struct {
 	// TaskKindMemory.
 	MemoryPayload map[string]any
 
-	// TaskID is the envelope task identifier (TaskMessage.TaskID) that the
+	// taskID is the envelope task identifier (TaskMessage.TaskID) that the
 	// scheduler claimed and will release. It is the authoritative claim key
 	// for both task kinds; MemoryPayload["id"] may differ from it for
 	// malformed or foreign messages, so execution must settle by this field,
-	// not by re-deriving an id from the payload.
-	TaskID string
+	// not by re-deriving an id from the payload. Unexported so the claim key
+	// cannot be mutated between admission (claim) and settlement (release).
+	taskID string
 
 	// Handle is the message-queue ack handle for the task message that scheduled
 	// this context. The scheduler sets it before queueing; the worker decides
@@ -91,7 +92,7 @@ func NewMemoryTaskContextForScheduling(ctx context.Context, taskID string, paylo
 	return &TaskContext{
 		Ctx:           ctx,
 		Kind:          TaskKindMemory,
-		TaskID:        taskID,
+		taskID:        taskID,
 		MemoryPayload: payload,
 		Handle:        handle,
 	}
@@ -105,8 +106,8 @@ func (c *TaskContext) ID() string {
 	if c == nil {
 		return ""
 	}
-	if c.TaskID != "" {
-		return c.TaskID
+	if c.taskID != "" {
+		return c.taskID
 	}
 	if c.IngestionTask != nil {
 		return c.IngestionTask.ID

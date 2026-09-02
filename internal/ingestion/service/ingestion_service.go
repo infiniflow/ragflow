@@ -377,6 +377,16 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			return
 		}
 		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, taskMessage.TaskID, payload, handle)
+		// A memory task without an envelope id has no valid identity: claiming
+		// an empty key would strand a release-able no-op claim in currentTasks
+		// and block nothing useful, so Ack-skip it instead.
+		if taskMessage.TaskID == "" {
+			common.Warn("memory task with empty task id received, ack")
+			if err := handle.Ack(); err != nil {
+				common.Error("error ack memory task with empty task id", err)
+			}
+			return
+		}
 		// Claim the task before enqueueing so a redelivered copy of the same
 		// memory task (NATS AckWait/BackOff redelivery, or a restart replay) is
 		// Ack-skipped instead of executed again. Memory tasks have no
