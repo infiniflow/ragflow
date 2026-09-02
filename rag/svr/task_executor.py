@@ -301,7 +301,7 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
     if task["size"] > settings.DOC_MAXIMUM_SIZE:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" % (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
         get_recording_context().record("file_size_exceeded", True)
-        return []
+        return [], 0
     get_recording_context().record("file_size_exceeded", False)
     get_recording_context().record("parser_id", task["parser_id"])
 
@@ -443,6 +443,8 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
 
     rag_tokenizer.tokenizer.set_language(task["language"])
 
+    llm_token_consumption = 0
+
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
         progress_callback(msg="Start to generate keywords for every chunk ...")
@@ -474,6 +476,7 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
+        llm_token_consumption += chat_mdl.cumulated_tokens
         progress_callback(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     # Record keywords extraction count
@@ -510,6 +513,7 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
+        llm_token_consumption += chat_mdl.cumulated_tokens
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     # Record question generation
@@ -572,7 +576,8 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
             metadata = update_metadata_to(metadata, existing_meta)
             ret = DocMetadataService.update_document_metadata(task["doc_id"], metadata)
             get_recording_context().save_func_return_value("DocMetadataService.update_document_metadata", ret)
-        progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        llm_token_consumption += chat_mdl.cumulated_tokens
+        progress_callback(msg="Metadata generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     # Record metadata generation count
     metadata_list = [d for d in docs if d.get("metadata_obj")]
@@ -600,7 +605,7 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
             task_canceled = has_canceled(task["id"])
             if task_canceled:
                 progress_callback(-1, msg="Task has been canceled.")
-                return None
+                return None, llm_token_consumption
             if settings.retriever.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(d[TAG_FLD]) > 0:
                 examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
             else:
@@ -640,6 +645,7 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
+        llm_token_consumption += chat_mdl.cumulated_tokens
         progress_callback(msg="Tagging {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     # Record tags applied
@@ -651,7 +657,7 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
     final_chunk_ids = [c.get("id") for c in docs if isinstance(c, dict) and "id" in c]
     get_recording_context().record("final_chunk_ids_count", len(final_chunk_ids))
 
-    return docs
+    return docs, llm_token_consumption
 
 
 @timed_with_recording
@@ -1466,6 +1472,11 @@ async def do_handle_task(task):
 
     init_kb(task, vector_size)
 
+    # The raptor/graphrag/mindmap branches below fall through to the shared
+    # increment_chunk_num call; only the standard-chunking branch computes a
+    # real value, so seed it here.
+    llm_token_count = 0
+
     if task_type[: len("dataflow")] == "dataflow":
         await run_dataflow(task)
         return
@@ -1597,13 +1608,13 @@ async def do_handle_task(task):
             task_start_ts += wait_time
 
         start_ts = timer()
-        chunks = await build_chunks(task, progress_callback, on_chunking_start)
+        chunks, llm_token_count = await build_chunks(task, progress_callback, on_chunking_start)
         get_recording_context().record("chunks", chunks)
         # Record chunk_ids_count for comparison
         chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and "id" in c]
         get_recording_context().record("chunk_ids_count", len(chunk_ids))
         # Record chunks array for content comparison (first, middle, last, random)
-        logging.info("Build document {}: {:.2f}s".format(task_document_name, timer() - start_ts))
+        logging.info("Build document {}: {:.2f}s, llm_tokens: {}".format(task_document_name, timer() - start_ts, llm_token_count))
         if not chunks:
             progress_callback(1.0, msg=f"No chunk built from {task_document_name}")
             return
@@ -1664,7 +1675,7 @@ async def do_handle_task(task):
 
         logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page, task_to_page, len(chunks), timer() - start_ts))
 
-        ret = DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
+        ret = DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0, llm_token_num=llm_token_count)
         get_recording_context().save_func_return_value("DocumentService.increment_chunk_num", ret)
 
         # Table parser: push metadata/both column values to document-level metadata for UI / chat filters

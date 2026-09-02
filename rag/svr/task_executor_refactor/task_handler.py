@@ -659,7 +659,7 @@ class TaskHandler:
         if ctx.write_interceptor:
             ctx.write_interceptor.intercept("DocumentService.increment_chunk_num")
         else:
-            DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
+            DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0, llm_token_num=ctx.llm_token_num)
 
         if not await self._run_document_post_chunking_if_last(
             embedding_model,

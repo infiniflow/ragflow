@@ -77,8 +77,14 @@ class LLMService(CommonService):
 
 
 class LLMBundle(LLM4Tenant):
+    # Running total of the chat tokens this bundle has spent, used to attribute
+    # LLM cost to a document during ingestion. Declared on the class so bundles
+    # built without __init__ still have it.
+    cumulated_tokens = 0
+
     def __init__(self, tenant_id: str, model_config: dict, lang="Chinese", **kwargs):
         super().__init__(tenant_id, model_config, lang, **kwargs)
+        self.cumulated_tokens = 0
 
     def _start_langfuse_observation(self, **kwargs):
         # Correlating attributes (session_id/user_id) let Langfuse group all of a
@@ -105,8 +111,9 @@ class LLMBundle(LLM4Tenant):
             self.mdl.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     def _report_usage(self, total_tokens: int) -> dict:
-        """Record a chat call's usage to the active agent run and return the
-        prompt/completion/total split for Langfuse.
+        """Record a chat call's usage to the active agent run, add it to this
+        bundle's running total, and return the prompt/completion/total split for
+        Langfuse.
 
         ``total_tokens`` is the authoritative total from the call. The prompt/completion
         split is taken from the provider response (``mdl.last_usage``) only when it is
@@ -122,6 +129,8 @@ class LLMBundle(LLM4Tenant):
             # Stale or inconsistent split — keep the total, drop the unreliable split.
             prompt, completion = 0, 0
         record_run_token_usage(prompt, completion, total_tokens)
+        # Safe: single-threaded asyncio event loop, += not interrupted between awaits.
+        self.cumulated_tokens += total_tokens
         return {"input": prompt, "output": completion, "total": total_tokens}
 
     def close(self):
