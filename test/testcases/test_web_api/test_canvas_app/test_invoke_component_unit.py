@@ -202,6 +202,20 @@ def test_header_empty(monkeypatch):
 
 
 @pytest.mark.p2
+@pytest.mark.parametrize("headers", ["{bad-json}", json.dumps(["not", "an", "object"])])
+def test_invalid_header_payload_is_ignored(monkeypatch, headers, caplog):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, headers=headers)
+    mock_get = MagicMock(return_value=SimpleNamespace(text="ok"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+
+    invoke._invoke()
+
+    assert mock_get.call_args[1]["headers"] == {}
+    assert "Invoke headers" in caplog.text
+
+
+@pytest.mark.p2
 def test_header_component_ref_variable(monkeypatch):
     module = _load_invoke_module(monkeypatch)
     invoke = _make_invoke(
