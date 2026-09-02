@@ -554,6 +554,14 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 	cpID := compiled.CheckPointID
 	var localInterruptID string // in-process resume fallback when tracker is nil
 
+	// All terminal-state Redis writes (success cleanup, failure, cancel)
+	// must survive a ctx that gets cancelled around the Invoke boundary.
+	// Detach cancellation once here, bounded by a short timeout so a hung
+	// Redis cannot stall the terminal path indefinitely — mirrors the
+	// WithoutCancel+WithTimeout convention used across ingestion_service.go.
+	stateCtx, stateCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer stateCancel()
+
 	const maxResumeRounds = 1000
 	for round := 0; round < maxResumeRounds; round++ {
 		// TOP: recover the pending interrupt (crash recovery or in-process).
@@ -582,38 +590,29 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 		out, invokeErr := compiled.Workflow.Invoke(runCtx, current, compose.WithCheckPointID(cpID))
 		if invokeErr == nil {
 			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("ClearInterruptID for %s", p.taskID), func() error { return tracker.ClearInterruptID(ctx, cpID) })
-				utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(ctx, cpID) })
+				utility.BestEffort(fmt.Sprintf("ClearInterruptID for %s", p.taskID), func() error { return tracker.ClearInterruptID(stateCtx, cpID) })
+				utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(stateCtx, cpID) })
 			}
 			if store != nil {
-				utility.BestEffort(fmt.Sprintf("delete checkpoint for %s", p.taskID), func() error { return store.Delete(ctx, cpID) })
-				utility.BestEffort(fmt.Sprintf("delete DSL fingerprint for %s", p.taskID), func() error { return store.Delete(ctx, cpID+dslKeySuffix) })
-				utility.BestEffort(fmt.Sprintf("delete override fingerprint for %s", p.taskID), func() error { return store.Delete(ctx, cpID+ovfKeySuffix) })
+				utility.BestEffort(fmt.Sprintf("delete checkpoint for %s", p.taskID), func() error { return store.Delete(stateCtx, cpID) })
+				utility.BestEffort(fmt.Sprintf("delete DSL fingerprint for %s", p.taskID), func() error { return store.Delete(stateCtx, cpID+dslKeySuffix) })
+				utility.BestEffort(fmt.Sprintf("delete override fingerprint for %s", p.taskID), func() error { return store.Delete(stateCtx, cpID+ovfKeySuffix) })
 			}
 			return finalizeResult(current, out, runState), nil
 		}
 
 		// Cancellation (plan §4.3.b): wipe the checkpoint and mark cancelled.
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			// The run ctx is already cancelled, so the Redis writes below
-			// would fail immediately if we used it. Detach cancellation so
-			// the cleanup + MarkCancelled actually land; otherwise a
-			// cancelled run leaks its checkpoint and interrupt id, and the
-			// next attempt misreads "interrupt pending + checkpoint missing"
-			// as a fresh run with nil input. Bound the detached ctx so a
-			// hung Redis cannot stall the cancel path indefinitely.
-			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			defer cleanupCancel()
-			p.cleanupCheckpoint(cleanupCtx, store, tracker, cpID)
+			p.cleanupCheckpoint(stateCtx, store, tracker, cpID)
 			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(cleanupCtx, cpID) })
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(stateCtx, cpID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", ctx.Err())
 		}
 
 		if !canvas.IsInterruptError(invokeErr) {
 			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(ctx, cpID, invokeErr.Error()) })
+				utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(stateCtx, cpID, invokeErr.Error()) })
 			}
 			return current, fmt.Errorf("pipeline: run canvas workflow: %w", invokeErr)
 		}
