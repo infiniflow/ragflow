@@ -70,6 +70,11 @@ ingestor:
   mq_type: 'nats'
   max_concurrent_workers: 1
   compiler_pool_size: 0
+  # Whole-task watchdog: a task still running past this deadline is marked
+  # FAILED with a timeout marker on its document instead of staying RUNNING
+  # at 0% forever (a stuck task also blocks every queued document while
+  # max_concurrent_workers is 1). 0 disables the watchdog.
+  task_timeout_seconds: 3600
 file_syncer:
   max_concurrent_syncs: 5
 user_default_llm:

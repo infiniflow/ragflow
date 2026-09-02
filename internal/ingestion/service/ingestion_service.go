@@ -64,6 +64,18 @@ type Ingestor struct {
 	version           string
 	heartbeatInterval time.Duration
 
+	// taskTimeout bounds how long a single ingestion task may run. A task
+	// still running past the deadline is aborted at its next ctx check and
+	// marked FAILED with a timeout marker on the document, instead of
+	// holding its worker slot forever while startHeartbeat keeps renewing
+	// the broker ack deadline — the "document stays RUNNING at 0%
+	// indefinitely" defect (a stuck task also blocks every queued document
+	// when maxConcurrency is 1). Python bounds its heaviest task stages the
+	// same way (task_executor.py wraps run_raptor_for_kb in
+	// @timeout(3600) and build_chunks in @timeout(60*80, 1)); this is the
+	// whole-task equivalent. 0 disables the watchdog.
+	taskTimeout time.Duration
+
 	// Runtime state
 	currentTasks  map[string]struct{} // set of task IDs currently claimed by a worker
 	tasksMu       sync.RWMutex
@@ -283,6 +295,14 @@ func (e *Ingestor) SetKnowledgeCompileModelConfig(llmID, embedding string) {
 // runtime.NumCPU() at start time.
 func (e *Ingestor) SetKnowledgeCompileConcurrency(n int32) {
 	e.kcConcurrency = n
+}
+
+// SetTaskTimeout bounds how long a single ingestion task may run before the
+// worker's watchdog deadline fires; the task is then marked FAILED with a
+// timeout marker on its document instead of lingering in RUNNING forever.
+// A value <= 0 disables the watchdog. Call before Start.
+func (e *Ingestor) SetTaskTimeout(d time.Duration) {
+	e.taskTimeout = d
 }
 
 // startDatasetKnowledgeCompile provisions the dataset-level compile scheduling
@@ -616,7 +636,18 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext
 	// Derive a per-task cancelable context so that an external cancel
 	// signal (Redis cancel flag, mirrored from Python's {task_id}-cancel)
 	// can stop only this task without affecting the whole Ingestor.
-	perTaskCtx, perTaskCancel := context.WithCancel(taskCtx.Ctx)
+	// When the task watchdog is armed (taskTimeout > 0), the same context
+	// also carries the execution deadline: a task still running past it is
+	// aborted at the pipeline's next ctx check and failed via runTask's
+	// context.DeadlineExceeded branch, freeing the worker slot and moving
+	// the document out of RUNNING.
+	var perTaskCtx context.Context
+	var perTaskCancel context.CancelFunc
+	if e.taskTimeout > 0 {
+		perTaskCtx, perTaskCancel = context.WithTimeout(taskCtx.Ctx, e.taskTimeout)
+	} else {
+		perTaskCtx, perTaskCancel = context.WithCancel(taskCtx.Ctx)
+	}
 	taskCtx.Ctx = perTaskCtx
 	cancelDone := make(chan struct{})
 	pollExited := make(chan struct{})
@@ -685,12 +716,31 @@ func (e *Ingestor) markFailed(ctx context.Context, taskID string) bool {
 	return true
 }
 
+// failWithTimeout settles a watchdog-deadline abort: the document gets the
+// timeout marker (run=FAIL, progress=-1, "Task timed out.") and the task is
+// durably marked FAILED so the message is Acked and the worker slot freed.
+func (e *Ingestor) failWithTimeout(ctx context.Context, task *entity.IngestionTask) bool {
+	e.markTimeoutProgress(task)
+	ok := e.markFailed(ctx, task.ID)
+	if ok {
+		e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
+	}
+	return ok
+}
+
 // runTask executes the task's business logic — run-count advance, document
 // pipeline, and completion — behind the heartbeat. It returns whether the
 // task reached a durably-persisted terminal status.
 func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool {
 	select {
 	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			// The task watchdog deadline fired before the pipeline
+			// even started (or between stages): fail with the timeout
+			// marker instead of recording a user-initiated stop.
+			common.Info(fmt.Sprintf("Task %s timed out before pipeline start", task.ID))
+			return e.failWithTimeout(ctx, task)
+		}
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
 		e.markCancelProgress(task)
 		stopped := e.markStopped(context.Background(), task.ID)
@@ -756,6 +806,14 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	}
 
 	if err := e.runDocumentTask(ctx, task); err != nil {
+		// A watchdog abort surfaces either as DeadlineExceeded directly or
+		// as Canceled from components that select on ctx.Done() without
+		// propagating the cause — classify by the task ctx's own error so
+		// the timeout is recorded as a failure, not a user stop.
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
+			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
+			return e.failWithTimeout(ctx, task)
+		}
 		if errors.Is(err, context.Canceled) {
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
 			e.markCancelProgress(task)
@@ -764,15 +822,6 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel))
 			}
 			return stopped
-		}
-		if errors.Is(err, context.DeadlineExceeded) {
-			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
-			e.markTimeoutProgress(task)
-			ok := e.markFailed(ctx, task.ID)
-			if ok {
-				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
-			}
-			return ok
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
 		ok := e.markFailed(ctx, task.ID)
