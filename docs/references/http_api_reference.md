@@ -1032,14 +1032,6 @@ Failure:
 }
 ```
 
- ---
-
-### RAPTOR and Knowledge graph
-
-:::caution
-Since RAGFlow v0.27, standalone RAPTOR and Knowledge Graph workflows are no longer supported through the public HTTP API. These workflows have been superseded by Knowledge Compilation, which can be configured and run through the RAGFlow Web UI.
-:::
-
 ---
 
 ## FILE MANAGEMENT WITHIN DATASET

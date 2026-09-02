@@ -556,7 +556,7 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(
     api_key="<YOUR_API_KEY>",
-    base_url="http://<YOUR_BASE_URL>",
+    base_url="https://<YOUR_BASE_URL>",
 )
 dataset = rag_object.list_datasets(id="id")[0]
 doc = dataset.list_documents(id="wdfxb5t547d")[0]
