@@ -5358,6 +5358,10 @@ async def get_wiki_graph(
       then pull the ``to`` entities. Capped at
       ``_WIKI_GRAPH_MAX_LOADING_ENTITY`` for hub-node safety.
 
+    Both modes finish with a completeness sweep that adds persisted
+    relations between already-loaded entities, so no returned node is
+    missing an edge whose endpoints are both on the canvas.
+
     Returns ``(True, {"entities": [...], "relations": [...], "total_entities": int,
     "total_relations": int, "returned_entities": int, "returned_relations": int})``
     shaped exactly as the frontend ``ForceGraph`` adapter consumes, or
@@ -5443,6 +5447,48 @@ async def get_wiki_graph(
         relation_keys.add(key)
         relations.append(payload)
 
+    async def _completeness_sweep() -> None:
+        """Add persisted relations between already-loaded entities.
+
+        Entities hydrated only as to-targets — click neighbours and step-4
+        hydrations — never had their outgoing relations pulled, and unstable
+        weight-tie pagination can displace from-side seeds between pages, so a
+        low-weight hub (an author entity mentioned once per document) can show
+        up with its incoming edges but none of its outgoing edges, which the
+        canvas renders as a missing connection. One extra in-memory-filtered
+        pass over the loaded entity set guarantees every returned node shows
+        its persisted outgoing edges (both endpoints must be loaded; a
+        to-target beyond the entity cap would dangle).
+
+        Cost: ``_wiki_search_relations_from`` reads the whole relation table
+        and filters in memory (relations are short and few; ``total_relations``
+        in the response tracks that volume), and the overview loop already
+        issues one such pull per entity page — so the sweep is a single extra
+        pull per request. Revisit if relation tables grow large.
+        """
+        final_slugs = list(entities.keys())
+        if not final_slugs:
+            return
+        try:
+            final_rel_map = await _wiki_search_relations_from(
+                index_nm,
+                dataset_id,
+                final_slugs,
+            )
+        except Exception:
+            logging.exception(
+                "get_wiki_graph: final relation sweep failed kb=%s",
+                dataset_id,
+            )
+            return
+        for row in (final_rel_map or {}).values():
+            payload = _wiki_relation_payload(row)
+            if payload is None:
+                continue
+            if payload["to"] not in entities:
+                continue
+            _add_relation(payload)
+
     # ---- Flow B — click expansion centred on ``node``. ----------------
     if isinstance(node, str) and node.strip():
         center_slug = node.strip()
@@ -5521,6 +5567,9 @@ async def get_wiki_graph(
                 if payload and len(entities) < cap * 2:
                     _add_entity(payload)
 
+        # Same completeness sweep as the overview flow: hydrated neighbours
+        # must also show their persisted outgoing edges among the loaded set.
+        await _completeness_sweep()
         return True, _response(list(entities.values()), relations)
 
     # ---- Flow A — overview, top-weight paged with cumulative budget. ---
@@ -5627,36 +5676,9 @@ async def get_wiki_graph(
             break
         page += 1
 
-    # Final completeness sweep. Entities hydrated as to-targets in step 4 —
-    # and entities displaced by unstable weight-tie pagination between pages —
-    # never had their outgoing relations pulled, so low-weight hub nodes (an
-    # author entity mentioned once per document) can appear in the graph with
-    # their incoming edges but none of their outgoing edges, which the canvas
-    # renders as a missing connection. One extra in-memory-filtered pass over
-    # the complete loaded entity set guarantees every returned node shows its
-    # persisted outgoing edges (both endpoints must be loaded; a to-target
-    # beyond the entity cap would dangle).
-    final_slugs = list(entities.keys())
-    if final_slugs:
-        try:
-            final_rel_map = await _wiki_search_relations_from(
-                index_nm,
-                dataset_id,
-                final_slugs,
-            )
-        except Exception:
-            logging.exception(
-                "get_wiki_graph: final relation sweep failed kb=%s",
-                dataset_id,
-            )
-            final_rel_map = {}
-        for row in (final_rel_map or {}).values():
-            payload = _wiki_relation_payload(row)
-            if payload is None:
-                continue
-            if payload["to"] not in entities:
-                continue
-            _add_relation(payload)
+    # Final completeness sweep over the complete loaded entity set — see
+    # ``_completeness_sweep`` for the rationale and cost note.
+    await _completeness_sweep()
 
     return True, _response(list(entities.values()), relations)
 
