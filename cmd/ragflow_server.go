@@ -568,6 +568,12 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	}
 	defer tokenizer.Close()
 
+	// Fail fast if the cl100k_base BPE table is missing: without it
+	// NumTokensFromString silently returns 0, corrupting every token budget.
+	if err := tokenizer.InitCL100KEncoder(); err != nil {
+		common.Fatal("Failed to initialize cl100k_base tokenizer", zap.Error(err))
+	}
+
 	// The dataset-level post-processing consumer cluster (§11) is owned and run by
 	// the Ingestor: it is started inside ingestor.Start() and joined inside
 	// ingestor.Stop(), so its lifecycle matches the ingestor. The configured
@@ -711,6 +717,12 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}
 	defer tokenizer.Close()
+
+	// Fail fast if the cl100k_base BPE table is missing: without it
+	// NumTokensFromString silently returns 0, corrupting every token budget.
+	if err := tokenizer.InitCL100KEncoder(); err != nil {
+		common.Fatal("Failed to initialize cl100k_base tokenizer", zap.Error(err))
+	}
 
 	// Initialize global QueryBuilder using tokenizer's DictPath
 	// This ensures the Synonym uses the same wordnet directory as tokenizer
