@@ -80,6 +80,8 @@ type fakeDocumentService struct {
 	filterResult           map[string]interface{}
 	filterTotal            int64
 	listIDs                []string
+	documentList           []*entity.DocumentListItem
+	documentListTotal      int64
 	metadataByKBs          map[string]interface{}
 }
 
@@ -171,7 +173,7 @@ func (f *fakeDocumentService) ListDocumentsByDatasetID(ctx context.Context, kbID
 }
 func (f *fakeDocumentService) ListDocumentsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	f.listOpts = opts
-	return nil, 0, nil
+	return f.documentList, f.documentListTotal, nil
 }
 func (f *fakeDocumentService) ListDocumentIDsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions) ([]string, error) {
 	f.listOpts = opts
@@ -1105,6 +1107,55 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 	data := resp["data"].(map[string]interface{})
 	if data["total"] != float64(2) {
 		t.Fatalf("expected total 2, got %v", data["total"])
+	}
+}
+
+func TestListDocumentsHandlerReturnsScheduledIngestionStatus(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{
+		documentList: []*entity.DocumentListItem{{
+			ID:              "doc-scheduled",
+			KbID:            "ds-1",
+			ParserID:        "naive",
+			ParserConfig:    "{}",
+			SourceType:      "local",
+			Type:            "document",
+			CreatedBy:       "user-1",
+			Name:            sptr("scheduled.pdf"),
+			Suffix:          "pdf",
+			IngestionStatus: sptr(common.SCHEDULED),
+		}},
+		documentListTotal: 1,
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.ListDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Data struct {
+			Docs []map[string]interface{} `json:"docs"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(response.Data.Docs) != 1 {
+		t.Fatalf("document count = %d, want 1", len(response.Data.Docs))
+	}
+	if got := response.Data.Docs[0]["ingestion_status"]; got != common.SCHEDULED {
+		t.Fatalf("ingestion_status = %v, want %q", got, common.SCHEDULED)
 	}
 }
 

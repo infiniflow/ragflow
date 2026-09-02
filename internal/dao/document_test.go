@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -140,6 +141,84 @@ func TestDocumentGetByKBIDOrdersByCreateTime(t *testing.T) {
 	}
 	if docs[0].ID != "doc-earlier" || docs[1].ID != "doc-later" {
 		t.Fatalf("unexpected order: %s, %s", docs[0].ID, docs[1].ID)
+	}
+}
+
+func TestDocumentListIncludesScheduledIngestionStatus(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.User{},
+		&entity.UserCanvas{},
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.IngestionTask{},
+	); err != nil {
+		t.Fatalf("migrate document-list dependencies: %v", err)
+	}
+	if err := db.Create(&entity.Document{
+		ID:           "doc-scheduled",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "document",
+		CreatedBy:    "user-1",
+		Name:         sp("scheduled.pdf"),
+		Suffix:       "pdf",
+	}).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	if err := db.Create(&entity.File{
+		ID:        "file-scheduled",
+		ParentID:  "parent-1",
+		TenantID:  "tenant-1",
+		CreatedBy: "user-1",
+		Name:      "scheduled.pdf",
+		Type:      "document",
+	}).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	if err := db.Create(&entity.File2Document{
+		ID:         "link-scheduled",
+		FileID:     sp("file-scheduled"),
+		DocumentID: sp("doc-scheduled"),
+	}).Error; err != nil {
+		t.Fatalf("link file to document: %v", err)
+	}
+	if err := db.Create(&entity.IngestionTask{
+		ID:         "task-scheduled",
+		UserID:     "user-1",
+		DocumentID: "doc-scheduled",
+		DatasetID:  "kb-1",
+		Status:     "SCHEDULED",
+	}).Error; err != nil {
+		t.Fatalf("create scheduled ingestion task: %v", err)
+	}
+
+	documents, total, err := NewDocumentDAO().ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+		KbID:    "kb-1",
+		OrderBy: "create_time",
+		Desc:    true,
+		Offset:  0,
+		Limit:   10,
+	})
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if total != 1 || len(documents) != 1 {
+		t.Fatalf("listed %d documents (total %d), want 1", len(documents), total)
+	}
+
+	raw, err := json.Marshal(documents[0])
+	if err != nil {
+		t.Fatalf("marshal document list item: %v", err)
+	}
+	var listed map[string]interface{}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatalf("unmarshal document list item: %v", err)
+	}
+	if got := listed["ingestion_status"]; got != "SCHEDULED" {
+		t.Fatalf("ingestion_status = %v, want %q", got, "SCHEDULED")
 	}
 }
 

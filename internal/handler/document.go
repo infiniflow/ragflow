@@ -1131,6 +1131,7 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"process_duration": processDuration,
 		"suffix":           doc.Suffix,
 		"run":              mapRunStatus(doc.Run),
+		"ingestion_status": stringValue(doc.IngestionStatus),
 		"status":           stringValue(doc.Status),
 		"parser_id":        doc.ParserID,
 		"chunk_method":     doc.ParserID,

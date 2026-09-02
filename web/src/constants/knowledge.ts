@@ -41,6 +41,10 @@ export enum RunningStatusOld {
   SCHEDULE = '5',
 }
 
+export enum IngestionStatus {
+  SCHEDULED = 'SCHEDULED',
+}
+
 export const RunningStatusMap = {
   [RunningStatus.UNSTART]: 'Pending',
   [RunningStatus.RUNNING]: 'Running',

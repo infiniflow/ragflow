@@ -32,6 +32,7 @@ import {
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
+import { isDocumentProcessing } from '@/pages/dataset/dataset/utils';
 import documentStructureService from '@/services/document-structure-service';
 import kbService, {
   changeDocumentParser,
@@ -177,10 +178,7 @@ export const useFetchDocumentList = (loop = true) => {
     queryKey: DocumentKeys.list(debouncedSearchString, pagination, filterValue),
     initialData: { docs: [], total: 0 },
     refetchInterval: (query) =>
-      loop &&
-      query.state.data?.docs.some((doc) => doc.run === RunningStatus.RUNNING)
-        ? 5000
-        : false,
+      loop && query.state.data?.docs.some(isDocumentProcessing) ? 5000 : false,
     enabled: !!knowledgeId || !!id,
     queryFn: async () => {
       let run = [] as any;
