@@ -37,7 +37,7 @@ type IngestorConfig struct {
 
 func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 	// Default Ingestor config
-	c.ingestor.MaxConcurrentWorkers = 1
+	c.ingestor.MaxConcurrentWorkers = 2
 	c.ingestor.CompilerPoolSize = 0
 	c.ingestor.TaskTimeoutSeconds = 3600
 

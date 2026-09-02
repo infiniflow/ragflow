@@ -2379,6 +2379,7 @@ Example: Virtual Hosted Style`,
       topics: 'Topics',
       selectArtifact: 'Select an item from the contents to view details',
       searchEntity: 'Search entity',
+      graphEntityCount: '{{returned}} / {{total}} entities',
       sourceDocuments: 'Source documents',
       clearWikiTitle: 'Clear wiki',
       clearWikiDescription:

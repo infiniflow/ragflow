@@ -68,7 +68,7 @@ otel:
   enable: false
 ingestor:
   mq_type: 'nats'
-  max_concurrent_workers: 1
+  max_concurrent_workers: 2
   compiler_pool_size: 0
   # Whole-task watchdog: a task still running past this deadline is marked
   # FAILED with a timeout marker on its document instead of staying RUNNING
