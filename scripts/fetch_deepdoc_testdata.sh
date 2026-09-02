@@ -85,18 +85,20 @@ if [ ! -e "$SRC" ] || [ -z "$(ls -A "$SRC" 2>/dev/null)" ]; then
   # so a CI blip does not redden the run.
   attempt=0
   max_attempts=3
+  fetched=0
   until [ "$attempt" -ge "$max_attempts" ]; do
     attempt=$((attempt + 1))
     rm -rf "$CACHE"
     if git clone --depth 1 --filter=blob:none --branch "$REF" --sparse \
          "https://github.com/$REPO.git" "$CACHE" >&2 && \
        git -C "$CACHE" sparse-checkout set "deepdoc/$PKG/testdata" >&2; then
+      fetched=1
       break
     fi
     echo "fetch_deepdoc_testdata: clone attempt $attempt/$max_attempts failed, retrying in 3s" >&2
     sleep 3
   done
-  if [ "$attempt" -ge "$max_attempts" ]; then
+  if [ "$fetched" -ne 1 ]; then
     echo "fetch_deepdoc_testdata: clone failed after $max_attempts attempts" >&2
     exit 1
   fi
