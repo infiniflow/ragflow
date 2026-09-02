@@ -189,13 +189,13 @@ func TestFetchBudget_NeverExceedsChannelCapacity(t *testing.T) {
 	}
 
 	for i := 0; i < cap(ingestor.taskChan)-1; i++ {
-		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(context.Background(), &entity.IngestionTask{ID: "filler"})
+		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(t.Context(), &entity.IngestionTask{ID: "filler"})
 	}
 	if got := ingestor.fetchBudget(); got != 1 {
 		t.Fatalf("3/4-full channel: fetchBudget = %d, want 1 (one free slot)", got)
 	}
 
-	ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(context.Background(), &entity.IngestionTask{ID: "filler"})
+	ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(t.Context(), &entity.IngestionTask{ID: "filler"})
 	if got := ingestor.fetchBudget(); got != 1 {
 		t.Fatalf("full channel: fetchBudget = %d, want 1 (floor: must never fetch 0)", got)
 	}

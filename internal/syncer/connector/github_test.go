@@ -30,7 +30,7 @@ func TestGitHubConnectorOpenSyncUsesWindowAndFingerprint(t *testing.T) {
 
 	start := mustTime(t, "2026-01-02T12:00:00Z")
 	end := mustTime(t, "2026-01-04T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestGitHubConnectorOpenPrune(t *testing.T) {
 	connector.baseURL = "https://api.github.test"
 	connector.doJSON = githubFixtureDoJSON(t)
 
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestGitHubConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
 	connector.doJSON = githubFixtureDoJSON(t)
 
 	end := mustTime(t, "2026-01-04T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: end})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestGitHubConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
 		t.Fatalf("first checkpoint = %+v, want PR 7", first.Checkpoint)
 	}
 
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: end, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: end, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestGitHubConnectorOpenSyncResumeRejectsMissingSourceAnchor(t *testing.T) {
 	connector.doJSON = githubFixtureDoJSON(t)
 
 	end := mustTime(t, "2026-01-04T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: end})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestGitHubConnectorOpenSyncResumeRejectsMissingSourceAnchor(t *testing.T) {
 	}
 
 	resumeCheckpoint := cloneGitHubCheckpointWithMissingSourceID(t, first.Checkpoint)
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: end, Resume: resumeCheckpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: end, Resume: resumeCheckpoint})
 	if resumed != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
 		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", resumed, err)
 	}
@@ -336,7 +336,7 @@ func TestGitHubValidateConnectorSettingSingleRepoSkipsRepoAccess(t *testing.T) {
 		},
 		nil,
 	)
-	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+	if err := connector.ValidateConnectorSetting(t.Context(), nil); err != nil {
 		t.Fatalf("ValidateConnectorSetting: %v", err)
 	}
 }
@@ -360,7 +360,7 @@ func TestGitHubValidateConnectorSettingMultipleReposSkipsRepoAccess(t *testing.T
 		},
 		nil,
 	)
-	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+	if err := connector.ValidateConnectorSetting(t.Context(), nil); err != nil {
 		t.Fatalf("ValidateConnectorSetting: %v", err)
 	}
 }
@@ -382,7 +382,7 @@ func TestGitHubValidateConnectorSettingUnauthorized(t *testing.T) {
 			"/orgs/openai": {Status: http.StatusUnauthorized, Message: `{"message":"Bad credentials"}`},
 		},
 	)
-	err = connector.ValidateConnectorSetting(context.Background(), nil)
+	err = connector.ValidateConnectorSetting(t.Context(), nil)
 	var credErr *ConnectorMissingCredentialError
 	if !errors.As(err, &credErr) {
 		t.Fatalf("err = %v, want ConnectorMissingCredentialError", err)
@@ -406,7 +406,7 @@ func TestGitHubValidateConnectorSettingOwnerOrg(t *testing.T) {
 		},
 		nil,
 	)
-	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+	if err := connector.ValidateConnectorSetting(t.Context(), nil); err != nil {
 		t.Fatalf("ValidateConnectorSetting: %v", err)
 	}
 }
@@ -430,7 +430,7 @@ func TestGitHubValidateConnectorSettingOwnerUserFallback(t *testing.T) {
 			"/orgs/openai": {Status: http.StatusNotFound, Message: `{"message":"Not Found"}`},
 		},
 	)
-	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+	if err := connector.ValidateConnectorSetting(t.Context(), nil); err != nil {
 		t.Fatalf("ValidateConnectorSetting: %v", err)
 	}
 }
@@ -452,7 +452,7 @@ func TestGitHubValidateConnectorSettingOwnerNotFound(t *testing.T) {
 			"/users/ghost": {Status: http.StatusNotFound, Message: `{"message":"Not Found"}`},
 		},
 	)
-	err = connector.ValidateConnectorSetting(context.Background(), nil)
+	err = connector.ValidateConnectorSetting(t.Context(), nil)
 	var valErr *ConnectorValidationError
 	if !errors.As(err, &valErr) {
 		t.Fatalf("err = %v, want ConnectorValidationError", err)
@@ -478,7 +478,7 @@ func TestGitHubValidateConnectorSettingMissingSSO(t *testing.T) {
 			"/orgs/ssoorg": {Status: http.StatusForbidden, Message: `{"message":"Resource protected by organization SAML enforcement. You must grant your Personal Access token access to this organization."}`},
 		},
 	)
-	err = connector.ValidateConnectorSetting(context.Background(), nil)
+	err = connector.ValidateConnectorSetting(t.Context(), nil)
 	var valErr *ConnectorValidationError
 	if !errors.As(err, &valErr) {
 		t.Fatalf("err = %v, want ConnectorValidationError", err)
@@ -499,7 +499,7 @@ func TestGitHubValidateConnectorSettingMissingInputs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewGitHubConnector failed: %v", err)
 		}
-		err = connector.ValidateConnectorSetting(context.Background(), nil)
+		err = connector.ValidateConnectorSetting(t.Context(), nil)
 		var credErr *ConnectorMissingCredentialError
 		if !errors.As(err, &credErr) {
 			t.Fatalf("err = %v, want ConnectorMissingCredentialError", err)
@@ -513,7 +513,7 @@ func TestGitHubValidateConnectorSettingMissingInputs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewGitHubConnector failed: %v", err)
 		}
-		err = connector.ValidateConnectorSetting(context.Background(), nil)
+		err = connector.ValidateConnectorSetting(t.Context(), nil)
 		var valErr *ConnectorValidationError
 		if !errors.As(err, &valErr) {
 			t.Fatalf("err = %v, want ConnectorValidationError", err)

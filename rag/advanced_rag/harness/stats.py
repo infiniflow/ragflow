@@ -355,6 +355,31 @@ def record_round_claims(name: str, count: int) -> None:
         stats.record_round_claims(name, count)
 
 
+def record_external_call(usage: dict | None = None) -> None:
+    """Record a successful raw model call that bypasses CountingChatModel."""
+    stats = _CURRENT_STATS.get()
+    if stats is None:
+        return
+    phase_name = _CURRENT_PHASE.get()
+    stats.record_call(phase_name)
+    stats.record_usage(phase_name, usage)
+
+
+def record_external_response(response) -> None:
+    """Record a raw completion response, including provider usage when present."""
+    usage = getattr(response, "usage", None)
+    if usage is None and isinstance(response, dict):
+        usage = response.get("usage")
+    if usage is not None and not isinstance(usage, dict):
+        if hasattr(usage, "model_dump"):
+            usage = usage.model_dump()
+        elif hasattr(usage, "dict"):
+            usage = usage.dict()
+        else:
+            usage = {k: getattr(usage, k) for k in ("prompt_tokens", "completion_tokens", "total_tokens") if hasattr(usage, k)}
+    record_external_call(usage if isinstance(usage, dict) else None)
+
+
 def _last_usage(chat_mdl) -> dict | None:
     mdl = getattr(chat_mdl, "mdl", None)
     usage = getattr(mdl, "last_usage", None)

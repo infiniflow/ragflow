@@ -73,6 +73,28 @@ for name in _stub_only:
     if name not in sys.modules:
         sys.modules[name] = types.ModuleType(name)
 
+# dataset_nav imports RedisDistributedLock at module level but only exercises it
+# on the build/upsert paths, so a no-op class is enough to import the search half.
+if not hasattr(sys.modules["rag.utils.redis_conn"], "RedisDistributedLock"):
+
+    class _NoOpLock:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def spin_acquire(self):
+            return True
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def release(self):
+            return True
+
+    sys.modules["rag.utils.redis_conn"].RedisDistributedLock = _NoOpLock
+
 # message_fit_in is imported by wiki_incremental at module level
 if not hasattr(sys.modules["rag.prompts.generator"], "message_fit_in"):
 
@@ -154,6 +176,18 @@ _common_mod.ensure_llm_bundle = lambda model: model
 _common_mod.knowledge_compile_gen_conf = lambda *a, **k: {}
 _common_mod.run_chunked_pipeline = MagicMock(return_value={})
 _common_mod.stable_row_id = lambda *a, **k: ""
+
+
+async def _encode(embd_mdl, texts: list):
+    """Mirror of ``_common.encode``: run the model in the pool, drop the token
+    count. Bound late so the conftest's ``thread_pool_exec`` stub is honoured."""
+    if not texts:
+        return []
+    embeddings, _ = await _fake_thread_pool_exec(embd_mdl.encode, texts)
+    return list(embeddings)
+
+
+_common_mod.encode = _encode
 
 # ---- Test helper constants (same values as structure.py) ----
 sys.modules["rag.advanced_rag.knowlege_compile.structure"].CONCEPT_MIN_CLAIMS = 3

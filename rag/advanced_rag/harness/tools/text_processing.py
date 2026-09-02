@@ -348,7 +348,14 @@ def _narrow_content(content: str, kwds: list[str]) -> str | None:
     # "table truncated at -4.58°N, Maseru (-29.3°) missing" bug on FRAMES Q408.
     # A table row is one data point, not a sentence, so keyword-window narrowing is
     # wrong here; keep the full table (it is already rank-sorted by the retriever).
-    if "<table" in content.lower() or "<tr" in content.lower() or "<td" in content.lower():
+    # Markdown pipe tables (>=3 rows with >=2 pipes) get the same full-text pass:
+    # their answer rows often sit mid-table (e.g. a rank row at ~62% of a 14.7K-char
+    # table), and sentence-window narrowing truncates them to a header-only snippet.
+    low_content = content.lower()
+    if "<table" in low_content or "<tr" in low_content or "<td" in low_content:
+        return "..." + _highlight_keywords(content, kwds) + "..."
+    pipe_rows = sum(1 for line in content.splitlines() if line.count("|") >= 2)
+    if pipe_rows >= 3:
         return "..." + _highlight_keywords(content, kwds) + "..."
 
     sents = _split_sentences(content)
