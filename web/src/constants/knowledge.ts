@@ -41,8 +41,14 @@ export enum RunningStatusOld {
   SCHEDULE = '5',
 }
 
-export enum IngestionStatus {
+export enum IngestionTaskStatus {
+  CREATED = 'CREATED',
   SCHEDULED = 'SCHEDULED',
+  RUNNING = 'RUNNING',
+  STOPPING = 'STOPPING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  STOPPED = 'STOPPED',
 }
 
 export const RunningStatusMap = {

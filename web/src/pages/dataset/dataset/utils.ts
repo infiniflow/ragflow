@@ -1,4 +1,4 @@
-import { IngestionStatus, RunningStatus } from './constant';
+import { IngestionTaskStatus, RunningStatus } from './constant';
 import type { IDocumentInfo } from '@/interfaces/database/document';
 
 export const isParserRunning = (text: RunningStatus) => {
@@ -10,4 +10,7 @@ export const isDocumentProcessing = (
   document: Pick<IDocumentInfo, 'run' | 'ingestion_status'>,
 ) =>
   isParserRunning(document.run) ||
-  document.ingestion_status === IngestionStatus.SCHEDULED;
+  document.ingestion_status === IngestionTaskStatus.CREATED ||
+  document.ingestion_status === IngestionTaskStatus.SCHEDULED ||
+  document.ingestion_status === IngestionTaskStatus.RUNNING ||
+  document.ingestion_status === IngestionTaskStatus.STOPPING;

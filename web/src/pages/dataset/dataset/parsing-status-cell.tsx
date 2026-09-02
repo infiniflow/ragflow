@@ -17,7 +17,7 @@ import { IDocumentInfo } from '@/interfaces/database/document';
 import { CircleQuestionMark, CircleX, Clock3 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DocumentType, IngestionStatus, RunningStatus } from './constant';
+import { DocumentType, IngestionTaskStatus, RunningStatus } from './constant';
 import { ParsingCard } from './parsing-card';
 import { ReparseDialog } from './reparse-dialog';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
@@ -120,7 +120,7 @@ export function ParsingStatusCell({
     hideModal: hideReparseDialogModal,
   } = useHandleRunDocumentByIds(id);
   const isRunning = isDocumentProcessing(record);
-  const isScheduled = record.ingestion_status === IngestionStatus.SCHEDULED;
+  const isScheduled = record.ingestion_status === IngestionTaskStatus.SCHEDULED;
   const isZeroChunk = chunk_count === 0;
 
   const handleOperationIconClick = (option?: {
