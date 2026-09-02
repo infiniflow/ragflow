@@ -30,6 +30,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'ci' && format('-ignore-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
+# infiniflow/onnxruntime_go is a fresh org mirror that is not yet present in the
+# public Go checksum database / proxy. Mark it private so Go skips the proxy and
+# sumdb for this path and resolves it directly from GitHub (Go's default
+# GOPROXY keeps the ",direct" fallback). Required for the in-process DeepDoc
+# backend to build against github.com/infiniflow/onnxruntime_go.
+env:
+  GOPRIVATE: github.com/infiniflow/onnxruntime_go
+
 jobs:
   ragflow_preflight:
     name: ragflow_preflight
