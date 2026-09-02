@@ -27,6 +27,24 @@ from deepdoc.parser.pdf_parser import MAXIMUM_PAGE_NUMBER
 from deepdoc.parser.somark_parser import SoMarkParser
 
 
+def _parse_ocr_provider_key(key: str | dict | None) -> dict:
+    """Parse OCR provider ``api_key`` payloads stored as JSON text or a dict."""
+    if isinstance(key, dict):
+        raw_config = key
+    elif isinstance(key, str) and key:
+        try:
+            raw_config = json.loads(key)
+        except json.JSONDecodeError:
+            raw_config = {}
+    else:
+        raw_config = {}
+
+    if not isinstance(raw_config, dict):
+        return {}
+    config = raw_config.get("api_key", raw_config)
+    return config if isinstance(config, dict) else {}
+
+
 class Base:
     def __init__(self, key: str | dict, model_name: str, **kwargs):
         self.model_name = model_name
@@ -40,18 +58,9 @@ class MinerUOcrModel(Base, MinerUParser):
 
     def __init__(self, key: str | dict, model_name: str, **kwargs):
         Base.__init__(self, key, model_name, **kwargs)
-        raw_config = {}
-        if key:
-            try:
-                raw_config = json.loads(key)
-            except Exception:
-                raw_config = {}
-
         # nested {"api_key": {...}} from UI
         # flat {"MINERU_*": "..."} payload auto-provisioned from env vars
-        config = raw_config.get("api_key", raw_config)
-        if not isinstance(config, dict):
-            config = {}
+        config = _parse_ocr_provider_key(key)
 
         def _resolve_config(key: str, env_key: str, default=""):
             # lower-case keys (UI), upper-case MINERU_* (env auto-provision), env vars
@@ -104,16 +113,7 @@ class MonkeyOCROcrModel(Base, MonkeyOCRParser):
 
     def __init__(self, key: str | dict, model_name: str, **kwargs):
         Base.__init__(self, key, model_name, **kwargs)
-        raw_config = {}
-        if key:
-            try:
-                raw_config = json.loads(key)
-            except Exception:
-                raw_config = {}
-
-        config = raw_config.get("api_key", raw_config)
-        if not isinstance(config, dict):
-            config = {}
+        config = _parse_ocr_provider_key(key)
 
         def _resolve_config(key: str, env_key: str, default=""):
             return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
