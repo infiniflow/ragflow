@@ -116,6 +116,14 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, paylo
 	if task.Progress == -1 {
 		return fmt.Errorf("%w: memory: task %s is already failed", ErrMemoryTaskTerminal, taskID)
 	}
+	// A task already extracted to completion (progress=1.0) is a durable
+	// terminal outcome: a redelivery after restart (or a duplicate copy from
+	// another consumer) must not re-run the LLM extraction, which would insert
+	// duplicate memory entries. Short-circuit to success so the Ingestor Acks
+	// the message instead of re-executing the task.
+	if task.Progress >= 1.0 {
+		return nil
+	}
 
 	if err = s.saveExtractedToMemory(ctx, memoryID, msg, sourceID, taskID); err != nil {
 		s.updateTaskProgress(ctx, taskID, -1, err.Error())

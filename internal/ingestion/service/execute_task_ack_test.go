@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,17 +20,56 @@ import (
 // counters are atomic because executeTask drives them from multiple goroutines
 // (the heartbeat goroutine calls InProgress; the defer calls Ack/Nack) while the
 // test goroutine reads them - plain ints would be a data race under -race.
+//
+// settledWithInProgress is set when Ack or Nack runs while an InProgress is
+// still in flight on the same message — a violation of startHeartbeat's
+// contract that the heartbeat must be stopped and waited on before settling.
 type fakeTaskHandle struct {
 	msg        common.TaskMessage
 	acks       atomic.Int64
 	nacks      atomic.Int64
 	inProgress atomic.Int64
+
+	mu                     sync.Mutex
+	inProgressActive       bool
+	settledWithInProgress  bool
 }
 
 func (f *fakeTaskHandle) GetMessage() common.TaskMessage { return f.msg }
-func (f *fakeTaskHandle) Ack() error                     { f.acks.Add(1); return nil }
-func (f *fakeTaskHandle) Nack() error                    { f.nacks.Add(1); return nil }
-func (f *fakeTaskHandle) InProgress() error              { f.inProgress.Add(1); return nil }
+
+func (f *fakeTaskHandle) Ack() error {
+	f.mu.Lock()
+	if f.inProgressActive {
+		f.settledWithInProgress = true
+	}
+	f.mu.Unlock()
+	f.acks.Add(1)
+	return nil
+}
+
+func (f *fakeTaskHandle) Nack() error {
+	f.mu.Lock()
+	if f.inProgressActive {
+		f.settledWithInProgress = true
+	}
+	f.mu.Unlock()
+	f.nacks.Add(1)
+	return nil
+}
+
+func (f *fakeTaskHandle) InProgress() error {
+	f.mu.Lock()
+	f.inProgressActive = true
+	f.mu.Unlock()
+	f.inProgress.Add(1)
+	// Simulate a real network call that takes a moment, so a racing
+	// Ack/Nack would observe inProgressActive=true.
+	time.Sleep(2 * time.Millisecond)
+	f.mu.Lock()
+	f.inProgressActive = false
+	f.mu.Unlock()
+	return nil
+}
 
 func newAckTaskCtx(ctx context.Context, taskID, docID string, handle *fakeTaskHandle) *taskpkg.TaskContext {
 	taskCtx := taskpkg.NewTaskContextForScheduling(

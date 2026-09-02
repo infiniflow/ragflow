@@ -227,6 +227,14 @@ func TestExecuteMemoryTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
 		t.Fatalf("expected 1 Ack/0 Nack on completion after heartbeat, got acks=%d nacks=%d inProgress=%d",
 			handle.acks.Load(), handle.nacks.Load(), handle.inProgress.Load())
 	}
+	// The heartbeat must be stopped and waited on before the Ack: no
+	// InProgress may be in flight on the same message while it is settled.
+	handle.mu.Lock()
+	settledWithInProgress := handle.settledWithInProgress
+	handle.mu.Unlock()
+	if settledWithInProgress {
+		t.Fatal("Ack ran while an InProgress was still in flight — heartbeat must stop before settlement")
+	}
 }
 
 // TestExecuteMemoryTask_ReleasesClaimByEnvelopeID verifies that executeMemoryTask
@@ -360,6 +368,41 @@ func TestExecuteMemoryTaskAlreadyFailedAcks(t *testing.T) {
 	ingestor.executeMemoryTask(context.Background(), taskCtx)
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("already-failed memory task: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// TestExecuteMemoryTaskAlreadyCompletedAcks verifies the idempotent
+// short-circuit for a task row already extracted to completion (progress=1.0):
+// a redelivery after restart (or a duplicate copy from another consumer) must
+// NOT re-run the LLM extraction — which would insert duplicate memory entries —
+// but must Ack the message. The production runner (defaultRunMemoryTask →
+// HandleSaveToMemoryTask) short-circuits on the progress=1.0 row, so the
+// message is settled with an Ack and no extraction side effects occur.
+func TestExecuteMemoryTaskAlreadyCompletedAcks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	// Seed a task row already marked complete (progress=1.0), mirroring what
+	// HandleSaveToMemoryTask persists after a successful extraction.
+	taskID := "mem-task-completed"
+	if err := dao.DB.Create(&entity.Task{ID: taskID, DocID: "doc-mem-c", Progress: 1.0}).Error; err != nil {
+		t.Fatalf("insert already-completed task: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	// Real memory service so the production runner path is exercised.
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
+
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeMemory}}
+	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), taskID, map[string]any{
+		"id": taskID, "task_type": "memory", "memory_id": "mem-c", "source_id": 7,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	}, handle)
+
+	ingestor.executeMemoryTask(context.Background(), taskCtx)
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("already-completed memory task: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 }
 

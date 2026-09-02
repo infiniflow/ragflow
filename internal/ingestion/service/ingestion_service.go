@@ -564,54 +564,26 @@ func (e *Ingestor) workerLoop(id int32) {
 //     LLM/network failure that did not reach progress=-1) is Nacked so the
 //     message is redelivered and retried instead of being silently dropped.
 //
+// Settlement ordering (mirrors settleMessage): the heartbeat is stopped and
+// waited on first, then the message is Acked/Nacked, then the in-process claim
+// is released by the deferred releaseTask. Stopping the heartbeat before the
+// Ack/Nack is required by startHeartbeat's contract — no InProgress may be
+// in flight on the same message while it is being settled. The claim is
+// released after settlement so a redelivery that races the settlement is
+// still Ack-skipped; a redelivery after the function returns (e.g. a lost
+// Ack) re-claims and re-runs the task as normal at-least-once delivery.
+//
 // A panic in the memory path is recovered so the worker goroutine survives:
 // the ingestion path already does this via settleMessage's recover, but a
 // panic here previously crashed the worker. With max_concurrent_workers as low
 // as 1, one panicking memory task could permanently remove the only worker and
 // stall every subsequent document parse. The recovered panic is treated as a
 // transient failure and Nacked for redelivery.
-//
-// Settlement ordering: the claim is released (defer below) BEFORE the message
-// is Acked. This differs from the ingestion path, which Acks inside
-// settleMessage and releases afterwards; that ordering works there because
-// ingestion tasks have an ingestion_task row whose terminal status makes a
-// post-Ack redelivery idempotent. Memory tasks have no such DB terminal state,
-// so the release must happen before the Ack: execution and Ack run in the same
-// goroutine, so no redelivered copy can be claimed between the release and the
-// Ack (the broker cannot redeliver before the Ack is sent), and a redelivery
-// that arrives after the Ack (e.g. a lost Ack) re-claims and re-runs the task
-// as normal at-least-once delivery.
 func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
 	// The envelope task id is the authoritative claim key (set by
 	// processMessage). Releasing by any other id would leak the claim and
 	// permanently block redelivery, so always settle by taskCtx.ID().
 	taskID := taskCtx.ID()
-
-	// Release the claim taken by processMessage when the worker finishes, so a
-	// future redelivery (after restart) can re-claim the task. Mirrors
-	// executeTask's defer e.releaseTask(task.ID).
-	defer e.releaseTask(taskID)
-
-	// Run under a heartbeat so a slow LLM-extraction task renews its AckWait
-	// and is not redelivered mid-run (mirrors settleMessage). The claim guard
-	// in processMessage already Ack-skips any redelivered copy; the heartbeat
-	// prevents the redelivery from happening in the first place so a long
-	// memory task does not generate repeated redelivery traffic.
-	stopHeartbeat := e.startHeartbeat(taskCtx)
-	defer stopHeartbeat()
-
-	// Recover a panic so a single poison memory task never crashes the worker
-	// (and, at max_concurrent_workers=1, the whole ingestor's only slot).
-	defer func() {
-		if r := recover(); r != nil {
-			common.Error(fmt.Sprintf("memory task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
-			if taskCtx != nil && taskCtx.Handle != nil {
-				if nackErr := taskCtx.Handle.Nack(); nackErr != nil {
-					common.Error(fmt.Sprintf("nack memory task %s after panic", taskID), nackErr)
-				}
-			}
-		}
-	}()
 
 	common.Info(fmt.Sprintf("Starting memory task %s", taskID))
 	if taskCtx.Handle == nil {
@@ -625,27 +597,57 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 		}
 		return
 	}
+
+	// Run under a heartbeat so a slow LLM-extraction task renews its AckWait
+	// and is not redelivered mid-run (mirrors settleMessage). The claim guard
+	// in processMessage already Ack-skips any redelivered copy; the heartbeat
+	// prevents the redelivery from happening in the first place so a long
+	// memory task does not generate repeated redelivery traffic.
+	stopHeartbeat := e.startHeartbeat(taskCtx)
+
+	// Settlement is deferred so every exit path (success, terminal/transient
+	// failure, panic) runs the same closed loop in a fixed order: stop the
+	// heartbeat and wait for it to exit, then settle the message exactly once,
+	// then release the claim. No Ack/Nack happens anywhere before this defer.
+	var (
+		settleAck  bool
+		settleNack bool
+	)
+	defer func() {
+		stopHeartbeat() // block until no in-flight InProgress on this message
+		if r := recover(); r != nil {
+			// A panic is treated as a transient failure: Nack so the broker
+			// redelivers and retries the message.
+			common.Error(fmt.Sprintf("memory task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
+			settleNack = true
+		}
+		if settleAck {
+			if err := taskCtx.Handle.Ack(); err != nil {
+				common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
+			}
+		} else if settleNack {
+			if err := taskCtx.Handle.Nack(); err != nil {
+				common.Error(fmt.Sprintf("nack memory task %s", taskID), err)
+			}
+		}
+		e.releaseTask(taskID)
+	}()
+
 	if err := e.runMemoryTask(ctx, taskCtx.MemoryPayload); err != nil {
 		// defaultRunMemoryTask wraps terminal outcomes in ErrMemoryTaskTerminal
 		// (durable progress=-1 written, or no row to retry). Everything else is
 		// transient and must be redelivered rather than dropped.
 		if errors.Is(err, servicepkg.ErrMemoryTaskTerminal) {
 			common.Error(fmt.Sprintf("memory task %s failed terminally, ack", taskID), err)
-			if ackErr := taskCtx.Handle.Ack(); ackErr != nil {
-				common.Error(fmt.Sprintf("ack failed memory task %s", taskID), ackErr)
-			}
+			settleAck = true
 			return
 		}
 		common.Error(fmt.Sprintf("memory task %s failed transiently, nack for redelivery", taskID), err)
-		if nackErr := taskCtx.Handle.Nack(); nackErr != nil {
-			common.Error(fmt.Sprintf("nack memory task %s", taskID), nackErr)
-		}
+		settleNack = true
 		return
 	}
 	common.Info(fmt.Sprintf("Memory task %s completed", taskID))
-	if err := taskCtx.Handle.Ack(); err != nil {
-		common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
-	}
+	settleAck = true
 }
 
 // defaultRunMemoryTask is the production memory-task runner. It is held behind
