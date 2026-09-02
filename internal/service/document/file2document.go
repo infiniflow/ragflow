@@ -76,9 +76,6 @@ type LinkToDatasetsRequest struct {
 
 // LinkToDatasets validates inputs, expands folders, checks permissions, and
 // schedules convertFiles in a goroutine — mirroring Python convert().
-// mode is "add" (link on top of existing KBs) or "replace" (remove links to
-// KBs outside the requested set); any other value behaves as "replace".
-// Returns immediately (fire-and-forget for the heavy DB work).
 //
 // On validation failure it returns a sentinel error (see ErrLink* above) so the
 // handler can map it to a Python-compatible response without leaking internals.
