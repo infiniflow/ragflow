@@ -17,7 +17,10 @@
 """Unit tests for RAGFlowS3.remove_bucket (issue: S3 backend could not delete buckets)."""
 
 import importlib
+import logging
 from unittest.mock import Mock
+
+from botocore.exceptions import ClientError
 
 # Import common.settings first: s3_conn <-> settings import cycle resolves
 # only in the same order the app uses (see test_s3_conn.py).
@@ -35,7 +38,8 @@ def _new_storage(monkeypatch, config):
 
 def _pages(client, *pages, by_prefix=None):
     """Stub the list_objects_v2 paginator. ``by_prefix`` maps a Prefix kwarg to
-    its pages so single-bucket mode sees realistic prefix-filtered results."""
+    its pages so single-bucket mode sees realistic prefix-filtered results.
+    delete_objects defaults to an all-deleted response; tests override it."""
     paginator = Mock()
 
     def paginate(**kwargs):
@@ -45,6 +49,7 @@ def _pages(client, *pages, by_prefix=None):
 
     paginator.paginate.side_effect = paginate
     client.get_paginator.return_value = paginator
+    client.delete_objects.return_value = {"Deleted": []}
 
 
 def test_remove_bucket_method_matches_storage_contract(monkeypatch):
@@ -72,13 +77,57 @@ def test_remove_bucket_deletes_objects_then_bucket(monkeypatch):
 
 
 def test_remove_bucket_skips_missing_bucket(monkeypatch):
+    """bucket_exists goes through head_bucket; drive the real 404 path."""
     storage, client = _new_storage(monkeypatch, {})
-    client.bucket_exists.return_value = False
+    client.head_bucket.side_effect = ClientError(
+        {"Error": {"Code": "404"}},
+        "HeadBucket",
+    )
 
     storage.remove_bucket("nope")
 
+    client.get_paginator.assert_not_called()
     client.delete_objects.assert_not_called()
     client.delete_bucket.assert_not_called()
+
+
+def test_remove_bucket_raises_on_batch_delete_errors(monkeypatch):
+    """delete_objects reports failed keys in its response instead of raising;
+    the helper must surface them rather than report silent success."""
+    storage, client = _new_storage(monkeypatch, {})
+    _pages(
+        client,
+        {"Contents": [{"Key": "a"}]},
+        {"Contents": [{"Key": "c"}]},
+    )
+    client.delete_objects.side_effect = [
+        {"Deleted": [{"Key": "a"}]},
+        {"Errors": [{"Key": "c", "Code": "InternalError", "Message": "boom"}]},
+    ]
+    client.bucket_exists.return_value = True
+
+    storage.remove_bucket("kb01")
+
+    client.delete_bucket.assert_not_called()
+
+
+def test_remove_bucket_log_omits_request_urls(monkeypatch, caplog):
+    """S3 error responses can embed signed query strings; the log line must
+    carry the failure mode, not a verbatim request URL."""
+    storage, client = _new_storage(monkeypatch, {})
+    # A non-ClientError escapes bucket_exists and reaches remove_bucket's
+    # handler; botocore wraps such failures with the request URL attached.
+    client.head_bucket.side_effect = ConnectionError("GET https://s3.example.com/bucket?X-Amz-Signature=SECRET failed")
+
+    with caplog.at_level(logging.ERROR):
+        storage.remove_bucket("kb01")
+
+    client.delete_bucket.assert_not_called()
+    client.get_paginator.assert_not_called()
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("Fail to remove bucket kb01" in m for m in messages), messages
+    for m in messages:
+        assert "X-Amz-Signature" not in m
 
 
 def test_remove_bucket_single_bucket_mode_keeps_physical_bucket(monkeypatch):

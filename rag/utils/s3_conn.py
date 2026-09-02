@@ -238,6 +238,20 @@ class RAGFlowS3:
             logging.exception(f"Fail to move {src_bucket}/{src_path} -> {dest_bucket}/{dest_path}")
             return False
 
+    def _delete_objects_paginated(self, bucket, prefix=None):
+        """Delete every object under ``bucket`` (optionally scoped to ``prefix``)
+        in paginated batches. Raises if any key in a batch fails to delete."""
+        paginator = self.conn[0].get_paginator("list_objects_v2")
+        pages = paginator.paginate(Bucket=bucket, Prefix=prefix) if prefix is not None else paginator.paginate(Bucket=bucket)
+        for page in pages:
+            objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
+            if not objects:
+                continue
+            result = self.conn[0].delete_objects(Bucket=bucket, Delete={"Objects": objects})
+            if result.get("Errors"):
+                failed = ", ".join(err.get("Key", "?") for err in result["Errors"])
+                raise RuntimeError(f"S3 object deletion failed for keys: {failed}")
+
     @use_default_bucket
     def remove_bucket(self, bucket, **kwargs):
         orig_bucket = kwargs.pop("_orig_bucket", None)
@@ -250,20 +264,16 @@ class RAGFlowS3:
                     prefix = f"{self.prefix_path}/"
                 if orig_bucket:
                     prefix += f"{orig_bucket}/"
-
-                paginator = self.conn[0].get_paginator("list_objects_v2")
-                for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-                    objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
-                    if objects:
-                        self.conn[0].delete_objects(Bucket=bucket, Delete={"Objects": objects})
+                self._delete_objects_paginated(bucket, prefix)
             else:
                 if not self.bucket_exists(bucket):
                     return
-                paginator = self.conn[0].get_paginator("list_objects_v2")
-                for page in paginator.paginate(Bucket=bucket):
-                    objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
-                    if objects:
-                        self.conn[0].delete_objects(Bucket=bucket, Delete={"Objects": objects})
+                self._delete_objects_paginated(bucket)
                 self.conn[0].delete_bucket(Bucket=bucket)
-        except Exception:
-            logging.exception(f"Fail to remove bucket {bucket}")
+        except Exception as e:
+            # Keep the connector-wide convention of not propagating storage
+            # errors, but log only the failure mode: exception type and, for
+            # botocore errors, the service error code. str(e) is omitted
+            # because S3 error responses can embed signed request URLs.
+            detail = getattr(e, "response", {}).get("Error", {}).get("Code", "") if hasattr(e, "response") else ""
+            logging.error(f"Fail to remove bucket {bucket}: {type(e).__name__}" + (f" ({detail})" if detail else ""))
