@@ -619,6 +619,9 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	hasActiveTasks, err := h.documentService.HasActiveIngestionTasks(ctx, datasetID)
 	if err != nil {
 		common.Warn("failed to check active ingestion tasks", zap.Error(err))
+		// Keep polling when the authoritative dataset-wide check is unavailable;
+		// otherwise an active task on another page could be missed.
+		hasActiveTasks = true
 	}
 	common.SuccessWithData(c, gin.H{"total": total, "docs": docs, "has_active_tasks": hasActiveTasks}, "success")
 }

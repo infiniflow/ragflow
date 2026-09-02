@@ -199,7 +199,12 @@ func (dao *IngestionTaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string
 
 func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, documentId string) (*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
-	err := db.WithContext(ctx).Where("document_id = ?", documentId).Limit(1).Find(&tasks).Error
+	err := db.WithContext(ctx).
+		Where("document_id = ?", documentId).
+		Order("COALESCE(create_time, 0) DESC").
+		Order("id DESC").
+		Limit(1).
+		Find(&tasks).Error
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +220,20 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 func (dao *IngestionTaskDAO) CountActiveByDatasetID(ctx context.Context, db *gorm.DB, datasetID string) (int64, error) {
 	var count int64
 	err := db.WithContext(ctx).Model(&entity.IngestionTask{}).
-		Where("dataset_id = ? AND status IN ?", datasetID, []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING}).
+		Where(`ingestion_task.dataset_id = ?
+			AND ingestion_task.status IN ?
+			AND NOT EXISTS (
+				SELECT 1
+				FROM ingestion_task AS newer_ingestion_task
+				WHERE newer_ingestion_task.document_id = ingestion_task.document_id
+				  AND (
+					COALESCE(newer_ingestion_task.create_time, 0) > COALESCE(ingestion_task.create_time, 0)
+					OR (
+						COALESCE(newer_ingestion_task.create_time, 0) = COALESCE(ingestion_task.create_time, 0)
+						AND newer_ingestion_task.id > ingestion_task.id
+					)
+				  )
+			)`, datasetID, []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING}).
 		Count(&count).Error
 	return count, err
 }

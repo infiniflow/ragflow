@@ -363,3 +363,97 @@ func TestIngestionTaskDAOCountActiveByDatasetID(t *testing.T) {
 		t.Fatalf("active count for unknown = %d, want 0", count)
 	}
 }
+
+func TestIngestionTaskDAOCountActiveByDatasetIDUsesLatestTask(t *testing.T) {
+	db := setupTaskTestDB(t)
+	if err := db.Exec("DROP INDEX idx_ingestion_task_document_id").Error; err != nil {
+		t.Fatalf("drop ingestion task unique index: %v", err)
+	}
+
+	oldTaskTime := int64(100)
+	newTaskTime := int64(200)
+	for _, task := range []*entity.IngestionTask{
+		{
+			ID:         "task-old-active",
+			UserID:     "user-1",
+			DocumentID: "doc-retried",
+			DatasetID:  "kb-1",
+			Status:     common.RUNNING,
+			BaseModel:  entity.BaseModel{CreateTime: &oldTaskTime},
+		},
+		{
+			ID:         "task-new-terminal",
+			UserID:     "user-1",
+			DocumentID: "doc-retried",
+			DatasetID:  "kb-1",
+			Status:     common.COMPLETED,
+			BaseModel:  entity.BaseModel{CreateTime: &newTaskTime},
+		},
+		{
+			ID:         "task-current-active",
+			UserID:     "user-1",
+			DocumentID: "doc-current",
+			DatasetID:  "kb-1",
+			Status:     common.SCHEDULED,
+		},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	count, err := NewIngestionTaskDAO().CountActiveByDatasetID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatalf("CountActiveByDatasetID: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("active count for kb-1 = %d, want 1 (latest task per document)", count)
+	}
+}
+
+func TestIngestionTaskDAOGetByDocumentIDUsesLatestTask(t *testing.T) {
+	db := setupTaskTestDB(t)
+	if err := db.Exec("DROP INDEX idx_ingestion_task_document_id").Error; err != nil {
+		t.Fatalf("drop ingestion task unique index: %v", err)
+	}
+
+	oldTaskTime := int64(100)
+	newTaskTime := int64(200)
+	for _, task := range []*entity.IngestionTask{
+		{
+			ID:         "task-old",
+			UserID:     "user-1",
+			DocumentID: "doc-retried",
+			DatasetID:  "kb-1",
+			Status:     common.RUNNING,
+			BaseModel:  entity.BaseModel{CreateTime: &oldTaskTime},
+		},
+		{
+			ID:         "task-new",
+			UserID:     "user-1",
+			DocumentID: "doc-retried",
+			DatasetID:  "kb-1",
+			Status:     common.COMPLETED,
+			BaseModel:  entity.BaseModel{CreateTime: &newTaskTime},
+		},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	task, err := NewIngestionTaskDAO().GetByDocumentID(t.Context(), db, "doc-retried")
+	if err != nil {
+		t.Fatalf("GetByDocumentID: %v", err)
+	}
+	if task == nil || task.ID != "task-new" {
+		t.Fatalf("latest task = %+v, want task-new", task)
+	}
+}
+
+func TestIngestionTaskDAOHasDatasetStatusIndex(t *testing.T) {
+	db := setupTaskTestDB(t)
+	if !db.Migrator().HasIndex(&entity.IngestionTask{}, "idx_ingestion_task_dataset_status") {
+		t.Fatal("expected composite dataset/status index on ingestion_task")
+	}
+}
