@@ -441,7 +441,16 @@ A list of dictionaries representing the documents to upload, each containing the
 
 ```python
 dataset = rag_object.create_dataset(name="kb_name")
-dataset.upload_documents([{"display_name": "1.txt", "blob": "<BINARY_CONTENT_OF_THE_DOC>"}, {"display_name": "2.pdf", "blob": "<BINARY_CONTENT_OF_THE_DOC>"}])
+
+with open("1.txt", "rb") as file:
+    documents = dataset.upload_documents([
+        {
+            "display_name": "1.txt",
+            "blob": file.read(),
+        }
+    ])
+
+print(documents[0].id)
 ```
 
 ---
@@ -538,15 +547,17 @@ The downloaded document in bytes.
 #### Examples
 
 ```python
+from pathlib import Path
 from ragflow_sdk import RAGFlow
 
-rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-dataset = rag_object.list_datasets(id="id")
-dataset = dataset[0]
-doc = dataset.list_documents(id="wdfxb5t547d")
-doc = doc[0]
-open("~/ragflow.txt", "wb+").write(doc.download())
-print(doc)
+rag_object = RAGFlow(
+    api_key="<YOUR_API_KEY>",
+    base_url="http://<YOUR_BASE_URL>:9380",
+)
+dataset = rag_object.list_datasets(id="id")[0]
+doc = dataset.list_documents(id="wdfxb5t547d")[0]
+
+Path("~/ragflow.txt").expanduser().write_bytes(doc.download())
 ```
 
 ---
@@ -555,17 +566,17 @@ print(doc)
 
 ```python
 DataSet.list_documents(
-    id: str = None,
+    id: str | None = None,
     ids: list[str] | None = None,
     name: str | None = None,
-    keywords: str = None,
+    keywords: str | None = None,
     page: int = 1,
     page_size: int = 30,
-    order_by: str = "create_time",
+    orderby: str = "create_time",
     desc: bool = True,
     create_time_from: int = 0,
     create_time_to: int = 0
-) -> list[Document]
+)
 ```
 
 Lists documents in the current dataset.
@@ -676,7 +687,12 @@ dataset = rag_object.create_dataset(name="kb_1")
 
 filename1 = "~/ragflow.txt"
 blob = open(filename1 , "rb").read()
-dataset.upload_documents([{"name":filename1,"blob":blob}])
+dataset.upload_documents([
+    {
+        "display_name": filename1,
+        "blob": blob,
+    }
+])
 for doc in dataset.list_documents(keywords="rag", page=0, page_size=12):
     print(doc)
 ```
@@ -1051,14 +1067,6 @@ A dictionary representing the attributes to update, with the following keys:
   - `True`: Available (default)
 - `"image_base64"`: `string` Base64-encoded image content to associate with the chunk.
 
-##### use_kg: `bool`
-
-Whether to enable graph-assisted retrieval for multi-hop queries. Defaults to `False`.
-
-##### toc_enhance: `bool`
-
-Whether to use extracted table-of-contents information during retrieval. Defaults to `False`.
-
 #### Returns
 
 - Success: No value is returned.
@@ -1154,6 +1162,14 @@ The languages that should be translated into, in order to achieve keywords retri
 ##### metadata_condition: `dict`
 
 filter condition for `meta_fields`.
+
+##### use_kg: `bool`
+
+Whether to enable graph-assisted retrieval for multi-hop queries. Defaults to `False`.
+
+##### toc_enhance: `bool`
+
+Whether to use extracted table-of-contents information during retrieval. Defaults to `False`.
 
 #### Returns
 
@@ -2254,7 +2270,7 @@ The name of the chat model to use. For example: `"glm-4-flash@ZHIPU-AI"`
 ```python
 from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-memory = rag_obj.create_memory("name", ["raw"], "BAAI/bge-large-zh-v1.5@SILICONFLOW", "glm-4-flash@ZHIPU-AI")
+memory = rag_object.create_memory("name", ["raw"], "BAAI/bge-large-zh-v1.5@SILICONFLOW", "glm-4-flash@ZHIPU-AI")
 ```
 
 ---
@@ -2345,9 +2361,9 @@ Configurations to update. Available configurations:
 #### Examples
 
 ```python
-from ragflow_sdk import Ragflow, Memory
+from ragflow_sdk import RAGFlow, Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-memory_obejct = Memory(rag_object, {"id": "your memory_id"})
+memory_object = Memory(rag_object, {"id": "your memory_id"})
 memory_object.update({"name": "New_name"})
 ```
 
@@ -2415,9 +2431,9 @@ Failure: `Exception`
 #### Examples
 
 ```
-from ragflow_sdk import Ragflow, Memory
+from ragflow_sdk import RAGFlow, Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-rag_obejct.list_memory()
+rag_object.list_memory()
 ```
 
 ---
@@ -2447,8 +2463,8 @@ Failure: `Exception`
 ```python
 from ragflow_sdk import RAGFlow, Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-memory_obejct = Memory(rag_object, {"id": "your memory_id"})
-memory_obejct.get_config()
+memory_object = Memory(rag_object, {"id": "your memory_id"})
+memory_object.get_config()
 ```
 
 ---
@@ -2535,8 +2551,8 @@ Failure: `Exception`
 ```python
 from ragflow_sdk import RAGFlow, Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-memory_obejct = Memory(rag_object, {"id": "your memory_id"})
-memory_obejct.list_memory_messages()
+memory_object = Memory(rag_object, {"id": "your memory_id"})
+memory_object.list_memory_messages()
 ```
 
 ---
@@ -2605,7 +2621,7 @@ message_payload = {
 Your agent response here
 """
 }
-client.add_message(**message_payload)
+rag_object.add_message(**message_payload)
 ```
 
 ---
@@ -2758,7 +2774,7 @@ rag_object.search_message("your question", ["your memory_id"])
 ### Get Recent Messages
 
 ```python
-Ragflow.get_recent_messages(
+RAGFlow.get_recent_messages(
     memory_id: list[str],
     agent_id: str=None,
     session_id: str=None,
@@ -2795,7 +2811,7 @@ Failure: `Exception`
 #### Examples
 
 ```python
-from ragflow_sdk import Ragflow
+from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 rag_object.get_recent_messages(["your memory_id"])
 ```
@@ -2825,7 +2841,7 @@ Failure: `Exception`
 #### Examples
 
 ```python
-from ragflow_sdk import RAGFlow
+from ragflow_sdk import RAGFlow,Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 memory_object = Memory(rag_object, {"id": "your memory_id"})
 memory_object.get_message_content(message_id)
