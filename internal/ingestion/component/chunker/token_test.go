@@ -824,10 +824,3 @@ func TestApplyChildrenDelimText_FallbackStripsLeadingNewline(t *testing.T) {
 		}
 	}
 }
-
-// TestApplyChildrenDelim_SymmetryWithTextPath was dropped because it
-// referenced applyChildrenDelim, a function that does not exist in
-// the current Go chunker — only applyChildrenDelimText exists. The
-// missing function makes the test a compile error, so the symmetry
-// check has to live in a follow-up that introduces the JSON-side
-// helper too.
