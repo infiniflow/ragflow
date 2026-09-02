@@ -132,10 +132,7 @@ def _assert_tokenizer_alive() -> None:
     from rag.nlp import num_tokens_from_string
 
     probe = "RAGFlow chunker parity tokenizer liveness probe."
-    hint = (
-        "Fix the encoding first: uv run python3 ragflow_deps/download_deps.py "
-        "(provides ragflow_deps/cl100k_base.tiktoken)."
-    )
+    hint = "Fix the encoding first: uv run python3 ragflow_deps/download_deps.py (provides ragflow_deps/cl100k_base.tiktoken)."
     # Two shapes to catch. common/token_utils.py builds the encoder on first use and
     # lets that failure propagate, so an unavailable BPE table raises here; a failure
     # to encode an otherwise valid string is still reported as 0.
@@ -144,11 +141,7 @@ def _assert_tokenizer_alive() -> None:
     except Exception as exc:
         sys.exit(f"tokenizer is dead: num_tokens_from_string() raised {exc!r}.\n{hint}")
     if got <= 0:
-        sys.exit(
-            "tokenizer is dead: num_tokens_from_string() returned "
-            f"{got} for a {len(probe)}-character probe, so capturing now "
-            f"would write goldens where no token budget is ever exceeded.\n{hint}"
-        )
+        sys.exit(f"tokenizer is dead: num_tokens_from_string() returned {got} for a {len(probe)}-character probe, so capturing now would write goldens where no token budget is ever exceeded.\n{hint}")
 
 
 def run_case(case: dict) -> dict:
