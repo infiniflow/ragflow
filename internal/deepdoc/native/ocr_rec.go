@@ -36,7 +36,7 @@ type OCRRecResult struct {
 }
 
 // RunOCRRec recognizes a single cropped text-line image. It is equivalent to a
-// one-line batch (see RunOCRRecBatch): the line is resized against its own
+// one-line batch (see RunOCRRecBatchReal): the line is resized against its own
 // wh_ratio floored at 320/48, never the batch-max, so a caller recognizing
 // lines independently gets the same result as a standalone Python
 // TextRecognizer call.
@@ -55,28 +55,16 @@ func RunOCRRec(ctx context.Context, modelDir string, img *Image) (OCRRecResult, 
 	return recognizeLine(ctx, modelDir, img, maxWhRatio, chars)
 }
 
-// RunOCRRecBatch recognizes a batch of cropped text-line images the way
-// deepdoc's TextRecognizer.__call__ does: every line in the batch is resized to
-// the SAME width derived from the batch's maximum wh_ratio (floored at 320/48),
-// so a narrow line inside a wide batch is widened to the batch max rather than
-// its own ratio. This makes Go match production batch semantics, where a page's
-// lines are recognized together. Lines are recognized independently after the
-// shared resize, so order is preserved and results are deterministic per batch.
-//
-// DEPRECATED semantic-shape note: this variant still runs one ONNX Run PER
-// line (recMaxBatch=1). Prefer RunOCRRecBatchReal, which concatenates every
-// line's preprocessed blob into a single {N,3,48,imgW} tensor and performs ONE
-// ONNX Run — identical numerically (each line uses the same shared batch width)
-// but with the real throughput benefit of batched matmul. RunOCRRecBatchReal is
-// the production path.
 // RunOCRRecBatchReal recognizes a batch of cropped text-line images with a
-// SINGLE ONNX Run, mirroring deepdoc's TextRecognizer.__call__ exactly: every
-// line is resized to the batch's shared width (imgW = 48*max_wh_ratio, floored
-// at 320/48) and zero-padded on the right, all blobs are concatenated into one
-// {N,3,48,imgW} tensor, and the model runs once. The output is split back into
-// per-line sequences and CTC-decoded in order, so the result is numerically
-// identical to calling RunOCRRec on each line (each line sees the same shared
-// batch width), but amortized over one forward pass instead of N.
+// SINGLE ONNX Run, mirroring deepdoc's TextRecognizer.__call__: each line is
+// resized to its own proportional width (recH * that line's wh_ratio), capped
+// by the batch-shared imgW (imgW = recH * max_wh_ratio, with max_wh_ratio
+// floored at 320/48), and zero-padded on the right out to imgW; all blobs are
+// concatenated into one {N,3,48,imgW} tensor, and the model runs once. The
+// output is split back into per-line sequences and CTC-decoded in order, so
+// the result is numerically identical to calling RunOCRRec on each line (each
+// line sees the same shared batch width), but amortized over one forward pass
+// instead of N.
 //
 // The shared batch width means a line is resized against the batch max wh_ratio,
 // not its own — exactly what deepdoc does inside a batch. A standalone call to
