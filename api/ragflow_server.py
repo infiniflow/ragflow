@@ -84,6 +84,7 @@ def stop_background_services():
 def signal_handler(sig, frame):
     global shutdown_requested
     if shutdown_requested:
+        os.kill(os.getpid(), signal.SIGKILL)
         return
     shutdown_requested = True
     sys.exit(0)
