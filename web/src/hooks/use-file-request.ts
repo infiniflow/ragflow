@@ -338,37 +338,8 @@ export const useConnectToKnowledge = () => {
       });
       if (data.code === 0) {
         message.success(t('message.operated'));
-        const fileIdSet = new Set(params.fileIds);
-        queryClient.setQueriesData<IFetchFileListResult>(
-          {
-            queryKey: [FileApiAction.FetchFileList],
-          },
-          (oldData) => {
-            if (!oldData?.files) return oldData;
-            return {
-              ...oldData,
-              files: oldData.files.map((file) => {
-                if (!fileIdSet.has(file.id)) return file;
-                const kbsInfo =
-                  params.mode === 'replace'
-                    ? params.kbsInfo
-                    : [
-                        ...(file.kbs_info ?? []),
-                        ...params.kbsInfo.filter(
-                          (kb) =>
-                            !(file.kbs_info ?? []).some(
-                              (item) => item.kb_id === kb.kb_id,
-                            ),
-                        ),
-                      ];
-                return { ...file, kbs_info: kbsInfo };
-              }),
-            };
-          },
-        );
-        queryClient.invalidateQueries({
+        await queryClient.invalidateQueries({
           queryKey: [FileApiAction.FetchFileList],
-          refetchType: 'none',
         });
       }
       return data.code;
