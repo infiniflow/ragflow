@@ -409,7 +409,6 @@ export function getInitialExtractorValues() {
 export const initialCompilationValues = {
   compilation_template_group_id: '',
   llm_id: '',
-  mode: 'entity',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },

@@ -226,7 +226,9 @@ class RAGFlowConnector:
                 break
 
             datasets.extend(page_datasets)
-            total = res_json.get("total")
+            # The REST API reports the dataset total under "total_datasets"
+            # (see api/utils/api_utils.py get_result).
+            total = res_json.get("total_datasets", res_json.get("total"))
             if total is not None and len(datasets) >= total:
                 break
 

@@ -143,7 +143,7 @@ def _load_user_app(monkeypatch):
 
     quart_mod = ModuleType("quart")
     quart_mod.session = {}
-    quart_mod.request = SimpleNamespace(args=_Args({}))
+    quart_mod.request = SimpleNamespace(args=_Args({}), path="/v1/user/setting")
 
     async def _make_response(data):
         return _DummyResponse(data)
@@ -174,6 +174,10 @@ def _load_user_app(monkeypatch):
     db_mod.UserTenantRole = SimpleNamespace(OWNER="owner")
     monkeypatch.setitem(sys.modules, "api.db", db_mod)
     api_pkg.db = db_mod
+
+    tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
+    tenant_model_service_mod.ensure_tenant_model_ids_for_params = lambda _tenant_id, params: params
+    monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
     db_models_mod = ModuleType("api.db.db_models")
 
@@ -854,10 +858,21 @@ def test_tenant_info_and_set_tenant_info_exception_matrix_unit(monkeypatch):
     assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
     assert "tenant info boom" in res["message"], res
 
+    # IDOR: tenant_id from request body must match the authenticated user
     _set_request_json(
         monkeypatch,
         module,
-        {"tenant_id": "tenant-1", "llm_id": "l", "embd_id": "e", "asr_id": "a", "img2txt_id": "i"},
+        {"tenant_id": "other-tenant", "llm_id": "l", "embd_id": "e", "asr_id": "a", "img2txt_id": "i"},
+    )
+    res = _run(module.set_tenant_info())
+    assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
+    assert res["message"] == "No authorization.", res
+
+    # Authorized request: tenant_id matches current_user.id ("current-user")
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"tenant_id": "current-user", "llm_id": "l", "embd_id": "e", "asr_id": "a", "img2txt_id": "i"},
     )
 
     def _raise_update(_tenant_id, _payload):

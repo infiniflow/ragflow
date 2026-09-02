@@ -304,7 +304,7 @@ def get_result(code=RetCode.SUCCESS, message="", data=None, total=None):
     {
         "code": 0,
         "data": [...],        # List or object, backward compatible
-        "total": 47,          # Optional field for pagination
+        "total_datasets": 47, # Optional field for pagination
         "message": "..."      # Error or status message
     }
     """

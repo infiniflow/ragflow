@@ -1580,7 +1580,7 @@ jobs:
 
       - name: Cache external DeepDoc testdata
         # The native backend tests fetch pinned test assets from
-        # xugangqiang/ragflow-testdata (see scripts/fetch_deepdoc_testdata.sh).
+        # infiniflow/ragflow-testdata (see scripts/fetch_deepdoc_testdata.sh).
         # Cache them across runs, keyed by the pinned ref recorded in
         # internal/deepdoc/native/testdata.ref so a ref bump invalidates the cache.
         uses: actions/cache@v4

@@ -2320,6 +2320,8 @@ async def _wiki_chunk_alteration(
     dataset_id: str,
     eligible_doc_ids: set[str],
     involved_doc_ids: set[str],
+    current_chunk_state: dict | None = None,
+    previous_map_state: dict | None = None,
 ) -> dict:
     """Compare active source chunks with the hashes used by Wiki MAP.
 
@@ -2338,15 +2340,15 @@ async def _wiki_chunk_alteration(
     if not eligible_doc_ids and not involved_doc_ids:
         return empty
 
-    from rag.advanced_rag.knowlege_compile.wiki import (
-        _wiki_compare_chunk_states,
-        _wiki_load_active_map_state,
-        _wiki_scan_current_chunk_state,
-    )
+    from rag.advanced_rag.knowlege_compile.wiki import _wiki_compare_chunk_states, _wiki_load_active_map_state, _wiki_scan_current_chunk_state
 
     try:
-        current = await _wiki_scan_current_chunk_state(tenant_id, dataset_id, eligible_doc_ids)
-        previous = await _wiki_load_active_map_state(tenant_id, dataset_id)
+        current = current_chunk_state
+        if current is None:
+            current = await _wiki_scan_current_chunk_state(tenant_id, dataset_id, eligible_doc_ids)
+        previous = previous_map_state
+        if previous is None:
+            previous = await _wiki_load_active_map_state(tenant_id, dataset_id)
     except Exception as exc:
         logging.exception("alteration: failed to compare Wiki chunk state for kb=%s", dataset_id)
         raise RuntimeError(f"Failed to compare Wiki chunk state for alteration (kb={dataset_id})") from exc
@@ -2456,10 +2458,20 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
     return involved
 
 
-async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str) -> set:
+async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str, tenant_id: str, wiki_map_state: dict | None = None) -> set:
     """Gather the doc ids baked into the compiled product for ``kind``."""
     if kind == "wiki":
-        return await _involved_doc_ids_paged(index_nm, dataset_id, {"compile_kwd": [WIKI_PAGE_COMPILE_KWD]}, "source_doc_ids", from_list=True)
+        from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_active_map_state
+
+        # Wiki MAP state is committed only after the compilation run has
+        # successfully completed.  Use that active snapshot as the
+        # compilation provenance, rather than wiki_page.source_doc_ids:
+        # a document can participate in MAP/REDUCE without producing a page
+        # (for example when the extractor finds no page-worthy entities).
+        state = wiki_map_state
+        if state is None:
+            state = await _wiki_load_active_map_state(tenant_id, dataset_id)
+        return {str(item.get("doc_id")) for item in state.values() if item.get("doc_id")}
     if kind in _ALTERATION_KIND_TO_MERGED_ROW_KIND:
         condition = {
             "knowledge_graph_kwd": ["entity", "relation"],
@@ -2514,14 +2526,61 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
     if pack is not None:
         index_nm, _ = pack
-        involved_doc_ids = await _involved_doc_ids_for_kind(index_nm, dataset_id, kind)
+        if kind == "wiki":
+            # A document may match the Wiki template while still having no
+            # available source chunks (for example, parsing has not produced
+            # chunks yet or all chunks are disabled). Such a document is not
+            # an actionable Wiki input and must not be reported as newly
+            # uploaded.
+            from rag.advanced_rag.knowlege_compile.wiki import _wiki_scan_current_chunk_state
+
+            eligible_before_chunk_filter = len(eligible_doc_ids)
+            current_chunk_state = await _wiki_scan_current_chunk_state(
+                kb.tenant_id,
+                dataset_id,
+                eligible_doc_ids,
+            )
+            chunk_doc_ids = {str(item.get("doc_id")) for item in current_chunk_state.values() if item.get("doc_id")}
+            eligible_doc_ids &= chunk_doc_ids
+            logging.debug(
+                "alteration: Wiki chunk eligibility kb=%s tenant=%s before=%d after=%d chunks=%d",
+                dataset_id,
+                kb.tenant_id,
+                eligible_before_chunk_filter,
+                len(eligible_doc_ids),
+                len(current_chunk_state),
+            )
+        wiki_map_state = None
+        if kind == "wiki":
+            from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_active_map_state
+
+            wiki_map_state = await _wiki_load_active_map_state(kb.tenant_id, dataset_id)
+            logging.debug(
+                "alteration: Wiki MAP provenance kb=%s tenant=%s involved=%d eligible=%d",
+                dataset_id,
+                kb.tenant_id,
+                len({str(item.get("doc_id")) for item in wiki_map_state.values() if item.get("doc_id")}),
+                len(eligible_doc_ids),
+            )
+        involved_doc_ids = await _involved_doc_ids_for_kind(index_nm, dataset_id, kind, kb.tenant_id, wiki_map_state)
         if kind == "wiki":
             chunk_changes = await _wiki_chunk_alteration(
                 kb.tenant_id,
                 dataset_id,
                 eligible_doc_ids,
                 involved_doc_ids,
+                current_chunk_state,
+                wiki_map_state,
             )
+    elif kind == "wiki":
+        # Without the compiled source index there are no current chunks that
+        # can be considered Wiki inputs.
+        eligible_doc_ids = set()
+        logging.debug(
+            "alteration: Wiki compiled index missing kb=%s tenant=%s eligible=0",
+            dataset_id,
+            kb.tenant_id,
+        )
 
     # Wiki membership follows compilation eligibility. Disabling a document or
     # removing its Wiki template is therefore a removal; enabling it again or
