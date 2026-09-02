@@ -37,8 +37,6 @@ class MonkeyOCRParser(MinerUParser):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def check_installation(self, backend: str = "vlm-transformers", server_url: Optional[str] = None) -> tuple[bool, str]:
-        # Availability is the HTTP adapter; ``backend`` is kept for MinerUParser API compatibility.
-        _ = backend
         if not self.mineru_api:
             reason = "[MonkeyOCR] MONKEYOCR_APISERVER not configured."
             self.logger.warning(reason)

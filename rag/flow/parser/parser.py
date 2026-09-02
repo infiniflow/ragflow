@@ -70,6 +70,29 @@ from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
 
 
+def _ocr_parse_lines_to_bboxes(pdf_parser, lines):
+    """Convert OCR parser line tuples into flow-parser bbox dicts."""
+    bboxes = []
+    for line in lines or []:
+        if not isinstance(line, tuple) or len(line) < 3:
+            continue
+
+        text, layout_type, poss = line[0], line[1], line[2]
+        box = {
+            "text": text,
+            "layout_type": layout_type or "text",
+        }
+        positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
+        if positions:
+            box["positions"] = positions
+            box["page_number"] = positions[0][0]
+        image = pdf_parser.crop(poss, 1)
+        if image is not None:
+            box["image"] = image
+        bboxes.append(box)
+    return bboxes
+
+
 class ParserParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
@@ -409,23 +432,7 @@ class Parser(ProcessBase):
                 parse_method="pipeline",
                 lang=conf.get("lang", "Chinese"),
             )
-            bboxes = []
-            for line in lines or []:
-                if not isinstance(line, tuple) or len(line) < 3:
-                    continue
-
-                t, layout_type, poss = line[0], line[1], line[2]
-                box = {
-                    "text": t,
-                    "layout_type": layout_type or "text",
-                }
-                positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
-                if positions:
-                    box["positions"] = positions
-                image = pdf_parser.crop(poss, 1)
-                if image is not None:
-                    box["image"] = image
-                bboxes.append(box)
+            bboxes = _ocr_parse_lines_to_bboxes(pdf_parser, lines)
 
         elif parse_method.lower() == "monkeyocr":
 
@@ -456,23 +463,7 @@ class Parser(ProcessBase):
                 parse_method="pipeline",
                 lang=conf.get("lang", "Chinese"),
             )
-            bboxes = []
-            for line in lines or []:
-                if not isinstance(line, tuple) or len(line) < 3:
-                    continue
-
-                t, layout_type, poss = line[0], line[1], line[2]
-                box = {
-                    "text": t,
-                    "layout_type": layout_type or "text",
-                }
-                positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
-                if positions:
-                    box["positions"] = positions
-                image = pdf_parser.crop(poss, 1)
-                if image is not None:
-                    box["image"] = image
-                bboxes.append(box)
+            bboxes = _ocr_parse_lines_to_bboxes(pdf_parser, lines)
 
         elif parse_method.lower() == "docling":
             pdf_parser = DoclingParser(docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""))
