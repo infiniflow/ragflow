@@ -215,9 +215,14 @@ func WriteXLSX(content string, _ XLSXOptions) ([]byte, error) {
 		name := t.sheetName
 		// Ensure unique sheet names: on collision append _1, _2, ...
 		// to the original name, truncating it in characters so the
-		// final name stays within the 31-character limit.
+		// final name stays within the 31-character limit. Keys are
+		// lowercased because Excel and Excelize resolve sheet names
+		// case-insensitively: with a case-sensitive map, "Report"
+		// followed by "report" would alias to the same sheet and the
+		// second table would overwrite the first.
+		key := strings.ToLower(name)
 		original := []rune(name)
-		for counter := 1; used[name]; counter++ {
+		for counter := 1; used[key]; counter++ {
 			suffix := "_" + strconv.Itoa(counter)
 			trim := 31 - len(suffix)
 			if trim < 1 {
@@ -228,8 +233,9 @@ func WriteXLSX(content string, _ XLSXOptions) ([]byte, error) {
 				base = base[:trim]
 			}
 			name = string(base) + suffix
+			key = strings.ToLower(name)
 		}
-		used[name] = true
+		used[key] = true
 		if _, err := f.NewSheet(name); err != nil {
 			return nil, fmt.Errorf("xlsx: new sheet %q: %w", name, err)
 		}

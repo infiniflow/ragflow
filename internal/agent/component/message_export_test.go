@@ -118,6 +118,65 @@ func TestMessage_ExportAttachmentXlsx(t *testing.T) {
 	}
 }
 
+// TestMessage_ExportAttachmentHTML pins the html branch conversion
+// contract: the exported file is produced from the resolved markdown
+// (converted to an HTML fragment, as pypandoc does in Python), not
+// from the already-escaped output_format rendering — headings and
+// emphasis must survive as real HTML instead of literal text.
+func TestMessage_ExportAttachmentHTML(t *testing.T) {
+	storageFactory := storage.GetStorageFactory()
+	prevStorage := storageFactory.GetStorage()
+	memStorage := storage.NewMemoryStorage()
+	storageFactory.SetStorage(memStorage)
+	t.Cleanup(func() { storageFactory.SetStorage(prevStorage) })
+
+	c, err := New(componentNameMessage, map[string]any{
+		"text":          "# Report\n\nHello **world**",
+		"output_format": "html",
+	})
+	if err != nil {
+		t.Fatalf("New(Message): %v", err)
+	}
+	state := canvas.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"stream": false})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	attachment, ok := out["attachment"].(map[string]any)
+	if !ok {
+		t.Fatalf("attachment = %#v, want a descriptor map", out["attachment"])
+	}
+	if attachment["format"] != "html" {
+		t.Errorf("format = %v, want html", attachment["format"])
+	}
+	docID, _ := attachment["doc_id"].(string)
+	if docID == "" {
+		t.Fatalf("attachment doc_id empty: %#v", attachment)
+	}
+
+	blob, err := memStorage.Get(ctx, "tenant-1-downloads", docID)
+	if err != nil {
+		t.Fatalf("stored blob missing: %v", err)
+	}
+	html := string(blob)
+	if !strings.Contains(html, "<!DOCTYPE html>") {
+		t.Errorf("exported blob is not a full HTML document")
+	}
+	for _, want := range []string{"<h1>Report</h1>", "<strong>world</strong>"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("exported html = %q, want it to contain %q (markdown converted, not literal text)", html, want)
+		}
+	}
+	for _, banned := range []string{"&lt;h1&gt;", "&lt;strong&gt;", "# Report"} {
+		if strings.Contains(html, banned) {
+			t.Errorf("exported html = %q, must not contain escaped/literal markdown %q", html, banned)
+		}
+	}
+}
+
 // TestMessage_NoExportWithoutFileFormat ensures plain/markdown text
 // rendering formats do not fabricate attachments.
 func TestMessage_NoExportWithoutFileFormat(t *testing.T) {

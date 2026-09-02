@@ -244,12 +244,14 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 	}
 
 	// File export (the "Download file type" selector). Python's
-	// _convert_content converts the final content via pypandoc/pandas and
-	// surfaces outputs["attachment"]; the front-end download button on the
-	// message depends on it. Failures are logged, never fatal — mirroring
-	// Python's try/except around the conversion.
-	if exportFmt := messageExportFormat(string(format)); exportFmt != "" && rendered != "" {
-		attachment, exportErr := exportMessageAttachment(ctx, exportFmt, rendered)
+	// _convert_content receives the resolved, un-rendered content and
+	// converts it via pypandoc/pandas; each format writer owns its own
+	// markdown handling. Exporting the format-rendered string instead
+	// would double-process the body (html export would ship the escaped
+	// text as literal content). Failures are logged, never fatal —
+	// mirroring Python's try/except around the conversion.
+	if exportFmt := messageExportFormat(string(format)); exportFmt != "" && resolved != "" {
+		attachment, exportErr := exportMessageAttachment(ctx, exportFmt, resolved)
 		if exportErr != nil {
 			common.Error("Message: export attachment failed", exportErr)
 		} else if attachment != nil {

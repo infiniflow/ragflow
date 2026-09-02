@@ -17,7 +17,7 @@
 // Message attachment export — the Go port of Python message.py's
 // `_convert_content`: when the Message component declares a file
 // `output_format` (the "Download file type" selector in the UI), the
-// final rendered content is converted to that format, uploaded to the
+// resolved content is converted to that format, uploaded to the
 // agent attachment storage, and surfaced as outputs["attachment"]
 // ({doc_id, format, file_name}). The front-end renders the message
 // download button from that descriptor.
@@ -25,11 +25,14 @@
 package component
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/yuin/goldmark"
+	gmhtml "github.com/yuin/goldmark/renderer/html"
 
 	iow "ragflow/internal/agent/component/io"
 	"ragflow/internal/common"
@@ -59,10 +62,12 @@ func messageExportFormat(raw string) string {
 	}
 }
 
-// exportMessageAttachment converts content to the requested format,
-// stores it via the agent attachment storage, and returns the
-// attachment descriptor consumed by the front-end download button
-// (group-button.tsx reads {doc_id, format, file_name}).
+// exportMessageAttachment converts the resolved (un-rendered) markdown
+// content to the requested format, stores it via the agent attachment
+// storage, and returns the attachment descriptor consumed by the
+// front-end download button (group-button.tsx reads {doc_id, format,
+// file_name}). Each format writer owns its own markdown handling, the
+// same contract as Python's pypandoc/pandas conversion.
 //
 // Errors are returned to the caller, which logs them and continues —
 // a failed export must not break the message itself (Python wraps the
@@ -77,7 +82,10 @@ func exportMessageAttachment(ctx context.Context, format, content string) (map[s
 	var err error
 	switch format {
 	case "html":
-		payload = iow.WriteHTML(exported, iow.HTMLOptions{
+		// Convert the markdown body to an HTML fragment first, as
+		// pypandoc does (format="markdown" → html); WriteHTML only
+		// adds the document wrapper around the fragment.
+		payload = iow.WriteHTML(markdownToHTML(exported), iow.HTMLOptions{
 			FontSize:   defaultDocsFontSize,
 			FontFamily: defaultHTMLFontFamily,
 		})
@@ -116,4 +124,20 @@ func exportMessageAttachment(ctx context.Context, format, content string) (map[s
 		"format":    format,
 		"file_name": fmt.Sprintf("%s.%s", docID[:8], format),
 	}, nil
+}
+
+// markdownToHTML renders markdown source to an HTML fragment, the Go
+// counterpart of pypandoc's markdown→html conversion in Python's
+// _convert_content: headings, emphasis and tables keep their structure
+// in the exported file instead of shipping as literal text. Raw HTML
+// in the source passes through (pandoc's raw_html default). On a
+// conversion error the plain content is kept rather than dropping the
+// export.
+func markdownToHTML(content string) string {
+	var buf bytes.Buffer
+	md := goldmark.New(goldmark.WithRendererOptions(gmhtml.WithUnsafe()))
+	if err := md.Convert([]byte(content), &buf); err != nil {
+		return content
+	}
+	return buf.String()
 }

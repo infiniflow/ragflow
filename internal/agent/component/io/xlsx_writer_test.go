@@ -195,3 +195,42 @@ func TestWriteXLSX_AllTablesEmptyFallsBackToDataSheet(t *testing.T) {
 		t.Errorf("A1 = %q (%v), want the whole content", v, err)
 	}
 }
+
+func TestWriteXLSX_SheetNameCollisionCaseInsensitive(t *testing.T) {
+	// Excelize resolves sheet names case-insensitively (EqualFold), so
+	// "Report" and "report" must not land on the same sheet: the second
+	// table would silently overwrite the first one's rows.
+	content := "## Report\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n## report\n\n| C | D |\n|---|---|\n| 3 | 4 |\n"
+
+	payload, err := WriteXLSX(content, XLSXOptions{})
+	if err != nil {
+		t.Fatalf("WriteXLSX: %v", err)
+	}
+	f, err := excelize.OpenReader(strings.NewReader(string(payload)))
+	if err != nil {
+		t.Fatalf("open workbook: %v", err)
+	}
+	defer f.Close()
+
+	sheets := f.GetSheetList()
+	if len(sheets) != 2 {
+		t.Fatalf("sheets = %v, want 2 distinct sheets", sheets)
+	}
+	if sheets[0] != "Report" || sheets[1] != "report_1" {
+		t.Errorf("sheets = %v, want [Report report_1] (case-insensitive collision suffixed)", sheets)
+	}
+	// Both tables' data must survive; before the fix the second table
+	// overwrote the first sheet's rows.
+	if v, err := f.GetCellValue("Report", "A2"); err != nil || v != "1" {
+		t.Errorf("Report A2 = %q (%v), want 1", v, err)
+	}
+	if v, err := f.GetCellValue("Report", "B2"); err != nil || v != "2" {
+		t.Errorf("Report B2 = %q (%v), want 2", v, err)
+	}
+	if v, err := f.GetCellValue("report_1", "A2"); err != nil || v != "3" {
+		t.Errorf("report_1 A2 = %q (%v), want 3", v, err)
+	}
+	if v, err := f.GetCellValue("report_1", "B2"); err != nil || v != "4" {
+		t.Errorf("report_1 B2 = %q (%v), want 4", v, err)
+	}
+}
