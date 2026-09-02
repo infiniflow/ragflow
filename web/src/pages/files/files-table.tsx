@@ -43,21 +43,25 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { ActionCell } from './action-cell';
-import { useHandleConnectToKnowledge, useRenameCurrentFile } from './hooks';
+import {
+  UseHandleConnectToKnowledgeReturnType,
+  useRenameCurrentFile,
+} from './hooks';
 import { KnowledgeCell } from './knowledge-cell';
 import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
 import { isFolderType, isKnowledgeBaseType } from './util';
-
-declare const __API_PROXY_SCHEME__: string;
+import { useIsGoBackend } from '../../utils/backend-variant';
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
   'files' | 'loading' | 'pagination' | 'setPagination' | 'total'
 > &
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> &
-  UseMoveDocumentShowType;
+  UseMoveDocumentShowType & {
+    connectKnowledgeModal: UseHandleConnectToKnowledgeReturnType;
+  };
 
 export function FilesTable({
   files,
@@ -68,6 +72,7 @@ export function FilesTable({
   rowSelection,
   setRowSelection,
   showMoveFileModal,
+  connectKnowledgeModal,
 }: FilesTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -87,7 +92,7 @@ export function FilesTable({
     initialConnectedIds,
     onConnectToKnowledgeOk,
     connectToKnowledgeLoading,
-  } = useHandleConnectToKnowledge();
+  } = connectKnowledgeModal;
   const {
     fileRenameVisible,
     showFileRenameModal,
@@ -97,17 +102,11 @@ export function FilesTable({
     fileRenameLoading,
   } = useRenameCurrentFile();
 
-  // Check if skills feature is enabled (only in hybrid or go mode)
-  const isSkillsEnabled = useMemo(() => {
-    const scheme =
-      typeof __API_PROXY_SCHEME__ !== 'undefined'
-        ? __API_PROXY_SCHEME__
-        : 'python';
-    return scheme === 'hybrid' || scheme === 'go';
-  }, []);
+  // Skills are only served by the Go backend
+  const isSkillsEnabled = useIsGoBackend();
 
   // Sort files with skills folder first, then by time
-  // Filter out skills folder if not in hybrid/go mode
+  // Filter out the skills folder on the Python backend
   const sortedFiles = useMemo(() => {
     if (!files) return [];
 
@@ -281,6 +280,7 @@ export function FilesTable({
             showConnectToKnowledgeModal={showConnectToKnowledgeModal}
             showFileRenameModal={showFileRenameModal}
             showMoveFileModal={showMoveFileModal}
+            setRowSelection={setRowSelection}
           />
         );
       },
@@ -408,6 +408,7 @@ export function FilesTable({
           onOk={onFileRenameOk}
           initialName={initialFileName}
           loading={fileRenameLoading}
+          forbidSlash
         ></RenameDialog>
       )}
     </>

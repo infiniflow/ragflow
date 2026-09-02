@@ -23,20 +23,23 @@ from quart import jsonify
 
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_json_result, get_data_error_result, server_error_response, generate_confirmation_token
-from api.utils.health_utils import run_health_checks, get_oceanbase_status
+from api.utils.health_utils import run_health_checks, get_oceanbase_status, get_gaussdb_status
 from common.versions import get_ragflow_version
 from common.time_utils import current_timestamp, datetime_format
 from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import UserTenantService
+from common.doc_store.gaussdb_conn_base import mask_gaussdb_text
 from common.log_utils import get_log_levels, set_log_level
 from common import settings
 from rag.utils.redis_conn import REDIS_CONN
 
+
 @manager.route("/system/ping", methods=["GET"])  # noqa: F821
 async def ping():
     return "pong", 200
+
 
 @manager.route("/system/version", methods=["GET"])  # noqa: F821
 def version():
@@ -58,6 +61,13 @@ def version():
               description: Version number.
     """
     return get_json_result(data=get_ragflow_version())
+
+
+@manager.route("/language", methods=["GET"])  # noqa: F821
+def language():
+    """Backend runtime language detection for front-end compatibility."""
+    logging.info("Language endpoint called, returning python")
+    return get_json_result(data={"language": "python"})
 
 
 @manager.route("/system/status", methods=["GET"])  # noqa: F821
@@ -196,13 +206,39 @@ def oceanbase_status():
         status_info = get_oceanbase_status()
         return get_json_result(data=status_info)
     except Exception as e:
-        return get_json_result(
-            data={
-                "status": "error",
-                "message": f"Failed to get OceanBase status: {str(e)}"
-            },
-            code=500
-        )
+        return get_json_result(data={"status": "error", "message": f"Failed to get OceanBase status: {str(e)}"}, code=500)
+
+
+@manager.route("/system/gaussdb/status", methods=["GET"])  # noqa: F821
+@login_required
+def gaussdb_status():
+    """
+    Get GaussDB health status and performance metrics.
+    ---
+    tags:
+      - System
+    security:
+      - ApiKeyAuth: []
+    responses:
+      200:
+        description: GaussDB status retrieved successfully.
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              description: Status (alive/timeout/not_configured).
+            message:
+              type: object
+              description: Detailed status information including health and performance metrics.
+    """
+    try:
+        status_info = get_gaussdb_status()
+        return get_json_result(data=status_info)
+    except Exception as e:
+        masked_error = mask_gaussdb_text(e)
+        logging.error("GaussDB status route failed (%s): %s", type(e).__name__, masked_error)
+        return get_json_result(data={"status": "error", "message": f"Failed to get GaussDB status: {masked_error}"}, code=500)
 
 
 @manager.route("/system/config", methods=["GET"])  # noqa: F821
@@ -222,15 +258,19 @@ def get_config():
                         type: integer 0 means disabled, 1 means enabled
                         description: Whether user registration is enabled
     """
-    return get_json_result(data={
-        "registerEnabled": settings.REGISTER_ENABLED,
-        "disablePasswordLogin": settings.DISABLE_PASSWORD_LOGIN,
-    })
+    return get_json_result(
+        data={
+            "registerEnabled": settings.REGISTER_ENABLED,
+            "disablePasswordLogin": settings.DISABLE_PASSWORD_LOGIN,
+        }
+    )
+
 
 @manager.route("/system/healthz", methods=["GET"])  # noqa: F821
 def healthz():
     result, all_ok = run_health_checks()
     return jsonify(result), (200 if all_ok else 500)
+
 
 @manager.route("/system/tokens", methods=["GET"])  # noqa: F821
 @login_required
@@ -409,6 +449,7 @@ async def set_logger_level():
             description: Log level updated successfully
     """
     from quart import request
+
     data = await request.get_json()
     if not data or "pkg_name" not in data or "level" not in data:
         return get_data_error_result(message="pkg_name and level are required")

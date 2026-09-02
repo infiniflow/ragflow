@@ -16,6 +16,7 @@
 import pytest
 import random
 
+
 @pytest.fixture(scope="class")
 def add_memory_func(client, request):
     def cleanup():
@@ -32,7 +33,7 @@ def add_memory_func(client, request):
             "name": f"test_memory_{i}",
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
             "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-            "llm_id": "glm-4-flash@ZHIPU-AI"
+            "llm_id": "glm-4-flash@ZHIPU-AI",
         }
         res = client.create_memory(**payload)
         memory_ids.append(res.id)

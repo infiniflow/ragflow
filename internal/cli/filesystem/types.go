@@ -34,13 +34,13 @@ const (
 // Node represents a node in the context filesystem
 // This is the unified output format for all providers
 type Node struct {
-	Name       string                 `json:"name"`
-	Path       string                 `json:"path"`
-	Type       NodeType               `json:"type"`
-	Size       int64                  `json:"size,omitempty"`
-	CreatedAt  time.Time              `json:"created_at,omitempty"`
-	UpdatedAt  time.Time              `json:"updated_at,omitempty"`
-	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+	Name      string                 `json:"name"`
+	Path      string                 `json:"path"`
+	Type      NodeType               `json:"type"`
+	Size      int64                  `json:"size,omitempty"`
+	CreatedAt time.Time              `json:"created_at,omitempty"`
+	UpdatedAt time.Time              `json:"updated_at,omitempty"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // CommandType represents the type of command
@@ -70,12 +70,12 @@ type ListOptions struct {
 
 // SearchOptions represents options for search operations
 type SearchOptions struct {
-	Query     string  `json:"query"`
-	Limit     int     `json:"limit,omitempty"`
-	Offset    int     `json:"offset,omitempty"`
-	Recursive bool    `json:"recursive,omitempty"`
-	TopK      int     `json:"top_k,omitempty"`      // Number of top results to return (default: 10)
-	Threshold float64 `json:"threshold,omitempty"`  // Similarity threshold (default: 0.2)
+	Query     string   `json:"query"`
+	Limit     int      `json:"limit,omitempty"`
+	Offset    int      `json:"offset,omitempty"`
+	Recursive bool     `json:"recursive,omitempty"`
+	TopK      int      `json:"top_k,omitempty"`     // Number of top results to return (default: 10)
+	Threshold float64  `json:"threshold,omitempty"` // Similarity threshold (default: 0.2)
 	Dirs      []string `json:"dirs,omitempty"`      // List of directories to search in
 }
 
@@ -90,12 +90,12 @@ type Result struct {
 
 // PathInfo represents parsed path information
 type PathInfo struct {
-	Provider    string   // The provider name (e.g., "datasets", "chats")
-	Path        string   // The full path
-	Components  []string // Path components
-	IsRoot      bool     // Whether this is the root path for the provider
-	ResourceID  string   // Resource ID if applicable
-	ResourceName string // Resource name if applicable
+	Provider     string   // The provider name (e.g., "datasets", "chats")
+	Path         string   // The full path
+	Components   []string // Path components
+	IsRoot       bool     // Whether this is the root path for the provider
+	ResourceID   string   // Resource ID if applicable
+	ResourceName string   // Resource name if applicable
 }
 
 // ProviderInfo holds metadata about a provider
@@ -107,10 +107,10 @@ type ProviderInfo struct {
 
 // Common error messages
 const (
-	ErrInvalidPath     = "invalid path"
+	ErrInvalidPath      = "invalid path"
 	ErrProviderNotFound = "provider not found for path"
-	ErrNotSupported    = "operation not supported"
-	ErrNotFound        = "resource not found"
-	ErrUnauthorized    = "unauthorized"
-	ErrInternal        = "internal error"
+	ErrNotSupported     = "operation not supported"
+	ErrNotFound         = "resource not found"
+	ErrUnauthorized     = "unauthorized"
+	ErrInternal         = "internal error"
 )

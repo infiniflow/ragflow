@@ -150,4 +150,7 @@ export interface NavigateToDataflowResultProps {
   [PipelineResultSearchParams.Type]: string;
   [PipelineResultSearchParams.CreatedBy]?: string;
   [PipelineResultSearchParams.DocumentExtension]?: string;
+  [PipelineResultSearchParams.DocumentName]?: string;
+  [PipelineResultSearchParams.DocumentSize]?: string | number;
+  [PipelineResultSearchParams.DocumentCreatedAt]?: string | number;
 }

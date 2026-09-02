@@ -7,7 +7,6 @@ export interface IChangeParserConfigRequestBody {
   auto_keywords?: number;
   auto_questions?: number;
   html4excel?: boolean;
-  toc_extraction?: boolean;
   image_table_context_window?: number;
   image_context_size?: number;
   table_context_size?: number;
@@ -22,6 +21,7 @@ export interface IChangeParserConfigRequestBody {
     clustering_method?: 'gmm' | 'ahc';
     tree_builder?: 'raptor' | 'psi';
   };
+  compilation_template_group_id?: string[];
   // Metadata fields
   metadata?: Array<{
     key?: string;
@@ -39,6 +39,8 @@ export interface IChangeParserConfigRequestBody {
 export interface IChangeParserRequestBody {
   parser_id: string;
   pipeline_id?: string;
+  // 1 = BuiltIn (parser_id), 2 = Pipeline (pipeline_id); omitted = unspecified.
+  parseType?: number;
   doc_id?: string;
   parser_config: IChangeParserConfigRequestBody;
 }

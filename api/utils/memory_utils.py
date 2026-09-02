@@ -16,6 +16,7 @@
 from typing import List
 from common.constants import MemoryType
 
+
 def format_ret_data_from_memory(memory):
     return {
         "id": memory.id,
@@ -37,7 +38,7 @@ def format_ret_data_from_memory(memory):
         "create_time": memory.create_time,
         "create_date": memory.create_date,
         "update_time": memory.update_time,
-        "update_date": memory.update_date
+        "update_date": memory.update_date,
     }
 
 

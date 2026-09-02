@@ -24,13 +24,45 @@ import json
 import logging
 import re
 from copy import deepcopy
-from typing import Dict, List, Optional
+from typing import Any
 
-from api.db.db_models import DB, Document
+from api.db.db_models import DB, Document, Knowledgebase
 from common import settings
-from common.metadata_utils import dedupe_list
-from api.db.db_models import Knowledgebase
 from common.doc_store.doc_store_base import OrderByExpr
+from common.metadata_utils import dedupe_list
+
+
+METADATA_ID_BATCH_SIZE = 10000
+
+
+def _es_response_total(response: Any) -> int | None:
+    """Extract the exact total hit count from an ES search response.
+
+    Returns ``None`` when the field is missing or in an unexpected shape
+    — callers should treat that as "cannot verify" rather than "no
+    overflow".
+    """
+    if not isinstance(response, dict):
+        try:
+            response = dict(response)
+        except Exception:
+            return None
+    hits = response.get("hits")
+    if not isinstance(hits, dict):
+        return None
+    total = hits.get("total")
+    if isinstance(total, dict):
+        value = total.get("value")
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+    elif isinstance(total, int):
+        # Legacy shape: some clients return the count directly.
+        return total
+    return None
 
 
 class DocMetadataService:
@@ -50,7 +82,7 @@ class DocMetadataService:
         return f"ragflow_doc_meta_{tenant_id}"
 
     @staticmethod
-    def _extract_metadata(flat_meta: Dict) -> Dict:
+    def _extract_metadata(flat_meta: dict) -> dict:
         """
         Extract metadata from ES/Infinity document format.
 
@@ -63,13 +95,14 @@ class DocMetadataService:
         if not flat_meta or not isinstance(flat_meta, dict):
             return {}
 
-        meta_fields = flat_meta.get('meta_fields')
+        meta_fields = flat_meta.get("meta_fields")
         if not meta_fields:
             return {}
 
         # Parse JSON string if needed
         if isinstance(meta_fields, str):
             import json
+
             try:
                 return json.loads(meta_fields)
             except json.JSONDecodeError:
@@ -82,7 +115,7 @@ class DocMetadataService:
         return {}
 
     @staticmethod
-    def _extract_doc_id(doc: Dict, hit: Dict = None) -> str:
+    def _extract_doc_id(doc: dict, hit: dict = None) -> str:
         """
         Extract document ID from various formats.
 
@@ -95,7 +128,7 @@ class DocMetadataService:
         """
         if hit:
             # ES format: doc is in _source, id is in _id
-            return hit.get('_id', '')
+            return hit.get("_id", "")
         # DataFrame or list format: check multiple possible fields
         return doc.get("doc_id") or doc.get("_id") or doc.get("id", "")
 
@@ -116,7 +149,7 @@ class DocMetadataService:
             results = results[0]  # Extract DataFrame from tuple
 
         # Check if results is a pandas DataFrame (from Infinity)
-        if hasattr(results, 'iterrows'):
+        if hasattr(results, "iterrows"):
             # Handle pandas DataFrame - use iterrows() to iterate over rows
             for _, row in results.iterrows():
                 doc = dict(row)  # Convert Series to dict
@@ -126,11 +159,11 @@ class DocMetadataService:
 
         # Check if ES format (has 'hits' key)
         # Note: ES returns ObjectApiResponse which is dict-like but not isinstance(dict)
-        elif hasattr(results, 'get') and 'hits' in results:
+        elif hasattr(results, "get") and "hits" in results:
             # ES format: {"hits": {"hits": [{"_source": {...}, "_id": "..."}]}}
-            hits = results.get('hits', {}).get('hits', [])
+            hits = results.get("hits", {}).get("hits", [])
             for hit in hits:
-                doc = hit.get('_source', {})
+                doc = hit.get("_source", {})
                 doc_id = cls._extract_doc_id(doc, hit)
                 if doc_id:
                     yield doc_id, doc
@@ -149,7 +182,7 @@ class DocMetadataService:
                         yield doc_id, doc
 
         # Check if OceanBase SearchResult format
-        elif hasattr(results, 'chunks') and hasattr(results, 'total'):
+        elif hasattr(results, "chunks") and hasattr(results, "total"):
             # OceanBase format: SearchResult(total=int, chunks=[{...}, {...}])
             for doc in results.chunks:
                 doc_id = cls._extract_doc_id(doc)
@@ -157,7 +190,7 @@ class DocMetadataService:
                     yield doc_id, doc
 
     @classmethod
-    def _search_metadata(cls, kb_id: str, condition: Dict = None):
+    def _search_metadata(cls, kb_id: str, condition: dict = None):
         """
         Common search logic for metadata queries.
         Uses pagination internally to retrieve data from the index.
@@ -169,6 +202,18 @@ class DocMetadataService:
         Returns:
             Search results from ES/Infinity, or empty list if index doesn't exist
         """
+        if condition is None:
+            condition = {"kb_id": kb_id}
+
+        doc_ids = condition.get("id")
+        if isinstance(doc_ids, list) and len(doc_ids) > METADATA_ID_BATCH_SIZE:
+            all_results = []
+            for offset in range(0, len(doc_ids), METADATA_ID_BATCH_SIZE):
+                batch_condition = dict(condition)
+                batch_condition["id"] = doc_ids[offset : offset + METADATA_ID_BATCH_SIZE]
+                all_results.extend(cls._search_metadata(kb_id, condition=batch_condition))
+            return all_results
+
         kb = Knowledgebase.get_by_id(kb_id)
         if not kb:
             return []
@@ -184,9 +229,6 @@ class DocMetadataService:
                 logging.error(f"Failed to create metadata index {index_name}")
                 return []
             logging.debug(f"Successfully created metadata index {index_name}")
-
-        if condition is None:
-            condition = {"kb_id": kb_id}
 
         # Add sort by id for ES to enable search_after on large data
         order_by = OrderByExpr()
@@ -207,7 +249,7 @@ class DocMetadataService:
                 offset=page * page_size,
                 limit=page_size,
                 index_names=index_name,
-                knowledgebase_ids=[kb_id]
+                knowledgebase_ids=[kb_id],
             )
 
             # Handle different result formats
@@ -221,28 +263,32 @@ class DocMetadataService:
             # Check for Infinity format first (DataFrame, total) tuple
             if isinstance(results, tuple) and len(results) == 2:
                 df, total_count = results
-                if hasattr(df, 'iterrows'):
+                if hasattr(df, "iterrows"):
                     # Pandas DataFrame from Infinity
-                    page_docs = df.to_dict('records')
+                    page_docs = df.to_dict("records")
                 else:
                     page_docs = list(df) if df else []
             # Check for ES format (dict with 'hits' key)
-            elif hasattr(results, 'get') and 'hits' in results:
-                hits_obj = results.get('hits', {})
-                hits = hits_obj.get('hits', [])
+            elif hasattr(results, "get") and "hits" in results:
+                hits_obj = results.get("hits", {})
+                hits = hits_obj.get("hits", [])
                 page_docs = []
                 for hit in hits:
-                    doc = hit.get('_source', {})
-                    doc['id'] = hit.get('_id', '')  # Add _id as 'id' for _extract_doc_id to work
+                    doc = hit.get("_source", {})
+                    doc["id"] = hit.get("_id", "")  # Add _id as 'id' for _extract_doc_id to work
                     page_docs.append(doc)
                 # Extract total count from ES response
-                total_hits = hits_obj.get('total', {})
+                total_hits = hits_obj.get("total", {})
                 if isinstance(total_hits, dict):
-                    total_count = total_hits.get('value', len(page_docs))
+                    total_count = total_hits.get("value", len(page_docs))
                 else:
                     total_count = total_hits if total_hits else len(page_docs)
+            # Handle GaussDB/OceanBase SearchResult(total, chunks) format
+            elif hasattr(results, "chunks") and hasattr(results, "total"):
+                page_docs = list(results.chunks or [])
+                total_count = results.total
             # Handle list/iterable results
-            elif hasattr(results, '__iter__') and not isinstance(results, dict):
+            elif hasattr(results, "__iter__") and not isinstance(results, dict):
                 page_docs = list(results)
             else:
                 page_docs = []
@@ -267,7 +313,7 @@ class DocMetadataService:
         return all_results
 
     @classmethod
-    def _split_combined_values(cls, meta_fields: Dict) -> Dict:
+    def _split_combined_values(cls, meta_fields: dict) -> dict:
         """
         Post-process metadata to split combined values by common delimiters.
 
@@ -293,7 +339,7 @@ class DocMetadataService:
                     if isinstance(item, str):
                         # Split by common delimiters: Chinese comma (、), regular comma (,), pipe (|), semicolon (;), Chinese semicolon (；)
                         # Also handle mixed delimiters and spaces
-                        split_items = re.split(r'[、,，;；|]+', item.strip())
+                        split_items = re.split(r"[、,，;；|]+", item.strip())
                         # Trim whitespace and filter empty strings
                         split_items = [s.strip() for s in split_items if s.strip()]
                         if split_items:
@@ -315,7 +361,7 @@ class DocMetadataService:
 
     @classmethod
     @DB.connection_context()
-    def insert_document_metadata(cls, doc_id: str, meta_fields: Dict) -> bool:
+    def insert_document_metadata(cls, doc_id: str, meta_fields: dict) -> bool:
         """
         Insert document metadata into ES/Infinity.
 
@@ -328,9 +374,7 @@ class DocMetadataService:
         """
         try:
             # Get document with tenant_id (need to join with Knowledgebase)
-            doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
-                Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
-            ).where(Document.id == doc_id)
+            doc_query = Document.select(Document, Knowledgebase.tenant_id).join(Knowledgebase, on=(Knowledgebase.id == Document.kb_id)).where(Document.id == doc_id)
 
             doc = doc_query.first()
             if not doc:
@@ -376,11 +420,7 @@ class DocMetadataService:
                 logging.debug(f"Metadata table already exists: {index_name}")
 
             # Insert into ES/Infinity
-            result = settings.docStoreConn.insert(
-                [doc_meta],
-                index_name,
-                kb_id
-            )
+            result = settings.docStoreConn.insert([doc_meta], index_name, kb_id)
 
             if result:
                 logging.error(f"Failed to insert metadata for document {doc_id}: {result}")
@@ -397,11 +437,7 @@ class DocMetadataService:
                         # A failed refresh can leave just-inserted metadata
                         # invisible to subsequent reads; surface it so operators
                         # can correlate stale-read complaints with the cause.
-                        logging.warning(
-                            f"Failed to refresh metadata index {index_name} on backend "
-                            f"{type(settings.docStoreConn).__name__}; "
-                            f"metadata may not be immediately searchable"
-                        )
+                        logging.warning(f"Failed to refresh metadata index {index_name} on backend {type(settings.docStoreConn).__name__}; metadata may not be immediately searchable")
                 else:
                     logging.debug(f"Backend {type(settings.docStoreConn).__name__} has no refresh_idx; skipping")
 
@@ -414,7 +450,7 @@ class DocMetadataService:
 
     @classmethod
     @DB.connection_context()
-    def update_document_metadata(cls, doc_id: str, meta_fields: Dict) -> bool:
+    def update_document_metadata(cls, doc_id: str, meta_fields: dict) -> bool:
         """
         Update document metadata in ES/Infinity.
 
@@ -430,9 +466,7 @@ class DocMetadataService:
         """
         try:
             # Get document with tenant_id
-            doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
-                Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
-            ).where(Document.id == doc_id)
+            doc_query = Document.select(Document, Knowledgebase.tenant_id).join(Knowledgebase, on=(Knowledgebase.id == Document.kb_id)).where(Document.id == doc_id)
 
             doc = doc_query.first()
             if not doc:
@@ -448,17 +482,31 @@ class DocMetadataService:
             # Post-process to split combined values
             processed_meta = cls._split_combined_values(meta_fields)
 
-            logging.debug(
-                f"[update_document_metadata] Updating doc_id: {doc_id}, kb_id: {kb_id}, meta_fields: {processed_meta}")
+            logging.debug(f"[update_document_metadata] Updating doc_id: {doc_id}, kb_id: {kb_id}, meta_fields: {processed_meta}")
+
+            if settings.DOC_ENGINE_GAUSSDB:
+                if not settings.docStoreConn.index_exist(index_name, kb_id):
+                    result = settings.docStoreConn.create_doc_meta_idx(index_name)
+                    if result is False:
+                        logging.error(f"Failed to create metadata index {index_name}")
+                        return False
+                insert_errors = settings.docStoreConn.insert(
+                    [{"id": doc_id, "kb_id": kb_id, "meta_fields": processed_meta}],
+                    index_name,
+                    kb_id,
+                )
+                if insert_errors:
+                    logging.error(f"Failed to update metadata for document {doc_id}: {insert_errors}")
+                    return False
+                return True
 
             # For Elasticsearch, use efficient partial update
-            if not settings.DOC_ENGINE_INFINITY and not settings.DOC_ENGINE_OCEANBASE:
+            if not settings.DOC_ENGINE_INFINITY and not settings.DOC_ENGINE_OCEANBASE and not settings.DOC_ENGINE_SERENEDB:
                 # Check if index exists first
                 index_exists = settings.docStoreConn.index_exist(index_name, "")
                 if not index_exists:
                     # Index doesn't exist - create it and insert directly
-                    logging.debug(
-                        f"[update_document_metadata] Index {index_name} does not exist, creating and inserting")
+                    logging.debug(f"[update_document_metadata] Index {index_name} does not exist, creating and inserting")
                     result = settings.docStoreConn.create_doc_meta_idx(index_name)
                     if result is False:
                         logging.error(f"Failed to create metadata index {index_name}")
@@ -467,11 +515,13 @@ class DocMetadataService:
 
                 # Index exists - check if document exists
                 try:
-                    doc_exists = settings.docStoreConn.get(
-                        doc_id,
-                        index_name,
-                        [kb_id]
-                    )
+                    # Doc-meta tables are per-tenant, not per-kb; ``kb_id`` is
+                    # unused by ES/OB and the Infinity connector special-cases
+                    # ``ragflow_doc_meta_`` to ignore it as well. Pass ``[]``
+                    # so the Infinity connector doesn't try to build a
+                    # non-existent ``ragflow_doc_meta_<tenant>_<kb>`` table
+                    # name. See also: ``_get_doc_meta_index_name`` above.
+                    doc_exists = settings.docStoreConn.get(doc_id, index_name, [])
                     if doc_exists:
                         # Document exists - replace meta_fields entirely.
                         # Using update with a `doc` body would deep-merge the meta_fields
@@ -479,13 +529,9 @@ class DocMetadataService:
                         # to a backend-provided scripted assignment that fully overwrites it.
                         replace_meta_fields = getattr(settings.docStoreConn, "replace_meta_fields", None)
                         if callable(replace_meta_fields) and replace_meta_fields(index_name, doc_id, processed_meta):
-                            logging.debug(
-                                f"Successfully updated metadata for document {doc_id} via {type(settings.docStoreConn).__name__}.replace_meta_fields")
+                            logging.debug(f"Successfully updated metadata for document {doc_id} via {type(settings.docStoreConn).__name__}.replace_meta_fields")
                             return True
-                        logging.warning(
-                            f"replace_meta_fields unavailable or failed on backend "
-                            f"{type(settings.docStoreConn).__name__}; falling back to delete+insert"
-                        )
+                        logging.warning(f"replace_meta_fields unavailable or failed on backend {type(settings.docStoreConn).__name__}; falling back to delete+insert")
                         # Mirror the Infinity fallback below so a failed scripted
                         # replace still guarantees full overwrite semantics rather
                         # than leaking through the "document not found" branch.
@@ -540,17 +586,21 @@ class DocMetadataService:
             # Check if metadata table exists before attempting deletion
             # This is the key optimization - no table = no metadata = nothing to delete
             if not settings.docStoreConn.index_exist(index_name, ""):
-                logging.debug(
-                    f"Metadata table {index_name} does not exist, skipping metadata deletion for document {doc_id}")
+                logging.debug(f"Metadata table {index_name} does not exist, skipping metadata deletion for document {doc_id}")
                 return True  # No metadata to delete is considered success
 
             # Try to get the metadata to confirm it exists before deleting
             # This is more efficient than attempting delete on non-existent records
             try:
+                # Doc-meta tables are per-tenant, not per-kb, so there is no
+                # kb suffix to query by. Pass an empty list — the Infinity
+                # connector (and OB) special-cases ``ragflow_doc_meta_``
+                # indexes and queries the table directly; ES relies on the
+                # empty-``kb_id`` filter it already injects below.
                 existing_metadata = settings.docStoreConn.get(
                     doc_id,
                     index_name,
-                    [""]  # Empty list for metadata tables
+                    [],
                 )
                 logging.debug(f"[METADATA DELETE] Get result: {existing_metadata is not None}")
                 if not existing_metadata:
@@ -568,7 +618,7 @@ class DocMetadataService:
             deleted_count = settings.docStoreConn.delete(
                 {"id": doc_id},
                 index_name,
-                kb_id  # Pass actual kb_id (delete() will handle metadata tables correctly)
+                kb_id,  # Pass actual kb_id (delete() will handle metadata tables correctly)
             )
             logging.debug(f"[METADATA DELETE] Deleted count: {deleted_count}")
             return True
@@ -609,7 +659,7 @@ class DocMetadataService:
                 if count_value < 0:
                     raise RuntimeError("native count_idx unavailable or failed")
                 logging.debug(f"[DROP EMPTY TABLE] count_idx API result: {count_value} documents")
-                is_empty = (count_value == 0)
+                is_empty = count_value == 0
             except Exception as e:
                 logging.warning(f"[DROP EMPTY TABLE] Count API failed, falling back to search: {e}")
                 # Fallback to search if count fails
@@ -622,7 +672,7 @@ class DocMetadataService:
                     offset=0,
                     limit=1,  # Only need 1 result to know if table is non-empty
                     index_names=index_name,
-                    knowledgebase_ids=[""]  # Metadata tables don't filter by KB
+                    knowledgebase_ids=[""],  # Metadata tables don't filter by KB
                 )
 
                 logging.debug(f"[DROP EMPTY TABLE] Search results type: {type(results)}, results: {results}")
@@ -631,25 +681,24 @@ class DocMetadataService:
                 if isinstance(results, tuple) and len(results) == 2:
                     # Infinity returns (DataFrame, int)
                     df, total = results
-                    logging.debug(
-                        f"[DROP EMPTY TABLE] Infinity format - total: {total}, df length: {len(df) if hasattr(df, '__len__') else 'N/A'}")
-                    is_empty = (total == 0 or (hasattr(df, '__len__') and len(df) == 0))
-                elif hasattr(results, 'get') and 'hits' in results:
+                    logging.debug(f"[DROP EMPTY TABLE] Infinity format - total: {total}, df length: {len(df) if hasattr(df, '__len__') else 'N/A'}")
+                    is_empty = total == 0 or (hasattr(df, "__len__") and len(df) == 0)
+                elif hasattr(results, "get") and "hits" in results:
                     # ES format - MUST check this before hasattr(results, '__len__')
                     # because ES response objects also have __len__
-                    total = results.get('hits', {}).get('total', {})
-                    hits = results.get('hits', {}).get('hits', [])
+                    total = results.get("hits", {}).get("total", {})
+                    hits = results.get("hits", {}).get("hits", [])
 
                     # ES 7.x+: total is a dict like {'value': 0, 'relation': 'eq'}
                     # ES 6.x: total is an int
                     if isinstance(total, dict):
-                        total_count = total.get('value', 0)
+                        total_count = total.get("value", 0)
                     else:
                         total_count = total
 
                     logging.debug(f"[DROP EMPTY TABLE] ES format - total: {total_count}, hits count: {len(hits)}")
-                    is_empty = (total_count == 0 or len(hits) == 0)
-                elif hasattr(results, '__len__'):
+                    is_empty = total_count == 0 or len(hits) == 0
+                elif hasattr(results, "__len__"):
                     # DataFrame or list (check this AFTER ES format)
                     result_len = len(results)
                     logging.debug(f"[DROP EMPTY TABLE] List/DataFrame format - length: {result_len}")
@@ -671,7 +720,7 @@ class DocMetadataService:
 
     @classmethod
     @DB.connection_context()
-    def get_document_metadata(cls, doc_id: str) -> Dict:
+    def get_document_metadata(cls, doc_id: str) -> dict:
         """
         Get document metadata from ES/Infinity.
 
@@ -683,9 +732,7 @@ class DocMetadataService:
         """
         try:
             # Get document with tenant_id
-            doc_query = Document.select(Document, Knowledgebase.tenant_id).join(
-                Knowledgebase, on=(Knowledgebase.id == Document.kb_id)
-            ).where(Document.id == doc_id)
+            doc_query = Document.select(Document, Knowledgebase.tenant_id).join(Knowledgebase, on=(Knowledgebase.id == Document.kb_id)).where(Document.id == doc_id)
 
             doc = doc_query.first()
             if not doc:
@@ -693,17 +740,13 @@ class DocMetadataService:
                 return {}
 
             # Extract fields
-            doc_obj = doc
             tenant_id = doc.knowledgebase.tenant_id
-            kb_id = doc_obj.kb_id
             index_name = cls._get_doc_meta_index_name(tenant_id)
 
-            # Try to get metadata from ES/Infinity
-            metadata_doc = settings.docStoreConn.get(
-                doc_id,
-                index_name,
-                [kb_id]
-            )
+            # Try to get metadata from ES/Infinity. Doc-meta tables are
+            # per-tenant, not per-kb; pass ``[]`` to avoid the Infinity
+            # connector building a non-existent ``<tenant>_<kb>`` table name.
+            metadata_doc = settings.docStoreConn.get(doc_id, index_name, [])
 
             if metadata_doc:
                 # Extract and unflatten metadata
@@ -717,7 +760,7 @@ class DocMetadataService:
 
     @classmethod
     @DB.connection_context()
-    def get_flatted_meta_by_kbs(cls, kb_ids: List[str]) -> Dict:
+    def get_flatted_meta_by_kbs(cls, kb_ids: list[str]) -> dict:
         """
         Get flattened metadata for documents in knowledge bases.
 
@@ -744,31 +787,43 @@ class DocMetadataService:
 
             condition = {"kb_id": kb_ids}
             order_by = OrderByExpr()
+            if not settings.DOC_ENGINE_INFINITY:
+                order_by.asc("id")
 
-            # Query with large limit
-            results = settings.docStoreConn.search(
-                select_fields=["*"],  # Get all fields
-                highlight_fields=[],
-                condition=condition,
-                match_expressions=[],
-                order_by=order_by,
-                offset=0,
-                limit=10000,
-                index_names=index_name,
-                knowledgebase_ids=kb_ids
-            )
+            # Paginate to support datasets with more than 10,000 documents.
+            page_size = 1000
+            offset = 0
+            all_results = []
+            while True:
+                batch = settings.docStoreConn.search(
+                    select_fields=["*"],
+                    highlight_fields=[],
+                    condition=condition,
+                    match_expressions=[],
+                    order_by=order_by,
+                    offset=offset,
+                    limit=page_size,
+                    index_names=index_name,
+                    knowledgebase_ids=kb_ids,
+                )
+                batch_docs = list(cls._iter_search_results(batch))
+                if not batch_docs:
+                    break
+                all_results.extend(batch_docs)
+                logging.debug(
+                    "[get_flatted_meta_by_kbs] offset=%d batch=%d total=%d kb_ids=%s",
+                    offset,
+                    len(batch_docs),
+                    len(all_results),
+                    kb_ids,
+                )
+                if len(batch_docs) < page_size:
+                    break
+                offset += page_size
 
-            logging.debug(f"[get_flatted_meta_by_kbs] index_name: {index_name}, kb_ids: {kb_ids}")
-            logging.debug(f"[get_flatted_meta_by_kbs] results type: {type(results)}")
-
-            # Aggregate metadata
+            # Aggregate metadata over all retrieved results
             meta = {}
-            doc_count = 0
-
-            # Use helper to iterate over results in any format
-            for doc_id, doc in cls._iter_search_results(results):
-                doc_count += 1
-                # Extract metadata fields (exclude system fields)
+            for doc_id, doc in all_results:
                 doc_meta = cls._extract_metadata(doc)
 
                 for k, v in doc_meta.items():
@@ -784,24 +839,29 @@ class DocMetadataService:
                             meta[k][sv] = []
                         meta[k][sv].append(doc_id)
 
-            if doc_count >= 10000:
-                logging.warning(f"[get_flatted_meta_by_kbs] Results hit the 10000 limit for KBs {kb_ids}.")
+            doc_count = len(all_results)
+            if doc_count >= 100000:
+                logging.warning(
+                    "[get_flatted_meta_by_kbs] Large result set: %d documents for KBs %s. Consider performance impact.",
+                    doc_count,
+                    kb_ids,
+                )
 
-            logging.debug(f"[get_flatted_meta_by_kbs] KBs: {kb_ids}, Returning metadata: {meta}")
+            logging.debug("[get_flatted_meta_by_kbs] KBs: %s, Retrieved %d documents, metadata: %s", kb_ids, doc_count, meta)
             return meta
 
         except Exception as e:
-            logging.error(f"Error getting flattened metadata for KBs {kb_ids}: {e}")
+            logging.error("Error getting flattened metadata for KBs %s: %s", kb_ids, e)
             return {}
 
     @classmethod
     def filter_doc_ids_by_meta_pushdown(
-            cls,
-            kb_ids: List[str],
-            filters: List[Dict],
-            logic: str = "and",
-            limit: int = 10000,
-    ) -> Optional[List[str]]:
+        cls,
+        kb_ids: list[str],
+        filters: list[dict],
+        logic: str = "and",
+        limit: int = 10000,
+    ) -> list[str] | None:
         """Run a metadata filter directly against ES or Infinity, returning matching doc IDs.
 
         Returns ``None`` to signal "push-down not viable, use the in-memory
@@ -834,23 +894,21 @@ class DocMetadataService:
             return []
 
         if settings.DOC_ENGINE_INFINITY:
-            return cls._filter_doc_ids_by_metadata_infinity(
-                index_name, kb_ids, filters, logic
-            )
+            return cls._filter_doc_ids_by_metadata_infinity(index_name, kb_ids, filters, logic)
+        elif settings.DOC_ENGINE_GAUSSDB:
+            return cls._filter_doc_ids_by_metadata_gaussdb(index_name, kb_ids, filters, logic, limit)
         else:
-            return cls._filter_doc_ids_by_metadata_es(
-                index_name, kb_ids, filters, logic, limit
-            )
+            return cls._filter_doc_ids_by_metadata_es(index_name, kb_ids, filters, logic, limit)
 
     @classmethod
     def _filter_doc_ids_by_metadata_es(
-            cls,
-            index_name: str,
-            kb_ids: List[str],
-            filters: List[Dict],
-            logic: str,
-            limit: int,
-    ) -> Optional[List[str]]:
+        cls,
+        index_name: str,
+        kb_ids: list[str],
+        filters: list[dict],
+        logic: str,
+        limit: int,
+    ) -> list[str] | None:
         """ES push-down path for metadata filtering."""
         from common.metadata_es_filter import (
             UnsupportedMetaFilter,
@@ -876,6 +934,10 @@ class DocMetadataService:
             **query_body,
             "size": limit,
             "_source": ["id"],
+            # Make hits.total.value exact. ES otherwise caps the tracked
+            # total at 10,000 with relation="gte", which would let
+            # overflow slip through undetected.
+            "track_total_hits": True,
         }
 
         try:
@@ -886,7 +948,7 @@ class DocMetadataService:
 
         doc_ids = extract_doc_ids(response if isinstance(response, dict) else dict(response))
         seen: set[str] = set()
-        unique: List[str] = []
+        unique: list[str] = []
         for did in doc_ids:
             if did in seen:
                 continue
@@ -894,21 +956,80 @@ class DocMetadataService:
             unique.append(did)
 
         if len(unique) >= limit:
-            logging.warning(
-                f"ES metadata filter hit limit {limit} for KBs {kb_ids}"
-            )
+            logging.warning(f"ES metadata filter hit limit {limit} for KBs {kb_ids}")
+
+        # Detect silent truncation: the push-down is a fast path, not
+        # the system of record. When the query matched more than
+        # ``limit`` docs, the slice we built here is necessarily a
+        # strict subset of the truth, and the caller treats any
+        # non-None result as definitive. Bail out and let the caller
+        # fall back to the in-memory ``meta_filter`` (correct, just
+        # slower for very large result sets) instead of silently
+        # dropping docs.
+        total = _es_response_total(response)
+        if total is not None and total > limit:
+            logging.warning(f"ES metadata filter result exceeds push-down cap, falling back to in-memory: total={total}, cap={limit}, kb_ids={kb_ids}")
+            return None
 
         logging.debug(f"ES metadata filter returned {len(unique)} matches for KBs {kb_ids}")
         return unique
 
     @classmethod
+    def _filter_doc_ids_by_metadata_gaussdb(
+        cls,
+        index_name: str,
+        kb_ids: list[str],
+        filters: list[dict],
+        logic: str,
+        limit: int,
+    ) -> list[str] | None:
+        """GaussDB push-down path for metadata filtering."""
+        from common.metadata_gaussdb_filter import (
+            UnsupportedGaussDBMetaFilter,
+            build_gaussdb_filter,
+            fetch_gaussdb_metadata_doc_ids,
+            is_pushdown_supported,
+        )
+
+        if not is_pushdown_supported(filters):
+            return None
+
+        try:
+            sql_filter, filter_params = build_gaussdb_filter(filters, logic)
+        except UnsupportedGaussDBMetaFilter as e:
+            logging.error("GaussDB build metadata filter failed: %s", e.reason)
+            return None
+
+        try:
+            probe_limit = int(limit or 0) + 1 if limit else limit
+            doc_ids = fetch_gaussdb_metadata_doc_ids(settings.docStoreConn, index_name, kb_ids, sql_filter, filter_params, probe_limit)
+        except Exception:
+            logging.warning("GaussDB metadata filter push-down failed; falling back to in-memory filter", exc_info=True)
+            return None
+
+        seen: set[str] = set()
+        unique: list[str] = []
+        for did in doc_ids:
+            if did in seen:
+                continue
+            seen.add(did)
+            unique.append(did)
+
+        if limit and len(unique) > limit:
+            logging.warning(f"GaussDB metadata filter hit push-down cap, falling back to in-memory: cap={limit}, kb_ids={kb_ids}")
+            return None
+
+        logging.debug(f"GaussDB metadata filter returned {len(unique)} matches for KBs {kb_ids}")
+        return unique[:limit] if limit else unique
+
+    @classmethod
     def _filter_doc_ids_by_metadata_infinity(
-            cls,
-            index_name: str,
-            kb_ids: List[str],
-            filters: List[Dict],
-            logic: str,
-    ) -> Optional[List[str]]:
+        cls,
+        index_name: str,
+        kb_ids: list[str],
+        filters: list[dict],
+        logic: str,
+    ) -> list[str] | None:
         """Infinity push-down path for metadata filtering."""
         from common.metadata_infinity_filter import (
             build_infinity_filter,
@@ -932,8 +1053,7 @@ class DocMetadataService:
                 table_instance = db_instance.get_table(index_name)
                 df, _ = table_instance.output(["id"]).filter(where_clause).to_df()
                 doc_ids = extract_doc_ids(df)
-                logging.debug(
-                    f"Infinity metadata filter returned {len(doc_ids)} doc IDs for kb_ids={kb_ids}, logic={logic}")
+                logging.debug(f"Infinity metadata filter returned {len(doc_ids)} doc IDs for kb_ids={kb_ids}, logic={logic}")
                 return doc_ids
             finally:
                 settings.docStoreConn.connPool.release_conn(inf_conn)
@@ -942,7 +1062,7 @@ class DocMetadataService:
             return None
 
     @classmethod
-    def get_metadata_keys_by_kbs(cls, kb_ids: List[str]) -> List[str]:
+    def get_metadata_keys_by_kbs(cls, kb_ids: list[str]) -> list[str]:
         """
         Get unique metadata field names across multiple knowledge bases.
 
@@ -972,7 +1092,7 @@ class DocMetadataService:
             return []
 
     @classmethod
-    def get_metadata_for_documents(cls, doc_ids: Optional[List[str]], kb_id: str) -> Dict[str, Dict]:
+    def get_metadata_for_documents(cls, doc_ids: list[str] | None, kb_id: str) -> dict[str, dict]:
         """
         Get metadata fields for specific documents.
         Returns a mapping of doc_id -> meta_fields
@@ -997,14 +1117,12 @@ class DocMetadataService:
 
             # Use helper to iterate over results
             for doc_id, doc in cls._iter_search_results(results):
-
                 # Extract metadata (handles both JSON strings and dicts)
                 doc_meta = cls._extract_metadata(doc)
                 if doc_meta:
                     meta_mapping[doc_id] = doc_meta
 
-            logging.debug(
-                f"[get_metadata_for_documents] Found metadata for {len(meta_mapping)}/{len(doc_ids) if doc_ids else 'all'} documents")
+            logging.debug(f"[get_metadata_for_documents] Found metadata for {len(meta_mapping)}/{len(doc_ids) if doc_ids else 'all'} documents")
             return meta_mapping
 
         except Exception as e:
@@ -1013,7 +1131,7 @@ class DocMetadataService:
 
     @classmethod
     @DB.connection_context()
-    def get_metadata_summary(cls, kb_id: str, doc_ids=None) -> Dict:
+    def get_metadata_summary(cls, kb_id: str, doc_ids=None) -> dict:
         """
         Get metadata summary for documents in a knowledge base.
 
@@ -1035,7 +1153,7 @@ class DocMetadataService:
             """Check if a string value is an ISO 8601 datetime (e.g., '2026-02-03T00:00:00')."""
             if not isinstance(value, str):
                 return False
-            return bool(re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$', value))
+            return bool(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$", value))
 
         def _meta_value_type(value):
             """Determine the type of a metadata value."""
@@ -1067,7 +1185,6 @@ class DocMetadataService:
 
             # Use helper to iterate over results in any format
             for doc_id, doc in cls._iter_search_results(results):
-
                 doc_meta = cls._extract_metadata(doc)
 
                 for k, v in doc_meta.items():
@@ -1107,7 +1224,7 @@ class DocMetadataService:
 
     @classmethod
     @DB.connection_context()
-    def batch_update_metadata(cls, kb_id: str, doc_ids: List[str], updates=None, deletes=None) -> int:
+    def batch_update_metadata(cls, kb_id: str, doc_ids: list[str], updates=None, deletes=None) -> int:
         """
         Batch update metadata for documents in a knowledge base.
 
@@ -1270,8 +1387,7 @@ class DocMetadataService:
             doc_ids_set = set(doc_ids)
             missing_doc_ids = doc_ids_set - found_doc_ids
             if missing_doc_ids and updates:
-                logging.debug(
-                    f"[batch_update_metadata] Inserting new metadata for documents without metadata rows: {missing_doc_ids}")
+                logging.debug(f"[batch_update_metadata] Inserting new metadata for documents without metadata rows: {missing_doc_ids}")
                 for doc_id in missing_doc_ids:
                     # Apply updates to create new metadata
                     meta = {}

@@ -1,5 +1,5 @@
 {
-  "name": "localai",
+  "name": "LocalAI",
   "url_suffix": {
     "chat": "chat/completions",
     "models": "models",

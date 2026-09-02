@@ -57,6 +57,16 @@ def _mock_contextualized_response(docs_embeddings_b64, total_tokens=20):
     }
 
 
+def _mock_http_response(json_response=None, status_code=200, text=""):
+    """Build a minimal requests.Response-like mock."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = status_code
+    mock_resp.text = text
+    if json_response is not None:
+        mock_resp.json.return_value = json_response
+    return mock_resp
+
+
 class TestPerplexityEmbedInit:
     def test_default_base_url(self):
         embed = PerplexityEmbed("test-key", "pplx-embed-v1-0.6b")
@@ -125,8 +135,7 @@ class TestPerplexityEmbedStandardEncode:
     @patch("rag.llm.embedding_model.requests.post")
     def test_encode_single_text(self, mock_post):
         emb_b64 = _make_b64_int8([10, 20, 30])
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = _mock_standard_response([emb_b64], total_tokens=5)
+        mock_resp = _mock_http_response(_mock_standard_response([emb_b64], total_tokens=5))
         mock_post.return_value = mock_resp
 
         embed = PerplexityEmbed("key", "pplx-embed-v1-0.6b")
@@ -144,8 +153,7 @@ class TestPerplexityEmbedStandardEncode:
         emb1 = _make_b64_int8([1, 2])
         emb2 = _make_b64_int8([3, 4])
         emb3 = _make_b64_int8([5, 6])
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = _mock_standard_response([emb1, emb2, emb3], total_tokens=15)
+        mock_resp = _mock_http_response(_mock_standard_response([emb1, emb2, emb3], total_tokens=15))
         mock_post.return_value = mock_resp
 
         embed = PerplexityEmbed("key", "pplx-embed-v1-0.6b")
@@ -156,8 +164,7 @@ class TestPerplexityEmbedStandardEncode:
 
     @patch("rag.llm.embedding_model.requests.post")
     def test_encode_sends_correct_payload(self, mock_post):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = _mock_standard_response([_make_b64_int8([1])], total_tokens=1)
+        mock_resp = _mock_http_response(_mock_standard_response([_make_b64_int8([1])], total_tokens=1))
         mock_post.return_value = mock_resp
 
         embed = PerplexityEmbed("key", "pplx-embed-v1-4b")
@@ -171,9 +178,8 @@ class TestPerplexityEmbedStandardEncode:
 
     @patch("rag.llm.embedding_model.requests.post")
     def test_encode_api_error_raises(self, mock_post):
-        mock_resp = MagicMock()
+        mock_resp = _mock_http_response(text="Internal Server Error")
         mock_resp.json.side_effect = Exception("Invalid JSON")
-        mock_resp.text = "Internal Server Error"
         mock_post.return_value = mock_resp
 
         embed = PerplexityEmbed("key", "pplx-embed-v1-0.6b")
@@ -186,8 +192,7 @@ class TestPerplexityEmbedContextualizedEncode:
     def test_contextualized_encode(self, mock_post):
         emb1 = _make_b64_int8([10, 20])
         emb2 = _make_b64_int8([30, 40])
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = _mock_contextualized_response([[emb1], [emb2]], total_tokens=12)
+        mock_resp = _mock_http_response(_mock_contextualized_response([[emb1], [emb2]], total_tokens=12))
         mock_post.return_value = mock_resp
 
         embed = PerplexityEmbed("key", "pplx-embed-context-v1-0.6b")
@@ -200,8 +205,7 @@ class TestPerplexityEmbedContextualizedEncode:
 
     @patch("rag.llm.embedding_model.requests.post")
     def test_contextualized_uses_correct_endpoint(self, mock_post):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = _mock_contextualized_response([[_make_b64_int8([1])]], total_tokens=1)
+        mock_resp = _mock_http_response(_mock_contextualized_response([[_make_b64_int8([1])]], total_tokens=1))
         mock_post.return_value = mock_resp
 
         embed = PerplexityEmbed("key", "pplx-embed-context-v1-4b")
@@ -212,8 +216,7 @@ class TestPerplexityEmbedContextualizedEncode:
 
     @patch("rag.llm.embedding_model.requests.post")
     def test_contextualized_sends_nested_input(self, mock_post):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = _mock_contextualized_response([[_make_b64_int8([1])]], total_tokens=1)
+        mock_resp = _mock_http_response(_mock_contextualized_response([[_make_b64_int8([1])]], total_tokens=1))
         mock_post.return_value = mock_resp
 
         embed = PerplexityEmbed("key", "pplx-embed-context-v1-0.6b")
@@ -228,8 +231,7 @@ class TestPerplexityEmbedEncodeQueries:
     @patch("rag.llm.embedding_model.requests.post")
     def test_encode_queries_returns_single_vector(self, mock_post):
         emb = _make_b64_int8([5, 10, 15, 20])
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = _mock_standard_response([emb], total_tokens=3)
+        mock_resp = _mock_http_response(_mock_standard_response([emb], total_tokens=3))
         mock_post.return_value = mock_resp
 
         embed = PerplexityEmbed("key", "pplx-embed-v1-0.6b")

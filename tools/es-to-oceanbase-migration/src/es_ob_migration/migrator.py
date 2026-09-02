@@ -29,7 +29,7 @@ console = Console()
 class ESToOceanBaseMigrator:
     """
     RAGFlow-specific migration orchestrator.
-    
+
     This migrator is designed specifically for RAGFlow's data structure,
     handling the fixed schema and vector embeddings correctly.
     """
@@ -99,7 +99,7 @@ class ESToOceanBaseMigrator:
             # Step 2: Analyze ES index
             console.print("\n[bold blue]Step 2: Analyzing ES index...[/]")
             analysis = self._analyze_es_index(es_index)
-            
+
             # Auto-detect vector size from ES mapping
             vector_size = 768  # Default fallback
             if analysis["vector_fields"]:
@@ -114,7 +114,7 @@ class ESToOceanBaseMigrator:
             # Step 3: Get total document count
             total_docs = self.es_client.count_documents(es_index)
             console.print(f"  Total documents: {total_docs:,}")
-            
+
             result["total_documents"] = total_docs
 
             if total_docs == 0:
@@ -126,21 +126,13 @@ class ESToOceanBaseMigrator:
             if resume and self.progress_manager.can_resume(es_index, ob_table):
                 console.print("\n[bold yellow]Resuming from previous progress...[/]")
                 progress = self.progress_manager.load_progress(es_index, ob_table)
-                console.print(
-                    f"  Previously migrated: {progress.migrated_documents:,} documents"
-                )
+                console.print(f"  Previously migrated: {progress.migrated_documents:,} documents")
             else:
                 # Fresh start - check if table already exists
                 if self.ob_client.table_exists(ob_table):
-                    raise RuntimeError(
-                        f"Table '{ob_table}' already exists in OceanBase. "
-                        f"Migration aborted to prevent data conflicts. "
-                        f"Please drop the table manually or use a different table name."
-                    )
+                    raise RuntimeError(f"Table '{ob_table}' already exists in OceanBase. Migration aborted to prevent data conflicts. Please drop the table manually or use a different table name.")
 
-                progress = self.progress_manager.create_progress(
-                    es_index, ob_table, total_docs
-                )
+                progress = self.progress_manager.create_progress(es_index, ob_table, total_docs)
 
             # Step 5: Create table if needed
             if not progress.table_created:
@@ -157,7 +149,7 @@ class ESToOceanBaseMigrator:
                     console.print(f"  Table '{ob_table}' already exists")
                     # Check and add vector column if needed
                     self.ob_client.add_vector_column(ob_table, vector_size)
-                
+
                 progress.table_created = True
                 progress.indexes_created = True
                 progress.schema_converted = True
@@ -186,10 +178,7 @@ class ESToOceanBaseMigrator:
             if verify_after:
                 console.print("\n[bold blue]Step 5: Verifying migration...[/]")
                 verifier = MigrationVerifier(self.es_client, self.ob_client)
-                verification = verifier.verify(
-                    es_index, ob_table, 
-                    primary_key="id"
-                )
+                verification = verifier.verify(es_index, ob_table, primary_key="id")
                 result["verification"] = {
                     "passed": verification.passed,
                     "message": verification.message,
@@ -236,7 +225,7 @@ class ESToOceanBaseMigrator:
         # Check OceanBase
         if not self.ob_client.health_check():
             raise RuntimeError("OceanBase connection failed")
-        
+
         ob_version = self.ob_client.get_version()
         console.print(f"  OceanBase connection: OK (version: {ob_version})")
 
@@ -275,7 +264,7 @@ class ESToOceanBaseMigrator:
             batch_count = 0
             for batch in self.es_client.scroll_documents(es_index, batch_size):
                 batch_count += 1
-                
+
                 # Convert batch to OceanBase format
                 ob_rows = data_converter.convert_batch(batch)
 
@@ -341,7 +330,7 @@ class ESToOceanBaseMigrator:
     ) -> list[dict[str, Any]]:
         """
         Get sample documents from ES for preview.
-        
+
         Args:
             es_index: ES index name
             sample_size: Number of samples
@@ -355,10 +344,10 @@ class ESToOceanBaseMigrator:
     def list_knowledge_bases(self, es_index: str) -> list[str]:
         """
         List all knowledge base IDs in an ES index.
-        
+
         Args:
             es_index: ES index name
-            
+
         Returns:
             List of kb_id values
         """

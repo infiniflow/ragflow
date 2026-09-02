@@ -26,14 +26,11 @@ class _ChunkNode:
         self.body_indexes = body_indexes or []
         self.children = []
 
-
     def add_child(self, child):
         self.children.append(child)
 
-
     def add_body_index(self, index):
         self.body_indexes.append(index)
-
 
     def build_tree(self, indexed_lines, depth):
         stack = [self]
@@ -51,12 +48,10 @@ class _ChunkNode:
 
         return self
 
-
     def get_paths(self, depth, include_heading_content):
         chunk_paths = []
         self._dfs(chunk_paths, [], depth, include_heading_content)
         return chunk_paths
-
 
     def _dfs(self, chunk_paths, titles, depth, include_heading_content):
         if self.level == 0 and self.body_indexes:
@@ -70,11 +65,7 @@ class _ChunkNode:
             elif not self.children and 1 <= self.level <= depth:
                 chunk_paths.append(path_titles)
         else:
-            path_titles = (
-                titles + self.title_indexes + self.body_indexes
-                if 1 <= self.level <= depth
-                else titles
-            )
+            path_titles = titles + self.title_indexes + self.body_indexes if 1 <= self.level <= depth else titles
 
             if not self.children and 1 <= self.level <= depth:
                 chunk_paths.append(path_titles)
@@ -88,7 +79,6 @@ class HierarchyTitleChunker(BaseTitleChunker):
 
     def resolve_levels(self, line_records):
         return self.resolve_title_levels(line_records)
-
 
     def build_chunks(self, line_records, resolved):
         record_groups = []

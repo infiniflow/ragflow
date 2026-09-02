@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import bulk_upload_documents
+from common import bulk_upload_documents, list_all_documents
 
 
 class TestDocumentsDeletion:
@@ -114,7 +114,7 @@ def test_delete_1k(add_dataset, tmp_path):
     count = 1_000
     dataset = add_dataset
     documents = bulk_upload_documents(dataset, count, tmp_path)
-    assert len(dataset.list_documents(page_size=count * 2)) == count
+    assert len(list_all_documents(dataset, limit=count + 1)) == count
 
     dataset.delete_documents(ids=[doc.id for doc in documents])
     assert len(dataset.list_documents()) == 0

@@ -18,6 +18,7 @@ import json
 import os
 import logging
 import re
+import secrets
 from typing import Any
 
 from werkzeug.security import check_password_hash
@@ -117,7 +118,9 @@ class UserMgr:
         # check new_password different from old.
         usr = user_list[0]
         psw = decrypt(new_password)
-        if check_password_hash(usr.password, psw):
+        # SSO-provisioned users (OIDC/OAuth) have no local password (usr.password is None):
+        # skip the equality check, which would otherwise crash inside werkzeug's split().
+        if usr.password and check_password_hash(usr.password, psw):
             return "Same password, no need to update!"
         # update password
         UserService.update_user_password(usr.id, psw)
@@ -144,7 +147,10 @@ class UserMgr:
         if target_status == usr.is_active:
             return f"User activate status is already {_activate_status}!"
         # update is_active
-        UserService.update_user(usr.id, {"is_active": target_status})
+        update_dict = {"is_active": target_status}
+        if target_status == ActiveEnum.INACTIVE.value:
+            update_dict["access_token"] = f"INVALID_{secrets.token_hex(16)}"
+        UserService.update_user(usr.id, update_dict)
         return f"Turn {_activate_status} user activate status successfully!"
 
     @staticmethod
@@ -271,12 +277,23 @@ class ServiceMgr:
     @staticmethod
     def get_all_services():
         doc_engine = os.getenv("DOC_ENGINE", "elasticsearch")
+        # Map STORAGE_IMPL (e.g. "AWS_S3", "MINIO", "OSS") to the lowercase
+        # `store_type` we use in FileStoreConfig.store_type. The "AWS_"
+        # prefix is stripped so AWS_S3 matches store_type "s3".
+        storage_impl = os.getenv("STORAGE_IMPL", "MINIO")
+        active_store_type = storage_impl.lower().removeprefix("aws_")
         result = []
         configs = SERVICE_CONFIGS.configs
         for service_id, config in enumerate(configs):
             config_dict = config.to_dict()
             if config_dict["service_type"] == "retrieval":
                 if config_dict["extra"]["retrieval_type"] != doc_engine:
+                    continue
+            if config_dict["service_type"] == "file_store":
+                # Only show the file-store backend that's actually active.
+                # Without this filter, a stale minio entry from service_conf.yaml
+                # is returned even when STORAGE_IMPL=AWS_S3 (see #17294).
+                if config_dict.get("extra", {}).get("store_type") != active_store_type:
                     continue
             try:
                 service_detail = ServiceMgr.get_service_details(service_id)
@@ -482,6 +499,16 @@ class SandboxMgr:
             "description": "E2B Cloud - Code Execution Sandboxes",
             "tags": ["saas", "fast", "global"],
         },
+        "tenki": {
+            "name": "Tenki",
+            "description": "Tenki - Disposable microVM code sandboxes",
+            "tags": ["saas", "cloud", "microvm", "isolated"],
+        },
+        "ucloud_agent_sandbox": {
+            "name": "UCloud Agent Sandbox",
+            "description": "UCloud Agent Sandbox - Disposable cloud sandboxes for agent code execution",
+            "tags": ["saas", "cloud", "isolated", "ucloud"],
+        },
     }
 
     @staticmethod
@@ -489,10 +516,7 @@ class SandboxMgr:
         """List all available sandbox providers."""
         result = []
         for provider_id, metadata in SandboxMgr.PROVIDER_REGISTRY.items():
-            result.append({
-                "id": provider_id,
-                **metadata
-            })
+            result.append({"id": provider_id, **metadata})
         return result
 
     @staticmethod
@@ -504,6 +528,8 @@ class SandboxMgr:
             SSHProvider,
             AliyunCodeInterpreterProvider,
             E2BProvider,
+            TenkiProvider,
+            UCloudAgentSandboxProvider,
         )
 
         schemas = {
@@ -512,6 +538,8 @@ class SandboxMgr:
             "ssh": SSHProvider.get_config_schema(),
             "aliyun_codeinterpreter": AliyunCodeInterpreterProvider.get_config_schema(),
             "e2b": E2BProvider.get_config_schema(),
+            "tenki": TenkiProvider.get_config_schema(),
+            "ucloud_agent_sandbox": UCloudAgentSandboxProvider.get_config_schema(),
         }
 
         if provider_id not in schemas:
@@ -577,6 +605,8 @@ class SandboxMgr:
             SSHProvider,
             AliyunCodeInterpreterProvider,
             E2BProvider,
+            TenkiProvider,
+            UCloudAgentSandboxProvider,
         )
 
         try:
@@ -621,6 +651,8 @@ class SandboxMgr:
                 "ssh": SSHProvider,
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
+                "tenki": TenkiProvider,
+                "ucloud_agent_sandbox": UCloudAgentSandboxProvider,
             }
             provider = provider_classes[provider_type]()
             is_valid, error_msg = provider.validate_config(config)
@@ -635,6 +667,7 @@ class SandboxMgr:
             config_json = json.dumps(config)
             SettingsMgr.update_by_name(f"sandbox.{provider_type}", config_json)
             from agent.sandbox.client import reload_provider
+
             reload_provider()
 
             return {"provider_type": provider_type, "config": config}
@@ -667,6 +700,8 @@ class SandboxMgr:
                 SSHProvider,
                 AliyunCodeInterpreterProvider,
                 E2BProvider,
+                TenkiProvider,
+                UCloudAgentSandboxProvider,
             )
 
             # Instantiate provider based on type
@@ -676,6 +711,8 @@ class SandboxMgr:
                 "ssh": SSHProvider,
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
+                "tenki": TenkiProvider,
+                "ucloud_agent_sandbox": UCloudAgentSandboxProvider,
             }
 
             if provider_type not in provider_classes:
@@ -693,17 +730,17 @@ class SandboxMgr:
                 raise AdminException("Failed to create sandbox instance.")
 
             try:
-                # Simple test code that exercises provider wrapping via main().
+                # Keep the probe close to the original coverage, but avoid
+                # `sys` because the sandbox security analyzer blocks it.
                 test_code = """
 import json
 import math
-import sys
 
 
 def main() -> dict:
-    print("Python version:", sys.version)
-    print("Platform:", sys.platform)
-    print(f"2 + 2 = {2 + 2}")
+    left = 2
+    right = 2
+    print(f"2 + 2 = {left + right}")
     print(f"JSON dump: {json.dumps({'test': 'data', 'value': 123})}")
     print(f"Math.sqrt(16) = {math.sqrt(16)}")
     print("TEST_PASSED")
@@ -727,11 +764,7 @@ def main() -> dict:
             # Build detailed result message
             success = execution_result.exit_code == 0 and "TEST_PASSED" in execution_result.stdout
 
-            message_parts = [
-                f"Test {success and 'PASSED' or 'FAILED'}",
-                f"Exit code: {execution_result.exit_code}",
-                f"Execution time: {execution_result.execution_time:.2f}s"
-            ]
+            message_parts = [f"Test {success and 'PASSED' or 'FAILED'}", f"Exit code: {execution_result.exit_code}", f"Execution time: {execution_result.execution_time:.2f}s"]
 
             if execution_result.stdout.strip():
                 stdout_preview = execution_result.stdout.strip()[:200]
@@ -751,12 +784,13 @@ def main() -> dict:
                     "execution_time": execution_result.execution_time,
                     "stdout": execution_result.stdout,
                     "stderr": execution_result.stderr,
-                }
+                },
             }
 
         except AdminException:
             raise
         except Exception as e:
             import traceback
+
             error_details = traceback.format_exc()
             raise AdminException(f"Connection test failed: {str(e)}\\n\\nStack trace:\\n{error_details}")

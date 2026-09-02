@@ -29,6 +29,7 @@ def encrypt_password(password_plain: str) -> str:
         import base64
         from Cryptodome.PublicKey import RSA
         from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
+
         def crypt(line):
             """
             decrypt(crypt(input_string)) == base64(input_string), which frontend and ragflow_cli use.
@@ -36,20 +37,18 @@ def encrypt_password(password_plain: str) -> str:
             pub = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/z8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOOUEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVKRNLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK6olN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs2wIDAQAB\n-----END PUBLIC KEY-----"
             rsa_key = RSA.importKey(pub)
             cipher = Cipher_pkcs1_v1_5.new(rsa_key)
-            password_base64 = base64.b64encode(line.encode('utf-8')).decode("utf-8")
+            password_base64 = base64.b64encode(line.encode("utf-8")).decode("utf-8")
             encrypted_password = cipher.encrypt(password_base64.encode())
-            return base64.b64encode(encrypted_password).decode('utf-8')
+            return base64.b64encode(encrypted_password).decode("utf-8")
     except Exception as exc:
-        raise AuthException(
-            "Password encryption unavailable; install pycryptodomex (uv sync --python 3.12 --group test)."
-        ) from exc
+        raise AuthException("Password encryption unavailable; install pycryptodomex (uv sync --python 3.13 --group test).") from exc
     return crypt(password_plain)
 
 
 def register_user(client: HttpClient, email: str, nickname: str, password: str) -> None:
     password_enc = encrypt_password(password)
     payload = {"email": email, "nickname": nickname, "password": password_enc}
-    res = client.request_json("POST", "/user/register", use_api_base=False, auth_kind=None, json_body=payload)
+    res = client.request_json("POST", "/users", use_api_base=True, auth_kind=None, json_body=payload)
     if res.get("code") == 0:
         return
     msg = res.get("message", "")
@@ -64,7 +63,7 @@ def login_user(client: HttpClient, server_type: str, email: str, password: str) 
     if server_type == "admin":
         response = client.request("POST", "/admin/login", use_api_base=True, auth_kind=None, json_body=payload)
     else:
-        response = client.request("POST", "/user/login", use_api_base=False, auth_kind=None, json_body=payload)
+        response = client.request("POST", "/auth/login", use_api_base=True, auth_kind=None, json_body=payload)
     try:
         res = response.json()
     except Exception as exc:

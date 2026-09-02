@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
 
 def build_javascript_wrapper(code: str, args_json: str) -> str:
-    return f'''{code}
+    return f"""{code}
 
 const __ragflowArgs = {args_json};
 
@@ -55,7 +55,7 @@ const __ragflowArgs = {args_json};
   }}
   console.log('{RESULT_MARKER_PREFIX}' + Buffer.from(payload, 'utf8').toString('base64'));
 }})();
-'''
+"""
 
 
 def extract_structured_result(stdout: str) -> tuple[str, dict[str, Any]]:

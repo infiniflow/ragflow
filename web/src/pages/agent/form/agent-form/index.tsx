@@ -19,6 +19,7 @@ import { Input, NumberInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import NumberInputStepper from '@/components/originui/number-input';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { get } from 'lodash';
@@ -32,7 +33,6 @@ import {
   NodeHandleId,
   VariableType,
 } from '../../constant';
-import { useSaveOnBlur } from '../../hooks/use-save-on-blur';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { hasSubAgentOrTool, isBottomSubAgent } from '../../utils';
@@ -50,6 +50,7 @@ import {
   useHandleShowStructuredOutput,
   useShowStructuredOutputDialog,
 } from './use-show-structured-output-dialog';
+import { useGetAgentMCPIds } from './use-get-tools';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
@@ -75,6 +76,7 @@ const FormSchema = z.object({
   exception_method: z.string().optional(),
   exception_goto: z.array(z.string()).optional(),
   exception_default_value: z.string().optional(),
+  tool_timeout: z.coerce.number().optional(),
   ...LargeModelFilterFormSchema,
   cite: z.boolean().optional(),
   showStructuredOutput: z.boolean().optional(),
@@ -93,8 +95,6 @@ function AgentForm({ node }: INextOperatorForm) {
   const defaultValues = useValues(node);
 
   const { extraOptions } = useBuildPromptExtraPromptOptions(edges, node?.id);
-
-  const { handleSaveOnBlur } = useSaveOnBlur();
 
   const ExceptionMethodOptions = Object.values(AgentExceptionMethod).map(
     (x) => ({
@@ -120,6 +120,8 @@ function AgentForm({ node }: INextOperatorForm) {
     control: form.control,
     name: 'exception_method',
   });
+
+  const { mcpIds } = useGetAgentMCPIds();
 
   const showStructuredOutput = useWatch({
     control: form.control,
@@ -160,11 +162,11 @@ function AgentForm({ node }: INextOperatorForm) {
       <Form {...form}>
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
-          {findLlmByUuid(llmId)?.tags?.includes('IMAGE2TEXT') && (
+          <LargeModelFormField></LargeModelFormField>
+          {findLlmByUuid(llmId)?.model_type?.includes('vision') && (
             <QueryVariable
               name="visual_files_var"
-              label="Visual Input File"
+              label={t('flow.visualInputFile')}
               types={[VariableType.File]}
             ></QueryVariable>
           )}
@@ -180,7 +182,6 @@ function AgentForm({ node }: INextOperatorForm) {
                     placeholder={t('flow.messagePlaceholder')}
                     showToolbar={true}
                     extraOptions={extraOptions}
-                    onBlur={handleSaveOnBlur}
                   ></PromptEditor>
                 </FormControl>
               </FormItem>
@@ -198,7 +199,6 @@ function AgentForm({ node }: INextOperatorForm) {
                       <PromptEditor
                         {...field}
                         showToolbar={true}
-                        onBlur={handleSaveOnBlur}
                       ></PromptEditor>
                     </section>
                   </FormControl>
@@ -209,7 +209,7 @@ function AgentForm({ node }: INextOperatorForm) {
           <Separator></Separator>
           <AgentTools></AgentTools>
           <Agents node={node}></Agents>
-          <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
+          <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
             <section className="space-y-5">
               <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
               <FormField
@@ -253,6 +253,24 @@ function AgentForm({ node }: INextOperatorForm) {
                   </FormItem>
                 )}
               />
+              {mcpIds.length > 0 && (
+                <RAGFlowFormItem
+                  label={t('flow.toolTimeout')}
+                  tooltip={t('flow.toolTimeoutTip')}
+                  name="tool_timeout"
+                >
+                  {(field) => (
+                    <div className="flex gap-2 items-center">
+                      <NumberInputStepper
+                        value={field.value}
+                        onChange={field.onChange}
+                        min={1}
+                      />{' '}
+                      {t('flow.seconds')}
+                    </div>
+                  )}
+                </RAGFlowFormItem>
+              )}
               {hasSubAgentOrTool(edges, node?.id) && (
                 <FormField
                   control={form.control}
