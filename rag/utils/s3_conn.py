@@ -44,7 +44,13 @@ class RAGFlowS3:
     def use_default_bucket(method):
         def wrapper(self, bucket, *args, **kwargs):
             # If there is a default bucket, use the default bucket
+            # but preserve the original bucket identifier so callers that
+            # need it as a key prefix (e.g. remove_bucket in single-bucket
+            # mode) can still scope the operation to the logical bucket.
+            original_bucket = bucket
             actual_bucket = self.bucket if self.bucket else bucket
+            if self.bucket:
+                kwargs["_orig_bucket"] = original_bucket
             return method(self, actual_bucket, *args, **kwargs)
 
         return wrapper
@@ -233,14 +239,31 @@ class RAGFlowS3:
             return False
 
     @use_default_bucket
-    def rm_bucket(self, bucket, *args, **kwargs):
-        for conn in self.conn:
-            try:
-                if not conn.bucket_exists(bucket):
-                    continue
-                for o in conn.list_objects_v2(Bucket=bucket):
-                    conn.delete_object(bucket, o.object_name)
-                conn.delete_bucket(Bucket=bucket)
-                return
-            except Exception as e:
-                logging.error(f"Fail rm {bucket}: " + str(e))
+    def remove_bucket(self, bucket, **kwargs):
+        orig_bucket = kwargs.pop("_orig_bucket", None)
+        try:
+            if self.bucket:
+                # Single bucket mode: remove objects with the logical-bucket
+                # prefix, but do not remove the physical bucket.
+                prefix = ""
+                if self.prefix_path:
+                    prefix = f"{self.prefix_path}/"
+                if orig_bucket:
+                    prefix += f"{orig_bucket}/"
+
+                paginator = self.conn[0].get_paginator("list_objects_v2")
+                for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                    objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
+                    if objects:
+                        self.conn[0].delete_objects(Bucket=bucket, Delete={"Objects": objects})
+            else:
+                if not self.bucket_exists(bucket):
+                    return
+                paginator = self.conn[0].get_paginator("list_objects_v2")
+                for page in paginator.paginate(Bucket=bucket):
+                    objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
+                    if objects:
+                        self.conn[0].delete_objects(Bucket=bucket, Delete={"Objects": objects})
+                self.conn[0].delete_bucket(Bucket=bucket)
+        except Exception:
+            logging.exception(f"Fail to remove bucket {bucket}")
