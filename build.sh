@@ -513,8 +513,8 @@ setup_cgo_env() {
             return 1
             ;;
     esac
-    # Statically link libonnxruntime*.a into the binary. The forked Go binding
-    # (onnxruntime_go, github.com/xugangqiang/onnxruntime_go) resolves
+    # Statically link libonnxruntime*.a into the binary. The org Go binding
+    # (onnxruntime_go, github.com/infiniflow/onnxruntime_go) resolves
     # OrtGetApiBase with dlopen(NULL), so the symbols must (a) be pulled in
     # wholesale with --whole-archive (ORT registers its execution providers
     # lazily at runtime, beyond what a normal link would keep) and (b) be
