@@ -556,7 +556,7 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(
     api_key="<YOUR_API_KEY>",
-    base_url="http://<YOUR_BASE_URL>:9380",
+    base_url="http://<YOUR_BASE_URL>",
 )
 dataset = rag_object.list_datasets(id="id")[0]
 doc = dataset.list_documents(id="wdfxb5t547d")[0]
@@ -587,7 +587,7 @@ Lists documents in the current dataset.
 
 #### Parameters
 
-##### id: `string`
+##### id: `string | None`
 
 The ID of the document to retrieve. Defaults to `None`.
 
@@ -599,7 +599,7 @@ The IDs of the documents to retrieve. Defaults to `None`. The `id` and `ids` par
 
 The exact name of the document to retrieve. Defaults to `None`.
 
-##### keywords: `string`
+##### keywords: `string | None`
 
 The keywords used to match document titles. Defaults to `None`.
 

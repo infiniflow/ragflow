@@ -1037,7 +1037,7 @@ Failure:
 ### RAPTOR and Knowledge graph
 
 :::caution
-Since RAGFlow v0.27, the standalone RAPTOR and Knowledge graph features have been replaced by Knowledge Compilation, and their previous HTTP APIs are no longer available. Use the RAGFlow Web UI to configure and run the corresponding features.
+Since RAGFlow v0.27, standalone RAPTOR and Knowledge Graph workflows are no longer supported through the public HTTP API. These workflows have been superseded by Knowledge Compilation, which can be configured and run through the RAGFlow Web UI.
 :::
 
 ---
