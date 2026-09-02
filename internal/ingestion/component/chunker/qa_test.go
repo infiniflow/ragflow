@@ -138,7 +138,7 @@ func TestQAChunker_CSVStrictPairRejectsThreeCells(t *testing.T) {
 		"output_format": "html",
 		"html":          "<table><tr><td>question</td><td></td><td>extra</td></tr></table>",
 	}
-	out, err := comp.Invoke(context.Background(), nil, inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestQAChunker_CSVStrictPairAcceptsTwoCells(t *testing.T) {
 		"output_format": "html",
 		"html":          "<table><tr><td>question</td><td>answer</td></tr></table>",
 	}
-	out, err := comp.Invoke(context.Background(), nil, inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestQAChunker_NonCSVHTMLThreeCellsKeepsFirstTwo(t *testing.T) {
 		"output_format": "html",
 		"html":          "<table><tr><td>question</td><td></td><td>extra</td></tr></table>",
 	}
-	out, err := comp.Invoke(context.Background(), nil, inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
