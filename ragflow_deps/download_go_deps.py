@@ -34,11 +34,11 @@
 import argparse
 import os
 import sys
+
 import requests
-from typing import Union
 
 
-def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
+def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
     if use_china_mirrors:
         return [
             # stagehand-server-v3 Node.js SEA binaries (used by Browser
@@ -62,7 +62,7 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             # network access during CI.
             ["https://gh-proxy.com/https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
             ["https://gh-proxy.com/https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            ["https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v0.1.8/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
+            ["https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
         ]
     else:
         return [
@@ -87,7 +87,7 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             # network access during CI.
             ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
             ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.8/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
+            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
         ]
 
 
