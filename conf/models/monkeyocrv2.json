@@ -1,0 +1,15 @@
+{
+  "name": "MonkeyOCRv2",
+  "url_suffix": {
+    "doc_parse": "parse"
+  },
+  "class": "local",
+  "models": [
+    {
+      "name": "MonkeyOCRv2-Parsing",
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
+}

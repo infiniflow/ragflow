@@ -1593,6 +1593,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 
 	// Mirror Python's ensure_*_from_env calls.
 	_ = m.ensureMineruFromEnv(ctx, tenantID)
+	_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
 	_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
 	_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
 
@@ -1837,8 +1838,13 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
-// env key / default config tables for the three OCR providers.
-// Mirrors common/constants.py MINERU_ENV_KEYS, PADDLEOCR_ENV_KEYS, OPENDATALOADER_ENV_KEYS.
+// ensureMonkeyOCRv2FromEnv mirrors Python's ensure_monkeyocrv2_from_env.
+func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCRv2", "monkeyocrv2-from-env", config)
+}
+
+// Environment-key/default tables mirror the Python OCR provider settings.
 var (
 	mineruEnvKeys = []string{
 		common.EnvMineruAPIServer,
@@ -1871,6 +1877,14 @@ var (
 	}
 	openDataLoaderDefaultConfig = map[string]interface{}{
 		common.EnvOpenDataLoaderAPIServer: "",
+	}
+	monkeyOCRv2EnvKeys = []string{
+		common.EnvMonkeyOCRv2ServerURL,
+		common.EnvMonkeyOCRv2Timeout,
+	}
+	monkeyOCRv2DefaultConfig = map[string]interface{}{
+		common.EnvMonkeyOCRv2ServerURL: "",
+		common.EnvMonkeyOCRv2Timeout:   600,
 	}
 )
 
