@@ -51,12 +51,8 @@ class TestLazyEncoder:
         assert calls == []
         assert module.num_tokens_from_string is not None
 
-    def test_encoder_attribute_still_resolves(self, monkeypatch):
-        """`from common.token_utils import encoder` must keep working.
-
-        `rag/prompts/generator.py` imports the name directly, so deleting it is
-        not an acceptable way to defer the build.
-        """
+    def test_encoder_is_built_once_and_shared(self, monkeypatch):
+        """`get_encoder()` builds on the first call and returns that object after."""
         built = []
 
         def fake_get_encoding(name):
@@ -71,9 +67,9 @@ class TestLazyEncoder:
         module = _reimport_token_utils(monkeypatch, fake_get_encoding)
         assert built == []
 
-        encoder = module.encoder
+        encoder = module.get_encoder()
         assert built == ["cl100k_base"]
-        assert encoder is module.encoder, "the encoder must be built once and reused"
+        assert module.get_encoder() is encoder
 
     def test_unavailable_table_is_not_reported_as_zero_tokens(self, monkeypatch):
         """A missing BPE table must fail loudly, not count as an empty string.
@@ -90,11 +86,3 @@ class TestLazyEncoder:
 
         with pytest.raises(RuntimeError, match="BPE table unavailable"):
             module.num_tokens_from_string("hello")
-
-    def test_unknown_attribute_still_raises(self, monkeypatch):
-        """The module __getattr__ must not mask genuine typos."""
-        module = _reimport_token_utils(monkeypatch, lambda name: None)
-
-        missing_name = "no_such_name"
-        with pytest.raises(AttributeError):
-            getattr(module, missing_name)

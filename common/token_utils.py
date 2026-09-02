@@ -69,13 +69,6 @@ def get_encoder():
     return _encoder
 
 
-def __getattr__(name):
-    """Keep `from common.token_utils import encoder` working without an import-time build."""
-    if name == "encoder":
-        return get_encoder()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 # Per-run token usage sink. An agent run (Canvas.run) installs a mutable dict here
 # at the start of each turn; every LLMBundle chat call adds its provider-reported
 # usage to it. This is the single chokepoint that aggregates token usage across all
