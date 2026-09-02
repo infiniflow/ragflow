@@ -43,6 +43,15 @@ ES_MAX_BUCKETS = 65536
 META_VALUE_SPACE_PAGE_SIZE = 1000
 
 
+class MetaValueSpaceIncomplete(Exception):
+    """The metadata value space could not be read in full.
+
+    Distinct from a failure to read it at all: callers must not answer with a
+    partial value space, and must not quietly substitute the result-window
+    limited scan, which is incomplete in the same way.
+    """
+
+
 def _es_response_total(response: Any) -> int | None:
     """Extract the exact total hit count from an ES search response.
 
@@ -812,10 +821,13 @@ class DocMetadataService:
         Deliberately not get_flatted_meta_by_kbs(), which pages the doc-meta
         index with from/size and stops at the doc store's result window: past
         it, gen_meta_filter is offered the metadata of an arbitrary prefix and
-        asked to pick a value that may not be in it. A terms aggregation is not
-        bound by that window, and its cost scales with the metadata's
+        asked to pick a value that may not be in it. A composite aggregation is
+        not bound by that window, and its cost scales with the metadata's
         cardinality rather than the document count, so the result is complete
         for a dataset of any size.
+
+        Raises MetaValueSpaceIncomplete when the doc store answers with partial
+        results, rather than returning a space that silently omits values.
 
         Falls back to flattening get_flatted_meta_by_kbs() on non-ES backends,
         so behaviour there is unchanged.
@@ -864,12 +876,30 @@ class DocMetadataService:
                     if key in after:
                         composite["after"] = after[key]
                     aggs[f"vs_{key}"] = {"composite": composite}
-                res = es.search(index=index_name, body={"size": 0, "query": query, "aggs": aggs})
+                # allow_partial_search_results=False: the client's default lets ES
+                # answer HTTP 200 with some shards missing, and a value absent
+                # because its shard failed is indistinguishable here from a value
+                # that does not exist. Filtering on that silently drops matching
+                # documents, so refuse the answer instead.
+                res = es.search(
+                    index=index_name,
+                    body={"size": 0, "query": query, "aggs": aggs},
+                    allow_partial_search_results=False,
+                )
                 requests += 1
-                result = getattr(res, "body", res).get("aggregations", {})
+                payload = getattr(res, "body", res)
+                shards = payload.get("_shards") or {}
+                if payload.get("timed_out") or shards.get("failed"):
+                    raise MetaValueSpaceIncomplete(f"partial aggregation response for kb_ids={kb_ids}: timed_out={payload.get('timed_out')}, shards={shards}")
+                result = payload.get("aggregations", {})
                 unfinished = {}
                 for key, field in pending.items():
-                    agg = result.get(f"vs_{key}") or {}
+                    agg = result.get(f"vs_{key}")
+                    if agg is None:
+                        # A requested aggregation that came back absent is not an
+                        # empty result; treating it as one would silently drop the
+                        # whole key from the value space.
+                        raise MetaValueSpaceIncomplete(f"aggregation vs_{key} missing from the response for kb_ids={kb_ids}")
                     buckets = agg.get("buckets") or []
                     if buckets:
                         space.setdefault(key, []).extend(str(b["key"][key]) for b in buckets)
@@ -884,6 +914,11 @@ class DocMetadataService:
             )
             return space
 
+        except MetaValueSpaceIncomplete:
+            # Deliberately not _fallback(): the paged scan is result-window
+            # limited, so substituting it here would answer an incomplete read
+            # with a differently incomplete one.
+            raise
         except Exception:
             logging.exception(f"get_meta_value_space_by_kbs failed for {kb_ids}; falling back to the paged scan")
             return _fallback()
