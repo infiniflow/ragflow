@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/types"
 )
 
 // makeResponse builds a SearchResponse with `n` synthetic hits whose id
@@ -579,5 +580,28 @@ func TestFormatOrderedTagFeas(t *testing.T) {
 	encodedStr := buf.String()
 	if !strings.Contains(encodedStr, `"tag_feas":{"活动咨询":9,"服务投诉":6,"价格咨询":4,"正面评价":3,"质量投诉":3}`) {
 		t.Fatalf("encoded JSON does not preserve score-descending order:\n%s", encodedStr)
+	}
+}
+
+func TestBuildQueryStringQueryMinimumShouldMatchHalfUp(t *testing.T) {
+	tests := []struct {
+		fraction float64
+		want     string
+	}{
+		{0.29, "29%"},
+		{0.125, "13%"},
+		{0.135, "14%"},
+		{0.0, "0%"},
+		{1.0, "100%"},
+	}
+	for _, tc := range tests {
+		query := buildQueryStringQuery(&types.MatchTextExpr{
+			MatchingText: "hello",
+			ExtraOptions: map[string]interface{}{"minimum_should_match": tc.fraction},
+		}, 0.5, false, false)
+		got := query["query_string"].(map[string]interface{})["minimum_should_match"].(string)
+		if got != tc.want {
+			t.Errorf("buildQueryStringQuery minimum_should_match for %g = %q, want %q", tc.fraction, got, tc.want)
+		}
 	}
 }
