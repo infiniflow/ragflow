@@ -519,7 +519,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         'Esegui un test di recupero per verificare se RAGFlow riesce a recuperare il contenuto previsto per il LLM. Se hai modificato le impostazioni predefinite, come il peso della similarità delle parole chiave o la soglia di similarità, per ottenere i risultati ottimali, tieni presente che queste modifiche non saranno salvate automaticamente. Devi applicarle alle impostazioni del tuo assistente chat o alle impostazioni del componente agente Recupero.',
       similarityThreshold: 'Soglia di similarità',
       similarityThresholdTip:
-        'RAGFlow utilizza una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata, o una combinazione di similarità delle parole chiave ponderata e punteggio di reranking ponderato durante il recupero. Questo parametro imposta la soglia per le similarità tra la query utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata a 0.2. Ciò significa che solo i chunk con punteggio di similarità ibrida di 20 o superiore saranno recuperati.',
+        'RAGFlow utilizza una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata, o una combinazione di similarità delle parole chiave ponderata e punteggio di reranking ponderato durante il recupero. Questo parametro imposta la soglia per le similarità tra la query utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata a 20. Ciò significa che solo i chunk con punteggio di similarità ibrida di 20 o superiore saranno recuperati.',
       vectorSimilarityWeight: 'Peso similarità vettoriale',
       vectorSimilarityWeightTip:
         'Imposta il peso della similarità delle parole chiave nel punteggio di similarità combinato, usato con la similarità coseno vettoriale o con il punteggio di reranking. Il totale dei due pesi deve essere uguale a 1.0.',
@@ -582,7 +582,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         'Un delimitatore può consistere in uno o più caratteri speciali. Se sono più caratteri, assicurati che siano racchiusi tra backtick (``). Ad esempio, se configuri i tuoi delimitatori così: \\n`##`;, i tuoi testi saranno separati a interruzioni di riga, doppio cancelletto (##) e punto e virgola.',
 
       html4excel: 'Excel in HTML',
-      html4excelTip: `Usa con il metodo di chunking Generale. Quando disabilitato, i fogli di calcolo (XLSX o XLS (Excel 97-2003)) nel dataset saranno analizzati in coppie chiave-valore. Quando abilitato, saranno analizzati in tabelle HTML, dividendo ogni 12 righe se la tabella originale ha più di 12 righe. Vedi https://ragflow.io/docs/dev/enable_excel2html per i dettagli.`,
+      html4excelTip: `Usa con il metodo di chunking Generale. Quando disabilitato, i fogli di calcolo (XLSX o XLS (Excel 97-2003)) nel dataset saranno analizzati in coppie chiave-valore. Quando abilitato, saranno analizzati in tabelle HTML, dividendo ogni 12 righe se la tabella originale ha più di 12 righe. Vedi https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration per i dettagli.`,
       autoKeywords: 'Parole chiave automatiche',
       autoKeywordsTip: `Estrai automaticamente N parole chiave per ogni chunk per aumentare il loro ranking per le query contenenti quelle parole chiave. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Puoi controllare o aggiornare le parole chiave aggiunte per un chunk dalla lista dei chunk. Per i dettagli, vedi https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Domande automatiche',
@@ -622,7 +622,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       overlappedPercentTip:
         'La percentuale di sovrapposizione tra due chunk adiacenti',
       globalIndexModelTip:
-        'Usato per generare grafi della conoscenza, RAPTOR, metadati automatici, parole chiave automatiche e domande automatiche. Le prestazioni del modello influenzeranno la qualità della generazione.',
+        'Usato per generare metadati automatici, parole chiave automatiche e domande automatiche. Le prestazioni del modello influenzeranno la qualità della generazione.',
       globalIndexModel: 'Modello di indicizzazione',
       settings: 'Impostazioni',
       autoMetadataTip: `Genera automaticamente i metadati. Si applica ai nuovi file durante l'analisi. I file esistenti richiedono una nuova analisi per essere aggiornati (i chunk rimangono preservati). Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'.`,
@@ -891,7 +891,7 @@ Quanto sopra è il contenuto che devi riassumere.`,
       entityTypes: 'Tipi di entità',
       vietnamese: 'Vietnamita',
       pageRank: 'Page rank',
-      pageRankTip: `Puoi assegnare un punteggio PageRank più alto a specifici dataset durante il recupero. Il punteggio corrispondente viene aggiunto ai punteggi di similarità ibrida dei chunk recuperati da questi dataset, aumentando il loro ranking. Vedi https://ragflow.io/docs/dev/set_page_rank per i dettagli.`,
+      pageRankTip: `Puoi assegnare un punteggio PageRank più alto a specifici dataset durante il recupero. Il punteggio corrispondente viene aggiunto ai punteggi di similarità ibrida dei chunk recuperati da questi dataset, aumentando il loro ranking. Vedi https://ragflow.io/docs/dataset_configuration#basic-information per i dettagli.`,
       tagName: 'Tag',
       frequency: 'Frequenza',
       searchTags: 'Cerca tag',
@@ -899,7 +899,7 @@ Quanto sopra è il contenuto che devi riassumere.`,
       tagTable: 'Tabella',
       tagSet: 'Set di tag',
       tagSetTip: `
-     <p> Seleziona uno o più dataset tag per auto-taggare i chunk nel tuo dataset. Vedi https://ragflow.io/docs/dev/use_tag_sets per i dettagli.</p>
+     <p> Seleziona uno o più dataset tag per auto-taggare i chunk nel tuo dataset. Vedi https://ragflow.io/docs/dataset_configuration#basic-information per i dettagli.</p>
 <p>Anche la query dell'utente sarà auto-taggata.</p>
 Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulteriore livello di conoscenza specifica del dominio al dataset esistente.
 <p>Differenza tra auto-tag e auto-keyword:</p>
@@ -1032,7 +1032,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       topN: 'Top N',
       topNTip: `Non tutti i chunk con punteggio di similarità sopra la 'soglia di similarità' saranno inviati all'LLM. Questo seleziona 'Top N' chunk da quelli recuperati.`,
       variable: 'Variabile',
-      variableTip: `Usate insieme alle API di gestione dell'assistente chat di RAGFlow, le variabili possono aiutare a sviluppare strategie di prompt di sistema più flessibili. Le variabili definite saranno usate dal 'Prompt di sistema' come parte dei prompt per l'LLM. {knowledge} è una variabile speciale riservata che rappresenta i chunk recuperati dal/i dataset specificato/i, e tutte le variabili devono essere racchiuse tra parentesi graffe {} nel 'Prompt di sistema'. Vedi https://ragflow.io/docs/dev/set_chat_variables per i dettagli.`,
+      variableTip: `Usate insieme alle API di gestione dell'assistente chat di RAGFlow, le variabili possono aiutare a sviluppare strategie di prompt di sistema più flessibili. Le variabili definite saranno usate dal 'Prompt di sistema' come parte dei prompt per l'LLM. {knowledge} è una variabile speciale riservata che rappresenta i chunk recuperati dal/i dataset specificato/i, e tutte le variabili devono essere racchiuse tra parentesi graffe {} nel 'Prompt di sistema'. Vedi https://ragflow.io/docs/chat_configuration#system-prompt per i dettagli.`,
       add: 'Aggiungi',
       key: 'Chiave',
       optional: 'Opzionale',

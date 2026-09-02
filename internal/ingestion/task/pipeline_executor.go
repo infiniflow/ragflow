@@ -32,6 +32,7 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/component/globals"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
@@ -959,6 +960,14 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		if s.taskCtx.Doc.Type != "" {
 			inputs["file_type"] = s.taskCtx.Doc.Type
 		}
+		// A debug (dry-run) run with a chunker node keeps only the leading
+		// N chunks for preview. The cap is delivered through pipeline inputs
+		// (seeded into CanvasState.Globals by the pipeline run, read by the
+		// chunker decorator via globals.DebugChunkCap) — the same run-level
+		// channel as the other shared metadata, not override_params (the
+		// decorator is built at compile time and cannot read run-time
+		// override_params). An explicit caller-supplied cap is respected.
+		inputs = injectDebugChunkCap(inputs)
 	} else {
 		if s.taskCtx.File != nil {
 			inputs["file"] = s.taskCtx.File
@@ -989,23 +998,48 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		return nil, dsl, err
 	}
 
-	// Surface the debug-run result DSL to any sink that implements ResultSink
-	// (the DebugLogSink used by canvas-debug runs). This mirrors Python's
-	// END-marker `dsl` attachment (rag/flow/pipeline.py:98) so the front-end
-	// "View result" page can render parsed chunks. The probe is an optional
-	// capability: non-debug (DB-backed) sinks ignore it and the ProgressSink
-	// contract is unchanged, keeping the coupling one-directional.
-	if rs, ok := s.progressSink.(ResultSink); ok {
-		if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
-			rs.SetResult(resultDSL, output)
-		}
-	}
+	logDSL := s.buildLogDSL(dsl, output)
 
 	payload, err := pipelinepkg.ExtractPayload(dsl, output)
 	if err != nil {
 		return nil, dsl, err
 	}
-	return payload, dsl, nil
+	return payload, logDSL, nil
+}
+
+// buildLogDSL returns the DSL string recorded for a pipeline run: the
+// run-result DSL (static canvas structure + each component's runtime outputs
+// merged into obj.params.outputs) when it can be built and marshaled,
+// otherwise the static dsl unchanged — log recording must never fail a run.
+//
+// BuildDebugResultDSL needs the full run output, which is in scope only inside
+// runPipelineWithDSL: the extracted payload returned there no longer carries
+// output["state"]. Two consumers:
+//   - canvas-debug runs hand the map to the DebugLogSink END marker via the
+//     ResultSink capability (END-marker `dsl` attachment,
+//     rag/flow/pipeline.py:98);
+//   - persist (dataset parse) runs return its JSON as the log DSL so the
+//     pipeline operation log carries every component's output
+//     (dsl=str(pipeline), rag/svr/task_executor_refactor/dataflow_service.py)
+//     — without it the dataset log "View result" page renders blank panels.
+//
+// The sink probe stays an optional capability: non-debug (DB-backed) sinks
+// ignore it and the ProgressSink contract is unchanged.
+func (s *PipelineExecutor) buildLogDSL(dsl string, output map[string]any) string {
+	logDSL := dsl
+	if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
+		if rs, ok := s.progressSink.(ResultSink); ok {
+			rs.SetResult(resultDSL, output)
+		}
+		if raw, e := json.Marshal(resultDSL); e == nil {
+			logDSL = string(raw)
+		} else {
+			common.Warn(fmt.Sprintf("marshal run-result dsl for pipeline log: %v", e))
+		}
+	} else {
+		common.Warn(fmt.Sprintf("build run-result dsl for pipeline log: %v", e))
+	}
+	return logDSL
 }
 
 // debugPageCapPages is the number of leading pages a canvas-debug
@@ -1014,3 +1048,20 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 // inclusive range [1, debugPageCapPages], matching the production
 // ParserConfig[cpnID][filetype]["pages"] shape (see NormalizeParserConfigPages).
 const debugPageCapPages = 2
+
+// injectDebugChunkCap sets the canvas-debug chunk cap on the run inputs when
+// not already present. The cap is read by the chunker decorator (via
+// CanvasState.Globals / globals.DebugChunkCap) and limits a debug (dry-run)
+// preview to the leading N chunks. An existing value (a future caller-supplied
+// override) is respected, mirroring BuildParserPageCapOverride's respect for an
+// explicit page cap. A nil inputs map is initialized, so callers may pass a
+// concrete or nil map.
+func injectDebugChunkCap(inputs map[string]any) map[string]any {
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	if _, ok := inputs[globals.DebugChunkCapKey]; !ok {
+		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
+	}
+	return inputs
+}

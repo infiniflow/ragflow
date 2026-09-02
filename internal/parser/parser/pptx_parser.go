@@ -144,27 +144,39 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 	defer doc.Close()
 
-	text, err := doc.PlainText()
+	// office_oxide's PlainText renders slides back-to-back with no page
+	// delimiter, so per-slide splitting must go through the structured
+	// IR, which carries one section per slide.
+	irJSON, err := doc.ToIRJSON()
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("pptx plain-text: %w", err)}
-	}
-
-	// Split on form-feed (the python TxtParser convention used by
-	// RAGFlow's slide parser) — each block becomes a JSON item.
-	var items []map[string]any
-	for i, raw := range strings.Split(text, "\f") {
-		trimmed := strings.TrimSpace(raw)
-		if trimmed == "" {
-			continue
+		// Salvage path: the document opened but its structured IR could
+		// not be serialized. Fall back to whole-document plain text
+		// (worst case: the entire deck as one chunk) so a still-readable
+		// deck yields content instead of a hard parse error. The original
+		// IR error is surfaced only when plain text fails too.
+		text, perr := doc.PlainText()
+		if perr != nil {
+			return ParseResult{Err: fmt.Errorf("presentation ir-json: %w", err)}
 		}
-		items = append(items, map[string]any{
-			"text":         trimmed,
-			"doc_type_kwd": "text",
-			"slide_number": i + 1,
-		})
+		return ParseResult{
+			OutputFormat: "json",
+			File:         map[string]any{"name": filename, "format": p.format},
+			JSON:         itemsFromPlainText(text),
+		}
 	}
-	if items == nil {
-		items = []map[string]any{{"text": strings.TrimSpace(text), "doc_type_kwd": "text"}}
+	items, err := buildPPTXJSONSections(irJSON)
+	if err != nil {
+		return ParseResult{Err: err}
+	}
+	if len(items) == 0 {
+		// A deck whose IR carries no sections at all: keep the
+		// whole-document text as a single item so a still-readable
+		// file yields one chunk instead of none.
+		text, perr := doc.PlainText()
+		if perr != nil {
+			return ParseResult{Err: fmt.Errorf("presentation plain-text: %w", perr)}
+		}
+		items = itemsFromPlainText(text)
 	}
 
 	return ParseResult{

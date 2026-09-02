@@ -548,7 +548,17 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
         # field_map: only columns stored in chunk_data (metadata or both) — used for retrieval/SQL
         stored_indices = [i for i in range(len(clmns)) if column_roles.get(clmns[i], "both") in ("metadata", "both")]
         if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB:
-            field_map = {py_clmns[i].lower(): str(clmns[i]).replace("_", " ") for i in stored_indices}
+            # Regression for #18287: Infinity/OceanBase/SereneDB store
+            # chunk_data keyed by the original column name, and the SQL
+            # prompt examples reference those exact keys via
+            # `json_extract_string(chunk_data, '$.FieldName')`. Apply
+            # the underscore-to-space formatting only to the displayed
+            # value; the key remains the raw column name verbatim so
+            # that columns like `row_id` continue to map to `$.row_id`
+            # in `chunk_data` instead of the unreachable `$.row id`.
+            # GaussDB's pinyin-keyed contract is preserved by the
+            # override block below.
+            field_map = {str(clmns[i]): str(clmns[i]).replace("_", " ") for i in stored_indices}
         else:
             field_map = {clmns_map[i][0]: clmns_map[i][1] for i in stored_indices}
         if settings.DOC_ENGINE_GAUSSDB:

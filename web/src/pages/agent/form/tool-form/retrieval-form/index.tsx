@@ -22,7 +22,6 @@ import { useOwnerTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
 import { FormWrapper } from '../../components/form-wrapper';
 import {
-  EmptyResponseField,
   MemoryDatasetForm,
   RetrievalPartialSchema,
   useHideKnowledgeGraphField,
@@ -80,7 +79,6 @@ const RetrievalForm = () => {
               </>
             )}
 
-            <EmptyResponseField></EmptyResponseField>
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>

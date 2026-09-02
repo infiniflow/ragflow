@@ -121,34 +121,45 @@ You are an expert at analyzing conversations to extract structured memory.
 6. Maximum {max_items} items per type
 `
 
-// TYPE_INSTRUCTIONS contains specific instructions for each memory type extraction
+// TYPE_INSTRUCTIONS contains specific instructions for each memory type extraction.
+// Kept in lockstep with Python's memory/utils/prompt_util.py TYPE_INSTRUCTIONS —
+// both implementations drive the same extraction contract, and a rule present on
+// only one side (e.g. the semantic Default line) drifts extraction behavior across
+// languages (see #18415).
 var TYPE_INSTRUCTIONS = map[string]string{
 	"semantic": `
 **EXTRACT SEMANTIC KNOWLEDGE:**
 - Universal facts, definitions, concepts, relationships
 - Time-invariant, generally true information
+- Examples: "The capital of France is Paris", "Water boils at 100°C"
 
-**Timestamp Rules:**
-- valid_at: When the fact became true
-- invalid_at: When it becomes false or empty if still true
+**Timestamp Rules for Semantic Knowledge:**
+- valid_at: When the fact became true (e.g., law enactment, discovery)
+- invalid_at: When it becomes false (e.g., repeal, disproven) or empty if still true
+- Default: valid_at = conversation time, invalid_at = "" for timeless facts
 `,
 	"episodic": `
 **EXTRACT EPISODIC KNOWLEDGE:**
 - Specific experiences, events, personal stories
 - Time-bound, person-specific, contextual
+- Examples: "Yesterday I fixed the bug", "User reported issue last week"
 
-**Timestamp Rules:**
+**Timestamp Rules for Episodic Knowledge:**
 - valid_at: Event start/occurrence time
 - invalid_at: Event end time or empty if instantaneous
+- Extract explicit times: "at 3 PM", "last Monday", "from X to Y"
 `,
 	"procedural": `
 **EXTRACT PROCEDURAL KNOWLEDGE:**
 - Processes, methods, step-by-step instructions
 - Goal-oriented, actionable, often includes conditions
+- Examples: "To reset password, click...", "Debugging steps: 1)..."
 
-**Timestamp Rules:**
+**Timestamp Rules for Procedural Knowledge:**
 - valid_at: When procedure becomes valid/effective
 - invalid_at: When it expires/becomes obsolete or empty if current
+- For version-specific: use release dates
+- For best practices: invalid_at = ""
 `,
 }
 
@@ -1118,7 +1129,7 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 			Method: "weighted_sum",
 			TopN:   topN,
 			FusionParams: map[string]interface{}{
-				"weights": fmt.Sprintf("%g,%g", 1-keywordsSimilarityWeight, keywordsSimilarityWeight),
+				"weights": memoryFusionWeights(keywordsSimilarityWeight),
 			},
 		}
 		matchExprs = append(matchExprs, matchText, matchDense, fusionExpr)
@@ -1352,6 +1363,21 @@ func memoryMessageTextExpr(question string, similarityThreshold float64) *engine
 	matchText.Fields = []string{"content"}
 	matchText.TopN = 100
 	return matchText
+}
+
+// memoryFusionWeights formats FusionExpr weights, whose slot order is [text, vector]:
+// the Elasticsearch, OceanBase and SereneDB adapters all read slot 1 as the vector
+// weight, and Elasticsearch then boosts the text query by 1 - that value. The keyword
+// weight is the text weight, so it belongs in slot 0. Sending it to slot 1 gave every
+// memory search the inverse of the requested hybrid balance.
+//
+// Six significant digits rather than %g for the same reason serenedb's formatWeight
+// rounds: 1 - 0.7 would otherwise render as 0.30000000000000004, which is also what the
+// Python side deliberately formats away.
+func memoryFusionWeights(keywordsSimilarityWeight float64) string {
+	textWeight := keywordsSimilarityWeight
+	vectorWeight := 1 - keywordsSimilarityWeight
+	return fmt.Sprintf("%.6g,%.6g", textWeight, vectorWeight)
 }
 
 func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {

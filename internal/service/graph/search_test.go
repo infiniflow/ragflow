@@ -404,7 +404,7 @@ func TestSearchEntities_WithMock(t *testing.T) {
 			}, nil
 		},
 	}
-	entities, err := SearchEntities(context.Background(), mock, []string{"kb1"}, "Elon", nil, 10)
+	entities, err := SearchEntities(t.Context(), mock, []string{"kb1"}, "Elon", nil, 10)
 	if err != nil {
 		t.Fatalf("SearchEntities failed: %v", err)
 	}
@@ -423,7 +423,7 @@ func TestSearchEntitiesByTypes_WithMock(t *testing.T) {
 			}, nil
 		},
 	}
-	entities, err := SearchEntitiesByTypes(context.Background(), mock, []string{"kb1"}, []string{"ORGANIZATION"}, 10)
+	entities, err := SearchEntitiesByTypes(t.Context(), mock, []string{"kb1"}, []string{"ORGANIZATION"}, 10)
 	if err != nil {
 		t.Fatalf("SearchEntitiesByTypes failed: %v", err)
 	}
@@ -434,7 +434,7 @@ func TestSearchEntitiesByTypes_WithMock(t *testing.T) {
 
 func TestSearchTypeSamples_WithMock(t *testing.T) {
 	mock := &mockKGEngine{}
-	samples, err := SearchTypeSamples(context.Background(), mock, []string{"kb1"})
+	samples, err := SearchTypeSamples(t.Context(), mock, []string{"kb1"})
 	if err != nil {
 		t.Fatalf("SearchTypeSamples failed: %v", err)
 	}

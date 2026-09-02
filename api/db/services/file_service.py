@@ -260,10 +260,7 @@ class FileService(CommonService):
         # Returns:
         #     Boolean indicating if folder exists
         parent_files = cls.model.select().where(cls.model.id == parent_id)
-        if parent_files.count():
-            return True
-        cls.delete_folder_by_pf_id(parent_id)
-        return False
+        return bool(parent_files.count())
 
     @classmethod
     @DB.connection_context()

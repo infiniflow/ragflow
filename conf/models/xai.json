@@ -14,7 +14,7 @@
   "models": [
     {
       "name": "grok-4",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -25,7 +25,7 @@
     },
     {
       "name": "grok-3",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -36,7 +36,7 @@
     },
     {
       "name": "grok-3-fast",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -47,7 +47,7 @@
     },
     {
       "name": "grok-3-mini",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -58,7 +58,7 @@
     },
     {
       "name": "grok-3-mini-mini-fast",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -69,7 +69,7 @@
     },
     {
       "name": "grok-2-vision",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "vision"

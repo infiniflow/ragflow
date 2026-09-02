@@ -9,7 +9,7 @@
   "models": [
     {
       "name": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -17,7 +17,7 @@
     },
     {
       "name": "anthropic.claude-3-5-haiku-20241022-v1:0",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -25,7 +25,7 @@
     },
     {
       "name": "anthropic.claude-3-opus-20240229-v1:0",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -33,7 +33,7 @@
     },
     {
       "name": "anthropic.claude-3-sonnet-20240229-v1:0",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -41,7 +41,7 @@
     },
     {
       "name": "anthropic.claude-3-haiku-20240307-v1:0",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -49,7 +49,7 @@
     },
     {
       "name": "meta.llama3-1-405b-instruct-v1:0",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -57,7 +57,7 @@
     },
     {
       "name": "meta.llama3-1-70b-instruct-v1:0",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -65,7 +65,7 @@
     },
     {
       "name": "meta.llama3-1-8b-instruct-v1:0",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -73,7 +73,7 @@
     },
     {
       "name": "mistral.mistral-large-2407-v1:0",
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -81,7 +81,7 @@
     },
     {
       "name": "mistral.mixtral-8x7b-instruct-v0:1",
-      "content_length": 32000,
+      "context_length": 32000,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -89,7 +89,7 @@
     },
     {
       "name": "amazon.nova-pro-v1:0",
-      "content_length": 300000,
+      "context_length": 300000,
       "max_output": 5000,
       "model_types": [
         "chat"
@@ -97,7 +97,7 @@
     },
     {
       "name": "amazon.nova-lite-v1:0",
-      "content_length": 300000,
+      "context_length": 300000,
       "max_output": 5000,
       "model_types": [
         "chat"
@@ -105,7 +105,7 @@
     },
     {
       "name": "amazon.nova-micro-v1:0",
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 5000,
       "model_types": [
         "chat"
@@ -113,7 +113,7 @@
     },
     {
       "name": "cohere.command-r-plus-v1:0",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -121,7 +121,7 @@
     },
     {
       "name": "cohere.command-r-v1:0",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 4096,
       "model_types": [
         "chat"

@@ -94,7 +94,7 @@ func tablesToGolden(tables []pdf.TableItem) []tableGolden {
 
 // TestIntegration_SectionsText verifies section text output matches golden.
 func TestIntegration_SectionsText(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "01_english_simple.pdf")
 
 	cfg := pdf.DefaultParserConfig()
@@ -137,7 +137,7 @@ func TestIntegration_SectionsText(t *testing.T) {
 
 // TestIntegration_SectionsCount verifies section count is stable.
 func TestIntegration_SectionsCount(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "01_english_simple.pdf")
 
 	cfg := pdf.DefaultParserConfig()
@@ -163,7 +163,7 @@ func TestIntegration_SectionsCount(t *testing.T) {
 
 // TestIntegration_TableStructure verifies table rows and cell text match golden.
 func TestIntegration_TableStructure(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "06_table_content.pdf")
 
 	cfg := pdf.DefaultParserConfig()
@@ -217,7 +217,7 @@ func TestIntegration_TableStructure(t *testing.T) {
 
 // TestIntegration_TableImageB64 verifies table ImageB64 is valid base64 PNG.
 func TestIntegration_TableImageB64(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "06_table_content.pdf")
 
 	cfg := pdf.DefaultParserConfig()
@@ -256,7 +256,7 @@ func TestIntegration_TableImageB64(t *testing.T) {
 
 // TestIntegration_LayoutTypes verifies DLA labels boxes with expected types.
 func TestIntegration_LayoutTypes(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "06_table_content.pdf")
 
 	cfg := pdf.DefaultParserConfig()
@@ -307,7 +307,7 @@ func TestIntegration_LayoutTypes(t *testing.T) {
 // results when called multiple times with the same image. This validates
 // that the ML inference is deterministic (or at least semantically stable).
 func TestIntegration_Idempotency(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	// Render a fixture page as the stable input image.
 	eng := mustOpenEngine(t, "06_table_content.pdf")
@@ -500,7 +500,7 @@ func floatClose(a, b, eps float64) bool {
 // suppression inside table regions, and caption removal — the key alignment
 // fixes from the Python→Go migration.
 func TestIntegration_TableAlign(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "18_table_caption.pdf")
 
 	cfg := pdf.DefaultParserConfig()
@@ -540,7 +540,7 @@ func TestIntegration_TableAlign(t *testing.T) {
 // TestIntegration_GarbageLayout verifies CID-garbled and garbage-layout
 // (header/footer/reference) boxes are popped from output.
 func TestIntegration_GarbageLayout(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "17_garbage_layout.pdf")
 
 	cfg := pdf.DefaultParserConfig()
@@ -570,7 +570,7 @@ func TestIntegration_GarbageLayout(t *testing.T) {
 
 // TestIntegration_MultiChunk verifies parsing for large documents.
 func TestIntegration_MultiChunk(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "19_multipage_chunk.pdf")
 
 	cfg := pdf.DefaultParserConfig()
@@ -592,7 +592,7 @@ func TestIntegration_MultiChunk(t *testing.T) {
 // TestIntegration_NoRegression runs a few snapshot PDFs and checks basic
 // invariants — no panic, sections produced, no CID garbage.
 func TestIntegration_NoRegression(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	for _, name := range []string{
 		"01_english_simple.pdf",
@@ -624,7 +624,7 @@ func TestIntegration_NoRegression(t *testing.T) {
 // TestIntegration_TableRotation verifies that evaluateTableOrientation
 // correctly detects rotation using region-count scoring.
 func TestIntegration_TableRotation(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	t.Run("upright_table", func(t *testing.T) {
 		data := mustReadPDF(t, "rotate_0.pdf")
@@ -662,7 +662,7 @@ func TestIntegration_TableRotation(t *testing.T) {
 // TestIntegration_WordSpacing verifies space insertion between ASCII word
 // characters with a visible gap (Python __img_ocr space insertion).
 func TestIntegration_WordSpacing(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "01_english_simple.pdf")
 
 	cfg := pdf.DefaultParserConfig()

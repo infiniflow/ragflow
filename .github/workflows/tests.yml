@@ -1098,3 +1098,84 @@ jobs:
           if [[ -n ${PORT_RESERVATION:-} ]]; then
             rm -f "${PORT_RESERVATION}"
           fi
+
+  ragflow_native_backend:
+    name: ragflow_native_backend
+    # Runs AFTER both per-engine go jobs (which contain the doc-engine-specific
+    # server build + Python RESTFUL correctness runs). The DeepDoc native
+    # backend is doc-engine-independent, so running it ONCE here — instead of
+    # duplicated (and memory-competing) inside each go job — removes the
+    # redundant second -race pass and the concurrent -race OOM risk. Running it
+    # last also keeps a flaky -race OOM from ever obscuring the functional
+    # verdict produced by the go jobs.
+    needs: [ragflow_tests_infinity, ragflow_tests_elasticsearch]
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
+    runs-on: [ "self-hosted", "ragflow-test" ]
+    steps:
+      - name: Ensure workspace ownership
+        run: |
+          echo "Workflow triggered by ${{ github.event_name }}"
+          echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Build C++ static library (ragflow native backend)
+        # Produces librag_tokenizer_c_api.a with the re2 symbols renamed into
+        # the ragtokre2_ namespace (so it no longer collides with onnxruntime's
+        # bundled re2 copy at link time). Only the .a is needed for the native
+        # integration tests; the per-engine go jobs build the full server.
+        run: |
+          set -euo pipefail
+          BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_native_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
+          cleanup_builder() {
+            if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
+              sudo docker rm -f -v "${BUILDER_CONTAINER}" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup_builder EXIT
+
+          TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
+          sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
+            -e TZ="${TZ}" \
+            -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
+            -v "${PWD}:/ragflow" \
+            -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
+            infiniflow/infinity_builder:ubuntu22_clang20
+          sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
+
+      - name: Cache external DeepDoc testdata
+        # The native backend tests fetch pinned test assets from
+        # xugangqiang/ragflow-testdata (see scripts/fetch_deepdoc_testdata.sh).
+        # Cache them across runs, keyed by the pinned ref recorded in
+        # internal/deepdoc/native/testdata.ref so a ref bump invalidates the cache.
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/ragflow-testdata
+          key: deepdoc-testdata-${{ hashFiles('internal/deepdoc/native/testdata.ref') }}
+
+      - name: Run in-process DeepDoc backend integration tests (correctness + race)
+        # Doc-engine-independent: the same native backend (det/layout/tsr/rec
+        # ONNX models + onnxruntime) is exercised regardless of DOC_ENGINE, so
+        # it is run ONCE here instead of duplicated inside each go job.
+        #
+        # Inside build.sh, the golden/comparison tests run WITHOUT -race (no
+        # race-detection value, ~10x memory tax) and only the concurrency
+        # correctness tests run WITH -race (see run_native_integration_tests).
+        #
+        # XDG_CACHE_HOME is pinned to a workspace path so the test fetch script
+        # and this job's actions/cache step agree on a single, deterministic
+        # location (the self-hosted runner's $HOME is not stable across steps).
+        env:
+          MODEL_DIR: /opt/ragflow-deepdoc-models
+          CGO_ENABLED: '1'
+          DEEPDOC_NATIVE_REQUIRED: '1'
+          XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+        run: |
+          set -euo pipefail
+          ./build.sh --test-native
+

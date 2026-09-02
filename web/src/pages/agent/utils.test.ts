@@ -1,4 +1,16 @@
-import { transformTokenChunkerParams } from './utils';
+import { Operator } from './constant';
+import {
+  getEmptyMessageNodeNames,
+  isEmptyMessageContent,
+  transformTokenChunkerParams,
+} from './utils';
+
+const createMessageNode = (name: string, content: unknown) => ({
+  id: `${Operator.Message}:${name}`,
+  type: 'ragNode',
+  position: { x: 0, y: 0 },
+  data: { label: Operator.Message, name, form: { content } },
+});
 
 describe('transformTokenChunkerParams', () => {
   it('keeps overlapped_percent and delimiters when delimiter_mode is one', () => {
@@ -35,5 +47,42 @@ describe('transformTokenChunkerParams', () => {
     expect(result.children_delimiters).toEqual(['|']);
     expect(result.table_context_size).toBe(81);
     expect(result.image_context_size).toBe(81);
+  });
+});
+
+describe('Message component content validation', () => {
+  describe('isEmptyMessageContent', () => {
+    it('treats missing, non-array and blank-only content as empty', () => {
+      expect(isEmptyMessageContent()).toBe(true);
+      expect(isEmptyMessageContent(null)).toBe(true);
+      expect(isEmptyMessageContent('hello')).toBe(true);
+      expect(isEmptyMessageContent([])).toBe(true);
+      expect(isEmptyMessageContent(['', ' \t '])).toBe(true);
+      // Non-string entries never satisfy the backend either.
+      expect(isEmptyMessageContent([123])).toBe(true);
+    });
+
+    it('accepts content with at least one non-blank string entry', () => {
+      expect(isEmptyMessageContent(['hi'])).toBe(false);
+      expect(isEmptyMessageContent(['', '{begin@query}'])).toBe(false);
+      expect(isEmptyMessageContent(['  text  '])).toBe(false);
+    });
+  });
+
+  describe('getEmptyMessageNodeNames', () => {
+    it('flags only Message nodes whose content is empty', () => {
+      const nodes = [
+        createMessageNode('回复消息_0', ['']),
+        createMessageNode('回复消息_1', ['ok']),
+        {
+          id: `${Operator.Agent}:x`,
+          type: 'ragNode',
+          position: { x: 0, y: 0 },
+          data: { label: Operator.Agent, name: '智能体_0', form: {} },
+        },
+      ];
+
+      expect(getEmptyMessageNodeNames(nodes as any)).toEqual(['回复消息_0']);
+    });
   });
 });

@@ -19,7 +19,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/table"
 	"ragflow/internal/deepdoc/parser/pdf/tool"
@@ -52,14 +51,8 @@ func TestBatchResults(t *testing.T) {
 	}
 	pdfs := all[:min(count, len(all))]
 
-	ddClient, err := inf.NewClient(common.GetEnv(common.EnvDeepDocURL))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ddClient.Health() {
-		t.Fatalf("DeepDoc service not available at %s (DLA+TSR required)", ddClient.BaseURL())
-	}
-	deepDoc := pdf.DocAnalyzer(ddClient)
+	ddClient := mustConnectInProcessAnalyzer(t)
+	deepDoc := ddClient
 
 	variant := "ocr"
 	t.Logf("DeepDoc available — DLA+TSR+OCR enabled (%d PDFs)", len(pdfs))
