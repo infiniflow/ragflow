@@ -222,6 +222,95 @@ func TestDocumentListIncludesScheduledIngestionStatus(t *testing.T) {
 	}
 }
 
+func TestDocumentListDeduplicatesHistoricalIngestionTasks(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.User{},
+		&entity.UserCanvas{},
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.IngestionTask{},
+	); err != nil {
+		t.Fatalf("migrate document-list dependencies: %v", err)
+	}
+	if err := db.Exec("DROP INDEX idx_ingestion_task_document_id").Error; err != nil {
+		t.Fatalf("drop ingestion task unique index: %v", err)
+	}
+
+	if err := db.Create(&entity.Document{
+		ID:           "doc-duplicate-tasks",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "document",
+		CreatedBy:    "user-1",
+		Name:         sp("duplicate-tasks.pdf"),
+		Suffix:       "pdf",
+	}).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	if err := db.Create(&entity.File{
+		ID:        "file-duplicate-tasks",
+		ParentID:  "parent-1",
+		TenantID:  "tenant-1",
+		CreatedBy: "user-1",
+		Name:      "duplicate-tasks.pdf",
+		Type:      "document",
+	}).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	if err := db.Create(&entity.File2Document{
+		ID:         "link-duplicate-tasks",
+		FileID:     sp("file-duplicate-tasks"),
+		DocumentID: sp("doc-duplicate-tasks"),
+	}).Error; err != nil {
+		t.Fatalf("link file to document: %v", err)
+	}
+
+	oldTaskTime := int64(100)
+	newTaskTime := int64(200)
+	for _, task := range []*entity.IngestionTask{
+		{
+			ID:         "task-old",
+			UserID:     "user-1",
+			DocumentID: "doc-duplicate-tasks",
+			DatasetID:  "kb-1",
+			Status:     "FAILED",
+			BaseModel:  entity.BaseModel{CreateTime: &oldTaskTime},
+		},
+		{
+			ID:         "task-new",
+			UserID:     "user-1",
+			DocumentID: "doc-duplicate-tasks",
+			DatasetID:  "kb-1",
+			Status:     "SCHEDULED",
+			BaseModel:  entity.BaseModel{CreateTime: &newTaskTime},
+		},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create ingestion task %s: %v", task.ID, err)
+		}
+	}
+
+	documents, total, err := NewDocumentDAO().ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+		KbID:    "kb-1",
+		OrderBy: "create_time",
+		Desc:    true,
+		Offset:  0,
+		Limit:   10,
+	})
+	if err != nil {
+		t.Fatalf("list documents: %v", err)
+	}
+	if total != 1 || len(documents) != 1 {
+		t.Fatalf("listed %d documents (total %d), want 1", len(documents), total)
+	}
+	if documents[0].IngestionStatus == nil || *documents[0].IngestionStatus != "SCHEDULED" {
+		t.Fatalf("ingestion status = %v, want %q", documents[0].IngestionStatus, "SCHEDULED")
+	}
+}
+
 func TestDocumentGetByDocumentIDAndDatasetIDUsesKBID(t *testing.T) {
 	db := setupDocumentTestDB(t)
 

@@ -560,7 +560,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       runningStatus2: 'Cancelled',
       runningStatus3: 'Success',
       runningStatus4: 'Fail',
-      runningStatusScheduled: 'Queued',
+      runningStatusQueued: 'Queued',
+      runningStatusStopping: 'Cancelling',
       pageRanges: 'Page ranges',
       pageRangesTip:
         'Range of pages to be parsed; pages outside this range will not be processed.',

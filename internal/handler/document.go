@@ -1131,7 +1131,6 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"process_duration": processDuration,
 		"suffix":           doc.Suffix,
 		"run":              mapRunStatus(doc.Run),
-		"ingestion_status": stringValue(doc.IngestionStatus),
 		"status":           stringValue(doc.Status),
 		"parser_id":        doc.ParserID,
 		"chunk_method":     doc.ParserID,
@@ -1144,6 +1143,9 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"create_date":      "",
 		"update_time":      int64(0),
 		"update_date":      "",
+	}
+	if doc.IngestionStatus != nil {
+		item["ingestion_status"] = *doc.IngestionStatus
 	}
 
 	if doc.CreateTime != nil {

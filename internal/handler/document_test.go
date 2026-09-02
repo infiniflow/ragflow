@@ -1159,6 +1159,54 @@ func TestListDocumentsHandlerReturnsScheduledIngestionStatus(t *testing.T) {
 	}
 }
 
+func TestListDocumentsHandlerOmitsEmptyIngestionStatus(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{
+		documentList: []*entity.DocumentListItem{{
+			ID:           "doc-without-task",
+			KbID:         "ds-1",
+			ParserID:     "naive",
+			ParserConfig: "{}",
+			SourceType:   "local",
+			Type:         "document",
+			CreatedBy:    "user-1",
+			Name:         sptr("without-task.pdf"),
+			Suffix:       "pdf",
+		}},
+		documentListTotal: 1,
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.ListDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Data struct {
+			Docs []map[string]interface{} `json:"docs"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(response.Data.Docs) != 1 {
+		t.Fatalf("document count = %d, want 1", len(response.Data.Docs))
+	}
+	if _, exists := response.Data.Docs[0]["ingestion_status"]; exists {
+		t.Fatalf("ingestion_status should be omitted when no ingestion task exists")
+	}
+}
+
 func TestListDocumentsHandler_MetadataFilterNarrowsDocumentIDs(t *testing.T) {
 	db := setupHandlerAccessDB(t)
 	orig := dao.DB

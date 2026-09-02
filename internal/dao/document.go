@@ -142,7 +142,19 @@ func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, 
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins("LEFT JOIN user_canvas ON document.pipeline_id = user_canvas.id").
 		Joins("LEFT JOIN user ON document.created_by = user.id").
-		Joins("LEFT JOIN ingestion_task ON ingestion_task.document_id = document.id")
+		Joins(`LEFT JOIN ingestion_task ON ingestion_task.document_id = document.id
+			AND NOT EXISTS (
+				SELECT 1
+				FROM ingestion_task newer_ingestion_task
+				WHERE newer_ingestion_task.document_id = ingestion_task.document_id
+				  AND (
+					COALESCE(newer_ingestion_task.create_time, 0) > COALESCE(ingestion_task.create_time, 0)
+					OR (
+						COALESCE(newer_ingestion_task.create_time, 0) = COALESCE(ingestion_task.create_time, 0)
+						AND newer_ingestion_task.id > ingestion_task.id
+					)
+				  )
+			)`)
 
 	listQuery = applyDocumentListFilters(listQuery, opts, true)
 	countQuery := applyDocumentListFilters(db.WithContext(ctx).Model(&entity.Document{}), opts, false)

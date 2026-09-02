@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { CircleQuestionMark, CircleX, Clock3 } from 'lucide-react';
+import { CircleQuestionMark, CircleX, Clock3, Loader2 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DocumentType, IngestionTaskStatus, RunningStatus } from './constant';
@@ -120,7 +120,10 @@ export function ParsingStatusCell({
     hideModal: hideReparseDialogModal,
   } = useHandleRunDocumentByIds(id);
   const isRunning = isDocumentProcessing(record);
-  const isScheduled = record.ingestion_status === IngestionTaskStatus.SCHEDULED;
+  const isQueued =
+    record.ingestion_status === IngestionTaskStatus.CREATED ||
+    record.ingestion_status === IngestionTaskStatus.SCHEDULED;
+  const isStopping = record.ingestion_status === IngestionTaskStatus.STOPPING;
   const isZeroChunk = chunk_count === 0;
 
   const handleOperationIconClick = (option?: {
@@ -142,7 +145,11 @@ export function ParsingStatusCell({
       className="flex gap-8 items-center"
       data-testid="document-parse-status"
       data-state={
-        isScheduled ? 'scheduled' : (ParseStatusStateMap[run] ?? 'unknown')
+        isQueued
+          ? 'queued'
+          : isStopping
+            ? 'stopping'
+            : (ParseStatusStateMap[run] ?? 'unknown')
       }
     >
       {showParse && (
@@ -151,14 +158,23 @@ export function ParsingStatusCell({
 
           {isRunning ? (
             <>
-              {isScheduled ? (
+              {isQueued ? (
                 <Button
                   size="auto"
                   variant="static"
                   onClick={() => handleShowLog(record)}
                 >
                   <Clock3 className="size-[1em]" />
-                  {t('knowledgeDetails.runningStatusScheduled')}
+                  {t('knowledgeDetails.runningStatusQueued')}
+                </Button>
+              ) : isStopping ? (
+                <Button
+                  size="auto"
+                  variant="static"
+                  onClick={() => handleShowLog(record)}
+                >
+                  <Loader2 className="size-[1em] animate-spin" />
+                  {t('knowledgeDetails.runningStatusStopping')}
                 </Button>
               ) : (
                 <Button
@@ -179,6 +195,7 @@ export function ParsingStatusCell({
               <Button
                 variant="ghost"
                 size="icon-xs"
+                disabled={isStopping}
                 onClick={() => showReparseDialogModal()}
                 // onClick={
                 //   isZeroChunk || isRunning
@@ -186,11 +203,13 @@ export function ParsingStatusCell({
                 //     : () => {}
                 // }
               >
-                {isScheduled ? (
+                {isQueued ? (
                   <CircleX
                     color="rgba(var(--state-error))"
                     className="size-[1em]"
                   />
+                ) : isStopping ? (
+                  <Loader2 className="size-[1em] animate-spin" />
                 ) : (
                   operationIcon
                 )}
