@@ -453,6 +453,45 @@ func TestIngestionTaskDAOGetByDocumentIDUsesLatestTask(t *testing.T) {
 	}
 }
 
+func TestIngestionTaskDAOGetByDocumentIDUsesIDAsTieBreaker(t *testing.T) {
+	db := setupTaskTestDB(t)
+	if err := db.Exec("DROP INDEX idx_ingestion_task_document_id").Error; err != nil {
+		t.Fatalf("drop ingestion task unique index: %v", err)
+	}
+
+	createTime := int64(100)
+	for _, task := range []*entity.IngestionTask{
+		{
+			ID:         "task-z",
+			UserID:     "user-1",
+			DocumentID: "doc-retried",
+			DatasetID:  "kb-1",
+			Status:     common.RUNNING,
+			BaseModel:  entity.BaseModel{CreateTime: &createTime},
+		},
+		{
+			ID:         "task-a",
+			UserID:     "user-1",
+			DocumentID: "doc-retried",
+			DatasetID:  "kb-1",
+			Status:     common.COMPLETED,
+			BaseModel:  entity.BaseModel{CreateTime: &createTime},
+		},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	task, err := NewIngestionTaskDAO().GetByDocumentID(t.Context(), db, "doc-retried")
+	if err != nil {
+		t.Fatalf("GetByDocumentID: %v", err)
+	}
+	if task == nil || task.ID != "task-z" {
+		t.Fatalf("latest task = %+v, want task-z", task)
+	}
+}
+
 func TestIngestionTaskDAOHasDatasetStatusIndex(t *testing.T) {
 	db := setupTaskTestDB(t)
 	if !db.Migrator().HasIndex(&entity.IngestionTask{}, "idx_ingestion_task_dataset_status") {
