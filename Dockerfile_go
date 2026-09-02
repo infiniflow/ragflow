@@ -30,6 +30,16 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
     ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.manual.onnx && \
     ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.paper.onnx
 
+# Copy the cl100k_base BPE table used by the Go tokenizer (tiktoken-go
+# cl100k_base). The deps image ships it at its root; the Go image previously
+# mounted only /huggingface.co and omitted this file, so NumTokensFromString
+# silently returned 0. localBpeLoader resolves it from <workdir>/ragflow_deps/,
+# so dropping it here makes the table load offline at startup (see
+# InitCL100KEncoder fail-fast guard).
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/cl100k_base.tiktoken,target=/tmp/cl100k_base.tiktoken \
+    mkdir -p /ragflow/ragflow_deps && \
+    cp /tmp/cl100k_base.tiktoken /ragflow/ragflow_deps/cl100k_base.tiktoken
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Setup apt

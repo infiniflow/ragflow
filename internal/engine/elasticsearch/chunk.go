@@ -1950,7 +1950,7 @@ func buildQueryStringQuery(matchText *types.MatchTextExpr, vectorSimilarityWeigh
 	minimumShouldMatch := "0%"
 	if matchText.ExtraOptions != nil {
 		if msm, ok := matchText.ExtraOptions["minimum_should_match"].(float64); ok {
-			minimumShouldMatch = fmt.Sprintf("%d%%", int(msm*100))
+			minimumShouldMatch = common.FormatMinimumShouldMatchPercent(msm)
 		}
 	}
 

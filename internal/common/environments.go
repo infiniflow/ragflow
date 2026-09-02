@@ -254,17 +254,23 @@ func HasModelFiles(dir string) bool {
 }
 
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)
-// DeepDoc backend is built and tested against (e.g. "1.23.2"). It is the
-// single source for the download URL and extracted dir name used across Go
-// and Python. The Go binding (github.com/yalue/onnxruntime_go, forked to
+// DeepDoc backend is built and tested against (e.g. "1.23.2"). It is ONE OF
+// THREE raw version declarations that must stay equal (the other two are
+// ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py)
+// — NOT a single source of truth. The download URL and extracted dir name are
+// built from those ORT_VERSION constants, not from this one. The Go binding
+// (github.com/yalue/onnxruntime_go, forked to
 // github.com/xugangqiang/onnxruntime_go) and the pip onnxruntime== pin must
 // track this MINOR version: the binding uses its own release numbering
 // (v1.23.0 <-> ORT 1.23.x) but is ABI-compatible with this native release on
 // the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),
 // so there is no .so / SONAME at runtime.
 //
-// To bump ORT: update DeepDocORTVersion (Go) AND ORT_VERSION in
-// ragflow_deps/download_deps.py AND the onnxruntime/onnxruntime-gpu pins in
-// pyproject.toml + .github/workflows/deepdoc-drift.yml, and refresh the
-// onnxruntime_go binding minor in go.mod.
+// To bump ORT, ALL of the following must change together (drift breaks the
+// static link or the runtime OrtGetApiBase lookup):
+//   - DeepDocORTVersion (here, Go) AND ORT_VERSION in BOTH
+//     ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py;
+//   - the onnxruntime== pin in pyproject.toml and the onnxruntime /
+//     onnxruntime-gpu pins in .github/workflows/deepdoc-drift.yml;
+//   - the onnxruntime_go binding minor in go.mod.
 const DeepDocORTVersion = "1.23.2"

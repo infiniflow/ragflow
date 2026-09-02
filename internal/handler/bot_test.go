@@ -661,10 +661,9 @@ func TestDownloadAttachment_OK(t *testing.T) {
 	}
 	cd := w.Header().Get("Content-Disposition")
 	// Mirrors Python apply_download_file_response_headers: with no
-	// explicit ?filename= the disposition is a plain attachment (Go
-	// backfills the empty name with "file" via SanitizeContentDispositionFilename).
-	if !strings.Contains(cd, "attachment") || !strings.Contains(cd, `filename="file"`) {
-		t.Errorf("Content-Disposition = %q, want attachment; filename=\"file\"", cd)
+	// explicit ?filename= the disposition is a plain attachment.
+	if cd != "attachment" {
+		t.Errorf("Content-Disposition = %q, want attachment", cd)
 	}
 }
 
