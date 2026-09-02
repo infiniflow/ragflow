@@ -35,6 +35,7 @@ import random
 import datetime
 import unicodedata
 import concurrent.futures
+import threading
 from io import BytesIO
 from typing import Optional
 import numpy as np
@@ -42,13 +43,43 @@ import numpy as np
 from common import settings
 from common.constants import MAXIMUM_PAGE_NUMBER
 
-# tiktoken for long random string filtering (ref: SmartResume should_remove strategy)
+# tiktoken for long random string filtering (ref: SmartResume should_remove strategy).
+# The encoding is built on first use. encoding_for_model downloads the BPE table when
+# TIKTOKEN_CACHE_DIR is cold, so building it here raised an OSError subclass out of a
+# plain `import rag.app.resume` whenever the blob host was unreachable, which the
+# ImportError guard never caught.
 try:
     import tiktoken
-
-    _tiktoken_encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
 except ImportError:
-    _tiktoken_encoding = None
+    tiktoken = None
+
+_tiktoken_encoding = None
+_tiktoken_encoding_ready = False
+_tiktoken_encoding_lock = threading.Lock()
+
+
+def _get_tiktoken_encoding():
+    """Return the tiktoken encoding, or None when it cannot be built.
+
+    Callers degrade on None: the random-string filter falls back to a
+    heuristic and the shingle similarity reports no match, so a missing
+    package or an unreachable BPE table weakens the filter instead of
+    failing the parse. The outcome is cached either way, so a dead host
+    costs one attempt per process rather than one per call.
+    """
+    global _tiktoken_encoding, _tiktoken_encoding_ready
+    if not _tiktoken_encoding_ready:
+        with _tiktoken_encoding_lock:
+            if not _tiktoken_encoding_ready:
+                if tiktoken is not None:
+                    try:
+                        _tiktoken_encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+                    except Exception:
+                        logger.warning("tiktoken encoding unavailable; resume text filtering falls back to heuristics", exc_info=True)
+                        _tiktoken_encoding = None
+                _tiktoken_encoding_ready = True
+    return _tiktoken_encoding
+
 
 # Long random string pattern: 40+ char alphanumeric mixed strings (hash, token, tracking ID, etc.)
 _LONG_RANDOM_PATTERN = re.compile(r"[a-zA-Z0-9\-~_]{40,}")
@@ -276,12 +307,13 @@ def _should_remove_random_str(match: re.Match) -> bool:
     Returns:
         True means it should be removed
     """
-    if _tiktoken_encoding is None:
+    encoding = _get_tiktoken_encoding()
+    if encoding is None:
         # When tiktoken is unavailable, use simple heuristic: case/digit alternation frequency
         s = match.group(0)
         changes = sum(1 for i in range(1, len(s)) if s[i].isdigit() != s[i - 1].isdigit() or (s[i].isalpha() and s[i - 1].isalpha() and s[i].isupper() != s[i - 1].isupper()))
         return changes / len(s) > 0.3
-    encoded = _tiktoken_encoding.encode(match.group(0))
+    encoded = encoding.encode(match.group(0))
     return len(encoded) > len(match.group(0)) * 0.5
 
 
@@ -2743,9 +2775,12 @@ def _text_shingles(text: str, n: int = 5) -> set[tuple[int, ...]]:
     Returns:
         Set of n-gram shingles (each shingle is a tuple of token ids)
     """
-    if not text or _tiktoken_encoding is None:
+    if not text:
         return set()
-    tokens = _tiktoken_encoding.encode(text)
+    encoding = _get_tiktoken_encoding()
+    if encoding is None:
+        return set()
+    tokens = encoding.encode(text)
     if len(tokens) < n:
         # Text too short: return the entire token sequence as a single shingle
         return {tuple(tokens)} if tokens else set()
@@ -2763,6 +2798,12 @@ def _shingling_jaccard(text1: str, text2: str, n: int = 5) -> float:
     Returns:
         Jaccard similarity [0.0, 1.0]
     """
+    if _get_tiktoken_encoding() is None:
+        # Without an encoding every text shingles to the empty set, and the
+        # empty union below reports 1.0, which callers read as "duplicate" and
+        # drop. Report no similarity instead, so a missing encoding keeps
+        # distinct entries rather than collapsing a resume to one of them.
+        return 0.0
     s1 = _text_shingles(text1, n=n)
     s2 = _text_shingles(text2, n=n)
     union = s1 | s2
