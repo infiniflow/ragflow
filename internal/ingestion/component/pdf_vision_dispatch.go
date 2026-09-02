@@ -324,15 +324,24 @@ func monkeyOCRv2ExtractSections(zipBytes []byte) ([]string, error) {
 			return nil, fmt.Errorf("MonkeyOCRv2 ZIP is too large after extraction")
 		}
 	}
-	var candidates []*zip.File
+	var canonicalJSON, legacyJSON []*zip.File
 	images := make(map[string]*zip.File)
 	for _, file := range reader.File {
 		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(file.Name))), "image/") {
 			images[path.Base(file.Name)] = file
 		}
-		if strings.Contains("/"+file.Name, "/jsons/") && strings.HasSuffix(file.Name, ".json") {
-			candidates = append(candidates, file)
+		cleanName := strings.TrimPrefix(path.Clean(file.Name), "./")
+		parts := strings.Split(cleanName, "/")
+		if len(parts) == 2 && parts[1] == parts[0]+".json" {
+			canonicalJSON = append(canonicalJSON, file)
 		}
+		if strings.Contains("/"+file.Name, "/jsons/") && strings.HasSuffix(file.Name, ".json") {
+			legacyJSON = append(legacyJSON, file)
+		}
+	}
+	candidates := canonicalJSON
+	if len(candidates) == 0 {
+		candidates = legacyJSON
 	}
 	if len(candidates) == 0 {
 		for _, file := range reader.File {

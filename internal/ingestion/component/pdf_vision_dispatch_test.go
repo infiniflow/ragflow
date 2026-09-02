@@ -38,11 +38,11 @@ import (
 func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
-	file, err := writer.Create("sample/jsons/page.json")
+	file, err := writer.Create("sample/sample.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload, _ := json.Marshal([]map[string]any{{"label": "Page-header", "content": "ignored"}, {"label": "Title", "content": "Heading"}, {"label": "Formula", "content": "x^2"}})
+	payload, _ := json.Marshal(map[string]any{"layouts": []map[string]any{{"label": "Page-header", "content": "ignored"}, {"label": "Title", "content": "Heading"}, {"label": "Formula", "content": "x^2"}}})
 	_, _ = file.Write(payload)
 	_ = writer.Close()
 	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes())
@@ -57,8 +57,8 @@ func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
 func TestMonkeyOCRv2ExtractSectionsEmbedsZIPImage(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
-	jsonFile, _ := writer.Create("sample/jsons/page.json")
-	_, _ = jsonFile.Write([]byte(`[{"label":"Picture","content":"![figure](../images/figure.png)"}]`))
+	jsonFile, _ := writer.Create("sample/sample.json")
+	_, _ = jsonFile.Write([]byte(`{"layouts":[{"label":"Picture","content":"![figure](images/figure.png)"}]}`))
 	imageFile, _ := writer.Create("sample/images/figure.png")
 	_, _ = imageFile.Write([]byte("png-data"))
 	_ = writer.Close()
@@ -95,8 +95,8 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 		}
 		var output bytes.Buffer
 		archive := zip.NewWriter(&output)
-		file, _ := archive.Create("sample/all_results.json")
-		_, _ = file.Write([]byte(`[{"label":"Text","content":"hello"}]`))
+		file, _ := archive.Create("sample/sample.json")
+		_, _ = file.Write([]byte(`{"layouts":[{"label":"Text","content":"hello"}]}`))
 		_ = archive.Close()
 		w.Header().Set("Content-Type", "application/zip")
 		_, _ = w.Write(output.Bytes())
