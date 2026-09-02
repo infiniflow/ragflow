@@ -128,10 +128,10 @@ RAGFlow.create_dataset(
     name: str,
     avatar: Optional[str] = None,
     description: Optional[str] = None,
-    embedding_model: Optional[str] = "BAAI/bge-large-zh-v1.5@BAAI",
+    embedding_model: Optional[str] = None,
     permission: str = "me",
     chunk_method: str = "naive",
-    parser_config: DataSet.ParserConfig = None,
+    parser_config: Optional[DataSet.ParserConfig] = None,
     auto_metadata_config: Optional[dict[str, Any]] = None
 
 ) -> DataSet
@@ -155,6 +155,10 @@ Base64 encoding of the avatar. Defaults to `None`
 ##### description: `string`
 
 A brief description of the dataset to create. Defaults to `None`.
+
+##### embedding_model: `string | None`
+
+The embedding model to use for the dataset. Defaults to `None`.
 
 ##### auto_metadata_config: `dict[str, Any] | None`
 
@@ -183,7 +187,7 @@ The chunking method of the dataset to create. Available options:
 - `"one"`: One
 - `"email"`: Email
 
-##### parser_config
+##### parser_config: `DataSet.ParserConfig | None`
 
 The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
@@ -680,20 +684,28 @@ A `Document` object contains the following attributes:
 #### Examples
 
 ```python
+from pathlib import Path
 from ragflow_sdk import RAGFlow
 
-rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_object = RAGFlow(
+    api_key="<YOUR_API_KEY>",
+    base_url="http://<YOUR_BASE_URL>:9380",
+)
 dataset = rag_object.create_dataset(name="kb_1")
 
-filename1 = "~/ragflow.txt"
-blob = open(filename1 , "rb").read()
+file_path = Path("~/ragflow.txt").expanduser()
 dataset.upload_documents([
     {
-        "display_name": filename1,
-        "blob": blob,
+        "display_name": file_path.name,
+        "blob": file_path.read_bytes(),
     }
 ])
-for doc in dataset.list_documents(keywords="rag", page=0, page_size=12):
+
+for doc in dataset.list_documents(
+    keywords="rag",
+    page=1,
+    page_size=12,
+):
     print(doc)
 ```
 
