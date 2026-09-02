@@ -371,7 +371,6 @@ export default {
       runningStatus3: 'УСПЕХ',
       runningStatus4: 'НЕУДАЧА',
       runningStatusQueued: 'В очереди',
-      runningStatusStopping: 'Отмена',
       pageRanges: 'Диапазон страниц',
       pageRangesTip:
         'Диапазон страниц для парсинга; страницы вне этого диапазона обрабатываться не будут.',

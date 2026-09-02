@@ -208,7 +208,6 @@ export default {
       runningStatus3: '成功',
       runningStatus4: '失敗',
       runningStatusQueued: '待機中',
-      runningStatusStopping: 'キャンセル中',
       pageRanges: 'ページ範囲',
 
       pageRangesTip:

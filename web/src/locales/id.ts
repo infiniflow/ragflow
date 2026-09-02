@@ -134,7 +134,6 @@ export default {
       runningStatus3: 'SUKSES',
       runningStatus4: 'GAGAL',
       runningStatusQueued: 'Dalam antrean',
-      runningStatusStopping: 'Membatalkan',
       pageRanges: 'Rentang Halaman',
       pageRangesTip:
         'rentang halaman: Tentukan rentang halaman yang perlu diparsing. Halaman yang tidak termasuk dalam rentang ini akan diabaikan.',

@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { CircleQuestionMark, CircleX, Clock3, Loader2 } from 'lucide-react';
+import { CircleQuestionMark, CircleX, Clock3 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DocumentType, IngestionTaskStatus, RunningStatus } from './constant';
@@ -144,13 +144,7 @@ export function ParsingStatusCell({
     <section
       className="flex gap-8 items-center"
       data-testid="document-parse-status"
-      data-state={
-        isQueued
-          ? 'queued'
-          : isStopping
-            ? 'stopping'
-            : (ParseStatusStateMap[run] ?? 'unknown')
-      }
+      data-state={isQueued ? 'queued' : (ParseStatusStateMap[run] ?? 'unknown')}
     >
       {showParse && (
         <div className="flex items-center gap-2">
@@ -166,15 +160,6 @@ export function ParsingStatusCell({
                 >
                   <Clock3 className="size-[1em]" />
                   {t('knowledgeDetails.runningStatusQueued')}
-                </Button>
-              ) : isStopping ? (
-                <Button
-                  size="auto"
-                  variant="static"
-                  onClick={() => handleShowLog(record)}
-                >
-                  <Loader2 className="size-[1em] animate-spin" />
-                  {t('knowledgeDetails.runningStatusStopping')}
                 </Button>
               ) : (
                 <Button
@@ -198,14 +183,10 @@ export function ParsingStatusCell({
                 disabled={isStopping}
                 onClick={() => showReparseDialogModal()}
               >
-                {isStopping ? (
-                  <Loader2 className="size-[1em] animate-spin" />
-                ) : (
-                  <CircleX
-                    color="rgba(var(--state-error))"
-                    className="size-[1em]"
-                  />
-                )}
+                <CircleX
+                  color="rgba(var(--state-error))"
+                  className="size-[1em]"
+                />
               </Button>
             </>
           ) : (

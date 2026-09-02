@@ -543,7 +543,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       runningStatus3: 'Successo',
       runningStatus4: 'Fallito',
       runningStatusQueued: 'In coda',
-      runningStatusStopping: 'Annullamento in corso',
       pageRanges: 'Intervallo pagine',
       pageRangesTip:
         'Intervallo di pagine da analizzare; le pagine al di fuori di questo intervallo non saranno elaborate.',

@@ -140,7 +140,6 @@ export default {
       runningStatus3: 'SUCCESS',
       runningStatus4: 'FAIL',
       runningStatusQueued: 'Đang chờ',
-      runningStatusStopping: 'Đang hủy',
       pageRanges: 'Phạm vi trang',
       pageRangesTip:
         'Phạm vi trang: Xác định các phạm vi trang cần phân tích cú pháp. Các trang không nằm trong các phạm vi này sẽ bị bỏ qua.',
