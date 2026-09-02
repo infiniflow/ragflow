@@ -36,13 +36,24 @@ import (
 
 // agentCheckpointsBucket is the NATS KV bucket holding eino checkpoint
 // payloads. The key is the raw canvas run id (no ":"-prefixed Redis
-// namespace, since that is not a legal NATS subject).
+// namespace, since that is not a legal NATS subject). NATS KV keys must be
+// valid subjects, so the id must not contain '/', '*', or '>' — the
+// ingestion task id (32-char lowercase hex) satisfies this today; if the id
+// format ever changes, Put/Get will surface a clear error rather than
+// silently corrupting the key.
 const agentCheckpointsBucket = "agent_checkpoints"
 
 // defaultCheckpointMaxValueSize caps a single checkpoint payload at 16 MiB.
 // eino checkpoints are structured graphs of component state; real payloads
 // are far smaller, but a hard cap prevents a runaway component from
 // exhausting the bucket.
+//
+// Deployment note: this bucket-level cap is enforced by JetStream, but the
+// NATS *server* also has a separate MaxPayload limit (default 1 MiB). The
+// server limit is lower-level and rejects the message before the bucket cap is
+// even considered, so a deployment must raise the server MaxPayload to at
+// least this value (the embedded test server uses 64 MiB) or large
+// checkpoints fail at the transport layer.
 const defaultCheckpointMaxValueSize = 16 * 1024 * 1024
 
 // NatsCheckPointStore is a NATS JetStream KV-backed eino CheckPointStore /

@@ -61,7 +61,7 @@ type CompileOptions struct {
 	// GraphCompileOption), so it only records the id on the returned
 	// CompiledCanvas — the caller threads it to Invoke. Use a stable value (for
 	// example a session-derived run id) so resuming hits the
-	// same Redis checkpoint (agent:cp:{id}). When empty,
+	// same checkpoint key (the raw id in the agent_checkpoints NATS KV bucket). When empty,
 	// CompiledCanvas.CheckPointID stays empty and the caller must supply
 	// its own id (or omit it for a fresh per-run checkpoint).
 	CheckPointID string
