@@ -49,9 +49,8 @@ os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
 # The build ran regardless, so an unreachable blob host failed any import that reached
 # this file, including unit tests that never tokenize anything.
 _encoder = None
-# Reentrant: a plain Lock would deadlock if building the encoder ever re-entered
-# this module through an import hook.
-_encoder_lock = threading.RLock()
+# Serializes the one-time build so concurrent first callers share a single encoder.
+_encoder_lock = threading.Lock()
 
 
 def get_encoder():
