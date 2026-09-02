@@ -38,6 +38,7 @@ from common.token_utils import num_tokens_from_string, total_token_count_from_re
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.llm.key_utils import _normalize_replicate_key
 from rag.llm.mws_utils import mws_api_url, require_mws_token
+from rag.llm.rate_limit_feedback import report_rate_limit
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 from rag.utils.url_utils import ensure_v1
@@ -406,6 +407,8 @@ class Base(ABC):
     async def _exceptions_async(self, e, attempt):
         logging.exception("OpenAI async completion")
         error_code = self._classify_error(e)
+        if error_code == LLMErrorCode.ERROR_RATE_LIMIT:
+            await report_rate_limit()
         if attempt == self.max_retries:
             error_code = LLMErrorCode.ERROR_MAX_RETRIES
 
@@ -2124,6 +2127,8 @@ class LiteLLMBase(ABC):
     async def _exceptions_async(self, e, attempt):
         logging.exception("LiteLLMBase async completion")
         error_code = self._classify_error(e)
+        if error_code == LLMErrorCode.ERROR_RATE_LIMIT:
+            await report_rate_limit()
         if attempt == self.max_retries:
             error_code = LLMErrorCode.ERROR_MAX_RETRIES
 

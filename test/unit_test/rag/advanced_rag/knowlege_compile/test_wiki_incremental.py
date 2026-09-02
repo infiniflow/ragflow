@@ -1144,6 +1144,55 @@ async def test_finalize_auto_links_mentions():
 
 
 @pytest.mark.asyncio
+async def test_finalize_auto_link_prefers_longest_name_without_nested_links():
+    search_results = [
+        {
+            "_source": {
+                "slug_kwd": "entity/虎牢关",
+                "title_kwd": "虎牢关",
+                "md_with_weight": "虎牢关是关隘。",
+                "page_type_kwd": "entity",
+            }
+        },
+        {
+            "_source": {
+                "slug_kwd": "entity/关",
+                "title_kwd": "关",
+                "md_with_weight": "关是称谓。",
+                "page_type_kwd": "entity",
+            }
+        },
+        {
+            "_source": {
+                "slug_kwd": "concept/虎牢关之战",
+                "title_kwd": "虎牢关之战",
+                "md_with_weight": "虎牢关之战发生在关前。",
+                "page_type_kwd": "concept",
+            }
+        },
+    ]
+    doc_store = make_doc_store(search_results)
+
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(f"{_wiki.__name__}._load_canonical_entities", new_callable=AsyncMock, return_value={}),
+    ):
+        await _wiki._wiki_finalize(tenant_id="t1", kb_id="kb1", embd_mdl=None)
+
+    update = next(args[0][1] for args in doc_store.update.call_args_list if args[0][0].get("id") == "concept/虎牢关之战")
+    body = update["md_with_weight"]
+    assert "[虎牢关](artifact/kb1/entity/虎牢关)" in body
+    assert "[关](artifact/kb1/entity/关)前" in body
+    assert "[虎牢[" not in body
+
+
+def test_find_unlinked_mention_skips_raw_and_rendered_links():
+    content = "[[entity/虎牢关|虎牢关]]与[虎牢关](artifact/kb1/entity/虎牢关)，关前"
+    assert _wiki._wiki_find_unlinked_mention(content, "虎牢关") == -1
+    assert _wiki._wiki_find_unlinked_mention(content, "关") == content.index("关前")
+
+
+@pytest.mark.asyncio
 async def test_finalize_preserves_merged_entity_name_as_link_label():
     """A merged page must not replace a member mention with its page title."""
     search_results = [

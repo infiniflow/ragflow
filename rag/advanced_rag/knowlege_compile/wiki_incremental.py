@@ -33,9 +33,29 @@ from ._common import (
 )
 
 
-# ----- REFINE concurrency control -----
+# ----- REFINE progress -----
 
-WIKI_REFINE_MAX_CONCURRENT = 20  # shared LLM pool size used by the Wiki runner
+WIKI_REFINE_PROGRESS_UPDATES = 20
+
+
+async def _wiki_run_refine_tasks(tasks: list, progress: Callable[[str], None]) -> None:
+    """Run REFINE page tasks and emit at most roughly 20 progress updates."""
+    total = len(tasks)
+    if not total:
+        return
+    report_every = max(1, (total + WIKI_REFINE_PROGRESS_UPDATES - 1) // WIKI_REFINE_PROGRESS_UPDATES)
+    scheduled = [asyncio.create_task(task) for task in tasks]
+    try:
+        for done, task in enumerate(asyncio.as_completed(scheduled), start=1):
+            await task
+            if done % report_every == 0 or done == total:
+                progress(f"{done}/{total} pages completed.")
+    except BaseException:
+        for task in scheduled:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*scheduled, return_exceptions=True)
+        raise
 
 
 # ----- constants ----
@@ -1201,6 +1221,25 @@ def _inside_wikilink(content: str, pos: int) -> bool:
     if close_pos < 0:
         close_pos = len(content)
     return open_pos + 2 <= pos < close_pos
+
+
+_WIKI_PROTECTED_LINK_RE = re.compile(r"\[\[[^\]\n]+\]\]|\[[^\]\n]*\]\([^)\n]+\)")
+
+
+def _wiki_find_unlinked_mention(content: str, name: str) -> int:
+    """Find the first occurrence of ``name`` outside existing link markup."""
+    if not content or not name:
+        return -1
+    protected_spans = [(match.start(), match.end()) for match in _WIKI_PROTECTED_LINK_RE.finditer(content)]
+    start = 0
+    while True:
+        idx = content.find(name, start)
+        if idx < 0:
+            return -1
+        end = idx + len(name)
+        if not any(idx < protected_end and end > protected_start for protected_start, protected_end in protected_spans):
+            return idx
+        start = idx + 1
 
 
 _WIKI_PIPE_LINK_RE = re.compile(r"\[\[([^\[\]\|]+?)\|([^\[\]]+?)\]\]")
@@ -3225,11 +3264,8 @@ async def _wiki_finalize(
                 continue
             if target in existing_links:
                 continue
-            idx = content.find(name)
+            idx = _wiki_find_unlinked_mention(content, name)
             if idx < 0:
-                continue
-            # Skip if the occurrence is already inside a [[...]] link span
-            if _inside_wikilink(content, idx):
                 continue
             # Preserve the matched prose as the link label.  This matters when
             # several entities share one page: e.g. the page slug may be
@@ -4023,8 +4059,8 @@ async def _wiki_mode_a_run(
 
     tasks = [_refine_one(pid, entry) for pid, entry in page_deltas.items()]
     if tasks:
-        _progress(f"REFINE A: {len(tasks)} pages (LLM pool max {WIKI_REFINE_MAX_CONCURRENT}) ...")
-        await asyncio.gather(*tasks)
+        _progress(f"{len(tasks)} pages ...")
+        await _wiki_run_refine_tasks(tasks, _progress)
     _wiki_log_stats("TOPIC", "selection_summary", mode="A", **topic_selection_stats)
 
     for did, pids in doc_updates.items():
@@ -4373,8 +4409,8 @@ async def _wiki_mode_b_run(
 
     tasks = [_refine_one(pid, ents) for pid, ents in assignments.items()]
     if tasks:
-        _progress(f"REFINE B: {len(tasks)} pages (LLM pool max {WIKI_REFINE_MAX_CONCURRENT}) ...")
-        await asyncio.gather(*tasks)
+        _progress(f"{len(tasks)} pages ...")
+        await _wiki_run_refine_tasks(tasks, _progress)
     _wiki_log_stats("TOPIC", "selection_summary", mode="B", **topic_selection_stats)
 
     # Apply doc_page_source updates serially (no race), preserving metadata
