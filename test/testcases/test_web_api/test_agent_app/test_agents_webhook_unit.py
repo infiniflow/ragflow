@@ -166,10 +166,11 @@ class _FakeRedisPipeline:
 
     def execute(self):
         self.client.execute_calls += 1
-        if self.client.conflict_value is not None:
-            key, conflict_value = self.client.conflict_value
-            self.client.values[key] = conflict_value
-            self.client.conflict_value = None
+        if self.client.conflicts_remaining:
+            if self.client.conflict_value is not None:
+                key, conflict_value = self.client.conflict_value
+                self.client.values[key] = conflict_value
+            self.client.conflicts_remaining -= 1
             raise self.client.watch_error()
 
         key, value, ttl = self.pending
@@ -179,11 +180,12 @@ class _FakeRedisPipeline:
 
 
 class _FakeRedisClient:
-    def __init__(self, *, conflict_value=None, watch_error=RuntimeError):
+    def __init__(self, *, conflict_value=None, conflicts_remaining=None, watch_error=RuntimeError):
         self.values = {}
         self.ttls = {}
         self.execute_calls = 0
         self.conflict_value = conflict_value
+        self.conflicts_remaining = int(conflict_value is not None) if conflicts_remaining is None else conflicts_remaining
         self.watch_error = watch_error
 
     def pipeline(self):
@@ -1458,6 +1460,26 @@ def test_append_webhook_trace_retries_conflicts_without_losing_events(monkeypatc
     assert "102.0" in trace["webhooks"]
     assert redis_client.execute_calls == 2
     assert redis_client.ttls[key] == 600
+
+
+@pytest.mark.p2
+def test_append_webhook_trace_stops_after_retry_budget(monkeypatch):
+    module = _load_agents_app(monkeypatch)
+    redis_client = _FakeRedisClient(
+        conflicts_remaining=module._WEBHOOK_TRACE_MAX_RETRIES,
+        watch_error=module.WatchError,
+    )
+
+    with pytest.raises(RuntimeError, match="after 3 retries"):
+        module._append_webhook_trace(
+            redis_client,
+            "agent-1",
+            101.0,
+            {"event": "message"},
+        )
+
+    assert redis_client.execute_calls == 3
+    assert redis_client.values == {}
 
 
 @pytest.mark.p2

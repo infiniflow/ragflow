@@ -76,7 +76,7 @@ from valkey.exceptions import WatchError
 # Keeps strong references to fire-and-forget tasks so they are not GC'd before completion.
 _background_tasks: Set[asyncio.Task] = set()
 
-_WEBHOOK_TRACE_MAX_RETRIES = 100
+_WEBHOOK_TRACE_MAX_RETRIES = 3
 _WEBHOOK_TRACE_TTL_SECONDS = 600
 
 
