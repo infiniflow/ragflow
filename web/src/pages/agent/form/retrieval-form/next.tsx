@@ -15,8 +15,16 @@ import {
 } from '@/components/rerank-candidates-count-item';
 
 import { TopNFormField } from '@/components/top-n-item';
-import { Form } from '@/components/ui/form';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
+import { Switch } from '@/components/ui/switch';
 import {
   useRevalidateStaleDatasetIds,
   useStaleDatasetFormSchema,
@@ -54,6 +62,10 @@ export const RetrievalPartialSchema = {
   memory_ids: z.array(z.string()).optional(),
   retrieval_from: z.string(),
   user_id: z.string().optional(),
+  // Knowledge-graph retrieval toggle. Optional so persisted nodes from older
+  // versions (which never round-tripped this field) still validate cleanly
+  // — the default is `false`, matching `agent.tools.retrieval.RetrievalParam`.
+  use_kg: z.boolean().optional(),
 };
 
 export const FormSchema = z.object({
@@ -145,6 +157,26 @@ function RetrievalForm({ node }: INextOperatorForm) {
           <PromptEditor></PromptEditor>
         </RAGFlowFormItem>
         <MemoryDatasetForm></MemoryDatasetForm>
+        {hideKnowledgeGraphField || (
+          <FormField
+            control={form.control}
+            name="use_kg"
+            render={({ field }) => (
+              <FormItem className="flex items-center gap-2">
+                <FormLabel className="text-sm">
+                  {t('flow.useKnowledgeGraph')}
+                </FormLabel>
+                <FormControl>
+                  <Switch
+                    checked={!!field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
         <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <section className="space-y-5">
             <SimilaritySliderFormField

@@ -2667,6 +2667,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'Supports file IDs, file URLs, or variables. You can separate multiple values with commas or use a JSON array format (for example ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Advanced settings',
       addTools: 'Add tools',
+      useKnowledgeGraph: 'Use knowledge graph',
       sysPromptDefaultValue: `
       <role>
         You are a helpful assistant, an AI assistant specialized in problem-solving for the user.
