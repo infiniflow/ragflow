@@ -284,7 +284,8 @@ func parseEML(r io.Reader, fields []string) map[string]any {
 	// fields while attachments are still extracted when "attachments" is.
 	if target["body"] || needAttachments {
 		contentType := msg.Header.Get("Content-Type")
-		bodyText, bodyHTML, attachments := readMailBody(msg.Body, contentType, needAttachments)
+		cte := msg.Header.Get("Content-Transfer-Encoding")
+		bodyText, bodyHTML, attachments := readMailBody(msg.Body, contentType, cte, needAttachments)
 		// Always emit text/text_html when "body" is requested, to match the
 		// Python flow parser contract (rag/flow/parser/parser.py:_email),
 		// which sets both unconditionally (empty string for a missing part)
@@ -306,7 +307,7 @@ func parseEML(r io.Reader, fields []string) map[string]any {
 // types. Returns (textBody, htmlBody, attachments).
 // When collectAttachments is true, non-text parts with Content-Disposition
 // starting with "attachment" are collected.
-func readMailBody(body io.Reader, contentType string, collectAttachments bool) (string, string, []map[string]any) {
+func readMailBody(body io.Reader, contentType, cte string, collectAttachments bool) (string, string, []map[string]any) {
 	var attachments []map[string]any
 
 	mediaType, params, err := mime.ParseMediaType(contentType)
@@ -316,6 +317,7 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 
 	if !strings.HasPrefix(mediaType, "multipart/") {
 		raw, _ := io.ReadAll(body)
+		raw = decodeCTE(raw, cte)
 		decoded := decodeMailPayload(raw, params["charset"])
 		if mediaType == "text/html" {
 			return "", decoded, attachments
@@ -326,7 +328,7 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 	boundary := params["boundary"]
 	if boundary == "" {
 		raw, _ := io.ReadAll(body)
-		return decodeMailPayload(raw, ""), "", attachments
+		return decodeMailPayload(decodeCTE(raw, cte), ""), "", attachments
 	}
 
 	mr := multipart.NewReader(body, boundary)
@@ -343,7 +345,7 @@ func readMailBody(body io.Reader, contentType string, collectAttachments bool) (
 		partMedia, partParams, _ := mime.ParseMediaType(partCT)
 
 		if strings.HasPrefix(partMedia, "multipart/") {
-			t, h, nestedAttachments := readMailBody(part, partCT, collectAttachments)
+			t, h, nestedAttachments := readMailBody(part, partCT, part.Header.Get("Content-Transfer-Encoding"), collectAttachments)
 			if t != "" {
 				textParts = append(textParts, t)
 			}
