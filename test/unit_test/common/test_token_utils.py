@@ -233,7 +233,7 @@ class TestTruncate:
 
     def test_string_equal_to_max_len(self):
         """Test string that exactly equals max_len in tokens"""
-        # Create a string that encodes to exactly 5 tokens
+        # max_len is the string's own token length, so truncate must return it whole.
         test_string = "hello world test"
         encoded = get_encoder().encode(test_string)
         exact_length = len(encoded)
