@@ -75,12 +75,7 @@ class MonkeyOCRv2Parser:
                 name.split("/", 1)[0]
                 for name in names
                 if "/" in name
-                and (
-                    name.endswith(".md")
-                    or name.endswith("/all_results.json")
-                    or name == f"{name.split('/', 1)[0]}/{name.split('/', 1)[0]}.json"
-                    or (name.endswith(".json") and "/jsons/" in name)
-                )
+                and (name.endswith(".md") or name.endswith("/all_results.json") or name == f"{name.split('/', 1)[0]}/{name.split('/', 1)[0]}.json" or (name.endswith(".json") and "/jsons/" in name))
             }
             for root in roots:
                 canonical = f"{root}/{root}.json"
