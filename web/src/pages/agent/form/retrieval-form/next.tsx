@@ -23,6 +23,7 @@ import {
 } from '@/hooks/use-stale-dataset-validation';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { memo, useMemo } from 'react';
 import {
   UseFormReturn,
@@ -47,7 +48,7 @@ export const RetrievalPartialSchema = {
   keywords_similarity_weight: z.coerce.number().min(0).max(1),
   top_n: z.coerce.number(),
   ...rerankCandidatesCountSchema,
-  dataset_ids: z.array(z.string()),
+  dataset_ids: z.array(z.string()).optional(),
   rerank_id: z.string(),
   cross_languages: z.array(z.string()),
   ...MetadataFilterSchema,
@@ -56,10 +57,26 @@ export const RetrievalPartialSchema = {
   user_id: z.string().optional(),
 };
 
-export const FormSchema = z.object({
-  query: z.string().optional(),
-  ...RetrievalPartialSchema,
-});
+export const FormSchema = z
+  .object({
+    query: z.string().optional(),
+    ...RetrievalPartialSchema,
+  })
+  .superRefine((data, ctx) => {
+    // A Retrieval node sourcing from datasets must name at least one dataset;
+    // the backend otherwise rejects the run with a `dataset_ids is required`
+    // error that only surfaces at runtime.
+    if (
+      data.retrieval_from === RetrievalFrom.Dataset &&
+      (data.dataset_ids ?? []).length === 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dataset_ids'],
+        message: t('flow.retrievalDatasetRequired'),
+      });
+    }
+  });
 
 export type RetrievalFormSchemaType = z.infer<typeof FormSchema>;
 

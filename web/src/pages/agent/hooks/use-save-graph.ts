@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { Operator } from '../constant';
 import { FormSchema as ParserFormSchema } from '../form/parser-form';
+import { FormSchema as RetrievalFormSchema } from '../form/retrieval-form/next';
 import useGraphStore from '../store';
 import { getEmptyMessageNodeNames } from '../utils';
 import { findAgentNodeWithoutModel } from '../utils/agent-node-model';
@@ -39,6 +40,23 @@ function findInvalidNode(
   );
   if (invalidParserNode) {
     return { node: invalidParserNode, messageKey: 'flow.nodeFormInvalid' };
+  }
+  // A Retrieval node sourcing from datasets must name at least one dataset;
+  // the backend otherwise rejects the run with a `dataset_ids is required`
+  // error that only surfaces at runtime. Only nodes whose form carries the
+  // canonical `dataset_ids` field are checked, so legacy DSLs still keyed on
+  // `kb_ids` cannot wedge saving.
+  const invalidRetrievalNode = nodes.find(
+    (node) =>
+      node.data?.label === Operator.Retrieval &&
+      Array.isArray(node.data?.form?.dataset_ids) &&
+      !RetrievalFormSchema.safeParse(node.data?.form).success,
+  );
+  if (invalidRetrievalNode) {
+    return {
+      node: invalidRetrievalNode,
+      messageKey: 'flow.retrievalDatasetMissing',
+    };
   }
   // Unlike the schema re-check above, the missing-model check is not gated on
   // editedNodeIds: a canvas loaded from storage with an empty model must warn
