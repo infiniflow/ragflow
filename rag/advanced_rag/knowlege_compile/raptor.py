@@ -15,6 +15,7 @@
 #
 import asyncio
 import logging
+import os
 import re
 
 import numpy as np
@@ -24,6 +25,7 @@ from common.connection_utils import timeout
 from common.exceptions import TaskCanceledException
 from common.token_utils import truncate
 from rag.graphrag.utils import (
+    LoopLocalSemaphore,
     chat_limiter,
     get_embed_cache,
     get_llm_cache,
@@ -34,15 +36,22 @@ from common.misc_utils import thread_pool_exec
 
 from ._common import knowledge_compile_gen_conf
 
+# Claim extraction has its own concurrency budget, decoupled from the global
+# chat_limiter (which also serves clustering and embedding). MiniMax's API only
+# tolerates ~4 concurrent requests, so default to 4 and let it be overridden via
+# MAX_CONCURRENT_CLAIM_CHATS. On rate-limit errors each call backs off and retries
+# instead of letting the limiter itself scale up and hammer the API.
+_claim_limiter = LoopLocalSemaphore(int(os.environ.get("MAX_CONCURRENT_CLAIM_CHATS", 4)))
+
 # Claim extraction runs before clustering so the cluster summaries can be built
 # from the claims of their member chunks instead of the raw chunk text (see
 # ``build_doc_tree`` and rag/advanced_rag/knowlege_compile/claim_evidence.md
 # §7). Claims are the atoms the tree is later read through; the raw text is only
 # used as a fallback when a chunk yields none.
 #
-# Claims are extracted one chunk per call (see ``_pack_claim_batches``). Source
-# chunks average ~2000 tokens — large enough that packing several into one call
-# made the model drop or mis-attribute claims. Each chunk is marked as a TARGET,
+# Claims are extracted in small fixed-size batches (2-4 chunks per call, see
+# ``_pack_claim_batches``) run in parallel under a dedicated concurrency budget
+# (``_claim_limiter``). Each chunk in a batch is marked as a TARGET,
 # and every claim is attributed to the chunk it was quoted from; the validation
 # gate then drops any quote that cannot be located in that chunk. One chunk per
 # call trades LLM-call count for per-target recall and exact quote validation.
@@ -69,15 +78,15 @@ A claim must be:
 - Atomic: exactly one fact. Split compound sentences.
 
 ## Response Format
-Reply with a single JSON object: {"items": [{"type": "claim", "name": "<the claim, one sentence>", "description": "<optional restatement for retrieval>", "evidence": [{"quote": "<the verbatim source sentence>", "chunk_id": "<CHUNK_ID it was taken from>"}]}, ...]}.
+Reply with a single JSON object: {"items": [{"type": "claim", "name": "<the claim, one sentence>", "description": "<optional restatement for retrieval>", "source_chunk_ids": ["<CHUNK_ID it was taken from>"], "evidence": [{"quote": "<the verbatim source sentence>", "chunk_id": "<CHUNK_ID it was taken from>"}]}, ...]}.
 
 Rules:
 - `evidence.quote` MUST be a CONTIGUOUS verbatim substring of the chunk cited
   by `evidence.chunk_id`: same words, same order, no paraphrase, no truncation,
   no added words. A quote that cannot be found verbatim is rejected downstream,
   so never restate.
-- `evidence.chunk_id` MUST identify the exact chunk the claim and quote came
-  from. Never cross-attribute a quote to a different chunk.
+- `evidence.chunk_id` and `source_chunk_ids` MUST identify the exact chunk the
+  claim and quote came from. Never cross-attribute a quote to a different chunk.
 - Keep each quote concise and under 240 characters.
 - For tables, infoboxes and bullet lists, the quote MUST be the raw cell/row
   text exactly as it appears — keep its separators and order. Do NOT turn a
@@ -109,16 +118,22 @@ def _render_claim_source(batch: list[tuple]) -> str:
     return "\n".join(lines)
 
 
-def _pack_claim_batches(entries: list[tuple]) -> list[list[tuple]]:
-    """Turn each chunk into its own batch.
+# Chunks per claim-extraction call. Empirically 2-4 is the sweet spot: a single
+# chunk under-utilises the call (one clean target but ~75s), while packing too
+# many raises latency superlinearly and makes the model drop trailing chunks.
+# 4 * ~512 tok = ~2k tok/call, which stays inside the attention window.
+_CLAIM_BATCH_SIZE = 4
 
-    ``entries`` is ``(chunk_id, text)``. Source chunks average ~2000 tokens —
-    large enough that packing several of them into one call makes the model
-    drop or mis-attribute claims. So each chunk becomes a single batch and gets
-    its own LLM call, giving the extractor one clean target at a time and
-    making the validation gate's verbatim check trivially correct.
+
+def _pack_claim_batches(entries: list[tuple]) -> list[list[tuple]]:
+    """Group chunks into fixed-size batches (``_CLAIM_BATCH_SIZE``).
+
+    ``entries`` is ``(chunk_id, text)``. Batches of 2-4 chunks cut the LLM-call
+    count several-fold versus one chunk per call while keeping each call small
+    enough that the model still covers every target (see _CLAIM_BATCH_SIZE).
     """
-    return [[entry] for entry in entries]
+    bs = max(1, int(_CLAIM_BATCH_SIZE))
+    return [entries[i : i + bs] for i in range(0, len(entries), bs)]
 
 
 async def extract_claims_for_chunks(
@@ -135,16 +150,15 @@ async def extract_claims_for_chunks(
     claim came from, so the builder can look up a cluster's claims by its
     members' ids.
 
-    Each chunk is extracted with its own LLM call (see ``_pack_claim_batches``),
-    so the call count equals the chunk count. Source chunks average ~2000 tokens,
-    which is why packing several together hurt recall. Every claim is attributed
-    to the chunk it was quoted from and run through the shared validation gate.
+    Chunks are grouped into fixed-size batches (see ``_pack_claim_batches``) and
+    all batches run in parallel, gated by the shared ``chat_limiter`` so the
+    LLM-call concurrency stays bounded. Each claim is attributed to the chunk it
+    was quoted from (model-provided ``source_chunk_ids`` filtered to the batch,
+    then the evidence gate validates the quote against that chunk's text).
 
-    Best-effort: extraction never fails the build. On error a chunk simply
+    Best-effort: extraction never fails the build. On error a batch simply
     contributes no claims and the tree falls back to raw text for it.
     """
-    from rag.prompts.generator import gen_json
-    from .structure import _struct_apply_evidence_gate
 
     if not chunks or llm_model is None:
         return {}
@@ -159,87 +173,167 @@ async def extract_claims_for_chunks(
     if not entries:
         return {}
 
-    # Every chunk is extracted on its own (see ``_pack_claim_batches``), so the
-    # LLM-call count equals the chunk count. Source chunks average ~2000 tokens,
-    # which is why packing them together hurt recall; one chunk per call keeps
-    # each target under the model's attention and the quote check exact.
     batches = _pack_claim_batches(entries)
 
     text_by_id = {cid: text for cid, text in entries}
     claims_by_chunk: dict[str, list[dict]] = {}
 
-    total = len(batches)
-    for bi, batch in enumerate(batches):
-        # Report per-chunk progress *before* the LLM call so the UI moves
-        # during the long extraction loop instead of freezing at
-        # "building tree". With one chunk per call (see ``_pack_claim_batches``)
-        # this is what keeps the progress bar alive across the whole doc.
-        # ``prog`` advances with each chunk so the percentage bar moves too,
-        # not just the log text. Callers that accept only ``msg`` ignore the
-        # extra keyword harmlessly.
-        if callback:
-            callback(prog=(bi + 1) / total, msg=f"tree-template: extracting claims for chunk {bi + 1}/{total}")
+    total_chunks = len(entries)
+    if not total_chunks:
+        return claims_by_chunk
 
-        user = _render_claim_source(batch)
-        try:
-            ans = await gen_json(
-                _CLAIM_EXTRACTION_PROMPT,
-                user,
-                llm_model,
-                knowledge_compile_gen_conf(llm_model),
-            )
-        except TaskCanceledException:
-            raise
-        except Exception as exc:
-            logging.warning(f"[RAPTOR] claim extraction skipped for batch of {len(batch)}: {exc}")
-            continue
-
-        items = (ans or {}).get("items") if isinstance(ans, dict) else None
-        if not isinstance(items, list):
-            continue
-
-        claims = []
-        for it in items:
-            if not isinstance(it, dict):
+    # Fan every batch's claim extraction out in parallel. Each task is gated by
+    # its own concurrency budget (_claim_limiter, default 4) so we never exceed
+    # the LLM API's limit even though we launch one task per batch. This turns
+    # the old serial loop into ~ceil(batches / concurrency) rounds.
+    tasks = []
+    batch_size_of: dict = {}
+    for batch in batches:
+        t = asyncio.create_task(_extract_claim_for_chunk(batch, llm_model, text_by_id))
+        tasks.append(t)
+        batch_size_of[t] = len(batch)
+    processed = 0
+    try:
+        # asyncio.as_completed returns an ASYNC iterator (3.10+); a plain ``for``
+        # would never await ``_wait_for_one`` and silently break extraction.
+        async for coro in asyncio.as_completed(tasks):
+            # Progress counts chunks (the user-visible unit), not batches — a
+            # batch holds _CLAIM_BATCH_SIZE chunks, so show the real figure.
+            processed += batch_size_of[coro]
+            if callback:
+                callback(prog=processed / total_chunks, msg=f"tree-template: extracting claims for chunk {processed}/{total_chunks}")
+            try:
+                result = await coro
+            except TaskCanceledException:
+                for t in tasks:
+                    t.cancel()
+                raise
+            except Exception as exc:
+                logging.warning(f"[RAPTOR] claim extraction failed for a chunk: {exc}")
                 continue
-            name = str(it.get("name") or "").strip()
-            if not name:
-                continue
-            # One chunk per call, so the claim is always attributed to that
-            # chunk — the chunk id is filled by code, never by the model (the
-            # model only sees a system-internal id it would otherwise have to
-            # guess). The evidence gate validates quotes against this chunk's
-            # text, so attribution stays exact.
-            it["name"] = name
-            it["type"] = "claim"
-            it["source_chunk_ids"] = [batch[0][0]]
-            if not it.get("description"):
-                it["description"] = name
-            claims.append(it)
-
-        if not claims:
-            continue
-        # Split "the model gave us no quote" from "the gate rejected the quote",
-        # so a low evidence yield can be attributed correctly.
-        emitted = sum(1 for cl in claims if cl.get("evidence"))
-        verified, rejected = _struct_apply_evidence_gate(claims, text_by_id, "soft")
-        logging.info(
-            "[RAPTOR] claim extraction batch=%d/%d chunks=%d claims=%d emitted_evidence=%d verified=%d rejected=%d",
-            bi + 1,
-            total,
-            len(batch),
-            len(claims),
-            emitted,
-            verified,
-            rejected,
-        )
-        for cl in claims:
-            cid = cl.get("source_chunk_ids") or [batch[0][0]]
-            claims_by_chunk.setdefault(cid[0], []).append(cl)
+            if result:
+                _, claims = result
+                # A batch covers several chunks, so group each claim under its
+                # own source chunk id (validated in _extract_claim_for_chunk).
+                for cl in claims:
+                    cid = (cl.get("source_chunk_ids") or [None])[0]
+                    if cid:
+                        claims_by_chunk.setdefault(cid, []).append(cl)
+    finally:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
 
     if callback:
         callback(prog=1.0, msg=f"Extracted claims for {len(claims_by_chunk)} chunk(s)")
     return claims_by_chunk
+
+
+# Substrings that mean "slow down and retry" rather than "permanent failure".
+_RETRYABLE_LLM_ERR = (
+    "rate limit",
+    "429",
+    "tpm limit",
+    "too many requests",
+    "requests per minute",
+    "server",
+    "503",
+    "502",
+    "504",
+    "500",
+    "unavailable",
+    "timeout",
+    "timed out",
+)
+
+
+async def _extract_claim_for_chunk(batch, llm_model, text_by_id):
+    """Run claim extraction for one batch of chunks (``_CLAIM_BATCH_SIZE`` of them).
+
+    One LLM call, gated by the shared ``chat_limiter`` so total concurrency stays
+    bounded. On a rate-limit / server / timeout error the call backs off with
+    exponential delay and retries, then gives up and returns ``None`` so the
+    tree falls back to raw text for those chunks.
+
+    Returns ``(label, [claim_payload, ...])`` when the batch yields claims (each
+    claim carries its own validated ``source_chunk_ids``), else ``None``.
+    """
+    from rag.prompts.generator import gen_json
+    from .structure import _struct_apply_evidence_gate
+
+    user = _render_claim_source(batch)
+    batch_ids = {cid for cid, _ in batch}
+
+    ans = None
+    attempt = 0
+    while True:
+        try:
+            async with _claim_limiter:
+                ans = await gen_json(
+                    _CLAIM_EXTRACTION_PROMPT,
+                    user,
+                    llm_model,
+                    knowledge_compile_gen_conf(llm_model),
+                )
+            break
+        except TaskCanceledException:
+            raise
+        except Exception as exc:
+            es = str(exc).lower()
+            retryable = any(k in es for k in _RETRYABLE_LLM_ERR)
+            attempt += 1
+            if not retryable or attempt >= 3:
+                logging.warning(f"[RAPTOR] claim extraction gave up for batch of {len(batch)}: {exc}")
+                return None
+            # Exponential back-off + jitter: slow down so the API stops
+            # rejecting us, rather than hammering it while it recovers.
+            delay = 2.0 * (2 ** (attempt - 1)) * (0.7 + 0.6 * ((attempt * 13) % 10) / 10)
+            logging.warning(f"[RAPTOR] claim extraction retry {attempt}/3 after {delay:.1f}s: {exc}")
+            await asyncio.sleep(delay)
+
+    items = (ans or {}).get("items") if isinstance(ans, dict) else None
+    if not isinstance(items, list):
+        return None
+
+    claims = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name") or "").strip()
+        if not name:
+            continue
+        # A batch holds several chunks, so the model must say which chunk a claim
+        # came from. Keep only ids that are actually in this batch (a hallucinated
+        # id pointing at text the model never saw cannot be validated), falling
+        # back to the batch's first chunk when the model omits attribution. The
+        # evidence gate then checks the quote against that chunk's text.
+        src = [str(s) for s in (it.get("source_chunk_ids") or []) if s]
+        src = [s for s in src if s in batch_ids]
+        if not src:
+            src = [batch[0][0]]
+        it["name"] = name
+        it["type"] = "claim"
+        it["source_chunk_ids"] = src
+        if not it.get("description"):
+            it["description"] = name
+        claims.append(it)
+
+    if not claims:
+        return None
+    # Split "the model gave us no quote" from "the gate rejected the quote", so
+    # a low evidence yield can be attributed correctly.
+    emitted = sum(1 for cl in claims if cl.get("evidence"))
+    verified, rejected = _struct_apply_evidence_gate(claims, text_by_id, "soft")
+    logging.info(
+        "[RAPTOR] claim extraction batch=%s chunks=%d claims=%d emitted_evidence=%d verified=%d rejected=%d",
+        ",".join(batch_ids),
+        len(batch),
+        len(claims),
+        emitted,
+        verified,
+        rejected,
+    )
+    return batch[0][0], claims
 
 
 def format_claims_for_summary(claims: list[dict]) -> str:

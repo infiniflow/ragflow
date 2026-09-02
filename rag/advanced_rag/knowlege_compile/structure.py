@@ -2721,18 +2721,28 @@ async def _struct_upsert_tree_claim_rows(
 
     rows = []
     for (chunk_id, payload), vector in zip(payloads, embeddings):
-        rows.append(
-            _struct_to_doc_storage_doc(
-                payload,
-                compile_kwd,
-                doc_id,
-                doc_name,
-                [chunk_id],
-                vector,
-                "entity",
-                compilation_template_id=compilation_template_id,
-            )
+        # Claims are searchable on their own (global KNN over their own
+        # embeddings) but are NOT part of the structure graph: they carry no
+        # relation, and a relation-less row would be rendered as a root in the
+        # artifacts tree. So they deliberately skip knowledge_graph_kwd (empty
+        # kind), which keeps them out of the artifacts query (build_bucket
+        # filters knowledge_graph_kwd=["entity","relation"]).
+        # entity_type_kwd is stamped explicitly — _struct_to_doc_storage_doc
+        # only derives it when kind == "entity", and claims intentionally pass an
+        # empty kind. Both behaviours mirror
+        # internal/ingestion/.../component.go case "claim".
+        row = _struct_to_doc_storage_doc(
+            payload,
+            compile_kwd,
+            doc_id,
+            doc_name,
+            [chunk_id],
+            vector,
+            "",
+            compilation_template_id=compilation_template_id,
         )
+        row["entity_type_kwd"] = "claim"
+        rows.append(row)
 
     # Replace first: a claim's row id hashes its payload, so a re-parse with
     # different claims would otherwise leave the previous rows behind.
