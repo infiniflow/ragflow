@@ -686,7 +686,7 @@ def test_convert_files_mode_add_and_replace_unit(monkeypatch):
     assert len(inserted) == 2
     assert removed == [("doc-f1", "tenant-1"), ("doc-f2", "tenant-1")]
     assert deleted_doc_links == ["doc-f1", "doc-f2"]
-    assert deleted_file_links == ["f1", "f2"]
+    assert deleted_file_links == []
 
 
 @pytest.mark.p2
