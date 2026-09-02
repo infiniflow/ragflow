@@ -128,6 +128,11 @@ class RAGFlowConnector:
     def _set_cached_document_metadata_by_dataset(self, dataset_id, doc_id_meta_list):
         self._document_metadata_cache[dataset_id] = (doc_id_meta_list, self._get_expiry_timestamp())
         self._document_metadata_cache.move_to_end(dataset_id)
+        # Class-level cache shared across tenants in host mode: without the same
+        # LRU bound the sibling dataset cache applies, every dataset ever touched
+        # keeps its full per-document metadata list resident forever.
+        if len(self._document_metadata_cache) > self._MAX_DATASET_CACHE:
+            self._document_metadata_cache.popitem(last=False)
 
     async def _fetch_datasets_page(
         self,
