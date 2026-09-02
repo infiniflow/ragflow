@@ -115,16 +115,19 @@ def _prepare(monkeypatch, max_length):
 
 
 @pytest.mark.p1
-async def test_oversized_value_space_is_trimmed_to_max_length(monkeypatch):
+async def test_oversized_value_space_yields_no_conditions_and_no_model_call(monkeypatch):
+    """The conditions become a hard document scope, so a filter chosen from a
+    value list that lost entries would exclude matching documents -- and the
+    model cannot report that it only saw part of the metadata. No conditions
+    leaves the search unscoped, which is recoverable."""
     generator, chat_mdl, seen = _prepare(monkeypatch, max_length=200)
     # One key with far more values than the budget can hold.
     meta_data = {"ref": {f"ref-{index:05d}": [f"doc-{index}"] for index in range(500)}}
 
     result = await generator.gen_meta_filter(chat_mdl, meta_data, "which project?")
 
-    assert result["conditions"][0]["key"] == "project"
-    sent = seen["system"] + seen["history"][-1]["content"]
-    assert len(sent) <= 200, f"prompt of {len(sent)} tokens exceeds max_length"
+    assert result == {"logic": "and", "conditions": []}
+    assert seen == {}, "the model must not be called for a value space that does not fit"
 
 
 @pytest.mark.p1
