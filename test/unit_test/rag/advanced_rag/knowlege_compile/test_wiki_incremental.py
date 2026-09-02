@@ -1460,9 +1460,7 @@ async def test_finalize_links_via_map_relations_case_folded():
                                 {"name": "The Nightingale and the Rose", "type": "work"},
                                 {"name": "Oscar Wilde", "type": "person"},
                             ],
-                            "relations": [
-                                {"from": "THE NIGHTINGALE AND THE ROSE", "to": "OSCAR WILDE", "type": "author"}
-                            ],
+                            "relations": [{"from": "THE NIGHTINGALE AND THE ROSE", "to": "OSCAR WILDE", "type": "author"}],
                         },
                         ensure_ascii=False,
                     ),
