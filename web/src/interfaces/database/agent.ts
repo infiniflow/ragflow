@@ -170,6 +170,7 @@ export interface IRetrievalForm {
   rerank_id?: string;
   tenant_rerank_id?: string;
   kb_ids: string[];
+  document_ids?: string | string[];
 }
 
 export interface ICodeForm {

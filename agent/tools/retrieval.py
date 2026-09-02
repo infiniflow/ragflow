@@ -16,6 +16,7 @@
 import asyncio
 from functools import partial
 import json
+import logging
 import os
 import re
 from abc import ABC
@@ -70,6 +71,7 @@ class RetrievalParam(ToolParamBase):
         self.cross_languages = []
         self.toc_enhance = False
         self.meta_data_filter = {}
+        self.document_ids = ""
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
@@ -77,7 +79,10 @@ class RetrievalParam(ToolParamBase):
         self.check_positive_number(self.top_n, "[Retrieval] Top N")
 
     def get_input_form(self) -> dict[str, dict]:
-        return {"query": {"name": "Query", "type": "line"}}
+        return {
+            "query": {"name": "Query", "type": "line"},
+            "document_ids": {"name": "Document IDs", "type": "line"},
+        }
 
 
 class Retrieval(ToolBase, ABC):
@@ -87,6 +92,30 @@ class Retrieval(ToolBase, ABC):
     def _dataset_ids(self):
         """Get dataset IDs with backward compatibility for kb_ids."""
         return self._param.dataset_ids or getattr(self._param, "kb_ids", None) or []
+
+    @staticmethod
+    def _normalize_document_ids(value) -> list[str]:
+        if value is None or value == "" or value == []:
+            return []
+        if isinstance(value, list):
+            return [str(v) for v in value if v]
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return []
+            return [value]
+        return []
+
+    def _resolve_document_ids(self, kwargs_document_ids=None) -> list[str]:
+        doc_ids = self._normalize_document_ids(kwargs_document_ids)
+        if doc_ids:
+            return doc_ids
+        raw = getattr(self._param, "document_ids", None)
+        if raw is None or raw == "" or raw == []:
+            return []
+        if isinstance(raw, str) and self._canvas.is_reff(raw):
+            return self._normalize_document_ids(self._canvas.get_variable_value(raw))
+        return self._normalize_document_ids(raw)
 
     def _resolve_manual_filter(self, flt: dict) -> dict:
         # Return a new dict instead of mutating `flt` in place. The caller
@@ -109,7 +138,7 @@ class Retrieval(ToolBase, ABC):
         resolved["value"] = self._replace_template_matches(pat, content, replace)
         return resolved
 
-    async def _retrieve_kb(self, query_text: str):
+    async def _retrieve_kb(self, query_text: str, document_ids=None):
         kb_ids: list[str] = []
         for id in self._dataset_ids:
             if id.find("@") < 0:
@@ -150,7 +179,13 @@ class Retrieval(ToolBase, ABC):
         vars = {k: o["value"] for k, o in vars.items()}
         query = self.string_format(query_text, vars)
 
-        doc_ids = []
+        doc_ids = self._resolve_document_ids(document_ids)
+        if doc_ids:
+            logging.info("Retrieval resolved document_ids=%s", doc_ids)
+            kb_doc_ids = KnowledgebaseService.list_documents_by_ids(filtered_kb_ids)
+            for doc_id in doc_ids:
+                if doc_id not in kb_doc_ids:
+                    raise Exception(f"The datasets don't own the document {doc_id}")
         if self._param.meta_data_filter != {}:
             # Defer the (potentially expensive) metadata table load — manual
             # filters served by ES push-down never need it. The loader is
@@ -294,12 +329,13 @@ class Retrieval(ToolBase, ABC):
             self.set_output("formalized_content", self._param.empty_response)
             return
 
+        document_ids = self._resolve_document_ids(kwargs.get("document_ids"))
         if hasattr(self._param, "retrieval_from") and self._param.retrieval_from == "dataset":
-            return await self._retrieve_kb(kwargs["query"])
+            return await self._retrieve_kb(kwargs["query"], document_ids)
         elif hasattr(self._param, "retrieval_from") and self._param.retrieval_from == "memory":
             return await self._retrieve_memory(kwargs["query"])
         elif self._dataset_ids:
-            return await self._retrieve_kb(kwargs["query"])
+            return await self._retrieve_kb(kwargs["query"], document_ids)
         elif hasattr(self._param, "memory_ids") and self._param.memory_ids:
             return await self._retrieve_memory(kwargs["query"])
         else:

@@ -60,6 +60,7 @@ type retrievalArgs struct {
 	DatasetIDs               []string       `json:"dataset_ids,omitempty"`
 	KBIDs                    []string       `json:"kb_ids,omitempty"`
 	MemoryIDs                []string       `json:"memory_ids,omitempty"`
+	DocumentIDs              []string       `json:"document_ids,omitempty"`
 	TopN                     int            `json:"top_n,omitempty"`
 	RerankCandidatesCount    int            `json:"rerank_candidates_count,omitempty"`
 	TopK                     int            `json:"top_k,omitempty"`
@@ -130,6 +131,11 @@ func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 				Desc:     "The keywords to search the dataset. The keywords should be the most important words/terms (including synonyms) from the original request.",
 				Required: true,
 			},
+			"document_ids": {
+				Type:     schema.Array,
+				Desc:     "Optional list of document IDs to restrict retrieval scope.",
+				Required: false,
+			},
 		}),
 	}, nil
 }
@@ -154,6 +160,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	common.Debug("agent retrieval tool: parsed arguments",
 		zap.String("query", args.Query),
 		zap.Strings("dataset_ids", args.DatasetIDs),
+		zap.Strings("document_ids", args.DocumentIDs),
 		zap.Int("top_n", args.TopN),
 		zap.Int("top_k", args.TopK),
 		zap.Float64p("keywords_similarity_weight", args.KeywordsSimilarityWeight),
@@ -185,6 +192,11 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		return "", err
 	}
 	args.DatasetIDs = resolvedDatasetIDs
+	resolvedDocumentIDs, err := resolveRetrievalDocumentIDs(ctx, args.DocumentIDs)
+	if err != nil {
+		return "", err
+	}
+	args.DocumentIDs = resolvedDocumentIDs
 	resolvedFilter, err := resolveRetrievalFilter(ctx, args.MetaDataFilter)
 	if err != nil {
 		return "", err
@@ -211,6 +223,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		TOCEnhance:               args.TOCEnhance,
 		MetaDataFilter:           cloneStringAnyMap(args.MetaDataFilter),
 		RetrievalFrom:            args.RetrievalFrom,
+		DocScope:                 append([]string(nil), args.DocumentIDs...),
 		TenantID:                 retrievalTenantID(ctx),
 	}
 
@@ -272,6 +285,9 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	}
 	if len(args.MemoryIDs) == 0 && len(r.defaults.MemoryIDs) != 0 {
 		args.MemoryIDs = append([]string(nil), r.defaults.MemoryIDs...)
+	}
+	if len(args.DocumentIDs) == 0 && len(r.defaults.DocumentIDs) != 0 {
+		args.DocumentIDs = append([]string(nil), r.defaults.DocumentIDs...)
 	}
 	if args.TopN <= 0 {
 		args.TopN = r.defaults.TopN
@@ -373,6 +389,61 @@ func resolveRetrievalDatasetIDs(ctx context.Context, datasetIDs []string) ([]str
 		}
 	}
 	return compactStrings(resolved), nil
+}
+
+func resolveRetrievalDocumentIDs(ctx context.Context, documentIDs []string) ([]string, error) {
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return compactStrings(documentIDs), nil
+	}
+	resolved := make([]string, 0, len(documentIDs))
+	for _, documentID := range documentIDs {
+		documentID = strings.TrimSpace(documentID)
+		if documentID == "" {
+			continue
+		}
+		if strings.Contains(documentID, "@") {
+			value, getErr := state.GetVar(documentID)
+			if getErr != nil {
+				return nil, fmt.Errorf("retrieval: resolve document variable %q: %w", documentID, getErr)
+			}
+			resolved = append(resolved, normalizeResolvedDocumentIDs(value)...)
+			continue
+		}
+		text, resolveErr := runtime.ResolveTemplateAuto(documentID, state)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("retrieval: resolve document_ids template: %w", resolveErr)
+		}
+		resolved = append(resolved, normalizeResolvedDocumentIDs(text)...)
+	}
+	return compactStrings(resolved), nil
+}
+
+func normalizeResolvedDocumentIDs(value any) []string {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case string:
+		typed = strings.TrimSpace(typed)
+		if typed == "" {
+			return nil
+		}
+		return []string{typed}
+	case []string:
+		return typed
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, normalizeResolvedDocumentIDs(item)...)
+		}
+		return out
+	default:
+		text := strings.TrimSpace(fmt.Sprint(typed))
+		if text == "" || text == "<nil>" {
+			return nil
+		}
+		return []string{text}
+	}
 }
 
 func resolveRetrievalFilter(ctx context.Context, filter map[string]any) (map[string]any, error) {

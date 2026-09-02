@@ -62,8 +62,8 @@ type RetrievalRequest struct {
 	TOCEnhance               bool
 	MetaDataFilter           map[string]any
 	RetrievalFrom            string
-	// DocScope restricts retrieval to a set of document ids (the doc_id list
-	// routed by the dataset_navigation_by_tree tool). Empty = no doc filter.
+	// DocScope restricts retrieval to a set of document ids (from document_ids
+	// on the retrieval node/tool, or dataset_navigation_by_tree). Empty = no doc filter.
 	DocScope []string
 	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
 	// It is used for dataset-name resolution and memory access. Reads from
