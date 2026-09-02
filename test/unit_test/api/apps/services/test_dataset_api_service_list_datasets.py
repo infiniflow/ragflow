@@ -451,6 +451,30 @@ def test_wiki_alteration_treats_wiki_template_as_eligible(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_wiki_involved_ids_use_active_map_state_when_pages_are_missing(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    async def _load_active_map_state(tenant_id, dataset_id):
+        assert tenant_id == "tenant-1"
+        assert dataset_id == "kb-1"
+        return {
+            "chunk-a": {"doc_id": "doc-with-page"},
+            "chunk-b": {"doc_id": "doc-without-page"},
+        }
+
+    wiki_stub = sys.modules["rag.advanced_rag.knowlege_compile.wiki"]
+    wiki_stub._wiki_load_active_map_state = _load_active_map_state
+
+    involved = await module._involved_doc_ids_for_kind("index", "kb-1", "wiki", "tenant-1")
+
+    assert involved == {"doc-with-page", "doc-without-page"}
+
+
+@pytest.mark.asyncio
 async def test_wiki_chunk_alteration_uses_full_successful_state(monkeypatch):
     module, _, _ = _load_list_datasets_module(
         monkeypatch,
