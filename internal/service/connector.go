@@ -84,6 +84,8 @@ var (
 	ErrConnectorTestUnsupported = errors.New("connector test is not supported for this source")
 	// ErrConnectorSourceNotImplemented is returned for connector sources not registered in the Go syncer.
 	ErrConnectorSourceNotImplemented = errors.New("connector source is not implemented")
+	// ErrConnectorInternal is a generic, safe-to-expose internal failure.
+	ErrConnectorInternal = errors.New("Internal server error")
 )
 
 // ConnectorService connector service
@@ -337,7 +339,8 @@ func (s *ConnectorService) GetConnector(ctx context.Context, connectorID, userID
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrConnectorNotFound
 		}
-		return nil, err
+		common.Error("get connector failed", err, zap.String("connector_id", connectorID))
+		return nil, ErrConnectorInternal
 	}
 
 	canAccess, err := s.canAccessConnector(ctx, connector, userID)
