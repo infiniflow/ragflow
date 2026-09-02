@@ -324,6 +324,19 @@ jobs:
             -v "${PWD}:/ragflow" \
             -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
+          # The builder image's cached office_oxide may predate the pinned
+          # OFFICE_OXIDE_VERSION in build.sh and fail its version guard;
+          # refresh the container's user cache from the pinned release first.
+          OFFICE_OXIDE_VER="$(grep -oP 'OFFICE_OXIDE_VERSION="\K[^"]+' build.sh)"
+          if ! sudo docker exec "${BUILDER_CONTAINER}" bash -c 'strings "$HOME/ragflow-native-libs/office_oxide/lib/liboffice_oxide.a" 2>/dev/null | grep -Fxq "'"$OFFICE_OXIDE_VER"'"'; then
+            OO_TGZ="$(mktemp --suffix=.tar.gz)"
+            curl -fsSL --retry 2 "https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VER}/native-linux-x86_64.tar.gz" -o "$OO_TGZ" \
+              || curl -fsSL --retry 2 "https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VER}/native-linux-x86_64.tar.gz" -o "$OO_TGZ"
+            sudo docker exec "${BUILDER_CONTAINER}" bash -c 'rm -rf "$HOME/ragflow-native-libs/office_oxide" && mkdir -p "$HOME/ragflow-native-libs/office_oxide"'
+            sudo docker cp "$OO_TGZ" "${BUILDER_CONTAINER}":/tmp/office_oxide.tar.gz
+            sudo docker exec "${BUILDER_CONTAINER}" bash -c 'tar xzf /tmp/office_oxide.tar.gz -C "$HOME/ragflow-native-libs/office_oxide" && rm -f /tmp/office_oxide.tar.gz'
+            rm -f "$OO_TGZ"
+          fi
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
 
@@ -955,6 +968,19 @@ jobs:
             -v "${PWD}:/ragflow" \
             -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
+          # The builder image's cached office_oxide may predate the pinned
+          # OFFICE_OXIDE_VERSION in build.sh and fail its version guard;
+          # refresh the container's user cache from the pinned release first.
+          OFFICE_OXIDE_VER="$(grep -oP 'OFFICE_OXIDE_VERSION="\K[^"]+' build.sh)"
+          if ! sudo docker exec "${BUILDER_CONTAINER}" bash -c 'strings "$HOME/ragflow-native-libs/office_oxide/lib/liboffice_oxide.a" 2>/dev/null | grep -Fxq "'"$OFFICE_OXIDE_VER"'"'; then
+            OO_TGZ="$(mktemp --suffix=.tar.gz)"
+            curl -fsSL --retry 2 "https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VER}/native-linux-x86_64.tar.gz" -o "$OO_TGZ" \
+              || curl -fsSL --retry 2 "https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VER}/native-linux-x86_64.tar.gz" -o "$OO_TGZ"
+            sudo docker exec "${BUILDER_CONTAINER}" bash -c 'rm -rf "$HOME/ragflow-native-libs/office_oxide" && mkdir -p "$HOME/ragflow-native-libs/office_oxide"'
+            sudo docker cp "$OO_TGZ" "${BUILDER_CONTAINER}":/tmp/office_oxide.tar.gz
+            sudo docker exec "${BUILDER_CONTAINER}" bash -c 'tar xzf /tmp/office_oxide.tar.gz -C "$HOME/ragflow-native-libs/office_oxide" && rm -f /tmp/office_oxide.tar.gz'
+            rm -f "$OO_TGZ"
+          fi
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
 
@@ -1576,6 +1602,19 @@ jobs:
             -v "${PWD}:/ragflow" \
             -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
             infiniflow/infinity_builder:ubuntu22_clang20
+          # The builder image's cached office_oxide may predate the pinned
+          # OFFICE_OXIDE_VERSION in build.sh and fail its version guard;
+          # refresh the container's user cache from the pinned release first.
+          OFFICE_OXIDE_VER="$(grep -oP 'OFFICE_OXIDE_VERSION="\K[^"]+' build.sh)"
+          if ! sudo docker exec "${BUILDER_CONTAINER}" bash -c 'strings "$HOME/ragflow-native-libs/office_oxide/lib/liboffice_oxide.a" 2>/dev/null | grep -Fxq "'"$OFFICE_OXIDE_VER"'"'; then
+            OO_TGZ="$(mktemp --suffix=.tar.gz)"
+            curl -fsSL --retry 2 "https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VER}/native-linux-x86_64.tar.gz" -o "$OO_TGZ" \
+              || curl -fsSL --retry 2 "https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VER}/native-linux-x86_64.tar.gz" -o "$OO_TGZ"
+            sudo docker exec "${BUILDER_CONTAINER}" bash -c 'rm -rf "$HOME/ragflow-native-libs/office_oxide" && mkdir -p "$HOME/ragflow-native-libs/office_oxide"'
+            sudo docker cp "$OO_TGZ" "${BUILDER_CONTAINER}":/tmp/office_oxide.tar.gz
+            sudo docker exec "${BUILDER_CONTAINER}" bash -c 'tar xzf /tmp/office_oxide.tar.gz -C "$HOME/ragflow-native-libs/office_oxide" && rm -f /tmp/office_oxide.tar.gz'
+            rm -f "$OO_TGZ"
+          fi
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
 
       - name: Cache external DeepDoc testdata
