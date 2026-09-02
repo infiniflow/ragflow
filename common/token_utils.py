@@ -64,7 +64,6 @@ def get_encoder():
     if _encoder is None:
         with _encoder_lock:
             if _encoder is None:
-                # encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
                 _encoder = tiktoken.get_encoding("cl100k_base")
     return _encoder
 
