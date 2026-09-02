@@ -415,9 +415,12 @@ Candidate chunks with relevance scores below this threshold are filtered out. In
 
 **Skills**
 
-Skills is a knowledge artifact supported by Knowledge Compilation.
+Skills are a knowledge organization mechanism that precompiles knowledge from a knowledge base into a navigable hierarchical directory.
 
-It extracts and organizes reusable skill content from existing knowledge, enabling knowledge to be further used in the form of skills.
+They organize knowledge into a hierarchical structure based on thematic and semantic relationships, with directory summaries describing the knowledge contained at each level and its child branches. During retrieval, an Agent reads these summaries based on the user query, selects relevant branches, and progressively navigates down the hierarchy to locate and retrieve the relevant source documents or evidence.
+
+Unlike traditional retrieval methods that recall Top-K text chunks based on similarity scores, Skills transform retrieval into a process of navigation and localization over a hierarchical knowledge structure. This enables the Agent to actively explore the knowledge base and progressively narrow the retrieval scope.
+
 
 **System prompt**
 
