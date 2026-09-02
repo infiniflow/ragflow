@@ -62,14 +62,18 @@ func validateDevImportPath(raw string) (string, error) {
 	if !filepath.IsAbs(cleaned) {
 		return "", fmt.Errorf("file_path must be absolute")
 	}
-	allowed, err := filepath.Abs(devImportAllowedDir)
+	resolved, err := filepath.EvalSymlinks(cleaned)
 	if err != nil {
 		return "", fmt.Errorf("file_path not allowed")
 	}
-	if !strings.HasPrefix(cleaned, allowed+string(filepath.Separator)) && cleaned != allowed {
+	allowed, err := filepath.EvalSymlinks(filepath.Clean(devImportAllowedDir))
+	if err != nil {
+		return "", fmt.Errorf("file_path not allowed")
+	}
+	if !strings.HasPrefix(resolved, allowed+string(filepath.Separator)) && resolved != allowed {
 		return "", fmt.Errorf("file_path must be under %s", allowed)
 	}
-	return cleaned, nil
+	return resolved, nil
 }
 
 func (h *TenantHandler) SetModels(c *gin.Context) {
