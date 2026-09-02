@@ -15,6 +15,7 @@
 #
 
 import hashlib
+import os
 
 from common.token_utils import _ensure_tiktoken_cache, get_encoder, num_tokens_from_string, total_token_count_from_response, truncate
 import pytest
@@ -127,8 +128,9 @@ def test_bundled_cl100k_table_is_copied_into_the_tiktoken_cache(tmp_path, monkey
     bundled.write_bytes(b"bundled cl100k table")
     monkeypatch.setenv("RAG_PROJECT_BASE", str(tmp_path))
     # The helper points TIKTOKEN_CACHE_DIR at the project base; registering the
-    # variable here makes monkeypatch restore it for the tests that follow.
-    monkeypatch.delenv("TIKTOKEN_CACHE_DIR", raising=False)
+    # variable here makes monkeypatch restore it for the tests that follow,
+    # whether or not it was already set.
+    monkeypatch.setenv("TIKTOKEN_CACHE_DIR", os.environ.get("TIKTOKEN_CACHE_DIR", ""))
 
     cache_dir = _ensure_tiktoken_cache()
 

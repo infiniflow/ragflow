@@ -14,7 +14,9 @@
 #  limitations under the License.
 #
 
+import hashlib
 import importlib
+import os
 import sys
 
 import pytest
@@ -32,6 +34,9 @@ def _reimport_token_utils(monkeypatch, get_encoding):
     read `common.token_utils` do not get the module built against a fake encoder.
     """
     monkeypatch.setattr(common, "token_utils", getattr(common, "token_utils", None), raising=False)
+    # Importing re-runs _ensure_tiktoken_cache, which rewrites TIKTOKEN_CACHE_DIR.
+    # Register it first so teardown puts back whatever the suite was using.
+    monkeypatch.setenv("TIKTOKEN_CACHE_DIR", os.environ.get("TIKTOKEN_CACHE_DIR", ""))
     monkeypatch.setattr(tiktoken, "get_encoding", get_encoding)
     monkeypatch.delitem(sys.modules, "common.token_utils", raising=False)
     return importlib.import_module("common.token_utils")
@@ -86,3 +91,26 @@ class TestLazyEncoder:
 
         with pytest.raises(RuntimeError, match="BPE table unavailable"):
             module.num_tokens_from_string("hello")
+
+
+class TestTiktokenCacheOnImport:
+    """The helper is only useful if importing the module runs it."""
+
+    def test_import_seeds_the_cache_from_the_bundled_table(self, tmp_path, monkeypatch):
+        """Importing must copy the bundled table and point tiktoken at it.
+
+        Testing _ensure_tiktoken_cache alone passes even if nothing calls it,
+        so drive it through a real import.
+        """
+        bundled = tmp_path / "ragflow_deps" / "cl100k_base.tiktoken"
+        bundled.parent.mkdir()
+        bundled.write_bytes(b"bundled cl100k table")
+        monkeypatch.setenv("RAG_PROJECT_BASE", str(tmp_path))
+
+        module = _reimport_token_utils(monkeypatch, lambda name: object())
+
+        encoding_url = "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+        cache_path = tmp_path / hashlib.sha1(encoding_url.encode()).hexdigest()
+        assert cache_path.read_bytes() == b"bundled cl100k table"
+        assert os.environ["TIKTOKEN_CACHE_DIR"] == str(tmp_path)
+        assert module.tiktoken_cache_dir == str(tmp_path)
