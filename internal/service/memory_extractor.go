@@ -79,18 +79,18 @@ type extractedMemory struct {
 // Python handle_save_to_memory_task: validate the task row, then
 // extract + persist, settling task progress on the way out.
 //
+// taskID is the authoritative identity passed explicitly by the Ingestor (the
+// envelope TaskID); it is never re-derived from the payload. The payload
+// carries only business parameters (memory_id / source_id / message_dict).
+//
 // The returned error is wrapped in ErrMemoryTaskTerminal when the failure has
 // already produced a durable terminal outcome (dependency/config error, task
 // row absent, task already failed, or extraction failed after progress=-1 was
 // persisted). Transient failures (a task-load DB error before any marker was
 // written) return an unwrapped error so the caller can Nack and redeliver.
-func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, payload map[string]any) error {
+func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, taskID string, payload map[string]any) error {
 	if s == nil || s.taskDAO == nil || s.memories == nil {
 		return fmt.Errorf("%w: memory: nil MemoryMessageService or memory dependency", ErrMemoryTaskTerminal)
-	}
-	taskID, _ := payload["id"].(string)
-	if taskID == "" {
-		taskID, _ = payload["task_id"].(string)
 	}
 	memoryID, _ := payload["memory_id"].(string)
 	sourceID := payloadInt64(payload["source_id"])
@@ -115,6 +115,14 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, paylo
 	}
 	if task.Progress == -1 {
 		return fmt.Errorf("%w: memory: task %s is already failed", ErrMemoryTaskTerminal, taskID)
+	}
+	// A task already extracted to completion (progress>=1.0) is a durable
+	// terminal outcome: a redelivery after restart (or a duplicate copy from
+	// another consumer) must not re-run the LLM extraction, which would insert
+	// duplicate memory entries. Short-circuit to success so the Ingestor Acks
+	// the message instead of re-executing the task.
+	if task.Progress >= 1.0 {
+		return nil
 	}
 
 	if err = s.saveExtractedToMemory(ctx, memoryID, msg, sourceID, taskID); err != nil {
