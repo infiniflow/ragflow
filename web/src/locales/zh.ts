@@ -1991,7 +1991,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       compilationTitleSuffix: '的数据集',
       llmWiki: 'Wiki',
       skills: 'To Skills',
-      navTree: 'PageIndex',
+      navTree: 'Tree/Page index',
       graph: 'Graph',
       structureMindmap: 'Mindmap',
       structureTimeline: 'Timeline',
@@ -2004,6 +2004,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       topics: 'Topic',
       selectArtifact: '从目录中选择一个条目以查看详情',
       searchEntity: '搜索 Entity',
+      graphEntityCount: '实体 {{returned}} / {{total}}',
       sourceDocuments: '来源文档',
       clearWikiTitle: '清空 Wiki',
       clearWikiDescription:
@@ -2248,6 +2249,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       script: '脚本',
       iterationItemDescription:
         '它是迭代过程中的当前元素，可以被后续流程引用和操作。',
+      maxConcurrency: '最大并发数',
+      maxConcurrencyTip: '0 或 1 表示逐项串行。大于 1 时按该数量并行处理。',
       guidingQuestion: '引导问题',
       onFailure: '异常时',
       userPromptDefaultValue:

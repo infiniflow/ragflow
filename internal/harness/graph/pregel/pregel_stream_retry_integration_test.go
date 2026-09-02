@@ -28,7 +28,7 @@ func TestStream_ValuesMode(t *testing.T) {
 	sg := newSimpleGraph(t)
 	engine := NewEngine(sg, WithRecursionLimit(10))
 
-	ctx := context.Background()
+	ctx := t.Context()
 	outputCh, errCh := engine.Run(ctx, map[string]any{"value": "start"}, types.StreamModeValues)
 
 	var events []*StreamEvent
@@ -66,7 +66,7 @@ func TestStream_UpdatesMode(t *testing.T) {
 	sg := newSimpleGraph(t)
 	engine := NewEngine(sg, WithRecursionLimit(10))
 
-	ctx := context.Background()
+	ctx := t.Context()
 	outputCh, errCh := engine.Run(ctx, map[string]any{"value": "start"}, types.StreamModeUpdates)
 
 	var events []*StreamEvent
@@ -92,7 +92,7 @@ func TestStream_TasksMode(t *testing.T) {
 	sg := newSimpleGraph(t)
 	engine := NewEngine(sg, WithRecursionLimit(10))
 
-	ctx := context.Background()
+	ctx := t.Context()
 	outputCh, errCh := engine.Run(ctx, map[string]any{"value": "start"}, types.StreamModeTasks)
 
 	var taskStarts []string
@@ -116,7 +116,7 @@ func TestStream_TasksMode(t *testing.T) {
 func TestStream_MultipleModes(t *testing.T) {
 	sg := newSimpleGraph(t)
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, mode := range []types.StreamMode{
 		types.StreamModeValues,
@@ -145,7 +145,7 @@ func TestStream_ConcurrentConsumers(t *testing.T) {
 	sg := newSimpleGraph(t)
 	engine := NewEngine(sg, WithRecursionLimit(10))
 
-	ctx := context.Background()
+	ctx := t.Context()
 	outputCh, errCh := engine.Run(ctx, map[string]any{"value": "conc"}, types.StreamModeValues)
 
 	var wg sync.WaitGroup
@@ -197,7 +197,7 @@ func TestRetry_TransientFailure_Succeeds(t *testing.T) {
 		WithRetryPolicy(&rp),
 	)
 
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "retry"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "retry"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestRetry_TransientFailure_Exhausted(t *testing.T) {
 		WithRetryPolicy(&rp),
 	)
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "retry"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "retry"})
 	if err == nil {
 		t.Fatal("expected error from exhausted retries")
 	}
@@ -267,7 +267,7 @@ func TestRetry_CustomPolicy(t *testing.T) {
 		WithRetryPolicy(&rp),
 	)
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "retry"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "retry"})
 	if err == nil {
 		t.Fatal("expected permanent failure error")
 	}
@@ -305,7 +305,7 @@ func TestRetry_WithCheckpointer(t *testing.T) {
 		WithRetryPolicy(&rp),
 	)
 
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestEngine_50NodeChain(t *testing.T) {
 	_ = sg.AddEdge(prev, constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(100))
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "fan"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "fan"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -377,7 +377,7 @@ func TestEngine_ChainOf100(t *testing.T) {
 		WithRecursionLimit(150),
 	)
 
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -410,7 +410,7 @@ func TestEngine_WithMultipleChannels(t *testing.T) {
 	_ = sg.AddEdge("node_b", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -451,7 +451,7 @@ func TestEngine_Interrupt(t *testing.T) {
 		WithInterrupts("target"),
 	)
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err == nil {
 		t.Fatal("expected interrupt at target")
 	}
@@ -477,7 +477,7 @@ func TestEngine_ContextCancellation_Propagation(t *testing.T) {
 	_ = sg.AddEdge("slow", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
 	defer cancel()
 
 	_, err := engine.RunSync(ctx, map[string]any{"value": "cancel"})

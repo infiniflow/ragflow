@@ -11,7 +11,7 @@
   "models": [
     {
       "name": "gemini-2.5-flash",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 65536,
       "model_types": [
         "chat"

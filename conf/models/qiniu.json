@@ -11,7 +11,7 @@
   "models": [
     {
       "name": "deepseek/deepseek-v4-flash",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -26,7 +26,7 @@
     },
     {
       "name": "deepseek/deepseek-v4-pro",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -41,7 +41,7 @@
     },
     {
       "name": "moonshotai/kimi-k2.6",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 131072,
       "model_types": [
         "vision"
@@ -53,7 +53,7 @@
     },
     {
       "name": "moonshotai/kimi-k2.5",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 131072,
       "model_types": [
         "vision"
@@ -61,7 +61,7 @@
     },
     {
       "name": "z-ai/glm-5.1",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -76,7 +76,7 @@
     },
     {
       "name": "z-ai/glm-5",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -91,7 +91,7 @@
     },
     {
       "name": "minimax/minimax-m2.7",
-      "content_length": 204800,
+      "context_length": 204800,
       "max_output": 16384,
       "model_types": [
         "chat"
@@ -106,7 +106,7 @@
     },
     {
       "name": "minimax/minimax-m2.5",
-      "content_length": 204800,
+      "context_length": 204800,
       "max_output": 196608,
       "model_types": [
         "chat"
@@ -121,7 +121,7 @@
     },
     {
       "name": "minimax/minimax-m2.5-highspeed",
-      "content_length": 196608,
+      "context_length": 196608,
       "max_output": 16384,
       "model_types": [
         "chat"
@@ -136,7 +136,7 @@
     },
     {
       "name": "minimax/minimax-m2.1",
-      "content_length": 204800,
+      "context_length": 204800,
       "max_output": 16384,
       "model_types": [
         "chat"
@@ -147,7 +147,7 @@
     },
     {
       "name": "kimi-k2-thinking",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -162,7 +162,7 @@
     },
     {
       "name": "meituan/longcat-flash-lite",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -173,7 +173,7 @@
     },
     {
       "name": "qwen3-max",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -184,7 +184,7 @@
     },
     {
       "name": "z-ai/glm-4.6",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -199,7 +199,7 @@
     },
     {
       "name": "z-ai/glm-4.7",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -210,7 +210,7 @@
     },
     {
       "name": "deepseek/deepseek-v3.2-251201",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -225,7 +225,7 @@
     },
     {
       "name": "deepseek/deepseek-v3.2-exp-thinking",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -240,7 +240,7 @@
     },
     {
       "name": "deepseek/deepseek-v3.1-terminus",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -251,7 +251,7 @@
     },
     {
       "name": "deepseek/deepseek-v3.1-terminus-thinking",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -266,7 +266,7 @@
     },
     {
       "name": "deepseek-v3.1",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -277,7 +277,7 @@
     },
     {
       "name": "deepseek-v3-0324",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -288,7 +288,7 @@
     },
     {
       "name": "deepseek-r1-0528",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 65536,
       "model_types": [
         "chat"
@@ -303,7 +303,7 @@
     },
     {
       "name": "deepseek-r1",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -318,7 +318,7 @@
     },
     {
       "name": "doubao-seed-1.6-flash",
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 16384,
       "model_types": [
         "vision"
@@ -330,7 +330,7 @@
     },
     {
       "name": "doubao-1.5-pro-32k",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 4096,
       "model_types": [
         "vision"
@@ -338,7 +338,7 @@
     },
     {
       "name": "doubao-seed-1.6",
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 16384,
       "model_types": [
         "vision"
@@ -350,7 +350,7 @@
     },
     {
       "name": "doubao-seed-2.0-pro",
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 16384,
       "model_types": [
         "vision"
@@ -362,7 +362,7 @@
     },
     {
       "name": "doubao-seed-2.0-lite",
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 16384,
       "model_types": [
         "chat"
@@ -377,7 +377,7 @@
     },
     {
       "name": "doubao-seed-2.0-mini",
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 16384,
       "model_types": [
         "vision"
@@ -389,7 +389,7 @@
     },
     {
       "name": "doubao-seed-2.0-code",
-      "content_length": 256000,
+      "context_length": 256000,
       "max_output": 16384,
       "model_types": [
         "chat"
@@ -404,7 +404,7 @@
     },
     {
       "name": "qwen3-next-80b-a3b-thinking",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -419,7 +419,7 @@
     },
     {
       "name": "qwen3-235b-a22b-thinking-2507",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -434,7 +434,7 @@
     },
     {
       "name": "qwen3-max-2026-01-23",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -449,7 +449,7 @@
     },
     {
       "name": "qwen3-next-80b-a3b-instruct",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 16384,
       "model_types": [
         "chat"
@@ -460,7 +460,7 @@
     },
     {
       "name": "qwen3-max-preview",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -471,7 +471,7 @@
     },
     {
       "name": "qwen-2.5-vl-72b-instruct",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 4096,
       "model_types": [
         "vision"
@@ -479,7 +479,7 @@
     },
     {
       "name": "qwen3-coder-480b-a35b-instruct",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 65536,
       "model_types": [
         "chat"
@@ -490,7 +490,7 @@
     },
     {
       "name": "qwen-turbo",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -505,7 +505,7 @@
     },
     {
       "name": "qwen3-235b-a22b-instruct-2507",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 16384,
       "model_types": [
         "chat"
@@ -516,7 +516,7 @@
     },
     {
       "name": "qwen3-32b",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -531,7 +531,7 @@
     },
     {
       "name": "qwen3-30b-a3b",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -546,7 +546,7 @@
     },
     {
       "name": "qwen3-235b-a22b",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -557,7 +557,7 @@
     },
     {
       "name": "qwen-2.5-vl-7b-instruct",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 4096,
       "model_types": [
         "vision"
@@ -565,7 +565,7 @@
     },
     {
       "name": "qwen-vl-max-2025-01-25",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "vision"
@@ -573,7 +573,7 @@
     },
     {
       "name": "qwen2.5-max-2025-01-25",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -584,7 +584,7 @@
     },
     {
       "name": "minimax-m1",
-      "content_length": 1000000,
+      "context_length": 1000000,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -599,7 +599,7 @@
     },
     {
       "name": "glm-4.5",
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 96000,
       "model_types": [
         "chat"
@@ -614,7 +614,7 @@
     },
     {
       "name": "qwen3-vl-30b-a3b-instruct",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "vision"
@@ -622,7 +622,7 @@
     },
     {
       "name": "deepseek-v3",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -633,7 +633,7 @@
     },
     {
       "name": "qwen3-30b-a3b-thinking-2507",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -648,7 +648,7 @@
     },
     {
       "name": "glm-4.5-air",
-      "content_length": 128000,
+      "context_length": 128000,
       "max_output": 96000,
       "model_types": [
         "chat"
@@ -663,7 +663,7 @@
     },
     {
       "name": "qwen3.5-397b-a17b",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 32768,
       "model_types": [
         "vision"
@@ -675,7 +675,7 @@
     },
     {
       "name": "qwen/qwen3.5-plus",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 65536,
       "model_types": [
         "vision"
@@ -683,7 +683,7 @@
     },
     {
       "name": "qwen/qwen3.6-plus",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -698,7 +698,7 @@
     },
     {
       "name": "deepseek/deepseek-v3.2-exp",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -709,7 +709,7 @@
     },
     {
       "name": "qwen/qwen3.7-max",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -724,7 +724,7 @@
     },
     {
       "name": "qwen/qwen3.6-27b",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 32768,
       "model_types": [
         "vision"
@@ -736,7 +736,7 @@
     },
     {
       "name": "tencent/hy3-preview",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 262144,
       "model_types": [
         "chat"
@@ -751,7 +751,7 @@
     },
     {
       "name": "qwen3.5-35b-a3b",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 32768,
       "model_types": [
         "vision"
@@ -763,7 +763,7 @@
     },
     {
       "name": "qwen3-vl-30b-a3b-thinking",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "vision"
@@ -775,7 +775,7 @@
     },
     {
       "name": "qwen3-30b-a3b-instruct-2507",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 16384,
       "model_types": [
         "chat"

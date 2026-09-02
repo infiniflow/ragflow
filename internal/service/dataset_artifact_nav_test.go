@@ -48,7 +48,7 @@ func TestDeleteNav_RemovesOnlyDirectDocChildren(t *testing.T) {
 	defer func() { nav.SetNavService(prev) }()
 
 	svc := NewDatasetArtifactService()
-	n, err := svc.DeleteNav(context.Background(), "t1", "kb1")
+	n, err := svc.DeleteNav(t.Context(), "t1", "kb1")
 	if err != nil {
 		t.Fatalf("DeleteNav: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestDeleteNavNode_RemovesDirectChildren(t *testing.T) {
 	defer func() { nav.SetNavService(prev) }()
 
 	svc := NewDatasetArtifactService()
-	n, err := svc.DeleteNavNode(context.Background(), "t1", "kb1", "C1")
+	n, err := svc.DeleteNavNode(t.Context(), "t1", "kb1", "C1")
 	if err != nil {
 		t.Fatalf("DeleteNavNode: %v", err)
 	}

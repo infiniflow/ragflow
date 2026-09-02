@@ -45,6 +45,7 @@ jobs:
       has_go_changes: ${{ steps.detect_changes.outputs.has_go_changes }}
       has_python_changes: ${{ steps.detect_changes.outputs.has_python_changes }}
       has_web_changes: ${{ steps.detect_changes.outputs.has_web_changes }}
+      has_native_deepdoc_changes: ${{ steps.detect_changes.outputs.has_native_deepdoc_changes }}
       api_proxy_schemes: ${{ steps.detect_changes.outputs.api_proxy_schemes }}
     steps:
       - name: Ensure workspace ownership
@@ -179,11 +180,13 @@ jobs:
           has_go=false
           has_python=false
           has_web=false
+          has_native_deepdoc=false
 
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
             has_go=true
             has_python=true
             has_web=true
+            has_native_deepdoc=true
           else
             if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
               CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }})
@@ -199,9 +202,11 @@ jobs:
             while IFS= read -r file; do
               case "$file" in
                 # Docker, test, SDK, and workflow changes can alter either server path.
-                Dockerfile|Dockerfile_ci|docker/**|.github/workflows/**|sdk/**)
+                # build.sh also controls the C++/native build, so it must trigger native backend.
+                Dockerfile|Dockerfile_ci|docker/**|.github/workflows/**|sdk/**|build.sh)
                   has_go=true
                   has_python=true
+                  has_native_deepdoc=true
                   ;;
                 test/unit_test/**)
                   has_python=true
@@ -210,7 +215,14 @@ jobs:
                   has_go=true
                   has_python=true
                   ;;
-                *.go|go.mod|go.sum|build.sh)              has_go=true ;;
+                # DeepDoc native backend (Go inference layer, C++ static lib, pinned testdata).
+                # Must come BEFORE the generic "*.go"/"*.py" rules, otherwise deepdoc/*.go
+                # would be caught by "*.go" first and never set has_native_deepdoc.
+                internal/deepdoc/**|internal/binding/cpp/**|internal/deepdoc/native/testdata.ref)
+                  has_go=true
+                  has_native_deepdoc=true
+                  ;;
+                *.go|go.mod|go.sum)                       has_go=true ;;
                 *.py|pyproject.toml|requirements*.txt)    has_python=true ;;
                 web/*)                                    has_web=true ;;
               esac
@@ -220,6 +232,7 @@ jobs:
               has_go=true
               has_python=true
               has_web=true
+              has_native_deepdoc=true
             fi
           fi
 
@@ -238,8 +251,9 @@ jobs:
           echo "has_go_changes=${has_go}"        >> $GITHUB_OUTPUT
           echo "has_python_changes=${has_python}" >> $GITHUB_OUTPUT
           echo "has_web_changes=${has_web}"       >> $GITHUB_OUTPUT
+          echo "has_native_deepdoc_changes=${has_native_deepdoc}" >> $GITHUB_OUTPUT
           echo "api_proxy_schemes=${api_proxy_schemes}" >> $GITHUB_OUTPUT
-          echo "Go: ${has_go}, Python: ${has_python}, Web: ${has_web}, proxy schemes: ${api_proxy_schemes}"
+          echo "Go: ${has_go}, Python: ${has_python}, Web: ${has_web}, Native DeepDoc: ${has_native_deepdoc}, proxy schemes: ${api_proxy_schemes}"
 
       - name: Prepare Python test environment
         if: steps.detect_changes.outputs.has_python_changes == 'true'
@@ -382,6 +396,17 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
+      - name: Run ORT deps-download regression guard
+        if: env.API_PROXY_SCHEME == 'go'
+        # Pure-Python, local, needs no API keys or model downloads; guards the
+        # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
+        # depends on (notably the version-bump path C2 hardened). Run it in
+        # isolation so the test/testcases conftest (which requires
+        # SILICONFLOW_API_KEY) cannot fail the collection.
+        run: |
+          set -euo pipefail
+          uv sync --python 3.13 --group test --frozen
+          uv run pytest ragflow_deps/test_download_go_deps.py -q
 
       - name: Build ragflow:nightly
         run: |
@@ -1002,6 +1027,17 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
+      - name: Run ORT deps-download regression guard
+        if: env.API_PROXY_SCHEME == 'go'
+        # Pure-Python, local, needs no API keys or model downloads; guards the
+        # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
+        # depends on (notably the version-bump path C2 hardened). Run it in
+        # isolation so the test/testcases conftest (which requires
+        # SILICONFLOW_API_KEY) cannot fail the collection.
+        run: |
+          set -euo pipefail
+          uv sync --python 3.13 --group test --frozen
+          uv run pytest ragflow_deps/test_download_go_deps.py -q
 
       - name: Build ragflow:nightly
         run: |
@@ -1501,7 +1537,8 @@ jobs:
     # last also keeps a flaky -race OOM from ever obscuring the functional
     # verdict produced by the go jobs.
     needs: [ragflow_tests_infinity, ragflow_tests_elasticsearch]
-    if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
+    # Skip unless DeepDoc native backend code/build/testdata actually changed.
+    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_native_deepdoc_changes == 'true' }}
     runs-on: [ "self-hosted", "ragflow-test" ]
     steps:
       - name: Ensure workspace ownership

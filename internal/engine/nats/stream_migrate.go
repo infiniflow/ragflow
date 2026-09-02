@@ -26,10 +26,10 @@ import (
 // ensureStreamConfig creates the stream, or - when it already exists with an
 // older configuration (e.g. created by a previous deployment) - migrates it in
 // place via UpdateStream instead of failing with "stream name already in
-// use". Only the capacity/dedup fields (MaxBytes, MaxMsgs, Duplicates) are
-// migrated; the server-side current config is the merge base so a partial
-// update can never reset fields this helper does not own (Subjects, Retention,
-// Storage, ...).
+// use". Only the capacity/dedup/discard fields (MaxBytes, MaxMsgs, Duplicates,
+// Discard) are migrated; the server-side current config is the merge base so a
+// partial update can never reset fields this helper does not own (Subjects,
+// Retention, Storage, ...).
 func ensureStreamConfig(ctx context.Context, js jetstream.JetStream, want jetstream.StreamConfig) (jetstream.Stream, error) {
 	st, err := js.CreateStream(ctx, want)
 	if err == nil {
@@ -51,12 +51,18 @@ func ensureStreamConfig(ctx context.Context, js jetstream.JetStream, want jetstr
 	if want.Duplicates != 0 && cur.Duplicates != want.Duplicates {
 		needUpdate = true
 	}
+	if want.Discard != jetstream.DiscardOld && cur.Discard != want.Discard {
+		needUpdate = true
+	}
 	if needUpdate {
 		merged := cur
 		merged.MaxBytes = want.MaxBytes
 		merged.MaxMsgs = want.MaxMsgs
 		if want.Duplicates != 0 {
 			merged.Duplicates = want.Duplicates
+		}
+		if want.Discard != jetstream.DiscardOld {
+			merged.Discard = want.Discard
 		}
 		st, err = js.UpdateStream(ctx, merged)
 		if err != nil {
