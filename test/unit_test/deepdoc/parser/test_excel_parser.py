@@ -135,6 +135,26 @@ def test_call_keeps_zero_valued_cells():
 
 
 @pytest.mark.p2
+def test_call_omits_a_blank_header_instead_of_labelling_it_none():
+    # A blank header cell has no label to give. str(None) is "None", which is
+    # truthy, so it defeats the separator guard and the literal token "None" is
+    # indexed and shown alongside the value it pretends to describe.
+    lines = RAGFlowExcelParser()(_make_xlsx_with_values(["name", None, "city"], ["widget", "note-1", "paris"]))
+    joined = " ".join(text for text, _ in lines)
+    assert "None" not in joined, lines
+    assert "note-1" in joined, lines
+
+
+@pytest.mark.p2
+def test_call_keeps_a_zero_header():
+    # Guards the tempting shorter fix, str(ti[i].value or ""), which would drop
+    # a numeric 0 header the same way it drops a None one. 0 is a real label.
+    lines = RAGFlowExcelParser()(_make_xlsx_with_values(["name", 0], ["widget", "note-1"]))
+    joined = " ".join(text for text, _ in lines)
+    assert "0：note-1" in joined, lines
+
+
+@pytest.mark.p2
 def test_call_skips_truly_empty_cells():
     # None / empty-string cells carry no value and should still be skipped.
     lines = RAGFlowExcelParser()(_make_xlsx_with_values(["name", "note"], ["widget", None]))

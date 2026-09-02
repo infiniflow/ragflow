@@ -294,7 +294,9 @@ class RAGFlowExcelParser:
                     col = i + 1
                     col_min = col if col_min is None else min(col_min, col)
                     col_max = col if col_max is None else max(col_max, col)
-                    t = str(ti[i].value) if i < len(ti) else ""
+                    # A blank header cell is not a label: str(None) is "None", which is truthy,
+                    # so it defeats the separator guard below and lands "None：" in the chunk text.
+                    t = str(ti[i].value) if i < len(ti) and ti[i].value is not None else ""
                     t += ("：" if t else "") + str(c.value)
                     fields.append(t)
                 if not fields:
