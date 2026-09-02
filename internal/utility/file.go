@@ -17,18 +17,36 @@
 package utility
 
 import (
+	"fmt"
+	"net/http"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
 )
 
+type FileType string
+
 const (
-	FileTypePDF    = "pdf"
-	FileTypeDOC    = "doc"
-	FileTypeVISUAL = "visual"
-	FileTypeAURAL  = "aural"
-	FileTypeFOLDER = "folder"
-	FileTypeOTHER  = "other"
+	FileTypePDF      FileType = "pdf"
+	FileTypeDOC      FileType = "doc"
+	FileTypeDOCX     FileType = "docx"
+	FileTypePPT      FileType = "ppt"
+	FileTypePPTX     FileType = "pptx"
+	FileTypeXLS      FileType = "xls"
+	FileTypeXLSX     FileType = "xlsx"
+	FileTypeCSV      FileType = "csv"
+	FileTypeHTML     FileType = "html"
+	FileTypeMarkdown FileType = "md"
+	FileTypeTXT      FileType = "txt"
+	FileTypeEPUB     FileType = "epub"
+	FileTypeJSON     FileType = "json"
+	FileTypeVIDEO    FileType = "video"
+	FileTypeEMAIL    FileType = "email"
+	FileTypeVISUAL   FileType = "visual"
+	FileTypeAURAL    FileType = "aural"
+	FileTypeFOLDER   FileType = "folder"
+	FileTypeOTHER    FileType = "other"
 )
 
 var (
@@ -50,7 +68,64 @@ func normalizeFilename(filename string) (string, bool) {
 	return strings.ToLower(base), true
 }
 
-func FilenameType(filename string) string {
+func GetFileType(filename string) FileType {
+
+	ext := filepath.Ext(filename)
+	var suffix string
+	if len(ext) > 0 && ext[0] == '.' {
+		suffix = strings.ToLower(ext[1:])
+	} else {
+		suffix = strings.ToLower(ext)
+	}
+
+	switch suffix {
+	case "pdf":
+		return FileTypePDF
+	case "xls":
+		return FileTypeXLS
+	case "xlsx":
+		return FileTypeXLSX
+	case "csv":
+		return FileTypeCSV
+	case "doc":
+		return FileTypeDOC
+	case "docx":
+		return FileTypeDOCX
+	case "ppt":
+		return FileTypePPT
+	case "pptx":
+		return FileTypePPTX
+	case "html", "htm":
+		return FileTypeHTML
+	case "md", "markdown", "mdx":
+		return FileTypeMarkdown
+	case "txt", "py", "js", "java", "c", "cpp", "h", "php",
+		"go", "ts", "sh", "cs", "kt", "sql":
+		return FileTypeTXT
+	case "epub":
+		return FileTypeEPUB
+	case "json", "jsonl", "ldjson":
+		return FileTypeJSON
+	case "eml", "msg":
+		return FileTypeEMAIL
+	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",
+		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus":
+		return FileTypeAURAL
+	case "mp4", "avi", "mkv", "mov", "webm", "flv", "mpeg",
+		"mpg", "wmv", "3gp", "3gpp":
+		return FileTypeVIDEO
+	case "png", "jpg", "jpeg", "gif", "bmp":
+		return FileTypeVISUAL
+	case "tiff", "tif", "webp", "svg", "ico":
+		return FileTypeVISUAL
+	case "avif", "heic", "apng":
+		return FileTypeVISUAL
+	default:
+		return FileTypeOTHER
+	}
+}
+
+func FilenameType(filename string) FileType {
 	normalized, ok := normalizeFilename(filename)
 	if !ok {
 		return FileTypeOTHER
@@ -82,8 +157,8 @@ func FilenameType(filename string) string {
 	}
 
 	visualExtensions := []string{
-		"jpg", "jpeg", "png", "tif", "gif", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
-		"pcd", "dxf", "ufo", "eps", "ai", "raw", "WMF", "webp", "avif", "apng", "icon", "ico",
+		"jpg", "jpeg", "png", "tif", "gif", "bmp", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
+		"pcd", "dxf", "ufo", "eps", "ai", "raw", "wmf", "webp", "avif", "apng", "icon", "ico",
 		"mpg", "mpeg", "avi", "rm", "rmvb", "mov", "wmv", "asf", "dat", "asx", "wvx", "mpe",
 		"mpa", "mp4", "mkv",
 	}
@@ -216,8 +291,17 @@ var FORCE_ATTACHMENT_CONTENT_TYPES = map[string]bool{
 	"image/svg+xml":         true,
 	"application/xhtml+xml": true,
 	"text/xml":              true,
-	"application/xml":        true,
+	"application/xml":       true,
 	"multipart/related":     true,
+}
+
+// stripContentTypeParams strips "; charset=..." and similar parameters
+// from a content type string.  Mirrors Python's .split(";")[0].strip().
+func stripContentTypeParams(ct string) string {
+	if before, _, found := strings.Cut(ct, ";"); found {
+		return strings.TrimSpace(before)
+	}
+	return strings.TrimSpace(ct)
 }
 
 // ShouldForceAttachment determines if the file should be forced as attachment
@@ -226,7 +310,7 @@ func ShouldForceAttachment(ext string, contentType string) bool {
 	if normalizedExt != "" && FORCE_ATTACHMENT_EXTENSIONS[normalizedExt] {
 		return true
 	}
-	normalizedType := strings.ToLower(contentType)
+	normalizedType := strings.ToLower(stripContentTypeParams(contentType))
 	return FORCE_ATTACHMENT_CONTENT_TYPES[normalizedType]
 }
 
@@ -241,8 +325,181 @@ func GetContentType(ext string, fileType string) string {
 		return contentType
 	}
 	fallbackPrefix := "application"
-	if fileType == FileTypeVISUAL {
+	if fileType == string(FileTypeVISUAL) {
 		fallbackPrefix = "image"
 	}
 	return fallbackPrefix + "/" + normalizedExt
+}
+
+// contentDispositionBasename extracts the final path segment, treating both
+// "/" and "\" as separators. Mirrors Python file_response.py basename logic.
+func contentDispositionBasename(filename string) string {
+	base := filename
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	if idx := strings.LastIndex(base, "\\"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	return base
+}
+
+// rfc8187Encode percent-encodes a UTF-8 string for RFC 8187 filename*.
+// Mirrors Python urllib.parse.quote(s, safe="").
+func rfc8187Encode(s string) string {
+	var buf strings.Builder
+	for _, b := range []byte(s) {
+		if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') ||
+			b == '-' || b == '.' || b == '_' || b == '~' {
+			buf.WriteByte(b)
+		} else {
+			buf.WriteString(fmt.Sprintf("%%%02X", b))
+		}
+	}
+	return buf.String()
+}
+
+// SanitizeContentDispositionFilename builds the ASCII filename fallback for
+// Content-Disposition headers. Mirrors Python file_response.py:
+// ascii_content_disposition_filename().
+func SanitizeContentDispositionFilename(filename string) string {
+	if filename == "" {
+		return "file"
+	}
+	var asciiOnly strings.Builder
+	for _, r := range filename {
+		if r < 0x80 {
+			asciiOnly.WriteRune(r)
+		}
+	}
+	var sanitized strings.Builder
+	for _, r := range asciiOnly.String() {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') ||
+			r == '_' || r == '.' || r == '-' {
+			sanitized.WriteRune(r)
+		} else {
+			sanitized.WriteRune('_')
+		}
+	}
+	result := strings.Trim(sanitized.String(), "._")
+	if result == "" {
+		return "file"
+	}
+	return result
+}
+
+// ResolveAttachmentContentType resolves a content type and extension from
+// query-parameter values. When mimeType is non-empty it is preferred and
+// reverse-looked up in CONTENT_TYPE_MAP to also resolve the extension;
+// otherwise the extension is looked up in CONTENT_TYPE_MAP, falling back
+// to "application/<ext>". Returns (contentType, ext). Mirrors Python
+// file_response.py: resolve_attachment_content_type().
+func ResolveAttachmentContentType(ext string, mimeType string) (string, string) {
+	ext = strings.ToLower(strings.TrimSpace(ext))
+	ext = strings.TrimPrefix(ext, ".")
+	mimeType = strings.TrimSpace(mimeType)
+
+	contentType := ""
+	if mimeType != "" {
+		normalizedType := strings.ToLower(stripContentTypeParams(mimeType))
+		contentType = normalizedType
+		// Reverse-lookup extension from CONTENT_TYPE_MAP only when
+		// no explicit ext was provided. Never overwrite a caller-
+		// supplied extension (e.g. ext=svg&mime_type=image/png must
+		// stay ext=svg for the force-attachment check).
+		if ext == "" {
+			for knownExt, knownType := range CONTENT_TYPE_MAP {
+				if knownType == normalizedType {
+					ext = knownExt
+					break
+				}
+			}
+		}
+	} else if ext != "" {
+		if ct, ok := CONTENT_TYPE_MAP[ext]; ok {
+			contentType = ct
+		} else {
+			contentType = "application/" + ext
+		}
+	}
+	return contentType, ext
+}
+
+// FormatContentDisposition builds a Content-Disposition value with an ASCII
+// filename fallback and an RFC 5987 UTF-8 filename* parameter.
+func FormatContentDisposition(disposition, filename string) string {
+	base := contentDispositionBasename(filename)
+	if base == "" {
+		return disposition
+	}
+	safe := SanitizeContentDispositionFilename(base)
+	encoded := rfc8187Encode(base)
+	return fmt.Sprintf(`%s; filename="%s"; filename*=UTF-8''%s`, disposition, safe, encoded)
+}
+
+// SetPreviewFileResponseHeaders sets response headers for inline file
+// preview. For force-attachment types (HTML, SVG, XML) it falls back to
+// attachment disposition with nosniff. Mirrors Python file_response.py:
+// apply_preview_file_response_headers().
+func SetPreviewFileResponseHeaders(h http.Header, contentType, ext, filename string) {
+	if contentType != "" {
+		h.Set("Content-Type", contentType)
+	}
+	if ShouldForceAttachment(ext, contentType) {
+		h.Set("X-Content-Type-Options", "nosniff")
+		if filename != "" {
+			h.Set("Content-Disposition", FormatContentDisposition("attachment", filename))
+		} else {
+			h.Set("Content-Disposition", "attachment")
+		}
+		return
+	}
+
+	if filename != "" {
+		h.Set("Content-Disposition", FormatContentDisposition("inline", filename))
+	} else {
+		h.Set("Content-Disposition", "inline")
+	}
+}
+
+// SetDownloadFileResponseHeaders sets response headers for file download
+// (always attachment disposition). Mirrors Python file_response.py:
+// apply_download_file_response_headers().
+func SetDownloadFileResponseHeaders(h http.Header, contentType, ext, filename string) {
+	if contentType != "" {
+		h.Set("Content-Type", contentType)
+	}
+	if ShouldForceAttachment(ext, contentType) {
+		h.Set("X-Content-Type-Options", "nosniff")
+		if filename != "" {
+			h.Set("Content-Disposition", FormatContentDisposition("attachment", filename))
+		} else {
+			h.Set("Content-Disposition", "attachment")
+		}
+		return
+	}
+	if filename != "" {
+		h.Set("Content-Disposition", FormatContentDisposition("attachment", filename))
+	} else {
+		h.Set("Content-Disposition", "attachment")
+	}
+}
+
+// AgentAttachmentPreviewPath builds the preview URL path for an agent
+// attachment. Query parameters ext and mime_type are URL-encoded when
+// provided. Mirrors Python file_response.py:
+// agent_attachment_preview_path().
+func AgentAttachmentPreviewPath(attachmentID, ext, mimeType string) string {
+	path := "/api/v1/agents/attachments/" + attachmentID + "/preview"
+	params := url.Values{}
+	if ext != "" {
+		params.Set("ext", ext)
+	}
+	if mimeType != "" {
+		params.Set("mime_type", mimeType)
+	}
+	if qs := params.Encode(); qs != "" {
+		return path + "?" + qs
+	}
+	return path
 }

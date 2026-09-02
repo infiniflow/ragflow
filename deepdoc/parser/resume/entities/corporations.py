@@ -24,9 +24,7 @@ from . import regions
 
 
 current_file_path = os.path.dirname(os.path.abspath(__file__))
-GOODS = pd.read_csv(
-    os.path.join(current_file_path, "res/corp_baike_len.csv"), sep="\t", header=0
-).fillna(0)
+GOODS = pd.read_csv(os.path.join(current_file_path, "res/corp_baike_len.csv"), sep="\t", header=0).fillna(0)
 GOODS["cid"] = GOODS["cid"].astype(str)
 GOODS = GOODS.set_index(["cid"])
 with open(os.path.join(current_file_path, "res/corp.tks.freq.json"), "r", encoding="utf-8") as f:
@@ -53,9 +51,7 @@ def corpNorm(nm, add_region=True):
     nm = rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(nm)).lower()
     nm = re.sub(r"&amp;", "&", nm)
     nm = re.sub(r"[\(\)（）\+'\"\t \*\\【】-]+", " ", nm)
-    nm = re.sub(
-        r"([—-]+.*| +co\..*|corp\..*| +inc\..*| +ltd.*)", "", nm, count=10000, flags=re.IGNORECASE
-    )
+    nm = re.sub(r"([—-]+.*| +co\..*|corp\..*| +inc\..*| +ltd.*)", "", nm, count=10000, flags=re.IGNORECASE)
     nm = re.sub(
         r"(计算机|技术|(技术|科技|网络)*有限公司|公司|有限|研发中心|中国|总部)$",
         "",

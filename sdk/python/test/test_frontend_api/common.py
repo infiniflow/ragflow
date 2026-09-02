@@ -73,20 +73,20 @@ def list_document(auth, dataset_id):
 def get_docs_info(auth, dataset_id, doc_ids=None, doc_id=None):
     """
     Get document information by IDs.
-    
+
     Args:
         auth: Authorization header
         dataset_id: Dataset ID
         doc_ids: List of document IDs (use for multiple) - exclusive with doc_id
         doc_id: Single document ID (use for one) - exclusive with doc_ids
-    
+
     Raises:
         ValueError: If both doc_id and doc_ids are provided
     """
     # Validate that id and ids are not used together
     if doc_id and doc_ids:
         raise ValueError("Cannot use both 'id' and 'ids' parameters at the same time.")
-    
+
     authorization = {"Authorization": auth}
     params = {}
     if doc_ids:
@@ -96,7 +96,7 @@ def get_docs_info(auth, dataset_id, doc_ids=None, doc_id=None):
     elif doc_id:
         # Single ID
         params["id"] = doc_id
-    
+
     # Use /api/v1 prefix for dataset API
     url = f"{HOST_ADDRESS}/api/v1/datasets/{dataset_id}/documents"
     res = requests.get(url=url, headers=authorization, params=params)
@@ -113,4 +113,3 @@ def parse_docs(auth, doc_ids):
 
 def parse_file(auth, document_id):
     pass
-

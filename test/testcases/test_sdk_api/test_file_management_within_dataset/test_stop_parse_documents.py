@@ -18,7 +18,7 @@ import pytest
 
 
 def validate_document_parse_done(dataset, document_ids):
-    documents = dataset.list_documents(page_size=1000)
+    documents = dataset.list_documents(page_size=100)
     for document in documents:
         if document.id in document_ids:
             assert document.run == "DONE"
@@ -29,7 +29,7 @@ def validate_document_parse_done(dataset, document_ids):
 
 
 def validate_document_parse_cancel(dataset, document_ids):
-    documents = dataset.list_documents(page_size=1000)
+    documents = dataset.list_documents(page_size=100)
     for document in documents:
         assert document.run == "CANCEL"
         assert len(document.process_begin_at) > 0

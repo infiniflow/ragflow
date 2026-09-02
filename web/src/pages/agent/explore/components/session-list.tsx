@@ -32,7 +32,9 @@ export function SessionList({
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <h2 className="text-base font-bold">{t('explore.sessions')}</h2>
-          <span className="text-xs text-text-secondary">{sessions.length}</span>
+          <span className="text-xs text-text-secondary">
+            {filteredData.length}
+          </span>
         </div>
         <Button variant="ghost" size="icon" onClick={addTemporarySession}>
           <Plus className="h-4 w-4" />

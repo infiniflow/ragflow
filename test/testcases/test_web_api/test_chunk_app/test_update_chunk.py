@@ -156,7 +156,7 @@ class TestUpdateChunk:
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
-            ("invalid_doc_id", 102, "You don't own the document invalid_doc_id."),
+            ("invalid_doc_id", 102, "you don't own the document invalid_doc_id"),
         ],
     )
     def test_invalid_document_id_for_update(self, WebApiAuth, add_chunks, document_id, expected_code, expected_message):
@@ -217,4 +217,4 @@ class TestUpdateChunk:
         delete_document(WebApiAuth, dataset_id, {"ids": [document_id]})
         res = update_chunk(WebApiAuth, dataset_id, document_id, chunk_ids[0], {"content": "test content"})
         assert res["code"] == 102, res
-        assert res["message"] in [f"You don't own the document {document_id}.", f"Can't find this chunk {chunk_ids[0]}"]
+        assert res["message"] in [f"you don't own the document {document_id}", f"Can't find this chunk {chunk_ids[0]}"]

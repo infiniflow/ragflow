@@ -30,21 +30,14 @@ class WenCaiParam(ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
+        self.meta: ToolMeta = {
             "name": "iwencai",
             "description": """
 iwencai search: search platform is committed to providing hundreds of millions of investors with the most timely, accurate and comprehensive information, covering news, announcements, research reports, blogs, forums, Weibo, characters, etc.
 robo-advisor intelligent stock selection platform: through AI technology, is committed to providing investors with intelligent stock selection, quantitative investment, main force tracking, value investment, technical analysis and other types of stock selection technologies.
 fund selection platform: through AI technology, is committed to providing excellent fund, value investment, quantitative analysis and other fund selection technologies for foundation citizens.
 """,
-            "parameters": {
-                "query": {
-                    "type": "string",
-                    "description": "The question/conditions to select stocks.",
-                    "default": "{sys.query}",
-                    "required": True
-                }
-            }
+            "parameters": {"query": {"type": "string", "description": "The question/conditions to select stocks.", "default": "{sys.query}", "required": True}},
         }
         super().__init__()
         self.top_n = 10
@@ -52,18 +45,11 @@ fund selection platform: through AI technology, is committed to providing excell
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
-        self.check_valid_value(self.query_type, "Query type",
-                               ['stock', 'zhishu', 'fund', 'hkstock', 'usstock', 'threeboard', 'conbond', 'insurance',
-                                'futures', 'lccp',
-                                'foreign_exchange'])
+        self.check_valid_value(self.query_type, "Query type", ["stock", "zhishu", "fund", "hkstock", "usstock", "threeboard", "conbond", "insurance", "futures", "lccp", "foreign_exchange"])
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "query": {
-                "name": "Query",
-                "type": "line"
-            }
-        }
+        return {"query": {"name": "Query", "type": "line"}}
+
 
 class WenCai(ToolBase, ABC):
     component_name = "WenCai"
@@ -78,7 +64,7 @@ class WenCai(ToolBase, ABC):
             return ""
 
         last_e = ""
-        for _ in range(self._param.max_retries+1):
+        for _ in range(self._param.max_retries + 1):
             if self.check_if_canceled("WenCai processing"):
                 return
 
@@ -103,7 +89,7 @@ class WenCai(ToolBase, ABC):
                         elif isinstance(item[1], dict):
                             if "meta" in item[1].keys():
                                 continue
-                            wencai_res.append(pd.DataFrame.from_dict(item[1], orient='index').to_markdown())
+                            wencai_res.append(pd.DataFrame.from_dict(item[1], orient="index").to_markdown())
                         elif isinstance(item[1], pd.DataFrame):
                             if "image_url" in item[1].columns:
                                 continue

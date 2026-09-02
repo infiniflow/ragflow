@@ -30,7 +30,6 @@ class TestClass:
 
 # Test cases
 class TestSingleton:
-
     def test_state_persistence(self):
         """Test that instance state persists across multiple calls"""
         instance1 = TestClass()

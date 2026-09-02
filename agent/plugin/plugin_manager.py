@@ -15,10 +15,8 @@ class PluginManager:
         self._llm_tool_plugins = {}
 
     def load_plugins(self) -> None:
-        loader = pluginlib.PluginLoader(
-            paths=[str(Path(os.path.dirname(__file__), "embedded_plugins"))]
-        )
-        
+        loader = pluginlib.PluginLoader(paths=[str(Path(os.path.dirname(__file__), "embedded_plugins"))])
+
         for type, plugins in loader.plugins.items():
             for name, plugin in plugins.items():
                 logging.info(f"Loaded {type} plugin {name} version {plugin.version}")

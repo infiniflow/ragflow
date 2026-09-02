@@ -7,7 +7,7 @@ export function useStopMessage() {
   const stopMessage = useCallback(
     (taskId?: string) => {
       if (taskId) {
-        cancelConversation(taskId);
+        void cancelConversation(taskId).catch(() => undefined);
       }
     },
     [cancelConversation],

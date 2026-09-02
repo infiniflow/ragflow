@@ -14,26 +14,21 @@ import {
 } from '../../hooks/use-button-disabled';
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
 import { useSendMessage } from '../../hooks/use-send-chat-message';
-import { buildMessageItemReference } from '../../utils';
+import { useMessageReferences } from '../../hooks/use-message-references';
+import { EmptyReference } from '../../utils';
 import { useShowInternet } from '../use-show-internet';
 
 interface IProps {
-  controller: AbortController;
-  stopOutputMessage(): void;
   conversation: IClientConversation;
 }
 
-export function SingleChatBox({
-  controller,
-  stopOutputMessage,
-  conversation,
-}: IProps) {
+export function SingleChatBox({ conversation }: IProps) {
   const {
     value,
     scrollRef,
     messageContainerRef,
     sendLoading,
-    derivedMessages,
+    messages,
     isUploading,
     handleInputChange,
     handlePressEnter,
@@ -41,8 +36,9 @@ export function SingleChatBox({
     removeMessageById,
     handleUploadFile,
     removeFile,
-    setDerivedMessages,
-  } = useSendMessage(controller);
+    hydrateFromServer,
+    stopOutputMessage,
+  } = useSendMessage();
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchChat();
   const { createConversationBeforeUploadDocument } =
@@ -55,35 +51,33 @@ export function SingleChatBox({
 
   const showInternet = useShowInternet();
 
-  useEffect(() => {
-    const messages = conversation?.messages;
-    if (Array.isArray(messages)) {
-      setDerivedMessages((prevMessages) => {
-        // Preserve uploaded file objects from local state that the server doesn't
-        // persist (e.g. File instances). Build a map of message id → files from
-        // the current local state so they survive when server data is applied.
-        const filesMap = new Map(
-          prevMessages
-            .filter((m) => m.files?.length)
-            .map((m) => [m.id, m.files]),
-        );
-        if (filesMap.size === 0) {
-          return messages;
-        }
-        return messages.map((m) => ({
-          ...m,
-          files: filesMap.get(m.id) ?? m.files,
-        }));
-      });
-    }
-  }, [conversation?.messages, setDerivedMessages]);
+  const messageReferences = useMessageReferences(
+    messages,
+    conversation.reference,
+  );
 
   useEffect(() => {
-    // Clear the message list after deleting the conversation.
-    if (conversationId === '') {
-      setDerivedMessages([]);
+    // Skip when the conversation prop is stale — its id doesn't match the
+    // URL's current conversationId. This happens during a switch (e.g.
+    // clicking "+" to create a new session): child effects fire before the
+    // parent's clear/load effect, so for one render the prop still holds the
+    // previous conversation's messages. Applying them here would leak the old
+    // conversation's content into the newly switched (or new) conversation.
+    if (conversation?.id && conversation.id !== conversationId) return;
+
+    const messages = conversation?.messages;
+    if (Array.isArray(messages)) {
+      // hydrateFromServer is a no-op while a stream is in flight, and rejects a
+      // server list shorter than the local one, so it can never truncate an
+      // answer the server hasn't persisted yet.
+      hydrateFromServer(conversationId, messages);
     }
-  }, [conversationId, setDerivedMessages]);
+  }, [
+    conversation?.messages,
+    conversation?.id,
+    conversationId,
+    hydrateFromServer,
+  ]);
 
   return (
     <section className="flex flex-col h-full gap-4">
@@ -92,27 +86,22 @@ export function SingleChatBox({
         className="p-5 flex-1 overflow-auto min-h-0 scrollbar-auto"
       >
         <div className="w-full pr-5">
-          {derivedMessages?.map((message, i) => (
+          {messages?.map((message, i) => (
             <MessageItem
               loading={
                 message.role === MessageType.Assistant &&
                 sendLoading &&
-                derivedMessages.length - 1 === i
+                messages.length - 1 === i
               }
               key={buildMessageUuidWithRole(message)}
               item={message}
               nickname={userInfo.nickname}
               avatar={userInfo.avatar}
               avatarDialog={currentDialog.icon}
-              reference={buildMessageItemReference(
-                {
-                  messages: derivedMessages,
-                  reference: conversation.reference,
-                },
-                message,
-              )}
+              reference={messageReferences.get(message) ?? EmptyReference}
               clickDocumentButton={clickDocumentButton}
               index={i}
+              isLast={i === messages.length - 1}
               removeMessageById={removeMessageById}
               regenerateMessage={regenerateMessage}
               sendLoading={sendLoading}

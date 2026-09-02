@@ -67,9 +67,7 @@ def get_google_creds(
             try:
                 credentials_dict = ensure_oauth_token_dict(credentials_dict, source)
             except Exception as exc:
-                raise PermissionError(
-                    "Google Drive OAuth credentials are incomplete. Please finish the OAuth flow to generate access tokens."
-                ) from exc
+                raise PermissionError("Google Drive OAuth credentials are incomplete. Please finish the OAuth flow to generate access tokens.") from exc
             credentials_dict_str = json.dumps(credentials_dict)
             regenerated_from_client_secret = True
 

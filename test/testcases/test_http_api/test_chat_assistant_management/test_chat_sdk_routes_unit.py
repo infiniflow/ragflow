@@ -193,15 +193,14 @@ def _load_chat_module(monkeypatch):
 
     class _StubLLMType(str, Enum):
         CHAT = "chat"
-        IMAGE2TEXT = "image2text"
+        VISION = "vision"
         RERANK = "rerank"
-        SPEECH2TEXT = "speech2text"
+        ASR = "asr"
         TTS = "tts"
 
     class _StubRetCode(int, Enum):
         SUCCESS = 0
         DATA_ERROR = 102
-        OPERATING_ERROR = 103
         AUTHENTICATION_ERROR = 109
 
     class _StubStatusEnum(str, Enum):
@@ -213,6 +212,7 @@ def _load_chat_module(monkeypatch):
     common_constants_mod.StatusEnum = _StubStatusEnum
     # Import pure-Python constants from the real module (no heavy deps)
     from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
+
     common_constants_mod.MAXIMUM_PAGE_NUMBER = _MPN
     common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
@@ -330,6 +330,7 @@ def _load_chat_module(monkeypatch):
             return False, None
 
     kb_service_mod.KnowledgebaseService = _StubKnowledgebaseService
+    kb_service_mod.validate_dataset_embedding_models = lambda _kbs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
 
     tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
@@ -359,6 +360,7 @@ def _load_chat_module(monkeypatch):
             pass
 
     llm_service_mod.LLMBundle = _StubLLMBundle
+    llm_service_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
 
     search_service_mod = ModuleType("api.db.services.search_service")
@@ -366,7 +368,8 @@ def _load_chat_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
-    tenant_model_service_mod.get_model_config_by_type_and_name = lambda *_args, **_kwargs: {}
+    tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
+    tenant_model_service_mod.resolve_model_config = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
@@ -376,10 +379,6 @@ def _load_chat_module(monkeypatch):
         @staticmethod
         def get_by_id(_tenant_id):
             return True, SimpleNamespace(llm_id="glm-4")
-
-        @staticmethod
-        def get_joined_tenants_by_user_id(_user_id):
-            return [{"tenant_id": "tenant-1"}, {"tenant_id": "team-tenant-2"}]
 
     class _StubUserTenantService:
         @staticmethod
@@ -415,12 +414,8 @@ def _load_chat_module(monkeypatch):
     api_utils_mod.get_json_result = lambda data=None, message="", code=0: {"code": code, "data": data, "message": message}
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
     api_utils_mod.server_error_response = lambda ex: {"code": 500, "data": None, "message": str(ex)}
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda func: func)
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda func: func
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
-
-    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
-    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, req: req
-    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
 
     rag_pkg = ModuleType("rag")
     rag_pkg.__path__ = [str(repo_root / "rag")]
@@ -519,7 +514,7 @@ def test_create_chat_blank_name_is_treated_as_missing(monkeypatch):
     res = _run(module.create.__wrapped__())
 
     assert res["code"] == 102
-    assert res["message"] == "`name` is required."
+    assert res["message"] == "`name` is required"
 
 
 @pytest.mark.p1
@@ -892,119 +887,13 @@ def test_list_chats_keeps_zero_pagination_semantics(monkeypatch):
 
 
 @pytest.mark.p2
-def test_list_chats_rejects_unauthorized_owner_ids(monkeypatch):
-    module = _load_chat_module(monkeypatch)
-    monkeypatch.setattr(
-        module,
-        "request",
-        SimpleNamespace(
-            args=SimpleNamespace(
-                get=lambda key, default=None: {
-                    "keywords": "",
-                    "page": "0",
-                    "page_size": "0",
-                    "orderby": "create_time",
-                    "desc": "true",
-                    "id": None,
-                    "name": None,
-                }.get(key, default),
-                getlist=lambda key: ["foreign-tenant-id"] if key == "owner_ids" else [],
-            )
-        ),
-    )
-    res = _run(module.list_chats.__wrapped__())
-    assert res["code"] == module.RetCode.OPERATING_ERROR
-    assert "authorized owner_ids" in res["message"]
-
-
-@pytest.mark.p2
-def test_list_chats_authorized_multi_tenant(monkeypatch):
-    module = _load_chat_module(monkeypatch)
-    captured = {}
-    monkeypatch.setattr(
-        module,
-        "request",
-        SimpleNamespace(
-            args=SimpleNamespace(
-                get=lambda key, default=None: {
-                    "keywords": "",
-                    "page": "1",
-                    "page_size": "10",
-                    "orderby": "create_time",
-                    "desc": "true",
-                    "id": None,
-                    "name": None,
-                }.get(key, default),
-                getlist=lambda key: ["tenant-1", "team-tenant-2"] if key == "owner_ids" else [],
-            )
-        ),
-    )
-
-    def _get_by_tenant_ids(owner_ids, user_id, *args, **kwargs):
-        captured["owner_ids"] = owner_ids
-        captured["user_id"] = user_id
-        return (
-            [
-                {**_DummyDialogRecord().to_dict(), "tenant_id": "tenant-1", "id": "c1"},
-                {**_DummyDialogRecord().to_dict(), "tenant_id": "team-tenant-2", "id": "c2"},
-            ],
-            2,
-        )
-
-    monkeypatch.setattr(module.DialogService, "get_by_tenant_ids", _get_by_tenant_ids)
-    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
-
-    res = _run(module.list_chats.__wrapped__())
-    assert res["code"] == 0
-    assert res["data"]["total"] == 2
-    assert {c["id"] for c in res["data"]["chats"]} == {"c1", "c2"}
-    assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}
-    assert captured["user_id"] == "tenant-1"
-
-
-@pytest.mark.p2
-def test_list_chats_defaults_to_authorized_owner_ids_when_omitted(monkeypatch):
-    module = _load_chat_module(monkeypatch)
-    captured = {}
-
-    monkeypatch.setattr(
-        module,
-        "request",
-        SimpleNamespace(
-            args=SimpleNamespace(
-                get=lambda key, default=None: {
-                    "keywords": "",
-                    "page": "1",
-                    "page_size": "10",
-                    "orderby": "create_time",
-                    "desc": "true",
-                    "id": None,
-                    "name": None,
-                }.get(key, default),
-                getlist=lambda _key: [],
-            )
-        ),
-    )
-
-    def _get_by_tenant_ids(owner_ids, *_args, **_kwargs):
-        captured["owner_ids"] = owner_ids
-        return ([], 0)
-
-    monkeypatch.setattr(module.DialogService, "get_by_tenant_ids", _get_by_tenant_ids)
-    res = _run(module.list_chats.__wrapped__())
-
-    assert res["code"] == 0
-    assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}
-
-
-@pytest.mark.p2
 def test_chat_session_create_and_update_guard_matrix_unit(monkeypatch):
     module = _load_chat_module(monkeypatch)
 
     _set_request_json(monkeypatch, module, {"name": "session"})
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
     res = _run(module.create_session.__wrapped__("chat-1"))
-    assert res["message"] == "No authorization."
+    assert res["message"] == "no authorization"
 
     dia = SimpleNamespace(prompt_config={"prologue": "hello"})
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [dia])
@@ -1022,20 +911,20 @@ def test_chat_session_create_and_update_guard_matrix_unit(monkeypatch):
     monkeypatch.setattr(module.ConversationService, "query", lambda **_kwargs: [SimpleNamespace(id="session-1")])
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert res["message"] == "No authorization."
+    assert res["message"] == "no authorization"
 
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
     _set_request_json(monkeypatch, module, {"message": []})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert "`messages` cannot be changed." in res["message"]
+    assert "`messages` cannot be changed" in res["message"]
 
     _set_request_json(monkeypatch, module, {"reference": []})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert "`reference` cannot be changed." in res["message"]
+    assert "`reference` cannot be changed" in res["message"]
 
     _set_request_json(monkeypatch, module, {"name": ""})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert "`name` can not be empty." in res["message"]
+    assert "`name` can not be empty" in res["message"]
 
     _set_request_json(monkeypatch, module, {"name": "renamed"})
     monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_args, **_kwargs: False)

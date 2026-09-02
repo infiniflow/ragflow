@@ -17,139 +17,53 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 	"strings"
-	"time"
 )
 
 // PPIOModel implements ModelDriver for PPIO.
 //
 // PPIO exposes OpenAI-compatible chat completions and model listing endpoints.
 type PPIOModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewPPIOModel(baseURL map[string]string, urlSuffix URLSuffix) *PPIOModel {
-	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
-	var transport *http.Transport
-	if ok {
-		transport = defaultTransport.Clone()
-	} else {
-		transport = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}
-	}
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &PPIOModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
 
 func (p *PPIOModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewPPIOModel(baseURL, p.URLSuffix)
+	return NewPPIOModel(baseURL, p.baseModel.URLSuffix)
 }
 
 func (p *PPIOModel) Name() string {
 	return "ppio"
 }
 
-func (p *PPIOModel) baseURLForRegion(region string) (string, error) {
-	base, ok := p.BaseURL[region]
-	if ok && base != "" {
-		return strings.TrimSuffix(base, "/"), nil
-	}
-	if region == "" {
-		if base, ok := p.BaseURL["default"]; ok && base != "" {
-			return strings.TrimSuffix(base, "/"), nil
-		}
-	}
-	return "", fmt.Errorf("ppio: no base URL configured for region %q", region)
-}
-
 func (p *PPIOModel) endpoint(apiConfig *APIConfig, suffix string) (string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := p.baseURLForRegion(region)
+	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return "", err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(suffix, "/")), nil
 }
 
-func ppioChatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   stream,
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-	}
-
-	return reqBody
-}
-
-type ppioChatMessage struct {
-	Content          string `json:"content"`
-	ReasoningContent string `json:"reasoning_content"`
-	Reasoning        string `json:"reasoning"`
-}
-
-type ppioChatChoice struct {
-	Message      ppioChatMessage `json:"message"`
-	Delta        ppioChatMessage `json:"delta"`
-	FinishReason string          `json:"finish_reason"`
-}
-
-type ppioChatResponse struct {
-	Choices      []ppioChatChoice `json:"choices"`
-	Error        interface{}      `json:"error"`
-	FinishReason string           `json:"finish_reason"`
-}
-
-func (p *PPIOModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (p *PPIOModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -158,71 +72,26 @@ func (p *PPIOModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	url, err := p.endpoint(apiConfig, p.URLSuffix.Chat)
+	url, err := p.endpoint(apiConfig, p.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
 
-	jsonData, err := json.Marshal(ppioChatPayload(modelName, messages, false, chatModelConfig))
+	body, err := p.baseModel.doRequest(ctx, url, apiConfig, buildRequestBody(chatModelConfig, modelName, messages, false), nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result ppioChatResponse
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-	if result.Error != nil {
-		return nil, fmt.Errorf("ppio: upstream error: %v", result.Error)
-	}
-	if len(result.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	content := result.Choices[0].Message.Content
-	reasonContent := result.Choices[0].Message.ReasoningContent
-	if reasonContent == "" {
-		reasonContent = result.Choices[0].Message.Reasoning
-	}
-
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
-const ppioStreamTimeout = 10 * time.Minute
+func (p *PPIOModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
 
-func (p *PPIOModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
-	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -234,93 +103,17 @@ func (p *PPIOModel) ChatStreamlyWithSender(modelName string, messages []Message,
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
 
-	url, err := p.endpoint(apiConfig, p.URLSuffix.Chat)
+	url, err := p.endpoint(apiConfig, p.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
 
-	jsonData, err := json.Marshal(ppioChatPayload(modelName, messages, true, chatModelConfig))
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
-	ctx, cancel := context.WithTimeout(context.Background(), ppioStreamTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	req.Header.Set("Accept", "text/event-stream")
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		data := strings.TrimSpace(line[5:])
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event ppioChatResponse
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			return fmt.Errorf("ppio: invalid SSE event: %w", err)
-		}
-		if event.Error != nil {
-			return fmt.Errorf("ppio: upstream stream error: %v", event.Error)
-		}
-		if len(event.Choices) == 0 {
-			continue
-		}
-
-		choice := event.Choices[0]
-		reasoning := choice.Delta.ReasoningContent
-		if reasoning == "" {
-			reasoning = choice.Delta.Reasoning
-		}
-		if reasoning != "" {
-			if err := sender(nil, &reasoning); err != nil {
-				return err
-			}
-		}
-		if choice.Delta.Content != "" {
-			if err := sender(&choice.Delta.Content, nil); err != nil {
-				return err
-			}
-		}
-		if choice.FinishReason != "" || event.FinishReason != "" {
-			sawTerminal = true
-			break
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !sawTerminal {
-		return fmt.Errorf("ppio: stream ended before [DONE] or finish_reason")
-	}
-
-	endOfStream := "[DONE]"
-	return sender(&endOfStream, nil)
+	return p.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 type ppioModelInfo struct {
@@ -328,21 +121,21 @@ type ppioModelInfo struct {
 }
 
 type ppioListModelsResponse struct {
-	Data  []ppioModelInfo `json:"data"`
+	Data  []ModelListItem `json:"data"`
 	Error interface{}     `json:"error"`
 }
 
-func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (p *PPIOModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url, err := p.endpoint(apiConfig, p.URLSuffix.Models)
+	url, err := p.endpoint(apiConfig, p.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -352,7 +145,7 @@ func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -374,60 +167,251 @@ func (p *PPIOModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("ppio: upstream error: %v", result.Error)
 	}
 
-	models := make([]string, 0, len(result.Data))
-	for _, model := range result.Data {
-		if model.ID != "" {
-			models = append(models, model.ID)
-		}
-	}
-	return models, nil
+	return ParseListModel(ModelList{Models: result.Data}), nil
 }
 
-func (p *PPIOModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := p.ListModels(apiConfig)
+func (p *PPIOModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := p.ListModels(ctx, apiConfig)
 	return err
 }
 
-func (p *PPIOModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+type PPIOEmbeddingData struct {
+	EmbeddingData
+	Object string `json:"object"`
+}
+
+type PPIOEmbeddingResponse struct {
+	ID     string              `json:"id"`
+	Object string              `json:"object"`
+	Data   []PPIOEmbeddingData `json:"data"`
+	Usage  struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+func (p *PPIOModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	if len(request.Texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, p.baseModel.URLSuffix.Embedding)
+
+	reqBody := map[string]interface{}{
+		"model":           *modelName,
+		"input":           request.Texts,
+		"encoding_format": "float",
+	}
+	if embeddingConfig != nil && embeddingConfig.EncodingFormat != "" {
+		reqBody["encoding_format"] = embeddingConfig.EncodingFormat
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := p.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("PPIO embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed PPIOEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	filled := make([]bool, len(request.Texts))
+	for _, item := range parsed.Data {
+		if item.Index < 0 || item.Index >= len(request.Texts) {
+			return nil, fmt.Errorf("ppio: response index %d out of range for %d inputs", item.Index, len(request.Texts))
+		}
+		if filled[item.Index] {
+			return nil, fmt.Errorf("ppio: duplicate embedding index %d in response", item.Index)
+		}
+		embeddings[item.Index] = EmbeddingData{
+			Embedding: item.Embedding,
+			Index:     item.Index,
+		}
+		filled[item.Index] = true
+	}
+	for i, ok := range filled {
+		if !ok {
+			return nil, fmt.Errorf("ppio: missing embedding for input index %d", i)
+		}
+	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "embedding")
+
+	return embeddings, nil
+}
+
+func (p *PPIOModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	documents := request.Documents
+	query := request.Query
+
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	resolvedBaseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), p.baseModel.URLSuffix.Rerank)
+
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 {
+		topN = rerankConfig.TopN
+	}
+
+	reqBody := map[string]any{
+		"model":     *modelName,
+		"query":     query,
+		"documents": documents,
+		"top_n":     topN,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := p.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("PPIO rerank API error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var rerankResp struct {
+		ID      string `json:"id"`
+		Results []struct {
+			Index          int     `json:"index"`
+			RelevanceScore float64 `json:"relevance_score"`
+		} `json:"results"`
+		Usage struct {
+			CompletionTokens int `json:"completion_tokens"`
+			PromptTokens     int `json:"prompt_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage"`
+	}
+
+	if err = json.Unmarshal(body, &rerankResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	var rerankResponse RerankResponse
+	for _, result := range rerankResp.Results {
+		rerankResult := RerankResult{
+			Index:          result.Index,
+			RelevanceScore: result.RelevanceScore,
+		}
+		rerankResponse.Data = append(rerankResponse.Data, rerankResult)
+	}
+	recordResponseUsage(modelUsage, rerankResp.ID, &TokenUsage{
+		PromptTokens:     rerankResp.Usage.PromptTokens,
+		CompletionTokens: rerankResp.Usage.CompletionTokens,
+		TotalTokens:      rerankResp.Usage.TotalTokens,
+	}, "rerank")
+
+	return &rerankResponse, nil
+}
+
+func (p *PPIOModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (p *PPIOModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
-}
-
-func (p *PPIOModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
-}
-
-func (p *PPIOModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (p *PPIOModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (p *PPIOModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (p *PPIOModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (p *PPIOModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (p *PPIOModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (p *PPIOModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
-func (p *PPIOModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (p *PPIOModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }

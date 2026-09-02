@@ -27,7 +27,8 @@ from google_auth_oauthlib.flow import Flow
 from api.db import InputType
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
-from common.constants import RetCode, TaskStatus
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from common.constants import FileSource, RetCode, TaskStatus
 from common.data_source.config import GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, GMAIL_WEB_OAUTH_REDIRECT_URI, BOX_WEB_OAUTH_REDIRECT_URI, DocumentSource
 from common.data_source.google_util.constant import WEB_OAUTH_POPUP_TEMPLATE, GOOGLE_SCOPES
 from common.misc_utils import get_uuid
@@ -42,7 +43,7 @@ LOGGER = logging.getLogger(__name__)
 def _connector_auth_error(connector_id: str, user_id: str):
     """Return the connector authorization failure response and log the denial."""
     LOGGER.warning("connector access denied: connector_id=%s user_id=%s", connector_id, user_id)
-    return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
 
 @manager.route("/connectors/<connector_id>", methods=["PATCH"])  # noqa: F821
@@ -140,7 +141,11 @@ def list_logs(connector_id):
         return _connector_auth_error(connector_id, current_user.id)
 
     req = request.args.to_dict(flat=True)
-    arr, total = SyncLogsService.list_sync_tasks(connector_id, int(req.get("page", 1)), int(req.get("page_size", 15)))
+    arr, total = SyncLogsService.list_sync_tasks(
+        connector_id,
+        validate_rest_api_page(req.get("page", DEFAULT_PAGE)),
+        validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE)),
+    )
     return get_json_result(data={"total": total, "logs": arr})
 
 
@@ -175,38 +180,33 @@ def rm_connector(connector_id):
 
 @manager.route("/connectors/<connector_id>/test", methods=["POST"])  # noqa: F821
 @login_required
+@validate_request("source")
 async def test_connector(connector_id):
-    """Validate connector configuration without persisting changes or triggering sync.
-
-    For the REST API connector, this uses `RestAPIConnector.validate_config`
-    against the existing saved configuration.
-    """
-    if not ConnectorService.accessible(connector_id, current_user.id):
+    """Validate connector configuration from the request body without persisting."""
+    unsaved = connector_id in {source.value for source in FileSource if source.value}
+    if not unsaved and not ConnectorService.accessible(connector_id, current_user.id):
         return _connector_auth_error(connector_id, current_user.id)
 
-    from common.data_source.rest_api_connector import RestAPIConnector
+    from common.data_source import build_connector_for_source
     from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
 
-    ok, conn = ConnectorService.get_by_id(connector_id)
-    if not ok:
-        return get_data_error_result(message="Can't find this Connector!")
+    req = await get_request_json()
+    source = req["source"]
+    config = req.get("config") or {}
+    if not isinstance(config, dict):
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="config must be an object.")
 
-    if conn.source != DocumentSource.REST_API:
-        return get_json_result(
-            code=RetCode.ARGUMENT_ERROR,
-            message="Test endpoint currently supports only REST API connectors.",
-            data=False,
-        )
+    if not unsaved:
+        ok, conn = ConnectorService.get_by_id(connector_id)
+        if ok and conn.tenant_id != current_user.id:
+            return get_json_result(code=RetCode.PERMISSION_ERROR, message="You don't own this connector.")
 
-    config = conn.config or {}
-    credentials = config.get("credentials") or {}
+    def _validate() -> None:
+        connector = build_connector_for_source(source, config)
+        connector.validate_connector_settings()
 
     try:
-        await asyncio.to_thread(
-            RestAPIConnector.validate_config,
-            config=config,
-            credentials=credentials,
-        )
+        await asyncio.to_thread(_validate)
     except (ConnectorValidationError, ConnectorMissingCredentialError) as exc:
         return get_json_result(
             code=RetCode.DATA_ERROR,
@@ -214,10 +214,10 @@ async def test_connector(connector_id):
             data=False,
         )
     except Exception as exc:
-        logging.exception("REST API connector validation failed: %s", exc)
+        logging.exception("Connector validation failed for %s: %s", connector_id, exc)
         return get_json_result(
             code=RetCode.SERVER_ERROR,
-            message="REST API connector validation failed, please check logs.",
+            message="Connector validation failed, please check logs.",
             data=False,
         )
 
@@ -338,7 +338,6 @@ async def start_google_web_oauth():
 
     try:
         credentials = _load_credentials(raw_credentials)
-        print(credentials)
     except ValueError as exc:
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(exc))
 
@@ -497,6 +496,7 @@ async def google_drive_web_oauth_callback():
 
     return await _render_web_oauth_popup(state_id, True, "Authorization completed successfully.", source)
 
+
 @manager.route("/connectors/google/oauth/web/result", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("flow_id")
@@ -517,13 +517,14 @@ async def poll_google_web_result():
     REDIS_CONN.delete(_web_result_cache_key(flow_id, source))
     return get_json_result(data={"credentials": result.get("credentials")})
 
+
 @manager.route("/connectors/box/oauth/web/start", methods=["POST"])  # noqa: F821
 @login_required
 async def start_box_web_oauth():
     req = await get_request_json()
 
     client_id = req.get("client_id")
-    client_secret = req.get("client_secret")    
+    client_secret = req.get("client_secret")
     redirect_uri = req.get("redirect_uri", BOX_WEB_OAUTH_REDIRECT_URI)
 
     if not client_id or not client_secret:
@@ -554,18 +555,20 @@ async def start_box_web_oauth():
     }
     REDIS_CONN.set_obj(_web_state_cache_key(flow_id, "box"), cache_payload, WEB_FLOW_TTL_SECS)
     return get_json_result(
-        data = {
+        data={
             "flow_id": flow_id,
             "authorization_url": auth_url,
-            "expires_in": WEB_FLOW_TTL_SECS,}
+            "expires_in": WEB_FLOW_TTL_SECS,
+        }
     )
+
 
 @manager.route("/connectors/box/oauth/web/callback", methods=["GET"])  # noqa: F821
 async def box_web_oauth_callback():
     flow_id = request.args.get("state")
     if not flow_id:
         return await _render_web_oauth_popup("", False, "Missing OAuth parameters.", "box")
-    
+
     code = request.args.get("code")
     if not code:
         return await _render_web_oauth_popup(flow_id, False, "Missing authorization code from Box.", "box")
@@ -579,7 +582,7 @@ async def box_web_oauth_callback():
     if error:
         REDIS_CONN.delete(_web_state_cache_key(flow_id, "box"))
         return await _render_web_oauth_popup(flow_id, False, error_description or "Authorization failed.", "box")
-    
+
     auth = BoxOAuth(
         OAuthConfig(
             client_id=cache_payload.get("client_id"),
@@ -602,6 +605,7 @@ async def box_web_oauth_callback():
 
     return await _render_web_oauth_popup(flow_id, True, "Authorization completed successfully.", "box")
 
+
 @manager.route("/connectors/box/oauth/web/result", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("flow_id")
@@ -616,7 +620,7 @@ async def poll_box_web_result():
     cache_raw = json.loads(cache_blob)
     if cache_raw.get("user_id") != current_user.id:
         return get_json_result(code=RetCode.PERMISSION_ERROR, message="You are not allowed to access this authorization result.")
-    
+
     REDIS_CONN.delete(_web_result_cache_key(flow_id, "box"))
 
     return get_json_result(data={"credentials": cache_raw})

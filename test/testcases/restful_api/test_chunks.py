@@ -18,8 +18,26 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 import pytest
 from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32
+from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import wait_for
+
+
+def _is_infinity_doc_engine(rest_client: RestClient) -> bool:
+    env_engine = (os.getenv("DOC_ENGINE") or "").strip().lower()
+    if env_engine:
+        return env_engine == "infinity"
+    try:
+        res = rest_client.get("/system/status")
+        if res.status_code != 200:
+            return False
+        payload = res.json()
+        if payload.get("code") != 0:
+            return False
+        engine = str(payload.get("data", {}).get("doc_engine", {}).get("type", "")).strip().lower()
+        return engine == "infinity"
+    except Exception:
+        return False
 
 
 def _assert_created_chunk_id(payload):
@@ -136,8 +154,7 @@ def test_chunk_add_requires_auth(create_document):
         res = client.post(path, json={"content": "chunk test"})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p1
@@ -148,8 +165,7 @@ def test_chunk_delete_requires_auth(create_document):
         res = client.delete(path, json={"chunk_ids": []})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p1
@@ -160,8 +176,7 @@ def test_chunk_list_requires_auth(create_document):
         res = client.get(path)
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -185,7 +200,7 @@ def test_chunk_add_keyword_question_and_tag_contract(rest_client, create_documen
             [
                 ({"content": "chunk test", "important_keywords": ["a", "b", "c"]}, 0, ""),
                 ({"content": "chunk test", "important_keywords": [""]}, 0, ""),
-                ({"content": "chunk test", "important_keywords": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
+                ({"content": "chunk test", "important_keywords": [1]}, 102, "`important_keywords` must be a list of strings"),
                 ({"content": "chunk test", "important_keywords": ["a", "a"]}, 0, ""),
                 ({"content": "chunk test", "important_keywords": "abc"}, 102, "`important_keywords` is required to be a list"),
                 ({"content": "chunk test", "important_keywords": 123}, 102, "`important_keywords` is required to be a list"),
@@ -196,7 +211,7 @@ def test_chunk_add_keyword_question_and_tag_contract(rest_client, create_documen
             [
                 ({"content": "chunk test", "questions": ["a", "b", "c"]}, 0, ""),
                 ({"content": "chunk test", "questions": [""]}, 0, ""),
-                ({"content": "chunk test", "questions": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
+                ({"content": "chunk test", "questions": [1]}, 102, "`questions` must be a list of strings"),
                 ({"content": "chunk test", "questions": ["a", "a"]}, 0, ""),
                 ({"content": "chunk test", "questions": "abc"}, 102, "`questions` is required to be a list"),
                 ({"content": "chunk test", "questions": 123}, 102, "`questions` is required to be a list"),
@@ -266,7 +281,7 @@ def test_chunk_add_invalid_dataset_and_document_contract(rest_client, create_doc
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+    assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
 
 @pytest.mark.p2
@@ -300,7 +315,7 @@ def test_chunk_add_repeated_and_deleted_document_contract(rest_client, create_do
     assert add_after_delete_res.status_code == 200
     add_after_delete_payload = add_after_delete_res.json()
     assert add_after_delete_payload["code"] == 102, add_after_delete_payload
-    assert add_after_delete_payload["message"] == f"You don't own the document {document_id}.", add_after_delete_payload
+    assert add_after_delete_payload["message"] == f"you don't own the document {document_id}", add_after_delete_payload
 
 
 @pytest.mark.p2
@@ -339,7 +354,7 @@ def test_chunks_list_empty_document(rest_client, create_document):
     assert "doc" in list_payload["data"], list_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_delete_basic_contract(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_delete_basic.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
@@ -431,7 +446,7 @@ def test_chunk_delete_partial_duplicate_repeat_and_invalid_target_contract(rest_
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+    assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
 
 @pytest.mark.p2
@@ -456,7 +471,7 @@ def test_chunk_delete_web_legacy_basic_variants(rest_client, create_document):
         assert list_payload["data"]["total"] == remaining, (scenario_name, list_payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_delete_concurrent_and_bulk_contract(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_delete_bulk_contract.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
@@ -482,7 +497,7 @@ def test_chunk_delete_concurrent_and_bulk_contract(rest_client, create_document)
     for index in range(40):
         payload = rest_client.post(base_path, json={"content": f"bulk chunk {index}"}).json()
         assert payload["code"] == 0, payload
-    bulk_ids_payload = rest_client.get(base_path, params={"page_size": 200}).json()
+    bulk_ids_payload = rest_client.get(base_path, params={"page_size": 100}).json()
     assert bulk_ids_payload["code"] == 0, bulk_ids_payload
     bulk_ids = [chunk["id"] for chunk in bulk_ids_payload["data"]["chunks"]]
     bulk_res = rest_client.delete(base_path, json={"chunk_ids": bulk_ids})
@@ -545,12 +560,13 @@ def test_chunk_list_default_get_id_and_invalid_target_contract(rest_client, crea
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+    assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
 
 @pytest.mark.p2
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="infinity")
 def test_chunk_list_keyword_and_invalid_param_contract(rest_client, create_document):
+    if _is_infinity_doc_engine(rest_client):
+        pytest.skip("infinity")
     dataset_id, document_id = create_document("chunk_list_keywords.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
     _reset_chunk_batch(rest_client, base_path)
@@ -575,27 +591,28 @@ def test_chunk_list_keyword_and_invalid_param_contract(rest_client, create_docum
 
 
 @pytest.mark.p2
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="infinity")
 def test_chunk_list_page_and_page_size_contract(rest_client, create_document):
+    if _is_infinity_doc_engine(rest_client):
+        pytest.skip("infinity")
     dataset_id, document_id = create_document("chunk_list_paging.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
     _reset_chunk_batch(rest_client, base_path)
 
     cases = [
         ("page none", {"page": None, "page_size": 2}, 0, 2, ""),
-        ("page zero", {"page": 0, "page_size": 2}, 100, None, "ValueError('Search does not support negative slicing.')"),
+        ("page zero", {"page": 0, "page_size": 2}, 0, 2, ""),
         ("page two", {"page": 2, "page_size": 2}, 0, 2, ""),
         ("page three", {"page": 3, "page_size": 2}, 0, 1, ""),
         ("page string", {"page": "3", "page_size": 2}, 0, 1, ""),
-        ("page negative", {"page": -1, "page_size": 2}, 100, None, "ValueError('Search does not support negative slicing.')"),
-        ("page alpha", {"page": "a", "page_size": 2}, 100, None, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page negative", {"page": -1, "page_size": 2}, 0, 2, ""),
+        ("page alpha", {"page": "a", "page_size": 2}, 0, 2, ""),
         ("page_size none", {"page_size": None}, 0, 5, ""),
         ("page_size zero", {"page_size": 0}, 0, 5, ""),
         ("page_size one", {"page_size": 1}, 0, 1, ""),
         ("page_size six", {"page_size": 6}, 0, 5, ""),
         ("page_size string", {"page_size": "1"}, 0, 1, ""),
         ("page_size negative", {"page_size": -1}, 0, 5, ""),
-        ("page_size alpha", {"page_size": "a"}, 100, None, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page_size alpha", {"page_size": "a"}, 0, 5, ""),
     ]
 
     for scenario_name, params, expected_code, expected_total, expected_message in cases:
@@ -641,11 +658,10 @@ def test_chunk_update_requires_auth(rest_client, create_document):
         res = client.patch(f"{base_path}/{chunk_id}", json={"content": "updated"})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_update_content_and_available_contract(rest_client, create_document):
     content_cases = [
         ("content none", {"content": None}, 0, ""),
@@ -736,7 +752,7 @@ def test_chunk_update_invalid_target_and_param_contract(rest_client, create_docu
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+    assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
     invalid_chunk_res = rest_client.patch(
         f"{base_path}/{INVALID_ID_32}",
@@ -757,11 +773,9 @@ def test_chunk_update_invalid_target_and_param_contract(rest_client, create_docu
         assert body["code"] == 0, (scenario_name, body)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chunk_update_repeated_concurrent_and_deleted_document_contract(rest_client, create_document):
-    dataset_id, document_id, chunk_id, base_path = _create_chunk_for_update(
-        rest_client, create_document, "chunk_update_repeated_concurrent_deleted.txt"
-    )
+    dataset_id, document_id, chunk_id, base_path = _create_chunk_for_update(rest_client, create_document, "chunk_update_repeated_concurrent_deleted.txt")
 
     first_res = rest_client.patch(f"{base_path}/{chunk_id}", json={"content": "chunk test 1"})
     assert first_res.status_code == 200
@@ -812,6 +826,6 @@ def test_chunk_update_repeated_concurrent_and_deleted_document_contract(rest_cli
     update_after_delete_payload = update_after_delete.json()
     assert update_after_delete_payload["code"] == 102, update_after_delete_payload
     assert update_after_delete_payload["message"] in {
-        f"You don't own the document {document_id}.",
+        f"you don't own the document {document_id}",
         f"Can't find this chunk {chunk_id}",
     }, update_after_delete_payload

@@ -29,6 +29,7 @@ The fix is to default to ``None`` and copy at the call site
 the ``ast`` module and asserts no parameter named ``gen_conf`` ever has
 a mutable literal as its default.
 """
+
 import ast
 from pathlib import Path
 from typing import Union
@@ -50,7 +51,7 @@ def _iter_param_defaults(func: Union[ast.FunctionDef, ast.AsyncFunctionDef]):
     pos_args = args.args
     pos_defaults = args.defaults
     # positional defaults are right-aligned with args
-    for arg, default in zip(pos_args[-len(pos_defaults):], pos_defaults):
+    for arg, default in zip(pos_args[-len(pos_defaults) :], pos_defaults):
         yield arg.arg, default
     for arg, default in zip(args.kwonlyargs, args.kw_defaults):
         if default is not None:
@@ -80,11 +81,7 @@ def test_no_mutable_default_for_gen_conf(path: Path):
     """No function in chat_model.py / cv_model.py should declare
     ``gen_conf={}`` (or ``gen_conf=[]``) as a default value."""
     bad = _find_mutable_gen_conf_defaults(path)
-    assert not bad, (
-        f"{path.name} has functions declaring `gen_conf` with a mutable "
-        f"default: {bad}. Use `gen_conf=None` and copy with "
-        f"`gen_conf = dict(gen_conf or {{}})` at the top of the function."
-    )
+    assert not bad, f"{path.name} has functions declaring `gen_conf` with a mutable default: {bad}. Use `gen_conf=None` and copy with `gen_conf = dict(gen_conf or {{}})` at the top of the function."
 
 
 def test_target_files_exist():
