@@ -525,12 +525,22 @@ def ensure_opendataloader_from_env(tenant_id: str) -> str | None:
 
 
 def ensure_monkeyocr_from_env(tenant_id: str) -> str | None:
-    return _ensure_ocr_provider_from_env(
+    env_config = _collect_env_config(MONKEYOCR_ENV_KEYS, MONKEYOCR_DEFAULT_CONFIG)
+    if not env_config:
+        logging.info("MonkeyOCR env provisioning skipped: no MONKEYOCR_* configuration detected (tenant_id=%s)", tenant_id)
+        return None
+    result = _ensure_ocr_provider_from_env(
         tenant_id,
         "MonkeyOCR",
         "monkeyocr-from-env",
-        _collect_env_config(MONKEYOCR_ENV_KEYS, MONKEYOCR_DEFAULT_CONFIG),
+        env_config,
     )
+    logging.info(
+        "MonkeyOCR env provisioning created_or_reused (tenant_id=%s, model=%s)",
+        tenant_id,
+        result,
+    )
+    return result
 
 
 def ensure_somark_from_env(tenant_id: str) -> str | None:

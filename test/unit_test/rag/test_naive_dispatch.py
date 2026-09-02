@@ -155,6 +155,10 @@ class _ByOpenDataLoader(_Parser):
     pass
 
 
+class _ByMonkeyocr(_Parser):
+    pass
+
+
 class _ByPlaintext(_Parser):
     pass
 
@@ -239,6 +243,7 @@ def naive_module():
             ensure_opendataloader_from_env=lambda *a, **k: None,
             ensure_paddleocr_from_env=lambda *a, **k: None,
             ensure_somark_from_env=lambda *a, **k: None,
+            ensure_monkeyocr_from_env=lambda *a, **k: None,
             get_first_provider_model_name=lambda *a, **k: None,
             get_composite_model_name_by_id=lambda *a, **k: (_ for _ in ()).throw(LookupError()),
         )
@@ -268,6 +273,7 @@ def naive_module():
         module.PARSERS["mineru"] = _ByMineru
         module.PARSERS["docling"] = _ByDocling
         module.PARSERS["opendataloader"] = _ByOpenDataLoader
+        module.PARSERS["monkeyocr"] = _ByMonkeyocr
         module.PARSERS["plaintext"] = _ByPlaintext
 
         yield module
@@ -376,6 +382,18 @@ def test_dispatch_uses_resolved_layout_recognize_via_override_for_opendataloader
     assert name == "opendataloader"
     assert parser is _ByOpenDataLoader
     assert op_name == resolved
+
+
+def test_dispatch_uses_resolved_layout_recognize_via_override_for_monkeyocr(naive_module):
+    resolved = "my-llm@my-instance@my-provider@monkeyocr"
+
+    parser, name, _lr, _op, model = naive_module._dispatch_pdf_parser(
+        {"layout_recognize": "06d85f8e819111f1995ef33d60f3a479"},
+        layout_recognize_override=resolved,
+    )
+    assert name == "monkeyocr"
+    assert parser is _ByMonkeyocr
+    assert model == resolved
 
 
 def test_merge_excel_items_keeps_sheets_separate(naive_module):

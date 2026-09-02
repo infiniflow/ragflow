@@ -260,7 +260,10 @@ func dispatchMonkeyOCRPDF(
 	if strings.EqualFold(parseMethod, "monkeyocr") {
 		parseMethod = "raw"
 	}
-	lang := getStringOr(setup, "mineru_lang", getStringOr(setup, "lang", "Chinese"))
+	lang := getStringOr(setup, "lang", "")
+	if lang == "" {
+		lang = getStringOr(setup, "monkeyocr_lang", getStringOr(setup, "mineru_lang", "Chinese"))
+	}
 	mineruLang := mineruLangCode(lang)
 	backend := getStringOr(setup, "monkeyocr_backend", "vlm-transformers")
 

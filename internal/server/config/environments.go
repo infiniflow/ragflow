@@ -105,6 +105,10 @@ type Environments struct {
 	MinerUAPIServer                   string `mapstructure:"miner_userver"`                     // MINERU_APISERVER
 	MinerUAPIKey                      string `mapstructure:"mineru_api_key"`                    // MINERU_API_KEY
 	MinerUBackend                     string `mapstructure:"mineru_backend"`                    // MINERU_BACKEND
+	MonkeyOCRAPIServer                string `mapstructure:"monkeyocr_apiserver"`               // MONKEYOCR_APISERVER
+	MonkeyOCROutputDir                string `mapstructure:"monkeyocr_output_dir"`              // MONKEYOCR_OUTPUT_DIR
+	MonkeyOCRServerURL                string `mapstructure:"monkeyocr_server_url"`              // MONKEYOCR_SERVER_URL
+	MonkeyOCRDeleteOutput             string `mapstructure:"monkeyocr_delete_output"`           // MONKEYOCR_DELETE_OUTPUT
 	TavilyAPIKey                      string `mapstructure:"tavily_api_key"`
 	QueritAPIKey                      string `mapstructure:"querit_api_key"`
 	KeenableAPIURL                    string `mapstructure:"keenable_api_url"` // KEENABLE_API_URL
@@ -533,6 +537,26 @@ func (c *Config) GetEnvironments() error {
 		c.environments.MinerUBackend = MinerUBackendStr
 	}
 
+	MonkeyOCRAPIServerStr := common.GetEnv(common.EnvMonkeyOCRAPIServer)
+	if MonkeyOCRAPIServerStr != "" {
+		c.environments.MonkeyOCRAPIServer = MonkeyOCRAPIServerStr
+	}
+
+	MonkeyOCROutputDirStr := common.GetEnv(common.EnvMonkeyOCROutputDir)
+	if MonkeyOCROutputDirStr != "" {
+		c.environments.MonkeyOCROutputDir = MonkeyOCROutputDirStr
+	}
+
+	MonkeyOCRServerURLStr := common.GetEnv(common.EnvMonkeyOCRServerURL)
+	if MonkeyOCRServerURLStr != "" {
+		c.environments.MonkeyOCRServerURL = MonkeyOCRServerURLStr
+	}
+
+	MonkeyOCRDeleteOutputStr := common.GetEnv(common.EnvMonkeyOCRDeleteOutput)
+	if MonkeyOCRDeleteOutputStr != "" {
+		c.environments.MonkeyOCRDeleteOutput = MonkeyOCRDeleteOutputStr
+	}
+
 	TavilyAPIKeyStr := common.GetEnv(common.EnvTavilyAPIKey)
 	if TavilyAPIKeyStr != "" {
 		c.environments.TavilyAPIKey = TavilyAPIKeyStr
@@ -818,6 +842,22 @@ func (c *Config) GetMinerUAPIKey() string {
 
 func (c *Config) GetMinerUBackend() string {
 	return c.environments.MinerUBackend
+}
+
+func (c *Config) GetMonkeyOCRAPIServer() string {
+	return c.environments.MonkeyOCRAPIServer
+}
+
+func (c *Config) GetMonkeyOCROutputDir() string {
+	return c.environments.MonkeyOCROutputDir
+}
+
+func (c *Config) GetMonkeyOCRServerURL() string {
+	return c.environments.MonkeyOCRServerURL
+}
+
+func (c *Config) GetMonkeyOCRDeleteOutput() string {
+	return c.environments.MonkeyOCRDeleteOutput
 }
 
 func (c *Config) GetQueritAPIKey() string {

@@ -43,6 +43,7 @@ from api.db.services.tenant_model_service import TenantModelService
 from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid, thread_pool_exec
+from common.parser_config_utils import normalize_layout_recognizer
 from deepdoc.parser import ExcelParser, HtmlParser, TxtParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
@@ -354,26 +355,15 @@ class Parser(ProcessBase):
                     raw_parse_method = f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
 
         parser_model_name = None
-        parse_method = raw_parse_method
-        parse_method = parse_method or ""
+        parse_method = raw_parse_method or ""
         if isinstance(raw_parse_method, str):
-            lowered = raw_parse_method.lower()
-            if lowered.endswith("@mineru"):
-                parser_model_name = raw_parse_method
-                parse_method = "MinerU"
-            elif lowered.endswith("@paddleocr"):
-                parser_model_name = raw_parse_method
-                parse_method = "PaddleOCR"
-            elif lowered.endswith("@somark"):
-                # Keep the full 3-segment ``<llm_name>@<instance_name>@<provider>``
-                # form produced by the new Tenant LLM Provider UI (#14595);
-                # ``resolve_model_config`` -> ``split_model_name``
-                # downstream requires all three segments.
-                parser_model_name = raw_parse_method
-                parse_method = "SoMark"
-            elif lowered.endswith("@mistral ocr"):
-                parser_model_name = raw_parse_method
-                parse_method = "Mistral OCR"
+            # Same suffix rules as dataset parsers (including @MonkeyOCR).
+            # A composite selector must become parse_method "MonkeyOCR" so
+            # the dedicated branch runs instead of the VLM fallback.
+            normalized, model_name = normalize_layout_recognizer(raw_parse_method)
+            if model_name:
+                parser_model_name = model_name
+                parse_method = normalized
 
         # DeepDOC returns structured page boxes directly.
         if parse_method.lower() == "deepdoc":
