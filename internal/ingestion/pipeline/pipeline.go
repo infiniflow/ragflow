@@ -524,21 +524,35 @@ func (p *Pipeline) resolveTracker() *canvas.RunTracker {
 // runPlain executes a single Invoke with no checkpoint/resume. Used when no
 // checkpoint store is available; progress is still recorded via the sink.
 func (p *Pipeline) runPlain(runCtx context.Context, current map[string]any, compiled *canvas.CompiledCanvas, tracker *canvas.RunTracker, runState *canvas.CanvasState) (map[string]any, error) {
+	// Terminal tracker writes must survive a run ctx that gets cancelled
+	// (the common failure/cancel path). Derive a fresh detached ctx per
+	// terminal branch, bounded so a hung Redis cannot stall — mirrors
+	// markStopped/markFailed in ingestion_service.go.
+	detached := func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(context.WithoutCancel(runCtx), 5*time.Second)
+	}
+
 	out, err := compiled.Workflow.Invoke(runCtx, current)
 	if err != nil {
 		if errors.Is(runCtx.Err(), context.Canceled) || errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(runCtx, p.taskID) })
+				stateCtx, cancel := detached()
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(stateCtx, p.taskID) })
+				cancel()
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", runCtx.Err())
 		}
 		if tracker != nil {
-			utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(runCtx, p.taskID, err.Error()) })
+			stateCtx, cancel := detached()
+			utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(stateCtx, p.taskID, err.Error()) })
+			cancel()
 		}
 		return current, fmt.Errorf("pipeline: run canvas workflow: %w", err)
 	}
 	if tracker != nil {
-		utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(runCtx, p.taskID) })
+		stateCtx, cancel := detached()
+		utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(stateCtx, p.taskID) })
+		cancel()
 	}
 	return finalizeResult(current, out, runState), nil
 }
@@ -553,14 +567,6 @@ func (p *Pipeline) runPlain(runCtx context.Context, current map[string]any, comp
 func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, current map[string]any, compiled *canvas.CompiledCanvas, store canvas.CheckPointStore, tracker *canvas.RunTracker, runState *canvas.CanvasState) (map[string]any, error) {
 	cpID := compiled.CheckPointID
 	var localInterruptID string // in-process resume fallback when tracker is nil
-
-	// All terminal-state Redis writes (success cleanup, failure, cancel)
-	// must survive a ctx that gets cancelled around the Invoke boundary.
-	// Detach cancellation once here, bounded by a short timeout so a hung
-	// Redis cannot stall the terminal path indefinitely — mirrors the
-	// WithoutCancel+WithTimeout convention used across ingestion_service.go.
-	stateCtx, stateCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer stateCancel()
 
 	const maxResumeRounds = 1000
 	for round := 0; round < maxResumeRounds; round++ {
@@ -589,6 +595,13 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 
 		out, invokeErr := compiled.Workflow.Invoke(runCtx, current, compose.WithCheckPointID(cpID))
 		if invokeErr == nil {
+			// Terminal-state writes must survive a ctx cancelled around the
+			// Invoke boundary. Derive a fresh detached ctx here — bounded by
+			// a short timeout so a hung Redis cannot stall completion — so
+			// the 5s window covers only the cleanup, not the whole run
+			// (mirrors markStopped/markFailed in ingestion_service.go).
+			stateCtx, stateCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer stateCancel()
 			if tracker != nil {
 				utility.BestEffort(fmt.Sprintf("ClearInterruptID for %s", p.taskID), func() error { return tracker.ClearInterruptID(stateCtx, cpID) })
 				utility.BestEffort(fmt.Sprintf("MarkSucceeded for %s", p.taskID), func() error { return tracker.MarkSucceeded(stateCtx, cpID) })
@@ -603,16 +616,26 @@ func (p *Pipeline) runResumable(ctx context.Context, runCtx context.Context, cur
 
 		// Cancellation (plan §4.3.b): wipe the checkpoint and mark cancelled.
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			p.cleanupCheckpoint(stateCtx, store, tracker, cpID)
+			// The run ctx is already cancelled, so Redis writes with it would
+			// fail immediately. Derive a fresh detached ctx so cleanup +
+			// MarkCancelled actually land; the 5s window covers the cleanup
+			// only, regardless of how long the run itself took.
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cleanupCancel()
+			p.cleanupCheckpoint(cleanupCtx, store, tracker, cpID)
 			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(stateCtx, cpID) })
+				utility.BestEffort(fmt.Sprintf("MarkCancelled for %s", p.taskID), func() error { return tracker.MarkCancelled(cleanupCtx, cpID) })
 			}
 			return current, fmt.Errorf("pipeline: run cancelled: %w", ctx.Err())
 		}
 
 		if !canvas.IsInterruptError(invokeErr) {
+			// Same detached-ctx guarantee as the success/cancel paths: the
+			// run ctx may be cancelled by the time the failure surfaces.
+			failCtx, failCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer failCancel()
 			if tracker != nil {
-				utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(stateCtx, cpID, invokeErr.Error()) })
+				utility.BestEffort(fmt.Sprintf("MarkFailed for %s", p.taskID), func() error { return tracker.MarkFailed(failCtx, cpID, invokeErr.Error()) })
 			}
 			return current, fmt.Errorf("pipeline: run canvas workflow: %w", invokeErr)
 		}

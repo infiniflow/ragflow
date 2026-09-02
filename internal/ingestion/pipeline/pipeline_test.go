@@ -574,6 +574,107 @@ func TestPipelineRunResumableOrphanInterruptIDWithoutCheckpoint(t *testing.T) {
 	}
 }
 
+// longRunCancelStage simulates a long-running component (e.g. a PDF parser):
+// it blocks until the run ctx is cancelled, then returns a cancellation error
+// so runResumable takes the cancel branch. The started channel lets the test
+// coordinate the cancel so it lands AFTER the entry-derived stateCtx's 5s
+// window would have expired — reproducing the "run took longer than the
+// detached-cleanup budget" failure mode.
+type longRunCancelStage struct {
+	started chan struct{}
+}
+
+func (m *longRunCancelStage) Invoke(ctx context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	if m.started != nil {
+		close(m.started)
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+func (m *longRunCancelStage) Inputs() map[string]string  { return map[string]string{"name": "string"} }
+func (m *longRunCancelStage) Outputs() map[string]string { return map[string]string{"output": "any"} }
+
+// TestPipelineRunResumableCancelCleanupAfterLongRun covers the detached-ctx
+// timing defect: the previous "unified" stateCtx was derived once at the top
+// of runResumable with a 5s timeout, so any run lasting longer than 5s
+// reached the cancel branch with an already-expired ctx and the cleanup
+// (checkpoint delete + ClearInterruptID + MarkCancelled) silently failed —
+// reintroducing the exact leak this PR fixes. Each terminal branch must
+// derive its own detached ctx at the point of cleanup.
+func TestPipelineRunResumableCancelCleanupAfterLongRun(t *testing.T) {
+	started := make(chan struct{})
+	longStage := &longRunCancelStage{started: started}
+	termStage := &mockCanvasStage{output: map[string]any{"b": 2}}
+
+	const (
+		nameA = "p.LongCancelA"
+		nameB = "p.LongCancelB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return longStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return termStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	const taskID = "task-long-run-cancel"
+
+	store := newMemCheckpointStore()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("client.Close: %v", err)
+		}
+	})
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+
+	runCtx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-started
+		// Simulate a long parse: cancel only after the entry-derived 5s
+		// cleanup window would have expired. 6s > 5s. Keep the test fast by
+		// timing the sleep from component start rather than from Run entry.
+		time.Sleep(6 * time.Second)
+		cancel()
+	}()
+
+	_, err = pipe.Run(runCtx, map[string]any{"doc_id": "d1"}, nil)
+	if err == nil {
+		t.Fatal("expected cancellation error, got nil")
+	}
+
+	// The cancel branch must have cleaned up with a fresh detached ctx.
+	if _, ok, _ := store.Get(context.Background(), taskID); ok {
+		t.Error("checkpoint was not deleted after cancellation (detached-ctx cleanup failed)")
+	}
+	if _, ok, _ := tracker.GetInterruptID(context.Background(), taskID); ok {
+		t.Error("interrupt id was not cleared after cancellation (detached-ctx cleanup failed)")
+	}
+	fields, err := tracker.Get(context.Background(), taskID)
+	if err != nil {
+		t.Fatalf("tracker.Get: %v", err)
+	}
+	if status := fields["status"]; status != "3" {
+		t.Errorf("tracker status = %q, want %q (cancelled)", status, "3")
+	}
+}
+
 // TestPipelineRunResumableDSLChanged discards a stale checkpoint when the DSL
 // is edited between the failed run and the resume. Run 1 fails on the terminal
 // stage, persisting a checkpoint keyed by taskID. Run 2 re-runs the SAME
