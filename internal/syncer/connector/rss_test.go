@@ -18,7 +18,7 @@ func TestRSSConnectorOpenSyncFullAndIncremental(t *testing.T) {
 	}
 	connector.fetchFeed = staticRSSFeed
 
-	fullSession, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-05T00:00:00Z")})
+	fullSession, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-05T00:00:00Z")})
 	if err != nil {
 		t.Fatalf("OpenSync full failed: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestRSSConnectorOpenSyncFullAndIncremental(t *testing.T) {
 	}
 
 	start := mustTime(t, "2026-01-02T00:00:00Z")
-	incrementalSession, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: mustTime(t, "2026-01-04T00:00:00Z")})
+	incrementalSession, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: mustTime(t, "2026-01-04T00:00:00Z")})
 	if err != nil {
 		t.Fatalf("OpenSync incremental failed: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestRSSConnectorOpenPrune(t *testing.T) {
 		t.Fatalf("NewRSSConnector failed: %v", err)
 	}
 	connector.fetchFeed = staticRSSFeed
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestRSSConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
 	}
 	connector.fetchFeed = staticRSSFeed
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestRSSConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
 		t.Fatalf("first checkpoint = %+v, want entry-new", first.Checkpoint)
 	}
 
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z"), Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z"), Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestRSSConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
 	}
 	connector.fetchFeed = staticRSSFeed
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
 	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
 		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
@@ -156,7 +156,7 @@ func TestRSSConnectorValidateConnectorSetting(t *testing.T) {
 		t.Fatalf("NewRSSConnector failed: %v", err)
 	}
 	connector.fetchFeed = staticRSSFeed
-	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+	if err := connector.ValidateConnectorSetting(t.Context(), nil); err != nil {
 		t.Fatalf("ValidateConnectorSetting failed: %v", err)
 	}
 }

@@ -6,7 +6,6 @@
 package checkpoint
 
 import (
-	"context"
 	"fmt"
 	"sort"
 	"testing"
@@ -62,7 +61,7 @@ func threadConfigWithID(tid, cpid string) map[string]interface{} {
 // TestPutAndGet verifies basic write-then-read.
 func (suite *ConformanceTestSuite) TestPutAndGet(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tid := "test-thread-putget"
 	data := map[string]interface{}{"key1": "value1", "key2": 42, "key3": true}
@@ -84,7 +83,7 @@ func (suite *ConformanceTestSuite) TestPutAndGet(t *testing.T) {
 // TestPutAndGetByID verifies getting a specific checkpoint by ID.
 func (suite *ConformanceTestSuite) TestPutAndGetByID(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tid := "test-thread-byid"
 	data1 := map[string]interface{}{"version": 1}
@@ -138,7 +137,7 @@ func (suite *ConformanceTestSuite) TestPutAndGetByID(t *testing.T) {
 // TestListEmpty verifies List returns nil/empty for a thread with no checkpoints.
 func (suite *ConformanceTestSuite) TestListEmpty(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	entries, err := cp.List(ctx, threadConfig("nonexistent-thread"), 10)
 	if err != nil {
@@ -152,7 +151,7 @@ func (suite *ConformanceTestSuite) TestListEmpty(t *testing.T) {
 // TestListOrder verifies List returns checkpoints in reverse chronological order.
 func (suite *ConformanceTestSuite) TestListOrder(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tid := "test-thread-order"
 	n := 5
@@ -211,7 +210,7 @@ func (suite *ConformanceTestSuite) TestListOrder(t *testing.T) {
 // TestListWithLimit verifies List respects the limit parameter.
 func (suite *ConformanceTestSuite) TestListWithLimit(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tid := "test-thread-limit"
 	for i := 0; i < 10; i++ {
@@ -233,7 +232,7 @@ func (suite *ConformanceTestSuite) TestListWithLimit(t *testing.T) {
 // TestMultipleThreads verifies isolation between threads.
 func (suite *ConformanceTestSuite) TestMultipleThreads(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	threads := []string{"thread-a", "thread-b", "thread-c"}
 	for _, tid := range threads {
@@ -261,7 +260,7 @@ func (suite *ConformanceTestSuite) TestMultipleThreads(t *testing.T) {
 // TestGetNonExistent verifies Get returns nil for non-existent threads.
 func (suite *ConformanceTestSuite) TestGetNonExistent(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	got, err := cp.Get(ctx, threadConfig("does-not-exist"))
 	if err != nil {
@@ -275,7 +274,7 @@ func (suite *ConformanceTestSuite) TestGetNonExistent(t *testing.T) {
 // TestOverwriteExisting verifies Put with same thread ID replaces latest.
 func (suite *ConformanceTestSuite) TestOverwriteExisting(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tid := "test-thread-overwrite"
 	v1 := map[string]interface{}{"value": "first"}
@@ -303,7 +302,7 @@ func (suite *ConformanceTestSuite) TestOverwriteExisting(t *testing.T) {
 // TestListAcrossThreads verifies List only returns entries for the specified thread.
 func (suite *ConformanceTestSuite) TestListAcrossThreads(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for i := 0; i < 3; i++ {
 		tid := fmt.Sprintf("thread-%d", i)
@@ -327,7 +326,7 @@ func (suite *ConformanceTestSuite) TestListAcrossThreads(t *testing.T) {
 // TestPutPreservesData verifies all types of data are preserved.
 func (suite *ConformanceTestSuite) TestPutPreservesData(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tid := "test-thread-types"
 	data := map[string]interface{}{
@@ -359,7 +358,7 @@ func (suite *ConformanceTestSuite) TestPutPreservesData(t *testing.T) {
 // TestDeepCopySemantics verifies that Put stores a copy, not a reference.
 func (suite *ConformanceTestSuite) TestDeepCopySemantics(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tid := "test-thread-deepcopy"
 	data := map[string]interface{}{
@@ -387,7 +386,7 @@ func (suite *ConformanceTestSuite) TestDeepCopySemantics(t *testing.T) {
 // TestConcurrentAccess verifies thread safety under concurrent Put/Get operations.
 func (suite *ConformanceTestSuite) TestConcurrentAccess(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	const goroutines = 20
 	const opsPerGoroutine = 50
@@ -426,7 +425,7 @@ func (suite *ConformanceTestSuite) TestConcurrentAccess(t *testing.T) {
 // TestManyCheckpoints verifies performance with many checkpoints.
 func (suite *ConformanceTestSuite) TestManyCheckpoints(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	const n = 100
 	tid := "test-thread-many"
@@ -474,7 +473,7 @@ func (suite *ConformanceTestSuite) TestManyCheckpoints(t *testing.T) {
 // TestEmptyValues verifies round-trip with empty maps.
 func (suite *ConformanceTestSuite) TestEmptyValues(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tid := "test-thread-empty"
 	empty := map[string]interface{}{}
@@ -494,7 +493,7 @@ func (suite *ConformanceTestSuite) TestEmptyValues(t *testing.T) {
 // TestNilConfig verifies Get/Put with missing thread_id returns an error.
 func (suite *ConformanceTestSuite) TestNilConfig(t *testing.T) {
 	cp := suite.NewCheckpointer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Put without thread_id should fail.
 	err := cp.Put(ctx, map[string]interface{}{}, map[string]interface{}{"key": "val"})

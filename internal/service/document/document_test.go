@@ -787,7 +787,7 @@ func TestContentHashHex_MatchesPythonXXH128(t *testing.T) {
 }
 
 func TestSyncDocumentUpsertRemovesStagedBlobWhenInsertFails(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -840,7 +840,7 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(origStorage) })
 
 	activeLocation := "sync/github/doc-sync-update.txt"
-	if err := mockStorage.Put(context.Background(), "kb-sync", activeLocation, []byte("old content")); err != nil {
+	if err := mockStorage.Put(t.Context(), "kb-sync", activeLocation, []byte("old content")); err != nil {
 		t.Fatalf("seed active object: %v", err)
 	}
 	oldName := "old.txt"
@@ -887,7 +887,7 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected update failure")
 	}
-	got, err := mockStorage.Get(context.Background(), "kb-sync", activeLocation)
+	got, err := mockStorage.Get(t.Context(), "kb-sync", activeLocation)
 	if err != nil {
 		t.Fatalf("active object was removed: %v", err)
 	}

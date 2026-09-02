@@ -88,7 +88,7 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -180,7 +180,7 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -267,7 +267,7 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -366,7 +366,7 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -464,7 +464,7 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -547,7 +547,7 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -628,7 +628,7 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 	attachFixedEmbedderFactory(t, pipe)
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 		"kb_id":  "test-kb",
 	}, nil)
@@ -732,7 +732,7 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 				t.Fatalf("NewPipelineFromDSL: %v", err)
 			}
 			attachFixedEmbedderFactory(t, pipe)
-			out, err := pipe.Run(context.Background(), map[string]any{
+			out, err := pipe.Run(t.Context(), map[string]any{
 				"doc_id": docID,
 			}, nil)
 			if err != nil {
@@ -810,7 +810,7 @@ func seedTemplateDocument(t *testing.T, stg storage.Storage, name, bucket, path,
 
 func seedTemplateDocumentBytes(t *testing.T, stg storage.Storage, name, bucket, path string, content []byte) string {
 	t.Helper()
-	if err := stg.Put(context.Background(), bucket, path, content); err != nil {
+	if err := stg.Put(t.Context(), bucket, path, content); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 	if registerTemplateDocumentRef == nil {
