@@ -490,8 +490,9 @@ func (m *docIDGuardStage) snapshot() (calls, missing int) {
 // checkpoint payload is gone. Before the fix, runResumable treated the
 // orphaned id as "resume" and invoked the graph with nil input, which
 // re-entered the source node (docIDGuardStage) and failed with
-// "inputs missing doc_id". The fix must detect the missing checkpoint and
-// fall back to a plain run with the full original input.
+// "inputs missing doc_id". The fix keeps passing the full original input on
+// resume rounds, so the graph starts fresh with doc_id intact instead of
+// re-entering the source node with nil input.
 func TestPipelineRunResumableOrphanInterruptIDWithoutCheckpoint(t *testing.T) {
 	guard := &docIDGuardStage{mockCanvasStage: mockCanvasStage{output: map[string]any{"a": 1}}}
 	termStage := &oneShotErrStage{mockCanvasStage: mockCanvasStage{output: map[string]any{"b": 2}}}
@@ -512,7 +513,11 @@ func TestPipelineRunResumableOrphanInterruptIDWithoutCheckpoint(t *testing.T) {
 	store := newMemCheckpointStore()
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	t.Cleanup(func() { client.Close() })
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("client.Close: %v", err)
+		}
+	})
 	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
 
 	newPipe := func() *Pipeline {
@@ -552,8 +557,9 @@ func TestPipelineRunResumableOrphanInterruptIDWithoutCheckpoint(t *testing.T) {
 		t.Fatal("precondition: interrupt id must still be present after checkpoint deletion")
 	}
 
-	// Run 2: must fall back to a plain run with the full input. The guard
-	// stage must see doc_id on every invocation (no "inputs missing").
+	// Run 2: must start fresh with the full input preserved (no nil-input
+	// re-entry). The guard stage must see doc_id on every invocation
+	// (no "inputs missing").
 	pipe2 := newPipe()
 	_, err = pipe2.Run(context.Background(), map[string]any{"doc_id": "d1"}, nil)
 	if err != nil {
