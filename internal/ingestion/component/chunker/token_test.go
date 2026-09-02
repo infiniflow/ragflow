@@ -20,6 +20,7 @@ import (
 	"context"
 	"math"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -725,5 +726,101 @@ func TestMergeByTokenSize_OversizeDropsBlankLines(t *testing.T) {
 	}
 	if got := joined.String(); strings.Contains(got, "\n\n") {
 		t.Errorf("blank line survived in oversize path (Python drops it): got chunk text %q, want no blank line (\\n\\n)", got)
+	}
+}
+
+// TestApplyChildrenDelimText_DefaultsMomToCurrentChunk verifies that when an
+// incoming chunk has no Mom, the children fall back to the current chunk's
+// text (the historical behaviour preserved by the fix for #17876).
+func TestApplyChildrenDelimText_DefaultsMomToCurrentChunk(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta. gamma"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		if c.Mom != "alpha. beta. gamma" {
+			t.Errorf("child %d: Mom=%q, want %q", i, c.Mom, "alpha. beta. gamma")
+		}
+	}
+}
+
+// TestApplyChildrenDelimText_OverwritesIncomingMom documents the
+// CURRENT behaviour: when a chunk flowing into applyChildrenDelimText
+// already has a non-empty Mom, the function OVERWRITES it with
+// TrimPrefix(d.Text, "\n") of the current chunk's text. This is
+// the divergence that #17876 item 2 (multi-chunk text-path Mom
+// granularity) is tracking. Once the merge-granularity fix lands,
+// this test should be updated (or the PreservesIncomingMom version
+// added back).
+func TestApplyChildrenDelimText_OverwritesIncomingMom(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta. gamma", Mom: "incoming-mom-from-upstream"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		// Children must NOT carry the incoming Mom; the function
+		// overwrites it with TrimPrefix(d.Text, "\n") of the current
+		// chunk's text. This pins the current behavior; a future
+		// merge-granularity fix should update this test (or the test
+		// itself flips to assert the new preserved Mom behavior).
+		if c.Mom == "incoming-mom-from-upstream" {
+			t.Errorf("child %d: Mom=%q, expected overwrite to %q (not preserved)",
+				i, c.Mom, "alpha. beta. gamma")
+		}
+		if c.Mom != "alpha. beta. gamma" {
+			t.Errorf("child %d: Mom=%q, want %q (TrimPrefix(d.Text, \"\\n\"))",
+				i, c.Mom, "alpha. beta. gamma")
+		}
+	}
+}
+
+// TestApplyChildrenDelimText_NilPatternIsNoop verifies the early return so
+// callers that pass a nil pattern don't accidentally clear Mom.
+func TestApplyChildrenDelimText_NilPatternIsNoop(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "alpha. beta", Mom: "kept"},
+	}
+	out := applyChildrenDelimText(docs, nil)
+	if len(out) != 1 {
+		t.Fatalf("want 1 chunk unchanged, got %d", len(out))
+	}
+	if out[0].Mom != "kept" || out[0].Text != "alpha. beta" {
+		t.Errorf("input mutated under nil pattern: %+v", out[0])
+	}
+}
+
+// TestApplyChildrenDelimText_FallbackStripsLeadingNewline verifies that
+// when no incoming Mom is set, the fallback Mom uses
+// strings.TrimPrefix(t, "\n") — i.e. it strips a single leading newline
+// from the current chunk's text. The historical default this PR
+// preserves; if a child path forgets to strip, JSON-keyed SQL
+// downstream could see an extra leading "\n" in the Mom value.
+func TestApplyChildrenDelimText_FallbackStripsLeadingNewline(t *testing.T) {
+	docs := []schema.ChunkDoc{
+		{Text: "\nalpha. beta. gamma"},
+	}
+	pattern := regexp.MustCompile(`\. `)
+
+	out := applyChildrenDelimText(docs, pattern)
+	if len(out) != 3 {
+		t.Fatalf("want 3 children, got %d", len(out))
+	}
+	for i, c := range out {
+		// Each child Mom must be the text-path parent segment with
+		// the leading "\n" stripped, NOT the raw text-with-newline.
+		if c.Mom != "alpha. beta. gamma" {
+			t.Errorf("child %d: Mom=%q, want %q (leading newline must be stripped)",
+				i, c.Mom, "alpha. beta. gamma")
+		}
 	}
 }
