@@ -216,15 +216,14 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 
 // fetchAllDatasetIDs pages through listPage collecting dataset IDs until the
 // total reported by the service is reached, or a short or empty page arrives.
-// Stopping at the reported total means exact multiples of pageSize do not pay
-// an extra empty-page request (matching the Python connector's early exit).
+// Stopping at the reported total avoids an extra empty-page request when the
+// dataset count is an exact multiple of pageSize.
 func fetchAllDatasetIDs(listPage func(page, pageSize int) ([]map[string]interface{}, int64, error), pageSize int) ([]string, error) {
 	var ids []string
 	page := 1
 	fetched := 0
-	var total int64 = -1
 	for {
-		data, t, err := listPage(page, pageSize)
+		data, total, err := listPage(page, pageSize)
 		if err != nil {
 			return nil, err
 		}
@@ -232,7 +231,6 @@ func fetchAllDatasetIDs(listPage func(page, pageSize int) ([]map[string]interfac
 			break
 		}
 		fetched += len(data)
-		total = t
 		for _, d := range data {
 			if id, ok := d["id"].(string); ok && id != "" {
 				ids = append(ids, id)
