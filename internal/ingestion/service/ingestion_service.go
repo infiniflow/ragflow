@@ -570,6 +570,17 @@ func (e *Ingestor) workerLoop(id int32) {
 // as 1, one panicking memory task could permanently remove the only worker and
 // stall every subsequent document parse. The recovered panic is treated as a
 // transient failure and Nacked for redelivery.
+//
+// Settlement ordering: the claim is released (defer below) BEFORE the message
+// is Acked. This differs from the ingestion path, which Acks inside
+// settleMessage and releases afterwards; that ordering works there because
+// ingestion tasks have an ingestion_task row whose terminal status makes a
+// post-Ack redelivery idempotent. Memory tasks have no such DB terminal state,
+// so the release must happen before the Ack: execution and Ack run in the same
+// goroutine, so no redelivered copy can be claimed between the release and the
+// Ack (the broker cannot redeliver before the Ack is sent), and a redelivery
+// that arrives after the Ack (e.g. a lost Ack) re-claims and re-runs the task
+// as normal at-least-once delivery.
 func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
 	// The envelope task id is the authoritative claim key (set by
 	// processMessage). Releasing by any other id would leak the claim and
