@@ -1063,7 +1063,7 @@ class HuggingFace(Base):
         if isinstance(model_type, dict):
             if "embedding" in model_type:
                 return [LLMType.EMBEDDING.value]
-            if "rerank" in model_type:
+            if "reranker" in model_type:
                 return [LLMType.RERANK.value]
             return []
         # TGI format: "text-generation" / "text2text-generation"
