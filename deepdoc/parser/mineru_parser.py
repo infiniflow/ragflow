@@ -851,6 +851,11 @@ class MinerUParser(RAGFlowPdfParser):
         the 1-based pages ``s`` to ``e - 1``, because ``queue_tasks`` builds each task
         stop with ``e = min(e - 1, pages)``. The end stays exclusive here so the merged
         span selects the same pages that one task per range selected.
+
+        A cross-page table is one block whose ``page_idx`` is its first page and whose
+        ``_mineru_positions`` hold every page it covers. A table that starts on a gap
+        page and continues into a configured range must stay, so the block is kept when
+        any of its pages is in a range, not only the first one.
         """
         if not page_ranges:
             return outputs
@@ -858,16 +863,17 @@ class MinerUParser(RAGFlowPdfParser):
         spans = [(int(s), int(e)) for s, e in page_ranges]
         kept = []
         for output in outputs:
-            page_idx = output.get("page_idx")
-            if page_idx is None:
+            pages = [output.get("page_idx")]
+            pages += [pos.get("page_idx") for pos in output.get("_mineru_positions") or []]
+            pages = [int(page_idx) for page_idx in pages if page_idx is not None]
+            if not pages:
                 # A block with no page cannot be placed on a gap page either. The rest of
                 # the parser already treats it as unplaced: _line_tag gives it no position
                 # and _middle_positions_for_output returns nothing for it. One task per
                 # range kept it too, so dropping it here would lose content.
                 kept.append(output)
                 continue
-            page_no = page_from + int(page_idx) + 1
-            if any(s <= page_no < e for s, e in spans):
+            if any(s <= page_from + page_idx + 1 < e for page_idx in pages for s, e in spans):
                 kept.append(output)
 
         dropped = len(outputs) - len(kept)

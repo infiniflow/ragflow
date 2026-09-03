@@ -947,3 +947,38 @@ def test_parse_pdf_sends_one_merged_span_to_the_mineru_api(monkeypatch, tmp_path
 
     kept = [section for section, _tag in sections]
     assert kept == [f"p{n}" for n in list(range(1, 10)) + list(range(20, 30))]
+
+
+def test_select_configured_pages_keeps_a_table_that_reaches_into_a_range(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    # _enrich_outputs_with_middle_positions gives a cross-page table every page it
+    # covers. This one starts on gap page 19 and continues onto configured page 20.
+    outputs = [
+        {"page_idx": 18, "text": "gap only"},
+        {
+            "page_idx": 18,
+            "text": "table 19-20",
+            "_mineru_positions": [{"page_idx": 18}, {"page_idx": 19}],
+        },
+    ]
+    kept = parser._select_configured_pages(outputs, [(1, 10), (20, 30)], 0)
+
+    assert [o["text"] for o in kept] == ["table 19-20"]
+
+
+def test_select_configured_pages_keeps_a_table_that_reaches_out_of_a_range(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    # The mirror case: the table starts on configured page 9 and runs onto gap page 10.
+    outputs = [
+        {
+            "page_idx": 8,
+            "text": "table 9-10",
+            "_mineru_positions": [{"page_idx": 8}, {"page_idx": 9}],
+        },
+        {"page_idx": 9, "text": "gap only"},
+    ]
+    kept = parser._select_configured_pages(outputs, [(1, 10), (20, 30)], 0)
+
+    assert [o["text"] for o in kept] == ["table 9-10"]
