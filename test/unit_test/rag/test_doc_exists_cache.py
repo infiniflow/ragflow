@@ -147,25 +147,35 @@ def test_invalidation_logs_count_and_epoch_without_document_ids(caplog):
 
 @pytest.mark.asyncio
 async def test_invalidation_during_db_check_does_not_repopulate_cache(monkeypatch):
-    """An in-flight stale lookup must not refill the cache after invalidation."""
+    """An in-flight stale lookup must be retried instead of returned or cached."""
     dealer = _dealer()
+    calls = []
 
     class _Rows:
+        def __init__(self, rows, invalidate=False):
+            self._rows = rows
+            self._invalidate = invalidate
+
         def dicts(self):
-            dealer.invalidate_doc_ids(["doc-1"])
-            return [{"id": "doc-1"}]
+            if self._invalidate:
+                dealer.invalidate_doc_ids(["doc-1"])
+            return self._rows
 
     class _DocumentService:
         @staticmethod
-        def get_by_ids(_doc_ids):
-            return _Rows()
+        def get_by_ids(doc_ids):
+            calls.append(list(doc_ids))
+            if len(calls) == 1:
+                return _Rows([{"id": "doc-1"}], invalidate=True)
+            return _Rows([])
 
     module = types.ModuleType("api.db.services.document_service")
     module.DocumentService = _DocumentService
     monkeypatch.setitem(sys.modules, "api.db.services.document_service", module)
 
-    assert await dealer._existing_doc_ids(["doc-1"]) == {"doc-1"}
-    assert "doc-1" not in dealer._doc_exists_cache
+    assert await dealer._existing_doc_ids(["doc-1"]) == set()
+    assert calls == [["doc-1"], ["doc-1"]]
+    assert dealer._doc_exists_cache["doc-1"][1] is False
 
 
 @pytest.mark.asyncio

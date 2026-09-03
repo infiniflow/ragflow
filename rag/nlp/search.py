@@ -104,18 +104,6 @@ class Dealer:
             return set()
 
         unique_doc_ids = list(dict.fromkeys(doc_ids))
-        now = time.time()
-
-        # Fast path: serve every doc_id from the short-lived cache if it is fresh.
-        with self._doc_exists_lock:
-            cache_epoch = self._doc_exists_cache_epoch
-            cached = {d: v for d, v in self._doc_exists_cache.items() if now - v[0] < self._DOC_EXISTS_TTL}
-            hit = {d for d in unique_doc_ids if d in cached and cached[d][1]}
-            miss = [d for d in unique_doc_ids if d not in cached]
-
-        if not miss:
-            return hit
-
         # Run the existence check on the MAIN thread against the shared peewee pool.
         # Doing it through ``thread_pool_exec`` spins up a fresh thread per call; the
         # pooled MySQL connection gets bound to that (short-lived) thread's local pool
@@ -125,20 +113,36 @@ class Dealer:
         # returning properly; the query itself is small and the cache makes this rare.
         from api.db.services.document_service import DocumentService
 
-        found = {row["id"] for row in DocumentService.get_by_ids(miss).dicts()}
+        while True:
+            now = time.time()
 
-        # Merge results; a missing doc is recorded as False so repeat queries skip it too.
-        with self._doc_exists_lock:
-            # A deletion may have invalidated the cache while the DB query was
-            # in flight. Do not reinsert results from before that invalidation.
-            if cache_epoch == self._doc_exists_cache_epoch:
+            # Fast path: serve every doc_id from the short-lived cache if it is fresh.
+            with self._doc_exists_lock:
+                cache_epoch = self._doc_exists_cache_epoch
+                cached = {d: v for d, v in self._doc_exists_cache.items() if now - v[0] < self._DOC_EXISTS_TTL}
+                hit = {d for d in unique_doc_ids if d in cached and cached[d][1]}
+                miss = [d for d in unique_doc_ids if d not in cached]
+
+            if not miss:
+                return hit
+
+            found = {row["id"] for row in DocumentService.get_by_ids(miss).dicts()}
+
+            # Merge results; a missing doc is recorded as False so repeat queries skip it too.
+            with self._doc_exists_lock:
+                # Discard the whole result when a deletion raced the DB lookup. Both
+                # cached hits and database rows may now be stale, so retry them under
+                # the new epoch instead of returning this snapshot to the caller.
+                if cache_epoch != self._doc_exists_cache_epoch:
+                    continue
+
                 for d in miss:
                     self._doc_exists_cache[d] = (now, d in found)
                 # Bound the cache so it cannot grow unbounded across many documents.
                 while len(self._doc_exists_cache) > 4096:
                     self._doc_exists_cache.popitem(last=False)
 
-        return hit.union(found)
+                return hit.union(found)
 
     async def _prune_deleted_chunks(self, sres: SearchResult) -> SearchResult:
         # Temporary safety net:
