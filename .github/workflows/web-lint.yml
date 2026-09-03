@@ -1,0 +1,109 @@
+name: web-lint
+permissions:
+  contents: read
+
+# Deliberately NOT gated on the `ci` label the way tests.yml / sep-tests.yml
+# are: this job takes seconds, so there is no reason to make it opt-in. It is
+# the only place that actually enforces web/.oxlintrc.json — the lefthook
+# pre-commit hook skips silently when a contributor has no oxlint binary.
+on:
+  push:
+    branches:
+      - "main"
+      - "*.*.*"
+    paths:
+      - "web/**"
+      - ".github/workflows/web-lint.yml"
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "web/**"
+      - ".github/workflows/web-lint.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web_lint:
+    name: web_lint
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: ["self-hosted", "ragflow-test"]
+    steps:
+      - name: Ensure workspace ownership
+        run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          # Full history so the format check can diff against the PR base.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install oxlint + oxfmt only
+        # Deliberately NOT `npm ci`: web/node_modules is ~1.5 GB over 1000+
+        # packages, and installing it was the dominant CI cost of the old
+        # prettier/eslint setup. oxlint and oxfmt are prebuilt Rust binaries
+        # (5 packages, ~35 MB, ~3 s) and need no project dependency installed —
+        # every rule in web/.oxlintrc.json is syntactic, not type-aware.
+        #
+        # The install targets an isolated prefix because `npm install <pkg>`
+        # with web/package.json in scope would resolve that whole tree too.
+        # cwd stays web/ so web/.npmrc (registry mirror) still applies.
+        # Versions are read from the lockfile so CI and local never diverge.
+        working-directory: web
+        run: |
+          set -euo pipefail
+          TOOLS="${RUNNER_TEMP}/web-lint-tools"
+          mkdir -p "$TOOLS"
+          printf '{"name":"web-lint-tools","version":"1.0.0","private":true}\n' > "$TOOLS/package.json"
+          oxlint_version=$(node -p "require('./package-lock.json').packages['node_modules/oxlint'].version")
+          oxfmt_version=$(node -p "require('./package-lock.json').packages['node_modules/oxfmt'].version")
+          echo "installing oxlint@${oxlint_version} oxfmt@${oxfmt_version}"
+          npm install --prefix "$TOOLS" --no-audit --no-fund \
+            "oxlint@${oxlint_version}" "oxfmt@${oxfmt_version}"
+          echo "TOOLS_BIN=${TOOLS}/node_modules/.bin" >> "$GITHUB_ENV"
+
+      - name: Lint
+        # Repo-wide: web/src is already at zero oxlint errors, so the whole
+        # tree is enforceable. Warnings stay non-blocking.
+        working-directory: web
+        run: |
+          "$TOOLS_BIN/oxlint" src
+
+      - name: Format check
+        # Changed files only. 31 files under web/src predate oxfmt and are
+        # still unformatted; reformatting them wholesale would collide with
+        # in-flight branches, so a change is only held to the format of what
+        # it touches.
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # package-lock.json is excluded because oxfmt ignores it internally:
+          # passing it as the only target makes oxfmt exit 2 ("no target file"),
+          # which would fail a pure dependency-bump PR for no reason.
+          changed=$(git diff --name-only --diff-filter=d "${BASE_SHA}...${HEAD_SHA}" -- web/ \
+            | grep -Ev '^web/(node_modules|dist)/|/package-lock\.json$|\.min\.(js|css)$' \
+            | grep -E '\.(js|jsx|ts|tsx|css|less|json)$' || true)
+          if [ -z "$changed" ]; then
+            echo "No web files changed — nothing to format-check."
+            exit 0
+          fi
+          mapfile -t files < <(printf '%s\n' "$changed" | sed 's|^web/||')
+          printf 'checking %d file(s):\n' "${#files[@]}"
+          printf '  %s\n' "${files[@]}"
+          # oxfmt reads web/.oxfmtrc.json from cwd, so the paths are web-relative.
+          cd web
+          if ! "$TOOLS_BIN/oxfmt" --check "${files[@]}"; then
+            # Deliberately not `npm run format` (= `oxfmt src`): that would also
+            # reformat the unrelated legacy files and bloat the diff.
+            echo "::error::Formatting check failed. In web/, run 'npx oxfmt' on the files listed above, then commit."
+            exit 1
+          fi

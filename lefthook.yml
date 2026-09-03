@@ -1,4 +1,4 @@
-# There are 8 fix-capable jobs and 6 pure-check jobs.
+# There are 8 fix-capable jobs and 5 pure-check jobs.
 # Dual-mode pre-commit: by default (local dev) jobs fix and stage changes
 # (`stage_fixed: true` batches the `git add` per job to avoid the index lock
 # that parallel `git add` calls would hit). In CI, set LEFTHOOK_CHECK_ONLY=1
@@ -71,23 +71,21 @@ pre-commit:
           gofmt -w {staged_files}
         fi
     - name: web-checks
+      # oxfmt runs before oxlint --fix so the two never fight over the same
+      # file. Both are best-effort locally: a contributor who has not run
+      # `npm install` in web/ has no oxfmt/oxlint binary, and the hook skips
+      # rather than forcing a network install mid-commit. The blocking check
+      # lives in the web-lint workflow, which installs the two binaries itself.
       group:
         piped: true
         jobs:
-          - name: web-deps
-            glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
-            run: |
-              TOOL=web/node_modules/.hookbin/node_modules/.bin
-              if [ ! -x "$TOOL/oxfmt" ] || [ ! -x "$TOOL/oxlint" ]; then
-                exit 0
-              fi
           - name: web-oxfmt
             glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
-            exclude: ["web/**/*.min.js", "web/**/*.min.css", "web/node_modules/**", "web/.next/**", "web/dist/**"]
+            exclude: ["web/**/*.min.js", "web/**/*.min.css", "web/package-lock.json", "web/node_modules/**", "web/.next/**", "web/dist/**"]
             root: "web/"
             stage_fixed: true
             run: |
-              OXFMT=node_modules/.hookbin/node_modules/.bin/oxfmt
+              OXFMT=node_modules/.bin/oxfmt
               if ! [ -x "$OXFMT" ]; then exit 0; fi
               if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
                 "$OXFMT" --check {staged_files}
@@ -100,7 +98,7 @@ pre-commit:
             root: "web/"
             stage_fixed: true
             run: |
-              OXLINT=node_modules/.hookbin/node_modules/.bin/oxlint
+              OXLINT=node_modules/.bin/oxlint
               if ! [ -x "$OXLINT" ]; then exit 0; fi
               if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
                 "$OXLINT" {staged_files}
