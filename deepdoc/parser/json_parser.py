@@ -33,6 +33,14 @@ class RAGFlowJsonParser:
     def __call__(self, binary):
         encoding = find_codec(binary)
         txt = binary.decode(encoding, errors="ignore")
+        # Strip a leading UTF-8 BOM (U+FEFF). Windows editors, PowerShell
+        # `Out-File` and several .NET export paths write JSON with a BOM by
+        # default. The bytes decode cleanly under UTF-8 but ``json.loads``
+        # rejects the leading \ufeff as garbage, and the bare ``except`` in
+        # ``_parse_json`` / ``_parse_jsonl`` swallows the failure so the
+        # whole upload silently produces zero chunks (#19179).
+        if txt.startswith("\ufeff"):
+            txt = txt[1:]
 
         if self.is_jsonl_format(txt):
             sections = self._parse_jsonl(txt)
