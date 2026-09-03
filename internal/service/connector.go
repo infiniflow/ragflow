@@ -78,7 +78,7 @@ var (
 	ErrConnectorNotFound = errors.New("can't find this Connector")
 	// ErrConnectorNoAuth mirrors Python's "no authorization" denial.
 	ErrConnectorNoAuth = errors.New("no authorization")
-	// ErrConnectorNotBoundToKB mirrors Python's rebuild binding denial.
+	// ErrConnectorNotBoundToKB is returned when the connector is not bound to the kb being rebuilt.
 	ErrConnectorNotBoundToKB = errors.New("connector is not bound to this knowledge base")
 	// ErrConnectorIDRequired is returned when a connector ID is missing.
 	ErrConnectorIDRequired = errors.New("connector_id is required")
@@ -1090,7 +1090,6 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 
 	// The caller-supplied kb is targeted by delete + re-sync below, so it must
 	// be accessible to the caller and the connector must be bound to it.
-	// Mirrors the Python service-layer guards in ConnectorService.rebuild.
 	if !s.knowledgebaseDAO.Accessible(ctx, dao.DB, kbID, userID) {
 		common.Warn("rebuild denied: kb not accessible",
 			zap.String("connector_id", connectorID), zap.String("kb_id", kbID), zap.String("user_id", userID))
