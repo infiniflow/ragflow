@@ -1,8 +1,9 @@
 import importlib.util
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
+from typing import ClassVar
 
 
 class FakeConnector:
@@ -23,7 +24,7 @@ fake_connector = FakeConnector()
 
 
 class FakeConnectorFactory:
-    configs = []
+    configs: ClassVar[list] = []
 
     @classmethod
     def build_connector(cls, config):
@@ -78,7 +79,7 @@ def test_manual_rebuild_scans_from_the_root():
     connector, batches = build_generator(
         config,
         {"reindex": "1", "poll_range_start": None},
-        window_end=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        window_end=datetime(2026, 1, 2, tzinfo=UTC),
     )
 
     assert connector is fake_connector
@@ -95,9 +96,9 @@ def test_automatic_sync_uses_the_previous_successful_window():
         {"space_id": "space-1"},
         {
             "reindex": "0",
-            "poll_range_start": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "poll_range_start": datetime(2026, 1, 1, tzinfo=UTC),
         },
-        window_end=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        window_end=datetime(2026, 1, 2, tzinfo=UTC),
     )
 
     assert connector is fake_connector

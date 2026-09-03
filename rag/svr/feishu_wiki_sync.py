@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from common.data_source import FeishuWikiConnector
@@ -19,7 +19,7 @@ def build_feishu_wiki_generator(
     if task.get("reindex") == "1" or task.get("poll_range_start") is None:
         return connector, connector.load_from_state()
 
-    effective_end = window_end or datetime.now(timezone.utc)
+    effective_end = window_end or datetime.now(UTC)
     return connector, connector.poll_source(
         task["poll_range_start"].timestamp(),
         effective_end.timestamp(),

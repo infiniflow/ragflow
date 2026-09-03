@@ -10,8 +10,9 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Iterator
+from collections.abc import Iterator
+from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import quote
 
 import requests
@@ -25,7 +26,6 @@ from common.data_source.exceptions import (
 from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch
 from common.data_source.models import Document, GenerateDocumentsOutput
 from common.data_source.utils import get_file_ext
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -79,15 +79,15 @@ def _parse_timestamp(value: Any) -> datetime | None:
     else:
         text = str(value).strip()
         try:
-            parsed = datetime.fromtimestamp(float(text), tz=timezone.utc)
+            parsed = datetime.fromtimestamp(float(text), tz=UTC)
         except (TypeError, ValueError, OverflowError):
             try:
-                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                parsed = datetime.fromisoformat(text)
             except (TypeError, ValueError):
                 return None
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 class FeishuWikiConnector(LoadConnector, PollConnector):
@@ -117,7 +117,7 @@ class FeishuWikiConnector(LoadConnector, PollConnector):
         self._access_token_expires_at = 0.0
 
     @classmethod
-    def build_connector(cls, config: dict[str, Any]) -> "FeishuWikiConnector":
+    def build_connector(cls, config: dict[str, Any]) -> FeishuWikiConnector:
         try:
             batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
         except (TypeError, ValueError) as exc:
@@ -348,7 +348,7 @@ class FeishuWikiConnector(LoadConnector, PollConnector):
         start: SecondsSinceUnixEpoch | None,
         end: SecondsSinceUnixEpoch | None,
     ) -> GenerateDocumentsOutput:
-        fallback_updated_at = datetime.fromtimestamp(end, tz=timezone.utc) if end is not None else datetime.now(timezone.utc)
+        fallback_updated_at = datetime.fromtimestamp(end, tz=UTC) if end is not None else datetime.now(UTC)
         batch: list[Document] = []
         for node in self._iter_nodes(self.root_node_token):
             if node.get("obj_type") != "file":

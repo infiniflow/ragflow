@@ -2,7 +2,7 @@ import hashlib
 import importlib.util
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from types import ModuleType
@@ -303,7 +303,7 @@ def test_pagination_incremental_window_metadata_and_fingerprint_are_preserved():
     assert len(documents) == 1
     document = documents[0]
     assert document.id == "feishu_wiki:space-1:current-node"
-    assert document.doc_updated_at == datetime(2026, 1, 3, tzinfo=timezone.utc)
+    assert document.doc_updated_at == datetime(2026, 1, 3, tzinfo=UTC)
     assert document.extension == ".docx"
     assert document.fingerprint == hashlib.sha256(b"current body").hexdigest()[:32]
     assert len(document.fingerprint) == 32

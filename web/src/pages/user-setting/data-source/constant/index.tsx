@@ -503,14 +503,14 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       name: 'config.space_id',
       type: FormFieldType.Text,
       required: true,
-      placeholder: '7677869716296813542',
+      placeholder: '1234567890123456789',
     },
     {
       label: t('setting.dataSourceFieldRootNodeToken'),
       name: 'config.root_node_token',
       type: FormFieldType.Text,
       required: true,
-      placeholder: 'E1uywCuOGiytfXkdUHdc6PROnMg',
+      placeholder: 'wikcnExampleRootNodeToken',
     },
     {
       label: t('setting.dataSourceFieldIncludeExtensions'),
