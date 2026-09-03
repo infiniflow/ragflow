@@ -75,7 +75,7 @@ var (
 var (
 	// ErrConnectorNotFound is returned when a connector is not found.
 	ErrConnectorNotFound = errors.New("can't find this Connector")
-	// ErrConnectorNoAuth is returned when the caller cannot access the connector.
+	// ErrConnectorNoAuth is returned when the caller cannot access the connector or knowledge base.
 	ErrConnectorNoAuth = errors.New("no authorization")
 	// ErrConnectorNotBoundToKB is returned when the connector is not bound to the kb being rebuilt.
 	ErrConnectorNotBoundToKB = errors.New("connector is not bound to this knowledge base")
