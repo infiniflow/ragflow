@@ -435,6 +435,83 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	}
 }
 
+func TestUpdateChunkRejectsChunkFromAnotherDocument(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+	insertChunkTestDoc(t, "doc-b", "kb-1")
+
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{"doc_id": "doc-b"},
+	}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:  "kb-1",
+		DocumentID: "doc-a",
+		ChunkID:    "chunk-1",
+	}, "user-1")
+	if err == nil {
+		t.Fatal("expected UpdateChunk to reject a chunk from another document")
+	}
+	if !strings.Contains(err.Error(), "chunk not found") {
+		t.Fatalf("UpdateChunk error = %q, want chunk not found", err)
+	}
+	if len(engine.updateCalls) != 0 {
+		t.Fatalf("UpdateChunks calls = %d, want 0", len(engine.updateCalls))
+	}
+}
+
+func TestUpdateChunkUpdatesSameDocumentWithDocumentCondition(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{
+			"doc_id":              "doc-a",
+			"content_with_weight": "existing content",
+		},
+	}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:  "kb-1",
+		DocumentID: "doc-a",
+		ChunkID:    "chunk-1",
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateChunk() error = %v", err)
+	}
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+	}
+	call := engine.updateCalls[0]
+	if !reflect.DeepEqual(call.condition, map[string]interface{}{
+		"id":     "chunk-1",
+		"doc_id": "doc-a",
+	}) {
+		t.Fatalf("UpdateChunks condition = %#v", call.condition)
+	}
+	if call.indexName != "ragflow_tenant-1" || call.datasetID != "kb-1" {
+		t.Fatalf("UpdateChunks target index=%q dataset=%q", call.indexName, call.datasetID)
+	}
+}
+
 func TestAddChunkSuccess(t *testing.T) {
 	ctx := t.Context()
 	db := setupChunkTestDB(t)
@@ -1208,6 +1285,26 @@ func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequ
 		},
 		Total: 1,
 	}, nil
+}
+
+type updateChunkTestEngine struct {
+	parseTestDocEngine
+	existingChunk interface{}
+	updateCalls   []updateChunksCall
+}
+
+func (e *updateChunkTestEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return e.existingChunk, nil
+}
+
+func (e *updateChunkTestEngine) UpdateChunks(_ context.Context, condition, newValue map[string]interface{}, indexName, datasetID string) error {
+	e.updateCalls = append(e.updateCalls, updateChunksCall{
+		condition: copyMap(condition),
+		newValue:  copyMap(newValue),
+		indexName: indexName,
+		datasetID: datasetID,
+	})
+	return nil
 }
 
 type chunkImageStorage struct {
