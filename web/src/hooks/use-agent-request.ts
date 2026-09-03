@@ -101,7 +101,7 @@ export const enum AgentApiAction {
   FetchBuiltinPipelineDetail = 'fetchBuiltinPipelineDetail',
 }
 
-const AgentKeys = {
+export const AgentKeys = {
   templates: () => [AgentApiAction.FetchAgentTemplates] as const,
   list: (params?: unknown) =>
     params === undefined
@@ -246,7 +246,7 @@ export function useFetchAllAgentList() {
           params: buildAgentListParams({
             page: 1,
             pageSize: 100000,
-            canvasCategory: AgentCategory.AgentCanvas,
+            canvasCategoryIds: [AgentCategory.AgentCanvas],
           }),
         },
         true,
@@ -360,6 +360,9 @@ export const useDeleteAgent = () => {
         });
         queryClient.invalidateQueries({
           queryKey: AgentKeys.filters(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: AgentKeys.tags(),
         });
       }
       return data?.data ?? false;
