@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Optional
 
+from common.constants import MAXIMUM_PAGE_NUMBER
 from deepdoc.parser.mineru_parser import MinerUParser
 
 
@@ -75,7 +76,7 @@ class MonkeyOCRParser(MinerUParser):
         delete_output: bool = True,
         parse_method: str = "raw",
         page_from: int = 0,
-        page_to=None,
+        page_to: int = MAXIMUM_PAGE_NUMBER,
         **kwargs,
     ) -> tuple:
         if callback:
