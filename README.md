@@ -182,53 +182,6 @@ releases! 🌟
    > ```bash
    > vm.max_map_count=262144
    > ```
-   >
-
-   > [!NOTE]
-   > The commands above apply to **Linux only**. `vm.max_map_count` is a Linux kernel parameter and does not exist on macOS (Darwin). When running RAGFlow with a container runtime on macOS, configure this parameter in the runtime's Linux virtual machine.
-
-   #### macOS with Docker Desktop
-
-   1. Open Docker Desktop and go to **Settings** > **Features in development**.
-   2. Add the following entry to **Kernel parameters**:
-
-      ```text
-      sysctl.vm.max_map_count=262144
-      ```
-
-   3. Restart Docker Desktop.
-
-   #### macOS with Colima
-
-   Check the current value inside the Colima virtual machine:
-
-   ```bash
-   colima ssh -- sysctl vm.max_map_count
-   ```
-
-   To change the value temporarily (the change is lost when the virtual machine restarts):
-
-   ```bash
-   colima ssh -- sudo sysctl -w vm.max_map_count=262144
-   ```
-
-   For a persistent configuration, run `colima start --edit` and add a provision script to `colima.yaml`:
-
-   ```yaml
-   provision:
-     - mode: system
-       script: |
-         #!/bin/bash
-         sysctl -w vm.max_map_count=262144
-   ```
-
-   Restart Colima to apply the configuration:
-
-   ```bash
-   colima stop
-   colima start
-   ```
-
 2. Clone the repo:
 
    ```bash
