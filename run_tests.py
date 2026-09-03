@@ -56,18 +56,27 @@ def _is_color_supported() -> bool:
         try:
             # Get Windows version number
             win_version = platform.version()
-            major, _, build = map(int, win_version.split("."))
+            ver_parts = win_version.split(".")
+            if len(ver_parts) < 3:
+                return False
+            major, _, build = map(int, ver_parts)
             if not (major >= 10 and build >= 10586):
                 return False
-            from ctypes import windll
+            from ctypes import windll,wintypes
 
             # Actively enable ANSI support for Windows terminal
-            INVALID_HANDLE_VALUE = -1
+            INVALID_HANDLE_VALUE = wintypes.HANDLE(-1)
+            STD_OUTPUT_HANDLE = wintypes.HANDLE(-11)
             kernel32 = windll.kernel32
-            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+            handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
             if handle == INVALID_HANDLE_VALUE:
                 return False
-            success = kernel32.SetConsoleMode(handle, 7)
+            mode = wintypes.DWORD()
+            if not kernel32.GetConsoleMode(handle, wintypes.byref(mode)):
+                return False
+            ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x04
+            new_mode = mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            success = kernel32.SetConsoleMode(handle, new_mode)
             return bool(success)
         except BaseException as e:
             if isinstance(e, (SystemExit, KeyboardInterrupt)):
@@ -77,7 +86,9 @@ def _is_color_supported() -> bool:
     else:
         try:
             # Detect color support
-            result = subprocess.check_output(["tput", "colors"], stderr=subprocess.DEVNULL, text=True)
+            result = subprocess.check_output(
+                ["tput", "colors"], 
+                stderr=subprocess.DEVNULL, text=True)
             color_count = int(result.strip())
             return color_count >= 8
         # Explicitly catch tput-related exceptions
@@ -106,8 +117,12 @@ def set_color(s: str, color: str) -> str:
     """
 
     if COLOR_SUPPORT:
-        return f"{getattr(Colors, color.strip().upper()).value}{s}{Colors.NC.value}"
-    return f"{s}"  # pragma: no cover
+        try:
+            c_enum = getattr(Colors, color.strip().upper())
+            return f"{c_enum.value}{s}{Colors.NC.value}"
+        except AttributeError:
+            return s
+    return s  # pragma: no cover
 
 
 class TestRunner:
