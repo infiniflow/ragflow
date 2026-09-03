@@ -59,6 +59,40 @@ func TestS3StorageRemoveBucketDeletesEmptyPhysicalBucket(t *testing.T) {
 	}
 }
 
+func TestS3StorageRemoveBucketSingleBucketMode(t *testing.T) {
+	var deleteBody string
+	storage := newS3TestStorage(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodHead:
+			if req.URL.Path != "/physical" {
+				t.Fatalf("HeadBucket path = %q, want /physical", req.URL.Path)
+			}
+			return s3Response(http.StatusOK, ""), nil
+		case req.URL.Query().Has("versions"):
+			if req.URL.Query().Get("prefix") != "prefix/kb01/" {
+				t.Fatalf("ListObjectVersions prefix = %q, want prefix/kb01/", req.URL.Query().Get("prefix"))
+			}
+			return s3Response(http.StatusOK, `<ListVersionsResult><IsTruncated>false</IsTruncated><Version><Key>prefix/kb01/document</Key><VersionId>v1</VersionId></Version></ListVersionsResult>`), nil
+		case req.URL.Query().Has("delete"):
+			body, _ := io.ReadAll(req.Body)
+			deleteBody = string(body)
+			return s3Response(http.StatusOK, `<DeleteResult/>`), nil
+		case req.Method == http.MethodDelete:
+			t.Fatalf("RemoveBucket deleted physical bucket in single-bucket mode")
+		}
+		t.Fatalf("unexpected request: %s %s", req.Method, req.URL)
+		return nil, nil
+	})
+	storage.bucket = "physical"
+	storage.prefixPath = "prefix"
+	if err := storage.RemoveBucket(t.Context(), "kb01"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(deleteBody, `<Key>prefix/kb01/document</Key><VersionId>v1</VersionId>`) {
+		t.Fatalf("DeleteObjects omitted matching version: %s", deleteBody)
+	}
+}
+
 func TestS3StorageRemoveBucketDeletesVersionsAndMarkers(t *testing.T) {
 	var deleteBody string
 	storage := newS3TestStorage(func(req *http.Request) (*http.Response, error) {

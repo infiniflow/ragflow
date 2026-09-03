@@ -45,7 +45,9 @@ type S3Storage struct {
 // NewS3Storage creates a new S3 storage instance
 func NewS3Storage(ctx context.Context, config config.S3Config) (*S3Storage, error) {
 	storage := &S3Storage{
-		config: config,
+		bucket:     config.Bucket,
+		prefixPath: config.PrefixPath,
+		config:     config,
 	}
 
 	if err := storage.connect(ctx); err != nil {
@@ -105,7 +107,13 @@ func (s *S3Storage) resolveBucketAndPath(bucket, fnm string) (string, string) {
 	}
 
 	actualPath := fnm
-	if s.prefixPath != "" {
+	if s.bucket != "" {
+		prefix := s.prefixPath
+		if prefix != "" {
+			prefix += "/"
+		}
+		actualPath = fmt.Sprintf("%s%s/%s", prefix, bucket, fnm)
+	} else if s.prefixPath != "" {
 		actualPath = fmt.Sprintf("%s/%s/%s", s.prefixPath, bucket, fnm)
 	}
 
@@ -335,7 +343,8 @@ func (s *S3Storage) BucketExists(ctx context.Context, bucket string) bool {
 
 // RemoveBucket removes a bucket and all its objects
 func (s *S3Storage) RemoveBucket(ctx context.Context, bucket string) error {
-	exists, err := s.bucketExistsForRemoval(ctx, bucket)
+	actualBucket, prefix := s.resolveBucketAndPrefix(bucket)
+	exists, err := s.bucketExistsForRemoval(ctx, actualBucket)
 	if err != nil {
 		return err
 	}
@@ -343,12 +352,15 @@ func (s *S3Storage) RemoveBucket(ctx context.Context, bucket string) error {
 		return nil
 	}
 
-	if err := s.removeObjects(ctx, bucket); err != nil {
+	if err := s.removeObjects(ctx, actualBucket, prefix); err != nil {
 		return err
+	}
+	if s.bucket != "" {
+		return nil
 	}
 
 	_, err = s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
-		Bucket: aws.String(bucket),
+		Bucket: aws.String(actualBucket),
 	})
 	if err != nil {
 		common.Error("Failed to delete bucket", err, zap.String("bucket", bucket), zap.Error(err))
@@ -356,6 +368,17 @@ func (s *S3Storage) RemoveBucket(ctx context.Context, bucket string) error {
 	}
 
 	return nil
+}
+
+func (s *S3Storage) resolveBucketAndPrefix(bucket string) (string, string) {
+	if s.bucket == "" {
+		return bucket, ""
+	}
+	prefix := s.prefixPath
+	if prefix != "" {
+		prefix += "/"
+	}
+	return s.bucket, prefix + bucket + "/"
 }
 
 func (s *S3Storage) bucketExistsForRemoval(ctx context.Context, bucket string) (bool, error) {
@@ -369,9 +392,10 @@ func (s *S3Storage) bucketExistsForRemoval(ctx context.Context, bucket string) (
 	return false, fmt.Errorf("head S3 bucket %q: %w", bucket, err)
 }
 
-func (s *S3Storage) removeObjects(ctx context.Context, bucket string) error {
+func (s *S3Storage) removeObjects(ctx context.Context, bucket, prefix string) error {
 	versions := s3.NewListObjectVersionsPaginator(s.client, &s3.ListObjectVersionsInput{
 		Bucket: aws.String(bucket),
+		Prefix: aws.String(prefix),
 	})
 	for versions.HasMorePages() {
 		page, err := versions.NextPage(ctx)
