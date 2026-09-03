@@ -422,7 +422,15 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 		if txt == "" {
 			continue
 		}
-		tmp := extractQAText(txt)
+		var tmp []qaPair
+		// Since #18800 the XLSX parser emits OutputFormat "json" with rendered
+		// HTML tables in each item's text field. Route those through the table
+		// extractor instead of delimiter-based text parsing.
+		if strings.Contains(strings.ToLower(txt), "<table") {
+			tmp = extractQATable(txt)
+		} else {
+			tmp = extractQAText(txt)
+		}
 		// Preserve the source item's image id and coordinates on each
 		// extracted pair
 		for _, p := range tmp {

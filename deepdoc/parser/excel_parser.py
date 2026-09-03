@@ -169,30 +169,17 @@ class RAGFlowExcelParser:
                     return True
             return False
 
-        if not any(row_has_data(i) for i in range(1, min(101, max_row + 1))):
-            return 0
-
-        left, right = 1, max_row
-        last_data_row = 1
-
-        while left <= right:
-            mid = (left + right) // 2
-            found = False
-            for r in range(mid, min(mid + 10, max_row + 1)):
-                if row_has_data(r):
-                    found = True
-                    last_data_row = max(last_data_row, r)
-                    break
-            if found:
-                left = mid + 1
-            else:
-                right = mid - 1
-
-        for r in range(last_data_row, min(last_data_row + 500, max_row + 1)):
-            if row_has_data(r):
-                last_data_row = r
-
-        return last_data_row
+        # Scan backwards in blocks to find the highest row that contains data.
+        # A forward binary search breaks when a large blank gap sits between two
+        # data blocks, and a "first 100 rows are blank" guard drops sheets whose
+        # data starts below row 100.
+        block_size = 100
+        for block_end in range(max_row, 0, -block_size):
+            block_start = max(1, block_end - block_size + 1)
+            for row_idx in range(block_end, block_start - 1, -1):
+                if row_has_data(row_idx):
+                    return row_idx
+        return 0
 
     @staticmethod
     def _get_rows_limited(ws):
