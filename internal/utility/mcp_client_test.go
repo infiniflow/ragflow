@@ -17,7 +17,6 @@
 package utility
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -81,7 +80,7 @@ func TestFetchToolsStreamableHTTPJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tools, err := FetchTools(context.Background(), FetchOptions{
+	tools, err := FetchTools(t.Context(), FetchOptions{
 		URL:        srv.URL,
 		ServerType: TransportStreamableHTTP,
 		HTTPClient: srv.Client(),
@@ -120,7 +119,7 @@ func TestFetchToolsStreamableHTTPErrorResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := FetchTools(context.Background(), FetchOptions{
+	_, err := FetchTools(t.Context(), FetchOptions{
 		URL:        srv.URL,
 		ServerType: TransportStreamableHTTP,
 		HTTPClient: srv.Client(),
@@ -187,7 +186,7 @@ func TestFetchToolsSSE(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	tools, err := FetchTools(context.Background(), FetchOptions{
+	tools, err := FetchTools(t.Context(), FetchOptions{
 		URL:        srv.URL + "/sse",
 		ServerType: TransportSSE,
 		HTTPClient: srv.Client(),
@@ -203,7 +202,7 @@ func TestFetchToolsSSE(t *testing.T) {
 
 func TestFetchToolsUnsupportedType(t *testing.T) {
 	defer allowLoopbackForTests(t)()
-	_, err := FetchTools(context.Background(), FetchOptions{
+	_, err := FetchTools(t.Context(), FetchOptions{
 		URL:        "https://example.com",
 		ServerType: "stdio",
 		Timeout:    time.Second,
@@ -214,7 +213,7 @@ func TestFetchToolsUnsupportedType(t *testing.T) {
 }
 
 func TestFetchToolsEmptyURL(t *testing.T) {
-	_, err := FetchTools(context.Background(), FetchOptions{URL: "", ServerType: TransportSSE})
+	_, err := FetchTools(t.Context(), FetchOptions{URL: "", ServerType: TransportSSE})
 	if err == nil || !strings.Contains(err.Error(), "Invalid url") {
 		t.Fatalf("expected Invalid url error, got %v", err)
 	}

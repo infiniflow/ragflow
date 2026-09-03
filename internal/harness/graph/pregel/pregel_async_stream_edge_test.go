@@ -23,7 +23,7 @@ import (
 
 // TestStream_ChannelStream_Basic verifies ChannelStream emit/consume cycle.
 func TestStream_ChannelStream_Basic(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	stream := types.NewChannelStream(types.StreamModeValues, 10)
 	defer stream.Close()
 
@@ -46,7 +46,7 @@ func TestStream_ChannelStream_Basic(t *testing.T) {
 
 // TestStream_ChannelStream_CloseWhileReading tests close during iteration.
 func TestStream_ChannelStream_CloseWhileReading(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	stream := types.NewChannelStream(types.StreamModeValues, 10)
 	_ = stream.Emit(ctx, &types.StreamChunk{Data: "a", Step: 1})
 
@@ -93,7 +93,7 @@ func TestConcurrent_MultipleEngines_DifferentGraphs(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(10))
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "conc"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "conc"})
 			if err != nil {
 				t.Errorf("engine %d: %v", idx, err)
 			}
@@ -106,7 +106,7 @@ func TestConcurrent_MultipleEngines_DifferentGraphs(t *testing.T) {
 // with different inputs sequentially.
 func TestConcurrent_SharedEngine_DifferentInputs(t *testing.T) {
 	engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(10))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, input := range []map[string]any{
 		{"value": "a"}, {"value": "b"}, {"value": "c"},
@@ -142,11 +142,11 @@ func TestConcurrent_ManyEngines_WithCheckpointer(t *testing.T) {
 				WithCheckpointer(ms),
 				WithConfig(cfg),
 			)
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "conc"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "conc"})
 			if err != nil {
 				t.Errorf("engine %d: %v", idx, err)
 			}
-			cp, err := ms.Get(context.Background(), map[string]interface{}{
+			cp, err := ms.Get(t.Context(), map[string]interface{}{
 				constants.ConfigKeyThreadID: tid,
 			})
 			if err != nil || cp == nil {
@@ -173,7 +173,7 @@ func TestRetry_ZeroMaxAttempts(t *testing.T) {
 	rp.MaxAttempts = 0
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&rp))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "zero"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "zero"})
 	t.Logf("zero max attempts: err=%v attempts=%d", err, attempts.Load())
 }
 
@@ -194,7 +194,7 @@ func TestRetry_MaxIntervalCapped(t *testing.T) {
 	}
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&rp))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "maxint"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "maxint"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -214,7 +214,7 @@ func TestRetry_JitterVariation(t *testing.T) {
 	rp.Jitter = true
 	engine := NewEngine(sg, WithRecursionLimit(10), WithRetryPolicy(&rp))
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "jitter"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "jitter"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -245,7 +245,7 @@ func TestEngine_DAG_ModeFanIn(t *testing.T) {
 	_ = sg.AddEdge("join", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestEngine_NodeReturningCommand(t *testing.T) {
 	_ = sg.AddEdge("dest", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestEngine_MixedChannels_TopicPlusLastValue(t *testing.T) {
 	_ = sg.AddEdge("finalizer", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}

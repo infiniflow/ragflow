@@ -9,8 +9,6 @@ import (
 
 func TestPDFParser_ParseWithResult_CGOInvalidPDF(t *testing.T) {
 	ctx := t.Context()
-	t.Setenv("DEEPDOC_URL", "")
-	t.Setenv("OSSDEEPDOC_URL", "")
 
 	pdf := NewPDFParser()
 	res := pdf.ParseWithResult(ctx, "bad.pdf", []byte("not a valid pdf"))

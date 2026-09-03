@@ -615,7 +615,7 @@ func TestUpdateMessageFeedback_AppliesChunkFeedbackWithResolvedTenantAndContext(
 		pipeline:       &fakePipeline{},
 		docEngine:      docEngine,
 	}
-	ctx := context.WithValue(context.Background(), feedbackContextKey{}, "request-context")
+	ctx := context.WithValue(t.Context(), feedbackContextKey{}, "request-context")
 
 	resp, code, err := svc.UpdateMessageFeedback(ctx, "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
 		"thumbup": true,
@@ -674,7 +674,7 @@ func TestUpdateMessageFeedback_ToggleUsesResolvedTenantForUndoAndApply(t *testin
 		docEngine:      docEngine,
 	}
 
-	resp, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
+	resp, code, err := svc.UpdateMessageFeedback(t.Context(), "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
 		"thumbup":  false,
 		"feedback": "not useful",
 	})
@@ -703,7 +703,7 @@ func TestApplyChunkFeedback_DisabledDoesNotTouchEngine(t *testing.T) {
 	docEngine := &fakeFeedbackDocEngine{}
 	svc := &ChatSessionService{docEngine: docEngine}
 
-	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+	result, err := svc.applyChunkFeedback(t.Context(), "tenant-1", map[string]interface{}{
 		"chunks": []interface{}{map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1"}},
 	}, true)
 	if err != nil {
@@ -724,7 +724,7 @@ func TestApplyChunkFeedback_UniformSplitsOneVoteAcrossChunks(t *testing.T) {
 	docEngine := &fakeFeedbackDocEngine{}
 	svc := &ChatSessionService{docEngine: docEngine}
 
-	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+	result, err := svc.applyChunkFeedback(t.Context(), "tenant-1", map[string]interface{}{
 		"chunks": []interface{}{
 			map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1"},
 			map[string]interface{}{"id": "chunk-2", "kb_id": "kb-1"},
@@ -751,7 +751,7 @@ func TestApplyChunkFeedback_RelevanceDistributesOneVoteBySignals(t *testing.T) {
 	docEngine := &fakeFeedbackDocEngine{}
 	svc := &ChatSessionService{docEngine: docEngine}
 
-	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+	result, err := svc.applyChunkFeedback(t.Context(), "tenant-1", map[string]interface{}{
 		"chunks": []interface{}{
 			map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1", "similarity": 2.0},
 			map[string]interface{}{"id": "chunk-2", "kb_id": "kb-1", "vector_similarity": 1.0},
@@ -777,7 +777,7 @@ func TestUpdateChunkWeight_InfinityUsesAtomicAdjuster(t *testing.T) {
 	docEngine := &fakeInfinityFeedbackDocEngine{}
 	svc := &ChatSessionService{docEngine: docEngine}
 
-	if ok := svc.updateChunkWeight(context.Background(), "tenant-1", "chunk-1", "kb-1", 0.25); !ok {
+	if ok := svc.updateChunkWeight(t.Context(), "tenant-1", "chunk-1", "kb-1", 0.25); !ok {
 		t.Fatal("expected updateChunkWeight to succeed")
 	}
 	if docEngine.getChunkCalled {
@@ -804,7 +804,7 @@ func TestApplyChunkFeedback_FallbackClampsAndRemovesPagerank(t *testing.T) {
 	}
 	svc := &ChatSessionService{docEngine: docEngine}
 
-	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+	result, err := svc.applyChunkFeedback(t.Context(), "tenant-1", map[string]interface{}{
 		"chunks": []interface{}{map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1"}},
 	}, false)
 	if err != nil {
@@ -919,7 +919,7 @@ func TestChatCompletionsPassesRequestUserIDToPipeline(t *testing.T) {
 	}
 
 	_, err := svc.ChatCompletions(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"dialog-1",
 		"session-1",
@@ -1000,7 +1000,7 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 
 	streamChan := make(chan string, 8)
 	_, err := svc.ChatCompletions(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"dialog-1",
 		"session-1",
@@ -1097,7 +1097,7 @@ func TestChatCompletionsModelIDOverrideUsesModelResolver(t *testing.T) {
 	}
 
 	_, err := svc.ChatCompletions(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"dialog-1",
 		"session-1",
@@ -1154,7 +1154,7 @@ func TestChatCompletionsStoreHistoryFalseDoesNotPersistSession(t *testing.T) {
 	}
 
 	result, err := svc.ChatCompletions(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"dialog-1",
 		"",
@@ -1331,7 +1331,7 @@ func TestCompletionStream_Success(t *testing.T) {
 	}
 
 	streamChan := make(chan string, 10)
-	err := svc.CompletionStream(context.Background(), "user-1", "session-1", []map[string]interface{}{
+	err := svc.CompletionStream(t.Context(), "user-1", "session-1", []map[string]interface{}{
 		{"role": "user", "content": "hi"},
 	}, "", nil, "msg-1", streamChan)
 	if err != nil {

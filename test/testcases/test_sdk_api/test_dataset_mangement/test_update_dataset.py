@@ -524,6 +524,9 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         dataset.update({"parser_config": parser_config})
         for k, v in parser_config.items():
+            if k in {"graphrag", "raptor"}:
+                assert not hasattr(dataset.parser_config, k), str(dataset)
+                continue
             if isinstance(v, dict):
                 for kk, vv in v.items():
                     assert attrgetter(f"{k}.{kk}")(dataset.parser_config) == vv, str(dataset)
@@ -532,6 +535,9 @@ class TestDatasetUpdate:
 
         retrieved_dataset = client.get_dataset(name=dataset.name)
         for k, v in parser_config.items():
+            if k in {"graphrag", "raptor"}:
+                assert not hasattr(retrieved_dataset.parser_config, k), str(retrieved_dataset)
+                continue
             if isinstance(v, dict):
                 for kk, vv in v.items():
                     assert attrgetter(f"{k}.{kk}")(retrieved_dataset.parser_config) == vv, str(retrieved_dataset)
@@ -688,8 +694,6 @@ class TestDatasetUpdate:
         expected_config = DataSet.ParserConfig(
             client,
             {
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
                 "image_context_size": 0,
                 "table_context_size": 0,
             },
@@ -706,8 +710,6 @@ class TestDatasetUpdate:
         expected_config = DataSet.ParserConfig(
             client,
             {
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
                 "image_context_size": 0,
                 "table_context_size": 0,
             },
@@ -724,8 +726,6 @@ class TestDatasetUpdate:
         expected_config = DataSet.ParserConfig(
             client,
             {
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
                 "image_context_size": 0,
                 "table_context_size": 0,
             },

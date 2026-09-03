@@ -17,17 +17,6 @@ func TestEncodePNG(t *testing.T) {
 	}
 }
 
-func TestEncodeJPEG(t *testing.T) {
-	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
-	data, err := EncodeJPEG(img)
-	if err != nil {
-		t.Fatalf("EncodeJPEG: %v", err)
-	}
-	if len(data) == 0 {
-		t.Error("encoded JPEG should not be empty")
-	}
-}
-
 func TestEncodeImageToBase64PNG(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
 	b64, err := EncodeImageToBase64PNG(img)

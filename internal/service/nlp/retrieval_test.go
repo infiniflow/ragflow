@@ -36,7 +36,7 @@ func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 	aggs := false
 	rerankCandidatesCount := 70
 
-	result, err := service.Retrieval(context.Background(), &RetrievalRequest{
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
 		Question:               "alpha",
 		TenantIDs:              []string{"tenant-1"},
 		Page:                   1,
@@ -266,7 +266,7 @@ func TestSearchPassesVectorSimilarityWeightToFusionExpr(t *testing.T) {
 	vectorWeight := 0.8
 	docEngine := &captureSearchDocEngine{engineType: string(engine.EngineInfinity)}
 	service := NewRetrievalService(docEngine, nil)
-	_, err := service.Search(context.Background(), &RetrievalSearchRequest{
+	_, err := service.Search(t.Context(), &RetrievalSearchRequest{
 		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, KNNTopK: 10,
 		RankFeature: map[string]float64{}, EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, VectorSimilarityWeight: &vectorWeight,
 	})
@@ -287,7 +287,7 @@ func TestRetrievalPassesVectorSimilarityWeightToSearch(t *testing.T) {
 		result:     &types.SearchResult{Chunks: []map[string]interface{}{}, Total: 0},
 	}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
-	_, err := service.Retrieval(context.Background(), &RetrievalRequest{
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
 		Question: "test question", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10, KNNTopK: &top,
 		RankFeature: &map[string]float64{}, EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}}, VectorSimilarityWeight: &vectorWeight,
 	})
@@ -328,7 +328,7 @@ func TestSearchKeepsLegacyFusionWeightForElasticsearch(t *testing.T) {
 	docEngine := &captureSearchDocEngine{engineType: string(engine.EngineElasticsearch)}
 	service := NewRetrievalService(docEngine, nil)
 
-	_, err := service.Search(context.Background(), &RetrievalSearchRequest{
+	_, err := service.Search(t.Context(), &RetrievalSearchRequest{
 		Question:               "test question",
 		TenantIDs:              []string{"tenant-1"},
 		KbIDs:                  []string{"kb-1"},

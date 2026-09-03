@@ -94,6 +94,8 @@ export function WikiGraphPanel({
         mapNodeToValue={mapNodeToValue}
         onNodeClick={onSelectArtifact}
         highlightNodeId={selectedArtifact?.slug}
+        totalEntities={data.total_entities}
+        returnedEntities={data.returned_entities}
       />
     </div>
   );

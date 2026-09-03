@@ -28,6 +28,16 @@ func TestValidateDynamicEntries(t *testing.T) {
 		componentDSL("Iteration", map[string]any{"outputs": map[string]any{
 			"result": map[string]any{"type": "string", "ref": "Iteration@result"},
 		}}),
+		componentDSL("Message", map[string]any{"text": "hello"}),
+		// Whitespace-only delimiters are legitimate split tokens: the web
+		// form's default row is "\n" (a real newline) and the delimiter
+		// input converts a typed "\n"/"\t" into the raw control character
+		// before saving. They must not be rejected as empty entries.
+		componentDSL("TokenChunker", map[string]any{
+			"delimiter_mode":      "delimiter",
+			"delimiters":          []any{"\n"},
+			"children_delimiters": []any{"\t"},
+		}),
 	)
 
 	if err := ValidateDynamicEntries(valid); err != nil {
@@ -50,6 +60,12 @@ func TestValidateDynamicEntries(t *testing.T) {
 		{"loop operator", componentDSL("Loop", map[string]any{"loop_termination_condition": []any{map[string]any{"variable": "count", "operator": "", "value": 3}}}), "loop_termination_condition[0]"},
 		{"iteration output", componentDSL("Iteration", map[string]any{"outputs": map[string]any{"result": map[string]any{"ref": ""}}}), "outputs.result"},
 		{"input option", componentDSL("UserFillUp", map[string]any{"inputs": map[string]any{"choice": map[string]any{"options": []any{"one", ""}}}}), "inputs.choice.options"},
+		{"empty delimiter entry", componentDSL("TokenChunker", map[string]any{"delimiters": []any{"ok", ""}}), "delimiters"},
+		{"empty children delimiter entry", componentDSL("TokenChunker", map[string]any{"children_delimiters": []any{""}}), "children_delimiters"},
+		{"empty message text", componentDSL("Message", map[string]any{"text": " \t "}), "Message"},
+		{"empty message content", componentDSL("Message", map[string]any{"content": []any{""}}), "Message"},
+		{"missing message content", componentDSL("Message", map[string]any{}), "Message"},
+		{"blank message row after valid row", componentDSL("Message", map[string]any{"content": []any{"hello", " "}}), "Message"},
 	}
 
 	for _, test := range tests {
