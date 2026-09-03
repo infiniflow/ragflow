@@ -19,7 +19,7 @@
 // Input formats and extraction strategies:
 //   - Text (txt, csv)  → delimiter-based Q&A (comma or tab)
 //   - Markdown (md)    → heading-based Q&A
-//   - HTML (xls, legacy xlsx) → table-based Q&A (first two columns)
+//   - HTML (xls, xlsx) → table-based Q&A (first two columns)
 //   - JSON (pdf, docx, xlsx) → text sections via delimiter; table items via extractQATable
 //
 // Every Q&A pair becomes a single chunk with content_with_weight
