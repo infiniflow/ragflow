@@ -136,11 +136,24 @@ func TestRerunDocument_RerunsAndPersistsDSL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load ingestion task: %v", err)
 	}
-	// CreateAndEnqueue marks the task SCHEDULED once its queue message has
-	// been published (the publisher here records instead of failing), so the
-	// persisted row is already past CREATED by the time we reload it.
-	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.Status != common.SCHEDULED {
+	// CreateAndEnqueue leaves the task CREATED once its queue message has
+	// been published (the publisher here records instead of failing).
+	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.Status != common.CREATED {
 		t.Fatalf("ingestion task = %+v", task)
+	}
+	rerun, ok := task.RerunInfo()
+	if !ok {
+		t.Fatal("ingestion task missing rerun schema")
+	}
+	if rerun.LogID != "log-1" || rerun.ComponentID != "c1" {
+		t.Fatalf("rerun info = %+v", rerun)
+	}
+	if _, ok := rerun.DSL["components"]; !ok {
+		t.Fatalf("task rerun dsl = %v", rerun.DSL)
+	}
+	taskPath, _ := rerun.DSL["path"].([]interface{})
+	if len(taskPath) != 1 || taskPath[0] != "c1" {
+		t.Fatalf("task rerun dsl path = %v, want [c1]", rerun.DSL["path"])
 	}
 
 	// Prior counters are cleared for the rerun.
