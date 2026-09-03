@@ -62,3 +62,20 @@ def test_queue_tasks_keeps_multiple_page_ranges_for_naive(monkeypatch):
     queued_tasks = _queue_tasks(monkeypatch, "naive", {"pages": [[1, 5], [10, 15]], "task_page_size": 12})
 
     assert len(queued_tasks) > 1
+
+
+@pytest.mark.p2
+def test_queue_tasks_logs_the_resume_collapse(monkeypatch, caplog):
+    with caplog.at_level("INFO"):
+        _queue_tasks(monkeypatch, "resume", {"pages": [[1, 5], [10, 15]]})
+
+    assert "Document doc-id uses the resume parser" in caplog.text
+    assert "[[1, 5], [10, 15]]" in caplog.text
+
+
+@pytest.mark.p2
+def test_queue_tasks_does_not_log_the_resume_collapse_for_naive(monkeypatch, caplog):
+    with caplog.at_level("INFO"):
+        _queue_tasks(monkeypatch, "naive", {"pages": [[1, 5], [10, 15]], "task_page_size": 12})
+
+    assert "uses the resume parser" not in caplog.text
