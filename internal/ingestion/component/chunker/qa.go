@@ -205,6 +205,11 @@ var htmlTR = regexp.MustCompile(`(?i)<tr[^>]*>(.*?)</tr>`)
 var htmlTD = regexp.MustCompile(`(?i)<t[dh][^>]*>(.*?)</t[dh]>`)
 var htmlTag = regexp.MustCompile(`<[^>]+>`)
 
+// isTableHTML reports whether the text is a rendered HTML table.
+func isTableHTML(s string) bool {
+	return strings.HasPrefix(strings.TrimSpace(strings.ToLower(s)), "<table")
+}
+
 func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if htmlStr == "" {
 		return nil
@@ -430,7 +435,16 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 		if txt == "" {
 			continue
 		}
-		tmp := extractQAText(txt)
+		// A JSON item can hold a rendered HTML table. The xlsx, docx, html
+		// and markdown parsers all emit one. Splitting that markup on
+		// newlines produces no CSV record, so read the rows the same way
+		// the HTML payload path does.
+		var tmp []qaPair
+		if isTableHTML(txt) {
+			tmp = extractQATable(txt, false)
+		} else {
+			tmp = extractQAText(txt)
+		}
 		// Preserve the source item's image id and coordinates on each
 		// extracted pair
 		for _, p := range tmp {
