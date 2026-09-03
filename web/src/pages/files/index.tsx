@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { LucidePlus } from 'lucide-react';
@@ -62,6 +63,8 @@ export default function Files() {
     clearRowSelection,
     selectedCount,
   } = useRowSelection();
+
+  useClearSelectionOnPageChange(pagination, clearRowSelection);
 
   const {
     showMoveFileModal,

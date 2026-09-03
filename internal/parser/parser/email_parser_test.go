@@ -247,8 +247,14 @@ func TestEmailParser_MsgSupported(t *testing.T) {
 	if v, ok := item["subject"].(string); !ok || v != "asdf" {
 		t.Errorf("subject: got %q", v)
 	}
-	if v, ok := item["date"].(string); !ok || v != "2018-03-24 00:06:29+0800" {
-		t.Errorf("date: got %q, want 2018-03-24 00:06:29+0800", v)
+	// The rendered offset follows the host timezone, so assert the layout and the
+	// instant instead of one host's spelling.
+	if v, ok := item["date"].(string); !ok {
+		t.Errorf("date: got %T, want string", item["date"])
+	} else if got, err := time.Parse("2006-01-02 15:04:05-0700", v); err != nil {
+		t.Errorf("date %q: %v", v, err)
+	} else if want := time.Date(2018, 3, 23, 16, 6, 29, 0, time.UTC); !got.Equal(want) {
+		t.Errorf("date: got %q = %v, want %v", v, got.UTC(), want)
 	}
 	if v, ok := item["text"].(string); !ok || v != " \r\n\r\n" {
 		t.Errorf("text: got %q", v)

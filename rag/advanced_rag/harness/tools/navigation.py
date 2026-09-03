@@ -27,6 +27,7 @@ to ``hypergraph``) and walks it breadth-first from seed entities.
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 import json_repair
@@ -34,7 +35,6 @@ import json_repair
 from rag.advanced_rag.harness.chunk_utils import (
     _chunk_id,
     _chunk_text,
-    _doc_title,
     _snippet,
     _xml_escape,
 )
@@ -56,6 +56,46 @@ _MAX_EVIDENCE_CHUNKS = 24
 
 # Cap on entities offered to the nav-tree entity selector.
 _MAX_ENTITIES = 300
+
+
+@dataclass
+class NavResult:
+    """Structured outcome of ONE compiled-navigation call.
+
+    ``text`` is what the MODEL sees (unchanged XML). The remaining fields are the
+    signals the ORCHESTRATOR needs to route on: does this dataset have the
+    structure at all, did THIS query reach anything, and was the result worth
+    using? Without them the caller can only regex the XML — which is how a
+    ``count="1" entities="0"`` empty shell used to read as a successful hit, and
+    how a single unrouted query used to disable the tool for a whole session.
+
+    :param doc_ids: documents reached (the routing result).
+    :param routed_docs: ``[(doc_id, summary), ...]`` — the routed documents WITH
+        their overall summaries. The summary is the "hint" the orchestrator feeds
+        back into retrieval: nav is a hint, not a constraint, so these become a
+        soft boost/rerank signal instead of a hard ``doc_scope`` filter.
+    :param entities: compiled entities discovered across those documents.
+    :param chunk_ptrs: chunk pointers the outline points the model at.
+    :param top_score: best beam score reached while drilling (0.0 when the
+        keyword fallback scored instead of vectors).
+    :param chunk_paths: ``{chunk_id: "root -> ... -> node"}`` — the full
+        hierarchy path (from the tree root down) of the node that owns each
+        drilled chunk. Lets a caller merge structure context onto retrieved
+        evidence: the snippet says WHAT a chunk contains, the path says WHERE it
+        sits in the document.
+    :param empty_reason: ``""`` when usable, else ``no_structure`` /
+        ``no_doc`` / ``infra`` / ``bad_args``. Only ``no_structure`` is a
+        statement about the DATASET; ``no_doc`` is about the query.
+    """
+
+    text: str = ""
+    doc_ids: list = field(default_factory=list)
+    routed_docs: list = field(default_factory=list)
+    entities: int = 0
+    chunk_ptrs: int = 0
+    top_score: float = 0.0
+    chunk_paths: dict = field(default_factory=dict)
+    empty_reason: str = ""
 
 
 def _normalize_kind(kind) -> str:
@@ -616,18 +656,38 @@ _NAV_SEARCH_MAX_DOCS = 12  # documents the hybrid search routes to
 _NAV_MIN_DOC_SCORE = 0.2  # drop docs below this score
 
 
-async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_scope: list[str] | None = None) -> list[str]:
-    """Return the ``doc_id``s most relevant to the question / keywords by
-    searching the dataset's navigation-tree document leaves (``nav_doc`` layer).
+async def _nav_search_titled(tools, topic: str, keywords: str = "", doc_scope: list[str] | None = None) -> list[tuple[str, str]]:
+    """Descend the compiled nav TREE and return ``(doc_id, summary)`` pairs.
 
-    Runs ``search_dataset_layers`` with ``mode="nav_doc"``: a direct hybrid
-    search over the nav-tree doc leaves, so it only sees documents that have a
-    compiled nav-tree node.  Faster, no LLM cost, but less precise for ambiguous
-    queries.
+    Uses ``mode="navigation_tree"``, which currently resolves to a FLAT hybrid
+    sweep over every ``nav_doc`` row (``_NAV_TREE_ROUTER = "nav_doc"``) rather
+    than a descent through the cluster levels. The strategy lives server-side, so
+    this function is agnostic to which one is active.
 
-    Returns the routed ``doc_id`` list (capped at ``_NAV_SEARCH_MAX_DOCS``), or
-    ``[]`` when no question/keywords are given or the search returns nothing.
-    This function only routes — it does not retrieve.
+    Flat routing is deliberate. A BFS beam descent narrows the field level by
+    level, and a wrong pick at the first level cannot be undone — the correct
+    branch was already pruned and never reaches the comparison. Nav rows embed
+    ``graph_text`` (the document's full entity/relation listing), so they are
+    discriminating enough to be compared directly without the cluster levels
+    narrowing them for us.
+
+    HYBRID sweep (vector + BM25): both the KNN legs and the ``_text_score``
+    gates stay armed. A pure-vector routing was tried — it dropped the text legs
+    and the ``_text_score > 0`` gate, on the theory that routing cares about
+    semantic matches a summary never spells out. It regressed routing badly:
+    scores collapsed onto the dense leg alone, the descent fell below
+    ``_NAV_TREE_MIN_SCORE`` far more often, and routing returned 1-5 docs instead
+    of hybrid's 7-12 — with 6 outright zero-doc failures per 20-question run.
+    Losing that scope let the downstream retrieval degenerate into a corpus-wide
+    search, which filled the evidence pool with unrelated chunks (gathered
+    passages 85 -> 105, max 213 -> 356) and drove SCA INSUFFICIENT from 6 to 27
+    per run. Routing needs both legs; the vector-only path was removed.
+
+    Each nav row already carries the document's overall summary (``description``
+    on the leaf row), so labelling the route costs ZERO extra queries — the
+    caller must never load the document for a label.
+
+    Routing only — this never retrieves document content.
     """
     query = " ".join(part for part in ((topic or "").strip(), (keywords or "").strip()) if part).strip()
     if not query:
@@ -642,7 +702,7 @@ async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_s
     kbs = getattr(tools, "kbs", []) or []
     allowed_docs = set(doc_scope or [])
 
-    candidates: dict[str, float] = {}
+    candidates: dict[str, tuple[float, str]] = {}
     for kb in kbs:
         # ``doc_scope`` is forwarded query-time (search_dataset_layers applies
         # it as a store filter on every mode), so the top_k truncation never
@@ -652,7 +712,7 @@ async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_s
                 kb.id,
                 kb.tenant_id,
                 query,
-                "nav_doc",
+                "navigation_tree",
                 top_k=_NAV_SEARCH_MAX_DOCS,
                 doc_scope=list(allowed_docs) or None,
             )
@@ -668,12 +728,36 @@ async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_s
             did = str(item.get("doc_id") or "").strip()
             if not did:
                 continue
-            candidates[did] = max(candidates.get(did, float("-inf")), score)
+            # The nav leaf row carries the document's OVERALL summary. Using it
+            # here is the whole point: the route is labelled for free, instead of
+            # loading the document to read its first chunk.
+            nav = item.get("_nav") or {}
+            summary = str(nav.get("description") or nav.get("name") or "").strip()
+            prev = candidates.get(did)
+            if prev is None or score > prev[0]:
+                candidates[did] = (score, summary)
 
-    routed = [did for did, _ in sorted(candidates.items(), key=lambda pair: pair[1], reverse=True)[:_NAV_SEARCH_MAX_DOCS]]
+    routed = [(did, summary) for did, (score, summary) in sorted(candidates.items(), key=lambda pair: pair[1][0], reverse=True)[:_NAV_SEARCH_MAX_DOCS]]
 
     _LOG.info("[Dataset navigation search] Routed to %d document(s) (min_score=%.1f).", len(routed), _NAV_MIN_DOC_SCORE)
     return routed[:_NAV_SEARCH_MAX_DOCS]
+
+
+async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_scope: list[str] | None = None) -> list[str]:
+    """Return the ``doc_id``s most relevant to the question / keywords by
+    descending the dataset's compiled navigation tree.
+
+    Routes through :func:`_nav_search_titled`, which runs
+    ``search_dataset_layers`` with ``mode="navigation_tree"``: a hybrid
+    (vector + BM25) sweep over the ``nav_doc`` rows, with the ``_text_score``
+    gates armed. Which router runs is decided server-side by
+    ``_NAV_TREE_ROUTER``, so this function does not depend on the strategy.
+
+    Returns the routed ``doc_id`` list (capped at ``_NAV_SEARCH_MAX_DOCS``), or
+    ``[]`` when no question/keywords are given or the search returns nothing.
+    This function only routes — it does not retrieve.
+    """
+    return [did for did, _title in await _nav_search_titled(tools, topic, keywords, doc_scope)]
 
 
 # Knowledge-graph and wiki exploration live in ``exploration`` and are
@@ -754,136 +838,81 @@ async def _navigate_tree_impl(
     query: str,
     keywords: str = "",
     doc_scope: list[str] | None = None,
-) -> str:
-    """Locate the document(s) most likely to hold the answer, via the dataset's
-    compiled navigation tree (``dataset_nav`` / ``nav_doc`` layer).
+) -> NavResult:
+    """Locate the document(s) most likely to hold the answer, by descending the
+    dataset's compiled navigation tree (``dataset_nav``).
 
-    This tool routes the question by searching the compiled navigation-tree
-    document leaves (nav_doc) — which cover EVERY document of the dataset
-    (2400+ here), organized into clusters — then returns each routed document
-    with a short excerpt (its first chunk) so you can decide which to deep-read.
+    This tool ROUTES, it does not retrieve: it walks the compiled cluster
+    hierarchy — root cluster → sub-clusters → ``nav_doc`` leaves — with BFS beam
+    pruning, and returns the ``doc_id`` list reached along the most relevant
+    branches. Descending the hierarchy beats a flat sweep over every document
+    summary when the dataset is large and many summaries look alike.
 
     Use it when search_chunks / grep_chunks did not clearly locate the answer and
     you need the document-level view to guide you (e.g. an entity spans many
     docs, or the question mentions a general topic that lives across a document's
-    body). After it returns doc_id values, deep-read the relevant one(s) with
-    list_chunks / navigate_structure.
+    body). After it returns doc_id values, use navigate_structure / list_chunks on
+    the relevant one(s) to get the actual passages.
+
+    It deliberately does NOT fetch document content. Loading full documents here
+    cost ~79 ES queries per document (``fetch_full_document`` pages 128 chunks at
+    a time) only to render a 500-char snippet that navigate_structure supersedes —
+    under the per-pass session fan-out that alone was enough to knock ES over.
 
     Returns an XML <tree_navigation> document. Each routed document is a <doc>
-    element with doc_id, doc_title attributes and a <snippet> element (a short
-    excerpt, NOT the full text). If nothing routes, an empty <tree_navigation/>
-    is returned.
+    element with a ``doc_id`` attribute and, when the nav leaf has one, a
+    <summary> child holding the document's overall summary. No <snippet>: the
+    content decision belongs to navigate_structure. If nothing routes, an empty
+    <tree_navigation/> is returned.
 
     :param query: REQUIRED: the question / topic to route.
-    :param keywords: Optional terms kept only for prompt hints; document routing
-        is driven by the nav-tree doc leaves and does not require keyword hits.
+    :param keywords: Optional terms kept only for prompt hints; routing descends
+        on vector similarity and does not require keyword hits.
     :param doc_scope: Optional document ids to restrict routing to (at most 8).
-    :return: XML <tree_navigation> document.
+    :return: :class:`NavResult` — the XML in ``text`` plus the routed ``doc_ids``.
     """
     from common import settings
 
     if not getattr(settings, "retriever", None):
-        return '<tree_navigation count="0" error="no retriever">\n</tree_navigation>'
+        return NavResult(text='<tree_navigation count="0" error="no retriever">\n</tree_navigation>', empty_reason="infra")
     query = str(query or "").strip()
     if not query:
-        return '<tree_navigation count="0" error="query is required">\n</tree_navigation>'
+        return NavResult(text='<tree_navigation count="0" error="query is required">\n</tree_navigation>', empty_reason="bad_args")
 
     tools_slot = _tools_slot()
-    # Route via the compiled navigation tree (dataset_nav / nav_doc layer): it
-    # covers ALL documents of the dataset organized into clusters, so a query can
-    # reach documents that pure embedding routing would miss. Fall back to pure
-    # embedding routing only when the dataset has NO compiled navigation tree.
-    routed = await dataset_navigation_search(tools_slot, query, keywords, doc_scope)
+    # PURE VECTOR descent over the compiled nav tree (dataset_nav), so a query
+    # reaches documents that term matching would miss. The climb narrows the
+    # candidate set level by level instead of comparing every document summary at
+    # once — accuracy at scale, at the cost of a bounded number of extra KNN
+    # queries (beam_width per depth).
+    #
+    # There is deliberately NO chunk-retrieval fallback here. Routing used to fall
+    # back to a full retriever pass over every chunk whenever the nav search came
+    # back empty — the generic retriever reinventing what dataset_nav already
+    # does, and by far the most expensive thing this file could do. When routing
+    # misses, the caller falls back to retrieve/search_chunks: the same work, done
+    # once and owned by the orchestrator instead of hidden inside a "route" call.
+    routed = await _nav_search_titled(tools_slot, query, keywords, doc_scope)
     if not routed:
-        routed = await _route_docs_via_embedding(tools_slot, query, doc_scope)
-    if not routed:
-        return '<tree_navigation count="0">\n</tree_navigation>'
+        # THIS query routed to nothing. The dataset may still have a nav tree that
+        # a better-formed query would hit — a query-level miss, not a dataset fact.
+        return NavResult(text='<tree_navigation count="0">\n</tree_navigation>', empty_reason="no_doc")
 
+    routed = routed[:_NAV_TREE_MAX_DOCS]
     parts = [f'<tree_navigation count="{len(routed)}" query="{_xml_escape(query)}">']
-    for i, doc_id in enumerate(routed[:_NAV_TREE_MAX_DOCS]):
-        title = ""
-        snippet = ""
-        try:
-            full = await tools_slot.fetch_full_document(doc_id)
-            doc_chunks = full.get("chunks", []) or []
-            if doc_chunks:
-                title = _doc_title(doc_chunks[0]) or doc_id
-                snippet = _chunk_text(doc_chunks[0])
-                if len(snippet) > 500:
-                    snippet = snippet[:500]
-            else:
-                title = doc_id
-        except Exception:
-            title = doc_id
-        parts.append(f'  <doc rank="{i + 1}" doc_id="{_xml_escape(doc_id)}" doc_title="{_xml_escape(title)}">')
-        if snippet:
-            parts.append(f"    <snippet>{_xml_escape(snippet)}</snippet>")
-        parts.append("  </doc>")
+    for i, (doc_id, summary) in enumerate(routed):
+        if summary:
+            parts.append(f'  <doc rank="{i + 1}" doc_id="{_xml_escape(doc_id)}">')
+            parts.append(f"    <summary>{_xml_escape(summary)}</summary>")
+            parts.append("  </doc>")
+        else:
+            parts.append(f'  <doc rank="{i + 1}" doc_id="{_xml_escape(doc_id)}"/>')
     parts.append("</tree_navigation>")
-    return "\n".join(parts)
-
-
-async def _route_docs_via_embedding(tools_slot, query: str, doc_scope: list[str] | None = None, top_n: int = 12) -> list[str]:
-    """Route ``query`` to documents by PURE embedding similarity — ZERO keywords.
-
-    Encodes the query with ``tools.embed_mdl`` and retrieves the most
-    vector-similar real document chunks (compiled products excluded), aggregated
-    to documents via ``doc_aggs``. There is NO nav-tree ``_text_score > 0``
-    keyword-literal gate and no hybrid/BM25 leg: routing is driven purely by
-    vector similarity, so a question that matches a document's body only
-    semantically (e.g. an entity alias the summary never spells out) still
-    routes to the right document.
-
-    Returns a deduplicated most-relevant-first ``doc_id`` list, or ``[]`` on
-    failure / when nothing hits. This function only routes — it does not
-    retrieve structure.
-    """
-    if not query or not str(query).strip():
-        return []
-    if not getattr(tools_slot, "embed_mdl", None):
-        _LOG.warning("[navigate_structure] no embed_mdl available; cannot route by embedding")
-        return []
-    from common import settings
-
-    if not getattr(settings, "retriever", None):
-        return []
-    target_ids = _get_kb_ids(tools_slot)
-    if not target_ids:
-        return []
-    tenant_ids = getattr(tools_slot, "tenant_ids", None) or []
-    if not tenant_ids:
-        tid = _first_tenant_id(tools_slot)
-        if tid:
-            tenant_ids = [tid]
-    if not tenant_ids:
-        return []
-    try:
-        kbinfos = await settings.retriever.retrieval(
-            str(query).strip(),
-            tools_slot.embed_mdl,
-            tenant_ids,
-            target_ids,
-            1,
-            top_n,
-            0.2,
-            vector_similarity_weight=1.0,  # pure embedding — no keyword/BM25 leg
-            aggs=True,
-            highlight=False,
-            doc_ids=doc_scope,
-            must_not={"exists": "compile_kwd"},  # real doc chunks only; compiled products have their own tools
-        )
-    except Exception:
-        _LOG.exception("[navigate_structure] embedding doc routing failed")
-        return []
-    doc_ids: list[str] = []
-    seen: set[str] = set()
-    for agg in kbinfos.get("doc_aggs") or []:
-        did = str(agg.get("doc_id") or "").strip()
-        if did and did not in seen:
-            seen.add(did)
-            doc_ids.append(did)
-    _LOG.info("[navigate_structure] Embedding doc routing found %d candidate document(s).", len(doc_ids))
-    return doc_ids
+    return NavResult(
+        text="\n".join(parts),
+        doc_ids=[did for did, _ in routed],
+        routed_docs=[(did, summary) for did, summary in routed],
+    )
 
 
 def _first_tenant_id(tools_slot) -> str:
@@ -941,8 +970,12 @@ async def _navigate_structure_impl(
     structure of the requested kind, an empty <doc/> is returned (no error) — fall
     back to list_chunks / search_chunks.
 
-    This tool performs NO chat-LLM calls: it only reads the compiled structure
-    rows from the doc store.
+    Cost: the structure rows themselves are read from the doc store. When the
+    document's nodes carry their own embeddings (page_index), the whole TOC is
+    additionally handed to the chat model once, so it can pick the relevant
+    sections — see ``_STRUCT_TOC_LLM_SELECT``. That pass is a single call per
+    document, and an empty or failed result falls through to local scoring, so
+    the tool still works without a chat model.
 
     :param query: REQUIRED: the question/topic (used to route to a document when
         ``doc_id`` is not given).
@@ -959,10 +992,10 @@ async def _navigate_structure_impl(
     from common import settings
 
     if not getattr(settings, "retriever", None):
-        return '<structure_navigation count="0" error="no retriever">\n</structure_navigation>'
+        return NavResult(text='<structure_navigation count="0" error="no retriever">\n</structure_navigation>', empty_reason="infra")
     query = str(query or "").strip()
     if not query:
-        return '<structure_navigation count="0" error="query is required">\n</structure_navigation>'
+        return NavResult(text='<structure_navigation count="0" error="query is required">\n</structure_navigation>', empty_reason="bad_args")
 
     # Determine which compiled kinds to read.
     kinds = _structure_kinds_for(kind)
@@ -971,23 +1004,47 @@ async def _navigate_structure_impl(
     if doc_id:
         doc_ids = [str(doc_id).strip()] if str(doc_id).strip() else []
     else:
-        # Locate the document by PURE embedding similarity — no nav-tree
-        # keyword-literal gate, no hybrid/BM25 leg (see _route_docs_via_embedding).
-        doc_ids = await _route_docs_via_embedding(tools_slot, query, doc_scope)
+        # Route by PURE VECTOR similarity over the nav tree — the same seam
+        # navigate_tree uses. This used to fall back to a full chunk-retriever
+        # pass, which reinvented nav routing with the most expensive tool in the
+        # file: a hybrid sweep over every chunk of the dataset to answer "which
+        # document?", a question dataset_nav already answers with one KNN query.
+        doc_ids = [did for did, _summary in await _nav_search_titled(tools_slot, query, "", doc_scope)]
     if not doc_ids:
-        return '<structure_navigation count="0" error="no document located">\n</structure_navigation>'
+        # The QUERY routed to nothing (or the caller passed a doc_id no route ever
+        # produced). Not a statement about the dataset's compiled structures.
+        return NavResult(text='<structure_navigation count="0" error="no document located">\n</structure_navigation>', empty_reason="no_doc")
 
     structures = await _read_structures(tools_slot, query, doc_ids[:_NAV_TREE_MAX_DOCS], kinds)
 
     parts = [f'<structure_navigation count="{len(structures)}" query="{_xml_escape(query)}" kind="{_xml_escape(kind)}">']
+    total_entities = 0
+    total_ptrs = 0
+    best_score = 0.0
+    all_chunk_paths: dict[str, str] = {}
     for i, s in enumerate(structures):
+        stats = s.get("stats") or {}
+        total_entities += len(s.get("entities") or [])
+        total_ptrs += int(stats.get("chunk_ptrs") or 0)
+        best_score = max(best_score, float(stats.get("top_score") or 0.0))
+        for cid, path in (s.get("chunk_paths") or {}).items():
+            if cid and cid not in all_chunk_paths:
+                all_chunk_paths[cid] = path
         parts.append(f'  <doc rank="{i + 1}" doc_id="{_xml_escape(s["doc_id"])}" doc_title="{_xml_escape(s["title"])}" entities="{len(s["entities"])}" relations="{len(s["relations"])}">')
         outline = s["outline"]
         if outline:
             parts.append(f"    <structure>{_xml_escape(outline)}</structure>")
         parts.append("  </doc>")
     parts.append("</structure_navigation>")
-    return "\n".join(parts)
+    return NavResult(
+        text="\n".join(parts),
+        doc_ids=list(structures and [s["doc_id"] for s in structures] or []),
+        entities=total_entities,
+        chunk_ptrs=total_ptrs,
+        top_score=round(best_score, 4),
+        chunk_paths=all_chunk_paths,
+        empty_reason="no_structure" if total_entities == 0 else "",
+    )
 
 
 def _structure_kinds_for(kind: str) -> set:
@@ -1010,6 +1067,33 @@ _STRUCT_VEC_BEAM_RATIO = 0.5  # vector beam: drop nodes below best*this similari
 _STRUCT_MAX_NODES = 10  # cap on nodes rendered in the outline.
 _STRUCT_MAX_CHUNKS = 4  # cap on chunk snippets returned in the outline.
 _STRUCT_DESC_SNIPPET = 180  # cap on a node's description snippet in the outline.
+# Chunks recalled per document when a tree cannot score its own nodes and the
+# chunk index has to choose instead.  Wide enough that several nodes can be
+# covered, so the outline is not pinned to a single branch.
+_STRUCT_RECALL_TOP_N = 24
+# Snippets rendered on that path.  Higher than _STRUCT_MAX_CHUNKS because there
+# the chunks *are* the answer's material — the outline is only the annotation.
+_STRUCT_MAX_CHUNK_HITS = 8
+# Document-in-LLM selection (PageIndex tree-search / VecTree-RAG Layer 1): the
+# whole TOC is handed to the model at once and it returns every node it thinks
+# is relevant.  This is deliberately NOT a top-down descent — the model sees all
+# levels simultaneously, so a wrong pick cannot prune a branch, which is the
+# failure mode beam descent has (SCT measures it as routing accuracy 20.2% vs
+# 39.3% for flat selection).
+# OFF by default.  Correct in principle — the model sees every level at once, so
+# nothing is pruned — but it costs one chat call per document, and the drill rung
+# calls navigate_structure once per routed document (8 docs = 8 extra calls per
+# question).  Measured 2026-09-02: with it on, per-question LLM calls went 9-17
+# -> 37 and the 180s research budget was exhausted on 15 of 16 questions
+# (baseline: 1 of 28).  Turn it on only when the LLM has headroom; prefer
+# restricting it to the top-ranked document first.
+_STRUCT_TOC_LLM_SELECT = False
+# Budget for the serialized TOC.  VecTree-RAG quotes 200-500 tokens per document
+# for section summaries; facts are included here too, so this allows more.
+# _ask_nav_select truncates past this via message_fit_in regardless.
+_STRUCT_TOC_MAX_NODES = 120
+_STRUCT_TOC_DESC_SNIPPET = 120
+_STRUCT_TOC_MAX_DEPTH = 6
 # Snippet length / per-doc cap for the related chunks appended after a
 # search_chunks hit (from the document's compiled structure, not a full read).
 _STRUCT_RELATED_SNIPPET_CHARS = 300
@@ -1161,7 +1245,24 @@ async def _read_structures(tools_slot, query: str, doc_ids: list[str], kinds: se
                 relations = structure.get("relations") or []
         except Exception:
             _LOG.exception("[navigate_structure] structure load failed for doc=%s", doc_id)
-        outline = await _render_toc_drilldown(query, qvec, entities, relations)
+
+        # Two selection strategies, chosen by whether the tree can score itself.
+        hits: list[tuple[str, float]] = []
+        selected: list[str] = []
+        if entities and _has_distinct_node_vectors(entities):
+            # page_index / per-node embeddings: hand the whole TOC to the model
+            # at once.  It sees every level simultaneously, so nothing is pruned
+            # by an early bad pick.  Empty result just means "caller's problem",
+            # so fall through to the beam only when the model is unavailable.
+            if _STRUCT_TOC_LLM_SELECT:
+                selected = await _select_toc_nodes(tools_slot, query, entities, relations)
+        else:
+            # RAPTOR blob path: every node shares the blob's one embedding, so
+            # beam descent would select arbitrarily.  Let the chunk index choose
+            # and keep the tree for labelling where the chosen chunks sit.
+            hits = await _recall_chunk_ids_in_doc(tools_slot, query, doc_id, _STRUCT_RECALL_TOP_N)
+
+        outline, stats, chunk_paths = await _render_toc_drilldown(query, qvec, entities, relations, chunk_hits=hits or None, selected=selected or None)
         out.append(
             {
                 "doc_id": doc_id,
@@ -1169,6 +1270,8 @@ async def _read_structures(tools_slot, query: str, doc_ids: list[str], kinds: se
                 "entities": entities,
                 "relations": relations,
                 "outline": outline,
+                "stats": stats,
+                "chunk_paths": chunk_paths,
             }
         )
     return out
@@ -1240,6 +1343,177 @@ def _cosine(a, b):
         return 0.0
 
 
+def _vecs_equal(a, b) -> bool:
+    """Whether two node embeddings are the same vector."""
+    try:
+        if a is b:
+            return True
+        la, lb = list(a), list(b)
+        if len(la) != len(lb):
+            return False
+        # Distinct embeddings diverge long before the tail; a prefix compare is
+        # enough and keeps this cheap on 1024-dim vectors.
+        return all(x == y for x, y in zip(la[:16], lb[:16]))
+    except Exception:
+        return False
+
+
+def _has_distinct_node_vectors(entities: list[dict]) -> bool:
+    """Whether nodes carry per-node embeddings rather than one shared vector.
+
+    The RAPTOR/tree main path persists a single graph blob, so every node
+    inherits that blob's one vector (see ``_load_entities_with_vectors``) and
+    beam scoring degenerates: every node gets the same cosine, the top-K is
+    whatever the row order happened to be, and the drill carries no signal.
+    page_index and the pipeline Compiler write one row per entity with its own
+    embedding, so their trees do discriminate.
+    """
+    first = None
+    for e in entities:
+        v = e.get("_vec")
+        if v is None:
+            continue
+        if first is None:
+            first = v
+        elif not _vecs_equal(first, v):
+            return True
+    # Either no node has a vector, or they all share one — neither discriminates.
+    return False
+
+
+async def _recall_chunk_ids_in_doc(tools, query: str, doc_id: str, top_n: int) -> list[tuple[str, float]]:
+    """Hybrid chunk retrieval confined to one document, as ``[(chunk_id, score)]``.
+
+    Used when a compiled tree cannot score its own nodes: the chunk index then
+    decides *which* nodes matter, and the tree is left to label where they sit.
+    """
+    if not query or not doc_id:
+        return []
+    from common import settings
+
+    target_ids = getattr(tools, "kb_ids", None) or []
+    if not target_ids:
+        return []
+    embd_mdl = getattr(tools, "embed_mdl", None)
+    try:
+        kbinfos = await settings.retriever.retrieval(
+            query,
+            embd_mdl,
+            getattr(tools, "tenant_ids", None),
+            target_ids,
+            1,
+            top_n,
+            0.0,
+            vector_similarity_weight=0.3 if embd_mdl else 0,
+            doc_ids=[str(doc_id).strip()],
+            highlight=False,
+            # RAPTOR cluster nodes live in the chunk index (rechunk_kwd=tree, no
+            # compile_kwd), so they survive this filter and stay retrievable —
+            # which is the point, since they are the structure.
+            must_not={"exists": "compile_kwd"},
+        )
+    except Exception:
+        _LOG.exception("[navigate_structure] chunk recall failed for doc=%s", doc_id)
+        return []
+    hits: list[tuple[str, float]] = []
+    for c in kbinfos.get("chunks", []):
+        cid = str(c.get("chunk_id") or c.get("id") or "").strip()
+        if cid:
+            hits.append((cid, float(c.get("similarity") or 0.0)))
+    return hits
+
+
+def _build_toc_items(entities: list[dict], relations: list[dict]) -> list[dict]:
+    """Serialize the whole TOC, indented by depth, for one-shot LLM selection.
+
+    Indentation is the only structure the model gets: it reads the list the way a
+    reader reads a table of contents.  Every node carries its real name through
+    ``_node`` so the selection can be mapped back without string matching.
+
+    Orphans (nodes no relation attaches to a root) are appended last at depth 0 —
+    dropping them would silently hide content from the model.
+    """
+    by_name, children, parents, roots = _build_toc_tree(entities, relations)
+    if not by_name:
+        return []
+
+    items: list[dict] = []
+    seen: set[str] = set()
+
+    def _walk(name: str, depth: int) -> None:
+        if name in seen or depth > _STRUCT_TOC_MAX_DEPTH:
+            return
+        seen.add(name)
+        e = by_name.get(name)
+        if not e:
+            return
+        desc = str(e.get("description") or "").strip().replace("\n", " ")
+        items.append(
+            {
+                "_node": name,
+                "name": "  " * depth + name,
+                "description": _snippet(desc, _STRUCT_TOC_DESC_SNIPPET),
+            }
+        )
+        for child in children.get(name, []):
+            _walk(child, depth + 1)
+
+    for r in roots:
+        _walk(r, 0)
+    for name in by_name:
+        if name not in seen:
+            _walk(name, 0)
+    return items
+
+
+async def _select_toc_nodes(tools, query: str, entities: list[dict], relations: list[dict]) -> list[str]:
+    """Let the model pick TOC nodes in one shot. Returns node names (''-filtered).
+
+    Returns ``[]`` on any failure so the caller can fall back — never raises.
+    """
+    if not entities:
+        return []
+    try:
+        items = _build_toc_items(entities, relations)
+    except Exception:
+        _LOG.exception("[navigate_structure] TOC serialization failed")
+        return []
+    if not items:
+        return []
+    try:
+        picked = await _ask_nav_select(tools, query, items, "sections", _STRUCT_TOC_MAX_NODES)
+    except Exception:
+        # _ask_nav_select catches model failures, but serialization/other paths can
+        # still raise; the caller must be able to fall through to local scoring.
+        _LOG.exception("[navigate_structure] TOC model selection failed")
+        return []
+    names = []
+    for it in picked or []:
+        name = str(it.get("_node") or "").strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def _nodes_covering_chunks(entities: list[dict], chunk_ids: set[str]) -> list[str]:
+    """Names of nodes whose ``source_chunk_ids`` cover any of ``chunk_ids``.
+
+    Used only to give retrieved chunks a structural home.  A chunk that no node
+    covers is still returned — the tree annotates, it does not select.
+    """
+    if not chunk_ids:
+        return []
+    names: list[str] = []
+    for e in entities:
+        name = (e.get("name") or "").strip()
+        if not name:
+            continue
+        ids = {str(c) for c in (e.get("source_chunk_ids") or []) if isinstance(c, str) and c}
+        if ids & chunk_ids:
+            names.append(name)
+    return names
+
+
 def _node_score(qvec, query_terms, entity: dict) -> float:
     """Score a TOC node: cosine similarity (if the node has an embedding and we
     have a query vector), else keyword-overlap. Higher is better."""
@@ -1250,22 +1524,28 @@ def _node_score(qvec, query_terms, entity: dict) -> float:
     return float(_node_relevance(query_terms, entity))
 
 
-def _drill_kept_nodes(query_terms: list[str], qvec, entities: list[dict], relations: list[dict]) -> tuple[list[dict], dict, set]:
+def _drill_kept_nodes(query_terms: list[str], qvec, entities: list[dict], relations: list[dict]) -> tuple[list[dict], dict, set, float]:
     """VECTOR BEAM drill-down over the compiled TOC hierarchy.
 
     From the roots, at each level keep the top-K nodes by cosine similarity to the
     query (``_node_score``) and descend to their children; keyword-overlap is the
-    fallback when no vectors are available. Returns ``(kept_nodes, parents, kept_names)``
-    so callers can both render the outline AND collect the related chunks behind the
-    drilled nodes' ``source_chunk_ids``.
+    fallback when no vectors are available. Returns
+    ``(kept_nodes, parents, kept_names, best_score)`` so callers can both render
+    the outline AND collect the related chunks behind the drilled nodes'
+    ``source_chunk_ids``.
+
+    ``best_score`` is the highest score reached at any level — the quality signal
+    the orchestrator routes on. It was computed here and thrown away; surfacing it
+    is what lets callers tell a shallow drift from a solid hit without re-scoring.
     """
     by_name, children, parents, roots = _build_toc_tree(entities, relations)
     if not roots:
-        return [], {}, set()
+        return [], {}, set(), 0.0
 
     frontier = list(roots)
     kept_names: set[str] = set()
     depth = 0
+    best_overall = 0.0
     # ``<=`` so the deepest relevant leaf (at depth MAX_DEPTH) is also collected,
     # not just the intermediate levels.
     while frontier and depth <= _STRUCT_MAX_DEPTH:
@@ -1276,6 +1556,8 @@ def _drill_kept_nodes(query_terms: list[str], qvec, entities: list[dict], relati
         if not scored:
             break
         best = scored[0][0]
+        if best > best_overall:
+            best_overall = best
         # If even the best node has no relevance, stop descending.
         if qvec is None and best < _STRUCT_RELEVANCE_MIN:
             break
@@ -1310,29 +1592,92 @@ def _drill_kept_nodes(query_terms: list[str], qvec, entities: list[dict], relati
         e = by_name.get(n)
         if e is not None:
             kept_nodes.append(e)
-    return kept_nodes, parents, kept_names
+    return kept_nodes, parents, kept_names, best_overall
 
 
-async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relations: list[dict]) -> str:
-    """Drill down the pre-built TOC hierarchy toward the query and render an outline.
+async def _render_toc_drilldown(
+    query: str,
+    qvec,
+    entities: list[dict],
+    relations: list[dict],
+    chunk_hits: list[tuple[str, float]] | None = None,
+    selected: list[str] | None = None,
+) -> tuple[str, dict, dict]:
+    """Render a query-focused outline of one document's compiled structure.
 
-    Uses VECTOR BEAM descent when the nodes carry embeddings (``_vec``) and a query
-    vector is available: from the roots, at each level keep the top-K nodes by
-    cosine similarity to the query and descend to their children. Falls back to
-    keyword-overlap when no vectors are available.
+    Three ways to choose what to show, in the order the caller tries them:
+
+    ``selected`` — node names already chosen elsewhere (the whole-TOC LLM pass,
+        see ``_select_toc_nodes``).  Every level was visible to the model at once,
+        so nothing is pruned; chunks come from the chosen nodes' ``source_ids``.
+
+    ``chunk_hits`` — ``[(chunk_id, score)]`` from chunk retrieval, used when the
+        tree cannot score its own nodes (RAPTOR blob path).  Selection belongs to
+        the chunk index outright: the chunks are returned **as retrieved**, not
+        filtered back through the nodes, and the tree is left to do the only job
+        it is still needed for — labelling where each chunk sits.  Round-tripping
+        the selection through the nodes would silently drop every chunk no node
+        happens to cover, which for a clustered tree is most of them.
+
+    neither — VECTOR BEAM descent: from the roots, at each level keep the top-K
+        nodes by cosine similarity to the query and descend to their children,
+        falling back to keyword overlap when no vectors are available.  Kept as
+        the fallback when the model pass returns nothing.
 
     Returns lines like:
         - Paris Demographics (tree_node): <desc> [chunks: c1,c2]
           - Immigration since 1945 (tree_node): <desc> [chunks: c3]
         - [chunk c3]: <snippet>
+
+    Also returns a stats dict (``nodes``, ``chunk_ptrs``, ``top_score``) and a
+    ``chunk_paths`` map ``{chunk_id: "root -> ... -> node"}`` — the full
+    hierarchy path of the node owning each drilled chunk — so a caller can merge
+    structure context onto retrieved evidence without re-deriving the tree.
     """
     query_terms = [t for t in re.findall(r"[A-Za-z0-9_]{2,}", (query or "").lower()) if len(t) >= 2]
-    if not query_terms and qvec is None:
-        return _render_outline(entities[:_STRUCT_MAX_NODES], relations[:_STRUCT_MAX_NODES])
+    # Pinned nodes were chosen elsewhere (chunk retrieval), so they stand even
+    # when the query yields no usable terms — bailing out here would discard a
+    # perfectly good selection just because the query is short.
+    if not chunk_hits and not selected and not query_terms and qvec is None:
+        return _render_outline(entities[:_STRUCT_MAX_NODES], relations[:_STRUCT_MAX_NODES]), _outline_stats(entities), {}
 
-    kept_nodes, parents, kept_names = _drill_kept_nodes(query_terms, qvec, entities, relations)
-    if not kept_nodes:
-        return _render_outline(entities[:_STRUCT_MAX_NODES], relations[:_STRUCT_MAX_NODES])
+    by_name, _children, parents, _roots = _build_toc_tree(entities, relations)
+
+    def _with_ancestors(names: set[str]) -> set[str]:
+        """Pull in ancestors so a path renders as root -> ... -> node."""
+        for name in list(names):
+            cur = parents.get(name)
+            guard = 0
+            while cur and cur not in names and guard < _STRUCT_MAX_DEPTH:
+                names.add(cur)
+                cur = parents.get(cur)
+                guard += 1
+        return names
+
+    selected_ids: list[str] = []
+    if selected:
+        kept_names = _with_ancestors({n for n in selected if n in by_name})
+        kept_nodes = [by_name[n] for n in kept_names if n in by_name]
+        # The model picked nodes, so the chunks are theirs to supply.
+        # No score: the model chooses, it does not rank (see stats["selector"]).
+        best = 0.0
+        selector = "llm_toc"
+    elif chunk_hits:
+        # Keep the retrieval's own ordering — it is the relevance order.
+        seen: set[str] = set()
+        for cid, _score in chunk_hits:
+            if cid and cid not in seen:
+                seen.add(cid)
+                selected_ids.append(cid)
+        kept_names = _with_ancestors({n for n in _nodes_covering_chunks(entities, set(selected_ids)) if n in by_name})
+        kept_nodes = [by_name[n] for n in kept_names if n in by_name]
+        best = max((float(s) for _c, s in chunk_hits), default=0.0)
+        selector = "chunk_retrieval"
+    else:
+        kept_nodes, parents, kept_names, best = _drill_kept_nodes(query_terms, qvec, entities, relations)
+        selector = "beam"
+    if not kept_nodes and not selected_ids:
+        return _render_outline(entities[:_STRUCT_MAX_NODES], relations[:_STRUCT_MAX_NODES]), _outline_stats(entities), {}
 
     # Render the drilled nodes (indented by depth via ancestor count).
     depth_of: dict[str, int] = {}
@@ -1343,6 +1688,25 @@ async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relation
             d += 1
             cur = parents.get(cur)
         depth_of[n] = d
+
+    # root -> ... -> node path for every drilled node, mapped onto its chunks so
+    # the caller can annotate retrieved evidence with where it sits structurally.
+    chunk_paths: dict[str, str] = {}
+    for e in kept_nodes:
+        name = (e.get("name") or "").strip()
+        if not name:
+            continue
+        segs = [name]
+        cur = parents.get(name)
+        guard = 0
+        while cur and guard < _STRUCT_MAX_DEPTH:
+            segs.append(cur)
+            cur = parents.get(cur)
+            guard += 1
+        path = " -> ".join(reversed(segs))
+        for cid in e.get("source_chunk_ids") or []:
+            if isinstance(cid, str) and cid and cid not in chunk_paths:
+                chunk_paths[cid] = path
 
     lines: list[str] = []
     for e in kept_nodes[:_STRUCT_MAX_NODES]:
@@ -1358,17 +1722,44 @@ async def _render_toc_drilldown(query: str, qvec, entities: list[dict], relation
             line += f" [chunks: {chunks}]"
         lines.append(line)
 
-    # Rank the chunks behind the drilled nodes and add short snippets.
-    wanted = _collect_chunk_ids(kept_nodes)
+    # Chunk snippets.  When chunk retrieval did the selecting, those hits are
+    # returned as-is: filtering them back through the nodes would drop every
+    # chunk no node happens to cover.  Otherwise take the chunks behind the
+    # drilled nodes.
+    wanted = selected_ids or _collect_chunk_ids(kept_nodes)
     if wanted:
         chunks = await _load_chunks_for_ids(_tools_slot(), wanted)
         if chunks:
-            ranked = _rank_chunks_by_terms(chunks, [query])
-            for c in ranked[:_STRUCT_MAX_CHUNKS]:
+            if selected_ids:
+                # Retrieval order is the relevance order; re-ranking by terms
+                # would discard the score that selected them.
+                ranked = sorted(chunks, key=lambda c: selected_ids.index(_chunk_id(c)))
+                limit = _STRUCT_MAX_CHUNK_HITS
+            else:
+                ranked = _rank_chunks_by_terms(chunks, [query])
+                limit = _STRUCT_MAX_CHUNKS
+            for c in ranked[:limit]:
                 cid = _chunk_id(c)
                 text = _chunk_text(c).strip()
                 lines.append(f"- [chunk {cid}]: {_snippet(text, 300)}")
-    return "\n".join(lines)
+    stats = {
+        "nodes": len(kept_nodes),
+        "chunk_ptrs": len(wanted),
+        "top_score": round(float(best), 4),
+        # Which strategy chose the nodes.  top_score is only meaningful for
+        # "beam" and "chunk_retrieval"; llm_toc has no comparable score.
+        "selector": selector,
+    }
+    return "\n".join(lines), stats, chunk_paths
+
+
+def _outline_stats(entities: list[dict]) -> dict:
+    """Stats for the flat fallback outline: no drill happened, so the beam score
+    is unknown (0.0) and only the entity/chunk counts are meaningful."""
+    ptrs = 0
+    for e in entities[:_STRUCT_MAX_NODES]:
+        ptrs += len(_collect_chunk_ids([e]))
+    return {"nodes": len(entities[:_STRUCT_MAX_NODES]), "chunk_ptrs": ptrs, "top_score": 0.0}
 
 
 def _render_outline(entities: list[dict], relations: list[dict]) -> str:

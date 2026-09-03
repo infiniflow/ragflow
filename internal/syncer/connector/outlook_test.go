@@ -16,7 +16,7 @@ func TestOutlookConnectorOpenSync(t *testing.T) {
 	start := mustTime(t, "2026-01-02T00:00:00Z")
 	end := mustTime(t, "2026-01-04T00:00:00Z")
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestOutlookConnectorOpenSyncResumesWithinPage(t *testing.T) {
 		}, nil
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestOutlookConnectorOpenSyncResumesWithinPage(t *testing.T) {
 		t.Fatalf("first checkpoint = %+v, want msg-2", first.Checkpoint)
 	}
 
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestOutlookConnectorOpenSyncResumesWithinPage(t *testing.T) {
 func TestOutlookConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
 	connector := newFixtureOutlookConnector()
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
 	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
 		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
@@ -127,7 +127,7 @@ func TestOutlookConnectorOpenSyncResumeRejectsMissingRemoteAnchor(t *testing.T) 
 		}, nil
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestOutlookConnectorOpenSyncResumeRejectsMissingRemoteAnchor(t *testing.T) 
 		}, nil
 	}
 
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: first.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync failed: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestOutlookConnectorOpenSyncResumeRejectsMissingRemoteAnchor(t *testing.T) 
 
 func TestOutlookConnectorOpenPrune(t *testing.T) {
 	connector := newFixtureOutlookConnector()
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestOutlookGetJSONRetriesTransientStatus(t *testing.T) {
 		acquireAccessToken: func(ctx context.Context) (string, error) { return "token", nil },
 	}
 	var page outlookDeltaPage
-	if err := connector.getJSON(context.Background(), "https://graph.example.test/messages", &page); err != nil {
+	if err := connector.getJSON(t.Context(), "https://graph.example.test/messages", &page); err != nil {
 		t.Fatalf("getJSON failed: %v", err)
 	}
 	if calls != 2 {
@@ -221,7 +221,7 @@ func TestOutlookGetJSONReadsBodyBeforeCancel(t *testing.T) {
 		},
 	}
 	var page outlookDeltaPage
-	if err := connector.getJSON(context.Background(), server.URL+"/messages", &page); err != nil {
+	if err := connector.getJSON(t.Context(), server.URL+"/messages", &page); err != nil {
 		t.Fatalf("getJSON failed: %v", err)
 	}
 }
@@ -299,7 +299,7 @@ func TestOutlookGetJSONRefreshesTokenAfterUnauthorized(t *testing.T) {
 	}
 
 	var page outlookDeltaPage
-	if err := connector.getJSON(context.Background(), "https://graph.example.test/messages", &page); err != nil {
+	if err := connector.getJSON(t.Context(), "https://graph.example.test/messages", &page); err != nil {
 		t.Fatalf("getJSON failed: %v", err)
 	}
 	if tokenCalls != 2 {
@@ -334,7 +334,7 @@ func TestOutlookConnectorValidateConnectorSetting(t *testing.T) {
 		}, nil
 	})}
 
-	if err := connector.ValidateConnectorSetting(context.Background(), nil); err != nil {
+	if err := connector.ValidateConnectorSetting(t.Context(), nil); err != nil {
 		t.Fatalf("ValidateConnectorSetting: %v", err)
 	}
 	if !probed {

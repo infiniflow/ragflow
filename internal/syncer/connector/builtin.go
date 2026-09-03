@@ -33,6 +33,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "azure_devops", NewAzureDevOpsConnector)
 	registerBuiltIn(registry, "dropbox", NewDropboxConnector)
 	registerBuiltIn(registry, "box", NewBoxConnector)
+	registerBuiltIn(registry, "asana", NewAsanaConnector)
 	registerBuiltIn(registry, "github", NewGitHubConnector)
 	registerBuiltIn(registry, "gitlab", NewGitlabConnector)
 	registerBuiltIn(registry, "gmail", NewGmailConnector)
@@ -62,6 +63,8 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "sharepoint", NewSharePointConnector)
 	registerBuiltIn(registry, "discord", NewDiscordConnector)
 	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
+	registerBuiltIn(registry, "seafile", NewSeaFileConnector)
+	registerBuiltIn(registry, "bigquery", NewBigQueryConnector)
 }
 
 func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {

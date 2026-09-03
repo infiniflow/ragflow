@@ -69,6 +69,7 @@ ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
+
 # Generation parameters that are safe to forward to the underlying completion
 # call. `gen_conf` originates from a chat assistant's `llm_setting`, which can
 # also carry RAGFlow-internal metadata (e.g. `model_type`). Anything outside
@@ -304,6 +305,8 @@ class Base(ABC):
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
+        answer = ""
+        generated_text = ""
 
         gen_conf, extra_request_kwargs = _apply_model_family_policies(
             self.model_name,
@@ -325,25 +328,46 @@ class Base(ABC):
                 resp.choices[0].delta.content = ""
             _reasoning = getattr(resp.choices[0].delta, "reasoning_content", None) or getattr(resp.choices[0].delta, "reasoning", None)
             if kwargs.get("with_reasoning", True) and _reasoning:
-                ans = ""
                 if not reasoning_start:
                     reasoning_start = True
-                    ans = "<think>"
-                ans += _reasoning + "</think>"
+                    yield "<think>", 0
+                tol = total_token_count_from_response(resp)
+                if not tol:
+                    tol = num_tokens_from_string(resp.choices[0].delta.content)
+                generated_text += _reasoning
+                yield _reasoning, tol
+                if resp.choices[0].delta.content:
+                    reasoning_start = False
+                    yield "</think>", 0
+                    answer += resp.choices[0].delta.content
+                    generated_text += resp.choices[0].delta.content
+                    yield resp.choices[0].delta.content, 0
+                if getattr(resp.choices[0], "finish_reason", "") == "length":
+                    if reasoning_start:
+                        reasoning_start = False
+                        yield "</think>", 0
+                    yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN, 0
+                continue
             else:
-                reasoning_start = False
+                if reasoning_start and resp.choices[0].delta.content:
+                    reasoning_start = False
+                    yield "</think>", 0
                 ans = resp.choices[0].delta.content
+                answer += ans
             tol = total_token_count_from_response(resp)
             if not tol:
                 tol = num_tokens_from_string(resp.choices[0].delta.content)
 
             finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
-            if finish_reason == "length":
-                if is_chinese(ans):
-                    ans += LENGTH_NOTIFICATION_CN
-                else:
-                    ans += LENGTH_NOTIFICATION_EN
             yield ans, tol
+            if finish_reason == "length":
+                if reasoning_start:
+                    reasoning_start = False
+                    yield "</think>", 0
+                yield LENGTH_NOTIFICATION_CN if is_chinese(answer) else LENGTH_NOTIFICATION_EN, 0
+
+        if reasoning_start:
+            yield "</think>", 0
 
     async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
         gen_conf = dict(gen_conf or {})
@@ -507,6 +531,16 @@ class Base(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
+    def _tool_request_kwargs(self, tools: list | None = None) -> dict:
+        """Tool fields for a completion request, omitted when nothing is bound.
+
+        Providers that validate the request body reject `tools: []` outright.
+        """
+        tools = self.tools if tools is None else tools
+        if not tools:
+            return {}
+        return {"tools": tools, "tool_choice": "auto"}
+
     async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
@@ -516,6 +550,8 @@ class Base(ABC):
             gen_conf=gen_conf,
             request_kwargs={},
         )
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
@@ -539,7 +575,7 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf, **extra_request_kwargs)
+                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, **self._tool_request_kwargs(), **gen_conf, **extra_request_kwargs)
                     _add_round_usage(response)
                     if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -621,6 +657,8 @@ class Base(ABC):
             gen_conf=gen_conf,
             request_kwargs={},
         )
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
         tools = self.tools
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -651,11 +689,12 @@ class Base(ABC):
                     logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     response = await self.async_client.chat.completions.create(
-                        model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf, **extra_request_kwargs
+                        model=self.model_name, messages=history, stream=True, **self._tool_request_kwargs(tools), **gen_conf, **extra_request_kwargs
                     )
 
                     final_tool_calls = {}
                     answer = ""
+                    generated_text = ""
                     round_estimate = 0
                     round_usage = None
 
@@ -685,14 +724,20 @@ class Base(ABC):
 
                         _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                         if _reasoning:
-                            ans = ""
+                            generated_text += _reasoning
                             if not reasoning_start:
                                 reasoning_start = True
-                                ans = "<think>"
-                            ans += _reasoning + "</think>"
-                            yield ans
+                                yield "<think>"
+                            yield _reasoning
+                            if delta.content:
+                                reasoning_start = False
+                                yield "</think>"
+                                answer += delta.content
+                                yield delta.content
                         else:
-                            reasoning_start = False
+                            if reasoning_start and delta.content:
+                                reasoning_start = False
+                                yield "</think>"
                             answer += delta.content
                             yield delta.content
 
@@ -701,7 +746,13 @@ class Base(ABC):
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
-                            yield self._length_stop("")
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
+                            yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN
+
+                    if reasoning_start:
+                        yield "</think>"
 
                     # Commit this round's tokens (each round is a separate provider
                     # request — accumulate, never overwrite).
@@ -734,7 +785,9 @@ class Base(ABC):
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield f"<think>Running the {tc.function.name} tool...</think>"
+                        yield "<think>"
+                        yield f"Running the {tc.function.name} tool..."
+                        yield "</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
 
                     # Terminal-tool short-circuit: stream a terminal tool's
@@ -761,8 +814,7 @@ class Base(ABC):
                     model=self.model_name,
                     messages=history,
                     stream=True,
-                    tools=tools,
-                    tool_choice="auto",
+                    **self._tool_request_kwargs(tools),
                     **gen_conf,
                     **extra_request_kwargs,
                 )
@@ -1105,6 +1157,16 @@ class LmStudioChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
         self.client = OpenAI(api_key="lm-studio", base_url=self.base_url)
         self.model_name = model_name
+
+
+class LlmmanChat(Base):
+    _FACTORY_NAME = "llmman"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("Local llm url cannot be None")
+        # Local server ignores auth; a placeholder key keeps Base's sync and async clients identical.
+        super().__init__("llmman", model_name, base_url, **kwargs)
 
 
 class OpenAI_APIChat(Base):
@@ -2026,6 +2088,8 @@ class LiteLLMBase(ABC):
         gen_conf = self._clean_conf(gen_conf)
         reasoning_start = False
         total_tokens = 0
+        answer = ""
+        generated_text = ""
         # Reset so a stale split from a previous call can't leak into this one.
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
@@ -2063,27 +2127,43 @@ class LiteLLMBase(ABC):
 
                     _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                     if kwargs.get("with_reasoning", True) and _reasoning:
-                        ans = ""
                         if not reasoning_start:
                             reasoning_start = True
-                            ans = "<think>"
-                        ans += _reasoning + "</think>"
+                            yield "<think>"
+                        yield _reasoning
+                        generated_text += _reasoning
+                        if delta.content:
+                            reasoning_start = False
+                            yield "</think>"
+                            yield delta.content
+                            answer += delta.content
+                            generated_text += delta.content
+                        if getattr(resp.choices[0], "finish_reason", "") == "length":
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
+                            yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN
+                        continue
                     else:
-                        reasoning_start = False
+                        if reasoning_start and delta.content:
+                            reasoning_start = False
+                            yield "</think>"
                         ans = delta.content
+                        answer += ans
 
                     if not _usage["total_tokens"]:
                         # No authoritative usage yet: keep a running estimate as fallback.
                         total_tokens += num_tokens_from_string(delta.content)
 
                     finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
-                    if finish_reason == "length":
-                        if is_chinese(ans):
-                            ans += LENGTH_NOTIFICATION_CN
-                        else:
-                            ans += LENGTH_NOTIFICATION_EN
-
                     yield ans
+                    if finish_reason == "length":
+                        if reasoning_start:
+                            reasoning_start = False
+                            yield "</think>"
+                        yield LENGTH_NOTIFICATION_CN if is_chinese(answer) else LENGTH_NOTIFICATION_EN
+                if reasoning_start:
+                    yield "</think>"
                 yield total_tokens
                 return
             except Exception as e:
@@ -2368,6 +2448,7 @@ class LiteLLMBase(ABC):
 
                     final_tool_calls = {}
                     answer = ""
+                    generated_text = ""
                     round_usage = None
                     round_estimate = 0
                     # Per-round filter for providers (MiniMax) whose control tokens
@@ -2401,16 +2482,28 @@ class LiteLLMBase(ABC):
 
                         _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                         if _reasoning:
+                            generated_text += _reasoning
                             if self._need_reasoning_content_back():
                                 reasoning_content += _reasoning
-                            ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
-                                ans = "<think>"
-                            ans += _reasoning + "</think>"
-                            yield ans
+                                yield "<think>"
+                            yield _reasoning
+                            if delta.content:
+                                reasoning_start = False
+                                yield "</think>"
+                                answer += delta.content
+                                generated_text += delta.content
+                                if _sanitizer is not None:
+                                    emitted = _sanitizer.feed(delta.content)
+                                    if emitted:
+                                        yield emitted
+                                else:
+                                    yield delta.content
                         else:
-                            reasoning_start = False
+                            if reasoning_start and delta.content:
+                                reasoning_start = False
+                                yield "</think>"
                             answer += delta.content
                             if _sanitizer is not None:
                                 emitted = _sanitizer.feed(delta.content)
@@ -2424,7 +2517,13 @@ class LiteLLMBase(ABC):
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
-                            yield self._length_stop("")
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
+                            yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN
+
+                    if reasoning_start:
+                        yield "</think>"
 
                     # Flush any held-back (sanitized) answer content for this round.
                     if _sanitizer is not None:
@@ -2462,7 +2561,9 @@ class LiteLLMBase(ABC):
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield f"<think>Running the {tc.function.name} tool...</think>"
+                        yield "<think>"
+                        yield f"Running the {tc.function.name} tool..."
+                        yield "</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
 
                     # Terminal-tool short-circuit: a terminal tool already

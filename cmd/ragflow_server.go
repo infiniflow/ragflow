@@ -63,7 +63,6 @@ import (
 	"ragflow/internal/engine/redis"
 	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
-	"ragflow/internal/servermode"
 	"ragflow/internal/utility"
 )
 
@@ -283,24 +282,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Register the in-process (Go) DeepDoc backend for the modes that run the
-	// document parsing pipeline. This server is built with -tags cgo and links
-	// ONNX Runtime statically (libonnxruntime.a, resolved via dlopen(NULL)),
-	// so the in-process backend is the production backend with no external
-	// DeepDoc HTTP service. Fail fast if it cannot serve — but only for modes
-	// that actually need it: "api" parses in-process (dataflow debug and other
-	// routes) and "ingestor" runs the ingestion pipeline. "admin"/"syncer"
-	// never instantiate the analyzer, so they must not fail-fast when ORT and
-	// models are absent on their node.
-	if servermode.NeedsDeepDoc(*arguments.mode) {
-		registerNativeDeepDoc()
-	}
-
 	globalConfig := server.GetConfig()
 
 	// override default port if provided
 	switch *arguments.mode {
 	case "api":
+		registerNativeDeepDoc()
 		apiServerConfig := globalConfig.GetAPIServerConfig()
 		port := apiServerConfig.HTTPPort
 		if arguments.port != nil {
@@ -321,6 +308,7 @@ func main() {
 			serverName = fmt.Sprintf("admin_server_%d", port)
 		}
 	case "ingestor":
+		registerNativeDeepDoc()
 		if serverName == "" {
 			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
@@ -568,6 +556,12 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	}
 	defer tokenizer.Close()
 
+	// Fail fast if the cl100k_base BPE table is missing: without it
+	// NumTokensFromString silently returns 0, corrupting every token budget.
+	if err := tokenizer.InitCL100KEncoder(); err != nil {
+		common.Fatal("Failed to initialize cl100k_base tokenizer", zap.Error(err))
+	}
+
 	// The dataset-level post-processing consumer cluster (§11) is owned and run by
 	// the Ingestor: it is started inside ingestor.Start() and joined inside
 	// ingestor.Stop(), so its lifecycle matches the ingestor. The configured
@@ -711,6 +705,12 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}
 	defer tokenizer.Close()
+
+	// Fail fast if the cl100k_base BPE table is missing: without it
+	// NumTokensFromString silently returns 0, corrupting every token budget.
+	if err := tokenizer.InitCL100KEncoder(); err != nil {
+		common.Fatal("Failed to initialize cl100k_base tokenizer", zap.Error(err))
+	}
 
 	// Initialize global QueryBuilder using tokenizer's DictPath
 	// This ensures the Synonym uses the same wordnet directory as tokenizer
