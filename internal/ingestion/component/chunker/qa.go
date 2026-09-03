@@ -324,7 +324,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	}
 	rows := tableRows(htmlStr)
 	pairs := make([]qaPair, 0, len(rows))
-	for _, cells := range rows {
+	for i, cells := range rows {
 		// Python qa.py:365 requires exactly two fields for CSV pairs.
 		if strictPairs && len(cells) != 2 {
 			continue
@@ -336,9 +336,10 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 			}
 		}
 		if len(texts) >= 2 {
-			// RowNum mirrors Python qa.py's enumerate over the extracted
-			// pairs (beAdoc(..., row_num=ii)) → top_int.
-			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1], RowNum: len(pairs)})
+			// RowNum is the source row index, matching Python qa.py:365,
+			// which passes i from enumerate(reader) and appends only once a
+			// pair completes. A skipped row must still advance the index.
+			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1], RowNum: i})
 		}
 	}
 	return pairs
