@@ -71,12 +71,11 @@ var (
 	connectorRedisGet = redis.Get
 )
 
-// Sentinel errors so handlers can map to the proper response codes,
-// mirroring the Python connector_api responses.
+// Sentinel errors so handlers can map to the proper response codes.
 var (
-	// ErrConnectorNotFound mirrors Python's "Can't find this Connector!".
+	// ErrConnectorNotFound is returned when a connector is not found.
 	ErrConnectorNotFound = errors.New("can't find this Connector")
-	// ErrConnectorNoAuth mirrors Python's "no authorization" denial.
+	// ErrConnectorNoAuth is returned when the caller cannot access the connector.
 	ErrConnectorNoAuth = errors.New("no authorization")
 	// ErrConnectorNotBoundToKB is returned when the connector is not bound to the kb being rebuilt.
 	ErrConnectorNotBoundToKB = errors.New("connector is not bound to this knowledge base")
@@ -150,7 +149,7 @@ type ListConnectorsResponse struct {
 	Connectors []*dao.ConnectorListItem `json:"connectors"`
 }
 
-// CreateConnectorRequest creates a connector with Python-compatible defaults.
+// CreateConnectorRequest holds the fields used to create a connector.
 type CreateConnectorRequest struct {
 	Name        string         `json:"name"`
 	Source      string         `json:"source"`
@@ -295,7 +294,6 @@ func (s *ConnectorService) cancelConnectorTasks(ctx context.Context, connectorID
 }
 
 // CreateConnector creates a connector owned by the current user.
-// Equivalent to Python's create_connector endpoint.
 func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
 	refreshFreq := int64(defaultConnectorFreq)
 	if req.RefreshFreq != nil {
