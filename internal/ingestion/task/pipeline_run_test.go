@@ -17,7 +17,9 @@
 package task
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -52,6 +54,42 @@ func TestPipelineExecutor_DefaultLoadDSL_UsesUserCanvas(t *testing.T) {
 	}
 	if _, ok := decoded["dsl"].(map[string]any); !ok {
 		t.Fatalf("decoded dsl = %v, want top-level dsl map", decoded)
+	}
+}
+
+func TestResolveDSL_UsesRerunSchemaInsteadOfCanvas(t *testing.T) {
+	taskCtx := makeTaskCtx()
+	taskCtx.IngestionTask.Schema = entity.NewIngestionTaskRerunSchema(
+		entity.JSONMap{
+			"components": map[string]interface{}{"rerun-marker": map[string]interface{}{}},
+			"path":       []interface{}{"c1"},
+		},
+		"log-1",
+		"c1",
+	)
+	svc := mustNewPipelineExecutor(t, taskCtx, "canvas-1", 0)
+	canvasCalled := false
+	svc.loadDSLFunc = func(context.Context, string) (string, string, error) {
+		canvasCalled = true
+		return "", "", fmt.Errorf("canvas should not be loaded")
+	}
+
+	gotDSL, correctedID, err := svc.resolveDSL(context.Background())
+	if err != nil {
+		t.Fatalf("resolveDSL: %v", err)
+	}
+	if canvasCalled {
+		t.Fatal("loadDSLFromCanvas was called despite rerun schema")
+	}
+	if correctedID != "canvas-1" {
+		t.Fatalf("correctedID = %q, want canvas-1", correctedID)
+	}
+	var decoded map[string]any
+	if err = json.Unmarshal([]byte(gotDSL), &decoded); err != nil {
+		t.Fatalf("unmarshal dsl: %v", err)
+	}
+	if _, ok := decoded["components"].(map[string]any)["rerun-marker"]; !ok {
+		t.Fatalf("decoded dsl = %v, want rerun-marker component", decoded)
 	}
 }
 

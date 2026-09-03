@@ -17,7 +17,7 @@ import (
 // JetStream stream and consumes the task message back. The unit tier's
 // recording publisher only proves the publish call happened; this tier
 // proves the enqueue actually lands on tasks.RAGFLOW with a task id that
-// resolves to a SCHEDULED ingestion task for the document.
+// resolves to a CREATED ingestion task for the document.
 func TestRerunDocument_E2E_EnqueuesThroughRealMessageQueue(t *testing.T) {
 	db := testutil.SetupTestDB(t,
 		&entity.IngestionTask{}, &entity.IngestionTaskLog{}, &entity.Task{},
@@ -99,12 +99,23 @@ func TestRerunDocument_E2E_EnqueuesThroughRealMessageQueue(t *testing.T) {
 		t.Fatalf("message task type = %s, want %s", taskMsg.TaskType, common.TaskTypeIngestionTask)
 	}
 
-	// ...and the referenced task row exists, already SCHEDULED.
+	// ...and the referenced task row exists in CREATED state.
 	task, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, taskMsg.TaskID)
 	if err != nil {
 		t.Fatalf("load enqueued ingestion task %s: %v", taskMsg.TaskID, err)
 	}
-	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.Status != common.SCHEDULED {
+	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.Status != common.CREATED {
 		t.Fatalf("ingestion task = %+v", task)
+	}
+	rerun, ok := task.RerunInfo()
+	if !ok {
+		t.Fatal("ingestion task missing rerun schema")
+	}
+	if rerun.LogID != "log-1" || rerun.ComponentID != "c1" {
+		t.Fatalf("rerun info = %+v", rerun)
+	}
+	path, _ = rerun.DSL["path"].([]interface{})
+	if len(path) != 1 || path[0] != "c1" {
+		t.Fatalf("task rerun dsl path = %v, want [c1]", rerun.DSL["path"])
 	}
 }
