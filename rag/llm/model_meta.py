@@ -1128,6 +1128,10 @@ class LMStudio(OpenAIAPICompatible):
     _FACTORY_NAME = "LM-Studio"
 
 
+class Llmman(OpenAIAPICompatible):
+    _FACTORY_NAME = "llmman"
+
+
 class NewAPI(OpenAIAPICompatible):
     _FACTORY_NAME = "New API"
 

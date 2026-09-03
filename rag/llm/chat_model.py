@@ -1120,6 +1120,16 @@ class LmStudioChat(Base):
         self.model_name = model_name
 
 
+class LlmmanChat(Base):
+    _FACTORY_NAME = "llmman"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("Local llm url cannot be None")
+        # Local server ignores auth; a placeholder key keeps Base's sync and async clients identical.
+        super().__init__("llmman", model_name, base_url, **kwargs)
+
+
 class OpenAI_APIChat(Base):
     _FACTORY_NAME = ["VLLM", "OpenAI-API-Compatible"]
 
