@@ -20,6 +20,7 @@ import importlib
 import logging
 from unittest.mock import Mock
 
+import pytest
 from botocore.exceptions import ClientError
 
 # Import common.settings first: s3_conn <-> settings import cycle resolves
@@ -36,8 +37,8 @@ def _new_storage(monkeypatch, config):
     return module.RAGFlowS3(), client
 
 
-def _pages(client, *pages, by_prefix=None):
-    """Stub the list_objects_v2 paginator. ``by_prefix`` maps a Prefix kwarg to
+def _paginator(client, kind, *pages, by_prefix=None):
+    """Stub one kind of list paginator. ``by_prefix`` maps a Prefix kwarg to
     its pages so single-bucket mode sees realistic prefix-filtered results.
     delete_objects defaults to an all-deleted response; tests override it."""
     paginator = Mock()
@@ -48,8 +49,22 @@ def _pages(client, *pages, by_prefix=None):
         return list(pages)
 
     paginator.paginate.side_effect = paginate
-    client.get_paginator.return_value = paginator
+    client.get_paginator.side_effect_map[kind] = paginator
+    return paginator
+
+
+def _wire(client):
+    """Prepare a client mock with per-kind paginators and safe defaults."""
+    client.get_paginator.side_effect_map = {}
+    client.get_paginator.side_effect = lambda kind: client.get_paginator.side_effect_map.setdefault(kind, _default_paginator(kind))
     client.delete_objects.return_value = {"Deleted": []}
+
+
+def _default_paginator(kind):
+    """Empty-pages paginator for kinds a test did not register explicitly."""
+    paginator = Mock()
+    paginator.paginate.side_effect = lambda **kwargs: [{}]
+    return paginator
 
 
 def test_remove_bucket_method_matches_storage_contract(monkeypatch):
@@ -60,14 +75,17 @@ def test_remove_bucket_method_matches_storage_contract(monkeypatch):
 
 
 def test_remove_bucket_deletes_objects_then_bucket(monkeypatch):
-    """Multi-bucket mode: objects are deleted in batches, then the bucket itself."""
+    """Multi-bucket mode: all object versions are deleted in batches, then the
+    bucket itself."""
     storage, client = _new_storage(monkeypatch, {})
-    _pages(
+    _wire(client)
+    _paginator(
         client,
-        {"Contents": [{"Key": "a"}, {"Key": "b"}]},
-        {"Contents": [{"Key": "c"}]},
+        "list_object_versions",
+        {"Versions": [{"Key": "a"}, {"Key": "b"}], "DeleteMarkers": []},
+        {"Versions": [{"Key": "c"}], "DeleteMarkers": []},
     )
-    client.bucket_exists.return_value = True
+    client.head_bucket.return_value = {}
 
     storage.remove_bucket("kb01")
 
@@ -76,9 +94,59 @@ def test_remove_bucket_deletes_objects_then_bucket(monkeypatch):
     client.delete_bucket.assert_called_once_with(Bucket="kb01")
 
 
-def test_remove_bucket_skips_missing_bucket(monkeypatch):
-    """bucket_exists goes through head_bucket; drive the real 404 path."""
+def test_remove_bucket_deletes_versions_and_markers_with_version_ids(monkeypatch):
+    """Versioned buckets: every version and delete marker must be deleted with
+    its VersionId, otherwise delete_bucket fails with BucketNotEmpty."""
     storage, client = _new_storage(monkeypatch, {})
+    _wire(client)
+    _paginator(
+        client,
+        "list_object_versions",
+        {
+            "Versions": [{"Key": "a", "VersionId": "v1"}, {"Key": "a", "VersionId": "v2"}],
+            "DeleteMarkers": [{"Key": "b", "VersionId": "m1"}],
+        },
+    )
+    client.head_bucket.return_value = {}
+
+    storage.remove_bucket("kb01")
+
+    client.delete_objects.assert_called_once_with(
+        Bucket="kb01",
+        Delete={
+            "Objects": [
+                {"Key": "a", "VersionId": "v1"},
+                {"Key": "a", "VersionId": "v2"},
+                {"Key": "b", "VersionId": "m1"},
+            ]
+        },
+    )
+    client.delete_bucket.assert_called_once_with(Bucket="kb01")
+
+
+def test_remove_bucket_aborts_incomplete_multipart_uploads(monkeypatch):
+    """Incomplete multipart uploads keep a bucket non-empty; they must be
+    aborted before delete_bucket."""
+    storage, client = _new_storage(monkeypatch, {})
+    _wire(client)
+    _paginator(client, "list_object_versions", {})
+    _paginator(
+        client,
+        "list_multipart_uploads",
+        {"Uploads": [{"Key": "big.bin", "UploadId": "up-1"}]},
+    )
+    client.head_bucket.return_value = {}
+
+    storage.remove_bucket("kb01")
+
+    client.abort_multipart_upload.assert_called_once_with(Bucket="kb01", Key="big.bin", UploadId="up-1")
+    client.delete_bucket.assert_called_once_with(Bucket="kb01")
+
+
+def test_remove_bucket_skips_missing_bucket(monkeypatch):
+    """A 404 from head_bucket means the bucket is absent: a clean no-op."""
+    storage, client = _new_storage(monkeypatch, {})
+    _wire(client)
     client.head_bucket.side_effect = ClientError(
         {"Error": {"Code": "404"}},
         "HeadBucket",
@@ -91,39 +159,71 @@ def test_remove_bucket_skips_missing_bucket(monkeypatch):
     client.delete_bucket.assert_not_called()
 
 
+def test_remove_bucket_propagates_head_bucket_errors(monkeypatch):
+    """403/400 from head_bucket are access failures, not absence: they must
+    reach the error handler, not silently skip cleanup."""
+    storage, client = _new_storage(monkeypatch, {})
+    _wire(client)
+    client.head_bucket.side_effect = ClientError(
+        {"Error": {"Code": "403", "Message": "Forbidden"}},
+        "HeadBucket",
+    )
+
+    with pytest.raises(ClientError):
+        storage.remove_bucket("kb01")
+
+    client.get_paginator.assert_not_called()
+    client.delete_bucket.assert_not_called()
+
+
 def test_remove_bucket_raises_on_batch_delete_errors(monkeypatch):
     """delete_objects reports failed keys in its response instead of raising;
-    the helper must surface them rather than report silent success."""
+    remove_bucket must propagate the failure to lifecycle callers."""
     storage, client = _new_storage(monkeypatch, {})
-    _pages(
+    _wire(client)
+    _paginator(
         client,
-        {"Contents": [{"Key": "a"}]},
-        {"Contents": [{"Key": "c"}]},
+        "list_object_versions",
+        {"Versions": [{"Key": "a"}], "DeleteMarkers": []},
+        {"Versions": [{"Key": "c"}], "DeleteMarkers": []},
     )
     client.delete_objects.side_effect = [
         {"Deleted": [{"Key": "a"}]},
         {"Errors": [{"Key": "c", "Code": "InternalError", "Message": "boom"}]},
     ]
-    client.bucket_exists.return_value = True
+    client.head_bucket.return_value = {}
 
-    storage.remove_bucket("kb01")
-
-    client.delete_bucket.assert_not_called()
-
-
-def test_remove_bucket_log_omits_request_urls(monkeypatch, caplog):
-    """S3 error responses can embed signed query strings; the log line must
-    carry the failure mode, not a verbatim request URL."""
-    storage, client = _new_storage(monkeypatch, {})
-    # A non-ClientError escapes bucket_exists and reaches remove_bucket's
-    # handler; botocore wraps such failures with the request URL attached.
-    client.head_bucket.side_effect = ConnectionError("GET https://s3.example.com/bucket?X-Amz-Signature=SECRET failed")
-
-    with caplog.at_level(logging.ERROR):
+    with pytest.raises(RuntimeError, match="S3 object deletion failed for keys: c"):
         storage.remove_bucket("kb01")
 
     client.delete_bucket.assert_not_called()
-    client.get_paginator.assert_not_called()
+
+
+def test_remove_bucket_handles_null_error_response(monkeypatch, caplog):
+    """botocore HTTPClientError can carry response=None; the failure path must
+    complete without AttributeError and still log the failure."""
+    storage, client = _new_storage(monkeypatch, {})
+    _wire(client)
+    err = ClientError({"Error": {}}, "HeadBucket")
+    err.response = None  # HTTPClientError can surface with a null response
+    client.head_bucket.side_effect = err
+
+    with caplog.at_level(logging.ERROR), pytest.raises(ClientError):
+        storage.remove_bucket("kb01")
+
+    assert any("Fail to remove bucket kb01" in r.getMessage() for r in caplog.records)
+
+
+def test_remove_bucket_re_raises_to_callers(monkeypatch, caplog):
+    """Lifecycle callers delete metadata after remove_bucket returns; a
+    storage failure must propagate, not report silent success."""
+    storage, client = _new_storage(monkeypatch, {})
+    _wire(client)
+    client.head_bucket.side_effect = ConnectionError("network down")
+
+    with caplog.at_level(logging.ERROR), pytest.raises(ConnectionError):
+        storage.remove_bucket("kb01")
+
     messages = [r.getMessage() for r in caplog.records]
     assert any("Fail to remove bucket kb01" in m for m in messages), messages
     for m in messages:
@@ -131,42 +231,47 @@ def test_remove_bucket_log_omits_request_urls(monkeypatch, caplog):
 
 
 def test_remove_bucket_single_bucket_mode_keeps_physical_bucket(monkeypatch):
-    """Default-bucket mode: scope deletion to the logical prefix, keep the bucket."""
+    """Default-bucket mode: scope deletion to the logical prefix, keep the
+    bucket. With no prefix_path the write path stores keys without a bucket
+    segment, so the cleanup prefix must also be empty."""
     storage, client = _new_storage(monkeypatch, {"bucket": "ragflow"})
-    _pages(
-        client,
-        by_prefix={"kb01/": [{"Contents": [{"Key": "kb01/x"}, {"Key": "kb01/y"}]}]},
-    )
+    _wire(client)
+    versions = _paginator(client, "list_object_versions", by_prefix={})
+    uploads = _paginator(client, "list_multipart_uploads", by_prefix={})
 
     storage.remove_bucket("kb01")
 
-    deleted = client.delete_objects.call_args
-    assert deleted.kwargs["Bucket"] == "ragflow"
-    keys = [o["Key"] for o in deleted.kwargs["Delete"]["Objects"]]
-    assert keys == ["kb01/x", "kb01/y"]
+    versions.paginate.assert_called_once_with(Bucket="ragflow", Prefix="")
+    uploads.paginate.assert_called_once_with(Bucket="ragflow")
     client.delete_bucket.assert_not_called()
 
 
 def test_remove_bucket_single_bucket_mode_with_prefix_path(monkeypatch):
     storage, client = _new_storage(monkeypatch, {"bucket": "ragflow", "prefix_path": "prod"})
-    _pages(
+    _wire(client)
+    versions = _paginator(
         client,
-        by_prefix={"prod/kb01/": [{"Contents": [{"Key": "prod/kb01/doc"}]}]},
+        "list_object_versions",
+        by_prefix={"prod/kb01/": [{"Versions": [{"Key": "prod/kb01/doc"}], "DeleteMarkers": []}]},
     )
+    _paginator(client, "list_multipart_uploads", by_prefix={"prod/kb01/": []})
 
     storage.remove_bucket("kb01")
 
+    versions.paginate.assert_called_once_with(Bucket="ragflow", Prefix="prod/kb01/")
     deleted = client.delete_objects.call_args
     keys = [o["Key"] for o in deleted.kwargs["Delete"]["Objects"]]
     assert keys == ["prod/kb01/doc"]
     client.delete_bucket.assert_not_called()
 
 
-def test_remove_bucket_empty_pages_delete_nothing_but_bucket(monkeypatch):
+def test_remove_bucket_empty_bucket_deletes_only_bucket(monkeypatch):
     """A bucket that exists but has no objects: only delete_bucket fires."""
     storage, client = _new_storage(monkeypatch, {})
-    _pages(client, {})
-    client.bucket_exists.return_value = True
+    _wire(client)
+    _paginator(client, "list_object_versions", {})
+    _paginator(client, "list_multipart_uploads", {})
+    client.head_bucket.return_value = {}
 
     storage.remove_bucket("kb01")
 

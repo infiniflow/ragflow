@@ -238,13 +238,17 @@ class RAGFlowS3:
             logging.exception(f"Fail to move {src_bucket}/{src_path} -> {dest_bucket}/{dest_path}")
             return False
 
-    def _delete_objects_paginated(self, bucket, prefix=None):
-        """Delete every object under ``bucket`` (optionally scoped to ``prefix``)
-        in paginated batches. Raises if any key in a batch fails to delete."""
-        paginator = self.conn[0].get_paginator("list_objects_v2")
-        pages = paginator.paginate(Bucket=bucket, Prefix=prefix) if prefix is not None else paginator.paginate(Bucket=bucket)
+    def _delete_object_batches(self, bucket, pages):
+        """Delete the objects listed in ``pages`` (an iterable of ListObjects
+        pages) in batches. Handles versioned buckets by deleting every listed
+        version and delete marker. Raises RuntimeError if any key fails."""
         for page in pages:
-            objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
+            objects = []
+            for obj in page.get("Versions", []) + page.get("DeleteMarkers", []):
+                entry = {"Key": obj["Key"]}
+                if "VersionId" in obj:
+                    entry["VersionId"] = obj["VersionId"]
+                objects.append(entry)
             if not objects:
                 continue
             result = self.conn[0].delete_objects(Bucket=bucket, Delete={"Objects": objects})
@@ -252,28 +256,65 @@ class RAGFlowS3:
                 failed = ", ".join(err.get("Key", "?") for err in result["Errors"])
                 raise RuntimeError(f"S3 object deletion failed for keys: {failed}")
 
+    def _abort_incomplete_multipart_uploads(self, bucket):
+        """Abort incomplete multipart uploads; they keep a bucket non-empty
+        even when no object versions remain."""
+        paginator = self.conn[0].get_paginator("list_multipart_uploads")
+        for page in paginator.paginate(Bucket=bucket):
+            uploads = page.get("Uploads", [])
+            if not uploads:
+                continue
+            self.conn[0].abort_multipart_upload(
+                Bucket=bucket,
+                Key=uploads[0]["Key"],
+                UploadId=uploads[0]["UploadId"],
+            )
+
+    def _head_bucket_or_none(self, bucket):
+        """Return the head_bucket response, or None only when the bucket does
+        not exist. Other client errors (403 Forbidden, 400) propagate so the
+        caller's error handler reports them instead of treating the bucket as
+        absent."""
+        try:
+            return self.conn[0].head_bucket(Bucket=bucket)
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "") if isinstance(e.response, dict) else ""
+            if code in ("404", "NoSuchBucket", "NotFound"):
+                return None
+            raise
+
+    def _delete_all_versions(self, bucket, prefix=None):
+        """Delete every object version and delete marker under ``bucket``
+        (optionally scoped to ``prefix``), then abort incomplete multipart
+        uploads. Raises if any batch fails."""
+        paginator = self.conn[0].get_paginator("list_object_versions")
+        pages = paginator.paginate(Bucket=bucket, Prefix=prefix) if prefix is not None else paginator.paginate(Bucket=bucket)
+        self._delete_object_batches(bucket, pages)
+        self._abort_incomplete_multipart_uploads(bucket)
+
     @use_default_bucket
     def remove_bucket(self, bucket, **kwargs):
         orig_bucket = kwargs.pop("_orig_bucket", None)
         try:
             if self.bucket:
                 # Single bucket mode: remove objects with the logical-bucket
-                # prefix, but do not remove the physical bucket.
+                # prefix, but do not remove the physical bucket. The prefix
+                # matches the write path: use_prefix_path only prepends the
+                # "{prefix_path}/{bucket}/" segment when prefix_path is set,
+                # so with no prefix_path the objects carry no bucket segment.
                 prefix = ""
                 if self.prefix_path:
-                    prefix = f"{self.prefix_path}/"
-                if orig_bucket:
-                    prefix += f"{orig_bucket}/"
-                self._delete_objects_paginated(bucket, prefix)
+                    prefix = f"{self.prefix_path}/{orig_bucket}/" if orig_bucket else f"{self.prefix_path}/"
+                self._delete_all_versions(bucket, prefix)
             else:
-                if not self.bucket_exists(bucket):
+                if self._head_bucket_or_none(bucket) is None:
                     return
-                self._delete_objects_paginated(bucket)
+                self._delete_all_versions(bucket)
                 self.conn[0].delete_bucket(Bucket=bucket)
-        except Exception as e:
-            # Keep the connector-wide convention of not propagating storage
-            # errors, but log only the failure mode: exception type and, for
-            # botocore errors, the service error code. str(e) is omitted
-            # because S3 error responses can embed signed request URLs.
-            detail = getattr(e, "response", {}).get("Error", {}).get("Code", "") if hasattr(e, "response") else ""
-            logging.error(f"Fail to remove bucket {bucket}: {type(e).__name__}" + (f" ({detail})" if detail else ""))
+        except Exception:
+            # Storage deletions must not fail silently: lifecycle callers
+            # (knowledge-base and account deletion) remove metadata after this
+            # returns, so re-raise after logging the failure mode. str(e) is
+            # omitted because S3 error responses can embed signed request URLs.
+            logging.exception(f"Fail to remove bucket {bucket}")
+            raise
