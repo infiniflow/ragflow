@@ -32,11 +32,13 @@ const DefaultRerankId = 'rerank_id';
 interface RerankFormFieldProps {
   name?: string;
   ownerTenantId?: string;
+  required?: boolean;
 }
 
 function RerankFormField({
   name = DefaultRerankId,
   ownerTenantId,
+  required = false,
 }: RerankFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeDetails');
@@ -47,7 +49,9 @@ function RerankFormField({
       name={name}
       render={({ field }) => (
         <FormItem>
-          <FormLabel tooltip={t('rerankTip')}>{t('rerankModel')}</FormLabel>
+          <FormLabel tooltip={t('rerankTip')} required={required}>
+            {t('rerankModel')}
+          </FormLabel>
           <FormControl>
             <ModelTreeSelect
               modelTypes={['rerank']}
@@ -71,11 +75,13 @@ export const rerankFormSchema = {
 interface RerankFormFieldsProps {
   prefix?: string;
   ownerTenantId?: string;
+  required?: boolean;
 }
 
 export function RerankFormFields({
   prefix = '',
   ownerTenantId,
+  required = false,
 }: RerankFormFieldsProps) {
   const rerankIdName = prefixName(prefix, DefaultRerankId);
 
@@ -83,6 +89,7 @@ export function RerankFormFields({
     <RerankFormField
       name={rerankIdName}
       ownerTenantId={ownerTenantId}
+      required={required}
     ></RerankFormField>
   );
 }
