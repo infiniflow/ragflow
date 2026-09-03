@@ -1619,16 +1619,11 @@ async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: d
     recursion_limit = 60 if use_graph else max(25, max_loops * 8)
 
     async def _drive():
-        # Last-resort wall clock: routing guards steer the graph to synthesis
-        # BEFORE this fires; the hard cancel only trips if a node still hangs
-        # (e.g. an unbounded HTTP read) so the client never hits its 300s
-        # read-timeout and flags the question as an error.
+        # No whole-graph wall clock: research stays bounded by per-node _bounded
+        # timeouts, the routing guards (_MIN_ROUND_HEADROOM_S) and recursion_limit;
+        # the final answer stream runs until the model finishes.
         try:
-            async with asyncio.timeout(_TOTAL_BUDGET_S + 30.0):
-                holder["state"] = await graph.ainvoke(init_state, {"recursion_limit": recursion_limit})
-        except TimeoutError:
-            logging.warning("run_agentic_rag: total research budget (%.0fs) exhausted — cutting off.", _TOTAL_BUDGET_S)
-            holder["error"] = True
+            holder["state"] = await graph.ainvoke(init_state, {"recursion_limit": recursion_limit})
         except Exception:
             logging.exception("run_agentic_rag: graph execution failed")
             holder["error"] = True
