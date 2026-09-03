@@ -26,6 +26,30 @@ class MonkeyOCRv2Parser:
         except requests.RequestException:
             return False
 
+    def crop(self, _text, ZM=1, need_position=False):
+        """Compatibility hook used by RAGFlow's PDF chunk tokenizer.
+
+        MonkeyOCRv2 returns already-rendered layout content and image
+        artifacts; it does not retain a local PDF canvas for post-hoc crops.
+        Returning no crop is preferable to failing chunk generation.
+        """
+        del ZM
+        positions = self.extract_positions(_text)
+        return (None, positions) if need_position else None
+
+    @staticmethod
+    def remove_tag(text):
+        """Return text unchanged; native layout tags are already normalized."""
+        return re.sub(r"@@[\t0-9.-]+?##", "", text)
+
+    @staticmethod
+    def extract_positions(text):
+        positions = []
+        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", text):
+            page, left, right, top, bottom = tag.strip("#").strip("@").split("\t")
+            positions.append((int(page) - 1, float(left), float(right), float(top), float(bottom)))
+        return positions
+
     def parse_pdf(self, filepath, binary=None, callback=None, page_from=0, page_to=99999, **_kwargs):
         """Upload one document and convert the service's ZIP response."""
         payload = binary if binary is not None else Path(filepath).read_bytes()
