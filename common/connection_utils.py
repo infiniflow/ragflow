@@ -26,6 +26,29 @@ from common.constants import RetCode
 TimeoutException = Union[Type[BaseException], BaseException]
 OnTimeoutCallback = Union[Callable[..., Any], Coroutine[Any, Any, Any]]
 
+# Bound sync @timeout worker threads to avoid unbounded growth when timed-out
+# work keeps running (Python cannot kill threads).
+_timeout_sem: Optional[threading.BoundedSemaphore] = None
+_timeout_sem_lock = threading.Lock()
+
+
+def _timeout_thread_limit() -> int:
+    raw = os.getenv("TIMEOUT_THREAD_MAX_WORKERS") or os.getenv("THREAD_POOL_MAX_WORKERS", "128")
+    try:
+        n = int(raw)
+    except ValueError:
+        n = 128
+    return max(n, 1)
+
+
+def _get_timeout_sem() -> threading.BoundedSemaphore:
+    global _timeout_sem
+    if _timeout_sem is None:
+        with _timeout_sem_lock:
+            if _timeout_sem is None:
+                _timeout_sem = threading.BoundedSemaphore(_timeout_thread_limit())
+    return _timeout_sem
+
 
 def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: Optional[TimeoutException] = None, on_timeout: Optional[OnTimeoutCallback] = None):
     if isinstance(seconds, str):
@@ -35,6 +58,13 @@ def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: 
         @wraps(func)
         def wrapper(*args, **kwargs):
             result_queue = queue.Queue(maxsize=1)
+            sem = _get_timeout_sem()
+            enable_timeout = bool(os.environ.get("ENABLE_TIMEOUT_ASSERTION"))
+            acquire_timeout = seconds if enable_timeout and seconds is not None else None
+            if not sem.acquire(timeout=acquire_timeout):
+                raise TimeoutError(
+                    f"Function '{func.__name__}' timed out after {seconds} seconds waiting for a timeout worker slot."
+                )
 
             def target():
                 try:
@@ -42,14 +72,19 @@ def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: 
                     result_queue.put(result)
                 except Exception as e:
                     result_queue.put(e)
+                finally:
+                    sem.release()
 
-            thread = threading.Thread(target=target)
-            thread.daemon = True
-            thread.start()
+            thread = threading.Thread(target=target, daemon=True)
+            try:
+                thread.start()
+            except Exception:
+                sem.release()
+                raise
 
-            for a in range(attempts):
+            for _ in range(attempts):
                 try:
-                    if os.environ.get("ENABLE_TIMEOUT_ASSERTION"):
+                    if enable_timeout:
                         result = result_queue.get(timeout=seconds)
                     else:
                         result = result_queue.get()
