@@ -54,6 +54,7 @@ class Dealer:
     # connection pool under concurrency. Doc existence is stable within seconds, so
     # a short TTL lets us skip the DB round-trip for repeats.
     _DOC_EXISTS_TTL = 120.0
+    _DOC_EXISTS_MAX_OPTIMISTIC_ATTEMPTS = 2
 
     def __init__(self, dataStore: DocStoreConnection):
         """Initialize search helpers and the process-local document-existence cache."""
@@ -113,7 +114,7 @@ class Dealer:
         # returning properly; the query itself is small and the cache makes this rare.
         from api.db.services.document_service import DocumentService
 
-        while True:
+        for _ in range(self._DOC_EXISTS_MAX_OPTIMISTIC_ATTEMPTS):
             now = time.time()
 
             # Fast path: serve every doc_id from the short-lived cache if it is fresh.
@@ -143,6 +144,24 @@ class Dealer:
                     self._doc_exists_cache.popitem(last=False)
 
                 return hit.union(found)
+
+        # Continuous deletions can invalidate every optimistic snapshot. Make
+        # bounded progress by performing one final lookup while invalidation is
+        # excluded. Query every requested ID so a cached positive entry cannot
+        # survive a deletion that committed just before this lock was acquired.
+        with self._doc_exists_lock:
+            now = time.time()
+            found = {row["id"] for row in DocumentService.get_by_ids(unique_doc_ids).dicts()}
+            for d in unique_doc_ids:
+                self._doc_exists_cache[d] = (now, d in found)
+            while len(self._doc_exists_cache) > 4096:
+                self._doc_exists_cache.popitem(last=False)
+
+        logging.debug(
+            "Document-existence lookup used a locked fallback after %s invalidated snapshots.",
+            self._DOC_EXISTS_MAX_OPTIMISTIC_ATTEMPTS,
+        )
+        return found
 
     async def _prune_deleted_chunks(self, sres: SearchResult) -> SearchResult:
         # Temporary safety net:

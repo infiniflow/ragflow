@@ -179,6 +179,41 @@ async def test_invalidation_during_db_check_does_not_repopulate_cache(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_repeated_invalidation_uses_bounded_locked_fallback(monkeypatch):
+    """Repeated invalidations must end in one locked lookup instead of livelock."""
+    dealer = _dealer()
+    calls = []
+    lock_states = []
+
+    class _Rows:
+        def __init__(self, rows, invalidate=False):
+            self._rows = rows
+            self._invalidate = invalidate
+
+        def dicts(self):
+            if self._invalidate:
+                dealer.invalidate_doc_ids(["doc-1"])
+            return self._rows
+
+    class _DocumentService:
+        @staticmethod
+        def get_by_ids(doc_ids):
+            calls.append(list(doc_ids))
+            lock_states.append(dealer._doc_exists_lock.locked())
+            optimistic = len(calls) <= dealer._DOC_EXISTS_MAX_OPTIMISTIC_ATTEMPTS
+            return _Rows([{"id": "doc-1"}] if optimistic else [], invalidate=optimistic)
+
+    module = types.ModuleType("api.db.services.document_service")
+    module.DocumentService = _DocumentService
+    monkeypatch.setitem(sys.modules, "api.db.services.document_service", module)
+
+    assert await dealer._existing_doc_ids(["doc-1"]) == set()
+    assert calls == [["doc-1"], ["doc-1"], ["doc-1"]]
+    assert lock_states == [False, False, True]
+    assert dealer._doc_exists_cache["doc-1"][1] is False
+
+
+@pytest.mark.asyncio
 async def test_mixed_batch_keeps_only_the_live_doc_when_cached(monkeypatch):
     dealer = _dealer()
     calls = _stub_document_service(monkeypatch, existing_ids={"live-doc"})
