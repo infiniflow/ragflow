@@ -175,7 +175,7 @@ export const IconMap = {
   [LLMFactory.Builtin]: 'builtin',
   [LLMFactory.MinerU]: 'mineru',
   [LLMFactory.MinerUNet]: 'mineru',
-  [LLMFactory.MonkeyOCR]: 'mineru',
+  [LLMFactory.MonkeyOCR]: 'monkeyocr',
   [LLMFactory.PaddleOCR]: 'paddleocr',
   [LLMFactory.PaddleOCRLocal]: 'paddleocr',
   [LLMFactory.N1n]: 'n1n',

@@ -17,7 +17,6 @@ import logging
 import os
 import enum
 import json
-from peewee import IntegrityError
 from common import settings
 from common.constants import (
     ActiveStatusEnum,
@@ -116,31 +115,18 @@ def _ensure_ocr_provider_from_env(tenant_id: str, provider_name: str, model_name
 
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
-        try:
-            TenantModelProviderService.insert(tenant_id=tenant_id, provider_name=provider_name)
-        except IntegrityError:
-            logging.debug("OCR provider %s already exists for tenant %s; reusing row", provider_name, tenant_id)
+        TenantModelProviderService.insert(tenant_id=tenant_id, provider_name=provider_name)
         provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
-    if not provider_obj:
-        return None
 
     api_key = json.dumps(config)
     instance_obj = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key)
     if not instance_obj:
-        try:
-            instance_obj = TenantModelInstanceService.create_instance(
-                provider_id=provider_obj.id,
-                instance_name=model_name,
-                api_key=api_key,
-                extra="{}",
-            )
-        except IntegrityError:
-            logging.debug("OCR instance for %s already exists for tenant %s; reusing row", provider_name, tenant_id)
-            instance_obj = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key)
-    if not instance_obj:
-        instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, model_name)
-    if not instance_obj:
-        return None
+        instance_obj = TenantModelInstanceService.create_instance(
+            provider_id=provider_obj.id,
+            instance_name=model_name,
+            api_key=api_key,
+            extra="{}",
+        )
 
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
         provider_obj.id,
@@ -149,24 +135,13 @@ def _ensure_ocr_provider_from_env(tenant_id: str, provider_name: str, model_name
         model_name,
     )
     if not model_obj:
-        try:
-            TenantModelService.insert(
-                model_name=model_name,
-                provider_id=provider_obj.id,
-                instance_id=instance_obj.id,
-                model_type=ModelTypeBinary.OCR.value,
-                extra=json.dumps({"max_tokens": 0}),
-            )
-        except IntegrityError:
-            logging.debug("OCR model %s already exists for tenant %s; reusing row", model_name, tenant_id)
-        model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
-            provider_obj.id,
-            instance_obj.id,
-            LLMType.OCR.value,
-            model_name,
+        TenantModelService.insert(
+            model_name=model_name,
+            provider_id=provider_obj.id,
+            instance_id=instance_obj.id,
+            model_type=ModelTypeBinary.OCR.value,
+            extra=json.dumps({"max_tokens": 0}),
         )
-    if not model_obj:
-        return None
 
     return f"{model_name}@{instance_obj.instance_name}@{provider_name}"
 

@@ -1848,6 +1848,12 @@ func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, ten
 // ensureMonkeyOCRFromEnv mirrors Python's ensure_monkeyocr_from_env.
 func (m *ModelProviderService) ensureMonkeyOCRFromEnv(ctx context.Context, tenantID string) error {
 	config := collectEnvConfig(monkeyOCREnvKeys, monkeyOCRDefaultConfig)
+	if config == nil {
+		return nil
+	}
+	if apiserver, ok := config[common.EnvMonkeyOCRAPIServer].(string); !ok || strings.TrimSpace(apiserver) == "" {
+		return nil
+	}
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCR", "monkeyocr-from-env", config)
 }
 
@@ -1897,12 +1903,14 @@ var (
 		common.EnvMonkeyOCRAPIServer,
 		common.EnvMonkeyOCROutputDir,
 		common.EnvMonkeyOCRServerURL,
+		common.EnvMonkeyOCRBackend,
 		common.EnvMonkeyOCRDeleteOutput,
 	}
 	monkeyOCRDefaultConfig = map[string]interface{}{
 		common.EnvMonkeyOCRAPIServer:    "",
 		common.EnvMonkeyOCROutputDir:    "",
 		common.EnvMonkeyOCRServerURL:    "",
+		common.EnvMonkeyOCRBackend:      "vlm-transformers",
 		common.EnvMonkeyOCRDeleteOutput: 1,
 	}
 )
