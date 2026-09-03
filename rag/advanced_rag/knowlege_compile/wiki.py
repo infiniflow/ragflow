@@ -4007,7 +4007,7 @@ async def wiki_refine_from_plan(
                 }
             except Exception:
                 logging.exception("wiki_refine: writer failed for slug=%s", slug)
-                return None
+                raise
 
             # Searchable wiki_page persistence has moved to the task
             # handler so the doc-storage schema can be controlled in one
@@ -4026,13 +4026,16 @@ async def wiki_refine_from_plan(
 
             return page
 
+        result: Optional[dict] = None
         try:
             if semaphore is not None:
                 async with semaphore:
-                    return await _run()
-            return await _run()
+                    result = await _run()
+            else:
+                result = await _run()
+            return result
         finally:
-            if callback:
+            if callback and result is not None:
                 async with completed_lock:
                     completed += 1
                     done = completed
