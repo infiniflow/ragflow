@@ -32,6 +32,7 @@ import {
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
+import { isParserRunning } from '@/pages/dataset/dataset/utils';
 import documentStructureService from '@/services/document-structure-service';
 import kbService, {
   changeDocumentParser,
@@ -178,7 +179,7 @@ export const useFetchDocumentList = (loop = true) => {
     initialData: { docs: [], total: 0 },
     refetchInterval: (query) =>
       loop &&
-      query.state.data?.docs.some((doc) => doc.run === RunningStatus.RUNNING)
+      query.state.data?.docs.some((doc) => isParserRunning(doc.run))
         ? 5000
         : false,
     enabled: !!knowledgeId || !!id,
