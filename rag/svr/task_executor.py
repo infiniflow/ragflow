@@ -82,7 +82,7 @@ from api.db.joint_services.tenant_model_service import get_tenant_default_model_
 from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, email, tag
-from rag.nlp import search, rag_tokenizer, add_positions
+from rag.nlp import search, rag_tokenizer, add_positions, DEFAULT_DELIMITER
 
 from common.token_utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
@@ -342,7 +342,7 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
         "parser_id": task["parser_id"],
         "chunk_token_num": parser_config_for_chunk.get("chunk_token_num", 128),
         "overlapped_percent": normalize_overlapped_percent(parser_config_for_chunk.get("overlapped_percent", 0)),
-        "delimiter": parser_config_for_chunk.get("delimiter", "\n!?。；！？"),
+        "delimiter": parser_config_for_chunk.get("delimiter", DEFAULT_DELIMITER),
         "from_page": task["from_page"],
         "to_page": task["to_page"],
         "language": task["language"],
