@@ -4041,7 +4041,7 @@ async def wiki_refine_from_plan(
                     try:
                         callback(progress, f"wiki REFINE: {done}/{total} pages completed")
                     except Exception:
-                        pass
+                        logging.exception("wiki REFINE progress callback failed")
 
     tasks = [asyncio.create_task(_write_one(p)) for p in pending]
     if tasks:

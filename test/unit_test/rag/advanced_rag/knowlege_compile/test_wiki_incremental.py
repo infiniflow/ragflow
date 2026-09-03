@@ -1192,6 +1192,11 @@ def test_find_unlinked_mention_skips_raw_and_rendered_links():
     assert _wiki._wiki_find_unlinked_mention(content, "关") == content.index("关前")
 
 
+def test_find_unlinked_mention_skips_unterminated_raw_link():
+    content = "before [[entity/X|Name"
+    assert _wiki._wiki_find_unlinked_mention(content, "Name") == -1
+
+
 @pytest.mark.asyncio
 async def test_finalize_preserves_merged_entity_name_as_link_label():
     """A merged page must not replace a member mention with its page title."""
@@ -1233,13 +1238,6 @@ async def test_finalize_preserves_merged_entity_name_as_link_label():
 
     update = next(args[0][1] for args in doc_store.update.call_args_list if args[0][0].get("id") == "entity/曹操")
     assert "[治世之能臣，乱世之奸雄](artifact/kb1/entity/五色棒)" in update["md_with_weight"]
-
-
-def test_inside_wikilink():
-    content = "before [[entity/X]] after"
-    assert _wiki._inside_wikilink(content, content.index("entity"))
-    assert not _wiki._inside_wikilink(content, content.index("before"))
-    assert not _wiki._inside_wikilink(content, content.index("after"))
 
 
 def test_extract_outlinks_from_content():

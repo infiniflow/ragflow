@@ -497,7 +497,7 @@ class Compiler(ProcessBase, LLM):
                     doc_id,
                     {"title": tree.get("title"), "graph_text": nav_graph_text},
                     embd_mdl=embedding_model,
-                    chat_mdl=chat_mdl_by_tid[template_id],
+                    chat_mdl=pooled_chat_mdl,
                 )
             except Exception:
                 logging.exception("Compiler: tree-template %s dataset navigation upsert failed for doc %s", template_id, doc_id)

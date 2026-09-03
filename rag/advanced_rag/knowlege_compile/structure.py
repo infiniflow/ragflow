@@ -30,8 +30,6 @@ from common.exceptions import TaskCanceledException
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import gen_json
-from rag.llm.rate_limit_feedback import current_rate_limit_reporter
-
 from ._common import (
     build_chunk_batches as _build_chunk_batches,
     encode as _encode,
@@ -100,7 +98,8 @@ class LLMCallPool:
 
     ``max_concurrency`` remains the task-wide hard ceiling. Each model starts
     at that ceiling, halves its own admission limit after an explicit rate
-    limit response, and recovers one slot at a time after sustained success.
+    limit response, retries through the reduced limit, and recovers one slot
+    at a time after sustained success.
     """
 
     _RATE_LIMIT_MARKERS = (
@@ -124,6 +123,9 @@ class LLMCallPool:
         decrease_cooldown: float = 5.0,
         recovery_successes: int = 20,
         recovery_cooldown: float = 30.0,
+        rate_limit_retries: int = 3,
+        rate_limit_retry_base_delay: float = 1.0,
+        rate_limit_retry_max_delay: float = 30.0,
         clock: Callable[[], float] = time.monotonic,
         on_concurrency_change: Callable[[int, int, str], None] | None = None,
     ):
@@ -134,6 +136,9 @@ class LLMCallPool:
         self.decrease_cooldown = max(0.0, float(decrease_cooldown))
         self.recovery_successes = max(1, int(recovery_successes))
         self.recovery_cooldown = max(0.0, float(recovery_cooldown))
+        self.rate_limit_retries = max(0, int(rate_limit_retries))
+        self.rate_limit_retry_base_delay = max(0.0, float(rate_limit_retry_base_delay))
+        self.rate_limit_retry_max_delay = max(self.rate_limit_retry_base_delay, float(rate_limit_retry_max_delay))
         self._clock = clock
         self._on_concurrency_change = on_concurrency_change
         self._active = 0
@@ -189,6 +194,8 @@ class LLMCallPool:
     def _next_admissible_ticket(self) -> tuple[int, int, str] | None:
         if self._active >= self.max_concurrency:
             return None
+        # The bounded queue is scanned to avoid one throttled model blocking
+        # admissible work for another model at the heap head.
         candidates = [ticket for ticket in self._waiting if self._state_for(ticket[2]).active < self._state_for(ticket[2]).concurrency]
         return min(candidates) if candidates else None
 
@@ -201,13 +208,13 @@ class LLMCallPool:
     def _is_error_result(result) -> bool:
         return isinstance(result, str) and result.lstrip().lower().startswith("**error**")
 
-    def _record_feedback(self, model_key: str, outcome: str, *, label: str, context: str | None) -> None:
+    def _record_feedback(self, model_key: str, outcome: str, *, label: str, context: str | None) -> tuple[int, int, str] | None:
         state = self._state_for(model_key)
         now = self._clock()
         if outcome == "rate_limited":
             state.successes = 0
             if now - state.last_decrease_at < self.decrease_cooldown:
-                return
+                return None
             old_concurrency = state.concurrency
             state.concurrency = max(self.min_concurrency, int(state.concurrency * self.decrease_factor))
             state.last_decrease_at = now
@@ -222,19 +229,19 @@ class LLMCallPool:
                     state.active,
                     len(self._waiting),
                 )
-                self._notify_concurrency_change(old_concurrency, state.concurrency, "rate limited")
-            return
+                return old_concurrency, state.concurrency, "rate limited"
+            return None
         if outcome != "success":
             state.successes = 0
-            return
+            return None
         if state.concurrency >= self.max_concurrency:
             state.successes = 0
-            return
+            return None
         state.successes += 1
         if state.successes < self.recovery_successes:
-            return
+            return None
         if now - state.last_decrease_at < self.recovery_cooldown or now - state.last_increase_at < self.recovery_cooldown:
-            return
+            return None
         old_concurrency = state.concurrency
         state.concurrency = min(self.max_concurrency, state.concurrency + 1)
         state.successes = 0
@@ -249,7 +256,7 @@ class LLMCallPool:
             state.active,
             len(self._waiting),
         )
-        self._notify_concurrency_change(old_concurrency, state.concurrency, "recovered")
+        return old_concurrency, state.concurrency, "recovered"
 
     def _notify_concurrency_change(self, old_concurrency: int, new_concurrency: int, reason: str) -> None:
         if self._on_concurrency_change is None:
@@ -259,7 +266,7 @@ class LLMCallPool:
         except Exception:
             logging.exception("LLM pool concurrency change callback failed")
 
-    async def call(self, fn, *, model_key: str, priority: int, label: str, context: str | None = None):
+    async def _acquire(self, model_key: str, priority: int) -> None:
         async with self._condition:
             while self.pending_count >= self.max_pending:
                 await self._condition.wait()
@@ -279,31 +286,58 @@ class LLMCallPool:
             heapq.heapify(self._waiting)
             self._active += 1
             self._state_for(model_key).active += 1
-        outcome = "cancelled"
-        try:
-            result = await fn()
-            if self._is_error_result(result):
-                outcome = "rate_limited" if self._is_rate_limited(result) else "failed"
-            else:
-                outcome = "success"
-            return result
-        except asyncio.CancelledError:
-            raise
-        except BaseException as exc:
-            outcome = "rate_limited" if self._is_rate_limited(exc) else "failed"
-            raise
-        finally:
-            async with self._condition:
-                self._active -= 1
-                self._state_for(model_key).active -= 1
-                self._record_feedback(model_key, outcome, label=label, context=context)
-                self._condition.notify_all()
 
-    async def report_rate_limit(self, model_key: str, *, label: str, context: str | None = None) -> None:
-        """Apply feedback immediately when a provider retries a rate limit."""
+    async def _release(self, model_key: str, outcome: str, *, label: str, context: str | None) -> None:
         async with self._condition:
-            self._record_feedback(model_key, "rate_limited", label=label, context=context)
+            self._active -= 1
+            self._state_for(model_key).active -= 1
+            change = self._record_feedback(model_key, outcome, label=label, context=context)
             self._condition.notify_all()
+        if change is not None:
+            self._notify_concurrency_change(*change)
+
+    def _rate_limit_retry_delay(self, retry: int) -> float:
+        return min(self.rate_limit_retry_max_delay, self.rate_limit_retry_base_delay * (2 ** (retry - 1)))
+
+    async def call(self, fn, *, model_key: str, priority: int, label: str, context: str | None = None):
+        for retry in range(self.rate_limit_retries + 1):
+            await self._acquire(model_key, priority)
+            try:
+                result = await fn()
+            except asyncio.CancelledError:
+                await self._release(model_key, "cancelled", label=label, context=context)
+                raise
+            except BaseException as exc:
+                rate_limited = self._is_rate_limited(exc)
+                await self._release(model_key, "rate_limited" if rate_limited else "failed", label=label, context=context)
+                if not rate_limited or retry >= self.rate_limit_retries:
+                    raise
+            else:
+                error_result = self._is_error_result(result)
+                rate_limited = error_result and self._is_rate_limited(result)
+                await self._release(
+                    model_key,
+                    "rate_limited" if rate_limited else "failed" if error_result else "success",
+                    label=label,
+                    context=context,
+                )
+                if not rate_limited or retry >= self.rate_limit_retries:
+                    return result
+
+            delay = self._rate_limit_retry_delay(retry + 1)
+            logging.warning(
+                "LLM pool retrying rate-limited call model=%s label=%s context=%s retry=%d/%d delay=%.2fs concurrency=%d",
+                model_key,
+                label,
+                context,
+                retry + 1,
+                self.rate_limit_retries,
+                delay,
+                self._state_for(model_key).concurrency,
+            )
+            await asyncio.sleep(delay)
+
+        raise AssertionError("LLM pool retry loop exhausted unexpectedly")
 
 
 class PooledChatModel:
@@ -320,22 +354,8 @@ class PooledChatModel:
 
     async def async_chat(self, system, history, gen_conf=None, **kwargs):
         gen_conf = _knowledge_compile_gen_conf(self._chat_mdl, gen_conf)
-
-        async def _chat_with_rate_limit_feedback():
-            token = current_rate_limit_reporter.set(
-                lambda: self._pool.report_rate_limit(
-                    self._model_key,
-                    label=self._label,
-                    context=self._context,
-                )
-            )
-            try:
-                return await self._chat_mdl.async_chat(system, history, gen_conf=gen_conf, **kwargs)
-            finally:
-                current_rate_limit_reporter.reset(token)
-
         return await self._pool.call(
-            _chat_with_rate_limit_feedback,
+            lambda: self._chat_mdl.async_chat(system, history, gen_conf=gen_conf, **kwargs),
             model_key=self._model_key,
             priority=self._priority,
             label=self._label,

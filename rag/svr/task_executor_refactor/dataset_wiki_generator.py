@@ -106,6 +106,7 @@ def _create_wiki_llm_pool(progress: Callable) -> LLMCallPool:
         max_pending=WIKI_MAP_MAX_PENDING,
         on_concurrency_change=_on_concurrency_change,
     )
+    logging.info("Wiki LLM pool initialized max_concurrency=%d max_pending=%d", pool.max_concurrency, pool.max_pending)
     progress(0.0, f"LLM pool max {pool.max_concurrency}.")
     return pool
 

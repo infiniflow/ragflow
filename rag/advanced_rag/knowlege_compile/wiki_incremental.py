@@ -1211,18 +1211,6 @@ def _wiki_extract_outlinks_from_content(content: str, kb_id: str = "") -> list[s
     return outlinks
 
 
-def _inside_wikilink(content: str, pos: int) -> bool:
-    """Return True iff position ``pos`` falls inside an existing [[...]] span."""
-    open_pos = content.rfind("[[", 0, pos)
-    if open_pos < 0:
-        return False
-    # Find the FIRST "]]" that closes the "[[...]]" starting at open_pos
-    close_pos = content.find("]]", open_pos + 2)
-    if close_pos < 0:
-        close_pos = len(content)
-    return open_pos + 2 <= pos < close_pos
-
-
 _WIKI_PROTECTED_LINK_RE = re.compile(r"\[\[[^\]\n]+\]\]|\[[^\]\n]*\]\([^)\n]+\)")
 
 
@@ -1231,6 +1219,9 @@ def _wiki_find_unlinked_mention(content: str, name: str) -> int:
     if not content or not name:
         return -1
     protected_spans = [(match.start(), match.end()) for match in _WIKI_PROTECTED_LINK_RE.finditer(content)]
+    raw_open = content.rfind("[[")
+    if raw_open >= 0 and content.find("]]", raw_open + 2) < 0:
+        protected_spans.append((raw_open, len(content)))
     start = 0
     while True:
         idx = content.find(name, start)

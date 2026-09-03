@@ -3,7 +3,6 @@ import asyncio
 import pytest
 
 from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
-from rag.llm.rate_limit_feedback import report_rate_limit
 
 
 class _Clock:
@@ -34,7 +33,7 @@ async def _return(value):
 def test_llm_call_pool_halves_model_concurrency_once_per_cooldown():
     async def exercise():
         clock = _Clock()
-        pool = LLMCallPool(20, decrease_cooldown=5, clock=clock)
+        pool = LLMCallPool(20, decrease_cooldown=5, rate_limit_retries=0, clock=clock)
         model = _ChatModel("limited")
 
         async def limited_call():
@@ -55,7 +54,7 @@ def test_llm_call_pool_halves_model_concurrency_once_per_cooldown():
 
 def test_pooled_chat_model_reports_rate_limit_results_to_the_pool():
     async def exercise():
-        pool = LLMCallPool(8, decrease_cooldown=0)
+        pool = LLMCallPool(8, decrease_cooldown=0, rate_limit_retries=0)
         model = _ChatModel("wrapped", "**ERROR**: RATE_LIMIT_EXCEEDED")
 
         result = await pool.wrap(model, priority=10, label="wrapped").async_chat("system", [])
@@ -66,10 +65,16 @@ def test_pooled_chat_model_reports_rate_limit_results_to_the_pool():
     asyncio.run(exercise())
 
 
-def test_provider_retry_reports_rate_limit_before_a_successful_result():
+def test_llm_call_pool_retries_after_lowering_concurrency():
     class RetryingChatModel(_ChatModel):
+        def __init__(self, name: str):
+            super().__init__(name)
+            self.calls = 0
+
         async def async_chat(self, system, history, gen_conf=None, **kwargs):
-            await report_rate_limit()
+            self.calls += 1
+            if self.calls == 1:
+                return "**ERROR**: 429 too many requests"
             return "ok after provider retry"
 
     async def exercise():
@@ -77,6 +82,7 @@ def test_provider_retry_reports_rate_limit_before_a_successful_result():
         pool = LLMCallPool(
             8,
             decrease_cooldown=0,
+            rate_limit_retry_base_delay=0,
             on_concurrency_change=lambda old, new, reason: changes.append((old, new, reason)),
         )
         model = RetryingChatModel("internally-retried")
@@ -84,8 +90,36 @@ def test_provider_retry_reports_rate_limit_before_a_successful_result():
         result = await pool.wrap(model, priority=10, label="wrapped").async_chat("system", [])
 
         assert result == "ok after provider retry"
+        assert model.calls == 2
         assert pool.concurrency_for(model) == 4
         assert changes == [(8, 4, "rate limited")]
+
+    asyncio.run(exercise())
+
+
+def test_llm_call_pool_retries_rate_limit_exceptions():
+    async def exercise():
+        calls = 0
+        model = _ChatModel("exception-retry")
+        pool = LLMCallPool(8, decrease_cooldown=0, rate_limit_retry_base_delay=0)
+
+        async def rate_limited_once():
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("429 too many requests")
+            return "ok"
+
+        result = await pool.call(
+            rate_limited_once,
+            model_key=pool._model_key(model),
+            priority=10,
+            label="exception-retry",
+        )
+
+        assert result == "ok"
+        assert calls == 2
+        assert pool.concurrency_for(model) == 4
 
     asyncio.run(exercise())
 
@@ -98,6 +132,7 @@ def test_llm_call_pool_recovers_concurrency_gradually_after_success():
             decrease_cooldown=0,
             recovery_successes=2,
             recovery_cooldown=10,
+            rate_limit_retries=0,
             clock=clock,
         )
         model = _ChatModel("recovering")
@@ -131,13 +166,18 @@ def test_llm_call_pool_reports_concurrency_changes():
     async def exercise():
         clock = _Clock()
         changes = []
+
+        def on_change(old, new, reason):
+            changes.append((old, new, reason, pool._condition.locked()))
+
         pool = LLMCallPool(
             8,
             decrease_cooldown=0,
             recovery_successes=1,
             recovery_cooldown=5,
+            rate_limit_retries=0,
             clock=clock,
-            on_concurrency_change=lambda old, new, reason: changes.append((old, new, reason)),
+            on_concurrency_change=on_change,
         )
         model = _ChatModel("reported")
         model_key = pool._model_key(model)
@@ -151,14 +191,14 @@ def test_llm_call_pool_reports_concurrency_changes():
         clock.advance(5)
         await pool.call(lambda: _return("ok"), model_key=model_key, priority=10, label="success")
 
-        assert changes == [(8, 4, "rate limited"), (4, 5, "recovered")]
+        assert changes == [(8, 4, "rate limited", False), (4, 5, "recovered", False)]
 
     asyncio.run(exercise())
 
 
 def test_llm_call_pool_isolates_models_and_avoids_head_of_line_blocking():
     async def exercise():
-        pool = LLMCallPool(2, max_pending=4, decrease_cooldown=0)
+        pool = LLMCallPool(2, max_pending=4, decrease_cooldown=0, rate_limit_retries=0)
         limited_model = _ChatModel("limited")
         healthy_model = _ChatModel("healthy")
         limited_key = pool._model_key(limited_model)
@@ -208,7 +248,7 @@ def test_llm_call_pool_isolates_models_and_avoids_head_of_line_blocking():
 
 def test_llm_call_pool_only_backs_off_for_rate_limit_errors():
     async def exercise():
-        pool = LLMCallPool(8, decrease_cooldown=0)
+        pool = LLMCallPool(8, decrease_cooldown=0, rate_limit_retries=0)
         model = _ChatModel("errors")
         model_key = pool._model_key(model)
 
