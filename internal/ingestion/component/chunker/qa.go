@@ -205,13 +205,18 @@ var htmlTR = regexp.MustCompile(`(?i)<tr[^>]*>(.*?)</tr>`)
 var htmlTD = regexp.MustCompile(`(?i)<t[dh][^>]*>(.*?)</t[dh]>`)
 var htmlTag = regexp.MustCompile(`<[^>]+>`)
 
+// isTableHTML reports whether the text is a rendered HTML table.
+func isTableHTML(s string) bool {
+	return strings.HasPrefix(strings.TrimSpace(strings.ToLower(s)), "<table")
+}
+
 func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if htmlStr == "" {
 		return nil
 	}
 	rows := htmlTR.FindAllStringSubmatch(htmlStr, -1)
 	pairs := make([]qaPair, 0, len(rows))
-	for _, row := range rows {
+	for i, row := range rows {
 		cells := htmlTD.FindAllStringSubmatch(row[1], -1)
 		// Python qa.py:365 requires exactly two fields for CSV pairs.
 		if strictPairs && len(cells) != 2 {
@@ -226,7 +231,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 			}
 		}
 		if len(texts) >= 2 {
-			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1]})
+			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1], RowNum: i})
 		}
 	}
 	return pairs
@@ -430,7 +435,16 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 		if txt == "" {
 			continue
 		}
-		tmp := extractQAText(txt)
+		// A JSON item can hold a rendered HTML table. The xlsx, docx, html
+		// and markdown parsers all emit one. Splitting that markup on
+		// newlines produces no CSV record, so read the rows the same way
+		// the HTML payload path does.
+		var tmp []qaPair
+		if isTableHTML(txt) {
+			tmp = extractQATable(txt, false)
+		} else {
+			tmp = extractQAText(txt)
+		}
 		// Preserve the source item's image id and coordinates on each
 		// extracted pair
 		for _, p := range tmp {
