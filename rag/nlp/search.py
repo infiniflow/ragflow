@@ -56,6 +56,7 @@ class Dealer:
     _DOC_EXISTS_TTL = 120.0
 
     def __init__(self, dataStore: DocStoreConnection):
+        """Initialize search helpers and the process-local document-existence cache."""
         self.qryr = query.FulltextQueryer()
         self.dataStore = dataStore
         self._doc_exists_cache: OrderedDict = OrderedDict()
@@ -69,8 +70,13 @@ class Dealer:
 
         with self._doc_exists_lock:
             self._doc_exists_cache_epoch += 1
+            cache_epoch = self._doc_exists_cache_epoch
+            invalidated_count = 0
             for doc_id in doc_ids:
-                self._doc_exists_cache.pop(doc_id, None)
+                if self._doc_exists_cache.pop(doc_id, None) is not None:
+                    invalidated_count += 1
+
+        logging.debug("Invalidated %s document-existence cache entries at epoch %s.", invalidated_count, cache_epoch)
 
     @dataclass
     class SearchResult:
@@ -93,6 +99,7 @@ class Dealer:
         return MatchDenseExpr(vector_column_name, embedding_data, "float", "cosine", top_k, {"similarity": similarity, "num_candidates": num_candidates})
 
     async def _existing_doc_ids(self, doc_ids: list[str]) -> set[str]:
+        """Return IDs that still have document rows, using the short-lived cache."""
         if not doc_ids:
             return set()
 

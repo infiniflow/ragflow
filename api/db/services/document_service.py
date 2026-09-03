@@ -51,12 +51,14 @@ class DocumentService(CommonService):
 
     @classmethod
     def delete_by_id(cls, pid):
+        """Delete one document row and invalidate its retriever cache entry."""
         deleted = super().delete_by_id(pid)
         cls._invalidate_doc_exists_cache([pid])
         return deleted
 
     @classmethod
     def delete_by_ids(cls, pids):
+        """Delete document rows and invalidate their retriever cache entries."""
         pids = list(pids)
         deleted = super().delete_by_ids(pids)
         cls._invalidate_doc_exists_cache(pids)
@@ -65,9 +67,10 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def filter_delete(cls, filters):
+        """Delete the selected document rows and invalidate the same IDs."""
         with DB.atomic():
             doc_ids = [doc_id for (doc_id,) in cls.model.select(cls.model.id).where(*filters).tuples()]
-            num = cls.model.delete().where(*filters).execute()
+            num = cls.model.delete().where(cls.model.id.in_(doc_ids)).execute() if doc_ids else 0
 
         cls._invalidate_doc_exists_cache(doc_ids)
         return num

@@ -15,6 +15,7 @@
 #
 """Unit tests for the doc-existence cache behind Dealer._prune_deleted_chunks."""
 
+import logging
 import sys
 import threading
 import types
@@ -57,6 +58,7 @@ finally:
 
 
 def _dealer():
+    """Build a Dealer with only the cache state needed by these unit tests."""
     dealer = Dealer.__new__(Dealer)
     dealer._doc_exists_cache = OrderedDict()
     dealer._doc_exists_lock = threading.Lock()
@@ -117,6 +119,7 @@ async def test_existing_doc_is_served_from_cache_without_a_second_query(monkeypa
 
 @pytest.mark.asyncio
 async def test_deleting_cached_doc_invalidates_positive_entry(monkeypatch):
+    """Invalidating a positive entry must force the next lookup back to the database."""
     dealer = _dealer()
     existing_ids = {"doc-1"}
     calls = _stub_document_service(monkeypatch, existing_ids)
@@ -129,8 +132,22 @@ async def test_deleting_cached_doc_invalidates_positive_entry(monkeypatch):
     assert calls == [["doc-1"], ["doc-1"]]
 
 
+def test_invalidation_logs_count_and_epoch_without_document_ids(caplog):
+    """Invalidation logs operational counts without exposing document identifiers."""
+    dealer = _dealer()
+    dealer._doc_exists_cache["sensitive-doc-id"] = (0, True)
+
+    with caplog.at_level(logging.DEBUG):
+        dealer.invalidate_doc_ids(["sensitive-doc-id", "uncached-doc-id"])
+
+    assert "Invalidated 1 document-existence cache entries at epoch 1." in caplog.text
+    assert "sensitive-doc-id" not in caplog.text
+    assert "uncached-doc-id" not in caplog.text
+
+
 @pytest.mark.asyncio
 async def test_invalidation_during_db_check_does_not_repopulate_cache(monkeypatch):
+    """An in-flight stale lookup must not refill the cache after invalidation."""
     dealer = _dealer()
 
     class _Rows:
