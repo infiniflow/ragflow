@@ -336,3 +336,32 @@ def test_validate_surfaces_feishu_api_errors_without_secrets():
 
     assert "secret" not in str(error.value)
     assert "token" not in str(error.value)
+
+
+def test_validate_surfaces_feishu_error_body_for_http_400_without_secrets():
+    session = FakeSession(
+        [
+            _auth_success(),
+            FakeResponse(
+                status_code=400,
+                payload={
+                    "code": 131006,
+                    "msg": "the parent node does not belong to the space",
+                    "data": {"app_secret": "must-not-leak"},
+                },
+            ),
+        ]
+    )
+    connector = _build_connector(session)
+
+    with pytest.raises(
+        ConnectorValidationError,
+        match=(
+            r"Feishu API error 131006 \(HTTP 400\) while attempting to "
+            r"list Wiki nodes: the parent node does not belong to the space"
+        ),
+    ) as error:
+        connector.validate_connector_settings()
+
+    assert "must-not-leak" not in str(error.value)
+    assert "app_secret" not in str(error.value)

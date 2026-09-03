@@ -181,14 +181,28 @@ class FeishuWikiConnector(LoadConnector, PollConnector):
 
     @staticmethod
     def _decode_api_payload(response: requests.Response, operation: str) -> dict[str, Any]:
-        if response.status_code in {401, 403}:
-            raise InsufficientPermissionsError(f"Feishu permission denied while attempting to {operation}")
-        if response.status_code >= 400:
-            raise ConnectorValidationError(f"Feishu HTTP {response.status_code} while attempting to {operation}")
+        payload: Any = None
+        json_error: Exception | None = None
         try:
             payload = response.json()
         except (TypeError, ValueError) as exc:
-            raise ConnectorValidationError(f"Feishu returned invalid JSON while attempting to {operation}") from exc
+            json_error = exc
+
+        code = payload.get("code") if isinstance(payload, dict) else None
+        message = str(payload.get("msg") or "unknown Feishu API error") if isinstance(payload, dict) else ""
+        if response.status_code in {401, 403}:
+            detail = f": {message}" if message else ""
+            raise InsufficientPermissionsError(
+                f"Feishu permission denied (HTTP {response.status_code}) while attempting to {operation}{detail}"
+            )
+        if response.status_code >= 400:
+            if code not in (0, "0", None):
+                raise ConnectorValidationError(
+                    f"Feishu API error {code} (HTTP {response.status_code}) while attempting to {operation}: {message}"
+                )
+            raise ConnectorValidationError(f"Feishu HTTP {response.status_code} while attempting to {operation}")
+        if json_error is not None:
+            raise ConnectorValidationError(f"Feishu returned invalid JSON while attempting to {operation}") from json_error
         if not isinstance(payload, dict):
             raise ConnectorValidationError(f"Feishu returned an invalid response while attempting to {operation}")
         code = payload.get("code", 0)
