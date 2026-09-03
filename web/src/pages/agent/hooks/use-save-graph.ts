@@ -150,6 +150,7 @@ export const useSaveGraph = (
           message.warning(
             `${emptyMessageNodeNames.join(', ')}: ${t('flow.messageMsg')}`,
           );
+          return;
         }
       }
 

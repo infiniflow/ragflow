@@ -47,4 +47,8 @@ export interface ArtifactForceGraphProps<TNodeValue = IArtifactGraphEntity> {
   ) => number;
   /** Controlled highlighted node id (same id space as getNodeId output, slug by default); real hover takes precedence over this value */
   highlightNodeId?: string | null;
+  /** Total entity count in the dataset; rendered together with returnedEntities as an overlay badge */
+  totalEntities?: number;
+  /** Entity count present in the current graph data (may be a sampled subset of totalEntities) */
+  returnedEntities?: number;
 }

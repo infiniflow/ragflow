@@ -34,10 +34,9 @@ from api.db.joint_services.tenant_model_service import (
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_counter_service import release_reparse_counters
 from api.db.services.document_service import DocumentService
-from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.llm_service import LLMBundle
-from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
+from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
@@ -213,6 +212,7 @@ async def parse(tenant_id, dataset_id):
 
     not_found = []
     success_count = 0
+    kb_table_num_map = {}
     for id in doc_list:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
@@ -247,9 +247,7 @@ async def parse(tenant_id, dataset_id):
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
         doc = doc.to_dict()
-        doc["tenant_id"] = tenant_id
-        bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
-        queue_tasks(doc, bucket, name, 0)
+        DocumentService.run(tenant_id, doc, kb_table_num_map)
         success_count += 1
     if not_found:
         return get_result(message=f"Documents not found: {not_found}", code=RetCode.DATA_ERROR)
@@ -610,6 +608,10 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     Response shape::
 
         {
+          "total_entities": 100,
+          "total_relations": 200,
+          "returned_entities": 80,
+          "returned_relations": 150,
           "templates": [
             {
               "template_id": "<id> | 'legacy:<compile_kwd>'",
@@ -704,6 +706,61 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     index_name = search.index_name(dataset_tenant_id)
     keywords = (request.args.get("keywords") or "").strip()
 
+    total_entities = 0
+    total_relations = 0
+
+    def _response(templates: list[dict]) -> dict:
+        return {
+            "templates": templates,
+            "total_entities": total_entities,
+            "total_relations": total_relations,
+            "returned_entities": sum(len(template["entities"]) for template in templates),
+            "returned_relations": sum(len(template["relations"]) for template in templates),
+        }
+
+    try:
+        _, total_entities = await sgc.graph_search(index_name, dataset_id, ["id"], {"doc_id": [document_id], "knowledge_graph_kwd": ["entity"]}, OrderByExpr(), 1)
+        _, total_relations = await sgc.graph_search(index_name, dataset_id, ["id"], {"doc_id": [document_id], "knowledge_graph_kwd": ["relation"]}, OrderByExpr(), 1)
+    except Exception as e:
+        return server_error_response(e)
+
+    # RAPTOR summary graph is stored as a standalone blob rather than raw
+    # knowledge_graph_kwd entity/relation rows, so include its arrays explicitly.
+    raptor_entities: list[dict] = []
+    raptor_relations: list[dict] = []
+    try:
+        res_raptor = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["content_with_weight", "compile_kwd"],
+            [],
+            {"doc_id": [document_id], "compile_kwd": ["raptor_graph"]},
+            [],
+            OrderByExpr(),
+            0,
+            16,
+            index_name,
+            [dataset_id],
+        )
+        raptor_rows = settings.docStoreConn.get_fields(res_raptor, ["content_with_weight", "compile_kwd"]) or {}
+    except Exception:
+        logging.exception("structure graph: RAPTOR blob load failed for doc=%s", document_id)
+        raptor_rows = {}
+    for row in raptor_rows.values():
+        try:
+            graph = json.loads(row.get("content_with_weight") or "{}")
+        except Exception:
+            continue
+        if not isinstance(graph, dict):
+            continue
+        r_entities = graph.get("entities") or []
+        r_relations = graph.get("relations") or []
+        if isinstance(r_entities, list):
+            raptor_entities.extend(r_entities)
+        if isinstance(r_relations, list):
+            raptor_relations.extend(r_relations)
+    total_entities += len(raptor_entities)
+    total_relations += len(raptor_relations)
+
     def _row_template_id(row: dict) -> str | None:
         raw = row.get("compilation_template_ids")
         if isinstance(raw, list):
@@ -771,7 +828,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             embd_mdl = TenantLLMService.model_instance(model_config)
         except Exception:
             logging.exception("structure graph: embedding bind failed for doc=%s", document_id)
-            return get_result(data={"templates": []})
+            return get_result(data=_response([]))
         try:
             bucket_meta, kw_entities, kw_relations = await sgc.keyword_subgraph(
                 index_name,
@@ -785,11 +842,11 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
         except Exception as e:
             return server_error_response(e)
         if not bucket_meta or (not kw_entities and not kw_relations):
-            return get_result(data={"templates": []})
+            return get_result(data=_response([]))
         bucket = dict(bucket_meta)
         bucket["entities"] = kw_entities
         bucket["relations"] = kw_relations
-        return get_result(data={"templates": [bucket]})
+        return get_result(data=_response([bucket]))
 
     # ── normal mode: per-template subgraph sampling from the raw rows ──
     # Metadata-only scan of the per-doc graph blob rows (one per
@@ -836,40 +893,12 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             continue
         grouped[bid] = {**meta, "entities": entities, "relations": relations}
 
-    # RAPTOR summary graph: a standalone blob (no ``knowledge_graph_kwd``, and
-    # no raw entity/relation rows), so read its content directly and don't
-    # sample it.
-    try:
-        res_raptor = await thread_pool_exec(
-            settings.docStoreConn.search,
-            ["content_with_weight", "compile_kwd"],
-            [],
-            {"doc_id": [document_id], "compile_kwd": ["raptor_graph"]},
-            [],
-            OrderByExpr(),
-            0,
-            16,
-            index_name,
-            [dataset_id],
-        )
-        raptor_rows = settings.docStoreConn.get_fields(res_raptor, ["content_with_weight", "compile_kwd"]) or {}
-    except Exception:
-        logging.exception("structure graph: RAPTOR blob load failed for doc=%s", document_id)
-        raptor_rows = {}
-    for row in raptor_rows.values():
-        try:
-            graph = json.loads(row.get("content_with_weight") or "{}")
-        except Exception:
-            continue
-        if not isinstance(graph, dict):
-            continue
-        r_entities = graph.get("entities") or []
-        r_relations = graph.get("relations") or []
-        if not r_entities and not r_relations:
-            continue
+    # RAPTOR was loaded above so its full counts are also available to keyword
+    # responses; append it only in normal mode, matching the existing behavior.
+    if raptor_entities or raptor_relations:
         rb = grouped.setdefault("raptor", {"template_id": "raptor", "template_name": "RAPTOR Summary", "kind": "raptor", "entities": [], "relations": []})
-        rb["entities"].extend(r_entities)
-        rb["relations"].extend(r_relations)
+        rb["entities"].extend(raptor_entities)
+        rb["relations"].extend(raptor_relations)
 
     # Order: configured templates first (in the user's chosen order),
     # then any discovered / legacy / raptor buckets after.
@@ -926,7 +955,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             ]
 
     templates_out = [grouped[bid] for bid in ordered_ids if grouped[bid]["entities"] or grouped[bid]["relations"]]
-    return get_result(data={"templates": templates_out})
+    return get_result(data=_response(templates_out))
 
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/structure/graph", methods=["DELETE"])  # noqa: F821

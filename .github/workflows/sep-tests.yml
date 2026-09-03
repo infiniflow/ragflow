@@ -135,6 +135,13 @@ jobs:
 #            fi
 #          fi
 
+      # lefthook's web-checks hook resolves oxlint/oxfmt through
+      # tools/hooks/web_tools.sh, which needs node and npm on PATH.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Run Lefthook on changed files
         run: |
           set -euo pipefail
@@ -159,6 +166,10 @@ jobs:
             # applying --fix or `git add`, so CI only checks and reports
             # failures instead of rewriting the working tree.
             LEFTHOOK_CHECK_ONLY=1 lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
+            # web-checks is a separate hook because it is not wired into local
+            # commits: it installs a Node toolchain that only CI has a reason to
+            # pay for. It is always check-only, so it needs no CHECK_ONLY flag.
+            lefthook run web-checks --files-from-stdin --no-auto-install < "$changed_files"
           fi
 
       - name: Set test level
@@ -396,6 +407,17 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
+      - name: Run ORT deps-download regression guard
+        if: env.API_PROXY_SCHEME == 'go'
+        # Pure-Python, local, needs no API keys or model downloads; guards the
+        # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
+        # depends on (notably the version-bump path C2 hardened). Run it in
+        # isolation so the test/testcases conftest (which requires
+        # SILICONFLOW_API_KEY) cannot fail the collection.
+        run: |
+          set -euo pipefail
+          uv sync --python 3.13 --group test --frozen
+          uv run pytest ragflow_deps/test_download_go_deps.py -q
 
       - name: Build ragflow:nightly
         run: |
@@ -1016,6 +1038,17 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
+      - name: Run ORT deps-download regression guard
+        if: env.API_PROXY_SCHEME == 'go'
+        # Pure-Python, local, needs no API keys or model downloads; guards the
+        # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
+        # depends on (notably the version-bump path C2 hardened). Run it in
+        # isolation so the test/testcases conftest (which requires
+        # SILICONFLOW_API_KEY) cannot fail the collection.
+        run: |
+          set -euo pipefail
+          uv sync --python 3.13 --group test --frozen
+          uv run pytest ragflow_deps/test_download_go_deps.py -q
 
       - name: Build ragflow:nightly
         run: |
@@ -1558,7 +1591,7 @@ jobs:
 
       - name: Cache external DeepDoc testdata
         # The native backend tests fetch pinned test assets from
-        # xugangqiang/ragflow-testdata (see scripts/fetch_deepdoc_testdata.sh).
+        # infiniflow/ragflow-testdata (see scripts/fetch_deepdoc_testdata.sh).
         # Cache them across runs, keyed by the pinned ref recorded in
         # internal/deepdoc/native/testdata.ref so a ref bump invalidates the cache.
         uses: actions/cache@v4

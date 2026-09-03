@@ -83,7 +83,7 @@ func newLoopGraph(t *testing.T, maxIter int) types.StateGraph {
 func TestEngine_Loop10Iterations(t *testing.T) {
 	sg := newLoopGraph(t, 10)
 	engine := NewEngine(sg, WithRecursionLimit(50))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestEngine_Loop10Iterations(t *testing.T) {
 func TestEngine_Loop100Iterations(t *testing.T) {
 	sg := newLoopGraph(t, 100)
 	engine := NewEngine(sg, WithRecursionLimit(200))
-	_, err := engine.RunSync(context.Background(), map[string]any{})
+	_, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -140,7 +140,7 @@ func newChainGraph(t *testing.T, n int) types.StateGraph {
 func TestEngine_Chain50Nodes(t *testing.T) {
 	sg := newChainGraph(t, 50)
 	engine := NewEngine(sg, WithRecursionLimit(100))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestEngine_FanOut10_FanInDAG(t *testing.T) {
 	sg.AddEdge("join", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(30))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestEngine_Concurrent50SameGraph(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			engine := NewEngine(sg, WithRecursionLimit(10))
-			_, err := engine.RunSync(context.Background(), map[string]any{})
+			_, err := engine.RunSync(t.Context(), map[string]any{})
 			if err != nil {
 				errs <- fmt.Errorf("goroutine %d: %w", id, err)
 			}
@@ -270,7 +270,7 @@ func TestEngine_MultiTenant50Engines(t *testing.T) {
 			sg.AddEdge(constants.Start, "worker")
 			sg.AddEdge("worker", constants.End)
 			engine := NewEngine(sg, WithRecursionLimit(10))
-			_, err := engine.RunSync(context.Background(), map[string]any{})
+			_, err := engine.RunSync(t.Context(), map[string]any{})
 			if err != nil {
 				errs <- fmt.Errorf("engine %d: %w", id, err)
 			}
@@ -312,7 +312,7 @@ func TestEngine_BinaryOperatorAggregate(t *testing.T) {
 	sg.AddEdge("join", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestEngine_TimeoutCancel(t *testing.T) {
 	sg.AddEdge(constants.Start, "slow")
 	sg.AddEdge("slow", constants.End)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
@@ -359,7 +359,7 @@ func TestEngine_TimeoutCancel(t *testing.T) {
 func TestEngine_RecursionLimitExceeded(t *testing.T) {
 	sg := newLoopGraph(t, 50)
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	_, err := engine.RunSync(context.Background(), map[string]any{})
+	_, err := engine.RunSync(t.Context(), map[string]any{})
 	if err == nil {
 		t.Fatal("expected recursion limit error, got nil")
 	}
@@ -390,7 +390,7 @@ func TestEngine_NodePanicRecovery(t *testing.T) {
 	sg.AddEdge("panicker", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	_, err := engine.RunSync(context.Background(), map[string]any{})
+	_, err := engine.RunSync(t.Context(), map[string]any{})
 	if err == nil {
 		t.Fatal("expected panic error, got nil")
 	}
@@ -421,7 +421,7 @@ func TestEngine_NodeErrorPropagation(t *testing.T) {
 	sg.AddEdge("never_reached", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	_, err := engine.RunSync(context.Background(), map[string]any{})
+	_, err := engine.RunSync(t.Context(), map[string]any{})
 	if err == nil {
 		t.Fatal("expected error from failing node, got nil")
 	}
@@ -475,7 +475,7 @@ func TestEngine_PartialNodeFailureInFanOut(t *testing.T) {
 	sg.AddEdge("join", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(30))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	// Error behavior depends on how the engine handles partial failure.
 	// The key thing is that the engine should not hang or crash.
 	if err != nil {
@@ -512,7 +512,7 @@ func TestEngine_ContextCancellationMidExecution(t *testing.T) {
 	sg.AddEdge("slow_start", "never_run")
 	sg.AddEdge("never_run", constants.End)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
 	defer cancel()
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
@@ -589,7 +589,7 @@ func TestEngine_MixedBSPAndDAG(t *testing.T) {
 	sg.AddEdge("dag_join", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(20))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -650,7 +650,7 @@ func TestEngine_ConditionalEdgesWithDAG(t *testing.T) {
 	sg.AddEdge("final", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -703,7 +703,7 @@ func TestEngine_LargeFanIn100(t *testing.T) {
 	sg.AddEdge("join", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(n+10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -759,7 +759,7 @@ func TestEngine_LargeFanOut100(t *testing.T) {
 	sg.AddEdge("collector", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(n+10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -834,7 +834,7 @@ func TestEngine_InterruptAndLoop(t *testing.T) {
 	engine := NewEngine(sg, WithInterrupts("checkpoint"), WithRecursionLimit(20))
 
 	// First run: should stop at checkpoint
-	result1, err1 := engine.RunSync(context.Background(), map[string]any{})
+	result1, err1 := engine.RunSync(t.Context(), map[string]any{})
 	if err1 != nil {
 		// GraphInterrupt is expected — that means the engine correctly interrupted
 		t.Logf("first run interrupted as expected: %v", err1)
@@ -869,7 +869,7 @@ func TestEngine_EmptyNodeExecution(t *testing.T) {
 	sg.AddEdge("end", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -912,7 +912,7 @@ func TestEngine_NodeReuseConcurrentRun(t *testing.T) {
 			sg.AddEdge("worker", constants.End)
 
 			engine := NewEngine(sg, WithRecursionLimit(5))
-			_, err := engine.RunSync(context.Background(), map[string]any{"val": "start"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"val": "start"})
 			if err != nil {
 				errs <- fmt.Errorf("engine %d: %w", id, err)
 			}
@@ -963,7 +963,7 @@ func TestEngine_DurabilityModes(t *testing.T) {
 			cfg := types.NewRunnableConfig()
 			cfg.Durability = mode
 			engine := NewEngine(sg, WithRecursionLimit(5), WithConfig(cfg))
-			result, err := engine.RunSync(context.Background(), map[string]any{})
+			result, err := engine.RunSync(t.Context(), map[string]any{})
 			if err != nil {
 				t.Fatalf("mode=%s failed: %v", mode, err)
 			}
@@ -999,7 +999,7 @@ func TestEngine_ChannelWriteConflict(t *testing.T) {
 		sg.AddEdge("a", constants.End)
 
 		engine := NewEngine(sg, WithRecursionLimit(5))
-		_, err := engine.RunSync(context.Background(), map[string]any{})
+		_, err := engine.RunSync(t.Context(), map[string]any{})
 		// Start→a and Start→b execute in consecutive steps (Pregel mode follows
 		// lastCompletedNode), so no conflict. When they happen in the same step,
 		// LastValue rejects the second write.
@@ -1041,7 +1041,7 @@ func TestEngine_ChannelWriteConflict(t *testing.T) {
 		sg.AddEdge("join", constants.End)
 
 		engine := NewEngine(sg, WithRecursionLimit(20))
-		result, err := engine.RunSync(context.Background(), map[string]any{})
+		result, err := engine.RunSync(t.Context(), map[string]any{})
 		if err != nil {
 			t.Fatalf("RunSync failed: %v", err)
 		}
@@ -1102,7 +1102,7 @@ func TestEngine_StateConcurrentHighPressure(t *testing.T) {
 			sg.AddEdge("c", constants.End)
 
 			engine := NewEngine(sg, WithRecursionLimit(10))
-			_, err := engine.RunSync(context.Background(), map[string]any{})
+			_, err := engine.RunSync(t.Context(), map[string]any{})
 			if err != nil {
 				errCh <- fmt.Errorf("engine %d: %w", id, err)
 			}
@@ -1151,7 +1151,7 @@ func TestEngine_MaxIterationsVsConditionStable(t *testing.T) {
 		)
 
 		engine := NewEngine(sg, WithRecursionLimit(5))
-		_, err := engine.RunSync(context.Background(), map[string]any{})
+		_, err := engine.RunSync(t.Context(), map[string]any{})
 		if err == nil {
 			t.Skip("engine completed without limit enforcement (timing)")
 		}
@@ -1191,7 +1191,7 @@ func TestEngine_MaxIterationsVsConditionStable(t *testing.T) {
 		sg.AddEdge("done", constants.End)
 
 		engine := NewEngine(sg, WithRecursionLimit(20))
-		result, err := engine.RunSync(context.Background(), map[string]any{})
+		result, err := engine.RunSync(t.Context(), map[string]any{})
 		if err != nil {
 			t.Fatalf("stable loop should terminate: %v", err)
 		}
@@ -1245,7 +1245,7 @@ func TestEngine_ChannelTypeCombinations(t *testing.T) {
 	sg.AddEdge("collect", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -1328,7 +1328,7 @@ func TestEngine_DynamicConditionalRouting(t *testing.T) {
 	sg.AddEdge("final", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(15))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -1357,7 +1357,7 @@ func TestEngine_CheckpointWithBSPLoop(t *testing.T) {
 	cfg.Configurable = map[string]any{constants.ConfigKeyThreadID: "test-cp-bsp"}
 	engine := NewEngine(sg, WithRecursionLimit(20), WithCheckpointer(cp), WithConfig(cfg))
 
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -1365,7 +1365,7 @@ func TestEngine_CheckpointWithBSPLoop(t *testing.T) {
 		t.Skip("result nil")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	checkpoints, err := cp.List(ctx, map[string]any{
 		constants.ConfigKeyThreadID: "test-cp-bsp",
 	}, 100)
@@ -1405,7 +1405,7 @@ func TestEngine_DuplicateNodeID(t *testing.T) {
 	sg.AddEdge("dup", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(5))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -1446,7 +1446,7 @@ func TestEngine_ExtremeConfigValues(t *testing.T) {
 		)
 
 		engine := NewEngine(sg, WithRecursionLimit(0))
-		_, err := engine.RunSync(context.Background(), map[string]any{})
+		_, err := engine.RunSync(t.Context(), map[string]any{})
 		if err == nil {
 			t.Skip("engine didn't enforce recursion limit 0 (allowed step 0)")
 		}
@@ -1457,7 +1457,7 @@ func TestEngine_ExtremeConfigValues(t *testing.T) {
 	t.Run("recursion_limit_one", func(t *testing.T) {
 		sg := newSimpleGraph(t)
 		engine := NewEngine(sg, WithRecursionLimit(1))
-		_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+		_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 		// With limit=1 and 2 nodes (entry + node_a), may or may not complete
 		t.Logf("recursion limit 1 result: %v", err)
 	})
@@ -1465,7 +1465,7 @@ func TestEngine_ExtremeConfigValues(t *testing.T) {
 	t.Run("max_concurrency_zero", func(t *testing.T) {
 		sg := newSimpleGraph(t)
 		engine := NewEngine(sg, WithRecursionLimit(10), WithMaxConcurrency(0))
-		_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+		_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 		if err != nil {
 			t.Fatalf("max concurrency 0 should use default: %v", err)
 		}
@@ -1500,7 +1500,7 @@ func TestEngine_MultipleEntryPoints(t *testing.T) {
 	sg.AddEdge("entry_b", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -1558,7 +1558,7 @@ func TestEngine_NodeWithBothEdgeAndConditionalEdge(t *testing.T) {
 	sg.AddEdge("done", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(20))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -1591,7 +1591,7 @@ func TestEngine_NodeTimeout(t *testing.T) {
 	sg.AddEdge("slow", constants.End)
 
 	// Use a short context timeout to cut off the slow node
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
@@ -1667,7 +1667,7 @@ func TestEngine_MultipleFanInNodes(t *testing.T) {
 	sg.AddEdge("final_join", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(30))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -1707,7 +1707,7 @@ func TestEngine_OverwriteValue(t *testing.T) {
 	sg.AddEdge("writer", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(5))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -1735,7 +1735,7 @@ func TestEngine_TrivialEmptyGraph(t *testing.T) {
 	sg.AddEdge(constants.Start, constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(5))
-	result, err := engine.RunSync(context.Background(), map[string]any{"x": "hello"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"x": "hello"})
 	if err != nil {
 		t.Fatalf("trivial graph failed: %v", err)
 	}
@@ -1765,7 +1765,7 @@ func TestEngine_PregelWithCustomChannels(t *testing.T) {
 	sg.AddEdge("adder", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(5))
-	result, err := engine.RunSync(context.Background(), map[string]any{"total": 10, "value": "init"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"total": 10, "value": "init"})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -1791,7 +1791,7 @@ func TestEngine_LargeLoopBSP(t *testing.T) {
 	const iterations = 50
 	sg := newLoopGraph(t, iterations)
 	engine := NewEngine(sg, WithRecursionLimit(iterations*2))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync failed: %v", err)
 	}
@@ -1834,7 +1834,7 @@ func TestEngine_SingleNodeGraph(t *testing.T) {
 			sg.AddEdge("only", constants.End)
 
 			engine := NewEngine(sg, WithRecursionLimit(5))
-			result, err := engine.RunSync(context.Background(), map[string]any{})
+			result, err := engine.RunSync(t.Context(), map[string]any{})
 			if err != nil {
 				t.Fatalf("mode=%s failed: %v", mode, err)
 			}

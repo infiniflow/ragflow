@@ -29,6 +29,7 @@ import (
 	s3Config "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	"go.uber.org/zap"
 )
@@ -334,53 +335,79 @@ func (s *S3Storage) BucketExists(ctx context.Context, bucket string) bool {
 
 // RemoveBucket removes a bucket and all its objects
 func (s *S3Storage) RemoveBucket(ctx context.Context, bucket string) error {
-	actualBucket := bucket
-	if s.bucket != "" {
-		actualBucket = s.bucket
+	exists, err := s.bucketExistsForRemoval(ctx, bucket)
+	if err != nil {
+		return err
 	}
-
-	// Check if bucket exists
-	if !s.BucketExists(ctx, actualBucket) {
+	if !exists {
 		return nil
 	}
 
-	// List and delete all objects
-	listInput := &s3.ListObjectsV2Input{
-		Bucket: aws.String(actualBucket),
-	}
-
-	for {
-		result, err := s.client.ListObjectsV2(ctx, listInput)
-		if err != nil {
-			common.Error("Failed to list objects", err, zap.String("bucket", actualBucket), zap.Error(err))
-			return err
-		}
-
-		for _, obj := range result.Contents {
-			_, err = s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-				Bucket: aws.String(actualBucket),
-				Key:    obj.Key,
-			})
-			if err != nil {
-				common.Error("Failed to delete object", err, zap.String("bucket", actualBucket), zap.Error(err))
-			}
-		}
-
-		if result.IsTruncated == nil || !*result.IsTruncated {
-			break
-		}
-		listInput.ContinuationToken = result.NextContinuationToken
-	}
-
-	// Delete bucket
-	_, err := s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
-		Bucket: aws.String(actualBucket),
-	})
-	if err != nil {
-		common.Error("Failed to delete bucket", err, zap.String("bucket", actualBucket), zap.Error(err))
+	if err := s.removeObjects(ctx, bucket); err != nil {
 		return err
 	}
 
+	_, err = s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		common.Error("Failed to delete bucket", err, zap.String("bucket", bucket), zap.Error(err))
+		return err
+	}
+
+	return nil
+}
+
+func (s *S3Storage) bucketExistsForRemoval(ctx context.Context, bucket string) (bool, error) {
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucket)})
+	if err == nil {
+		return true, nil
+	}
+	if isS3BucketNotFound(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("head S3 bucket %q: %w", bucket, err)
+}
+
+func (s *S3Storage) removeObjects(ctx context.Context, bucket string) error {
+	versions := s3.NewListObjectVersionsPaginator(s.client, &s3.ListObjectVersionsInput{
+		Bucket: aws.String(bucket),
+	})
+	for versions.HasMorePages() {
+		page, err := versions.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("list S3 object versions in %q: %w", bucket, err)
+		}
+		toDelete := make([]types.ObjectIdentifier, 0, len(page.Versions)+len(page.DeleteMarkers))
+		for _, version := range page.Versions {
+			toDelete = append(toDelete, types.ObjectIdentifier{Key: version.Key, VersionId: version.VersionId})
+		}
+		for _, marker := range page.DeleteMarkers {
+			toDelete = append(toDelete, types.ObjectIdentifier{Key: marker.Key, VersionId: marker.VersionId})
+		}
+		if err := s.deleteObjects(ctx, bucket, toDelete); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *S3Storage) deleteObjects(ctx context.Context, bucket string, objects []types.ObjectIdentifier) error {
+	for len(objects) > 0 {
+		count := min(len(objects), 1000)
+		output, err := s.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(bucket),
+			Delete: &types.Delete{Objects: objects[:count], Quiet: aws.Bool(true)},
+		})
+		if err != nil {
+			return fmt.Errorf("delete S3 objects in %q: %w", bucket, err)
+		}
+		if len(output.Errors) > 0 {
+			failed := output.Errors[0]
+			return fmt.Errorf("delete S3 object %q (version %q): %s: %s", aws.ToString(failed.Key), aws.ToString(failed.VersionId), aws.ToString(failed.Code), aws.ToString(failed.Message))
+		}
+		objects = objects[count:]
+	}
 	return nil
 }
 
@@ -432,6 +459,17 @@ func isS3NotFound(err error) bool {
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "404" || apiErr.ErrorCode() == "NoSuchKey"
+	}
+	return false
+}
+
+func isS3BucketNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "404" || apiErr.ErrorCode() == "NoSuchBucket"
 	}
 	return false
 }

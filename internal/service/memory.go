@@ -1084,6 +1084,18 @@ func memorySearchEmbeddingKey(memory *entity.Memory) string {
 	return "embedding:" + strings.TrimSpace(memory.EmbdID)
 }
 
+// memoryMessageNotForgottenCondition returns the filter that hides forgotten
+// messages, i.e. records whose forget_at is set. Python's message store
+// connectors apply the same default (hide_forgotten=True), for example
+// memory/utils/es_conn.py and memory/utils/ob_conn.py, so memory retrievals
+// must skip these records regardless of the backing engine. OceanBase's memory
+// handling adds the same must_not when the caller leaves it absent.
+func memoryMessageNotForgottenCondition() map[string]interface{} {
+	return map[string]interface{}{
+		"must_not": map[string]interface{}{"exists": "forget_at"},
+	}
+}
+
 func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Memory, filterDict, params map[string]interface{}) ([]map[string]interface{}, common.ErrorCode, error) {
 	if s.docEngine == nil {
 		return nil, common.CodeServerError, errors.New("message store is not initialized")
@@ -1116,6 +1128,15 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 	}
 	if _, ok := conditionDict["status"]; !ok {
 		conditionDict["status"] = 1
+	}
+	// SearchMessage hides forgotten messages by default, matching Python's
+	// MessageService.search_message which relies on hide_forgotten=True in the
+	// store connectors. Without this, non-OceanBase engines return records
+	// whose forget_at is set.
+	for key, value := range memoryMessageNotForgottenCondition() {
+		if _, present := conditionDict[key]; !present {
+			conditionDict[key] = value
+		}
 	}
 
 	matchExprs := make([]interface{}, 0, 3)
@@ -1440,6 +1461,15 @@ func (s *MemoryService) getRecentMessage(ctx context.Context, memories []*entity
 	}
 	if sessionID = strings.TrimSpace(sessionID); sessionID != "" {
 		conditionDict["session_id"] = sessionID
+	}
+	// Hide forgotten messages by default, matching Python's
+	// MessageService.get_recent_messages which relies on hide_forgotten=True in
+	// the store connectors. Without this, non-OceanBase engines return records
+	// whose forget_at is set.
+	for key, value := range memoryMessageNotForgottenCondition() {
+		if _, present := conditionDict[key]; !present {
+			conditionDict[key] = value
+		}
 	}
 	req := &enginetypes.SearchRequest{
 		IndexNames:   indexNames,

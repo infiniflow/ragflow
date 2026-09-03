@@ -177,6 +177,9 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		for _, tenant := range tenants {
 			kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenant.TenantID)
 			if err == nil && kb != nil {
+				if kb.TenantID != userID && kb.Permission != string(entity.TenantPermissionTeam) {
+					continue
+				}
 				common.Debug("Found knowledge base in database",
 					zap.String("datasetID", datasetID),
 					zap.String("tenantID", tenant.TenantID),
