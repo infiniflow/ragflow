@@ -216,7 +216,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	}
 	rows := htmlTR.FindAllStringSubmatch(htmlStr, -1)
 	pairs := make([]qaPair, 0, len(rows))
-	for _, row := range rows {
+	for i, row := range rows {
 		cells := htmlTD.FindAllStringSubmatch(row[1], -1)
 		// Python qa.py:365 requires exactly two fields for CSV pairs.
 		if strictPairs && len(cells) != 2 {
@@ -231,7 +231,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 			}
 		}
 		if len(texts) >= 2 {
-			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1]})
+			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1], RowNum: i})
 		}
 	}
 	return pairs
