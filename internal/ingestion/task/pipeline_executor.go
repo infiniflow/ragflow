@@ -174,7 +174,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 		return nil, err
 	}
 
-	dsl, correctedID, err := s.loadDSLFunc(ctx, s.canvasID)
+	dsl, correctedID, err := s.resolveDSL(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -203,6 +203,19 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	return result, nil
+}
+
+func (s *PipelineExecutor) resolveDSL(ctx context.Context) (string, string, error) {
+	if s.taskCtx != nil && s.taskCtx.IngestionTask != nil {
+		if rerun, ok := s.taskCtx.IngestionTask.RerunInfo(); ok && rerun.DSL != nil {
+			raw, err := json.Marshal(rerun.DSL)
+			if err != nil {
+				return "", "", fmt.Errorf("marshal rerun dsl: %w", err)
+			}
+			return string(raw), s.canvasID, nil
+		}
+	}
+	return s.loadDSLFunc(ctx, s.canvasID)
 }
 
 // collectDebugOutput builds a PipelineResult for a debug (dry-run) run.

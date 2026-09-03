@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
 )
 
@@ -35,6 +36,7 @@ type DocumentService struct {
 	kbDAO               *dao.KnowledgebaseDAO
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
+	pipelineLogDAO      *dao.PipelineOperationLogDAO
 	ingestionTaskSvc    *service.IngestionTaskService
 	docEngine           engine.DocEngine
 	metadataSvc         *service.MetadataService
@@ -58,6 +60,7 @@ func NewDocumentService() *DocumentService {
 		documentDAO:         dao.NewDocumentDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
+		pipelineLogDAO:      dao.NewPipelineOperationLogDAO(),
 		ingestionTaskSvc:    ingestionTaskSvc,
 		kbDAO:               dao.NewKnowledgebaseDAO(),
 		docEngine:           engine.Get(),
@@ -231,6 +234,14 @@ type StartParseOptions struct {
 	ApplyKB bool
 	// RerunWithDelete clears prior chunks/tasks/counters before reparsing.
 	RerunWithDelete bool
+	// RerunDSL, when set, is the edited pipeline DSL the worker should
+	// execute instead of loading from the canvas.
+	RerunDSL entity.JSONMap
+	// RerunLogID is the pipeline operation log id the rerun originated from.
+	RerunLogID string
+	// RerunComponentID is the component the front-end chose as the rerun
+	// entry point (recorded on the log DSL as path=[component_id]).
+	RerunComponentID string
 }
 
 // GetMetadataSummaryRequest request for metadata summary
