@@ -502,6 +502,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         if doc["parser_id"] == "resume":
             # The resume parser ignores from_page and to_page, so every task parses the whole
             # file. Collapse the configured ranges into one range to keep a resume document at a single task.
+            logging.info("Document %s uses the resume parser, so one task covers the whole file instead of the ranges %s", doc["id"], page_ranges)
             page_ranges = [(1, MAXIMUM_PAGE_NUMBER)]
         if is_mineru and len(page_ranges) > 1:
             # One task per configured range means one full upload per range, which is
