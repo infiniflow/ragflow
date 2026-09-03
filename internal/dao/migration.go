@@ -145,7 +145,7 @@ func migrateTenantLLMPrimaryKey(ctx context.Context, db *gorm.DB) error {
 		// Add unique index on (tenant_id, llm_factory, llm_name)
 		var idxExists int64
 		tx.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-			WHERE TABLE_NAME = 'tenant_llm' AND INDEX_NAME = 'idx_tenant_llm_unique'`).Scan(&idxExists)
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant_llm' AND INDEX_NAME = 'idx_tenant_llm_unique'`).Scan(&idxExists)
 		if idxExists == 0 {
 			if err = tx.Exec(`
 				ALTER TABLE tenant_llm
@@ -169,7 +169,7 @@ func migrateAddUniqueEmail(ctx context.Context, db *gorm.DB) error {
 	// Check if unique index already exists using raw SQL
 	var count int64
 	db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-		WHERE TABLE_NAME = 'user' AND INDEX_NAME = 'idx_user_email_unique'`).Scan(&count)
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user' AND INDEX_NAME = 'idx_user_email_unique'`).Scan(&count)
 	if count > 0 {
 		return nil
 	}
@@ -215,7 +215,8 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 	var uniqueCount int64
 	if err := db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-		WHERE TABLE_NAME = 'ingestion_task'
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'ingestion_task'
 		  AND INDEX_NAME = ?
 		  AND COLUMN_NAME = 'document_id'
 		  AND NON_UNIQUE = 0
@@ -242,7 +243,8 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 	var existingIndexCount int64
 	if err := db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-		WHERE TABLE_NAME = 'ingestion_task'
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'ingestion_task'
 		  AND INDEX_NAME = ?
 	`, indexName).Scan(&existingIndexCount).Error; err != nil {
 		return err
@@ -567,7 +569,7 @@ func migrateSkillSearchTables(ctx context.Context, db *gorm.DB) error {
 		// Drop legacy unique index (tenant_id, embd_id) to allow per-space configs.
 		var legacyIndexExists int64
 		db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_embd'`).Scan(&legacyIndexExists)
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_embd'`).Scan(&legacyIndexExists)
 		if legacyIndexExists > 0 {
 			common.Info("Dropping legacy unique index idx_tenant_embd from skill_search_configs...")
 			if err := db.WithContext(ctx).Exec(`ALTER TABLE skill_search_configs DROP INDEX idx_tenant_embd`).Error; err != nil {
@@ -578,7 +580,7 @@ func migrateSkillSearchTables(ctx context.Context, db *gorm.DB) error {
 		// Table exists, check if unique index exists
 		var indexExists int64
 		db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-			WHERE TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_space_embd'`).Scan(&indexExists)
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'skill_search_configs' AND INDEX_NAME = 'idx_tenant_space_embd'`).Scan(&indexExists)
 		if indexExists == 0 {
 			common.Info("Adding unique index idx_tenant_space_embd to skill_search_configs...")
 			if err := db.WithContext(ctx).Exec(`ALTER TABLE skill_search_configs
@@ -655,7 +657,7 @@ func migrateSkillSpaceIndex(ctx context.Context, db *gorm.DB) error {
 	var oldIndexExists int64
 	db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-		WHERE TABLE_NAME = 'skill_spaces' AND INDEX_NAME = 'idx_tenant_name'
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'skill_spaces' AND INDEX_NAME = 'idx_tenant_name'
 	`).Scan(&oldIndexExists)
 
 	if oldIndexExists > 0 {
@@ -669,7 +671,7 @@ func migrateSkillSpaceIndex(ctx context.Context, db *gorm.DB) error {
 	var newIndexExists int64
 	db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
-		WHERE TABLE_NAME = 'skill_spaces' AND INDEX_NAME = 'idx_tenant_name_status'
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'skill_spaces' AND INDEX_NAME = 'idx_tenant_name_status'
 	`).Scan(&newIndexExists)
 
 	if newIndexExists == 0 {

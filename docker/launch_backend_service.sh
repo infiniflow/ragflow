@@ -235,6 +235,11 @@ ensure_db_init() {
 }
 
 run_mysql_migrations() {
+    if [[ "${SKIP_DB_INIT:-0}" == "1" || "${SKIP_DB_INIT:-false}" == "true" ]]; then
+        echo "Skipping model provider table migrations (SKIP_DB_INIT is enabled)."
+        return 0
+    fi
+
     local db_type="${DB_TYPE:-mysql}"
     db_type="${db_type,,}"
     if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then

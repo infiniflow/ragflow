@@ -13,8 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 from unittest.mock import patch
 
@@ -209,3 +211,43 @@ def test_tc_cfg_808_rendered_artifacts_stay_under_tmp_path_and_git_status_is_sta
         check=True,
     ).stdout
     assert after == before
+
+
+def test_launch_backend_service_skips_all_migrations_when_db_init_is_skipped(tmp_path):
+    root = tmp_path / "ragflow"
+    docker_dir = root / "docker"
+    tools_dir = root / "tools" / "scripts"
+    bin_dir = root / "bin"
+    docker_dir.mkdir(parents=True)
+    tools_dir.mkdir(parents=True)
+    bin_dir.mkdir()
+
+    launcher = docker_dir / "launch_backend_service.sh"
+    shutil.copy2(ROOT / "docker" / "launch_backend_service.sh", launcher)
+
+    sentinel = root / "migration-ran"
+    migration_script = tools_dir / "run_migrations.sh"
+    migration_script.write_text('#!/bin/sh\ntouch "$MIGRATION_SENTINEL"\n', encoding="utf-8")
+    migration_script.chmod(0o755)
+
+    for command in ("python3", "pkg-config"):
+        stub = bin_dir / command
+        stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        stub.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", str(launcher), "ragflow"],
+        cwd=root,
+        env={
+            "API_PROXY_SCHEME": "python",
+            "MIGRATION_SENTINEL": str(sentinel),
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "SKIP_DB_INIT": "1",
+        },
+        encoding="utf-8",
+        capture_output=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not sentinel.exists(), result.stdout

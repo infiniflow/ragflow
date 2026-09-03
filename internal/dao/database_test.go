@@ -131,3 +131,26 @@ func TestLoadTemplatesFromDirErrorHandling(t *testing.T) {
 		t.Fatal("expected error loading template with trailing content, got nil")
 	}
 }
+
+func TestParseCanvasTemplateFileRejectsInvalidIDTypes(t *testing.T) {
+	for _, raw := range []string{
+		`{"id": null}`,
+		`{"id": true}`,
+		`{"id": {"value": "template"}}`,
+		`{"id": ["template"]}`,
+	} {
+		if _, err := parseCanvasTemplateFile([]byte(raw)); err == nil {
+			t.Fatalf("parseCanvasTemplateFile(%s) succeeded for an invalid ID type", raw)
+		}
+	}
+}
+
+func TestParseCanvasTemplateFileAcceptsNumericID(t *testing.T) {
+	tmpl, err := parseCanvasTemplateFile([]byte(`{"id": 45}`))
+	if err != nil {
+		t.Fatalf("parseCanvasTemplateFile returned error for numeric ID: %v", err)
+	}
+	if tmpl.ID != "45" {
+		t.Fatalf("template ID = %q, want 45", tmpl.ID)
+	}
+}

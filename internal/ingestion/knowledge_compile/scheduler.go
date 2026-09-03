@@ -85,9 +85,6 @@ type ClaimResult struct {
 // single producer entry point so a publisher never forgets to Notify after
 // enqueue (the two are now one atomic call site).
 type Publisher interface {
-	// Provision verifies that external database schema migrations have initialized the backing store.
-	Provision(ctx context.Context) error
-
 	// Publish records one doc event in the dataset's durable backlog and wakes
 	// idle workers. It is transactional so concurrent publishers do not clobber
 	// each other's backlog, and it always pairs the append with a notify.
@@ -204,10 +201,6 @@ type mysqlScheduler struct {
 // defaultClaimBatch is the closed-batch boundary when Claim is invoked without
 // an explicit size (the previous batchSize argument).
 const defaultClaimBatch = 32
-
-func (s *mysqlScheduler) Provision(_ context.Context) error {
-	return nil
-}
 
 // Publish appends one doc event to the dataset's durable backlog and wakes idle
 // workers. The append is transactional (concurrent publishers do not clobber
@@ -776,8 +769,6 @@ func NewFakeScheduler() *FakeScheduler {
 		leaseTTL: 2 * time.Minute,
 	}
 }
-
-func (f *FakeScheduler) Provision(_ context.Context) error { return nil }
 
 // Publish appends one doc event and pushes a notify (same contract as MySQL).
 func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {

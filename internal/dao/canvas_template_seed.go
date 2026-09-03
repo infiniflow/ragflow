@@ -155,8 +155,11 @@ func parseCanvasTemplateFile(raw []byte) (*entity.CanvasTemplate, error) {
 		CanvasCategory: "agent_canvas",
 	}
 
-	if v, ok := data["id"]; ok {
-		tmpl.ID = strings.TrimSpace(fmt.Sprint(v))
+	switch v := data["id"].(type) {
+	case string:
+		tmpl.ID = strings.TrimSpace(v)
+	case json.Number:
+		tmpl.ID = strings.TrimSpace(v.String())
 	}
 	if tmpl.ID == "" {
 		return nil, fmt.Errorf("canvas template missing or empty id")

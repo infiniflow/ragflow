@@ -53,6 +53,10 @@ chat_channel_thread = None
 RAGFLOW_DEBUGPY_LISTEN = int(os.environ.get("RAGFLOW_DEBUGPY_LISTEN", "0"))
 
 
+def _should_skip_db_init():
+    return os.environ.get("SKIP_DB_INIT") in {"1", "true"}
+
+
 def update_progress():
     lock_value = str(uuid.uuid4())
     redis_lock = RedisDistributedLock("update_progress", lock_value=lock_value, timeout=60)
@@ -110,9 +114,11 @@ if __name__ == "__main__":
 
         debugpy.listen(("0.0.0.0", RAGFLOW_DEBUGPY_LISTEN))
 
-    # init db
-    init_web_db()
-    init_web_data()
+    if _should_skip_db_init():
+        logging.info("Skipping database initialization (SKIP_DB_INIT is enabled).")
+    else:
+        init_web_db()
+        init_web_data()
     # init runtime config
     import argparse
 
