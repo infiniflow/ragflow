@@ -2,7 +2,6 @@ import { buildOperatorNode } from '@/utils/pipeline-operator';
 
 let mockIsGoBackend = true;
 jest.mock('@/utils/backend-runtime', () => ({
-  isGoBackend: () => mockIsGoBackend,
   getBackendLanguage: () => (mockIsGoBackend ? 'go' : 'python'),
 }));
 
