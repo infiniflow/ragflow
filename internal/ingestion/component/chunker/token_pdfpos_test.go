@@ -187,10 +187,10 @@ func TestMergeByTokenSizeFromJSON_OverlapPrefixCarriesPrevPositions(t *testing.T
 // into the overlap prefix; here overlappedPct=20 means the overlap prefix is
 // only the TAIL ~20% of the previous chunk. The coordinates carried must be
 // exactly the previous chunk's tail items whose span intersects that tail --
-// NOT the whole previous chunk. This locks the per-item tail-selection in
-// overlapTailPositions (token.go:832): a regression that carried the entire
-// previous chunk's coordinates (over-inflating the highlight box) or dropped
-// overlap coordinates entirely would both fail this test.
+// NOT the whole previous chunk. This locks the per-item tail-selection now
+// done by overlapTailItems: a regression that carried the entire previous
+// chunk's coordinates (over-inflating the highlight box) or dropped overlap
+// coordinates entirely would both fail this test.
 func TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions(t *testing.T) {
 	posA := json.RawMessage(`[[1,0,10,0,5]]`)
 	posB := json.RawMessage(`[[2,0,20,0,8]]`)
@@ -552,7 +552,7 @@ func TestOverlapTailItems_JoinSepNoSeparatorBeforeCur(t *testing.T) {
 // measures and slices on the TAG-FREE visible text, so a coordinate tag in an
 // earlier item does not shift the boundaries of later items (which would pull
 // head coordinates into the overlap tail). This mirrors the contract already
-// locked for overlapTailPositions but for the separate-item storage.
+// locked for the previous fused-item storage but for the separate-item storage.
 func TestOverlapTailItems_TagBearingUsesVisibleRuneOffsets(t *testing.T) {
 	prev := []mergeItem{
 		// Visible text "hello world" (11 runes); the tag inflates the RAW length
