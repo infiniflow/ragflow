@@ -98,6 +98,20 @@ async def test_reasoning_stream_emits_one_marker_pair(monkeypatch, with_tools):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("with_tools", [False, True])
+async def test_reasoning_and_answer_in_same_delta_are_both_emitted(monkeypatch, with_tools):
+    events = await _collect(
+        monkeypatch,
+        _make_model(),
+        with_tools=with_tools,
+        chunks=[_stream_chunk(reasoning="reasoning", content="answer", finish_reason="stop")],
+    )
+
+    text_events = [event for event in events if isinstance(event, str) and event]
+    assert text_events == ["<think>", "reasoning", "</think>", "answer"]
+
+
+@pytest.mark.asyncio
 async def test_reasoning_stream_can_hide_reasoning(monkeypatch):
     events = await _collect(
         monkeypatch,

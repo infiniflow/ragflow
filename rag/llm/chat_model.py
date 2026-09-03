@@ -305,6 +305,8 @@ class Base(ABC):
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
+        answer = ""
+        generated_text = ""
 
         gen_conf, extra_request_kwargs = _apply_model_family_policies(
             self.model_name,
@@ -329,12 +331,29 @@ class Base(ABC):
                 if not reasoning_start:
                     reasoning_start = True
                     yield "<think>", 0
-                ans = _reasoning
+                tol = total_token_count_from_response(resp)
+                if not tol:
+                    tol = num_tokens_from_string(resp.choices[0].delta.content)
+                generated_text += _reasoning
+                yield _reasoning, tol
+                if resp.choices[0].delta.content:
+                    reasoning_start = False
+                    yield "</think>", 0
+                    answer += resp.choices[0].delta.content
+                    generated_text += resp.choices[0].delta.content
+                    yield resp.choices[0].delta.content, 0
+                if getattr(resp.choices[0], "finish_reason", "") == "length":
+                    if reasoning_start:
+                        reasoning_start = False
+                        yield "</think>", 0
+                    yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN, 0
+                continue
             else:
                 if reasoning_start and resp.choices[0].delta.content:
                     reasoning_start = False
                     yield "</think>", 0
                 ans = resp.choices[0].delta.content
+                answer += ans
             tol = total_token_count_from_response(resp)
             if not tol:
                 tol = num_tokens_from_string(resp.choices[0].delta.content)
@@ -345,7 +364,7 @@ class Base(ABC):
                 if reasoning_start:
                     reasoning_start = False
                     yield "</think>", 0
-                yield LENGTH_NOTIFICATION_CN if is_chinese(ans) else LENGTH_NOTIFICATION_EN, 0
+                yield LENGTH_NOTIFICATION_CN if is_chinese(answer) else LENGTH_NOTIFICATION_EN, 0
 
         if reasoning_start:
             yield "</think>", 0
@@ -675,6 +694,7 @@ class Base(ABC):
 
                     final_tool_calls = {}
                     answer = ""
+                    generated_text = ""
                     round_estimate = 0
                     round_usage = None
 
@@ -704,10 +724,16 @@ class Base(ABC):
 
                         _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                         if _reasoning:
+                            generated_text += _reasoning
                             if not reasoning_start:
                                 reasoning_start = True
                                 yield "<think>"
                             yield _reasoning
+                            if delta.content:
+                                reasoning_start = False
+                                yield "</think>"
+                                answer += delta.content
+                                yield delta.content
                         else:
                             if reasoning_start and delta.content:
                                 reasoning_start = False
@@ -723,7 +749,7 @@ class Base(ABC):
                             if reasoning_start:
                                 reasoning_start = False
                                 yield "</think>"
-                            yield LENGTH_NOTIFICATION_CN if is_chinese([answer]) else LENGTH_NOTIFICATION_EN
+                            yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN
 
                     if reasoning_start:
                         yield "</think>"
@@ -2052,6 +2078,8 @@ class LiteLLMBase(ABC):
         gen_conf = self._clean_conf(gen_conf)
         reasoning_start = False
         total_tokens = 0
+        answer = ""
+        generated_text = ""
         # Reset so a stale split from a previous call can't leak into this one.
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
@@ -2092,12 +2120,26 @@ class LiteLLMBase(ABC):
                         if not reasoning_start:
                             reasoning_start = True
                             yield "<think>"
-                        ans = _reasoning
+                        yield _reasoning
+                        generated_text += _reasoning
+                        if delta.content:
+                            reasoning_start = False
+                            yield "</think>"
+                            yield delta.content
+                            answer += delta.content
+                            generated_text += delta.content
+                        if getattr(resp.choices[0], "finish_reason", "") == "length":
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
+                            yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN
+                        continue
                     else:
                         if reasoning_start and delta.content:
                             reasoning_start = False
                             yield "</think>"
                         ans = delta.content
+                        answer += ans
 
                     if not _usage["total_tokens"]:
                         # No authoritative usage yet: keep a running estimate as fallback.
@@ -2109,7 +2151,7 @@ class LiteLLMBase(ABC):
                         if reasoning_start:
                             reasoning_start = False
                             yield "</think>"
-                        yield LENGTH_NOTIFICATION_CN if is_chinese(ans) else LENGTH_NOTIFICATION_EN
+                        yield LENGTH_NOTIFICATION_CN if is_chinese(answer) else LENGTH_NOTIFICATION_EN
                 if reasoning_start:
                     yield "</think>"
                 yield total_tokens
@@ -2396,6 +2438,7 @@ class LiteLLMBase(ABC):
 
                     final_tool_calls = {}
                     answer = ""
+                    generated_text = ""
                     round_usage = None
                     round_estimate = 0
                     # Per-round filter for providers (MiniMax) whose control tokens
@@ -2429,12 +2472,24 @@ class LiteLLMBase(ABC):
 
                         _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                         if _reasoning:
+                            generated_text += _reasoning
                             if self._need_reasoning_content_back():
                                 reasoning_content += _reasoning
                             if not reasoning_start:
                                 reasoning_start = True
                                 yield "<think>"
                             yield _reasoning
+                            if delta.content:
+                                reasoning_start = False
+                                yield "</think>"
+                                answer += delta.content
+                                generated_text += delta.content
+                                if _sanitizer is not None:
+                                    emitted = _sanitizer.feed(delta.content)
+                                    if emitted:
+                                        yield emitted
+                                else:
+                                    yield delta.content
                         else:
                             if reasoning_start and delta.content:
                                 reasoning_start = False
@@ -2455,7 +2510,7 @@ class LiteLLMBase(ABC):
                             if reasoning_start:
                                 reasoning_start = False
                                 yield "</think>"
-                            yield LENGTH_NOTIFICATION_CN if is_chinese([answer]) else LENGTH_NOTIFICATION_EN
+                            yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN
 
                     if reasoning_start:
                         yield "</think>"
