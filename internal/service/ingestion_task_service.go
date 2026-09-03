@@ -102,10 +102,15 @@ func (s *IngestionTaskService) ListByUser(ctx context.Context, userID string, da
 	return s.ingestionTaskDAO.ListByUserIDAndDatasetID(ctx, dao.DB, userID, *datasetID, page, pageSize)
 }
 
-func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
+func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID, userID string, docIDs []string, taskSchema ...entity.JSONMap) ([]*ParseDocumentResponse, error) {
 	uniqueDocIDs := common.Deduplicate(docIDs)
 	if len(uniqueDocIDs) == 0 {
 		return nil, fmt.Errorf("no documents to parse")
+	}
+
+	var schema entity.JSONMap
+	if len(taskSchema) > 0 {
+		schema = taskSchema[0]
 	}
 
 	// Populate this cache lazily so a batch avoids repeated knowledge-base reads.
@@ -133,7 +138,7 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 			DocumentID: docID,
 			UserID:     userID,
 			DatasetID:  datasetID,
-			Schema:     nil,
+			Schema:     schema,
 			Status:     common.CREATED,
 		}
 		task, err = s.createAndEnqueueWithKBCache(ctx, task, kbCache)
@@ -596,6 +601,12 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 				return nil, fmt.Errorf("clear previous run identity for task %s: %w", existing.ID, err)
 			}
 			existing.PipelineLogID = nil
+			if task.Schema != nil {
+				if err = s.ingestionTaskDAO.UpdateSchema(ctx, dao.DB, existing.ID, task.Schema); err != nil {
+					return nil, err
+				}
+				existing.Schema = task.Schema
+			}
 			// The previous run is terminal, so any leftover Redis cancel flag
 			// is stale: a genuine cancel of the new run can only come through
 			// RequestStop once the task is RUNNING again. Clear it so the

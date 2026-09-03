@@ -15,8 +15,12 @@ func (s *DocumentService) ListIngestionTasks(ctx context.Context, userID string,
 	return s.ingestionTaskSvc.ListByUser(ctx, userID, datasetID, page, pageSize)
 }
 
-func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
-	responses, err := s.ingestionTaskSvc.CreateForDocuments(ctx, datasetID, userID, docIDs)
+func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string, taskSchema ...entity.JSONMap) ([]*service.ParseDocumentResponse, error) {
+	var schema entity.JSONMap
+	if len(taskSchema) > 0 {
+		schema = taskSchema[0]
+	}
+	responses, err := s.ingestionTaskSvc.CreateForDocuments(ctx, datasetID, userID, docIDs, schema)
 	if err != nil {
 		return nil, err
 	}
