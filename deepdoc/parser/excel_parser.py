@@ -188,7 +188,13 @@ class RAGFlowExcelParser:
             else:
                 right = mid - 1
 
-        for r in range(last_data_row, min(last_data_row + 500, max_row + 1)):
+        # Extend forward from the binary-search result all the way to
+        # ``max_row`` rather than capping at the first 500 rows past it.
+        # The 500-row cap was the root cause of #19185: a sheet with used
+        # range >10000 and a blank run in the middle (the reporter's
+        # reproducer uses 12000 + a 600-row gap, returning 200/400 data
+        # rows) lost every row past the first 500 of the second region.
+        for r in range(last_data_row + 1, max_row + 1):
             if row_has_data(r):
                 last_data_row = r
 
