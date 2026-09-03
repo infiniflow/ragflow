@@ -165,11 +165,19 @@ class RAGFlowExcelParser:
         # Inspect instantiated cells directly to avoid materializing all rows
         # when max_row is inflated by sparse worksheet metadata.
         last_data_row = 0
-        for cell in ws._cells.values():
-            if cell.column > max_col:
-                continue
-            if cell.value is not None and str(cell.value).strip():
-                last_data_row = max(last_data_row, cell.row)
+        cells = getattr(ws, "_cells", None)
+
+        if cells is not None:
+            for cell in cells.values():
+                if cell.column > max_col:
+                    continue
+                if cell.value is not None and str(cell.value).strip():
+                    last_data_row = max(last_data_row, cell.row)
+        else:
+            for row in ws.iter_rows(min_row=1, max_row=max_row, max_col=max_col):
+                for cell in row:
+                    if cell.value is not None and str(cell.value).strip():
+                        last_data_row = max(last_data_row, cell.row)
 
         return last_data_row
 
