@@ -162,7 +162,7 @@ async def test_bind_embedding_model_uses_default_for_stale_model_without_name(ta
         caplog.at_level(logging.INFO),
         patch(
             "rag.svr.task_executor_refactor.task_handler.get_model_config_by_id",
-            return_value={"llm_factory": "OpenAI", "api_key": ""},
+            side_effect=LookupError("stale model binding"),
         ),
         patch(
             "rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type",
