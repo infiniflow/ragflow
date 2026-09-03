@@ -1725,19 +1725,14 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
                 if out is not None:
                     yield ("text", out, state)
             after_visible = re.sub(r"</?think>", "", after or "")
-            if after_visible.strip():
-                think_piece = _flush_think_buffer()
-                if think_piece is not None:
-                    yield ("text", think_piece, state)
+            think_piece = _flush_think_buffer()
+            if think_piece is not None:
+                yield ("text", think_piece, state)
+            if state.in_think:
                 state.in_think = False
                 yield ("marker", "</think>", state)
-                pending = after_visible
-                continue
-            state.close_pending = True
-            if after_visible:
-                state.pending_after_close += after_visible
-            pending = ""
-            break
+            pending = after_visible
+            continue
 
     if state.think_buffer:
         yield ("text", state.think_buffer, state)

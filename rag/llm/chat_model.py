@@ -68,6 +68,15 @@ class ReActMode(StrEnum):
 ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
+_STREAM_LOG_GREEN = "\033[92m"
+_STREAM_LOG_RESET = "\033[0m"
+
+
+def _log_stream_output(value):
+    """Log the exact stream event sent to downstream consumers."""
+    logging.info("%s[LLM STREAM -> downstream] %r%s", _STREAM_LOG_GREEN, value, _STREAM_LOG_RESET)
+    return value
+
 
 # Generation parameters that are safe to forward to the underlying completion
 # call. `gen_conf` originates from a chat assistant's `llm_setting`, which can
@@ -325,25 +334,29 @@ class Base(ABC):
                 resp.choices[0].delta.content = ""
             _reasoning = getattr(resp.choices[0].delta, "reasoning_content", None) or getattr(resp.choices[0].delta, "reasoning", None)
             if kwargs.get("with_reasoning", True) and _reasoning:
-                ans = ""
                 if not reasoning_start:
                     reasoning_start = True
-                    ans = "<think>"
-                ans += _reasoning + "</think>"
+                    yield "<think>", 0
+                ans = _reasoning
             else:
-                reasoning_start = False
+                if reasoning_start and resp.choices[0].delta.content:
+                    reasoning_start = False
+                    yield "</think>", 0
                 ans = resp.choices[0].delta.content
             tol = total_token_count_from_response(resp)
             if not tol:
                 tol = num_tokens_from_string(resp.choices[0].delta.content)
 
             finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
-            if finish_reason == "length":
-                if is_chinese(ans):
-                    ans += LENGTH_NOTIFICATION_CN
-                else:
-                    ans += LENGTH_NOTIFICATION_EN
             yield ans, tol
+            if finish_reason == "length":
+                if reasoning_start:
+                    reasoning_start = False
+                    yield "</think>", 0
+                yield LENGTH_NOTIFICATION_CN if is_chinese(ans) else LENGTH_NOTIFICATION_EN, 0
+
+        if reasoning_start:
+            yield "</think>", 0
 
     async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
         gen_conf = dict(gen_conf or {})
@@ -699,14 +712,14 @@ class Base(ABC):
 
                         _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                         if _reasoning:
-                            ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
-                                ans = "<think>"
-                            ans += _reasoning + "</think>"
-                            yield ans
+                                yield "<think>"
+                            yield _reasoning
                         else:
-                            reasoning_start = False
+                            if reasoning_start and delta.content:
+                                reasoning_start = False
+                                yield "</think>"
                             answer += delta.content
                             yield delta.content
 
@@ -715,7 +728,13 @@ class Base(ABC):
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
                             yield self._length_stop("")
+
+                    if reasoning_start:
+                        yield "</think>"
 
                     # Commit this round's tokens (each round is a separate provider
                     # request — accumulate, never overwrite).
@@ -748,7 +767,9 @@ class Base(ABC):
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield f"<think>Running the {tc.function.name} tool...</think>"
+                        yield _log_stream_output("<think>")
+                        yield _log_stream_output(f"Running the {tc.function.name} tool...")
+                        yield _log_stream_output("</think>")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
 
                     # Terminal-tool short-circuit: stream a terminal tool's
@@ -2076,13 +2097,14 @@ class LiteLLMBase(ABC):
 
                     _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                     if kwargs.get("with_reasoning", True) and _reasoning:
-                        ans = ""
                         if not reasoning_start:
                             reasoning_start = True
-                            ans = "<think>"
-                        ans += _reasoning + "</think>"
+                            yield "<think>"
+                        ans = _reasoning
                     else:
-                        reasoning_start = False
+                        if reasoning_start and delta.content:
+                            reasoning_start = False
+                            yield "</think>"
                         ans = delta.content
 
                     if not _usage["total_tokens"]:
@@ -2090,13 +2112,14 @@ class LiteLLMBase(ABC):
                         total_tokens += num_tokens_from_string(delta.content)
 
                     finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
-                    if finish_reason == "length":
-                        if is_chinese(ans):
-                            ans += LENGTH_NOTIFICATION_CN
-                        else:
-                            ans += LENGTH_NOTIFICATION_EN
-
                     yield ans
+                    if finish_reason == "length":
+                        if reasoning_start:
+                            reasoning_start = False
+                            yield "</think>"
+                        yield LENGTH_NOTIFICATION_CN if is_chinese(ans) else LENGTH_NOTIFICATION_EN
+                if reasoning_start:
+                    yield "</think>"
                 yield total_tokens
                 return
             except Exception as e:
@@ -2416,14 +2439,14 @@ class LiteLLMBase(ABC):
                         if _reasoning:
                             if self._need_reasoning_content_back():
                                 reasoning_content += _reasoning
-                            ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
-                                ans = "<think>"
-                            ans += _reasoning + "</think>"
-                            yield ans
+                                yield "<think>"
+                            yield _reasoning
                         else:
-                            reasoning_start = False
+                            if reasoning_start and delta.content:
+                                reasoning_start = False
+                                yield "</think>"
                             answer += delta.content
                             if _sanitizer is not None:
                                 emitted = _sanitizer.feed(delta.content)
@@ -2437,7 +2460,13 @@ class LiteLLMBase(ABC):
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
                             yield self._length_stop("")
+
+                    if reasoning_start:
+                        yield "</think>"
 
                     # Flush any held-back (sanitized) answer content for this round.
                     if _sanitizer is not None:
@@ -2475,7 +2504,9 @@ class LiteLLMBase(ABC):
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield f"<think>Running the {tc.function.name} tool...</think>"
+                        yield _log_stream_output("<think>")
+                        yield _log_stream_output(f"Running the {tc.function.name} tool...")
+                        yield _log_stream_output("</think>")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
 
                     # Terminal-tool short-circuit: a terminal tool already
