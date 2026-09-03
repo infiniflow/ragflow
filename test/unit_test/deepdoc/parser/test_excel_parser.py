@@ -78,6 +78,34 @@ def _make_xlsx(n_data_rows):
     return buf.read()
 
 
+def _make_xlsx_with_large_gap():
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+
+    ws["A1"] = "Name"
+    ws["B1"] = "City"
+
+    # First data block: rows 2-201 (200 rows).
+    for r in range(2, 202):
+        ws.cell(row=r, column=1, value=f"n{r}")
+        ws.cell(row=r, column=2, value=f"c{r}")
+
+    # Second data block: rows 802-1001 (200 rows), after a 600-row gap.
+    for r in range(802, 1002):
+        ws.cell(row=r, column=1, value=f"n{r}")
+        ws.cell(row=r, column=2, value=f"c{r}")
+
+    # Inflate the worksheet's used range beyond 10,000 rows.
+    ws.cell(row=12000, column=3, value=" ")
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
+
+
 def _chunk_has_no_data_cells(chunk):
     return "<td>" not in chunk and "<td></td>" not in chunk
 
@@ -226,6 +254,7 @@ def test_call_emits_zero_based_sheet_index():
     assert second == (1, 2, 2, 1, 1)
 
 
+
 def _make_large_used_range_xlsx(first_data_row, last_data_row, inflate_row=12000):
     from openpyxl import Workbook
     from openpyxl.styles import Font
@@ -289,3 +318,15 @@ def test_row_number_includes_rows_after_blank_gap():
     xlsx = _make_gap_xlsx(gap_rows=600)
     total = RAGFlowExcelParser.row_number("test.xlsx", xlsx)
     assert total >= 1001
+
+@pytest.mark.p2
+def test_large_blank_gap_does_not_drop_rows():
+    binary = _make_xlsx_with_large_gap()
+
+    rows = RAGFlowExcelParser()(binary)
+
+    assert len(rows) == 400
+    assert "n201" in rows[199][0]
+    assert "n802" in rows[200][0]
+    assert "n1001" in rows[399][0]
+    assert RAGFlowExcelParser.row_number("test.xlsx", binary) == 1001
