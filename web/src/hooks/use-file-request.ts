@@ -29,7 +29,12 @@ import fileManagerService from '@/services/file-manager-service';
 import api from '@/utils/api';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import request from '@/utils/request';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -316,6 +321,50 @@ export const useRenameFile = () => {
   return { data, loading, renameFile: mutateAsync };
 };
 
+const LinkedDatasetsPollIntervalMs = 500;
+const LinkedDatasetsPollMaxAttempts = 6;
+
+// Returns true when every affected file row on the current page carries all the
+// newly linked datasets. Rows that are not on the current page, or folder rows
+// (which never carry kbs_info), cannot be verified and are treated as done.
+const areDatasetsLinked = (
+  queryClient: QueryClient,
+  fileIds: string[],
+  kbIds: string[],
+) => {
+  const cached =
+    queryClient.getQueriesData<IFetchFileListResult>({
+      queryKey: [FileApiAction.FetchFileList],
+    })[0]?.[1] ?? { files: [] };
+  const verifiableFiles = (cached.files ?? []).filter(
+    (file) => fileIds.includes(file.id) && file.type !== 'folder',
+  );
+  if (verifiableFiles.length === 0) return true;
+  return verifiableFiles.every((file) =>
+    kbIds.every((kbId) => file.kbs_info?.some((kb) => kb.kb_id === kbId)),
+  );
+};
+
+// Both backends respond to link-to-datasets before the file↔dataset mappings
+// are written (the conversion runs in the background), so the refetch right
+// after success can still see stale kbs_info. Poll until the newly linked
+// datasets show up in the list data; give up after a bounded window.
+const waitUntilDatasetsLinked = async (
+  queryClient: QueryClient,
+  fileIds: string[],
+  kbIds: string[],
+) => {
+  for (let attempt = 0; attempt < LinkedDatasetsPollMaxAttempts; attempt++) {
+    if (areDatasetsLinked(queryClient, fileIds, kbIds)) return;
+    await new Promise((resolve) =>
+      setTimeout(resolve, LinkedDatasetsPollIntervalMs),
+    );
+    await queryClient.refetchQueries({
+      queryKey: [FileApiAction.FetchFileList],
+    });
+  }
+};
+
 export const useConnectToKnowledge = () => {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
@@ -338,38 +387,14 @@ export const useConnectToKnowledge = () => {
       });
       if (data.code === 0) {
         message.success(t('message.operated'));
-        const fileIdSet = new Set(params.fileIds);
-        queryClient.setQueriesData<IFetchFileListResult>(
-          {
-            queryKey: [FileApiAction.FetchFileList],
-          },
-          (oldData) => {
-            if (!oldData?.files) return oldData;
-            return {
-              ...oldData,
-              files: oldData.files.map((file) => {
-                if (!fileIdSet.has(file.id)) return file;
-                const kbsInfo =
-                  params.mode === 'replace'
-                    ? params.kbsInfo
-                    : [
-                        ...(file.kbs_info ?? []),
-                        ...params.kbsInfo.filter(
-                          (kb) =>
-                            !(file.kbs_info ?? []).some(
-                              (item) => item.kb_id === kb.kb_id,
-                            ),
-                        ),
-                      ];
-                return { ...file, kbs_info: kbsInfo };
-              }),
-            };
-          },
-        );
-        queryClient.invalidateQueries({
+        await queryClient.invalidateQueries({
           queryKey: [FileApiAction.FetchFileList],
-          refetchType: 'none',
         });
+        await waitUntilDatasetsLinked(
+          queryClient,
+          params.fileIds,
+          params.kbIds,
+        );
       }
       return data.code;
     },

@@ -39,34 +39,33 @@ logger = logging.getLogger(__name__)
 def _convert_files(file_ids, kb_ids, user_id, mode):
     """Synchronous worker: add missing links or replace existing links."""
     replace_existing = mode == "replace"
+    kb_ids = set(kb_ids)
     for id in file_ids:
         e, file = FileService.get_by_id(id)
         if not e:
             continue
 
-        existing_links = File2DocumentService.get_by_file_id(id)
         existing_kb_ids = set()
-        if replace_existing:
-            for inform in existing_links:
-                doc_id = inform.document_id
-                e, doc = DocumentService.get_by_id(doc_id)
-                if e and doc:
-                    tenant_id = DocumentService.get_tenant_id(doc_id)
+        existing_links = File2DocumentService.get_by_file_id(id)
+        for inform in existing_links:
+            e, doc = DocumentService.get_by_id(inform.document_id)
+            if e and doc:
+                existing_kb_ids.add(doc.kb_id)
+
+                # Delete existing link to KB if it is replaced
+                if replace_existing and doc.kb_id not in kb_ids:
+                    logger.info("Unlink file_id=%s kb_id=%s", id, doc.kb_id)
+                    tenant_id = DocumentService.get_tenant_id(doc.id)
                     if not tenant_id:
                         raise RuntimeError("Tenant not found!")
                     if not DocumentService.remove_document(doc, tenant_id):
                         raise RuntimeError("Database error (Document removal)!")
-                File2DocumentService.delete_by_document_id(doc_id)
-            if existing_links:
-                File2DocumentService.delete_by_file_id(id)
-        else:
-            for inform in existing_links:
-                e, doc = DocumentService.get_by_id(inform.document_id)
-                if e and doc:
-                    existing_kb_ids.add(doc.kb_id)
+                    File2DocumentService.delete_by_document_id(doc.id)
 
         for kb_id in kb_ids:
+            # Skip if the file is already linked to this KB
             if kb_id in existing_kb_ids:
+                logger.info("skip existing file_id=%s kb_id=%s", id, kb_id)
                 continue
             e, kb = KnowledgebaseService.get_by_id(kb_id)
             if not e:

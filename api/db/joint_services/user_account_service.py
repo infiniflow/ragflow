@@ -16,6 +16,8 @@
 import logging
 import uuid
 
+from common.misc_utils import get_uuid
+
 from api.utils.api_utils import group_by
 from api.db import FileType, UserTenantRole
 from api.db.services.api_service import APITokenService, API4ConversationService
@@ -56,9 +58,9 @@ def create_new_user(user_info: dict) -> dict:
     }
     """
     # generate user_id and access_token for user
-    user_id = uuid.uuid1().hex
+    user_id = get_uuid()
     user_info["id"] = user_id
-    user_info["access_token"] = uuid.uuid1().hex
+    user_info["access_token"] = uuid.uuid4().hex
     # construct tenant info
     tenant = {
         "id": user_id,
@@ -77,7 +79,7 @@ def create_new_user(user_info: dict) -> dict:
         "role": UserTenantRole.OWNER,
     }
     # construct file folder info
-    file_id = uuid.uuid1().hex
+    file_id = get_uuid()
     file = {
         "id": file_id,
         "parent_id": file_id,

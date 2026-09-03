@@ -729,9 +729,9 @@ func buildDBMSBody(kind string, condition map[string]interface{}, req *types.Sea
 		}
 	}
 	if value, ok := minimumShouldMatch.(float64); ok {
-		minimumShouldMatch = strconv.Itoa(int(value*100)) + "%"
+		minimumShouldMatch = common.FormatMinimumShouldMatchPercent(value)
 	} else if value, ok := minimumShouldMatch.(float32); ok {
-		minimumShouldMatch = strconv.Itoa(int(value*100)) + "%"
+		minimumShouldMatch = common.FormatMinimumShouldMatchPercent(float64(value))
 	}
 	boolQuery := map[string]interface{}{
 		"must": []interface{}{map[string]interface{}{"query_string": map[string]interface{}{

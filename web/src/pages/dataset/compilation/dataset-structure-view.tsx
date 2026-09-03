@@ -76,7 +76,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
     });
   }, [queryClient, knowledgeBaseId, kind]);
-  
+
   useRunEndEffect(structureStatus, handleRunEnd);
 
   const entityOptions = useMemo<SelectWithSearchFlagOptionType[]>(
@@ -193,6 +193,8 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       <RepresentationRenderer
         template={template}
         highlightNodeId={selectedEntityName || null}
+        totalEntities={data?.total_entities}
+        returnedEntities={data?.returned_entities}
       />
       <UpdateLogSheet
         open={updateSheetOpen}

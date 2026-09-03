@@ -111,7 +111,7 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	var isMarkdown bool
 	switch upstream.OutputFormat {
 	case schema.PayloadFormatHTML:
-		qaPairs = extractQATable(stringPtrVal(upstream.HTMLResult))
+		qaPairs = extractQATable(stringPtrVal(upstream.HTMLResult), isCSV(upstream.Name))
 	case schema.PayloadFormatMarkdown:
 		qaPairs = extractQAMarkdown(stringPtrVal(upstream.MarkdownResult))
 		isMarkdown = true
@@ -193,6 +193,10 @@ func stringPtrVal(s *string) string {
 	return *s
 }
 
+func isCSV(name string) bool {
+	return strings.HasSuffix(strings.ToLower(name), ".csv")
+}
+
 // ---------------------------------------------------------------------------
 // HTML / spreadsheet QA extraction
 // ---------------------------------------------------------------------------
@@ -201,7 +205,7 @@ var htmlTR = regexp.MustCompile(`(?i)<tr[^>]*>(.*?)</tr>`)
 var htmlTD = regexp.MustCompile(`(?i)<t[dh][^>]*>(.*?)</t[dh]>`)
 var htmlTag = regexp.MustCompile(`<[^>]+>`)
 
-func extractQATable(htmlStr string) []qaPair {
+func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if htmlStr == "" {
 		return nil
 	}
@@ -209,6 +213,10 @@ func extractQATable(htmlStr string) []qaPair {
 	pairs := make([]qaPair, 0, len(rows))
 	for _, row := range rows {
 		cells := htmlTD.FindAllStringSubmatch(row[1], -1)
+		// Python qa.py:365 requires exactly two fields for CSV pairs.
+		if strictPairs && len(cells) != 2 {
+			continue
+		}
 		var texts []string
 		for _, cell := range cells {
 			t := html.UnescapeString(htmlTag.ReplaceAllString(cell[1], ""))

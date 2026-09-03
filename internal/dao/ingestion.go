@@ -197,9 +197,16 @@ func (dao *IngestionTaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string
 	return task, err
 }
 
+// GetByDocumentID returns the latest ingestion task for a document. Historical
+// retries are ordered by create_time and then ID to match document-list state.
 func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, documentId string) (*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
-	err := db.WithContext(ctx).Where("document_id = ?", documentId).Limit(1).Find(&tasks).Error
+	err := db.WithContext(ctx).
+		Where("document_id = ?", documentId).
+		Order("COALESCE(create_time, 0) DESC").
+		Order("id DESC").
+		Limit(1).
+		Find(&tasks).Error
 	if err != nil {
 		return nil, err
 	}
@@ -207,6 +214,31 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 		return nil, nil
 	}
 	return tasks[0], nil
+}
+
+// CountActiveByDatasetID returns the number of ingestion tasks for the
+// dataset whose latest task is non-terminal (CREATED/SCHEDULED/RUNNING/STOPPING).
+// It uses the same create_time/ID ordering as document-list state so historical
+// retries cannot keep polling alive after a newer task becomes terminal.
+func (dao *IngestionTaskDAO) CountActiveByDatasetID(ctx context.Context, db *gorm.DB, datasetID string) (int64, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.IngestionTask{}).
+		Where(`ingestion_task.dataset_id = ?
+			AND ingestion_task.status IN ?
+			AND NOT EXISTS (
+				SELECT 1
+				FROM ingestion_task AS newer_ingestion_task
+				WHERE newer_ingestion_task.document_id = ingestion_task.document_id
+				  AND (
+					COALESCE(newer_ingestion_task.create_time, 0) > COALESCE(ingestion_task.create_time, 0)
+					OR (
+						COALESCE(newer_ingestion_task.create_time, 0) = COALESCE(ingestion_task.create_time, 0)
+						AND newer_ingestion_task.id > ingestion_task.id
+					)
+				  )
+			)`, datasetID, []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING}).
+		Count(&count).Error
+	return count, err
 }
 
 // DeleteIfTerminal deletes ingestion tasks for a document that are in a

@@ -560,6 +560,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       runningStatus2: 'Cancelled',
       runningStatus3: 'Success',
       runningStatus4: 'Fail',
+      runningStatusQueued: 'Queued',
       pageRanges: 'Page ranges',
       pageRangesTip:
         'Range of pages to be parsed; pages outside this range will not be processed.',
@@ -2379,6 +2380,7 @@ Example: Virtual Hosted Style`,
       topics: 'Topics',
       selectArtifact: 'Select an item from the contents to view details',
       searchEntity: 'Search entity',
+      graphEntityCount: '{{returned}} / {{total}} entities',
       sourceDocuments: 'Source documents',
       clearWikiTitle: 'Clear wiki',
       clearWikiDescription:
@@ -3374,6 +3376,12 @@ This process aggregates variables from multiple branches into a single variable 
         'Cannot save: "{{name}}" has invalid settings. Please fix them first',
       agentModelMissing:
         'Cannot save: "{{name}}" has no model selected. Please choose one first',
+      retrievalDatasetRequired: 'Please select at least one dataset',
+      retrievalDatasetMissing:
+        'Cannot save: "{{name}}" has no dataset selected. Please choose one first',
+      retrievalMemoryRequired: 'Please select at least one memory',
+      retrievalMemoryMissing:
+        'Cannot save: "{{name}}" has no memory selected. Please choose one first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
       tokenChunker: 'Token Chunker',
