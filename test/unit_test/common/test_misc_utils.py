@@ -214,11 +214,11 @@ class TestGetUuid:
         # The hex representation should match the original
         assert reconstructed_uuid.hex == result
 
-    def test_uuid4_characteristics(self):
-        """Generated identifiers are random RFC 4122 UUIDv4 values."""
+    def test_uuid1_characteristics(self):
+        """Generated identifiers are RFC 4122 UUIDv1 values."""
         result = get_uuid()
         uuid_obj = uuid.UUID(hex=result)
-        assert uuid_obj.version == 4
+        assert uuid_obj.version == 1
         assert uuid_obj.variant == "specified in RFC 4122"
 
     def test_result_length_consistency(self):

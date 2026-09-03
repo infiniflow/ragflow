@@ -34,7 +34,7 @@ _LONG_TIME_THREAD_POOL_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("
 
 
 def get_uuid():
-    return uuid.uuid4().hex
+    return uuid.uuid1().hex
 
 
 # OAuth avatar fetch: bounded size; each redirect hop is SSRF-checked and DNS-pinned

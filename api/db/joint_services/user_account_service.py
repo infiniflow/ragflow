@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 import logging
+import uuid
+
 from common.misc_utils import get_uuid
 
 from api.utils.api_utils import group_by
@@ -58,7 +60,7 @@ def create_new_user(user_info: dict) -> dict:
     # generate user_id and access_token for user
     user_id = get_uuid()
     user_info["id"] = user_id
-    user_info["access_token"] = get_uuid()
+    user_info["access_token"] = uuid.uuid4().hex
     # construct tenant info
     tenant = {
         "id": user_id,
