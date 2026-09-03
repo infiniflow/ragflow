@@ -962,11 +962,6 @@ func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
 			common.ResponseWithCodeData(c, code, data, err.Error())
 			return
 		}
-		if code == common.CodeServerError {
-			_ = c.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": code, "message": err.Error()})
-			return
-		}
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
