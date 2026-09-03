@@ -261,6 +261,11 @@ func tableRows(htmlStr string) [][]string {
 	return rows
 }
 
+// isTableHTML reports whether the text is a rendered HTML table.
+func isTableHTML(s string) bool {
+	return strings.HasPrefix(strings.TrimSpace(strings.ToLower(s)), "<table")
+}
+
 // cellText returns the visible text of a table cell. The parser hands text
 // nodes over already unescaped, nested markup contributes its text without
 // its tags (a nested table's cells are concatenated, not separated), and a
@@ -537,12 +542,18 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 		if txt == "" {
 			continue
 		}
-		// XLSX (#18800) emits OutputFormat json with HTML tables in item
-		// text and doc_type_kwd=table. Route those through extractQATable
-		// so spreadsheet QA keeps working; plain text items stay on the
-		// delimiter path used by pdf/docx.
+		// A JSON item can hold a rendered HTML table. The xlsx, docx, html
+		// and markdown parsers all emit one. Splitting that markup on
+		// newlines produces no CSV record, so read the rows the same way
+		// the HTML payload path does.
+		//
+		// Route on the payload, not on doc_type_kwd. The type says what the
+		// producer meant, and the two disagree in both directions:
+		// pdf_postprocess.go:222 sets "table" from the layout class with
+		// plain text under it, and a docx or markdown table can arrive with
+		// no type at all.
 		var tmp []qaPair
-		if itemDocType(item) == "table" {
+		if isTableHTML(txt) {
 			tmp = extractQATable(txt, false)
 		} else {
 			tmp = extractQAText(txt)
