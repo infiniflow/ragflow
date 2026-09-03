@@ -111,6 +111,11 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
+	var count int64
+	if err = DB.WithContext(ctx).Raw("SELECT COUNT(*) FROM ingestion_task").Scan(&count).Error; err != nil {
+		return fmt.Errorf("failed to query ingestion_task: %w", err)
+	}
+
 	// Auto migrate all dataModels
 	dataModels := []interface{}{
 		&entity.User{},
