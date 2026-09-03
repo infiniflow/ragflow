@@ -59,20 +59,30 @@ def _is_color_supported() -> bool:
             ver_parts = win_version.split(".")
             if len(ver_parts) < 3:
                 return False
-            major, _, build = map(int, ver_parts)
+            major, _, build = map(int, ver_parts[:3])
             if not (major >= 10 and build >= 10586):
                 return False
-            from ctypes import windll,wintypes
+            from ctypes import windll,wintypes,POINTER,byref
 
             # Actively enable ANSI support for Windows terminal
             INVALID_HANDLE_VALUE = wintypes.HANDLE(-1)
-            STD_OUTPUT_HANDLE = wintypes.HANDLE(-11)
+            STD_OUTPUT_HANDLE = wintypes.DWORD(-11)
             kernel32 = windll.kernel32
+
+            # Declare Win32 API signatures. Prevent 64‑bit handle truncation and silent API failure
+            kernel32.GetStdHandle.argtypes = [wintypes.DWORD]
+            kernel32.GetStdHandle.restype = wintypes.HANDLE
+            # Signatures for console mode read and write APIs
+            kernel32.GetConsoleMode.argtypes = [wintypes.HANDLE, POINTER(wintypes.DWORD)]
+            kernel32.GetConsoleMode.restype = wintypes.BOOL
+            kernel32.SetConsoleMode.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+            kernel32.SetConsoleMode.restype = wintypes.BOOL
+
             handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
             if handle == INVALID_HANDLE_VALUE:
                 return False
             mode = wintypes.DWORD()
-            if not kernel32.GetConsoleMode(handle, wintypes.byref(mode)):
+            if not kernel32.GetConsoleMode(handle,byref(mode)):
                 return False
             ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x04
             new_mode = mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING
