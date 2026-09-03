@@ -25,6 +25,7 @@ import chatService from '@/services/next-chat-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { useCallback, useMemo, useState } from 'react';
+import { fetchAllAgents } from '@/hooks/use-agent-request';
 import { ChatChannelKey, useChatChannelInfo } from './constant';
 import { IChatChannel, IChatChannelBase, IChatChannelInfo } from './interface';
 
@@ -32,6 +33,7 @@ export const ChatChannelKeys = {
   list: () => ['chat-channel'] as const,
   detail: (id?: string) => ['chat-channel-detail', id] as const,
   dialogs: () => ['chat-channel-dialogs'] as const,
+  agents: () => ['chat-channel-agents'] as const,
 };
 
 export const useListChatChannel = () => {
@@ -178,19 +180,26 @@ export const useFetchChatChannelDetail = () => {
   return { fetchDetail };
 };
 
-// Connect (or disconnect) a chat channel to an assistant (dialog).
-export const useConnectChatChannelDialog = () => {
+// Connect (or disconnect) a chat channel to an assistant (dialog) or an agent.
+export const useConnectChatChannelTarget = () => {
   const queryClient = useQueryClient();
 
   const { mutateAsync, isPending } = useMutation({
-    mutationKey: ['connect-chat-channel-dialog'],
+    mutationKey: ['connect-chat-channel-target'],
     mutationFn: async (params: {
       channelId: string;
       dialogId: string | null;
+      agentId: string | null;
     }) => {
-      const { data } = await updateChatChannel(params.channelId, {
-        chat_id: params.dialogId,
-      });
+      // Only send the target that is actually selected: chat_id and agent_id
+      // are mutually exclusive on the server, so a null sibling would
+      // otherwise be treated as a disconnection.
+      const payload = params.agentId
+        ? { agent_id: params.agentId }
+        : params.dialogId
+          ? { chat_id: params.dialogId }
+          : { chat_id: null, agent_id: null };
+      const { data } = await updateChatChannel(params.channelId, payload);
       if (data.code === 0) {
         message.success(t('message.operated'));
         queryClient.invalidateQueries({ queryKey: ChatChannelKeys.list() });
@@ -202,18 +211,44 @@ export const useConnectChatChannelDialog = () => {
   return { connect: mutateAsync, connecting: isPending };
 };
 
-// Assistants (dialogs) available to connect a channel to.
-export const useChatChannelDialogList = () => {
-  const { data, isFetching } = useQuery<Array<{ id: string; name: string }>>({
-    queryKey: ChatChannelKeys.dialogs(),
-    initialData: [],
-    queryFn: async () => {
-      const { data } = await chatService.listChats(
-        { params: { page_size: 100, page: 1 }, data: {} },
-        true,
-      );
-      return data?.data?.chats ?? [];
-    },
-  });
-  return { dialogs: data, isFetching };
+type ChatChannelTarget = { id: string; name: string };
+
+// Factory for the "assistant / agent" option lists shared by the channel
+// connect dialog, so the two hooks stay consistent.
+const createChatChannelTargetListHook = (
+  queryKey: readonly unknown[],
+  fetchTargets: () => Promise<ChatChannelTarget[]>,
+) => {
+  return () => {
+    const { data, isFetching } = useQuery<ChatChannelTarget[]>({
+      queryKey,
+      initialData: [],
+      queryFn: fetchTargets,
+    });
+    return { targets: data ?? [], isFetching };
+  };
 };
+
+// Assistants (dialogs) available to connect a channel to.
+export const useChatChannelDialogList = createChatChannelTargetListHook(
+  ChatChannelKeys.dialogs(),
+  async () => {
+    const { data } = await chatService.listChats(
+      { params: { page_size: 100, page: 1 }, data: {} },
+      true,
+    );
+    return data?.data?.chats ?? [];
+  },
+);
+
+// Flow agents available to connect a channel to.
+export const useChatChannelAgentList = createChatChannelTargetListHook(
+  ChatChannelKeys.agents(),
+  async () => {
+    const agents = await fetchAllAgents();
+    return (agents || []).map((agent) => ({
+      id: agent.id,
+      name: 'title' in agent ? agent.title : agent.id,
+    }));
+  },
+);
