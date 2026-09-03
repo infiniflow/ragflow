@@ -15,12 +15,11 @@
 #
 """Regression tests for agent Retrieval KB/memory embedding compatibility.
 
-After v0.27 a new dataset may store a tenant_model UUID in ``embd_id`` while a
-legacy dataset stores ``model@instance@provider``. Chat/assistant selection
-already treats those as compatible when they share a tenant_embd_id / base
-name. The Retrieval canvas component must use the same
-``validate_dataset_embedding_models`` comparison instead of hashing raw
-``embd_id`` strings.
+Datasets may store a tenant_model UUID or a ``model@instance@provider``
+composite in ``embd_id``. Chat/assistant selection treats those as compatible
+when they share a tenant_embd_id / base name. The Retrieval canvas component
+must use the same ``validate_dataset_embedding_models`` comparison rather than
+comparing raw ``embd_id`` strings.
 
 This test loads only the relevant function definitions via AST so it does not
 pull in the full ``api.db.db_models`` import chain.

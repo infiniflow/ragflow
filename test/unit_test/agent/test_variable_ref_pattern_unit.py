@@ -148,7 +148,11 @@ def retrieval_module(monkeypatch, base_module):
     install_module("api.db.services", package=True)
     install_module("api.db.joint_services", package=True)
     install_module("api.db.services.doc_metadata_service", DocMetadataService=type("DocMetadataService", (), {}))
-    install_module("api.db.services.knowledgebase_service", KnowledgebaseService=type("KnowledgebaseService", (), {}))
+    install_module(
+        "api.db.services.knowledgebase_service",
+        KnowledgebaseService=type("KnowledgebaseService", (), {}),
+        validate_dataset_embedding_models=lambda _kbs: None,
+    )
     install_module("api.db.services.llm_service", LLMBundle=type("LLMBundle", (), {}))
     install_module("api.db.services.memory_service", MemoryService=type("MemoryService", (), {}))
     install_module("api.db.joint_services.memory_message_service")
