@@ -1692,10 +1692,10 @@ func TestPromptsReturnsHardcodedFields(t *testing.T) {
 }
 
 // TestRerunAgent_RejectsInaccessibleDocument: POST /api/v1/agents/rerun
-// gates on the document service resolving the log and enforcing
-// DocumentService.accessible before accepting the request. A denial from
-// the service must surface as CodeDataError + "Document not found." so a
-// caller cannot probe whether a document exists in another tenant.
+// gates on RerunDocument resolving the log and validating document access
+// before accepting the request. A denial from the service must surface as
+// CodeDataError + "Document not found." so a caller cannot probe whether a
+// document exists in another tenant.
 func TestRerunAgent_RejectsInaccessibleDocument(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
