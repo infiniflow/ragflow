@@ -773,6 +773,10 @@ func (s *Service) UpdateUserActivateStatus(ctx context.Context, username string,
 	}
 
 	user.IsActive = targetStatus
+	if !isActive {
+		invalidToken := "INVALID_" + utility.GenerateToken()
+		user.AccessToken = &invalidToken
+	}
 
 	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)

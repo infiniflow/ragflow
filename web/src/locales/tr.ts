@@ -64,7 +64,8 @@ export default {
       s: 'S',
       pleaseSelect: 'Lütfen seçin',
       pleaseInput: 'Lütfen girin',
-      modelUnavailable: 'Daha önce seçilen model silinmiş, lütfen başka bir tane seçin',
+      modelUnavailable:
+        'Daha önce seçilen model silinmiş, lütfen başka bir tane seçin',
       submit: 'Gönder',
       clear: 'Temizle',
       embedIntoSite: 'Web sayfasına göm',
@@ -77,7 +78,7 @@ export default {
       search: 'Ara',
       reset: 'Sıfırla',
       noDataFound: 'Veri bulunamadı.',
-      searchOrEnterToAdd: 'Arayın veya eklemek için Enter\'a basın',
+      searchOrEnterToAdd: "Arayın veya eklemek için Enter'a basın",
       noData: 'Kullanılabilir veri yok',
       promptPlaceholder: `Lütfen girin veya değişkenleri hızlıca eklemek için / kullanın.`,
       mcp: {
@@ -253,7 +254,7 @@ export default {
       gitPlatform: 'Platform',
       repoUrl: "Depo URL'si",
       repoUrlHelp: "İsteğe bağlı yol içeren depo URL'sini destekler",
-      accessToken: 'Erişim Token\'ı',
+      accessToken: "Erişim Token'ı",
       githubTokenHelp:
         'Özel depolar veya daha yüksek hız limitleri için (5000 istek/saat)',
       giteeTokenHelp:
@@ -359,7 +360,8 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         action: 'İşlem',
       },
       config: {
-        titleDescription: 'Bellek yapılandırmanızı, özellikle LLM ve istemleri buradan güncelleyin.',
+        titleDescription:
+          'Bellek yapılandırmanızı, özellikle LLM ve istemleri buradan güncelleyin.',
         descriptionPlaceholder: 'Belleğinizi açıklayın',
         memorySizeTooltip: `Her mesajın içeriği + embedding vektörü için geçerlidir (≈ İçerik + Boyutlar × 8 Bayt).
 Örnek: 1024 boyutlu embedding ile 1 KB'lık bir mesaj ~9 KB kullanır. 5 MB varsayılan sınır ~500 mesaj tutar.`,
@@ -463,8 +465,10 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         'Bu, bu dataset içindeki tüm belgelerinizden varlıklar ve ilişkiler çıkaracak. İşlem tamamlanması biraz zaman alabilir.',
       generateRaptor:
         'Uzun belgelerde bağlama duyarlı alımı etkinleştirmek için hiyerarşik bir ağaç yapısı oluşturarak belge parçalarının özyinelemeli kümelenmesini ve özetlenmesini gerçekleştirir.',
-      generateArtifact: 'Bilgi derleme şablonu tanımlanmış her belgeden artifact sayfaları (varlık / kavram / konu wiki\'si) derler. Her çalıştırmada yalnızca yeni eklenen parçalar işlenir.',
-      generateToSkills: 'Bu dataset\'ten hiyerarşik bir beceri ağacı oluşturur ve üretilen beceri sayfalarını arama ve yeniden kullanım için saklar.',
+      generateArtifact:
+        "Bilgi derleme şablonu tanımlanmış her belgeden artifact sayfaları (varlık / kavram / konu wiki'si) derler. Her çalıştırmada yalnızca yeni eklenen parçalar işlenir.",
+      generateToSkills:
+        "Bu dataset'ten hiyerarşik bir beceri ağacı oluşturur ve üretilen beceri sayfalarını arama ve yeniden kullanım için saklar.",
       generate: 'Oluştur',
       raptor: 'RAPTOR',
       artifact: 'Artifact',
@@ -565,8 +569,10 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       fromMessage: 'Başlangıç sayfa numarası eksik',
       toPlaceholder: 'bitiş',
       toMessage: 'Bitiş sayfa numarası eksik (hariç)',
-      pageRangeFromInvalid: 'Başlangıç sayfası 0\'dan büyük bir tam sayı olmalıdır',
-      pageRangeToInvalid: 'Bitiş sayfası, başlangıç sayfasından küçük olmayan bir tam sayı olmalıdır',
+      pageRangeFromInvalid:
+        "Başlangıç sayfası 0'dan büyük bir tam sayı olmalıdır",
+      pageRangeToInvalid:
+        'Bitiş sayfası, başlangıç sayfasından küçük olmayan bir tam sayı olmalıdır',
       layoutRecognize: 'PDF ayrıştırıcı',
       layoutRecognizeTip:
         "PDF düzen analizi için görsel model kullanın. Belge başlıklarını, metin bloklarını, görüntüleri ve tabloları etkili bir şekilde konumlandırır. Naive seçeneği seçilirse yalnızca PDF'deki düz metin alınır. Bu seçeneğin şu anda YALNIZCA PDF belgeleri için çalıştığını lütfen unutmayın.",
@@ -599,7 +605,8 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       childrenDelimiterTip:
         'Bir sınırlayıcı bir veya birden fazla özel karakterden oluşabilir. Birden fazla karakter ise ters tırnak içine alındığından emin olun( ``). Örneğin, sınırlayıcılarınızı şöyle yapılandırırsanız: \\n`##`;, metinleriniz satır sonlarında, çift kare işaretlerinde (##) ve noktalı virgüllerde ayrılacaktır.',
       delimiterPreviewLabel: 'Şurada bölünür:',
-      delimiterPreviewEmpty: 'Sınırlayıcı yok — metin yalnızca boyuta göre parçalanacak.',
+      delimiterPreviewEmpty:
+        'Sınırlayıcı yok — metin yalnızca boyuta göre parçalanacak.',
       delimiterPreviewCount: '({{count}})',
       html4excel: "Excel'i HTML'ye dönüştür",
       html4excelTip: `Genel parçalama yöntemi ile kullanın. Devre dışı bırakıldığında, datasetteki elektronik tablolar (XLSX veya XLS(Excel 97-2003)) anahtar-değer çiftlerine ayrıştırılır. Etkinleştirildiğinde HTML tablolarına ayrıştırılır; orijinal tabloda 12'den fazla satır varsa her 12 satırda bölünür. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
@@ -660,7 +667,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       mineruTableEnable: 'Tablo tanıma',
       mineruTableEnableTip: 'Tablo tanıma ve çıkarmayı etkinleştir.',
       paddleocrOptions: 'PaddleOCR Seçenekleri',
-      paddleocrApiUrl: 'PaddleOCR API URL\'si',
+      paddleocrApiUrl: "PaddleOCR API URL'si",
       paddleocrApiUrlTip: "PaddleOCR servisi için API uç nokta URL'si",
       paddleocrApiUrlPlaceholder:
         'örn. https://paddleocr-server.com/layout-parsing',
@@ -742,14 +749,18 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       tableColumnMode: 'Sütun modu',
       tableColumnModeAuto: 'Otomatik',
       tableColumnModeManual: 'El ile',
-      tableColumnModeAutoDescription: 'Tüm sütunlar parça metnine dahil edilir ve meta veri olarak saklanır (RAGFlow varsayılanı).',
+      tableColumnModeAutoDescription:
+        'Tüm sütunlar parça metnine dahil edilir ve meta veri olarak saklanır (RAGFlow varsayılanı).',
       tableColumnRoles: 'Sütun rolleri',
-      tableColumnRolesTip: 'Hangi sütunların parça metnine (vektör ve tam metin araması için dizinlenir), yalnızca meta veriye (filtrelenebilir) veya her ikisine dahil edileceğini seçin. Değişiklikler yeni ayrıştırmalarda geçerli olur; rollerin etkili olması için mevcut belgeleri yeniden ayrıştırın.',
+      tableColumnRolesTip:
+        'Hangi sütunların parça metnine (vektör ve tam metin araması için dizinlenir), yalnızca meta veriye (filtrelenebilir) veya her ikisine dahil edileceğini seçin. Değişiklikler yeni ayrıştırmalarda geçerli olur; rollerin etkili olması için mevcut belgeleri yeniden ayrıştırın.',
       tableColumnRoleIndexing: 'Dizinleme',
       tableColumnRoleMetadata: 'Meta veri',
       tableColumnRoleBoth: 'Her ikisi',
-      tableColumnRolesEmpty: 'Sütun rollerini yapılandırmaya başlamak için bir CSV veya Excel dosyası yükleyip ayrıştırın.',
-      tableColumnRolesReparseTip: 'Yeni sütun rollerinin etkili olması için mevcut belgeleri yeniden ayrıştırın.',
+      tableColumnRolesEmpty:
+        'Sütun rollerini yapılandırmaya başlamak için bir CSV veya Excel dosyası yükleyip ayrıştırın.',
+      tableColumnRolesReparseTip:
+        'Yeni sütun rollerinin etkili olması için mevcut belgeleri yeniden ayrıştırın.',
       parserLabel: {
         naive: 'Genel',
         general: 'Genel',
@@ -889,7 +900,8 @@ Yukarısı özetlemeniz gereken içeriktir.`,
         "RAPTOR'da parçalar anlamsal benzerliklerine göre kümelenir.",
       thresholdMessage: 'Eşik gereklidir',
       clusteringMethod: 'Kümeleme yöntemi',
-      clusteringMethodTip: 'RAPTOR kümeleme yöntemini seçin. AHC daha büyük bir maksimum küme değeri kullanabilir ancak büyük girdilerde daha fazla bellek gerektirebilir.',
+      clusteringMethodTip:
+        'RAPTOR kümeleme yöntemini seçin. AHC daha büyük bir maksimum küme değeri kullanabilir ancak büyük girdilerde daha fazla bellek gerektirebilir.',
       clusteringMethodGmm: 'GMM',
       clusteringMethodAhc: 'AHC',
       maxCluster: 'Maksimum küme',
@@ -934,7 +946,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       Genel: Varlıkları ve ilişkileri çıkarmak için github.com/microsoft/graphrag tarafından sağlanan istemler kullanılır.</br>
       NER: Varlıkları ve ilişkileri çıkarmak için spaCy NER ve kural tabanlı anahtar kelime çıkarma kullanılır. Çıkarma işlemi için LLM gerekmez, bu da onu hızlı ve kaynak verimli yapar.`,
       graphRagBatchChunkTokenSize: 'Toplu parça token boyutu',
-      graphRagBatchChunkTokenSizeTip: 'Bilgi grafiği varlık ve ilişki çıkarımı için LLM\'ye gönderilen her parça grubunun token sınırı. NER\'e uygulanmaz.',
+      graphRagBatchChunkTokenSizeTip:
+        "Bilgi grafiği varlık ve ilişki çıkarımı için LLM'ye gönderilen her parça grubunun token sınırı. NER'e uygulanmaz.",
       resolution: 'Varlık çözünürlüğü',
       resolutionTip: `Varlık tekilleştirme anahtarı. Etkinleştirildiğinde LLM benzer varlıkları birleştirir - örneğin '2025' ve '2025 yılı' veya 'BT' ve 'Bilgi Teknolojisi' - daha doğru bir grafik oluşturmak için`,
       community: 'Topluluk raporları',
@@ -1013,7 +1026,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       sendPlaceholder: 'Asistana mesaj gönderin...',
       chatConfiguration: 'Sohbet yapılandırması',
       chatConfigurationDescription:
-        ' Seçtiğiniz dataset\'ler için buradan bir sohbet asistanı kurun! 💕',
+        " Seçtiğiniz dataset'ler için buradan bir sohbet asistanı kurun! 💕",
       assistantName: 'Asistan adı',
       assistantNameMessage: 'Asistan adı gereklidir',
       namePlaceholder: 'örn. Özgeçmiş Jarvis',
@@ -1029,7 +1042,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       knowledgeBases: 'Datasets',
       knowledgeBasesPlaceholder: 'Değer seçin',
       knowledgeBasesMessage: 'Lütfen seçin',
-      datasetUnavailable: 'Seçilen bilgi tabanı kullanılamıyor (silinmiş veya hiç parçası yok), lütfen yeniden seçin',
+      datasetUnavailable:
+        'Seçilen bilgi tabanı kullanılamıyor (silinmiş veya hiç parçası yok), lütfen yeniden seçin',
       knowledgeBasesTip:
         'Bu sohbet asistanıyla ilişkilendirilecek datasets seçin.',
       system: 'Sistem istemi',
@@ -1048,16 +1062,20 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         - **Bilgi mevcut olmadığında**: Yanıtınızda şu cümle yer almalıdır: "Aradığınız cevap dataset içinde bulunamadı!"
         - **Her zaman** konuşma geçmişinin tamamını göz önünde bulundurun.`,
       systemMessage: 'Lütfen girin!',
-      knowledgePlaceholderMessage: 'Dataset\'ler seçili ancak sistem isteminde {knowledge} yer tutucusu yok, bu nedenle getirilen içerik eklenemez. Sistem istemine {knowledge} ekleyin veya dataset\'leri kaldırın.',
+      knowledgePlaceholderMessage:
+        "Dataset'ler seçili ancak sistem isteminde {knowledge} yer tutucusu yok, bu nedenle getirilen içerik eklenemez. Sistem istemine {knowledge} ekleyin veya dataset'leri kaldırın.",
       systemTip:
         'LLM için istemleriniz veya talimatlarınız; rol, yanıtların uzunluğu, tonu ve dili dahil ancak bunlarla sınırlı değildir. Modeliniz doğal olarak akıl yürütmeyi destekliyorsa, akıl yürütmeyi durdurmak için isteme //no_thinking ekleyebilirsiniz.',
       topN: 'İlk N',
       topNTip: `Benzerlik eşiğinin üzerindeki tüm parçalar LLM'ye gönderilmeyecek. Bu, alınanlardan 'İlk N' parçayı seçer.`,
       rerankCandidatesCount: 'Yeniden sıralama adayları',
-      rerankCandidatesCountTip: 'Yeniden sıralama için getirilen aday parça sayısı.',
-      rerankCandidatesCountValidation: 'Yeniden sıralama adayları, Top N değerinden büyük veya ona eşit olmalıdır.',
+      rerankCandidatesCountTip:
+        'Yeniden sıralama için getirilen aday parça sayısı.',
+      rerankCandidatesCountValidation:
+        'Yeniden sıralama adayları, Top N değerinden büyük veya ona eşit olmalıdır.',
       variable: 'Değişken',
-      variableTip: 'RAGFlow\'nun sohbet asistanı yönetim API\'leri ile birlikte kullanıldığında değişkenler, daha esnek sistem istemi stratejileri geliştirmeye yardımcı olur. Tanımlanan değişkenler, LLM\'ye gönderilen istemlerin bir parçası olarak \'Sistem istemi\' tarafından kullanılır. {knowledge}, belirtilen dataset\'lerden getirilen parçaları temsil eden ayrılmış özel bir değişkendir ve tüm değişkenler \'Sistem istemi\' içinde süslü parantez {} arasına alınmalıdır. Ayrıntılar için https://ragflow.io/docs/chat_configuration#system-prompt adresine bakın.',
+      variableTip:
+        "RAGFlow'nun sohbet asistanı yönetim API'leri ile birlikte kullanıldığında değişkenler, daha esnek sistem istemi stratejileri geliştirmeye yardımcı olur. Tanımlanan değişkenler, LLM'ye gönderilen istemlerin bir parçası olarak 'Sistem istemi' tarafından kullanılır. {knowledge}, belirtilen dataset'lerden getirilen parçaları temsil eden ayrılmış özel bir değişkendir ve tüm değişkenler 'Sistem istemi' içinde süslü parantez {} arasına alınmalıdır. Ayrıntılar için https://ragflow.io/docs/chat_configuration#system-prompt adresine bakın.",
       add: 'Ekle',
       key: 'Anahtar',
       variableKeyMessage: 'Lütfen değişken anahtarını girin',
@@ -1111,7 +1129,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       thinkingLevelHighDescription: 'Derin akıl yürütme',
       thinkingLevelUltra: 'Ultra',
       thinkingLevelUltraDescription: 'Maksimum bilişsel çaba',
-      thinkingTip: 'Yalnızca resmi Qwen, Kimi ve GLM model sağlayıcıları için düşünme modunu denetler. Sistem varsayılanı, uzun süren görevlerden kaçınmak için Qwen düşünmesini devre dışı bırakır.',
+      thinkingTip:
+        'Yalnızca resmi Qwen, Kimi ve GLM model sağlayıcıları için düşünme modunu denetler. Sistem varsayılanı, uzun süren görevlerden kaçınmak için Qwen düşünmesini devre dışı bırakır.',
       quote: 'Alıntı göster',
       quoteTip: 'Orijinal metnin referans olarak gösterilip gösterilmeyeceği.',
       selfRag: 'Self-RAG',
@@ -1190,14 +1209,19 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       tavilyApiKeyMessage: 'Lütfen Tavily API anahtarınızı girin',
       webSearch: 'Web araması',
       webSearchProvider: 'Web arama sağlayıcısı',
-      webSearchProviderTip: 'İnternet araması etkinleştirildiğinde kullanılacak hizmeti seçin.',
+      webSearchProviderTip:
+        'İnternet araması etkinleştirildiğinde kullanılacak hizmeti seçin.',
       webSearchProviderPlaceholder: 'Bir web arama sağlayıcısı seçin',
-      queritApiKeyTip: 'Querit seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
+      queritApiKeyTip:
+        'Querit seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
       queritApiKeyMessage: 'Lütfen Querit API Anahtarınızı girin',
-      serplyApiKeyTip: 'Serply seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
+      serplyApiKeyTip:
+        'Serply seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
       serplyApiKeyMessage: 'Lütfen Serply API Anahtarınızı girin',
-      youcomApiKeyTip: 'İsteğe bağlı. You.com, hız sınırlı uç noktasında anahtarsız çalışır; bu sınırları kaldırmak için bir anahtar ekleyin.',
-      youcomApiKeyMessage: 'İsteğe bağlı — ücretsiz katmanı kullanmak için boş bırakın',
+      youcomApiKeyTip:
+        'İsteğe bağlı. You.com, hız sınırlı uç noktasında anahtarsız çalışır; bu sınırları kaldırmak için bir anahtar ekleyin.',
+      youcomApiKeyMessage:
+        'İsteğe bağlı — ücretsiz katmanı kullanmak için boş bırakın',
       tavilyApiKeyHelp: 'Nasıl alınır?',
       crossLanguage: 'Çapraz dil araması',
       crossLanguagePlaceholder: 'Değer seçin',
@@ -1268,19 +1292,20 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldFolderPathOptional: 'Klasör Yolu (isteğe bağlı)',
       dataSourceFieldBatchSize: 'Toplu İşlem Boyutu',
       dataSourceFieldMailFolder: 'Posta Klasörü',
-      dataSourceFieldMailboxUserIds: 'Posta Kutusu Kullanıcı Kimlikleri (isteğe bağlı)',
-      dataSourceFieldInstanceUrl: 'Örnek URL\'si',
+      dataSourceFieldMailboxUserIds:
+        'Posta Kutusu Kullanıcı Kimlikleri (isteğe bağlı)',
+      dataSourceFieldInstanceUrl: "Örnek URL'si",
       dataSourceFieldObjects: 'Nesneler',
       dataSourceFieldApiVersion: 'API Sürümü',
       dataSourceFieldAuthMode: 'Kimlik Doğrulama Modu',
       dataSourceFieldAccountName: 'Hesap Adı',
       dataSourceFieldAccountKey: 'Hesap Anahtarı',
       dataSourceFieldConnectionString: 'Bağlantı Dizesi',
-      dataSourceFieldContainerUrl: 'Konteyner URL\'si',
-      dataSourceFieldSasToken: 'SAS Token\'ı',
+      dataSourceFieldContainerUrl: "Konteyner URL'si",
+      dataSourceFieldSasToken: "SAS Token'ı",
       dataSourceFieldContainerName: 'Konteyner Adı',
       dataSourceFieldPrefixOptional: 'Ön Ek (isteğe bağlı)',
-      dataSourceFieldFeedUrl: 'Besleme URL\'si',
+      dataSourceFieldFeedUrl: "Besleme URL'si",
       dataSourceFieldGcsAccessKeyId: 'GCS Erişim Anahtarı Kimliği',
       dataSourceFieldGcsSecretAccessKey: 'GCS Gizli Erişim Anahtarı',
       dataSourceFieldBucketName: 'Bucket Adı',
@@ -1291,9 +1316,9 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldR2AccountId: 'R2 Hesap Kimliği',
       dataSourceFieldR2AccessKeyId: 'R2 Erişim Anahtarı Kimliği',
       dataSourceFieldR2SecretAccessKey: 'R2 Gizli Erişim Anahtarı',
-      dataSourceFieldNotionIntegrationToken: 'Notion Entegrasyon Token\'ı',
+      dataSourceFieldNotionIntegrationToken: "Notion Entegrasyon Token'ı",
       dataSourceFieldRootPageId: 'Kök Sayfa Kimliği',
-      dataSourceFieldDiscordBotToken: 'Discord Bot Token\'ı',
+      dataSourceFieldDiscordBotToken: "Discord Bot Token'ı",
       dataSourceFieldServerIds: 'Sunucu Kimlikleri',
       dataSourceFieldChannels: 'Kanallar',
       dataSourceFieldXquikApiKey: 'Xquik API anahtarı',
@@ -1303,16 +1328,16 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldPrimaryAdminEmail: 'Birincil Yönetici E-postası',
       dataSourceFieldOauthTokenJson: 'OAuth Token JSON',
       dataSourceFieldMyDriveEmails: 'My Drive E-postaları',
-      dataSourceFieldSharedFolderUrls: 'Paylaşılan Klasör URL\'leri',
-      dataSourceFieldMoodleUrl: 'Moodle URL\'si',
-      dataSourceFieldApiToken: 'API Token\'ı',
-      dataSourceFieldSlackBotToken: 'Slack Bot Token\'ı',
-      dataSourceFieldSiteUrl: 'Site URL\'si',
-      dataSourceFieldWebdavServerUrl: 'WebDAV Sunucu URL\'si',
+      dataSourceFieldSharedFolderUrls: "Paylaşılan Klasör URL'leri",
+      dataSourceFieldMoodleUrl: "Moodle URL'si",
+      dataSourceFieldApiToken: "API Token'ı",
+      dataSourceFieldSlackBotToken: "Slack Bot Token'ı",
+      dataSourceFieldSiteUrl: "Site URL'si",
+      dataSourceFieldWebdavServerUrl: "WebDAV Sunucu URL'si",
       dataSourceFieldUsername: 'Kullanıcı adı',
       dataSourceFieldPassword: 'Şifre',
       dataSourceFieldRemotePath: 'Uzak Yol',
-      dataSourceFieldAccessToken: 'Erişim Token\'ı',
+      dataSourceFieldAccessToken: "Erişim Token'ı",
       dataSourceFieldBoxOauthConfiguration: 'Box OAuth Yapılandırması',
       dataSourceFieldFolderId: 'Klasör Kimliği',
       dataSourceFieldBaseId: 'Temel Kimlik',
@@ -1320,22 +1345,22 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldOperatorId: 'Operatör Kimliği',
       dataSourceFieldProjectOwner: 'Proje Sahibi',
       dataSourceFieldProjectName: 'Proje Adı',
-      dataSourceFieldGitlabPersonalAccessToken: 'GitLab Kişisel Erişim Token\'ı',
-      dataSourceFieldGitlabUrl: 'GitLab URL\'si',
+      dataSourceFieldGitlabPersonalAccessToken: "GitLab Kişisel Erişim Token'ı",
+      dataSourceFieldGitlabUrl: "GitLab URL'si",
       dataSourceFieldIncludeIssues: 'Sorunları Dahil Et',
       dataSourceFieldWorkspaceId: 'Çalışma Alanı Kimliği',
       dataSourceFieldProjectIds: 'Proje Kimlikleri',
       dataSourceFieldTeamId: 'Takım Kimliği',
       dataSourceFieldRepositoryOwner: 'Depo Sahibi',
       dataSourceFieldRepositoryName: 'Depo Adı',
-      dataSourceFieldGithubAccessToken: 'GitHub Erişim Token\'ı',
+      dataSourceFieldGithubAccessToken: "GitHub Erişim Token'ı",
       dataSourceFieldHost: 'Ana bilgisayar',
       dataSourceFieldPort: 'Bağlantı noktası',
       dataSourceFieldMailboxes: 'Posta Kutuları',
       dataSourceFieldPollRange: 'Yoklama Aralığı',
       dataSourceFieldZendeskDomain: 'Zendesk Alan Adı',
       dataSourceFieldZendeskEmail: 'Zendesk E-postası',
-      dataSourceFieldZendeskToken: 'Zendesk Token\'ı',
+      dataSourceFieldZendeskToken: "Zendesk Token'ı",
       dataSourceFieldContent: 'İçerik',
       dataSourceFieldDatabase: 'Veritabanı',
       dataSourceFieldSqlQuery: 'SQL Sorgusu',
@@ -1360,7 +1385,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldAuthType: 'Kimlik Doğrulama Türü',
       dataSourceFieldApiKeyHeaderName: 'API Anahtarı Başlık Adı',
       dataSourceFieldApiKeyValue: 'API Anahtarı Değeri',
-      dataSourceFieldBearerToken: 'Bearer Token\'ı',
+      dataSourceFieldBearerToken: "Bearer Token'ı",
       dataSourceFieldContentFields: 'İçerik Alanları',
       dataSourceFieldMetadataFields: 'Meta Veri Alanları',
       dataSourceFieldPaginationType: 'Sayfalama Türü',
@@ -1378,11 +1403,11 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldPollTimestampField: 'Yoklama Zaman Damgası Alanı',
       dataSourceFieldRequestBody: 'İstek Gövdesi (POST) JSON',
       dataSourceFieldConfluenceUsername: 'Confluence Kullanıcı Adı',
-      dataSourceFieldConfluenceAccessToken: 'Confluence Erişim Token\'ı',
-      dataSourceFieldWikiBaseUrl: 'Wiki Temel URL\'si',
+      dataSourceFieldConfluenceAccessToken: "Confluence Erişim Token'ı",
+      dataSourceFieldWikiBaseUrl: "Wiki Temel URL'si",
       dataSourceFieldIsCloud: 'Bulut mu',
       dataSourceFieldIndexMode: 'Dizin Modu',
-      dataSourceFieldAzureDevOpsPat: 'Azure DevOps kişisel erişim token\'ı',
+      dataSourceFieldAzureDevOpsPat: "Azure DevOps kişisel erişim token'ı",
       dataSourceFieldAzureDevOpsOrganization: 'Azure DevOps kuruluşu',
       dataSourceFieldAzureDevOpsRepositories: 'Depolar',
       dataSourceFieldAzureDevOpsContentTypes: 'İçerik türleri',
@@ -1395,7 +1420,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldIndexRecursively: 'Özyinelemeli Dizinle',
       dataSourceFieldJiraUserEmail: 'Jira Kullanıcı E-postası',
       dataSourceFieldJiraUsername: 'Jira Kullanıcı Adı',
-      dataSourceFieldJiraBaseUrl: 'Jira Temel URL\'si',
+      dataSourceFieldJiraBaseUrl: "Jira Temel URL'si",
       dataSourceFieldProjectKey: 'Proje Anahtarı',
       dataSourceFieldCustomJql: 'Özel JQL',
       dataSourceFieldAttachmentSizeLimit: 'Ek Boyut Sınırı (bayt)',
@@ -1404,7 +1429,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldIncludeComments: 'Yorumları Dahil Et',
       dataSourceFieldIncludeAttachments: 'Ekleri Dahil Et',
       dataSourceFieldMode: 'Mod',
-      dataSourceFieldJiraApiToken: 'Jira API Token\'ı',
+      dataSourceFieldJiraApiToken: "Jira API Token'ı",
       dataSourceFieldJiraPassword: 'Jira Şifresi',
       dataSourceFieldUseScopedToken: 'Kapsamlı Token Kullan',
       dataSourceFieldRegion: 'Bölge',
@@ -1414,16 +1439,16 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldAwsSecretAccessKey: 'AWS Gizli Erişim Anahtarı',
       dataSourceFieldRoleArn: 'Rol ARN',
       dataSourceFieldAddressingStyle: 'Adresleme Biçimi',
-      dataSourceFieldEndpointUrl: 'Uç Nokta URL\'si',
-      dataSourceFieldSeafileServerUrl: 'SeaFile Sunucu URL\'si',
+      dataSourceFieldEndpointUrl: "Uç Nokta URL'si",
+      dataSourceFieldSeafileServerUrl: "SeaFile Sunucu URL'si",
       dataSourceFieldSyncScope: 'Eşitleme Kapsamı',
-      dataSourceFieldAccountApiToken: 'Hesap API Token\'ı',
+      dataSourceFieldAccountApiToken: "Hesap API Token'ı",
       dataSourceFieldIncludeSharedLibraries: 'Paylaşılan Kitaplıkları Dahil Et',
-      dataSourceFieldLibraryToken: 'Kitaplık Token\'ı',
+      dataSourceFieldLibraryToken: "Kitaplık Token'ı",
       dataSourceFieldLibraryId: 'Kitaplık Kimliği',
       dataSourceFieldDirectoryPath: 'Dizin Yolu',
       dataSourceFieldBitbucketAccountEmail: 'Bitbucket Hesap E-postası',
-      dataSourceFieldBitbucketApiToken: 'Bitbucket API Token\'ı',
+      dataSourceFieldBitbucketApiToken: "Bitbucket API Token'ı",
       dataSourceFieldWorkspace: 'Çalışma Alanı',
       dataSourceFieldRepositorySlugs: 'Depo Kısa Adları',
       dataSourceFieldProjects: 'Projeler',
@@ -1433,12 +1458,12 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceIncludeCodeFiles: 'Kod Dosyalarını Dahil Et',
       dataSourceOptionAccountKey: 'Hesap Anahtarı',
       dataSourceOptionConnectionString: 'Bağlantı Dizesi',
-      dataSourceOptionSasToken: 'SAS Token\'ı',
+      dataSourceOptionSasToken: "SAS Token'ı",
       dataSourceOptionArticles: 'Makaleler',
       dataSourceOptionTickets: 'Talepler',
       dataSourceOptionNone: 'Yok',
       dataSourceOptionApiKeyHeader: 'API Anahtarı (Başlık)',
-      dataSourceOptionBearerToken: 'Bearer Token\'ı',
+      dataSourceOptionBearerToken: "Bearer Token'ı",
       dataSourceOptionBasicAuth: 'Temel Kimlik Doğrulama',
       dataSourceOptionPage: 'Sayfa',
       dataSourceOptionOffset: 'Offset',
@@ -1461,21 +1486,35 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceOptionWorkspace: 'Çalışma Alanı',
       dataSourceValidationFieldRequired: '{{label}} zorunludur',
       dataSourceValidationMinOne: '{{label}} en az 1 olmalıdır',
-      dataSourceConfluenceEverythingTip: 'Bu seçim, sağlanan kimlik bilgilerinin erişebildiği tüm sayfaları dizinler.',
-      dataSourceS3AssumeRoleTip: 'Kimlik bilgisi gerekmez. Varsayılan ortam rolünü kullanır.',
+      dataSourceConfluenceEverythingTip:
+        'Bu seçim, sağlanan kimlik bilgilerinin erişebildiği tüm sayfaları dizinler.',
+      dataSourceS3AssumeRoleTip:
+        'Kimlik bilgisi gerekmez. Varsayılan ortam rolünü kullanır.',
       dataSourceS3RoleArnTip: 'Rol, çalışma ortamı tarafından üstlenilecektir.',
-      dataSourceS3RegionRequired: 'Erişim anahtarı kullanılırken bölge zorunludur',
-      dataSourceAzureAccountNameRequired: 'Hesap anahtarı kimlik doğrulaması için hesap adı zorunludur',
-      dataSourceAzureAccountKeyRequired: 'Hesap anahtarı kimlik doğrulaması için hesap anahtarı zorunludur',
-      dataSourceAzureConnectionStringRequired: 'Bağlantı dizesi kimlik doğrulaması için bağlantı dizesi zorunludur',
-      dataSourceAzureContainerUrlRequired: 'SAS token kimlik doğrulaması için konteyner URL\'si zorunludur',
-      dataSourceAzureSasTokenRequired: 'SAS token kimlik doğrulaması için SAS token\'ı zorunludur',
-      dataSourceAzureContainerNameRequired: 'Bu kimlik doğrulama modu için konteyner adı zorunludur',
-      dataSourceBigqueryDatasetIdRequired: 'Özel bir SQL Sorgusu kullanılmadığında Dataset Kimliği zorunludur',
-      dataSourceBigqueryTableIdRequired: 'Özel bir SQL Sorgusu kullanılmadığında Tablo Kimliği zorunludur',
-      dataSourceBigqueryQueryRequired: 'Bir SQL Sorgusu ya da hem Dataset Kimliği hem de Tablo Kimliği girin',
-      dataSourceSalesforceInstanceUrlInvalid: 'Geçerli bir Salesforce alan adı olmalıdır (https://...salesforce.com)',
-      dataSourceSalesforceApiVersionInvalid: 'API sürümü v59.0 gibi bir biçimde olmalıdır',
+      dataSourceS3RegionRequired:
+        'Erişim anahtarı kullanılırken bölge zorunludur',
+      dataSourceAzureAccountNameRequired:
+        'Hesap anahtarı kimlik doğrulaması için hesap adı zorunludur',
+      dataSourceAzureAccountKeyRequired:
+        'Hesap anahtarı kimlik doğrulaması için hesap anahtarı zorunludur',
+      dataSourceAzureConnectionStringRequired:
+        'Bağlantı dizesi kimlik doğrulaması için bağlantı dizesi zorunludur',
+      dataSourceAzureContainerUrlRequired:
+        "SAS token kimlik doğrulaması için konteyner URL'si zorunludur",
+      dataSourceAzureSasTokenRequired:
+        "SAS token kimlik doğrulaması için SAS token'ı zorunludur",
+      dataSourceAzureContainerNameRequired:
+        'Bu kimlik doğrulama modu için konteyner adı zorunludur',
+      dataSourceBigqueryDatasetIdRequired:
+        'Özel bir SQL Sorgusu kullanılmadığında Dataset Kimliği zorunludur',
+      dataSourceBigqueryTableIdRequired:
+        'Özel bir SQL Sorgusu kullanılmadığında Tablo Kimliği zorunludur',
+      dataSourceBigqueryQueryRequired:
+        'Bir SQL Sorgusu ya da hem Dataset Kimliği hem de Tablo Kimliği girin',
+      dataSourceSalesforceInstanceUrlInvalid:
+        'Geçerli bir Salesforce alan adı olmalıdır (https://...salesforce.com)',
+      dataSourceSalesforceApiVersionInvalid:
+        'API sürümü v59.0 gibi bir biçimde olmalıdır',
       dataSourcePruneFreq: 'Budama Sıklığı',
       dataSourceRefreshFreq: 'Yenileme Sıklığı',
       dataSourceTimeoutSecs: 'Zaman Aşımı (sn)',
@@ -1520,7 +1559,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         'Dosyaları senkronize etmek için WebDAV sunucularına bağlanın.',
       webdavRemotePathTip:
         'İsteğe bağlı: WebDAV sunucusunda bir klasör yolu belirtin.',
-      webdavCaCertPathTip: 'İsteğe bağlı: RAGFlow konteynerinin içine bağlanmış bir CA sertifika paketinin yolu.',
+      webdavCaCertPathTip:
+        'İsteğe bağlı: RAGFlow konteynerinin içine bağlanmış bir CA sertifika paketinin yolu.',
       google_driveTokenTip:
         'OAuth yardımcısından veya Google Cloud Console\'dan oluşturulan OAuth token JSON\'unu yükleyin. "installed" veya "web" uygulamasından bir client_secret JSON da yükleyebilirsiniz. Bu ilk senkronizasyonunuzsa, OAuth onayını tamamlamak için bir tarayıcı penceresi açılacaktır. JSON zaten bir yenileme token\'ı içeriyorsa otomatik olarak yeniden kullanılacaktır.',
       google_drivePrimaryAdminTip:
@@ -1537,19 +1577,32 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         "Google Console'dan oluşturulan OAuth JSON'ını yükleyin. Yalnızca istemci kimlik bilgilerini içeriyorsa, uzun ömürlü yenileme tokenları oluşturmak için tarayıcı tabanlı doğrulamayı bir kez çalıştırın.",
       dropboxDescription:
         "Seçilen bir hesaptan dosya ve klasörleri senkronize etmek için Dropbox'ınızı bağlayın.",
-      teamsDescription: 'Kanal gönderilerini ve yanıtlarını eşitlemek için Microsoft Teams\'i Microsoft Graph üzerinden bağlayın.',
-      teamsTenantIdTip: 'Azure AD kiracı kimliği. Team.ReadBasic.All ve ChannelMessage.Read.All uygulama izinlerine (yönetici onayı) sahip bir uygulama gerektirir.',
-      slackDescription: 'Kanal mesajlarını ve konularını eşitlemek için Slack çalışma alanınızı bağlayın.',
-      slackBotTokenTip: 'Slack bot kullanıcı OAuth token\'ı (xoxb- ile başlar). Uygulamanın channels:read, channels:history ve users:read kapsamlarına ihtiyacı vardır.',
-      slackChannelsTip: 'İsteğe bağlı: eşitlenecek kanal adları (örneğin general). Erişilebilir tüm kanalları eşitlemek için boş bırakın.',
-      sharepointDescription: 'Belge kitaplıklarını eşitlemek için bir SharePoint sitesini Microsoft Graph üzerinden bağlayın.',
-      sharepointSiteUrlTip: 'Dizinlenecek SharePoint sitesinin tam URL\'si, örneğin https://contoso.sharepoint.com/sites/MySite. Sites.Read.All ve Files.Read.All izinlerine sahip bir Azure AD uygulaması gerektirir.',
-      azureDevOpsPatTip: 'Code (Read) kapsamına sahip bir kişisel erişim token\'ı.',
-      azureDevOpsOrganizationTip: 'Kuruluş adı (örneğin "contoso") veya kendi barındırdığınız Azure DevOps Server\'ın tam koleksiyon URL\'si (örneğin https://tfs.contoso.com/DefaultCollection).',
-      azureDevOpsProjectsTip: 'Virgülle ayrılmış takım projesi adları. Örneğin Project1,Project2',
-      azureDevOpsRepositoriesTip: 'Virgülle ayrılmış depolar. Aynı adı paylaşan depoları ayırt etmek için proje/depo biçimini kullanın.',
-      azureDevOpsOrganizationScopeTip: 'Bu kuruluşta token\'ın görebildiği her depo dizinlenecektir.',
-      azureDevOpsContentTypesTip: 'Neyin dizinleneceğini seçin: kaynak dosyalar, çekme istekleri veya her ikisi.',
+      teamsDescription:
+        "Kanal gönderilerini ve yanıtlarını eşitlemek için Microsoft Teams'i Microsoft Graph üzerinden bağlayın.",
+      teamsTenantIdTip:
+        'Azure AD kiracı kimliği. Team.ReadBasic.All ve ChannelMessage.Read.All uygulama izinlerine (yönetici onayı) sahip bir uygulama gerektirir.',
+      slackDescription:
+        'Kanal mesajlarını ve konularını eşitlemek için Slack çalışma alanınızı bağlayın.',
+      slackBotTokenTip:
+        "Slack bot kullanıcı OAuth token'ı (xoxb- ile başlar). Uygulamanın channels:read, channels:history ve users:read kapsamlarına ihtiyacı vardır.",
+      slackChannelsTip:
+        'İsteğe bağlı: eşitlenecek kanal adları (örneğin general). Erişilebilir tüm kanalları eşitlemek için boş bırakın.',
+      sharepointDescription:
+        'Belge kitaplıklarını eşitlemek için bir SharePoint sitesini Microsoft Graph üzerinden bağlayın.',
+      sharepointSiteUrlTip:
+        "Dizinlenecek SharePoint sitesinin tam URL'si, örneğin https://contoso.sharepoint.com/sites/MySite. Sites.Read.All ve Files.Read.All izinlerine sahip bir Azure AD uygulaması gerektirir.",
+      azureDevOpsPatTip:
+        "Code (Read) kapsamına sahip bir kişisel erişim token'ı.",
+      azureDevOpsOrganizationTip:
+        'Kuruluş adı (örneğin "contoso") veya kendi barındırdığınız Azure DevOps Server\'ın tam koleksiyon URL\'si (örneğin https://tfs.contoso.com/DefaultCollection).',
+      azureDevOpsProjectsTip:
+        'Virgülle ayrılmış takım projesi adları. Örneğin Project1,Project2',
+      azureDevOpsRepositoriesTip:
+        'Virgülle ayrılmış depolar. Aynı adı paylaşan depoları ayırt etmek için proje/depo biçimini kullanın.',
+      azureDevOpsOrganizationScopeTip:
+        "Bu kuruluşta token'ın görebildiği her depo dizinlenecektir.",
+      azureDevOpsContentTypesTip:
+        'Neyin dizinleneceğini seçin: kaynak dosyalar, çekme istekleri veya her ikisi.',
       azure_devopsDescription:
         "Depo dosyalarını ve pull request'leri senkronize etmek için Azure DevOps'u bağlayın.",
       bitbucketDescription:
@@ -1661,90 +1714,157 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         'Benzersiz belge kimliği olarak kullanılacak sütun.',
       postgresqlTimestampColumnTip:
         'Artımlı senkronizasyon için tarih/zaman damgası sütunu.',
-      bigqueryDescription: 'Bir tablodan veya özel bir GoogleSQL sorgusundan satırları eşitlemek için Google BigQuery\'ye bağlanın.',
-      bigqueryProjectIdTip: 'Sorgu işlerinin sahibi olan GCP projesi (örneğin my-gcp-project).',
-      bigqueryLocationTip: 'İstemci ve sorgu işleri için varsayılan konum; örneğin US veya EU. BigQuery\'nin çıkarım yapması için boş bırakın.',
-      bigqueryServiceAccountJsonTip: 'BigQuery erişimi olan hizmet hesabı anahtarı JSON\'u. Anahtar dosyasının tamamını yapıştırın.',
-      bigqueryDatasetIdTip: 'Tablo modu için dataset kimliği. SQL sorgusu verilmediğinde Tablo Kimliği ile birlikte zorunludur.',
-      bigqueryTableIdTip: 'Tablo modu için tablo kimliği. SQL sorgusu verilmediğinde Dataset Kimliği ile birlikte zorunludur.',
-      bigqueryQueryTip: 'Özel GoogleSQL sorgusu. Dataset Kimliği ve Tablo Kimliği\'nin önüne geçer. Yalnızca standart SQL.',
-      bigqueryContentColumnsTip: 'Değerleri vektörleştirme için belge içeriği olarak birleştirilecek, virgülle ayrılmış sütun adları.',
-      bigqueryMetadataColumnsTip: 'Belge meta verisi olarak saklanacak, virgülle ayrılmış sütun adları (vektörleştirilmez ancak aranabilir).',
-      bigqueryIdColumnTip: 'Benzersiz belge kimliği olarak kullanılacak sütun. Belirtilmezse içeriğin karması kullanılır.',
-      bigqueryTimestampColumnTip: 'Artımlı eşitleme için zaman damgası, tarih-saat, tarih veya sayısal sütun. Yalnızca son eşitlemeden yeni olan satırlar çekilir.',
-      bigqueryMaximumBytesBilledTip: 'Her sorgu işine uygulanan, bayt cinsinden kesin maliyet koruması. Varsayılan 1 GiB\'dir.',
-      bigqueryJobTimeoutMsTip: 'İsteğe bağlı, sorgu başına milisaniye cinsinden iş zaman aşımı.',
-      rest_apiDescription: 'Esnek, yapılandırma tabanlı bir bağlayıcı ile herhangi bir REST API uç noktasını veri kaynağı olarak bağlayın.',
-      xquikDescription: 'Xquik ile X gönderilerinde arama yapın ve eşleşen gönderileri bir bilgi tabanına eşitleyin.',
-      xquikApiKeyTip: 'Bir Xquik API anahtarı oluşturun ve yalnızca bu şifre alanında saklayın.',
-      xquikQueryTip: 'Anahtar kelimeler, etiketler veya from:kullaniciadi gibi X arama operatörleri kullanın.',
-      xquikPageSizeTip: 'API sayfası başına istenen maksimum gönderi sayısı. Dönen her gönderi 1 Xquik kredisi harcar.',
-      xquikMaxPagesTip: 'API kullanımını sınırlamak için her eşitlemeyi bu kadar sayfadan sonra durdurun.',
-      xquikPageSizeValidation: 'Sayfa Başına Gönderi 1 ile 10000 arasında olmalıdır.',
+      bigqueryDescription:
+        "Bir tablodan veya özel bir GoogleSQL sorgusundan satırları eşitlemek için Google BigQuery'ye bağlanın.",
+      bigqueryProjectIdTip:
+        'Sorgu işlerinin sahibi olan GCP projesi (örneğin my-gcp-project).',
+      bigqueryLocationTip:
+        "İstemci ve sorgu işleri için varsayılan konum; örneğin US veya EU. BigQuery'nin çıkarım yapması için boş bırakın.",
+      bigqueryServiceAccountJsonTip:
+        "BigQuery erişimi olan hizmet hesabı anahtarı JSON'u. Anahtar dosyasının tamamını yapıştırın.",
+      bigqueryDatasetIdTip:
+        'Tablo modu için dataset kimliği. SQL sorgusu verilmediğinde Tablo Kimliği ile birlikte zorunludur.',
+      bigqueryTableIdTip:
+        'Tablo modu için tablo kimliği. SQL sorgusu verilmediğinde Dataset Kimliği ile birlikte zorunludur.',
+      bigqueryQueryTip:
+        "Özel GoogleSQL sorgusu. Dataset Kimliği ve Tablo Kimliği'nin önüne geçer. Yalnızca standart SQL.",
+      bigqueryContentColumnsTip:
+        'Değerleri vektörleştirme için belge içeriği olarak birleştirilecek, virgülle ayrılmış sütun adları.',
+      bigqueryMetadataColumnsTip:
+        'Belge meta verisi olarak saklanacak, virgülle ayrılmış sütun adları (vektörleştirilmez ancak aranabilir).',
+      bigqueryIdColumnTip:
+        'Benzersiz belge kimliği olarak kullanılacak sütun. Belirtilmezse içeriğin karması kullanılır.',
+      bigqueryTimestampColumnTip:
+        'Artımlı eşitleme için zaman damgası, tarih-saat, tarih veya sayısal sütun. Yalnızca son eşitlemeden yeni olan satırlar çekilir.',
+      bigqueryMaximumBytesBilledTip:
+        "Her sorgu işine uygulanan, bayt cinsinden kesin maliyet koruması. Varsayılan 1 GiB'dir.",
+      bigqueryJobTimeoutMsTip:
+        'İsteğe bağlı, sorgu başına milisaniye cinsinden iş zaman aşımı.',
+      rest_apiDescription:
+        'Esnek, yapılandırma tabanlı bir bağlayıcı ile herhangi bir REST API uç noktasını veri kaynağı olarak bağlayın.',
+      xquikDescription:
+        'Xquik ile X gönderilerinde arama yapın ve eşleşen gönderileri bir bilgi tabanına eşitleyin.',
+      xquikApiKeyTip:
+        'Bir Xquik API anahtarı oluşturun ve yalnızca bu şifre alanında saklayın.',
+      xquikQueryTip:
+        'Anahtar kelimeler, etiketler veya from:kullaniciadi gibi X arama operatörleri kullanın.',
+      xquikPageSizeTip:
+        'API sayfası başına istenen maksimum gönderi sayısı. Dönen her gönderi 1 Xquik kredisi harcar.',
+      xquikMaxPagesTip:
+        'API kullanımını sınırlamak için her eşitlemeyi bu kadar sayfadan sonra durdurun.',
+      xquikPageSizeValidation:
+        'Sayfa Başına Gönderi 1 ile 10000 arasında olmalıdır.',
       xquikMaxPagesValidation: 'Maksimum Sayfa 1 ile 1000 arasında olmalıdır.',
-      onedriveDescription: 'Microsoft Graph delta sorgularıyla dosya ve klasörleri dizinlemek için OneDrive veya İş için OneDrive\'ı bağlayın.',
-      onedriveTenantIdTip: 'Microsoft 365 kuruluşunun Azure Active Directory kiracı kimliği (Dizin Kimliği).',
-      onedriveClientIdTip: 'Files.Read.All iznine sahip Azure AD uygulama kaydının uygulama (istemci) kimliği.',
-      onedriveClientSecretTip: 'Azure AD uygulama kaydında üretilen istemci gizli anahtarı değeri.',
-      onedriveFolderPathTip: 'Dizinlemeyi sınırlamak için isteğe bağlı alt klasör yolu (örneğin /Documents/Reports). Sürücünün tamamını dizinlemek için boş bırakın.',
-      outlookDescription: 'Outlook / Microsoft 365 posta kutularını bağlayın ve iletileri Microsoft Graph delta sorgularıyla dizinleyin.',
-      outlookTenantIdTip: 'Microsoft 365 kuruluşunun Azure Active Directory kiracı kimliği (Dizin Kimliği).',
-      outlookClientIdTip: 'Mail.Read iznine sahip Azure AD uygulama kaydının uygulama (istemci) kimliği.',
-      outlookClientSecretTip: 'Azure AD uygulama kaydında üretilen istemci gizli anahtarı değeri.',
-      outlookFolderTip: 'Eşitlenecek posta klasörü (örneğin inbox, sentitems, archive). Varsayılan olarak inbox kullanılır.',
-      outlookUserIdsTip: 'Eşitlenecek posta kutularının virgülle ayrılmış UPN\'leri veya nesne kimlikleri. Kiracıdaki her posta kutusunu eşitlemek için boş bırakın (User.Read.All gerektirir).',
-      salesforceDescription: 'Bir Salesforce kuruluşunu bağlayın ve CRM kayıtlarını (Hesaplar, Kişiler, Fırsatlar, Talepler, Bilgi makaleleri) SOQL üzerinden artımlı eşitlemeyle dizinleyin.',
-      salesforceInstanceUrlTip: 'Salesforce kuruluş URL\'si, örneğin https://your-domain.my.salesforce.com (sonda eğik çizgi olmadan).',
-      salesforceClientIdTip: 'İstemci Kimlik Bilgileri Akışı etkin ve api kapsamına sahip bir Connected App\'in Tüketici Anahtarı.',
-      salesforceClientSecretTip: 'İstemci kimlik bilgileri doğrulaması için kullanılan Connected App\'in Tüketici Gizli Anahtarı.',
-      salesforceObjectsTip: 'Dizinlenecek, virgülle ayrılmış SObject API adları. Varsayılan olarak Account, Contact, Opportunity, Case, Knowledge__kav kullanılır.',
-      salesforceApiVersionTip: 'Salesforce REST API sürümü (örneğin v59.0). Kuruluşunuzun desteklediği sürümü kullanın.',
-      azure_blobDescription: 'Bir Azure Blob Storage konteynerindeki blob\'ları bir bilgi tabanına dizinleyin. Hesap anahtarı, bağlantı dizesi ve SAS token kimlik doğrulamasını destekler. Değişmemiş blob\'lar ETag parmak izi ile atlanır.',
-      azureBlobAuthModeTip: 'Kimlik doğrulama yöntemini seçin. Hesap Anahtarı ve Bağlantı Dizesi container_name gerektirir; SAS Token ise container_url + sas_token gerektirir.',
-      azureBlobAccountNameTip: 'Azure depolama hesabı adı (örneğin mystorageaccount). Hesap anahtarı kimlik doğrulaması için zorunludur.',
-      azureBlobAccountKeyTip: 'Depolama hesabı erişim anahtarı (Base64 kodlu). Hesap anahtarı kimlik doğrulaması için zorunludur.',
-      azureBlobConnectionStringTip: 'Tam Azure Storage bağlantı dizesi (DefaultEndpointsProtocol=https;AccountName=...;...). Bağlantı dizesi kimlik doğrulaması için zorunludur.',
-      azureBlobContainerUrlTip: 'Konteynerin tam HTTPS URL\'si (örneğin https://account.blob.core.windows.net/container). SAS token kimlik doğrulaması için zorunludur.',
-      azureBlobSasTokenTip: 'SAS sorgu dizesi (baştaki "?" olmadan). SAS token kimlik doğrulaması için zorunludur.',
-      azureBlobContainerNameTip: 'Dizinlenecek konteynerin adı. Hesap anahtarı ve bağlantı dizesi kimlik doğrulaması için zorunludur.',
-      azureBlobPrefixTip: 'Dizinlemeyi sanal bir klasörle sınırlamak için isteğe bağlı blob adı ön eki (örneğin documents/reports/). Konteynerin tamamını dizinlemek için boş bırakın.',
-      restApiQueryParamsTip: 'URL sorgu parametresi olarak gönderilen anahtar=değer çiftleri (satır başına bir tane). Parametreleri URL\'ye gömmek yerine bunu kullanın.',
-      restApiHeadersTip: 'Her istekle gönderilecek ek HTTP başlıklarını içeren isteğe bağlı JSON nesnesi.',
-      restApiItemsPathTip: 'Yanıttaki öğe dizisinin alan adı veya JSONPath\'i. Otomatik algılama için boş bırakın ("items", "results", "data" vb. denenir).',
-      restApiIdFieldTip: 'Kararlı bir belge kimliği oluşturmak için her öğe içinde kullanılan alan yolu. İçerik karmasından otomatik üretmek için boş bırakın.',
-      restApiContentFieldsTip: 'Belge içeriğinde birleştirilecek, virgülle ayrılmış öğe alanları listesi.',
-      restApiMetadataFieldsTip: 'Meta veri olarak saklanacak, virgülle ayrılmış öğe alanları listesi.',
-      restApiNextCursorPathTip: 'API yanıtındaki sonraki sayfa imlecine karşılık gelen JSONPath ifadesi.',
-      restApiPollTimestampFieldTip: 'Her öğede son güncellenme zamanını temsil eden ve artımlı eşitlemede kullanılan alan yolu.',
-      restApiRequestBodyTip: 'POST istekleri için gönderilecek isteğe bağlı JSON gövdesi. Sorgu parametreleri ve sayfalama ile birlikte kullanılır.',
-      restApiRequestDelayTip: 'Ardışık sayfa istekleri arasındaki saniye cinsinden gecikme. API\'nin hız sınırlamasından kaçınmaya yardımcı olur. Devre dışı bırakmak için 0 yapın.',
-      restApiValidationApiKeyRequired: 'Kimlik Doğrulama Türü API Anahtarı (Başlık) olduğunda API Anahtarı zorunludur.',
-      restApiValidationApiKeyHeaderNameRequired: 'Kimlik Doğrulama Türü API Anahtarı (Başlık) olduğunda API Anahtarı başlık adı zorunludur.',
-      restApiValidationBearerTokenRequired: 'Kimlik Doğrulama Türü Bearer Token olduğunda Bearer token zorunludur.',
-      restApiValidationBasicUsernameRequired: 'Kimlik Doğrulama Türü Temel Kimlik Doğrulama olduğunda kullanıcı adı zorunludur.',
-      restApiValidationBasicPasswordRequired: 'Kimlik Doğrulama Türü Temel Kimlik Doğrulama olduğunda şifre zorunludur.',
+      onedriveDescription:
+        "Microsoft Graph delta sorgularıyla dosya ve klasörleri dizinlemek için OneDrive veya İş için OneDrive'ı bağlayın.",
+      onedriveTenantIdTip:
+        'Microsoft 365 kuruluşunun Azure Active Directory kiracı kimliği (Dizin Kimliği).',
+      onedriveClientIdTip:
+        'Files.Read.All iznine sahip Azure AD uygulama kaydının uygulama (istemci) kimliği.',
+      onedriveClientSecretTip:
+        'Azure AD uygulama kaydında üretilen istemci gizli anahtarı değeri.',
+      onedriveFolderPathTip:
+        'Dizinlemeyi sınırlamak için isteğe bağlı alt klasör yolu (örneğin /Documents/Reports). Sürücünün tamamını dizinlemek için boş bırakın.',
+      outlookDescription:
+        'Outlook / Microsoft 365 posta kutularını bağlayın ve iletileri Microsoft Graph delta sorgularıyla dizinleyin.',
+      outlookTenantIdTip:
+        'Microsoft 365 kuruluşunun Azure Active Directory kiracı kimliği (Dizin Kimliği).',
+      outlookClientIdTip:
+        'Mail.Read iznine sahip Azure AD uygulama kaydının uygulama (istemci) kimliği.',
+      outlookClientSecretTip:
+        'Azure AD uygulama kaydında üretilen istemci gizli anahtarı değeri.',
+      outlookFolderTip:
+        'Eşitlenecek posta klasörü (örneğin inbox, sentitems, archive). Varsayılan olarak inbox kullanılır.',
+      outlookUserIdsTip:
+        "Eşitlenecek posta kutularının virgülle ayrılmış UPN'leri veya nesne kimlikleri. Kiracıdaki her posta kutusunu eşitlemek için boş bırakın (User.Read.All gerektirir).",
+      salesforceDescription:
+        'Bir Salesforce kuruluşunu bağlayın ve CRM kayıtlarını (Hesaplar, Kişiler, Fırsatlar, Talepler, Bilgi makaleleri) SOQL üzerinden artımlı eşitlemeyle dizinleyin.',
+      salesforceInstanceUrlTip:
+        "Salesforce kuruluş URL'si, örneğin https://your-domain.my.salesforce.com (sonda eğik çizgi olmadan).",
+      salesforceClientIdTip:
+        "İstemci Kimlik Bilgileri Akışı etkin ve api kapsamına sahip bir Connected App'in Tüketici Anahtarı.",
+      salesforceClientSecretTip:
+        "İstemci kimlik bilgileri doğrulaması için kullanılan Connected App'in Tüketici Gizli Anahtarı.",
+      salesforceObjectsTip:
+        'Dizinlenecek, virgülle ayrılmış SObject API adları. Varsayılan olarak Account, Contact, Opportunity, Case, Knowledge__kav kullanılır.',
+      salesforceApiVersionTip:
+        'Salesforce REST API sürümü (örneğin v59.0). Kuruluşunuzun desteklediği sürümü kullanın.',
+      azure_blobDescription:
+        "Bir Azure Blob Storage konteynerindeki blob'ları bir bilgi tabanına dizinleyin. Hesap anahtarı, bağlantı dizesi ve SAS token kimlik doğrulamasını destekler. Değişmemiş blob'lar ETag parmak izi ile atlanır.",
+      azureBlobAuthModeTip:
+        'Kimlik doğrulama yöntemini seçin. Hesap Anahtarı ve Bağlantı Dizesi container_name gerektirir; SAS Token ise container_url + sas_token gerektirir.',
+      azureBlobAccountNameTip:
+        'Azure depolama hesabı adı (örneğin mystorageaccount). Hesap anahtarı kimlik doğrulaması için zorunludur.',
+      azureBlobAccountKeyTip:
+        'Depolama hesabı erişim anahtarı (Base64 kodlu). Hesap anahtarı kimlik doğrulaması için zorunludur.',
+      azureBlobConnectionStringTip:
+        'Tam Azure Storage bağlantı dizesi (DefaultEndpointsProtocol=https;AccountName=...;...). Bağlantı dizesi kimlik doğrulaması için zorunludur.',
+      azureBlobContainerUrlTip:
+        "Konteynerin tam HTTPS URL'si (örneğin https://account.blob.core.windows.net/container). SAS token kimlik doğrulaması için zorunludur.",
+      azureBlobSasTokenTip:
+        'SAS sorgu dizesi (baştaki "?" olmadan). SAS token kimlik doğrulaması için zorunludur.',
+      azureBlobContainerNameTip:
+        'Dizinlenecek konteynerin adı. Hesap anahtarı ve bağlantı dizesi kimlik doğrulaması için zorunludur.',
+      azureBlobPrefixTip:
+        'Dizinlemeyi sanal bir klasörle sınırlamak için isteğe bağlı blob adı ön eki (örneğin documents/reports/). Konteynerin tamamını dizinlemek için boş bırakın.',
+      restApiQueryParamsTip:
+        "URL sorgu parametresi olarak gönderilen anahtar=değer çiftleri (satır başına bir tane). Parametreleri URL'ye gömmek yerine bunu kullanın.",
+      restApiHeadersTip:
+        'Her istekle gönderilecek ek HTTP başlıklarını içeren isteğe bağlı JSON nesnesi.',
+      restApiItemsPathTip:
+        'Yanıttaki öğe dizisinin alan adı veya JSONPath\'i. Otomatik algılama için boş bırakın ("items", "results", "data" vb. denenir).',
+      restApiIdFieldTip:
+        'Kararlı bir belge kimliği oluşturmak için her öğe içinde kullanılan alan yolu. İçerik karmasından otomatik üretmek için boş bırakın.',
+      restApiContentFieldsTip:
+        'Belge içeriğinde birleştirilecek, virgülle ayrılmış öğe alanları listesi.',
+      restApiMetadataFieldsTip:
+        'Meta veri olarak saklanacak, virgülle ayrılmış öğe alanları listesi.',
+      restApiNextCursorPathTip:
+        'API yanıtındaki sonraki sayfa imlecine karşılık gelen JSONPath ifadesi.',
+      restApiPollTimestampFieldTip:
+        'Her öğede son güncellenme zamanını temsil eden ve artımlı eşitlemede kullanılan alan yolu.',
+      restApiRequestBodyTip:
+        'POST istekleri için gönderilecek isteğe bağlı JSON gövdesi. Sorgu parametreleri ve sayfalama ile birlikte kullanılır.',
+      restApiRequestDelayTip:
+        "Ardışık sayfa istekleri arasındaki saniye cinsinden gecikme. API'nin hız sınırlamasından kaçınmaya yardımcı olur. Devre dışı bırakmak için 0 yapın.",
+      restApiValidationApiKeyRequired:
+        'Kimlik Doğrulama Türü API Anahtarı (Başlık) olduğunda API Anahtarı zorunludur.',
+      restApiValidationApiKeyHeaderNameRequired:
+        'Kimlik Doğrulama Türü API Anahtarı (Başlık) olduğunda API Anahtarı başlık adı zorunludur.',
+      restApiValidationBearerTokenRequired:
+        'Kimlik Doğrulama Türü Bearer Token olduğunda Bearer token zorunludur.',
+      restApiValidationBasicUsernameRequired:
+        'Kimlik Doğrulama Türü Temel Kimlik Doğrulama olduğunda kullanıcı adı zorunludur.',
+      restApiValidationBasicPasswordRequired:
+        'Kimlik Doğrulama Türü Temel Kimlik Doğrulama olduğunda şifre zorunludur.',
       restApiTestConnection: 'Bağlantıyı test et',
       restApiTestSuccess: 'REST API bağlayıcısı başarıyla doğrulandı.',
-      restApiTestFailed: 'REST API bağlayıcısı doğrulaması başarısız oldu. Lütfen yapılandırmanızı ve günlükleri denetleyin.',
+      restApiTestFailed:
+        'REST API bağlayıcısı doğrulaması başarısız oldu. Lütfen yapılandırmanızı ve günlükleri denetleyin.',
       dataSourceTestConnection: 'Bağlantıyı test et',
       dataSourceTestSuccess: 'Veri kaynağı bağlantısı başarıyla doğrulandı.',
-      dataSourceTestFailed: 'Veri kaynağı bağlantısı doğrulaması başarısız oldu. Lütfen yapılandırmanızı ve günlükleri denetleyin.',
+      dataSourceTestFailed:
+        'Veri kaynağı bağlantısı doğrulaması başarısız oldu. Lütfen yapılandırmanızı ve günlükleri denetleyin.',
       availableSourcesDescription: 'Eklenecek veri kaynağını seçin',
       availableSources: 'Kullanılabilir kaynaklar',
       datasourceDescription: 'Veri kaynağınızı ve bağlantılarınızı yönetin',
       chatChannels: 'Sohbet kanalları',
-      chatChannelsDescription: 'Sohbet kanalı botlarınızı ve kimlik bilgilerinizi yönetin',
-      channelEmptyTip: 'Henüz sohbet kanalı eklenmedi. Bağlanmak için aşağıdan birini seçin.',
+      chatChannelsDescription:
+        'Sohbet kanalı botlarınızı ve kimlik bilgilerinizi yönetin',
+      channelEmptyTip:
+        'Henüz sohbet kanalı eklenmedi. Bağlanmak için aşağıdan birini seçin.',
       availableChannels: 'Kullanılabilir kanallar',
       availableChannelsDescription: 'Eklemek için bir sohbet kanalı seçin',
       addChannelModalTitle: '{{name}} botu ekle',
       editChannelModalTitle: '{{name}} botunu düzenle',
       deleteChannelModalTitle: 'Sohbet kanalını sil',
-      deleteChannelModalContent: 'Bu sohbet kanalı botunu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
+      deleteChannelModalContent:
+        'Bu sohbet kanalı botunu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
       connectDialog: 'Asistan bağla',
       connectDialogTitle: '{{name}} kanalını bir asistana bağla',
       selectDialog: 'Bir asistan seçin',
-      connectDialogTip: 'Bu kanala gelen mesajlar, bağlı asistan tarafından yanıtlanır. Bağlantıyı kesmek için seçimi temizleyin.',
+      connectDialogTip:
+        'Bu kanala gelen mesajlar, bağlı asistan tarafından yanıtlanır. Bağlantıyı kesmek için seçimi temizleyin.',
       notConnected: 'Bağlı asistan yok',
       chatChannelDesc: {
         clickclack: 'Bir ClickClack botu bağlayın',
@@ -1799,7 +1919,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       username: 'Ad',
       usernameMessage: 'Lütfen kullanıcı adınızı girin!',
       usernameMaxLength: 'Ad en fazla {{max}} karakter olmalıdır.',
-      usernameInvalidCharacters: 'Ad yalnızca harf, rakam, boşluk ve . _ \' - karakterlerini içerebilir',
+      usernameInvalidCharacters:
+        "Ad yalnızca harf, rakam, boşluk ve . _ ' - karakterlerini içerebilir",
       photo: 'Fotoğrafınız',
       photoDescription: 'Bu profilinizde görüntülenecek.',
       colorSchema: 'Renk şeması',
@@ -1852,17 +1973,19 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       siliconflowBaseUrlPlaceholder: 'https://api.siliconflow.cn/v1',
       groupId: 'Grup Kimliği',
       providerOrder: 'Sağlayıcı sırası',
-      paddleocrApiUrl: 'PaddleOCR API URL\'si',
-      paddleocrApiUrlMessage: 'Lütfen PaddleOCR API URL\'sini girin!',
-      paddleocrApiUrlPlaceholder: 'örn. https://paddleocr-server.com/layout-parsing',
-      paddleocrAccessToken: 'AI Studio Erişim Token\'ı',
-      paddleocrAccessTokenMessage: 'PaddleOCR API için erişim token\'ı (isteğe bağlı)',
-      paddleocrAccessTokenPlaceholder: 'AI Studio token\'ınız (isteğe bağlı)',
+      paddleocrApiUrl: "PaddleOCR API URL'si",
+      paddleocrApiUrlMessage: "Lütfen PaddleOCR API URL'sini girin!",
+      paddleocrApiUrlPlaceholder:
+        'örn. https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: "AI Studio Erişim Token'ı",
+      paddleocrAccessTokenMessage:
+        "PaddleOCR API için erişim token'ı (isteğe bağlı)",
+      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
       paddleocrAlgorithm: 'PaddleOCR Algoritması',
       paddleocrAlgorithmMessage: 'Lütfen bir PaddleOCR algoritması seçin',
       paddleocrSelectAlgorithm: 'Algoritma Seçin',
       mineruApiserver: 'MinerU API Sunucusu',
-      mineruApiserverMessage: 'Lütfen MinerU API Sunucusu URL\'sini girin!',
+      mineruApiserverMessage: "Lütfen MinerU API Sunucusu URL'sini girin!",
       mineruApiserverPlaceholder: 'örn. http://host.docker.internal:9987',
       mineruOutputDir: 'MinerU Çıktı Dizini',
       mineruOutputDirMessage: 'Lütfen MinerU çıktı dizinini girin!',
@@ -1870,14 +1993,16 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       mineruBackend: 'MinerU Arka Ucu',
       mineruBackendMessage: 'Lütfen bir MinerU arka ucu seçin!',
       mineruSelectBackend: 'İşleme arka ucunu seçin',
-      mineruServerUrl: 'MinerU Sunucu URL\'si',
-      mineruServerUrlMessage: 'Lütfen MinerU Sunucu URL\'sini girin!',
+      mineruServerUrl: "MinerU Sunucu URL'si",
+      mineruServerUrlMessage: "Lütfen MinerU Sunucu URL'sini girin!",
       mineruServerUrlPlaceholder: 'örn. http://your-vllm-server:30000',
       mineruDeleteOutput: 'Çıktı Dosyalarını Sil',
       mineruDeleteOutputMessage: 'Çıktı silme için geçersiz değer',
       opendataloaderApiserver: 'OpenDataLoader API Sunucusu',
-      opendataloaderApiserverMessage: 'Lütfen OpenDataLoader API Sunucusunu girin!',
-      opendataloaderApiserverPlaceholder: 'http://your-opendataloader-service:9383',
+      opendataloaderApiserverMessage:
+        'Lütfen OpenDataLoader API Sunucusunu girin!',
+      opendataloaderApiserverPlaceholder:
+        'http://your-opendataloader-service:9383',
       modify: 'Değiştir',
       systemModelSettings: 'Varsayılan modelleri ayarla',
       default: 'Varsayılan',
@@ -1911,7 +2036,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       editModel: 'Modeli düzenle',
       instanceName: 'Örnek adı',
       instanceNameMessage: 'Lütfen örnek adını girin!',
-      instanceNameTip: 'Aynı fabrika altındaki bu sağlayıcı örneğini tanımlayan benzersiz bir ad.',
+      instanceNameTip:
+        'Aynı fabrika altındaki bu sağlayıcı örneğini tanımlayan benzersiz bir ad.',
       instanceNamePlaceholder: 'Lütfen örnek adını girin',
       instanceNameExists: 'Örnek adı zaten mevcut',
       deleteInstance: 'Örneği sil',
@@ -1923,14 +2049,14 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       modelTypeMessage: 'Lütfen model türünüzü girin!',
       addLlmBaseUrl: 'Temel URL',
       baseUrlNameMessage: "Lütfen temel URL'nizi girin",
-      mwsApiUrl: 'API URL\'si',
-      mwsApiUrlMessage: 'Lütfen MWS proje API URL\'sini girin',
+      mwsApiUrl: "API URL'si",
+      mwsApiUrlMessage: "Lütfen MWS proje API URL'sini girin",
       mwsApiUrlPlaceholder: 'https://gpt.mwsapis.ru/projects/<project>',
       mwsToken: 'Token',
-      mwsTokenMessage: 'Lütfen MWS Token\'ını girin',
+      mwsTokenMessage: "Lütfen MWS Token'ını girin",
       mwsTokenPlaceholder: 'MWS hizmet hesabı API anahtarı',
       paddleocr: {
-        apiUrl: 'PaddleOCR API URL\'si',
+        apiUrl: "PaddleOCR API URL'si",
         apiUrlPlaceholder: 'Örnek: https://paddleocr-server.com/layout-parsing',
         accessToken: "AI Studio Erişim Token'ı",
         accessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
@@ -2015,7 +2141,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       FishAudioAKMessage: 'Lütfen API anahtarınızı girin',
       addFishAudioAKMessage: 'Lütfen API ANAHTARINIZI girin',
       addFishAudioRefID: 'FishAudio Referans Kimliği',
-      FishAudioRefIDMessage: 'Lütfen Referans Kimliğini girin (varsayılan modeli kullanmak için boş bırakın).',
+      FishAudioRefIDMessage:
+        'Lütfen Referans Kimliğini girin (varsayılan modeli kullanmak için boş bırakın).',
       addFishAudioRefIDMessage:
         'Lütfen Referans Kimliğini girin (varsayılan model kullanmak için boş bırakın).',
       GoogleModelIDMessage: 'Lütfen model kimliğinizi girin!',
@@ -2034,7 +2161,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       updateDate: 'Tarih',
       role: 'Durum',
       invite: 'Üye davet et',
-      inviteTip: 'Yalnızca kayıtlı kullanıcılar davet edilebilir. Lütfen davet göndermeden önce hesabı kaydedin.',
+      inviteTip:
+        'Yalnızca kayıtlı kullanıcılar davet edilebilir. Lütfen davet göndermeden önce hesabı kaydedin.',
       agree: 'Kabul et',
       refuse: 'Reddet',
       teamMembers: 'Takım üyeleri',
@@ -2080,10 +2208,12 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       somark: {
         modelNameMessage: 'Lütfen model adınızı girin',
         baseUrl: 'Temel URL',
-        baseUrlMessage: 'Lütfen Temel URL\'yi girin',
-        baseUrlPlaceholder: 'SoMark API için Çin anakarasında https://somark.cn/api/v1, Çin anakarası dışında (Tayvan, Çin; Hong Kong, Çin; Makao, Çin ve yurt dışı dahil) https://somark.ai/api/v1 kullanın. Kendi barındırdığınız dağıtım için yerel Temel URL\'nizi kullanın',
+        baseUrlMessage: "Lütfen Temel URL'yi girin",
+        baseUrlPlaceholder:
+          "SoMark API için Çin anakarasında https://somark.cn/api/v1, Çin anakarası dışında (Tayvan, Çin; Hong Kong, Çin; Makao, Çin ve yurt dışı dahil) https://somark.ai/api/v1 kullanın. Kendi barındırdığınız dağıtım için yerel Temel URL'nizi kullanın",
         apiKey: 'API Anahtarı',
-        apiKeyPlaceholder: 'SoMark API için zorunludur; kendi barındırdığınız dağıtımda boş bırakın',
+        apiKeyPlaceholder:
+          'SoMark API için zorunludur; kendi barındırdığınız dağıtımda boş bırakın',
         verifyPassed: 'Doğrulandı',
         verifyFailed: 'Doğrulama başarısız',
         sectionElementFormats: 'Öğe Biçimleri',
@@ -2128,8 +2258,10 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       listModelsSearchPlaceholder: 'Modellerde ara…',
       listModelsEmpty: 'Kullanılabilir model yok',
       listModelsLoading: 'Modeller yükleniyor…',
-      selectModelBeforeVerify: 'Lütfen doğrulamadan önce en az bir model seçin.',
-      selectModelBeforeSave: 'Lütfen kaydetmeden önce en az bir model keşfedip seçin.',
+      selectModelBeforeVerify:
+        'Lütfen doğrulamadan önce en az bir model seçin.',
+      selectModelBeforeSave:
+        'Lütfen kaydetmeden önce en az bir model keşfedip seçin.',
       addCustomModel: 'Özel model ekle',
       addCustomModelTitle: 'Özel model ekle',
       batchAddModels: 'Tüm modelleri ekle',
@@ -2150,7 +2282,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       addTemplateGroup: 'Şablon ekle',
       editTemplateGroup: 'Şablonu düzenle',
       deleteTemplateGroupTitle: 'Şablon grubunu sil',
-      deleteTemplateGroupDescription: 'Bu şablon grubunu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
+      deleteTemplateGroupDescription:
+        'Bu şablon grubunu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
       templateNameRequired: 'Lütfen şablon adını girin',
       templateKindRequired: 'Lütfen bir tür seçin',
       builtinTemplates: 'Şablon',
@@ -2177,25 +2310,31 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       entityMode: 'Varlık modu',
       topicMode: 'Konu modu',
       wikiModeRequired: 'Lütfen bir Wiki modu seçin',
-      wikiModeTip: 'Varlık modu: her varlık veya kavram için bir Wiki sayfası. Konu modu: LLM, ilişkili varlıkları veya kavramları konuya göre aynı Wiki sayfasında gruplasın.',
+      wikiModeTip:
+        'Varlık modu: her varlık veya kavram için bir Wiki sayfası. Konu modu: LLM, ilişkili varlıkları veya kavramları konuya göre aynı Wiki sayfasında gruplasın.',
       raptorTreeSettings: 'RAPTOR ağaç ayarları',
       summarizationPrompt: 'Özetleme istemi',
       maxToken: 'Maksimum token',
       maxTokenRequired: 'Lütfen maksimum token değerini girin',
       clusteringThreshold: 'Kümeleme eşiği',
-      clusteringThresholdTip: 'Kümeleri komşu parça benzerliğine göre bölmek için kullanılan yüzdelik dilimi belirler. Yüksek değerler daha fazla küme sınırı oluşturur.',
+      clusteringThresholdTip:
+        'Kümeleri komşu parça benzerliğine göre bölmek için kullanılan yüzdelik dilimi belirler. Yüksek değerler daha fazla küme sınırı oluşturur.',
       clusteringRatio: 'Kümeleme oranı',
-      clusteringRatioTip: 'Maksimum küme sayısını, girdi parçalarının bir oranı olarak belirler. Düşük değerler daha az küme üretir.',
+      clusteringRatioTip:
+        'Maksimum küme sayısını, girdi parçalarının bir oranı olarak belirler. Düşük değerler daha az küme üretir.',
       rechunkByTreeLeaves: 'Ağaç yapraklarına göre yeniden parçala',
-      rechunkByTreeLeavesTip: 'Her yaprak kümesinin kaynak parçalarını tek bir yerine geçen parçada birleştirir. Özgün parçalar korunur ancak alım için kullanılamaz olarak işaretlenir. Grup başına yalnızca bir ağaç şablonu bunu etkinleştirebilir.',
+      rechunkByTreeLeavesTip:
+        'Her yaprak kümesinin kaynak parçalarını tek bir yerine geçen parçada birleştirir. Özgün parçalar korunur ancak alım için kullanılamaz olarak işaretlenir. Grup başına yalnızca bir ağaç şablonu bunu etkinleştirebilir.',
       rechunkInput: 'Ayrıştırıcı çıktısını yeniden parçala',
-      rechunkInputTip: 'Parça sınırlarını, bilgi derleme görevine göre LLM belirlesin.',
+      rechunkInputTip:
+        'Parça sınırlarını, bilgi derleme görevine göre LLM belirlesin.',
       rechunkRules: 'Yeniden parçalama kuralları',
-      rechunkRulesPlaceholder: 'LLM\'nin bu derleme görevi için kaynak parçaları nasıl gruplaması gerektiğini açıklayın.',
+      rechunkRulesPlaceholder:
+        "LLM'nin bu derleme görevi için kaynak parçaları nasıl gruplaması gerektiğini açıklayın.",
       jsonPreview: 'JSON önizlemesi',
       processFlow: 'İşlem akışı',
       processFlowComingSoon: 'İşlem akışı önizlemesi yakında',
-      compilationTitleSuffix: ' dataset\'i',
+      compilationTitleSuffix: " dataset'i",
       llmWiki: 'Wiki',
       skills: 'Becerilere',
       navTree: 'Ağaç/Sayfa dizini',
@@ -2212,13 +2351,16 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       selectArtifact: 'Ayrıntıları görmek için içindekilerden bir öğe seçin',
       searchEntity: 'Varlık ara',
       sourceDocuments: 'Kaynak belgeler',
-      clearWikiTitle: 'Wiki\'yi temizle',
-      clearWikiDescription: 'Bu dataset içindeki tüm wiki sayfalarını temizlemek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
+      clearWikiTitle: "Wiki'yi temizle",
+      clearWikiDescription:
+        'Bu dataset içindeki tüm wiki sayfalarını temizlemek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
       update: 'Güncelle',
-      updateTooltip: '{{newlyUploaded}} yeni, {{removed}} kaldırılmış, {{changed}} değişmiş belge bulundu. Derleyip geçerli Wiki ile birleştirmek için tıklayın.',
-      updateSheetTitle: 'Wiki\'yi Güncelle',
+      updateTooltip:
+        '{{newlyUploaded}} yeni, {{removed}} kaldırılmış, {{changed}} değişmiş belge bulundu. Derleyip geçerli Wiki ile birleştirmek için tıklayın.',
+      updateSheetTitle: "Wiki'yi Güncelle",
       updateStructureSheetTitle: '{{name}} güncelle',
-      updateStructureTooltip: '{{newlyUploaded}} yeni, {{removed}} kaldırılmış belge bulundu. {{name}} güncellemek için tıklayın.',
+      updateStructureTooltip:
+        '{{newlyUploaded}} yeni, {{removed}} kaldırılmış belge bulundu. {{name}} güncellemek için tıklayın.',
       generate: 'Oluştur',
       compiling: 'Derleniyor…',
       compilingCounts: '{{inflight}} işleniyor / {{backlog}} kuyrukta',
@@ -2229,7 +2371,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       versionDiff: 'Bu sürümde neler değişti',
       noDiffAvailable: 'Gösterilecek değişiklik yok',
       commit: 'Commit',
-      confirmCommit: 'Commit\'i onayla',
+      confirmCommit: "Commit'i onayla",
       versionContent: 'Sürüm içeriği',
       versionContentPlaceholder: 'Sürüm içeriğini girin',
       versionContentRequired: 'Lütfen sürüm içeriğini girin',
@@ -2237,11 +2379,13 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       log: 'Günlük',
       createDirectoryFolder: 'Dizin oluştur',
       directoryRule: 'Kural',
-      deleteStructureConfirm: '{{name}} öğesini silmek istediğinizden emin misiniz?',
+      deleteStructureConfirm:
+        '{{name}} öğesini silmek istediğinizden emin misiniz?',
       skillFolders: 'Beceriler',
       skillEmpty: 'Kullanılabilir beceri yok',
       skillDeleteAllTitle: 'Tüm becerileri sil',
-      skillDeleteAllDescription: 'Tüm becerileri silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
+      skillDeleteAllDescription:
+        'Tüm becerileri silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
       skillDeleteTitle: 'Beceriyi sil',
       skillDeleteDescription: 'Bu beceriyi silmek istediğinizden emin misiniz?',
       navTitle: 'Gezinme ağacı',
@@ -2256,9 +2400,11 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       navGraphContent: 'Tam Grafik İçeriği',
       navDocCount: '{{count}} belge',
       navDeleteAllTitle: 'Gezinme ağacını sil',
-      navDeleteAllDescription: 'Gezinme ağacının tamamını silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
+      navDeleteAllDescription:
+        'Gezinme ağacının tamamını silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
       navDeleteNodeTitle: 'Düğümü sil',
-      navDeleteNodeDescription: 'Bu düğümü ve alt düğümlerini silmek istediğinizden emin misiniz?',
+      navDeleteNodeDescription:
+        'Bu düğümü ve alt düğümlerini silmek istediğinizden emin misiniz?',
       representationEmpty: 'Kullanılabilir artifact şablonu yok.',
       representationUnsupported: 'Bu gösterim türü henüz desteklenmiyor.',
     },
@@ -2274,8 +2420,10 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       noLangfuseConfigToDelete: 'Silinecek Langfuse yapılandırması yok',
       renamed: 'Yeniden adlandırıldı',
       operated: 'İşlendi',
-      compileAutoGenerated: 'Derleme, belgeler ayrıştırıldığında otomatik olarak çalışır; el ile tetiklemeye gerek yoktur.',
-      compileNotSupported: 'Burada el ile derleme desteklenmiyor; belgeler ayrıştırıldığında otomatik olarak çalışır.',
+      compileAutoGenerated:
+        'Derleme, belgeler ayrıştırıldığında otomatik olarak çalışır; el ile tetiklemeye gerek yoktur.',
+      compileNotSupported:
+        'Burada el ile derleme desteklenmiyor; belgeler ayrıştırıldığında otomatik olarak çalışır.',
       updated: 'Güncellendi',
       uploaded: 'Yüklendi',
       200: 'Sunucu istenen verileri başarıyla döndürdü.',
@@ -2378,7 +2526,8 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       beginInput: 'Başlangıç girişi',
       ref: 'Değişken',
       stockCode: 'Hisse kodu',
-      apiKeyPlaceholder: 'API_ANAHTARINIZ (https://serpapi.com/manage-api-key adresinden alınır)',
+      apiKeyPlaceholder:
+        'API_ANAHTARINIZ (https://serpapi.com/manage-api-key adresinden alınır)',
       flowStart: 'Başla',
       flowNum: 'N',
       test: 'Test',
@@ -2399,24 +2548,32 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       queritCount: 'Sonuç sayısı',
       queritCountTip: 'Döndürülecek maksimum arama sonucu sayısını belirleyin.',
       queritChunksPerDoc: 'Belge başına parça',
-      queritChunksPerDocTip: 'Her sonuç için döndürülen ilgili metin parçası sayısını 1 ile 3 arasında belirleyin.',
+      queritChunksPerDocTip:
+        'Her sonuç için döndürülen ilgili metin parçası sayısını 1 ile 3 arasında belirleyin.',
       queritSiteInclude: 'Dahil edilecek siteler',
-      queritSiteIncludeTip: 'Yalnızca belirtilen alan adlarından veya web sitelerinden sonuç döndürür.',
+      queritSiteIncludeTip:
+        'Yalnızca belirtilen alan adlarından veya web sitelerinden sonuç döndürür.',
       queritSiteExclude: 'Hariç tutulacak siteler',
-      queritSiteExcludeTip: 'Belirtilen alan adlarından veya web sitelerinden gelen sonuçları hariç tutar.',
+      queritSiteExcludeTip:
+        'Belirtilen alan adlarından veya web sitelerinden gelen sonuçları hariç tutar.',
       queritTimeRange: 'Zaman aralığı',
-      queritTimeRangeTip: 'd7, w2, m1 veya y1 gibi göreli bir aralık ya da 2026-01-01to2026-01-31 gibi mutlak bir aralık kullanın.',
+      queritTimeRangeTip:
+        'd7, w2, m1 veya y1 gibi göreli bir aralık ya da 2026-01-01to2026-01-31 gibi mutlak bir aralık kullanın.',
       queritCountryInclude: 'Dahil edilecek ülkeler',
-      queritCountryIncludeTip: 'Belirtilen ülkelerle ilişkili sonuçları döndürür.',
+      queritCountryIncludeTip:
+        'Belirtilen ülkelerle ilişkili sonuçları döndürür.',
       queritLanguageInclude: 'Dahil edilecek diller',
       queritLanguageIncludeTip: 'Belirtilen dillerdeki sonuçları döndürür.',
       queritListPlaceholder: 'Bir değer girin',
-      queritContentsUrls: 'URL\'ler',
-      queritContentsUrlsTip: 'Virgülle ayrılmış, bir ile on arasında mutlak HTTP veya HTTPS URL\'si girin.',
+      queritContentsUrls: "URL'ler",
+      queritContentsUrlsTip:
+        "Virgülle ayrılmış, bir ile on arasında mutlak HTTP veya HTTPS URL'si girin.",
       queritContentsTimeout: 'Tarama zaman aşımı',
-      queritContentsTimeoutTip: 'Sayfa başına tarama zaman aşımını 1 ile 60 saniye arasında belirleyin.',
+      queritContentsTimeoutTip:
+        'Sayfa başına tarama zaman aşımını 1 ile 60 saniye arasında belirleyin.',
       queritContentsMetadata: 'Sayfa meta verisini dahil et',
-      queritContentsMetadataTip: 'Varsa sayfa başlığını, yayın zamanını, site adını ve site simgesini döndürür.',
+      queritContentsMetadataTip:
+        'Varsa sayfa başlığını, yayın zamanını, site adını ve site simgesini döndürür.',
       Days: 'Günler',
       comma: 'Virgül',
       semicolon: 'Noktalı virgül',
@@ -2451,17 +2608,22 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       delayAfterError: 'Hatadan sonra gecikme',
       maxRetries: 'Maksimum yeniden deneme turu',
       toolTimeout: 'Araç zaman aşımı',
-      toolTimeoutTip: 'Tek bir araç çağrısı (MCP araçları dahil) için saniye cinsinden zaman aşımı. Uzun süren araçlar için artırın.',
+      toolTimeoutTip:
+        'Tek bir araç çağrısı (MCP araçları dahil) için saniye cinsinden zaman aşımı. Uzun süren araçlar için artırın.',
       maxSteps: 'Maksimum adım',
       headless: 'Başsız',
       enableDefaultExtensions: 'Varsayılan uzantıları etkinleştir',
-      enableDefaultExtensionsTip: 'browser-use varsayılan uzantılarını (uBlock, çerez işleme, ClearURLs) etkinleştirir. Çalışma anında uzantı indirmelerinden kaçınmak için devre dışı bırakın.',
+      enableDefaultExtensionsTip:
+        'browser-use varsayılan uzantılarını (uBlock, çerez işleme, ClearURLs) etkinleştirir. Çalışma anında uzantı indirmelerinden kaçınmak için devre dışı bırakın.',
       chromiumSandbox: 'Chromium korumalı alanı',
-      chromiumSandboxTip: 'Chromium korumalı alanının etkinleştirilip etkinleştirilmeyeceği. Docker root ortamlarında genellikle devre dışı bırakılır; normal ana bilgisayarlarda etkinleştirilmesi önerilir.',
+      chromiumSandboxTip:
+        'Chromium korumalı alanının etkinleştirilip etkinleştirilmeyeceği. Docker root ortamlarında genellikle devre dışı bırakılır; normal ana bilgisayarlarda etkinleştirilmesi önerilir.',
       persistSession: 'Oturumu koru',
-      persistSessionTip: 'Etkinleştirildiğinde bu Tarayıcı düğümü, yinelenen oturum açmalardan kaçınmak için tarayıcı oturumunu yeniden kullanır.',
+      persistSessionTip:
+        'Etkinleştirildiğinde bu Tarayıcı düğümü, yinelenen oturum açmalardan kaçınmak için tarayıcı oturumunu yeniden kullanır.',
       uploadSources: 'Kaynakları yükle',
-      uploadSourcesTip: 'Dosya kimliklerini, dosya URL\'lerini veya değişkenleri destekler. Birden fazla değeri virgülle ayırabilir ya da JSON dizisi biçimi kullanabilirsiniz (örneğin ["id1","https://example.com/a.pdf"]).',
+      uploadSourcesTip:
+        'Dosya kimliklerini, dosya URL\'lerini veya değişkenleri destekler. Birden fazla değeri virgülle ayırabilir ya da JSON dizisi biçimi kullanabilirsiniz (örneğin ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Gelişmiş ayarlar',
       addTools: 'Araç ekle',
       sysPromptDefaultValue: `
@@ -2562,12 +2724,15 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       searXNGDescription:
         "Sağlanan SearXNG örnek URL'si üzerinden arama yapan bir bileşen.",
       keenableSearch: 'Keenable',
-      keenableSearchDescription: 'Yapay zekâ ajanları için geliştirilmiş bir arama API\'si olan Keenable ile çalışan bir web arama bileşeni. Varsayılan olarak API Anahtarı olmadan çalışır (anahtarsız ücretsiz katman); hız sınırlarını kaldırmak için bir anahtar ekleyin.',
+      keenableSearchDescription:
+        "Yapay zekâ ajanları için geliştirilmiş bir arama API'si olan Keenable ile çalışan bir web arama bileşeni. Varsayılan olarak API Anahtarı olmadan çalışır (anahtarsız ücretsiz katman); hız sınırlarını kaldırmak için bir anahtar ekleyin.",
       keenableMode: 'Arama modu',
       keenableSite: 'Site',
-      keenableApiKeyTip: 'İsteğe bağlı. Anahtarsız ücretsiz katmanı kullanmak için boş bırakın.',
+      keenableApiKeyTip:
+        'İsteğe bağlı. Anahtarsız ücretsiz katmanı kullanmak için boş bırakın.',
       youComSearch: 'You.com',
-      youComSearchDescription: 'You.com\'un kendi dizini ile çalışan bir web arama bileşeni. Her sonuç, tek bir alıntı yerine sayfadan çıkarılmış pasajlar taşır. Varsayılan olarak API Anahtarı olmadan çalışır (anahtarsız ücretsiz katman); hız sınırlarını kaldırmak için bir anahtar ekleyin.',
+      youComSearchDescription:
+        "You.com'un kendi dizini ile çalışan bir web arama bileşeni. Her sonuç, tek bir alıntı yerine sayfadan çıkarılmış pasajlar taşır. Varsayılan olarak API Anahtarı olmadan çalışır (anahtarsız ücretsiz katman); hız sınırlarını kaldırmak için bir anahtar ekleyin.",
       youComFreshness: 'Güncellik',
       youComFreshnessTip: 'Sonuçları yayınlanma tarihlerine göre sınırlar.',
       youComFreshnessAny: 'Herhangi bir zaman',
@@ -2575,11 +2740,13 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       youComFreshnessWeek: 'Son hafta',
       youComFreshnessMonth: 'Son ay',
       youComFreshnessYear: 'Son yıl',
-      youComApiKeyTip: 'İsteğe bağlı. Anahtarsız ücretsiz katmanı kullanmak için boş bırakın.',
+      youComApiKeyTip:
+        'İsteğe bağlı. Anahtarsız ücretsiz katmanı kullanmak için boş bırakın.',
       docGenerator: 'Belge Oluşturucu',
       docGeneratorDescription: `Markdown içeriğinden bir dosya oluşturur.`,
       browser: 'Tarayıcı',
-      browserDescription: 'Tarayıcı görevlerini otomatikleştirir. Model yapılandırmasını ve istem güdümlü eylemleri destekler. Yüklenen kaynaklar dosya kimliklerini ve URL\'leri destekler, indirilen dosyalar bir hedef klasöre kaydedilebilir.',
+      browserDescription:
+        "Tarayıcı görevlerini otomatikleştirir. Model yapılandırmasını ve istem güdümlü eylemleri destekler. Yüklenen kaynaklar dosya kimliklerini ve URL'leri destekler, indirilen dosyalar bir hedef klasöre kaydedilebilir.",
       subtitle: 'Alt başlık',
       logoImage: 'Logo Görüntüsü',
       logoPosition: 'Logo Konumu',
@@ -2609,11 +2776,14 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       pubMedDescription:
         'https://pubmed.ncbi.nlm.nih.gov/ adresinden arama yapan bir bileşen.',
       bGPT: 'BGPT',
-      bGPTDescription: 'BGPT üzerinden bilimsel makaleleri arar ve tam metin çalışmalardan yapılandırılmış kanıt döndürür: yöntemler, örneklem büyüklükleri, kısıtlar, çıkar çatışmaları, veri erişilebilirliği, kör noktalar ve yanlışlama istemleri. Ücretsiz katmandan sonra isteğe bağlı API Anahtarı.',
+      bGPTDescription:
+        'BGPT üzerinden bilimsel makaleleri arar ve tam metin çalışmalardan yapılandırılmış kanıt döndürür: yöntemler, örneklem büyüklükleri, kısıtlar, çıkar çatışmaları, veri erişilebilirliği, kör noktalar ve yanlışlama istemleri. Ücretsiz katmandan sonra isteğe bağlı API Anahtarı.',
       bgptApiKey: 'API Anahtarı',
-      bgptApiKeyTip: 'İsteğe bağlı. Ücretsiz katman (ilk 50 sonuç) için boş bırakın.',
+      bgptApiKeyTip:
+        'İsteğe bağlı. Ücretsiz katman (ilk 50 sonuç) için boş bırakın.',
       bgptDaysBack: 'Geriye dönük gün',
-      bgptDaysBackTip: 'İsteğe bağlı güncellik filtresi (örneğin son bir yıl için 365).',
+      bgptDaysBackTip:
+        'İsteğe bağlı güncellik filtresi (örneğin son bir yıl için 365).',
       email: 'E-posta',
       emailTip: 'E-posta zorunlu bir alandır.',
       arXiv: 'ArXiv',
@@ -2926,7 +3096,8 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       optional: 'İsteğe bağlı',
       pasteFileLink: 'Dosya bağlantısını yapıştır',
       testRun: 'Test çalıştırması',
-      debugRunLimits: 'Hata ayıklama çalıştırması, akışın hatasız yürüdüğünü doğrular: PDF yalnızca ilk 2 sayfayı ayrıştırır (diğer biçimlerde tüm sayfalar ayrıştırılır); bir parçalayıcı düğüm varsa yalnızca ilk 3 parça önizlenir; bir bilgi derleyici düğümü varsa yalnızca yerel olarak çalışır, dataset yeniden oluşturma veya bildirim tetiklemez.',
+      debugRunLimits:
+        'Hata ayıklama çalıştırması, akışın hatasız yürüdüğünü doğrular: PDF yalnızca ilk 2 sayfayı ayrıştırır (diğer biçimlerde tüm sayfalar ayrıştırılır); bir parçalayıcı düğüm varsa yalnızca ilk 3 parça önizlenir; bir bilgi derleyici düğümü varsa yalnızca yerel olarak çalışır, dataset yeniden oluşturma veya bildirim tetiklemez.',
       template: 'Şablon',
       templateDescription:
         'Diğer bileşenlerin çıktısını biçimlendiren bir bileşen. 1. Jinja2 şablonlarını destekler; girdiyi önce bir nesneye dönüştürür, ardından şablonu işler. 2. Aynı zamanda {parameter} dize değiştirme yönteminin özgün kullanımını da korur',
@@ -3076,9 +3247,11 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       tavilySearch: 'Tavily araması',
       tavilySearchDescription: 'Tavily servisi üzerinden arama sonuçları.',
       queritSearch: 'Querit arama',
-      queritSearchDescription: 'Querit ile web\'de arama yapar ve ajanlar için kaynağa dayalı sonuçlar döndürür.',
+      queritSearchDescription:
+        "Querit ile web'de arama yapar ve ajanlar için kaynağa dayalı sonuçlar döndürür.",
       queritContents: 'Querit içerikleri',
-      queritContentsDescription: 'Querit ile web sayfalarını tarar ve içeriklerini döndürür.',
+      queritContentsDescription:
+        'Querit ile web sayfalarını tarar ve içeriklerini döndürür.',
       tavilyExtract: 'Tavily çıkarma',
       tavilyExtractDescription: 'Tavily Çıkarma',
       log: 'Günlük',
@@ -3110,7 +3283,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         code: 'Hızlı komut dosyası çalıştırılıyor',
         textProcessing: 'Metin düzenleniyor',
         tavilySearch: 'Web aranıyor',
-        queritSearch: 'Querit ile web\'de aranıyor',
+        queritSearch: "Querit ile web'de aranıyor",
         queritContents: 'Querit ile web sayfaları okunuyor',
         tavilyExtract: 'Sayfa okunuyor',
         exeSQL: 'Veritabanı sorgulanıyor',
@@ -3155,7 +3328,14 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         'Aşağı akış işleme için dosyalardan ham metin ve yapı çıkarır.',
       tokenizer: 'İndeksleyici',
       tokenizerRequired: 'Lütfen önce İndeksleyici düğümü ekleyin',
-      nodeFormInvalid: 'Kaydedilemiyor: "{{name}}" geçersiz ayarlar içeriyor. Lütfen önce bunları düzeltin',
+      nodeFormInvalid:
+        'Kaydedilemiyor: "{{name}}" geçersiz ayarlar içeriyor. Lütfen önce bunları düzeltin',
+      retrievalDatasetRequired: 'Lütfen en az bir veri kümesi seçin',
+      retrievalDatasetMissing:
+        'Kaydedilemiyor: "{{name}}" için veri kümesi seçilmedi. Lütfen önce bir tane seçin',
+      retrievalMemoryRequired: 'Lütfen en az bir bellek seçin',
+      retrievalMemoryMissing:
+        'Kaydedilemiyor: "{{name}}" için bellek seçilmedi. Lütfen önce bir tane seçin',
       tokenizerDescription:
         'Metni seçilen arama yöntemine bağlı olarak gerekli veri yapısına dönüştürür.',
       tokenChunker: 'Token Parçalayıcı',
@@ -3168,7 +3348,8 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       extractorDescription:
         'Belge parçalarından yapılandırılmış içgörüler çıkarmak için LLM kullanır.',
       compiler: 'Derleyici',
-      compilerDescription: 'Belge parçalarını, bilgi derleme şablonlarını kullanarak yapılandırılmış artifact\'lere derler.',
+      compilerDescription:
+        "Belge parçalarını, bilgi derleme şablonlarını kullanarak yapılandırılmış artifact'lere derler.",
       outputFormat: 'Çıktı formatı',
       fileFormats: 'Dosya türü',
       fileFormatOptions: {
@@ -3329,7 +3510,8 @@ Temel Talimatlar:
         authMethods: 'Kimlik doğrulama yöntemleri',
         authType: 'Kimlik doğrulama türü',
         allowAnonymous: 'Anonim erişime izin ver',
-        allowAnonymousTip: 'Bu etkinleştirildiğinde, bu webhook URL\'sine sahip herkes ajanı tetikleyebilir.',
+        allowAnonymousTip:
+          "Bu etkinleştirildiğinde, bu webhook URL'sine sahip herkes ajanı tetikleyebilir.",
         limit: 'İstek sıklık sınırı',
         per: 'Zaman dilimi',
         maxBodySize: 'Maksimum gövde boyutu',
@@ -3376,8 +3558,9 @@ Temel Talimatlar:
       tags: 'Etiketler',
       canvasCategory: 'Kanvas kategorisi',
       editTags: 'Etiketleri düzenle',
-      editTagsDescription: 'Ajanlarınızı düzenlemek ve filtrelemek için etiket ekleyin. Eklemek için Enter\'a veya virgüle basın.',
-      tagsPlaceholder: 'Bir etiket ekleyip Enter\'a basın',
+      editTagsDescription:
+        "Ajanlarınızı düzenlemek ve filtrelemek için etiket ekleyin. Eklemek için Enter'a veya virgüle basın.",
+      tagsPlaceholder: "Bir etiket ekleyip Enter'a basın",
       tagSuggestionsLabel: 'Mevcut etiketler',
       removeTagAriaLabel: '{{tag}} etiketini kaldır',
     },

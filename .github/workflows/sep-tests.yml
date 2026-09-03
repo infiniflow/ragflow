@@ -396,6 +396,17 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
+      - name: Run ORT deps-download regression guard
+        if: env.API_PROXY_SCHEME == 'go'
+        # Pure-Python, local, needs no API keys or model downloads; guards the
+        # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
+        # depends on (notably the version-bump path C2 hardened). Run it in
+        # isolation so the test/testcases conftest (which requires
+        # SILICONFLOW_API_KEY) cannot fail the collection.
+        run: |
+          set -euo pipefail
+          uv sync --python 3.13 --group test --frozen
+          uv run pytest ragflow_deps/test_download_go_deps.py -q
 
       - name: Build ragflow:nightly
         run: |
@@ -1016,6 +1027,17 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
+      - name: Run ORT deps-download regression guard
+        if: env.API_PROXY_SCHEME == 'go'
+        # Pure-Python, local, needs no API keys or model downloads; guards the
+        # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
+        # depends on (notably the version-bump path C2 hardened). Run it in
+        # isolation so the test/testcases conftest (which requires
+        # SILICONFLOW_API_KEY) cannot fail the collection.
+        run: |
+          set -euo pipefail
+          uv sync --python 3.13 --group test --frozen
+          uv run pytest ragflow_deps/test_download_go_deps.py -q
 
       - name: Build ragflow:nightly
         run: |
@@ -1558,7 +1580,7 @@ jobs:
 
       - name: Cache external DeepDoc testdata
         # The native backend tests fetch pinned test assets from
-        # xugangqiang/ragflow-testdata (see scripts/fetch_deepdoc_testdata.sh).
+        # infiniflow/ragflow-testdata (see scripts/fetch_deepdoc_testdata.sh).
         # Cache them across runs, keyed by the pinned ref recorded in
         # internal/deepdoc/native/testdata.ref so a ref bump invalidates the cache.
         uses: actions/cache@v4

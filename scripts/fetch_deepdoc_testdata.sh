@@ -6,15 +6,15 @@
 #          (mirrors internal/deepdoc/<pkg>/testdata).
 #
 # The data lives in an external asset repository
-# (RAGFLOW_TESTDATA_REPO, default xugangqiang/ragflow-testdata — the fork used
-# until the data is merged into infiniflow/ragflow-testdata; see
-# deepdoc_native_testdata_handoff.md S8) and is pinned by a tag recorded in
+# (RAGFLOW_TESTDATA_REPO, default infiniflow/ragflow-testdata — the canonical
+# org-owned asset repository. The data was migrated out of the xugangqiang fork
+# (see deepdoc_native_testdata_handoff.md S8) and is pinned by a tag recorded in
 # internal/deepdoc/<pkg>/testdata.ref. We sparse-clone only the relevant
 # subtree into a content-addressed cache and symlink it into the package so
 # existing tests (which read relative testdata/... paths) need no changes.
 #
 # Env:
-#   RAGFLOW_TESTDATA_REPO  repo "owner/name" (default xugangqiang/ragflow-testdata)
+#   RAGFLOW_TESTDATA_REPO  repo "owner/name" (default infiniflow/ragflow-testdata)
 #   RAGFLOW_TESTDATA_REF   override the anchor tag/ref (else read testdata.ref)
 #   XDG_CACHE_HOME         cache base (default ~/.cache)
 #
@@ -50,7 +50,7 @@ if [ -z "$REF" ]; then
   exit 1
 fi
 
-REPO="${RAGFLOW_TESTDATA_REPO:-xugangqiang/ragflow-testdata}"
+REPO="${RAGFLOW_TESTDATA_REPO:-infiniflow/ragflow-testdata}"
 CACHE_BASE="${XDG_CACHE_HOME:-$HOME/.cache}/ragflow-testdata"
 CACHE="$CACHE_BASE/$REF"
 SRC="$CACHE/deepdoc/$PKG/testdata"
@@ -79,11 +79,29 @@ rm -f "$TARGET" 2>/dev/null || true
 
 if [ ! -e "$SRC" ] || [ -z "$(ls -A "$SRC" 2>/dev/null)" ]; then
   echo "fetch_deepdoc_testdata: cloning $REPO @ $REF (subtree deepdoc/$PKG/testdata)"
-  rm -rf "$CACHE"
   mkdir -p "$CACHE_BASE"
-  git clone --depth 1 --filter=blob:none --branch "$REF" --sparse \
-    "https://github.com/$REPO.git" "$CACHE" >&2
-  git -C "$CACHE" sparse-checkout set "deepdoc/$PKG/testdata" >&2
+  # Network clones are best-effort and occasionally fail with a transient TLS
+  # reset (seen on the self-hosted runner). Retry a few times before giving up
+  # so a CI blip does not redden the run.
+  attempt=0
+  max_attempts=3
+  fetched=0
+  until [ "$attempt" -ge "$max_attempts" ]; do
+    attempt=$((attempt + 1))
+    rm -rf "$CACHE"
+    if git clone --depth 1 --filter=blob:none --branch "$REF" --sparse \
+         "https://github.com/$REPO.git" "$CACHE" >&2 && \
+       git -C "$CACHE" sparse-checkout set "deepdoc/$PKG/testdata" >&2; then
+      fetched=1
+      break
+    fi
+    echo "fetch_deepdoc_testdata: clone attempt $attempt/$max_attempts failed, retrying in 3s" >&2
+    sleep 3
+  done
+  if [ "$fetched" -ne 1 ]; then
+    echo "fetch_deepdoc_testdata: clone failed after $max_attempts attempts" >&2
+    exit 1
+  fi
 fi
 
 if [ ! -e "$SRC" ] || [ -z "$(ls -A "$SRC" 2>/dev/null)" ]; then

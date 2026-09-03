@@ -243,6 +243,22 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 		"downloads": downloads,
 	}
 
+	// File export (the "Download file type" selector). Python's
+	// _convert_content receives the resolved, un-rendered content and
+	// converts it via pypandoc/pandas; each format writer owns its own
+	// markdown handling. Exporting the format-rendered string instead
+	// would double-process the body (html export would ship the escaped
+	// text as literal content). Failures are logged, never fatal —
+	// mirroring Python's try/except around the conversion.
+	if exportFmt := messageExportFormat(string(format)); exportFmt != "" && resolved != "" {
+		attachment, exportErr := exportMessageAttachment(ctx, exportFmt, resolved)
+		if exportErr != nil {
+			common.Error("Message: export attachment failed", exportErr)
+		} else if attachment != nil {
+			out["attachment"] = attachment
+		}
+	}
+
 	// auto_play TTS dispatch. The audio bytes are returned under
 	// outputs["audio"] as a structured envelope; the SSE layer
 	// can choose to forward them on a separate event channel.
@@ -561,7 +577,7 @@ func (m *MessageComponent) Inputs() map[string]string {
 		"stream":        "When true, the resolved content is delivered as an SSE stream.",
 		"memory_save":   "When true, persist the message via the registered MemorySaver (default stub returns ErrMemoryServiceMissing).",
 		"memory_ids":    "List of memory-store IDs to persist into (used when memory_save=true).",
-		"output_format": "'html' | 'markdown' | 'plain'. Default 'plain' when unset.",
+		"output_format": "'html' | 'markdown' | 'plain' rendering; file formats (markdown/md, html, docx, xlsx, pdf) additionally export the content as a downloadable attachment.",
 		"auto_play":     "When truthy, dispatch the resolved text through the audio.Synthesizer.",
 		"voice":         "TTS voice hint (engine-specific).",
 		"lang":          "TTS language tag (BCP-47, e.g. 'en' or 'zh-CN').",
@@ -573,6 +589,7 @@ func (m *MessageComponent) Outputs() map[string]string {
 	return map[string]string{
 		"content":      "Resolved and rendered message body.",
 		"downloads":    "Extracted download descriptors ({doc_id, filename, mime_type, url}).",
+		"attachment":   "{doc_id, format, file_name} descriptor for the exported file when output_format selects a file format.",
 		"audio":        "{media_type, data_b64} envelope populated when auto_play is wired and a TTS engine succeeds.",
 		"audio_error":  "Surfaced when TTS dispatch fails; the textual content is still returned.",
 		"memory_error": "Surfaced when memory persistence fails; the textual content is still returned.",
