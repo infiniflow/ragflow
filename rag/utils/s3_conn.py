@@ -256,20 +256,6 @@ class RAGFlowS3:
                 failed = ", ".join(err.get("Key", "?") for err in result["Errors"])
                 raise RuntimeError(f"S3 object deletion failed for keys: {failed}")
 
-    def _abort_incomplete_multipart_uploads(self, bucket, prefix=None):
-        """Abort every incomplete multipart upload (optionally scoped to
-        ``prefix``); they keep a bucket non-empty even when no object versions
-        remain."""
-        paginator = self.conn[0].get_paginator("list_multipart_uploads")
-        pages = paginator.paginate(Bucket=bucket, Prefix=prefix) if prefix is not None else paginator.paginate(Bucket=bucket)
-        for page in pages:
-            for upload in page.get("Uploads", []):
-                self.conn[0].abort_multipart_upload(
-                    Bucket=bucket,
-                    Key=upload["Key"],
-                    UploadId=upload["UploadId"],
-                )
-
     def _head_bucket_or_none(self, bucket):
         """Return the head_bucket response, or None only when the bucket does
         not exist. Other client errors (403 Forbidden, 400) propagate so the
@@ -285,12 +271,10 @@ class RAGFlowS3:
 
     def _delete_all_versions(self, bucket, prefix=None):
         """Delete every object version and delete marker under ``bucket``
-        (optionally scoped to ``prefix``), then abort incomplete multipart
-        uploads under the same prefix. Raises if any batch fails."""
+        (optionally scoped to ``prefix``). Raises if any batch fails."""
         paginator = self.conn[0].get_paginator("list_object_versions")
         pages = paginator.paginate(Bucket=bucket, Prefix=prefix) if prefix is not None else paginator.paginate(Bucket=bucket)
         self._delete_object_batches(bucket, pages)
-        self._abort_incomplete_multipart_uploads(bucket, prefix)
 
     @use_default_bucket
     def remove_bucket(self, bucket, **kwargs):
@@ -300,11 +284,19 @@ class RAGFlowS3:
                 # Single bucket mode: remove objects with the logical-bucket
                 # prefix, but do not remove the physical bucket. The prefix
                 # matches the write path: use_prefix_path only prepends the
-                # "{prefix_path}/{bucket}/" segment when prefix_path is set,
-                # so with no prefix_path the objects carry no bucket segment.
-                prefix = ""
-                if self.prefix_path:
-                    prefix = f"{self.prefix_path}/{orig_bucket}/" if orig_bucket else f"{self.prefix_path}/"
+                # "{prefix_path}/{bucket}/" segment when prefix_path is set.
+                if not self.prefix_path:
+                    # A shared physical bucket with no prefix_path stores keys
+                    # without a logical-bucket segment, so no cleanup prefix
+                    # can scope this deletion to one knowledge base: run it
+                    # and the whole bucket's data would go. Refuse instead;
+                    # shared-bucket namespacing needs its own migration story.
+                    logging.error(
+                        "Refusing to remove logical bucket %s: STORAGE_S3 bucket is shared without a prefix_path, which cannot be scoped to one knowledge base",
+                        orig_bucket or bucket,
+                    )
+                    return
+                prefix = f"{self.prefix_path}/{orig_bucket}/" if orig_bucket else f"{self.prefix_path}/"
                 self._delete_all_versions(bucket, prefix)
             else:
                 if self._head_bucket_or_none(bucket) is None:

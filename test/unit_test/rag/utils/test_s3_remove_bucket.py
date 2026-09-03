@@ -18,7 +18,7 @@
 
 import importlib
 import logging
-from unittest.mock import Mock, call as mock_call
+from unittest.mock import Mock
 
 import pytest
 from botocore.exceptions import ClientError
@@ -124,48 +124,6 @@ def test_remove_bucket_deletes_versions_and_markers_with_version_ids(monkeypatch
     client.delete_bucket.assert_called_once_with(Bucket="kb01")
 
 
-def test_remove_bucket_aborts_every_incomplete_multipart_upload(monkeypatch):
-    """Incomplete multipart uploads keep a bucket non-empty; every upload in
-    the page must be aborted, not just the first, before delete_bucket."""
-    storage, client = _new_storage(monkeypatch, {})
-    _wire(client)
-    _paginator(client, "list_object_versions", {})
-    _paginator(
-        client,
-        "list_multipart_uploads",
-        {
-            "Uploads": [
-                {"Key": "big.bin", "UploadId": "up-1"},
-                {"Key": "huge.bin", "UploadId": "up-2"},
-            ]
-        },
-    )
-    client.head_bucket.return_value = {}
-
-    storage.remove_bucket("kb01")
-
-    assert client.abort_multipart_upload.call_args_list == [
-        mock_call(Bucket="kb01", Key="big.bin", UploadId="up-1"),
-        mock_call(Bucket="kb01", Key="huge.bin", UploadId="up-2"),
-    ]
-    client.delete_bucket.assert_called_once_with(Bucket="kb01")
-
-
-def test_remove_bucket_scopes_multipart_pagination_to_prefix(monkeypatch):
-    """Single-bucket mode: the multipart-upload pagination must apply the same
-    logical-bucket prefix as the version listing."""
-    storage, client = _new_storage(monkeypatch, {"bucket": "ragflow", "prefix_path": "prod"})
-    _wire(client)
-    _paginator(client, "list_object_versions", by_prefix={})
-    uploads = _paginator(client, "list_multipart_uploads", by_prefix={})
-    client.head_bucket.return_value = {}
-
-    storage.remove_bucket("kb01")
-
-    uploads.paginate.assert_called_once_with(Bucket="ragflow", Prefix="prod/kb01/")
-    client.delete_bucket.assert_not_called()
-
-
 def test_remove_bucket_skips_missing_bucket(monkeypatch):
     """A 404 from head_bucket means the bucket is absent: a clean no-op."""
     storage, client = _new_storage(monkeypatch, {})
@@ -253,20 +211,19 @@ def test_remove_bucket_re_raises_to_callers(monkeypatch, caplog):
         assert "X-Amz-Signature" not in m
 
 
-def test_remove_bucket_single_bucket_mode_keeps_physical_bucket(monkeypatch):
-    """Default-bucket mode: scope deletion to the logical prefix, keep the
-    bucket. With no prefix_path the write path stores keys without a bucket
-    segment, so the cleanup prefix must also be empty."""
+def test_remove_bucket_refuses_shared_bucket_without_prefix_path(monkeypatch, caplog):
+    """A shared physical bucket without prefix_path hosts keys without a
+    logical-bucket segment; no cleanup prefix could scope the deletion, so it
+    must refuse rather than wipe the whole bucket."""
     storage, client = _new_storage(monkeypatch, {"bucket": "ragflow"})
     _wire(client)
-    versions = _paginator(client, "list_object_versions", by_prefix={})
-    uploads = _paginator(client, "list_multipart_uploads", by_prefix={})
 
-    storage.remove_bucket("kb01")
+    with caplog.at_level(logging.ERROR):
+        storage.remove_bucket("kb01")
 
-    versions.paginate.assert_called_once_with(Bucket="ragflow", Prefix="")
-    uploads.paginate.assert_called_once_with(Bucket="ragflow", Prefix="")
+    client.get_paginator.assert_not_called()
     client.delete_bucket.assert_not_called()
+    assert any("Refusing to remove logical bucket kb01" in r.getMessage() for r in caplog.records)
 
 
 def test_remove_bucket_single_bucket_mode_with_prefix_path(monkeypatch):
