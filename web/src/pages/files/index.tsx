@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { LucidePlus } from 'lucide-react';
@@ -63,6 +64,8 @@ export default function Files() {
     selectedCount,
   } = useRowSelection();
 
+  useClearSelectionOnPageChange(pagination, clearRowSelection);
+
   const {
     showMoveFileModal,
     moveFileVisible,
@@ -96,8 +99,11 @@ export default function Files() {
   );
 
   return (
-    <article className="size-full flex flex-col" data-testid="files-list">
-      <header className="px-5 pt-8 mb-4">
+    <article
+      className="size-full min-w-0 flex flex-col"
+      data-testid="files-list"
+    >
+      <header className="mb-4 min-w-0 px-5 pt-8">
         <ListFilterBar
           leftPanel={leftPanel}
           searchString={searchString}

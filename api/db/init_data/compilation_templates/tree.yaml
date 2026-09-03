@@ -1,0 +1,37 @@
+kind: tree
+display_name: Tree — RAPTOR-based document tree
+description: >-
+  Recursive Abstractive Processing for Tree-Organized Retrieval over a
+  single document's chunks. Produces a hierarchical summary tree
+  (root summary → cluster summaries → leaf cluster source_chunk_ids).
+config:
+  kind: tree
+  raptor:
+    prompt: |-
+      Summarize the paragraphs below without inventing facts or changing numbers.
+      Output exactly two parts in the same language as the source:
+      1. First line: a concise title only.
+      2. Following lines: a concise summary of the content.
+      Do not output labels, Markdown headings, bullet points, or any other commentary.
+
+      Paragraphs:
+      {cluster_content}
+    max_token: 512
+    clustering_threshold: 0.3
+    clustering_ratio: 0.5
+  # Entity / relation collections are not used by the tree kind but kept
+  # as empty stubs so the form schema's shared validators see a stable
+  # shape regardless of kind.
+  entity:
+    description: ''
+    fields:
+      - type: ''
+        description: ''
+        rule: ''
+  relation:
+    description: ''
+    fields:
+      - type: ''
+        description: ''
+        rule: ''
+  global_rules: ''

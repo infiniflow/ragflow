@@ -86,7 +86,7 @@ class TestChatCompletions:
             },
         )
         assert res["code"] == 109, res
-        assert "No authorization." in res.get("message", ""), res
+        assert "no authorization" in res.get("message", ""), res
 
     @pytest.mark.p2
     def test_chat_completion_invalid_session(self, HttpApiAuth, request):

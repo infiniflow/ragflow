@@ -42,9 +42,7 @@ class TestParseAddrs:
         assert _parse_addrs("user@example.com") == [("", "user@example.com")]
 
     def test_address_with_display_name(self):
-        assert _parse_addrs("Alice <alice@example.com>") == [
-            ("Alice", "alice@example.com")
-        ]
+        assert _parse_addrs("Alice <alice@example.com>") == [("Alice", "alice@example.com")]
 
     def test_quoted_display_name_with_comma_returns_single_address(self):
         # #14963: the bug was that ``split(",")`` produced two bogus tuples.
@@ -57,9 +55,7 @@ class TestParseAddrs:
         assert result == [("", "a@example.com"), ("", "b@example.com")]
 
     def test_multiple_addresses_with_quoted_comma_in_name(self):
-        result = _parse_addrs(
-            '"Wilkens, Michael" <m@example.com>, "Müller, Hans" <h@example.com>'
-        )
+        result = _parse_addrs('"Wilkens, Michael" <m@example.com>, "Müller, Hans" <h@example.com>')
         assert result == [
             ("Wilkens, Michael", "m@example.com"),
             ("Müller, Hans", "h@example.com"),
@@ -79,9 +75,7 @@ class TestParseSingularAddr:
     def test_quoted_comma_display_name_does_not_raise(self):
         # #14963 cascade: before the fix, ``_parse_addrs`` returned two bogus
         # tuples and ``_parse_singular_addr`` then raised RuntimeError.
-        assert _parse_singular_addr(
-            '"Schlüter, Sabine" <sabine.schlueter@ihklw.de>'
-        ) == ("Schlüter, Sabine", "sabine.schlueter@ihklw.de")
+        assert _parse_singular_addr('"Schlüter, Sabine" <sabine.schlueter@ihklw.de>') == ("Schlüter, Sabine", "sabine.schlueter@ihklw.de")
 
     def test_multi_address_header_warns_and_returns_first(self, caplog):
         # #14964: a legitimately multi-address From header must not crash sync.
@@ -89,9 +83,7 @@ class TestParseSingularAddr:
         with caplog.at_level(logging.WARNING):
             result = _parse_singular_addr(header)
         assert result == ("User A", "a@example.com")
-        assert any(
-            "Multiple addresses" in rec.message for rec in caplog.records
-        ), f"expected warning about multiple addresses, got: {caplog.records}"
+        assert any("Multiple addresses" in rec.message for rec in caplog.records), f"expected warning about multiple addresses, got: {caplog.records}"
 
     def test_multi_address_header_does_not_raise(self):
         # Explicit guard: no RuntimeError should propagate.

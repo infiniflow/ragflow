@@ -38,13 +38,9 @@ class VariableAggregatorParam(ComponentParamBase):
             if not g.get("group_name"):
                 raise ValueError("[VariableAggregator] group_name can not be empty!")
             if not g.get("variables"):
-                raise ValueError(
-                    f"[VariableAggregator] variables of group `{g.get('group_name')}` can not be empty"
-                )
+                raise ValueError(f"[VariableAggregator] variables of group `{g.get('group_name')}` can not be empty")
             if not isinstance(g.get("variables"), list):
-                raise ValueError(
-                    f"[VariableAggregator] variables of group `{g.get('group_name')}` should be a list of strings"
-                )
+                raise ValueError(f"[VariableAggregator] variables of group `{g.get('group_name')}` should be a list of strings")
 
     def get_input_form(self) -> dict[str, dict]:
         return {
@@ -67,11 +63,11 @@ class VariableAggregator(ComponentBase):
             # record candidate selectors within this group
             self.set_input_value(f"{gname}.variables", list(group.get("variables", [])))
             for selector in group.get("variables", []):
-                val = self._canvas.get_variable_value(selector['value'])
+                val = self._canvas.get_variable_value(selector["value"])
                 if val:
                     self.set_output(gname, val)
                     break
-            
+
     @staticmethod
     def _to_object(value: Any) -> Any:
         # Try to convert value to serializable object if it has to_object()

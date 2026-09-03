@@ -18,15 +18,233 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
+
+func TestBuildAgentMessageEventsThinkingProtocol(t *testing.T) {
+	events := buildAgentMessageEvents("final answer", "think step", nil)
+	if len(events) < 4 {
+		t.Fatalf("events len = %d, want at least start, thinking, end, answer", len(events))
+	}
+	if !events[0].StartToThink {
+		t.Fatalf("first event StartToThink = false")
+	}
+	if events[0].Content != "" {
+		t.Fatalf("start event content = %q, want empty", events[0].Content)
+	}
+
+	endIdx := -1
+	for i, ev := range events {
+		if ev.EndToThink {
+			endIdx = i
+			break
+		}
+	}
+	if endIdx < 0 {
+		t.Fatal("missing EndToThink event")
+	}
+	var thinking strings.Builder
+	for _, ev := range events[1:endIdx] {
+		thinking.WriteString(ev.Content)
+	}
+	if got := thinking.String(); got != "think step" {
+		t.Fatalf("thinking stream = %q, want %q", got, "think step")
+	}
+	var answer strings.Builder
+	for _, ev := range events[endIdx+1:] {
+		answer.WriteString(ev.Content)
+	}
+	if got := answer.String(); got != "final answer" {
+		t.Fatalf("answer stream = %q, want %q", got, "final answer")
+	}
+}
+
+func TestBuildAgentMessageEventsSplitsInlineThink(t *testing.T) {
+	events := buildAgentMessageEvents("<think>plan</think>\nanswer", "", nil)
+	if len(events) < 4 || !events[0].StartToThink {
+		t.Fatalf("inline think events malformed: %+v", events)
+	}
+
+	endIdx := -1
+	for i, ev := range events {
+		if ev.EndToThink {
+			endIdx = i
+			break
+		}
+	}
+	if endIdx < 0 {
+		t.Fatal("missing EndToThink event")
+	}
+	if got := events[1].Content; got != "plan" {
+		t.Fatalf("inline thinking = %q, want plan", got)
+	}
+	var answer strings.Builder
+	for _, ev := range events[endIdx+1:] {
+		answer.WriteString(ev.Content)
+	}
+	if got := answer.String(); got != "answer" {
+		t.Fatalf("inline answer = %q, want answer", got)
+	}
+}
+
+func TestBuildAgentMessageEventsWithoutThinkingKeepsSingleMessage(t *testing.T) {
+	ref := map[string]any{"total": 1}
+	events := buildAgentMessageEvents("answer", "", ref)
+	if len(events) != 1 {
+		t.Fatalf("events len = %d, want 1", len(events))
+	}
+	if events[0].Content != "answer" {
+		t.Fatalf("content = %q, want answer", events[0].Content)
+	}
+	if events[0].Reference == nil {
+		t.Fatal("reference missing")
+	}
+}
+
+func TestAgentMessageDeltaEmitterStreamsInlineThink(t *testing.T) {
+	var events []canvas.MessageEvent
+	emit := makeAgentMessageDeltaEmitter(func(event, data string) {
+		if event != "message" {
+			t.Fatalf("event = %q, want message", event)
+		}
+		var ev canvas.MessageEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		events = append(events, ev)
+	})
+
+	emit("<thi", "")
+	if len(events) != 0 {
+		t.Fatalf("events after partial tag = %+v, want none", events)
+	}
+	emit("nk>plan", "")
+	emit("</thi", "")
+	emit("nk>answer", "")
+
+	if len(events) != 4 {
+		t.Fatalf("events len = %d, want 4: %+v", len(events), events)
+	}
+	if !events[0].StartToThink {
+		t.Fatalf("first event = %+v, want StartToThink", events[0])
+	}
+	if events[1].Content != "plan" {
+		t.Fatalf("thinking content = %q, want plan", events[1].Content)
+	}
+	if !events[2].EndToThink {
+		t.Fatalf("third event = %+v, want EndToThink", events[2])
+	}
+	if events[3].Content != "answer" {
+		t.Fatalf("answer content = %q, want answer", events[3].Content)
+	}
+}
+
+func TestAgentMessageDeltaEmitterStreamsReasoningBeforeAnswer(t *testing.T) {
+	var events []canvas.MessageEvent
+	emit := makeAgentMessageDeltaEmitter(func(event, data string) {
+		if event != "message" {
+			t.Fatalf("event = %q, want message", event)
+		}
+		var ev canvas.MessageEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		events = append(events, ev)
+	})
+
+	emit("", "step 1")
+	emit("", " step 2")
+	emit("answer", "")
+
+	if len(events) != 5 {
+		t.Fatalf("events len = %d, want 5: %+v", len(events), events)
+	}
+	if !events[0].StartToThink {
+		t.Fatalf("first event = %+v, want StartToThink", events[0])
+	}
+	if events[1].Content+events[2].Content != "step 1 step 2" {
+		t.Fatalf("thinking content = %q, want step 1 step 2", events[1].Content+events[2].Content)
+	}
+	if !events[3].EndToThink {
+		t.Fatalf("fourth event = %+v, want EndToThink", events[3])
+	}
+	if events[4].Content != "answer" {
+		t.Fatalf("answer content = %q, want answer", events[4].Content)
+	}
+}
+
+func TestAgentMessageDeltaEmitterProcessesThinkingAndContentTogether(t *testing.T) {
+	var events []canvas.MessageEvent
+	emit, finalize, _ := makeAgentMessageDeltaEmitterWithFinalizer(func(event, data string) {
+		if event != "message" {
+			t.Fatalf("event = %q, want message", event)
+		}
+		var ev canvas.MessageEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		events = append(events, ev)
+	})
+
+	emit("answer", "think")
+	finalize()
+
+	if len(events) != 4 {
+		t.Fatalf("events len = %d, want 4: %+v", len(events), events)
+	}
+	if !events[0].StartToThink {
+		t.Fatalf("first event = %+v, want StartToThink", events[0])
+	}
+	if events[1].Content != "think" {
+		t.Fatalf("thinking content = %q, want think", events[1].Content)
+	}
+	if !events[2].EndToThink {
+		t.Fatalf("third event = %+v, want EndToThink", events[2])
+	}
+	if events[3].Content != "answer" {
+		t.Fatalf("answer content = %q, want answer", events[3].Content)
+	}
+}
+
+func TestAgentMessageDeltaEmitterFinalizeClosesReasoning(t *testing.T) {
+	var events []canvas.MessageEvent
+	emit, finalize, _ := makeAgentMessageDeltaEmitterWithFinalizer(func(event, data string) {
+		if event != "message" {
+			t.Fatalf("event = %q, want message", event)
+		}
+		var ev canvas.MessageEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		events = append(events, ev)
+	})
+
+	emit("", "think only")
+	finalize()
+
+	if len(events) != 3 {
+		t.Fatalf("events len = %d, want 3: %+v", len(events), events)
+	}
+	if !events[0].StartToThink {
+		t.Fatalf("first event = %+v, want StartToThink", events[0])
+	}
+	if events[1].Content != "think only" {
+		t.Fatalf("thinking content = %q, want think only", events[1].Content)
+	}
+	if !events[2].EndToThink {
+		t.Fatalf("third event = %+v, want EndToThink", events[2])
+	}
+}
 
 // TestListVersions_Success verifies that ListVersions returns all versions
 // for a canvas, ordered by update_time DESC.
@@ -36,7 +254,6 @@ func TestListVersions_Success(t *testing.T) {
 
 	// Migrate tables needed for agent versions
 	if err := testDB.AutoMigrate(
-		&entity.User{},
 		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
@@ -89,8 +306,9 @@ func TestListVersions_Success(t *testing.T) {
 		},
 	})
 
+	ctx := t.Context()
 	svc := NewAgentService()
-	versions, err := svc.ListVersions("canvas-1")
+	versions, err := svc.ListVersions(ctx, "user-1", "canvas-1")
 	if err != nil {
 		t.Fatalf("ListVersions failed: %v", err)
 	}
@@ -133,8 +351,9 @@ func TestListVersions_Empty(t *testing.T) {
 		Title:  sptr("Empty Agent"),
 	})
 
+	ctx := t.Context()
 	svc := NewAgentService()
-	versions, err := svc.ListVersions("canvas-empty")
+	versions, err := svc.ListVersions(ctx, "user-1", "canvas-empty")
 	if err != nil {
 		t.Fatalf("ListVersions failed: %v", err)
 	}
@@ -143,126 +362,48 @@ func TestListVersions_Empty(t *testing.T) {
 	}
 }
 
-// TestCheckCanvasAccess_Owner verifies that the canvas owner gets access.
-func TestCheckCanvasAccess_Owner(t *testing.T) {
-	testDB := setupServiceTestDB(t)
-	t.Helper()
-
-	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.UserCanvas{},
-	); err != nil {
-		t.Fatalf("failed to migrate: %v", err)
+func TestWorkflowOutputs_WithDownloads(t *testing.T) {
+	downloads := []map[string]any{
+		{
+			"doc_id":    "d1",
+			"filename":  "report.pdf",
+			"mime_type": "application/pdf",
+		},
 	}
 
-	orig := dao.DB
-	dao.DB = testDB
-	t.Cleanup(func() { dao.DB = orig })
-
-	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "a@b.com"})
-	testDB.Create(&entity.UserCanvas{ID: "c-1", UserID: "user-1", Title: sptr("My Agent")})
-
-	svc := NewAgentService()
-	ok, err := svc.CheckCanvasAccess("user-1", "c-1")
-	if err != nil {
-		t.Fatalf("CheckCanvasAccess failed: %v", err)
-	}
+	out, ok := workflowOutputs("", downloads, nil).(map[string]any)
 	if !ok {
-		t.Error("expected owner to have access")
+		t.Fatalf("workflowOutputs type = %T, want map", workflowOutputs("", downloads, nil))
+	}
+	if out["content"] != "" {
+		t.Fatalf("content = %v, want empty string", out["content"])
+	}
+	if got := out["downloads"]; !reflect.DeepEqual(got, downloads) {
+		t.Fatalf("downloads = %#v, want %#v", got, downloads)
+	}
+	if _, has := out["attachment"]; has {
+		t.Fatalf("attachment unexpectedly present: %#v", out["attachment"])
 	}
 }
 
-// TestCheckCanvasAccess_NotOwner verifies that a tenant member can access
-// a team-level canvas.
-func TestCheckCanvasAccess_NotOwner(t *testing.T) {
-	testDB := setupServiceTestDB(t)
-	t.Helper()
-
-	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.UserCanvas{},
-		&entity.UserTenant{},
-	); err != nil {
-		t.Fatalf("failed to migrate: %v", err)
+func TestWorkflowOutputs_NoDownloadsKeepsString(t *testing.T) {
+	if got := workflowOutputs("answer", nil, nil); got != "answer" {
+		t.Fatalf("workflowOutputs without downloads = %#v, want string answer", got)
 	}
+}
 
-	orig := dao.DB
-	dao.DB = testDB
-	t.Cleanup(func() { dao.DB = orig })
+func TestWorkflowOutputs_WithAttachment(t *testing.T) {
+	attachment := map[string]any{"doc_id": "d2", "format": "markdown", "file_name": "d2.markdown"}
 
-	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "a@b.com"})
-	testDB.Create(&entity.User{ID: "user-2", Nickname: "member", Email: "c@d.com"})
-	// user-2 is a member of user-1's tenant (status "1" = active)
-	testDB.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-2", TenantID: "user-1", Role: "member", Status: sptr("1")})
-	// Canvas has team-level permission
-	testDB.Create(&entity.UserCanvas{ID: "c-1", UserID: "user-1", Permission: "team", Title: sptr("Team Agent")})
-
-	svc := NewAgentService()
-	ok, err := svc.CheckCanvasAccess("user-2", "c-1")
-	if err != nil {
-		t.Fatalf("CheckCanvasAccess failed: %v", err)
-	}
+	out, ok := workflowOutputs("answer", nil, attachment).(map[string]any)
 	if !ok {
-		t.Error("expected tenant member to have access to team canvas")
+		t.Fatalf("workflowOutputs type = %T, want map", workflowOutputs("answer", nil, attachment))
 	}
-}
-
-// TestCheckCanvasAccess_PrivateCanvas_Denied verifies that a tenant member
-// cannot access a private (default "me") canvas.
-func TestCheckCanvasAccess_PrivateCanvas_Denied(t *testing.T) {
-	testDB := setupServiceTestDB(t)
-	t.Helper()
-
-	if err := testDB.AutoMigrate(
-		&entity.User{},
-		&entity.UserCanvas{},
-		&entity.UserTenant{},
-	); err != nil {
-		t.Fatalf("failed to migrate: %v", err)
+	if out["content"] != "answer" {
+		t.Fatalf("content = %v, want answer", out["content"])
 	}
-
-	orig := dao.DB
-	dao.DB = testDB
-	t.Cleanup(func() { dao.DB = orig })
-
-	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "a@b.com"})
-	testDB.Create(&entity.User{ID: "user-2", Nickname: "member", Email: "c@d.com"})
-	// user-2 is a tenant member (status "1" = active)
-	testDB.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-2", TenantID: "user-1", Role: "member", Status: sptr("1")})
-	// Canvas has default "me" permission (private)
-	testDB.Create(&entity.UserCanvas{ID: "c-1", UserID: "user-1", Title: sptr("Private Agent")})
-
-	svc := NewAgentService()
-	ok, err := svc.CheckCanvasAccess("user-2", "c-1")
-	if err != nil {
-		t.Fatalf("CheckCanvasAccess failed: %v", err)
-	}
-	if ok {
-		t.Error("expected tenant member to be denied access to private canvas")
-	}
-}
-
-// TestCheckCanvasAccess_NotFound verifies behavior for non-existent canvas.
-func TestCheckCanvasAccess_NotFound(t *testing.T) {
-	testDB := setupServiceTestDB(t)
-	t.Helper()
-
-	if err := testDB.AutoMigrate(
-		&entity.User{},
-	); err != nil {
-		t.Fatalf("failed to migrate: %v", err)
-	}
-
-	orig := dao.DB
-	dao.DB = testDB
-	t.Cleanup(func() { dao.DB = orig })
-
-	testDB.Create(&entity.User{ID: "user-1", Nickname: "tester", Email: "a@b.com"})
-
-	svc := NewAgentService()
-	_, err := svc.CheckCanvasAccess("user-1", "non-existent")
-	if err == nil {
-		t.Error("expected error for non-existent canvas")
+	if got := out["attachment"]; !reflect.DeepEqual(got, attachment) {
+		t.Fatalf("attachment = %#v, want %#v", got, attachment)
 	}
 }
 
@@ -272,7 +413,9 @@ func TestGetVersion_Success(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -281,6 +424,12 @@ func TestGetVersion_Success(t *testing.T) {
 	dao.DB = testDB
 	t.Cleanup(func() { dao.DB = orig })
 
+	testDB.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+
 	testDB.Create(&entity.UserCanvasVersion{
 		ID:           "v1",
 		UserCanvasID: "canvas-1",
@@ -288,8 +437,9 @@ func TestGetVersion_Success(t *testing.T) {
 		DSL:          entity.JSONMap{"model": "gpt-4"},
 	})
 
+	ctx := t.Context()
 	svc := NewAgentService()
-	v, err := svc.GetVersion("canvas-1", "v1")
+	v, err := svc.GetVersion(ctx, "user-1", "canvas-1", "v1")
 	if err != nil {
 		t.Fatalf("GetVersion failed: %v", err)
 	}
@@ -304,7 +454,9 @@ func TestGetVersion_WrongCanvas(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -319,8 +471,9 @@ func TestGetVersion_WrongCanvas(t *testing.T) {
 		Title:        sptr("version-1"),
 	})
 
+	ctx := t.Context()
 	svc := NewAgentService()
-	_, err := svc.GetVersion("canvas-other", "v1")
+	_, err := svc.GetVersion(ctx, "user-other", "canvas-other", "v1")
 	if err == nil {
 		t.Error("expected error for version belonging to another canvas")
 	}
@@ -332,7 +485,9 @@ func TestGetVersion_NotFound(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
 		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -341,10 +496,345 @@ func TestGetVersion_NotFound(t *testing.T) {
 	dao.DB = testDB
 	t.Cleanup(func() { dao.DB = orig })
 
+	ctx := t.Context()
 	svc := NewAgentService()
-	_, err := svc.GetVersion("canvas-1", "non-existent")
+	_, err := svc.GetVersion(ctx, "user-1", "canvas-1", "non-existent")
 	if err == nil {
 		t.Error("expected error for non-existent version")
+	}
+}
+
+// TestRunAgent_VersionBelongsToOtherCanvas pins the v3.5.2 IDOR
+// fix: when the caller supplies an explicit version id, RunAgent
+// must verify that the row belongs to the canvas being run, not
+// to some other canvas whose id the caller happens to know. The
+// previous code did `versionRow, _ = s.versionDAO.GetByID(version)`
+// and used whatever row came back, letting any caller run any
+// canvas's DSL against their own canvas.
+//
+// We set up two canvases owned by the same user (user-1 owns
+// canvas-1 and canvas-2), create a version v1 on canvas-2, and
+// try to run canvas-1 with version=v1. RunAgent must refuse with
+// dao.ErrUserCanvasVersionNotFound.
+func TestRunAgent_VersionBelongsToOtherCanvas(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"})
+	testDB.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Canvas 1"),
+	})
+	testDB.Create(&entity.UserCanvas{
+		ID:     "canvas-2",
+		UserID: "user-1",
+		Title:  sptr("Canvas 2"),
+	})
+	// Version row that belongs to canvas-2, NOT canvas-1.
+	testDB.Create(&entity.UserCanvasVersion{
+		ID:           "v-on-canvas-2",
+		UserCanvasID: "canvas-2",
+		Title:        sptr("foreign version"),
+		DSL:          entity.JSONMap{"components": map[string]any{}},
+	})
+
+	ctx := t.Context()
+	svc := NewAgentService()
+	_, err := svc.RunAgent(
+		ctx,
+		"user-1",
+		"canvas-1",      // we're running canvas-1…
+		"",              // session ID auto-generated
+		"v-on-canvas-2", // …with a version that belongs to canvas-2
+		"hi", nil)
+	if err == nil {
+		t.Fatal("expected error when version belongs to a different canvas (IDOR guard)")
+	}
+	if !errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
+		t.Errorf("expected ErrUserCanvasVersionNotFound, got %v", err)
+	}
+}
+
+// TestRunAgent_VersionNotFound pins the v3.5.2 DAO-error
+// visibility fix: when the caller supplies an explicit version id
+// and the row does not exist, RunAgent must return the DAO error
+// (not swallow it as the V1 placeholder). The previous code
+// silenced the error and proceeded with a "no version published"
+// placeholder answer, hiding real storage/DAO failures from the
+// caller.
+func TestRunAgent_VersionNotFound(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"})
+	testDB.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Canvas 1"),
+	})
+
+	ctx := t.Context()
+	svc := NewAgentService()
+	_, err := svc.RunAgent(
+		ctx,
+		"user-1",
+		"canvas-1",
+		"",
+		"does-not-exist",
+		"hi", nil)
+	if err == nil {
+		t.Fatal("expected error when explicit version id does not exist")
+	}
+	if !errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
+		t.Errorf("expected ErrUserCanvasVersionNotFound, got %v", err)
+	}
+}
+
+// TestRunAgent_NoVersionPublishedPlaceholder pins the legitimate
+// "no version published" branch: when version is empty AND
+// GetLatest returns ErrUserCanvasVersionNotFound (no rows), the
+// run proceeds with the V1 echo placeholder answer rather than
+// failing the whole RunAgent call. This is intentional — the SSE
+// surface still flows and the caller sees a "no published version"
+// message.
+//
+// (Distinct from TestRunAgent_VersionNotFound above, which tests
+// the explicit-version case where the error must surface.)
+//
+// v3.5.2 hardening: the v3.5.2 review noted the prior version of
+// this test only asserted "non-nil channel, no immediate error"
+// — a spec that would pass for many wrong implementations
+// (channel with only a done event, channel with malformed events,
+// etc.). The hardened test now drains the channel synchronously
+// and asserts at least one MessageEvent carries Content whose
+// payload contains the canonical placeholder text.
+func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"})
+	testDB.Create(&entity.UserCanvas{
+		ID:     "canvas-empty",
+		UserID: "user-1",
+		Title:  sptr("Canvas With No Version"),
+	})
+
+	ctx := t.Context()
+	svc := NewAgentService()
+	events, err := svc.RunAgent(
+		ctx,
+		"user-1",
+		"canvas-empty",
+		"test-session",
+		"", // no explicit version → use GetLatest, which returns ErrUserCanvasVersionNotFound
+		"hi", nil)
+	if err != nil {
+		t.Fatalf("RunAgent should proceed with placeholder when no version published: %v", err)
+	}
+	if events == nil {
+		t.Fatal("RunAgent returned nil event channel for legitimate 'no version published'")
+	}
+
+	// Drain the channel synchronously and assert the placeholder
+	// answer text is present. The driver emits at least one
+	// orchestrator (canvas.Runner) RunEvent with Type=="message" whose Data is a
+	// JSON-encoded MessageEvent with the placeholder Content, plus
+	// the handler writes the final data:[DONE] frame after the channel closes.
+	var (
+		gotAnswer       string
+		gotMessageEvent bool
+	)
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				if !gotMessageEvent {
+					t.Fatal("placeholder channel closed before any MessageEvent was received")
+				}
+				if gotAnswer == "" {
+					t.Fatal("placeholder MessageEvent had empty Content")
+				}
+				if !strings.Contains(gotAnswer, "canvas-empty") {
+					t.Errorf("placeholder answer %q does not mention canvas ID", gotAnswer)
+				}
+				if !strings.Contains(gotAnswer, "No published version") {
+					t.Errorf("placeholder answer %q does not contain 'No published version'", gotAnswer)
+				}
+				return
+			}
+			switch ev.Type {
+			case "message":
+				gotMessageEvent = true
+				var msg canvas.MessageEvent
+				if err := json.Unmarshal([]byte(ev.Data), &msg); err != nil {
+					t.Fatalf("message RunEvent had un-decodable Data %q: %v", ev.Data, err)
+				}
+				gotAnswer = msg.Content
+			}
+		case <-deadline:
+			t.Fatal("placeholder channel did not close within 5s — driver deadlocked?")
+		}
+	}
+}
+
+// TestRunAgent_StorageErrorFromCanvasAccess pins the v3.5.2
+// follow-up: when loadCanvasForUser's underlying DAO surfaces a
+// real DB error (NOT the ErrUserCanvasNotFound sentinel), RunAgent
+// must return an error wrapped with ErrAgentStorageError so the
+// handler maps it to CodeServerError (500) with a sanitized
+// message — the raw DAO string (DSN, table name, etc.) MUST NOT
+// reach the client.
+//
+// We simulate a real DB failure by closing the underlying sql.DB
+// connection mid-test. The next query against the test SQLite DB
+// returns a "sql: database is closed" error, which is the
+// closest thing to a real production DB outage we can stage
+// without monkey-patching the DAO.
+//
+// This complements TestMapAgentError's wrapped-storage case (which
+// pins the HTTP-layer mapping) by pinning the service-layer
+// wrapping contract itself.
+func TestRunAgent_StorageErrorFromCanvasAccess(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+		&entity.UserTenant{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"})
+	testDB.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Canvas"),
+	})
+
+	// Close the underlying sql.DB to make the next DAO query fail
+	// with a real storage error. We restore dao.DB after the test
+	// via t.Cleanup above so the close doesn't leak across tests.
+	sqlDB, sErr := testDB.DB()
+	if sErr != nil {
+		t.Fatalf("failed to obtain sql.DB: %v", sErr)
+	}
+	if cErr := sqlDB.Close(); cErr != nil {
+		t.Fatalf("failed to close sql.DB: %v", cErr)
+	}
+
+	ctx := t.Context()
+	svc := NewAgentService()
+	_, err := svc.RunAgent(
+		ctx,
+		"user-1",
+		"canvas-1",
+		"",
+		"",
+		"hi", nil)
+	if err == nil {
+		t.Fatal("expected storage error from closed DB")
+	}
+	if !errors.Is(err, ErrAgentStorageError) {
+		t.Errorf("expected ErrAgentStorageError in chain, got %v", err)
+	}
+	// The raw "sql: database is closed" / gorm error text must
+	// not be in the user-facing message — the handler's
+	// mapAgentError returns a sanitized message, but we pin the
+	// contract at the service layer too: the error wraps the
+	// sentinel, and a wrapping chain that includes
+	// ErrAgentStorageError means the handler will sanitize.
+}
+
+// TestLoadCanvasForUser_StorageErrorWrap pins the same wrapping
+// contract at the loadCanvasForUser level (not just through
+// RunAgent). loadCanvasForUser is shared by GetAgent, UpdateAgent,
+// DeleteAgent, PublishAgent, ListVersions, GetVersion, and
+// Session cancellation — sanitising its DAO errors closes the leak in all
+// eight call sites.
+func TestLoadCanvasForUser_StorageErrorWrap(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{},
+		&entity.UserTenant{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	// Close the underlying sql.DB before any query — this is the
+	// cleanest way to force a non-sentinel DAO error out of
+	// userTenantDAO.GetTenantIDsByUserID.
+	sqlDB, sErr := testDB.DB()
+	if sErr != nil {
+		t.Fatalf("failed to obtain sql.DB: %v", sErr)
+	}
+	if cErr := sqlDB.Close(); cErr != nil {
+		t.Fatalf("failed to close sql.DB: %v", cErr)
+	}
+
+	ctx := t.Context()
+	svc := NewAgentService()
+	_, err := svc.loadCanvasForUser(ctx, "user-1", "canvas-1")
+	if err == nil {
+		t.Fatal("expected storage error from closed DB")
+	}
+	if !errors.Is(err, ErrAgentStorageError) {
+		t.Errorf("expected ErrAgentStorageError in chain, got %v", err)
+	}
+	// Also assert the sentinel ErrUserCanvasNotFound did NOT
+	// leak — it must not appear in the chain because the error
+	// is a real storage failure, not a permission miss.
+	if errors.Is(err, dao.ErrUserCanvasNotFound) {
+		t.Errorf("storage error chain should not include ErrUserCanvasNotFound; got %v", err)
 	}
 }
 
@@ -352,11 +842,20 @@ func setupAgentSessionServiceTest(t *testing.T) {
 	t.Helper()
 
 	testDB := setupServiceTestDB(t)
-	if err := testDB.AutoMigrate(
-		&entity.User{},
+	sqlDB, err := testDB.DB()
+	if err != nil {
+		t.Fatalf("failed to access sqlite handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err = testDB.AutoMigrate(
 		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
 		&entity.API4Conversation{},
+		// The merged /agents list reads compilation template groups (and their
+		// children) alongside canvases, so those tables must exist too.
+		&entity.CompilationTemplateGroup{},
+		&entity.CompilationTemplate{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -404,9 +903,11 @@ func TestListAgentSessionsServiceSuccess(t *testing.T) {
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 	createAgentSessionTestConversation(t, "session-old", "canvas-1", "user-1", 1000)
 	createAgentSessionTestConversation(t, "session-new", "canvas-1", "user-1", 3000)
+	createAgentSessionTestConversation(t, "session-team", "canvas-1", "team-user", 2000)
 	createAgentSessionTestConversation(t, "session-other-agent", "canvas-other", "user-1", 9999)
 
-	resp, code, err := NewAgentService().ListAgentSessions("user-1", "user-1", "canvas-1", ListAgentSessionsRequest{
+	ctx := t.Context()
+	resp, code, err := NewAgentService().ListAgentSessions(ctx, "user-1", "user-1", "canvas-1", ListAgentSessionsRequest{
 		Page:       1,
 		PageSize:   10,
 		OrderBy:    "update_time",
@@ -419,11 +920,11 @@ func TestListAgentSessionsServiceSuccess(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
 	}
-	if resp.Total != 2 {
-		t.Fatalf("expected total 2, got %d", resp.Total)
+	if resp.Total != 3 {
+		t.Fatalf("expected total 3, got %d", resp.Total)
 	}
-	if len(resp.Data) != 2 {
-		t.Fatalf("expected 2 sessions, got %d", len(resp.Data))
+	if len(resp.Data) != 3 {
+		t.Fatalf("expected 3 sessions, got %d", len(resp.Data))
 	}
 	if resp.Data[0]["id"] != "session-new" {
 		t.Fatalf("expected newest session first, got %v", resp.Data[0]["id"])
@@ -445,7 +946,8 @@ func TestListAgentSessionsServiceDenied(t *testing.T) {
 
 	createAgentSessionTestCanvas(t, "canvas-1", "user-2")
 
-	resp, code, err := NewAgentService().ListAgentSessions("user-1", "user-1", "canvas-1", ListAgentSessionsRequest{})
+	ctx := t.Context()
+	resp, code, err := NewAgentService().ListAgentSessions(ctx, "user-1", "user-1", "canvas-1", ListAgentSessionsRequest{})
 	if err == nil {
 		t.Fatal("expected permission error")
 	}
@@ -463,7 +965,8 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
 
-	session, code, err := NewAgentService().GetAgentSession("user-1", "canvas-1", "session-1")
+	ctx := t.Context()
+	session, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "canvas-1", "session-1")
 	if err != nil {
 		t.Fatalf("GetAgentSession failed: %v", err)
 	}
@@ -487,7 +990,8 @@ func TestGetAgentSessionServiceNotFoundWhenSessionBelongsToAnotherAgent(t *testi
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 	createAgentSessionTestConversation(t, "session-other", "canvas-other", "user-1", 1000)
 
-	session, code, err := NewAgentService().GetAgentSession("user-1", "canvas-1", "session-other")
+	ctx := t.Context()
+	session, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "canvas-1", "session-other")
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -506,7 +1010,8 @@ func TestDeleteAgentSessionItemServiceDeletesMatchingSession(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
 	createAgentSessionTestConversation(t, "session-other", "canvas-other", "user-1", 2000)
 
-	deleted, code, err := NewAgentService().DeleteAgentSessionItem("user-1", "canvas-1", "session-1")
+	ctx := t.Context()
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(ctx, "user-1", "canvas-1", "session-1")
 	if err != nil {
 		t.Fatalf("DeleteAgentSessionItem failed: %v", err)
 	}
@@ -518,14 +1023,14 @@ func TestDeleteAgentSessionItemServiceDeletesMatchingSession(t *testing.T) {
 	}
 
 	var count int64
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
+	if err = dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
 		t.Fatalf("failed to count deleted session: %v", err)
 	}
 	if count != 0 {
 		t.Fatalf("expected session-1 to be deleted, count=%d", count)
 	}
 
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&count).Error; err != nil {
+	if err = dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&count).Error; err != nil {
 		t.Fatalf("failed to count other session: %v", err)
 	}
 	if count != 1 {
@@ -539,7 +1044,8 @@ func TestDeleteAgentSessionItemServiceNoopForSessionFromAnotherAgent(t *testing.
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 	createAgentSessionTestConversation(t, "session-other", "canvas-other", "user-1", 1000)
 
-	deleted, code, err := NewAgentService().DeleteAgentSessionItem("user-1", "canvas-1", "session-other")
+	ctx := t.Context()
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(ctx, "user-1", "canvas-1", "session-other")
 	if err != nil {
 		t.Fatalf("DeleteAgentSessionItem failed: %v", err)
 	}
@@ -551,7 +1057,7 @@ func TestDeleteAgentSessionItemServiceNoopForSessionFromAnotherAgent(t *testing.
 	}
 
 	var count int64
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&count).Error; err != nil {
+	if err = dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&count).Error; err != nil {
 		t.Fatalf("failed to count other session: %v", err)
 	}
 	if count != 1 {
@@ -567,7 +1073,8 @@ func TestDeleteAgentSessionsServiceDeleteAll(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-2", "canvas-1", "user-1", 2000)
 	createAgentSessionTestConversation(t, "session-other", "canvas-other", "user-1", 3000)
 
-	result, code, err := NewAgentService().DeleteAgentSessions("user-1", "canvas-1", nil, true)
+	ctx := t.Context()
+	result, code, err := NewAgentService().DeleteAgentSessions(ctx, "user-1", "canvas-1", nil, true)
 	if err != nil {
 		t.Fatalf("DeleteAgentSessions failed: %v", err)
 	}
@@ -582,7 +1089,7 @@ func TestDeleteAgentSessionsServiceDeleteAll(t *testing.T) {
 	}
 
 	var ownCount int64
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("dialog_id = ?", "canvas-1").Count(&ownCount).Error; err != nil {
+	if err = dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).Where("dialog_id = ?", "canvas-1").Count(&ownCount).Error; err != nil {
 		t.Fatalf("failed to count own sessions: %v", err)
 	}
 	if ownCount != 0 {
@@ -590,7 +1097,7 @@ func TestDeleteAgentSessionsServiceDeleteAll(t *testing.T) {
 	}
 
 	var otherCount int64
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&otherCount).Error; err != nil {
+	if err = dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&otherCount).Error; err != nil {
 		t.Fatalf("failed to count other session: %v", err)
 	}
 	if otherCount != 1 {
@@ -604,7 +1111,8 @@ func TestDeleteAgentSessionsServiceDuplicateIDsPartial(t *testing.T) {
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
 
-	result, code, err := NewAgentService().DeleteAgentSessions("user-1", "canvas-1", []string{"session-1", "session-1"}, false)
+	ctx := t.Context()
+	result, code, err := NewAgentService().DeleteAgentSessions(ctx, "user-1", "canvas-1", []string{"session-1", "session-1"}, false)
 	if err != nil {
 		t.Fatalf("DeleteAgentSessions failed: %v", err)
 	}
@@ -622,7 +1130,7 @@ func TestDeleteAgentSessionsServiceDuplicateIDsPartial(t *testing.T) {
 	}
 
 	var count int64
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
+	if err = dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
 		t.Fatalf("failed to count deleted session: %v", err)
 	}
 	if count != 0 {
@@ -635,7 +1143,8 @@ func TestDeleteAgentSessionsServiceMissingSessionError(t *testing.T) {
 
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 
-	result, code, err := NewAgentService().DeleteAgentSessions("user-1", "canvas-1", []string{"missing-session"}, false)
+	ctx := t.Context()
+	result, code, err := NewAgentService().DeleteAgentSessions(ctx, "user-1", "canvas-1", []string{"missing-session"}, false)
 	if err == nil {
 		t.Fatal("expected missing session error")
 	}
@@ -656,7 +1165,8 @@ func TestDeleteAgentSessionsServiceRequiresOwner(t *testing.T) {
 	createAgentSessionTestCanvas(t, "canvas-1", "user-2")
 	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
 
-	result, code, err := NewAgentService().DeleteAgentSessions("user-1", "canvas-1", []string{"session-1"}, false)
+	ctx := t.Context()
+	result, code, err := NewAgentService().DeleteAgentSessions(ctx, "user-1", "canvas-1", []string{"session-1"}, false)
 	if err == nil {
 		t.Fatal("expected owner error")
 	}
@@ -668,7 +1178,7 @@ func TestDeleteAgentSessionsServiceRequiresOwner(t *testing.T) {
 	}
 
 	var count int64
-	if err := dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
+	if err = dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
 		t.Fatalf("failed to count session: %v", err)
 	}
 	if count != 1 {
@@ -681,7 +1191,8 @@ func TestUpdateAgentTagsServiceSuccess(t *testing.T) {
 
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 
-	ok, code, err := NewAgentService().UpdateAgentTags("user-1", "canvas-1", []interface{}{"alpha", "beta", "alpha", "with,comma"})
+	ctx := t.Context()
+	ok, code, err := NewAgentService().UpdateAgentTags(ctx, "user-1", "canvas-1", []interface{}{"alpha", "beta", "alpha", "with,comma"})
 	if err != nil {
 		t.Fatalf("UpdateAgentTags failed: %v", err)
 	}
@@ -692,12 +1203,12 @@ func TestUpdateAgentTagsServiceSuccess(t *testing.T) {
 		t.Fatal("expected update to succeed")
 	}
 
-	canvas, err := dao.NewUserCanvasDAO().GetByID("canvas-1")
+	canvasInstance, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
-	if canvas.Tags != "alpha,beta,with comma" {
-		t.Fatalf("expected normalized tags, got %q", canvas.Tags)
+	if canvasInstance.Tags != "alpha,beta,with comma" {
+		t.Fatalf("expected normalized tags, got %q", canvasInstance.Tags)
 	}
 }
 
@@ -706,7 +1217,8 @@ func TestUpdateAgentTagsServiceInvalidPayload(t *testing.T) {
 
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 
-	ok, code, err := NewAgentService().UpdateAgentTags("user-1", "canvas-1", map[string]string{"tag": "alpha"})
+	ctx := t.Context()
+	ok, code, err := NewAgentService().UpdateAgentTags(ctx, "user-1", "canvas-1", map[string]string{"tag": "alpha"})
 	if err == nil {
 		t.Fatal("expected invalid tags error")
 	}
@@ -717,12 +1229,12 @@ func TestUpdateAgentTagsServiceInvalidPayload(t *testing.T) {
 		t.Fatal("expected update to fail")
 	}
 
-	canvas, err := dao.NewUserCanvasDAO().GetByID("canvas-1")
+	canvasInstance, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
-	if canvas.Tags != "" {
-		t.Fatalf("expected tags to remain unchanged, got %q", canvas.Tags)
+	if canvasInstance.Tags != "" {
+		t.Fatalf("expected tags to remain unchanged, got %q", canvasInstance.Tags)
 	}
 }
 
@@ -731,7 +1243,8 @@ func TestUpdateAgentTagsServiceNoPermission(t *testing.T) {
 
 	createAgentSessionTestCanvas(t, "canvas-1", "user-2")
 
-	ok, code, err := NewAgentService().UpdateAgentTags("user-1", "canvas-1", []string{"alpha"})
+	ctx := t.Context()
+	ok, code, err := NewAgentService().UpdateAgentTags(ctx, "user-1", "canvas-1", []string{"alpha"})
 	if err == nil {
 		t.Fatal("expected permission error")
 	}
@@ -742,12 +1255,12 @@ func TestUpdateAgentTagsServiceNoPermission(t *testing.T) {
 		t.Fatal("expected update to fail")
 	}
 
-	canvas, err := dao.NewUserCanvasDAO().GetByID("canvas-1")
+	canvasInstance, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
-	if canvas.Tags != "" {
-		t.Fatalf("expected tags to remain unchanged, got %q", canvas.Tags)
+	if canvasInstance.Tags != "" {
+		t.Fatalf("expected tags to remain unchanged, got %q", canvasInstance.Tags)
 	}
 }
 
@@ -787,7 +1300,8 @@ func TestAssertHostIsSafeRejectsLocalhost(t *testing.T) {
 }
 
 func TestTestDBConnectionMissingFields(t *testing.T) {
-	code, err := NewAgentService().TestDBConnection("user-1", &TestDBConnectionRequest{DBType: "mysql"})
+	ctx := t.Context()
+	code, err := NewAgentService().TestDBConnection(ctx, "user-1", &TestDBConnectionRequest{DBType: "mysql"})
 	if err == nil {
 		t.Fatal("expected missing field error")
 	}
@@ -801,7 +1315,8 @@ func TestTestDBConnectionMissingFields(t *testing.T) {
 }
 
 func TestTestDBConnectionUnsupportedDatabaseType(t *testing.T) {
-	code, err := NewAgentService().TestDBConnection("user-1", &TestDBConnectionRequest{
+	ctx := t.Context()
+	code, err := NewAgentService().TestDBConnection(ctx, "user-1", &TestDBConnectionRequest{
 		DBType:   "postgres",
 		Database: "rag_flow",
 		Username: "root",
@@ -815,7 +1330,7 @@ func TestTestDBConnectionUnsupportedDatabaseType(t *testing.T) {
 	if code != common.CodeExceptionError {
 		t.Fatalf("expected code %d, got %d", common.CodeExceptionError, code)
 	}
-	if err.Error() != "Unsupported database type." {
+	if err.Error() != "unsupported database type" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -831,3 +1346,1037 @@ func TestDBConnectionPortAcceptsStringAndNumber(t *testing.T) {
 
 // ptr returns a pointer to the given int64.
 func ptr(v int64) *int64 { return &v }
+
+// TestResetAgentServiceClearsPerRunState asserts the happy path: a
+// canvas that already accumulated per-run state (history, retrieval,
+// memory, path, dirty sys.* globals) comes back from ResetAgent with
+// every accumulator emptied, every sys.* key zeroed, and every env.*
+// key restored from its declared default — and the row in the DB is
+// updated in place (release flipped to false, no new version row).
+func TestResetAgentServiceClearsPerRunState(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	ctx := t.Context()
+	initialDSL := entity.JSONMap{
+		"graph": map[string]any{
+			"nodes": []any{map[string]any{"id": "begin"}},
+			"edges": []any{},
+		},
+		"components": map[string]any{
+			"begin": map[string]any{
+				"obj": map[string]any{"component_name": "Begin"},
+			},
+		},
+		"history":   []any{"m1", "m2"},
+		"retrieval": []any{map[string]any{"doc": "x"}},
+		"memory":    []any{"mem"},
+		"path":      []any{"begin", "llm"},
+		"variables": map[string]any{
+			"answer": map[string]any{
+				"type":  "string",
+				"value": "default-answer",
+			},
+		},
+		"globals": map[string]any{
+			"sys.query":    "stale query",
+			"sys.history":  []any{"a", "b"},
+			"env.answer":   "stale answer",
+			"env.leftover": "stale",
+		},
+	}
+	row := &entity.UserCanvas{
+		ID:             "canvas-1",
+		UserID:         "user-1",
+		Title:          sptr("Test Agent"),
+		CanvasCategory: "agent_canvas",
+		Release:        true, // pre-reset draft has a published version
+		DSL:            initialDSL,
+	}
+	if err := dao.DB.WithContext(ctx).Create(row).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	got, err := NewAgentService().ResetAgent(ctx, "user-1", "canvas-1")
+	if err != nil {
+		t.Fatalf("ResetAgent failed: %v", err)
+	}
+
+	gotMap := map[string]any(got)
+	// Per-run accumulators.
+	if v, ok := gotMap["history"].([]any); !ok || len(v) != 0 {
+		t.Errorf("history = %v (%T), want empty []any", gotMap["history"], gotMap["history"])
+	}
+	if v, ok := gotMap["retrieval"].([]any); !ok || len(v) != 0 {
+		t.Errorf("retrieval = %v (%T), want empty []any", gotMap["retrieval"], gotMap["retrieval"])
+	}
+	if v, ok := gotMap["memory"].([]any); !ok || len(v) != 0 {
+		t.Errorf("memory = %v (%T), want empty []any", gotMap["memory"], gotMap["memory"])
+	}
+	if v, ok := gotMap["path"].([]any); !ok || len(v) != 0 {
+		t.Errorf("path = %v (%T), want empty []any", gotMap["path"], gotMap["path"])
+	}
+	globals, ok := gotMap["globals"].(map[string]any)
+	if !ok {
+		t.Fatalf("globals missing or wrong type: %T", gotMap["globals"])
+	}
+	if globals["sys.query"] != "" {
+		t.Errorf("sys.query = %v, want \"\"", globals["sys.query"])
+	}
+	if v, ok := globals["sys.history"].([]any); !ok || len(v) != 0 {
+		t.Errorf("sys.history = %v (%T), want empty []any", globals["sys.history"], globals["sys.history"])
+	}
+	if globals["env.answer"] != "default-answer" {
+		t.Errorf("env.answer = %v, want \"default-answer\" (restored from variables)", globals["env.answer"])
+	}
+	if globals["env.leftover"] != "" {
+		t.Errorf("env.leftover = %v, want \"\" (no declared default)", globals["env.leftover"])
+	}
+	// Static DSL must survive.
+	if gotMap["graph"] == nil {
+		t.Errorf("graph was removed by reset")
+	}
+	if gotMap["components"] == nil {
+		t.Errorf("components was removed by reset")
+	}
+
+	// DB row was updated in place; release flipped back to false.
+	persisted, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if persisted.Release {
+		t.Errorf("Release = true after reset, want false")
+	}
+	if persisted.DSL == nil {
+		t.Fatal("persisted DSL is nil after reset")
+	}
+	if v, ok := persisted.DSL["history"].([]any); !ok || len(v) != 0 {
+		t.Errorf("persisted history = %v (%T), want empty []any", persisted.DSL["history"], persisted.DSL["history"])
+	}
+}
+
+// TestResetAgentServiceNotFound asserts the same 404 path
+// loadCanvasForUser exposes for GetAgent / UpdateAgent: a missing
+// canvas surfaces as dao.ErrUserCanvasNotFound.
+func TestResetAgentServiceNotFound(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	ctx := t.Context()
+	_, err := NewAgentService().ResetAgent(ctx, "user-1", "missing")
+	if err == nil {
+		t.Fatal("expected error for missing canvas")
+	}
+	if !errors.Is(err, dao.ErrUserCanvasNotFound) {
+		t.Errorf("expected ErrUserCanvasNotFound, got %v", err)
+	}
+}
+
+func TestUpdateAgentSettingsPreservesDSL(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	originalDSL := entity.JSONMap{
+		"graph": map[string]any{
+			"nodes": []any{map[string]any{"id": "begin"}},
+			"edges": []any{},
+		},
+		"components": map[string]any{
+			"begin": map[string]any{
+				"obj": map[string]any{"component_name": "Begin"},
+			},
+		},
+	}
+	ctx := t.Context()
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
+		ID:             "canvas-settings",
+		UserID:         "user-1",
+		Title:          sptr("Settings Agent"),
+		Description:    sptr("old description"),
+		CanvasCategory: "agent_canvas",
+		DSL:            originalDSL,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-settings", map[string]interface{}{
+		"description": "new description",
+	})
+	if err != nil {
+		t.Fatalf("UpdateAgent failed: %v", err)
+	}
+
+	persisted, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-settings")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if persisted.Description == nil || *persisted.Description != "new description" {
+		t.Fatalf("Description = %v, want new description", persisted.Description)
+	}
+	if _, ok := persisted.DSL["graph"]; !ok {
+		t.Fatalf("DSL graph was removed: %#v", persisted.DSL)
+	}
+	if _, ok := persisted.DSL["components"]; !ok {
+		t.Fatalf("DSL components were removed: %#v", persisted.DSL)
+	}
+}
+
+func TestUpdateAgentAllowsExistingTitleForSameCanvas(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	ctx := t.Context()
+
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
+		ID:             "canvas-same-title",
+		UserID:         "user-1",
+		Title:          sptr("Same Title"),
+		Description:    sptr("old description"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-same-title", map[string]interface{}{
+		"title":       "Same Title",
+		"description": "new description",
+	})
+	if err != nil {
+		t.Fatalf("UpdateAgent failed for unchanged title: %v", err)
+	}
+}
+
+func TestUpdateAgentTeamMemberPermissionAndOwnerTitleChecks(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	ctx := t.Context()
+
+	status := "1"
+	for _, row := range []*entity.UserCanvas{
+		{
+			ID:             "canvas-team-edit",
+			UserID:         "owner-1",
+			Title:          sptr("Editable Title"),
+			Permission:     string(entity.TenantPermissionTeam),
+			CanvasCategory: "agent_canvas",
+			DSL:            entity.JSONMap{},
+		},
+		{
+			ID:             "canvas-owner-duplicate",
+			UserID:         "owner-1",
+			Title:          sptr("Owner Duplicate"),
+			Permission:     string(entity.TenantPermissionMe),
+			CanvasCategory: "agent_canvas",
+			DSL:            entity.JSONMap{},
+		},
+	} {
+		if err := dao.DB.WithContext(ctx).Create(row).Error; err != nil {
+			t.Fatalf("failed to seed canvas %s: %v", row.ID, err)
+		}
+	}
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserTenant{
+		ID:        "ut-agent-team",
+		UserID:    "member-1",
+		TenantID:  "owner-1",
+		Role:      "normal",
+		InvitedBy: "owner-1",
+		Status:    &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed user tenant: %v", err)
+	}
+
+	samePermission := " TEAM "
+	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
+		"description": "member edit",
+		"permission":  samePermission,
+	}); err != nil {
+		t.Fatalf("UpdateAgent with same permission failed: %v", err)
+	}
+
+	nextPermission := "me"
+	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
+		"permission": nextPermission,
+	}); err == nil {
+		t.Fatal("UpdateAgent permission change error = nil, want error")
+	}
+
+	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
+		"title": "Owner Duplicate",
+	}); err == nil || err.Error() != "Owner Duplicate already exists." {
+		t.Fatalf("UpdateAgent duplicate title error = %v, want Owner Duplicate already exists.", err)
+	}
+}
+
+func TestUpdateAgentRejectsDuplicateTitleInDestinationCategory(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	ctx := t.Context()
+
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
+		ID:             "canvas-source-category",
+		UserID:         "user-1",
+		Title:          sptr("Source Title"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed source canvas: %v", err)
+	}
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
+		ID:             "canvas-destination-duplicate",
+		UserID:         "user-1",
+		Title:          sptr("Duplicate Title"),
+		CanvasCategory: "dataflow_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed duplicate canvas: %v", err)
+	}
+
+	err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-source-category", map[string]interface{}{
+		"title":           "Duplicate Title",
+		"canvas_category": "dataflow_canvas",
+	})
+	if err == nil || err.Error() != "Duplicate Title already exists." {
+		t.Fatalf("UpdateAgent error = %v, want Duplicate Title already exists.", err)
+	}
+}
+
+func TestUpdateAgentRejectsCategoryOnlyDuplicateTitleInDestinationCategory(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-category-only-source",
+		UserID:         "user-1",
+		Title:          sptr("Shared Title"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed source canvas: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-category-only-duplicate",
+		UserID:         "user-1",
+		Title:          sptr("Shared Title"),
+		CanvasCategory: "dataflow_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed duplicate canvas: %v", err)
+	}
+
+	ctx := t.Context()
+	err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-category-only-source", map[string]interface{}{
+		"canvas_category": "dataflow_canvas",
+	})
+	if err == nil || err.Error() != "Shared Title already exists." {
+		t.Fatalf("UpdateAgent error = %v, want Shared Title already exists.", err)
+	}
+}
+
+func TestUpdateAgentPersistsDSLAsJSONMap(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	ctx := t.Context()
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
+		ID:             "canvas-dsl-update",
+		UserID:         "user-1",
+		Title:          sptr("DSL Agent"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-dsl-update", map[string]interface{}{
+		"dsl": map[string]interface{}{
+			"graph": map[string]interface{}{
+				"nodes": []interface{}{map[string]interface{}{"id": "begin"}},
+				"edges": []interface{}{},
+			},
+			"components": map[string]interface{}{
+				"begin": map[string]interface{}{
+					"obj": map[string]interface{}{"component_name": "Begin"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateAgent failed: %v", err)
+	}
+
+	persisted, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-dsl-update")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if _, ok := persisted.DSL["graph"]; !ok {
+		t.Fatalf("DSL graph was not persisted: %#v", persisted.DSL)
+	}
+}
+
+func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	ctx := t.Context()
+	if err := dao.DB.WithContext(ctx).Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
+		ID:             "canvas-version-draft",
+		UserID:         "user-1",
+		Title:          sptr("Draft Agent"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	patch := map[string]interface{}{
+		"title": "Draft Agent",
+		"dsl": map[string]interface{}{
+			"graph": map[string]interface{}{
+				"nodes": []interface{}{map[string]interface{}{"id": "begin"}},
+				"edges": []interface{}{},
+			},
+			"components": map[string]interface{}{
+				"begin": map[string]interface{}{
+					"obj": map[string]interface{}{"component_name": "Begin"},
+				},
+			},
+		},
+	}
+	if err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-version-draft", patch); err != nil {
+		t.Fatalf("first UpdateAgent failed: %v", err)
+	}
+	secondPatch := map[string]interface{}{
+		"title": "Renamed Agent",
+		"dsl":   patch["dsl"],
+	}
+	if err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-version-draft", secondPatch); err != nil {
+		t.Fatalf("second UpdateAgent failed: %v", err)
+	}
+
+	versions, err := dao.NewUserCanvasVersionDAO().ListByCanvasID(ctx, dao.DB, "canvas-version-draft")
+	if err != nil {
+		t.Fatalf("failed to list versions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("expected same DSL to replace latest draft, got %d versions", len(versions))
+	}
+	if versions[0].Title == nil || !strings.HasPrefix(*versions[0].Title, "owner_Renamed Agent_") {
+		t.Fatalf("unexpected version title: %v", versions[0].Title)
+	}
+	var release bool
+	if err = dao.DB.WithContext(ctx).Table("user_canvas_version").Select("release").Where("id = ?", versions[0].ID).Scan(&release).Error; err != nil {
+		t.Fatalf("failed to read release flag: %v", err)
+	}
+	if release {
+		t.Fatal("draft update saved a released version")
+	}
+}
+
+func TestUpdateAgentReleaseTrueMarksCanvasAndVersionReleased(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-update-release",
+		UserID:         "user-1",
+		Title:          sptr("Release Agent"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	ctx := t.Context()
+	// The front-end publish flow sends release as the string "true".
+	if err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-update-release", map[string]interface{}{
+		"title":   "Release Agent",
+		"release": "true",
+		"dsl": map[string]interface{}{
+			"graph": map[string]interface{}{
+				"nodes": []interface{}{map[string]interface{}{"id": "begin"}},
+				"edges": []interface{}{},
+			},
+			"components": map[string]interface{}{
+				"begin": map[string]interface{}{
+					"obj": map[string]interface{}{"component_name": "Begin"},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateAgent failed: %v", err)
+	}
+	persisted, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-update-release")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if !persisted.Release {
+		t.Fatal("canvas release flag was not set after publish update")
+	}
+	versions, err := dao.NewUserCanvasVersionDAO().ListByCanvasID(ctx, dao.DB, "canvas-update-release")
+	if err != nil {
+		t.Fatalf("failed to list versions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("expected 1 version, got %d", len(versions))
+	}
+	if !versions[0].Release {
+		t.Fatal("version created by publish update is not marked released")
+	}
+	lastPublishTime, err := NewAgentService().GetLastPublishTime(ctx, "canvas-update-release")
+	if err != nil {
+		t.Fatalf("GetLastPublishTime failed: %v", err)
+	}
+	if lastPublishTime == nil {
+		t.Fatal("GetLastPublishTime returned nil after publish")
+	}
+	if versions[0].UpdateTime == nil || *lastPublishTime != *versions[0].UpdateTime {
+		t.Fatalf("last publish time = %v, want version update_time %v", lastPublishTime, versions[0].UpdateTime)
+	}
+}
+
+func TestUpdateAgentWithoutReleaseKeepsCanvasUnreleased(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-update-draft",
+		UserID:         "user-1",
+		Title:          sptr("Draft Agent"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+		Release:        true,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	// Python parity: update_agent coerces a missing release to False and
+	// always writes it back to the canvas row.
+	ctx := t.Context()
+	if err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-update-draft", map[string]interface{}{
+		"title": "Draft Agent",
+		"dsl": map[string]interface{}{
+			"graph": map[string]interface{}{
+				"nodes": []interface{}{map[string]interface{}{"id": "begin"}},
+				"edges": []interface{}{},
+			},
+			"components": map[string]interface{}{
+				"begin": map[string]interface{}{
+					"obj": map[string]interface{}{"component_name": "Begin"},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateAgent failed: %v", err)
+	}
+	persisted, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-update-draft")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if persisted.Release {
+		t.Fatal("canvas release flag should be reset to false when release is absent")
+	}
+	if lastPublishTime, err := NewAgentService().GetLastPublishTime(ctx, "canvas-update-draft"); err != nil {
+		t.Fatalf("GetLastPublishTime failed: %v", err)
+	} else if lastPublishTime != nil {
+		t.Fatalf("GetLastPublishTime = %v, want nil without released version", lastPublishTime)
+	}
+}
+
+func TestListAgentsIncludesReleaseTime(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	createAgentSessionTestCanvas(t, "canvas-listed-released", "user-1")
+	createAgentSessionTestCanvas(t, "canvas-listed-draft", "user-1")
+
+	releaseTime := int64(1753335149000)
+	if err := dao.DB.Create(&entity.UserCanvasVersion{
+		ID:           "version-listed-released",
+		UserCanvasID: "canvas-listed-released",
+		Title:        sptr("owner_Test Agent_2026-07-24 00:00:00"),
+		Release:      true,
+		DSL:          entity.JSONMap{},
+		BaseModel:    entity.BaseModel{CreateTime: &releaseTime},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed released version: %v", err)
+	}
+	ctx := t.Context()
+	resp, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, "create_time", true, nil, "", "", nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
+	}
+
+	var released, draft *AgentItem
+	for _, raw := range resp.Canvas {
+		var item AgentItem
+		if err := json.Unmarshal(raw, &item); err != nil {
+			t.Fatalf("unmarshal canvas item: %v", err)
+		}
+		switch item.ID {
+		case "canvas-listed-released":
+			released = &item
+		case "canvas-listed-draft":
+			draft = &item
+		}
+	}
+	if released == nil || draft == nil {
+		t.Fatalf("expected both canvases in list, got %s", resp.Canvas)
+	}
+	if released.ReleaseTime == nil || *released.ReleaseTime != releaseTime {
+		t.Fatalf("ReleaseTime = %v, want %d", released.ReleaseTime, releaseTime)
+	}
+	if draft.ReleaseTime != nil {
+		t.Fatalf("draft canvas ReleaseTime = %v, want nil", draft.ReleaseTime)
+	}
+}
+
+// TestListAgents_MergesCompilationTemplateGroups verifies that a compilation
+// template group owned by the caller appears in the merged /agents list
+// (no canvas_category filter), carrying the "compilation_template_group" type
+// discriminator and its title = name. Built-in catalogue groups (empty tenant)
+// must NOT leak in.
+func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	base := time.Now().UnixMilli()
+	groupUpdate := base + 1000  // group updated most recently
+	canvasUpdate := base + 5000 // agent updated most recently
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	// Agent updated most recently (canvasUpdate > groupUpdate).
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID: "canvas-1", UserID: "user-1", Title: sptr("Agent canvas"),
+		CanvasCategory: "agent_canvas",
+		BaseModel:      entity.BaseModel{UpdateTime: &canvasUpdate},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+	// The caller's own group (must appear), updated before the canvas.
+	createAgentSessionTestCompilationGroup(t, "group-own", "user-1", groupUpdate)
+	// A built-in catalogue group with empty tenant_id (must NOT appear).
+	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
+		ID: "group-builtin", TenantID: "", Name: "Built-in templates",
+		Scope: "file", BaseModel: entity.BaseModel{CreateTime: &base},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed builtin group: %v", err)
+	}
+
+	resp, code, err := NewAgentService().ListAgents(t.Context(), "user-1", "", 1, 30, "create_time", true, nil, "", "", nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
+	}
+
+	var sawAgent, sawOwnGroup, sawBuiltin bool
+	var prevCat, prevName string
+	orderOK := true
+	for i, raw := range resp.Canvas {
+		var item map[string]interface{}
+		if err := json.Unmarshal(raw, &item); err != nil {
+			t.Fatalf("unmarshal canvas item: %v", err)
+		}
+		// Sort category: agents carry canvas_category; groups are classified by
+		// the "compilation_template_group" type discriminator (mirroring the
+		// frontend AgentListItem union).
+		cat := "agent"
+		if item["type"] == AgentItemTypeGroup {
+			cat = CompilationTemplateGroupCategory
+		} else if cc, ok := item["canvas_category"].(string); ok {
+			cat = cc
+		}
+		name, _ := item["title"].(string)
+		if i > 0 {
+			if cat < prevCat || (cat == prevCat && strings.ToLower(name) < strings.ToLower(prevName)) {
+				orderOK = false
+			}
+		}
+		prevCat, prevName = cat, name
+		switch item["type"] {
+		case AgentItemTypeAgent:
+			if item["id"] == "canvas-1" {
+				sawAgent = true
+			}
+		case AgentItemTypeGroup:
+			if item["id"] == "group-own" {
+				sawOwnGroup = true
+				if item["title"] != "own-group" || item["name"] != "own-group" {
+					t.Errorf("group title/name = %v/%v, want own-group", item["title"], item["name"])
+				}
+				if item["templates"] == nil {
+					t.Errorf("group item missing templates")
+				}
+			}
+			if item["id"] == "group-builtin" {
+				sawBuiltin = true
+			}
+		}
+	}
+	if !sawAgent {
+		t.Fatal("agent canvas-1 not in merged list")
+	}
+	if !sawOwnGroup {
+		t.Fatal("caller's compilation template group not in merged list")
+	}
+	if sawBuiltin {
+		t.Fatal("built-in catalogue group leaked into merged list")
+	}
+	if !orderOK {
+		t.Fatal("merged list is not ordered by (canvas_category, name) ascending")
+	}
+	// agent_canvas < compilation_template_group, so the canvas must be first.
+	var first map[string]interface{}
+	if err := json.Unmarshal(resp.Canvas[0], &first); err != nil {
+		t.Fatalf("unmarshal first item: %v", err)
+	}
+	if first["id"] != "canvas-1" {
+		t.Fatalf("first merged item = %v, want canvas-1 (agent_canvas category)", first["id"])
+	}
+}
+
+// TestSlicePage_NoOverflowPanic guards the review-Critical integer overflow:
+// an unbounded positive page/page_size must never overflow (page-1)*pageSize to
+// a negative start and panic; out-of-range pages return nil.
+func TestSlicePage_NoOverflowPanic(t *testing.T) {
+	s := []int{1, 2, 3, 4, 5}
+	// A huge page must return nil, not panic on an overflowing offset.
+	if got := slicePage(s, 1<<40, 1<<40); got != nil {
+		t.Fatalf("huge page/pageSize = %v, want nil", got)
+	}
+	if got := slicePage(s, 2, 3); len(got) != 2 || got[0] != 4 || got[1] != 5 {
+		t.Fatalf("page2/size3 = %v, want [4 5]", got)
+	}
+	if got := slicePage(s, 3, 2); len(got) != 1 || got[0] != 5 {
+		t.Fatalf("page3/size2 (start 4) = %v, want [5]", got)
+	}
+	if got := slicePage(s, 4, 2); got != nil {
+		t.Fatalf("page4/size2 (start 6 >= len 5) = %v, want nil", got)
+	}
+	// Empty/no-paging semantics preserved (empty input returns the empty slice,
+	// never a panic).
+	if got := slicePage([]int{}, 1, 10); len(got) != 0 {
+		t.Fatalf("empty slice = %v, want empty", got)
+	}
+}
+
+func createAgentSessionTestCompilationGroup(t *testing.T, id, tenantID string, now int64) {
+	t.Helper()
+	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
+		ID: id, TenantID: tenantID, Name: "own-group", Scope: "file",
+		BaseModel: entity.BaseModel{CreateTime: &now, UpdateTime: &now},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed group %s: %v", id, err)
+	}
+	if err := dao.DB.Create(&entity.CompilationTemplate{
+		ID: id + "-tpl", GroupID: &id, Name: "tree tpl", Kind: "tree",
+		Config:    entity.JSONMap{},
+		BaseModel: entity.BaseModel{CreateTime: &now},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed template for %s: %v", id, err)
+	}
+}
+
+func TestPublishAgentUpdatesCanvasAndReleasedVersion(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	ctx := t.Context()
+	if err := dao.DB.WithContext(ctx).Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	initialDSL := entity.JSONMap{
+		"components": map[string]any{},
+	}
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
+		ID:             "canvas-publish",
+		UserID:         "user-1",
+		Title:          sptr("Draft Agent"),
+		CanvasCategory: "agent_canvas",
+		DSL:            initialDSL,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+
+	description := "published description"
+	publishTitle := "  Published Agent  "
+	publishDSL := entity.JSONMap{
+		"graph": map[string]any{
+			"nodes": []any{map[string]any{"id": "begin"}},
+			"edges": []any{},
+		},
+		"components": map[string]any{
+			"begin": map[string]any{
+				"obj": map[string]any{"component_name": "Begin"},
+			},
+		},
+	}
+	row, err := NewAgentService().PublishAgent(ctx, "user-1", "canvas-publish", &PublishAgentRequest{
+		Title:       &publishTitle,
+		Description: &description,
+		DSL:         publishDSL,
+	})
+	if err != nil {
+		t.Fatalf("PublishAgent failed: %v", err)
+	}
+	if row == nil {
+		t.Fatal("PublishAgent returned nil version")
+	}
+	if !row.Release {
+		t.Fatal("published version release flag is false")
+	}
+	if row.Description == nil || *row.Description != description {
+		t.Fatalf("published version description = %v", row.Description)
+	}
+	if row.Title == nil || !strings.HasPrefix(*row.Title, "owner_Published Agent_") {
+		t.Fatalf("unexpected published version title: %v", row.Title)
+	}
+
+	persisted, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-publish")
+	if err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if !persisted.Release {
+		t.Fatal("publish did not mark canvas released")
+	}
+	if persisted.Title == nil || *persisted.Title != "Published Agent" {
+		t.Fatalf("published canvas title = %v", persisted.Title)
+	}
+	if persisted.Description == nil || *persisted.Description != description {
+		t.Fatalf("published canvas description = %v", persisted.Description)
+	}
+	if _, ok := persisted.DSL["graph"]; !ok {
+		t.Fatalf("published canvas DSL was not persisted: %#v", persisted.DSL)
+	}
+
+	versions, err := dao.NewUserCanvasVersionDAO().ListByCanvasID(ctx, dao.DB, "canvas-publish")
+	if err != nil {
+		t.Fatalf("failed to list versions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("expected one published version, got %d", len(versions))
+	}
+	if versions[0].ID != row.ID {
+		t.Fatalf("listed version id = %q, want %q", versions[0].ID, row.ID)
+	}
+	if !versions[0].Release {
+		t.Fatal("listed version release flag is false")
+	}
+}
+
+func TestUpdateAgentDSLDoesNotOverwriteLatestReleasedVersion(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	ctx := t.Context()
+	if err := dao.DB.WithContext(ctx).Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	dsl := entity.JSONMap{
+		"graph": map[string]any{
+			"nodes": []any{map[string]any{"id": "begin"}},
+			"edges": []any{},
+		},
+		"components": map[string]any{
+			"begin": map[string]any{
+				"obj": map[string]any{"component_name": "Begin"},
+			},
+		},
+	}
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
+		ID:             "canvas-released-latest",
+		UserID:         "user-1",
+		Title:          sptr("Released Agent"),
+		CanvasCategory: "agent_canvas",
+		DSL:            dsl,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+	releasedAt := time.Now().Add(-time.Minute)
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvasVersion{
+		ID:           "released-version",
+		UserCanvasID: "canvas-released-latest",
+		Title:        sptr("released"),
+		Release:      true,
+		DSL:          dsl,
+		BaseModel: entity.BaseModel{
+			CreateTime: ptr(releasedAt.UnixMilli()),
+			UpdateTime: ptr(releasedAt.UnixMilli()),
+		},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed released version: %v", err)
+	}
+
+	if err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-released-latest", map[string]interface{}{"dsl": map[string]interface{}(dsl)}); err != nil {
+		t.Fatalf("UpdateAgent failed: %v", err)
+	}
+
+	versions, err := dao.NewUserCanvasVersionDAO().ListByCanvasID(ctx, dao.DB, "canvas-released-latest")
+	if err != nil {
+		t.Fatalf("failed to list versions: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("expected draft save to create a new version beside the released one, got %d", len(versions))
+	}
+	var releasedCount int64
+	if err = dao.DB.WithContext(ctx).Table("user_canvas_version").Where("user_canvas_id = ? AND release = ?", "canvas-released-latest", true).Count(&releasedCount).Error; err != nil {
+		t.Fatalf("failed to count released versions: %v", err)
+	}
+	if releasedCount != 1 {
+		t.Fatalf("released version count = %d, want 1", releasedCount)
+	}
+	var draftCount int64
+	if err = dao.DB.WithContext(ctx).Table("user_canvas_version").Where("user_canvas_id = ? AND release = ?", "canvas-released-latest", false).Count(&draftCount).Error; err != nil {
+		t.Fatalf("failed to count draft versions: %v", err)
+	}
+	if draftCount != 1 {
+		t.Fatalf("draft version count = %d, want 1", draftCount)
+	}
+}
+
+// TestResetAgentServiceOtherTenant asserts the access-denied path:
+// a canvas owned by user-2 is not visible to user-1, so the same
+// not-found error type is returned. The service layer does not
+// distinguish "missing" from "not yours" because the Python
+// handler at api/apps/restful_apis/agent_api.py:1002 emits
+// "canvas not found." for both.
+func TestResetAgentServiceOtherTenant(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	createAgentSessionTestCanvas(t, "canvas-1", "user-2")
+
+	ctx := t.Context()
+	_, err := NewAgentService().ResetAgent(ctx, "user-1", "canvas-1")
+	if !errors.Is(err, dao.ErrUserCanvasNotFound) {
+		t.Errorf("expected ErrUserCanvasNotFound for cross-tenant access, got %v", err)
+	}
+}
+
+// TestGetAgentSession_RejectsIDOR mirrors the Python regression
+// test for PR #15374: a session that exists for agent-A must NOT
+// be returned when the URL path asks for agent-B. The Go
+// protection is enforced inside the DAO query
+// (`WHERE id = ? AND dialog_id = ?`), so the service sees nil and
+// returns CodeNotFound. This is a stronger guarantee than the
+// Python "post-fetch dialog_id check" — the SQL simply cannot
+// return a row whose dialog_id does not match the URL.
+//
+// The test exercises the full service path: it constructs a
+// session under agent-1, then asks the service for that session
+// ID under agent-2. The service must respond with CodeNotFound
+// and a nil data pointer.
+func TestGetAgentSession_RejectsIDOR(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "agent-1", "user-1")
+	createAgentSessionTestCanvas(t, "agent-2", "user-1")
+	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
+
+	ctx := t.Context()
+	data, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "agent-2", "session-1")
+	if err == nil {
+		t.Fatal("expected non-nil error for cross-agent session access")
+	}
+	if code != common.CodeNotFound {
+		t.Fatalf("expected code %d (CodeNotFound), got %d", common.CodeNotFound, code)
+	}
+	if data != nil {
+		t.Errorf("expected nil data, got %+v", data)
+	}
+}
+
+// TestGetAgentSession_SuccessWhenAgentMatches is the negative
+// control: the same session ID IS returned when the URL path's
+// agent_id matches the row's dialog_id. Without this, the IDOR
+// test could pass trivially if the protection were too broad.
+func TestGetAgentSession_SuccessWhenAgentMatches(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "agent-1", "user-1")
+	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
+
+	ctx := t.Context()
+	data, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "agent-1", "session-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
+	}
+	if data == nil {
+		t.Fatal("expected non-nil data")
+	}
+	if data.ID != "session-1" {
+		t.Errorf("expected ID=session-1, got %s", data.ID)
+	}
+}
+
+// TestDeleteAgentSessionItem_RejectsIDOR mirrors the IDOR test for
+// DELETE: a session under agent-A must NOT be deleted when the URL
+// path asks for agent-B. The DAO's `WHERE id = ? AND dialog_id = ?`
+// is a no-op in this case (rows affected = 0), and the service
+// returns (false, CodeSuccess, nil) so the API replies with an
+// "empty" success rather than 404 — same trade-off the Python
+// fix chose by returning the generic "Session not found!".
+func TestDeleteAgentSessionItem_RejectsIDOR(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "agent-1", "user-1")
+	createAgentSessionTestCanvas(t, "agent-2", "user-1")
+	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
+
+	ctx := t.Context()
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(ctx, "user-1", "agent-2", "session-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
+	}
+	if deleted {
+		t.Fatal("expected deleted=false for cross-agent delete")
+	}
+
+	// The session must still exist — the cross-agent delete was a no-op.
+	verify, _, err := NewAgentService().GetAgentSession(ctx, "user-1", "agent-1", "session-1")
+	if err != nil {
+		t.Fatalf("session should still exist for the legitimate owner: %v", err)
+	}
+	if verify == nil || verify.ID != "session-1" {
+		t.Fatalf("session was deleted despite IDOR rejection: %+v", verify)
+	}
+}
+
+func TestAgentHistoryRenderingMatchesPythonShapes(t *testing.T) {
+	user := renderUserHistoryValue(map[string]any{
+		"content": "你好",
+		"count":   2,
+	})
+	if user != `{"content":"你好","count":2}` {
+		t.Fatalf("rendered user history = %q", user)
+	}
+
+	assistant := pythonHistoryRepr(map[string]any{
+		"content": "it's ready\nnext",
+		"ok":      true,
+	})
+	want := `{'content': 'it\'s ready\nnext', 'ok': True}`
+	if assistant != want {
+		t.Fatalf("rendered assistant history = %q, want %q", assistant, want)
+	}
+}
+
+func TestOpenAICompatPriorHistoryPreservesConversation(t *testing.T) {
+	messages := []map[string]interface{}{
+		{"role": "system", "content": "Be concise."},
+		{"role": "user", "content": "What is 1+1?"},
+		{"role": "assistant", "content": "2"},
+		{"role": "user", "content": "What is 2+2?"},
+	}
+
+	history := openAICompatPriorHistory(messages)
+	want := []map[string]any{
+		{"role": "system", "content": "Be concise."},
+		{"role": "user", "content": "What is 1+1?"},
+		{"role": "assistant", "content": "2"},
+	}
+	if !reflect.DeepEqual(history, want) {
+		t.Fatalf("prior history = %#v, want %#v", history, want)
+	}
+}

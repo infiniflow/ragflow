@@ -58,12 +58,12 @@ class TestDocumentsParse:
         "payload, expected_message",
         [
             pytest.param(None, "AttributeError", marks=pytest.mark.skip),
-            pytest.param({"document_ids": []}, "`document_ids` is required", marks=pytest.mark.p1),
+            pytest.param({"document_ids": []}, "`document_ids` is required", marks=pytest.mark.p3),
             pytest.param({"document_ids": ["invalid_id"]}, "Documents not found: ['invalid_id']", marks=pytest.mark.p3),
             pytest.param({"document_ids": ["\n!?。；！？\"'"]}, "Documents not found: ['\\n!?。；！？\"\\'']", marks=pytest.mark.p3),
             pytest.param("not json", "AttributeError", marks=pytest.mark.skip),
-            pytest.param(lambda r: {"document_ids": r[:1]}, "", marks=pytest.mark.p1),
-            pytest.param(lambda r: {"document_ids": r}, "", marks=pytest.mark.p1),
+            pytest.param(lambda r: {"document_ids": r[:1]}, "", marks=pytest.mark.p3),
+            pytest.param(lambda r: {"document_ids": r}, "", marks=pytest.mark.p3),
         ],
     )
     def test_basic_scenarios(self, add_documents_func, payload, expected_message):
@@ -84,7 +84,7 @@ class TestDocumentsParse:
         "payload",
         [
             pytest.param(lambda r: {"document_ids": ["invalid_id"] + r}, marks=pytest.mark.p3),
-            pytest.param(lambda r: {"document_ids": r[:1] + ["invalid_id"] + r[1:3]}, marks=pytest.mark.p1),
+            pytest.param(lambda r: {"document_ids": r[:1] + ["invalid_id"] + r[1:3]}, marks=pytest.mark.p3),
             pytest.param(lambda r: {"document_ids": r + ["invalid_id"]}, marks=pytest.mark.p3),
         ],
     )

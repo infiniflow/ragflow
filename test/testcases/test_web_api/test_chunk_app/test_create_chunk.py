@@ -145,7 +145,7 @@ class TestAddChunk:
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
-            ("invalid_document_id", 102, "You don't own the document invalid_document_id."),
+            ("invalid_document_id", 102, "you don't own the document invalid_document_id"),
         ],
     )
     def test_invalid_document_id(self, WebApiAuth, add_document, document_id, expected_code, expected_message):
@@ -177,7 +177,7 @@ class TestAddChunk:
         delete_document(WebApiAuth, dataset_id, {"ids": [document_id]})
         res = add_chunk(WebApiAuth, dataset_id, document_id, {"content": "chunk test"})
         assert res["code"] == 102, res
-        assert res["message"] == f"You don't own the document {document_id}.", res
+        assert res["message"] == f"you don't own the document {document_id}", res
 
     @pytest.mark.skip(reason="issues/6411")
     @pytest.mark.p3
@@ -187,10 +187,7 @@ class TestAddChunk:
         chunks_count = list_chunks(WebApiAuth, dataset_id, document_id)["data"]["doc"]["chunk_count"]
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(add_chunk, WebApiAuth, dataset_id, document_id, {"content": f"chunk test {i}"})
-                for i in range(count)
-            ]
+            futures = [executor.submit(add_chunk, WebApiAuth, dataset_id, document_id, {"content": f"chunk test {i}"}) for i in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
         assert all(future.result()["code"] == 0 for future in futures)

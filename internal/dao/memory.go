@@ -24,6 +24,8 @@ import (
 	"fmt"
 	"ragflow/internal/entity"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 // Memory type bit flag constants, consistent with Python MemoryType enum
@@ -111,8 +113,8 @@ func NewMemoryDAO() *MemoryDAO {
 //
 // Returns:
 //   - error: Database operation error
-func (dao *MemoryDAO) Create(memory *entity.Memory) error {
-	return DB.Create(memory).Error
+func (dao *MemoryDAO) Create(ctx context.Context, db *gorm.DB, memory *entity.Memory) error {
+	return db.WithContext(ctx).Create(memory).Error
 }
 
 // GetByID retrieves a memory record by ID from database
@@ -123,14 +125,14 @@ func (dao *MemoryDAO) Create(memory *entity.Memory) error {
 // Returns:
 //   - *model.Memory: Memory model pointer
 //   - error: Database operation error
-func (dao *MemoryDAO) GetByID(id string) (*entity.Memory, error) {
-	return dao.GetByIDWithContext(context.Background(), id)
+func (dao *MemoryDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Memory, error) {
+	return dao.GetByIDWithContext(ctx, db, id)
 }
 
 // GetByIDWithContext retrieves a memory record by ID from database with context.
-func (dao *MemoryDAO) GetByIDWithContext(ctx context.Context, id string) (*entity.Memory, error) {
+func (dao *MemoryDAO) GetByIDWithContext(ctx context.Context, db *gorm.DB, id string) (*entity.Memory, error) {
 	var memory entity.Memory
-	err := DB.WithContext(ctx).Where("id = ?", id).First(&memory).Error
+	err := db.WithContext(ctx).Where("id = ?", id).First(&memory).Error
 	if err != nil {
 		return nil, err
 	}
@@ -145,9 +147,9 @@ func (dao *MemoryDAO) GetByIDWithContext(ctx context.Context, id string) (*entit
 // Returns:
 //   - []*model.Memory: Memory model pointer array
 //   - error: Database operation error
-func (dao *MemoryDAO) GetByTenantID(tenantID string) ([]*entity.Memory, error) {
+func (dao *MemoryDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]*entity.Memory, error) {
 	var memories []*entity.Memory
-	err := DB.Where("tenant_id = ?", tenantID).Find(&memories).Error
+	err := db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&memories).Error
 	return memories, err
 }
 
@@ -161,9 +163,9 @@ func (dao *MemoryDAO) GetByTenantID(tenantID string) ([]*entity.Memory, error) {
 // Returns:
 //   - []*model.Memory: Matching memory list (for existence check)
 //   - error: Database operation error
-func (dao *MemoryDAO) GetByNameAndTenant(name string, tenantID string) ([]*entity.Memory, error) {
+func (dao *MemoryDAO) GetByNameAndTenant(ctx context.Context, db *gorm.DB, name string, tenantID string) ([]*entity.Memory, error) {
 	var memories []*entity.Memory
-	err := DB.Where("name = ? AND tenant_id = ?", name, tenantID).Find(&memories).Error
+	err := db.WithContext(ctx).Where("name = ? AND tenant_id = ?", name, tenantID).Find(&memories).Error
 	return memories, err
 }
 
@@ -175,9 +177,9 @@ func (dao *MemoryDAO) GetByNameAndTenant(name string, tenantID string) ([]*entit
 // Returns:
 //   - []*model.Memory: Memory model pointer array
 //   - error: Database operation error
-func (dao *MemoryDAO) GetByIDs(ids []string) ([]*entity.Memory, error) {
+func (dao *MemoryDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Memory, error) {
 	var memories []*entity.Memory
-	err := DB.Where("id IN ?", ids).Find(&memories).Error
+	err := db.WithContext(ctx).Where("id IN ?", ids).Find(&memories).Error
 	return memories, err
 }
 
@@ -202,7 +204,7 @@ func (dao *MemoryDAO) GetByIDs(ids []string) ([]*entity.Memory, error) {
 //
 //	updates := map[string]interface{}{"name": "NewName", "memory_type": []string{"semantic"}}
 //	err := dao.UpdateByID("memory123", updates)
-func (dao *MemoryDAO) UpdateByID(id string, updates map[string]interface{}) error {
+func (dao *MemoryDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
 	if updates == nil || len(updates) == 0 {
 		return nil
 	}
@@ -222,7 +224,7 @@ func (dao *MemoryDAO) UpdateByID(id string, updates map[string]interface{}) erro
 		}
 	}
 
-	return DB.Model(&entity.Memory{}).Where("id = ?", id).Updates(updates).Error
+	return db.WithContext(ctx).Model(&entity.Memory{}).Where("id = ?", id).Updates(updates).Error
 }
 
 // DeleteByID deletes a memory by ID
@@ -236,8 +238,8 @@ func (dao *MemoryDAO) UpdateByID(id string, updates map[string]interface{}) erro
 // Example:
 //
 //	err := dao.DeleteByID("memory123")
-func (dao *MemoryDAO) DeleteByID(id string) error {
-	return DB.Where("id = ?", id).Delete(&entity.Memory{}).Error
+func (dao *MemoryDAO) DeleteByID(ctx context.Context, db *gorm.DB, id string) error {
+	return db.WithContext(ctx).Where("id = ?", id).Delete(&entity.Memory{}).Error
 }
 
 // GetWithOwnerNameByID retrieves a memory with owner name by ID
@@ -253,7 +255,7 @@ func (dao *MemoryDAO) DeleteByID(id string) error {
 // Example:
 //
 //	memory, err := dao.GetWithOwnerNameByID("memory123")
-func (dao *MemoryDAO) GetWithOwnerNameByID(id string) (*entity.MemoryListItem, error) {
+func (dao *MemoryDAO) GetWithOwnerNameByID(ctx context.Context, db *gorm.DB, id string) (*entity.MemoryListItem, error) {
 	querySQL := `
 		SELECT m.id, m.name, m.avatar, m.tenant_id, m.memory_type,
 			m.storage_type, m.embd_id, m.tenant_embd_id, m.llm_id, m.tenant_llm_id,
@@ -271,7 +273,7 @@ func (dao *MemoryDAO) GetWithOwnerNameByID(id string) (*entity.MemoryListItem, e
 		OwnerName *string `gorm:"column:owner_name"`
 	}
 
-	if err := DB.Raw(querySQL, id).Scan(&rawResult).Error; err != nil {
+	if err := db.WithContext(ctx).Raw(querySQL, id).Scan(&rawResult).Error; err != nil {
 		return nil, err
 	}
 
@@ -301,13 +303,18 @@ func (dao *MemoryDAO) GetWithOwnerNameByID(id string) (*entity.MemoryListItem, e
 // Example:
 //
 //	memories, total, err := dao.GetByFilter([]string{"tenant1"}, []string{"semantic"}, "table", "test", 1, 10)
-func (dao *MemoryDAO) GetByFilter(tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int) ([]*entity.MemoryListItem, int64, error) {
+func (dao *MemoryDAO) GetByFilter(ctx context.Context, db *gorm.DB, userID string, tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int) ([]*entity.MemoryListItem, int64, error) {
 	var conditions []string
 	var args []interface{}
 
 	if len(tenantIDs) > 0 {
 		conditions = append(conditions, "m.tenant_id IN ?")
 		args = append(args, tenantIDs)
+	}
+
+	if userID != "" {
+		conditions = append(conditions, "(m.tenant_id = ? OR m.permissions = ?)")
+		args = append(args, userID, "team")
 	}
 
 	if len(memoryTypes) > 0 {
@@ -333,7 +340,7 @@ func (dao *MemoryDAO) GetByFilter(tenantIDs []string, memoryTypes []string, stor
 
 	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM memory m %s", whereClause)
 	var total int64
-	if err := DB.Raw(countSQL, args...).Scan(&total).Error; err != nil {
+	if err := db.WithContext(ctx).Raw(countSQL, args...).Scan(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -348,7 +355,7 @@ func (dao *MemoryDAO) GetByFilter(tenantIDs []string, memoryTypes []string, stor
 		FROM memory m
 		LEFT JOIN user u ON m.tenant_id = u.id
 		%s
-		ORDER BY m.update_time DESC
+		ORDER BY m.create_time DESC
 		LIMIT ? OFFSET ?
 	`, whereClause)
 
@@ -359,7 +366,7 @@ func (dao *MemoryDAO) GetByFilter(tenantIDs []string, memoryTypes []string, stor
 		OwnerName *string `gorm:"column:owner_name"`
 	}
 
-	if err := DB.Raw(querySQL, queryArgs...).Scan(&rawResults).Error; err != nil {
+	if err := db.WithContext(ctx).Raw(querySQL, queryArgs...).Scan(&rawResults).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -372,4 +379,33 @@ func (dao *MemoryDAO) GetByFilter(tenantIDs []string, memoryTypes []string, stor
 	}
 
 	return memories, total, nil
+}
+
+// Accessible check if it is possible for user to access the memory
+func (dao *MemoryDAO) Accessible(ctx context.Context, db *gorm.DB, userID, memoryID string) (bool, error) {
+	memory, err := dao.GetByID(ctx, db, memoryID)
+	if err != nil {
+		return false, err
+	}
+
+	if memory.TenantID == userID {
+		return true, nil
+	}
+
+	if memory.Permissions != string(entity.TenantPermissionTeam) {
+		return false, fmt.Errorf("user %s have no access to this memory", userID)
+	}
+
+	var count int64
+	err = db.WithContext(ctx).Table("user_tenant").
+		Where("tenant_id = ? AND user_id = ? AND status = ?", memory.TenantID, userID, "1").
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+
+	return false, fmt.Errorf("user %s have no access to this memory", userID)
 }

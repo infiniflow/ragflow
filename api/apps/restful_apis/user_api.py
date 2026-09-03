@@ -29,6 +29,7 @@ from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
 from api.db.services.file_service import FileService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
+from api.db.joint_services.tenant_model_service import ensure_tenant_model_ids_for_params
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.misc_utils import download_img, get_uuid
 from common.constants import RetCode
@@ -40,6 +41,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from api.utils.nickname_validation import validate_nickname
 from api.utils.crypt import decrypt
 from rag.utils.redis_conn import REDIS_CONN
 from api.apps import login_required, current_user, login_user, logout_user
@@ -113,7 +115,7 @@ async def login():
 
     user = UserService.query_user(email, password)
 
-    if user and hasattr(user, 'is_active') and user.is_active == "0":
+    if user and hasattr(user, "is_active") and user.is_active == "0":
         logging.warning("Login failed: disabled account for user_id=%s", user.id)
         return get_json_result(
             data=False,
@@ -123,6 +125,7 @@ async def login():
     elif user:
         user.access_token = get_uuid()
         login_user(user)
+        user.last_login_time = get_format_time()
         user.update_time = current_timestamp()
         user.update_date = datetime_format(datetime.now())
         user.save()
@@ -170,7 +173,7 @@ async def oauth_login(channel):
     state = get_uuid()
     session["oauth_state"] = state
     auth_url = auth_cli.get_authorization_url(state)
-    logging.info("OAuth login initiated: channel='%s', state='%s'", channel, state)
+    logging.info("OAuth login initiated: channel='%s'", channel)
     return redirect(auth_url)
 
 
@@ -258,7 +261,7 @@ async def oauth_callback(channel):
         # User exists, try to log in
         user = users[0]
         user.access_token = get_uuid()
-        if user and hasattr(user, 'is_active') and user.is_active == "0":
+        if user and hasattr(user, "is_active") and user.is_active == "0":
             return redirect("/?error=user_inactive")
 
         login_user(user)
@@ -329,6 +332,7 @@ async def setting_user():
     """
     update_dict = {}
     request_data = await get_request_json()
+    password_changed = False
     if request_data.get("password"):
         new_password = request_data.get("new_password")
         if not check_password_hash(current_user.password, decrypt(request_data["password"])):
@@ -340,6 +344,8 @@ async def setting_user():
 
         if new_password:
             update_dict["password"] = generate_password_hash(decrypt(new_password))
+            update_dict["access_token"] = f"INVALID_{secrets.token_hex(16)}"
+            password_changed = True
 
     for k in request_data.keys():
         if k in [
@@ -357,8 +363,16 @@ async def setting_user():
             continue
         update_dict[k] = request_data[k]
 
+    if "nickname" in update_dict:
+        error_message, error_code = validate_nickname(update_dict["nickname"])
+        if error_message:
+            return get_json_result(data=False, message=error_message, code=error_code)
+        update_dict["nickname"] = update_dict["nickname"].strip()
+
     try:
         UserService.update_by_id(current_user.id, update_dict)
+        if password_changed:
+            logout_user()
         return get_json_result(data=True)
     except Exception as e:
         logging.exception(e)
@@ -416,12 +430,12 @@ def user_register(user_id, user):
     tenant = {
         "id": user_id,
         "name": user["nickname"] + "‘s Kingdom",
-        "llm_id": settings.CHAT_MDL,
-        "embd_id": settings.EMBEDDING_MDL,
-        "asr_id": settings.ASR_MDL,
-        "parser_ids": settings.PARSERS,
-        "img2txt_id": settings.IMAGE2TEXT_MDL,
-        "rerank_id": settings.RERANK_MDL,
+        "llm_id": "",
+        "embd_id": "",
+        "asr_id": "",
+        "parser_ids": "",
+        "img2txt_id": "",
+        "rerank_id": "",
     }
     usr_tenant = {
         "tenant_id": user_id,
@@ -512,6 +526,11 @@ async def user_add():
 
     # Construct user info data
     nickname = req["nickname"]
+    error_message, error_code = validate_nickname(nickname)
+    if error_message:
+        return get_json_result(data=False, message=error_message, code=error_code)
+    nickname = nickname.strip()
+
     user_dict = {
         "access_token": get_uuid(),
         "email": email_address,
@@ -627,7 +646,11 @@ async def set_tenant_info():
     req = await get_request_json()
     try:
         tid = req.pop("tenant_id")
-        TenantService.update_by_id(tid, req)
+        if tid != current_user.id:
+            logging.warning("IDOR attempt blocked: user %s requested tenant_id %s on %s", current_user.id, tid, request.path)
+            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        update_dict = ensure_tenant_model_ids_for_params(tid, req)
+        TenantService.update_by_id(tid, update_dict)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
@@ -640,7 +663,7 @@ async def forget_get_captcha():
     - Generate an image captcha and cache it in Redis under key captcha:{email} with TTL = OTP_TTL_SECONDS.
     - Returns the captcha as a PNG image.
     """
-    email = (request.args.get("email") or "")
+    email = request.args.get("email") or ""
     if not email:
         return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="email is required")
 
@@ -651,9 +674,10 @@ async def forget_get_captcha():
     # Generate captcha text
     allowed = string.ascii_uppercase + string.digits
     captcha_text = "".join(secrets.choice(allowed) for _ in range(OTP_LENGTH))
-    REDIS_CONN.set(captcha_key(email), captcha_text, 60) # Valid for 60 seconds
+    REDIS_CONN.set(captcha_key(email), captcha_text, 60)  # Valid for 60 seconds
 
     from captcha.image import ImageCaptcha
+
     image = ImageCaptcha(width=300, height=120, font_sizes=[50, 60, 70])
     img_bytes = image.generate(captcha_text).read()
     response = await make_response(img_bytes)
@@ -803,7 +827,7 @@ async def forget_reset_password():
     - auto login
     - clear verified flag
     """
-    
+
     req = await get_request_json()
     email = req.get("email") or ""
     new_pwd = req.get("new_password")
@@ -816,8 +840,8 @@ async def forget_reset_password():
         return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="email not verified")
 
     new_pwd_base64 = decrypt(new_pwd)
-    new_pwd_string = base64.b64decode(new_pwd_base64).decode('utf-8')
-    new_pwd2_string = base64.b64decode(decrypt(new_pwd2)).decode('utf-8')
+    new_pwd_string = base64.b64decode(new_pwd_base64).decode("utf-8")
+    new_pwd2_string = base64.b64decode(decrypt(new_pwd2)).decode("utf-8")
 
     if new_pwd_string != new_pwd2_string:
         return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="passwords do not match")
@@ -825,7 +849,7 @@ async def forget_reset_password():
     users = UserService.query_user_by_email(email=email)
     if not users:
         return get_json_result(data=False, code=RetCode.DATA_ERROR, message="invalid email")
-    
+
     user = users[0]
     try:
         UserService.update_user_password(user.id, new_pwd_base64)
@@ -841,5 +865,3 @@ async def forget_reset_password():
 
     msg = "Password reset successful. Logged in."
     return await construct_response(data=user.to_safe_dict(for_self=True), auth=user.get_id(), message=msg)
-
-

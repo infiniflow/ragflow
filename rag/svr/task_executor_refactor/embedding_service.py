@@ -90,7 +90,7 @@ class EmbeddingService:
         # Batch encode contents using EmbeddingUtils
         vects_batches = []
         for i in range(0, len(contents), self._embedding_batch_size):
-            batch = contents[i: i + self._embedding_batch_size]
+            batch = contents[i : i + self._embedding_batch_size]
             async with self._task_context.embed_limiter:
                 vts, c = await thread_pool_exec(
                     self._batch_encode_wrapper,

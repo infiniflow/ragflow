@@ -18,6 +18,7 @@ import { omit } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router';
+import { MemoryApiAction } from '../memory/constant';
 import {
   CreateMemoryResponse,
   DeleteMemoryProps,
@@ -217,9 +218,9 @@ export const useUpdateMemory = () => {
       queryClient.invalidateQueries({
         queryKey: ['memoryDetail', variables.id],
       });
-    },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
+      queryClient.invalidateQueries({
+        queryKey: [MemoryApiAction.FetchMemoryDetail],
+      });
     },
   });
 
@@ -303,6 +304,7 @@ export const useRenameMemory = () => {
 };
 
 export function useSelectFilters() {
+  const { t } = useTranslation();
   const { data: res } = useFetchMemoryList();
   const data = res?.data;
 
@@ -318,16 +320,16 @@ export function useSelectFilters() {
   }, [data?.memory_list]);
 
   const filters: FilterCollection[] = [
-    buildOwnersFilter(data?.memory_list ?? [], 'owner_name'),
+    buildOwnersFilter(data?.memory_list ?? [], 'owner_name', t('common.owner')),
     {
       field: 'memoryType',
       list: memoryType,
-      label: 'Memory Type',
+      label: t('memories.memoryType'),
     },
     {
       field: 'storageType',
       list: storageType,
-      label: 'Storage Type',
+      label: t('memory.config.storageType'),
     },
   ];
 

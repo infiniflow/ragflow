@@ -28,6 +28,13 @@ class DropboxConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.batch_size = batch_size
         self.dropbox_client: Dropbox | None = None
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "DropboxConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(batch_size=batch_size)
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Load Dropbox credentials"""
         access_token = credentials.get("dropbox_access_token")

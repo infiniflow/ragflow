@@ -19,6 +19,7 @@ from rag.graphrag.utils import chat_limiter, pack_user_ass_to_openai_messages, s
 from rag.llm.chat_model import Base as CompletionLLM
 from common.token_utils import num_tokens_from_string
 
+
 @dataclass
 class GraphExtractionResult:
     """Unipartite graph extraction result class definition."""
@@ -121,5 +122,5 @@ class GraphExtractor(Extractor):
         if self.callback:
             self.callback(
                 0.5 + 0.1 * len(out_results) / num_chunks,
-                msg=f"Entities extraction of chunk {chunk_seq+1} {len(out_results)}/{num_chunks} done, {len(maybe_nodes)} nodes, {len(maybe_edges)} edges, {token_count} tokens.",
+                msg=f"Entities extraction of chunk {chunk_seq + 1} {len(out_results)}/{num_chunks} done, {len(maybe_nodes)} nodes, {len(maybe_edges)} edges, {token_count} tokens.",
             )

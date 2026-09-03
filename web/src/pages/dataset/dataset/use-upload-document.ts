@@ -47,7 +47,12 @@ export const useHandleUploadDocument = () => {
           return;
         }
 
-        if (isSuccess && parseOnCreation) {
+        // Trigger parsing for both full and partial success when parseOnCreation is enabled
+        if (
+          (isSuccess || isPartialSuccess) &&
+          parseOnCreation &&
+          ret.data?.length > 0
+        ) {
           runDocumentByIds({
             documentIds: ret.data.map((x: any) => x.id),
             run: 1,

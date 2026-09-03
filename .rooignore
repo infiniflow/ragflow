@@ -72,9 +72,9 @@ docker/seekdb
 # Native / compiled build dirs
 target/
 bin/
-internal/cpp/build/
-internal/cpp/cmake-build-release/
-internal/cpp/cmake-build-debug/
+internal/binding/cpp/build/
+internal/binding/cpp/cmake-build-release/
+internal/binding/cpp/cmake-build-debug/
 
 # Optional: skip tests and docs from indexing
 # test/

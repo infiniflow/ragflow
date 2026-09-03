@@ -128,10 +128,12 @@ RAGFlow.create_dataset(
     name: str,
     avatar: Optional[str] = None,
     description: Optional[str] = None,
-    embedding_model: Optional[str] = "BAAI/bge-large-zh-v1.5@BAAI",
-    permission: str = "me", 
+    embedding_model: Optional[str] = None,
+    permission: str = "me",
     chunk_method: str = "naive",
-    parser_config: DataSet.ParserConfig = None
+    parser_config: Optional[DataSet.ParserConfig] = None,
+    auto_metadata_config: Optional[dict[str, Any]] = None
+
 ) -> DataSet
 ```
 
@@ -154,10 +156,17 @@ Base64 encoding of the avatar. Defaults to `None`
 
 A brief description of the dataset to create. Defaults to `None`.
 
+##### embedding_model: `string | None`
+
+The embedding model to use for the dataset. Defaults to `None`.
+
+##### auto_metadata_config: `dict[str, Any] | None`
+
+The automatic metadata extraction configuration for the dataset. Defaults to `None`.
 
 ##### permission
 
-Specifies who can access the dataset to create. Available options:  
+Specifies who can access the dataset to create. Available options:
 
 - `"me"`: (Default) Only you can manage the dataset.
 - `"team"`: All team members can manage the dataset.
@@ -167,7 +176,7 @@ Specifies who can access the dataset to create. Available options:
 The chunking method of the dataset to create. Available options:
 
 - `"naive"`: General (default)
-- `"manual`: Manual
+- `"manual"`: Manual
 - `"qa"`: Q&A
 - `"table"`: Table
 - `"paper"`: Paper
@@ -178,33 +187,31 @@ The chunking method of the dataset to create. Available options:
 - `"one"`: One
 - `"email"`: Email
 
-##### parser_config
+##### parser_config: `DataSet.ParserConfig | None`
 
 The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
-- `chunk_method`=`"naive"`:  
+- `chunk_method`=`"naive"`:
   `{"chunk_token_num":512,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\\n"}}`.
-- `chunk_method`=`"qa"`:  
+- `chunk_method`=`"qa"`:
   `{"raptor": {"use_raptor": False}}`
-- `chunk_method`=`"manuel"`:  
+- `chunk_method`=`"manual"`:
   `{"raptor": {"use_raptor": False}}`
-- `chunk_method`=`"table"`:  
+- `chunk_method`=`"table"`:
   `None`
-- `chunk_method`=`"paper"`:  
+- `chunk_method`=`"paper"`:
   `{"raptor": {"use_raptor": False}}`
-- `chunk_method`=`"book"`:  
+- `chunk_method`=`"book"`:
   `{"raptor": {"use_raptor": False}}`
-- `chunk_method`=`"laws"`:  
+- `chunk_method`=`"laws"`:
   `{"raptor": {"use_raptor": False}}`
-- `chunk_method`=`"picture"`:  
+- `chunk_method`=`"picture"`:
   `None`
-- `chunk_method`=`"presentation"`:  
+- `chunk_method`=`"presentation"`:
   `{"raptor": {"use_raptor": False}}`
-- `chunk_method`=`"one"`:  
+- `chunk_method`=`"one"`:
   `None`
-- `chunk_method`=`"knowledge-graph"`:  
-  `{"chunk_token_num":128,"delimiter":"\\n","entity_types":["organization","person","location","event","time"]}`
-- `chunk_method`=`"email"`:  
+- `chunk_method`=`"email"`:
   `None`
 
 #### Returns
@@ -262,13 +269,13 @@ rag_object.delete_datasets(delete_all=True)
 
 ```python
 RAGFlow.list_datasets(
-    page: int = 1, 
-    page_size: int = 30, 
-    orderby: str = "create_time", 
+    page: int = 1,
+    page_size: int = 30,
+    orderby: str = "create_time",
     desc: bool = True,
-    id: str = None,
-    name: str = None,
-    include_parsing_status: bool = False
+    id: str | None = None,
+    ids: list[str] | None = None,
+    name: str | None = None,
 ) -> list[DataSet]
 ```
 
@@ -303,15 +310,9 @@ The ID of the dataset to retrieve. Defaults to `None`.
 
 The name of the dataset to retrieve. Defaults to `None`.
 
-##### include_parsing_status: `bool`
+##### ids: `list[str] | None`
 
-Whether to include document parsing status counts in each returned `DataSet` object. Defaults to `False`. When set to `True`, each `DataSet` object will include the following additional attributes:
-
-- `unstart_count`: `int` Number of documents not yet started parsing.
-- `running_count`: `int` Number of documents currently being parsed.
-- `cancel_count`: `int` Number of documents whose parsing was cancelled.
-- `done_count`: `int` Number of documents that have been successfully parsed.
-- `fail_count`: `int` Number of documents whose parsing failed.
+The IDs of the datasets to retrieve. Defaults to `None`. The `id` and `ids` parameters cannot be used together.
 
 #### Returns
 
@@ -334,11 +335,12 @@ dataset = rag_object.list_datasets(id = "id_1")
 print(dataset[0])
 ```
 
-##### List datasets with parsing status
+##### Retrieve datasets by IDs
 
 ```python
-for dataset in rag_object.list_datasets(include_parsing_status=True):
-    print(dataset.done_count, dataset.fail_count, dataset.running_count)
+datasets = rag_object.list_datasets(ids=["id_1", "id_2"])
+for dataset in datasets:
+    print(dataset)
 ```
 
 ---
@@ -361,25 +363,25 @@ A dictionary representing the attributes to update, with the following keys:
   - Basic Multilingual Plane (BMP) only
   - Maximum 128 characters
   - Case-insensitive
-- `"avatar"`: (*Body parameter*), `string`  
+- `"avatar"`: (*Body parameter*), `string`
   The updated base64 encoding of the avatar.
   - Maximum 65535 characters
-- `"embedding_model"`: (*Body parameter*), `string`  
-  The updated embedding model name.  
+- `"embedding_model"`: (*Body parameter*), `string`
+  The updated embedding model name.
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
-- `"permission"`: (*Body parameter*), `string`  
-  The updated dataset permission. Available options:  
+- `"permission"`: (*Body parameter*), `string`
+  The updated dataset permission. Available options:
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
-- `"pagerank"`: (*Body parameter*), `int`  
+- `"pagerank"`: (*Body parameter*), `int`
   refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
   - Default: `0`
   - Minimum: `0`
   - Maximum: `100`
-- `"chunk_method"`: (*Body parameter*), `enum<string>`  
-  The chunking method for the dataset. Available options:  
+- `"chunk_method"`: (*Body parameter*), `enum<string>`
+  The chunking method for the dataset. Available options:
   - `"naive"`: General (default)
   - `"book"`: Book
   - `"email"`: Email
@@ -429,19 +431,30 @@ Uploads documents to the current dataset.
 
 A list of dictionaries representing the documents to upload, each containing the following keys:
 
-- `"display_name"`: (Optional) The file name to display in the dataset.  
-- `"blob"`: (Optional) The binary content of the file to upload.
+- `"display_name"`: `string`, *Required*
+  The file name to display in the dataset.
+- `"blob"`: `bytes`, *Required*
+  The binary content of the file to upload.
 
 #### Returns
 
-- Success: No value is returned.
+- Success: A list of uploaded `Document` objects.
 - Failure: `Exception`
 
 #### Examples
 
 ```python
 dataset = rag_object.create_dataset(name="kb_name")
-dataset.upload_documents([{"display_name": "1.txt", "blob": "<BINARY_CONTENT_OF_THE_DOC>"}, {"display_name": "2.pdf", "blob": "<BINARY_CONTENT_OF_THE_DOC>"}])
+
+with open("1.txt", "rb") as file:
+    documents = dataset.upload_documents([
+        {
+            "display_name": "1.txt",
+            "blob": file.read(),
+        }
+    ])
+
+print(documents[0].id)
 ```
 
 ---
@@ -449,14 +462,14 @@ dataset.upload_documents([{"display_name": "1.txt", "blob": "<BINARY_CONTENT_OF_
 ### Update document
 
 ```python
-Document.update(update_message:dict)
+Document.update(update_message: dict)
 ```
 
 Updates configurations for the current document.
 
 #### Parameters
 
-##### update_message: `dict[str, str|dict[]]`, *Required*
+##### update_message: `dict[str, Any]`, *Required*
 
 A dictionary representing the attributes to update, with the following keys:
 
@@ -464,7 +477,7 @@ A dictionary representing the attributes to update, with the following keys:
 - `"meta_fields"`: `dict[str, Any]` The meta fields of the document.
 - `"chunk_method"`: `string` The parsing method to apply to the document.
   - `"naive"`: General
-  - `"manual`: Manual
+  - `"manual"`: Manual
   - `"qa"`: Q&A
   - `"table"`: Table
   - `"paper"`: Paper
@@ -475,34 +488,32 @@ A dictionary representing the attributes to update, with the following keys:
   - `"one"`: One
   - `"email"`: Email
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
-  - `"chunk_method"`=`"naive"`:  
+  - `"chunk_method"`=`"naive"`:
     `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\\n"}}`.
-  - `chunk_method`=`"qa"`:  
+  - `chunk_method`=`"qa"`:
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"manuel"`:  
+  - `chunk_method`=`"manual"`:
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"table"`:  
+  - `chunk_method`=`"table"`:
     `None`
-  - `chunk_method`=`"paper"`:  
+  - `chunk_method`=`"paper"`:
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"book"`:  
+  - `chunk_method`=`"book"`:
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"laws"`:  
+  - `chunk_method`=`"laws"`:
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"presentation"`:  
+  - `chunk_method`=`"presentation"`:
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"picture"`:  
+  - `chunk_method`=`"picture"`:
     `None`
-  - `chunk_method`=`"one"`:  
+  - `chunk_method`=`"one"`:
     `None`
-  - `chunk_method`=`"knowledge-graph"`:  
-    `{"chunk_token_num":128,"delimiter":"\\n","entity_types":["organization","person","location","event","time"]}`
-  - `chunk_method`=`"email"`:  
+  - `chunk_method`=`"email"`:
     `None`
 
 #### Returns
 
-- Success: No value is returned.
+- Success: The updated `Document` object.
 - Failure: `Exception`
 
 #### Examples
@@ -515,7 +526,12 @@ dataset = rag_object.list_datasets(id='id')
 dataset = dataset[0]
 doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
-doc.update([{"parser_config": {"chunk_token_num": 256}}, {"chunk_method": "manual"}])
+doc.update({
+    "parser_config": {
+        "chunk_token_num": 256,
+    },
+    "chunk_method": "manual",
+})
 ```
 
 ---
@@ -535,15 +551,17 @@ The downloaded document in bytes.
 #### Examples
 
 ```python
+from pathlib import Path
 from ragflow_sdk import RAGFlow
 
-rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-dataset = rag_object.list_datasets(id="id")
-dataset = dataset[0]
-doc = dataset.list_documents(id="wdfxb5t547d")
-doc = doc[0]
-open("~/ragflow.txt", "wb+").write(doc.download())
-print(doc)
+rag_object = RAGFlow(
+    api_key="<YOUR_API_KEY>",
+    base_url="https://<YOUR_BASE_URL>",
+)
+dataset = rag_object.list_datasets(id="id")[0]
+doc = dataset.list_documents(id="wdfxb5t547d")[0]
+
+Path("~/ragflow.txt").expanduser().write_bytes(doc.download())
 ```
 
 ---
@@ -551,27 +569,37 @@ print(doc)
 ### List documents
 
 ```python
-Dataset.list_documents(
-    id: str = None,
-    keywords: str = None,
+DataSet.list_documents(
+    id: str | None = None,
+    ids: list[str] | None = None,
+    name: str | None = None,
+    keywords: str | None = None,
     page: int = 1,
     page_size: int = 30,
-    order_by: str = "create_time",
+    orderby: str = "create_time",
     desc: bool = True,
     create_time_from: int = 0,
     create_time_to: int = 0
-) -> list[Document]
+)
 ```
 
 Lists documents in the current dataset.
 
 #### Parameters
 
-##### id: `string`
+##### id: `string | None`
 
 The ID of the document to retrieve. Defaults to `None`.
 
-##### keywords: `string`
+##### ids: `list[str] | None`
+
+The IDs of the documents to retrieve. Defaults to `None`. The `id` and `ids` parameters cannot be used together.
+
+##### name: `string | None`
+
+The exact name of the document to retrieve. Defaults to `None`.
+
+##### keywords: `string | None`
 
 The keywords used to match document titles. Defaults to `None`.
 
@@ -630,41 +658,54 @@ A `Document` object contains the following attributes:
   - `"FAIL"`
 - `status`: `string` Reserved for future use.
 - `parser_config`: `ParserConfig` Configuration object for the parser. Its attributes vary based on the selected `chunk_method`:
-  - `chunk_method`=`"naive"`:  
+  - `chunk_method`=`"naive"`:
     `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
-  - `chunk_method`=`"qa"`:  
+  - `chunk_method`=`"qa"`:
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"manuel"`:  
+  - `chunk_method`=`"manual"`:
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"table"`:  
+  - `chunk_method`=`"table"`:
     `None`
-  - `chunk_method`=`"paper"`:  
+  - `chunk_method`=`"paper"`:
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"book"`:  
+  - `chunk_method`=`"book"`:
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"laws"`:  
+  - `chunk_method`=`"laws"`:
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"presentation"`:  
+  - `chunk_method`=`"presentation"`:
     `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"picure"`:  
+  - `chunk_method`=`"picture"`:
     `None`
-  - `chunk_method`=`"one"`:  
+  - `chunk_method`=`"one"`:
     `None`
-  - `chunk_method`=`"email"`:  
+  - `chunk_method`=`"email"`:
     `None`
 
 #### Examples
 
 ```python
+from pathlib import Path
 from ragflow_sdk import RAGFlow
 
-rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
+rag_object = RAGFlow(
+    api_key="<YOUR_API_KEY>",
+    base_url="http://<YOUR_BASE_URL>:9380",
+)
 dataset = rag_object.create_dataset(name="kb_1")
 
-filename1 = "~/ragflow.txt"
-blob = open(filename1 , "rb").read()
-dataset.upload_documents([{"name":filename1,"blob":blob}])
-for doc in dataset.list_documents(keywords="rag", page=0, page_size=12):
+file_path = Path("~/ragflow.txt").expanduser()
+dataset.upload_documents([
+    {
+        "display_name": file_path.name,
+        "blob": file_path.read_bytes(),
+    }
+])
+
+for doc in dataset.list_documents(
+    keywords="rag",
+    page=1,
+    page_size=12,
+):
     print(doc)
 ```
 
@@ -758,7 +799,7 @@ DataSet.parse_documents(document_ids: list[str]) -> list[tuple[str, str, int, in
 
 *Asynchronously* parses documents in the current dataset.
 
-This method encapsulates `async_parse_documents()`. It awaits the completion of all parsing tasks before returning detailed results, including the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), all pending parsing tasks will be cancelled gracefully.
+This method encapsulates `async_parse_documents()`. It awaits the completion of all parsing tasks before returning detailed results, including the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), all pending parsing tasks will be canceled gracefully.
 
 #### Parameters
 
@@ -776,9 +817,9 @@ A list of tuples with detailed parsing results:
   ...
 ]
 ```
-- `status`: The final parsing state (e.g., `success`, `failed`, `cancelled`).  
-- `chunk_count`: The number of content chunks created from the document.  
-- `token_count`: The total number of tokens processed.  
+- `status`: The final parsing state (e.g., `success`, `failed`, `cancelled`).
+- `chunk_count`: The number of content chunks created from the document.
+- `token_count`: The total number of tokens processed.
 
 ---
 
@@ -1062,7 +1103,21 @@ chunk.update({"content":"sdfx..."})
 ### Retrieve chunks
 
 ```python
-RAGFlow.retrieve(question:str="", dataset_ids:list[str]=None, document_ids=list[str]=None, page:int=1, page_size:int=30, similarity_threshold:float=0.2, vector_similarity_weight:float=0.3, top_k:int=1024,rerank_id:str=None,keyword:bool=False,cross_languages:list[str]=None,metadata_condition: dict=None) -> list[Chunk]
+RAGFlow.retrieve(
+  dataset_ids,
+  document_ids=None,
+  question='',
+  page=1,
+  page_size=30,
+  similarity_threshold=0.2,
+  vector_similarity_weight=0.3,
+  top_k=1024,
+  rerank_id: str | None = None,
+  keyword: bool = False,
+  cross_languages: list[str] | None = None,
+  metadata_condition: dict | None = None,
+  use_kg: bool = False,
+  toc_enhance: bool = False)
 ```
 
 Retrieves chunks from specified datasets.
@@ -1075,11 +1130,11 @@ The user query or query keywords. Defaults to `""`.
 
 ##### dataset_ids: `list[str]`, *Required*
 
-The IDs of the datasets to search. Defaults to `None`. 
+The IDs of the datasets to search. Defaults to `None`.
 
 ##### document_ids: `list[str]`
 
-The IDs of the documents to search. Defaults to `None`. You must ensure all selected documents use the same embedding model. Otherwise, an error will occur. 
+The IDs of the documents to search. Defaults to `None`. You must ensure all selected documents use the same embedding model. Otherwise, an error will occur.
 
 ##### page: `int`
 
@@ -1089,7 +1144,7 @@ The starting index for the documents to retrieve. Defaults to `1`.
 
 The maximum number of chunks to retrieve. Defaults to `30`.
 
-##### Similarity_threshold: `float`
+##### similarity_threshold: `float`
 
 The minimum similarity score. Defaults to `0.2`.
 
@@ -1112,13 +1167,21 @@ Indicates whether to enable keyword-based matching:
 - `True`: Enable keyword-based matching.
 - `False`: Disable keyword-based matching (default).
 
-##### cross_languages:  `list[string]`  
+##### cross_languages:  `list[string]`
 
 The languages that should be translated into, in order to achieve keywords retrievals in different languages.
 
 ##### metadata_condition: `dict`
 
 filter condition for `meta_fields`.
+
+##### use_kg: `bool`
+
+Whether to enable graph-assisted retrieval for multi-hop queries. Defaults to `False`.
+
+##### toc_enhance: `bool`
+
+Whether to use extracted table-of-contents information during retrieval. Defaults to `False`.
 
 #### Returns
 
@@ -1177,7 +1240,7 @@ Base64 encoding of the avatar. Defaults to `""`.
 
 ##### dataset_ids: `list[str]`
 
-The IDs of the associated datasets. Defaults to `[]`. When omitted or empty, the SDK creates an empty chat assistant and you can attach datasets later.
+The IDs of the associated datasets. Defaults to `[]`. When omitted or empty, the SDK creates an empty chat assistant, and you can attach datasets later.
 
 ##### llm_id: `str | None`
 
@@ -1244,7 +1307,7 @@ A dictionary containing the attributes to be updated. Supported keys include:
 - `"dataset_ids"`: `list[string]` A list of unique identifiers for the datasets associated with the assistant.
 - `"llm_id"`: `string` The unique identifier or name of the LLM to be used.
 - `"llm_setting"`: `dict` Configuration for LLM generation parameters:
-  - `"temperature"`: `float` Controls the randomness of the model's output. 
+  - `"temperature"`: `float` Controls the randomness of the model's output.
   - `"top_p"`: `float` Sets the nucleus sampling threshold.
   - `"presence_penalty"`: `float` Penalizes tokens based on whether they have already appeared in the text.
   - `"frequency_penalty"`: `float` Penalizes tokens based on their existing frequency in the text.
@@ -1322,15 +1385,14 @@ rag_object.delete_chats(delete_all=True)
 
 ```python
 RAGFlow.list_chats(
-    page: int = 1, 
-    page_size: int = 30, 
-    orderby: str = "create_time", 
+    page: int = 1,
+    page_size: int = 30,
+    orderby: str = "create_time",
     desc: bool = True,
     id: str | None = None,
     name: str | None = None,
     keywords: str | None = None,
     owner_ids: str | list[str] | None = None,
-    parser_id: str | None = None
 ) -> list[Chat]
 ```
 
@@ -1361,6 +1423,8 @@ Indicates whether the retrieved chat assistants should be sorted in descending o
 
 Exact match on chat assistant ID. Defaults to `None`.
 
+##### name: `string | None`
+
 Filters results by the exact name of the chat assistant. Defaults to `None`.
 
 ##### keywords: `string | None`
@@ -1370,12 +1434,6 @@ Performs a case-insensitive fuzzy search against chat assistant names. Defaults 
 ##### owner_ids: `string | list[string] | None`
 
 Filters results by one or more owner tenant IDs. Defaults to `None`.
-
-##### parser_id: `string | None`
-
-Filters results by a specific parser type identifier. Defaults to `None`.
-
-If `id` or `name` is specified, exact filtering takes precedence over the fuzzy matching provided by `keywords`.
 
 #### Returns
 
@@ -1586,7 +1644,7 @@ Session.ask(question: str = "", stream: bool = False, **kwargs) -> Optional[Mess
 Asks a specified chat assistant a question to start an AI-powered conversation.
 
 :::tip NOTE
-In streaming mode, not all responses include a reference, as this depends on the system's judgement.
+In streaming mode, not all responses include a reference, as this depends on the system's judgment.
 :::
 
 #### Parameters
@@ -1625,27 +1683,27 @@ The content of the message. Defaults to `"Hi! I am your assistant, can I help yo
 
 A list of `Chunk` objects representing references to the message, each containing the following attributes:
 
-- `id` `string`  
+- `id` `string`
   The chunk ID.
-- `content` `string`  
+- `content` `string`
   The content of the chunk.
-- `img_id` `string`  
+- `img_id` `string`
   The ID of the snapshot of the chunk. Applicable only when the source of the chunk is an image, PPT, PPTX, or PDF file.
-- `document_id` `string`  
+- `document_id` `string`
   The ID of the referenced document.
-- `document_name` `string`  
+- `document_name` `string`
   The name of the referenced document.
-- `document_metadata` `dict`  
+- `document_metadata` `dict`
   Optional document metadata, returned only when `extra_body.reference_metadata.include` is `true`.
-- `position` `list[str]`  
+- `position` `list[str]`
   The location information of the chunk within the referenced document.
-- `dataset_id` `string`  
+- `dataset_id` `string`
   The ID of the dataset to which the referenced document belongs.
-- `similarity` `float`  
+- `similarity` `float`
   A composite similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity. It is the weighted sum of `vector_similarity` and `term_similarity`.
-- `vector_similarity` `float`  
+- `vector_similarity` `float`
   A vector similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between vector embeddings.
-- `term_similarity` `float`  
+- `term_similarity` `float`
   A keyword similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between keywords.
 
 #### Examples
@@ -1656,7 +1714,7 @@ from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
 assistant = assistant[0]
-session = assistant.create_session()    
+session = assistant.create_session()
 
 print("\n==================== Miss R =====================\n")
 print("Hello. What can I do for you?")
@@ -1664,7 +1722,7 @@ print("Hello. What can I do for you?")
 while True:
     question = input("\n==================== User =====================\n> ")
     print("\n==================== Miss R =====================\n")
-    
+
     cont = ""
     for ans in session.ask(question, stream=True):
         print(ans.content[len(cont):], end='', flush=True)
@@ -1723,7 +1781,7 @@ Session.ask(question: str = "", stream: bool = False, **kwargs) -> Optional[Mess
 Asks a specified agent through the unified completion endpoint.
 
 :::tip NOTE
-In streaming mode, not all responses include a reference, as this depends on the system's judgement.
+In streaming mode, not all responses include a reference, as this depends on the system's judgment.
 :::
 
 #### Parameters
@@ -1768,27 +1826,27 @@ The content of the message. Defaults to `"Hi! I am your assistant, can I help yo
 
 A list of `Chunk` objects representing references to the message, each containing the following attributes:
 
-- `id` `string`  
+- `id` `string`
   The chunk ID.
-- `content` `string`  
+- `content` `string`
   The content of the chunk.
-- `image_id` `string`  
+- `image_id` `string`
   The ID of the snapshot of the chunk. Applicable only when the source of the chunk is an image, PPT, PPTX, or PDF file.
-- `document_id` `string`  
+- `document_id` `string`
   The ID of the referenced document.
-- `document_name` `string`  
+- `document_name` `string`
   The name of the referenced document.
-- `document_metadata` `dict`  
+- `document_metadata` `dict`
   Optional document metadata, returned only when `extra_body.reference_metadata.include` is `true`.
-- `position` `list[str]`  
+- `position` `list[str]`
   The location information of the chunk within the referenced document.
-- `dataset_id` `string`  
+- `dataset_id` `string`
   The ID of the dataset to which the referenced document belongs.
-- `similarity` `float`  
+- `similarity` `float`
   A composite similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity. It is the weighted sum of `vector_similarity` and `term_similarity`.
-- `vector_similarity` `float`  
+- `vector_similarity` `float`
   A vector similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between vector embeddings.
-- `term_similarity` `float`  
+- `term_similarity` `float`
   A keyword similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between keywords.
 
 #### Examples
@@ -1807,7 +1865,7 @@ print("Hello. What can I do for you?")
 while True:
     question = input("\n===== User ====\n> ")
     print("\n==== Miss R ====\n")
-    
+
     cont = ""
     for ans in session.ask(question, stream=True):
         print(ans.content[len(cont):], end='', flush=True)
@@ -1845,9 +1903,9 @@ print(message.reference)
 
 ```python
 Agent.list_sessions(
-    page: int = 1, 
-    page_size: int = 30, 
-    orderby: str = "update_time", 
+    page: int = 1,
+    page_size: int = 30,
+    orderby: str = "update_time",
     desc: bool = True,
     id: str = None
 ) -> List[Session]
@@ -1893,7 +1951,7 @@ from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 AGENT_id = "AGENT_ID"
 agent = rag_object.get_agent(AGENT_id)
-sessons = agent.list_sessions()
+sessions = agent.list_sessions()
 for session in sessions:
     print(session)
 ```
@@ -1946,9 +2004,9 @@ agent.delete_sessions(delete_all=True)
 
 ```python
 RAGFlow.list_agents(
-    page: int = 1, 
-    page_size: int = 30, 
-    orderby: str = "update_time", 
+    page: int = 1,
+    page_size: int = 30,
+    orderby: str = "update_time",
     desc: bool = True
 ) -> List[Agent]
 ```
@@ -2029,7 +2087,8 @@ print(agent)
 RAGFlow.create_agent(
     title: str,
     dsl: dict,
-    description: str | None = None
+    description: str | None = None,
+    canvas_type: str | None = None
 ) -> None
 ```
 
@@ -2048,6 +2107,10 @@ Specifies the canvas DSL of the agent.
 ##### description: `string`
 
 The description of the agent. Defaults to `None`.
+
+##### canvas_type: `string | None`
+
+The canvas type of the agent. Defaults to `None`.
 
 #### Returns
 
@@ -2077,7 +2140,8 @@ RAGFlow.update_agent(
     agent_id: str,
     title: str | None = None,
     description: str | None = None,
-    dsl: dict | None = None
+    dsl: dict | None = None,
+    canvas_type: str | None = None,
 ) -> None
 ```
 
@@ -2100,6 +2164,10 @@ Specifies the new canvas DSL of the agent. `None` if you do not want to update t
 ##### description: `string`
 
 The new description of the agent. `None` if you do not want to update this.
+
+##### canvas_type: `string | None`
+
+The canvas type of the agent. Defaults to `None`.
 
 #### Returns
 
@@ -2161,10 +2229,10 @@ rag_object.delete_agent("58af890a2a8911f0a71a11b922ed82d6")
 ### Create Memory
 
 ```python
-Ragflow.create_memory(
-    name: str, 
-    memory_type: list[str], 
-    embd_id: str, 
+RAGFlow.create_memory(
+    name: str,
+    memory_type: list[str],
+    embd_id: str,
     llm_id: str
 ) -> Memory
 ```
@@ -2180,7 +2248,7 @@ The unique name of the memory to create. It must adhere to the following require
 - Basic Multilingual Plane (BMP) only
 - Maximum 128 characters
 
-##### memory_type: `list[str]`, *Required* 
+##### memory_type: `list[str]`, *Required*
 
 Specifies the types of memory to extract. Available options:
 
@@ -2214,7 +2282,7 @@ The name of the chat model to use. For example: `"glm-4-flash@ZHIPU-AI"`
 ```python
 from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-memory = rag_obj.create_memory("name", ["raw"], "BAAI/bge-large-zh-v1.5@SILICONFLOW", "glm-4-flash@ZHIPU-AI")
+memory = rag_object.create_memory("name", ["raw"], "BAAI/bge-large-zh-v1.5@SILICONFLOW", "glm-4-flash@ZHIPU-AI")
 ```
 
 ---
@@ -2244,7 +2312,7 @@ Configurations to update. Available configurations:
   - Basic Multilingual Plane (BMP) only
   - Maximum 128 characters, *Optional*
 
-- `avatar`: `string`, *Optional* 
+- `avatar`: `string`, *Optional*
 
   The updated base64 encoding of the avatar.
 
@@ -2305,9 +2373,9 @@ Configurations to update. Available configurations:
 #### Examples
 
 ```python
-from ragflow_sdk import Ragflow, Memory
+from ragflow_sdk import RAGFlow, Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-memory_obejct = Memory(rag_object, {"id": "your memory_id"})
+memory_object = Memory(rag_object, {"id": "your memory_id"})
 memory_object.update({"name": "New_name"})
 ```
 
@@ -2318,12 +2386,12 @@ memory_object.update({"name": "New_name"})
 ### List Memory
 
 ```python
-Ragflow.list_memory(
-    page: int = 1, 
-    page_size: int = 50, 
-    tenant_id: str | list[str] = None, 
-    memory_type: str | list[str] = None, 
-    storage_type: str = None, 
+RAGFlow.list_memory(
+    page: int = 1,
+    page_size: int = 50,
+    tenant_id: str | list[str] = None,
+    memory_type: str | list[str] = None,
+    storage_type: str = None,
     keywords: str = None) -> dict
 ```
 
@@ -2364,7 +2432,7 @@ The name of memory to retrieve, supports fuzzy search.
 
 #### Returns
 
-Success: A dict of `Memory` object list and total count. 
+Success: A dict of `Memory` object list and total count.
 
 ```json
 {"memory_list": list[Memory], "total_count": int}
@@ -2375,9 +2443,9 @@ Failure: `Exception`
 #### Examples
 
 ```
-from ragflow_sdk import Ragflow, Memory
+from ragflow_sdk import RAGFlow, Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-rag_obejct.list_memory()
+rag_object.list_memory()
 ```
 
 ---
@@ -2405,10 +2473,10 @@ Failure: `Exception`
 #### Examples
 
 ```python
-from ragflow_sdk import Ragflow, Memory
+from ragflow_sdk import RAGFlow, Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-memory_obejct = Memory(rag_object, {"id": "your memory_id"})
-memory_obejct.get_config()
+memory_object = Memory(rag_object, {"id": "your memory_id"})
+memory_object.get_config()
 ```
 
 ---
@@ -2418,7 +2486,7 @@ memory_obejct.get_config()
 ### Delete Memory
 
 ```python
-Ragflow.delete_memory(
+RAGFlow.delete_memory(
     memory_id: str
 ) -> None
 ```
@@ -2440,7 +2508,7 @@ Failure: `Exception`
 #### Examples
 
 ```python
-from ragflow_sdk import Ragflow, Memory
+from ragflow_sdk import RAGFlow, Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 rag_object.delete_memory("your memory_id")
 ```
@@ -2453,9 +2521,9 @@ rag_object.delete_memory("your memory_id")
 
 ```python
 Memory.list_memory_messages(
-    agent_id: str | list[str]=None, 
-    keywords: str=None, 
-    page: int=1, 
+    agent_id: str | list[str]=None,
+    keywords: str=None,
+    page: int=1,
     page_size: int=50
 ) -> dict
 ```
@@ -2482,7 +2550,7 @@ The number of messages on each page. Defaults to `50`.
 
 #### Returns
 
-Success: a dict of messages and meta info. 
+Success: a dict of messages and meta info.
 
 ```json
 {"messages": {"message_list": [{message dict}], "total_count": int}, "storage_type": "table"}
@@ -2493,10 +2561,10 @@ Failure: `Exception`
 #### Examples
 
 ```python
-from ragflow_sdk import Ragflow, Memory
+from ragflow_sdk import RAGFlow, Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-memory_obejct = Memory(rag_object, {"id": "your memory_id"})
-memory_obejct.list_memory_messages()
+memory_object = Memory(rag_object, {"id": "your memory_id"})
+memory_object.list_memory_messages()
 ```
 
 ---
@@ -2506,12 +2574,12 @@ memory_obejct.list_memory_messages()
 ### Add Message
 
 ```python
-Ragflow.add_message(
-    memory_id: list[str], 
-    agent_id: str, 
-    session_id: str, 
-    user_input: str, 
-    agent_response: str, 
+RAGFlow.add_message(
+    memory_id: list[str],
+    agent_id: str,
+    session_id: str,
+    user_input: str,
+    agent_response: str,
     user_id: str = ""
 ) -> str
 ```
@@ -2553,7 +2621,7 @@ Failure: `Exception`
 #### Examples
 
 ```python
-from ragflow_sdk import Ragflow, Memory
+from ragflow_sdk import RAGFlow, Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 message_payload = {
     "memory_id": memory_ids,
@@ -2565,7 +2633,7 @@ message_payload = {
 Your agent response here
 """
 }
-client.add_message(**message_payload)
+rag_object.add_message(**message_payload)
 ```
 
 ---
@@ -2595,7 +2663,7 @@ Failure: `Exception`
 #### Examples
 
 ```python
-from ragflow_sdk import Ragflow, Memory
+from ragflow_sdk import RAGFlow, Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 memory_object = Memory(rag_object, {"id": "your memory_id"})
 memory_object.forget_message(message_id)
@@ -2632,7 +2700,7 @@ Failure: `Exception`
 #### Examples
 
 ```python
-from ragflow_sdk import Ragflow, Memory
+from ragflow_sdk import RAGFlow, Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 memory_object = Memory(rag_object, {"id": "your memory_id"})
 memory_object.update_message_status(message_id, True)
@@ -2645,14 +2713,14 @@ memory_object.update_message_status(message_id, True)
 ### Search message
 
 ```python
-Ragflow.search_message(
-    query: str, 
-    memory_id: list[str], 
-    agent_id: str=None, 
+RAGFlow.search_message(
+    query: str,
+    memory_id: list[str],
+    agent_id: str=None,
     session_id: str=None,
     user_id: str=None,
-    similarity_threshold: float=0.2, 
-    keywords_similarity_weight: float=0.7, 
+    similarity_threshold: float=0.2,
+    keywords_similarity_weight: float=0.7,
     top_n: int=10
 ) -> list[dict]
 ```
@@ -2706,7 +2774,7 @@ Failure: `Exception`
 #### Examples
 
 ```python
-from ragflow_sdk import Ragflow
+from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 rag_object.search_message("your question", ["your memory_id"])
 ```
@@ -2718,15 +2786,15 @@ rag_object.search_message("your question", ["your memory_id"])
 ### Get Recent Messages
 
 ```python
-Ragflow.get_recent_messages(
-    memory_id: list[str], 
-    agent_id: str=None, 
-    session_id: str=None, 
+RAGFlow.get_recent_messages(
+    memory_id: list[str],
+    agent_id: str=None,
+    session_id: str=None,
     limit: int=10
 ) -> list[dict]
 ```
 
-Retrieves the most recent messages from specified memories. Typically accepts a `limit` parameter to control the number of messages returned.
+Retrieves the most recent messages from specified memories. Typically, accepts a `limit` parameter to control the number of messages returned.
 
 #### Parameters
 
@@ -2755,7 +2823,7 @@ Failure: `Exception`
 #### Examples
 
 ```python
-from ragflow_sdk import Ragflow
+from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 rag_object.get_recent_messages(["your memory_id"])
 ```
@@ -2785,7 +2853,7 @@ Failure: `Exception`
 #### Examples
 
 ```python
-from ragflow_sdk import Ragflow
+from ragflow_sdk import RAGFlow,Memory
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 memory_object = Memory(rag_object, {"id": "your memory_id"})
 memory_object.get_message_content(message_id)

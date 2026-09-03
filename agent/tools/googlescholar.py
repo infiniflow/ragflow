@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import itertools
 import logging
 import os
 import time
@@ -28,7 +29,7 @@ class GoogleScholarParam(ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
+        self.meta: ToolMeta = {
             "name": "google_scholar_search",
             "description": """Google Scholar provides a simple way to broadly search for scholarly literature. From one place, you can search across many disciplines and sources: articles, theses, books, abstracts and court opinions, from academic publishers, professional societies, online repositories, universities and other web sites. Google Scholar helps you find relevant work across the world of scholarly research.""",
             "parameters": {
@@ -36,29 +37,25 @@ class GoogleScholarParam(ToolParamBase):
                     "type": "string",
                     "description": "The search keyword to execute with Google Scholar. The keywords should be the most important words/terms(includes synonyms) from the original request.",
                     "default": "{sys.query}",
-                    "required": True
+                    "required": True,
                 }
-            }
+            },
         }
         super().__init__()
         self.top_n = 12
-        self.sort_by = 'relevance'
+        self.sort_by = "relevance"
         self.year_low = None
         self.year_high = None
         self.patents = True
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
-        self.check_valid_value(self.sort_by, "GoogleScholar Sort_by", ['date', 'relevance'])
+        self.check_valid_value(self.sort_by, "GoogleScholar Sort_by", ["date", "relevance"])
         self.check_boolean(self.patents, "Whether or not to include patents, defaults to True")
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "query": {
-                "name": "Query",
-                "type": "line"
-            }
-        }
+        return {"query": {"name": "Query", "type": "line"}}
+
 
 class GoogleScholar(ToolBase, ABC):
     component_name = "GoogleScholar"
@@ -70,26 +67,35 @@ class GoogleScholar(ToolBase, ABC):
 
         if not kwargs.get("query"):
             self.set_output("formalized_content", "")
+            # Reset json too, otherwise a reused instance keeps stale results
+            # from a previous successful call.
+            self.set_output("json", [])
             return ""
 
         last_e = ""
-        for _ in range(self._param.max_retries+1):
+        for _ in range(self._param.max_retries + 1):
             if self.check_if_canceled("GoogleScholar processing"):
                 return
 
             try:
-                scholar_client = scholarly.search_pubs(kwargs["query"], patents=self._param.patents, year_low=self._param.year_low,
-                                                       year_high=self._param.year_high, sort_by=self._param.sort_by)
+                scholar_client = scholarly.search_pubs(kwargs["query"], patents=self._param.patents, year_low=self._param.year_low, year_high=self._param.year_high, sort_by=self._param.sort_by)
 
                 if self.check_if_canceled("GoogleScholar processing"):
                     return
 
-                self._retrieve_chunks(scholar_client,
-                                      get_title=lambda r: r['bib']['title'],
-                                      get_url=lambda r: r["pub_url"],
-                                      get_content=lambda r: "\n author: " + ",".join(r['bib']['author']) + '\n Abstract: ' + r['bib'].get('abstract', 'no abstract')
-                                      )
-                self.set_output("json", list(scholar_client))
+                # search_pubs returns a lazy generator: materialize at most top_n
+                # results once so the bound is respected and the same list feeds
+                # both _retrieve_chunks and the json output (iterating it twice
+                # would otherwise leave json empty).
+                results = list(itertools.islice(scholar_client, self._param.top_n))
+
+                self._retrieve_chunks(
+                    results,
+                    get_title=lambda r: r["bib"]["title"],
+                    get_url=lambda r: r["pub_url"],
+                    get_content=lambda r: "\n author: " + ",".join(r["bib"]["author"]) + "\n Abstract: " + r["bib"].get("abstract", "no abstract"),
+                )
+                self.set_output("json", results)
                 return self.output("formalized_content")
             except Exception as e:
                 if self.check_if_canceled("GoogleScholar processing"):

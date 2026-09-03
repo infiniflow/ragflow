@@ -5,6 +5,8 @@ import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { Spin } from '@/components/ui/spin';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
 import { useQueryClient } from '@tanstack/react-query';
 import { pick } from 'lodash';
@@ -37,6 +39,7 @@ export default function Datasets() {
     searchString,
     filterValue,
     handleFilterSubmit,
+    loading,
   } = useFetchNextKnowledgeListByPage();
 
   const owners = useSelectOwners();
@@ -56,6 +59,7 @@ export default function Datasets() {
     },
     [setPagination],
   );
+  useGoToPreviousPageOnEmpty(kbs?.length, loading);
   const [searchUrl, setSearchUrl] = useSearchParams();
   const isCreate = searchUrl.get('isCreate') === 'true';
   const queryClient = useQueryClient();
@@ -70,12 +74,19 @@ export default function Datasets() {
 
   return (
     <>
-      {kbs?.length || searchString ? (
+      {loading && !kbs?.length ? (
         <article
-          className="size-full flex flex-col"
+          className="size-full flex items-center justify-center"
           data-testid="datasets-list"
         >
-          <header className="px-5 pt-8 mb-4">
+          <Spin size="large" />
+        </article>
+      ) : kbs?.length || searchString ? (
+        <article
+          className="size-full min-w-0 flex flex-col"
+          data-testid="datasets-list"
+        >
+          <header className="mb-4 min-w-0 px-5 pt-8">
             <ListFilterBar
               title={t('header.dataset')}
               searchString={searchString}

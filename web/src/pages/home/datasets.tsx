@@ -57,11 +57,13 @@ export function Datasets() {
                 }
               </CardSineLineContainer>
             )}
-            {kbs?.length <= 0 && (
-              <EmptyAppCard
-                type={EmptyCardType.Dataset}
-                onClick={() => navigateToDatasetList({ isCreate: true })}
-              />
+            {!(kbs && kbs?.length > 0) && (
+              <div className="w-[210px]">
+                <EmptyAppCard
+                  type={EmptyCardType.Dataset}
+                  onClick={() => navigateToDatasetList({ isCreate: true })}
+                />
+              </div>
             )}
           </>
           // </div>

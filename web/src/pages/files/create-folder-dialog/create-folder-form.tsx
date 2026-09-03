@@ -25,7 +25,10 @@ export function CreateFolderForm({ hideModal, onOk }: IModalProps<any>) {
       .min(1, {
         message: t('common.namePlaceholder'),
       })
-      .trim(),
+      .trim()
+      .refine((value) => !value.includes('/'), {
+        message: t('common.nameSlashError'),
+      }),
   });
 
   const form = useForm<z.infer<typeof FormSchema>>({
