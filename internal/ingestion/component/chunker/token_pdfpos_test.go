@@ -505,3 +505,120 @@ func TestOverlapTailItemsTruncatesToOverlapPortion(t *testing.T) {
 		}
 	}
 }
+
+// TestOverlapTailItems_JoinSepNoSeparatorBeforeCur is the TDD (RED) test for the
+// joinSep offset-model defect (CodeRabbit review #1 on PR #19068). The overlap
+// path stores the previous chunk's merged_items as [tailItems..., cur] and builds
+// cp.Text = overlap + cp.Text -- there is NO separator between the final tail
+// item and cur. But overlapTailItems reconstructs the rune offsets by inserting
+// joinSep before EVERY item, including before cur. On the JSON path (joinSep="\n")
+// that phantom separator shifts the offsets by one rune, so the tail slice is
+// truncated one rune too long (and, in a chained overlap, the window does not
+// converge as tightly as the displayed text implies).
+//
+// This test feeds overlapTailItems the structure the overlap path actually
+// produces -- tail item "aaaaa" followed by cur "bbbbb" with NO separator in the
+// real text (10 visible runes), overlap tail [7,10) -- and expects the tail of
+// cur to be truncated to exactly "bbb" (the last 3 runes). The buggy code inserts
+// a "\n" between "aaaaa" and "bbbbb", inflating the model to 11 runes and
+// returning "bbbb" instead. It fails (RED) until the offset model drops the
+// separator before the final (cur) item.
+func TestOverlapTailItems_JoinSepNoSeparatorBeforeCur(t *testing.T) {
+	prev := []mergeItem{
+		{Text: "aaaaa", PDFPositions: json.RawMessage("[[1,0,10,0,5]]"), Positions: json.RawMessage("[[1,0,10,0,5]]")},
+		{Text: "bbbbb", PDFPositions: json.RawMessage("[[2,0,20,0,8]]"), Positions: json.RawMessage("[[2,0,20,0,8]]")},
+	}
+	// Real overlap-chunk text = "aaaaa" + "bbbbb" (10 visible runes, no sep).
+	// Overlap tail is the last 3 runes [7,10) of cur.
+	tail := overlapTailItems(prev, 7, "\n")
+	if len(tail) != 1 {
+		t.Fatalf("want 1 tail item in overlap [7,10), got %d: %+v", len(tail), tail)
+	}
+	if tail[0].Text != "bbb" {
+		t.Errorf("tail item Text not truncated to overlap portion under joinSep: got %q, want %q (phantom separator shifted the offset)", tail[0].Text, "bbb")
+	}
+	if string(tail[0].PDFPositions) != "[[2,0,20,0,8]]" {
+		t.Errorf("tail item carried wrong PDF positions: %s", tail[0].PDFPositions)
+	}
+	// The head item (page 1) must not appear in the tail.
+	for _, it := range tail {
+		if string(it.PDFPositions) == "[[1,0,10,0,5]]" {
+			t.Errorf("head item (page1) leaked into overlap tail: %+v", it)
+		}
+	}
+}
+
+// TestOverlapTailItems_TagBearingUsesVisibleRuneOffsets pins that overlapTailItems
+// measures and slices on the TAG-FREE visible text, so a coordinate tag in an
+// earlier item does not shift the boundaries of later items (which would pull
+// head coordinates into the overlap tail). This mirrors the contract already
+// locked for overlapTailPositions but for the separate-item storage.
+func TestOverlapTailItems_TagBearingUsesVisibleRuneOffsets(t *testing.T) {
+	prev := []mergeItem{
+		// Visible text "hello world" (11 runes); the tag inflates the RAW length
+		// to 23 runes. If the code measured RAW length, item0 would span [0,23)
+		// and overlapStart=12 would fall inside it (leaking head coords). Using
+		// the tag-free visible length, item0 spans [0,11) and item1 owns [11,15).
+		{Text: "hello@@1\t2\t3\t4## world", PDFPositions: json.RawMessage(`[["p0"]]`), Positions: json.RawMessage(`[["q0"]]`)},
+		{Text: "tail", PDFPositions: json.RawMessage(`[["p1"]]`), Positions: json.RawMessage(`[["q1"]]`)},
+	}
+	// Visible layout (no separator before cur, matching the overlap path):
+	// item0 [0,11), item1 [11,15). overlapStart=12 lands inside item1 only, so
+	// item0's head coordinates must NOT be included and item1 is truncated to
+	// the overlap portion [12,15) == "ail" (the last 3 runes of "tail").
+	tail := overlapTailItems(prev, 12, "\n")
+	if len(tail) != 1 {
+		t.Fatalf("want 1 tail item in overlap [12,15), got %d: %+v", len(tail), tail)
+	}
+	if string(tail[0].PDFPositions) != `[["p1"]]` {
+		t.Errorf("pdf positions = %s, want only item1 [\"p1\"] (item0 head must be excluded)", tail[0].PDFPositions)
+	}
+	if tail[0].Text != "ail" {
+		t.Errorf("tail item Text = %q, want %q (visible rune offsets must ignore the tag and truncate to the overlap portion)", tail[0].Text, "ail")
+	}
+}
+
+// TestMergeByTokenSizeFromJSON_ChainedOverlapPerChunkConvergence strengthens the
+// chained-overlap regression: not only must the FINAL chunk avoid head
+// coordinates, EVERY chunk's carried PDF positions must contain only the true
+// tail of its predecessor plus its own unit -- never any earlier (head) unit.
+// This locks convergence at every boundary, not just at the end of the chain.
+func TestMergeByTokenSizeFromJSON_ChainedOverlapPerChunkConvergence(t *testing.T) {
+	pos := func(page int) json.RawMessage {
+		return json.RawMessage(fmt.Sprintf("[[%d,0,%d,0,%d]]", page, page*10, page*5))
+	}
+	const n = 24
+	var row []schema.ChunkDoc
+	for i := 0; i < n; i++ {
+		row = append(row, schema.ChunkDoc{
+			Text:         string(rune('a' + i)),
+			DocType:      "text",
+			CKType:       "text",
+			TKNums:       intPtr(1),
+			PDFPositions: pos(i + 1),
+		})
+	}
+	items := [][]schema.ChunkDoc{row}
+	merged := mergeByTokenSizeFromJSON(items, 9, 20)[0]
+	if len(merged) < 3 {
+		t.Fatalf("want several chained chunks (>2), got %d", len(merged))
+	}
+	// The first chunk legitimately owns unit0 (page 1); every LATER chunk must
+	// NOT carry it. The overlap window converges to only the previous chunk's
+	// tail + the current unit, so the ultimate head (unit0) must never reappear
+	// after chunk 0. unit1 (page 2) must not reappear after chunk 1 either.
+	for k := 1; k < len(merged); k++ {
+		p := string(merged[k].PDFPositions)
+		if strings.Contains(p, "1,0,10,0,5") {
+			t.Errorf("chunk %d carries stale head coords (unit0/page1): pdf_positions=%s", k, p)
+		}
+		if k >= 2 && strings.Contains(p, "2,0,20,0,8") {
+			t.Errorf("chunk %d carries stale head coords (unit1/page2): pdf_positions=%s", k, p)
+		}
+	}
+	// Sanity: the final chunk must still carry its own most-recent unit's coords.
+	last := string(merged[len(merged)-1].PDFPositions)
+	if !strings.Contains(last, fmt.Sprintf("%d,0,%d,0,%d", n, n*10, n*5)) {
+		t.Errorf("final chunk lost its own coordinates (unit%d): pdf_positions=%s", n, last)
+	}
+}

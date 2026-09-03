@@ -944,26 +944,46 @@ func overlapTailPositions(prevItems []mergeItem, overlapStart int, joinSep strin
 // true tail and converge to a sliding window, instead of carrying the previous
 // chunk's HEAD coordinates forward again -- the chained over-carry defect that
 // the fused single-item storage (overlapTailPositions) suffers from (#18148).
-// The offset math mirrors overlapTailPositions exactly (items are concatenated
-// with joinSep, matching the merge join at mergeUnits) so the rune offsets line
-// up with overlapCut/overlapFitPrefix, which carve the overlap from removeTag'd
-// text.
+//
+// Offset model: the overlap path stores the previous chunk's merged_items as
+// [tailItems..., cur] and builds cp.Text = overlap + cp.Text. So the source
+// items are concatenated with joinSep BETWEEN consecutive items, but there is
+// NO separator before the final (cur) item. The offsets below reproduce exactly
+// that layout so they line up with overlapCut/overlapFitPrefix, which carve the
+// overlap from removeTag'd text. Inserting a separator before cur (as the raw
+// "concatenate all items with joinSep" model does) would inflate the offsets by
+// one rune on the JSON path (joinSep="\n") and over-truncate the tail -- the
+// chained-overlap convergence defect flagged by CodeRabbit #1 on #19068.
 func overlapTailItems(prevItems []mergeItem, overlapStart int, joinSep string) []mergeItem {
 	if len(prevItems) == 0 {
 		return nil
 	}
+	// Measure the TAG-FREE visible text of each item so a coordinate tag in an
+	// earlier item does not shift the boundaries of later items.
 	visible := make([]string, len(prevItems))
-	total := 0
 	for i, it := range prevItems {
 		visible[i] = removeTag(it.Text)
-		total += utf8.RuneCountInString(visible[i]) + utf8.RuneCountInString(joinSep)
 	}
-	total -= utf8.RuneCountInString(joinSep)
-	var out []mergeItem
+	n := len(prevItems)
+	sepLen := utf8.RuneCountInString(joinSep)
+	// Reconstruct prev.Text: items joined by joinSep between consecutive items,
+	// but with NO separator before the final (cur) item.
+	starts := make([]int, n)
+	ends := make([]int, n)
 	offset := 0
+	for i := 0; i < n; i++ {
+		if i > 0 && i < n-1 {
+			offset += sepLen
+		}
+		starts[i] = offset
+		ends[i] = offset + utf8.RuneCountInString(visible[i])
+		offset = ends[i]
+	}
+	total := offset
+	var out []mergeItem
 	for i, it := range prevItems {
-		start := offset
-		end := offset + utf8.RuneCountInString(visible[i])
+		start := starts[i]
+		end := ends[i]
 		if start < total && end > overlapStart {
 			lo := start
 			if lo < overlapStart {
@@ -977,7 +997,6 @@ func overlapTailItems(prevItems []mergeItem, overlapStart int, joinSep string) [
 			slice := string(runes[lo-start : hi-start])
 			out = append(out, mergeItem{Text: slice, PDFPositions: it.PDFPositions, Positions: it.Positions})
 		}
-		offset = end + utf8.RuneCountInString(joinSep)
 	}
 	return out
 }
