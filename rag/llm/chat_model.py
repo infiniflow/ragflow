@@ -68,13 +68,11 @@ class ReActMode(StrEnum):
 ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
-_STREAM_LOG_GREEN = "\033[92m"
-_STREAM_LOG_RESET = "\033[0m"
 
 
 def _log_stream_output(value):
     """Log the exact stream event sent to downstream consumers."""
-    logging.info("%s[LLM STREAM -> downstream] %r%s", _STREAM_LOG_GREEN, value, _STREAM_LOG_RESET)
+    logging.debug("[LLM STREAM -> downstream] %r", value)
     return value
 
 
@@ -731,7 +729,7 @@ class Base(ABC):
                             if reasoning_start:
                                 reasoning_start = False
                                 yield "</think>"
-                            yield self._length_stop("")
+                            yield LENGTH_NOTIFICATION_CN if is_chinese([answer]) else LENGTH_NOTIFICATION_EN
 
                     if reasoning_start:
                         yield "</think>"
@@ -2463,7 +2461,7 @@ class LiteLLMBase(ABC):
                             if reasoning_start:
                                 reasoning_start = False
                                 yield "</think>"
-                            yield self._length_stop("")
+                            yield LENGTH_NOTIFICATION_CN if is_chinese([answer]) else LENGTH_NOTIFICATION_EN
 
                     if reasoning_start:
                         yield "</think>"

@@ -1598,12 +1598,8 @@ def tts(tts_mdl, text):
 class _ThinkStreamState:
     def __init__(self) -> None:
         self.full_text = ""
-        self.last_idx = 0
         self.last_model_full = ""
         self.in_think = False
-        self.close_pending = False
-        self.pending_after_close = ""
-        self.think_buffer = ""
         self.answer_buffer = ""
 
 
@@ -1635,13 +1631,6 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
             return out
         return None
 
-    def _flush_think_buffer():
-        if not state.think_buffer:
-            return None
-        out = state.think_buffer
-        state.think_buffer = ""
-        return out
-
     def _flush_answer_buffer():
         if not state.answer_buffer:
             return None
@@ -1662,26 +1651,6 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
             continue
         state.full_text += new_part
         pending = new_part
-
-        if state.close_pending and "</think>" not in pending:
-            state.close_pending = False
-            think_piece = _flush_think_buffer()
-            if think_piece is not None:
-                yield ("text", think_piece, state)
-            state.in_think = False
-            yield ("marker", "</think>", state)
-            if state.pending_after_close:
-                answer_piece = state.pending_after_close
-                state.pending_after_close = ""
-                out = _emit_text("answer", answer_piece)
-                if out is not None:
-                    yield ("text", out, state)
-            answer_piece = re.sub(r"</?think>", "", pending or "")
-            if answer_piece:
-                out = _emit_text("answer", answer_piece)
-                if out is not None:
-                    yield ("text", out, state)
-            continue
 
         while pending:
             open_idx = pending.find("<think>")
@@ -1709,9 +1678,6 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
                     answer_piece = _flush_answer_buffer()
                     if answer_piece is not None:
                         yield ("text", answer_piece, state)
-                    think_piece = _flush_think_buffer()
-                    if think_piece is not None:
-                        yield ("text", think_piece, state)
                     state.in_think = True
                     yield ("marker", "<think>", state)
                 continue
@@ -1725,27 +1691,15 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
                 if out is not None:
                     yield ("text", out, state)
             after_visible = re.sub(r"</?think>", "", after or "")
-            think_piece = _flush_think_buffer()
-            if think_piece is not None:
-                yield ("text", think_piece, state)
             if state.in_think:
                 state.in_think = False
                 yield ("marker", "</think>", state)
             pending = after_visible
             continue
 
-    if state.think_buffer:
-        yield ("text", state.think_buffer, state)
-        state.think_buffer = ""
-    if state.close_pending:
-        state.in_think = False
-        yield ("marker", "</think>", state)
     if state.answer_buffer:
         yield ("text", state.answer_buffer, state)
         state.answer_buffer = ""
-    if state.pending_after_close:
-        yield ("text", state.pending_after_close, state)
-        state.pending_after_close = ""
 
 
 async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, search_id=None):
