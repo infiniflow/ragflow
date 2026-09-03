@@ -106,6 +106,7 @@ type Environments struct {
 	MonkeyOCRAPIServer                string `mapstructure:"monkeyocr_apiserver"`               // MONKEYOCR_APISERVER
 	MonkeyOCROutputDir                string `mapstructure:"monkeyocr_output_dir"`              // MONKEYOCR_OUTPUT_DIR
 	MonkeyOCRServerURL                string `mapstructure:"monkeyocr_server_url"`              // MONKEYOCR_SERVER_URL
+	MonkeyOCRBackend                  string `mapstructure:"monkeyocr_backend"`                 // MONKEYOCR_BACKEND
 	MonkeyOCRDeleteOutput             string `mapstructure:"monkeyocr_delete_output"`           // MONKEYOCR_DELETE_OUTPUT
 	TavilyAPIKey                      string `mapstructure:"tavily_api_key"`
 	QueritAPIKey                      string `mapstructure:"querit_api_key"`
@@ -538,6 +539,11 @@ func (c *Config) GetEnvironments() error {
 	MonkeyOCRServerURLStr := common.GetEnv(common.EnvMonkeyOCRServerURL)
 	if MonkeyOCRServerURLStr != "" {
 		c.environments.MonkeyOCRServerURL = MonkeyOCRServerURLStr
+	}
+
+	MonkeyOCRBackendStr := common.GetEnv(common.EnvMonkeyOCRBackend)
+	if MonkeyOCRBackendStr != "" {
+		c.environments.MonkeyOCRBackend = MonkeyOCRBackendStr
 	}
 
 	MonkeyOCRDeleteOutputStr := common.GetEnv(common.EnvMonkeyOCRDeleteOutput)

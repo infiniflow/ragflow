@@ -165,6 +165,7 @@ const (
 	EnvMonkeyOCRAPIServer                = "MONKEYOCR_APISERVER"
 	EnvMonkeyOCROutputDir                = "MONKEYOCR_OUTPUT_DIR"
 	EnvMonkeyOCRServerURL                = "MONKEYOCR_SERVER_URL"
+	EnvMonkeyOCRBackend                  = "MONKEYOCR_BACKEND"
 	EnvMonkeyOCRDeleteOutput             = "MONKEYOCR_DELETE_OUTPUT"
 	EnvPaddleOCRBaseUrl                  = "PADDLEOCR_BASE_URL"
 	EnvPaddleOCRAPIURL                   = "PADDLEOCR_API_URL"

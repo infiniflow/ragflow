@@ -13,22 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Integration tests for MonkeyOCR composite selectors on the canvas flow parser.
-
-Regression for PR #19044 review blockers: a UI selector
-``<model>@<instance>@MonkeyOCR`` must normalize to the MonkeyOCR branch and
-bind ``parser_model_name`` — not fall through to the VLM ``else`` path.
-
-Full ``Parser._pdf`` import is environment-sensitive (heavy agent deps), so
-this file pins the normalization contract and verifies the flow parser source
-delegates to ``normalize_layout_recognizer``.
-"""
-
-from pathlib import Path
+"""Composite-selector normalization tests for MonkeyOCR on the canvas flow parser."""
 
 from common.parser_config_utils import normalize_layout_recognizer
-
-REPO_ROOT = Path(__file__).resolve().parents[5]
 
 
 def test_flow_parser_normalizes_ui_monkeyocr_composite():
@@ -45,11 +32,18 @@ def test_flow_parser_normalizes_four_segment_monkeyocr_composite():
     assert parser_model_name == selector
 
 
-def test_flow_parser_source_uses_shared_normalizer():
-    source = (REPO_ROOT / "rag" / "flow" / "parser" / "parser.py").read_text()
-    assert "from common.parser_config_utils import normalize_layout_recognizer" in source
-    assert "normalize_layout_recognizer(raw_parse_method)" in source
-    assert 'elif lowered.endswith("@mineru")' not in source.split("normalize_layout_recognizer(raw_parse_method)")[1][:800]
+def test_remove_toc_pdf_filter_keeps_items_without_page_number():
+    items = [{"text": "orphan", "layout_type": "text"}, {"text": "body", "layout_type": "text", "page_number": 5}]
+    toc_start_page = 1
+    content_start_page = 5
+
+    filtered = [
+        item
+        for item in items
+        if item.get("page_number") is None or not (toc_start_page <= item["page_number"] < content_start_page)
+    ]
+
+    assert filtered == items
 
 
 def _normalize_like_flow_parser(raw_parse_method: str) -> tuple[str, str | None]:

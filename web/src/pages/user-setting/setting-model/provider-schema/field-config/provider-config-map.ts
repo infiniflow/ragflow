@@ -515,6 +515,20 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         placeholder: 'monkeyocrServerUrlPlaceholder',
       },
       {
+        name: 'monkeyocr_backend',
+        label: 'monkeyocrBackend',
+        type: FormFieldType.Select,
+        required: true,
+        defaultValue: 'vlm-transformers',
+        placeholder: 'monkeyocrSelectBackend',
+        options: [
+          { label: 'vlm-transformers', value: 'vlm-transformers' },
+          { label: 'vlm-vllm-engine', value: 'vlm-vllm-engine' },
+          { label: 'vlm-http-client', value: 'vlm-http-client' },
+        ],
+        validation: { message: 'monkeyocrBackendMessage' },
+      },
+      {
         name: 'monkeyocr_output_dir',
         label: 'monkeyocrOutputDir',
         type: FormFieldType.Text,
@@ -556,6 +570,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       return {
         monkeyocr_apiserver: obj.monkeyocr_apiserver ?? '',
         monkeyocr_server_url: obj.monkeyocr_server_url ?? '',
+        monkeyocr_backend: obj.monkeyocr_backend ?? 'vlm-transformers',
         monkeyocr_output_dir: obj.monkeyocr_output_dir ?? '',
         monkeyocr_delete_output: String(obj.monkeyocr_delete_output ?? '1') !== '0',
       };

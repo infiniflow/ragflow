@@ -121,6 +121,7 @@ class MonkeyOCROcrModel(Base, MonkeyOCRParser):
         self.monkeyocr_api = _resolve_config("monkeyocr_apiserver", "MONKEYOCR_APISERVER", "")
         self.monkeyocr_output_dir = _resolve_config("monkeyocr_output_dir", "MONKEYOCR_OUTPUT_DIR", "")
         self.monkeyocr_server_url = _resolve_config("monkeyocr_server_url", "MONKEYOCR_SERVER_URL", "")
+        self.monkeyocr_backend = _resolve_config("monkeyocr_backend", "MONKEYOCR_BACKEND", "vlm-transformers")
         self.monkeyocr_delete_output = bool(int(_resolve_config("monkeyocr_delete_output", "MONKEYOCR_DELETE_OUTPUT", 1)))
 
         redacted_config = {}
@@ -135,10 +136,14 @@ class MonkeyOCROcrModel(Base, MonkeyOCRParser):
             self,
             monkeyocr_api=self.monkeyocr_api,
             monkeyocr_server_url=self.monkeyocr_server_url,
+            monkeyocr_backend=self.monkeyocr_backend,
         )
 
-    def check_available(self, server_url: Optional[str] = None) -> tuple[bool, str]:
-        return self.check_installation(server_url=server_url or self.monkeyocr_server_url)
+    def check_available(self, backend: Optional[str] = None, server_url: Optional[str] = None) -> tuple[bool, str]:
+        return self.check_installation(
+            backend=backend or self.monkeyocr_backend,
+            server_url=server_url or self.monkeyocr_server_url,
+        )
 
     def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs):
         ok, reason = self.check_available()
@@ -151,6 +156,7 @@ class MonkeyOCROcrModel(Base, MonkeyOCRParser):
             binary=binary,
             callback=callback,
             output_dir=self.monkeyocr_output_dir,
+            backend=self.monkeyocr_backend,
             server_url=self.monkeyocr_server_url,
             delete_output=self.monkeyocr_delete_output,
             parse_method=parse_method,

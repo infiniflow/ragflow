@@ -78,19 +78,64 @@ def _ocr_parse_lines_to_bboxes(pdf_parser, lines):
             continue
 
         text, layout_type, poss = line[0], line[1], line[2]
+        positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
         box = {
             "text": text,
             "layout_type": layout_type or "text",
+            "page_number": positions[0][0] if positions else 1,
         }
-        positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
         if positions:
             box["positions"] = positions
-            box["page_number"] = positions[0][0]
         image = pdf_parser.crop(poss, 1)
         if image is not None:
             box["image"] = image
         bboxes.append(box)
     return bboxes
+
+
+def _run_flow_ocr_pdf_branch(
+    process,
+    *,
+    name,
+    blob,
+    conf,
+    parser_model_name,
+    provider_name: str,
+    config_model_key: str,
+    ensure_from_env,
+):
+    """Resolve an OCR provider model and parse a PDF on the canvas flow path."""
+
+    def resolve_llm_name():
+        configured = parser_model_name or conf.get(config_model_key)
+        if configured:
+            return configured
+
+        tenant_id = process._canvas._tenant_id
+        if not tenant_id:
+            return None
+
+        return get_first_provider_model_name(tenant_id, provider_name, LLMType.OCR) or ensure_from_env(tenant_id)
+
+    resolved_model = resolve_llm_name()
+    if not resolved_model:
+        raise RuntimeError(
+            f"{provider_name} model not configured. Please add {provider_name} in Model Providers "
+            f"or set the corresponding env vars."
+        )
+
+    tenant_id = process._canvas._tenant_id
+    ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, resolved_model)
+    ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"))
+    pdf_parser = ocr_model.mdl
+    lines, _ = pdf_parser.parse_pdf(
+        filepath=name,
+        binary=blob,
+        callback=process.callback,
+        parse_method="pipeline",
+        lang=conf.get("lang", "Chinese"),
+    )
+    return pdf_parser, _ocr_parse_lines_to_bboxes(pdf_parser, lines)
 
 
 class ParserParam(ProcessParamBase):
@@ -404,66 +449,28 @@ class Parser(ProcessBase):
         # MinerU/PaddleOCR/Docling/TCADP all return line-like sections that need
         # to be converted into the shared bbox-like structure used below.
         elif parse_method.lower() == "mineru":
-
-            def resolve_mineru_llm_name():
-                configured = parser_model_name or conf.get("mineru_llm_name")
-                if configured:
-                    return configured
-
-                tenant_id = self._canvas._tenant_id
-                if not tenant_id:
-                    return None
-
-                return get_first_provider_model_name(tenant_id, "MinerU", LLMType.OCR) or ensure_mineru_from_env(tenant_id)
-
-            parser_model_name = resolve_mineru_llm_name()
-            if not parser_model_name:
-                raise RuntimeError("MinerU model not configured. Please add MinerU in Model Providers or set MINERU_* env.")
-
-            tenant_id = self._canvas._tenant_id
-            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
-            ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"))
-            pdf_parser = ocr_model.mdl
-
-            lines, _ = pdf_parser.parse_pdf(
-                filepath=name,
-                binary=blob,
-                callback=self.callback,
-                parse_method="pipeline",
-                lang=conf.get("lang", "Chinese"),
+            pdf_parser, bboxes = _run_flow_ocr_pdf_branch(
+                self,
+                name=name,
+                blob=blob,
+                conf=conf,
+                parser_model_name=parser_model_name,
+                provider_name="MinerU",
+                config_model_key="mineru_llm_name",
+                ensure_from_env=ensure_mineru_from_env,
             )
-            bboxes = _ocr_parse_lines_to_bboxes(pdf_parser, lines)
 
         elif parse_method.lower() == "monkeyocr":
-
-            def resolve_monkeyocr_llm_name():
-                configured = parser_model_name or conf.get("monkeyocr_llm_name")
-                if configured:
-                    return configured
-
-                tenant_id = self._canvas._tenant_id
-                if not tenant_id:
-                    return None
-
-                return get_first_provider_model_name(tenant_id, "MonkeyOCR", LLMType.OCR) or ensure_monkeyocr_from_env(tenant_id)
-
-            parser_model_name = resolve_monkeyocr_llm_name()
-            if not parser_model_name:
-                raise RuntimeError("MonkeyOCR model not configured. Please add MonkeyOCR in Model Providers or set MONKEYOCR_* env.")
-
-            tenant_id = self._canvas._tenant_id
-            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
-            ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"))
-            pdf_parser = ocr_model.mdl
-
-            lines, _ = pdf_parser.parse_pdf(
-                filepath=name,
-                binary=blob,
-                callback=self.callback,
-                parse_method="pipeline",
-                lang=conf.get("lang", "Chinese"),
+            pdf_parser, bboxes = _run_flow_ocr_pdf_branch(
+                self,
+                name=name,
+                blob=blob,
+                conf=conf,
+                parser_model_name=parser_model_name,
+                provider_name="MonkeyOCR",
+                config_model_key="monkeyocr_llm_name",
+                ensure_from_env=ensure_monkeyocr_from_env,
             )
-            bboxes = _ocr_parse_lines_to_bboxes(pdf_parser, lines)
 
         elif parse_method.lower() == "docling":
             pdf_parser = DoclingParser(docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""))

@@ -30,20 +30,42 @@ class MonkeyOCRParser(MinerUParser):
     configuration surface (``MONKEYOCR_*`` env keys and provider registration).
     """
 
-    def __init__(self, monkeyocr_api: str = "", monkeyocr_server_url: str = ""):
+    def __init__(
+        self,
+        monkeyocr_api: str = "",
+        monkeyocr_server_url: str = "",
+        monkeyocr_backend: str = "vlm-transformers",
+    ):
         super().__init__(
             mineru_api=(monkeyocr_api or "").rstrip("/"),
             mineru_server_url=(monkeyocr_server_url or "").rstrip("/"),
         )
+        self.monkeyocr_backend = monkeyocr_backend or "vlm-transformers"
         self.logger = logging.getLogger(self.__class__.__name__)
 
+    @property
+    def monkeyocr_api(self) -> str:
+        return self.mineru_api
+
+    @monkeyocr_api.setter
+    def monkeyocr_api(self, value: str) -> None:
+        self.mineru_api = (value or "").rstrip("/")
+
+    @property
+    def monkeyocr_server_url(self) -> str:
+        return self.mineru_server_url
+
+    @monkeyocr_server_url.setter
+    def monkeyocr_server_url(self, value: str) -> None:
+        self.mineru_server_url = (value or "").rstrip("/")
+
     def check_installation(self, backend: str = "vlm-transformers", server_url: Optional[str] = None) -> tuple[bool, str]:
-        if not self.mineru_api:
+        if not self.monkeyocr_api:
             reason = "[MonkeyOCR] MONKEYOCR_APISERVER not configured."
             self.logger.warning(reason)
             return False, reason
 
-        api_openapi = f"{self.mineru_api}/openapi.json"
+        api_openapi = f"{self.monkeyocr_api}/openapi.json"
         try:
             api_ok = self._is_http_endpoint_valid(api_openapi)
             self.logger.info("[MonkeyOCR] API openapi.json reachable=%s url=%s", api_ok, api_openapi)
@@ -54,7 +76,7 @@ class MonkeyOCRParser(MinerUParser):
             self.logger.warning(reason)
             return False, reason
 
-        resolved_server = server_url or self.mineru_server_url
+        resolved_server = server_url or self.monkeyocr_server_url
         if resolved_server:
             try:
                 server_ok = self._is_http_endpoint_valid(resolved_server)
@@ -71,7 +93,7 @@ class MonkeyOCRParser(MinerUParser):
         callback: Optional[Callable] = None,
         *,
         output_dir: Optional[str] = None,
-        backend: str = "vlm-transformers",
+        backend: Optional[str] = None,
         server_url: Optional[str] = None,
         delete_output: bool = True,
         parse_method: str = "raw",
@@ -81,13 +103,14 @@ class MonkeyOCRParser(MinerUParser):
     ) -> tuple:
         if callback:
             callback(0.1, "[MonkeyOCR] Parsing PDF via MonkeyOCR adapter...")
+        resolved_backend = backend or self.monkeyocr_backend
         return super().parse_pdf(
             filepath,
             binary,
             callback=callback,
             output_dir=output_dir,
-            backend=backend,
-            server_url=server_url or self.mineru_server_url,
+            backend=resolved_backend,
+            server_url=server_url or self.monkeyocr_server_url,
             delete_output=delete_output,
             parse_method=parse_method,
             page_from=page_from,
