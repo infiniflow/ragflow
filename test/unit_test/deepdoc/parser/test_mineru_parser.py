@@ -848,3 +848,120 @@ def test_read_output_keeps_original_tag_when_middle_json_has_single_table_positi
     assert module.MinerUParser.extract_positions(line_tag) == [
         ([0], 20.0, 170.0, 40.0, 340.0),
     ]
+
+
+def _page_filter_parser(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    return module.MinerUParser(mineru_api="http://mineru.local")
+
+
+def test_select_configured_pages_drops_blocks_between_the_ranges(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    # One request covers the merged span, so MinerU also returns pages 10..19.
+    outputs = [{"page_idx": i, "text": f"p{i + 1}"} for i in range(29)]
+    kept = parser._select_configured_pages(outputs, [(1, 10), (20, 30)], 0)
+
+    assert [o["text"] for o in kept] == [f"p{n}" for n in list(range(1, 10)) + list(range(20, 30))]
+
+
+def test_select_configured_pages_matches_one_task_per_range(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    # queue_tasks turns a range (s, e) into a task stop of e - 1, so one task per
+    # range covered 1..9 and 20..29. The merged span must select the same pages.
+    outputs = [{"page_idx": i, "text": f"p{i + 1}"} for i in range(29)]
+    kept = parser._select_configured_pages(outputs, [(1, 10), (20, 30)], 0)
+
+    assert [o["text"] for o in kept][-1] == "p29"
+    assert "p10" not in [o["text"] for o in kept]
+
+
+def test_select_configured_pages_offsets_page_idx_by_page_from(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    # The task starts at page_from=5, so page_idx 0 is document page 6.
+    outputs = [{"page_idx": i, "text": f"p{5 + i + 1}"} for i in range(10)]
+    kept = parser._select_configured_pages(outputs, [(6, 7), (12, 14)], 5)
+
+    assert [o["text"] for o in kept] == ["p6", "p12", "p13"]
+
+
+def test_select_configured_pages_keeps_everything_without_ranges(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    outputs = [{"page_idx": 0, "text": "a"}, {"page_idx": 9, "text": "b"}]
+
+    assert parser._select_configured_pages(outputs, None, 0) == outputs
+    assert parser._select_configured_pages(outputs, [], 0) == outputs
+
+
+def test_select_configured_pages_keeps_a_block_with_no_page(monkeypatch):
+    parser = _page_filter_parser(monkeypatch)
+
+    outputs = [{"page_idx": 0, "text": "in"}, {"text": "unplaced"}, {"page_idx": 14, "text": "gap"}]
+    kept = parser._select_configured_pages(outputs, [(1, 10)], 0)
+
+    assert [o["text"] for o in kept] == ["in", "unplaced"]
+
+
+class _FakeZipResponse:
+    """Stand-in for the streamed zip that MinerU returns from /file_parse."""
+
+    headers = {"Content-Type": "application/zip"}
+
+    def __init__(self):
+        self.raw = BytesIO(b"")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def raise_for_status(self):
+        return None
+
+
+def test_parse_pdf_sends_one_merged_span_to_the_mineru_api(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.local")
+    pdf_path = tmp_path / "document.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    posted = {}
+
+    def fake_post(**kwargs):
+        posted.update(kwargs["data"])
+        return _FakeZipResponse()
+
+    monkeypatch.setattr(module, "extract_pdf_outlines", Mock(return_value=[]))
+    monkeypatch.setattr(parser, "__images__", Mock())
+    monkeypatch.setattr(module.requests, "post", fake_post)
+    monkeypatch.setattr(parser, "_extract_zip_no_root", Mock())
+    # MinerU parses the whole merged span, so it returns the gap pages as well.
+    monkeypatch.setattr(
+        parser,
+        "_read_output",
+        Mock(return_value=[{"type": module.MinerUContentType.TEXT, "page_idx": i, "bbox": [0, 0, 1, 1], "text": f"p{i + 1}"} for i in range(29)]),
+    )
+
+    sections, _tables = parser.parse_pdf(
+        filepath=pdf_path,
+        binary=None,
+        output_dir=str(output_dir),
+        delete_output=False,
+        page_from=0,
+        page_to=29,
+        parser_config={"pages": [(1, 10), (20, 30)]},
+    )
+
+    # One request for the merged span. start_page_id is 0-based, end_page_id is
+    # 0-based inclusive, so pages 1 to 29 become 0 and 28.
+    assert posted["start_page_id"] == 0
+    assert posted["end_page_id"] == 28
+
+    kept = [section for section, _tag in sections]
+    assert kept == [f"p{n}" for n in list(range(1, 10)) + list(range(20, 30))]

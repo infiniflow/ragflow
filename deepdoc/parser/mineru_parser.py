@@ -841,6 +841,40 @@ class MinerUParser(RAGFlowPdfParser):
                     item[key] = str((subdir / item[key]).resolve())
         return data
 
+    def _select_configured_pages(self, outputs: list[dict[str, Any]], page_ranges, page_from: int) -> list[dict[str, Any]]:
+        """Keep only the blocks whose page falls inside ``page_ranges``.
+
+        The dispatcher covers every configured range with one request, so the PDF is
+        uploaded once. MinerU then also returns the pages between the ranges.
+
+        ``page_idx`` counts from ``page_from``. A configured range ``(s, e)`` selects
+        the 1-based pages ``s`` to ``e - 1``, because ``queue_tasks`` builds each task
+        stop with ``e = min(e - 1, pages)``. The end stays exclusive here so the merged
+        span selects the same pages that one task per range selected.
+        """
+        if not page_ranges:
+            return outputs
+
+        spans = [(int(s), int(e)) for s, e in page_ranges]
+        kept = []
+        for output in outputs:
+            page_idx = output.get("page_idx")
+            if page_idx is None:
+                # A block with no page cannot be placed on a gap page either. The rest of
+                # the parser already treats it as unplaced: _line_tag gives it no position
+                # and _middle_positions_for_output returns nothing for it. One task per
+                # range kept it too, so dropping it here would lose content.
+                kept.append(output)
+                continue
+            page_no = page_from + int(page_idx) + 1
+            if any(s <= page_no < e for s, e in spans):
+                kept.append(output)
+
+        dropped = len(outputs) - len(kept)
+        if dropped:
+            self.logger.info("[MinerU] Dropped %d block(s) outside the configured page ranges %s.", dropped, spans)
+        return kept
+
     def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None, table_enable: bool = False):
         sections = []
         parse_method = (parse_method or "raw").lower()
@@ -1069,6 +1103,7 @@ class MinerUParser(RAGFlowPdfParser):
             )
             final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback, page_from=page_from, page_to=page_to)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
+            outputs = self._select_configured_pages(outputs, parser_cfg.get("pages"), page_from)
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
