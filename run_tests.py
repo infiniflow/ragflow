@@ -62,7 +62,7 @@ def _is_color_supported() -> bool:
             major, _, build = map(int, ver_parts[:3])
             if not (major >= 10 and build >= 10586):
                 return False
-            from ctypes import windll,wintypes,POINTER,byref
+            from ctypes import windll, wintypes, POINTER, byref
 
             # Actively enable ANSI support for Windows terminal
             INVALID_HANDLE_VALUE = wintypes.HANDLE(-1)
@@ -82,7 +82,7 @@ def _is_color_supported() -> bool:
             if handle == INVALID_HANDLE_VALUE:
                 return False
             mode = wintypes.DWORD()
-            if not kernel32.GetConsoleMode(handle,byref(mode)):
+            if not kernel32.GetConsoleMode(handle, byref(mode)):
                 return False
             ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x04
             new_mode = mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING
@@ -96,9 +96,7 @@ def _is_color_supported() -> bool:
     else:
         try:
             # Detect color support
-            result = subprocess.check_output(
-                ["tput", "colors"], 
-                stderr=subprocess.DEVNULL, text=True)
+            result = subprocess.check_output(["tput", "colors"], stderr=subprocess.DEVNULL, text=True)
             color_count = int(result.strip())
             return color_count >= 8
         # Explicitly catch tput-related exceptions
