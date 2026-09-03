@@ -905,24 +905,6 @@ def test_select_configured_pages_keeps_a_block_with_no_page(monkeypatch):
     assert [o["text"] for o in kept] == ["in", "unplaced"]
 
 
-class _FakeZipResponse:
-    """Stand-in for the streamed zip that MinerU returns from /file_parse."""
-
-    headers = {"Content-Type": "application/zip"}
-
-    def __init__(self):
-        self.raw = BytesIO(b"")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_exc):
-        return False
-
-    def raise_for_status(self):
-        return None
-
-
 def test_parse_pdf_sends_one_merged_span_to_the_mineru_api(monkeypatch, tmp_path):
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser(mineru_api="http://mineru.local")
@@ -935,7 +917,7 @@ def test_parse_pdf_sends_one_merged_span_to_the_mineru_api(monkeypatch, tmp_path
 
     def fake_post(**kwargs):
         posted.update(kwargs["data"])
-        return _FakeZipResponse()
+        return _FakePostContext(_FakeZipResponse(), posted)
 
     monkeypatch.setattr(module, "extract_pdf_outlines", Mock(return_value=[]))
     monkeypatch.setattr(parser, "__images__", Mock())
