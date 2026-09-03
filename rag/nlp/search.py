@@ -60,6 +60,17 @@ class Dealer:
         self.dataStore = dataStore
         self._doc_exists_cache: OrderedDict = OrderedDict()
         self._doc_exists_lock = threading.Lock()
+        self._doc_exists_cache_epoch = 0
+
+    def invalidate_doc_ids(self, doc_ids: list[str]) -> None:
+        """Remove document-existence entries after documents are deleted."""
+        if not doc_ids:
+            return
+
+        with self._doc_exists_lock:
+            self._doc_exists_cache_epoch += 1
+            for doc_id in doc_ids:
+                self._doc_exists_cache.pop(doc_id, None)
 
     @dataclass
     class SearchResult:
@@ -90,6 +101,7 @@ class Dealer:
 
         # Fast path: serve every doc_id from the short-lived cache if it is fresh.
         with self._doc_exists_lock:
+            cache_epoch = self._doc_exists_cache_epoch
             cached = {d: v for d, v in self._doc_exists_cache.items() if now - v[0] < self._DOC_EXISTS_TTL}
             hit = {d for d in unique_doc_ids if d in cached and cached[d][1]}
             miss = [d for d in unique_doc_ids if d not in cached]
@@ -110,11 +122,14 @@ class Dealer:
 
         # Merge results; a missing doc is recorded as False so repeat queries skip it too.
         with self._doc_exists_lock:
-            for d in miss:
-                self._doc_exists_cache[d] = (now, d in found)
-            # Bound the cache so it cannot grow unbounded across many documents.
-            while len(self._doc_exists_cache) > 4096:
-                self._doc_exists_cache.popitem(last=False)
+            # A deletion may have invalidated the cache while the DB query was
+            # in flight. Do not reinsert results from before that invalidation.
+            if cache_epoch == self._doc_exists_cache_epoch:
+                for d in miss:
+                    self._doc_exists_cache[d] = (now, d in found)
+                # Bound the cache so it cannot grow unbounded across many documents.
+                while len(self._doc_exists_cache) > 4096:
+                    self._doc_exists_cache.popitem(last=False)
 
         return hit.union(found)
 

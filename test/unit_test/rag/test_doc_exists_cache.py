@@ -60,6 +60,7 @@ def _dealer():
     dealer = Dealer.__new__(Dealer)
     dealer._doc_exists_cache = OrderedDict()
     dealer._doc_exists_lock = threading.Lock()
+    dealer._doc_exists_cache_epoch = 0
     return dealer
 
 
@@ -112,6 +113,42 @@ async def test_existing_doc_is_served_from_cache_without_a_second_query(monkeypa
     assert first == {"live-doc"}
     assert second == {"live-doc"}
     assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_deleting_cached_doc_invalidates_positive_entry(monkeypatch):
+    dealer = _dealer()
+    existing_ids = {"doc-1"}
+    calls = _stub_document_service(monkeypatch, existing_ids)
+
+    assert await dealer._existing_doc_ids(["doc-1"]) == {"doc-1"}
+    existing_ids.remove("doc-1")
+    dealer.invalidate_doc_ids(["doc-1"])
+
+    assert await dealer._existing_doc_ids(["doc-1"]) == set()
+    assert calls == [["doc-1"], ["doc-1"]]
+
+
+@pytest.mark.asyncio
+async def test_invalidation_during_db_check_does_not_repopulate_cache(monkeypatch):
+    dealer = _dealer()
+
+    class _Rows:
+        def dicts(self):
+            dealer.invalidate_doc_ids(["doc-1"])
+            return [{"id": "doc-1"}]
+
+    class _DocumentService:
+        @staticmethod
+        def get_by_ids(_doc_ids):
+            return _Rows()
+
+    module = types.ModuleType("api.db.services.document_service")
+    module.DocumentService = _DocumentService
+    monkeypatch.setitem(sys.modules, "api.db.services.document_service", module)
+
+    assert await dealer._existing_doc_ids(["doc-1"]) == {"doc-1"}
+    assert "doc-1" not in dealer._doc_exists_cache
 
 
 @pytest.mark.asyncio

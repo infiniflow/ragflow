@@ -43,6 +43,36 @@ class DocumentService(CommonService):
     model = Document
 
     @classmethod
+    def _invalidate_doc_exists_cache(cls, doc_ids: list[str]) -> None:
+        """Invalidate the local retriever cache after document-row changes."""
+        retriever = getattr(settings, "retriever", None)
+        if retriever is not None:
+            retriever.invalidate_doc_ids(doc_ids)
+
+    @classmethod
+    def delete_by_id(cls, pid):
+        deleted = super().delete_by_id(pid)
+        cls._invalidate_doc_exists_cache([pid])
+        return deleted
+
+    @classmethod
+    def delete_by_ids(cls, pids):
+        pids = list(pids)
+        deleted = super().delete_by_ids(pids)
+        cls._invalidate_doc_exists_cache(pids)
+        return deleted
+
+    @classmethod
+    @DB.connection_context()
+    def filter_delete(cls, filters):
+        with DB.atomic():
+            doc_ids = [doc_id for (doc_id,) in cls.model.select(cls.model.id).where(*filters).tuples()]
+            num = cls.model.delete().where(*filters).execute()
+
+        cls._invalidate_doc_exists_cache(doc_ids)
+        return num
+
+    @classmethod
     @DB.connection_context()
     def get_disabled_doc_ids_by_kb_id(cls, kb_id) -> set[str]:
         return {str(doc_id) for (doc_id,) in cls.model.select(cls.model.id).where((cls.model.kb_id == kb_id) & (cls.model.status == "0")).tuples()}
@@ -850,6 +880,7 @@ class DocumentService(CommonService):
         Returns True if the document was deleted by this call, False if it was
         already deleted by a concurrent request (idempotent).
         """
+        deleted = False
         with DB.atomic():
             doc = (
                 cls.model.select(
@@ -862,17 +893,19 @@ class DocumentService(CommonService):
                 .for_update()
                 .get_or_none()
             )
-            if doc is None:
-                return False
-            deleted = cls.model.delete().where(cls.model.id == doc_id).execute()
-            if not deleted:
-                return False
-            Knowledgebase.update(
-                token_num=Knowledgebase.token_num - doc.token_num,
-                chunk_num=Knowledgebase.chunk_num - doc.chunk_num,
-                doc_num=Knowledgebase.doc_num - 1,
-            ).where(Knowledgebase.id == doc.kb_id).execute()
-        return True
+            if doc is not None:
+                deleted = cls.model.delete().where(cls.model.id == doc_id).execute()
+                if deleted:
+                    Knowledgebase.update(
+                        token_num=Knowledgebase.token_num - doc.token_num,
+                        chunk_num=Knowledgebase.chunk_num - doc.chunk_num,
+                        doc_num=Knowledgebase.doc_num - 1,
+                    ).where(Knowledgebase.id == doc.kb_id).execute()
+
+        # Invalidate even when the row was already absent. A stale positive cache
+        # entry may have been left by an earlier direct deletion path.
+        cls._invalidate_doc_exists_cache([doc_id])
+        return bool(deleted)
 
     @classmethod
     @DB.connection_context()
