@@ -70,12 +70,6 @@ LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小�
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
 
-def _log_stream_output(value):
-    """Log the exact stream event sent to downstream consumers."""
-    logging.debug("[LLM STREAM -> downstream] %r", value)
-    return value
-
-
 # Generation parameters that are safe to forward to the underlying completion
 # call. `gen_conf` originates from a chat assistant's `llm_setting`, which can
 # also carry RAGFlow-internal metadata (e.g. `model_type`). Anything outside
@@ -765,9 +759,9 @@ class Base(ABC):
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield _log_stream_output("<think>")
-                        yield _log_stream_output(f"Running the {tc.function.name} tool...")
-                        yield _log_stream_output("</think>")
+                        yield "<think>"
+                        yield f"Running the {tc.function.name} tool..."
+                        yield "</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
 
                     # Terminal-tool short-circuit: stream a terminal tool's
@@ -2502,9 +2496,9 @@ class LiteLLMBase(ABC):
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield _log_stream_output("<think>")
-                        yield _log_stream_output(f"Running the {tc.function.name} tool...")
-                        yield _log_stream_output("</think>")
+                        yield "<think>"
+                        yield f"Running the {tc.function.name} tool..."
+                        yield "</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
 
                     # Terminal-tool short-circuit: a terminal tool already
