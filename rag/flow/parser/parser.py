@@ -49,6 +49,7 @@ from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParse
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
+from rag.flow.parser.docling import docling_tables_to_bboxes, media_records_to_bboxes, order_docling_bboxes
 from rag.flow.parser.pdf_chunk_metadata import (
     extract_pdf_positions,
     normalize_pdf_items_metadata,
@@ -439,7 +440,7 @@ class Parser(ProcessBase):
 
         elif parse_method.lower() == "docling":
             pdf_parser = DoclingParser(docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""))
-            lines, _ = pdf_parser.parse_pdf(
+            lines, docling_tables = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
@@ -463,6 +464,8 @@ class Parser(ProcessBase):
                     if image is not None:
                         box["image"] = image
                 bboxes.append(box)
+            bboxes.extend(docling_tables_to_bboxes(docling_tables))
+            bboxes = order_docling_bboxes(bboxes)
 
         elif parse_method.lower() == "opendataloader":
 
@@ -509,20 +512,7 @@ class Parser(ProcessBase):
                         box["image"] = image
                 bboxes.append(box)
             # Merge tables and images from the second return value.
-            for (img, html_or_caption), positions in odl_tables or []:
-                box = {"layout_type": "table" if not isinstance(html_or_caption, list) else "figure"}
-                if isinstance(html_or_caption, str):
-                    box["text"] = html_or_caption
-                elif isinstance(html_or_caption, list):
-                    box["text"] = html_or_caption[0] if html_or_caption else ""
-                if img is not None:
-                    box["image"] = img
-                if positions:
-                    try:
-                        box["positions"] = [[p[0] + 1, p[1], p[2], p[3], p[4]] for p in positions]
-                    except Exception:
-                        pass
-                bboxes.append(box)
+            bboxes.extend(media_records_to_bboxes(odl_tables, "OpenDataLoader"))
 
         elif parse_method.lower() == "somark":
 
