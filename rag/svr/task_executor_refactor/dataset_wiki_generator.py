@@ -1889,7 +1889,10 @@ async def run_wiki_incremental(
         # prior run stopped after MAP), fall through so the compiler can rebuild
         # pages from the stored extracts.
         has_compiled_pages = await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id) if existing_map_doc_ids else None
-        if existing_map_doc_ids and has_compiled_pages is True:
+        from rag.advanced_rag.knowlege_compile.wiki_incremental import _wiki_load_refine_failures
+
+        has_refine_failures = bool(await _wiki_load_refine_failures(ctx.tenant_id, ctx.kb_id))
+        if existing_map_doc_ids and has_compiled_pages is True and not has_refine_failures:
             from rag.advanced_rag.knowlege_compile.wiki_incremental import (
                 _wiki_finalize,
                 _wiki_load_pages_for_graph,

@@ -65,6 +65,7 @@ WIKI_PAGE_COMPILE_KWD = "wiki_page"
 WIKI_PLAN_GROUP_COMPILE_KWD = "wiki_plan_group"
 WIKI_DOC_PAGE_SOURCE_COMPILE_KWD = "wiki_doc_page_source"
 WIKI_CANONICAL_ENTITY_COMPILE_KWD = "wiki_canonical_entity"
+WIKI_REFINE_FAILURE_COMPILE_KWD = "wiki_refine_failure"
 
 # Entity matching thresholds (not exposed in YAML)
 ENTITY_MERGE_THRESHOLD = 0.90  # auto-merge
@@ -321,6 +322,103 @@ async def _wiki_has_any_pages(tenant_id: str, kb_id: str) -> bool:
     except Exception:
         logging.exception("wiki: _wiki_has_any_pages failed for kb=%s", kb_id)
         return False
+
+
+async def _wiki_load_refine_failures(tenant_id: str, kb_id: str) -> dict[str, dict]:
+    """Load persisted REFINE failures keyed by page id."""
+    index = search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return {}
+    fields = ["slug_kwd", "content_with_weight"]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            {"compile_kwd": [WIKI_REFINE_FAILURE_COMPILE_KWD]},
+            [],
+            OrderByExpr(),
+            0,
+            1000,
+            index,
+            [kb_id],
+        )
+        rows = settings.docStoreConn.get_fields(res, fields) or {}
+    except Exception:
+        logging.exception("wiki: failed to load REFINE failures for kb=%s", kb_id)
+        return {}
+
+    failures: dict[str, dict] = {}
+    for row in rows.values():
+        page_id = row.get("slug_kwd")
+        payload = row.get("content_with_weight")
+        if isinstance(page_id, list):
+            page_id = page_id[0] if page_id else ""
+        if not isinstance(page_id, str) or not page_id.strip():
+            continue
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload) if payload else {}
+            except (json.JSONDecodeError, TypeError):
+                payload = {}
+        failures[page_id.strip()] = payload if isinstance(payload, dict) else {}
+    return failures
+
+
+async def _wiki_record_refine_failure(
+    tenant_id: str,
+    kb_id: str,
+    page_id: str,
+    entity_names: list[str] | None = None,
+    error: str = "",
+) -> None:
+    """Persist one failed page so a later Update can retry it."""
+    page_id = str(page_id or "").strip()
+    if not page_id:
+        return
+    index = search.index_name(tenant_id)
+    payload = json.dumps(
+        {
+            "page_id": page_id,
+            "entity_names": [str(name).strip() for name in entity_names or [] if str(name).strip()],
+            "error": str(error or "")[:1000],
+        },
+        ensure_ascii=False,
+    )
+    row = {
+        "id": _stable_row_id(WIKI_REFINE_FAILURE_COMPILE_KWD, kb_id, page_id),
+        "doc_id": str(kb_id),
+        "compile_kwd": WIKI_REFINE_FAILURE_COMPILE_KWD,
+        "slug_kwd": page_id,
+        "content_with_weight": payload,
+        "available_int": 0,
+    }
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"compile_kwd": [WIKI_REFINE_FAILURE_COMPILE_KWD], "slug_kwd": [page_id]},
+            index,
+            kb_id,
+        )
+        await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
+    except Exception:
+        logging.exception("wiki: failed to persist REFINE failure page=%s", page_id)
+
+
+async def _wiki_clear_refine_failure(tenant_id: str, kb_id: str, page_id: str) -> None:
+    """Remove the retry marker after a page succeeds or is deleted."""
+    page_id = str(page_id or "").strip()
+    if not page_id:
+        return
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"compile_kwd": [WIKI_REFINE_FAILURE_COMPILE_KWD], "slug_kwd": [page_id]},
+            search.index_name(tenant_id),
+            kb_id,
+        )
+    except Exception:
+        logging.exception("wiki: failed to clear REFINE failure page=%s", page_id)
 
 
 async def _load_canonical_entities(
@@ -3730,6 +3828,15 @@ async def wiki_compile_incremental(
             if page_id in existing_pages and names:
                 existing_pages[page_id]["entity_names_kwd"] = names
 
+    # A failed REFINE page must be reconsidered together with the current
+    # document delta.  The current REDUCE snapshot remains authoritative, so
+    # deleted entities can still produce a deletion rather than being blindly
+    # retried from stale failure metadata.
+    refine_failures = await _wiki_load_refine_failures(tenant_id, kb_id)
+    retry_names = {str(name).strip() for failure in refine_failures.values() for name in failure.get("entity_names", []) if str(name).strip()}
+    if incremental:
+        affected_names.update(retry_names)
+
     # Build canonical claims ON-DEMAND only for affected names, then release
     # the full claim_index.  claim_index is keyed by RAW entity name (from MAP),
     # so claims must be aggregated through name_resolution onto the canonical
@@ -4000,6 +4107,7 @@ async def _wiki_mode_a_run(
                         page_version=existing.get("page_version_int", 0) if existing else 0,
                     )
                     summary["pages_deleted"] += 1
+                    await _wiki_clear_refine_failure(tenant_id, kb_id, pid)
                     return
 
                 next_version = _as_int(existing.get("page_version_int")) + 1 if existing else 1
@@ -4035,6 +4143,9 @@ async def _wiki_mode_a_run(
                     topic_pool=topic_pool,
                     topic_pool_lock=topic_pool_lock,
                 )
+                if result is None:
+                    raise RuntimeError(f"REFINE returned no page content for {pid}")
+                await _wiki_clear_refine_failure(tenant_id, kb_id, pid)
                 if refine_mode == "generate":
                     summary["pages_created"] += 1
                 else:
@@ -4044,8 +4155,15 @@ async def _wiki_mode_a_run(
                     for did in entry["source_doc_ids"]:
                         doc_updates.setdefault(did, []).append(pid)
 
-            except Exception:
+            except Exception as exc:
                 logging.exception("wiki A: REFINE failed for %s", pid)
+                await _wiki_record_refine_failure(
+                    tenant_id,
+                    kb_id,
+                    pid,
+                    entry.get("existing_page", {}).get("entity_names_kwd") or [entry.get("page_title", pid)],
+                    error=str(exc),
+                )
                 summary["errors"].append(f"REFINE_FAILED:{pid}")
 
     tasks = [_refine_one(pid, entry) for pid, entry in page_deltas.items()]
@@ -4327,6 +4445,7 @@ async def _wiki_mode_b_run(
                         page_version=existing.get("page_version_int", 0) if existing else 0,
                     )
                     if deleted_page is None:
+                        await _wiki_clear_refine_failure(tenant_id, kb_id, page_key)
                         await _wiki_delete_plan_group(tenant_id, kb_id, page_key)
                         for did in _as_str_list(existing.get("source_doc_ids")) if existing else []:
                             doc_removals.setdefault(did, []).append(page_key)
@@ -4368,7 +4487,10 @@ async def _wiki_mode_b_run(
                     topic_pool_lock=topic_pool_lock,
                     member_evidence=member_evidence,
                 )
+                if result is None:
+                    raise RuntimeError(f"REFINE returned no page content for {page_key}")
                 if result:
+                    await _wiki_clear_refine_failure(tenant_id, kb_id, page_key)
                     if is_new:
                         summary["pages_created"] += 1
                     else:
@@ -4394,8 +4516,16 @@ async def _wiki_mode_b_run(
                     for did in old_doc_ids - new_doc_ids:
                         doc_removals.setdefault(did, []).append(page_key)
 
-            except Exception:
+            except Exception as exc:
                 logging.exception("wiki B: REFINE failed for %s", page_id)
+                failed_page_id = page_id[5:] if page_id.startswith("_new_") else page_id
+                await _wiki_record_refine_failure(
+                    tenant_id,
+                    kb_id,
+                    failed_page_id,
+                    [ent.get("entity_name", "") for ent in entities if isinstance(ent, dict)],
+                    error=str(exc),
+                )
                 summary["errors"].append(f"REFINE_FAILED:{page_id}")
 
     tasks = [_refine_one(pid, ents) for pid, ents in assignments.items()]

@@ -80,6 +80,32 @@ class MockChatModel:
 
 
 @pytest.mark.asyncio
+async def test_load_refine_failures_decodes_persisted_page_markers(monkeypatch):
+    store = MagicMock()
+    store.index_exist.return_value = True
+    store.get_fields.return_value = {
+        "row-1": {
+            "slug_kwd": ["entity/alice"],
+            "content_with_weight": json.dumps({"entity_names": ["Alice"], "error": "429"}),
+        },
+        "row-2": {"slug_kwd": "entity/bob", "content_with_weight": "{}"},
+    }
+
+    async def fake_thread_pool_exec(*args, **kwargs):
+        return object()
+
+    monkeypatch.setattr(_wiki.settings, "docStoreConn", store)
+    monkeypatch.setattr(_wiki, "thread_pool_exec", fake_thread_pool_exec)
+
+    failures = await _wiki._wiki_load_refine_failures("tenant", "kb")
+
+    assert failures == {
+        "entity/alice": {"entity_names": ["Alice"], "error": "429"},
+        "entity/bob": {},
+    }
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "response",
     [
