@@ -104,6 +104,14 @@ func TestQAChunker_XLSXTablePairs(t *testing.T) {
 		if got != expected {
 			t.Errorf("chunk %d = %q, want %q", i, got, expected)
 		}
+		// Each pair keeps its source row, the same as the text path does.
+		raw, ok := chunks[i]["top_int"].([]any)
+		if !ok || len(raw) != 1 {
+			t.Fatalf("chunk %d top_int has shape %#v", i, chunks[i]["top_int"])
+		}
+		if int(raw[0].(float64)) != i {
+			t.Errorf("chunk %d top_int = %v, want %d", i, raw[0], i)
+		}
 	}
 }
 
