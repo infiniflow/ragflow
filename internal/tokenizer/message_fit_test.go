@@ -1,11 +1,9 @@
-package messagefit
+package tokenizer
 
 import (
 	"slices"
 	"strings"
 	"testing"
-
-	"ragflow/internal/tokenizer"
 )
 
 func TestFit_AllFits(t *testing.T) {
@@ -51,7 +49,7 @@ func TestFit_Step2_DropsMiddle(t *testing.T) {
 		{Role: "user", Content: middle},
 		{Role: "user", Content: last},
 	}
-	budget := tokenizer.NumTokensFromString(sysContent) + tokenizer.NumTokensFromString(last)
+	budget := NumTokensFromString(sysContent) + NumTokensFromString(last)
 
 	kept, keptIdx, count := Fit(msgs, budget)
 	if count == 0 {
@@ -71,7 +69,7 @@ func TestFit_ExactBudget(t *testing.T) {
 		{Role: "system", Content: "abc"},
 		{Role: "user", Content: "def"},
 	}
-	budget := tokenizer.NumTokensFromString("abc") + tokenizer.NumTokensFromString("def")
+	budget := NumTokensFromString("abc") + NumTokensFromString("def")
 
 	kept, keptIdx, _ := Fit(msgs, budget)
 	if len(kept) != 2 || !slices.Equal(keptIdx, []int{0, 1}) {
@@ -115,16 +113,16 @@ func TestFit_SystemOnlyMessages(t *testing.T) {
 	if len(kept) != 2 || !slices.Equal(keptIdx, []int{0, 1}) {
 		t.Fatalf("got kept=%+v keptIdx=%v, want both systems", kept, keptIdx)
 	}
-	total := tokenizer.NumTokensFromString(kept[0].Content) + tokenizer.NumTokensFromString(kept[1].Content)
+	total := NumTokensFromString(kept[0].Content) + NumTokensFromString(kept[1].Content)
 	if total > budget {
 		t.Errorf("fitted total %d exceeds budget %d", total, budget)
 	}
-	fitted0 := tokenizer.NumTokensFromString(kept[0].Content)
-	fitted1 := tokenizer.NumTokensFromString(kept[1].Content)
+	fitted0 := NumTokensFromString(kept[0].Content)
+	fitted1 := NumTokensFromString(kept[1].Content)
 	if fitted0 == 0 || fitted1 == 0 {
 		t.Errorf("a system message was emptied by fitting: %+v", kept)
 	}
-	if fitted0 >= tokenizer.NumTokensFromString(sys1) || fitted1 >= tokenizer.NumTokensFromString(sys2) {
+	if fitted0 >= NumTokensFromString(sys1) || fitted1 >= NumTokensFromString(sys2) {
 		t.Errorf("system messages not trimmed: %+v", kept)
 	}
 }
@@ -150,18 +148,18 @@ func TestFit_TrimsAllSystemMessages(t *testing.T) {
 	if kept[2].Content != last {
 		t.Errorf("last user message not preserved: %q", kept[2].Content)
 	}
-	total := tokenizer.NumTokensFromString(kept[0].Content) +
-		tokenizer.NumTokensFromString(kept[1].Content) +
-		tokenizer.NumTokensFromString(kept[2].Content)
+	total := NumTokensFromString(kept[0].Content) +
+		NumTokensFromString(kept[1].Content) +
+		NumTokensFromString(kept[2].Content)
 	if total > budget {
 		t.Errorf("fitted total %d exceeds budget %d", total, budget)
 	}
-	fitted0 := tokenizer.NumTokensFromString(kept[0].Content)
-	fitted1 := tokenizer.NumTokensFromString(kept[1].Content)
+	fitted0 := NumTokensFromString(kept[0].Content)
+	fitted1 := NumTokensFromString(kept[1].Content)
 	if fitted0 == 0 || fitted1 == 0 {
 		t.Errorf("a system message was emptied by fitting: %+v", kept)
 	}
-	if fitted0 >= tokenizer.NumTokensFromString(sys1) || fitted1 >= tokenizer.NumTokensFromString(sys2) {
+	if fitted0 >= NumTokensFromString(sys1) || fitted1 >= NumTokensFromString(sys2) {
 		t.Errorf("system messages not trimmed: %+v", kept)
 	}
 }
@@ -187,10 +185,10 @@ func TestFit_Step3_SystemDominates(t *testing.T) {
 		t.Fatalf("keptIdx = %v, want [0 1]", keptIdx)
 	}
 	// User preserved verbatim; system trimmed.
-	if tokenizer.NumTokensFromString(kept[1].Content) != tokenizer.NumTokensFromString(userContent) {
+	if NumTokensFromString(kept[1].Content) != NumTokensFromString(userContent) {
 		t.Errorf("user message not preserved: %+v", kept)
 	}
-	if tokenizer.NumTokensFromString(kept[0].Content) >= tokenizer.NumTokensFromString(sysContent) {
+	if NumTokensFromString(kept[0].Content) >= NumTokensFromString(sysContent) {
 		t.Errorf("system not trimmed: %+v", kept)
 	}
 }
@@ -216,10 +214,10 @@ func TestFit_Step3_UserDominates(t *testing.T) {
 		t.Fatalf("keptIdx = %v, want [0 1]", keptIdx)
 	}
 	// System preserved verbatim; user trimmed.
-	if tokenizer.NumTokensFromString(kept[0].Content) != tokenizer.NumTokensFromString(sysContent) {
+	if NumTokensFromString(kept[0].Content) != NumTokensFromString(sysContent) {
 		t.Errorf("system message not preserved: %+v", kept)
 	}
-	if tokenizer.NumTokensFromString(kept[1].Content) >= tokenizer.NumTokensFromString(userContent) {
+	if NumTokensFromString(kept[1].Content) >= NumTokensFromString(userContent) {
 		t.Errorf("user not trimmed: %+v", kept)
 	}
 }
@@ -248,7 +246,7 @@ func TestFit_Step3_BudgetFilledByLast(t *testing.T) {
 	if kept[0].Content != "" {
 		t.Errorf("system message not trimmed to empty when the last message fills the budget: %+v", kept)
 	}
-	if tokenizer.NumTokensFromString(kept[1].Content) > budget {
+	if NumTokensFromString(kept[1].Content) > budget {
 		t.Errorf("user message exceeds budget after trim: %+v", kept)
 	}
 }
@@ -264,7 +262,7 @@ func TestFit_SingleMessage(t *testing.T) {
 	if !slices.Equal(keptIdx, []int{0}) {
 		t.Fatalf("keptIdx = %v, want [0]", keptIdx)
 	}
-	if tokenizer.NumTokensFromString(kept[0].Content) > 100 {
+	if NumTokensFromString(kept[0].Content) > 100 {
 		t.Errorf("single message not trimmed: %+v", kept)
 	}
 }
