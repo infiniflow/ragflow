@@ -65,6 +65,19 @@ func TestJoinDOCXIRRuns(t *testing.T) {
 	}
 }
 
+// TestJoinDOCXIRRuns_LineBreak pins that a hard line break inline run
+// renders as a newline instead of being dropped.
+func TestJoinDOCXIRRuns_LineBreak(t *testing.T) {
+	runs := []docxIRRun{
+		{Type: "text", Text: "before"},
+		{Type: "line_break"},
+		{Type: "text", Text: "after"},
+	}
+	if got := joinDOCXIRRuns(runs); got != "before\nafter" {
+		t.Fatalf("joinDOCXIRRuns = %q, want %q", got, "before\nafter")
+	}
+}
+
 // TestExtractDOCXFiguresFromIR verifies the image-figure context
 // extraction: an image block carries the immediately surrounding text
 // as ContextAbove / ContextBelow / Marker. Pure-Go, runs under !cgo.

@@ -13,7 +13,7 @@ import (
 )
 
 // TestProductionAssemblySmoke parses real PDFs through the PRODUCTION path —
-// real DLA/TSR/OCR inference against DEEPDOC_URL, no replay dump — and checks
+// real in-process DLA/TSR/OCR inference (MODEL_DIR; ONNX Runtime statically linked), no replay dump — and checks
 // the converged R/C grid assembly (AnnotateBoxesWithGrid + GroupBoxesByRC)
 // stays robust: parse does not crash, detected tables are not fully empty, and
 // every table has content rows. This is the non-replay sanity check for the
@@ -23,7 +23,7 @@ import (
 // the real_pdfs directory, the four ocr_real table PDFs are appended so the
 // image/OCR-heavy production path is exercised too.
 func TestProductionAssemblySmoke(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	// Run whichever of the known table PDFs exist under BATCH_PARITY_PDF_DIR:
 	// the 35-set fixtures live in testdata/pdfs, the ocr_real ones in

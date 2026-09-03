@@ -203,11 +203,50 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 		return []map[string]any{chunk}
 	}
 
+	// Proportionally slice PDF positions so each sub-chunk's screenshot
+	// crops only its own vertical region (fix for chunk-screenshot mismatch).
+	// When no positions are present the old shallow-copy behaviour is kept.
+	_, hasPDF := chunk["_pdf_positions"]
+	_, hasPos := chunk["positions"]
+	if !hasPDF && !hasPos {
+		out := make([]map[string]any, 0, len(finalGroups))
+		for _, g := range finalGroups {
+			sub := shallowCopyChunk(chunk)
+			sub["text"] = g
+			out = append(out, sub)
+		}
+		return out
+	}
+	total := totalRunes(finalGroups)
+	if total == 0 {
+		out := make([]map[string]any, 0, len(finalGroups))
+		for _, g := range finalGroups {
+			sub := shallowCopyChunk(chunk)
+			sub["text"] = g
+			out = append(out, sub)
+		}
+		return out
+	}
 	out := make([]map[string]any, 0, len(finalGroups))
+	cum := 0
 	for _, g := range finalGroups {
+		pcRunes := utf8.RuneCountInString(g)
+		startRatio := float64(cum) / float64(total)
+		endRatio := float64(cum+pcRunes) / float64(total)
 		sub := shallowCopyChunk(chunk)
 		sub["text"] = g
+		if hasPDF {
+			if sliced := sliceAnyPositions(chunk["_pdf_positions"], startRatio, endRatio); sliced != nil {
+				sub["_pdf_positions"] = sliced
+			}
+		}
+		if hasPos {
+			if sliced := sliceAnyPositions(chunk["positions"], startRatio, endRatio); sliced != nil {
+				sub["positions"] = sliced
+			}
+		}
 		out = append(out, sub)
+		cum += pcRunes
 	}
 	return out
 }

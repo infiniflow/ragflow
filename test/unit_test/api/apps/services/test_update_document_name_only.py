@@ -45,6 +45,7 @@ def _load_update_document_name_only_module(monkeypatch, *, file_lookup):
     doc = SimpleNamespace(id="doc-1", kb_id="kb-1")
     f2d_row = SimpleNamespace(file_id="missing-file-id")
 
+    _stub(monkeypatch, "api.db.services.document_counter_service", release_reparse_counters=lambda doc_id: None)
     _stub(
         monkeypatch,
         "api.db.services.document_service",
@@ -75,6 +76,7 @@ def _load_update_document_name_only_module(monkeypatch, *, file_lookup):
         get_error_data_result=lambda **kwargs: kwargs,
         server_error_response=lambda e: {"error": str(e)},
         get_parser_config=lambda doc: {},
+        strip_graphrag_raptor_config=lambda data: data,
     )
     _stub(monkeypatch, "api.utils.validation_utils", UpdateDocumentReq=object)
     _stub(monkeypatch, "api.utils", validation_utils=sys.modules["api.utils.validation_utils"])

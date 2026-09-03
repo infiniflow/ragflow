@@ -636,7 +636,14 @@ func pageResultsDebug(pages []wikiPageResult) []string {
 }
 
 func (p *wikiPipeline) runMap() error {
-	if p.deps.WikiMapVersions != nil {
+	// The versioned MAP cache is dataset-scoped: its DocStore rows live under
+	// ragflow_<tenant_id>/<kb_id>. A canvas debug (dataflow dry-run) run has no
+	// knowledgebase (NewDebugTaskContext forces kb_id == ""), so there is no
+	// scope to key cache rows on — the strict-scope store would fail the whole
+	// run with "tenant_id and dataset_id are required". Run the cache-less MAP
+	// there instead, mirroring how the debug tokenizer skips embedding and the
+	// debug executor skips persistence: a dry-run must stay side-effect free.
+	if p.deps.WikiMapVersions != nil && strings.TrimSpace(p.tenantID) != "" && strings.TrimSpace(p.datasetID) != "" {
 		err := p.runVersionedMap()
 		for i := range p.mapExtracts {
 			p.mapExtracts[i].Mode = p.wikiMode()

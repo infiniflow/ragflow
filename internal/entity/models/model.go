@@ -160,7 +160,7 @@ type ModelTools struct {
 // Model represents a single LLM model
 type Model struct {
 	Name          string         `json:"name"`
-	ContentLength *int           `json:"content_length"`
+	ContextLength *int           `json:"context_length"`
 	MaxOutput     *int           `json:"max_output"`
 	MaxTokens     *int           `json:"max_tokens"`
 	ModelTypes    []string       `json:"model_types"`

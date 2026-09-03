@@ -28,9 +28,9 @@ describe('shouldAutosaveCanvas', () => {
   });
 
   it('skips an empty nodes/edges store so autosave cannot wipe a pipeline', () => {
-    expect(
-      shouldAutosaveCanvas({ ...ready, nodeCount: 0, edgeCount: 0 }),
-    ).toBe(false);
+    expect(shouldAutosaveCanvas({ ...ready, nodeCount: 0, edgeCount: 0 })).toBe(
+      false,
+    );
   });
 
   it('still autosaves when there are nodes but no edges', () => {

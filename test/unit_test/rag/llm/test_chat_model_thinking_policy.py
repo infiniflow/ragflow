@@ -23,6 +23,7 @@ pytestmark = pytest.mark.p1
 
 
 def test_qwen3_uses_system_disabled_default():
+    """Base-compatible Qwen3 requests disable thinking by default."""
     gen_conf, kwargs = _apply_model_family_policies(
         "qwen3-plus",
         backend="base",
@@ -31,10 +32,11 @@ def test_qwen3_uses_system_disabled_default():
     )
 
     assert gen_conf == {}
-    assert kwargs["extra_body"]["enable_thinking"] is False
+    assert kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
 
 
 def test_qwen3_can_enable_thinking_explicitly():
+    """An explicit Qwen3 thinking choice reaches chat_template_kwargs."""
     gen_conf, kwargs = _apply_model_family_policies(
         "qwen3-plus",
         backend="base",
@@ -43,7 +45,28 @@ def test_qwen3_can_enable_thinking_explicitly():
     )
 
     assert gen_conf == {"temperature": 0.2}
-    assert kwargs["extra_body"] == {"seed": 1, "enable_thinking": True}
+    assert kwargs["extra_body"] == {"seed": 1, "chat_template_kwargs": {"enable_thinking": True}}
+
+
+def test_qwen3_preserves_existing_chat_template_kwargs():
+    """Qwen policy updates its field without dropping other template options."""
+    gen_conf, kwargs = _apply_model_family_policies(
+        "qwen3-plus",
+        backend="base",
+        gen_conf={"thinking": "disabled"},
+        request_kwargs={
+            "extra_body": {
+                "seed": 1,
+                "chat_template_kwargs": {"enable_thinking": True, "custom_template_flag": "keep"},
+            }
+        },
+    )
+
+    assert gen_conf == {}
+    assert kwargs["extra_body"] == {
+        "seed": 1,
+        "chat_template_kwargs": {"enable_thinking": False, "custom_template_flag": "keep"},
+    }
 
 
 def test_qwen3_preview_variant_forces_thinking_true():
@@ -56,7 +79,7 @@ def test_qwen3_preview_variant_forces_thinking_true():
     )
 
     assert gen_conf == {}
-    assert kwargs["extra_body"]["enable_thinking"] is True
+    assert kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
 
 
 def test_qwen3_preview_ignores_disabled_thinking():
@@ -70,7 +93,7 @@ def test_qwen3_preview_ignores_disabled_thinking():
 
     assert "thinking" not in gen_conf
     assert gen_conf == {"temperature": 0.2}
-    assert kwargs["extra_body"]["enable_thinking"] is True
+    assert kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
 
 
 def test_qwen3_24t_a95b_forces_thinking_true():
@@ -83,7 +106,7 @@ def test_qwen3_24t_a95b_forces_thinking_true():
     )
 
     assert gen_conf == {}
-    assert kwargs["extra_body"]["enable_thinking"] is True
+    assert kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
 
 
 def test_qwen3_24t_a95b_ignores_disabled_thinking():
@@ -97,7 +120,7 @@ def test_qwen3_24t_a95b_ignores_disabled_thinking():
 
     assert "thinking" not in gen_conf
     assert gen_conf == {"temperature": 0.2}
-    assert kwargs["extra_body"]["enable_thinking"] is True
+    assert kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
 
 
 @pytest.mark.parametrize(
@@ -105,6 +128,7 @@ def test_qwen3_24t_a95b_ignores_disabled_thinking():
     [SupportedLiteLLMProvider.Tongyi_Qianwen, SupportedLiteLLMProvider.Dashscope],
 )
 def test_qwen3_litellm_provider_uses_provider_field(provider):
+    """Native DashScope providers keep their provider-specific body field."""
     gen_conf, kwargs = _apply_model_family_policies(
         "qwen3-max",
         backend="litellm",
@@ -115,6 +139,34 @@ def test_qwen3_litellm_provider_uses_provider_field(provider):
 
     assert kwargs == {}
     assert gen_conf["enable_thinking"] is False
+
+
+def test_qwen3_litellm_openai_uses_nested_extra_body():
+    """Non-DashScope LiteLLM providers carry Qwen controls in extra_body."""
+    gen_conf, kwargs = _apply_model_family_policies(
+        "qwen3-8b",
+        backend="litellm",
+        provider=SupportedLiteLLMProvider.OpenAI,
+        gen_conf={
+            "thinking": "enabled",
+            "extra_body": {
+                "seed": 1,
+                "chat_template_kwargs": {"custom_template_flag": "keep"},
+            },
+        },
+        request_kwargs={},
+    )
+
+    assert kwargs == {}
+    assert gen_conf == {
+        "extra_body": {
+            "seed": 1,
+            "chat_template_kwargs": {
+                "custom_template_flag": "keep",
+                "enable_thinking": True,
+            },
+        }
+    }
 
 
 def test_kimi_thinking_maps_to_moonshot_payload():
@@ -223,6 +275,29 @@ def test_deepseek_thinking_enabled_via_extra_body():
     assert kwargs == {}
     assert "thinking" not in gen_conf
     assert gen_conf["extra_body"]["thinking"] == {"type": "enabled"}
+
+
+def test_deepseek_extra_body_keeps_shallow_merge_semantics():
+    """The Qwen fix must not recursively merge unrelated provider payloads."""
+    gen_conf, kwargs = _apply_model_family_policies(
+        "deepseek-v4-flash",
+        backend="litellm",
+        provider=SupportedLiteLLMProvider.DeepSeek,
+        gen_conf={
+            "thinking": "disabled",
+            "extra_body": {
+                "seed": 1,
+                "thinking": {"budget_tokens": 128},
+            },
+        },
+        request_kwargs={},
+    )
+
+    assert kwargs == {}
+    assert gen_conf["extra_body"] == {
+        "seed": 1,
+        "thinking": {"type": "disabled"},
+    }
 
 
 def test_litellm_provider_body_fields_move_to_extra_body_before_drop_params():

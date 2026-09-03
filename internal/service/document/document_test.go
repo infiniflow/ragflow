@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -49,6 +50,18 @@ import (
 type recordingTaskPublisher struct {
 	subject  string
 	messages []common.TaskMessage
+}
+
+type runningTaskPublisher struct {
+	db        *gorm.DB
+	published chan struct{}
+	once      sync.Once
+}
+
+func (p *runningTaskPublisher) PublishTaskMessage(_ string, msg common.TaskMessage) error {
+	p.once.Do(func() { close(p.published) })
+	return p.db.Model(&entity.IngestionTask{}).Where("id = ?", msg.TaskID).
+		Update("status", common.RUNNING).Error
 }
 
 func (r *recordingTaskPublisher) PublishTaskMessage(subject string, msg common.TaskMessage) error {
@@ -422,8 +435,19 @@ func (f *failingDeleteMetadataEngine) UpdateMetadata(ctx context.Context, docID 
 // setupServiceTestDB initializes an in-memory SQLite database for service tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	return setupServiceTestDBWithDSN(t, ":memory:")
+}
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+func setupConcurrentServiceTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
+	return setupServiceTestDBWithDSN(t, dsn)
+}
+
+func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		TranslateError: true,
 	})
 	if err != nil {
@@ -763,7 +787,7 @@ func TestContentHashHex_MatchesPythonXXH128(t *testing.T) {
 }
 
 func TestSyncDocumentUpsertRemovesStagedBlobWhenInsertFails(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -816,7 +840,7 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(origStorage) })
 
 	activeLocation := "sync/github/doc-sync-update.txt"
-	if err := mockStorage.Put(context.Background(), "kb-sync", activeLocation, []byte("old content")); err != nil {
+	if err := mockStorage.Put(t.Context(), "kb-sync", activeLocation, []byte("old content")); err != nil {
 		t.Fatalf("seed active object: %v", err)
 	}
 	oldName := "old.txt"
@@ -863,7 +887,7 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected update failure")
 	}
-	got, err := mockStorage.Get(context.Background(), "kb-sync", activeLocation)
+	got, err := mockStorage.Get(t.Context(), "kb-sync", activeLocation)
 	if err != nil {
 		t.Fatalf("active object was removed: %v", err)
 	}
@@ -1266,8 +1290,8 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	if ingestionTask.UserID != "user-1" {
 		t.Fatalf("ingestion task user id = %q, want %q", ingestionTask.UserID, "user-1")
 	}
-	if ingestionTask.Status != common.CREATED {
-		t.Fatalf("ingestion task status = %q, want %q", ingestionTask.Status, common.CREATED)
+	if ingestionTask.Status != common.SCHEDULED {
+		t.Fatalf("ingestion task status = %q, want %q", ingestionTask.Status, common.SCHEDULED)
 	}
 
 	tasks, err := svc.taskDAO.GetByDocID(ctx, db, "doc-1")
@@ -1276,6 +1300,76 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	}
 	if len(tasks) != 0 {
 		t.Fatalf("expected no legacy task rows, got %d", len(tasks))
+	}
+}
+
+func TestStartParseDocumentsSerializesConcurrentReruns(t *testing.T) {
+	db := setupConcurrentServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
+		t.Fatalf("set document location: %v", err)
+	}
+
+	firstTaskLookup := make(chan struct{})
+	releaseFirstTaskLookup := make(chan struct{})
+	var blockFirstLookup sync.Once
+	const callbackName = "test:block-first-ingestion-task-lookup"
+	if err := db.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != (&entity.IngestionTask{}).TableName() {
+			return
+		}
+		blockFirstLookup.Do(func() {
+			close(firstTaskLookup)
+			<-releaseFirstTaskLookup
+		})
+	}); err != nil {
+		t.Fatalf("register query callback: %v", err)
+	}
+
+	firstService := testDocumentService(t)
+	firstService.ingestionTaskSvc.SetTaskPublisher(&recordingTaskPublisher{})
+	secondPublisher := &runningTaskPublisher{db: db, published: make(chan struct{})}
+	secondService := testDocumentService(t)
+	secondService.ingestionTaskSvc.SetTaskPublisher(secondPublisher)
+	ctx := t.Context()
+	kb, err := firstService.kbDAO.GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("load knowledgebase: %v", err)
+	}
+	doc, err := firstService.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- firstService.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true})
+	}()
+	<-firstTaskLookup
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- secondService.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true})
+	}()
+
+	secondPublishedBeforeFirstCompletes := false
+	select {
+	case <-secondPublisher.published:
+		secondPublishedBeforeFirstCompletes = true
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	close(releaseFirstTaskLookup)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first concurrent reparse: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second concurrent reparse: %v", err)
+	}
+	if secondPublishedBeforeFirstCompletes {
+		t.Fatal("second reparse published a task before the first reparse completed cleanup")
 	}
 }
 
@@ -2057,6 +2151,58 @@ func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T)
 				t.Fatalf("%s ingestion task must not be deleted", status)
 			}
 		})
+	}
+}
+
+func TestClearDocumentParseResultsDoesNotClearResultsWhenTaskStartsRunning(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
+
+	const callbackName = "test:start-ingestion-task-before-conditional-delete"
+	if err := db.Callback().Delete().Before("gorm:delete").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != (&entity.IngestionTask{}).TableName() {
+			return
+		}
+		if err := tx.Session(&gorm.Session{NewDB: true}).Model(&entity.IngestionTask{}).
+			Where("id = ?", "task-1").Update("status", common.RUNNING).Error; err != nil {
+			_ = tx.AddError(err)
+		}
+	}); err != nil {
+		t.Fatalf("register delete callback: %v", err)
+	}
+
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("get document: %v", err)
+	}
+	if err = testDocumentService(t).clearDocumentParseResults(ctx, doc, "tenant-1"); err == nil || !strings.Contains(err.Error(), "started running") {
+		t.Fatalf("expected reparse cleanup to reject a task that started running, got %v", err)
+	}
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("task status = %q, want %q", task.Status, common.RUNNING)
+	}
+
+	updatedDoc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if updatedDoc.TokenNum != 10 || updatedDoc.ChunkNum != 5 {
+		t.Fatalf("document counters = token:%d chunk:%d, want unchanged 10/5", updatedDoc.TokenNum, updatedDoc.ChunkNum)
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("reload knowledgebase: %v", err)
+	}
+	if kb.TokenNum != 10 || kb.ChunkNum != 5 {
+		t.Fatalf("knowledgebase counters = token:%d chunk:%d, want unchanged 10/5", kb.TokenNum, kb.ChunkNum)
 	}
 }
 

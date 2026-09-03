@@ -74,7 +74,7 @@ const DataSourceItem = (props: DataSourceItemProps) => {
           />
         </div>
         <Tooltip>
-          <TooltipTrigger>
+          <TooltipTrigger asChild>
             <Button
               variant={'transparent'}
               className="border-none hidden group-hover:block"
@@ -90,33 +90,45 @@ const DataSourceItem = (props: DataSourceItemProps) => {
             {t('knowledgeConfiguration.rebuildTip')}
           </TooltipContent>
         </Tooltip>
-        <Button
-          variant={'transparent'}
-          className="border-none hidden group-hover:block"
-          type="button"
-          onClick={() => {
-            toDetail(id);
-          }}
-        >
-          <Settings />
-        </Button>
-        <>
-          <Button
-            type="button"
-            variant={'transparent'}
-            className="border-none hidden group-hover:block"
-            onClick={() => {
-              delSourceModal({
-                data: props,
-                type: 'unlink',
-                dataSourceInfo: dataSourceInfo,
-                onOk: (data) => unbindFunc?.(data as DataSourceItemProps),
-              });
-            }}
-          >
-            <Unlink />
-          </Button>
-        </>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={'transparent'}
+              className="border-none hidden group-hover:block"
+              type="button"
+              onClick={() => {
+                toDetail(id);
+              }}
+            >
+              <Settings />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {t('knowledgeConfiguration.settings')}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant={'transparent'}
+              className="border-none hidden group-hover:block"
+              onClick={() => {
+                delSourceModal({
+                  data: props,
+                  type: 'unlink',
+                  dataSourceInfo: dataSourceInfo,
+                  onOk: (data) => unbindFunc?.(data as DataSourceItemProps),
+                });
+              }}
+            >
+              <Unlink />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {t('dataflowParser.unlinkSourceModalConfirmText')}
+          </TooltipContent>
+        </Tooltip>
       </div>
     </div>
   );

@@ -9,6 +9,48 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.27.1
+
+Released on Aug 28, 2026.
+
+### New features
+- New Azure DevOps connector for data sources ([#18715](https://github.com/infiniflow/ragflow/pull/18715))
+- New You.com web search provider for chat and agent ([#18478](https://github.com/infiniflow/ragflow/pull/18478))
+- New Serply web search provider for chat ([#18475](https://github.com/infiniflow/ragflow/pull/18475))
+
+### Model Support
+- New Synthorai model provider ([#18830](https://github.com/infiniflow/ragflow/pull/18830))
+- Missing DeepSeek models added ([#18678](https://github.com/infiniflow/ragflow/pull/18678))
+- AWS Bedrock API key authentication support ([#18301](https://github.com/infiniflow/ragflow/pull/18301))
+
+### Improvements
+- Retrieval API exposes rerank_candidates_count, knn top_k, and num_candidates ([#18768](https://github.com/infiniflow/ragflow/pull/18768), [#18737](https://github.com/infiniflow/ragflow/pull/18737))
+- Metadata filters pushed down to the metadata index for faster retrieval ([#18219](https://github.com/infiniflow/ragflow/pull/18219))
+- Chat settings form auto-scrolls to the error location on save ([#18811](https://github.com/infiniflow/ragflow/pull/18811))
+- Search page validates deleted knowledge bases ([#18522](https://github.com/infiniflow/ragflow/pull/18522))
+
+### Bug fixes
+- Fixed PDF parsing failure in chat ([#18860](https://github.com/infiniflow/ragflow/pull/18860))
+- Fixed wiki compilation accepting LLM error responses ([#18857](https://github.com/infiniflow/ragflow/pull/18857))
+- Fixed MinerU rendering stability, error visibility, and code block parsing ([#18617](https://github.com/infiniflow/ragflow/pull/18617))
+- Fixed 0-chunk datasets not showing, preventing scrolling to fetch more datasets ([#18810](https://github.com/infiniflow/ragflow/pull/18810))
+- Fixed QA Excel parser dropping rows whose answer is zero ([#17902](https://github.com/infiniflow/ragflow/pull/17902))
+- Fixed naive parser treating an empty upload as a missing binary ([#18826](https://github.com/infiniflow/ragflow/pull/18826))
+- Fixed encoding detection discarding confident detection results ([#15793](https://github.com/infiniflow/ragflow/pull/15793))
+- Fixed reasoning-enabled chat ignoring the dialog system prompt ([#18842](https://github.com/infiniflow/ragflow/pull/18842))
+- Fixed knowledge compilation using the default tenant LLM instead of the pipeline LLM ([#18572](https://github.com/infiniflow/ragflow/pull/18572))
+- Fixed chat network search service not allowed to be null ([#18791](https://github.com/infiniflow/ragflow/pull/18791))
+- Fixed Firefox chat auto-scroll not pinned to the bottom ([#18736](https://github.com/infiniflow/ragflow/pull/18736))
+- Fixed chat auto-scroll not following streamed answers ([#18570](https://github.com/infiniflow/ragflow/pull/18570))
+- Fixed parsing progress not visible after selecting upload ([#18741](https://github.com/infiniflow/ragflow/pull/18741))
+- Fixed BigQuery connector constructing SQL queries incorrectly ([#17500](https://github.com/infiniflow/ragflow/pull/17500))
+- Fixed WebDAV listing errors not propagated, causing prune data loss ([#18694](https://github.com/infiniflow/ragflow/pull/18694))
+- Fixed cross-KB document ID collision in data source sync ([#18244](https://github.com/infiniflow/ragflow/pull/18244))
+- Fixed GPUStack model discovery and audio support ([#18599](https://github.com/infiniflow/ragflow/pull/18599))
+- Fixed Kimi K3 temperature ([#18564](https://github.com/infiniflow/ragflow/pull/18564))
+- Fixed OCR text lost when no image2text model is configured ([#18012](https://github.com/infiniflow/ragflow/pull/18012))
+- Fixed hierarchical Wiki topic navigation ([#18721](https://github.com/infiniflow/ragflow/pull/18721))
+
 ## v0.27.0
 
 Released on Aug 19, 2026.

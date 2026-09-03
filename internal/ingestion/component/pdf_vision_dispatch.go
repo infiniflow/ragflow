@@ -42,8 +42,7 @@ var (
 var (
 	pdfVisionPromptCache   = make(map[string]string)
 	pdfVisionPromptCacheMu sync.RWMutex
-	pdfVisionPromptsBase   string
-	pdfVisionPromptsOnce   sync.Once
+	pdfVisionPrompts       promptDirState
 )
 
 func maybeDispatchPDFVision(
@@ -704,19 +703,7 @@ func loadPDFVisionPrompt(name string) (string, error) {
 }
 
 func pdfVisionPromptsBaseDir() (string, error) {
-	var initErr error
-	pdfVisionPromptsOnce.Do(func() {
-		root := utility.GetProjectRoot()
-		if _, statErr := os.Stat(filepath.Join(root, "rag", "prompts")); statErr == nil {
-			pdfVisionPromptsBase = root
-			return
-		}
-		initErr = fmt.Errorf("rag/prompts not found under project root %q", root)
-	})
-	if initErr != nil {
-		return "", initErr
-	}
-	return pdfVisionPromptsBase, nil
+	return pdfVisionPrompts.resolve(utility.GetProjectRoot())
 }
 
 // renderPDFVisionPrompt only renders page metadata. The full-page PDF vision

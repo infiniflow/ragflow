@@ -66,6 +66,39 @@ var GlobalMetadataKeys = []string{
 	"tenant_id",
 	"kb_id",
 	"lang",
+	// debug_chunk_cap is debug-only (canvas dry-run). Production pipeline
+	// inputs never set it, and no component outputs it, so SeedIngestionGlobals
+	// / PublishGlobals only ever propagate it in a debug run — where the
+	// chunker decorator reads it to limit preview chunks.
+	DebugChunkCapKey,
+}
+
+// DebugChunkCapKey is the run-input key (seeded into CanvasState.Globals)
+// carrying the canvas-debug (dry-run) chunk cap: when >= 1, a chunker node in
+// a debug run emits at most this many leading chunks for preview. 0 means "no
+// cap" (no chunker, or cap disabled). The chunker decorator reads it via
+// DebugChunkCap; the executor seeds the default into run inputs only in the
+// debug branch of runPipelineWithDSL.
+const DebugChunkCapKey = "debug_chunk_cap"
+
+// DebugChunkCap reads the canvas-debug chunk cap from CanvasState.Globals.
+// Returns 0 when no cap is set (no debug run, no chunker node, or cap
+// disabled). The stored value is normally an int (Go-side default); a
+// JSON-decoded override may arrive as float64, both are accepted.
+func DebugChunkCap(ctx context.Context) int {
+	if st := canvasStateFromContext(ctx); st != nil {
+		if v, ok := st.GetGlobal(DebugChunkCapKey); ok {
+			switch n := v.(type) {
+			case int:
+				return n
+			case int64:
+				return int(n)
+			case float64:
+				return int(n)
+			}
+		}
+	}
+	return 0
 }
 
 // SeedIngestionGlobals copies the whitelisted run-level metadata from `in`

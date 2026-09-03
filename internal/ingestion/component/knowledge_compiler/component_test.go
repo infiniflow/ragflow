@@ -367,6 +367,174 @@ func TestKnowledgeCompiler_Wiki_EndToEnd(t *testing.T) {
 	}
 }
 
+// strictScopeWikiMapVersions mimics the production DocStore-backed Wiki MAP
+// version cache (knowledge_compile.wikiMapVersionStore): any access with an
+// empty tenant or dataset scope fails loudly instead of degrading. It also
+// records which entry points a run exercised, so tests can prove the versioned
+// path was taken (or fully skipped) and that every persisted write carries
+// both scope ids.
+type strictScopeWikiMapVersions struct {
+	mu   sync.Mutex
+	gets int
+	puts []common.WikiMapVersion
+}
+
+func (s *strictScopeWikiMapVersions) GetWikiMapVersions(_ context.Context, tenantID, datasetID string, _ []string) (map[string][]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gets++
+	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(datasetID) == "" {
+		return nil, errors.New("load Wiki MAP versions: tenant_id and dataset_id are required")
+	}
+	return map[string][]byte{}, nil
+}
+
+func (s *strictScopeWikiMapVersions) PutWikiMapVersions(_ context.Context, versions []common.WikiMapVersion) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.puts = append(s.puts, versions...)
+	for _, version := range versions {
+		if version.TenantID == "" || version.DatasetID == "" {
+			return errors.New("save Wiki MAP version: key, tenant_id, and dataset_id are required")
+		}
+	}
+	return nil
+}
+
+func (s *strictScopeWikiMapVersions) storeAccess() (gets, puts int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.gets, len(s.puts)
+}
+
+// invokeWikiCompiler runs one Compiler/wiki invocation over the prose fixture
+// shared by the scope-guard tests below and returns the emitted chunk maps.
+func invokeWikiCompiler(t *testing.T, inputs map[string]any) []map[string]any {
+	t.Helper()
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
+		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1",
+	})
+	if err != nil {
+		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
+	}
+	out, err := c.Invoke(context.Background(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	raw, ok := out["chunks"].([]any)
+	if !ok {
+		t.Fatalf("chunks = %T, want []any", out["chunks"])
+	}
+	chunks := make([]map[string]any, 0, len(raw))
+	for _, r := range raw {
+		if cm, ok := r.(map[string]any); ok {
+			chunks = append(chunks, cm)
+		}
+	}
+	return chunks
+}
+
+func hasWikiPageChunk(chunks []map[string]any) bool {
+	for _, cm := range chunks {
+		if kind, _ := cm["kc_kind"].(string); kind == "page" {
+			return true
+		}
+	}
+	return false
+}
+
+func wikiScopeFixtureChunks() []any {
+	return []any{
+		map[string]any{"id": "c1", "text": "The quick brown fox jumps over the lazy dog near the river bank."},
+		map[string]any{"id": "c2", "text": "A red fox and a lazy dog rest beside a calm river at dawn."},
+	}
+}
+
+func installStrictScopeWikiDeps(t *testing.T, store *strictScopeWikiMapVersions) {
+	t.Helper()
+	common.SetDepsResolver(func(tenantID, _, _ string) (common.Deps, error) {
+		return common.Deps{
+			Chat:            proseChat{},
+			Embed:           mockEmbedder{dim: 8},
+			WikiMapVersions: store,
+			TenantID:        tenantID,
+		}, nil
+	})
+	t.Cleanup(func() { common.SetDepsResolver(nil) })
+	installVariantTemplateResolver(t, "wiki")
+}
+
+// TestKnowledgeCompiler_Wiki_DebugRunWithoutDataset reproduces the canvas
+// debug (dry-run) scenario from the field report: a dataflow canvas run
+// (File → Parser → Chunker → Compiler/wiki) executes with tenant_id but no
+// kb_id, because the debug TaskContext deliberately carries no KB. The wiki
+// variant must run cache-less there instead of failing on the DocStore-backed
+// MAP version cache, keeping debug runs side-effect free (same contract as
+// the tokenizer skipping embedding and the executor skipping persistence).
+// Both guard variants are covered: tenant without dataset (the field report)
+// and neither scope at all. In both, the strict-scope store must never be
+// touched — any access would fail the run (the pre-fix behavior).
+func TestKnowledgeCompiler_Wiki_DebugRunWithoutDataset(t *testing.T) {
+	store := &strictScopeWikiMapVersions{}
+	installStrictScopeWikiDeps(t, store)
+
+	// Inputs mirror a canvas debug run: tenant_id present, no dataset_id/kb_id.
+	chunks := invokeWikiCompiler(t, map[string]any{
+		"chunks":    wikiScopeFixtureChunks(),
+		"doc_id":    "d1",
+		"tenant_id": "t1",
+	})
+	if !hasWikiPageChunk(chunks) {
+		t.Fatalf("debug wiki run (tenant, no dataset): no 'page' chunk; got %d chunks", len(chunks))
+	}
+	if gets, puts := store.storeAccess(); gets != 0 || puts != 0 {
+		t.Fatalf("debug wiki run (tenant, no dataset) touched the version cache: gets=%d puts=%d, want 0/0", gets, puts)
+	}
+
+	// Neither scope present must also stay on the cache-less path.
+	chunks = invokeWikiCompiler(t, map[string]any{
+		"chunks": wikiScopeFixtureChunks(),
+		"doc_id": "d1",
+	})
+	if !hasWikiPageChunk(chunks) {
+		t.Fatalf("debug wiki run (no scope): no 'page' chunk; got %d chunks", len(chunks))
+	}
+	if gets, puts := store.storeAccess(); gets != 0 || puts != 0 {
+		t.Fatalf("debug wiki run (no scope) touched the version cache: gets=%d puts=%d, want 0/0", gets, puts)
+	}
+}
+
+// TestKnowledgeCompiler_Wiki_VersionedMapWritesAreScoped covers the other
+// branch of the runMap scope guard: a production-shaped run (tenant_id and
+// dataset_id both present) takes the versioned MAP path, and every MAP version
+// it persists carries both scope ids — the strict-scope invariant the
+// DocStore-backed store enforces on real writes.
+func TestKnowledgeCompiler_Wiki_VersionedMapWritesAreScoped(t *testing.T) {
+	store := &strictScopeWikiMapVersions{}
+	installStrictScopeWikiDeps(t, store)
+
+	chunks := invokeWikiCompiler(t, map[string]any{
+		"chunks":     wikiScopeFixtureChunks(),
+		"doc_id":     "d1",
+		"tenant_id":  "t1",
+		"dataset_id": "kb1",
+	})
+	if !hasWikiPageChunk(chunks) {
+		t.Fatalf("versioned wiki run: no 'page' chunk; got %d chunks", len(chunks))
+	}
+	if gets, _ := store.storeAccess(); gets == 0 {
+		t.Fatal("versioned wiki run never read the MAP version cache; the versioned path was not taken")
+	}
+	if _, puts := store.storeAccess(); puts == 0 {
+		t.Fatal("versioned wiki run persisted no MAP versions")
+	}
+	for _, version := range store.puts {
+		if version.TenantID != "t1" || version.DatasetID != "kb1" {
+			t.Fatalf("MAP version write missing scope: tenant=%q dataset=%q, want t1/kb1", version.TenantID, version.DatasetID)
+		}
+	}
+}
+
 func TestKnowledgeCompiler_Tree_EndToEnd(t *testing.T) {
 	installProseDeps(t)
 	// watershed (default tree_order): zero external clustering dependency.

@@ -1753,6 +1753,8 @@ async def handle_task():
         await asyncio.sleep(5)
         return
 
+    logging.info(f"handle_task begin for task {json.dumps(task)}")
+
     task_type = task["task_type"]
     pipeline_task_type = TASK_TYPE_TO_PIPELINE_TASK_TYPE.get(task_type, PipelineTaskType.PARSE) or PipelineTaskType.PARSE
     task_id = task["id"]

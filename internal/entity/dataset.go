@@ -52,6 +52,7 @@ const (
 	ParserTypeBook         ParserType = "book"
 	ParserTypeQA           ParserType = "qa"
 	ParserTypeTable        ParserType = "table"
+	ParserTypeGeneral      ParserType = "general"
 	ParserTypeNaive        ParserType = "naive"
 	ParserTypePicture      ParserType = "picture"
 	ParserTypeOne          ParserType = "one"
@@ -124,7 +125,7 @@ type Knowledgebase struct {
 	ChunkNum               int64      `gorm:"column:chunk_num;default:0;index" json:"chunk_num"`
 	SimilarityThreshold    float64    `gorm:"column:similarity_threshold;default:0.2;index" json:"similarity_threshold"`
 	VectorSimilarityWeight float64    `gorm:"column:vector_similarity_weight;default:0.3;index" json:"vector_similarity_weight"`
-	ParserID               string     `gorm:"column:parser_id;size:32;not null;default:naive;index" json:"parser_id"`
+	ParserID               string     `gorm:"column:parser_id;size:32;not null;default:general;index" json:"parser_id"`
 	PipelineID             *string    `gorm:"column:pipeline_id;size:32;index" json:"pipeline_id,omitempty"`
 	ParserConfig           JSONMap    `gorm:"column:parser_config;type:json" json:"parser_config"`
 	Pagerank               int64      `gorm:"column:pagerank;default:0" json:"pagerank"`
