@@ -104,4 +104,3 @@ def test_automatic_sync_uses_the_previous_successful_window():
     assert list(batches) == [["incremental"]]
     assert fake_connector.full_calls == 0
     assert fake_connector.poll_calls == [(1767225600.0, 1767312000.0)]
-

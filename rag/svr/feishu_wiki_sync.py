@@ -24,4 +24,3 @@ def build_feishu_wiki_generator(
         task["poll_range_start"].timestamp(),
         effective_end.timestamp(),
     )
-
