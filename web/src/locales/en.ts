@@ -3375,6 +3375,12 @@ This process aggregates variables from multiple branches into a single variable 
         'Cannot save: "{{name}}" has invalid settings. Please fix them first',
       agentModelMissing:
         'Cannot save: "{{name}}" has no model selected. Please choose one first',
+      retrievalDatasetRequired: 'Please select at least one dataset',
+      retrievalDatasetMissing:
+        'Cannot save: "{{name}}" has no dataset selected. Please choose one first',
+      retrievalMemoryRequired: 'Please select at least one memory',
+      retrievalMemoryMissing:
+        'Cannot save: "{{name}}" has no memory selected. Please choose one first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
       tokenChunker: 'Token Chunker',
