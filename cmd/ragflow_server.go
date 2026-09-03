@@ -1045,7 +1045,7 @@ func buildAgentRunOptions() agentRunOptions {
 		common.Info("agent: redis client not initialised; agent run infra in in-memory mode (no checkpoints, no run tracker)")
 		return out
 	}
-	cp := canvas.NewRedisCheckPointStore(24 * time.Hour)
+	cp := canvas.NewRedisCheckPointStore(7 * 24 * time.Hour)
 	out.checkpointStore = cp
 	// stateSerializer is intentionally left nil. eino's default
 	// InternalSerializer (used when no compose.WithSerializer is
@@ -1059,7 +1059,7 @@ func buildAgentRunOptions() agentRunOptions {
 	// "load checkpoint from store fail: cannot unmarshal object
 	// into Go struct field checkpoint.Channels of type
 	// compose.channel". Rely on eino's default instead.
-	rt := canvas.NewRunTracker(24 * time.Hour)
+	rt := canvas.NewRunTracker(7 * 24 * time.Hour)
 	out.runTracker = rt
 	common.Info("agent: redis-backed run infra installed (24h TTL on checkpoint store + run tracker; eino default serializer)")
 	return out

@@ -184,13 +184,32 @@ func TestNatsCheckPointStoreContextCancelSurfacesError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // already cancelled
 
-	// Operations against a cancelled ctx must surface the cancellation
-	// error rather than silently succeeding or panicking.
-	if err := store.Set(ctx, "run-ctx", []byte("x")); err == nil {
-		t.Fatal("Set with cancelled ctx: expected an error, got nil")
+	// Set must swallow the cancellation error (the checkpoint is best-effort;
+	// a failed write must not abort the ingestion run) and return nil so
+	// parsing continues.
+	if err := store.Set(ctx, "run-ctx", []byte("x")); err != nil {
+		t.Fatalf("Set with cancelled ctx: expected nil (error swallowed), got %v", err)
 	}
+	// Get is a read path and still surfaces the error.
 	if _, _, err := store.Get(ctx, "run-ctx"); err == nil {
 		t.Fatal("Get with cancelled ctx: expected an error, got nil")
+	}
+}
+
+// TestNatsCheckPointStoreSetSwallowsFullBucket verifies the "discardNew, log,
+// keep parsing" contract: a write that the bucket cannot accommodate (here a
+// value exceeding the 16 MiB per-value cap) does not fail Set — the error is
+// swallowed and Set returns nil so the pipeline run continues without a
+// checkpoint.
+func TestNatsCheckPointStoreSetSwallowsFullBucket(t *testing.T) {
+	store := newTestNatsStore(t)
+	ctx := context.Background()
+	id := "run-overflow"
+
+	// 20 MiB exceeds the 16 MiB MaxValueSize cap, so the underlying Put fails.
+	big := make([]byte, 20*1024*1024)
+	if err := store.Set(ctx, id, big); err != nil {
+		t.Fatalf("Set on over-cap value: expected nil (swallowed), got %v", err)
 	}
 }
 
@@ -226,17 +245,16 @@ func TestNatsCheckpointExistsFalse(t *testing.T) {
 }
 
 func TestNatsCheckpointExistsNoEngine(t *testing.T) {
-	// No NATS engine installed globally → there is no checkpoint to resume,
-	// so the probe must report (false, nil), never an error.
+	// No NATS engine installed → the probe falls back to the Redis backend.
+	// With neither NATS nor Redis available, the Redis probe errors (no client),
+	// so the caller learns resume state is indeterminate rather than silently
+	// running non-resumable. This matches the pre-migration Redis-only behavior.
 	engine.SetNatsEngine(nil)
 	ctx := context.Background()
 
-	found, err := NatsCheckpointExists(ctx, "run-x")
-	if err != nil {
-		t.Fatalf("NatsCheckpointExists with no engine: expected nil error, got %v", err)
-	}
-	if found {
-		t.Fatal("NatsCheckpointExists with no engine: expected false")
+	_, err := NatsCheckpointExists(ctx, "run-x")
+	if err == nil {
+		t.Fatal("NatsCheckpointExists with no NATS and no Redis: expected an error, got nil")
 	}
 }
 

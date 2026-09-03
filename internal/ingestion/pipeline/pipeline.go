@@ -230,7 +230,9 @@ func cloneMapOrEmpty(m map[string]any) map[string]any {
 // defaultCheckpointTTL is the expiry applied to the eino checkpoint payload
 // and the RunTracker hash. A finished run's checkpoint is deleted on success;
 // the TTL only guards against leaks from crashed runs that never clean up.
-var defaultCheckpointTTL = 24 * time.Hour
+// 7 days is conservative: a checkpoint only needs to outlive the window in
+// which a task can be resumed after an interrupt.
+var defaultCheckpointTTL = 7 * 24 * time.Hour
 
 // dslKeySuffix / ovfKeySuffix derive the two DSL-fingerprint keys from a
 // checkpoint id. Both live in the same CheckPointStore as the eino payload
@@ -501,26 +503,27 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	return p.runResumable(ctx, runCtx, current, compiled, store, tracker, runState)
 }
 
-// resolveStore returns the injected store, or a NATS-backed one when the
-// global NATS engine is available (hard cutover from Redis — PR1). Returns
-// nil (degraded, non-resumable) when neither is present; a resume-required
-// run is then rejected by the requireResume guard in Run.
+// resolveStore returns the injected store, or the NATS-backed one (default
+// backend) when the global NATS engine is available, or the Redis-backed one
+// as a fallback when NATS is absent but Redis is. The system supports both
+// checkpoint implementations with NATS preferred; a deployment with neither
+// degrades to a non-resumable runPlain (returns nil, nil), and a
+// resume-required run is then rejected by the requireResume guard in Run.
 func (p *Pipeline) resolveStore(ctx context.Context) (canvas.CheckPointStore, error) {
 	if p.store != nil {
 		return p.store, nil
 	}
-	ne := engine.GetNatsEngine()
-	if ne == nil {
-		// NATS is now the only checkpoint backend. A deployment without NATS
-		// cannot resume; fresh (non-resume) runs fall back to runPlain (no
-		// checkpoint store), preserving the prior Redis-less degrade path.
-		return nil, nil
+	if ne := engine.GetNatsEngine(); ne != nil {
+		store, err := canvas.NewNatsCheckPointStore(ctx, ne, defaultCheckpointTTL)
+		if err != nil {
+			return nil, fmt.Errorf("pipeline: resolveStore: %w", err)
+		}
+		return store, nil
 	}
-	store, err := canvas.NewNatsCheckPointStore(ctx, ne, defaultCheckpointTTL)
-	if err != nil {
-		return nil, fmt.Errorf("pipeline: resolveStore: %w", err)
+	if redis2.Get() != nil {
+		return canvas.NewRedisCheckPointStore(defaultCheckpointTTL), nil
 	}
-	return store, nil
+	return nil, nil
 }
 
 // resolveTracker mirrors resolveStore for the RunTracker.

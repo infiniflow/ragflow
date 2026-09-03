@@ -43,7 +43,8 @@ type BucketConfig struct {
 	Description  string
 	History      int // cache: 1 (keep only the latest revision)
 	TTL          time.Duration
-	MaxValueSize int // OCR: 8 MiB; others: 1 MiB default
+	MaxValueSize int   // OCR: 8 MiB; others: 1 MiB default
+	MaxBytes     int64 // total bucket size cap; 0 → JetStream unlimited (-1)
 	Storage      jetstream.StorageType
 	Replicas     int // cache: 1 (rebuildable)
 	Compression  bool
@@ -80,6 +81,7 @@ func NewNatsKVStore(ctx context.Context, js jetstream.JetStream, cfg BucketConfi
 		History:      uint8(cfg.History),
 		TTL:          cfg.TTL,
 		MaxValueSize: int32(cfg.MaxValueSize),
+		MaxBytes:     cfg.MaxBytes,
 		Storage:      storage,
 		Replicas:     cfg.Replicas,
 		Compression:  cfg.Compression,
