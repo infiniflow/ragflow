@@ -309,6 +309,11 @@ func datasetChunkID(chunk map[string]interface{}) string {
 			return s
 		}
 	}
+	if id, ok := chunk["id"]; ok {
+		if s, ok := id.(string); ok {
+			return s
+		}
+	}
 	return ""
 }
 
