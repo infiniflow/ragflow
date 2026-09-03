@@ -256,19 +256,19 @@ class RAGFlowS3:
                 failed = ", ".join(err.get("Key", "?") for err in result["Errors"])
                 raise RuntimeError(f"S3 object deletion failed for keys: {failed}")
 
-    def _abort_incomplete_multipart_uploads(self, bucket):
-        """Abort incomplete multipart uploads; they keep a bucket non-empty
-        even when no object versions remain."""
+    def _abort_incomplete_multipart_uploads(self, bucket, prefix=None):
+        """Abort every incomplete multipart upload (optionally scoped to
+        ``prefix``); they keep a bucket non-empty even when no object versions
+        remain."""
         paginator = self.conn[0].get_paginator("list_multipart_uploads")
-        for page in paginator.paginate(Bucket=bucket):
-            uploads = page.get("Uploads", [])
-            if not uploads:
-                continue
-            self.conn[0].abort_multipart_upload(
-                Bucket=bucket,
-                Key=uploads[0]["Key"],
-                UploadId=uploads[0]["UploadId"],
-            )
+        pages = paginator.paginate(Bucket=bucket, Prefix=prefix) if prefix is not None else paginator.paginate(Bucket=bucket)
+        for page in pages:
+            for upload in page.get("Uploads", []):
+                self.conn[0].abort_multipart_upload(
+                    Bucket=bucket,
+                    Key=upload["Key"],
+                    UploadId=upload["UploadId"],
+                )
 
     def _head_bucket_or_none(self, bucket):
         """Return the head_bucket response, or None only when the bucket does
@@ -286,11 +286,11 @@ class RAGFlowS3:
     def _delete_all_versions(self, bucket, prefix=None):
         """Delete every object version and delete marker under ``bucket``
         (optionally scoped to ``prefix``), then abort incomplete multipart
-        uploads. Raises if any batch fails."""
+        uploads under the same prefix. Raises if any batch fails."""
         paginator = self.conn[0].get_paginator("list_object_versions")
         pages = paginator.paginate(Bucket=bucket, Prefix=prefix) if prefix is not None else paginator.paginate(Bucket=bucket)
         self._delete_object_batches(bucket, pages)
-        self._abort_incomplete_multipart_uploads(bucket)
+        self._abort_incomplete_multipart_uploads(bucket, prefix)
 
     @use_default_bucket
     def remove_bucket(self, bucket, **kwargs):

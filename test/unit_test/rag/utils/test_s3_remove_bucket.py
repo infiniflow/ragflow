@@ -18,7 +18,7 @@
 
 import importlib
 import logging
-from unittest.mock import Mock
+from unittest.mock import Mock, call as mock_call
 
 import pytest
 from botocore.exceptions import ClientError
@@ -124,23 +124,46 @@ def test_remove_bucket_deletes_versions_and_markers_with_version_ids(monkeypatch
     client.delete_bucket.assert_called_once_with(Bucket="kb01")
 
 
-def test_remove_bucket_aborts_incomplete_multipart_uploads(monkeypatch):
-    """Incomplete multipart uploads keep a bucket non-empty; they must be
-    aborted before delete_bucket."""
+def test_remove_bucket_aborts_every_incomplete_multipart_upload(monkeypatch):
+    """Incomplete multipart uploads keep a bucket non-empty; every upload in
+    the page must be aborted, not just the first, before delete_bucket."""
     storage, client = _new_storage(monkeypatch, {})
     _wire(client)
     _paginator(client, "list_object_versions", {})
     _paginator(
         client,
         "list_multipart_uploads",
-        {"Uploads": [{"Key": "big.bin", "UploadId": "up-1"}]},
+        {
+            "Uploads": [
+                {"Key": "big.bin", "UploadId": "up-1"},
+                {"Key": "huge.bin", "UploadId": "up-2"},
+            ]
+        },
     )
     client.head_bucket.return_value = {}
 
     storage.remove_bucket("kb01")
 
-    client.abort_multipart_upload.assert_called_once_with(Bucket="kb01", Key="big.bin", UploadId="up-1")
+    assert client.abort_multipart_upload.call_args_list == [
+        mock_call(Bucket="kb01", Key="big.bin", UploadId="up-1"),
+        mock_call(Bucket="kb01", Key="huge.bin", UploadId="up-2"),
+    ]
     client.delete_bucket.assert_called_once_with(Bucket="kb01")
+
+
+def test_remove_bucket_scopes_multipart_pagination_to_prefix(monkeypatch):
+    """Single-bucket mode: the multipart-upload pagination must apply the same
+    logical-bucket prefix as the version listing."""
+    storage, client = _new_storage(monkeypatch, {"bucket": "ragflow", "prefix_path": "prod"})
+    _wire(client)
+    _paginator(client, "list_object_versions", by_prefix={})
+    uploads = _paginator(client, "list_multipart_uploads", by_prefix={})
+    client.head_bucket.return_value = {}
+
+    storage.remove_bucket("kb01")
+
+    uploads.paginate.assert_called_once_with(Bucket="ragflow", Prefix="prod/kb01/")
+    client.delete_bucket.assert_not_called()
 
 
 def test_remove_bucket_skips_missing_bucket(monkeypatch):
@@ -242,7 +265,7 @@ def test_remove_bucket_single_bucket_mode_keeps_physical_bucket(monkeypatch):
     storage.remove_bucket("kb01")
 
     versions.paginate.assert_called_once_with(Bucket="ragflow", Prefix="")
-    uploads.paginate.assert_called_once_with(Bucket="ragflow")
+    uploads.paginate.assert_called_once_with(Bucket="ragflow", Prefix="")
     client.delete_bucket.assert_not_called()
 
 
