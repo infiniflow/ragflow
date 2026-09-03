@@ -4,7 +4,6 @@
 package pregel
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -24,7 +23,7 @@ func TestInterrupt_NamedNode(t *testing.T) {
 		WithRecursionLimit(10),
 		WithInterrupts("node_a"),
 	)
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err == nil {
 		t.Fatal("expected interrupt at node_a")
 	}
@@ -36,7 +35,7 @@ func TestInterrupt_NamedNode_Second(t *testing.T) {
 		WithRecursionLimit(10),
 		WithInterrupts("node_b"),
 	)
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err == nil {
 		t.Fatal("expected interrupt at node_b")
 	}
@@ -48,7 +47,7 @@ func TestInterrupt_LastNode(t *testing.T) {
 		WithRecursionLimit(10),
 		WithInterrupts("node_b"),
 	)
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err == nil {
 		t.Fatal("expected interrupt at last node")
 	}
@@ -63,7 +62,7 @@ func TestInterrupt_MultipleNamedNodes(t *testing.T) {
 		WithRecursionLimit(10),
 		WithInterrupts("node_a", "node_b"),
 	)
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err == nil {
 		t.Fatal("expected interrupt at multiple nodes")
 	}
@@ -78,7 +77,7 @@ func TestInterrupt_Wildcard(t *testing.T) {
 		WithRecursionLimit(10),
 		WithInterrupts("*"),
 	)
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err == nil {
 		t.Fatal("expected interrupt on wildcard")
 	}
@@ -93,7 +92,7 @@ func TestInterrupt_AfterNamedNode(t *testing.T) {
 		WithRecursionLimit(10),
 		WithInterruptsAfter("node_a"),
 	)
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err == nil {
 		t.Fatal("expected after-interrupt at node_a")
 	}
@@ -104,7 +103,7 @@ func TestInterrupt_WildcardAfter(t *testing.T) {
 		WithRecursionLimit(10),
 		WithInterruptsAfter("*"),
 	)
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err == nil {
 		t.Fatal("expected after-interrupt")
 	}
@@ -127,12 +126,12 @@ func TestInterrupt_WithCheckpointer(t *testing.T) {
 		WithInterrupts("node_a"),
 	)
 
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err == nil {
 		t.Fatal("expected interrupt")
 	}
 
-	cp, _ := ms.Get(context.Background(), map[string]interface{}{
+	cp, _ := ms.Get(t.Context(), map[string]interface{}{
 		constants.ConfigKeyThreadID: tid,
 	})
 	if cp != nil {
@@ -149,7 +148,7 @@ func TestInterrupt_NoCheckpointer(t *testing.T) {
 		WithRecursionLimit(10),
 		WithInterrupts("node_a"),
 	)
-	_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+	_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 	if err == nil {
 		t.Fatal("expected interrupt without checkpointer")
 	}
@@ -167,7 +166,7 @@ func TestInterrupt_Concurrent(t *testing.T) {
 				WithRecursionLimit(10),
 				WithInterrupts("node_a"),
 			)
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "conc"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "conc"})
 			if err == nil {
 				t.Errorf("expected interrupt")
 			}
@@ -193,7 +192,7 @@ func TestInterrupt_ConcurrentWithCheckpointer(t *testing.T) {
 				WithConfig(cfg),
 				WithInterrupts("node_a"),
 			)
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "x"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "x"})
 			if err == nil {
 				t.Errorf("expected interrupt")
 			}

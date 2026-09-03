@@ -185,7 +185,11 @@ class AgenticState(TypedDict, total=False):
     current_queries: list  # active research targets (fanouts, then rewritten gap queries)
 
     # outer draft/SCA/rewrite stages can validate and close unresolved slots.
-    slot_table: dict  # {"slots": [{id,type,question_clues,discovered_clues,candidate,candidate_strength}], "answer_variable": int}
+    # The shared slot table is held as the ``State`` object itself. The graph is
+    # compiled without a checkpointer, so graph state never needs to be
+    # JSON-serialized — keeping the object avoids carrying a parallel dict
+    # representation of the same data.
+    slot_table: object  # action_session.State (None until the planner runs)
     slot_draft: str  # slot-rendered fact draft fed to the SCA (structured view)
     collected_answer: str  # non-terminal <answer> candidate surfaced for SCA validation
     unresolved_slots: list  # [{id,type,question_clues,discovered_clues}] still unfilled after the tree round
@@ -422,7 +426,7 @@ async def _expand_fanouts(tools, question: str, answer_conf: dict) -> list[str]:
 _MAX_SNIPPET_POOL = 60
 _DRILL_RESERVE = 12  # slots kept free after the FIRST prefetch so the research
 #                       executor can top up evidence
-_SCA_VIEW_CAP = 24  # chunks shown to the Sufficient Context Agent per review
+_SCA_VIEW_CAP = 60  # chunks shown to the Sufficient Context Agent per review (24 -> 60: 24 of 225 hid the answer-bearing table chunk from the SCA)
 
 
 async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: int | None = None) -> int:
@@ -485,21 +489,26 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
         # touch ``kbinfos``. All mutation happens in the main coroutine below,
         # so concurrent fan-out searches cannot race on the shared list.
         # Channel A: exact-surface collector.
+        #
+        # Feed the BM25 candidate pool the CONCISE entity terms, not just the full
+        # sentence: a long question buries the discriminating entities (e.g.
+        # "Culdect Saga") under stopwords, so generic docs outrank the specific
+        # one and the proper-noun chunk never even enters the pool. Passing the
+        # keyed terms as ``keywords`` makes bm25_search build
+        # ``effective_query = "sentence + entity terms"`` so the discriminating
+        # noun gets its own score mass.
+        terms = _query_to_terms(fq)
+        keyed = [t for t in terms if len(t) >= 3 and t.lower() not in _FANOUT_STOPWORDS and not t.isdigit() or (len(t) >= 4 and t.isdigit())]
         try:
-            res = await bm25_search(tools, fq, kb_ids=kb_ids, top_n=60)
+            res = await bm25_search(tools, fq, kb_ids=kb_ids, top_n=60, keywords=" ".join(keyed or terms))
             candidates = res.get("chunks", []) or []
         except Exception:
             _LOG.warning("[rag_agent] BM25 search failed for %r", fq, exc_info=True)
             candidates = []
 
         kept_a: list = []
-        terms = _query_to_terms(fq)
         if candidates:
             try:
-                # Feed the matcher CONCISE entity terms instead of the full sentence:
-                # a long question buries the discriminating entities under stopwords,
-                # so generic docs outrank the specific one. Numbers are kept.
-                keyed = [t for t in terms if len(t) >= 3 and t.lower() not in _FANOUT_STOPWORDS and not t.isdigit() or (len(t) >= 4 and t.isdigit())]
                 narrowed = narrow_by_terms(
                     candidates,
                     keyed or terms,
@@ -668,8 +677,33 @@ async def _compose_answer_from_evidence(state: AgenticState, tools, token_queue:
     system = FINAL_ANSWER_SYSTEM.format(cite_rules=rules)
     # Honor the dialog-level system prompt (UI-configured) the same way the
     # reasoning-disabled path does — merge from upstream/main.
+    #
+    # The configured prompt is appended AFTER the agentic contract so that
+    # presentational instructions actually take effect: FINAL_ANSWER_SYSTEM ends
+    # with a "# Language" rule ("answer in the same language as the question"),
+    # and when the configured prompt was prepended instead, that rule won on
+    # later-write-priority and silently overrode "answer in English", "be
+    # concise" and similar settings. Behaviour then differed from the
+    # reasoning-disabled path, where the same prompt is the only system prompt.
+    #
+    # Appending alone would let a configured prompt break the contract, so the
+    # closing clause re-states precedence. Note the split: LANGUAGE IS DELIBERATELY
+    # LEFT OVERRIDABLE — "answer in the same language as the question" is exactly
+    # the rule a user setting "answer in English" means to replace, so it must not
+    # be listed as protected. What stays protected is the evidence contract:
+    # citing sources, answering the exact attribute asked for, and never
+    # substituting prior knowledge for missing evidence.
     if getattr(tools, "system_prompt", "").strip():
-        system = f"{tools.system_prompt.strip()}\n\n{system}"
+        system = (
+            f"{system}\n\n"
+            "# Assistant configuration (set by the user)\n"
+            f"{tools.system_prompt.strip()}\n\n"
+            "Follow the configuration above for language, tone, style, format and "
+            "any other presentational instruction, including where it overrides "
+            "the language rule above. Where it conflicts with the citation rules, "
+            "attribute fidelity, or the requirement to answer only from the "
+            "provided evidence, those three take precedence."
+        )
 
     parts.append(f"Evidence:\n{evidence}")
     user_content = "\n".join(parts)
@@ -806,7 +840,7 @@ def build_agentic_graph(
             answer_conf,
             lambda: _remaining_s(state) - 15.0,
         )
-        out["slot_table"] = _slot_table_serialize(root)
+        out["slot_table"] = root
         if first_queries:
             out["current_queries"] = [str(q) for q in first_queries]
         return out
@@ -845,6 +879,17 @@ def build_agentic_graph(
         if time_left < _MIN_ROUND_HEADROOM_S:
             _LOG.info("[RAGAgent] only %.0fs left of the research budget; skipping further passes.", time_left)
             return {}
+        round_no = int(state.get("search_rounds", 0)) + 1
+        pool_before = len(((getattr(tools, "kbinfos", None) or state.get("kbinfos") or {}).get("chunks")) or [])
+        unresolved_ids = [str(getattr(v, "id", "")) for v in getattr(state.get("slot_table"), "state", None) or [] if not getattr(v, "candidate", None)]
+        _LOG.info(
+            "[RAGAgent] ROUND %d start (search_rounds=%d, time_left=%.0fs, pool=%d chunks, unresolved slots=%s)",
+            round_no,
+            int(state.get("search_rounds", 0)),
+            time_left,
+            pool_before,
+            unresolved_ids or "-",
+        )
         t = max(20.0, min(_PASS_TIMEOUT_S, time_left - 25.0))
         slot_result = await _bounded(
             _run_slot_research_pass(tools, question, state, answer_conf, deadline_left=t),
@@ -853,10 +898,19 @@ def build_agentic_graph(
         )
         if not slot_result:
             return {}
+        slot_table = slot_result.get("slot_table")
         _LOG.info(
             "[RAGAgent] pass %d — %d slot(s) filled, unresolved=%d",
             int(state.get("search_rounds", 0)) + 1,
-            sum(1 for s in (slot_result.get("slot_table") or {}).get("slots", []) if s.get("candidate")),
+            sum(1 for s in getattr(slot_table, "state", []) if getattr(s, "candidate", None)),
+            len(slot_result.get("unresolved_slots") or []),
+        )
+        pool_after = len(((getattr(tools, "kbinfos", None) or state.get("kbinfos") or {}).get("chunks")) or [])
+        _LOG.info(
+            "[RAGAgent] ROUND %d end (+%d new chunks, pool=%d, unresolved=%d)",
+            round_no,
+            pool_after - pool_before,
+            pool_after,
             len(slot_result.get("unresolved_slots") or []),
         )
         return slot_result
@@ -907,6 +961,41 @@ def build_agentic_graph(
             _LOG.info("[SCA] review view UNCHANGED since last round (%d stored / %d viewed); closing out.", len(chunks), len(view))
             return {"verdict": {"status": "INSUFFICIENT"}, "sca": {}, "no_progress": True}
 
+        # Ensure the passages the action sessions actually used to fill slots
+        # are visible to the SCA. slot_evidence maps slot_id -> evidence_ids
+        # (chunk ids as recorded by _chunk_id). Resolve them to the chunks in
+        # the pool, append any missing to the view, and pass their positions to
+        # sufficient_context_agent (which indexes kbinfos["chunks"] by position).
+        from rag.advanced_rag.harness.tools.search import _chunk_id
+
+        slot_evidence = state.get("slot_evidence") or {}
+        view_by_id = {_chunk_id(c): i for i, c in enumerate(view) if _chunk_id(c)}
+        view_index_by_id = {}
+        claims = []
+        if draft_text:
+            claims.append(("c0", draft_text, []))
+        for sid, meta in (slot_evidence or {}).items():
+            eids = list(meta.get("evidence_ids") or [])
+            if not eids:
+                continue
+            # resolve chunk-id -> view position, appending missing chunks
+            positions = []
+            for eid in eids:
+                pos = view_index_by_id.get(eid)
+                if pos is None:
+                    match = next((i for i, c in enumerate(chunks) if _chunk_id(c) == eid), None)
+                    if match is not None:
+                        if _chunk_id(chunks[match]) not in view_by_id:
+                            view.append(chunks[match])
+                            view_by_id[_chunk_id(chunks[match])] = len(view) - 1
+                        pos = view_by_id[_chunk_id(chunks[match])]
+                if pos is not None:
+                    positions.append(pos)
+                    view_index_by_id[eid] = pos
+            claims.append((str(sid), (meta.get("candidate") or "")[:400] or f"(slot {sid} evidence)", positions))
+        if not claims:
+            claims = [("c0", draft_text or "(no draft)", list(range(len(view))))]
+
         # The SCA renders claim evidence from ``tools.kbinfos`` by INDEX, so swap
         # in a view-only copy for the duration of the review — the indexed ids
         # then point at exactly the selected chunks. Restore afterwards so other
@@ -921,7 +1010,7 @@ def build_agentic_graph(
                 sufficient_context_agent(
                     tools,
                     question,
-                    claims=[("c0", draft_text or "(no draft)", list(range(len(view))))],
+                    claims=claims,
                 ),
                 min(_SCA_TIMEOUT_S, max(15.0, _remaining_s(state) - 10.0)),
                 "sufficient-context review",
@@ -1075,8 +1164,13 @@ def build_agentic_graph(
     g.add_node("query_rewrite", query_rewrite)
     g.add_node("formalize_answer", formalize_answer)
 
-    # Slot mode owns its first-hop queries (slot-table first_queries) — the
-    # planning prefetch would duplicate them at full BM25+hybrid cost for ~20s
+    # Prefetch is DISABLED. In slot mode the planner emits a slot table whose
+    # first-hop queries are already retrieved by rag_agent's action_session, so a
+    # programmatic prefetch would duplicate that retrieval at full BM25+hybrid
+    # cost (~20s). Worse, the prefetch previously FILLED the snippet pool with
+    # broad-fanout chunks first, so the model-driven drill had nothing left to
+    # admit (observed "Drill admitted 0 for entire runs"). rag_agent retrieves on
+    # its own, so the pool fills naturally from targeted per-slot searches.
     use_prefetch = use_fanout
 
     g.add_edge(START, "formalize_question")
@@ -1094,85 +1188,56 @@ def build_agentic_graph(
     return g.compile()
 
 
-def _render_slot_draft(slot_table: dict, collected_answer: str | None = None) -> str:
+def _render_slot_draft(slot_table, collected_answer: str | None = None, slot_evidence: dict | None = None) -> str:
     """Render a slot table into a fact-preserving draft for the SCA.
 
     Each resolved slot becomes a ``<type>: <candidate> [strength]`` line with its
     discovered-clue tail; unresolved slots are listed explicitly so the SCA can
     call them out as gaps. When the tree surfaced a ``collected_answer`` it leads
     the draft (it is the strongest candidate); the slot view stays as structured
-    context below it.
+    context below it. When ``slot_evidence`` is provided, resolved slots and the
+    collected answer carry their evidence ids / terminal type so the SCA can
+    verify candidates against the passages that produced them.
     """
-    slots = slot_table.get("slots") if isinstance(slot_table, dict) else None
+    slots = list(getattr(slot_table, "state", None) or [])
     lines = []
     if collected_answer:
-        lines.append(f"Candidate answer: {collected_answer}")
+        answer_meta = (slot_evidence or {}).get("_answer", {})
+        answer_ids = answer_meta.get("evidence_ids") or []
+        answer_terminal = answer_meta.get("terminal_type")
+        parts = []
+        if answer_terminal:
+            parts.append(f"terminal={answer_terminal}")
+        if answer_ids:
+            parts.append(f"evidence_ids={answer_ids}")
+        suffix = " [" + ", ".join(parts) + "]" if parts else ""
+        lines.append(f"Candidate answer: {collected_answer}{suffix}")
         lines.append("")
     if not slots:
         return "\n".join(lines) if lines else ""
-    for s in slots:
-        if not isinstance(s, dict):
-            continue
-        vid = s.get("id")
-        vtype = s.get("type") or "entity"
-        cand = s.get("candidate")
+    for v in slots:
+        vid = v.id
+        vtype = getattr(v, "type", None) or "entity"
+        cand = getattr(v, "candidate", None)
         if cand:
-            cs = s.get("candidate_strength")
+            cs = getattr(v, "candidate_strength", None)
             strength = f"{float(cs):.2f}" if isinstance(cs, (int, float)) else "?"
-            clues = s.get("discovered_clues") or []
-            tail = "; ".join(str(c)[:80] for c in clues[-2:])
-            lines.append(f"- slot {vid} [{vtype}]: {cand} (strength={strength})" + (f" — {tail}" if tail else ""))
+            clues = list(getattr(v, "discovered_clues", None) or [])
+            tail = "; ".join(str(c)[:240] for c in clues[-4:])
+            meta = (slot_evidence or {}).get(str(vid), {})
+            evidence_ids = meta.get("evidence_ids") or []
+            terminal = meta.get("terminal_type")
+            details = []
+            if terminal:
+                details.append(f"terminal={terminal}")
+            if evidence_ids:
+                details.append(f"evidence_ids={evidence_ids}")
+            suffix = " [" + ", ".join(details) + "]" if details else ""
+            lines.append(f"- slot {vid} [{vtype}]: {cand} (strength={strength}){suffix}" + (f" — {tail}" if tail else ""))
         else:
-            qc = s.get("question_clues") or []
+            qc = list(getattr(v, "question_clues", None) or [])
             lines.append(f"- slot {vid} [{vtype}]: NOT RESOLVED ({'; '.join(str(c)[:80] for c in qc[:2])})")
     return "\n".join(lines)
-
-
-def _slot_table_serialize(state) -> dict:
-    """Serialize a tree ``State`` (slot table) into a JSON-friendly dict for
-    graph-state transport. ``None``/empty yields a minimal empty table."""
-    if state is None:
-        return {"slots": [], "answer_variable": None}
-    slots = []
-    for v in getattr(state, "state", []):
-        slots.append(
-            {
-                "id": v.id,
-                "type": v.type,
-                "question_clues": list(v.question_clues),
-                "discovered_clues": list(v.discovered_clues),
-                "candidate": v.candidate,
-                "candidate_strength": v.candidate_strength,
-            }
-        )
-    return {"slots": slots, "answer_variable": getattr(state, "answer_variable", None)}
-
-
-def _slot_table_deserialize(slot_table: dict):
-    """Rebuild a tree ``State`` from a serialized slot-table dict (方案 B).
-    Returns ``None`` when no usable table is present."""
-    from rag.advanced_rag.harness.action_session import State, Variable
-
-    slots = (slot_table or {}).get("slots") if isinstance(slot_table, dict) else None
-    if not slots:
-        return None
-    vars_ = []
-    for s in slots:
-        if not isinstance(s, dict):
-            continue
-        vars_.append(
-            Variable(
-                id=int(s.get("id", len(vars_))),
-                type=str(s.get("type") or "entity"),
-                question_clues=[str(c) for c in (s.get("question_clues") or [])],
-                discovered_clues=[str(c) for c in (s.get("discovered_clues") or [])],
-                candidate=s.get("candidate"),
-                candidate_strength=s.get("candidate_strength"),
-            )
-        )
-    if not vars_:
-        return None
-    return State(state=vars_, depth=0, answer_variable=(slot_table or {}).get("answer_variable"))
 
 
 async def _build_slot_table(tools, question: str, fanouts: list, answer_conf: dict, deadline_left_fn=None) -> tuple:
@@ -1204,7 +1269,6 @@ async def _build_slot_table(tools, question: str, fanouts: list, answer_conf: di
         root = State(
             state=[Variable(id=i, type="aspect", question_clues=[str(q)[:160]]) for i, q in enumerate(queries[:4])],
             depth=0,
-            answer_variable=0,
         )
         first_queries = first_queries or queries[:3]
     _LOG.info("[SlotTable] built %d slot(s): %s", len(root.state), root.brief())
@@ -1217,7 +1281,7 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
     """
     from rag.advanced_rag.harness.action_session import run_action_session
 
-    slot_table = _slot_table_deserialize(state.get("slot_table"))
+    slot_table = state.get("slot_table")
     if slot_table is None:
         # No planner ran (medium single-pass, or planner failed): build the slot
         # table from the raw question so the slot research still executes. The
@@ -1241,16 +1305,23 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
     base = getattr(tools, "kbinfos", None) or state.get("kbinfos") or {"chunks": [], "doc_aggs": []}
     tools.kbinfos = dict(base)
 
+    # Shared cache across sessions to avoid duplicate retrievals
+    shared_tool_cache = {}
+    shared_search_queries = []
+
     async def _one(v):
         direction = v.question_clues[0] if v.question_clues else question
         async with sem:
-            return await run_action_session(
+            result = await run_action_session(
                 tools=tools,
                 direction=direction,
                 parent_state=slot_table,
                 deadline_left=max(20.0, deadline_left - 10.0),
                 base_summary="",
+                shared_tool_cache=shared_tool_cache,
+                shared_search_queries=shared_search_queries,
             )
+            return v.id, result
 
     results = await asyncio.gather(
         *[_one(v) for v in unresolved[:3]],
@@ -1259,13 +1330,26 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
 
     collected = state.get("collected_answer")
     ledger = [e for e in _safe_list(state.get("attempted"), "state.attempted") if isinstance(e, dict)]
-    # Fold each session's new-state branches back into the slot table.
-    for r in results:
-        if isinstance(r, Exception):
-            _LOG.warning("[SlotResearch] action_session raised: %s", r)
+    session_evidence: dict[str, dict] = {}
+    # Fold each session's new-state branches back into the slot table, keeping
+    # the session's evidence IDs and terminal type so the SCA can verify the
+    # candidate against the passages that actually produced it.
+    for item in results:
+        if isinstance(item, Exception):
+            _LOG.warning("[SlotResearch] action_session raised: %s", item)
             continue
+        slot_id, r = item
         if r.found_answer and not collected:
             collected = r.found_answer
+        ev_ids = list(r.retrieved_evidence_ids or [])
+        if ev_ids:
+            session_evidence[str(slot_id)] = {
+                "evidence_ids": ev_ids,
+                "terminal_type": r.terminal_type,
+                "terminal_payload": r.terminal_payload or {},
+                "candidate": r.found_answer,
+                "strength": None,
+            }
         for ns in r.new_states or []:
             # merge the branch's candidate values into the shared table
             merged = _merge_slot_patch(slot_table, ns)
@@ -1274,8 +1358,25 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
 
         ledger.append({"q": (r.found_answer or str(getattr(r, "messages", [])))[:80] if hasattr(r, "found_answer") else "", "new": 1})
 
-    # Serialize the updated table and expose unresolved slots for the rewriter.
-    out_table = _slot_table_serialize(slot_table)
+    # session_evidence is already keyed by slot_id; normalize into a
+    # slot-evidence map the SCA consumer can read. Sessions that produced only
+    # a collected answer (no slot patch) land under the "_answer" key.
+    slot_evidence: dict[str, dict] = {}
+    for sid, rec in session_evidence.items():
+        slot_evidence[sid] = {
+            "evidence_ids": list(dict.fromkeys(rec.get("evidence_ids") or [])),
+            "terminal_type": rec.get("terminal_type"),
+            "candidate": rec.get("candidate"),
+            "strength": rec.get("strength"),
+        }
+    if slot_evidence:
+        _LOG.info(
+            "[SlotResearch] slot evidence bound: %s",
+            {k: len(v["evidence_ids"]) for k, v in slot_evidence.items()},
+        )
+
+    # Expose the updated table and its unresolved slots for the rewriter.
+    out_table = slot_table
     unresolved_slots = [
         {
             "id": v.id,
@@ -1285,17 +1386,19 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
         }
         for v in slot_table.unresolved()
     ]
-    draft = _render_slot_draft(out_table, collected)
+    draft = _render_slot_draft(out_table, collected, slot_evidence=slot_evidence)
     _LOG.info(
         "[SlotResearch] round done — %d slot(s) filled, unresolved=%d, collected_answer=%s",
-        sum(1 for s in out_table.get("slots", []) if s.get("candidate")),
+        sum(1 for v in getattr(out_table, "state", []) if getattr(v, "candidate", None)),
         len(unresolved_slots),
         bool(collected),
     )
+    _LOG.info("[SlotResearch] slot table after round:\n%s", draft)
     return {
         "slot_table": out_table,
         "collected_answer": collected,
         "unresolved_slots": unresolved_slots,
+        "slot_evidence": slot_evidence,
         "slot_draft": draft,
         "rag_answer": draft or (state.get("rag_answer") or ""),
         "kbinfos": tools.kbinfos,
@@ -1319,15 +1422,25 @@ def _merge_slot_patch(base, branch):
         if bv is None:
             merged_vars.append(v)
             continue
-        cand = bv.candidate or v.candidate
         bstr = bv.candidate_strength if bv.candidate_strength is not None else None
         vstr = v.candidate_strength if v.candidate_strength is not None else None
-        strength = None
-        strength = None
-        if cand is not None:
-            strength = bstr if bstr is not None else (vstr if vstr is not None else 0.5)
-        elif vstr is not None:
-            strength = vstr
+        # Adopt the branch candidate only when it is STRONGER than the base.
+        # Sessions run concurrently and their branches are folded in completion
+        # order, so an unconditional "branch wins" made the result both
+        # order-dependent (same inputs, different answers) and destructive: a
+        # session with weak evidence (0.3, tentative) could downgrade a slot
+        # another session had already proven (0.95). Strength is the model's own
+        # calibrated confidence (see the candidate_strength bands in the
+        # action_run prompt), so picking the max is deterministic and keeps the
+        # best-supported candidate.
+        if bv.candidate is None:
+            cand, strength = v.candidate, vstr
+        elif v.candidate is None:
+            cand, strength = bv.candidate, bstr
+        elif (bstr or 0.0) > (vstr or 0.0):
+            cand, strength = bv.candidate, bstr
+        else:
+            cand, strength = v.candidate, vstr
         clues = list(dict.fromkeys(list(v.discovered_clues) + list(bv.discovered_clues)))
         if cand != v.candidate or clues != v.discovered_clues:
             changed = True
@@ -1346,7 +1459,6 @@ def _merge_slot_patch(base, branch):
     return State(
         state=merged_vars,
         depth=base.depth + 1,
-        answer_variable=base.answer_variable,
         retrieved_evidence_ids=list(base.retrieved_evidence_ids),
     )
 

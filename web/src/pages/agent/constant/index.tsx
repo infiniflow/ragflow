@@ -88,7 +88,7 @@ export const initialRetrievalValues = {
   query: AgentGlobalsSysQueryWithBrace,
   top_n: 8,
   rerank_candidates_count: 64,
-  kb_ids: [],
+  dataset_ids: [],
   rerank_id: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
@@ -473,6 +473,7 @@ export const initialEmailValues = {
 
 export const initialIterationValues = {
   items_ref: '',
+  max_concurrency: 0,
   outputs: {},
 };
 

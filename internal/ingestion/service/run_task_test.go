@@ -86,7 +86,7 @@ func TestRunTask_CorruptedRunCountSkipped(t *testing.T) {
 		return nil
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 
@@ -120,7 +120,7 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 		return errors.New("boom")
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 
@@ -158,7 +158,7 @@ func TestRunTask_PipelineCancelledMarksStopped(t *testing.T) {
 		return context.Canceled
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.STOPPING,
 	})
 
@@ -191,7 +191,7 @@ func TestRunTask_ComponentTimeoutMarksFailed(t *testing.T) {
 		return context.DeadlineExceeded
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 
@@ -232,7 +232,7 @@ func TestRunTask_AlreadyCompletedAcksNotRedelivers(t *testing.T) {
 		return nil
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 
@@ -272,7 +272,7 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 		return nil // pipeline still finishes successfully
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 
@@ -303,7 +303,7 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 		return nil
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 

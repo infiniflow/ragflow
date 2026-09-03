@@ -31,6 +31,7 @@ const (
 // task status
 const (
 	CREATED   = "CREATED"
+	SCHEDULED = "SCHEDULED"
 	RUNNING   = "RUNNING"
 	COMPLETED = "COMPLETED"
 	FAILED    = "FAILED"

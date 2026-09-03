@@ -10,12 +10,16 @@ import {
 } from '@/interfaces/database/agent';
 import { formatDate } from '@/utils/date';
 import { useDebounceEffect } from 'ahooks';
+import { t } from 'i18next';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { Operator } from '../constant';
 import { FormSchema as ParserFormSchema } from '../form/parser-form';
+import { FormSchema as RetrievalFormSchema } from '../form/retrieval-form/next';
 import useGraphStore from '../store';
+import { getEmptyMessageNodeNames } from '../utils';
+import { findAgentNodeWithoutModel } from '../utils/agent-node-model';
 import { useBuildDslData } from './use-build-dsl';
 
 /**
@@ -24,13 +28,57 @@ import { useBuildDslData } from './use-build-dsl';
  * same schema before persisting, but only for nodes the user actually edited —
  * a node still carrying stale DSL from an older version must not wedge saving.
  */
-function findInvalidNode(nodes: RAGFlowNodeType[], editedNodeIds: string[]) {
-  return nodes.find(
+function findInvalidNode(
+  nodes: RAGFlowNodeType[],
+  editedNodeIds: string[],
+): { node: RAGFlowNodeType; messageKey: string } | undefined {
+  const invalidParserNode = nodes.find(
     (node) =>
       editedNodeIds.includes(node.id) &&
       node.data?.label === Operator.Parser &&
       !ParserFormSchema.safeParse(node.data?.form).success,
   );
+  if (invalidParserNode) {
+    return { node: invalidParserNode, messageKey: 'flow.nodeFormInvalid' };
+  }
+  // A Retrieval node sourcing from datasets must name at least one dataset,
+  // and one sourcing from memories must name at least one memory; the backend
+  // otherwise rejects the run with a `dataset_ids`/`memory_ids is required`
+  // error that only surfaces at runtime. Only nodes whose form carries the
+  // canonical `dataset_ids`/`memory_ids` field are checked, so legacy DSLs
+  // still keyed on `kb_ids` cannot wedge saving. The warning follows the
+  // field that actually failed, so a memory-mode node never reports a missing
+  // dataset.
+  for (const node of nodes) {
+    if (
+      node.data?.label !== Operator.Retrieval ||
+      (!Array.isArray(node.data?.form?.dataset_ids) &&
+        !Array.isArray(node.data?.form?.memory_ids))
+    ) {
+      continue;
+    }
+    const parsed = RetrievalFormSchema.safeParse(node.data?.form);
+    if (parsed.success) {
+      continue;
+    }
+    const memoryMissing = parsed.error.issues.some(
+      (issue) => issue.path[0] === 'memory_ids',
+    );
+    return {
+      node,
+      messageKey: memoryMissing
+        ? 'flow.retrievalMemoryMissing'
+        : 'flow.retrievalDatasetMissing',
+    };
+  }
+  // Unlike the schema re-check above, the missing-model check is not gated on
+  // editedNodeIds: a canvas loaded from storage with an empty model must warn
+  // on the very next save, not only after the node is edited again.
+  const agentNode = findAgentNodeWithoutModel(nodes);
+  if (agentNode) {
+    return { node: agentNode, messageKey: 'flow.agentModelMissing' };
+  }
+  return undefined;
 }
 
 export const useValidateNodeForms = () => {
@@ -48,10 +96,10 @@ export const useValidateNodeForms = () => {
   // publish stay silent and just skip the write.
   const notifyIfInvalid = useCallback(
     (currentNodes?: RAGFlowNodeType[]) => {
-      const invalidNode = getInvalidNode(currentNodes);
-      if (invalidNode) {
+      const invalid = getInvalidNode(currentNodes);
+      if (invalid) {
         message.warning(
-          t('flow.nodeFormInvalid', { name: invalidNode.data?.name }),
+          t(invalid.messageKey, { name: invalid.node.data?.name }),
         );
         return false;
       }
@@ -89,6 +137,23 @@ export const useSaveGraph = (
         return;
       }
 
+      // Warn about Message components with empty content at save time; the
+      // canvas only fails on them when the agent runs otherwise (backend
+      // MessageParam.check() rejects empty content). Advisory only — the save
+      // itself proceeds. Autosave/publish (showMessage=false) stay silent to
+      // avoid nagging toasts.
+      if (showMessage) {
+        const emptyMessageNodeNames = getEmptyMessageNodeNames(
+          currentNodes ?? useGraphStore.getState().nodes,
+        );
+        if (emptyMessageNodeNames.length > 0) {
+          message.warning(
+            `${emptyMessageNodeNames.join(', ')}: ${t('flow.messageMsg')}`,
+          );
+          return;
+        }
+      }
+
       const params: Record<string, any> = {
         id,
         title: data.title,
@@ -101,7 +166,7 @@ export const useSaveGraph = (
 
       return setAgent(params);
     },
-    [id, getInvalidNode, data.title, buildDslData, setAgent],
+    [id, getInvalidNode, showMessage, data.title, buildDslData, setAgent],
   );
 
   return { saveGraph, loading };

@@ -222,7 +222,7 @@ func TestVerifyProviderModelValidatesRemoteEmbeddingMetadata(t *testing.T) {
 		}},
 	}
 
-	result, err := verifyProviderModel(context.Background(), driver, nil, &modelModule.APIConfig{}, nil)
+	result, err := verifyProviderModel(t.Context(), driver, nil, &modelModule.APIConfig{}, nil)
 	if err == nil {
 		t.Fatal("verifyProviderModel() error = nil, want validation error")
 	}
@@ -491,7 +491,7 @@ func TestModelProviderServiceResolveModelContextLength(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	// Seed a tenant chat model that maps to a real factory-catalog model
-	// (Anthropic / claude-opus-4-8 has content_length=1000000, max_output=128000).
+	// (Anthropic / claude-opus-4-8 has context_length=1000000, max_output=128000).
 	activeStatus := "1"
 	rows := []interface{}{
 		&entity.UserTenant{ID: "user-tenant-cl", UserID: "user-1", TenantID: "tenant-cl", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
@@ -508,14 +508,14 @@ func TestModelProviderServiceResolveModelContextLength(t *testing.T) {
 	svc := NewModelProviderService()
 	ctx := t.Context()
 
-	// UUID path: resolves content_length (context window) from the factory
+	// UUID path: resolves context_length (context window) from the factory
 	// catalog, NOT max_output.
 	got, err := svc.ResolveModelContextLength(ctx, "user-1", "model-claude")
 	if err != nil {
 		t.Fatalf("ResolveModelContextLength(uuid) error = %v", err)
 	}
 	if got != 1000000 {
-		t.Fatalf("uuid content_length = %d, want 1000000 (must be the context window, not max_output=128000)", got)
+		t.Fatalf("uuid context_length = %d, want 1000000 (must be the context window, not max_output=128000)", got)
 	}
 
 	// Composite "model@instance@provider" path resolves the same value.
@@ -524,7 +524,7 @@ func TestModelProviderServiceResolveModelContextLength(t *testing.T) {
 		t.Fatalf("ResolveModelContextLength(composite) error = %v", err)
 	}
 	if got2 != 1000000 {
-		t.Fatalf("composite content_length = %d, want 1000000", got2)
+		t.Fatalf("composite context_length = %d, want 1000000", got2)
 	}
 }
 
@@ -540,13 +540,13 @@ func TestModelProviderServiceResolveModelContextLengthUnknownModel(t *testing.T)
 		t.Fatalf("ResolveModelContextLength(unknown) error = %v", err)
 	}
 	if got != 0 {
-		t.Fatalf("unknown model content_length = %d, want 0", got)
+		t.Fatalf("unknown model context_length = %d, want 0", got)
 	}
 }
 
 // TestModelProviderServiceResolveModelContextLengthOverride verifies that the
 // tenant-configured "max_tokens" override in tenant_model.extra wins over the
-// catalog content_length through the service delegation. UUID resolution is
+// catalog context_length through the service delegation. UUID resolution is
 // unscoped (globally unique); the composite path needs the real tenant id to
 // locate the tenant's provider/instance/model rows.
 func TestModelProviderServiceResolveModelContextLengthOverride(t *testing.T) {
@@ -568,13 +568,13 @@ func TestModelProviderServiceResolveModelContextLengthOverride(t *testing.T) {
 	svc := NewModelProviderService()
 	ctx := t.Context()
 
-	// UUID path: the 4096 override wins over catalog content_length 1000000.
+	// UUID path: the 4096 override wins over catalog context_length 1000000.
 	got, err := svc.ResolveModelContextLength(ctx, "user-1", "model-claude")
 	if err != nil {
 		t.Fatalf("ResolveModelContextLength(override uuid) error = %v", err)
 	}
 	if got != 4096 {
-		t.Fatalf("uuid override content_length = %d, want 4096 (custom override, not catalog 1000000)", got)
+		t.Fatalf("uuid override context_length = %d, want 4096 (custom override, not catalog 1000000)", got)
 	}
 
 	// Composite path with the real tenant id honors the same override.
@@ -583,7 +583,7 @@ func TestModelProviderServiceResolveModelContextLengthOverride(t *testing.T) {
 		t.Fatalf("ResolveModelContextLength(override composite) error = %v", err)
 	}
 	if got2 != 4096 {
-		t.Fatalf("composite override content_length = %d, want 4096", got2)
+		t.Fatalf("composite override context_length = %d, want 4096", got2)
 	}
 }
 
@@ -672,7 +672,7 @@ func TestReconcileNvidiaInstanceModelsAddsUpdatesAndDeletes(t *testing.T) {
 		{Name: "nvidia/new-embed", MaxOutput: ptrService(8192), MaxDimension: &maxDimension, Dimensions: []int{1024, 2048}, ModelTypes: []string{"embedding"}},
 	}
 
-	err := NewModelProviderService().reconcileNvidiaInstanceModels(context.Background(), db, provider, instance, remote)
+	err := NewModelProviderService().reconcileNvidiaInstanceModels(t.Context(), db, provider, instance, remote)
 	if err != nil {
 		t.Fatalf("reconcileNvidiaInstanceModels() error = %v", err)
 	}
@@ -717,7 +717,7 @@ func TestReconcileNvidiaInstanceModelsRejectsEmptyDiscoveryWithoutMutation(t *te
 		}
 	}
 
-	err := NewModelProviderService().reconcileNvidiaInstanceModels(context.Background(), db, provider, instance, nil)
+	err := NewModelProviderService().reconcileNvidiaInstanceModels(t.Context(), db, provider, instance, nil)
 	if err == nil {
 		t.Fatal("reconcileNvidiaInstanceModels() error = nil, want empty discovery error")
 	}
@@ -753,7 +753,7 @@ func TestReconcileNvidiaInstanceModelsRollsBackPartialRefresh(t *testing.T) {
 		{Name: "nvidia/new", ModelTypes: []string{"chat"}},
 		{Name: "nvidia/keep", ModelTypes: []string{"chat"}},
 	}
-	err := NewModelProviderService().reconcileNvidiaInstanceModels(context.Background(), db, provider, instance, remote)
+	err := NewModelProviderService().reconcileNvidiaInstanceModels(t.Context(), db, provider, instance, remote)
 	if err == nil {
 		t.Fatal("reconcileNvidiaInstanceModels() error = nil, want metadata error")
 	}

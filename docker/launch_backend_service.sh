@@ -103,12 +103,12 @@ task_exe(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
         echo "Starting $task_name (Attempt $((retry_count+1)))"
+        EXIT_CODE=0
         if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-            "${task_cmd[@]}"
+            "${task_cmd[@]}" || EXIT_CODE=$?
         else
-            LD_PRELOAD=$JEMALLOC_PATH "${task_cmd[@]}"
+            LD_PRELOAD=$JEMALLOC_PATH "${task_cmd[@]}" || EXIT_CODE=$?
         fi
-        EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "$task_name exited successfully."
             break
@@ -137,8 +137,8 @@ run_server(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
         echo "Starting $server_name (Attempt $((retry_count+1)))"
-        "${server_cmd[@]}"
-        EXIT_CODE=$?
+        EXIT_CODE=0
+        "${server_cmd[@]}" || EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "$server_name exited successfully."
             break
@@ -167,8 +167,8 @@ run_admin_server(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
         echo "Starting $server_name (Attempt $((retry_count+1)))"
-        "${server_cmd[@]}"
-        EXIT_CODE=$?
+        EXIT_CODE=0
+        "${server_cmd[@]}" || EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "$server_name exited successfully."
             break
@@ -189,8 +189,8 @@ run_data_sync(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
         echo "Starting sync_data_source.py (Attempt $((retry_count+1)))"
-        $PY rag/svr/sync_data_source.py
-        EXIT_CODE=$?
+        EXIT_CODE=0
+        $PY rag/svr/sync_data_source.py || EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "sync_data_source.py exited successfully."
             break

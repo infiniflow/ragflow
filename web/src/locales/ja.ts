@@ -184,7 +184,7 @@ export default {
       similarityThreshold: '類似度しきい値',
 
       similarityThresholdTip:
-        'RAGFlowは、ユーザークエリとチャンク間の類似度スコアがこのしきい値を下回る場合、そのチャンクを結果から除外します。デフォルトでは、閾値は0.2に設定されています。これは、ハイブリッド類似度スコアが20以上のチャンクのみが取得されることを意味します。',
+        'RAGFlowは、ユーザークエリとチャンク間の類似度スコアがこのしきい値を下回る場合、そのチャンクを結果から除外します。デフォルトでは、閾値は20に設定されています。これは、ハイブリッド類似度スコアが20以上のチャンクのみが取得されることを意味します。',
 
       vectorSimilarityWeight: 'ベクトル類似度の重み',
 
@@ -207,6 +207,7 @@ export default {
       runningStatus2: 'キャンセル',
       runningStatus3: '成功',
       runningStatus4: '失敗',
+      runningStatusQueued: '待機中',
       pageRanges: 'ページ範囲',
 
       pageRangesTip:

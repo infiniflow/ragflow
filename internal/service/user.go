@@ -781,6 +781,8 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 				return common.CodeExceptionError, err
 			}
 			user.Password = &hashedPassword
+			invalidToken := "INVALID_" + utility.GenerateToken()
+			user.AccessToken = &invalidToken
 		}
 	}
 	if req.Nickname != nil {
@@ -827,6 +829,8 @@ func (s *UserService) ChangePassword(ctx context.Context, user *entity.User, req
 			return common.CodeServerError, fmt.Errorf("failed to hash new password: %w", err)
 		}
 		user.Password = &hashedPassword
+		invalidToken := "INVALID_" + utility.GenerateToken()
+		user.AccessToken = &invalidToken
 	}
 
 	// Save updated user
