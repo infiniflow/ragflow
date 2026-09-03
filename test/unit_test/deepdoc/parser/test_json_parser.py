@@ -28,15 +28,25 @@ chunk directly.
 import importlib.util
 import os
 import sys
-from unittest import mock
+import types
 
 # Load json_parser by file path so we don't trigger deepdoc/parser/__init__.py
-# (which pulls in heavy parsers). json_parser only imports ``find_codec`` from
-# rag.nlp, and only inside ``__call__``; stub rag.nlp so the module imports.
-if "rag" not in sys.modules:
-    sys.modules["rag"] = mock.MagicMock()
-if "rag.nlp" not in sys.modules:
-    sys.modules["rag.nlp"] = mock.MagicMock()
+# (which pulls in heavy parsers). json_parser imports ``decode_text`` from
+# rag.nlp; stub rag.nlp with a minimal decoder so the module imports.
+
+
+def _decode_text(blob, document_type="text"):
+    if blob.startswith(b"\xef\xbb\xbf"):
+        return blob.decode("utf-8-sig"), "utf-8-sig"
+    return blob.decode("utf-8"), "utf-8"
+
+
+_rag_nlp = types.ModuleType("rag.nlp")
+_rag_nlp.decode_text = _decode_text
+sys.modules["rag.nlp"] = _rag_nlp
+_rag = types.ModuleType("rag")
+_rag.nlp = _rag_nlp
+sys.modules["rag"] = _rag
 
 
 def _find_project_root(marker="pyproject.toml"):
@@ -84,3 +94,18 @@ def test_objects_and_arrays_still_chunk():
     parser = RAGFlowJsonParser()
     assert parser._parse_json('{"a": 1}') == ['{"a": 1}']
     assert parser._parse_json("[1, 2, 3]") != []
+
+
+def test_utf8_bom_json_parses_same_as_without_bom():
+    parser = RAGFlowJsonParser()
+    doc = '{"title": "Quarterly report", "body": "Revenue grew 12 percent."}'
+    assert parser(b"\xef\xbb\xbf" + doc.encode("utf-8")) == parser(doc.encode("utf-8"))
+
+
+def test_utf8_bom_jsonl_keeps_all_records():
+    import json
+
+    parser = RAGFlowJsonParser()
+    lines = [json.dumps({"id": i}) for i in range(1, 21)]
+    jsonl = "\n".join(lines).encode("utf-8")
+    assert len(parser(b"\xef\xbb\xbf" + jsonl)) == len(parser(jsonl))
