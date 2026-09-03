@@ -84,3 +84,20 @@ def test_objects_and_arrays_still_chunk():
     parser = RAGFlowJsonParser()
     assert parser._parse_json('{"a": 1}') == ['{"a": 1}']
     assert parser._parse_json("[1, 2, 3]") != []
+
+
+def test_utf8_bom_json_parses_same_as_without_bom():
+    _json_mod.find_codec = lambda _binary: "utf-8"
+    parser = RAGFlowJsonParser()
+    doc = '{"title": "Quarterly report", "body": "Revenue grew 12 percent."}'
+    assert parser(b"\xef\xbb\xbf" + doc.encode("utf-8")) == parser(doc.encode("utf-8"))
+
+
+def test_utf8_bom_jsonl_keeps_all_records():
+    import json
+
+    _json_mod.find_codec = lambda _binary: "utf-8"
+    parser = RAGFlowJsonParser()
+    lines = [json.dumps({"id": i}) for i in range(1, 21)]
+    jsonl = "\n".join(lines).encode("utf-8")
+    assert len(parser(b"\xef\xbb\xbf" + jsonl)) == len(parser(jsonl))

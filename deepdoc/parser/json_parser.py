@@ -33,6 +33,9 @@ class RAGFlowJsonParser:
     def __call__(self, binary):
         encoding = find_codec(binary)
         txt = binary.decode(encoding, errors="ignore")
+        # Windows editors and several .NET export paths write UTF-8 with a BOM.
+        # json.loads treats the BOM as part of the first token and fails silently.
+        txt = txt.lstrip("\ufeff")
 
         if self.is_jsonl_format(txt):
             sections = self._parse_jsonl(txt)

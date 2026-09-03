@@ -357,3 +357,27 @@ func TestQAChunker_MarkdownRendersHTML(t *testing.T) {
 		t.Fatalf("markdown not rendered to HTML: %q", cww)
 	}
 }
+
+func TestQAChunker_XLSXJSONRegression(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "qa.xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{
+				"text": "<table><caption>Sheet1</caption><tr><th>question</th><th>answer</th></tr><tr><td>What is RAGFlow?</td><td>A RAG engine.</td></tr><tr><td>Where are the docs?</td><td>On the website.</td></tr></table>",
+			},
+		},
+	}
+	out, err := comp.Invoke(context.Background(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 3 {
+		t.Fatalf("expected 3 chunks, got %d", len(chunks))
+	}
+}
