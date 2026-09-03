@@ -1691,13 +1691,11 @@ func TestPromptsReturnsHardcodedFields(t *testing.T) {
 	}
 }
 
-// TestRerunAgent_RejectsInaccessibleDocument mirrors PR #15145:
-// POST /api/v1/agents/rerun gates on the document service resolving
-// the log and enforcing DocumentService.accessible (the python "is
-// the document reachable by this tenant" check) before accepting the
-// request. A denial from the service must surface as CodeDataError +
-// "Document not found." so a caller cannot probe whether a document
-// exists in another tenant.
+// TestRerunAgent_RejectsInaccessibleDocument: POST /api/v1/agents/rerun
+// gates on the document service resolving the log and enforcing
+// DocumentService.accessible before accepting the request. A denial from
+// the service must surface as CodeDataError + "Document not found." so a
+// caller cannot probe whether a document exists in another tenant.
 func TestRerunAgent_RejectsInaccessibleDocument(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1762,7 +1760,68 @@ func TestRerunAgent_NoDocumentServiceFailsClosed(t *testing.T) {
 	}
 }
 
-// stubDocService stubs the dataflowRerunService surface for handler
+// TestRerunAgent_InternalErrorReturns500: a non-domain failure (DB down,
+// queue publish failed, ...) is neither a caller data error nor safe to
+// echo back. The handler must answer CodeServerError with a generic
+// message and keep the raw error text out of the response.
+func TestRerunAgent_InternalErrorReturns500(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
+		strings.NewReader(`{"id":"log-1","dsl":{"path":[]},"component_id":"c1"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	stub := &stubDocService{err: errors.New("update pipeline log dsl: connection refused")}
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
+		WithDocumentService(stub)
+	h.RerunAgent(c)
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if code, _ := resp["code"].(float64); code != float64(common.CodeServerError) {
+		t.Errorf("internal error: want code %d, got %v (msg=%v)",
+			common.CodeServerError, code, resp["message"])
+	}
+	if msg, _ := resp["message"].(string); strings.Contains(msg, "connection refused") {
+		t.Errorf("internal error: raw error leaked into the response message %q", msg)
+	}
+}
+
+// TestRerunAgent_DocumentProcessingIsDataError: a mid-run document is a
+// caller-facing conflict, so the typed processing error keeps the 102
+// envelope with the service's message.
+func TestRerunAgent_DocumentProcessingIsDataError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
+		strings.NewReader(`{"id":"log-1","dsl":{"path":[]},"component_id":"c1"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	stub := &stubDocService{err: &document.RerunDocumentProcessingError{DocumentName: "hlm.docx"}}
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
+		WithDocumentService(stub)
+	h.RerunAgent(c)
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if code, _ := resp["code"].(float64); code != float64(common.CodeDataError) {
+		t.Errorf("processing error: want code %d, got %v (msg=%v)",
+			common.CodeDataError, code, resp["message"])
+	}
+	if msg, _ := resp["message"].(string); !strings.Contains(msg, "is processing") {
+		t.Errorf("processing error: want message to contain 'is processing', got %q", msg)
+	}
+}
+
+// stubDocService stubs the documentRerunService surface for handler
 // tests: it records the arguments and replays err (nil = success,
 // document.ErrRerunDocumentNotFound = deny).
 type stubDocService struct {
@@ -1773,7 +1832,7 @@ type stubDocService struct {
 	componentID string
 }
 
-func (s *stubDocService) RerunDataflow(_ context.Context, userID, logID string, dsl map[string]interface{}, componentID string) error {
+func (s *stubDocService) RerunDocument(_ context.Context, userID, logID string, dsl map[string]interface{}, componentID string) error {
 	s.userID = userID
 	s.logID = logID
 	s.dsl = dsl

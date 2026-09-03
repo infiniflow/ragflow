@@ -1,6 +1,7 @@
 package document
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -38,18 +39,18 @@ func rerunTestService(t *testing.T) (*DocumentService, *recordingTaskPublisher) 
 	return svc, publisher
 }
 
-func TestRerunDataflow_UnknownLogID(t *testing.T) {
+func TestRerunDocument_UnknownLogID(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
 	svc, _ := rerunTestService(t)
-	err := svc.RerunDataflow(t.Context(), "tenant-1", "missing-log", entity.JSONMap{"components": struct{}{}}, "c1")
+	err := svc.RerunDocument(t.Context(), "tenant-1", "missing-log", entity.JSONMap{"components": struct{}{}}, "c1")
 	if err != ErrRerunDocumentNotFound {
 		t.Fatalf("err = %v, want ErrRerunDocumentNotFound", err)
 	}
 }
 
-func TestRerunDataflow_InaccessibleDocument(t *testing.T) {
+func TestRerunDocument_InaccessibleDocument(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -60,13 +61,13 @@ func TestRerunDataflow_InaccessibleDocument(t *testing.T) {
 	// No user_tenant row joins "stranger" to tenant-1 and the kb is owned
 	// by tenant-1, so Accessible must deny.
 	svc, _ := rerunTestService(t)
-	err := svc.RerunDataflow(t.Context(), "stranger", "log-1", entity.JSONMap{"components": struct{}{}}, "c1")
+	err := svc.RerunDocument(t.Context(), "stranger", "log-1", entity.JSONMap{"components": struct{}{}}, "c1")
 	if err != ErrRerunDocumentNotFound {
 		t.Fatalf("err = %v, want ErrRerunDocumentNotFound", err)
 	}
 }
 
-func TestRerunDataflow_DocumentProcessing(t *testing.T) {
+func TestRerunDocument_DocumentProcessing(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -78,13 +79,18 @@ func TestRerunDataflow_DocumentProcessing(t *testing.T) {
 	insertTestPipelineLog(t, "log-1", "doc-1", "kb-1", "tenant-1", nil)
 
 	svc, _ := rerunTestService(t)
-	err := svc.RerunDataflow(t.Context(), "tenant-1", "log-1", entity.JSONMap{"components": struct{}{}}, "c1")
+	err := svc.RerunDocument(t.Context(), "tenant-1", "log-1", entity.JSONMap{"components": struct{}{}}, "c1")
 	if err == nil || !strings.Contains(err.Error(), "is processing") {
 		t.Fatalf("err = %v, want 'is processing' message", err)
 	}
+	// The handler classifies via errors.As, so pin the typed contract.
+	var processingErr *RerunDocumentProcessingError
+	if !errors.As(err, &processingErr) {
+		t.Fatalf("err = %T, want RerunDocumentProcessingError", err)
+	}
 }
 
-func TestRerunDataflow_RerunsAndPersistsDSL(t *testing.T) {
+func TestRerunDocument_RerunsAndPersistsDSL(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -100,8 +106,8 @@ func TestRerunDataflow_RerunsAndPersistsDSL(t *testing.T) {
 	dsl := map[string]interface{}{
 		"components": map[string]interface{}{"c1": map[string]interface{}{"obj": map[string]interface{}{}}},
 	}
-	if err := svc.RerunDataflow(t.Context(), "tenant-1", "log-1", dsl, "c1"); err != nil {
-		t.Fatalf("RerunDataflow: %v", err)
+	if err := svc.RerunDocument(t.Context(), "tenant-1", "log-1", dsl, "c1"); err != nil {
+		t.Fatalf("RerunDocument: %v", err)
 	}
 
 	// The caller's DSL map is not mutated in place.
@@ -147,7 +153,7 @@ func TestRerunDataflow_RerunsAndPersistsDSL(t *testing.T) {
 	}
 }
 
-func TestRerunDataflow_EmptyDSLPersistsEntryPath(t *testing.T) {
+func TestRerunDocument_EmptyDSLPersistsEntryPath(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -160,12 +166,12 @@ func TestRerunDataflow_EmptyDSLPersistsEntryPath(t *testing.T) {
 	insertTestPipelineLog(t, "log-1", "doc-1", "kb-1", "tenant-1", entity.JSONMap{"components": map[string]interface{}{}})
 
 	svc, publisher := rerunTestService(t)
-	if err := svc.RerunDataflow(t.Context(), "tenant-1", "log-1", entity.JSONMap{}, "c1"); err != nil {
-		t.Fatalf("RerunDataflow: %v", err)
+	if err := svc.RerunDocument(t.Context(), "tenant-1", "log-1", entity.JSONMap{}, "c1"); err != nil {
+		t.Fatalf("RerunDocument: %v", err)
 	}
 
 	// An empty but non-nil dsl is still persisted, with the rerun entry
-	// point recorded on the log row (Python update_by_id parity).
+	// point recorded on the log row.
 	updated, err := svc.pipelineLogDAO.GetByID(t.Context(), db, "log-1")
 	if err != nil {
 		t.Fatalf("reload log: %v", err)

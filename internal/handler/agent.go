@@ -72,23 +72,20 @@ type chatAgentService interface {
 	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error)
 }
 
-// dataflowRerunService is the surface RerunAgent needs from the document
+// documentRerunService is the surface RerunAgent needs from the document
 // service: re-run the ingestion pipeline a pipeline operation log points
 // at, with document accessibility enforced inside the service. Defined as
 // an interface (instead of taking the concrete *document.DocumentService)
 // so handler tests can inject a stub without spinning up the full service
 // (DB DAOs, storage clients, …). The production *document.DocumentService
-// satisfies this interface because its RerunDataflow signature matches.
-type dataflowRerunService interface {
-	RerunDataflow(ctx context.Context, userID, logID string, dsl map[string]interface{}, componentID string) error
+// satisfies this interface because its RerunDocument signature matches.
+type documentRerunService interface {
+	RerunDocument(ctx context.Context, userID, logID string, dsl map[string]interface{}, componentID string) error
 }
 
 // Compile-time proof that the production document service satisfies the
-// rerun surface. The previous documentAccessChecker interface did NOT
-// match DocumentService.Accessible's signature, so the production wiring
-// could never compile and every rerun 500'd with "document service not
-// wired" — this guard keeps the interface and the service in lockstep.
-var _ dataflowRerunService = (*document.DocumentService)(nil)
+// rerun surface, keeping the interface and the service in lockstep.
+var _ documentRerunService = (*document.DocumentService)(nil)
 
 // AgentHandler agent handler
 type AgentHandler struct {
@@ -101,7 +98,7 @@ type AgentHandler struct {
 	// to preserve the existing test-friendly signature). RerunAgent fails
 	// closed (500) when it is nil: skipping the service would bypass the
 	// document ownership gate.
-	documentService dataflowRerunService
+	documentService documentRerunService
 	// redisGet fetches a raw string from Redis. Defaults to the global
 	// client (redis.Get) so production behaviour is unchanged; tests inject
 	// a miniredis-backed getter to exercise Agent log endpoints without a
@@ -133,7 +130,7 @@ type debugExecutor interface {
 // RerunAgent to resolve the pipeline operation log, enforce
 // DocumentService accessibility, and enqueue the rerun. Returns the
 // receiver for chaining in the server wiring.
-func (h *AgentHandler) WithDocumentService(s dataflowRerunService) *AgentHandler {
+func (h *AgentHandler) WithDocumentService(s documentRerunService) *AgentHandler {
 	h.documentService = s
 	return h
 }
@@ -1483,11 +1480,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 // pipeline operation LOG id plus the edited DSL (web
 // useRerunDataflow); the service resolves log -> document, enforces
 // ownership, persists the edited DSL, and re-enqueues the ingestion
-// run (see DocumentService.RerunDataflow for the Python-parity
-// mapping).
+// run (see DocumentService.RerunDocument).
 //
-// Tenant / document ownership gate (PR #15145, review round 6):
-// `DocumentService.RerunDataflow` enforces accessibility BEFORE the
+// DocumentService.RerunDocument enforces accessibility BEFORE the
 // rerun. The gate is REQUIRED: a nil documentService turns a wiring
 // miss into an auth bypass (any caller could rerun an arbitrary doc
 // id without an ownership check), so we fail closed with 500 instead
@@ -1533,11 +1528,26 @@ func (h *AgentHandler) RerunAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, "server misconfiguration: document service not wired")
 		return
 	}
-	if err := h.documentService.RerunDataflow(c.Request.Context(), user.ID, body.ID, body.DSL, body.ComponentID); err != nil {
+	if err := h.documentService.RerunDocument(c.Request.Context(), user.ID, body.ID, body.DSL, body.ComponentID); err != nil {
 		// Domain failures (unknown log/document, access denial,
-		// document mid-run) mirror the Python endpoint's
-		// get_data_error_result envelope (code 102 + message).
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		// document mid-run) map to the data-error envelope (code 102)
+		// with the service's caller-safe message. Everything else is
+		// an internal failure: log it server-side and answer 500 with
+		// a generic message so internals (DB errors, queue failures)
+		// are neither leaked to the tenant nor mislabeled as a data
+		// error.
+		var processingErr *document.RerunDocumentProcessingError
+		switch {
+		case errors.Is(err, document.ErrRerunDocumentNotFound):
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		case errors.As(err, &processingErr):
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		default:
+			zap.L().Error("RerunAgent: rerun failed",
+				zap.String("log_id", body.ID),
+				zap.Error(err))
+			common.ResponseWithCodeData(c, common.CodeServerError, nil, "rerun failed, please try again later")
+		}
 		return
 	}
 	common.SuccessWithData(c, true, "success")
