@@ -402,12 +402,12 @@ build_go() {
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
     echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY and $RAGFLOW_SERVER_BINARY"
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
-        go build "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        go build -tags cgo,static "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -tags cgo "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
+        go build -tags cgo,static "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
         cmd/ragflow_server.go
 
 
@@ -604,7 +604,7 @@ run_go_tests() {
     fi
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go test -count=1 "$@"
+        go test -tags cgo,static -count=1 "$@"
 
     run_native_tests
 }
@@ -622,7 +622,7 @@ run_native_tests() {
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags cgo -count=1 ./internal/deepdoc/native/... )
+      go test -tags cgo,static -count=1 ./internal/deepdoc/native/... )
 }
 
 # Run the model-backed integration tests of the native package and the
