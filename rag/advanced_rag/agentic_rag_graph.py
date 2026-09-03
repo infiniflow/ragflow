@@ -84,7 +84,7 @@ _REWRITE_TIMEOUT_S = 45.0  # gap → query rewrite call
 def _snip(value: Any, limit: int = 240) -> str:
     try:
         s = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
-    except Exception:
+    except Exception:  # noqa: BLE001
         s = str(value)
     s = " ".join(s.split())
     if len(s) > limit:
@@ -141,7 +141,7 @@ def _select_sca_view(chunks: list, focus_terms: list[str], cap: int | None = Non
         fresh = min(i / 20.0, 0.2)  # late arrivals (gap-pursuit evidence) get seen
         return rel * 0.45 + min(cov_ratio, 1.0) * 0.45 + fresh
 
-    ranked = sorted(list(enumerate(chunks)), key=lambda ic: _score(*ic), reverse=True)
+    ranked = sorted(list(enumerate(chunks)), key=lambda ic: _score(*ic), reverse=True)  # noqa: C414
     view = [c for _, c in ranked[:capped]]
     ident = "|".join(sorted((_chunk_id(c) or "") for c in view))
     return view, str(hash(ident))
@@ -373,7 +373,7 @@ def _extract_json_object(text: str):
                     candidate = text[start : j + 1]
                     try:
                         return json.loads(candidate)
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         break  # not a valid object; try the next "{"
         i = start + 1
     return None
@@ -387,12 +387,12 @@ async def _expand_fanouts(tools, question: str, answer_conf: dict) -> list[str]:
     """
     try:
         from rag.advanced_rag.harness.tools.search import _base_chat_mdl
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[rag_agent] could not import _base_chat_mdl for fan-out expansion", exc_info=True)
         return [question] if question else []
     try:
         mdl = _base_chat_mdl(tools)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[rag_agent] could not resolve base chat model for fan-out expansion", exc_info=True)
         return [question] if question else []
     if mdl is None or not question:
@@ -413,7 +413,7 @@ async def _expand_fanouts(tools, question: str, answer_conf: dict) -> list[str]:
         fanouts = list(dict.fromkeys(fanouts))[:5]
         _LOG.info("[Planner] fan-out expansion: %d sub-question(s): %s", len(fanouts), fanouts)
         return fanouts or ([question] if question else [])
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Planner] fan-out expansion failed; falling back to raw question", exc_info=True)
         return [question] if question else []
 
@@ -456,7 +456,7 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
             bm25_search,
             hybrid_search,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[rag_agent] could not import fan-out search helpers", exc_info=True)
         return 0
 
@@ -478,7 +478,7 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
     elif isinstance(fanouts, (list, tuple, set)):
         try:
             fanouts = [f for f in fanouts if isinstance(f, str)]
-        except Exception:
+        except Exception:  # noqa: BLE001
             return 0
     else:
         _LOG.warning("[Prefetch] unexpected queries payload of type %s; skipping fan-out search", type(fanouts).__name__)
@@ -502,7 +502,7 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
         try:
             res = await bm25_search(tools, fq, kb_ids=kb_ids, top_n=60, keywords=" ".join(keyed or terms))
             candidates = res.get("chunks", []) or []
-        except Exception:
+        except Exception:  # noqa: BLE001
             _LOG.warning("[rag_agent] BM25 search failed for %r", fq, exc_info=True)
             candidates = []
 
@@ -519,7 +519,7 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
                     max_out_total_chars=16000,
                 )
                 kept_a = (narrowed.get("kept", []) or [])[: max(1, top_n)]
-            except Exception:
+            except Exception:  # noqa: BLE001
                 _LOG.warning("[rag_agent] narrowing failed for %r; using raw BM25 head", fq, exc_info=True)
                 kept_a = candidates[: max(1, top_n)]
 
@@ -535,7 +535,7 @@ async def _fanout_search(tools, fanouts: list[str], top_n: int = 8, capacity: in
                 kept_b.append(c)
                 if len(kept_b) >= 4:  # modest semantic quota per query
                     break
-        except Exception:
+        except Exception:  # noqa: BLE001
             _LOG.warning("[rag_agent] hybrid channel failed for %r; skipping", fq, exc_info=True)
         return kept_a, kept_b
 
@@ -720,7 +720,7 @@ async def _compose_answer_from_evidence(state: AgenticState, tools, token_queue:
     try:
         async for tok in tools.chat_mdl.async_chat_streamly_delta(msg[0]["content"], msg[1:], answer_conf):
             token_queue.put_nowait(tok)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("formalize_answer: stream failed")
         token_queue.put_nowait("I'm sorry, I encountered an error while composing the answer.")
 
@@ -1257,7 +1257,7 @@ async def _build_slot_table(tools, question: str, fanouts: list, answer_conf: di
             fanouts or [],
             deadline_left_fn() if deadline_left_fn else None,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[SlotTable] initialize_state failed; building from fanouts", exc_info=True)
         root = None
         first_queries = fanouts or [question]
@@ -1435,7 +1435,7 @@ def _merge_slot_patch(base, branch):
         # best-supported candidate.
         if bv.candidate is None:
             cand, strength = v.candidate, vstr
-        elif v.candidate is None:
+        elif v.candidate is None:  # noqa: SIM114
             cand, strength = bv.candidate, bstr
         elif (bstr or 0.0) > (vstr or 0.0):
             cand, strength = bv.candidate, bstr
@@ -1509,7 +1509,7 @@ async def _compose_fallback_draft(tools, state: AgenticState, answer_conf: dict)
             dict(answer_conf or {}),
         )
         return (str(ans or "").strip() or evidence)[:6000]
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Draft] fallback composition failed; using snippet text", exc_info=True)
         return evidence[:4000]
 
@@ -1531,7 +1531,7 @@ async def _naive_rag(tools, messages: list, gen_conf: dict | None = None):
     _LOG.info("[Naive RAG] single-pass retrieval for question_len=%d", len(question))
     try:
         res = await tools.retrieve(question) if question else {"chunks": [], "doc_aggs": []}
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("[Naive RAG] retrieval failed")
         res = {"chunks": [], "doc_aggs": []}
 
@@ -1563,7 +1563,7 @@ async def _naive_rag(tools, messages: list, gen_conf: dict | None = None):
         if isinstance(ans, tuple):
             ans = ans[0]
         yield str(ans or "").strip() or str(getattr(tools, "empty_response", "") or "")
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("[Naive RAG] composition failed; returning evidence")
         yield evidence[:4000]
 
@@ -1625,7 +1625,7 @@ async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: d
         try:
             holder["state"] = await graph.ainvoke(init_state, {"recursion_limit": recursion_limit})
         except Exception:
-            logging.exception("run_agentic_rag: graph execution failed")
+            logging.exception("run_agentic_rag: graph execution failed")  # noqa: LOG015
             holder["error"] = True
         finally:
             token_queue.put_nowait(_SENTINEL)
@@ -1658,7 +1658,7 @@ async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: d
             state.get("search_rounds", 0),
             (verdict or {}).get("status") if isinstance(verdict, dict) else verdict,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.info(
             "[Agentic RAG] Research complete — %d passage(s) gathered.",
             len((state.get("kbinfos") or {}).get("chunks", [])),
