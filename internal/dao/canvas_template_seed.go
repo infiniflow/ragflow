@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -37,10 +38,6 @@ import (
 // SeedCanvasTemplates seeds the canvas_template table from the built-in
 // agent/templates/*.json and internal/ingestion/pipeline/template/*.json files.
 func SeedCanvasTemplates(ctx context.Context, db *gorm.DB) error {
-	if err := addColumnIfNotExists(ctx, db, "canvas_template", "parser_ids", "LONGTEXT NULL"); err != nil {
-		return fmt.Errorf("failed to ensure canvas_template.parser_ids column: %w", err)
-	}
-
 	var allTemplates []*entity.CanvasTemplate
 	var allIDs []string
 	for _, dir := range findTemplateDirs() {
@@ -49,18 +46,19 @@ func SeedCanvasTemplates(ctx context.Context, db *gorm.DB) error {
 		}
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			common.Warn("Failed to read template directory", zap.String("dir", dir), zap.Error(err))
-			continue
+			return fmt.Errorf("failed to read template directory %s: %w", dir, err)
 		}
 		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-		templates, ids := loadTemplatesFromDir(dir, entries)
+		templates, ids, err := loadTemplatesFromDir(dir, entries)
+		if err != nil {
+			return err
+		}
 		allTemplates = append(allTemplates, templates...)
 		allIDs = append(allIDs, ids...)
 	}
 
 	if len(allTemplates) == 0 {
-		common.Warn("No template directories found, skipping canvas template seeding")
-		return nil
+		return fmt.Errorf("no canvas templates found to seed")
 	}
 
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -86,7 +84,7 @@ func SeedCanvasTemplates(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-func loadTemplatesFromDir(dir string, entries []os.DirEntry) ([]*entity.CanvasTemplate, []string) {
+func loadTemplatesFromDir(dir string, entries []os.DirEntry) ([]*entity.CanvasTemplate, []string, error) {
 	templates := make([]*entity.CanvasTemplate, 0, len(entries))
 	ids := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -96,71 +94,27 @@ func loadTemplatesFromDir(dir string, entries []os.DirEntry) ([]*entity.CanvasTe
 		path := filepath.Join(dir, entry.Name())
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			common.Warn("Failed to read agent template", zap.String("file", path), zap.Error(err))
-			continue
+			return nil, nil, fmt.Errorf("failed to read agent template %s: %w", path, err)
 		}
 		tmpl, err := parseCanvasTemplateFile(raw)
 		if err != nil {
-			common.Warn("Failed to parse agent template", zap.String("file", path), zap.Error(err))
-			continue
+			return nil, nil, fmt.Errorf("failed to parse agent template %s: %w", path, err)
 		}
 		templates = append(templates, tmpl)
 		ids = append(ids, tmpl.ID)
 	}
-	return templates, ids
-}
-
-func findTemplateDirs() []string {
-	var dirs []string
-	if d := findAgentTemplatesDir(); d != "" {
-		dirs = append(dirs, d)
-	}
-	if d := findIngestionTemplatesDir(); d != "" {
-		dirs = append(dirs, d)
-	}
-	return dirs
-}
-
-func findIngestionTemplatesDir() string {
-	candidates := []string{
-		"internal/ingestion/pipeline/template",
-		filepath.Join("..", "internal", "ingestion", "pipeline", "template"),
-		filepath.Join("..", "..", "internal", "ingestion", "pipeline", "template"),
-		filepath.Join("..", "..", "..", "internal", "ingestion", "pipeline", "template"),
-	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
-		}
-	}
-	return ""
+	return templates, ids, nil
 }
 
 func seedCanvasTemplates(ctx context.Context, db *gorm.DB, dir string, entries []os.DirEntry) (int, error) {
-	templates := make([]*entity.CanvasTemplate, 0, len(entries))
-	ids := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		path := filepath.Join(dir, entry.Name())
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			common.Warn("Failed to read agent template", zap.String("file", path), zap.Error(err))
-			continue
-		}
-		tmpl, err := parseCanvasTemplateFile(raw)
-		if err != nil {
-			common.Warn("Failed to parse agent template", zap.String("file", path), zap.Error(err))
-			continue
-		}
-		templates = append(templates, tmpl)
-		ids = append(ids, tmpl.ID)
+	templates, ids, err := loadTemplatesFromDir(dir, entries)
+	if err != nil {
+		return 0, err
 	}
 	if len(templates) == 0 {
 		return 0, nil
 	}
-	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, tmpl := range templates {
 			if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
 				Columns: []clause.Column{{Name: "id"}},
@@ -189,13 +143,23 @@ func parseCanvasTemplateFile(raw []byte) (*entity.CanvasTemplate, error) {
 	if err := decoder.Decode(&data); err != nil {
 		return nil, err
 	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("unexpected trailing data in canvas template")
+		}
+		return nil, fmt.Errorf("invalid trailing data in canvas template: %w", err)
+	}
 
 	tmpl := &entity.CanvasTemplate{
 		CanvasCategory: "agent_canvas",
 	}
 
 	if v, ok := data["id"]; ok {
-		tmpl.ID = fmt.Sprint(v)
+		tmpl.ID = strings.TrimSpace(fmt.Sprint(v))
+	}
+	if tmpl.ID == "" {
+		return nil, fmt.Errorf("canvas template missing or empty id")
 	}
 	if v, ok := data["title"].(map[string]any); ok {
 		tmpl.Title = v
@@ -261,6 +225,32 @@ func collectCanvasTypes(rawType, rawTypes any) entity.JSONSlice {
 	}
 
 	return result
+}
+
+func findTemplateDirs() []string {
+	var dirs []string
+	if d := findAgentTemplatesDir(); d != "" {
+		dirs = append(dirs, d)
+	}
+	if d := findIngestionTemplatesDir(); d != "" {
+		dirs = append(dirs, d)
+	}
+	return dirs
+}
+
+func findIngestionTemplatesDir() string {
+	candidates := []string{
+		"internal/ingestion/pipeline/template",
+		filepath.Join("..", "internal", "ingestion", "pipeline", "template"),
+		filepath.Join("..", "..", "internal", "ingestion", "pipeline", "template"),
+		filepath.Join("..", "..", "..", "internal", "ingestion", "pipeline", "template"),
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func findAgentTemplatesDir() string {

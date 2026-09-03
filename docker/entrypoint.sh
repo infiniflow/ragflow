@@ -254,8 +254,16 @@ function ensure_docling() {
 }
 
 function ensure_db_init() {
+    if [[ "${SKIP_DB_INIT:-0}" == "1" || "${SKIP_DB_INIT:-false}" == "true" ]]; then
+        echo "Skipping database initialization (SKIP_DB_INIT is enabled)."
+        return 0
+    fi
     echo "Initializing database tables..."
     "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+    if [[ "${API_PROXY_SCHEME}" == "go" || "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+        echo "Running Go database migrations..."
+        bin/ragflow_server --migrate
+    fi
     echo "Database tables initialized."
 }
 

@@ -254,8 +254,12 @@ function ensure_docling() {
 }
 
 function ensure_db_init() {
-    echo "Initializing database tables..."
-    "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+    if [[ "${SKIP_DB_INIT:-0}" == "1" || "${SKIP_DB_INIT:-false}" == "true" ]]; then
+        echo "Skipping database initialization (SKIP_DB_INIT is enabled)."
+        return 0
+    fi
+    echo "Running Go database migrations..."
+    bin/ragflow_server --migrate
     echo "Database tables initialized."
 }
 
@@ -263,7 +267,7 @@ function ensure_db_init() {
 # Start components based on flags
 # -----------------------------------------------------------------------------
 #ensure_docling
-#ensure_db_init
+ensure_db_init
 
 run_with_restart() {
   local process_name="$1"

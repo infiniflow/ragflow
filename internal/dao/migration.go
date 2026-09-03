@@ -84,7 +84,7 @@ func migrateTenantLLMPrimaryKey(ctx context.Context, db *gorm.DB) error {
 	var idColumnExists int64
 	err := db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-		WHERE TABLE_NAME = 'tenant_llm' AND COLUMN_NAME = 'id'
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant_llm' AND COLUMN_NAME = 'id'
 	`).Scan(&idColumnExists).Error
 	if err != nil {
 		return err
@@ -95,7 +95,8 @@ func migrateTenantLLMPrimaryKey(ctx context.Context, db *gorm.DB) error {
 		var count int64
 		err = db.WithContext(ctx).Raw(`
 			SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-			WHERE TABLE_NAME = 'tenant_llm'
+			WHERE TABLE_SCHEMA = DATABASE()
+			AND TABLE_NAME = 'tenant_llm'
 			AND COLUMN_NAME = 'id'
 			AND EXTRA LIKE '%auto_increment%'
 		`).Scan(&count).Error
@@ -115,7 +116,7 @@ func migrateTenantLLMPrimaryKey(ctx context.Context, db *gorm.DB) error {
 		// Check for temp_id column and drop it if exists
 		var tempIdExists int64
 		tx.Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-			WHERE TABLE_NAME = 'tenant_llm' AND COLUMN_NAME = 'temp_id'`).Scan(&tempIdExists)
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant_llm' AND COLUMN_NAME = 'temp_id'`).Scan(&tempIdExists)
 		if tempIdExists > 0 {
 			if err = tx.Exec("ALTER TABLE tenant_llm DROP COLUMN temp_id").Error; err != nil {
 				common.Warn("Failed to drop temp_id column", zap.Error(err))
@@ -385,7 +386,7 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 	columnExists := func(table, column string) bool {
 		var count int64
 		db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-			WHERE TABLE_NAME = ? AND COLUMN_NAME = ?`, table, column).Scan(&count)
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`, table, column).Scan(&count)
 		return count > 0
 	}
 
@@ -423,6 +424,9 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 				common.Warn("Failed to modify canvas_template.description", zap.Error(err))
 			}
 		}
+		if err := addColumnIfNotExists(ctx, db, "canvas_template", "parser_ids", "LONGTEXT NULL"); err != nil {
+			return fmt.Errorf("failed to add parser_ids column to canvas_template: %w", err)
+		}
 	}
 
 	// system_settings.value: ensure it's LONGTEXT
@@ -459,7 +463,7 @@ func renameColumnIfExists(ctx context.Context, db *gorm.DB, tableName, oldName, 
 	columnExists := func(column string) bool {
 		var count int64
 		db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-			WHERE TABLE_NAME = ? AND COLUMN_NAME = ?`, tableName, column).Scan(&count)
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`, tableName, column).Scan(&count)
 		return count > 0
 	}
 
@@ -494,7 +498,7 @@ func addColumnIfNotExists(ctx context.Context, db *gorm.DB, tableName, columnNam
 	// Check if column exists using raw SQL
 	var count int64
 	db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-		WHERE TABLE_NAME = ? AND COLUMN_NAME = ?`, tableName, columnName).Scan(&count)
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`, tableName, columnName).Scan(&count)
 	if count > 0 {
 		return nil
 	}

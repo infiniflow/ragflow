@@ -85,7 +85,7 @@ type ClaimResult struct {
 // single producer entry point so a publisher never forgets to Notify after
 // enqueue (the two are now one atomic call site).
 type Publisher interface {
-	// Provision ensures the backing store (table + notify subject) exists.
+	// Provision verifies that external database schema migrations have initialized the backing store.
 	Provision(ctx context.Context) error
 
 	// Publish records one doc event in the dataset's durable backlog and wakes
@@ -205,11 +205,8 @@ type mysqlScheduler struct {
 // an explicit size (the previous batchSize argument).
 const defaultClaimBatch = 32
 
-func (s *mysqlScheduler) Provision(ctx context.Context) error {
-	if s.db == nil {
-		return nil
-	}
-	return s.db.WithContext(ctx).AutoMigrate(&entity.KnowledgeCompileDataset{})
+func (s *mysqlScheduler) Provision(_ context.Context) error {
+	return nil
 }
 
 // Publish appends one doc event to the dataset's durable backlog and wakes idle

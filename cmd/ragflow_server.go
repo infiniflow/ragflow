@@ -68,7 +68,7 @@ import (
 )
 
 type serverArgs struct {
-	mode          *string // admin | api | ingestor | syncer
+	mode          *string // admin | api | ingestor | syncer | migrate
 	helpFlag      bool
 	versionFlag   bool
 	debugLog      bool
@@ -168,15 +168,16 @@ func parseArgs() (*serverArgs, error) {
 func printHelp(args *serverArgs) {
 	switch {
 	case args.mode == nil:
-		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer|--migrate [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
-		fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
+		fmt.Fprintf(os.Stderr, "Mode selection:\n")
 		fmt.Fprintf(os.Stderr, "  --api          \tRun as API server\n")
 		fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n")
 		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n\n")
 		fmt.Fprintf(os.Stderr, "Common options:\n")
 		fmt.Fprintf(os.Stderr, "  --config string\tPath to configuration file\n")
+		fmt.Fprintf(os.Stderr, "  --migrate      \tRun database schema migrations and exit\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n\n")
@@ -236,9 +237,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	if arguments.helpFlag || arguments.mode == nil {
+	if arguments.helpFlag || (arguments.mode == nil && !arguments.migrateDB) {
 		printHelp(arguments)
 		os.Exit(1)
+	}
+
+	if arguments.migrateDB && arguments.mode != nil && *arguments.mode != "admin" {
+		fmt.Fprintf(os.Stderr, "Error: --migrate cannot be combined with --%s. Run '%s --migrate' standalone or with '--admin'.\n\n", *arguments.mode, os.Args[0])
+		printHelp(arguments)
+		os.Exit(1)
+	}
+
+	if arguments.mode == nil && arguments.migrateDB {
+		migrateMode := "migrate"
+		arguments.mode = &migrateMode
 	}
 
 	if arguments.versionFlag {
@@ -330,6 +342,10 @@ func main() {
 			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
+	case "migrate":
+		if arguments.name == nil {
+			serverName = "migrate_server"
+		}
 	default:
 		err = errors.New(*arguments.mode)
 		common.Error("invalid server mode", err)
@@ -377,6 +393,11 @@ func main() {
 	// Initialize database
 	if err = dao.InitDB(ctx, arguments.migrateDB); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
+	}
+
+	if *arguments.mode == "migrate" {
+		common.Info("Database migration completed successfully")
+		return
 	}
 
 	// Initialize doc engine
