@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
@@ -29,7 +28,7 @@ func TestStartHeartbeat_TicksInProgressUntilStop(t *testing.T) {
 	ingestor.heartbeatInterval = 2 * time.Millisecond
 
 	handle := &fakeTaskHandle{}
-	taskCtx := newAckTaskCtx(context.Background(), "task-1", "doc-1", handle)
+	taskCtx := newAckTaskCtx(t.Context(), "task-1", "doc-1", handle)
 
 	stop := ingestor.startHeartbeat(taskCtx)
 	time.Sleep(15 * time.Millisecond)
@@ -59,7 +58,7 @@ func TestStartHeartbeat_StopWaitsForInFlightInProgress(t *testing.T) {
 		},
 	}
 	taskCtx := taskpkg.NewTaskContextForScheduling(
-		context.Background(),
+		t.Context(),
 		&entity.IngestionTask{ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", Status: common.RUNNING},
 	)
 	taskCtx.Handle = h
@@ -93,7 +92,7 @@ func TestStartHeartbeat_NoOpWhenNoHandle(t *testing.T) {
 	ingestor.heartbeatInterval = time.Millisecond
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(
-		context.Background(),
+		t.Context(),
 		&entity.IngestionTask{ID: "task-1"},
 	)
 	// taskCtx.Handle is nil

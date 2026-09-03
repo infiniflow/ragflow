@@ -32,6 +32,8 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "bitbucket", NewBitbucketConnector)
 	registerBuiltIn(registry, "azure_devops", NewAzureDevOpsConnector)
 	registerBuiltIn(registry, "dropbox", NewDropboxConnector)
+	registerBuiltIn(registry, "box", NewBoxConnector)
+	registerBuiltIn(registry, "asana", NewAsanaConnector)
 	registerBuiltIn(registry, "github", NewGitHubConnector)
 	registerBuiltIn(registry, "gitlab", NewGitlabConnector)
 	registerBuiltIn(registry, "gmail", NewGmailConnector)
@@ -39,7 +41,9 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "google_drive", NewGoogleDriveConnector)
 	registerBuiltIn(registry, "google_cloud_storage", NewGoogleCloudStorageConnector)
 	registerBuiltIn(registry, "oci_storage", NewOCIStorageConnector)
+	registerBuiltIn(registry, "zendesk", NewZendeskConnector)
 	registerBuiltIn(registry, "azure_blob", NewAzureBlobStorageConnector)
+	registerBuiltIn(registry, "airtable", NewAirtableConnector)
 	registerBuiltIn(registry, "r2", NewR2Connector)
 	registerBuiltIn(registry, "s3", NewS3Connector)
 	registerBuiltIn(registry, "s3_compatible", NewS3CompatibleConnector)
@@ -47,6 +51,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "imap", NewIMAPConnector)
 	registerBuiltIn(registry, "jira", NewJiraConnector)
 	registerBuiltIn(registry, "outlook", NewOutlookConnector)
+	registerBuiltIn(registry, "onedrive", NewOneDriveConnector)
 	registerBuiltIn(registry, "notion", NewNotionConnector)
 	registerBuiltIn(registry, "rest_api", NewRestAPIConnector)
 	registerBuiltIn(registry, "xquik", NewXquikConnector)
@@ -58,6 +63,8 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "sharepoint", NewSharePointConnector)
 	registerBuiltIn(registry, "discord", NewDiscordConnector)
 	registerBuiltIn(registry, "webdav", NewWebDAVConnector)
+	registerBuiltIn(registry, "seafile", NewSeaFileConnector)
+	registerBuiltIn(registry, "bigquery", NewBigQueryConnector)
 }
 
 func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {

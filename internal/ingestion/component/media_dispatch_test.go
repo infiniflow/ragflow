@@ -16,19 +16,22 @@
 package component
 
 import (
+	"bytes"
 	"context"
-	"ragflow/internal/dao"
+	"encoding/base64"
+	"image"
 	"strings"
 	"sync"
 	"testing"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
-
-	"gorm.io/gorm"
 )
 
 // imagePromptCaptureDriver embeds ModelDriver so it satisfies the interface
@@ -516,5 +519,144 @@ func TestMaybeDispatchAudio_UsesConfiguredModel(t *testing.T) {
 	}
 	if len(res.JSON) != 1 || res.JSON[0]["text"] != "transcribed" {
 		t.Fatalf("unexpected audio result: %#v", res.JSON)
+	}
+}
+
+// TestImageDecoders_RegisteredFormats validates that image decoders for WebP, BMP,
+// TIFF, PNG, JPEG, and GIF are registered by media_dispatch.go and can decode
+// their respective binary payloads via image.Decode without importing the decoder
+// packages directly in the test file.
+func TestImageDecoders_RegisteredFormats(t *testing.T) {
+	// Fixed binary fixtures for image formats decoded via decoders registered in
+	// media_dispatch.go (neither standard library nor x/image decoders are imported
+	// in this test file).
+	const (
+		webpB64 = "UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAD8D+JaQAA3AA/ua1AAA="
+		bmpB64  = "Qk1GAAAAAAAAADYAAAAoAAAAAgAAAAIAAAABACAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/AP8AAP//AAAAAA=="
+		tiffB64 = "SUkqABgAAAD/AAD/AAAAAAAAAAAA/wD/DQAAAQMAAQAAAAIAAAABAQMAAQAAAAIAAAACAQMABAAAALoAAAADAQMAAQAAAAEAAAAGAQMAAQAAAAIAAAARAQQAAQAAAAgAAAAVAQMAAQAAAAQAAAAWAQMAAQAAAAIAAAAXAQQAAQAAABAAAAAaAQUAAQAAAMIAAAAbAQUAAQAAAMoAAAAoAQMAAQAAAAIAAABSAQMAAQAAAAEAAAAAAAAACAAIAAgACABIAAAAAQAAAEgAAAABAAAA"
+		pngB64  = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4GBgYGJAQoAHxcCAk+Uzr4AAAAASUVORK5CYII="
+		jpegB64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQgJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAACAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDi6KKK+UP38//Z"
+		gifB64  = "R0lGODdhAgACAIEAAP8AAAAAAAAAAAAAACwAAAAAAgACAAAIBgABCAQQEAA7"
+	)
+
+	tests := []struct {
+		format string
+		b64    string
+	}{
+		{"webp", webpB64},
+		{"bmp", bmpB64},
+		{"tiff", tiffB64},
+		{"png", pngB64},
+		{"jpeg", jpegB64},
+		{"gif", gifB64},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.format, func(t *testing.T) {
+			raw, err := base64.StdEncoding.DecodeString(tc.b64)
+			if err != nil {
+				t.Fatalf("failed to decode test %s base64: %v", tc.format, err)
+			}
+			decoded, format, err := image.Decode(bytes.NewReader(raw))
+			if err != nil {
+				t.Fatalf("image.Decode failed for %s: %v", tc.format, err)
+			}
+			if format != tc.format {
+				t.Errorf("image.Decode format = %q, want %q", format, tc.format)
+			}
+			if decoded == nil {
+				t.Errorf("image.Decode returned nil image for %s", tc.format)
+			}
+		})
+	}
+}
+
+// TestVLMGateShouldSkip verifies the rune vs word count threshold
+// for skipping VLM description. Specifically:
+//   - Zero-allocation rune counting via utf8.RuneCountInString correctly handles multi-byte UTF-8.
+//   - Whitespace trimming matches Python txt.strip(): surrounding whitespace is trimmed before counting.
+//   - CJK text is measured in unicode runes: 12 CJK characters occupy 36 bytes (>32 bytes)
+//     but only 12 runes (<=32 runes), so VLM must NOT be skipped.
+//   - CJK text >32 runes (e.g. 33 runes) skips VLM.
+//   - CJK exact boundary text (32 runes) triggers VLM.
+//   - English text >32 words skips VLM.
+//   - English short text (<=32 words and <=32 chars) triggers VLM.
+//   - English text with <=32 words but >32 chars skips VLM.
+func TestVLMGateShouldSkip(t *testing.T) {
+	tests := []struct {
+		name     string
+		lang     string
+		ocrText  string
+		wantSkip bool
+	}{
+		{
+			name:     "empty text does not skip",
+			lang:     "Chinese",
+			ocrText:  "",
+			wantSkip: false,
+		},
+		{
+			name:     "whitespace only text does not skip",
+			lang:     "Chinese",
+			ocrText:  "   \n\t  ",
+			wantSkip: false,
+		},
+		{
+			name:     "CJK substantial text (>32 runes, >32 bytes) skips VLM",
+			lang:     "Chinese",
+			ocrText:  strings.Repeat("中", 33), // 33 runes, 99 bytes
+			wantSkip: true,
+		},
+		{
+			name:     "CJK short text with >32 bytes but <=32 runes triggers VLM",
+			lang:     "Chinese",
+			ocrText:  strings.Repeat("中", 12), // 12 runes, 36 bytes (>32 bytes)
+			wantSkip: false,
+		},
+		{
+			name:     "CJK exact boundary text (32 runes, 96 bytes) triggers VLM",
+			lang:     "Chinese",
+			ocrText:  strings.Repeat("中", 32), // 32 runes, 96 bytes (32 is not > 32)
+			wantSkip: false,
+		},
+		{
+			name:     "CJK exact boundary text with whitespace padding trims to <=32 runes and triggers VLM",
+			lang:     "Chinese",
+			ocrText:  "  " + strings.Repeat("中", 32) + "  ", // 32 runes after trim
+			wantSkip: false,
+		},
+		{
+			name:     "CJK substantial text with whitespace padding trims to >32 runes and skips VLM",
+			lang:     "Chinese",
+			ocrText:  "  " + strings.Repeat("中", 33) + "  ", // 33 runes after trim
+			wantSkip: true,
+		},
+		{
+			name:     "English substantial text (>32 words) skips VLM",
+			lang:     "English",
+			ocrText:  strings.Repeat("word ", 33), // 33 words
+			wantSkip: true,
+		},
+		{
+			name:     "English short text (<=32 words and <=32 chars) triggers VLM",
+			lang:     "English",
+			ocrText:  "hello world", // 2 words, 11 chars
+			wantSkip: false,
+		},
+		{
+			name:     "English text with <=32 words but >32 chars skips VLM",
+			lang:     "English",
+			ocrText:  "abcdefghijklmnopqrstuvwxyz01234567", // 1 word, 34 chars (>32 chars)
+			wantSkip: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := vlmGateShouldSkip(tc.ocrText, tc.lang)
+			if got != tc.wantSkip {
+				t.Errorf("vlmGateShouldSkip(%q, %q) = %v, want %v", tc.ocrText, tc.lang, got, tc.wantSkip)
+			}
+		})
 	}
 }

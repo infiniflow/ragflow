@@ -27,12 +27,11 @@ import (
 	"ragflow/internal/agent/chat"
 )
 
-// LLM groundedness review (draft review), mirroring Python grounded_llm.py +
-// rag/prompts/grounded_select.md. It reviews each claim's draft report against
-// the cited evidence semantically, catching over-claims/relation errors that the
-// lexical code-level cross-check cannot see.
+// LLM groundedness review (draft review). It reviews each claim's draft report
+// against the cited evidence semantically, catching over-claims/relation errors
+// that the lexical code-level cross-check cannot see.
 
-// groundedSelectPrompt mirrors rag/prompts/grounded_select.md.
+// groundedSelectPrompt is the groundedness reviewer system prompt (self-contained).
 const groundedSelectPrompt = `You are an answer-groundedness reviewer. For each claim's report (the draft answer), determine whether every assertion is supported by the provided evidence.
 
 A claim's report is GROUNDED only if each of its assertions can be inferred from the evidence. The assertion does NOT need to use the same words as the evidence (semantic paraphrase is fine), but it must NOT:

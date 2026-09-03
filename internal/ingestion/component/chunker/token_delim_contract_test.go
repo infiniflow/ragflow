@@ -1,7 +1,6 @@
 package chunker
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
@@ -21,7 +20,7 @@ func TestTokenChunker_BareDelimiterHonored(t *testing.T) {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
 	const text = "alpha::beta::gamma::delta"
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          text,
@@ -65,7 +64,7 @@ func TestTokenChunker_MultiByteBacktickDelimiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "第一部分段落第二部分",
@@ -93,7 +92,7 @@ func TestTokenChunker_MultiByteBacktickDelimiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out2, err := c2.Invoke(context.Background(), nil, map[string]any{
+	out2, err := c2.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "A段落B",

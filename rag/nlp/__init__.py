@@ -451,6 +451,27 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
     return res
 
 
+def tokenize_chunks_with_positions(chunks_with_pos, doc, eng, child_delimiters_pattern=None, language="English"):
+    """Tokenize chunks that already carry real positions (Excel sheet/row).
+
+    chunks_with_pos: iterable of (text, position) where position is a 5-tuple
+    suitable for add_positions (first component 0-based).
+    """
+    res = []
+    for ck, pos in chunks_with_pos:
+        if not ck or not str(ck).strip():
+            continue
+        d = copy.deepcopy(doc)
+        add_positions(d, [pos])
+        if child_delimiters_pattern:
+            d["mom_with_weight"] = ck.removeprefix("\n")
+            res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
+            continue
+        tokenize(d, ck, eng, language=language)
+        res.append(d)
+    return res
+
+
 def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=None, batch_size=10, language="English"):
     res = []
     for ii, ck in enumerate(chunks):

@@ -15,7 +15,7 @@
 #
 
 import math
-from common.float_utils import get_float
+from common.float_utils import format_minimum_should_match_percent, get_float
 
 
 class TestGetFloat:
@@ -86,3 +86,24 @@ class TestGetFloat:
         result = get_float("  invalid  ")
         assert math.isinf(result)
         assert result < 0
+
+
+class TestFormatMinimumShouldMatchPercent:
+    def test_fractions_round_to_nearest_percent(self):
+        """Test that floating fractions round to the nearest whole percent."""
+        assert format_minimum_should_match_percent(0.29) == "29%"
+        assert format_minimum_should_match_percent(0.57) == "57%"
+        assert format_minimum_should_match_percent(0.58) == "58%"
+
+    def test_half_up_rounding(self):
+        """Half percent values must round up, not use banker's rounding."""
+        assert format_minimum_should_match_percent(0.125) == "13%"
+        assert format_minimum_should_match_percent(0.135) == "14%"
+
+    def test_zero_and_one(self):
+        assert format_minimum_should_match_percent(0.0) == "0%"
+        assert format_minimum_should_match_percent(1.0) == "100%"
+
+    def test_representational_error_not_truncated(self):
+        """0.29 * 100 is 28.999... in IEEE-754; must round to 29, not truncate."""
+        assert format_minimum_should_match_percent(0.29) != "28%"

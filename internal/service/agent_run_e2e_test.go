@@ -199,7 +199,7 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-hello",
 		"session-hello",
@@ -292,7 +292,7 @@ func TestRunAgent_SessionHistoryFeedsSysHistoryAndPersists(t *testing.T) {
 	svc := NewAgentService()
 	run := func(input string) canvas.MessageEvent {
 		t.Helper()
-		events, err := svc.RunAgent(context.Background(), "user-1", "canvas-history", "session-history", "", input, nil)
+		events, err := svc.RunAgent(t.Context(), "user-1", "canvas-history", "session-history", "", input, nil)
 		if err != nil {
 			t.Fatalf("RunAgent(%q): %v", input, err)
 		}
@@ -394,7 +394,7 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 	makeCanvasWithDSL(t, "canvas-new-session", "user-1", "tenant-1", "v-new-session", dsl)
 
 	svc := NewAgentService()
-	events, err := svc.RunAgent(context.Background(), "user-1", "canvas-new-session", "", "", "1", nil)
+	events, err := svc.RunAgent(t.Context(), "user-1", "canvas-new-session", "", "", "1", nil)
 	if err != nil {
 		t.Fatalf("first RunAgent: %v", err)
 	}
@@ -424,7 +424,7 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 		t.Fatalf("new session lost reusable env state: %#v", globals["env.topic"])
 	}
 
-	events, err = svc.RunAgent(context.Background(), "user-1", "canvas-new-session", session.ID, "", "1", nil)
+	events, err = svc.RunAgent(t.Context(), "user-1", "canvas-new-session", session.ID, "", "1", nil)
 	if err != nil {
 		t.Fatalf("second RunAgent: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestRunAgent_RejectsSessionOwnedByAnotherUser(t *testing.T) {
 	}
 
 	events, err := NewAgentService().RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-session-owner",
 		"session-foreign",
@@ -607,7 +607,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 
 	// Run 1: should emit a waiting_for_user event.
 	events1, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-fillup",
 		"session-fillup",
@@ -644,7 +644,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	// — the actual cause was the test running without the
 	// production environment's checkpoint store.
 	events2, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-fillup",
 		"session-fillup", // SAME sessionID as run 1
@@ -725,7 +725,7 @@ func TestRunAgent_InterruptPersistsPartialAssistantHistory(t *testing.T) {
 	}
 
 	events, err := NewAgentService().RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-partial",
 		"session-partial",
@@ -814,7 +814,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 
 	events1, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-fillup-events",
 		"session-fillup-events",
@@ -837,7 +837,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 	}
 
 	events2, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-fillup-events",
 		"session-fillup-events",
@@ -955,7 +955,7 @@ func TestRunAgent_RealCanvas_GroupedParallelOuterFollower(t *testing.T) {
 
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-parallel",
 		"session-parallel",
@@ -1025,7 +1025,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 
 	events1, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-all",
 		"session-all-loop",
@@ -1065,7 +1065,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	}
 
 	events2, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-all",
 		"session-all-loop",
@@ -1092,7 +1092,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	}
 
 	events3, err := svc.RunAgent(
-		context.Background(), "user-1", "canvas-all", "session-all-loop", "", "1", nil,
+		t.Context(), "user-1", "canvas-all", "session-all-loop", "", "1", nil,
 	)
 	if err != nil {
 		t.Fatalf("RunAgent run 3: %v", err)
@@ -1151,7 +1151,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 
 	for i, input := range inputs {
 		events, err := svc.RunAgent(
-			context.Background(),
+			t.Context(),
 			"user-1",
 			"canvas-all-multi",
 			sessionID,
@@ -1244,7 +1244,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 	sessionID := "session-all-iteration"
 
 	events1, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-all-iteration",
 		sessionID,
@@ -1273,7 +1273,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 	}
 
 	events2, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-all-iteration",
 		sessionID,
@@ -1300,7 +1300,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 	}
 
 	events3, err := svc.RunAgent(
-		context.Background(), "user-1", "canvas-all-iteration", sessionID, "", "a,b,c,d,e", nil,
+		t.Context(), "user-1", "canvas-all-iteration", sessionID, "", "a,b,c,d,e", nil,
 	)
 	if err != nil {
 		t.Fatalf("RunAgent run 3: %v", err)
@@ -1354,7 +1354,7 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-all-var-assigner",
 		"session-all-var-assigner",
@@ -1377,7 +1377,7 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 		t.Fatalf("expected no message before menu resume, got %d", len(messages))
 	}
 	events, err = svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-all-var-assigner",
 		"session-all-var-assigner",
@@ -1438,7 +1438,7 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-all-data-ops",
 		"session-all-data-ops",
@@ -1461,7 +1461,7 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 		t.Fatalf("expected no message before menu resume, got %d", len(messages))
 	}
 	events, err = svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-all-data-ops",
 		"session-all-data-ops",
@@ -1540,7 +1540,7 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-bogus",
 		"session-bogus",
@@ -1612,7 +1612,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 	cp := canvas.NewRedisCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events1, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-all-categorize",
 		"session-all-categorize",
@@ -1640,7 +1640,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 	}
 
 	events2, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-all-categorize",
 		"session-all-categorize",
@@ -1674,7 +1674,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 	}
 
 	events3, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-all-categorize",
 		"session-all-categorize",
@@ -1770,7 +1770,7 @@ func TestRunAgent_RealCanvas_InvokeFails(t *testing.T) {
 
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-invoke-fail",
 		"session-invoke-fail",
@@ -1877,7 +1877,7 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 
 	svc := NewAgentServiceWithOptions(cp, canvas.CanvasStateSerializer{}, tracker)
 	events, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-cp",
 		"session-cp",
@@ -1900,7 +1900,7 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 	// The run id is canvasID-sessionID per runIDFor; this is also
 	// the checkpoint id per the Goal 7 contract.
 	runID := "canvas-cp-session-cp"
-	got, err := tracker.Get(context.Background(), runID)
+	got, err := tracker.Get(t.Context(), runID)
 	if err != nil {
 		t.Fatalf("RunTracker.Get: %v", err)
 	}
@@ -2119,7 +2119,7 @@ func TestRunAgent_MissingUploadEmitsError(t *testing.T) {
 	makeCanvasWithDSL(t, "canvas-missing-upload", "user-1", "tenant-1", "v-missing-upload", dsl)
 
 	events, err := NewAgentService().RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"canvas-missing-upload",
 		"session-missing-upload",
@@ -2197,7 +2197,7 @@ func TestRunAgent_NoFilesRunsNormally(t *testing.T) {
 
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		canvasID,
 		sessionID,

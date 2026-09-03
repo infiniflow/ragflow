@@ -502,7 +502,10 @@ def list_datasets(tenant_id: str, args: dict):
         user_dict = user_map.get(kb["tenant_id"], {})
         kb.update({"nickname": user_dict.get("nickname", ""), "tenant_avatar": user_dict.get("avatar", "")})
         if status_by_kb:
-            kb["parsing_status"] = status_by_kb.get(kb["id"], {})
+            # The documented contract (HTTP API + Python SDK references) places the
+            # counts at the top level of each dataset record, not under a nested
+            # "parsing_status" object.
+            kb.update(status_by_kb.get(kb["id"], {}))
         response_data_list.append(remap_dictionary_keys(kb))
 
     embed_model_names = get_composite_model_name_by_ids([m["embedding_model"] for m in response_data_list])
@@ -1054,7 +1057,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     )
 
     page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    size = int(req.get("page_size") or req.get("size", 30))
     rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
@@ -1439,7 +1442,7 @@ async def search_datasets(tenant_id: str, req: dict):
 
     kb_ids = req.get("dataset_ids", [])
     page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    size = int(req.get("page_size") or req.get("size", 30))
     rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
@@ -1572,6 +1575,7 @@ async def search_datasets(tenant_id: str, req: dict):
         knn_top_k=knn_top_k,
         knn_num_candidates=knn_num_candidates,
         rerank_mdl=rerank_mdl,
+        highlight=req.get("highlight", False),
         rank_feature=labels,
         trace_id=search_id,
         must_not=None if req.get("include_knowledge_compilation", True) else {"exists": "compile_kwd"},
@@ -1909,7 +1913,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         return False, f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, session_essence, session_graph."
 
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
-    empty = {"kind": kind, "templates": []}
+    empty = {"kind": kind, "templates": [], "total_entities": 0, "total_relations": 0, "returned_entities": 0, "returned_relations": 0}
 
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
@@ -2038,6 +2042,25 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             template_scope_by_id[tid] = "doc"
             kind_template_ids.append(tid)
 
+    template_scopes: dict[str, dict] = {}
+    total_entities = 0
+    total_relations = 0
+    for tid in kind_template_ids:
+        scope_kwd = template_scope_by_id.get(tid, "dataset")
+        scope = {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]}
+        if scope_kwd == "doc":
+            scope["doc_id"] = sorted(active_doc_ids)
+        template_scopes[tid] = scope
+        try:
+            _, entity_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(scope, knowledge_graph_kwd=["entity"]), OrderByExpr(), 1)
+            _, relation_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(scope, knowledge_graph_kwd=["relation"]), OrderByExpr(), 1)
+            total_entities += entity_total
+            total_relations += relation_total
+        except Exception:
+            logging.exception("get_dataset_structure: bucket count failed for kb=%s template=%s", dataset_id, tid)
+    empty["total_entities"] = total_entities
+    empty["total_relations"] = total_relations
+
     # Detect datasets that have ONLY the legacy dataset_graph blob (no
     # entity/relation rows yet) so the fallback path below handles them.
     if not kind_template_ids and not has_templateless:
@@ -2111,20 +2134,24 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         bucket = dict(bucket_meta)
         bucket["entities"] = kw_entities
         bucket["relations"] = kw_relations
-        return True, {"kind": kind, "templates": [bucket]}
+        return True, {
+            "kind": kind,
+            "templates": [bucket],
+            "total_entities": total_entities,
+            "total_relations": total_relations,
+            "returned_entities": len(kw_entities),
+            "returned_relations": len(kw_relations),
+        }
 
     # ── normal mode: per-template subgraph sampling from raw KB-wide rows. ──
     templates_out: list[dict] = []
     for tid in kind_template_ids:
         scope_kwd = template_scope_by_id.get(tid, "dataset")
         try:
-            scope = {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]}
-            if scope_kwd == "doc":
-                scope["doc_id"] = sorted(active_doc_ids)
             entities, relations = await sgc.build_bucket(
                 index_nm,
                 dataset_id,
-                scope,
+                template_scopes[tid],
                 excluded_doc_ids=dataset_excluded_doc_ids if scope_kwd == "dataset" else disabled_doc_ids,
             )
         except Exception:
@@ -2174,14 +2201,19 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                     continue
                 reconstructed_compile_kwds.add(compile_kwd)
                 try:
+                    legacy_scope = {"compile_kwd": [compile_kwd], "doc_id": sorted(active_doc_ids)}
+                    _, entity_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(legacy_scope, knowledge_graph_kwd=["entity"]), OrderByExpr(), 1)
+                    _, relation_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(legacy_scope, knowledge_graph_kwd=["relation"]), OrderByExpr(), 1)
                     entities, relations = await sgc.build_bucket(
                         index_nm,
                         dataset_id,
-                        {"compile_kwd": [compile_kwd], "doc_id": sorted(active_doc_ids)},
+                        legacy_scope,
                         excluded_doc_ids=disabled_doc_ids,
                     )
                 except Exception:
                     continue
+                total_entities += entity_total
+                total_relations += relation_total
                 legacy_bucket["entities"].extend(entities)
                 legacy_bucket["relations"].extend(relations)
                 continue
@@ -2191,15 +2223,26 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                 continue
             if not isinstance(graph, dict):
                 continue
-            legacy_bucket["entities"].extend(item for item in (graph.get("entities") or []) if isinstance(item, dict))
-            legacy_bucket["relations"].extend(item for item in (graph.get("relations") or []) if isinstance(item, dict))
+            legacy_entities = [item for item in (graph.get("entities") or []) if isinstance(item, dict)]
+            legacy_relations = [item for item in (graph.get("relations") or []) if isinstance(item, dict)]
+            total_entities += len(legacy_entities)
+            total_relations += len(legacy_relations)
+            legacy_bucket["entities"].extend(legacy_entities)
+            legacy_bucket["relations"].extend(legacy_relations)
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             legacy_bucket["entities"] = sgc.filter_entities_with_relations(legacy_bucket["entities"], legacy_bucket["relations"])
         if legacy_bucket["entities"] or legacy_bucket["relations"]:
             if resolved_kind not in {"knowledge_graph", "mind_map", "timeline"} or legacy_bucket["entities"]:
                 templates_out.append(legacy_bucket)
 
-    return True, {"kind": kind, "templates": templates_out}
+    return True, {
+        "kind": kind,
+        "templates": templates_out,
+        "total_entities": total_entities,
+        "total_relations": total_relations,
+        "returned_entities": sum(len(template["entities"]) for template in templates_out),
+        "returned_relations": sum(len(template["relations"]) for template in templates_out),
+    }
 
 
 # ── artifacts/alteration: per-``kind`` provenance & eligibility mapping ──
@@ -2277,6 +2320,8 @@ async def _wiki_chunk_alteration(
     dataset_id: str,
     eligible_doc_ids: set[str],
     involved_doc_ids: set[str],
+    current_chunk_state: dict | None = None,
+    previous_map_state: dict | None = None,
 ) -> dict:
     """Compare active source chunks with the hashes used by Wiki MAP.
 
@@ -2295,15 +2340,15 @@ async def _wiki_chunk_alteration(
     if not eligible_doc_ids and not involved_doc_ids:
         return empty
 
-    from rag.advanced_rag.knowlege_compile.wiki import (
-        _wiki_compare_chunk_states,
-        _wiki_load_active_map_state,
-        _wiki_scan_current_chunk_state,
-    )
+    from rag.advanced_rag.knowlege_compile.wiki import _wiki_compare_chunk_states, _wiki_load_active_map_state, _wiki_scan_current_chunk_state
 
     try:
-        current = await _wiki_scan_current_chunk_state(tenant_id, dataset_id, eligible_doc_ids)
-        previous = await _wiki_load_active_map_state(tenant_id, dataset_id)
+        current = current_chunk_state
+        if current is None:
+            current = await _wiki_scan_current_chunk_state(tenant_id, dataset_id, eligible_doc_ids)
+        previous = previous_map_state
+        if previous is None:
+            previous = await _wiki_load_active_map_state(tenant_id, dataset_id)
     except Exception as exc:
         logging.exception("alteration: failed to compare Wiki chunk state for kb=%s", dataset_id)
         raise RuntimeError(f"Failed to compare Wiki chunk state for alteration (kb={dataset_id})") from exc
@@ -2413,10 +2458,20 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
     return involved
 
 
-async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str) -> set:
+async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str, tenant_id: str, wiki_map_state: dict | None = None) -> set:
     """Gather the doc ids baked into the compiled product for ``kind``."""
     if kind == "wiki":
-        return await _involved_doc_ids_paged(index_nm, dataset_id, {"compile_kwd": [WIKI_PAGE_COMPILE_KWD]}, "source_doc_ids", from_list=True)
+        from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_active_map_state
+
+        # Wiki MAP state is committed only after the compilation run has
+        # successfully completed.  Use that active snapshot as the
+        # compilation provenance, rather than wiki_page.source_doc_ids:
+        # a document can participate in MAP/REDUCE without producing a page
+        # (for example when the extractor finds no page-worthy entities).
+        state = wiki_map_state
+        if state is None:
+            state = await _wiki_load_active_map_state(tenant_id, dataset_id)
+        return {str(item.get("doc_id")) for item in state.values() if item.get("doc_id")}
     if kind in _ALTERATION_KIND_TO_MERGED_ROW_KIND:
         condition = {
             "knowledge_graph_kwd": ["entity", "relation"],
@@ -2471,14 +2526,61 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
     if pack is not None:
         index_nm, _ = pack
-        involved_doc_ids = await _involved_doc_ids_for_kind(index_nm, dataset_id, kind)
+        if kind == "wiki":
+            # A document may match the Wiki template while still having no
+            # available source chunks (for example, parsing has not produced
+            # chunks yet or all chunks are disabled). Such a document is not
+            # an actionable Wiki input and must not be reported as newly
+            # uploaded.
+            from rag.advanced_rag.knowlege_compile.wiki import _wiki_scan_current_chunk_state
+
+            eligible_before_chunk_filter = len(eligible_doc_ids)
+            current_chunk_state = await _wiki_scan_current_chunk_state(
+                kb.tenant_id,
+                dataset_id,
+                eligible_doc_ids,
+            )
+            chunk_doc_ids = {str(item.get("doc_id")) for item in current_chunk_state.values() if item.get("doc_id")}
+            eligible_doc_ids &= chunk_doc_ids
+            logging.debug(
+                "alteration: Wiki chunk eligibility kb=%s tenant=%s before=%d after=%d chunks=%d",
+                dataset_id,
+                kb.tenant_id,
+                eligible_before_chunk_filter,
+                len(eligible_doc_ids),
+                len(current_chunk_state),
+            )
+        wiki_map_state = None
+        if kind == "wiki":
+            from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_active_map_state
+
+            wiki_map_state = await _wiki_load_active_map_state(kb.tenant_id, dataset_id)
+            logging.debug(
+                "alteration: Wiki MAP provenance kb=%s tenant=%s involved=%d eligible=%d",
+                dataset_id,
+                kb.tenant_id,
+                len({str(item.get("doc_id")) for item in wiki_map_state.values() if item.get("doc_id")}),
+                len(eligible_doc_ids),
+            )
+        involved_doc_ids = await _involved_doc_ids_for_kind(index_nm, dataset_id, kind, kb.tenant_id, wiki_map_state)
         if kind == "wiki":
             chunk_changes = await _wiki_chunk_alteration(
                 kb.tenant_id,
                 dataset_id,
                 eligible_doc_ids,
                 involved_doc_ids,
+                current_chunk_state,
+                wiki_map_state,
             )
+    elif kind == "wiki":
+        # Without the compiled source index there are no current chunks that
+        # can be considered Wiki inputs.
+        eligible_doc_ids = set()
+        logging.debug(
+            "alteration: Wiki compiled index missing kb=%s tenant=%s eligible=0",
+            dataset_id,
+            kb.tenant_id,
+        )
 
     # Wiki membership follows compilation eligibility. Disabling a document or
     # removing its Wiki template is therefore a removal; enabling it again or
@@ -3689,7 +3791,7 @@ async def generate_nav(
             continue
         try:
             await upsert_dataset_nav_doc(
-                tenant_id=tenant_id,
+                tenant_id=kb.tenant_id,
                 kb_id=dataset_id,
                 doc_id=doc_id,
                 summary_or_tree=summary,
@@ -4575,20 +4677,55 @@ async def get_wiki_graph(
       then pull the ``to`` entities. Capped at
       ``_WIKI_GRAPH_MAX_LOADING_ENTITY`` for hub-node safety.
 
-    Returns ``(True, {"entities": [...], "relations": [...]})`` shaped
-    exactly as the frontend ``ForceGraph`` adapter consumes, or
+    Returns ``(True, {"entities": [...], "relations": [...], "total_entities": int,
+    "total_relations": int, "returned_entities": int, "returned_relations": int})``
+    shaped exactly as the frontend ``ForceGraph`` adapter consumes, or
     ``(False, message)`` on authorization failure.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
-    empty = {"entities": [], "relations": []}
+    total_entities = 0
+    total_relations = 0
+
+    def _response(response_entities: list[dict], response_relations: list[dict]) -> dict:
+        return {
+            "entities": response_entities,
+            "relations": response_relations,
+            "total_entities": total_entities,
+            "total_relations": total_relations,
+            "returned_entities": len(response_entities),
+            "returned_relations": len(response_relations),
+        }
 
     pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
-        return True, empty
+        return True, _response([], [])
     index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    try:
+        for compile_kwd, count_name in ((_WIKI_GRAPH_ENTITY_KWD, "entities"), (_WIKI_GRAPH_RELATION_KWD, "relations")):
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id"],
+                [],
+                {"compile_kwd": [compile_kwd]},
+                [],
+                OrderByExpr(),
+                0,
+                1,
+                index_nm,
+                [dataset_id],
+            )
+            if count_name == "entities":
+                total_entities = int(settings.docStoreConn.get_total(res) or 0)
+            else:
+                total_relations = int(settings.docStoreConn.get_total(res) or 0)
+    except Exception:
+        logging.exception("get_wiki_graph: graph count failed for kb=%s", dataset_id)
 
     keywords = (keywords or "").strip()
     # Entity budget: caller-overridable, clamped to a sane range so a bad param
@@ -4640,7 +4777,7 @@ async def get_wiki_graph(
                 dataset_id,
                 center_slug,
             )
-            return True, empty
+            return True, _response([], [])
 
         for row in (field_map or {}).values():
             payload = _wiki_entity_payload(row)
@@ -4651,7 +4788,7 @@ async def get_wiki_graph(
         if center_slug not in entities:
             # Caller pointed at a slug that doesn't exist; return empty
             # rather than a confusing partial graph.
-            return True, empty
+            return True, _response([], [])
 
         # Outgoing edges from the centre, capped by MAX_LOADING_ENTITY.
         try:
@@ -4666,7 +4803,7 @@ async def get_wiki_graph(
                 dataset_id,
                 center_slug,
             )
-            return True, {"entities": list(entities.values()), "relations": []}
+            return True, _response(list(entities.values()), [])
 
         to_slugs: list[str] = []
         for row in (rel_map or {}).values():
@@ -4703,10 +4840,7 @@ async def get_wiki_graph(
                 if payload and len(entities) < cap * 2:
                     _add_entity(payload)
 
-        return True, {
-            "entities": list(entities.values()),
-            "relations": relations,
-        }
+        return True, _response(list(entities.values()), relations)
 
     # ---- Flow A — overview, top-weight paged with cumulative budget. ---
     cumulative_weight = 0
@@ -4812,10 +4946,7 @@ async def get_wiki_graph(
             break
         page += 1
 
-    return True, {
-        "entities": list(entities.values()),
-        "relations": relations,
-    }
+    return True, _response(list(entities.values()), relations)
 
 
 async def clear_wiki(dataset_id: str, tenant_id: str):

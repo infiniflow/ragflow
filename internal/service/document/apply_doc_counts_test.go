@@ -17,7 +17,6 @@
 package document
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/entity"
@@ -36,7 +35,7 @@ func TestApplyDocCounts_ReparseCarriesDelta(t *testing.T) {
 		t.Fatalf("create doc: %v", err)
 	}
 	svc := testDocumentService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// First parse produces 5 chunks / 100 tokens; a re-parse produces 7 / 140.
 	if err := svc.ApplyDocCounts(ctx, "doc-1", "kb-1", 5, 100, 1); err != nil {
@@ -81,7 +80,7 @@ func TestApplyDocCounts_KBAggregateClampsAtZero(t *testing.T) {
 
 	// A run that clears the document (0 chunks) drives the aggregate delta to -5;
 	// 2 - 5 is negative and must clamp to 0 rather than underflow.
-	if err := svc.ApplyDocCounts(context.Background(), "doc-1", "kb-1", 0, 0, 1); err != nil {
+	if err := svc.ApplyDocCounts(t.Context(), "doc-1", "kb-1", 0, 0, 1); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	var kb entity.Knowledgebase
@@ -106,7 +105,7 @@ func TestApplyDocCounts_ProcessDurationIsAbsolute(t *testing.T) {
 		t.Fatalf("create doc: %v", err)
 	}
 	svc := testDocumentService(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// A run sets process_duration to its own value; a later run replaces it rather
 	// than accumulating, so the stored value is the last run's, not the 3.5+1.25 sum.

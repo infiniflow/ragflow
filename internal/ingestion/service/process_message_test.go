@@ -206,6 +206,39 @@ func TestProcessMessage_TaskNotFoundAcks(t *testing.T) {
 	}
 }
 
+// TestProcessMessage_CreatedTaskStartsRunning verifies that a worker can claim
+// a task after NATS accepts its message but before the API records SCHEDULED.
+func TestProcessMessage_CreatedTaskStartsRunning(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.CREATED).Error; err != nil {
+		t.Fatalf("reset task to CREATED: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
+
+	ingestor.processMessage(handle)
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("CREATED task: expected 0 Ack/0 Nack (deferred), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 1 {
+		t.Fatalf("expected 1 task enqueued, got %d", len(ingestor.taskChan))
+	}
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("status = %q, want %q", task.Status, common.RUNNING)
+	}
+}
+
 // TestProcessMessage_AlreadyCompletedAcks: a task already in a terminal state
 // (COMPLETED) is acked and skipped — no enqueue, and the document is NOT
 // resurrected to RUNNING. A redelivered terminal task must not reset a
@@ -368,6 +401,73 @@ func TestProcessMessage_ChannelFullBlocksUntilSlot(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("real task was not enqueued after a slot freed")
+	}
+}
+
+// TestProcessMessage_ShutdownRaceMarksStopped: shutdown winning the race
+// against the taskChan send must not leave the task in non-terminal RUNNING
+// with no in-flight worker. StartRunning has already flipped the task to
+// RUNNING, so the ctx.Done branch finalizes it as STOPPED (user-retryable)
+// with a detached timeout, and leaves the message unsettled — the broker
+// redelivers it and the terminal status ack-skips.
+func TestProcessMessage_ShutdownRaceMarksStopped(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	// SeedTestData creates the task RUNNING; reset to CREATED so the race
+	// below is the real one: processMessage's StartRunning flips it RUNNING
+	// and then blocks on the full channel.
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.CREATED).Error; err != nil {
+		t.Fatalf("reset task to CREATED: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"}) // channel cap = 2
+	for i := 0; i < cap(ingestor.taskChan); i++ {
+		ingestor.taskChan <- taskpkg.NewTaskContextForScheduling(nil, &entity.IngestionTask{ID: "filler"})
+	}
+
+	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
+	done := make(chan struct{})
+	go func() {
+		ingestor.processMessage(handle)
+		close(done)
+	}()
+
+	// Wait until StartRunning flipped the task RUNNING and processMessage
+	// is blocked on the full channel.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var task entity.IngestionTask
+		if err := db.Where("id = ?", taskID).First(&task).Error; err == nil && task.Status == common.RUNNING {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("task never reached RUNNING; processMessage did not reach the blocking send")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	// Shutdown wins the race against the channel send.
+	ingestor.cancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("processMessage did not return after shutdown")
+	}
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("task status = %q, want %q (shutdown race must not strand a RUNNING row)", task.Status, common.STOPPED)
+	}
+	// Message unsettled: on redelivery the STOPPED status ack-skips it.
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 0 Ack/0 Nack (unsettled for redelivery), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 }
 

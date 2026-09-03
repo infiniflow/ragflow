@@ -127,13 +127,20 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 
 	items := make([]map[string]any, 0)
 	warnings := make([]string, 0)
-	for _, sheet := range sheets {
+	for sheetIdx, sheet := range sheets {
 		for _, table := range renderSheetTableChunks(f, sheet, chunkRows) {
 			items = append(items, map[string]any{
-				"text":         table,
+				"text":         table.HTML,
 				"doc_type_kwd": "table",
 				"ck_type":      "table",
 				"sheet":        sheet,
+				"positions": [][]float64{{
+					float64(sheetIdx + 1),
+					float64(table.RowStart),
+					float64(table.RowEnd),
+					float64(table.ColStart),
+					float64(table.ColEnd),
+				}},
 			})
 		}
 		images, imageWarnings := extractXLSXImages(f, sheet)

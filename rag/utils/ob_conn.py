@@ -40,7 +40,7 @@ from common.doc_store.ob_conn_base import (
     doc_meta_column_names,
     doc_meta_column_types,
 )
-from common.float_utils import get_float
+from common.float_utils import format_minimum_should_match_percent, get_float
 from rag.nlp import rag_tokenizer
 
 logger = logging.getLogger("ragflow.ob_conn")
@@ -635,7 +635,7 @@ class OBConnection(OBConnectionBase):
                 if isinstance(m, MatchTextExpr):
                     minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
                     if isinstance(minimum_should_match, float):
-                        minimum_should_match = str(int(minimum_should_match * 100)) + "%"
+                        minimum_should_match = format_minimum_should_match_percent(minimum_should_match)
                     bqry.must.append(Q("query_string", fields=FTS_COLUMNS_TKS, type="best_fields", query=m.matching_text, minimum_should_match=minimum_should_match, boost=1))
                     bqry.boost = 1.0 - vector_similarity_weight
 
@@ -696,7 +696,9 @@ class OBConnection(OBConnectionBase):
                     result.total = result.total + 1
             return result
 
-        output_fields = select_fields.copy()
+        output_fields = [field for field in select_fields.copy() if field != "row_id()"]
+        if len(output_fields) != len(select_fields):
+            logger.warning("SeekDB/OceanBase does not support row_id(); removing it from output fields")
         if "*" in output_fields:
             if index_names[0].startswith("ragflow_doc_meta_"):
                 output_fields = doc_meta_column_names.copy()
@@ -1291,6 +1293,24 @@ class OBConnection(OBConnectionBase):
     """
     Helper functions for search result
     """
+
+    def get_scores(self, res: SearchResult) -> dict[str, float]:
+        """Return the scores attached to SeekDB search result chunks."""
+        scores = {}
+        missing_id = 0
+        missing_score = 0
+        for chunk in res.chunks:
+            chunk_id = chunk.get("id")
+            if chunk_id is None:
+                missing_id += 1
+                continue
+            score = chunk.get("_score")
+            if score is None:
+                missing_score += 1
+            scores[chunk_id] = float(score or 0.0)
+        if missing_id or missing_score:
+            logger.debug("get_scores skipped chunks: missing_id=%d missing_score=%d", missing_id, missing_score)
+        return scores
 
     def get_total(self, res) -> int:
         return res.total

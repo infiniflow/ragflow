@@ -1447,11 +1447,11 @@ class ConfluenceConnector(
             self._document_name_counts[page_title] += 1
             self._document_name_paths[page_title].append(full_path)
 
-            # Use simple name if no duplicates, otherwise use full path
-            if self._document_name_counts[page_title] == 1:
-                semantic_identifier = page_title
-            else:
-                semantic_identifier = full_path
+            # Always use the full hierarchical path as the semantic identifier.
+            # Using a bare name for the first occurrence and a full path for later
+            # duplicates caused asymmetric naming: the first item would keep its
+            # bare name even after a same-named item appeared later (issue #16665).
+            semantic_identifier = full_path
 
             # Get the page content
             page_content = extract_text_from_confluence_html(self.confluence_client, page, self._fetched_titles)
@@ -1607,11 +1607,11 @@ class ConfluenceConnector(
                 self._document_name_counts[attachment_title] += 1
                 self._document_name_paths[attachment_title].append(full_attachment_path)
 
-                # Use simple name if no duplicates, otherwise use full path
-                if self._document_name_counts[attachment_title] == 1:
-                    attachment_semantic_identifier = attachment_title
-                else:
-                    attachment_semantic_identifier = full_attachment_path
+                # Always use the full hierarchical path as the semantic identifier.
+                # Using a bare name for the first occurrence and a full path for later
+                # duplicates caused asymmetric naming: the first item would keep its
+                # bare name even after a same-named item appeared later (issue #16665).
+                attachment_semantic_identifier = full_attachment_path
 
                 primary_owners: list[BasicExpertInfo] | None = None
                 if "version" in attachment and "by" in attachment["version"]:
@@ -1761,9 +1761,10 @@ class ConfluenceConnector(
         end: SecondsSinceUnixEpoch | None = None,
         callback: IndexingHeartbeatInterface | None = None,
     ) -> GenerateSlimDocumentOutput:
+        # ``start``/``end`` are accepted for interface compatibility, but the
+        # Confluence slim-doc CQL query is not time-filtered, so they are not
+        # forwarded -- same as ``retrieve_all_slim_docs_perm_sync`` below.
         return self._retrieve_all_slim_docs(
-            start=start,
-            end=end,
             callback=callback,
             include_permissions=False,
         )

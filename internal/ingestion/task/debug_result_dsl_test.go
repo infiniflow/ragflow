@@ -45,19 +45,27 @@ func TestBuildDebugResultDSL(t *testing.T) {
 				{"id": "begin", "data": {"name": "开始"}},
 				{"id": "a", "data": {"name": "解析"}},
 				{"id": "b", "data": {"name": "分词"}}
-			]}
+			]},
+			"path": ["begin", "a", "b"],
+			"task_id": "task-42",
+			"canvas_type": "dataflow"
 		}
 	}`
 
 	// Run output: keyed by component id (state.go:284 `out[ref]=v`). `a` emits
-	// chunks, `b` emits plain text, `begin` has no recognized output key.
+	// chunks, `b` emits plain text, `begin` carries only the TrackElapsed
+	// bookkeeping pair — the shape real no-payload components (e.g. File)
+	// produce, since the canvas wraps every component body in TrackElapsed.
 	output := map[string]any{
 		"a": map[string]any{
 			"chunks": []any{
 				map[string]any{"text": "hello", "vector": []float64{0.1, 0.2}},
 			},
+			"_elapsed_time": 0.35,
+			"_created_time": 100.0,
 		},
-		"b": map[string]any{"text": "plain"},
+		"b":     map[string]any{"text": "plain", "_elapsed_time": 0.02},
+		"begin": map[string]any{"_elapsed_time": 0.01, "_created_time": 99.0},
 	}
 
 	result, err := BuildDebugResultDSL(dsl, output)
@@ -71,6 +79,22 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	}
 	if len(components) != 3 {
 		t.Fatalf("want 3 components (begin,a,b), got %d: %#v", len(components), components)
+	}
+
+	// Non-components top-level keys are carried verbatim (agent/canvas.py:126):
+	// the persisted log DSL round-tripped by the rerun flow must not drop
+	// path/task_id/canvas_type/graph.
+	if p, _ := result["path"].([]any); len(p) != 3 || p[0] != "begin" || p[2] != "b" {
+		t.Errorf("result.path=%#v want [begin a b]", result["path"])
+	}
+	if tid, _ := result["task_id"].(string); tid != "task-42" {
+		t.Errorf("result.task_id=%v want task-42", result["task_id"])
+	}
+	if ct, _ := result["canvas_type"].(string); ct != "dataflow" {
+		t.Errorf("result.canvas_type=%v want dataflow", result["canvas_type"])
+	}
+	if g := result["graph"]; g == nil {
+		t.Error("result.graph must be carried, got nil")
 	}
 
 	// --- component "a": must carry chunks under params.outputs ---
@@ -105,6 +129,22 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	if !ok || of["value"] != "chunks" {
 		t.Errorf("components.a output_format=%#v want {value:\"chunks\"}", aOutputs["output_format"])
 	}
+	// The outputs wrapper records str(type(value)) type strings
+	// (agent/component/base.py:467), not "".
+	if of["type"] != "<class 'str'>" {
+		t.Errorf("components.a output_format.type=%#v want <class 'str'>", of["type"])
+	}
+	// TrackElapsed bookkeeping rides along as plain {value, type} entries so
+	// the front-end timeline renders per-node elapsed times.
+	if et, _ := aOutputs["_elapsed_time"].(map[string]any); et["value"] != 0.35 {
+		t.Errorf("components.a outputs._elapsed_time=%#v want {value:0.35}", aOutputs["_elapsed_time"])
+	}
+	if ct, _ := aOutputs["_created_time"].(map[string]any); ct["value"] != 100.0 {
+		t.Errorf("components.a outputs._created_time=%#v want {value:100}", aOutputs["_created_time"])
+	}
+	if et, _ := aOutputs["_elapsed_time"].(map[string]any); et["type"] != "<class 'float'>" {
+		t.Errorf("components.a outputs._elapsed_time.type=%#v want <class 'float'>", aOutputs["_elapsed_time"])
+	}
 	chunksOut, ok := aOutputs["chunks"].(map[string]any)
 	if !ok {
 		t.Fatalf("components.a outputs.chunks wrong type: %#v", aOutputs["chunks"])
@@ -112,6 +152,9 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	chunksVal, _ := chunksOut["value"].([]any)
 	if len(chunksVal) != 1 {
 		t.Fatalf("components.a outputs.chunks.value len=%d want 1", len(chunksVal))
+	}
+	if chunksOut["type"] != "<class 'list'>" {
+		t.Errorf("components.a outputs.chunks.type=%#v want <class 'list'>", chunksOut["type"])
 	}
 	chunk0, _ := chunksVal[0].(map[string]any)
 	if chunk0["text"] != "hello" {
@@ -134,17 +177,29 @@ func TestBuildDebugResultDSL(t *testing.T) {
 	if bOutputs["output_format"].(map[string]any)["value"] != "text" {
 		t.Errorf("components.b output_format=%#v want {value:\"text\"}", bOutputs["output_format"])
 	}
+	if tt := bOutputs["text"].(map[string]any)["type"]; tt != "<class 'str'>" {
+		t.Errorf("components.b outputs.text.type=%#v want <class 'str'>", tt)
+	}
 	// static params.field_name carried (used by front-end chunk text key).
 	if fn, _ := bParams["field_name"].(string); fn != "content" {
 		t.Errorf("components.b params.field_name=%v want content", fn)
 	}
 
-	// --- component "begin": no recognized output -> outputs empty, safe ---
+	// --- component "begin": no recognized payload format, so no output_format
+	// is invented — but the TrackElapsed bookkeeping keys must still surface
+	// as outputs so the timeline shows its elapsed time. ---
 	begin, _ := components["begin"].(map[string]any)
 	beginObj, _ := begin["obj"].(map[string]any)
 	beginParams, _ := beginObj["params"].(map[string]any)
-	if _, exists := beginParams["outputs"]; exists {
-		t.Errorf("begin has no run output, outputs must be absent: %#v", beginParams)
+	beginOutputs, ok := beginParams["outputs"].(map[string]any)
+	if !ok {
+		t.Fatalf("begin (bookkeeping-only output) must still carry params.outputs: %#v", beginParams)
+	}
+	if _, exists := beginOutputs["output_format"]; exists {
+		t.Errorf("begin has no payload format, output_format must be absent: %#v", beginOutputs)
+	}
+	if et, _ := beginOutputs["_elapsed_time"].(map[string]any); et["value"] != 0.01 {
+		t.Errorf("begin outputs._elapsed_time=%#v want {value:0.01}", beginOutputs["_elapsed_time"])
 	}
 
 	// --- graph.nodes copied through ---
@@ -204,7 +259,7 @@ func TestBuildDebugResultDSL_NestedState(t *testing.T) {
 					map[string]any{"text": "hello", "vector": []float64{0.1, 0.2}},
 				},
 			},
-			"b": {"text": "plain"},
+			"b": {"text": "plain", "_elapsed_time": 0.02},
 		},
 	}
 
@@ -250,6 +305,10 @@ func TestBuildDebugResultDSL_NestedState(t *testing.T) {
 	}
 	if of, _ := bOutputs["output_format"].(map[string]any); of["value"] != "text" {
 		t.Errorf("components.b output_format=%#v want {value:\"text\"}", bOutputs["output_format"])
+	}
+	// Bookkeeping keys must resolve through the SAME nested-state lookup.
+	if et, _ := bOutputs["_elapsed_time"].(map[string]any); et["value"] != 0.02 {
+		t.Errorf("components.b outputs._elapsed_time=%#v want {value:0.02}", bOutputs["_elapsed_time"])
 	}
 }
 
@@ -424,6 +483,38 @@ func TestDetectFormat_Priority(t *testing.T) {
 			got, _ := detectFormat(c.in)
 			if got != c.want {
 				t.Errorf("detectFormat(%#v) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// TestPythonTypeName locks the type-string mapping: scalar kinds map to their
+// Python scalar classes, and every sequence/mapping reports list/dict
+// regardless of the Go element type — typed containers like []int must not
+// leak Go type syntax into the persisted log.
+func TestPythonTypeName(t *testing.T) {
+	cases := []struct {
+		name string
+		in   any
+		want string
+	}{
+		{"nil", nil, "<class 'NoneType'>"},
+		{"bool", true, "<class 'bool'>"},
+		{"string", "s", "<class 'str'>"},
+		{"int", 3, "<class 'int'>"},
+		{"int64", int64(3), "<class 'int'>"},
+		{"float64", 0.5, "<class 'float'>"},
+		{"[]any", []any{1, "a"}, "<class 'list'>"},
+		{"[]map[string]any", []map[string]any{{"k": 1}}, "<class 'list'>"},
+		{"typed slice []int", []int{1, 2}, "<class 'list'>"},
+		{"array", [2]int{1, 2}, "<class 'list'>"},
+		{"map[string]any", map[string]any{"k": 1}, "<class 'dict'>"},
+		{"typed map", map[string]string{"k": "v"}, "<class 'dict'>"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := pythonTypeName(c.in); got != c.want {
+				t.Errorf("pythonTypeName(%#v) = %q, want %q", c.in, got, c.want)
 			}
 		})
 	}

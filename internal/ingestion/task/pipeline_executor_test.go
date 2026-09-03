@@ -2,7 +2,9 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
 	"sync"
 	"testing"
@@ -886,5 +888,130 @@ func TestMergeCompiledVariants(t *testing.T) {
 	want := []string{"structure", "tree", "wiki"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("merged variants = %v, want %v", got, want)
+	}
+}
+
+// TestRunPipelineWithDSL_LogDSLCarriesOutputs locks the dataset-parse
+// "View result" contract: the DSL runPipelineWithDSL returns for the pipeline
+// operation log (Execute passes it straight to recordPipelineLog) must carry
+// each component's runtime outputs under obj.params.outputs, mirroring
+// Python's dsl=str(pipeline)
+// (rag/svr/task_executor_refactor/dataflow_service.py). Before this, the log
+// stored the raw static DSL, so the dataset log "View result" page rendered
+// blank panels and "0s" elapsed times even though the chunks were indexed —
+// the front-end renders those panels exclusively from
+// dsl.components[<id>].obj.params.outputs
+// (web/src/pages/dataflow-result/parser.tsx, hooks.ts).
+//
+// It drives the REAL runPipelineWithDSL with stub ingestion components, so
+// the log DSL is built from an actual run output (nested under
+// output["state"][<id>] by finalizeResult), not a hand-built one, and the
+// enveloped {"dsl": {...}} input is unwrapped to the front-end shape
+// (top-level components).
+func TestRunPipelineWithDSL_LogDSLCarriesOutputs(t *testing.T) {
+	const (
+		compC = "logdsl.RealStubChunks"
+		compD = "logdsl.RealStubD"
+	)
+	runtime.MustRegister(compC, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return traceChunkComponent{}, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(compD, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return traceStubComponent{}, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	dsl := `{"dsl":{"components":{
+		"begin":{"obj":{"component_name":"Begin","params":{}},"downstream":["c"]},
+		"c":{"obj":{"component_name":"` + compC + `","params":{"setups":{"pdf":{"parse_method":"general"}}}},"upstream":["begin"],"downstream":["d"]},
+		"d":{"obj":{"component_name":"` + compD + `","params":{}},"upstream":["c"]}
+	},"path":["begin","c","d"],"graph":{"nodes":[{"id":"begin","data":{"name":"开始"}},{"id":"c","data":{"name":"解析"}},{"id":"d","data":{"name":"分词"}}]}}}`
+
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-logdsl", 0)
+	_, logDSL, err := svc.runPipelineWithDSL(t.Context(), dsl)
+	if err != nil {
+		t.Fatalf("runPipelineWithDSL: %v", err)
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(logDSL), &doc); err != nil {
+		t.Fatalf("log DSL is not valid JSON: %v body=%s", err, logDSL)
+	}
+	// The enveloped canvas DSL must come back unwrapped: the front-end reads
+	// dsl.components at the top level.
+	components, ok := doc["components"].(map[string]any)
+	if !ok {
+		t.Fatalf("log DSL must carry top-level components (unwrapped canvas envelope): %s", logDSL)
+	}
+
+	// Chunk-emitting component: params.outputs.chunks + output_format.
+	cParams, ok := components["c"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("log DSL components.c.obj.params missing: %s", logDSL)
+	}
+	cOutputs, ok := cParams["outputs"].(map[string]any)
+	if !ok {
+		t.Fatalf("REGRESSION: log DSL has no params.outputs for chunk component c; "+
+			"the dataset log 'View result' page would render a blank panel. params=%#v", cParams)
+	}
+	if of, _ := cOutputs["output_format"].(map[string]any); of["value"] != "chunks" {
+		t.Errorf("c output_format=%#v want {value:\"chunks\"}", cOutputs["output_format"])
+	}
+	chunksVal, _ := cOutputs["chunks"].(map[string]any)["value"].([]any)
+	if len(chunksVal) != 1 {
+		t.Fatalf("c chunks.value len=%d want 1", len(chunksVal))
+	}
+	// TrackElapsed bookkeeping must ride along so the timeline shows real
+	// per-node elapsed times (hooks.ts reads outputs._elapsed_time.value).
+	et, ok := cOutputs["_elapsed_time"].(map[string]any)
+	if !ok {
+		t.Fatalf("c outputs._elapsed_time missing: %#v", cOutputs)
+	}
+	if _, ok := et["value"].(float64); !ok {
+		t.Errorf("c outputs._elapsed_time.value=%#v want float64", et["value"])
+	}
+	// TrackElapsed stamps _created_time as an RFC3339Nano wall-clock string;
+	// the outputs wrapper carries it verbatim with its type string.
+	if cct, ok := cOutputs["_created_time"].(map[string]any); ok {
+		cs, ok := cct["value"].(string)
+		if !ok || cs == "" {
+			t.Errorf("c outputs._created_time.value=%#v want non-empty string", cct["value"])
+		} else if _, err := time.Parse(time.RFC3339Nano, cs); err != nil {
+			t.Errorf("c outputs._created_time.value %q is not RFC3339Nano: %v", cs, err)
+		}
+		if cct["type"] != "<class 'str'>" {
+			t.Errorf("c outputs._created_time.type=%#v want <class 'str'>", cct["type"])
+		}
+	} else {
+		t.Errorf("c outputs._created_time missing: %#v", cOutputs)
+	}
+	// Non-components top-level keys are carried verbatim; this fixture's DSL
+	// declares "path" — the round-tripped log must keep it for rerun-flow
+	// consumers.
+	if p, _ := doc["path"].([]any); len(p) != 3 || p[0] != "begin" || p[2] != "d" {
+		t.Errorf("log DSL path=%#v want [begin c d]", doc["path"])
+	}
+}
+
+// TestBuildLogDSL_FallbackToStaticDSL pins the guarantee that log recording
+// never fails a run: when the run-result DSL cannot be built or cannot be
+// marshaled, buildLogDSL must return the static dsl unchanged rather than a
+// half-written payload.
+func TestBuildLogDSL_FallbackToStaticDSL(t *testing.T) {
+	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-logdsl-fallback", 0)
+
+	// Marshal failure: NaN is a valid float64 payload, so the run-result DSL
+	// builds fine but json.Marshal rejects it.
+	dsl := `{"dsl":{"components":{"a":{"obj":{"component_name":"X","params":{}}}}}}`
+	if got := svc.buildLogDSL(dsl, map[string]any{
+		"a": map[string]any{"text": math.NaN()},
+	}); got != dsl {
+		t.Errorf("marshal failure: log DSL must fall back to the static dsl\n got: %s\nwant: %s", got, dsl)
+	}
+
+	// Build failure: a DSL without a components map cannot produce a
+	// run-result DSL at all.
+	badDSL := `{"dsl":{"path":["a"]}}`
+	if got := svc.buildLogDSL(badDSL, nil); got != badDSL {
+		t.Errorf("build failure: log DSL must fall back to the static dsl\n got: %s\nwant: %s", got, badDSL)
 	}
 }
