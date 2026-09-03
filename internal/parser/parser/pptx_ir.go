@@ -45,10 +45,11 @@ func buildPPTXJSONSections(irJSON string) ([]map[string]any, error) {
 		for _, el := range sec.Elements {
 			// Each element's full text (paragraphs, table cells, list
 			// items, etc.) becomes a single value; the shared IR walker
-			// already inserts newlines between rows/items, so internal
-			// newlines are preserved as-is. Only the element-level split
-			// is collapsed (one element → one value or none if empty).
-			if text := strings.TrimSpace(docxElementText(el)); text != "" {
+			// already inserts newlines between rows/items (cellSep "\n"),
+			// so internal newlines are preserved as-is. Only the
+			// element-level split is collapsed (one element → one value or
+			// none if empty).
+			if text := strings.TrimSpace(docxElementText(el, "\n")); text != "" {
 				lines = append(lines, text)
 			}
 		}
