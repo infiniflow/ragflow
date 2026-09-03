@@ -73,6 +73,50 @@ class _StateDocStore:
                 del self.rows[row_id]
 
 
+class _KbScopedDocStore(_StateDocStore):
+    """Mirrors ES/OpenSearch search: every query is pinned to ``kb_id``."""
+
+    def search(self, fields, highlights, condition, matches, order, offset, limit, index, dataset_ids):
+        scoped = dict(condition or {})
+        if dataset_ids:
+            scoped["kb_id"] = list(dataset_ids)
+        rows = []
+        for row in self.rows.values():
+            if scoped.get("kb_id") and row.get("kb_id") not in scoped["kb_id"]:
+                continue
+            if any(scoped.get(key) and row.get(key) not in scoped[key] for key in ("id", "compile_kwd", "type_kwd")):
+                continue
+            if scoped.get("doc_id") and row.get("doc_id") not in scoped["doc_id"]:
+                continue
+            if scoped.get("source_chunk_ids") and not set(row.get("source_chunk_ids") or []) & set(scoped["source_chunk_ids"]):
+                continue
+            if scoped.get("chunk_hash_kwd") and row.get("chunk_hash_kwd") not in scoped["chunk_hash_kwd"]:
+                continue
+            rows.append(row)
+        return rows[offset : offset + limit]
+
+
+# Reporter chunk ids from infiniflow/ragflow#19092. MAP logged extracted=9 then
+# immediately listed these same ids as missing_chunks.
+_REPORTER_CHUNK_IDS = [
+    "0b9beb4afcaf7717",
+    "2382483997f1183d",
+    "31c63a0feb6b8207",
+    "39feff69089a3d59",
+    "5467040776c88761",
+    "60ffd6504434bae2",
+    "87b76b7a1ebb3dc5",
+    "d96c875495acd52c",
+    "e96857ea65980dec",
+]
+
+
+def _missing_after_resolve(wiki, tenant_id, kb_id, state, target_chunk_ids):
+    resolved = asyncio.run(wiki._wiki_load_map_extracts_for_state(tenant_id, kb_id, state, target_chunk_ids))
+    resolved_ids = {str((extract.get("_map_version") or {}).get("chunk_id") or "") for extract in resolved}
+    return set(target_chunk_ids) - resolved_ids
+
+
 def test_active_map_state_switches_marker_after_new_generation(monkeypatch):
     wiki = _load_wiki_module(monkeypatch)
     marker_id = wiki._stable_row_id(wiki.WIKI_MAP_STATE_META_COMPILE_KWD, "kb-1")
@@ -165,3 +209,71 @@ def test_failed_state_write_keeps_previous_generation_active(monkeypatch):
         asyncio.run(wiki._wiki_commit_active_map_state("tenant-1", "kb-1", {"chunk-new": {"doc_id": "doc-new", "hash": "hash-new"}}))
 
     assert asyncio.run(wiki._wiki_load_active_map_state("tenant-1", "kb-1")) == {"chunk-old": {"doc_id": "doc-old", "hash": "hash-old"}}
+
+
+def test_persisted_map_extracts_are_not_missing_from_completeness_check(monkeypatch):
+    """Successful MAP persist must satisfy the incremental completeness check.
+
+    Issue 19092: wiki_map logged requested=9 cache_hits=0 extracted=9, then the
+    follow-up cache resolution reported the same 9 source-chunk ids as missing.
+    The rows were written, but searches always filter by kb_id and the resume
+    doc omitted that field, so every extracted chunk looked absent.
+    """
+    wiki = _load_wiki_module(monkeypatch)
+    store = _KbScopedDocStore()
+    monkeypatch.setattr(sys.modules["common.settings"], "docStoreConn", store)
+
+    doc_id = "6dc70e7aa5a411f19c0109b856bc47ac"
+    kb_id = "ff675c34a5a111f19c0109b856bc47ac"
+    per_chunk = {chunk_id: wiki._wiki_empty_extract() for chunk_id in _REPORTER_CHUNK_IDS}
+    hashes = {chunk_id: f"hash-{chunk_id}" for chunk_id in _REPORTER_CHUNK_IDS}
+    state = {chunk_id: {"doc_id": doc_id, "hash": hashes[chunk_id]} for chunk_id in _REPORTER_CHUNK_IDS}
+    target = set(_REPORTER_CHUNK_IDS)
+
+    asyncio.run(wiki._wiki_persist_extracts(per_chunk, doc_id, "tenant-1", kb_id, chunk_hashes=hashes))
+
+    written = [row for batch in store.insert_calls for row in batch]
+    assert {row["kb_id"] for row in written} == {kb_id}
+    assert {row["source_chunk_ids"][0] for row in written} == target
+    assert _missing_after_resolve(wiki, "tenant-1", kb_id, state, target) == set()
+
+
+def test_completeness_check_still_reports_chunks_that_were_never_persisted(monkeypatch):
+    wiki = _load_wiki_module(monkeypatch)
+    store = _KbScopedDocStore()
+    monkeypatch.setattr(sys.modules["common.settings"], "docStoreConn", store)
+
+    doc_id = "doc-1"
+    kb_id = "kb-1"
+    persisted = _REPORTER_CHUNK_IDS[:-1]
+    missing_id = _REPORTER_CHUNK_IDS[-1]
+    hashes = {chunk_id: f"hash-{chunk_id}" for chunk_id in _REPORTER_CHUNK_IDS}
+    state = {chunk_id: {"doc_id": doc_id, "hash": hashes[chunk_id]} for chunk_id in _REPORTER_CHUNK_IDS}
+    per_chunk = {chunk_id: wiki._wiki_empty_extract() for chunk_id in persisted}
+
+    asyncio.run(wiki._wiki_persist_extracts(per_chunk, doc_id, "tenant-1", kb_id, chunk_hashes=hashes))
+
+    assert _missing_after_resolve(wiki, "tenant-1", kb_id, state, set(_REPORTER_CHUNK_IDS)) == {missing_id}
+
+
+def test_map_extract_without_kb_id_is_invisible_to_completeness_check(monkeypatch):
+    """Rows that omit kb_id must not count as resolved under a kb-scoped search."""
+    wiki = _load_wiki_module(monkeypatch)
+    store = _KbScopedDocStore()
+    monkeypatch.setattr(sys.modules["common.settings"], "docStoreConn", store)
+
+    chunk_id = _REPORTER_CHUNK_IDS[0]
+    doc_id = "doc-1"
+    kb_id = "kb-1"
+    chunk_hash = "hash-1"
+    store.rows["orphan"] = {
+        "id": "orphan",
+        "doc_id": doc_id,
+        "compile_kwd": wiki.WIKI_MAP_COMPILE_KWD,
+        "source_chunk_ids": [chunk_id],
+        "chunk_hash_kwd": chunk_hash,
+        "content_with_weight": json.dumps({"entities": []}),
+    }
+    state = {chunk_id: {"doc_id": doc_id, "hash": chunk_hash}}
+
+    assert _missing_after_resolve(wiki, "tenant-1", kb_id, state, {chunk_id}) == {chunk_id}

@@ -692,6 +692,7 @@ def _wiki_build_resume_doc(
     doc_id: str,
     per_chunk_extract: dict,
     chunk_hash: str = "",
+    kb_id: str = "",
 ) -> dict:
     """Build the non-searchable ES doc that records a per-chunk MAP extract.
 
@@ -702,6 +703,10 @@ def _wiki_build_resume_doc(
     ``chunk_hash`` fingerprints the chunk's content as of extraction time.
     The incremental MAP re-run reads it back and compares against the
     current chunk's hash to decide whether to re-extract.
+
+    ``kb_id`` is stamped on the row because every doc-store search in this
+    pipeline injects a ``kb_id`` filter. A MAP row without it is invisible
+    to cache resolution even after a successful bulk write.
     """
     content_with_weight = json.dumps(per_chunk_extract, ensure_ascii=False)
     doc_id_str = str(doc_id)
@@ -710,6 +715,7 @@ def _wiki_build_resume_doc(
         # identity lets A -> B -> A reuse the first extraction instead of
         # replacing it when B is compiled.
         "id": _stable_row_id(WIKI_MAP_COMPILE_KWD, doc_id_str, chunk_id, chunk_hash),
+        "kb_id": str(kb_id),
         "doc_id": doc_id_str,
         "compile_kwd": WIKI_MAP_COMPILE_KWD,
         "source_chunk_ids": [chunk_id],
@@ -813,6 +819,7 @@ async def _wiki_persist_extracts(
             doc_id,
             extract,
             chunk_hash=hashes.get(chunk_id, ""),
+            kb_id=kb_id,
         )
         for chunk_id, extract in per_chunk.items()
         if chunk_id
