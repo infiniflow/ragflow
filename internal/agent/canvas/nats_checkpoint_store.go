@@ -59,11 +59,14 @@ const agentCheckpointsBucket = "agent_checkpoints"
 const defaultCheckpointMaxValueSize = 16 * 1024 * 1024
 
 // defaultCheckpointBucketMaxBytes is the total size cap of the
-// agent_checkpoints bucket (10 GiB). When the bucket reaches this cap,
-// JetStream evicts the oldest entries (DiscardOld, the KV default) to make
-// room, and any write that still cannot be accommodated returns an error
-// which NatsCheckPointStore.Set swallows so ingestion parsing continues (see
-// Set). 10 GiB is ample for many concurrent pipeline checkpoints.
+// agent_checkpoints bucket (10 GiB). The NATS KV bucket is hardwired to
+// DiscardNew (the underlying JetStream stream sets Discard: DiscardNew at
+// jetstream/kv.go; KeyValueConfig exposes no field to change it): when
+// MaxBytes is reached the stream rejects the new Put with an error rather than
+// evicting old entries. NatsCheckPointStore.Set swallows that error (logs +
+// returns nil) so ingestion parsing continues; stale checkpoints are reclaimed
+// by the TTL, not by overflow eviction. 10 GiB is ample for many concurrent
+// pipeline checkpoints.
 const defaultCheckpointBucketMaxBytes = 10 * 1024 * 1024 * 1024
 
 // NatsCheckPointStore is a NATS JetStream KV-backed eino CheckPointStore /
@@ -77,9 +80,10 @@ type NatsCheckPointStore struct {
 // agent_checkpoints bucket on the given engine and returns a ready store. The
 // TTL is applied at bucket level (NATS KV has no per-key expiry), so it is set
 // here rather than on every Set. The bucket is capped at
-// defaultCheckpointBucketMaxBytes; on overflow JetStream evicts the oldest
-// entries (DiscardOld) and NatsCheckPointStore.Set swallows any remaining
-// write error so ingestion parsing is never blocked by a full bucket.
+// defaultCheckpointBucketMaxBytes; when the cap is hit the KV stream rejects the
+// new Put (DiscardNew, hardwired) with an error, which NatsCheckPointStore.Set
+// swallows (logs + returns nil) so ingestion parsing is never blocked by a full
+// bucket.
 func NewNatsCheckPointStore(ctx context.Context, engine *nats.NatsEngine, ttl time.Duration) (*NatsCheckPointStore, error) {
 	kv, err := engine.EnsureKVBucket(ctx, nats.BucketConfig{
 		Name:         agentCheckpointsBucket,
@@ -114,11 +118,13 @@ func (s *NatsCheckPointStore) Get(ctx context.Context, id string) ([]byte, bool,
 //
 // The checkpoint is a resumability aid, not a correctness requirement. If the
 // write fails — most importantly when the bucket is full (MaxBytes reached) —
-// we must not abort the ingestion run. We log the error and return nil so the
-// pipeline parsing continues without a checkpoint for this run (the bucket's
-// DiscardOld policy evicts the oldest entries on overflow; any write that
-// still cannot be accommodated is dropped here). This is the "discardNew, log,
-// keep parsing" contract from the checkpoint migration design.
+// we must not abort the ingestion run. The NATS KV bucket is hardwired to
+// DiscardNew (the underlying stream rejects the new Put with an error when
+// MaxBytes is hit; KeyValueConfig has no field to flip this), so an overflow
+// surfaces as a Put error rather than a silent drop. We catch that error here,
+// log it via common.Error, and return nil so the pipeline parsing continues
+// without a checkpoint for this run. This is the "discardNew, log error, keep
+// parsing" contract from the checkpoint migration design.
 func (s *NatsCheckPointStore) Set(ctx context.Context, id string, payload []byte) error {
 	if s == nil || s.kv == nil {
 		return errors.New("checkpoint store: nats kv not initialized")
