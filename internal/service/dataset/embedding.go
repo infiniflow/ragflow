@@ -270,7 +270,7 @@ func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 			Position:          chunkMap["position_int"],
 			Top:               chunkMap["top_int"],
 			ContentWithWeight: datasetString(chunkMap["content_with_weight"]),
-			QuestionKeywords:  datasetStringSlice(chunkMap["question_keywords"]),
+			QuestionKeywords:  datasetStringSlice(chunkMap["question_kwd"]),
 		})
 	}
 
