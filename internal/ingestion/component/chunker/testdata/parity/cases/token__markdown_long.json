@@ -1,0 +1,16 @@
+{
+ "id": "token__markdown_long",
+ "component": "TokenChunker",
+ "notes": "markdown counterpart of token__text_long_paragraph.",
+ "param": {
+  "chunk_token_size": 32,
+  "delimiters": [
+   "\n"
+  ]
+ },
+ "input": {
+  "name": "t",
+  "output_format": "markdown",
+  "markdown": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word "
+ }
+}

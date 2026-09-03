@@ -17,55 +17,112 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
 
 	"go.uber.org/zap"
 )
 
-// searchbotLLM is the interface for LLM calls used by SearchbotHandler.
-type searchbotLLM interface {
-	Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error)
+// SearchBotAskRequest is the request body for POST /api/v1/searchbots/ask.
+type SearchBotAskRequest struct {
+	Question string             `json:"question" binding:"required"`
+	KbIDs    common.StringSlice `json:"kb_ids" binding:"required"`
+	SearchID string             `json:"search_id,omitempty"`
 }
 
-// SearchbotRealLLM wraps ModelProviderService to implement searchbotLLM.
-type SearchbotRealLLM struct {
-	Svc *service.ModelProviderService
+// SearchBotMindMapRequest is the request body for POST /api/v1/searchbots/mindmap.
+type SearchBotMindMapRequest struct {
+	Question string             `json:"question" binding:"required"`
+	KbIDs    common.StringSlice `json:"kb_ids" binding:"required"`
+	SearchID string             `json:"search_id,omitempty"`
 }
 
-func (r *SearchbotRealLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
-	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
-	if err != nil {
-		return nil, err
+// SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval_test.
+type SearchBotRetrievalTestRequest struct {
+	KbIDs                  common.StringSlice     `json:"kb_ids" binding:"required"`
+	Question               string                 `json:"question" binding:"required"`
+	Page                   *int                   `json:"page,omitempty"`
+	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
+	DocIDs                 []string               `json:"doc_ids,omitempty"`
+	UseKG                  *bool                  `json:"use_kg,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"`
+	CrossLanguages         []string               `json:"cross_languages,omitempty"`
+	SearchID               *string                `json:"search_id,omitempty"`
+	MetaDataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
+	TenantRerankID         *string                `json:"tenant_rerank_id,omitempty"`
+	RerankID               *string                `json:"rerank_id,omitempty"`
+	Keyword                *bool                  `json:"keyword,omitempty"`
+	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+	// TODO: wire highlight to nlp Retrieval when engine supports highlightFields
+	// Python: bot_api.py → retrieval(highlight=req.get("highlight"))
+	//        → search.py highlightFields → ES get_highlight()
+	// Issue: https://github.com/infiniflow/ragflow/issues/15712
+	// Highlight           *bool                   `json:"highlight,omitempty"`
+}
+
+// UnmarshalJSON accepts both kb_id (Python API) and kb_ids (Go compatibility).
+func (r *SearchBotRetrievalTestRequest) UnmarshalJSON(data []byte) error {
+	type Alias SearchBotRetrievalTestRequest
+	aux := struct {
+		*Alias
+		KbID common.StringSlice `json:"kb_id"`
+	}{
+		Alias: (*Alias)(r),
 	}
-	return chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, config)
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(r.KbIDs) == 0 && len(aux.KbID) > 0 {
+		r.KbIDs = aux.KbID
+	}
+	return nil
 }
 
-// SearchbotRequest is the request body for POST /api/v1/searchbots/related_questions.
-type SearchbotRequest struct {
-	Question string `json:"question" binding:"required"`
+// SearchBotRequest is the request body for POST /api/v1/searchbots/related_questions.
+// Question is validated manually below so the error message follows the
+// established API contract instead of the Gin validator format.
+type SearchBotRequest struct {
+	Question string `json:"question"`
 	SearchID string `json:"search_id,omitempty"`
 }
 
-// SearchbotHandler handles POST /api/v1/searchbots/related_questions.
-type SearchbotHandler struct {
+// SearchBotHandler handles searchbot endpoints:
+//
+//	POST /api/v1/searchbots/related_questions
+//	POST /api/v1/searchbots/retrieval_test
+//	POST /api/v1/searchbots/ask
+//	POST /api/v1/searchbots/mindmap
+type SearchBotHandler struct {
 	searchSvc *service.SearchService
 	tenantSvc *service.TenantService
-	llm       searchbotLLM
+	llm       *service.ModelProviderService
+	streamLLM *service.ModelProviderService
+	chunkSvc  service.Retriever
+	askSvc    *service.AskService
+	sseWriter SSEWriter
 }
 
-// NewSearchbotHandler creates a new SearchbotHandler.
-func NewSearchbotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm searchbotLLM) *SearchbotHandler {
-	return &SearchbotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm}
+// NewSearchBotHandler creates a new SearchBotHandler.
+func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm *service.ModelProviderService, chunkSvc service.Retriever) *SearchBotHandler {
+	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc, sseWriter: &ginSSEWriter{}}
 }
+
+// SetStreamLLM sets the streaming LLM for the Ask endpoint.
+func (h *SearchBotHandler) SetStreamLLM(llm *service.ModelProviderService) { h.streamLLM = llm }
+
+// SetAskService sets the AskService used by the Ask endpoint.
+func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = svc }
 
 // Handle generates related search questions based on a user query.
 // @Summary Generate Related Questions
@@ -73,39 +130,131 @@ func NewSearchbotHandler(searchSvc *service.SearchService, tenantSvc *service.Te
 // @Tags searchbots
 // @Accept json
 // @Produce json
-// @Param request body SearchbotRequest true "Request body"
+// @Param request body SearchBotRequest true "Request body"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/related_questions [post]
-func (h *SearchbotHandler) Handle(c *gin.Context) {
+func (h *SearchBotHandler) Handle(c *gin.Context) {
+	ctx := c.Request.Context()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
 
-	var req SearchbotRequest
+	var req SearchBotRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"data":    nil,
-			"message": "question is required",
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
 	if req.Question == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeArgumentError,
-			"data":    nil,
-			"message": "question is required",
-		})
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
 		return
 	}
 
-	// Resolve model ID from search config if provided
+	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
+	if err != nil {
+		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "LLM call failed")
+		return
+	}
+
+	common.SuccessWithData(c, questions, "success")
+}
+
+// RetrievalTest performs a retrieval test against specified knowledge bases.
+// @Summary Retrieval Test
+// @Description Test document retrieval across knowledge bases with optional filters, reranking, and KG search.
+// @Tags searchBots
+// @Param request body SearchBotRetrievalTestRequest true "Retrieval test parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/searchbots/retrieval_test [post]
+func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, errorCode, nil, errorMessage)
+		return
+	}
+
+	var req SearchBotRetrievalTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+
+	// Filter out empty strings from KbIDs before validation.
+	filtered := make(common.StringSlice, 0, len(req.KbIDs))
+	for _, id := range req.KbIDs {
+		if strings.TrimSpace(id) != "" {
+			filtered = append(filtered, id)
+		}
+	}
+	req.KbIDs = filtered
+
+	if len(req.KbIDs) == 0 || req.Question == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_id and question are required")
+		return
+	}
+
+	applyRetrievalDefaults(&req)
+
+	if req.TopK != nil && *req.TopK <= 0 {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be greater than 0")
+		return
+	}
+
+	svcReq := toRetrievalServiceRequest(&req)
+	ctx := c.Request.Context()
+	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq, user.ID)
+	if err != nil {
+		common.Warn("search bot retrieval test failed", zap.String("error", err.Error()))
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "retrieval test failed")
+		return
+	}
+
+	common.SuccessWithData(c, result, "success")
+}
+
+// Ask performs a retrieval-augmented Q&A with streaming SSE response.
+// @Summary Ask with Knowledge Bases
+// @Description Retrieves chunks, builds prompt, and streams LLM answer with citations via SSE.
+// @Tags searchbots
+// @Accept json
+// @Produce text/event-stream
+// @Param request body SearchBotAskRequest true "Ask parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/searchbots/ask [post]
+func (h *SearchBotHandler) Ask(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	var req SearchBotAskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+
+	// Filter empty kb_ids.
+	filtered := make(common.StringSlice, 0, len(req.KbIDs))
+	for _, id := range req.KbIDs {
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		filtered = append(filtered, id)
+	}
+	if len(filtered) == 0 || strings.TrimSpace(req.Question) == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
+		return
+	}
+
+	// Resolve chat model ID.
 	modelID := ""
 	if req.SearchID != "" && h.searchSvc != nil {
-		if detail, err := h.searchSvc.GetDetail(req.SearchID); err == nil {
+		ctx := c.Request.Context()
+		if detail, err := h.searchSvc.GetDetail(ctx, req.SearchID); err == nil {
 			if sc, ok := detail["search_config"].(map[string]interface{}); ok {
 				if cid, ok := sc["chat_id"].(string); ok && cid != "" {
 					modelID = cid
@@ -114,116 +263,303 @@ func (h *SearchbotHandler) Handle(c *gin.Context) {
 		}
 	}
 	if modelID == "" && h.tenantSvc != nil {
-		defaultModel, err := h.tenantSvc.GetDefaultModelName(user.ID, entity.ModelTypeChat)
+		ctx := c.Request.Context()
+		defaultModel, err := h.tenantSvc.GetDefaultModelName(ctx, user.ID, entity.ModelTypeChat)
 		if err == nil && defaultModel != "" {
 			modelID = defaultModel
 		}
 	}
-
-	messages := []modelModule.Message{
-		{Role: "system", Content: relatedQuestionPrompt},
-		{Role: "user", Content: "Keywords: " + req.Question + "\nRelated search terms:\n"},
-	}
-
-	genConf := &modelModule.ChatConfig{
-		Temperature: ptrFloat64(0.9),
-	}
-
-	response, err := h.llm.Chat(user.ID, modelID, messages, genConf)
-	if err != nil {
-		common.Warn("searchbot LLM call failed", zap.String("error", err.Error()))
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeOperatingError,
-			"data":    nil,
-			"message": "LLM call failed",
-		})
+	if modelID == "" {
+		h.sseWriter.Write(c, sseError("chat model not configured"))
 		return
 	}
 
-	var questions []string
-	if response != nil && response.Answer != nil {
-		questions = parseRelatedQuestions(*response.Answer)
+	disableWriteDeadlineForSSE(c)
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+
+	if h.askSvc == nil {
+		h.sseWriter.Write(c, sseError("ask service not configured"))
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    questions,
-		"message": "",
+	if h.streamLLM == nil {
+		h.sseWriter.Write(c, sseError("streaming LLM not configured"))
+		return
+	}
+	ctx := c.Request.Context()
+	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: user.ID, ModelID: modelID}
+	for delta := range h.askSvc.Stream(ctx, adapter, user.ID, req.Question, filtered) {
+		switch delta.Kind {
+		case service.AskDeltaAnswer:
+			h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
+		case service.AskDeltaMarker:
+			h.sseWriter.Write(c, sseMarker(delta.Value))
+		case service.AskDeltaError:
+			h.sseWriter.Write(c, sseError(delta.Value))
+		case service.AskDeltaFinal:
+			h.sseWriter.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+		}
+	}
+	c.Stream(func(w io.Writer) bool {
+		fmt.Fprintf(w, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
+		return false
 	})
+
+}
+
+// MindMap generates a query mind map for a shared search bot.
+// @Summary Generate Mind Map
+// @Description Retrieves related chunks and asks the configured chat model to summarize them into a mind map.
+// @Tags searchbots
+// @Accept json
+// @Produce json
+// @Param request body SearchBotMindMapRequest true "Mind map parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/searchbots/mindmap [post]
+func (h *SearchBotHandler) MindMap(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	var req SearchBotMindMapRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+
+	filtered := make(common.StringSlice, 0, len(req.KbIDs))
+	for _, id := range req.KbIDs {
+		if strings.TrimSpace(id) != "" {
+			filtered = append(filtered, id)
+		}
+	}
+	if len(filtered) == 0 || strings.TrimSpace(req.Question) == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
+		return
+	}
+	if h.chunkSvc == nil {
+		jsonInternalError(c, fmt.Errorf("chunk service not configured"))
+		return
+	}
+	if h.llm == nil {
+		jsonInternalError(c, fmt.Errorf("LLM not configured"))
+		return
+	}
+
+	searchConfig := map[string]interface{}{}
+	if req.SearchID != "" {
+		if h.searchSvc == nil {
+			jsonInternalError(c, fmt.Errorf("search service not configured"))
+			return
+		}
+		ctx := c.Request.Context()
+		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
+		if err != nil {
+			jsonInternalError(c, err)
+			return
+		}
+		searchConfig = searchConfigFromDetail(detail)
+	}
+
+	ctx := c.Request.Context()
+	mindMap, err := runMindMap(ctx, mindMapRunConfig{
+		Question:      req.Question,
+		KbIDs:         filtered,
+		SearchID:      req.SearchID,
+		SearchConfig:  searchConfig,
+		AuthUserID:    user.ID,
+		ModelTenantID: user.ID,
+		ChunkSvc:      h.chunkSvc,
+		LLM:           h.llm,
+		TenantSvc:     h.tenantSvc,
+	})
+	if err != nil {
+		common.Warn("searchbot mindmap failed", zap.String("error", err.Error()))
+		jsonInternalError(c, err)
+		return
+	}
+	common.SuccessWithData(c, mindMap, "success")
+}
+
+// SearchBotDetail returns the public share-page bootstrap payload for a
+// search app. The route is mounted under apiNoAuth but still requires a beta
+// token, matching Python's AUTH_BETA flow.
+func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
+	ctx := c.Request.Context()
+	searchID := strings.TrimSpace(c.Query("search_id"))
+	if searchID == "" {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "search_id is required")
+		return
+	}
+
+	userSvc := service.NewUserService()
+	user, code, err := userSvc.GetUserByBetaAPIToken(ctx, c.GetHeader("Authorization"))
+	if err != nil {
+		common.ResponseWithCodeData(c, code, nil, "Authentication error: API key is invalid!")
+		return
+	}
+	detail, err := h.searchSvc.GetSearchShareDetail(ctx, user.ID, searchID)
+	if err != nil {
+		switch err.Error() {
+		case "has no permission for this operation":
+			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "Has no permission for this operation.")
+		case "can't find this Search App!":
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Search App!")
+		default:
+			jsonInternalError(c, err)
+		}
+		return
+	}
+
+	common.SuccessWithData(c, detail, "success")
+}
+
+// ---- SSE helpers ----
+
+type ssePayload struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data"`
+}
+
+// askSSEData is the inner data object for SSE events, matching Python bot_api.py.
+// The Reference field is always present (non-nil) so the frontend can safely
+// access .chunks or .reduce without a null guard.
+type askSSEData struct {
+	Answer       string      `json:"answer"`
+	Reference    interface{} `json:"reference"`
+	Final        bool        `json:"final"`
+	StartToThink bool        `json:"start_to_think,omitempty"`
+	EndToThink   bool        `json:"end_to_think,omitempty"`
+}
+
+func sseAnswer(answer string, refs interface{}, final bool) string {
+	if refs == nil {
+		refs = map[string]interface{}{}
+	}
+	payload := ssePayload{
+		Code:    0,
+		Message: "",
+		Data: askSSEData{
+			Answer:    answer,
+			Reference: refs,
+			Final:     final,
+		},
+	}
+	b, _ := json.Marshal(payload)
+	return fmt.Sprintf("data: %s\n\n", string(b))
+}
+
+// sseError matches Python bot_api.py error format:
+//
+//	{"code": 500, "message": "...", "data": {"answer": "**ERROR**: ...", "reference": []}}
+func sseError(message string) string {
+	payload := ssePayload{
+		Code:    int(common.CodeServerError),
+		Message: message,
+		Data: askSSEData{
+			Answer:    "**ERROR**: " + message,
+			Reference: []map[string]interface{}{},
+		},
+	}
+	b, _ := json.Marshal(payload)
+	return fmt.Sprintf("data: %s\n\n", string(b))
+}
+
+// sseMarker matches Python dialog_service.py think-tag marker format:
+//
+//	{"answer": "", "reference": {}, "final": false, "start_to_think": true}
+func sseMarker(marker string) string {
+	d := askSSEData{
+		Answer:    "",
+		Reference: map[string]interface{}{},
+	}
+	if marker == "<think>" {
+		d.StartToThink = true
+	} else {
+		d.EndToThink = true
+	}
+	payload := ssePayload{Code: 0, Message: "", Data: d}
+	b, _ := json.Marshal(payload)
+	return fmt.Sprintf("data: %s\n\n", string(b))
+}
+
+type SSEWriter interface {
+	Write(c *gin.Context, data string)
+}
+
+// ginSSEWriter is the production SSEWriter backed by gin.Context.Stream.
+type ginSSEWriter struct{}
+
+func (w *ginSSEWriter) Write(c *gin.Context, data string) {
+	c.Stream(func(w io.Writer) bool {
+		fmt.Fprint(w, data)
+		return false
+	})
+}
+
+// toRetrievalServiceRequest maps the handler DTO to the service DTO.
+// The two structs differ in KbIDs (StringSlice → []string) and
+// MetaDataFilter (→ Filter) to maintain Python API compatibility.
+func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.RetrievalTestRequest {
+	return &service.RetrievalTestRequest{
+		Datasets:               common.StringSlice(h.KbIDs),
+		Question:               h.Question,
+		Page:                   h.Page,
+		Size:                   h.Size,
+		RerankCandidatesCount:  h.RerankCandidatesCount,
+		DocIDs:                 h.DocIDs,
+		UseKG:                  h.UseKG,
+		TopK:                   h.TopK,
+		CrossLanguages:         h.CrossLanguages,
+		SearchID:               h.SearchID,
+		Filter:                 h.MetaDataFilter,
+		TenantRerankID:         h.TenantRerankID,
+		RerankID:               h.RerankID,
+		Keyword:                h.Keyword,
+		SimilarityThreshold:    h.SimilarityThreshold,
+		VectorSimilarityWeight: h.VectorSimilarityWeight,
+	}
 }
 
 // ptrFloat64 returns a pointer to a float64 value.
 func ptrFloat64(v float64) *float64 { return &v }
 
-// parseRelatedQuestions extracts numbered list items from an LLM response.
-// Lines matching "^N. " are extracted and the number prefix is stripped.
-func parseRelatedQuestions(text string) []string {
-	lineRe := regexp.MustCompile(`^\d+\.\s`)
-	var result []string
-	for _, line := range strings.Split(text, "\n") {
-		if lineRe.MatchString(line) {
-			result = append(result, lineRe.ReplaceAllString(line, ""))
-		}
+func intPtr(v int) *int           { return &v }
+func floatPtr(v float64) *float64 { return &v }
+
+// applyRetrievalDefaults fills in default values for optional fields,
+// matching Python bot_api.py retrieval_test endpoint.
+func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
+	if req.Page == nil {
+		v := 1
+		req.Page = &v
 	}
-	if result == nil {
-		return []string{}
+	if req.Size == nil {
+		v := 30
+		req.Size = &v
 	}
-	return result
+	if req.TopK == nil {
+		v := 1024
+		req.TopK = &v
+	}
+	if req.UseKG == nil {
+		v := false
+		req.UseKG = &v
+	}
+	if req.Keyword == nil {
+		v := false
+		req.Keyword = &v
+	}
+	if req.SimilarityThreshold == nil {
+		v := 0.0
+		req.SimilarityThreshold = &v
+	}
+	if req.VectorSimilarityWeight == nil {
+		v := 0.3
+		req.VectorSimilarityWeight = &v
+	}
 }
-
-// relatedQuestionPrompt is the system prompt for generating related search questions.
-// Matches Python rag/prompts/related_question.md
-const relatedQuestionPrompt = `# Role
-You are an AI language model assistant tasked with generating **5-10 related questions** based on a user's original query.
-These questions should help **expand the search query scope** and **improve search relevance**.
-
----
-
-## Instructions
-
-**Input:**
-You are provided with a **user's question**.
-
-**Output:**
-Generate **5-10 alternative questions** that are **related** to the original user question.
-These alternatives should help retrieve a **broader range of relevant documents** from a vector database.
-
-**Context:**
-Focus on **rephrasing** the original question in different ways, ensuring the alternative questions are **diverse but still connected** to the topic of the original query.
-Do **not** create overly obscure, irrelevant, or unrelated questions.
-
-**Fallback:**
-If you cannot generate any relevant alternatives, do **not** return any questions.
-
----
-
-## Guidance
-
-1. Each alternative should be **unique** but still **relevant** to the original query.
-2. Keep the phrasing **clear, concise, and easy to understand**.
-3. Avoid overly technical jargon or specialized terms **unless directly relevant**.
-4. Ensure that each question **broadens** the search angle, **not narrows** it.
-
----
-
-## Example
-
-**Original Question:**
-> What are the benefits of electric vehicles?
-
-**Alternative Questions:**
-1. How do electric vehicles impact the environment?
-2. What are the advantages of owning an electric car?
-3. What is the cost-effectiveness of electric vehicles?
-4. How do electric vehicles compare to traditional cars in terms of fuel efficiency?
-5. What are the environmental benefits of switching to electric cars?
-6. How do electric vehicles help reduce carbon emissions?
-7. Why are electric vehicles becoming more popular?
-8. What are the long-term savings of using electric vehicles?
-9. How do electric vehicles contribute to sustainability?
-10. What are the key benefits of electric vehicles for consumers?
-
----
-
-## Reason
-Rephrasing the original query into multiple alternative questions helps the user explore **different aspects** of their search topic, improving the **quality of search results**.
-These questions guide the search engine to provide a **more comprehensive set** of relevant documents.`

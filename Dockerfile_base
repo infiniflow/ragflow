@@ -1,0 +1,196 @@
+# base stage
+FROM ubuntu:24.04 AS base
+USER root
+SHELL ["/bin/bash", "-c"]
+
+ARG NEED_MIRROR=1
+# if set NEED_MIRROR=1, need to set  docker build --build-arg GITEE_TOKEN="xxxxx"  when build base image, otherwise set NEED_MIRROR=0
+ARG GITEE_TOKEN=""
+
+WORKDIR /ragflow
+
+# copy models downloaded via download_deps.py
+RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
+    tar --exclude='.*' -cf - \
+        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
+        /huggingface.co/InfiniFlow/deepdoc \
+        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
+
+# https://github.com/chrismattmann/tika-python
+# This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+    cp -r /deps/nltk_data /root/ && \
+    cp /deps/tika-server-standard-3.3.0.jar /deps/tika-server-standard-3.3.0.jar.md5 /ragflow/ && \
+    cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+
+ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.3.0.jar"
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Setup apt
+# Python package and implicit dependencies:
+# opencv-python: libglib2.0-0 libglx-mesa0 libgl1
+# python-pptx:   default-jdk                              tika-server-standard-3.3.0.jar
+# selenium:      libatk-bridge2.0-0                       chrome-linux64-121-0-6167-85
+# Building C extensions: libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        # CI runners may inject a proxy whose TLS certificate is not trusted inside
+        # the fresh Ubuntu base image yet. Keep the Ubuntu mirror on HTTP here so
+        # the mirror switch remains usable before the full CA store is available.
+        sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
+        sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
+    fi; \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    chmod 1777 /tmp && \
+    apt update && \
+    apt --no-install-recommends install -y ca-certificates \
+    build-essential  libicu-dev libpython3-dev libgbm-dev rsync \
+    libglib2.0-0 libglx-mesa0 libgl1 pkg-config libgdiplus default-jdk libatk-bridge2.0-0 \
+    libgtk-4-1 libnss3 xdg-utils libjemalloc-dev gnupg unzip curl wget git vim less \
+    ghostscript pandoc lmodern texlive texlive-latex-extra texlive-xetex texlive-lang-chinese \
+    fonts-freefont-ttf fonts-noto-cjk postgresql-client
+
+# Download resource from GitHub to /usr/share/infinity
+RUN --mount=type=secret,id=gitee_token \
+    mkdir -p /usr/share/infinity/resource && \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+
+        if [ -n "$GITEE_TOKEN" ]; then \
+            git clone --depth 1 --single-branch "https://oauth2:${GITEE_TOKEN}@gitee.com/infiniflow/resource" /tmp/resource; \
+        else \
+            git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource; \
+        fi; \
+    else \
+        git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource; \
+    fi && \
+    cp -r /tmp/resource/* /usr/share/infinity/resource && \
+    rm -rf /tmp/resource
+
+# Install uv
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        mkdir -p /etc/uv && \
+        echo 'python-install-mirror = "https://registry.npmmirror.com/-/binary/python-build-standalone/"' > /etc/uv/uv.toml && \
+        echo '[[index]]' >> /etc/uv/uv.toml && \
+        echo 'url = "https://mirrors.aliyun.com/pypi/simple"' >> /etc/uv/uv.toml && \
+        echo 'default = true' >> /etc/uv/uv.toml; \
+    fi; \
+    arch="$(uname -m)"; \
+    if [ "$arch" = "x86_64" ]; then uv_arch="x86_64"; else uv_arch="aarch64"; fi; \
+    tar xzf "/deps/uv-${uv_arch}-unknown-linux-gnu.tar.gz" \
+    && cp "uv-${uv_arch}-unknown-linux-gnu/"* /usr/local/bin/ \
+    && rm -rf "uv-${uv_arch}-unknown-linux-gnu" \
+    && uv python install 3.13
+
+ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+    UV_HTTP_TIMEOUT=200 \
+    UV_HTTP_RETRIES=3
+ENV PATH=/root/.local/bin:$PATH
+
+# Install profiling tools (SYS_PTRACE capability is added via K8s securityContext)
+RUN uv tool install austin-dist && uv tool install austin-tui && uv tool install py-spy
+
+# Install Node.js 22.x (Ubuntu 24.04's Node.js is too old)
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get purge -y nodejs npm && \
+    apt autoremove -y && \
+    apt-get update && \
+    apt-get install -y nodejs && \
+    node -v && npm -v
+
+# stagehand-server-v3 (Node.js SEA binary used by Browser component
+# in local mode).
+#
+# The `v3.21.0` value below is the `stagehand-go/v3` Go module
+# version pinned in `go.mod`. It is used here only to compute the
+# `go_<ver>/` subdirectory that `local.go:cacheDir()` will look in
+# for the binary at runtime — that subdirectory name is keyed by
+# the Go module's own `internal.PackageVersion`, NOT by the server
+# binary's release tag.
+#
+# The server binary itself is fetched separately by `download_deps.py`
+# from the browserbase/stagehand GitHub releases. The two are
+# LOOSELY MATCHED — both stay on the v3.x line and remain protocol-
+# compatible, but the version numbers do NOT track each other (Go
+# SDK is at v3.21.0, server binary is at v3.7.2 today). On every
+# go.mod bump, refresh the server binary pin in `download_deps.py`
+# to the current latest server release; no version correspondence
+# is required to maintain.
+#
+# Drift on the Go SDK pin (this ARG vs go.mod) forces a fresh
+# GitHub download at process boot — a hard failure in air-gapped
+# deployments. CI cross-checks the two values.
+#
+# The binary is pre-fetched by `download_deps.py` and shipped via
+# the ragflow_deps image, then written directly to the stagehand-go
+# cache path that `local.go:cacheDir()` constructs at runtime —
+# `/root/.cache/stagehand/lib/go_<ver>/stagehand-server-v3-<arch>`.
+ARG STAGEHAND_GO_VERSION=v3.21.0
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+    set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64) stagehand_arch=x64 ;; \
+        aarch64|arm64) stagehand_arch=arm64 ;; \
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    stagehand_version="${STAGEHAND_GO_VERSION#v}"; \
+    stagehand_cache_dir="/root/.cache/stagehand/lib/go_${stagehand_version}"; \
+    mkdir -p "${stagehand_cache_dir}"; \
+    cp "/deps/stagehand-server-v3-linux-${stagehand_arch}" \
+       "${stagehand_cache_dir}/stagehand-server-v3-linux-${stagehand_arch}"; \
+    chmod +x "${stagehand_cache_dir}/stagehand-server-v3-linux-${stagehand_arch}"
+
+# Add msssql ODBC driver
+# macOS ARM64 environment, install msodbcsql18.
+# general x86_64 environment, install msodbcsql17.
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
+    apt update && \
+    arch="$(uname -m)"; \
+    if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then \
+        # ARM64 (macOS/Apple Silicon or Linux aarch64) \
+        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql18; \
+    else \
+        # x86_64 or others \
+        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17; \
+    fi || \
+    { echo "Failed to install ODBC driver"; exit 1; }
+
+
+
+# Install Chrome and ChromeDriver for selenium (from ragflow_deps image)
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
+    unzip /chrome-linux64.zip && \
+    mv chrome-linux64 /opt/chrome && \
+    ln -s /opt/chrome/chrome /usr/local/bin/
+
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chromedriver-linux64-121-0-6167-85,target=/chromedriver-linux64.zip \
+    unzip -j /chromedriver-linux64.zip chromedriver-linux64/chromedriver && \
+    mv chromedriver /usr/local/bin/ && \
+    rm -f /usr/bin/google-chrome
+
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+    if [ "$(uname -m)" = "x86_64" ]; then \
+        dpkg -i /deps/libssl1.1_1.1.1f-1ubuntu2_amd64.deb; \
+    elif [ "$(uname -m)" = "aarch64" ]; then \
+        dpkg -i /deps/libssl1.1_1.1.1f-1ubuntu2_arm64.deb; \
+    fi
+
+# Configure pip to use mirrors if needed
+RUN mkdir -p /root/.config/pip \
+    && if [ "$NEED_MIRROR" == "1" ]; then \
+    echo "[global]" > /root/.config/pip/pip.conf \
+    && echo "index-url = https://mirrors.aliyun.com/pypi/simple/" >> /root/.config/pip/pip.conf \
+    && echo "trusted-host = mirrors.aliyun.com" >> /root/.config/pip/pip.conf; \
+    fi
+
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt-get update --fix-missing && \
+    apt-get install -y build-essential libpython3-dev libicu-dev libgbm-dev && \
+    rm -rf /var/lib/apt/lists/*
+

@@ -30,6 +30,14 @@ class TenantModelProviderService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_by_tenant_id_and_provider_id(cls, tenant_id, provider_id):
+        return cls.model.get_or_none(
+            cls.model.tenant_id == tenant_id,
+            cls.model.id == provider_id,
+        )
+
+    @classmethod
+    @DB.connection_context()
     def get_by_tenant_id(cls, tenant_id):
         return list(cls.model.select().where(cls.model.tenant_id == tenant_id))
 
@@ -41,10 +49,14 @@ class TenantModelProviderService(CommonService):
     @classmethod
     @DB.connection_context()
     def delete_by_tenant_id_and_provider_name(cls, tenant_id, provider_name):
-        return cls.model.delete().where(
-            cls.model.tenant_id == tenant_id,
-            cls.model.provider_name == provider_name,
-        ).execute()
+        return (
+            cls.model.delete()
+            .where(
+                cls.model.tenant_id == tenant_id,
+                cls.model.provider_name == provider_name,
+            )
+            .execute()
+        )
 
     @classmethod
     @DB.connection_context()

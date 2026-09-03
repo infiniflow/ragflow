@@ -24,7 +24,7 @@ export function useValues() {
 
   const { initializeAgentToolValues } = useAgentToolInitialValues();
 
-  const values = useMemo(() => {
+  const values = useMemo<Record<string, any>>(() => {
     const agentNode = findUpstreamNodeById(clickedNodeId);
     const tool = getAgentToolById(clickedToolId, agentNode!);
     const formData = tool?.params;

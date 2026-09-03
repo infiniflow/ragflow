@@ -2,6 +2,7 @@ import { TimelineNode } from '@/components/originui/timeline';
 import SvgIcon from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
+import DOMPurify from 'dompurify';
 import { CircleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 interface RerunButtonProps {
@@ -11,7 +12,7 @@ interface RerunButtonProps {
   loading?: boolean;
 }
 const RerunButton = (props: RerunButtonProps) => {
-  const { className, step, onRerun, loading } = props;
+  const { step, onRerun, loading } = props;
   const { t } = useTranslation();
   const clickFunc = () => {
     console.log('click rerun button');
@@ -22,9 +23,11 @@ const RerunButton = (props: RerunButtonProps) => {
       children: (
         <div
           dangerouslySetInnerHTML={{
-            __html: t('dataflowParser.confirmRerunModalContent', {
-              step: step?.title,
-            }),
+            __html: DOMPurify.sanitize(
+              t('dataflowParser.confirmRerunModalContent', {
+                step: step?.title,
+              }),
+            ),
           }}
         ></div>
       ),

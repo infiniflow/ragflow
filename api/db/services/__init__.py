@@ -42,7 +42,7 @@ def _split_name_counter(filename: str) -> tuple[str, int | None]:
     return filename, None
 
 
-def duplicate_name(query_func, name_field: str="name", **kwargs) -> str:
+def duplicate_name(query_func, name_field: str = "name", **kwargs) -> str:
     """
     Generates a unique filename by appending/incrementing a counter when duplicates exist.
 

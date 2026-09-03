@@ -1,4 +1,4 @@
-import { crossLanguageOptions } from '@/components/cross-language-form-field';
+import { useCrossLanguageOptions } from '@/components/cross-language-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import {
   SelectWithSearch,
@@ -8,6 +8,7 @@ import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Switch } from '@/components/ui/switch';
 import { upperCase, upperFirst } from 'lodash';
 import { useTranslation } from 'react-i18next';
+import { useOwnerTenantId } from '../../context';
 import {
   FileType,
   OutputFormatMap,
@@ -61,12 +62,14 @@ export function ParserMethodFormField({
   optionsWithoutLLM,
 }: CommonProps & { optionsWithoutLLM?: { value: string; label: string }[] }) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
   return (
     <LayoutRecognizeFormField
       name={buildFieldNameWithPrefix(`parse_method`, prefix)}
       horizontal={false}
       optionsWithoutLLM={optionsWithoutLLM}
       label={t('flow.parserMethod')}
+      ownerTenantId={ownerTenantId}
     ></LayoutRecognizeFormField>
   );
 }
@@ -164,6 +167,7 @@ export function RemoveHeaderFooterFormField({ prefix }: CommonProps) {
 
 export function LanguageFormField({ prefix }: CommonProps) {
   const { t } = useTranslation();
+  const crossLanguageOptions = useCrossLanguageOptions();
 
   return (
     <RAGFlowFormItem

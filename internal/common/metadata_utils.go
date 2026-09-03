@@ -17,6 +17,7 @@
 package common
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -49,6 +50,7 @@ var operatorMapping = map[string]string{
 	">=":     "≥",
 	"<=":     "≤",
 	"!=":     "≠",
+	"==":     "=",
 }
 
 // ParseAndConvert converts raw API conditions into MetaFilterInput.
@@ -76,9 +78,15 @@ func ParseAndConvert(metadataCondition map[string]interface{}) *MetaFilterInput 
 		}
 		name, _ := cond["name"].(string)
 		if name == "" {
+			name, _ = cond["key"].(string) // OpenAI API metadata_condition uses "key"
+		}
+		if name == "" {
 			continue
 		}
 		op, _ := cond["comparison_operator"].(string)
+		if op == "" {
+			op, _ = cond["operator"].(string) // OpenAI API uses "operator"
+		}
 		op = convertOperator(op)
 		conditions = append(conditions, MetaCondition{
 			Operator: op,
@@ -97,13 +105,17 @@ func ParseAndConvert(metadataCondition map[string]interface{}) *MetaFilterInput 
 	}
 }
 
-// convertOperator translates Python-style operator to internal symbol.
+// convertOperator translates operator aliases to their canonical form.
+
 func convertOperator(op string) string {
 	if mapped, exists := operatorMapping[op]; exists {
 		return mapped
 	}
 	return op
 }
+
+// NormalizeOperator is the exported equivalent of convertOperator.
+func NormalizeOperator(op string) string { return convertOperator(op) }
 
 // MetaFilter applies filter conditions against metadata and returns matching doc IDs.
 // Python equivalent: common/metadata_utils.py::meta_filter()
@@ -167,10 +179,65 @@ func MetaFilter(metas MetaData, input *MetaFilterInput) []string {
 }
 
 // filterOut returns matching doc IDs for a single (value → matchedDocs) map and operator.
+// For "in" and "not in", it delegates to filterSet for O(n+m) hash-map-based filtering;
+// all other operators use matchValue for per-element predicate evaluation.
 func filterOut(v2docs MetaValueDocs, operator string, value interface{}) []string {
+	if operator == "in" || operator == "not in" {
+		return filterSet(v2docs, operator, value)
+	}
 	var ids []string
 	for input, docids := range v2docs {
 		if matchValue(input, operator, value) {
+			ids = append(ids, docids...)
+		}
+	}
+	return ids
+}
+
+// filterSet handles "in" and "not in" operators using O(1) hash map lookups.
+//
+// Instead of the O(n×m) linear scan that matchValue performs for these operators
+// (n = distinct metadata values, m = filter list size), filterSet builds a lookup
+// map from the filter value list once (O(m)) then tests each metadata entry in
+// O(1) time (O(n)), yielding O(n+m) overall.
+//
+// Case sensitivity follows the same contract as matchValue:
+//   - "in":      case-sensitive  (exact match via toString(item) == input)
+//   - "not in":  case-insensitive (strings.ToLower on both sides)
+//
+// When value is not a []interface{} (should not happen in normal call paths),
+// filterSet returns nil — no metadata values match "in", and for "not in" it
+// defensively returns nil as well (rather than returning all entries, which could
+// silently bypass a misconfigured filter).
+func filterSet(v2docs MetaValueDocs, operator string, value interface{}) []string {
+	list, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+
+	if operator == "not in" {
+		// Build case-insensitive exclusion set.
+		lookup := make(map[string]bool, len(list))
+		for _, item := range list {
+			lookup[strings.ToLower(toString(item))] = true
+		}
+		var ids []string
+		for input, docids := range v2docs {
+			if !lookup[strings.ToLower(input)] {
+				ids = append(ids, docids...)
+			}
+		}
+		return ids
+	}
+
+	// "in": build case-sensitive inclusion set.
+	lookup := make(map[string]bool, len(list))
+	for _, item := range list {
+		lookup[toString(item)] = true
+	}
+	var ids []string
+	for input, docids := range v2docs {
+		if lookup[input] {
 			ids = append(ids, docids...)
 		}
 	}
@@ -190,31 +257,18 @@ func matchValue(input string, operator string, value interface{}) bool {
 
 	switch operator {
 	case "contains":
-		return strings.Contains(input, valStr)
+		return strings.Contains(strings.ToLower(input), strings.ToLower(valStr))
 	case "not contains":
-		return !strings.Contains(input, valStr)
+		return !strings.Contains(strings.ToLower(input), strings.ToLower(valStr))
 	case "start with":
 		return strings.HasPrefix(strings.ToLower(input), strings.ToLower(valStr))
 	case "end with":
 		return strings.HasSuffix(strings.ToLower(input), strings.ToLower(valStr))
-	case "in":
-		if list, ok := value.([]interface{}); ok {
-			for _, item := range list {
-				if toString(item) == input {
-					return true
-				}
-			}
-		}
-		return false
-	case "not in":
-		if list, ok := value.([]interface{}); ok {
-			for _, item := range list {
-				if toString(item) == input {
-					return false
-				}
-			}
-		}
-		return true
+
+		// "in" and "not in" are intentionally omitted from matchValue.
+		// filterOut (line 177) intercepts these operators and delegates
+		// them to filterSet for O(n+m) hash-map-based filtering, so they
+		// never reach this function through normal call paths.
 	}
 
 	// Comparison operators: =, ≠, >, <, ≥, ≤
@@ -227,7 +281,7 @@ func compareValues(a, b, operator string) bool {
 	// Non-date values should not be compared against date filters (matching Python behavior).
 	if isDate(b) {
 		if !isDate(a) {
-			return false
+			return operator == "≠"
 		}
 		return compareString(a, b, operator)
 	}
@@ -316,4 +370,137 @@ func toString(v interface{}) string {
 	default:
 		return ""
 	}
+}
+
+// MetadataFieldDef describes one auto-metadata field, mirroring the
+// {key, type, description, enum} shape stored in parser_config.metadata /
+// built_in_metadata and the Python metadata_utils.py field contract.
+type MetadataFieldDef struct {
+	Key         string   `json:"key"`
+	Type        string   `json:"type,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Enum        []string `json:"enum,omitempty"`
+}
+
+// Turn2JSONSchema converts a metadata field list into a JSON-Schema object,
+// mirroring Python common/metadata_utils.py::turn2jsonschema /
+// metadata_schema. The result is rendered into the auto-metadata extraction
+// prompt (rag/prompts/meta_data.md equivalent) so the LLM knows the exact
+// keys, descriptions and allowed enum values to extract.
+func Turn2JSONSchema(fields []MetadataFieldDef) map[string]any {
+	properties := make(map[string]any, len(fields))
+	for _, f := range fields {
+		if strings.TrimSpace(f.Key) == "" {
+			continue
+		}
+		prop := map[string]any{}
+		if f.Description != "" {
+			prop["description"] = f.Description
+		}
+		if len(f.Enum) > 0 {
+			prop["enum"] = f.Enum
+			prop["type"] = "string"
+		} else if f.Type != "" {
+			prop["type"] = f.Type
+		}
+		properties[f.Key] = prop
+	}
+	if len(properties) == 0 {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"additionalProperties": false,
+	}
+}
+
+// combinedValueDelim splits a single combined metadata value into its parts.
+// Mirrors Python doc_metadata_service.py _split_combined_values regex
+// r"[、,，;；|]+" (Chinese comma 、, ASCII comma ,, full-width comma ，,
+// semicolon ;, full-width semicolon ；, pipe |).
+var combinedValueDelim = regexp.MustCompile(`[、,，;；|]+`)
+
+// SplitCombinedMetadataValues post-processes a metadata map by splitting
+// combined values written to the doc-metadata index, mirroring Python
+// api/db/services/doc_metadata_service.py:_split_combined_values (applied at
+// both insert_document_metadata:383 and update_document_metadata:468).
+//
+// Only list-typed values are split (each string element is split on the
+// delimiter, trimmed, empties dropped, then flattened and de-duplicated);
+// scalar string values are left untouched, matching the Python implementation.
+// Non-string / non-list values pass through unchanged.
+func SplitCombinedMetadataValues(meta map[string]any) map[string]any {
+	if len(meta) == 0 {
+		return meta
+	}
+	out := make(map[string]any, len(meta))
+	for k, v := range meta {
+		switch val := v.(type) {
+		case []string:
+			out[k] = splitCombinedStringList(val)
+		case []any:
+			strs, allStr := toStringSlice(val)
+			if !allStr {
+				out[k] = v
+				continue
+			}
+			out[k] = splitCombinedStringList(strs)
+		default:
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// splitCombinedStringList splits each element on the combined-value delimiter,
+// trims, drops empties, keeps single elements intact, and de-duplicates.
+func splitCombinedStringList(items []string) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item == "" {
+			continue
+		}
+		parts := combinedValueDelim.Split(strings.TrimSpace(item), -1)
+		got := false
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			out = append(out, p)
+			got = true
+		}
+		if !got {
+			out = append(out, item)
+		}
+	}
+	return dedupeMetaStrings(out)
+}
+
+// toStringSlice converts a []any to []string when every element is a string,
+// reporting allStr=false otherwise.
+func toStringSlice(val []any) ([]string, bool) {
+	strs := make([]string, 0, len(val))
+	for _, e := range val {
+		s, ok := e.(string)
+		if !ok {
+			return nil, false
+		}
+		strs = append(strs, s)
+	}
+	return strs, true
+}
+
+// dedupeMetaStrings removes duplicates while preserving order.
+func dedupeMetaStrings(input []string) []string {
+	seen := make(map[string]struct{}, len(input))
+	out := make([]string, 0, len(input))
+	for _, s := range input {
+		if _, ok := seen[s]; !ok {
+			seen[s] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	return out
 }

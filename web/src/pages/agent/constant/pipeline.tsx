@@ -1,8 +1,8 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
-import {
-  initialLlmBaseValues,
-  DataflowOperator as Operator,
-} from '@/constants/agent';
+import { initialLlmBaseValues, Operator } from '@/constants/agent';
+import { ModelTypeToField } from '@/constants/llm';
+import { pickByBackend } from '@/utils/backend-variant';
+import { cloneDeep } from 'lodash';
 
 export enum FileType {
   PDF = 'pdf',
@@ -30,7 +30,7 @@ export enum SpreadsheetOutputFormat {
 }
 
 export enum ImageOutputFormat {
-  Text = 'text',
+  Json = 'json',
 }
 
 export enum EmailOutputFormat {
@@ -79,19 +79,12 @@ export const OutputFormatMap = {
   [FileType.Audio]: AudioOutputFormat,
 };
 
-export const InitialOutputFormatMap = {
-  [FileType.PDF]: PdfOutputFormat.Json,
-  [FileType.Spreadsheet]: SpreadsheetOutputFormat.Html,
-  [FileType.Image]: ImageOutputFormat.Text,
-  [FileType.Email]: EmailOutputFormat.Text,
-  [FileType.TextMarkdown]: TextMarkdownOutputFormat.Text,
-  [FileType.Code]: TextJsonOutputFormat.Json,
-  [FileType.Html]: TextJsonOutputFormat.Json,
-  [FileType.Doc]: DocxOutputFormat.Json,
-  [FileType.Docx]: DocxOutputFormat.Json,
-  [FileType.PowerPoint]: PptOutputFormat.Json,
-  [FileType.Video]: VideoOutputFormat.Text,
-  [FileType.Audio]: AudioOutputFormat.Text,
+// The video parser defaults to the tenant's VLM model and the audio parser to
+// the ASR model, keyed by the useFetchDefaultModelDictionary fields. A file
+// type without a configured tenant default keeps its empty model id.
+export const FileTypeDefaultModelFieldMap: Partial<Record<FileType, string>> = {
+  [FileType.Video]: ModelTypeToField.vision,
+  [FileType.Audio]: ModelTypeToField.asr,
 };
 
 export enum ContextGeneratorFieldName {
@@ -99,7 +92,6 @@ export enum ContextGeneratorFieldName {
   Keywords = 'keywords',
   Questions = 'questions',
   Metadata = 'metadata',
-  TableOfContents = 'toc',
 }
 
 export const FileId = 'File'; // BeginId
@@ -199,6 +191,7 @@ export const initialParserValues = {
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
       remove_header_footer: false,
+      pages: [{ from: 1, to: 100000 }],
     },
     {
       fileFormat: FileType.Spreadsheet,
@@ -209,7 +202,7 @@ export const initialParserValues = {
     },
     {
       fileFormat: FileType.Image,
-      output_format: ImageOutputFormat.Text,
+      output_format: ImageOutputFormat.Json,
       parse_method: ImageParseMethod.OCR,
       preprocess: PreprocessValue.main_content,
       system_prompt: '',
@@ -257,6 +250,16 @@ export const initialParserValues = {
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
     },
+    {
+      fileFormat: FileType.Video,
+      output_format: VideoOutputFormat.Text,
+      vlm: { llm_id: '' },
+    },
+    {
+      fileFormat: FileType.Audio,
+      output_format: AudioOutputFormat.Text,
+      vlm: { llm_id: '' },
+    },
   ],
 };
 
@@ -264,11 +267,13 @@ export const initialTokenChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
-  delimiter_mode: 'token_size',
+  delimiter_mode: 'delimiter',
   chunk_token_size: 512,
   overlapped_percent: 0,
   delimiters: [{ value: '\n' }],
   image_table_context_window: 0,
+  enable_children: false,
+  children_delimiters: [],
 };
 
 export enum Hierarchy {
@@ -278,7 +283,12 @@ export enum Hierarchy {
   H4 = '4',
   H5 = '5',
 }
-const rules = [
+
+export enum TitleChunkerMethod {
+  Hierarchy = 'hierarchy',
+  Group = 'group',
+}
+export const originalRules = [
   {
     // levels: [
     //   { expression: '^#[^#]' },
@@ -331,34 +341,80 @@ const rules = [
     ],
   },
 ];
+
 export const initialTitleChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
-  method: 'hierarchy',
-  hierarchy: Hierarchy.H3,
+  method: TitleChunkerMethod.Hierarchy,
+  hierarchyHierarchy: Hierarchy.H3,
+  hierarchyGroup: '0',
   include_heading_content: false,
   root_chunk_as_heading: false,
-  rules: rules,
+  chunk_token_cap: 512,
+  hierarchyRules: cloneDeep(originalRules),
+  groupRules: cloneDeep(originalRules),
 };
 
-export const initialGroupValues = {
-  method: 'group',
-  hierarchy: '0',
-  include_heading_content: false,
-  root_chunk_as_heading: false,
-  rules: rules,
-};
-
+// Defaults for the Python backend extractor (legacy flat fields).
 export const initialExtractorValues = {
   ...initialLlmBaseValues,
   field_name: ContextGeneratorFieldName.Summary,
+  auto_tags: 1,
+  tag_file_id: '',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
 };
 
-export const NoDebugOperatorsList = [Operator.Begin];
+// Defaults for the Go backend extractor: the LLM settings plus the nested
+// per-feature groups the Go schema reads (schema.ExtractorParam).
+export const initialGoExtractorValues = {
+  ...initialLlmBaseValues,
+  keywords: {
+    top_n: 0,
+    system_prompt: '',
+  },
+  questions: {
+    top_n: 0,
+    system_prompt: '',
+  },
+  tags: {
+    top_n: 0,
+    tag_file_id: '',
+  },
+  summary: {
+    enabled: false,
+    system_prompt: '',
+  },
+  metadata: {
+    enabled: false,
+    metadata: [],
+    built_in_metadata: [],
+  },
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+};
+
+export function getInitialExtractorValues() {
+  return pickByBackend<
+    typeof initialGoExtractorValues | typeof initialExtractorValues
+  >({
+    go: initialGoExtractorValues,
+    python: initialExtractorValues,
+  });
+}
+
+export const initialCompilationValues = {
+  compilation_template_group_id: '',
+  llm_id: '',
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+};
+
+export const NoDebugOperatorsList = [Operator.File];
 
 export const FileTypeSuffixMap = {
   [FileType.PDF]: ['pdf'],

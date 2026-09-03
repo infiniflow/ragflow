@@ -59,7 +59,7 @@ Auth and bootstrap flags (used when --api-key is not provided)
   --token-name
     Optional API token name for /system/new_token.
   --bootstrap-llm
-    Ensure LLM factory API key is configured via /llm/set_api_key.
+    Ensure LLM factory API key is configured via /providers + /providers/{name}/instances.
   --llm-factory
     LLM factory name for bootstrap.
     Env: RAGFLOW_LLM_FACTORY
@@ -70,7 +70,7 @@ Auth and bootstrap flags (used when --api-key is not provided)
     Optional LLM API base URL.
     Env: RAGFLOW_LLM_API_BASE
   --set-tenant-info
-    Set tenant defaults via /users/me/models.
+    Set tenant defaults via /models/default.
   --tenant-llm-id
     Tenant chat model ID.
     Env: RAGFLOW_TENANT_LLM_ID

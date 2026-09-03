@@ -1,0 +1,16 @@
+{
+ "id": "token__empty_input",
+ "component": "TokenChunker",
+ "param": {
+  "chunk_token_size": 128,
+  "delimiters": [
+   "\n"
+  ]
+ },
+ "input": {
+  "name": "empty.json",
+  "output_format": "json",
+  "json": []
+ },
+ "notes": "Empty json list must yield zero chunks on both sides."
+}
