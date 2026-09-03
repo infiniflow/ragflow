@@ -501,13 +501,17 @@ class _FakeZipResponse:
     headers (Content-Type), and a `.raw` stream that copyfileobj can drain.
     """
 
-    def __init__(self, body: bytes = b"zip-bytes"):
+    def __init__(self, body: bytes = b"zip-bytes", *, status_code: int = 200):
         self._body = body
+        self.status_code = status_code
+        self.ok = 200 <= status_code < 400
+        self.text = ""
         self.headers = {"Content-Type": "application/zip"}
         self.raw = BytesIO(body)
 
     def raise_for_status(self):
-        return None
+        if not self.ok:
+            raise RuntimeError(f"HTTP {self.status_code}")
 
 
 class _FakePostContext:
