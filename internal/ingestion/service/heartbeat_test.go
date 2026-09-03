@@ -102,3 +102,18 @@ func TestHeartbeat_StopBeforeStart(t *testing.T) {
 		t.Fatal("Stop before Start blocked")
 	}
 }
+
+// TestHeartbeat_StopBeforeStartPreventsLaterStart ensures a stopped heartbeat
+// cannot launch a renewal goroutine afterwards.
+func TestHeartbeat_StopBeforeStartPreventsLaterStart(t *testing.T) {
+	handle := &fakeTaskHandle{}
+	hb := NewHeartbeat("task-1", handle, time.Millisecond)
+
+	hb.Stop()
+	hb.Start()
+	time.Sleep(10 * time.Millisecond)
+
+	if got := handle.inProgress.Load(); got != 0 {
+		t.Fatalf("InProgress calls after Stop then Start = %d, want 0", got)
+	}
+}

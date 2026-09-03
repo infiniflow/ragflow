@@ -278,7 +278,9 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 		}
 		vectorDim = len(vector)
 		message[fmt.Sprintf("q_%d_vec", len(vector))] = vector
-		message["id"] = fmt.Sprintf("%s_%v", message["memory_id"], message["message_id"])
+		if id, ok := message["id"].(string); !ok || id == "" {
+			message["id"] = fmt.Sprintf("%s_%v", message["memory_id"], message["message_id"])
+		}
 		message["doc_id"] = message["memory_id"]
 	}
 

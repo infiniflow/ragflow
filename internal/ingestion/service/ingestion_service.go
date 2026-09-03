@@ -47,9 +47,10 @@ import (
 // in-flight message's ack deadline renewed while a worker parses. It MUST stay
 // comfortably below the consumer's ack deadline, which the server normalizes
 // to BackOff[0] = 5s (see NatsEngine.InitConsumer): a pulse slower than the
-// deadline lets the broker redeliver mid-run, and the redelivered copy is
-// ack-skipped by the claim guard. If the worker or process stops, the broker
-// can redeliver the unsettled message after the ack deadline.
+// deadline lets the broker redeliver mid-run. A duplicate delivery renews its
+// lease but remains unsettled until the owning worker reaches a durable
+// outcome. If the worker or process stops, the broker can redeliver the
+// unsettled message after the ack deadline.
 const defaultHeartbeatInterval = 2 * time.Second
 
 type Ingestor struct {
@@ -389,14 +390,14 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, taskMessage.TaskID, payload, handle)
 		// Claim the task before enqueueing so a redelivered copy of the same
 		// memory task (NATS AckWait/BackOff redelivery, or a restart replay) is
-		// Ack-skipped instead of executed again. Memory tasks have no
+		// not executed again while its owner is still running. Memory tasks have no
 		// ingestion_task row / status CAS to dedupe against, so this claim
 		// guards duplicate execution within this ingestor. The claim is released
 		// by executeMemoryTask when the worker finishes.
 		if !e.claimTask(taskMessage.TaskID) {
-			common.Warn(fmt.Sprintf("memory task %s redelivered while worker still processing, ack skip", taskMessage.TaskID))
-			if err := handle.Ack(); err != nil {
-				common.Error(fmt.Sprintf("error ack redelivered memory task %s", taskMessage.TaskID), err)
+			common.Warn(fmt.Sprintf("memory task %s redelivered while worker still processing, renew lease", taskMessage.TaskID))
+			if err := handle.InProgress(); err != nil {
+				common.Error(fmt.Sprintf("renew redelivered memory task %s", taskMessage.TaskID), err)
 			}
 			return
 		}
@@ -404,7 +405,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		// Begin renewing the broker lease before the task can wait in taskChan.
 		// Starting only in executeMemoryTask would leave queued work unprotected
 		// until a worker becomes available: a task waiting past AckWait would be
-		// redelivered, ack-skipped by the claim guard, and lost on process exit.
+		// redelivered before its owner can begin running it.
 		// The stop function rides on the task context so the worker can stop it
 		// before settlement (the lease is owned by the task, not by the map).
 		hb := NewHeartbeat(taskMessage.TaskID, handle, e.heartbeatInterval).WithContext(e.ctx)
@@ -468,13 +469,14 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		return
 	case common.RUNNING:
 		// Guard against MQ redelivery: if another worker in this
-		// process is already processing this task, ack the redelivered
-		// message and skip instead of scheduling it again.
+		// process is already processing this task, renew the redelivered
+		// message's lease and skip instead of scheduling it again. The
+		// owning worker remains the only code path that may Ack/Nack.
 		if !e.claimTask(task.ID) {
-			common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, ack skip (task_id=%s doc_id=%s kb_id=%s)",
+			common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, renew lease (task_id=%s doc_id=%s kb_id=%s)",
 				taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
-			if ackErr := handle.Ack(); ackErr != nil {
-				common.Error(fmt.Sprintf("error ack redelivered task %s", taskMessage.TaskID), ackErr)
+			if err := handle.InProgress(); err != nil {
+				common.Error(fmt.Sprintf("renew redelivered task %s", taskMessage.TaskID), err)
 			}
 			return
 		}
@@ -506,8 +508,8 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 	// first few parse" defect.
 	//
 	// The in-flight claim (set just above) guards against a redelivery racing
-	// the blocked send: a duplicate delivery sees claimTask fail and is
-	// ack-skipped, so a blocking send cannot double-execute a task.
+	// the blocked send: a duplicate delivery sees claimTask fail, renews its
+	// lease, and cannot double-execute a task.
 	select {
 	case e.taskChan <- taskCtx:
 		claimedTaskID = "" // executeTask owns the release now
@@ -576,7 +578,7 @@ func (e *Ingestor) workerLoop(id int32) {
 // the in-process claim. Stopping the heartbeat before the Ack/Nack is required
 // by Heartbeat's contract — no InProgress may be in flight on the same message
 // while it is being settled. The claim is released after settlement so a
-// redelivery that races the settlement is still Ack-skipped; a redelivery
+// redelivery that races the settlement stays owned by this worker; a redelivery
 // after the function returns (e.g. a lost Ack) re-claims and re-runs the task
 // as normal at-least-once delivery.
 //

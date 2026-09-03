@@ -289,10 +289,11 @@ func TestProcessMessage_AlreadyCompletedAcks(t *testing.T) {
 	}
 }
 
-// TestProcessMessage_ClaimFailsAcks: a RUNNING task whose claim fails
-// (redelivery guard) is acked without enqueuing — another worker is already
-// processing it.
-func TestProcessMessage_ClaimFailsAcks(t *testing.T) {
+// TestProcessMessage_ClaimFailsRenewsLease: a RUNNING task whose claim fails
+// is already owned by another worker. The duplicate must not Ack the broker
+// message before that owner reaches a durable outcome; it only renews the
+// delivery lease and stays out of the worker queue.
+func TestProcessMessage_ClaimFailsRenewsLease(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -305,8 +306,11 @@ func TestProcessMessage_ClaimFailsAcks(t *testing.T) {
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
 	ingestor.processMessage(handle)
-	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
-		t.Fatalf("claim-fail: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("claim-fail: expected 0 Ack/0 Nack while owner runs, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if handle.inProgress.Load() != 1 {
+		t.Fatalf("claim-fail: expected duplicate lease renewal, got InProgress=%d", handle.inProgress.Load())
 	}
 	if len(ingestor.taskChan) != 0 {
 		t.Fatal("expected no task enqueued when claim fails")
@@ -500,8 +504,8 @@ func TestProcessMessage_StartRunningErrorNacks(t *testing.T) {
 
 // TestProcessMessage_MemoryTaskHeartbeatsWhileQueued verifies that a claimed
 // memory message renews its broker lease before a worker starts it. Without
-// this, a task waiting in taskChan can exceed AckWait, have its redelivery
-// ack-skipped by the claim guard, and then be lost if this process exits.
+// this, a task waiting in taskChan can exceed AckWait and consume unnecessary
+// broker deliveries before a worker starts it.
 func TestProcessMessage_MemoryTaskHeartbeatsWhileQueued(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
@@ -534,12 +538,12 @@ func TestProcessMessage_MemoryTaskHeartbeatsWhileQueued(t *testing.T) {
 	}
 }
 
-// TestProcessMessage_MemoryTaskRedeliveryAcksSkip verifies the claim guard on
+// TestProcessMessage_MemoryTaskRedeliveryRenewsLease verifies the claim guard on
 // the memory dispatch path: when a memory task is redelivered by the broker
-// while the first copy is still queued/in-flight, the duplicate must be Acked
-// and skipped instead of being enqueued and executed again. A different task
-// id must still be accepted (claim is per-task-id).
-func TestProcessMessage_MemoryTaskRedeliveryAcksSkip(t *testing.T) {
+// while the first copy is still queued/in-flight, the duplicate must renew its
+// lease without Acking it or enqueuing a second worker. A different task id
+// must still be accepted (claim is per-task-id).
+func TestProcessMessage_MemoryTaskRedeliveryRenewsLease(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
 
@@ -562,11 +566,14 @@ func TestProcessMessage_MemoryTaskRedeliveryAcksSkip(t *testing.T) {
 	}
 
 	// Redelivery while the first copy is still queued: claim fails, the
-	// duplicate must be Acked and NOT enqueued.
+	// duplicate must renew its lease and NOT be enqueued.
 	dup := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-redeliver-1", TaskType: common.TaskTypeMemory, Payload: payload}}
 	ingestor.processMessage(dup)
-	if dup.acks.Load() != 1 || dup.nacks.Load() != 0 {
-		t.Fatalf("redelivered copy: expected 1 Ack/0 Nack (ack skip), got acks=%d nacks=%d", dup.acks.Load(), dup.nacks.Load())
+	if dup.acks.Load() != 0 || dup.nacks.Load() != 0 {
+		t.Fatalf("redelivered copy: expected 0 Ack/0 Nack while owner runs, got acks=%d nacks=%d", dup.acks.Load(), dup.nacks.Load())
+	}
+	if dup.inProgress.Load() != 1 {
+		t.Fatalf("redelivered copy: expected 1 lease renewal, got InProgress=%d", dup.inProgress.Load())
 	}
 	if len(ingestor.taskChan) != 1 {
 		t.Fatalf("redelivered copy must not be enqueued, got %d tasks in channel", len(ingestor.taskChan))

@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"ragflow/internal/common"
@@ -42,11 +41,11 @@ type Heartbeat struct {
 	interval time.Duration
 	ctx      context.Context
 
-	startOnce sync.Once
-	stopOnce  sync.Once
-	started   atomic.Bool
-	stopCh    chan struct{}
-	doneCh    chan struct{}
+	mu      sync.Mutex
+	started bool
+	stopped bool
+	stopCh  chan struct{}
+	doneCh  chan struct{}
 }
 
 // NewHeartbeat builds a Heartbeat for the given message handle. A nil handle or
@@ -72,33 +71,43 @@ func (h *Heartbeat) WithContext(ctx context.Context) *Heartbeat {
 	return h
 }
 
-// Start launches the renewal goroutine. It is idempotent: repeated calls are
-// no-ops. With a nil handle or non-positive interval it starts nothing, so the
-// corresponding Stop returns immediately.
+// Start launches the renewal goroutine. It is idempotent: repeated calls and a
+// call after Stop are no-ops. With a nil handle or non-positive interval it
+// starts nothing, so the corresponding Stop returns immediately.
 func (h *Heartbeat) Start() {
 	if h == nil || h.handle == nil || h.interval <= 0 {
 		return
 	}
-	h.startOnce.Do(func() {
-		h.started.Store(true)
-		go h.loop()
-	})
+	h.mu.Lock()
+	if h.started || h.stopped {
+		h.mu.Unlock()
+		return
+	}
+	h.started = true
+	h.mu.Unlock()
+	go h.loop()
 }
 
 // Stop signals the renewal goroutine to exit and BLOCKS until it has, so no
 // InProgress is in flight when it returns. It is idempotent; calling Stop when
-// no goroutine was started (or before Start) returns immediately.
+// no goroutine was started (or before Start) returns immediately and prevents a
+// later Start from launching a renewal goroutine.
 func (h *Heartbeat) Stop() {
 	if h == nil {
 		return
 	}
-	h.stopOnce.Do(func() {
-		if !h.started.Load() {
-			return
+	h.mu.Lock()
+	started := h.started
+	if !h.stopped {
+		h.stopped = true
+		if started {
+			close(h.stopCh)
 		}
-		close(h.stopCh)
+	}
+	h.mu.Unlock()
+	if started {
 		<-h.doneCh
-	})
+	}
 }
 
 func (h *Heartbeat) loop() {
