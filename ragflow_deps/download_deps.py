@@ -86,9 +86,12 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             # ONNX Runtime static archives for the Go in-process (DeepDoc)
             # backend. Statically linked into the server binary (see build.sh:
-            # ONNX_RUNTIME_STATIC_DIR, --whole-archive + --export-dynamic), so
-            # no libonnxruntime.so is needed at runtime — OrtGetApiBase is
-            # resolved via dlopen(self). csukuangfj's static_lib build is
+            # ONNXRUNTIME_STATIC_PREFIX — no --whole-archive, so kernels nothing
+            # references are dropped; only OrtGetApiBase is exported, via
+            # --dynamic-list), so no libonnxruntime.so is needed at runtime —
+            # OrtGetApiBase is resolved via dlopen(NULL) (the process-global
+            # symbol table, not the executable's own path). csukuangfj's
+            # static_lib build is
             # CPU-only and glibc2_28-based, matching ORT_VERSION's C-API line
             # (ABI-compatible with onnxruntime_go) and the onnxruntime the
             # Python goldens were generated with.
@@ -132,9 +135,12 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             # ONNX Runtime static archives for the Go in-process (DeepDoc)
             # backend. Statically linked into the server binary (see build.sh:
-            # ONNX_RUNTIME_STATIC_DIR, --whole-archive + --export-dynamic), so
-            # no libonnxruntime.so is needed at runtime — OrtGetApiBase is
-            # resolved via dlopen(self). csukuangfj's static_lib build is
+            # ONNXRUNTIME_STATIC_PREFIX — no --whole-archive, so kernels nothing
+            # references are dropped; only OrtGetApiBase is exported, via
+            # --dynamic-list), so no libonnxruntime.so is needed at runtime —
+            # OrtGetApiBase is resolved via dlopen(NULL) (the process-global
+            # symbol table, not the executable's own path). csukuangfj's
+            # static_lib build is
             # CPU-only and glibc2_28-based, matching ORT_VERSION's C-API line
             # (ABI-compatible with onnxruntime_go) and the onnxruntime the
             # Python goldens were generated with.

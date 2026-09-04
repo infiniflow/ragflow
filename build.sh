@@ -39,10 +39,11 @@ PDF_OXIDE_VERSION="0.3.73"
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
-# (--whole-archive + --export-dynamic); OrtGetApiBase is then resolved via
-# dlopen(self), so no libonnxruntime.so is needed at runtime. Downloaded by
-# ragflow_deps/download_go_deps.py (and ragflow_deps/download_deps.py) into
-# onnxruntime/static_lib.
+# (--undefined=OrtGetApiBase + --dynamic-list, no --whole-archive); OrtGetApiBase
+# is then resolved via dlopen(NULL) (the process-global symbol table, not the
+# executable's own path), so no libonnxruntime.so is needed at runtime.
+# Downloaded by ragflow_deps/download_go_deps.py (and
+# ragflow_deps/download_deps.py) into onnxruntime/static_lib.
 ONNXRUNTIME_STATIC_PREFIX="${HOME}/ragflow-native-libs/onnxruntime/static_lib"
 
 # Copy a dependency from the system pre-seed directory to the user cache.
@@ -372,19 +373,20 @@ build_go() {
     setup_cgo_env
 
     # The in-process (Go) DeepDoc backend is statically linked against ONNX
-    # Runtime (--whole-archive + -Wl,--export-dynamic, see setup_cgo_env). The
-    # forked onnxruntime_go binding resolves OrtGetApiBase only at RUNTIME via
-    # dlopen(NULL), so a missing ORT archive still lets `go build` SUCCEED and
-    # yields a server binary that FAILS AT STARTUP with a fatal
-    # "no in-process DeepDoc backend serving". That is exactly the breakage
-    # colleagues hit when ORT was not present at build time and setup_cgo_env
-    # silently skipped it. Fail the build HERE instead of deferring the breakage
-    # to runtime: a server binary without ORT is unusable, not a degraded one.
+    # Runtime (--undefined=OrtGetApiBase + -Wl,--dynamic-list, see
+    # setup_cgo_env). The forked onnxruntime_go binding resolves OrtGetApiBase
+    # only at RUNTIME via dlopen(NULL), so a missing ORT archive still lets
+    # `go build` SUCCEED and yields a server binary that FAILS AT STARTUP with a
+    # fatal "no in-process DeepDoc backend serving". That is exactly the
+    # breakage colleagues hit when ORT was not present at build time and
+    # setup_cgo_env silently skipped it. Fail the build HERE instead of
+    # deferring the breakage to runtime: a server binary without ORT is unusable,
+    # not a degraded one.
     if ! printf '%s' "$CGO_LDFLAGS" | grep -q 'libonnxruntime'; then
         echo -e "${RED}Error: ONNX Runtime static libraries are not linked.${NC}" >&2
         echo "  The in-process DeepDoc backend requires libonnxruntime.a to be" >&2
-        echo "  statically linked into ragflow_server (--whole-archive +" >&2
-        echo "  -Wl,--export-dynamic). Without it the binary compiles but dies" >&2
+        echo "  statically linked into ragflow_server (--undefined=OrtGetApiBase +" >&2
+        echo "  -Wl,--dynamic-list). Without it the binary compiles but dies" >&2
         echo "  at startup with a fatal 'no in-process DeepDoc backend serving'." >&2
         echo "  Fetch the static libs with:" >&2
         echo "    uv run python3 ragflow_deps/download_go_deps.py" >&2
@@ -502,25 +504,35 @@ setup_cgo_env() {
 
     # ── onnxruntime (static, resolved via dlopen(NULL)) ────────────────
     # macOS native builds of the in-process DeepDoc backend are not supported:
-    # ONNX Runtime is statically linked with GNU ld flags (--whole-archive /
-    # --export-dynamic) and resolved at runtime via dlopen(NULL); Apple's ld64
-    # does not understand these flags. Build on Linux or cross-compile there.
+    # ONNX Runtime is statically linked with GNU ld flags
+    # (-Wl,--undefined=OrtGetApiBase + -Wl,--dynamic-list) and resolved at
+    # runtime via dlopen(NULL); Apple's ld64 does not understand these flags.
+    # Build on Linux or cross-compile there.
     case "$(uname -s)" in
         Darwin)
             echo "Error: macOS native build of the in-process DeepDoc backend is not supported." >&2
-            echo "  ONNX Runtime is linked with GNU ld flags (--whole-archive / --export-dynamic)" >&2
+            echo "  ONNX Runtime is linked with GNU ld flags (-Wl,--undefined=OrtGetApiBase + -Wl,--dynamic-list)" >&2
             echo "  and resolved via dlopen(NULL); Apple's ld64 does not support them. Build on Linux." >&2
             return 1
             ;;
     esac
     # Statically link libonnxruntime*.a into the binary. The org Go binding
-    # (onnxruntime_go, github.com/infiniflow/onnxruntime_go) resolves
-    # OrtGetApiBase with dlopen(NULL), so the symbols must (a) be pulled in
-    # wholesale with --whole-archive (ORT registers its execution providers
-    # lazily at runtime, beyond what a normal link would keep) and (b) be
-    # exported with --export-dynamic so the process-global symbol table
-    # dlopen finds them. No libonnxruntime.so is required or supported at
-    # runtime; there is no dynamic .so fallback.
+    # (onnxruntime_go, github.com/infiniflow/onnxruntime_go) resolves OrtGetApiBase
+    # with dlopen(NULL) + dlsym(handle, "OrtGetApiBase"), so the ONLY symbol that
+    # must be visible in the process-global table is OrtGetApiBase.
+    #
+    # We therefore do NOT use --whole-archive: that flag force-pulls every .o in
+    # the archive (including unregistered "dead" kernels we never call), which
+    # is why every ORT size-trimming build flag had near-zero effect before.
+    # Instead we link the archives normally and let GNU ld's archive-level GC
+    # drop any kernel/EP object that nothing references. The onnxruntime_go
+    # binding reaches ORT purely through the OrtApi function-pointer table
+    # returned by OrtGetApiBase, and a minimal/reduced-ops build registers only
+    # the operators the deepdoc models actually use, so the reachable closure is
+    # small. --dynamic-list exports just OrtGetApiBase (the only symbol dlopen
+    # needs) and leaves Go's runtime symbols untouched, unlike a "local: *"
+    # version script which breaks PIE absolute relocations. No libonnxruntime.so
+    # is required or supported at runtime; there is no dynamic .so fallback.
     #
     # Seed the static ORT archives from the system pre-bake (/opt, laid down
     # by the CI runner image) into the user cache before the link check
@@ -559,14 +571,28 @@ setup_cgo_env() {
         done < <(find "$ONNXRUNTIME_STATIC_PREFIX" -type f -name '*.a' 2>/dev/null)
 
         if [ -n "$ort_a" ]; then
-            export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,--export-dynamic -Wl,--whole-archive$ort_a -Wl,--no-whole-archive -lstdc++"
+            # Export exactly one symbol (OrtGetApiBase) for the binding's
+            # dlopen(NULL)+dlsym lookup via --dynamic-list (NOT --version-script
+            # with "local: *", which hides Go's runtime type symbols and breaks
+            # the PIE absolute relocations). No --whole-archive, so GNU ld's
+            # archive-level GC drops any ORT kernel/EP object nothing references.
+            local ort_dynamic_list
+            ort_dynamic_list="$(mktemp "${TMPDIR:-/tmp}/ort_dynamic.XXXXXX.txt")"
+            printf '{\n  OrtGetApiBase;\n};\n' > "$ort_dynamic_list"
+            # --undefined=OrtGetApiBase force-pulls the archive member that
+            # defines OrtGetApiBase (the Go binding reaches ORT only via
+            # dlsym("OrtGetApiBase"), so nothing references it at link time and
+            # it would otherwise be GC'd). From there the minimal build's CPU-EP
+            # registration call chain pulls in the operators the models use.
+            export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=$ort_dynamic_list$ort_a -lstdc++"
             echo "  onnxruntime (static) → $ONNXRUNTIME_STATIC_PREFIX"
             # The re2 regex-library collision between onnxruntime.a and
             # librag_tokenizer_c_api.a is fixed at the .a level in build_cpp():
             # the tokenizer's bundled re2 symbols are renamed into a private
             # namespace (ragtokre2_) so the two re2 copies never share a symbol
-            # name. --export-dynamic is required because OrtGetApiBase is
-            # resolved via dlopen(NULL) at runtime (see the block comment above).
+            # name. --dynamic-list (above) exports OrtGetApiBase into the process
+            # dynamic symbol table, which is what the binding's dlopen(NULL)+dlsym
+            # lookup needs at runtime (no --export-dynamic required).
         else
             echo "  onnxruntime static_lib dir has no .a files; the in-process DeepDoc backend cannot link ORT" >&2
         fi

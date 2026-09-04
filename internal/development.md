@@ -62,10 +62,16 @@ uv run python3 ragflow_deps/download_deps.py
 >
 > # Resolve the version-stamped ORT archive path FIRST, in its own unquoted
 > # assignment: the shell does not expand `*` inside the double-quoted
-> # CGO_LDFLAGS below, and `--whole-archive` must stay a separate argument from
-> # the archive path. If this lists more than one match, delete the stale
+> # CGO_LDFLAGS below. If this lists more than one match, delete the stale
 > # version dir — build.sh refuses to link two ORT versions.
 > ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/*/lib/libonnxruntime.a)"
+>
+> # The binding reaches ORT with dlopen(NULL)+dlsym("OrtGetApiBase"), so
+> # OrtGetApiBase is the only symbol that must be visible process-wide. Export
+> # just it — not via a "local: *" version script, which hides Go's runtime type
+> # symbols and breaks PIE absolute relocations. There is deliberately no
+> # --whole-archive, so unreferenced kernels are dropped.
+> printf '{\n  OrtGetApiBase;\n};\n' > /tmp/ort_dynamic.txt
 >
 > export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
 > export CGO_LDFLAGS="\
@@ -74,7 +80,7 @@ uv run python3 ragflow_deps/download_deps.py
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
 >     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
->     -Wl,--export-dynamic -Wl,--whole-archive ${ORT_A} -Wl,--no-whole-archive -lstdc++ \
+>     -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=/tmp/ort_dynamic.txt ${ORT_A} -lstdc++ \
 >     -fuse-ld=lld \
 >     -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 > ```
@@ -82,9 +88,11 @@ uv run python3 ragflow_deps/download_deps.py
 > All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
 >
 > **ONNX Runtime is mandatory for the production binary.** The in-process (Go)
-> DeepDoc backend is statically linked against `libonnxruntime.a` via
-> `--whole-archive -Wl,--export-dynamic`, and `OrtGetApiBase` is resolved at
-> runtime through `dlopen(NULL)`. The org `onnxruntime_go` binding
+> DeepDoc backend is statically linked against `libonnxruntime.a` (no
+> `--whole-archive`; `OrtGetApiBase` is force-pulled with
+> `-Wl,--undefined=OrtGetApiBase` and exported via `--dynamic-list`), and
+> `OrtGetApiBase` is resolved at runtime through `dlopen(NULL)`. The org
+> `onnxruntime_go` binding
 > (github.com/infiniflow/onnxruntime_go, the mirror of yalue/onnxruntime_go) only
 > needs `-ldl` to *compile*, so a binary built **without** ORT links
 > successfully but dies at startup with:
