@@ -26,6 +26,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"golang.org/x/text/encoding"
@@ -123,4 +124,26 @@ func decodeFirstCharsetMatch(data []byte, labels []string) (string, string, bool
 		}
 	}
 	return "", "", false
+}
+
+var xmlEncodingRe = regexp.MustCompile(`(?i)^\s*<\?xml[^>]*\bencoding\s*=\s*["']\s*([^"'\s?]+)`)
+
+// decodeLegacyTextToUTF8 accepts UTF-8 first, then the GB18030 family used by
+// legacy Chinese text files. An XML declaration is authoritative for EPUB
+// XHTML; undecodable input remains an error instead of being reinterpreted as
+// arbitrary binary text.
+func decodeLegacyTextToUTF8(data []byte) (string, string, error) {
+	if utf8Valid(data) {
+		return string(data), "utf-8", nil
+	}
+	if match := xmlEncodingRe.FindSubmatch(data); len(match) == 2 {
+		label := string(match[1])
+		if decoded, err := decodeWithCharset(data, label); err == nil {
+			return decoded, label, nil
+		}
+	}
+	if decoded, err := decodeWithCharset(data, "gb18030"); err == nil {
+		return decoded, "gb18030", nil
+	}
+	return "", "", fmt.Errorf("text input is neither valid UTF-8 nor decodable GB18030")
 }

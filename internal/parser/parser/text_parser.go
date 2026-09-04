@@ -57,10 +57,11 @@ func NewTextParser() *TextParser {
 // non-empty JSON payload even for an empty input (mirrors the
 // MarkdownParser convention at markdown_parser.go:71-76).
 func (p *TextParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	if !utf8Valid(data) {
-		return ParseResult{Err: errInvalidUTF8}
+	text, encoding, err := decodeLegacyTextToUTF8(data)
+	if err != nil {
+		return ParseResult{Err: err}
 	}
-	items := textParserItems(data)
+	items := textParserItems([]byte(text))
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
@@ -69,7 +70,7 @@ func (p *TextParser) ParseWithResult(ctx context.Context, filename string, data 
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),
-			"encoding": "utf-8",
+			"encoding": encoding,
 		},
 		JSON: items,
 	}

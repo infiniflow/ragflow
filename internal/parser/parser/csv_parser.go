@@ -125,14 +125,17 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		// for CSV processing.
 	}
 
-	text := string(data)
+	text, encoding, err := decodeLegacyTextToUTF8(data)
+	if err != nil {
+		return ParseResult{Err: fmt.Errorf("csv decode: %w", err)}
+	}
 	if strings.TrimSpace(text) == "" {
 		return ParseResult{
 			OutputFormat: "html",
 			File: map[string]any{
 				"name":     filename,
 				"size":     len(data),
-				"encoding": "utf-8",
+				"encoding": encoding,
 			},
 			HTML: "<table><caption>" + csvSheetName + "</caption><tr><td></td></tr></table>",
 		}
@@ -161,7 +164,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),
-			"encoding": "utf-8",
+			"encoding": encoding,
 		},
 		HTML: recordsToHTMLTableChunks(records, chunkRows, csvSheetName),
 	}
