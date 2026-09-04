@@ -584,8 +584,6 @@ github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 h1:+C0TIdyyYmzadGaL/HBL
 github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9/go.mod h1:WwHg+CVyzlv/TX9xqBFXEZAuxOPxn2k1GNHwG41IIUQ=
 github.com/yargevad/filepathx v1.0.0 h1:SYcT+N3tYGi+NvazubCNlvgIPbzAk7i7y2dwg3I5FYc=
 github.com/yargevad/filepathx v1.0.0/go.mod h1:BprfX/gpYNJHJfc35GjRRpVcwWXS89gGulUIU5tK3tA=
-github.com/yfedoseev/office_oxide/go v0.1.8 h1:Q6aQrrs0pN/B6fBoWN6PN95QSQ7EKGMb5HExh04mJJc=
-github.com/yfedoseev/office_oxide/go v0.1.8/go.mod h1:YLtMlKUkRCp/Q96wsy7D6yoBKDeJnP66UH+c9Bb+E+M=
 github.com/yfedoseev/office_oxide/go v0.1.9 h1:gvTMCvJDYEZNF4dKd1cdfvU+9SRDSpnbNhCpZJbZOaE=
 github.com/yfedoseev/office_oxide/go v0.1.9/go.mod h1:YLtMlKUkRCp/Q96wsy7D6yoBKDeJnP66UH+c9Bb+E+M=
 github.com/yfedoseev/pdf_oxide/go v0.3.73 h1:hRad+X4W0ILW3bCQeCvdUKcoy8yMj2TFS6/XtoMk55I=

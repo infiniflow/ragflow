@@ -34,6 +34,7 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/jsonschema"
 )
 
 // MCPToolAdapter wraps a single MCP-discovered tool descriptor as an
@@ -93,83 +94,31 @@ func NewMCPToolAdapterFull(t mcpclient.Tool, serverURL string, headers map[strin
 // Name returns the underlying MCP tool name.
 func (m *MCPToolAdapter) Name() string { return m.mcpTool.Name }
 
-// Info returns eino-compatible tool metadata. InputSchema is
-// translated from the MCP tool's JSON Schema. The MCP client stores the
+// Info returns eino-compatible tool metadata. The MCP client stores the
 // full inputSchema object ({"type":"object","properties":{...},"required":
-// [...]}) on mcpTool.InputSchema, so parameter names are read from the
-// "properties" map — iterating the schema's top level would surface keys
-// like "type"/"properties"/"required" instead of the real tool parameters.
-// For tools without a "properties" map the params are empty and eino falls
+// [...]}) on mcpTool.InputSchema, so we pass it through to eino's
+// JSON Schema channel untouched. That keeps the real parameter names under
+// "properties" (never the schema's top-level keys like "type"/"properties"/
+// "required") together with each property's type/description/required flag
+// and any richer keywords (enum, default, items, nested objects, anyOf/oneOf,
+// ...). A tool with no inputSchema yields an empty schema and eino falls
 // back to free-form args.
 func (m *MCPToolAdapter) Info(_ context.Context) (*schema.ToolInfo, error) {
-	properties, _ := m.mcpTool.InputSchema["properties"].(map[string]interface{})
-
-	params := make(map[string]*schema.ParameterInfo, len(properties))
-	required := requiredParams(m.mcpTool.InputSchema)
-	for name, raw := range properties {
-		prop, _ := raw.(map[string]interface{})
-		params[name] = &schema.ParameterInfo{
-			Type:     paramDataType(prop),
-			Desc:     paramDescription(prop, name),
-			Required: required[name],
+	var js jsonschema.Schema
+	if len(m.mcpTool.InputSchema) > 0 {
+		raw, err := json.Marshal(m.mcpTool.InputSchema)
+		if err != nil {
+			return nil, fmt.Errorf("encode MCP tool %q inputSchema: %w", m.mcpTool.Name, err)
+		}
+		if err := json.Unmarshal(raw, &js); err != nil {
+			return nil, fmt.Errorf("parse MCP tool %q inputSchema: %w", m.mcpTool.Name, err)
 		}
 	}
 	return &schema.ToolInfo{
 		Name:        m.mcpTool.Name,
 		Desc:        m.mcpTool.Description,
-		ParamsOneOf: schema.NewParamsOneOfByParams(params),
+		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&js),
 	}, nil
-}
-
-// requiredParams returns the set of property names declared in the
-// top-level "required" array of an MCP inputSchema object.
-func requiredParams(inputSchema map[string]interface{}) map[string]bool {
-	out := map[string]bool{}
-	raw, ok := inputSchema["required"].([]interface{})
-	if !ok {
-		return out
-	}
-	for _, item := range raw {
-		if name, ok := item.(string); ok {
-			out[name] = true
-		}
-	}
-	return out
-}
-
-// paramDataType maps a JSON Schema "type" string to the eino DataType.
-// Unknown or missing types fall back to schema.String (conservative),
-// matching the previous behavior.
-func paramDataType(prop map[string]interface{}) schema.DataType {
-	raw, ok := prop["type"].(string)
-	if !ok {
-		return schema.String
-	}
-	switch raw {
-	case "object":
-		return schema.Object
-	case "number":
-		return schema.Number
-	case "integer":
-		return schema.Integer
-	case "string":
-		return schema.String
-	case "array":
-		return schema.Array
-	case "boolean":
-		return schema.Boolean
-	default:
-		return schema.String
-	}
-}
-
-// paramDescription returns the property's "description" when present,
-// otherwise a generic label mentioning the parameter name.
-func paramDescription(prop map[string]interface{}, name string) string {
-	if desc, ok := prop["description"].(string); ok && desc != "" {
-		return desc
-	}
-	return fmt.Sprintf("MCP tool parameter: %s", name)
 }
 
 // InvokableRun is the eino entry point. When the adapter was

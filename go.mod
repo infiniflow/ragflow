@@ -144,7 +144,7 @@ require (
 	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
-	github.com/eino-contrib/jsonschema v1.0.3 // indirect
+	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect

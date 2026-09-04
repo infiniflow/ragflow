@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -68,55 +69,50 @@ func TestMCPToolAdapter_InfoReturnsMCPDescriptor(t *testing.T) {
 		t.Errorf("ToolInfo.Desc=%q, want 'search internal docs'", info.Desc)
 	}
 	if info.ParamsOneOf == nil {
-		t.Error("expected non-nil ParamsOneOf")
+		t.Fatal("expected non-nil ParamsOneOf")
 	}
-
-	payload, err := json.Marshal(info)
+	js, err := info.ParamsOneOf.ToJSONSchema()
 	if err != nil {
-		t.Fatalf("marshal ToolInfo: %v", err)
+		t.Fatalf("ToJSONSchema: %v", err)
 	}
-	var decoded struct {
-		Params map[string]struct {
-			Type     string `json:"Type"`
-			Desc     string `json:"Desc"`
-			Required bool   `json:"Required"`
-		} `json:"params"`
+	if js.Type != "object" {
+		t.Errorf("schema type=%q, want object", js.Type)
 	}
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		t.Fatalf("unmarshal ToolInfo: %v", err)
+	if js.Properties == nil {
+		t.Fatal("expected non-nil properties")
 	}
-	if len(decoded.Params) != 2 {
-		t.Fatalf("expected 2 params, got %d: %s", len(decoded.Params), payload)
+	if js.Properties.Len() != 2 {
+		t.Fatalf("expected 2 params, got %d", js.Properties.Len())
 	}
 	for _, leaked := range []string{"type", "properties", "required"} {
-		if _, ok := decoded.Params[leaked]; ok {
-			t.Errorf("schema top-level key %q leaked into advertised params: %s", leaked, payload)
+		if _, ok := js.Properties.Get(leaked); ok {
+			t.Errorf("schema top-level key %q leaked into advertised params", leaked)
 		}
 	}
 
-	query, ok := decoded.Params["query"]
+	query, ok := js.Properties.Get("query")
 	if !ok {
-		t.Fatalf("expected advertised param 'query', got %s", payload)
+		t.Fatal("expected advertised param 'query'")
 	}
 	if query.Type != "string" {
 		t.Errorf("query.Type=%q, want string", query.Type)
 	}
-	if query.Desc != "the search query" {
-		t.Errorf("query.Desc=%q, want 'the search query'", query.Desc)
+	if query.Description != "the search query" {
+		t.Errorf("query.Description=%q, want 'the search query'", query.Description)
 	}
-	if !query.Required {
-		t.Errorf("query should be required per inputSchema.required")
+	if !slices.Contains(js.Required, "query") {
+		t.Errorf("query should be required per inputSchema.required; required=%v", js.Required)
 	}
 
-	limit, ok := decoded.Params["limit"]
+	limit, ok := js.Properties.Get("limit")
 	if !ok {
-		t.Fatalf("expected advertised param 'limit', got %s", payload)
+		t.Fatal("expected advertised param 'limit'")
 	}
 	if limit.Type != "integer" {
 		t.Errorf("limit.Type=%q, want integer", limit.Type)
 	}
-	if limit.Required {
-		t.Errorf("limit should not be required")
+	if slices.Contains(js.Required, "limit") {
+		t.Errorf("limit should not be required; required=%v", js.Required)
 	}
 }
 
@@ -135,21 +131,90 @@ func TestMCPToolAdapter_InfoWithoutPropertiesFallsBackToFreeForm(t *testing.T) {
 		t.Fatalf("Info: %v", err)
 	}
 	if info.ParamsOneOf == nil {
-		t.Error("expected non-nil ParamsOneOf")
+		t.Fatal("expected non-nil ParamsOneOf")
+	}
+	js, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("ToJSONSchema: %v", err)
+	}
+	if js.Properties != nil && js.Properties.Len() != 0 {
+		t.Errorf("expected no advertised params, got %d", js.Properties.Len())
+	}
+}
+
+// TestMCPToolAdapter_InfoPreservesRichJSONSchema: richer JSON Schema
+// keywords (enum, default, array items, nested objects) survive the
+// round-trip through eino's JSON Schema channel — the flat params form
+// would have dropped them.
+func TestMCPToolAdapter_InfoPreservesRichJSONSchema(t *testing.T) {
+	mcp := mcpclient.Tool{
+		Name:        "rich",
+		Description: "tool with a rich input schema",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"mode": map[string]any{
+					"type":    "string",
+					"enum":    []any{"fast", "slow"},
+					"default": "fast",
+				},
+				"tags": map[string]any{
+					"type":  "array",
+					"items": map[string]any{"type": "string"},
+				},
+				"filter": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"year": map[string]any{"type": "integer"},
+					},
+				},
+			},
+		},
+	}
+	a := NewMCPToolAdapter(mcp)
+	info, err := a.Info(t.Context())
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	js, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("ToJSONSchema: %v", err)
 	}
 
-	payload, err := json.Marshal(info)
-	if err != nil {
-		t.Fatalf("marshal ToolInfo: %v", err)
+	mode, ok := js.Properties.Get("mode")
+	if !ok {
+		t.Fatal("expected param 'mode'")
 	}
-	var decoded struct {
-		Params map[string]json.RawMessage `json:"params"`
+	if len(mode.Enum) != 2 || mode.Enum[0] != "fast" || mode.Enum[1] != "slow" {
+		t.Errorf("mode.Enum=%v, want [fast slow]", mode.Enum)
 	}
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		t.Fatalf("unmarshal ToolInfo: %v", err)
+	if mode.Default != "fast" {
+		t.Errorf("mode.Default=%v, want 'fast'", mode.Default)
 	}
-	if len(decoded.Params) != 0 {
-		t.Errorf("expected no advertised params, got %s", payload)
+
+	tags, ok := js.Properties.Get("tags")
+	if !ok {
+		t.Fatal("expected param 'tags'")
+	}
+	if tags.Type != "array" {
+		t.Errorf("tags.Type=%q, want array", tags.Type)
+	}
+	if tags.Items == nil || tags.Items.Type != "string" {
+		t.Errorf("tags.Items=%+v, want element type string", tags.Items)
+	}
+
+	filter, ok := js.Properties.Get("filter")
+	if !ok {
+		t.Fatal("expected param 'filter'")
+	}
+	if filter.Type != "object" {
+		t.Errorf("filter.Type=%q, want object", filter.Type)
+	}
+	if filter.Properties == nil || filter.Properties.Len() != 1 {
+		t.Fatalf("filter.Properties.Len()=%d, want 1", filter.Properties.Len())
+	}
+	if _, ok := filter.Properties.Get("year"); !ok {
+		t.Error("expected nested param 'year'")
 	}
 }
 
