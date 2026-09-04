@@ -66,9 +66,10 @@ func NewRedisCheckPointStoreWithClient(client *redis.Client, ttl time.Duration) 
 }
 
 // RedisCheckpointExists reports whether a pipeline checkpoint is present for
-// id. It is used by ingestion progress handling to distinguish a fresh run
-// from a resume: resumed nodes may not emit lifecycle events again, so their
-// previous completed progress rows must be retained.
+// id in Redis. It is the Redis-backed counterpart of NatsCheckpointExists and
+// is used as the fallback probe when the NATS engine is not initialized. A
+// missing Redis client surfaces an error so the caller can decide (the
+// ingestion path treats a probe error as "mark task failed").
 func RedisCheckpointExists(ctx context.Context, id string) (bool, error) {
 	rc := redis2.Get()
 	if rc == nil || rc.GetClient() == nil {

@@ -29,6 +29,7 @@ import (
 	_ "ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
 	redis2 "ragflow/internal/engine/redis"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/utility"
@@ -54,7 +55,7 @@ type Pipeline struct {
 	store   canvas.CheckPointStore // optional injected; nil -> resolve at Run
 	tracker *canvas.RunTracker     // optional injected; nil -> resolve at Run
 	// requireResume, when true, makes Run refuse to start if no checkpoint
-	// store can be resolved (no injected store AND no global Redis client).
+	// store can be resolved (no injected store AND no global NATS engine).
 	// Plan §6.a M4: a deployment that cannot persist checkpoints must
 	// not silently degrade to a non-resumable run — it must surface a clear,
 	// distinguishable error so the caller knows resume is unavailable.
@@ -229,7 +230,9 @@ func cloneMapOrEmpty(m map[string]any) map[string]any {
 // defaultCheckpointTTL is the expiry applied to the eino checkpoint payload
 // and the RunTracker hash. A finished run's checkpoint is deleted on success;
 // the TTL only guards against leaks from crashed runs that never clean up.
-var defaultCheckpointTTL = 24 * time.Hour
+// 7 days is conservative: a checkpoint only needs to outlive the window in
+// which a task can be resumed after an interrupt.
+var defaultCheckpointTTL = 7 * 24 * time.Hour
 
 // dslKeySuffix / ovfKeySuffix derive the two DSL-fingerprint keys from a
 // checkpoint id. Both live in the same CheckPointStore as the eino payload
@@ -418,7 +421,10 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	// point; without one we fall back to a single non-resumable Invoke
 	// (plan §6.a degrade — progress stays observable, the run just cannot
 	// pause/resume across nodes).
-	store := p.resolveStore()
+	store, err := p.resolveStore(ctx)
+	if err != nil {
+		return nil, err
+	}
 	tracker := p.resolveTracker()
 
 	// M4 (plan §6.a): refuse to start when resume is required but no
@@ -497,17 +503,27 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	return p.runResumable(ctx, runCtx, current, compiled, store, tracker, runState)
 }
 
-// resolveStore returns the injected store, or a Redis-backed one when the
-// global Redis client is available. Returns nil (degraded, non-resumable)
-// when neither is present.
-func (p *Pipeline) resolveStore() canvas.CheckPointStore {
+// resolveStore returns the injected store, or the NATS-backed one (default
+// backend) when the global NATS engine is available, or the Redis-backed one
+// as a fallback when NATS is absent but Redis is. The system supports both
+// checkpoint implementations with NATS preferred; a deployment with neither
+// degrades to a non-resumable runPlain (returns nil, nil), and a
+// resume-required run is then rejected by the requireResume guard in Run.
+func (p *Pipeline) resolveStore(ctx context.Context) (canvas.CheckPointStore, error) {
 	if p.store != nil {
-		return p.store
+		return p.store, nil
+	}
+	if ne := engine.GetNatsEngine(); ne != nil {
+		store, err := canvas.NewNatsCheckPointStore(ctx, ne, defaultCheckpointTTL)
+		if err != nil {
+			return nil, fmt.Errorf("pipeline: resolveStore: %w", err)
+		}
+		return store, nil
 	}
 	if redis2.Get() != nil {
-		return canvas.NewRedisCheckPointStore(defaultCheckpointTTL)
+		return canvas.NewRedisCheckPointStore(defaultCheckpointTTL), nil
 	}
-	return nil
+	return nil, nil
 }
 
 // resolveTracker mirrors resolveStore for the RunTracker.

@@ -280,6 +280,30 @@ func (n *NatsEngine) CheckStatus() string {
 	return n.nc.Status().String()
 }
 
+// KeyValueExists reports whether key exists in the named KV bucket without
+// creating the bucket. A missing bucket is reported as not-found (false, nil),
+// because an uncreated bucket holds no entries to look up — callers (e.g. the
+// checkpoint resume probe) treat that as "no checkpoint to resume".
+func (n *NatsEngine) KeyValueExists(ctx context.Context, bucket, key string) (bool, error) {
+	if n.jetStream == nil {
+		return false, fmt.Errorf("KeyValueExists: jetStream not initialized (call Init first)")
+	}
+	kv, err := n.jetStream.KeyValue(ctx, bucket)
+	if err != nil {
+		if errors.Is(err, jetstream.ErrBucketNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("KeyValueExists: lookup bucket %q: %w", bucket, err)
+	}
+	if _, err := kv.Get(ctx, key); err != nil {
+		if errors.Is(err, jetstream.ErrKeyNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("KeyValueExists: get key %q: %w", key, err)
+	}
+	return true, nil
+}
+
 type NatsMessageHandle struct {
 	message jetstream.Msg
 }

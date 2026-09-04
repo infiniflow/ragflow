@@ -151,7 +151,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	ingestor.runMemoryTask = ingestor.defaultRunMemoryTask
 	ingestor.cancelCheck = ingestor.defaultCancelCheck
-	ingestor.checkpointExists = canvas.RedisCheckpointExists
+	ingestor.checkpointExists = canvas.NatsCheckpointExists
 	ingestor.kcConcurrency = maxConcurrency // parallel dataset-level compile workers default to the task width
 	return ingestor
 }
@@ -783,7 +783,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	}
 	checkpointExists := e.checkpointExists
 	if checkpointExists == nil {
-		checkpointExists = canvas.RedisCheckpointExists
+		checkpointExists = canvas.NatsCheckpointExists
 	}
 	resumeCheckpoint, checkpointErr := checkpointExists(dbCtx, task.ID)
 	if checkpointErr != nil {

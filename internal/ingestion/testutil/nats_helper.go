@@ -41,6 +41,10 @@ func SetupNatsEngine(t *testing.T) *natsengine.NatsEngine {
 		StoreDir:  t.TempDir(),
 		NoLog:     true,
 		NoSigs:    true,
+		// Checkpoint payloads can be several MiB; the server default MaxPayload
+		// is 1 MiB, which is too small for real eino checkpoints. Raise it so
+		// tests exercise payloads near the 16 MiB bucket cap.
+		MaxPayload: 64 * 1024 * 1024,
 	}
 
 	ns, err := server.NewServer(opts)
