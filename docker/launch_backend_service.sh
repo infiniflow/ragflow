@@ -172,7 +172,7 @@ run_admin_server(){
     if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         prepare_for_go
         server_name="admin_server"
-        server_cmd=("bin/ragflow_server" "--admin")
+        server_cmd=("bin/ragflow_server" "--admin" "--migrate")
         if [[ "$DEBUG_MODE" -eq 1 ]]; then
             server_cmd+=("--debug")
         fi

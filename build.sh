@@ -709,7 +709,7 @@ run() {
     # admin_server must be running before ragflow_server, otherwise ragflow_server's
     # heartbeats to admin will error out (see internal/development.md).
     print_section "Starting admin server (background)"
-    "$RAGFLOW_SERVER_BINARY" --admin &
+    "$RAGFLOW_SERVER_BINARY" --admin --migrate &
     ADMIN_PID=$!
     # One trap for both background services: a second `trap ... EXIT INT TERM`
     # would replace this one rather than add to it, leaving admin_server holding
