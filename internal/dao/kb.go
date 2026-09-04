@@ -337,8 +337,8 @@ func (dao *KnowledgebaseDAO) GetDetail(ctx context.Context, db *gorm.DB, kbID st
 // This matches the Python accessible method:
 // 1. KB must exist and be VALID
 // 2. If user is the owner tenant, return true
-// 3. If permission is "me", only owner tenant can access
-// 4. If permission is "team", user must be a member of the tenant
+// 3. Non-owners require the explicit "team" permission
+// 4. Team members must have a valid user_tenant relationship
 func (dao *KnowledgebaseDAO) Accessible(ctx context.Context, db *gorm.DB, datasetID, userID string) bool {
 	var kb entity.Knowledgebase
 	err := db.WithContext(ctx).Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).First(&kb).Error
@@ -351,14 +351,14 @@ func (dao *KnowledgebaseDAO) Accessible(ctx context.Context, db *gorm.DB, datase
 		return true
 	}
 
-	// If permission is "me", only the owner can access
-	if kb.Permission == string(entity.TenantPermissionMe) {
+	// Fail closed for unknown, missing, or private permissions.
+	if kb.Permission != string(entity.TenantPermissionTeam) {
 		return false
 	}
 
 	var count int64
 	err = db.WithContext(ctx).Table("user_tenant").
-		Where("tenant_id = ? AND user_id = ? AND status = ?", kb.TenantID, userID, "1").
+		Where("tenant_id = ? AND user_id = ? AND status = ?", kb.TenantID, userID, string(entity.StatusValid)).
 		Count(&count).Error
 
 	if err != nil {

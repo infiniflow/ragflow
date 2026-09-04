@@ -219,6 +219,10 @@ RUN rm -f /etc/nginx/sites-enabled/default
 COPY conf conf
 COPY agent/templates agent/templates
 
+# Wiki page-structure presets read at runtime by the Go backend
+# (CompilationTemplateService.LoadWikiPresets).
+COPY api/db/init_data/compilation_templates ./api/db/init_data/compilation_templates
+
 
 # Copy compiled web pages
 COPY --from=web-builder /ragflow/web/dist /ragflow/web/dist

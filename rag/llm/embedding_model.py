@@ -910,6 +910,10 @@ class LmStudioEmbed(LocalAIEmbed):
         self.model_name = model_name
 
 
+class LlmmanEmbed(LocalAIEmbed):
+    _FACTORY_NAME = "llmman"
+
+
 class OpenAI_APIEmbed(OpenAIEmbed):
     _FACTORY_NAME = ["VLLM", "OpenAI-API-Compatible"]
 

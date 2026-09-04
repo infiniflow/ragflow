@@ -416,6 +416,7 @@ export default {
       runningStatus2: 'ANNULÉ',
       runningStatus3: 'SUCCÈS',
       runningStatus4: 'ÉCHEC',
+      runningStatusQueued: 'En attente',
       pageRanges: 'Plages de pages',
       pageRangesTip:
         'Les pages en dehors de cette plage ne seront pas traitées.',

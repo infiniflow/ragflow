@@ -19,10 +19,10 @@ func TestQueueMemoryTaskUninitializedQueueReturnsError(t *testing.T) {
 
 	err := queueMemoryTask(
 		t.Context(),
+		"task-1",
 		"mem-1",
 		"tenant-1",
 		1,
-		map[string]any{"id": "task-1", "task_type": "memory"},
 		MemoryMessage{UserID: "u1", AgentID: "agent-1", SessionID: "s1", UserInput: "hi", AgentResponse: "hello"},
 	)
 	if err == nil {

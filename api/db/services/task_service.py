@@ -219,6 +219,9 @@ class TaskService(CommonService):
         if not docs:
             return None
         doc = docs[0]
+        for config_key in ("parser_config", "kb_parser_config"):
+            if isinstance(doc.get(config_key), dict):
+                doc[config_key] = {key: value for key, value in doc[config_key].items() if key not in ("graphrag", "raptor")}
 
         msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task has been received."
         prog = random.random() / 10.0
@@ -495,9 +498,13 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int, user_id: str |
                 pass
         if is_mineru:
             logging.info("Document %s selected MinerU unsplit-task mode with page size %s", doc["id"], MAXIMUM_TASK_PAGE_NUMBER)
-        if doc["parser_id"] in ["one", "knowledge_graph"] or doc["parser_config"].get("toc_extraction", False) or is_mineru:
+        if doc["parser_id"] in ["one", "knowledge_graph", "resume"] or doc["parser_config"].get("toc_extraction", False) or is_mineru:
             page_size = MAXIMUM_TASK_PAGE_NUMBER
         page_ranges = doc["parser_config"].get("pages") or [(1, MAXIMUM_PAGE_NUMBER)]
+        if doc["parser_id"] == "resume":
+            # The resume parser ignores from_page and to_page, so every task parses the whole
+            # file. Collapse the configured ranges into one range to keep a resume document at a single task.
+            page_ranges = [(1, MAXIMUM_PAGE_NUMBER)]
         for s, e in page_ranges:
             s -= 1
             s = max(0, s)
