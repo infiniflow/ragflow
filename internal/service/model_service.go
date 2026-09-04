@@ -103,6 +103,33 @@ func splitRightAnchoredModelName(compositeName string) (modelName, instanceName,
 	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1]
 }
 
+func parseTenantModelInstanceExtra(raw string) (map[string]interface{}, error) {
+	extra := make(map[string]interface{})
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || strings.EqualFold(strings.Trim(trimmed, `"`), "active") {
+		extra["region"] = "default"
+		return extra, nil
+	}
+
+	if err := json.Unmarshal([]byte(trimmed), &extra); err != nil {
+		return nil, err
+	}
+	if extra == nil {
+		extra = make(map[string]interface{})
+	}
+	if region, ok := extra["region"].(string); ok && strings.TrimSpace(region) != "" {
+		extra["region"] = strings.TrimSpace(region)
+	} else {
+		extra["region"] = "default"
+	}
+	return extra, nil
+}
+
+func tenantModelInstanceExtraString(extra map[string]interface{}, key string) string {
+	value, _ := extra[key].(string)
+	return value
+}
+
 func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {
 	if driver == nil {
 		return nil, fmt.Errorf("provider %s driver not found", providerName)
@@ -358,8 +385,7 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 		return nil, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	extra, err := parseTenantModelInstanceExtra(instance.Extra)
 	if err != nil {
 		return nil, err
 	}
@@ -369,14 +395,14 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 		Region: nil,
 	}
 
-	region := extra["region"]
+	region := tenantModelInstanceExtraString(extra, "region")
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
 	driver := providerInfo.ModelDriver
 
 	// For local deployed models
-	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+	if baseURL := tenantModelInstanceExtraString(extra, "base_url"); baseURL != "" {
 		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
 		if err != nil {
 			return nil, err
@@ -830,14 +856,9 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 	result := make([]map[string]interface{}, 0, len(instances))
 	for _, instance := range instances {
 		// Parse extra to extract region
-		var extraFields map[string]string
-		if instance.Extra != "" {
-			if err = json.Unmarshal([]byte(instance.Extra), &extraFields); err != nil {
-				return nil, common.CodeServerError, err
-			}
-		}
-		if extraFields == nil {
-			extraFields = make(map[string]string)
+		extraFields, err := parseTenantModelInstanceExtra(instance.Extra)
+		if err != nil {
+			return nil, common.CodeServerError, err
 		}
 
 		// Emit snake_case keys to match the Python
@@ -847,7 +868,7 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 			"id":            instance.ID,
 			"instance_name": instance.InstanceName,
 			"provider_id":   instance.ProviderID,
-			"region":        extraFields["region"],
+			"region":        tenantModelInstanceExtraString(extraFields, "region"),
 			"status":        instance.Status,
 		})
 	}
@@ -896,22 +917,17 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 
 	// Parse extra fields. Mirrors Python's:
 	//   extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
-	var extraFields map[string]string
-	if instance.Extra != "" {
-		if err := json.Unmarshal([]byte(instance.Extra), &extraFields); err != nil {
-			return nil, common.CodeServerError, err
-		}
-	}
-	if extraFields == nil {
-		extraFields = make(map[string]string)
+	extraFields, err := parseTenantModelInstanceExtra(instance.Extra)
+	if err != nil {
+		return nil, common.CodeServerError, err
 	}
 
 	result := map[string]interface{}{
 		"id":            instance.ID,
 		"instance_name": instance.InstanceName,
 		"provider_id":   provider.ID,
-		"region":        extraFields["region"],
-		"base_url":      extraFields["base_url"],
+		"region":        tenantModelInstanceExtraString(extraFields, "region"),
+		"base_url":      tenantModelInstanceExtraString(extraFields, "base_url"),
 		"api_key":       instance.APIKey,
 		"status":        instance.Status,
 	}
@@ -949,8 +965,7 @@ func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, provider
 		return nil, common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	extra, err := parseTenantModelInstanceExtra(instance.Extra)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -960,8 +975,8 @@ func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, provider
 		Region: nil,
 	}
 
-	region := extra["region"]
-	baseURL := extra["base_url"]
+	region := tenantModelInstanceExtraString(extra, "region")
+	baseURL := tenantModelInstanceExtraString(extra, "base_url")
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 	apiConfig.BaseURL = &baseURL
@@ -1397,8 +1412,7 @@ func (m *ModelProviderService) CheckInstanceConnection(ctx context.Context, prov
 		return common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	extra, err := parseTenantModelInstanceExtra(instance.Extra)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -1408,12 +1422,12 @@ func (m *ModelProviderService) CheckInstanceConnection(ctx context.Context, prov
 		Region: nil,
 	}
 
-	region := extra["region"]
+	region := tenantModelInstanceExtraString(extra, "region")
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
 	driver := providerInfo.ModelDriver
-	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+	if baseURL := tenantModelInstanceExtraString(extra, "base_url"); baseURL != "" {
 		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
 		if err != nil {
 			return common.CodeServerError, err
@@ -1457,8 +1471,7 @@ func (m *ModelProviderService) ListTasks(ctx context.Context, providerName, inst
 		return nil, common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	extra, err := parseTenantModelInstanceExtra(instance.Extra)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1468,12 +1481,12 @@ func (m *ModelProviderService) ListTasks(ctx context.Context, providerName, inst
 		Region: nil,
 	}
 
-	region := extra["region"]
+	region := tenantModelInstanceExtraString(extra, "region")
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
 	driver := providerInfo.ModelDriver
-	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+	if baseURL := tenantModelInstanceExtraString(extra, "base_url"); baseURL != "" {
 		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
 		if err != nil {
 			return nil, common.CodeServerError, err
@@ -1518,8 +1531,7 @@ func (m *ModelProviderService) ShowTask(ctx context.Context, providerName, insta
 		return nil, common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	extra, err := parseTenantModelInstanceExtra(instance.Extra)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1529,12 +1541,12 @@ func (m *ModelProviderService) ShowTask(ctx context.Context, providerName, insta
 		Region: nil,
 	}
 
-	region := extra["region"]
+	region := tenantModelInstanceExtraString(extra, "region")
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
 	driver := providerInfo.ModelDriver
-	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+	if baseURL := tenantModelInstanceExtraString(extra, "base_url"); baseURL != "" {
 		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
 		if err != nil {
 			return nil, common.CodeServerError, err
@@ -2036,11 +2048,9 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		extraFields["region"] = region
 	}
 	// Preserve existing extra fields not overwritten.
-	existingExtra := make(map[string]interface{})
-	if instance.Extra != "" {
-		if err = json.Unmarshal([]byte(instance.Extra), &existingExtra); err != nil {
-			return common.CodeServerError, err
-		}
+	existingExtra, err := parseTenantModelInstanceExtra(instance.Extra)
+	if err != nil {
+		return common.CodeServerError, err
 	}
 	for k, v := range extraFields {
 		existingExtra[k] = v
@@ -3750,9 +3760,8 @@ func (m *ModelProviderService) GetModelTypeByName(ctx context.Context, tenantID,
 	}
 
 	// Fallback: factory LLM catalog
-	var extra map[string]string
-	_ = json.Unmarshal([]byte(instance.Extra), &extra)
-	region := extra["region"]
+	extra, _ := parseTenantModelInstanceExtra(instance.Extra)
+	region := tenantModelInstanceExtraString(extra, "region")
 
 	targetFactoryName := providerName
 	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
@@ -4017,10 +4026,9 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 
 	// Decode api_key and extra fields from the instance row
 	apiKey := instance.APIKey
-	var extra map[string]string
-	_ = json.Unmarshal([]byte(instance.Extra), &extra)
-	region := extra["region"]
-	baseURL := extra["base_url"]
+	extra, _ := parseTenantModelInstanceExtra(instance.Extra)
+	region := tenantModelInstanceExtraString(extra, "region")
+	baseURL := tenantModelInstanceExtraString(extra, "base_url")
 
 	// Direct model lookup
 	modelObj, modelErr := m.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
@@ -4146,16 +4154,16 @@ func (m *ModelProviderService) getModelConfig(ctx context.Context, tenantID, com
 
 	// TODO: if provider name is Builtin, HOW TO?
 
-	var extra map[string]string
 	var region string
 	var baseURL string
 	if instance != nil {
-		err = json.Unmarshal([]byte(instance.Extra), &extra)
+		var extra map[string]interface{}
+		extra, err = parseTenantModelInstanceExtra(instance.Extra)
 		if err != nil {
 			return nil, "", nil, 0, err
 		}
-		region = extra["region"]
-		baseURL = extra["base_url"]
+		region = tenantModelInstanceExtraString(extra, "region")
+		baseURL = tenantModelInstanceExtraString(extra, "base_url")
 	}
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
