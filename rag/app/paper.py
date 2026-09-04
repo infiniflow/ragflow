@@ -38,7 +38,7 @@ class Pdf(PdfParser):
 
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
         start = timer()
@@ -157,7 +157,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         if name == "deepdoc":
             pdf_parser = Pdf()
-            paper = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+            paper = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
             sections = paper.get("sections", [])
         else:
             kwargs.pop("parse_method", None)
