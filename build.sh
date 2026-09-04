@@ -649,8 +649,11 @@ run() {
 
     # admin_server must be running before ragflow_server, otherwise ragflow_server's
     # heartbeats to admin will error out (see internal/development.md).
+    # --migrate keeps the DB schema (including Go-only tables such as
+    # ingestion_task) in sync; without it a schema created by the Python init
+    # never gains the Go tables and every parse request fails.
     print_section "Starting admin server (background)"
-    "$RAGFLOW_SERVER_BINARY" --admin &
+    "$RAGFLOW_SERVER_BINARY" --admin --migrate &
     ADMIN_PID=$!
     # One trap for both background services: a second `trap ... EXIT INT TERM`
     # would replace this one rather than add to it, leaving admin_server holding

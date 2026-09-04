@@ -301,7 +301,9 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         echo "Starting Admin go server..."
-        run_with_restart "Admin go server" bin/ragflow_server --admin &
+        # --migrate keeps the DB schema (including Go-only tables such as
+        # ingestion_task) in sync on schemas created by the Python init.
+        run_with_restart "Admin go server" bin/ragflow_server --admin --migrate &
     fi
 fi
 
