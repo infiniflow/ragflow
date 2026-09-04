@@ -113,22 +113,48 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// for spreadsheet processing.
 	}
 
-	f, err := excelize.OpenReader(bytes.NewReader(data))
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("xlsx open: %w", err)}
-	}
-	defer f.Close()
-
-	sheets := f.GetSheetList()
 	chunkRows := p.ChunkRows
 	if chunkRows <= 0 {
 		chunkRows = defaultTableChunkRows
 	}
 
+	items, warnings, sheets, err := parseXLSXBytes(data, chunkRows)
+	if err == nil {
+		return xlsxParseResult(filename, items, warnings, sheets)
+	}
+
+	normalized, normalizeWarnings, changed, normalizeErr := normalizeXLSXForRead(data)
+	if normalizeErr != nil {
+		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; normalize: %v", err, normalizeErr)}
+	}
+	if !changed {
+		return ParseResult{Err: fmt.Errorf("xlsx parse: %w", err)}
+	}
+	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, chunkRows)
+	if retryErr != nil {
+		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
+	}
+	warnings = append(normalizeWarnings, warnings...)
+	return xlsxParseResult(filename, items, warnings, sheets)
+}
+
+func parseXLSXBytes(data []byte, chunkRows int) ([]map[string]any, []string, int, error) {
+	f, err := excelize.OpenReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("open XLSX: %w", err)
+	}
+	defer f.Close()
+
+	sheets := f.GetSheetList()
 	items := make([]map[string]any, 0)
 	warnings := make([]string, 0)
 	for sheetIdx, sheet := range sheets {
-		for _, table := range renderSheetTableChunks(f, sheet, chunkRows) {
+		tables, sheetWarnings, err := renderSheetTableChunks(f, sheet, chunkRows)
+		if err != nil {
+			return nil, warnings, len(sheets), err
+		}
+		warnings = append(warnings, sheetWarnings...)
+		for _, table := range tables {
 			items = append(items, map[string]any{
 				"text":         table.HTML,
 				"doc_type_kwd": "table",
@@ -147,10 +173,13 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		items = append(items, images...)
 		warnings = append(warnings, imageWarnings...)
 	}
+	return items, warnings, len(sheets), nil
+}
 
+func xlsxParseResult(filename string, items []map[string]any, warnings []string, sheets int) ParseResult {
 	return ParseResult{
 		OutputFormat: "json",
-		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": len(sheets)},
+		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": sheets},
 		JSON:         items,
 		Warnings:     warnings,
 	}
