@@ -76,7 +76,12 @@ class MCPToolCallSession(ToolCallSession):
         for h, v in raw_headers.items():
             nh = Template(h).safe_substitute(self._server_variables)
             nv = Template(v).safe_substitute(self._server_variables)
-            if nh.strip() and nv.strip().strip("Bearer"):
+            # `.strip("Bearer")` strips the character *set* {B,e,a,r}, so a
+            # header whose value is made only of those letters -- "rare", "rae" --
+            # collapsed to "" and the header was silently dropped. The intent is
+            # to skip an Authorization header carrying no token after "Bearer".
+            token = nv.strip()
+            if nh.strip() and token and token != "Bearer":
                 headers[nh] = nv
 
         for h, v in custom_header.items():

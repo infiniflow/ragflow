@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from common import mcp_tool_call_conn
+from common.constants import MCPServerType
 from common.mcp_tool_call_conn import MCPToolCallSession
 
 
@@ -242,3 +243,80 @@ def test_public_tool_call_uses_one_absolute_deadline(monkeypatch):
     assert cancelled_seen
     assert not side_effect.is_set()
     assert processor.done()
+
+
+def _header_session(headers: dict[str, str]) -> MCPToolCallSession:
+    session = object.__new__(MCPToolCallSession)
+    session._queue = asyncio.Queue()
+    session._close = False
+    session._custom_header = {}
+    session._server_variables = {}
+    session._mcp_server = SimpleNamespace(
+        id="srv-1",
+        url="http://localhost/mcp",
+        headers=headers,
+        server_type=MCPServerType.SSE,
+    )
+    return session
+
+
+def _forwarded_headers(monkeypatch, headers: dict[str, str]) -> dict[str, str]:
+    """Run the header-building half of `_mcp_server_loop` and return what it forwards."""
+    seen: dict[str, str] = {}
+
+    class _StopBeforeConnecting(Exception):
+        pass
+
+    class _NeverConnects:
+        async def __aenter__(self):
+            raise _StopBeforeConnecting
+
+        async def __aexit__(self, *exc):
+            return False
+
+    def fake_sse_client(url, forwarded):
+        seen.update(forwarded)
+        return _NeverConnects()
+
+    monkeypatch.setattr(mcp_tool_call_conn, "sse_client", fake_sse_client)
+
+    session = _header_session(headers)
+
+    async def _swallow(client_session, message=None):
+        return None
+
+    session._process_mcp_tasks = _swallow
+
+    asyncio.run(session._mcp_server_loop())
+    return seen
+
+
+@pytest.mark.parametrize(
+    ("value", "forwarded"),
+    [
+        # The reason this PR exists: `.strip("Bearer")` strips the character set
+        # {B,e,a,r}, so a token built only from those letters used to collapse to
+        # "" and the whole header was dropped.
+        ("rare", True),
+        ("rae", True),
+        ("Bearer", False),
+        ("Bearer ", False),
+        ("Bearer sk-123", True),
+        ("   ", False),
+        ("", False),
+        ("sk-123", True),
+    ],
+)
+def test_authorization_header_is_dropped_only_when_it_carries_no_token(monkeypatch, value, forwarded):
+    seen = _forwarded_headers(monkeypatch, {"Authorization": value})
+
+    if forwarded:
+        assert seen["Authorization"] == value
+    else:
+        assert "Authorization" not in seen
+
+
+def test_blank_header_name_is_dropped(monkeypatch):
+    seen = _forwarded_headers(monkeypatch, {"   ": "sk-123"})
+
+    assert seen == {}
