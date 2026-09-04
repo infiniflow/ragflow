@@ -20,6 +20,7 @@ import skillSpaceService, {
   SkillSearchConfig,
 } from '@/services/skill-space-service';
 import { getAuthorization } from '@/utils/authorization-util';
+import { withAppBasePath } from '@/utils/base-path';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -636,7 +637,7 @@ export const useSkills = () => {
       setLoading(true);
       try {
         // Use search API with empty query to list all skills
-        const response = await fetch('/api/v1/skills/search', {
+        const response = await fetch(withAppBasePath('/api/v1/skills/search'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -945,7 +946,7 @@ export const useSkills = () => {
           // Index the skill with embd_id from config (if available)
           // Use user-specified name (skillNameNormalized) as skill ID and name
           // This ensures consistency between folder name, skill ID, and display name
-          const indexResponse = await fetch('/api/v1/skills/index', {
+          const indexResponse = await fetch(withAppBasePath('/api/v1/skills/index'), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -1553,7 +1554,7 @@ export const useSkillSearchConfig = (spaceId?: string) => {
   // Get index status
   const getIndexStatus = useCallback(async () => {
     try {
-      const response = await fetch('/api/v1/skills/status', {
+      const response = await fetch(withAppBasePath('/api/v1/skills/status'), {
         headers: {
           Authorization: getAuthorization(),
         },

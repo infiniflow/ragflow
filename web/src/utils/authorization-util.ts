@@ -21,6 +21,7 @@ import {
   UserInfo,
 } from '@/constants/authorization';
 import { getSearchValue } from './common-util';
+import { withAppBasePath } from './base-path';
 const KeySet = [Authorization, Token, UserInfo];
 
 const storage = {
@@ -88,5 +89,5 @@ export default storage;
 // Will not jump to the login page
 export function redirectToLogin() {
   // const env = import.meta.env;
-  window.location.href = location.origin + `/login`;
+  window.location.href = location.origin + withAppBasePath('/login');
 }

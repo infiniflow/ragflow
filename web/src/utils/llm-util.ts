@@ -15,6 +15,7 @@
  */
 
 import { IAddedModel } from '@/interfaces/database/llm';
+import { withAppBasePath } from './base-path';
 import { getCachedLlmList } from './llm-cache';
 
 // The names of the large models returned by the interface are similar to "deepseek-r1___OpenAI-API"
@@ -178,13 +179,13 @@ const modelParamMap: ModelParamMap = {
 // model name/id pair server-side, so the frontend submits only llm_id /
 // rerank_id and must not have a stale tenant_* id injected back in here.
 const API_WHITELIST = [
-  '/api/v1/users/me/models',
-  '/v1/canvas/set',
-  '/v1/canvas/setting',
-  '/api/v1/searches/',
-  '/api/v1/memories',
-  '/api/v1/datasets',
-  '/v1/dataflow/set',
+  withAppBasePath('/api/v1/users/me/models'),
+  withAppBasePath('/v1/canvas/set'),
+  withAppBasePath('/v1/canvas/setting'),
+  withAppBasePath('/api/v1/searches/'),
+  withAppBasePath('/api/v1/memories'),
+  withAppBasePath('/api/v1/datasets'),
+  withAppBasePath('/v1/dataflow/set'),
 ];
 
 // Check if the URL is in the whitelist
