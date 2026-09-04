@@ -16,8 +16,9 @@
 import logging
 from datetime import datetime
 
-from api.apps import login_required
-from api.db.services.task_service import TaskService, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
+from api.apps import current_user, login_required
+from api.db.services.task_service import TaskService
+from api.db.services.document_service import DocumentService, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.utils.api_utils import (
     get_json_result,
     get_request_json,
@@ -55,6 +56,21 @@ async def _cancel_task(task_id):
     Sets a Redis cancel flag, updates the task progress to -1 (cancelled),
         and marks the associated document's run status as CANCEL if applicable.
     """
+    exists, task = TaskService.get_by_id(task_id)
+    if not exists:
+        return get_json_result(data=True)
+
+    # Verify the caller has access to the dataset the task belongs to before
+    # touching anything. Canvas-debug and graph-raptor tasks use sentinel doc
+    # ids that have no Document row, so they are not scope-checked.
+    if task.doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
+        if not DocumentService.accessible(task.doc_id, current_user.id):
+            logging.warning("Task %s cancel denied: user %s lacks dataset access", task_id, current_user.id)
+            return get_json_result(
+                code=RetCode.PERMISSION_ERROR,
+                message="You do not have access to the dataset this task belongs to.",
+            )
+
     try:
         REDIS_CONN.set(f"{task_id}-cancel", "x")
     except Exception as e:
@@ -63,10 +79,6 @@ async def _cancel_task(task_id):
             code=RetCode.CONNECTION_ERROR,
             message="Failed to stop task",
         )
-
-    exists, task = TaskService.get_by_id(task_id)
-    if not exists:
-        return get_json_result(data=True)
 
     # Append a cancellation message so the user can see it in progress_msg.
     try:
@@ -83,8 +95,6 @@ async def _cancel_task(task_id):
     # If the task belongs to a document, also mark the document's run status as
     # cancelled so that the UI reflects the state correctly.
     try:
-        from api.db.services.document_service import DocumentService
-
         doc_id = task.doc_id
         if doc_id and doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
             _, doc = DocumentService.get_by_id(doc_id)
