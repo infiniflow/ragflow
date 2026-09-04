@@ -45,7 +45,7 @@ def convert_decimals(obj):
             return None
         return obj
     if isinstance(obj, Decimal):
-        return float(obj)  # 或 str(obj)
+        return float(obj)
     # datetime subclasses date; both (and time) expose isoformat()
     if isinstance(obj, (date, time)):
         return obj.isoformat()

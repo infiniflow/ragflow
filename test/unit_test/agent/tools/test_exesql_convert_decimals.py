@@ -35,40 +35,43 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _load_exesql_module():
-    for name in ("pandas", "psycopg2", "pyodbc", "pymysql"):
-        mod = types.ModuleType(name)
-        mod.connect = lambda *a, **k: None
-        sys.modules.setdefault(name, mod)
+    with pytest.MonkeyPatch.context() as mp:
+        for name in ("pandas", "psycopg2", "pyodbc", "pymysql"):
+            if name not in sys.modules:
+                mod = types.ModuleType(name)
+                mod.connect = lambda *a, **k: None
+                mp.setitem(sys.modules, name, mod)
 
-    base = types.ModuleType("agent.tools.base")
+        base = types.ModuleType("agent.tools.base")
 
-    class _ToolParamBase:
-        def __init__(self):
-            pass
+        class _ToolParamBase:
+            def __init__(self):
+                pass
 
-    class _ToolBase:
-        def __init__(self, *a, **k):
-            pass
+        class _ToolBase:
+            def __init__(self, *a, **k):
+                pass
 
-    base.ToolParamBase = _ToolParamBase
-    base.ToolBase = _ToolBase
-    base.ToolMeta = dict
-    for pkg in ("agent", "agent.tools"):
-        sys.modules.setdefault(pkg, types.ModuleType(pkg))
-    sys.modules["agent.tools.base"] = base
+        base.ToolParamBase = _ToolParamBase
+        base.ToolBase = _ToolBase
+        base.ToolMeta = dict
+        for pkg in ("agent", "agent.tools"):
+            if pkg not in sys.modules:
+                mp.setitem(sys.modules, pkg, types.ModuleType(pkg))
+        mp.setitem(sys.modules, "agent.tools.base", base)
 
-    conn_utils = types.ModuleType("common.connection_utils")
-    conn_utils.timeout = lambda *a, **k: lambda f: f
-    sys.modules["common.connection_utils"] = conn_utils
+        conn_utils = types.ModuleType("common.connection_utils")
+        conn_utils.timeout = lambda *a, **k: lambda f: f
+        mp.setitem(sys.modules, "common.connection_utils", conn_utils)
 
-    ssrf = types.ModuleType("common.ssrf_guard")
-    ssrf.assert_host_is_safe = lambda h: h
-    sys.modules["common.ssrf_guard"] = ssrf
+        ssrf = types.ModuleType("common.ssrf_guard")
+        ssrf.assert_host_is_safe = lambda h: h
+        mp.setitem(sys.modules, "common.ssrf_guard", ssrf)
 
-    spec = importlib.util.spec_from_file_location("exesql_convert_uut", _REPO_ROOT / "agent" / "tools" / "exesql.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+        spec = importlib.util.spec_from_file_location("exesql_convert_uut", _REPO_ROOT / "agent" / "tools" / "exesql.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
 
 
 _exesql_mod = _load_exesql_module()
