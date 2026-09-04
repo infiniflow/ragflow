@@ -16,7 +16,6 @@
 
 from typing import Any
 
-
 # Parser-specific option keys. ``_has_mineru_options`` uses these to detect
 # whether the operator clearly intended the MinerU parser (issue #17114).
 MINERU_OPTION_KEYS: tuple[str, ...] = (
@@ -45,7 +44,10 @@ def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | 
 
     if isinstance(layout_recognizer_raw, str):
         lowered = layout_recognizer_raw.lower()
-        if lowered.endswith("@mineru"):
+        if lowered.endswith("@monkeyocrv2"):
+            parser_model_name = layout_recognizer_raw
+            layout_recognizer = "MonkeyOCRv2"
+        elif lowered.endswith("@mineru"):
             parser_model_name = layout_recognizer_raw
             layout_recognizer = "MinerU"
         elif lowered.endswith("@paddleocr"):

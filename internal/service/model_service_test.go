@@ -83,6 +83,19 @@ func TestValidateBedrockAPIKeyAuth(t *testing.T) {
 	}
 }
 
+func TestMonkeyOCRv2EnvConfig(t *testing.T) {
+	t.Setenv(common.EnvMonkeyOCRv2ServerURL, "http://monkeyocrv2:8000")
+	t.Setenv(common.EnvMonkeyOCRv2Timeout, "120")
+
+	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
+	if config[common.EnvMonkeyOCRv2ServerURL] != "http://monkeyocrv2:8000" {
+		t.Fatalf("server URL = %#v", config[common.EnvMonkeyOCRv2ServerURL])
+	}
+	if config[common.EnvMonkeyOCRv2Timeout] != "120" {
+		t.Fatalf("timeout = %#v", config[common.EnvMonkeyOCRv2Timeout])
+	}
+}
+
 func TestValidateEmbeddingModel(t *testing.T) {
 	maxDimension := 2048
 	maxBatchSize := 128

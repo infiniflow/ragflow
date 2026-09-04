@@ -16,16 +16,136 @@
 package component
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
 )
+
+func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	file, err := writer.Create("sample/sample.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"layouts": []map[string]any{{"label": "Page-header", "content": "ignored"}, {"label": "Title", "content": "Heading"}, {"label": "Formula", "content": "x^2"}}})
+	_, _ = file.Write(payload)
+	_ = writer.Close()
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sections) != 2 || sections[0] != "Heading" || sections[1] != "x^2" {
+		t.Fatalf("sections=%v", sections)
+	}
+}
+
+func TestMonkeyOCRv2ExtractSectionsEmbedsZIPImage(t *testing.T) {
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	jsonFile, _ := writer.Create("sample/sample.json")
+	_, _ = jsonFile.Write([]byte(`{"layouts":[{"label":"Picture","content":"![figure](images/figure.png)"}]}`))
+	imageFile, _ := writer.Create("sample/images/figure.png")
+	_, _ = imageFile.Write([]byte("png-data"))
+	_ = writer.Close()
+
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sections) != 1 || !strings.HasPrefix(sections[0], "![figure](data:image/png;base64,") {
+		t.Fatalf("sections=%v", sections)
+	}
+}
+
+func TestMonkeyOCRv2RequestTimeoutUsesSetupAndAPIConfig(t *testing.T) {
+	if got := monkeyOCRv2RequestTimeout(schema.ParserSetup{"monkeyocrv2_timeout": 12}, nil); got != 12*time.Second {
+		t.Fatalf("setup timeout=%v", got)
+	}
+	apiKey := `{"MONKEYOCRV2_TIMEOUT":"34"}`
+	if got := monkeyOCRv2RequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKey}); got != 34*time.Second {
+		t.Fatalf("API config timeout=%v", got)
+	}
+}
+
+func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/parse" {
+			t.Fatalf("path=%s", request.URL.Path)
+		}
+		if err := request.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatal(err)
+		}
+		if request.FormValue("start_page_id") != "0" || request.FormValue("end_page_id") != "99999" {
+			t.Fatalf("page range missing")
+		}
+		var output bytes.Buffer
+		archive := zip.NewWriter(&output)
+		file, _ := archive.Create("sample/sample.json")
+		_, _ = file.Write([]byte(`{"layouts":[{"label":"Text","content":"hello"}]}`))
+		_ = archive.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(output.Bytes())
+	}))
+	defer server.Close()
+	result, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.OutputFormat != "markdown" || result.Markdown != "hello" {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
+type monkeyOCRv2FakeDriver struct {
+	modelModule.ModelDriver
+}
+
+func (d *monkeyOCRv2FakeDriver) Name() string { return "monkeyocrv2" }
+
+func TestDispatchMonkeyOCRv2PDFUsesSelectedCompositeModel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		var output bytes.Buffer
+		archive := zip.NewWriter(&output)
+		file, _ := archive.Create("sample/all_results.json")
+		_, _ = file.Write([]byte(`[{"label":"Text","content":"selected"}]`))
+		_ = archive.Close()
+		_, _ = w.Write(output.Bytes())
+	}))
+	defer server.Close()
+
+	original := resolveModelConfig
+	t.Cleanup(func() { resolveModelConfig = original })
+	selected := "MonkeyOCRv2-Parsing@custom@MonkeyOCRv2"
+	resolveModelConfig = func(_ context.Context, _ *gorm.DB, tenantID string, _ entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		if tenantID != "tenant-1" || modelRef != selected {
+			t.Fatalf("tenant=%q modelRef=%q", tenantID, modelRef)
+		}
+		return &monkeyOCRv2FakeDriver{}, "MonkeyOCRv2-Parsing", &modelModule.APIConfig{BaseURL: &server.URL}, 0, nil
+	}
+
+	result, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "tenant-1", schema.ParserSetup{}, selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Markdown != "selected" {
+		t.Fatalf("result=%+v", result)
+	}
+}
 
 // paddleOCRFakeDriver embeds the ModelDriver interface and only implements
 // the OCRFile method needed by dispatchPaddleOCRPdf.
@@ -121,7 +241,7 @@ func TestIsNamedPDFParseMethodWhitelistAligned(t *testing.T) {
 	// Values that MUST be recognized (subset of the Check() whitelist,
 	// case-insensitive).
 	named := []string{
-		"deepdoc", "plain_text", "mineru", "docling",
+		"deepdoc", "plain_text", "mineru", "monkeyocrv2", "docling",
 		"opendataloader", "tcadp parser", "paddleocr", "somark",
 		"DeepDoc", "PLAIN_TEXT", "MinerU", "DocLing",
 		"OpenDataLoader", "TCADP Parser", "PaddleOCR", "SoMark",
@@ -158,6 +278,7 @@ func TestIsNamedPDFParseMethodWhitelistAligned(t *testing.T) {
 func TestIsNamedPDFParseMethodLayoutSuffixes(t *testing.T) {
 	suffixed := []string{
 		"foo@mineru", "@mineru",
+		"foo@monkeyocrv2", "@monkeyocrv2",
 		"foo@paddleocr", "@paddleocr",
 		"foo@somark", "@somark",
 		"foo@opendataloader", "@opendataloader",

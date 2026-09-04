@@ -202,7 +202,7 @@ func (c *ParserComponent) Check() error {
 		}
 		pmLower := strings.ToLower(pm)
 		pdfWhitelist := []string{
-			"deepdoc", "plain_text", "mineru", "docling",
+			"deepdoc", "plain_text", "mineru", "monkeyocrv2", "docling",
 			"opendataloader", "tcadp parser", "paddleocr", "somark",
 		}
 		if !containsString(pdfWhitelist, pmLower) {
