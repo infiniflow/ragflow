@@ -3913,6 +3913,8 @@ async def wiki_refine_from_plan(
     semaphore = asyncio.Semaphore(max_workers) if max_workers and max_workers > 0 else None
     completed = 0
     completed_lock = asyncio.Lock()
+    progress_updates = 20
+    report_every = max(1, (total + progress_updates - 1) // progress_updates)
 
     async def _write_one(plan_item: dict) -> Optional[dict]:
         nonlocal completed
@@ -3922,7 +3924,6 @@ async def wiki_refine_from_plan(
         page_type = plan_item.get("page_type") or "concept"
 
         async def _run() -> Optional[dict]:
-            nonlocal completed
             try:
                 evidence = _wiki_assemble_evidence(
                     plan_item,
@@ -4006,7 +4007,7 @@ async def wiki_refine_from_plan(
                 }
             except Exception:
                 logging.exception("wiki_refine: writer failed for slug=%s", slug)
-                return None
+                raise
 
             # Searchable wiki_page persistence has moved to the task
             # handler so the doc-storage schema can be controlled in one
@@ -4023,21 +4024,27 @@ async def wiki_refine_from_plan(
             except Exception:
                 logging.exception("wiki_refine: persist_draft failed for slug=%s", slug)
 
-            if callback:
+            return page
+
+        result: Optional[dict] = None
+        try:
+            if semaphore is not None:
+                async with semaphore:
+                    result = await _run()
+            else:
+                result = await _run()
+            return result
+        finally:
+            if callback and result is not None:
                 async with completed_lock:
                     completed += 1
                     done = completed
-                progress = 0.1 + 0.85 * (done / total)
-                try:
-                    callback(progress, f"wiki REFINE: {done}/{total} pages written ({slug})")
-                except Exception:
-                    pass
-            return page
-
-        if semaphore is not None:
-            async with semaphore:
-                return await _run()
-        return await _run()
+                if done % report_every == 0 or done == total:
+                    progress = 0.1 + 0.85 * (done / total)
+                    try:
+                        callback(progress, f"wiki REFINE: {done}/{total} pages completed")
+                    except Exception:
+                        logging.exception("wiki REFINE progress callback failed")
 
     tasks = [asyncio.create_task(_write_one(p)) for p in pending]
     if tasks:

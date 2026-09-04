@@ -29,21 +29,24 @@ when present, and download only what is still missing.
 
 import os
 
-import nltk
+# NLTK >=3.10 refuses proxied downloads (SSRF guard, CWE-918) by default. The
+# CI runners and some dev boxes sit behind a proxy, so opt in to proxied fetches
+# before importing nltk; otherwise `nltk.download` fails with a Security
+# Violation. Must be set before the `import nltk` below so pathsec reads it.
+os.environ.setdefault("NLTK_ALLOW_PROXIED_URLOPEN", "1")
 
-# Reuse data already fetched by download_deps.py so provisioned environments
-# do not download it again. download_deps.py writes to a CWD-relative
-# ``nltk_data/`` directory; when invoked from the repo root (the documented
-# usage) that resolves to ``<repo_root>/nltk_data/``. A secondary location
-# ``<repo_root>/ragflow_deps/nltk_data/`` is also checked for environments
-# that run the script from inside ``ragflow_deps/``.
+import nltk
+import warnings
+
+# Reuse data already fetched by download_deps.py (the directory the app exports
+# as NLTK_DATA) so provisioned environments do not download it again. Create it
+# if absent so the fallback download below lands in a repo-local, reproducible
+# location instead of a shared home directory.
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
-for _nltk_candidate in (
-    os.path.join(_REPO_ROOT, "ragflow_deps", "nltk_data"),
-    os.path.join(_REPO_ROOT, "nltk_data"),
-):
-    if os.path.isdir(_nltk_candidate) and _nltk_candidate not in nltk.data.path:
-        nltk.data.path.insert(0, _nltk_candidate)
+_LOCAL_NLTK_DATA = os.path.join(_REPO_ROOT, "ragflow_deps", "nltk_data")
+os.makedirs(_LOCAL_NLTK_DATA, exist_ok=True)
+if _LOCAL_NLTK_DATA not in nltk.data.path:
+    nltk.data.path.insert(0, _LOCAL_NLTK_DATA)
 
 # (download name, resource path used by nltk.data.find)
 _REQUIRED_NLTK_DATA = (
@@ -55,4 +58,10 @@ for _name, _find_path in _REQUIRED_NLTK_DATA:
     try:
         nltk.data.find(_find_path)
     except LookupError:
-        nltk.download(_name, quiet=True)
+        # On shared CI runners the download dir is often group-writable, which
+        # makes NLTK emit a "non-private download directory" UserWarning. pytest
+        # escalates warnings to errors (filterwarnings = error), so suppress it
+        # for the duration of the download and fetch into the repo-local dir.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            nltk.download(_name, download_dir=_LOCAL_NLTK_DATA, quiet=True)
