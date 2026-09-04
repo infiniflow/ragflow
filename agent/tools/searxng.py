@@ -17,10 +17,15 @@ import logging
 import os
 import time
 from abc import ABC
+from urllib.parse import urljoin
+
 import requests
+
 from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
 from common.connection_utils import timeout
 from common.ssrf_guard import assert_url_is_safe, pin_dns
+
+_MAX_REDIRECTS = 10
 
 
 class SearXNGParam(ToolParamBase):
@@ -92,6 +97,7 @@ class SearXNG(ToolBase, ABC):
             return f"SearXNG error: SSRF guard blocked {searxng_url!r}: {e}"
 
         last_e = ""
+        current_url = f"{searxng_url}/search"
         for _ in range(self._param.max_retries + 1):
             if self.check_if_canceled("SearXNG processing"):
                 return
@@ -99,8 +105,29 @@ class SearXNG(ToolBase, ABC):
             try:
                 search_params = {"q": query, "format": "json", "categories": "general", "language": "auto", "safesearch": 1, "pageno": 1}
 
-                with pin_dns(_ssrf_hostname, _ssrf_ip):
-                    response = requests.get(f"{searxng_url}/search", params=search_params, timeout=10)
+                response = None
+                for _ in range(_MAX_REDIRECTS + 1):
+                    with pin_dns(_ssrf_hostname, _ssrf_ip):
+                        response = requests.get(current_url, params=search_params, timeout=10, allow_redirects=False)
+
+                    if response.status_code not in (301, 302, 303, 307, 308):
+                        break
+
+                    location = response.headers.get("Location")
+                    if not location:
+                        break
+
+                    redirect_url = urljoin(current_url, location)
+                    try:
+                        _ssrf_hostname, _ssrf_ip = assert_url_is_safe(redirect_url)
+                    except ValueError as e:
+                        error = f"SSRF guard blocked redirect {redirect_url!r}: {e}"
+                        self.set_output("_ERROR", error)
+                        return f"SearXNG error: {error}"
+                    current_url = redirect_url
+                else:
+                    raise ValueError(f"Exceeded {_MAX_REDIRECTS} redirects fetching {searxng_url!r}")
+
                 response.raise_for_status()
 
                 if self.check_if_canceled("SearXNG processing"):
