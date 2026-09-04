@@ -50,12 +50,6 @@ type searchDatasetService interface {
 	SearchDataset(ctx context.Context, datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error)
 }
 
-type listDatasetsExt struct {
-	Keywords string   `json:"keywords,omitempty"`
-	OwnerIDs []string `json:"owner_ids,omitempty"`
-	ParserID string   `json:"parser_id,omitempty"`
-}
-
 // NewDatasetsHandler creates a new datasets' handler.
 func NewDatasetsHandler(datasetsService *dataset.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
 	h := &DatasetsHandler{
@@ -144,20 +138,15 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		desc = parsed
 	}
 
-	keywords := ""
-	parserID := ""
+	keywords := c.Query("keywords")
+	parserID := c.Query("parser_id")
 	var ownerIDs []string
-
-	// ext keeps the same compatibility payload as the Python REST API.
-	if extStr := c.Query("ext"); extStr != "" {
-		var ext listDatasetsExt
-		if err := json.Unmarshal([]byte(extStr), &ext); err != nil {
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
-			return
+	for _, item := range c.QueryArray("owner_ids") {
+		for _, ownerID := range strings.Split(item, ",") {
+			if ownerID = strings.TrimSpace(ownerID); ownerID != "" {
+				ownerIDs = append(ownerIDs, ownerID)
+			}
 		}
-		keywords = ext.Keywords
-		parserID = ext.ParserID
-		ownerIDs = ext.OwnerIDs
 	}
 
 	// Mirror pydantic: a present-but-empty id fails UUID validation.
@@ -236,8 +225,12 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		return
 	}
 
-	bodyBytes, _, ok := parseJSONRequestObject(c)
+	bodyBytes, raw, ok := parseJSONRequestObject(c)
 	if !ok {
+		return
+	}
+	if _, exists := raw["ext"]; exists {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Extra inputs are not permitted: ext")
 		return
 	}
 
@@ -357,12 +350,12 @@ func pythonJSONTypeName(v interface{}) string {
 }
 
 // listDatasetsAllowedParams mirrors the query field set of Python's
-// ListDatasetReq (BaseListReq + include_parsing_status/ext; `type` is handled
+// ListDatasetReq (BaseListReq + dataset filters; `type` is handled
 // before validation in the Python endpoint).
 var listDatasetsAllowedParams = map[string]bool{
 	"id": true, "ids": true, "name": true, "page": true, "page_size": true,
 	"orderby": true, "desc": true, "include_parsing_status": true,
-	"ext": true, "type": true,
+	"keywords": true, "owner_ids": true, "parser_id": true, "type": true,
 }
 
 // updateDatasetAllowedFields mirrors the field set of Python's UpdateDatasetReq
@@ -370,7 +363,7 @@ var listDatasetsAllowedParams = map[string]bool{
 var updateDatasetAllowedFields = map[string]bool{
 	"name": true, "avatar": true, "description": true, "embedding_model": true,
 	"permission": true, "parse_type": true, "pipeline_id": true, "chunk_method": true,
-	"parser_id": true, "parser_config": true, "auto_metadata_config": true, "ext": true,
+	"parser_id": true, "parser_config": true, "auto_metadata_config": true,
 	"dataset_id": true, "pagerank": true, "language": true, "connectors": true,
 }
 
@@ -419,6 +412,21 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 			if !updateDatasetAllowedFields[field] {
 				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Extra inputs are not permitted: %s", field))
 				return
+			}
+		}
+		if parserConfig, ok := providedFields["parser_config"]; ok {
+			var config map[string]interface{}
+			if json.Unmarshal(parserConfig, &config) == nil {
+				if _, ok := config["ext"]; ok {
+					common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "parser_config.ext is not supported; send parser configuration fields directly")
+					return
+				}
+				if raptor, ok := config["raptor"].(map[string]interface{}); ok {
+					if _, ok := raptor["ext"]; ok {
+						common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "parser_config.raptor.ext is not supported; send RAPTOR configuration fields directly")
+						return
+					}
+				}
 			}
 		}
 	}

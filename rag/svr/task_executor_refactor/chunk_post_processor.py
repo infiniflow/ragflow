@@ -444,9 +444,6 @@ def _parser_config_compilation_template_group_ids(parser_config) -> list[str]:
         return []
     if "compilation_template_group_id" in parser_config:
         return _normalize(parser_config.get("compilation_template_group_id"))
-    ext = parser_config.get("ext")
-    if isinstance(ext, dict):
-        return _normalize(ext.get("compilation_template_group_id"))
     return []
 
 
@@ -976,7 +973,6 @@ async def run_tree_templates(
             "threshold": float(raptor_cfg.get("threshold") or 0.1),
             "random_seed": int(raptor_cfg.get("random_seed") or 0),
             "max_cluster": int(raptor_cfg.get("max_cluster") or 64),
-            "ext": raptor_cfg.get("ext") or {},
         }
         progress_cb(
             msg=f"tree-template ({idx + 1}/{len(templates)}): building tree for doc={doc_id}",
