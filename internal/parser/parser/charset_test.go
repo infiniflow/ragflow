@@ -1,6 +1,17 @@
 package parser
 
-import "testing"
+import (
+	"archive/zip"
+	"bytes"
+	"context"
+	"strings"
+	"testing"
+
+	"golang.org/x/text/encoding/japanese"
+	"golang.org/x/text/encoding/korean"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/encoding/traditionalchinese"
+)
 
 // TestCharsetEncodingSharedLabelContract locks the single-label contract of
 // charsetEncoding: every fallback label the HTML parser may walk (and the
@@ -11,7 +22,7 @@ import "testing"
 // drift apart again.
 func TestCharsetEncodingSharedLabelContract(t *testing.T) {
 	mailLabels := []string{"gb2312", "gbk", "gb18030", "hz-gb-2312", "big5", "shift_jis", "sjis", "euc-kr", "iso-8859-1", "latin1"}
-	for _, label := range append(mailLabels, htmlCharsetFallbackLabels...) {
+	for _, label := range append(mailLabels, fallbackCharsetLabels...) {
 		if _, ok := charsetEncoding(label); !ok {
 			t.Errorf("charsetEncoding(%q) = (_, false); the shared resolver must cover every mail-chain and HTML-fallback label", label)
 		}
@@ -58,5 +69,151 @@ func TestDecodeFirstCharsetMatchAcceptance(t *testing.T) {
 
 	if _, _, ok := decodeFirstCharsetMatch(big5Bytes, []string{"utf-8"}); ok {
 		t.Error("decodeFirstCharsetMatch over a rejecting candidate list must report failure")
+	}
+}
+
+func TestDecodeToUTF8(t *testing.T) {
+	// 1. Empty input passes through
+	out, label := DecodeToUTF8(nil, "")
+	if len(out) != 0 || label != "utf-8" {
+		t.Errorf("empty input: got (%d, %q), want (0, utf-8)", len(out), label)
+	}
+
+	// 2. Already UTF-8 passes through without alteration
+	utf8Str := "你好，世界！This is valid UTF-8 text."
+	out, label = DecodeToUTF8([]byte(utf8Str), "")
+	if string(out) != utf8Str || label != "utf-8" {
+		t.Errorf("UTF-8 input: got %q (%q), want %q (utf-8)", string(out), label, utf8Str)
+	}
+
+	// 3. GBK / GB2312 text
+	chinese := "自然语言处理与知识图谱构建"
+	gbkBytes, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(chinese))
+	if err != nil {
+		t.Fatalf("GBK encode: %v", err)
+	}
+	out, label = DecodeToUTF8(gbkBytes, "text/plain")
+	if string(out) != chinese {
+		t.Errorf("GBK decode: got %q, want %q", string(out), chinese)
+	}
+	if label != "gb18030" && label != "gbk" && label != "gb2312" {
+		t.Errorf("GBK label: got %q, want gb18030/gbk/gb2312", label)
+	}
+
+	// 4. Big5 text
+	traditional := "繁體中文測試資料"
+	big5Bytes, err := traditionalchinese.Big5.NewEncoder().Bytes([]byte(traditional))
+	if err != nil {
+		t.Fatalf("Big5 encode: %v", err)
+	}
+	out, label = DecodeToUTF8(big5Bytes, "")
+	if string(out) != traditional {
+		t.Errorf("Big5 decode: got %q, want %q", string(out), traditional)
+	}
+
+	// 5. Shift-JIS Japanese text
+	japaneseText := "日本語テキストのテストです"
+	sjisBytes, err := japanese.ShiftJIS.NewEncoder().Bytes([]byte(japaneseText))
+	if err != nil {
+		t.Fatalf("Shift-JIS encode: %v", err)
+	}
+	out, _ = DecodeToUTF8(sjisBytes, "")
+	if string(out) != japaneseText {
+		t.Errorf("Shift-JIS decode: got %q, want %q", string(out), japaneseText)
+	}
+
+	// 6. EUC-KR Korean text
+	koreanText := "한국어 시험: 이 문서는 EUC-KR로 인코딩되어 있습니다. 서울특별시."
+	euckrBytes, err := korean.EUCKR.NewEncoder().Bytes([]byte(koreanText))
+	if err != nil {
+		t.Fatalf("EUC-KR encode: %v", err)
+	}
+	out, _ = DecodeToUTF8(euckrBytes, "")
+	if string(out) != koreanText {
+		t.Errorf("EUC-KR decode: got %q, want %q", string(out), koreanText)
+	}
+
+	// 7. XML declaration check
+	xmlHeader := `<?xml version="1.0" encoding="GB2312"?><html><body><p>章节测试</p></body></html>`
+	xmlGBK, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(xmlHeader))
+	if err != nil {
+		t.Fatalf("XML GBK encode: %v", err)
+	}
+	out, label = DecodeToUTF8(xmlGBK, "application/xhtml+xml")
+	if !strings.Contains(string(out), "章节测试") {
+		t.Errorf("XML declaration decode: missing expected text in %q", string(out))
+	}
+	if label != "gb2312" && label != "gb18030" && label != "gbk" {
+		t.Errorf("XML declaration label: got %q", label)
+	}
+}
+
+func TestCSVParser_GBK(t *testing.T) {
+	csvText := "产品,分类,价格,备注\n笔记本电脑,电子,6999.00,\"特价销售，送鼠标\"\n无线耳机,配件,399.00,\"热销\"\n"
+	gbkBytes, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(csvText))
+	if err != nil {
+		t.Fatalf("GBK encode: %v", err)
+	}
+
+	p := NewCSVParser()
+	res := p.ParseWithResult(context.Background(), "products.csv", gbkBytes)
+	if res.Err != nil {
+		t.Fatalf("CSVParser.ParseWithResult failed: %v", res.Err)
+	}
+	if strings.ContainsRune(res.HTML, '\ufffd') {
+		t.Errorf("CSV HTML output contains replacement runes: %s", res.HTML)
+	}
+	for _, want := range []string{"笔记本电脑", "电子", "特价销售，送鼠标", "无线耳机"} {
+		if !strings.Contains(res.HTML, want) {
+			t.Errorf("CSV HTML missing expected substring %q; got: %s", want, res.HTML)
+		}
+	}
+	if enc, _ := res.File["encoding"].(string); enc != "gb18030" && enc != "gbk" && enc != "gb2312" {
+		t.Errorf("CSV File.encoding = %q, want gbk/gb2312/gb18030", enc)
+	}
+}
+
+func TestEPUBParser_GB2312(t *testing.T) {
+	// Create an in-memory EPUB zip with GB2312-encoded chapter XHTML
+	chapterContent := `<?xml version="1.0" encoding="GB2312"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>第一章</title></head>
+<body><h1>第一章 破晓</h1><p>这是一段包含中文的EPUB正文内容。</p></body>
+</html>`
+	chapterGBK, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(chapterContent))
+	if err != nil {
+		t.Fatalf("GBK encode: %v", err)
+	}
+
+	containerXML := `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`
+	contentOPF := `<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="2.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>测试</dc:title></metadata><manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c1"/></spine></package>`
+
+	buf := new(bytes.Buffer)
+	zw := zip.NewWriter(buf)
+	w, _ := zw.Create("META-INF/container.xml")
+	w.Write([]byte(containerXML))
+	w, _ = zw.Create("OEBPS/content.opf")
+	w.Write([]byte(contentOPF))
+	w, _ = zw.Create("OEBPS/c1.xhtml")
+	w.Write(chapterGBK)
+	zw.Close()
+
+	p := NewEPUBParser()
+	res := p.ParseWithResult(context.Background(), "book.epub", buf.Bytes())
+	if res.Err != nil {
+		t.Fatalf("EPUBParser.ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatal("want non-empty JSON items from EPUB")
+	}
+	text, _ := res.JSON[0]["text"].(string)
+	if strings.ContainsRune(text, '\ufffd') {
+		t.Errorf("EPUB text contains replacement runes: %s", text)
+	}
+	for _, want := range []string{"第一章 破晓", "这是一段包含中文的EPUB正文内容。"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("EPUB text missing %q; got: %s", want, text)
+		}
 	}
 }

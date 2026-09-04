@@ -238,7 +238,8 @@ func readEPUBContentFile(r *zip.Reader, opfDir, href string) string {
 	if err != nil {
 		return ""
 	}
-	return stripHTMLTags(string(raw))
+	decoded, _ := DecodeToUTF8(raw, "application/xhtml+xml")
+	return stripHTMLTags(string(decoded))
 }
 
 // stripHTMLTags removes HTML markup and returns normalized plain text.

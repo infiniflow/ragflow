@@ -26,8 +26,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 
+	"github.com/saintfish/chardet"
+	htmlcharset "golang.org/x/net/html/charset"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/encoding/japanese"
@@ -90,6 +94,9 @@ func decodeWithCharset(payload []byte, charset string) (string, error) {
 	if enc, ok := charsetEncoding(charset); ok {
 		return decodeTransform(payload, enc.NewDecoder())
 	}
+	if enc, _ := htmlcharset.Lookup(charset); enc != nil {
+		return decodeTransform(payload, enc.NewDecoder())
+	}
 	// Unknown charset: treat as latin-1.
 	runes := make([]rune, len(payload))
 	for i, b := range payload {
@@ -124,3 +131,154 @@ func decodeFirstCharsetMatch(data []byte, labels []string) (string, string, bool
 	}
 	return "", "", false
 }
+
+// fallbackCharsetLabels is the ordered brute-force decode loop for bytes
+// that are neither valid UTF-8 nor carrying a BOM / explicit charset declaration.
+// GB18030 (the GBK superset) leads for CJK documents, followed by Big5, Shift-JIS,
+// EUC-KR, and terminal ISO-8859-1.
+var fallbackCharsetLabels = []string{"gb18030", "big5", "shift_jis", "euc-kr", "iso-8859-1"}
+
+
+// charsetDetectConfidence is the minimum statistical-detection confidence
+// (on chardet's 0-100 scale) allowed to override the fallback chain order.
+const charsetDetectConfidence = 90
+
+func detectedCharset(data []byte) string {
+	sample := data
+	if len(sample) > 1024 {
+		sample = sample[:1024]
+	}
+	res, err := chardet.NewTextDetector().DetectBest(sample)
+	if err != nil || res == nil || res.Charset == "" || res.Confidence < charsetDetectConfidence {
+		return ""
+	}
+	detected := canonicalCharsetLabel(res.Charset)
+	// The detector reports the GBK family as GB2312 / GBK; GB18030 is the
+	// superset we ship, so both map onto the gb18030 candidate.
+	if detected == "gb2312" || detected == "gbk" {
+		detected = "gb18030"
+	}
+	for _, label := range fallbackCharsetLabels {
+		if canonicalCharsetLabel(label) == detected {
+			return label
+		}
+	}
+	return ""
+}
+
+var (
+	htmlMetaCharsetRe = regexp.MustCompile(`(?i)<meta[^>]*charset\s*=\s*["']?\s*([a-z0-9._+\-]+)`)
+	xmlEncodingRe     = regexp.MustCompile(`(?i)<\?xml[^>]*encoding\s*=\s*["']?\s*([a-z0-9._+\-]+)`)
+)
+
+func declaresWindows1252(data []byte) bool {
+	if len(data) > 1024 {
+		data = data[:1024]
+	}
+	for _, m := range htmlMetaCharsetRe.FindAllSubmatch(data, -1) {
+		if _, name := htmlcharset.Lookup(string(m[1])); name == "windows-1252" {
+			return true
+		}
+	}
+	for _, m := range xmlEncodingRe.FindAllSubmatch(data, -1) {
+		if _, name := htmlcharset.Lookup(string(m[1])); name == "windows-1252" {
+			return true
+		}
+	}
+	return false
+}
+
+func declaredXMLEncoding(data []byte) string {
+	sample := data
+	if len(sample) > 1024 {
+		sample = sample[:1024]
+	}
+	m := xmlEncodingRe.FindSubmatch(sample)
+	if len(m) > 1 {
+		return string(m[1])
+	}
+	return ""
+}
+
+// extractCharsetHint extracts any explicit charset label from hint,
+// whether hint is a bare charset ("gb2312") or a media type parameter ("text/plain; charset=gb2312").
+func extractCharsetHint(hint string) string {
+	hint = strings.TrimSpace(hint)
+	if hint == "" {
+		return ""
+	}
+	if !strings.Contains(hint, "/") {
+		return hint
+	}
+	if idx := strings.Index(strings.ToLower(hint), "charset="); idx != -1 {
+		cs := hint[idx+len("charset="):]
+		cs = strings.Trim(cs, `"' `)
+		if end := strings.IndexAny(cs, "; \t\r\n"); end != -1 {
+			cs = cs[:end]
+		}
+		return cs
+	}
+	return ""
+}
+
+// DecodeToUTF8 converts arbitrary data bytes into UTF-8.
+// If data is already valid UTF-8, it returns data untouched with encoding "utf-8".
+// hint can be:
+//   - An explicit charset label (e.g. "gbk", "gb2312", "big5", from MIME headers)
+//   - A MIME Content-Type (e.g. "text/html", "application/xhtml+xml", "text/csv", "text/plain")
+//   - Empty string ""
+// It returns the decoded UTF-8 bytes and the canonical encoding label used.
+func DecodeToUTF8(data []byte, hint string) ([]byte, string) {
+	if len(data) == 0 {
+		return data, "utf-8"
+	}
+
+	// 1. Explicit charset declaration from hint (e.g. email MIME headers).
+	// If the caller explicitly declared a non-UTF8 charset, prioritize trying it first.
+	// This correctly handles 7-bit ASCII escape encodings like HZ-GB-2312, where bytes are
+	// valid ASCII (thus valid UTF-8) but represent encoded Chinese escape sequences.
+	if cs := extractCharsetHint(hint); cs != "" && canonicalCharsetLabel(cs) != "utf8" {
+		if decoded, err := decodeWithCharset(data, cs); err == nil {
+			return []byte(decoded), canonicalCharsetLabel(cs)
+		}
+	}
+
+	// 2. Fast-path: already valid UTF-8.
+	if utf8.Valid(data) {
+		return data, "utf-8"
+	}
+
+	// 3. XML declaration check (e.g. <?xml version="1.0" encoding="GB2312"?> in EPUB XHTML)
+	if xmlEnc := declaredXMLEncoding(data); xmlEnc != "" {
+		if decoded, err := decodeWithCharset(data, xmlEnc); err == nil {
+			return []byte(decoded), canonicalCharsetLabel(xmlEnc)
+		}
+	}
+
+	// 4. Document prescan via DetermineEncoding (handles BOM, HTML meta charset, and Content-Type)
+	contentType := ""
+	if strings.Contains(hint, "/") {
+		contentType = hint
+	}
+	if enc, name, _ := htmlcharset.DetermineEncoding(data, contentType); enc != nil &&
+		(name != "windows-1252" || declaresWindows1252(data)) {
+		if decoded, err := decodeTransform(data, enc.NewDecoder()); err == nil {
+			return []byte(decoded), name
+		}
+	}
+
+	// 5. Statistical detection with chardet (confidence >= 90)
+	if label := detectedCharset(data); label != "" {
+		if decoded, err := decodeWithCharset(data, label); err == nil {
+			return []byte(decoded), label
+		}
+	}
+
+	// 6. Fallback chain: gb18030 -> big5 -> shift_jis -> euc-kr -> iso-8859-1
+	if decoded, label, ok := decodeFirstCharsetMatch(data, fallbackCharsetLabels); ok {
+		return []byte(decoded), label
+	}
+
+	return data, ""
+}
+
