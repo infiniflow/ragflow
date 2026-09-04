@@ -171,25 +171,39 @@ def test_overlap_prefix_is_never_dropped_at_overflow():
 
 
 # --------------------------------------------------------------------------- #
-# Custom-delimiter path (intended #11434 behaviour must be preserved)
+# Custom-delimiter path (boundary hints, still capped by chunk_token_num)
 # --------------------------------------------------------------------------- #
 
 
 @pytest.mark.p2
-def test_custom_delimiter_ignores_chunk_size():
-    text = "partA##partB##partC"
-    # Backtick-wrapped custom delimiter -> every segment is its own chunk,
-    # regardless of chunk_token_num.
-    chunks = [c.strip() for c in naive_merge([text], chunk_token_num=1000, delimiter="\n。`##`")]
-    assert chunks == ["partA", "partB", "partC"]
+def test_custom_delimiter_segments_merge_to_the_cap():
+    # A wrapped delimiter marks a boundary, not an exact chunk size (#18552):
+    # segments merge up to chunk_token_num like any other paragraphs, and the
+    # delimiter text never leaks into a chunk.
+    parts = [f"seg{i}" for i in range(5)]
+    text = "##".join(parts)
+    chunks = _nonempty(naive_merge([text], chunk_token_num=1000, delimiter="`##`"))
+    assert len(chunks) == 1
+    for part in parts:
+        assert part in chunks[0]
+    assert "##" not in chunks[0]
 
 
 @pytest.mark.p2
-def test_custom_delimiter_does_not_size_merge():
-    parts = [f"seg{i}" for i in range(5)]
+def test_custom_delimiter_boundary_respected_when_cap_is_tight():
+    # ~13 tokens per segment; a cap of 15 fits one segment but never two, so
+    # every wrapped-delimiter boundary survives the merge.
+    parts = [f"seg{i} " + " ".join(["word"] * 10) for i in range(5)]
     text = "##".join(parts)
-    chunks = [c.strip() for c in naive_merge([text], chunk_token_num=1000, delimiter="`##`")]
-    assert chunks == parts
+    chunks = _nonempty(
+        naive_merge(
+            [text],
+            chunk_token_num=15,
+            delimiter="`##`",
+            strategy=MergeStrategy.UNDER_CAP,
+        )
+    )
+    assert [c.strip() for c in chunks] == [p.strip() for p in parts]
 
 
 # --------------------------------------------------------------------------- #
@@ -214,10 +228,14 @@ def test_images_oversized_section_is_split():
 
 
 @pytest.mark.p2
-def test_images_custom_delimiter_preserved():
+def test_images_custom_delimiter_merges_to_the_cap():
+    # Same contract as the text path: segments between wrapped delimiters
+    # merge up to chunk_token_num (#18552), image lists staying aligned.
     chunks, imgs = naive_merge_with_images([("x##y##z", "")], [None], chunk_token_num=1000, delimiter="`##`")
-    assert [c.strip() for c in chunks] == ["x", "y", "z"]
+    assert len(chunks) == 1
     assert len(chunks) == len(imgs)
+    assert all(part in chunks[0] for part in ("x", "y", "z"))
+    assert "##" not in chunks[0]
 
 
 @pytest.mark.p2
