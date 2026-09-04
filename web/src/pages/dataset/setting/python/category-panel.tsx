@@ -7,6 +7,7 @@ import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';
 import { TagTabs } from './tag-tabs';
 import { DescriptionKeyMap, ImageMap } from './utils';
+import { cn } from '@/lib/utils';
 
 const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   const parserList = useSelectParserList();
@@ -54,7 +55,12 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
               <span className="text-text-secondary">
                 {t('methodExamplesDescription')}
               </span>
-              <div className="grid grid-cols-2 gap-2.5 mt-4">
+              <div
+                className={cn(
+                  'grid gap-2.5 mt-4',
+                  imageList.length > 1 ? 'grid-cols-2' : 'grid-cols-1',
+                )}
+              >
                 {imageList.map((x) => (
                   <SvgIcon
                     name={x}
