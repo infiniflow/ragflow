@@ -175,7 +175,6 @@ async def extract_claims_for_chunks(
 
     batches = _pack_claim_batches(entries)
 
-    text_by_id = {cid: text for cid, text in entries}
     claims_by_chunk: dict[str, list[dict]] = {}
 
     total_chunks = len(entries)
@@ -189,7 +188,13 @@ async def extract_claims_for_chunks(
     tasks = []
     batch_size_of: dict = {}
     for batch in batches:
-        t = asyncio.create_task(_extract_claim_for_chunk(batch, llm_model, text_by_id))
+        # Hand each batch only its own text. The gate falls back to scanning
+        # every chunk it is given when a quote cites none, so passing the whole
+        # document would let a quote match an unrelated chunk that merely
+        # happens to contain the same sentence — and would silently attribute
+        # the claim to the wrong source.
+        batch_text_by_id = {cid: text for cid, text in batch}
+        t = asyncio.create_task(_extract_claim_for_chunk(batch, llm_model, batch_text_by_id))
         tasks.append(t)
         batch_size_of[t] = len(batch)
     processed = 0
@@ -304,16 +309,13 @@ async def _extract_claim_for_chunk(batch, llm_model, text_by_id):
             continue
         # A batch holds several chunks, so the model must say which chunk a claim
         # came from. Keep only ids that are actually in this batch (a hallucinated
-        # id pointing at text the model never saw cannot be validated), falling
-        # back to the batch's first chunk when the model omits attribution. The
-        # evidence gate then checks the quote against that chunk's text.
+        # id pointing at text the model never saw cannot be validated). Missing
+        # attribution is recovered from the verified evidence below; a claim that
+        # neither the model nor its evidence can place is dropped.
         src = [str(s) for s in (it.get("source_chunk_ids") or []) if s]
-        src = [s for s in src if s in batch_ids]
-        if not src:
-            src = [batch[0][0]]
         it["name"] = name
         it["type"] = "claim"
-        it["source_chunk_ids"] = src
+        it["source_chunk_ids"] = [s for s in src if s in batch_ids]
         if not it.get("description"):
             it["description"] = name
         claims.append(it)
@@ -333,7 +335,29 @@ async def _extract_claim_for_chunk(batch, llm_model, text_by_id):
         verified,
         rejected,
     )
-    return batch[0][0], claims
+
+    # Recover attribution from the evidence that survived the gate: the chunk a
+    # quote was located in IS where the claim came from. Falling back to
+    # batch[0][0] instead would file every unattributed claim under an arbitrary
+    # chunk — and after rechunking, under one that no longer exists.
+    attributed: list[dict] = []
+    for cl in claims:
+        if cl.get("source_chunk_ids"):
+            attributed.append(cl)
+            continue
+        derived = next(
+            (e.get("chunk_id") for e in cl.get("evidence") or [] if isinstance(e, dict) and e.get("chunk_id") in batch_ids),
+            None,
+        )
+        if derived is None:
+            logging.info("[RAPTOR] dropped claim with no attributable source: %s", cl.get("name"))
+            continue
+        cl["source_chunk_ids"] = [derived]
+        attributed.append(cl)
+
+    if not attributed:
+        return None
+    return batch[0][0], attributed
 
 
 def format_claims_for_summary(claims: list[dict]) -> str:

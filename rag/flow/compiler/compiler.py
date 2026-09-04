@@ -481,22 +481,23 @@ class Compiler(ProcessBase, LLM):
                 )
                 # Claims become their own searchable rows so global KNN can hit
                 # them directly instead of only via beam descent. Best-effort:
-                # a failure here must not cost us the tree.
-                if claims_by_chunk:
-                    from rag.advanced_rag.knowlege_compile.structure import (
-                        _struct_upsert_tree_claim_rows,
-                    )
+                # a failure here must not cost us the tree. Called even when
+                # there are no claims, so a recompile that yields none clears
+                # the rows a previous run wrote.
+                from rag.advanced_rag.knowlege_compile.structure import (
+                    _struct_upsert_tree_claim_rows,
+                )
 
-                    await _struct_upsert_tree_claim_rows(
-                        claims_by_chunk,
-                        tenant_id,
-                        kb_id,
-                        doc_id,
-                        doc_name,
-                        embedding_model,
-                        compile_kwd="tree",
-                        compilation_template_id=template_id,
-                    )
+                await _struct_upsert_tree_claim_rows(
+                    claims_by_chunk,
+                    tenant_id,
+                    kb_id,
+                    doc_id,
+                    doc_name,
+                    embedding_model,
+                    compile_kwd="tree",
+                    compilation_template_id=template_id,
+                )
             except Exception:
                 logging.exception("Compiler: tree-template %s graph upsert failed for doc %s", template_id, doc_id)
                 continue

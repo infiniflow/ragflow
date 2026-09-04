@@ -323,7 +323,13 @@ func sortedKeys(m map[string][]Claim) []string {
 // The embedding excludes evidence, matching the page_index claim path and the
 // Python implementation: the geometric layer indexes the claim, not the raw
 // source it was verified against.
-func buildTreeClaimProducts(ctx context.Context, deps common.Deps, docID string, claimsByChunk map[string][]Claim) ([]common.Product, error) {
+//
+// templateID scopes the row to the compilation template that produced it, like
+// Python's _struct_upsert_tree_claim_rows: it is stamped on the product and
+// mixed into the row id, so two templates that extract the same claim from the
+// same document get two rows instead of overwriting each other — and a
+// template-scoped cleanup can remove one without touching the other.
+func buildTreeClaimProducts(ctx context.Context, deps common.Deps, docID string, claimsByChunk map[string][]Claim, templateID string) ([]common.Product, error) {
 	if len(claimsByChunk) == 0 {
 		return nil, nil
 	}
@@ -371,20 +377,34 @@ func buildTreeClaimProducts(ctx context.Context, deps common.Deps, docID string,
 	if err != nil {
 		return nil, err
 	}
+	// One vector per payload, no exceptions: a short read means the vectors no
+	// longer line up with the payloads, and writing claim rows with missing or
+	// mismatched vectors would silently corrupt retrieval. Fail before writing
+	// anything so a bad batch never leaves half-embedded claims behind.
+	if len(vecs) != len(payloads) {
+		return nil, fmt.Errorf("tree: embedder returned %d vector(s) for %d claim payload(s)", len(vecs), len(payloads))
+	}
 
 	out := make([]common.Product, 0, len(payloads))
 	for i, payload := range payloads {
-		var vec []float32
-		if i < len(vecs) {
-			vec = vecs[i]
+		vec := vecs[i]
+		content := payloadJSON(payload)
+		// Mirror Python _struct_to_doc_storage_doc, which mixes the template id
+		// into the row-id seed (row_seed_extras): without it two templates that
+		// extract an identical claim from the same document would share a row id
+		// and silently overwrite one another.
+		idParts := []string{content, docID}
+		if templateID != "" {
+			idParts = append(idParts, templateID)
 		}
 		out = append(out, common.Product{
-			ID:       common.StableRowID(payloadJSON(payload), docID),
-			DocID:    docID,
-			TenantID: deps.TenantID,
-			Variant:  common.VariantTree,
-			Content:  payloadJSON(payload),
-			Vector:   vec,
+			ID:         common.StableRowID(idParts...),
+			DocID:      docID,
+			TemplateID: templateID,
+			TenantID:   deps.TenantID,
+			Variant:    common.VariantTree,
+			Content:    content,
+			Vector:     vec,
 			Meta: map[string]any{
 				"kind":             "claim",
 				"compile_kwd":      "tree",

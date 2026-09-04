@@ -851,6 +851,23 @@ def _struct_evidence_gate_mode(parser_config: dict) -> str:
     return _EVIDENCE_GATE_DEFAULT
 
 
+def _struct_relation_expects_evidence(parser_config: dict) -> bool:
+    """Whether relation items are expected to carry evidence.
+
+    Only templates that list ``evidence`` under ``relation.output_fields`` ask
+    the model for relation evidence. Gating relations unconditionally would
+    strip the field from payloads that legitimately have none, changing the
+    stored shape for every configuration that never asked for it.
+    """
+    relations_cfg = _struct_get(parser_config, "relation", default={}) or {}
+    if not isinstance(relations_cfg, dict):
+        return False
+    fields = _struct_get(relations_cfg, "output_fields", default=[]) or []
+    if not isinstance(fields, (list, tuple)):
+        return False
+    return any(isinstance(f, str) and f.strip().lower() == "evidence" for f in fields)
+
+
 def _struct_normalize_for_match(text: str) -> tuple[str, list[int]]:
     """Collapse whitespace runs, returning the normalized text and, for each
     normalized index, the index of the character it came from.
@@ -1017,9 +1034,15 @@ def _struct_payload_description(payload: dict, excluded: frozenset[str] | set[st
     """
     skip = _STRUCT_INDEX_EXCLUDED_KEYS if excluded is None else excluded
     parts: list[str] = []
-    for k, v in payload.items():
+    # Keys are visited in sorted order to match the Go implementation
+    # (common.PayloadDescription). Go maps carry no insertion order, so that
+    # side sorts; iterating this dict in insertion order would feed the two
+    # runtimes different text — and therefore different vectors — for the very
+    # same payload.
+    for k in sorted(payload):
         if k in skip:
             continue
+        v = payload[k]
         if isinstance(v, (list, tuple)):
             for item in v:
                 if item is None:
@@ -1345,13 +1368,18 @@ async def _struct_process_batch(
         # Validate claim evidence while the batch's source text is still in
         # hand: every quote must be locatable in the chunk it cites, otherwise
         # it is discarded. Runs before embedding so the vector is built from
-        # the surviving payload.
-        if items:
-            verified, rejected = _struct_apply_evidence_gate(
-                items,
-                _struct_batch_text_by_chunk_id(packed, chunk_id_map),
-                _struct_evidence_gate_mode(parser_config),
-            )
+        # the surviving payload. Relations are gated the same way whenever the
+        # template asks them to carry evidence.
+        if items or relations:
+            text_by_chunk = _struct_batch_text_by_chunk_id(packed, chunk_id_map)
+            gate_mode = _struct_evidence_gate_mode(parser_config)
+            verified = rejected = 0
+            if items:
+                verified, rejected = _struct_apply_evidence_gate(items, text_by_chunk, gate_mode)
+            if relations and _struct_relation_expects_evidence(parser_config):
+                rel_verified, rel_rejected = _struct_apply_evidence_gate(relations, text_by_chunk, gate_mode)
+                verified += rel_verified
+                rejected += rel_rejected
             if verified or rejected:
                 logging.info(f"compile_structure_from_text: doc={doc_id} batch {batch_idx}: evidence verified={verified} rejected={rejected}")
 
@@ -2900,6 +2928,46 @@ async def _struct_upsert_graph_json(
         await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
 
 
+# Upper bound on the claim rows listed when deciding which previous rows the
+# new payload no longer covers. Claims are one row each, so a very large
+# document reaches the low thousands; anything past the limit is left for the
+# next recompile rather than costing an unbounded scan.
+_STRUCT_CLAIM_ROW_SCAN_LIMIT = 4096
+
+
+async def _struct_existing_claim_row_ids(index: str, kb_id: str, condition: dict) -> list[str]:
+    """Return the ids of the claim rows matching ``condition``.
+
+    Lets the caller tell "overwrite this row" from "drop this row" without
+    deleting first: only ids the new payload does not cover are removed, and
+    nothing is deleted until the replacement rows are safely written.
+    """
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    select_fields = ["id"]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            select_fields,
+            [],
+            condition,
+            [],
+            OrderByExpr(),
+            0,
+            _STRUCT_CLAIM_ROW_SCAN_LIMIT,
+            index,
+            [kb_id],
+        )
+    except Exception:
+        # Failing to list is not a reason to skip the upsert: without ids we
+        # simply keep whatever is already stored.
+        logging.exception("tree claims: could not list existing claim rows")
+        return []
+    field_map = settings.docStoreConn.get_fields(res, select_fields) or {}
+    return [str(rid) for rid in field_map if rid]
+
+
 async def _struct_upsert_tree_claim_rows(
     claims_by_chunk: dict,
     tenant_id: str,
@@ -2943,10 +3011,31 @@ async def _struct_upsert_tree_claim_rows(
                 payload["evidence"] = claim["evidence"]
             payloads.append((chunk_id, payload))
 
+    index = _rag_search.index_name(tenant_id)
+
+    # Scoped to this document and template: a claim row's id hashes its payload,
+    # so a re-parse with different claims leaves the previous rows behind unless
+    # they are removed explicitly.
+    delete_condition = {
+        "doc_id": [doc_id],
+        "compile_kwd": [compile_kwd],
+        "entity_type_kwd": ["claim"],
+    }
+    if compilation_template_id:
+        delete_condition["compilation_template_ids"] = [compilation_template_id]
+
     if not payloads:
+        # Recompiling to zero claims must still clear what was stored: the
+        # caller only knows the new payload, and stale rows would keep answering
+        # queries with facts the document no longer has.
+        await thread_pool_exec(settings.docStoreConn.delete, delete_condition, index, kb_id)
+        logging.info(
+            "tree claims: doc=%s template=%s yielded no claims; removed stale claim rows",
+            doc_id,
+            compilation_template_id,
+        )
         return 0
 
-    index = _rag_search.index_name(tenant_id)
     # Evidence is excluded from the embedding input, consistent with the
     # page_index claim path.
     embeddings = await _struct_embed(embedding_model, [_struct_payload_description(p) for _, p in payloads])
@@ -2978,17 +3067,28 @@ async def _struct_upsert_tree_claim_rows(
         row["entity_type_kwd"] = "claim"
         rows.append(row)
 
-    # Replace first: a claim's row id hashes its payload, so a re-parse with
-    # different claims would otherwise leave the previous rows behind.
-    delete_condition = {
-        "doc_id": [doc_id],
-        "compile_kwd": [compile_kwd],
-        "entity_type_kwd": ["claim"],
-    }
-    if compilation_template_id:
-        delete_condition["compilation_template_ids"] = [compilation_template_id]
-    await thread_pool_exec(settings.docStoreConn.delete, delete_condition, index, kb_id)
+    # An unchanged claim hashes to the same row id, so the insert below simply
+    # overwrites it — those rows must survive the cleanup that follows.
+    new_ids = {row["id"] for row in rows}
+    stale_ids = [rid for rid in await _struct_existing_claim_row_ids(index, kb_id, delete_condition) if rid not in new_ids]
+
+    # Insert BEFORE delete: the doc store has no transaction, so ordering IS the
+    # rollback. A failed insert leaves the previous claim rows untouched, while
+    # deleting first would drop them and leave the document with no claims at all
+    # if the write then failed.
     await thread_pool_exec(settings.docStoreConn.insert, rows, index, kb_id)
+    if stale_ids:
+        try:
+            await thread_pool_exec(settings.docStoreConn.delete, {"id": stale_ids}, index, kb_id)
+        except Exception:
+            # The new rows are already readable, so leaving a few stale ones
+            # behind is the lesser evil; the next recompile clears them.
+            logging.exception(
+                "tree claims: failed to remove %d stale claim row(s) for doc=%s template=%s",
+                len(stale_ids),
+                doc_id,
+                compilation_template_id,
+            )
     logging.info(
         "tree claims: upserted %d claim row(s) for doc=%s template=%s",
         len(rows),

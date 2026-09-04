@@ -70,7 +70,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// Claims become their own searchable rows so global KNN can hit them
 	// directly instead of only reaching them through beam descent. Also
 	// best-effort: a failure here must not cost us the tree.
-	if claimProds, err := buildTreeClaimProducts(ctx, deps, docID, claimsByChunk); err != nil {
+	if claimProds, err := buildTreeClaimProducts(ctx, deps, docID, claimsByChunk, param.TemplateID); err != nil {
 		log.Printf("tree: claim rows failed (best-effort, continuing): %v", err)
 	} else {
 		products = append(products, claimProds...)
@@ -193,7 +193,10 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 	// more compact than the source, so the per-chunk truncation in
 	// buildClusterContent no longer discards content, and the abstraction is
 	// guaranteed to agree with the claims attached to the same cluster.
-	claimsByChunk := ExtractClaimsForChunks(ctx, deps, llmID, chunks)
+	//
+	// The gate mode comes from the template config, mirroring Python
+	// _struct_evidence_gate_mode(parser_config).
+	claimsByChunk := ExtractClaimsForChunks(ctx, deps, llmID, chunks, ParseEvidenceGateMode(param.Extra["evidence_gate_mode"]))
 	if len(claimsByChunk) > 0 {
 		log.Printf("tree: extracted claims for %d/%d chunk(s)", len(claimsByChunk), len(chunks))
 	}

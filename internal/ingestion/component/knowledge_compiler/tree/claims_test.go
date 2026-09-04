@@ -3,8 +3,10 @@ package tree
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
@@ -37,6 +39,22 @@ func (f *fakeChatForClaims) Chat(ctx context.Context, req common.ChatRequest) (*
 	return &common.ChatResponse{Content: f.reply}, nil
 }
 
+// flakyChatForClaims fails the first N calls with a retryable error, then
+// succeeds — exercises the claim-extraction retry path.
+type flakyChatForClaims struct {
+	reply    string
+	failures int
+	calls    int
+}
+
+func (f *flakyChatForClaims) Chat(ctx context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
+	f.calls++
+	if f.calls <= f.failures {
+		return nil, fmt.Errorf("429 rate limit exceeded")
+	}
+	return &common.ChatResponse{Content: f.reply}, nil
+}
+
 func TestLocateEvidenceExactAndReflowed(t *testing.T) {
 	text := "Post-war immigration added 2.1 million residents to the city."
 	if _, _, ok := LocateEvidence(text, text); !ok {
@@ -52,6 +70,36 @@ func TestLocateEvidenceExactAndReflowed(t *testing.T) {
 	}
 	if got, want := strings.Join(strings.Fields(src[start:end]), " "), strings.Join(strings.Fields(quote), " "); got != want {
 		t.Fatalf("span sliced %q, want %q", got, want)
+	}
+}
+
+func TestLocateEvidenceMultibyteOffsets(t *testing.T) {
+	// A byte offset from strings.Index runs ahead of the rune offset, so a map
+	// indexed per rune resolves every lookup past the first multi-byte rune to
+	// the wrong span. Offsets must stay byte-aligned.
+	src := "前言。中国的首都是北京。尾声。"
+	quote := "中国的首都是北京。"
+	start, end, ok := LocateEvidence(quote, src)
+	if !ok {
+		t.Fatalf("CJK quote not located in %q", src)
+	}
+	if got := src[start:end]; got != quote {
+		t.Fatalf("span sliced %q, want %q", got, quote)
+	}
+
+	// A match that runs to the end of the text has no following byte to take
+	// the offset from; the end must be len(text), not "last matched byte + 1",
+	// which would land inside the final rune.
+	tail := "前言。中国的首都是北京。"
+	start, end, ok = LocateEvidence(quote, tail)
+	if !ok {
+		t.Fatal("quote at the end of the text not located")
+	}
+	if end != len(tail) {
+		t.Fatalf("end = %d, want len(text) = %d", end, len(tail))
+	}
+	if got := tail[start:end]; got != quote {
+		t.Fatalf("span sliced %q, want %q", got, quote)
 	}
 }
 
@@ -75,7 +123,7 @@ func TestValidateClaimsKeepsClaimWhenEvidenceRejected(t *testing.T) {
 		SourceChunkIDs: []string{"c1"},
 		Evidence:       []EvidenceRef{{Quote: "not in source", ChunkID: "c1"}},
 	}}
-	verified, rejected := ValidateClaims(claims, map[string]string{"c1": "real text"})
+	_, verified, rejected := ValidateClaims(claims, map[string]string{"c1": "real text"}, EvidenceGateSoft)
 	if verified != 0 || rejected != 1 {
 		t.Fatalf("got verified=%d rejected=%d, want 0/1", verified, rejected)
 	}
@@ -94,7 +142,7 @@ func TestValidateClaimsRecordsOffsets(t *testing.T) {
 		SourceChunkIDs: []string{"c1"},
 		Evidence:       []EvidenceRef{{Quote: "The capital is Paris.", ChunkID: "c1"}},
 	}}
-	verified, rejected := ValidateClaims(claims, map[string]string{"c1": src})
+	_, verified, rejected := ValidateClaims(claims, map[string]string{"c1": src}, EvidenceGateSoft)
 	if verified != 1 || rejected != 0 {
 		t.Fatalf("got verified=%d rejected=%d, want 1/0", verified, rejected)
 	}
@@ -161,7 +209,7 @@ func TestExtractClaimsForChunksRequiresChat(t *testing.T) {
 	// No chat client -> extraction disabled, not an error.
 	deps := common.Deps{TenantID: "t"}
 	chunks := []common.Chunk{{ID: "c1", Text: "some text"}}
-	if got := ExtractClaimsForChunks(context.Background(), deps, "llm", chunks); got != nil {
+	if got := ExtractClaimsForChunks(context.Background(), deps, "llm", chunks, EvidenceGateSoft); got != nil {
 		t.Fatalf("expected nil without a chat client, got %v", got)
 	}
 }
@@ -179,7 +227,7 @@ func TestExtractClaimsForChunksValidatesAndKeysByChunk(t *testing.T) {
 	deps := common.Deps{Chat: &fakeChatForClaims{reply: string(reply)}, TenantID: "t"}
 	chunks := []common.Chunk{{ID: "c1", Text: src}}
 
-	got := ExtractClaimsForChunks(context.Background(), deps, "llm", chunks)
+	got := ExtractClaimsForChunks(context.Background(), deps, "llm", chunks, EvidenceGateSoft)
 	claims := got["c1"]
 	if len(claims) != 1 {
 		t.Fatalf("expected one claim for c1, got %+v", got)
@@ -199,25 +247,110 @@ func TestExtractClaimsForChunksValidatesAndKeysByChunk(t *testing.T) {
 	}
 }
 
-func TestExtractClaimsForChunksFillsSourceChunkIDByCode(t *testing.T) {
-	// The chunk id is filled by code, never trusted from the model: even when
-	// the model returns a source_chunk_ids that points elsewhere (or omits it),
-	// the claim is attributed to the single TARGET chunk.
+func TestExtractClaimsForChunksAttribution(t *testing.T) {
+	// Attribution mirrors Python raptor._extract_claim_for_chunk: trust the
+	// model when it names a chunk in the batch, fall back to the chunk the
+	// verified quote was located in, and drop the claim when neither can place
+	// it (rather than filing it under text it never came from).
+	src := "The capital of France is Paris."
+	marshal := func(items ...any) string {
+		reply, err := json.Marshal(map[string]any{"items": items})
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		return string(reply)
+	}
+	run := func(reply string) map[string][]Claim {
+		deps := common.Deps{Chat: &fakeChatForClaims{reply: reply}, TenantID: "t"}
+		return ExtractClaimsForChunks(context.Background(), deps, "llm", []common.Chunk{{ID: "c1", Text: src}}, EvidenceGateSoft)
+	}
+
+	got := run(marshal(map[string]any{
+		"name":             "Paris is the capital",
+		"source_chunk_ids": []any{"c1"},
+		"evidence":         []any{map[string]any{"quote": src, "chunk_id": "c1"}},
+	}))
+	if len(got["c1"]) != 1 || got["c1"][0].SourceChunkIDs[0] != "c1" {
+		t.Fatalf("a batch-local source should be kept: %+v", got)
+	}
+
+	// The model named a chunk outside the batch — the quote still locates the
+	// claim, so attribution is recovered from the evidence.
+	got = run(marshal(map[string]any{
+		"name":             "Paris is the capital",
+		"source_chunk_ids": []any{"does-not-exist"},
+		"evidence":         []any{map[string]any{"quote": src, "chunk_id": "c1"}},
+	}))
+	if len(got["c1"]) != 1 || got["c1"][0].SourceChunkIDs[0] != "c1" {
+		t.Fatalf("attribution should be recovered from the verified evidence: %+v", got)
+	}
+
+	got = run(marshal(map[string]any{
+		"name":             "a claim",
+		"source_chunk_ids": []any{"does-not-exist"},
+	}))
+	if len(got) != 0 {
+		t.Fatalf("an unattributable claim should be dropped, got %+v", got)
+	}
+}
+
+func TestExtractClaimsForChunksBatchesChunksPerCall(t *testing.T) {
+	// Mirrors Python _CLAIM_BATCH_SIZE: one call harvests a whole batch, so the
+	// call count stays flat instead of growing one-per-chunk.
 	reply, _ := json.Marshal(map[string]any{"items": []any{
 		map[string]any{
 			"name":             "a claim",
-			"source_chunk_ids": []any{"does-not-exist"},
+			"source_chunk_ids": []any{"c1"},
+			"evidence":         []any{map[string]any{"quote": "alpha text", "chunk_id": "c1"}},
 		},
 	}})
-	deps := common.Deps{Chat: &fakeChatForClaims{reply: string(reply)}, TenantID: "t"}
-	chunks := []common.Chunk{{ID: "c1", Text: "text"}}
-
-	got := ExtractClaimsForChunks(context.Background(), deps, "llm", chunks)
-	if len(got["c1"]) != 1 {
-		t.Fatalf("claim should be attributed to the target chunk: %+v", got)
+	chat := &fakeChatForClaims{reply: string(reply)}
+	deps := common.Deps{Chat: chat, TenantID: "t"}
+	chunks := []common.Chunk{
+		{ID: "c1", Text: "alpha text"},
+		{ID: "c2", Text: "beta text"},
+		{ID: "c3", Text: "gamma text"},
+		{ID: "c4", Text: "delta text"},
 	}
-	if id := got["c1"][0].SourceChunkIDs[0]; id != "c1" {
-		t.Fatalf("source chunk id = %q, want c1", id)
+	ExtractClaimsForChunks(context.Background(), deps, "llm", chunks, EvidenceGateSoft)
+	if chat.calls != 1 {
+		t.Fatalf("expected 1 call for %d chunks, got %d", len(chunks), chat.calls)
+	}
+}
+
+func TestExtractClaimsForChunksRetriesTransientErrors(t *testing.T) {
+	// Mirrors Python _RETRYABLE_LLM_ERR: a rate-limit failure is worth waiting
+	// out instead of silently dropping the batch's claims.
+	old := claimRetryBaseDelay
+	claimRetryBaseDelay = time.Millisecond
+	t.Cleanup(func() { claimRetryBaseDelay = old })
+
+	reply, _ := json.Marshal(map[string]any{"items": []any{
+		map[string]any{
+			"name":             "a claim",
+			"source_chunk_ids": []any{"c1"},
+			"evidence":         []any{map[string]any{"quote": "alpha text", "chunk_id": "c1"}},
+		},
+	}})
+	deps := common.Deps{Chat: &flakyChatForClaims{reply: string(reply), failures: 1}, TenantID: "t"}
+	got := ExtractClaimsForChunks(context.Background(), deps, "llm", []common.Chunk{{ID: "c1", Text: "alpha text"}}, EvidenceGateSoft)
+	if len(got["c1"]) != 1 {
+		t.Fatalf("a retried call should still yield its claims, got %+v", got)
+	}
+}
+
+func TestValidateClaimsHardModeDropsTheClaim(t *testing.T) {
+	claims := []Claim{{
+		Name:           "invented",
+		SourceChunkIDs: []string{"c1"},
+		Evidence:       []EvidenceRef{{Quote: "not in source", ChunkID: "c1"}},
+	}}
+	kept, verified, rejected := ValidateClaims(claims, map[string]string{"c1": "real text"}, EvidenceGateHard)
+	if verified != 0 || rejected != 1 {
+		t.Fatalf("got verified=%d rejected=%d, want 0/1", verified, rejected)
+	}
+	if len(kept) != 0 {
+		t.Fatalf("hard mode should drop the claim, got %d survivor(s)", len(kept))
 	}
 }
 
@@ -231,7 +364,7 @@ func TestBuildTreeClaimProductsExcludesEvidenceFromVector(t *testing.T) {
 			Evidence:       []EvidenceRef{{Quote: "VERBATIM_SOURCE_SENTENCE", ChunkID: "c1", Start: 0, End: 22}},
 		}},
 	}
-	prods, err := buildTreeClaimProducts(context.Background(), deps, "d1", claims)
+	prods, err := buildTreeClaimProducts(context.Background(), deps, "d1", claims, "")
 	if err != nil {
 		t.Fatalf("buildTreeClaimProducts: %v", err)
 	}
