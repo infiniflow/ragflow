@@ -400,7 +400,7 @@ func mergePairsBatch(ctx context.Context, chat common.ChatInvoker, llmID string,
 	for _, p := range pairs {
 		b.WriteString(fmt.Sprintf("Pair %d:\nItem A (existing):\n%s\n\nItem B (incoming):\n%s\n\n", p.Index, p.Existing, p.Incoming))
 	}
-	res, err := common.GenJSON(ctx, chat, common.ChatRequest{
+	res, err := common.GenJSON(ctx, common.Deps{Chat: chat}, common.ChatRequest{
 		LLMID:        llmID,
 		SystemPrompt: mergeSystemPrompt + "\n\n" + batchMergeDecisionInstruction,
 		UserPrompt:   b.String(),
@@ -471,7 +471,7 @@ func mergePair(ctx context.Context, chat common.ChatInvoker, llmID, existingCont
 	if existingPayload == nil || incomingPayload == nil {
 		return nil, nil
 	}
-	res, err := common.GenJSON(ctx, chat, common.ChatRequest{
+	res, err := common.GenJSON(ctx, common.Deps{Chat: chat}, common.ChatRequest{
 		LLMID:        llmID,
 		SystemPrompt: mergeSystemPrompt + "\n\n" + mergeDecisionInstruction,
 		UserPrompt:   fmt.Sprintf(mergeUserPrompt, payloadJSON(existingPayload), payloadJSON(incomingPayload)),

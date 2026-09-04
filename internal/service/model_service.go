@@ -2580,19 +2580,15 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 	return &model, nil
 }
 
-func maxTokensFromTenantModelExtra(modelEntity *entity.TenantModel, fallback int) (int, error) {
-	if modelEntity == nil || strings.TrimSpace(modelEntity.Extra) == "" {
-		return fallback, nil
-	}
-	var extra tenantModelExtra
-	if err := json.Unmarshal([]byte(modelEntity.Extra), &extra); err != nil {
-		return 0, err
-	}
-	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
-		return *extra.MaxTokens, nil
-	}
-	return fallback, nil
-}
+// defaultModelMaxOutput is the safe generation cap (max OUTPUT tokens) used
+// when the provider catalog has no max_output. The source of truth is the
+// catalog's max_output (e.g. all_models.json max_output = 393216 for
+// deepseek-v4-pro). It is deliberately small and provider-agnostic: it must
+// never be the context window, which is far larger (e.g. 1M) and would make the
+// LLM request an output cap its serving layer cannot emit (provider 400 or
+// timeouts / truncated JSON). tenant_model.extra.max_tokens is the CONTEXT
+// WINDOW, not the generation cap, so it must never be used here.
+const defaultModelMaxOutput = 16384
 
 func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Context, providerName, instanceName, modelName *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
 	if providerName == nil || instanceName == nil || modelName == nil {
@@ -3572,10 +3568,14 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 			maxTokens = *mi.MaxOutput
 		}
 	}
-	maxTokens, err = maxTokensFromTenantModelExtra(modelEntity, maxTokens)
-	if err != nil {
-		return nil, "", nil, 0, err
+	if maxTokens <= 0 {
+		maxTokens = defaultModelMaxOutput
 	}
+	common.Debug("GetModelConfigByID: resolved ModelMaxOutput",
+		zap.String("providerName", providerEntity.ProviderName),
+		zap.String("modelName", modelEntity.ModelName),
+		zap.Int("modelMaxOutput", maxTokens),
+		zap.Bool("usedDefault", maxTokens == defaultModelMaxOutput))
 
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	return modelDriver, modelEntity.ModelName, apiConfig, maxTokens, nil
@@ -4050,10 +4050,14 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 				maxTokens = *mi.MaxOutput
 			}
 		}
-		maxTokens, driverErr = maxTokensFromTenantModelExtra(modelObj, maxTokens)
-		if driverErr != nil {
-			return nil, "", nil, 0, driverErr
+		if maxTokens <= 0 {
+			maxTokens = defaultModelMaxOutput
 		}
+		common.Debug("GetModelConfigFromProviderInstance: resolved ModelMaxOutput",
+			zap.String("providerName", providerName),
+			zap.String("modelName", pureModelName),
+			zap.Int("modelMaxOutput", maxTokens),
+			zap.Bool("usedDefault", maxTokens == defaultModelMaxOutput))
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 		return driver, modelObj.ModelName, apiConfig, maxTokens, nil
 	case errors.Is(modelErr, gorm.ErrRecordNotFound):
@@ -4104,6 +4108,9 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 	maxTokens := 0
 	if llmInfo.MaxOutput != nil {
 		maxTokens = *llmInfo.MaxOutput
+	}
+	if maxTokens <= 0 {
+		maxTokens = defaultModelMaxOutput
 	}
 	return driver, llmInfo.Name, apiConfig, maxTokens, nil
 }
@@ -4190,21 +4197,22 @@ func (m *ModelProviderService) getModelConfig(ctx context.Context, tenantID, com
 		return builtinDriver, modelName, apiConfig, maxTokens, nil
 	}
 
-	var modelRecord *entity.TenantModel
-	modelRecord, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, providerID, instance.ID, modelName)
-	if err != nil {
+	if _, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, providerID, instance.ID, modelName); err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, "", nil, 0, fmt.Errorf("tenant model %q lookup failed: %w", modelName, err)
 		}
-		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-		if err != nil {
+		if _, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName); err != nil {
 			return nil, "", nil, 0, fmt.Errorf("provider %s model %s not found", providerName, modelName)
 		}
 	}
-	maxTokens, err = maxTokensFromTenantModelExtra(modelRecord, maxTokens)
-	if err != nil {
-		return nil, "", nil, 0, err
+	if maxTokens <= 0 {
+		maxTokens = defaultModelMaxOutput
 	}
+	common.Debug("getModelConfig: resolved ModelMaxOutput",
+		zap.String("providerName", providerName),
+		zap.String("modelName", modelName),
+		zap.Int("modelMaxOutput", maxTokens),
+		zap.Bool("usedDefault", maxTokens == defaultModelMaxOutput))
 	apiKey = instance.APIKey
 
 	driver, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, baseURL)

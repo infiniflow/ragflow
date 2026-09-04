@@ -116,8 +116,13 @@ func (dao *CompilationTemplateDAO) ResolveGroupTemplateIDs(ctx context.Context, 
 // template "content" plumbed to the variant.
 func (dao *CompilationTemplateDAO) GetTemplate(ctx context.Context, db *gorm.DB, tenantID, templateID string) (*entity.CompilationTemplate, error) {
 	var t entity.CompilationTemplate
+	// Built-in (tenant-agnostic) templates are seeded with a NULL tenant_id, so
+	// they must resolve for every tenant. Match either a NULL tenant_id (global
+	// built-in) or the requesting tenant's own template. This mirrors
+	// ResolveGroupTemplateIDs, which already special-cases the built-in group.
 	if err := db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ? AND status = ?", templateID, tenantID, string(entity.StatusValid)).
+		Where("id = ? AND (tenant_id IS NULL OR tenant_id = ?) AND status = ?",
+			templateID, tenantID, string(entity.StatusValid)).
 		First(&t).Error; err != nil {
 		return nil, fmt.Errorf("load compilation template %q: %w", templateID, err)
 	}
