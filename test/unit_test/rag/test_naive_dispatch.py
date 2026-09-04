@@ -213,6 +213,9 @@ def naive_module():
 
         _stub(
             "rag.nlp",
+            # naive.py imports the unified delimiter constant (#18562); the
+            # dispatch tests never read the value — only the name must exist.
+            DEFAULT_DELIMITER="\n!?;。；！？",
             num_tokens_from_string=lambda s: len((s or "").split()),
             find_codec=lambda b: "utf-8",
             rag_tokenizer=types.SimpleNamespace(tokenize=lambda s: ((s or "").split(), [])),

@@ -86,8 +86,8 @@ func (p *PPTXParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 // ParseWithResult emits one JSON item per slide with the slide's
-// plain text. Mirrors the python parser.py:slides branch which
-// forces output_format="json" for the slide family.
+// plain text. Forces OutputFormat to "json" and emits one JSON item
+// per slide section.
 func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	// p == nil guard: the struct is embedded by value in PPTParser and
 	// always created via NewPPTXParser or the "ppt"-format constructor in

@@ -60,6 +60,7 @@ from api.utils.api_utils import (
     get_request_json,
     get_error_argument_result,
     check_duplicate_ids,
+    strip_graphrag_raptor_config,
 )
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.validation_utils import (
@@ -713,7 +714,7 @@ async def _upload_local_documents(kb, tenant_id):
     return_raw_files = request.args.get("return_raw_files", "false").lower() == "true"
 
     if return_raw_files:
-        doc_data = files
+        doc_data = [strip_graphrag_raptor_config(doc) for doc in files]
     else:
         doc_data = [map_doc_keys_with_run_status(doc, run_status="0") for doc in files]
 
@@ -1296,7 +1297,7 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     except Exception as e:
         return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
-    return get_result(data=doc.to_dict())
+    return get_result(data=strip_graphrag_raptor_config(doc.to_dict()))
 
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
