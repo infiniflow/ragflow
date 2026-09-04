@@ -56,6 +56,7 @@ from common.constants import LLMType
 from common.misc_utils import thread_pool_exec
 from rag.nlp import search
 from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
+from rag.advanced_rag.knowlege_compile._common import env_int
 from rag.advanced_rag.knowlege_compile.wiki import (
     WIKI_MAP_STATE_COMPILE_KWD,
     WIKI_MAP_STATE_META_COMPILE_KWD,
@@ -83,28 +84,32 @@ WIKI_MAP_BATCH_CHUNKS = 64
 # The pool limits actual LLM calls rather than the surrounding batch tasks and
 # adapts each model's admission limit when it reports rate limiting. This lets
 # high-capacity and low-concurrency models share one Wiki task safely.
-WIKI_MAP_LLM_POOL_SIZE = 20
+WIKI_MAP_LLM_POOL_SIZE = env_int("WIKI_MAP_LLM_POOL_SIZE", 20, minimum=1)
 
 # Global MAP admission limit: active calls plus calls waiting in the pool.
-WIKI_MAP_MAX_PENDING = 25
+WIKI_MAP_MAX_PENDING = env_int("WIKI_MAP_MAX_PENDING", 25, minimum=WIKI_MAP_LLM_POOL_SIZE)
 
-# Keep only a small number of outer batches buffered. With 20 workers this
-# bounds the in-memory MAP work to roughly 25 batches (20 active + 5 waiting).
+# Keep only a small number of outer batches buffered. Together with the
+# configured worker and pending limits, this bounds in-memory MAP work.
 WIKI_MAP_QUEUE_SIZE = 5
 
 # REFINE pages are independent. Keep enough page workers to feed the shared
-# pool; the pool itself still caps actual LLM requests at 20.
-WIKI_REFINE_WORKERS = WIKI_MAP_LLM_POOL_SIZE
+# pool; the pool itself still caps actual LLM requests at the configured size.
+WIKI_REFINE_WORKERS = env_int("WIKI_REFINE_WORKERS", 4, minimum=1)
 
 
 def _create_wiki_llm_pool(progress: Callable) -> LLMCallPool:
     def _on_concurrency_change(old: int, new: int, reason: str) -> None:
         progress(msg=f"LLM pool concurrency {old} -> {new} ({reason}).")
 
+    def _on_error(label: str, context: str | None, error_type: str) -> None:
+        progress(msg=f"LLM call failed ({label}, {context or 'no context'}): {error_type}")
+
     pool = LLMCallPool(
         WIKI_MAP_LLM_POOL_SIZE,
         max_pending=WIKI_MAP_MAX_PENDING,
         on_concurrency_change=_on_concurrency_change,
+        on_error=_on_error,
     )
     logging.info("Wiki LLM pool initialized max_concurrency=%d max_pending=%d", pool.max_concurrency, pool.max_pending)
     progress(0.0, f"LLM pool max {pool.max_concurrency}.")
