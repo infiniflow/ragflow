@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from operator import attrgetter
 
@@ -313,7 +315,7 @@ class TestDatasetCreate:
             ("qa", "qa"),
             ("table", "table"),
             ("tag", "tag"),
-            ("resume", "resume"),
+            pytest.param("resume", "resume", marks=pytest.mark.skipif((os.getenv("DOC_ENGINE") or "elasticsearch").lower() != "elasticsearch", reason="requires Elasticsearch")),
         ],
         ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"],
     )
@@ -321,6 +323,13 @@ class TestDatasetCreate:
         payload = {"name": name, "chunk_method": chunk_method}
         dataset = client.create_dataset(**payload)
         assert dataset.chunk_method == chunk_method, str(dataset)
+
+    @pytest.mark.p1
+    @pytest.mark.skipif((os.getenv("DOC_ENGINE") or "elasticsearch").lower() == "elasticsearch", reason="requires a non-Elasticsearch doc engine")
+    def test_resume_chunk_method_rejected_by_non_elasticsearch(self, client):
+        with pytest.raises(Exception) as exception_info:
+            client.create_dataset(name="resume_non_elasticsearch", chunk_method="resume")
+        assert "'resume' can only be used when doc_engine is elasticsearch" in str(exception_info.value)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
