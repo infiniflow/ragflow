@@ -81,6 +81,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 
 	nodePrompt, edgePromptTmpl := HypergraphPrompts(parserConfig, param.Language)
+	gateMode := EvidenceGateMode(parserConfig)
 
 	// ---- MAP ----
 	batches := common.PackBatches(inputs.Chunks, structureBatchTokenBudget, deps.Tokenizer)
@@ -95,6 +96,18 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			nodes, edges, err := extractHypergraph(ctx, deps, cfg, nodePrompt, edgePromptTmpl, packed)
 			if err != nil {
 				return err
+			}
+			// Evidence gate (mirrors Python _struct_process_batch): validate
+			// quotes while the batch's source text is still in hand, before
+			// embedding so the vector is built from the surviving payload.
+			// Relations are gated only when the template asked them to carry
+			// evidence.
+			textByID := batchTextByID(batch)
+			if len(textByID) > 0 {
+				nodes, _, _ = ValidatePayloadEvidence(nodes, textByID, gateMode)
+				if len(edges) > 0 && RelationExpectsEvidence(parserConfig) {
+					edges, _, _ = ValidatePayloadEvidence(edges, textByID, gateMode)
+				}
 			}
 			rows, err := buildRows(ctx, deps, cfg, nodes, edges, batchIDs)
 			if err != nil {

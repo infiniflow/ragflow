@@ -761,6 +761,16 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     total_entities += len(raptor_entities)
     total_relations += len(raptor_relations)
 
+    # Leaf clusters carry a claim-count badge: claims live in their own rows
+    # (entity_type_kwd="claim") so they don't drown the tree, but a bare leaf
+    # hides that its facts are inspectable. One scan for the whole document;
+    # failures are logged and the graph renders without badges.
+    if raptor_entities:
+        try:
+            await sgc.attach_claim_counts(raptor_entities, raptor_relations, index_name, dataset_id, document_id, "tree")
+        except Exception:
+            logging.exception("structure graph: claim count attach failed for doc=%s", document_id)
+
     def _row_template_id(row: dict) -> str | None:
         raw = row.get("compilation_template_ids")
         if isinstance(raw, list):
@@ -956,6 +966,56 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
 
     templates_out = [grouped[bid] for bid in ordered_ids if grouped[bid]["entities"] or grouped[bid]["relations"]]
     return get_result(data=_response(templates_out))
+
+
+@manager.route("/datasets/<dataset_id>/documents/<document_id>/structure/claims", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_document_structure_claims(tenant_id, dataset_id, document_id):
+    """Page through a document's claim/evidence rows (entity_type_kwd="claim").
+
+    Tree artifacts keep claims out of the node list, so the UI fetches them per
+    leaf cluster on demand. Query args:
+
+        chunk_ids:   comma-separated source chunk ids — a leaf cluster's
+                     members; without it the endpoint pages the whole document
+        template_id: compilation template scoping (optional)
+        offset/limit: paging, limit capped at 100
+    """
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    docs = DocumentService.query(id=document_id, kb_id=dataset_id)
+    if not docs:
+        return get_error_data_result(message=f"you don't own the document {document_id}")
+
+    chunk_ids = [c.strip() for c in (request.args.get("chunk_ids") or "").split(",") if c.strip()]
+    template_id = (request.args.get("template_id") or "").strip() or None
+    try:
+        offset = max(int(request.args.get("offset") or 0), 0)
+        limit = min(max(int(request.args.get("limit") or 20), 1), 100)
+    except ValueError:
+        return get_error_data_result(message="offset/limit must be integers")
+
+    from rag.nlp import search
+
+    index_name = search.index_name(dataset_tenant_id)
+    try:
+        claims, total = await sgc.list_claim_rows(
+            index_name,
+            dataset_id,
+            document_id,
+            compile_kwd="tree",
+            compilation_template_id=template_id,
+            chunk_ids=chunk_ids or None,
+            offset=offset,
+            limit=limit,
+        )
+    except Exception as e:
+        return server_error_response(e)
+    return get_result(data={"claims": claims, "total": total, "offset": offset, "limit": limit})
 
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/structure/graph", methods=["DELETE"])  # noqa: F821

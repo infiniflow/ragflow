@@ -113,6 +113,12 @@ function buildUniqueTreeDataItems(
         name: entity.name,
         entityType: entity.type,
         source_chunk_ids: entity.source_chunk_ids,
+        // Leaf clusters only: the tree UI shows this as a count badge and
+        // fetches the claims themselves on expand.
+        badge: entity.claim_count,
+        // page_index fact/conclusion: gate-verified quotes shown in the
+        // node's detail panel.
+        evidence: entity.evidence,
       },
     ]),
   );
@@ -172,18 +178,20 @@ export function adaptTreeToTreeData(
 export function adaptKnowledgeGraphToForceGraph(
   template: IStructureGraphTemplate,
 ): IArtifactGraph {
-  const entities: IArtifactGraphEntity[] = (template.entities ?? []).map((entity) => {
-    const normalized = normalizeEntity(entity);
-    return {
-      slug: normalized.id,
-      name: normalized.name,
-      aliases: normalized.aliases ?? [],
-      description: getEntityDescription(normalized),
-      type: normalized.type ?? '',
-      weight: normalized.mention_count ?? 0,
-      source_chunk_ids: normalized.source_chunk_ids,
-    };
-  });
+  const entities: IArtifactGraphEntity[] = (template.entities ?? []).map(
+    (entity) => {
+      const normalized = normalizeEntity(entity);
+      return {
+        slug: normalized.id,
+        name: normalized.name,
+        aliases: normalized.aliases ?? [],
+        description: getEntityDescription(normalized),
+        type: normalized.type ?? '',
+        weight: normalized.mention_count ?? 0,
+        source_chunk_ids: normalized.source_chunk_ids,
+      };
+    },
+  );
 
   const entityNames = new Set(entities.map((entity) => entity.slug));
 

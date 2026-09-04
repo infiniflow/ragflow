@@ -1082,7 +1082,7 @@ def _struct_graph_entity(payload: dict, source_chunk_ids: list | None = None) ->
     if isinstance(source_chunk_ids, str):
         source_chunk_ids = [source_chunk_ids]
     source_chunk_ids = _struct_union_chunk_ids(source_chunk_ids)
-    return {
+    entity = {
         "aliases": aliases,
         "mention_count": 1,
         "name": name,
@@ -1090,6 +1090,16 @@ def _struct_graph_entity(payload: dict, source_chunk_ids: list | None = None) ->
         "type": typ or "other",
         "description": str(description).strip() if description is not None else "",
     }
+    # page_index fact/conclusion payloads carry gate-verified verbatim evidence
+    # (page_index.yaml's evidence field). The artifacts detail panel renders it
+    # next to the description; rows compiled before the field existed simply
+    # omit it.
+    evidence = payload.get("evidence")
+    if isinstance(evidence, list):
+        verified = [e for e in evidence if isinstance(e, dict) and str(e.get("quote") or "").strip()]
+        if verified:
+            entity["evidence"] = verified
+    return entity
 
 
 def _struct_graph_relation(payload: dict) -> dict | None:
