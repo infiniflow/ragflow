@@ -54,9 +54,10 @@ func lockDocumentParse(docID string) func() {
 // StartParseDocuments starts parsing a document via the DSL ingestion
 // pipeline. It optionally clears prior results (RerunWithDelete), applies
 // KB config (ApplyKB), validates storage, and enqueues an ingestion task.
-// The document run status is NOT set here; service.IngestionTaskService.StartRunning
-// sets it to RUNNING when the worker picks up the task and transitions it from
-// CREATED or SCHEDULED. Extracted from Ingest so
+// The document run status is set to RUNNING when the task is enqueued
+// (service.IngestionTaskService.CreateForDocuments); StartRunning and the
+// worker's progress sink keep run/progress in sync as the task advances.
+// Extracted from Ingest so
 // other entry points (e.g. ChunkService.Parse)
 // can reuse the same start-parse flow.
 func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) error {

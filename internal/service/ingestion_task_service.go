@@ -96,6 +96,24 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 			continue
 		}
 
+		// Mirror the Python run endpoint (DocumentService.update_by_id with
+		// run=RUNNING and progress=0 before queueing): accepting a parse
+		// request flips the document to RUNNING right away so the document
+		// list/detail reflects the newly queued run instead of a stale
+		// terminal status (e.g. CANCEL left by a previous run). The worker's
+		// StartRunning and the progress sink keep run/progress in sync as the
+		// task advances.
+		if err := s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{
+			"run":      string(entity.TaskStatusRunning),
+			"progress": float64(0),
+		}); err != nil {
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     fmt.Sprintf("mark document running: %v", err),
+			})
+			continue
+		}
+
 		task := &entity.IngestionTask{
 			DocumentID: docID,
 			UserID:     userID,

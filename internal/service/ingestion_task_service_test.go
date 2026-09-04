@@ -102,6 +102,44 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	}
 }
 
+func TestIngestionTaskServiceCreateForDocumentsMarksDocumentRunning(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPED)
+
+	// A previously cancelled parse leaves the legacy run field terminal.
+	// Re-parsing must flip it back to RUNNING when the run is accepted so
+	// the file list and the detail dialog agree a new run is queued.
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").
+		Updates(map[string]interface{}{"run": string(entity.TaskStatusCancel), "progress": float64(0)}).Error; err != nil {
+		t.Fatalf("seed cancelled document: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+
+	responses, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("CreateForDocuments failed: %v", err)
+	}
+	if len(responses) != 1 || !strings.HasPrefix(responses[0].Result, "task_id: ") {
+		t.Fatalf("unexpected parse response: %+v", responses)
+	}
+
+	var doc entity.Document
+	if err := db.First(&doc, "id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if doc.Run == nil || *doc.Run != string(entity.TaskStatusRunning) {
+		t.Fatalf("document run = %v, want %q (RUNNING)", doc.Run, string(entity.TaskStatusRunning))
+	}
+	if doc.Progress != 0 {
+		t.Fatalf("document progress = %v, want 0", doc.Progress)
+	}
+}
+
 func TestIngestionTaskServiceMarksTaskScheduledOnlyAfterPublish(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
