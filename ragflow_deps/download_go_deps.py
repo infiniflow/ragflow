@@ -90,18 +90,10 @@ def host_platform():
     # does not raise KeyError when indexing the per-platform asset maps below.
     goos = {"linux": "linux", "darwin": "darwin"}.get(raw_os.lower())
     if goos is None:
-        raise SystemExit(
-            f"Unsupported RAGFLOW_TARGET_OS={raw_os!r}; expected linux or darwin "
-            f"(aliases Linux/Darwin also accepted)."
-        )
-    goarch = {"amd64": "amd64", "x86_64": "amd64", "arm64": "arm64", "aarch64": "arm64"}.get(
-        raw_arch.lower()
-    )
+        raise SystemExit(f"Unsupported RAGFLOW_TARGET_OS={raw_os!r}; expected linux or darwin (aliases Linux/Darwin also accepted).")
+    goarch = {"amd64": "amd64", "x86_64": "amd64", "arm64": "arm64", "aarch64": "arm64"}.get(raw_arch.lower())
     if goarch is None:
-        raise SystemExit(
-            f"Unsupported RAGFLOW_TARGET_ARCH={raw_arch!r}; expected amd64 or arm64 "
-            f"(aliases x86_64/aarch64 also accepted)."
-        )
+        raise SystemExit(f"Unsupported RAGFLOW_TARGET_ARCH={raw_arch!r}; expected amd64 or arm64 (aliases x86_64/aarch64 also accepted).")
     return goos, goarch
 
 
