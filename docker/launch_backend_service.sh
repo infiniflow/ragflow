@@ -172,7 +172,9 @@ run_admin_server(){
     if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         prepare_for_go
         server_name="admin_server"
-        server_cmd=("bin/ragflow_server" "--admin")
+        # --migrate keeps the DB schema (including Go-only tables such as
+        # ingestion_task) in sync on schemas created by the Python init.
+        server_cmd=("bin/ragflow_server" "--admin" "--migrate")
         if [[ "$DEBUG_MODE" -eq 1 ]]; then
             server_cmd+=("--debug")
         fi
