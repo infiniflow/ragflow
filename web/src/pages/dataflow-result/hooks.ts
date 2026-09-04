@@ -27,6 +27,7 @@ import {
   TimelineNodeType,
 } from './constant';
 import { IChunk, IDslComponent, IPipelineFileLogDetail } from './interface';
+import { buildPipelineFileLogDetailQueryKey } from './query-key';
 
 export const useFetchPipelineFileLogDetail = ({
   isAgent = false,
@@ -42,16 +43,17 @@ export const useFetchPipelineFileLogDetail = ({
   const logId = searchParams.get('id') || id;
   const knowledgeId = searchParams.get('knowledgeId') || '';
 
-  let queryKey: (string | number)[] = [];
-  if (typeof refreshCount === 'number') {
-    queryKey = ['fetchLogDetail', refreshCount];
-  }
+  const queryKey = buildPipelineFileLogDetailQueryKey({
+    knowledgeId,
+    logId,
+    refreshCount,
+  });
 
   const { data, isFetching: loading } = useQuery<IPipelineFileLogDetail>({
     queryKey,
     initialData: {} as IPipelineFileLogDetail,
     gcTime: 0,
-    enabled: !isAgent,
+    enabled: !isAgent && isEdit && Boolean(knowledgeId && logId),
     queryFn: async () => {
       if (isEdit && knowledgeId && logId) {
         const { data } = await getPipelineDetail(knowledgeId, logId);
