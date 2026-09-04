@@ -651,20 +651,20 @@ run_native_integration_tests() {
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo integration fetch_testdata" -count=1 ./internal/deepdoc/native/... )
+      go test -tags "cgo static integration fetch_testdata" -count=1 ./internal/deepdoc/native/... )
 
     print_section "Running native integration concurrency tests (race detector on)"
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo integration fetch_testdata" -race -count=1 \
+      go test -tags "cgo static integration fetch_testdata" -race -count=1 \
       -run 'TestInferenceConcurrency' ./internal/deepdoc/native/... )
 
     print_section "Running native_analyzer race tests (race detector on)"
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo integration fetch_testdata" -race -count=1 \
+      go test -tags "cgo static integration fetch_testdata" -race -count=1 \
       ./internal/deepdoc/parser/pdf/inference/native_analyzer/... )
 }
 
@@ -683,7 +683,7 @@ run_go_tests_tagged() {
     fi
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go test -tags "${tags}" -count=1 "$@"
+        go test -tags "${tags} static" -count=1 "$@"
 }
 
 # Clean build artifacts
