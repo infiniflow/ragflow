@@ -170,3 +170,12 @@ def test_message_fit_in_zero_budget_preserves_non_empty_messages(monkeypatch):
     assert used_tokens == expected_total
     assert trimmed[0]["content"] == "s" * system_len
     assert trimmed[-1]["content"] == user_content
+
+
+@pytest.mark.p1
+def test_append_keywords_uses_comma_only_for_non_empty_keywords(monkeypatch):
+    generator = _load_generator_module(monkeypatch)
+
+    assert generator.append_keywords("question", "keyword one") == "question,keyword one"
+    assert generator.append_keywords("question", "") == "question"
+    assert generator.append_keywords("question", None) == "question"
