@@ -460,8 +460,9 @@ async def test_structure_alteration_chunk_filter_excludes_unparsed_documents(mon
 
     captured = {}
 
-    async def _paged(_index, dataset_id, condition, field, from_list):
+    async def _paged(_index, dataset_id, condition, field, from_list, *, raise_on_error):
         captured.update(dataset_id=dataset_id, condition=condition, field=field, from_list=from_list)
+        assert raise_on_error is True
         return {"doc-with-chunk"}
 
     monkeypatch.setattr(module, "_involved_doc_ids_paged", _paged)
@@ -483,6 +484,23 @@ async def test_structure_alteration_chunk_filter_excludes_unparsed_documents(mon
         "field": "doc_id",
         "from_list": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_current_chunk_doc_ids_propagates_search_errors(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    async def _paged(*_args, **_kwargs):
+        raise RuntimeError("search unavailable")
+
+    monkeypatch.setattr(module, "_involved_doc_ids_paged", _paged)
+
+    with pytest.raises(RuntimeError, match="search unavailable"):
+        await module._current_chunk_doc_ids("tenant-index", "kb-1", {"doc-1"})
 
 
 @pytest.mark.asyncio

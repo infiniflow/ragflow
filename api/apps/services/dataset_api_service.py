@@ -2411,7 +2411,15 @@ def _eligible_doc_ids_for_kind(docs, tenant_id: str, kind: str) -> set:
     return eligible
 
 
-async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, field: str | list[str], from_list: bool) -> set:
+async def _involved_doc_ids_paged(
+    index_nm,
+    dataset_id: str,
+    condition: dict,
+    field: str | list[str],
+    from_list: bool,
+    *,
+    raise_on_error: bool = False,
+) -> set:
     """Page a docStore search, folding provenance fields into a doc-id set.
 
     ``from_list`` reads the selected fields as lists of provenance document IDs;
@@ -2441,6 +2449,8 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
             rows = settings.docStoreConn.get_fields(res, select_fields) or {}
         except Exception:
             logging.exception("alteration: docStore search failed for kb=%s cond=%s", dataset_id, condition)
+            if raise_on_error:
+                raise
             rows = {}
 
         if not rows:
@@ -2460,7 +2470,7 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
 
 
 async def _current_chunk_doc_ids(index_nm, dataset_id: str, doc_ids: set[str]) -> set[str]:
-    """Return eligible documents that currently have searchable source chunks."""
+    """Return eligible documents with available, not-yet-compiled source chunks."""
     if not doc_ids:
         return set()
     return await _involved_doc_ids_paged(
@@ -2473,6 +2483,7 @@ async def _current_chunk_doc_ids(index_nm, dataset_id: str, doc_ids: set[str]) -
         },
         "doc_id",
         from_list=False,
+        raise_on_error=True,
     )
 
 
