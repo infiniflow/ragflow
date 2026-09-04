@@ -27,9 +27,9 @@ import (
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	"ragflow/internal/component/messagefit"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
 )
@@ -1074,21 +1074,21 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 		}
 	}
 
-	// Convert to messagefit.Message. Track where each entry's text lives
+	// Convert to tokenizer.Message. Track where each entry's text lives
 	// (plain Content or a multi-modal text part) so the fitted text can be
 	// written back to the right field. Entries with no text at all
-	// (image-only turns) carry an empty Content in messagefit and survive
+	// (image-only turns) carry an empty Content for fitting and survive
 	// fitting when kept.
 	type fitSource struct {
 		copiedIdx     int  // index into copied; -1 for the synthetic system prompt
 		multiIdx      int  // -1 means the text lives in Content
 		textInContent bool // the original message carried text in Content
 	}
-	all := make([]messagefit.Message, 0, 1+len(copied))
+	all := make([]tokenizer.Message, 0, 1+len(copied))
 	sources := make([]fitSource, 0, 1+len(copied))
 
 	if systemPrompt != "" {
-		all = append(all, messagefit.Message{Role: "system", Content: systemPrompt})
+		all = append(all, tokenizer.Message{Role: "system", Content: systemPrompt})
 		sources = append(sources, fitSource{copiedIdx: -1, multiIdx: 0})
 	}
 
@@ -1114,15 +1114,15 @@ func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]s
 				hadText = true
 			}
 		}
-		all = append(all, messagefit.Message{Role: string(copied[i].Role), Content: text})
+		all = append(all, tokenizer.Message{Role: string(copied[i].Role), Content: text})
 		sources = append(sources, fitSource{copiedIdx: i, multiIdx: multiIdx, textInContent: copied[i].Content != ""})
 	}
 
 	// Use 97% of effective context as the token budget.
 	budget := contextFitBudget(maxLength)
-	kept, keptIdx, _ := messagefit.Fit(all, budget)
+	kept, keptIdx, _ := tokenizer.Fit(all, budget)
 
-	// Convert back to []schema.Message. messagefit.Fit reports exactly which
+	// Convert back to []schema.Message. tokenizer.Fit reports exactly which
 	// entries are kept (keptIdx); dropped entries are simply absent, so no
 	// empty-content sentinel is needed and image-only turns are preserved.
 	result := make([]schema.Message, 0, len(kept))
