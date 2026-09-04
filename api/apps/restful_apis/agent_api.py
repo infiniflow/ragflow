@@ -131,6 +131,12 @@ def _is_truthy(value):
     return False
 
 
+def _parse_release_flag(value):
+    if isinstance(value, bool):
+        return value
+    return isinstance(value, str) and value.strip().lower() == "true"
+
+
 def _allow_anonymous_webhook(security_cfg: dict) -> bool:
     if not isinstance(security_cfg, dict):
         return False
@@ -476,7 +482,7 @@ async def create_agent_session(agent_id, tenant_id):
 
     req = await get_request_json()
     user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
-    release_mode = bool(req.get("release", request.args.get("release", False)))
+    release_mode = _parse_release_flag(req.get("release", request.args.get("release", False)))
 
     try:
         cvs, dsl = UserCanvasService.get_agent_dsl_with_release(agent_id, release_mode, tenant_id)
