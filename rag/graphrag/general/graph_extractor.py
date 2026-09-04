@@ -9,14 +9,13 @@ Reference:
 import re
 from typing import Any
 from dataclasses import dataclass
-import tiktoken
 
 from rag.graphrag.general.extractor import Extractor, ENTITY_EXTRACTION_MAX_GLEANINGS
 from rag.graphrag.general.graph_prompt import GRAPH_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
 from rag.graphrag.utils import ErrorHandlerFn, perform_variable_replacements, chat_limiter, split_string_by_multi_markers
 from rag.llm.chat_model import Base as CompletionLLM
 import networkx as nx
-from common.token_utils import num_tokens_from_string
+from common.token_utils import get_encoder, num_tokens_from_string
 
 DEFAULT_TUPLE_DELIMITER = "<|>"
 DEFAULT_RECORD_DELIMITER = "##"
@@ -78,7 +77,12 @@ class GraphExtractor(Extractor):
         self.prompt_token_count = num_tokens_from_string(self._extraction_prompt)
 
         # Construct the looping arguments
-        encoding = tiktoken.get_encoding("cl100k_base")
+        # `get_encoder()` builds the cl100k_base BPE table on first use. The
+        # shared `common.token_utils` helper already caches it in
+        # `tiktoken.registry.ENCODINGS`, so we get the same fast path without
+        # the eager `tiktoken.get_encoding` call that used to run at import
+        # time and force every importer to reach openaipublic.blob.core.
+        encoding = get_encoder()
         yes = encoding.encode("YES")
         no = encoding.encode("NO")
         self._loop_args = {"logit_bias": {yes[0]: 100, no[0]: 100}, "max_tokens": 1}
