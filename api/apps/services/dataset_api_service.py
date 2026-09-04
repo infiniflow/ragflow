@@ -53,9 +53,10 @@ _STRUCTURE_INDEX_TYPES = frozenset(_STRUCTURE_INDEX_TYPE_TO_KIND)
 _VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "wiki", "skill"} | set(_STRUCTURE_INDEX_TYPES)
 
 _INDEX_TYPE_TO_TASK_TYPE = {
-    "graph": "structure_graph",
+    # Public API: type=graph -> GraphRAG (not structure_graph merge).
+    "graph": "graphrag",
     "raptor": "raptor",
-    "mindmap": "structure_mindmap",
+    "mindmap": "mindmap",
     "wiki": "wiki",
     "skill": "skill",
     # Structure merge types carry their own task_type (== index_type) so the
