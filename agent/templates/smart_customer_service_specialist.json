@@ -238,7 +238,7 @@
                     "params": {
                         "cross_languages": [],
                         "empty_response": "",
-                        "kb_ids": [
+                        "dataset_ids": [
                             "a5aaec4a819b11f095f1047c16ec874f"
                         ],
                         "retrieval_from": "dataset",
@@ -270,7 +270,7 @@
                     "params": {
                         "cross_languages": [],
                         "empty_response": "",
-                        "kb_ids": [
+                        "dataset_ids": [
                             "65cb5150819b11f08347047c16ec874f"
                         ],
                         "retrieval_from": "dataset",
@@ -592,7 +592,7 @@
                         "form": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "kb_ids": [
+                            "dataset_ids": [
                                 "65cb5150819b11f08347047c16ec874f"
                             ],
                             "retrieval_from": "dataset",
@@ -693,7 +693,7 @@
                         "form": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "kb_ids": [
+                            "dataset_ids": [
                                 "a5aaec4a819b11f095f1047c16ec874f"
                             ],
                             "retrieval_from": "dataset",
