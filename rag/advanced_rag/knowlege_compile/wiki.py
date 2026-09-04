@@ -54,6 +54,7 @@ from ._common import (
     knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
     run_chunked_pipeline as _run_chunked_pipeline,
     stable_row_id as _stable_row_id,
+    env_int as _env_int,
 )
 
 
@@ -90,8 +91,8 @@ from .structure import (
 WIKI_MAP_COMPILE_KWD = "wiki_map_extract"
 WIKI_MAP_STATE_COMPILE_KWD = "wiki_map_state"
 WIKI_MAP_STATE_META_COMPILE_KWD = "wiki_map_state_meta"
-DEFAULT_WIKI_MAP_WORKERS = 20
-DEFAULT_WIKI_MAP_TIMEOUT = 600
+DEFAULT_WIKI_MAP_WORKERS = _env_int("WIKI_MAP_WORKERS", 20, minimum=1)
+DEFAULT_WIKI_MAP_TIMEOUT = _env_int("WIKI_MAP_TIMEOUT", 600, minimum=1)
 
 
 async def _wiki_disabled_doc_ids(kb_id: str) -> set[str]:
@@ -1355,7 +1356,7 @@ WIKI_REDUCE_COMPILE_KWD = "wiki_reduce_result"
 DEFAULT_WIKI_REDUCE_MERGE_THRESHOLD = 0.95
 DEFAULT_WIKI_REDUCE_AMBIGUOUS_LOW = 0.75
 DEFAULT_WIKI_REDUCE_AMBIGUOUS_BATCH = 50
-DEFAULT_WIKI_REDUCE_TIMEOUT = 60
+DEFAULT_WIKI_REDUCE_TIMEOUT = _env_int("WIKI_REDUCE_TIMEOUT", 60, minimum=1)
 
 
 # System prompt for the LLM disambiguation batch. The shared engine
@@ -1863,7 +1864,7 @@ WIKI_PLAN_COMPILE_KWD = "wiki_compilation_plan"
 WIKI_PAGE_COMPILE_KWD = "wiki_page"
 DEFAULT_WIKI_PLAN_UPDATE_THRESHOLD = 0.95
 DEFAULT_WIKI_PLAN_MAYBE_THRESHOLD = 0.60
-DEFAULT_WIKI_PLAN_TIMEOUT = 600  # ~10 min — the planning call emits one big
+DEFAULT_WIKI_PLAN_TIMEOUT = _env_int("WIKI_PLAN_TIMEOUT", 600, minimum=1)  # ~10 min — the planning call emits one big
 # JSON plan and reasoning models can spend a
 # long time thinking before emitting tokens.
 # Override via the ``llm_timeout`` arg to
@@ -2799,11 +2800,11 @@ async def wiki_plan_from_reduction(
 
 
 WIKI_DRAFT_COMPILE_KWD = "wiki_page_draft"
-DEFAULT_WIKI_REFINE_WORKERS = 4
-DEFAULT_WIKI_REFINE_TIMEOUT = 300
+DEFAULT_WIKI_REFINE_WORKERS = _env_int("WIKI_REFINE_WORKERS", 4, minimum=1)
+DEFAULT_WIKI_REFINE_TIMEOUT = _env_int("WIKI_REFINE_TIMEOUT", 300, minimum=1)
 WIKI_REFINE_SOURCE_BUDGET_CHARS = 60_000
 WIKI_MERGE_BODY_SHRINK_THRESHOLD = 0.7
-WIKI_MERGE_TIMEOUT = 600
+WIKI_MERGE_TIMEOUT = _env_int("WIKI_MERGE_TIMEOUT", 600, minimum=1)
 
 
 WIKI_TEMPLATE_EXAMPLE = (

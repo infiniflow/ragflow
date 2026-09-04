@@ -2937,8 +2937,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       agentModelMissing: '无法保存：“{{name}}” 未选择模型，请先选择',
       retrievalDatasetRequired: '请选择知识库',
       retrievalDatasetMissing: '无法保存：“{{name}}” 未选择知识库，请先选择',
+      retrievalTemplateDatasetHint:
+        '该模板包含 {{count}} 处未绑定知识库的数据集检索。请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       retrievalMemoryRequired: '请选择记忆库',
       retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆库，请先选择',
+      retrievalTemplateMemoryHint:
+        '该模板包含 {{count}} 处未绑定记忆库的记忆检索。请在下方选择一个记忆库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       tokenChunker: '按 Token 分块',

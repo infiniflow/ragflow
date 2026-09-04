@@ -469,41 +469,6 @@ func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, n
 	return out
 }
 
-func hydrateEmptyDispatchPayload(dispatched parserDispatchResult, binary []byte) parserDispatchResult {
-	if dispatched.Err != nil || len(binary) == 0 {
-		return dispatched
-	}
-	switch dispatched.OutputFormat {
-	case "json":
-		if len(dispatched.JSON) == 0 {
-			dispatched.JSON = pagesToJSONItems(splitIntoPages(binary))
-		}
-	case "text":
-		if dispatched.Text == "" {
-			dispatched.Text = string(binary)
-		}
-	}
-	return dispatched
-}
-
-func pagesToJSONItems(pages [][]byte) []map[string]any {
-	if len(pages) == 0 {
-		pages = splitIntoPages(nil)
-	}
-	out := make([]map[string]any, 0, len(pages))
-	for _, page := range pages {
-		text := string(page)
-		if text == "" {
-			continue
-		}
-		out = append(out, map[string]any{
-			"text":         text,
-			"doc_type_kwd": "text",
-		})
-	}
-	return out
-}
-
 func parserInputName(inputs map[string]any, docID string) string {
 	if inputs != nil {
 		if name, ok := inputs["name"].(string); ok && name != "" {

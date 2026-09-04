@@ -84,7 +84,8 @@ uv run python3 ragflow_deps/download_deps.py
 > **ONNX Runtime is mandatory for the production binary.** The in-process (Go)
 > DeepDoc backend is statically linked against `libonnxruntime.a` via
 > `--whole-archive -Wl,--export-dynamic`, and `OrtGetApiBase` is resolved at
-> runtime through `dlopen(NULL)`. The forked `onnxruntime_go` binding only
+> runtime through `dlopen(NULL)`. The org `onnxruntime_go` binding
+> (github.com/infiniflow/onnxruntime_go, the mirror of yalue/onnxruntime_go) only
 > needs `-ldl` to *compile*, so a binary built **without** ORT links
 > successfully but dies at startup with:
 > `Error looking up OrtGetApiBase in statically-linked ONNX Runtime` → fatal

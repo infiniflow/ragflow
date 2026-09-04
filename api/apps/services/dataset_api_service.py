@@ -2411,7 +2411,15 @@ def _eligible_doc_ids_for_kind(docs, tenant_id: str, kind: str) -> set:
     return eligible
 
 
-async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, field: str | list[str], from_list: bool) -> set:
+async def _involved_doc_ids_paged(
+    index_nm,
+    dataset_id: str,
+    condition: dict,
+    field: str | list[str],
+    from_list: bool,
+    *,
+    raise_on_error: bool = False,
+) -> set:
     """Page a docStore search, folding provenance fields into a doc-id set.
 
     ``from_list`` reads the selected fields as lists of provenance document IDs;
@@ -2441,6 +2449,8 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
             rows = settings.docStoreConn.get_fields(res, select_fields) or {}
         except Exception:
             logging.exception("alteration: docStore search failed for kb=%s cond=%s", dataset_id, condition)
+            if raise_on_error:
+                raise
             rows = {}
 
         if not rows:
@@ -2457,6 +2467,24 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
         if not total or offset >= int(total):
             break
     return involved
+
+
+async def _current_chunk_doc_ids(index_nm, dataset_id: str, doc_ids: set[str]) -> set[str]:
+    """Return eligible documents with available, not-yet-compiled source chunks."""
+    if not doc_ids:
+        return set()
+    return await _involved_doc_ids_paged(
+        index_nm,
+        dataset_id,
+        {
+            "doc_id": sorted(doc_ids),
+            "available_int": [1],
+            "must_not": {"exists": "compile_kwd"},
+        },
+        "doc_id",
+        from_list=False,
+        raise_on_error=True,
+    )
 
 
 async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str, tenant_id: str, wiki_map_state: dict | None = None) -> set:
@@ -2551,6 +2579,17 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
                 len(eligible_doc_ids),
                 len(current_chunk_state),
             )
+        else:
+            eligible_before_chunk_filter = len(eligible_doc_ids)
+            chunk_doc_ids = await _current_chunk_doc_ids(index_nm, dataset_id, eligible_doc_ids)
+            eligible_doc_ids &= chunk_doc_ids
+            logging.debug(
+                "alteration: structure chunk eligibility kind=%s kb=%s before=%d after=%d",
+                kind,
+                dataset_id,
+                eligible_before_chunk_filter,
+                len(eligible_doc_ids),
+            )
         wiki_map_state = None
         if kind == "wiki":
             from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_active_map_state
@@ -2573,12 +2612,13 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
                 current_chunk_state,
                 wiki_map_state,
             )
-    elif kind == "wiki":
-        # Without the compiled source index there are no current chunks that
-        # can be considered Wiki inputs.
+    else:
+        # Without the source index there are no current chunks that can be
+        # considered inputs for any structure kind.
         eligible_doc_ids = set()
         logging.debug(
-            "alteration: Wiki compiled index missing kb=%s tenant=%s eligible=0",
+            "alteration: structure source index missing kind=%s kb=%s tenant=%s eligible=0",
+            kind,
             dataset_id,
             kb.tenant_id,
         )

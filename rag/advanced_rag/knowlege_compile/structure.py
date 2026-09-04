@@ -39,6 +39,8 @@ from ._common import (
     union_ordered as _union_ordered,
     run_chunked_pipeline as _run_chunked_pipeline,
     knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
+    env_float as _env_float,
+    env_int as _env_int,
 )
 
 
@@ -69,6 +71,10 @@ MERGE_SCOPE_DATASET = "dataset"
 # cross-document upsert hazard.
 _STRUCT_MERGE_LOCK_TIMEOUT_S = 60
 _STRUCT_MERGE_LOCK_BLOCKING_TIMEOUT_S = 5
+
+LLM_POOL_RATE_LIMIT_RETRIES = _env_int("LLM_POOL_RATE_LIMIT_RETRIES", 3, minimum=0)
+LLM_POOL_RATE_LIMIT_RETRY_BASE_DELAY = _env_float("LLM_POOL_RATE_LIMIT_RETRY_BASE_DELAY", 1.0, minimum=0.0)
+LLM_POOL_RATE_LIMIT_RETRY_MAX_DELAY = _env_float("LLM_POOL_RATE_LIMIT_RETRY_MAX_DELAY", 30.0, minimum=0.0)
 
 
 class _RechunkedDocs(list):
@@ -123,11 +129,12 @@ class LLMCallPool:
         decrease_cooldown: float = 5.0,
         recovery_successes: int = 20,
         recovery_cooldown: float = 30.0,
-        rate_limit_retries: int = 3,
-        rate_limit_retry_base_delay: float = 1.0,
-        rate_limit_retry_max_delay: float = 30.0,
+        rate_limit_retries: int = LLM_POOL_RATE_LIMIT_RETRIES,
+        rate_limit_retry_base_delay: float = LLM_POOL_RATE_LIMIT_RETRY_BASE_DELAY,
+        rate_limit_retry_max_delay: float = LLM_POOL_RATE_LIMIT_RETRY_MAX_DELAY,
         clock: Callable[[], float] = time.monotonic,
         on_concurrency_change: Callable[[int, int, str], None] | None = None,
+        on_error: Callable[[str, str | None, str], None] | None = None,
     ):
         self.max_concurrency = max(1, int(max_concurrency))
         self.max_pending = max(self.max_concurrency, int(max_pending or self.max_concurrency))
@@ -141,6 +148,7 @@ class LLMCallPool:
         self.rate_limit_retry_max_delay = max(self.rate_limit_retry_base_delay, float(rate_limit_retry_max_delay))
         self._clock = clock
         self._on_concurrency_change = on_concurrency_change
+        self._on_error = on_error
         self._active = 0
         self._ticket = 0
         self._waiting: list[tuple[int, int, str]] = []
@@ -266,6 +274,21 @@ class LLMCallPool:
         except Exception:
             logging.exception("LLM pool concurrency change callback failed")
 
+    def _notify_error(self, label: str, context: str | None, error: BaseException | str) -> None:
+        error_type = type(error).__name__ if isinstance(error, BaseException) else "ProviderErrorResult"
+        logging.error(
+            "LLM pool terminal call failure label=%s context=%s error_type=%s",
+            label,
+            context,
+            error_type,
+        )
+        if self._on_error is None:
+            return
+        try:
+            self._on_error(label, context, error_type)
+        except Exception:
+            logging.exception("LLM pool error callback failed")
+
     async def _acquire(self, model_key: str, priority: int) -> None:
         async with self._condition:
             while self.pending_count >= self.max_pending:
@@ -311,6 +334,7 @@ class LLMCallPool:
                 rate_limited = self._is_rate_limited(exc)
                 await self._release(model_key, "rate_limited" if rate_limited else "failed", label=label, context=context)
                 if not rate_limited or retry >= self.rate_limit_retries:
+                    self._notify_error(label, context, exc)
                     raise
             else:
                 error_result = self._is_error_result(result)
@@ -322,6 +346,8 @@ class LLMCallPool:
                     context=context,
                 )
                 if not rate_limited or retry >= self.rate_limit_retries:
+                    if error_result:
+                        self._notify_error(label, context, result)
                     return result
 
             delay = self._rate_limit_retry_delay(retry + 1)
