@@ -958,6 +958,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       setAnOpenerTip: "Définissez un message d'accueil pour les utilisateurs.",
       knowledgeBases: 'Bases de connaissances',
       knowledgeBasesMessage: 'Veuillez sélectionner',
+      modelNotAvailable: 'Modèle non disponible — veuillez le resélectionner',
       knowledgeBasesTip:
         "Sélectionnez les bases de connaissances à associer à cet assistant de chat. Une base de connaissances vide n'apparaîtra pas dans la liste déroulante.",
       system: 'Prompt système',

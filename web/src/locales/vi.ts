@@ -430,6 +430,7 @@ export default {
       setAnOpenerTip: 'Bạn muốn chào đón khách hàng của mình như thế nào?',
       knowledgeBases: 'Cơ sở kiến thức',
       knowledgeBasesMessage: 'Vui lòng chọn',
+      modelNotAvailable: 'Mô hình không khả dụng — vui lòng chọn lại',
       knowledgeBasesTip:
         'Chọn các cơ sở kiến thức liên kết. Cơ sở tri thức trống sẽ không xuất hiện trong danh sách thả xuống.',
       system: 'Hệ thống',

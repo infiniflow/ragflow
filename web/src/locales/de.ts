@@ -780,6 +780,7 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       setAnOpenerTip: 'Legen Sie einen Begrüßungstext für Benutzer fest.',
       knowledgeBases: 'Wissensdatenbanken',
       knowledgeBasesMessage: 'Bitte auswählen',
+      modelNotAvailable: 'Modell nicht verfügbar — bitte erneut auswählen',
       knowledgeBasesTip:
         'Wählen Sie die Wissensdatenbanken aus, die mit diesem Chat-Assistenten verknüpft werden sollen. Eine leere Wissensdatenbank wird nicht in der Dropdown-Liste angezeigt.',
       system: 'System',
@@ -1014,7 +1015,8 @@ Beispiel: Virtual Hosted Style`,
         'Laden Sie das OAuth-JSON hoch, das von der Google Console generiert wurde. Wenn es nur Client-Anmeldeinformationen enthält, führen Sie die browserbasierte Überprüfung einmal durch, um langlebige Refresh-Token zu erstellen.',
       dropboxDescription:
         'Verbinden Sie Ihre Dropbox, um Dateien und Ordner von einem ausgewählten Konto zu synchronisieren.',
-      azure_devopsDescription: 'Verbinden Sie Azure DevOps, um Repository-Dateien und Pull Requests zu synchronisieren.',
+      azure_devopsDescription:
+        'Verbinden Sie Azure DevOps, um Repository-Dateien und Pull Requests zu synchronisieren.',
       bitbucketDescription:
         'Bitbucket verbinden, um PR-Inhalte zu synchronisieren.',
       zendeskDescription:

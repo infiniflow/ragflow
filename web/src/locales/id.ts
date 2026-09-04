@@ -389,6 +389,7 @@ export default {
       setAnOpenerTip: 'Bagaimana Anda ingin menyambut klien Anda?',
       knowledgeBases: 'Basis Pengetahuan',
       knowledgeBasesMessage: 'Silakan pilih',
+      modelNotAvailable: 'Model tidak tersedia — silakan pilih ulang',
       knowledgeBasesTip:
         'Pilih basis pengetahuan yang terkait. Basis pengetahuan yang kosong tidak akan muncul di daftar dropdown.',
       system: 'Prompt Sistem',

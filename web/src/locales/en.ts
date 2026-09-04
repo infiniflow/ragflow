@@ -1049,6 +1049,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       knowledgeBasesMessage: 'Please select',
       datasetUnavailable:
         'The selected knowledge base is unavailable (deleted or has no chunks), please re-select',
+      modelNotAvailable: 'Model not available — please re-select',
       knowledgeBasesTip:
         'Select the datasets to associate with this chat assistant. An empty dataset will not appear in the dropdown list.',
       system: 'System prompt',

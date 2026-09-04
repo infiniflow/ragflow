@@ -463,6 +463,7 @@ export default {
       setAnOpenerTip: '您想如何歡迎您的客戶？',
       knowledgeBases: '知識庫',
       knowledgeBasesMessage: '請選擇',
+      modelNotAvailable: '模型不可用 — 請重新選擇',
       knowledgeBasesTip:
         '選擇關聯的知識庫。新建或空的知識庫不會在下拉選單中顯示。',
       system: '系統提示词',

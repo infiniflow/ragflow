@@ -811,6 +811,7 @@ export default {
       knowledgeBases: 'Базы знаний',
       knowledgeBasesPlaceholder: 'Выберите значение',
       knowledgeBasesMessage: 'Пожалуйста, выберите',
+      modelNotAvailable: 'Модель недоступна — выберите её заново',
       knowledgeBasesTip:
         'Выберите базы знаний для связи с этим чат-ассистентом. Пустая база знаний не появится в списке.',
       system: 'Системный промпт',

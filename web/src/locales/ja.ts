@@ -802,6 +802,7 @@ export default {
       setAnOpenerTip: 'お客様をどのように歓迎しますか？',
       knowledgeBases: 'ナレッジベース',
       knowledgeBasesMessage: '選択してください',
+      modelNotAvailable: 'モデルが利用できません — 再度選択してください',
 
       knowledgeBasesTip:
         '関連付けるナレッジベースを選択してください。空のナレッジベースはドロップダウンリストに表示されません。',

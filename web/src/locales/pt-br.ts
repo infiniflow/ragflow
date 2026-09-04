@@ -379,6 +379,7 @@ export default {
       setAnOpenerTip: 'Defina uma saudação inicial para os usuários.',
       knowledgeBases: 'Bases de conhecimento',
       knowledgeBasesMessage: 'Por favor, selecione',
+      modelNotAvailable: 'Modelo indisponível — selecione novamente',
       knowledgeBasesTip:
         'Selecione as bases de conhecimento para associar a este assistente de chat. Uma base de conhecimento vazia não aparecerá na lista suspensa.',
       system: 'Sistema',

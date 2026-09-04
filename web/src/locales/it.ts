@@ -1009,6 +1009,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       knowledgeBases: 'Dataset',
       knowledgeBasesPlaceholder: 'Seleziona valore',
       knowledgeBasesMessage: 'Seleziona',
+      modelNotAvailable: 'Modello non disponibile — selezionarlo di nuovo',
       knowledgeBasesTip:
         'Seleziona i dataset da associare a questo assistente chat. Un dataset vuoto non apparirà nella lista a discesa.',
       system: 'Prompt di sistema',

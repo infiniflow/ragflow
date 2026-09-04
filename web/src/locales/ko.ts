@@ -987,6 +987,7 @@ export default {
       knowledgeBases: '데이터셋',
       knowledgeBasesPlaceholder: '값 선택',
       knowledgeBasesMessage: '선택해 주세요',
+      modelNotAvailable: '모델을 사용할 수 없습니다 — 다시 선택해 주세요',
       knowledgeBasesTip:
         '이 채팅 어시스턴트에 연결할 데이터셋을 선택하세요. 비어 있는 데이터셋은 드롭다운 목록에 표시되지 않습니다.',
       system: '시스템 프롬프트',

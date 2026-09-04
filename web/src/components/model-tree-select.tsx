@@ -167,9 +167,9 @@ export const ModelTreeSelect = forwardRef<
     [allAddedModels, modelTypes],
   );
 
-  // Backward compatibility: map legacy concatenated ids
-  // ("modelName@instanceName@providerName") to new model_id-based ids so
-  // that previously persisted values still display correctly.
+  // Map composite ("modelName@instanceName@providerName") values to the
+  // current model_id-based tree id, so previously persisted values still
+  // display correctly.
   const legacyIdMap = useMemo(() => {
     const map = new Map<string, string>();
     const walk = (nodes: TreeSelectNode[]) => {
@@ -211,26 +211,18 @@ export const ModelTreeSelect = forwardRef<
     [],
   );
 
-  // The persisted model no longer matches any added model (e.g. it was
-  // deleted from the provider, or the row was left holding a legacy integer
-  // id from a v0.26.x → v0.27.x in-place upgrade that didn't run the
-  // tenant_*_id migration) — keep it visible with a warning marker instead
-  // of rendering a blank select.
-  //
-  // Prefer the readable model name from the composite key when the value
-  // still parses as one; otherwise fall back to a generic warning string
-  // rather than echoing back an opaque value (a 32-char hex id, or a
-  // legacy integer like "23") that the user can't act on. The English
-  // string is intentional — this is a degraded-state warning rather than a
-  // primary UI label, and the existing code already keeps the raw composite
-  // key in English on the same screen.
+  // The persisted model no longer matches any added model — keep it visible
+  // with a warning marker instead of rendering a blank select. Prefer the
+  // readable model name from the composite key when the value still parses
+  // as one; otherwise fall back to a generic warning string rather than
+  // echoing back an opaque value the user can't act on.
   const renderMissingModel = useCallback((missingValue: string) => {
     const readableName = parseModelValue(missingValue)?.model_name;
     return (
       <span className="flex items-center gap-1.5 text-text-disabled">
         <TriangleAlert className="size-4 flex-shrink-0" />
         <span className="truncate">
-          {readableName ?? 'Model not available — please re-select'}
+          {readableName ?? t('common.modelNotAvailable')}
         </span>
       </span>
     );

@@ -210,6 +210,7 @@ export default {
       setAnOpenerTip: '¿Cómo quieres dar la bienvenida a tus clientes?',
       knowledgeBases: 'Bases de conocimiento',
       knowledgeBasesMessage: 'Por favor selecciona',
+      modelNotAvailable: 'Modelo no disponible — vuelva a seleccionarlo',
       knowledgeBasesTip:
         'Selecciona las bases de conocimiento asociadas. Una base de conocimientos vacía no aparecerá en la lista desplegable.',
       system: 'prompt del sistema',
