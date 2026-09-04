@@ -97,12 +97,23 @@ func decodeWithCharset(payload []byte, charset string) (string, error) {
 	if enc, _ := htmlcharset.Lookup(charset); enc != nil {
 		return decodeTransform(payload, enc.NewDecoder())
 	}
-	// Unknown charset: treat as latin-1.
-	runes := make([]rune, len(payload))
-	for i, b := range payload {
-		runes[i] = rune(b)
+	return "", fmt.Errorf("unsupported charset: %s", charset)
+}
+
+// isRecognizedCharset reports whether charset maps to a known decoder
+// either via our shared charsetEncoding resolver or htmlcharset.Lookup.
+func isRecognizedCharset(charset string) bool {
+	switch canonicalCharsetLabel(charset) {
+	case "utf8", "":
+		return true
 	}
-	return string(runes), nil
+	if _, ok := charsetEncoding(charset); ok {
+		return true
+	}
+	if enc, _ := htmlcharset.Lookup(charset); enc != nil {
+		return true
+	}
+	return false
 }
 
 // decodeTransform decodes payload through decoder, rejecting results that
@@ -137,7 +148,6 @@ func decodeFirstCharsetMatch(data []byte, labels []string) (string, string, bool
 // GB18030 (the GBK superset) leads for CJK documents, followed by Big5, Shift-JIS,
 // EUC-KR, and terminal ISO-8859-1.
 var fallbackCharsetLabels = []string{"gb18030", "big5", "shift_jis", "euc-kr", "iso-8859-1"}
-
 
 // charsetDetectConfidence is the minimum statistical-detection confidence
 // (on chardet's 0-100 scale) allowed to override the fallback chain order.
@@ -227,6 +237,7 @@ func extractCharsetHint(hint string) string {
 //   - An explicit charset label (e.g. "gbk", "gb2312", "big5", from MIME headers)
 //   - A MIME Content-Type (e.g. "text/html", "application/xhtml+xml", "text/csv", "text/plain")
 //   - Empty string ""
+//
 // It returns the decoded UTF-8 bytes and the canonical encoding label used.
 func DecodeToUTF8(data []byte, hint string) ([]byte, string) {
 	if len(data) == 0 {
@@ -237,22 +248,26 @@ func DecodeToUTF8(data []byte, hint string) ([]byte, string) {
 	// If the caller explicitly declared a non-UTF8 charset, prioritize trying it first.
 	// This correctly handles 7-bit ASCII escape encodings like HZ-GB-2312, where bytes are
 	// valid ASCII (thus valid UTF-8) but represent encoded Chinese escape sequences.
-	if cs := extractCharsetHint(hint); cs != "" && canonicalCharsetLabel(cs) != "utf8" {
+	// We verify the charset is recognized so unrecognized labels (e.g. "unknown-8bit")
+	// do not corrupt UTF-8 text or bypass validation.
+	if cs := extractCharsetHint(hint); cs != "" && canonicalCharsetLabel(cs) != "utf8" && isRecognizedCharset(cs) {
 		if decoded, err := decodeWithCharset(data, cs); err == nil {
 			return []byte(decoded), canonicalCharsetLabel(cs)
 		}
 	}
 
-	// 2. Fast-path: already valid UTF-8.
-	if utf8.Valid(data) {
-		return data, "utf-8"
-	}
-
-	// 3. XML declaration check (e.g. <?xml version="1.0" encoding="GB2312"?> in EPUB XHTML)
-	if xmlEnc := declaredXMLEncoding(data); xmlEnc != "" {
+	// 2. XML declaration check (e.g. <?xml version="1.0" encoding="GB2312"?> in EPUB XHTML).
+	// Evaluated before the UTF-8 fast-path so that 7-bit ASCII-compatible escape encodings
+	// like HZ-GB-2312 declared in XML are decoded rather than treated as valid ASCII UTF-8.
+	if xmlEnc := declaredXMLEncoding(data); xmlEnc != "" && canonicalCharsetLabel(xmlEnc) != "utf8" && isRecognizedCharset(xmlEnc) {
 		if decoded, err := decodeWithCharset(data, xmlEnc); err == nil {
 			return []byte(decoded), canonicalCharsetLabel(xmlEnc)
 		}
+	}
+
+	// 3. Fast-path: already valid UTF-8.
+	if utf8.Valid(data) {
+		return data, "utf-8"
 	}
 
 	// 4. Document prescan via DetermineEncoding (handles BOM, HTML meta charset, and Content-Type)
@@ -279,6 +294,7 @@ func DecodeToUTF8(data []byte, hint string) ([]byte, string) {
 		return []byte(decoded), label
 	}
 
+	// Defensive fallback: unreachable for non-empty input as terminal ISO-8859-1
+	// accepts every byte sequence without producing replacement runes.
 	return data, ""
 }
-

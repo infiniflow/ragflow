@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/encoding/korean"
@@ -215,5 +216,49 @@ func TestEPUBParser_GB2312(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("EPUB text missing %q; got: %s", want, text)
 		}
+	}
+	if enc, _ := res.File["encoding"].(string); enc != "gb2312" && enc != "gbk" && enc != "gb18030" {
+		t.Errorf("EPUB File.encoding = %q, want gb2312/gbk/gb18030", enc)
+	}
+}
+
+func TestDecodeToUTF8_HZGB2312Hint(t *testing.T) {
+	// HZ-GB-2312 escape sequences (~{...~}) are pure 7-bit ASCII, hence valid UTF-8.
+	// An explicit hint must decode via HZ-GB-2312 rather than returning bytes untouched.
+	hz := []byte("~{<4Ky~}")
+	out, label := DecodeToUTF8(hz, "hz-gb-2312")
+	if label != "hzgb2312" && label != "hz-gb-2312" {
+		t.Errorf("got label %q, want hzgb2312 or hz-gb-2312", label)
+	}
+	if string(out) == string(hz) {
+		t.Fatal("hint ignored; utf8 fast-path swallowed HZ escapes")
+	}
+	if !utf8.Valid(out) {
+		t.Fatal("decoded HZ output must be valid UTF-8")
+	}
+}
+
+func TestDecodeToUTF8_XMLEncoding_HZGB2312(t *testing.T) {
+	// XML encoding declaration for HZ-GB-2312 must be evaluated before the UTF-8 fast path.
+	xml := []byte("<?xml version=\"1.0\" encoding=\"HZ-GB-2312\"?><html><body>~{<4Ky~}</body></html>")
+	out, label := DecodeToUTF8(xml, "application/xhtml+xml")
+	if label != "hzgb2312" && label != "hz-gb-2312" {
+		t.Errorf("got label %q, want hzgb2312", label)
+	}
+	if string(out) == string(xml) {
+		t.Fatal("XML HZ-GB-2312 declaration ignored; utf8 fast-path swallowed HZ escapes")
+	}
+}
+
+func TestDecodeToUTF8_UnrecognizedHint_UTF8Payload(t *testing.T) {
+	// Unrecognized charset labels (e.g. unknown-8bit from MIME) must not trigger
+	// a bogus latin-1 decode or corrupt valid UTF-8 input.
+	utf8Text := []byte("这是一段标准的UTF-8中文内容")
+	out, label := DecodeToUTF8(utf8Text, "unknown-8bit")
+	if label != "utf-8" {
+		t.Errorf("got label %q, want utf-8", label)
+	}
+	if string(out) != string(utf8Text) {
+		t.Errorf("unrecognized hint corrupted UTF-8 text; got %q, want %q", string(out), string(utf8Text))
 	}
 }
