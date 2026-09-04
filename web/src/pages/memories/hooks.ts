@@ -3,10 +3,12 @@
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import memoryService, { updateMemoryById } from '@/services/memory-service';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import {
   buildOwnersFilter,
   groupListByArray,
@@ -51,9 +53,15 @@ export const useCreateMemory = () => {
 };
 
 export const useFetchMemoryList = () => {
-  const { handleInputChange, searchString, pagination, setPagination } =
-    useHandleSearchChange();
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const {
+    handleInputChange,
+    searchString,
+    setSearchString,
+    pagination,
+    setPagination,
+  } = useHandleSearchChange();
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
   const memoryType = Array.isArray(filterValue.memoryType)
@@ -115,10 +123,12 @@ export const useFetchMemoryList = () => {
     isError,
     pagination,
     searchString,
+    setSearchString,
     handleInputChange,
     setPagination,
     refetch,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   };
 };
@@ -175,6 +185,7 @@ export const useDeleteMemory = () => {
       }
 
       queryClient.invalidateQueries({ queryKey: ['memoryList'] });
+      markListItemsDeleted(ListDeletionKey.MemoryList);
       return response;
     },
     onSuccess: () => {

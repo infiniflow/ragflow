@@ -18,10 +18,12 @@
 
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import searchService from '@/services/search-service';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback, useState } from 'react';
@@ -104,10 +106,16 @@ interface SearchListResponse {
 }
 
 export const useFetchSearchList = () => {
-  const { handleInputChange, searchString, pagination, setPagination } =
-    useHandleSearchChange();
+  const {
+    handleInputChange,
+    searchString,
+    setSearchString,
+    pagination,
+    setPagination,
+  } = useHandleSearchChange();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
   const { data, isLoading, isError, refetch } = useQuery<
     SearchListResponse,
     Error
@@ -146,10 +154,12 @@ export const useFetchSearchList = () => {
     isError,
     pagination,
     searchString,
+    setSearchString,
     handleInputChange,
     setPagination,
     refetch,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   };
 };
@@ -274,6 +284,7 @@ export const useDeleteSearch = () => {
       }
 
       queryClient.invalidateQueries({ queryKey: ['searchList'] });
+      markListItemsDeleted(ListDeletionKey.SearchList);
       return response;
     },
     onSuccess: () => {
