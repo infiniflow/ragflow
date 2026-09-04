@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/xuri/excelize/v2"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
@@ -111,6 +112,41 @@ func TestParserComponent_Invoke_TextInput(t *testing.T) {
 	}
 	if got := pages[0]["text"]; got != "hello world" {
 		t.Errorf("pages[0][text] = %q, want %q", got, "hello world")
+	}
+}
+
+func TestParserComponent_EmptyXLSXDoesNotBecomeRawText(t *testing.T) {
+	f := excelize.NewFile()
+	data, err := f.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("WriteToBuffer: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	c := &ParserComponent{Param: schema.ParserParam{}.Defaults(), Setups: defaultSetups()}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    data.Bytes(),
+		"file_type": "xlsx",
+		"name":      "empty.xlsx",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	items, ok := out["json"].([]map[string]any)
+	if !ok {
+		t.Fatalf("json = %T, want []map[string]any", out["json"])
+	}
+	if len(items) != 0 {
+		t.Fatalf("empty XLSX JSON = %v, want no raw-binary items", items)
+	}
+	pages, ok := out["pages"].([]schema.Page)
+	if !ok {
+		t.Fatalf("pages = %T, want []schema.Page", out["pages"])
+	}
+	if len(pages) != 0 {
+		t.Fatalf("empty XLSX pages = %v, want none", pages)
 	}
 }
 
