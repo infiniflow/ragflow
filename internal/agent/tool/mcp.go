@@ -101,24 +101,26 @@ func (m *MCPToolAdapter) Name() string { return m.mcpTool.Name }
 // "properties" (never the schema's top-level keys like "type"/"properties"/
 // "required") together with each property's type/description/required flag
 // and any richer keywords (enum, default, items, nested objects, anyOf/oneOf,
-// ...). A tool with no inputSchema yields an empty schema and eino falls
-// back to free-form args.
+// ...). A tool with no inputSchema takes no parameters: ParamsOneOf is left
+// nil so callers emit an empty object schema instead of an invalid schema.
 func (m *MCPToolAdapter) Info(_ context.Context) (*schema.ToolInfo, error) {
-	var js jsonschema.Schema
-	if len(m.mcpTool.InputSchema) > 0 {
-		raw, err := json.Marshal(m.mcpTool.InputSchema)
-		if err != nil {
-			return nil, fmt.Errorf("encode MCP tool %q inputSchema: %w", m.mcpTool.Name, err)
-		}
-		if err := json.Unmarshal(raw, &js); err != nil {
-			return nil, fmt.Errorf("parse MCP tool %q inputSchema: %w", m.mcpTool.Name, err)
-		}
+	info := &schema.ToolInfo{
+		Name: m.mcpTool.Name,
+		Desc: m.mcpTool.Description,
 	}
-	return &schema.ToolInfo{
-		Name:        m.mcpTool.Name,
-		Desc:        m.mcpTool.Description,
-		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&js),
-	}, nil
+	if len(m.mcpTool.InputSchema) == 0 {
+		return info, nil
+	}
+	var js jsonschema.Schema
+	raw, err := json.Marshal(m.mcpTool.InputSchema)
+	if err != nil {
+		return nil, fmt.Errorf("encode MCP tool %q inputSchema: %w", m.mcpTool.Name, err)
+	}
+	if err := json.Unmarshal(raw, &js); err != nil {
+		return nil, fmt.Errorf("parse MCP tool %q inputSchema: %w", m.mcpTool.Name, err)
+	}
+	info.ParamsOneOf = schema.NewParamsOneOfByJSONSchema(&js)
+	return info, nil
 }
 
 // InvokableRun is the eino entry point. When the adapter was

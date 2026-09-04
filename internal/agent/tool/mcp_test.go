@@ -142,6 +142,41 @@ func TestMCPToolAdapter_InfoWithoutPropertiesFallsBackToFreeForm(t *testing.T) {
 	}
 }
 
+// TestMCPToolAdapter_InfoWithoutInputSchema: an MCP tool with a missing or
+// empty inputSchema takes no parameters. ParamsOneOf must stay nil — a
+// non-nil empty jsonschema.Schema would serialize to `true`, which OpenAI
+// tool calls would read as `"parameters": true` and reject.
+func TestMCPToolAdapter_InfoWithoutInputSchema(t *testing.T) {
+	for name, inputSchema := range map[string]map[string]any{
+		"missing": nil,
+		"empty":   {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := NewMCPToolAdapter(mcpclient.Tool{Name: "no_params", InputSchema: inputSchema})
+			info, err := a.Info(t.Context())
+			if err != nil {
+				t.Fatalf("Info: %v", err)
+			}
+			if info.ParamsOneOf != nil {
+				t.Fatalf("expected nil ParamsOneOf for %s inputSchema, got non-nil", name)
+			}
+			raw, err := json.Marshal(info)
+			if err != nil {
+				t.Fatalf("Marshal ToolInfo: %v", err)
+			}
+			var got map[string]any
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatalf("Unmarshal ToolInfo %s: %v", raw, err)
+			}
+			for _, leaked := range []string{"has_params_one_of", "json_schema"} {
+				if _, ok := got[leaked]; ok {
+					t.Fatalf("empty inputSchema must not advertise a parameters schema (key %q); got %s", leaked, raw)
+				}
+			}
+		})
+	}
+}
+
 // TestMCPToolAdapter_InfoPreservesRichJSONSchema: richer JSON Schema
 // keywords (enum, default, array items, nested objects) survive the
 // round-trip through eino's JSON Schema channel — the flat params form
