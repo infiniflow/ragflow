@@ -218,6 +218,9 @@ class TaskService(CommonService):
         if not docs:
             return None
         doc = docs[0]
+        for config_key in ("parser_config", "kb_parser_config"):
+            if isinstance(doc.get(config_key), dict):
+                doc[config_key] = {key: value for key, value in doc[config_key].items() if key not in ("graphrag", "raptor")}
 
         msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task has been received."
         prog = random.random() / 10.0

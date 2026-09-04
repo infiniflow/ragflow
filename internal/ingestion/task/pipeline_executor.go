@@ -756,13 +756,16 @@ func recordPipelineLog(
 	// selection runs on a builtin registry pipeline: its canvasID is the
 	// parser_id, not a canvas row, so the log is titled with the document's
 	// parser_id, reuses the document thumbnail as avatar, and leaves
-	// pipeline_id empty.
+	// pipeline_id empty. The canvas lookup must not depend on the DSL: terminal
+	// failure/cancel logs are recorded without a DSL, and their pipeline title
+	// and avatar must still resolve from the canvas row (mirrors the Python
+	// operation-log creation path).
 	pipelineTitle := doc.ParserID
 	pipelineAvatar := doc.Thumbnail
 	var pipelineID *string
 	if input.PipelineID != "" {
 		pipelineID = &input.PipelineID
-		if db != nil && strings.TrimSpace(input.DSL) != "" {
+		if db != nil {
 			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, input.PipelineID); err == nil && canvas != nil {
 				if canvas.Title != nil {
 					pipelineTitle = *canvas.Title

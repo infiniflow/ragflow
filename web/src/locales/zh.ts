@@ -504,6 +504,7 @@ export default {
       runningStatus2: '取消',
       runningStatus3: '成功',
       runningStatus4: '失败',
+      runningStatusQueued: '排队中',
       pageRanges: '页码范围',
       pageRangesTip:
         '页码范围：定义需要解析的页面范围。 不包含在这些范围内的页面将被忽略。',
@@ -2930,14 +2931,18 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       },
       parser: '解析器',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
-      tokenizer: '分词器',
-      tokenizerRequired: '请先添加 Tokenizer 节点',
+      tokenizer: '索引器',
+      tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '无法保存：“{{name}}” 配置有误，请先修正',
       agentModelMissing: '无法保存：“{{name}}” 未选择模型，请先选择',
       retrievalDatasetRequired: '请选择知识库',
       retrievalDatasetMissing: '无法保存：“{{name}}” 未选择知识库，请先选择',
+      retrievalTemplateDatasetHint:
+        '该模板包含 {{count}} 处未绑定知识库的数据集检索。请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       retrievalMemoryRequired: '请选择记忆库',
       retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆库，请先选择',
+      retrievalTemplateMemoryHint:
+        '该模板包含 {{count}} 处未绑定记忆库的记忆检索。请在下方选择一个记忆库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       tokenChunker: '按 Token 分块',

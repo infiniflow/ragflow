@@ -359,6 +359,7 @@ export default {
       runningStatus2: 'تم الإلغاء',
       runningStatus3: 'نجاح',
       runningStatus4: 'يفشل',
+      runningStatusQueued: 'في الانتظار',
       pageRanges: 'نطاقات الصفحات',
       pageRangesTip:
         'نطاق الصفحات التي سيتم تحليلها؛ لن تتم معالجة الصفحات التي تقع خارج هذا النطاق.',

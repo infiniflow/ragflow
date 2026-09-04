@@ -412,6 +412,7 @@ from common.token_utils import num_tokens_from_string
 # component can share them. Re-exported here for backwards compatibility.
 from rag.advanced_rag.knowlege_compile.runner import (
     DOC_STRUCTURE_COMPILE_BATCH_CHUNKS,
+    DOC_STRUCTURE_LLM_POOL_SIZE,
     DOC_STRUCTURE_MERGE_MAX_DOCS,  # noqa: F401
     STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S,  # noqa: F401
     load_active_templates,
@@ -928,6 +929,7 @@ async def run_tree_templates(
     chat_mdl_by_tid: dict[str, "LLMBundle"],
     embedding_model,
     doc_name: str,
+    llm_pool,
 ) -> None:
     """Run the ``tree``-kind compilation templates for the current
     doc. Each pair runs RAPTOR with ``is_tree=True`` via
@@ -964,6 +966,12 @@ async def run_tree_templates(
     raptor_service = RaptorService(ctx)
 
     for idx, (template_id, parser_cfg) in enumerate(templates):
+        pooled_chat_mdl = llm_pool.wrap(
+            chat_mdl_by_tid[template_id],
+            priority=30,
+            label=f"tree:{template_id}",
+            context=f"{doc_id}:{template_id}:tree",
+        )
         raptor_cfg = (parser_cfg or {}).get("raptor") or {}
         raptor_config = {
             "prompt": raptor_cfg.get("prompt") or "Please write a concise summary of the following texts:\n{cluster_content}",
@@ -980,7 +988,7 @@ async def run_tree_templates(
             tree = await raptor_service.build_doc_tree(
                 chunks=chunks,
                 raptor_config=raptor_config,
-                chat_mdl=chat_mdl_by_tid[template_id],
+                chat_mdl=pooled_chat_mdl,
                 embd_mdl=embedding_model,
                 max_errors=3,
             )
@@ -1014,12 +1022,11 @@ async def run_tree_templates(
                     doc_id,
                 )
 
-        await rewrite_duplicate_tree_names(tree, chat_mdl_by_tid[template_id])
+        await rewrite_duplicate_tree_names(tree, pooled_chat_mdl)
         # Claims are keyed by chunk id on the tree dict (see
         # RaptorService.build_doc_tree); pull them off before projecting so the
         # graph blob stays a pure structure payload.
         claims_by_chunk = tree.pop("claims_by_chunk", None) if isinstance(tree, dict) else None
-
         graph = raptor_tree_to_graph(tree)
         try:
             await _struct_upsert_graph_json(
@@ -1083,7 +1090,7 @@ async def run_tree_templates(
                     doc_id,
                     {"title": tree.get("title"), "graph_text": nav_graph_text},
                     embd_mdl=embedding_model,
-                    chat_mdl=chat_mdl_by_tid[template_id],
+                    chat_mdl=pooled_chat_mdl,
                 )
         except Exception:
             logging.exception(
@@ -1130,6 +1137,15 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
         logging.exception("document_structure_compile: cannot resolve ingestion chat model %s", chat_llm_id)
         return
     chat_mdl_by_tid = {template_id: chat_mdl for template_id, _ in active_templates}
+    from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
+
+    def _on_llm_error(label: str, context: str | None, error_type: str) -> None:
+        ctx.progress_cb(msg=f"LLM call failed ({label}, {context or 'no context'}): {error_type}")
+
+    llm_pool = LLMCallPool(
+        DOC_STRUCTURE_LLM_POOL_SIZE,
+        on_error=_on_llm_error,
+    )
 
     tree_templates: list[tuple[str, dict]] = []
     non_tree_templates: list[tuple[str, dict]] = []
@@ -1146,6 +1162,7 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
             chat_mdl_by_tid,
             embedding_model,
             doc_name,
+            llm_pool,
         )
 
     if not non_tree_templates:
@@ -1173,6 +1190,7 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
         progress_cb=ctx.progress_cb,
         cancel_check=lambda: ctx.has_canceled_func(ctx.id),
         record=ctx.recording_context.record,
+        llm_pool=llm_pool,
     )
 
 

@@ -65,7 +65,7 @@
                                     "cross_languages": [],
                                     "description": "Retrieve papers, reports, datasets, and notes that ground CAJAL scientific writing outputs.",
                                     "empty_response": "",
-                                    "kb_ids": [],
+                                    "dataset_ids": [],
                                     "retrieval_from": "dataset",
                                     "keywords_similarity_weight": 0.7,
                                     "outputs": {
@@ -255,7 +255,7 @@
                                         "cross_languages": [],
                                         "description": "Retrieve papers, reports, datasets, and notes that ground CAJAL scientific writing outputs.",
                                         "empty_response": "",
-                                        "kb_ids": [],
+                                        "dataset_ids": [],
                                         "retrieval_from": "dataset",
                                         "keywords_similarity_weight": 0.7,
                                         "outputs": {

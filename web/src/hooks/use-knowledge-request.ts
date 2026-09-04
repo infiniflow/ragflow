@@ -18,7 +18,9 @@ import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-f
 import message from '@/components/ui/message';
 import { useIsGoBackend } from '@/utils/backend-variant';
 import { isDatasetId } from '@/utils/dataset-util';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { GenerateType, ParseType } from '@/constants/knowledge';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
   IArtifact,
@@ -193,10 +195,12 @@ export const useTestRetrieval = () => {
 };
 
 export const useFetchNextKnowledgeListByPage = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { searchString, setSearchString, handleInputChange } =
+    useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
 
   const { data, isFetching: loading } = useQuery<IDatasetListResult>({
     queryKey: [
@@ -235,11 +239,13 @@ export const useFetchNextKnowledgeListByPage = () => {
   return {
     ...data,
     searchString,
+    setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total_datasets },
     setPagination,
     loading,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   };
 };
@@ -316,6 +322,7 @@ export const useDeleteKnowledge = () => {
         queryClient.invalidateQueries({
           queryKey: [KnowledgeApiAction.FetchDatasetFilter],
         });
+        markListItemsDeleted(ListDeletionKey.KnowledgeList);
       }
       return data?.data ?? [];
     },

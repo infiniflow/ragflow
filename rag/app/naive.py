@@ -52,7 +52,8 @@ from common.parser_config_utils import has_mineru_options, normalize_layout_reco
 from common.text_utils import normalize_arabic_presentation_forms
 from rag.nlp import (
     concat_img,
-    find_codec,
+    DEFAULT_DELIMITER,
+    decode_text,
     naive_merge,
     naive_merge_with_images,
     naive_merge_docx,
@@ -1001,8 +1002,7 @@ class Markdown(MarkdownParser):
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
         """Parse markdown into text sections and optional standalone table chunks."""
         if binary is not None:
-            encoding = find_codec(binary)
-            txt = binary.decode(encoding, errors="ignore")
+            txt, _ = decode_text(binary, document_type="Markdown document")
         else:
             with open(filename, "r") as f:
                 txt = f.read()
@@ -1067,7 +1067,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     lang = lang or "Chinese"
     is_english = lang.lower() == "english"  # is_english(cks)
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
 
     child_deli = (parser_config.get("children_delimiter") or "").encode("utf-8").decode("unicode_escape").encode("latin1").decode("utf-8")
     cust_child_deli = re.findall(r"`([^`]+)`", child_deli)
@@ -1133,7 +1133,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         # chunks list[dict]
         # images list - index of image chunk in chunks
-        chunks, images = naive_merge_docx(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), table_context_size, image_context_size)
+        chunks, images = naive_merge_docx(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", DEFAULT_DELIMITER), table_context_size, image_context_size)
 
         vision_figure_parser_docx_wrapper_naive(
             chunks=chunks,
@@ -1261,7 +1261,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
+        sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", DEFAULT_DELIMITER))
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         logging.info("TxtParser produced %d sections for %s", len(sections), filename)
         callback(0.8, "Finish parsing.")
@@ -1273,7 +1273,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             filename,
             binary,
             separate_tables=False,
-            delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
+            delimiter=parser_config.get("delimiter", DEFAULT_DELIMITER),
             return_section_images=True,
         )
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
@@ -1428,10 +1428,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 section_images = None
 
         if section_images:
-            chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
+            chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", DEFAULT_DELIMITER), overlapped_percent)
             res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli, language=lang))
         else:
-            chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
+            chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", DEFAULT_DELIMITER), overlapped_percent)
 
             res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang))
 

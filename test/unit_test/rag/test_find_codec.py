@@ -163,3 +163,36 @@ def test_find_codec_utf8_wins_over_confident_wrong_detection(find_codec, monkeyp
     )
     blob = "Ελληνικά".encode("utf-8")
     assert find_codec(blob) == "utf-8"
+
+
+@pytest.fixture
+def decode_text(find_codec):
+    from rag.nlp import decode_text as _decode_text
+
+    return _decode_text
+
+
+@pytest.mark.p2
+def test_decode_text_preserves_gbk_and_gb18030(decode_text):
+    gbk = "项目名称,核心系统重构".encode("gbk")
+    text, encoding = decode_text(gbk, document_type="CSV document")
+    assert text == "项目名称,核心系统重构"
+    assert encoding == "gb18030"
+
+    gb18030_only = "𠀀".encode("gb18030")
+    text, encoding = decode_text(gb18030_only, document_type="CSV document")
+    assert text == "𠀀"
+    assert encoding == "gb18030"
+
+
+@pytest.mark.p2
+def test_decode_text_rejects_undetectable_bytes_without_loss(decode_text):
+    with pytest.raises(UnicodeError, match="CSV document"):
+        decode_text(b"prefix\xc3suffix", document_type="CSV document")
+
+
+@pytest.mark.p2
+def test_decode_text_accepts_literal_replacement_character(decode_text):
+    text, encoding = decode_text("literal � content".encode("utf-8"))
+    assert text == "literal � content"
+    assert encoding == "utf-8"
