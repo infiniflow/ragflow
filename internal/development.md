@@ -44,7 +44,7 @@ uv run tools/scripts/download_dev_deps.py   # local-dev one-stop: native .a + cl
 
 Install `uv` before running the downloaders; it installs each script's declared Python dependencies.
 
-`download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `ragflow_deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `ragflow_deps/download_deps.py` provisions the same runtime resources plus the stagehand driver (installed into the SDK's cache, using the SDK version from `go.mod`) and skips the native `.a`; run it only when building the dependency image or in CI. Native archives support Linux x86_64.
+`download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `ragflow_deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `ragflow_deps/download_deps.py` provisions the same runtime resources plus the stagehand driver (installed into the SDK's cache, using the SDK version from `go.mod`) and skips the native `.a`; run it only when building the dependency image or in CI. Native archives are fetched per target platform (linux/darwin on amd64/arm64; override with `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`).
 
 Build the Go resource image from `ragflow_deps/` after preparing these files:
 
@@ -59,13 +59,18 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 >
 > ```bash
 > RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_dev_deps.py
-> PLATFORM="linux_amd64"  # macOS (darwin_*) is temporarily unsupported; linux_arm64 is not a supported native build target
-> # NOTE: the ONNX Runtime static lib fetched by download_dev_deps.py is
-> # linux-x64 ONLY (onnxruntime-linux-x64-static_lib-*). On darwin_* / non-amd64
-> # PLATFORM values the production DeepDoc backend cannot be linked, so those
-> # PLATFORM examples cover office_oxide/pdfium/pdf_oxide only — ORT is a
-> # Linux-amd64 link dependency here. macOS is temporarily not supported by the
-> # Go backend; use a Linux x86-64 host for a supported native build.
+> PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
+> # Native libs are fetched for the *host* platform by download_dev_deps.py
+> # (override with RAGFLOW_TARGET_OS / RAGFLOW_TARGET_ARCH). ONNX Runtime static
+> # libs are published for linux-x86_64, linux-aarch64, osx-arm64 and
+> # osx-universal (Intel Macs use the universal archive — there is no osx-x86_64),
+> # so the production DeepDoc backend links on all four. On Linux the link force-pulls
+> # OrtGetApiBase and exports just it (--undefined=OrtGetApiBase + --dynamic-list,
+> # no --whole-archive) with -fuse-ld=lld + -lstdc++; on macOS (ld64) it uses
+> # -force_load + -export_dynamic + -lc++ instead, since ld64 has no GNU ld
+> # equivalents. The macOS path is written but NOT yet verified on real
+> # Apple-Silicon hardware — confirm the dlopen(NULL) resolution of OrtGetApiBase
+> # there. (待 Mac 验证)
 >
 > # Resolve the version-stamped ORT archive path FIRST, in its own unquoted
 > # assignment: the shell does not expand `*` inside the double-quoted
@@ -73,14 +78,26 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 > # version dir — build.sh refuses to link two ORT versions.
 > ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/*/lib/libonnxruntime.a)"
 >
-> # The binding reaches ORT with dlopen(NULL)+dlsym("OrtGetApiBase"), so
-> # OrtGetApiBase is the only symbol that must be visible process-wide. Export
-> # just it — not via a "local: *" version script, which hides Go's runtime type
-> # symbols and breaks PIE absolute relocations. There is deliberately no
-> # --whole-archive, so unreferenced kernels are dropped. Write the dynamic
-> # list to .cache/ (gitignored), matching build.sh.
-> mkdir -p .cache
-> printf '{\n  OrtGetApiBase;\n};\n' > .cache/ort_dynamic_list.txt
+> # Link flags differ between Linux (GNU ld) and macOS (ld64). On macOS the
+> # path below is written but NOT yet verified on real Apple-Silicon hardware
+> # (see "待 Mac 验证" above) — prefer `build.sh` which derives the same flags.
+> if [ "$(uname -s)" = "Darwin" ]; then
+>   ORT_LINK="-Wl,-export_dynamic"
+>   for a in ${ORT_A}; do ORT_LINK="${ORT_LINK} -Wl,-force_load,${a}"; done
+>   ORT_LINK="${ORT_LINK} -lc++"
+>   SYS_LIBS="-lm -lpthread -ldl -lutil -lc"
+> else
+>   # The binding reaches ORT with dlopen(NULL)+dlsym("OrtGetApiBase"), so
+>   # OrtGetApiBase is the only symbol that must be visible process-wide. Export
+>   # just it via --dynamic-list — not a "local: *" version script, which hides
+>   # Go's runtime type symbols and breaks PIE absolute relocations. There is
+>   # deliberately no --whole-archive, so unreferenced kernels are dropped.
+>   # The dynamic list lives in .cache/ (gitignored), matching build.sh.
+>   mkdir -p .cache
+>   printf '{\n  OrtGetApiBase;\n};\n' > .cache/ort_dynamic_list.txt
+>   ORT_LINK="-Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=.cache/ort_dynamic_list.txt ${ORT_A} -lstdc++"
+>   SYS_LIBS="-fuse-ld=lld -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
+> fi
 >
 > export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
 > export CGO_LDFLAGS="\
@@ -89,18 +106,21 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
 >     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
->     -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=.cache/ort_dynamic_list.txt ${ORT_A} -lstdc++ \
->     -fuse-ld=lld \
->     -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
+>     ${ORT_LINK} \
+>     ${SYS_LIBS}"
 > ```
 >
 > All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
 >
 > **ONNX Runtime is mandatory for the production binary.** The in-process (Go)
-> DeepDoc backend is statically linked against `libonnxruntime.a` (no
-> `--whole-archive`; `OrtGetApiBase` is force-pulled with
-> `-Wl,--undefined=OrtGetApiBase` and exported via `--dynamic-list`), and
-> `OrtGetApiBase` is resolved at runtime through `dlopen(NULL)`. The org
+> DeepDoc backend is statically linked against `libonnxruntime.a`. On Linux the
+> only symbol that must be visible process-wide is `OrtGetApiBase`: it is
+> force-pulled with `-Wl,--undefined=OrtGetApiBase` and exported via
+> `--dynamic-list` (no `--whole-archive`, so unreferenced kernels are dropped).
+> On macOS (ld64) the archives are instead pulled in with `-force_load` and
+> exported with `-export_dynamic`, since ld64 has no GNU ld equivalents; this
+> path is written but NOT yet verified on real Apple-Silicon hardware. In both
+> cases `OrtGetApiBase` is resolved at runtime through `dlopen(NULL)`. The org
 > `onnxruntime_go` binding
 > (github.com/infiniflow/onnxruntime_go, the mirror of yalue/onnxruntime_go) only
 > needs `-ldl` to *compile*, so a binary built **without** ORT links
@@ -134,9 +154,10 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 > **Note**: `build.sh` also guards ONNX Runtime **archive integrity** and the
 > **link cache**, because a silently-stale `.a` is easy to miss:
 > - `check_onnxruntime_deps` compares the local release ZIP under `ragflow_deps/`
->   (`onnxruntime-v<ver>-linux-x86_64.zip`) against the SHA-256 digest pinned in
+>   (`onnxruntime-v<ver>-<target>.zip`, e.g. `-linux-x86_64` / `-osx-arm64`)
+>   against the SHA-256 digest pinned in
 >   `build.sh`, without a network request. The downloader separately checks the
->   published `onnxruntime-v<ver>-linux-x86_64.zip.sha256` sidecar. A local ZIP
+>   published `onnxruntime-v<ver>-<target>.zip.sha256` sidecar. A local ZIP
 >   mismatch only emits a warning with the expected/actual SHA-256 and the
 >   refresh command (`rm -f <zip>` + `uv run tools/scripts/download_dev_deps.py`);
 >   the build continues checking and linking the extracted static libraries. CI seeds
