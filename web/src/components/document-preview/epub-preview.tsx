@@ -30,8 +30,15 @@ export const EpubPreviewer = ({ className, url }: EpubPreviewerProps) => {
   const [blob, setBlob] = useState<Blob | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const { containerRef, toc, rendering, parseError, goToHref, nextPage, prevPage } =
-    useEpubBook(blob, isDark);
+  const {
+    containerRef,
+    toc,
+    rendering,
+    parseError,
+    goToHref,
+    nextPage,
+    prevPage,
+  } = useEpubBook(blob, isDark);
   const [tocOpen, setTocOpen] = useState(false);
 
   useEffect(() => {
@@ -103,7 +110,9 @@ export const EpubPreviewer = ({ className, url }: EpubPreviewerProps) => {
 
       <div className="relative flex-1 h-full min-w-0">
         <button
-          aria-label={tocOpen ? 'Hide table of contents' : 'Show table of contents'}
+          aria-label={
+            tocOpen ? 'Hide table of contents' : 'Show table of contents'
+          }
           onClick={() => setTocOpen(!tocOpen)}
           className="absolute left-2 top-2 z-10 flex size-8 items-center justify-center rounded-md border border-border-normal bg-bg-component text-text-secondary hover:text-text-primary"
         >

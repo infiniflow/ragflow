@@ -152,5 +152,13 @@ export const useEpubBook = (blob: Blob | null, isDark: boolean) => {
   const nextPage = useCallback(() => renditionRef.current?.next(), []);
   const prevPage = useCallback(() => renditionRef.current?.prev(), []);
 
-  return { containerRef, toc, rendering, parseError, goToHref, nextPage, prevPage };
+  return {
+    containerRef,
+    toc,
+    rendering,
+    parseError,
+    goToHref,
+    nextPage,
+    prevPage,
+  };
 };
