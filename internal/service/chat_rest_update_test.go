@@ -537,13 +537,39 @@ func TestChatServiceCreatePromptDefaultsContract(t *testing.T) {
 	if !ok || param["key"] != "knowledge" || param["optional"] != false {
 		t.Fatalf("expected knowledge parameter, got %#v", params[0])
 	}
-	if promptConfig["system"] == "" {
-		t.Fatal("expected non-empty default system prompt")
+	if promptConfig["system"] != "" {
+		t.Fatalf("expected empty default system prompt without a dataset, got %#v", promptConfig["system"])
 	}
 	if promptConfig["prologue"] == "" {
 		t.Fatal("expected non-empty default prologue")
 	}
 	if promptConfig["empty_response"] == "" {
 		t.Fatal("expected non-empty default empty_response")
+	}
+}
+
+func TestChatServiceCreateWithDatasetSeedsDatasetSystemPrompt(t *testing.T) {
+	setupChatRESTUpdateServiceTestDB(t)
+
+	svc := NewChatService()
+	ctx := t.Context()
+	resp, code, err := svc.Create(ctx, "user-1", map[string]interface{}{
+		"name":   "prompt defaults chat with dataset",
+		"kb_ids": []interface{}{"kb-1"},
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	promptConfig, ok := resp["prompt_config"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected prompt_config map, got %T: %+v", resp["prompt_config"], resp["prompt_config"])
+	}
+	system, _ := promptConfig["system"].(string)
+	if system == "" || !strings.Contains(system, "{knowledge}") || !strings.Contains(system, "not found in the dataset") {
+		t.Fatalf("expected dataset-oriented default system prompt, got %#v", promptConfig["system"])
 	}
 }

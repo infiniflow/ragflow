@@ -1,4 +1,3 @@
-
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -48,6 +47,7 @@ const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name, className }) => {
         return `bg-[rgba(0,190,180,0.1)] text-accent-primary`;
       case RunningStatus.UNSTART:
       case RunningStatusOld.UNSTART:
+      case RunningStatus.QUEUED:
         return `bg-[rgba(250,173,20,0.1)] text-state-warning`;
       default:
         return 'bg-gray-500/10 text-text-secondary';
@@ -71,6 +71,7 @@ const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name, className }) => {
         return `bg-[rgba(0,190,180,1)] text-accent-primary`;
       case RunningStatus.UNSTART:
       case RunningStatusOld.UNSTART:
+      case RunningStatus.QUEUED:
         return `bg-[rgba(250,173,20,1)] text-state-warning`;
       default:
         return `bg-[rgba(117,120,122,1)] text-text-secondary`;
