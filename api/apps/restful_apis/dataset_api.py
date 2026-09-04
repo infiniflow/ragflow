@@ -81,6 +81,28 @@ def get_flattened_metadata(tenant_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/metadata/keys", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_metadata_keys(tenant_id):
+    dataset_ids = request.args.get("kb_ids", "").split(",")
+    dataset_ids = [d for d in dataset_ids if d]
+    if not dataset_ids:
+        return get_error_data_result(message='Lack of "kb_ids" in query parameters')
+
+    try:
+        success, result = dataset_api_service.get_metadata_keys(dataset_ids, tenant_id)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except ValueError as e:
+        return get_error_argument_result(str(e))
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
