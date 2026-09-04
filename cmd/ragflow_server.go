@@ -580,6 +580,9 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	// vCPU default, overridable via KC_COMPILE_CONCURRENCY).
 	knowledge_compile.SetCompilerConcurrency(ingestorCfg.CompilerPoolSize)
 	ingestor := ingestion.NewIngestor(*args.name, int32(ingestorCfg.MaxConcurrentWorkers), []string{"pdf", "docx", "txt"})
+	if ingestorCfg.TaskTimeoutSeconds > 0 {
+		ingestor.SetTaskTimeout(time.Duration(ingestorCfg.TaskTimeoutSeconds) * time.Second)
+	}
 	ingestor.SetKnowledgeCompileModelConfig(
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,

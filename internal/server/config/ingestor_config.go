@@ -26,12 +26,20 @@ type IngestorConfig struct {
 	// pool that drives the cross-doc KNN / LLM-merge / write stages. 0/negative
 	// falls back to runtime.NumCPU() (or KC_COMPILE_CONCURRENCY if set).
 	CompilerPoolSize int `mapstructure:"compiler_pool_size"`
+	// TaskTimeoutSeconds bounds how long a single ingestion task may run
+	// before the worker watchdog deadline fires; the task is then marked
+	// FAILED with a timeout marker on its document instead of lingering in
+	// RUNNING at 0% forever (and, with a single worker, blocking every
+	// queued document). Mirrors Python task_executor's @timeout stage caps.
+	// 0/negative disables the watchdog.
+	TaskTimeoutSeconds int `mapstructure:"task_timeout_seconds"`
 }
 
 func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 	// Default Ingestor config
 	c.ingestor.MaxConcurrentWorkers = 2
 	c.ingestor.CompilerPoolSize = 0
+	c.ingestor.TaskTimeoutSeconds = 3600
 
 	if !v.IsSet("ingestor") {
 		return nil
@@ -47,6 +55,10 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 
 	if sub.IsSet("compiler_pool_size") {
 		c.ingestor.CompilerPoolSize = sub.GetInt("compiler_pool_size")
+	}
+
+	if sub.IsSet("task_timeout_seconds") {
+		c.ingestor.TaskTimeoutSeconds = sub.GetInt("task_timeout_seconds")
 	}
 
 	return nil
