@@ -7176,6 +7176,21 @@
             ]
         },
         {
+            "name": "MonkeyOCR",
+            "logo": "",
+            "tags": "OCR",
+            "status": "1",
+            "url": "https://github.com/Yuliang-Liu/MonkeyOCR",
+            "llm": [
+                {
+                    "llm_name": "MonkeyOCR-model",
+                    "tags": "OCR",
+                    "max_tokens": 8192,
+                    "model_type": "ocr"
+                }
+            ]
+        },
+        {
             "name": "SoMark",
             "logo": "",
             "tags": "OCR",

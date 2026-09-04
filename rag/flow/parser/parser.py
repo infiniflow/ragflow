@@ -30,6 +30,7 @@ from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import (
     ensure_mineru_from_env,
+    ensure_monkeyocr_from_env,
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_first_provider_model_name,
@@ -43,6 +44,7 @@ from api.db.services.tenant_model_service import TenantModelService
 from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid, thread_pool_exec
+from common.parser_config_utils import normalize_layout_recognizer
 from deepdoc.parser import ExcelParser, HtmlParser, TxtParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
@@ -67,6 +69,74 @@ from rag.flow.parser.utils import (
 )
 from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
+
+
+def _ocr_parse_lines_to_bboxes(pdf_parser, lines):
+    """Convert OCR parser line tuples into flow-parser bbox dicts."""
+    bboxes = []
+    for line in lines or []:
+        if not isinstance(line, tuple) or len(line) < 3:
+            continue
+
+        text, layout_type, poss = line[0], line[1], line[2]
+        positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
+        box = {
+            "text": text,
+            "layout_type": layout_type or "text",
+            "page_number": positions[0][0] if positions else 1,
+        }
+        if positions:
+            box["positions"] = positions
+        image = pdf_parser.crop(poss, 1)
+        if image is not None:
+            box["image"] = image
+        bboxes.append(box)
+    return bboxes
+
+
+def _run_flow_ocr_pdf_branch(
+    process,
+    *,
+    name,
+    blob,
+    conf,
+    parser_model_name,
+    provider_name: str,
+    config_model_key: str,
+    ensure_from_env,
+):
+    """Resolve an OCR provider model and parse a PDF on the canvas flow path."""
+
+    def resolve_llm_name():
+        configured = parser_model_name or conf.get(config_model_key)
+        if configured:
+            return configured
+
+        tenant_id = process._canvas._tenant_id
+        if not tenant_id:
+            return None
+
+        return get_first_provider_model_name(tenant_id, provider_name, LLMType.OCR) or ensure_from_env(tenant_id)
+
+    resolved_model = resolve_llm_name()
+    if not resolved_model:
+        raise RuntimeError(
+            f"{provider_name} model not configured. Please add {provider_name} in Model Providers "
+            f"or set the corresponding env vars."
+        )
+
+    tenant_id = process._canvas._tenant_id
+    ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, resolved_model)
+    ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"))
+    pdf_parser = ocr_model.mdl
+    lines, _ = pdf_parser.parse_pdf(
+        filepath=name,
+        binary=blob,
+        callback=process.callback,
+        parse_method="pipeline",
+        lang=conf.get("lang", "Chinese"),
+    )
+    return pdf_parser, _ocr_parse_lines_to_bboxes(pdf_parser, lines)
 
 
 class ParserParam(ProcessParamBase):
@@ -259,7 +329,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark", "mistral ocr"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "monkeyocr", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark", "mistral ocr"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -354,26 +424,15 @@ class Parser(ProcessBase):
                     raw_parse_method = f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
 
         parser_model_name = None
-        parse_method = raw_parse_method
-        parse_method = parse_method or ""
+        parse_method = raw_parse_method or ""
         if isinstance(raw_parse_method, str):
-            lowered = raw_parse_method.lower()
-            if lowered.endswith("@mineru"):
-                parser_model_name = raw_parse_method
-                parse_method = "MinerU"
-            elif lowered.endswith("@paddleocr"):
-                parser_model_name = raw_parse_method
-                parse_method = "PaddleOCR"
-            elif lowered.endswith("@somark"):
-                # Keep the full 3-segment ``<llm_name>@<instance_name>@<provider>``
-                # form produced by the new Tenant LLM Provider UI (#14595);
-                # ``resolve_model_config`` -> ``split_model_name``
-                # downstream requires all three segments.
-                parser_model_name = raw_parse_method
-                parse_method = "SoMark"
-            elif lowered.endswith("@mistral ocr"):
-                parser_model_name = raw_parse_method
-                parse_method = "Mistral OCR"
+            # Same suffix rules as dataset parsers (including @MonkeyOCR).
+            # A composite selector must become parse_method "MonkeyOCR" so
+            # the dedicated branch runs instead of the VLM fallback.
+            normalized, model_name = normalize_layout_recognizer(raw_parse_method)
+            if model_name:
+                parser_model_name = model_name
+                parse_method = normalized
 
         # DeepDOC returns structured page boxes directly.
         if parse_method.lower() == "deepdoc":
@@ -391,51 +450,28 @@ class Parser(ProcessBase):
         # MinerU/PaddleOCR/Docling/TCADP all return line-like sections that need
         # to be converted into the shared bbox-like structure used below.
         elif parse_method.lower() == "mineru":
-
-            def resolve_mineru_llm_name():
-                configured = parser_model_name or conf.get("mineru_llm_name")
-                if configured:
-                    return configured
-
-                tenant_id = self._canvas._tenant_id
-                if not tenant_id:
-                    return None
-
-                return get_first_provider_model_name(tenant_id, "MinerU", LLMType.OCR) or ensure_mineru_from_env(tenant_id)
-
-            parser_model_name = resolve_mineru_llm_name()
-            if not parser_model_name:
-                raise RuntimeError("MinerU model not configured. Please add MinerU in Model Providers or set MINERU_* env.")
-
-            tenant_id = self._canvas._tenant_id
-            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
-            ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"))
-            pdf_parser = ocr_model.mdl
-
-            lines, _ = pdf_parser.parse_pdf(
-                filepath=name,
-                binary=blob,
-                callback=self.callback,
-                parse_method="pipeline",
-                lang=conf.get("lang", "Chinese"),
+            pdf_parser, bboxes = _run_flow_ocr_pdf_branch(
+                self,
+                name=name,
+                blob=blob,
+                conf=conf,
+                parser_model_name=parser_model_name,
+                provider_name="MinerU",
+                config_model_key="mineru_llm_name",
+                ensure_from_env=ensure_mineru_from_env,
             )
-            bboxes = []
-            for line in lines or []:
-                if not isinstance(line, tuple) or len(line) < 3:
-                    continue
 
-                t, layout_type, poss = line[0], line[1], line[2]
-                box = {
-                    "text": t,
-                    "layout_type": layout_type or "text",
-                }
-                positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
-                if positions:
-                    box["positions"] = positions
-                image = pdf_parser.crop(poss, 1)
-                if image is not None:
-                    box["image"] = image
-                bboxes.append(box)
+        elif parse_method.lower() == "monkeyocr":
+            pdf_parser, bboxes = _run_flow_ocr_pdf_branch(
+                self,
+                name=name,
+                blob=blob,
+                conf=conf,
+                parser_model_name=parser_model_name,
+                provider_name="MonkeyOCR",
+                config_model_key="monkeyocr_llm_name",
+                ensure_from_env=ensure_monkeyocr_from_env,
+            )
 
         elif parse_method.lower() == "docling":
             pdf_parser = DoclingParser(docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""))

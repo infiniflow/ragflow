@@ -34,6 +34,7 @@ from common.constants import LLMType, MAXIMUM_PAGE_NUMBER
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import (
     ensure_mineru_from_env,
+    ensure_monkeyocr_from_env,
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_composite_model_name_by_id,
@@ -236,6 +237,61 @@ def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None, layo
     return parser, name, layout_recognizer, opendataloader_llm_name, parser_model_name
 
 
+def _by_mineru_compatible_ocr(
+    provider_name: str,
+    ensure_from_env,
+    llm_name: str | None,
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=MAXIMUM_PAGE_NUMBER,
+    lang="Chinese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    tenant_id: str | None = None,
+    **kwargs,
+):
+    if not tenant_id:
+        raise RuntimeError(f"{provider_name} model not found or not configured.")
+
+    if not llm_name:
+        try:
+            llm_name = get_first_provider_model_name(tenant_id, provider_name, LLMType.OCR) or ensure_from_env(tenant_id)
+        except Exception as e:
+            logging.warning("fallback to env %s: %s", provider_name.lower(), e)
+
+    if not llm_name:
+        raise RuntimeError(f"{provider_name} model not found or not configured.")
+
+    try:
+        ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, llm_name)
+        ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+        pdf_parser = ocr_model.mdl
+
+        if "vision_model" not in kwargs:
+            try:
+                vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.VISION)
+                kwargs["vision_model"] = LLMBundle(tenant_id=tenant_id, model_config=vision_model_config, lang=lang)
+            except Exception as vlm_err:
+                logging.info("[%s] no VISION model for tenant; skipping image VLM enhancement: %s", provider_name, vlm_err)
+
+        sections, tables = pdf_parser.parse_pdf(
+            filepath=filename,
+            binary=binary,
+            callback=callback,
+            parse_method=parse_method,
+            lang=lang,
+            page_from=from_page,
+            page_to=min(to_page, MAXIMUM_PAGE_NUMBER),
+            **kwargs,
+        )
+        return sections, tables, pdf_parser
+    except Exception as e:
+        logging.error("Failed to parse pdf via LLMBundle %s (%s): %s", provider_name, llm_name, e)
+        raise
+
+
 def by_mineru(
     filename,
     binary=None,
@@ -249,48 +305,51 @@ def by_mineru(
     tenant_id: str | None = None,
     **kwargs,
 ):
-    pdf_parser = None
-    if tenant_id:
-        if not mineru_llm_name:
-            try:
-                mineru_llm_name = get_first_provider_model_name(tenant_id, "MinerU", LLMType.OCR) or ensure_mineru_from_env(tenant_id)
-            except Exception as e:  # best-effort fallback
-                logging.warning(f"fallback to env mineru: {e}")
+    return _by_mineru_compatible_ocr(
+        "MinerU",
+        ensure_mineru_from_env,
+        mineru_llm_name,
+        filename,
+        binary=binary,
+        from_page=from_page,
+        to_page=to_page,
+        lang=lang,
+        callback=callback,
+        pdf_cls=pdf_cls,
+        parse_method=parse_method,
+        tenant_id=tenant_id,
+        **kwargs,
+    )
 
-        if mineru_llm_name:
-            try:
-                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, mineru_llm_name)
-                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
-                pdf_parser = ocr_model.mdl
 
-                # Closes #14869: when the tenant has a VISION model
-                # configured, let the MinerU parser enrich image chunks with
-                # VLM-generated semantic descriptions (parity with deepdoc's
-                # VisionFigureParser). Best-effort — fall back silently if
-                # no vision model is available.
-                if "vision_model" not in kwargs:
-                    try:
-                        vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.VISION)
-                        kwargs["vision_model"] = LLMBundle(tenant_id=tenant_id, model_config=vision_model_config, lang=lang)
-                    except Exception as vlm_err:
-                        logging.info(f"[MinerU] no VISION model for tenant; skipping image VLM enhancement: {vlm_err}")
-
-                sections, tables = pdf_parser.parse_pdf(
-                    filepath=filename,
-                    binary=binary,
-                    callback=callback,
-                    parse_method=parse_method,
-                    lang=lang,
-                    page_from=from_page,
-                    page_to=min(to_page, MAXIMUM_PAGE_NUMBER),
-                    **kwargs,
-                )
-                return sections, tables, pdf_parser
-            except Exception as e:
-                logging.error(f"Failed to parse pdf via LLMBundle MinerU ({mineru_llm_name}): {e}")
-                raise
-
-    raise RuntimeError("MinerU model not found or not configured.")
+def by_monkeyocr(
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=MAXIMUM_PAGE_NUMBER,
+    lang="Chinese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    monkeyocr_llm_name: str | None = None,
+    tenant_id: str | None = None,
+    **kwargs,
+):
+    return _by_mineru_compatible_ocr(
+        "MonkeyOCR",
+        ensure_monkeyocr_from_env,
+        monkeyocr_llm_name,
+        filename,
+        binary=binary,
+        from_page=from_page,
+        to_page=to_page,
+        lang=lang,
+        callback=callback,
+        pdf_cls=pdf_cls,
+        parse_method=parse_method,
+        tenant_id=tenant_id,
+        **kwargs,
+    )
 
 
 def by_docling(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -540,6 +599,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER
 PARSERS = {
     "deepdoc": by_deepdoc,
     "mineru": by_mineru,
+    "monkeyocr": by_monkeyocr,
     "docling": by_docling,
     "opendataloader": by_opendataloader,
     "tcadp parser": by_tcadp,
@@ -1190,6 +1250,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             callback=callback,
             layout_recognizer=layout_recognizer,
             mineru_llm_name=parser_model_name,
+            monkeyocr_llm_name=parser_model_name,
             paddleocr_llm_name=parser_model_name,
             opendataloader_llm_name=opendataloader_llm_name,
             somark_llm_name=parser_model_name,
@@ -1206,10 +1267,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 sections,
                 tables,
                 image_context_size,
-                section_page_offset=from_page if name == "mineru" else 0,
+                section_page_offset=from_page if name in ("mineru", "monkeyocr") else 0,
             )
 
-        if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark", "mistral ocr"]:
+        if name in ["tcadp", "docling", "mineru", "monkeyocr", "paddleocr", "opendataloader", "somark", "mistral ocr"]:
             if int(parser_config.get("chunk_token_num", 0)) <= 0:
                 parser_config["chunk_token_num"] = 0
 

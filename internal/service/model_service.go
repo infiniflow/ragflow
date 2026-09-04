@@ -1595,6 +1595,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 	_ = m.ensureMineruFromEnv(ctx, tenantID)
 	_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
 	_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
+	_ = m.ensureMonkeyOCRFromEnv(ctx, tenantID)
 
 	var modelTypeFilterBin entity.ModelType
 	if modelTypeFilter != "" {
@@ -1837,6 +1838,18 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
+// ensureMonkeyOCRFromEnv mirrors Python's ensure_monkeyocr_from_env.
+func (m *ModelProviderService) ensureMonkeyOCRFromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(monkeyOCREnvKeys, monkeyOCRDefaultConfig)
+	if config == nil {
+		return nil
+	}
+	if apiserver, ok := config[common.EnvMonkeyOCRAPIServer].(string); !ok || strings.TrimSpace(apiserver) == "" {
+		return nil
+	}
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCR", "monkeyocr-from-env", config)
+}
+
 // env key / default config tables for the three OCR providers.
 // Mirrors common/constants.py MINERU_ENV_KEYS, PADDLEOCR_ENV_KEYS, OPENDATALOADER_ENV_KEYS.
 var (
@@ -1871,6 +1884,20 @@ var (
 	}
 	openDataLoaderDefaultConfig = map[string]interface{}{
 		common.EnvOpenDataLoaderAPIServer: "",
+	}
+	monkeyOCREnvKeys = []string{
+		common.EnvMonkeyOCRAPIServer,
+		common.EnvMonkeyOCROutputDir,
+		common.EnvMonkeyOCRServerURL,
+		common.EnvMonkeyOCRBackend,
+		common.EnvMonkeyOCRDeleteOutput,
+	}
+	monkeyOCRDefaultConfig = map[string]interface{}{
+		common.EnvMonkeyOCRAPIServer:    "",
+		common.EnvMonkeyOCROutputDir:    "",
+		common.EnvMonkeyOCRServerURL:    "",
+		common.EnvMonkeyOCRBackend:      "vlm-transformers",
+		common.EnvMonkeyOCRDeleteOutput: 1,
 	}
 )
 

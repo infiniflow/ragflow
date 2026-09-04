@@ -162,6 +162,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         else:
             kwargs.pop("parse_method", None)
             kwargs.pop("mineru_llm_name", None)
+            kwargs.pop("monkeyocr_llm_name", None)
             sections, tables, pdf_parser = pdf_parser(
                 filename=filename,
                 binary=binary,
@@ -172,6 +173,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 pdf_cls=Pdf,
                 layout_recognizer=layout_recognizer,
                 mineru_llm_name=parser_model_name,
+                monkeyocr_llm_name=parser_model_name,
                 mistral_ocr_llm_name=parser_model_name,
                 parse_method="paper",
                 **kwargs,

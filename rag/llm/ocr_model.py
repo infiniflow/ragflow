@@ -19,11 +19,30 @@ import os
 from typing import Any, Optional
 
 from deepdoc.parser.mineru_parser import MinerUParser
+from deepdoc.parser.monkeyocr_parser import MonkeyOCRParser
 from deepdoc.parser.mistral_parser import MistralParser
 from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.paddleocr_parser import PaddleOCRParser
 from deepdoc.parser.pdf_parser import MAXIMUM_PAGE_NUMBER
 from deepdoc.parser.somark_parser import SoMarkParser
+
+
+def _parse_ocr_provider_key(key: str | dict | None) -> dict:
+    """Parse OCR provider ``api_key`` payloads stored as JSON text or a dict."""
+    if isinstance(key, dict):
+        raw_config = key
+    elif isinstance(key, str) and key:
+        try:
+            raw_config = json.loads(key)
+        except json.JSONDecodeError:
+            raw_config = {}
+    else:
+        raw_config = {}
+
+    if not isinstance(raw_config, dict):
+        return {}
+    config = raw_config.get("api_key", raw_config)
+    return config if isinstance(config, dict) else {}
 
 
 class Base:
@@ -39,18 +58,9 @@ class MinerUOcrModel(Base, MinerUParser):
 
     def __init__(self, key: str | dict, model_name: str, **kwargs):
         Base.__init__(self, key, model_name, **kwargs)
-        raw_config = {}
-        if key:
-            try:
-                raw_config = json.loads(key)
-            except Exception:
-                raw_config = {}
-
         # nested {"api_key": {...}} from UI
         # flat {"MINERU_*": "..."} payload auto-provisioned from env vars
-        config = raw_config.get("api_key", raw_config)
-        if not isinstance(config, dict):
-            config = {}
+        config = _parse_ocr_provider_key(key)
 
         def _resolve_config(key: str, env_key: str, default=""):
             # lower-case keys (UI), upper-case MINERU_* (env auto-provision), env vars
@@ -92,6 +102,63 @@ class MinerUOcrModel(Base, MinerUParser):
             backend=self.mineru_backend,
             server_url=self.mineru_server_url,
             delete_output=self.mineru_delete_output,
+            parse_method=parse_method,
+            **kwargs,
+        )
+        return sections, tables
+
+
+class MonkeyOCROcrModel(Base, MonkeyOCRParser):
+    _FACTORY_NAME = "MonkeyOCR"
+
+    def __init__(self, key: str | dict, model_name: str, **kwargs):
+        Base.__init__(self, key, model_name, **kwargs)
+        config = _parse_ocr_provider_key(key)
+
+        def _resolve_config(key: str, env_key: str, default=""):
+            return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
+
+        self.monkeyocr_api = _resolve_config("monkeyocr_apiserver", "MONKEYOCR_APISERVER", "")
+        self.monkeyocr_output_dir = _resolve_config("monkeyocr_output_dir", "MONKEYOCR_OUTPUT_DIR", "")
+        self.monkeyocr_server_url = _resolve_config("monkeyocr_server_url", "MONKEYOCR_SERVER_URL", "")
+        self.monkeyocr_backend = _resolve_config("monkeyocr_backend", "MONKEYOCR_BACKEND", "vlm-transformers")
+        self.monkeyocr_delete_output = bool(int(_resolve_config("monkeyocr_delete_output", "MONKEYOCR_DELETE_OUTPUT", 1)))
+
+        redacted_config = {}
+        for k, v in config.items():
+            if any(sensitive_word in k.lower() for sensitive_word in ("key", "password", "token", "secret")):
+                redacted_config[k] = "[REDACTED]"
+            else:
+                redacted_config[k] = v
+        logging.info("Parsed MonkeyOCR config (sensitive fields redacted): %s", redacted_config)
+
+        MonkeyOCRParser.__init__(
+            self,
+            monkeyocr_api=self.monkeyocr_api,
+            monkeyocr_server_url=self.monkeyocr_server_url,
+            monkeyocr_backend=self.monkeyocr_backend,
+        )
+
+    def check_available(self, backend: Optional[str] = None, server_url: Optional[str] = None) -> tuple[bool, str]:
+        return self.check_installation(
+            backend=backend or self.monkeyocr_backend,
+            server_url=server_url or self.monkeyocr_server_url,
+        )
+
+    def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs):
+        ok, reason = self.check_available()
+        if not ok:
+            raise RuntimeError(f"MonkeyOCR server not accessible: {reason}")
+
+        sections, tables = MonkeyOCRParser.parse_pdf(
+            self,
+            filepath=filepath,
+            binary=binary,
+            callback=callback,
+            output_dir=self.monkeyocr_output_dir,
+            backend=self.monkeyocr_backend,
+            server_url=self.monkeyocr_server_url,
+            delete_output=self.monkeyocr_delete_output,
             parse_method=parse_method,
             **kwargs,
         )

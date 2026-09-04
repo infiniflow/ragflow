@@ -66,5 +66,8 @@ def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | 
             # so this suffix cannot collide with pixtral vision models.
             parser_model_name = layout_recognizer_raw
             layout_recognizer = "Mistral OCR"
+        elif lowered.endswith("@monkeyocr"):
+            parser_model_name = layout_recognizer_raw
+            layout_recognizer = "MonkeyOCR"
 
     return layout_recognizer, parser_model_name
