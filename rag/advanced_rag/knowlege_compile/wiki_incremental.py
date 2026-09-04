@@ -503,7 +503,10 @@ def _build_canonical_entity_doc(
     source_chunk_ids: list[str] | None = None,
 ) -> dict:
     """Build a canonical entity row for insert or update."""
+    from rag.nlp import rag_tokenizer
+
     dim = len(embedding) if embedding else 768
+    content_ltks = rag_tokenizer.tokenize(entity_name) if entity_name else ""
     doc = {
         "id": _stable_row_id(WIKI_CANONICAL_ENTITY_COMPILE_KWD, kb_id, entity_name),
         "entity_kwd": entity_name,
@@ -514,6 +517,11 @@ def _build_canonical_entity_doc(
         "mention_count_int": claim_count,
         "compile_kwd": WIKI_CANONICAL_ENTITY_COMPILE_KWD,
         "kb_id": kb_id,
+        "doc_id": kb_id,  # KB-scoped sentinel; real provenance is source_doc_ids
+        "available_int": 1,
+        "content_with_weight": entity_name,
+        "content_ltks": content_ltks,
+        "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(content_ltks) if content_ltks else "",
     }
     if embedding is not None:
         vec_col = f"q_{dim}_vec"
@@ -2243,9 +2251,12 @@ async def _wiki_refine_page(
 
     page = {
         "id": _stable_row_id(WIKI_PAGE_COMPILE_KWD, kb_id, page_id),
+        "kb_id": kb_id,
+        "doc_id": kb_id,  # KB-scoped sentinel; real provenance is source_doc_ids
         "slug_kwd": page_id,
         "title_kwd": title,
         "md_with_weight": content,
+        "content_with_weight": content,
         "summary_with_weight": summary or title,
         "entity_names_kwd": sorted(set(entity_names or [page_title])),
         "source_chunk_ids": sorted(source_chunk_ids),
@@ -2260,6 +2271,7 @@ async def _wiki_refine_page(
         "title_tks": rag_tokenizer.tokenize(title),
         "content_ltks": content_ltks,
         "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(content_ltks),
+        "available_int": 1,
     }
     # Insert vector (adds q_{dim}_vec field)
     vec_col = f"q_{vec_dim}_vec"
@@ -3429,6 +3441,13 @@ async def _wiki_finalize(
         outlinks = outlink_map.get(pid) or []
         update["outlinks_kwd"] = list(outlinks)
         update["outlinks_int"] = len(outlinks)
+        # Backfill retrieval fields on every FINALIZE so pages written before
+        # available_int/doc_id were stamped become visible to RAG on re-run.
+        update["available_int"] = 1
+        update["doc_id"] = kb_id
+        body = rendered_content or original or page.get("md_with_weight") or ""
+        if body:
+            update["content_with_weight"] = body
 
         await thread_pool_exec(
             settings.docStoreConn.update,
