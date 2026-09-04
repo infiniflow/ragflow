@@ -273,6 +273,28 @@ jobs:
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
+      - name: Provision NLTK data for unit tests
+        if: steps.detect_changes.outputs.has_python_changes == 'true'
+        run: |
+          # download_deps.py writes NLTK data to <repo_root>/nltk_data/ when
+          # invoked from the repo root. conftest.py finds it from there.
+          # On CI runners the data is pre-cached at /opt/ragflow_deps/nltk_data;
+          # copy it to avoid a network download that the sandbox blocks.
+          NLTK_TARGET="${GITHUB_WORKSPACE}/nltk_data"
+          if [ -d "/opt/ragflow_deps/nltk_data" ]; then
+            echo "Copying NLTK data from runner cache"
+            cp -r /opt/ragflow_deps/nltk_data "${NLTK_TARGET}"
+          else
+            echo "Runner cache not found; downloading NLTK data"
+            uv run python - <<'PYEOF'
+          import nltk, os
+          target = os.path.join(os.environ["GITHUB_WORKSPACE"], "nltk_data")
+          os.makedirs(target, exist_ok=True)
+          for name in ("punkt_tab", "punkt", "wordnet"):
+              nltk.download(name, download_dir=target, quiet=True)
+          PYEOF
+          fi
+
       - name: Run unit test
         if: steps.detect_changes.outputs.has_python_changes == 'true'
         run: |

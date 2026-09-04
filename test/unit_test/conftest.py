@@ -31,12 +31,19 @@ import os
 
 import nltk
 
-# Reuse data already fetched by download_deps.py (the directory the app exports
-# as NLTK_DATA) so provisioned environments do not download it again.
+# Reuse data already fetched by download_deps.py so provisioned environments
+# do not download it again. download_deps.py writes to a CWD-relative
+# ``nltk_data/`` directory; when invoked from the repo root (the documented
+# usage) that resolves to ``<repo_root>/nltk_data/``. A secondary location
+# ``<repo_root>/ragflow_deps/nltk_data/`` is also checked for environments
+# that run the script from inside ``ragflow_deps/``.
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
-_LOCAL_NLTK_DATA = os.path.join(_REPO_ROOT, "ragflow_deps", "nltk_data")
-if os.path.isdir(_LOCAL_NLTK_DATA) and _LOCAL_NLTK_DATA not in nltk.data.path:
-    nltk.data.path.insert(0, _LOCAL_NLTK_DATA)
+for _nltk_candidate in (
+    os.path.join(_REPO_ROOT, "ragflow_deps", "nltk_data"),
+    os.path.join(_REPO_ROOT, "nltk_data"),
+):
+    if os.path.isdir(_nltk_candidate) and _nltk_candidate not in nltk.data.path:
+        nltk.data.path.insert(0, _nltk_candidate)
 
 # (download name, resource path used by nltk.data.find)
 _REQUIRED_NLTK_DATA = (
