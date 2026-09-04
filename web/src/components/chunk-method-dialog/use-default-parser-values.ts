@@ -18,6 +18,7 @@ import { IParserConfig } from '@/interfaces/database/document';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ParseDocumentType } from '../layout-recognize-form-field';
+import { fillDefaultParserValue } from './parser-config-schema';
 
 export function useDefaultParserValues() {
   const { t } = useTranslation();
@@ -70,16 +71,9 @@ export function useFillDefaultValueOnMount() {
 
   const fillDefaultValue = useCallback(
     (parserConfig: IParserConfig) => {
-      return Object.entries(defaultParserValues).reduce<Record<string, any>>(
-        (pre, [key, value]) => {
-          if (key in parserConfig) {
-            pre[key] = parserConfig[key as keyof IParserConfig];
-          } else {
-            pre[key] = value;
-          }
-          return pre;
-        },
-        {},
+      return fillDefaultParserValue(
+        defaultParserValues as Record<string, unknown>,
+        parserConfig as Record<string, unknown>,
       );
     },
     [defaultParserValues],

@@ -67,6 +67,7 @@ import {
   useDefaultParserValues,
   useFillDefaultValueOnMount,
 } from './use-default-parser-values';
+import { optionalPositiveInt } from './parser-config-schema';
 import { FormLayout } from '@/constants/form';
 
 const FormId = 'ChunkMethodDialogForm';
@@ -118,7 +119,7 @@ export function ChunkMethodDialog({
       parser_id: z.string().trim().optional(),
       pipeline_id: z.string().optional(),
       parser_config: z.object({
-        task_page_size: z.coerce.number().optional(),
+        task_page_size: optionalPositiveInt,
         layout_recognize: z.string().optional(),
         chunk_token_num: z.coerce.number().optional(),
         delimiter: z.string().optional(),
@@ -249,20 +250,29 @@ export function ChunkMethodDialog({
     const imageTableContextWindow = Number(
       parserConfig?.image_table_context_window || 0,
     );
+    const showTaskPageSize =
+      isPdf &&
+      hidePagesChunkMethods.every((x) => x !== data.parser_id) &&
+      data.parseType === ParseType.BuiltIn &&
+      !!parserConfig?.layout_recognize;
+    const nextParserConfig = {
+      ...parserConfig,
+      image_table_context_window: imageTableContextWindow,
+      image_context_size: imageTableContextWindow,
+      table_context_size: imageTableContextWindow,
+      // Unset children delimiter if this option is not enabled
+      children_delimiter: parserConfig.enable_children
+        ? parserConfig.children_delimiter
+        : '',
+      pages: parserConfig?.pages?.map((x: any) => [x.from, x.to]) ?? [],
+    };
+    if (!showTaskPageSize || nextParserConfig.task_page_size == null) {
+      delete nextParserConfig.task_page_size;
+    }
     const nextData = {
       ...data,
       parser_id: data.parser_id || '',
-      parser_config: {
-        ...parserConfig,
-        image_table_context_window: imageTableContextWindow,
-        image_context_size: imageTableContextWindow,
-        table_context_size: imageTableContextWindow,
-        // Unset children delimiter if this option is not enabled
-        children_delimiter: parserConfig.enable_children
-          ? parserConfig.children_delimiter
-          : '',
-        pages: parserConfig?.pages?.map((x: any) => [x.from, x.to]) ?? [],
-      },
+      parser_config: nextParserConfig,
     };
     const ret = await onOk?.(nextData);
     if (ret) {
