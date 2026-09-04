@@ -191,12 +191,10 @@ describe('addTenantParams — clearing model selections', () => {
 });
 
 // `tenant_model.id` is a 32-char lowercase hex string produced by
-// `common.misc_utils.get_uuid` (`uuid.uuid1().hex`). On a v0.26.x → v0.27.x
-// in-place upgrade, the `tenant.tenant_*_id` columns may still hold a legacy
-// integer from the pre-tenant_model world. The frontend uses this predicate
-// to decide whether a server-supplied `model_id` can be used as-is to look up
-// a tree node, or must be replaced with the composite "name@instance@provider"
-// key (see `resolveDefaultModelFormValue` below).
+// `common.misc_utils.get_uuid` (`uuid.uuid1().hex`). The frontend uses this
+// predicate to decide whether a server-supplied `model_id` can be used as-is
+// to look up a tree node, or must be replaced with the composite
+// "name@instance@provider" key (see `resolveDefaultModelFormValue` below).
 describe('isTenantModelId — canonical 32-char lowercase hex', () => {
   test('accepts a canonical 32-char lowercase hex string', () => {
     expect(isTenantModelId('2d8ff0a97d75431c8c91526549939328')).toBe(true);

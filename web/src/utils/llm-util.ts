@@ -23,10 +23,7 @@ export function getRealModelName(llmName: string) {
 }
 
 // `tenant_model.id` is a 32-char lowercase hex string produced by
-// `common.misc_utils.get_uuid` (`uuid.uuid1().hex`). On a v0.26.x → v0.27.x
-// in-place upgrade, the `tenant.tenant_*_id` columns may still hold a legacy
-// integer from the pre-tenant_model world; anything that doesn't match the
-// canonical 32-char hex shape is treated as not a tenant_model id.
+// `common.misc_utils.get_uuid` (`uuid.uuid1().hex`).
 const TENANT_MODEL_ID_PATTERN = /^[0-9a-f]{32}$/;
 
 export function isTenantModelId(value?: string | null): value is string {
