@@ -396,12 +396,19 @@ async def _validate_dataset_ids(dataset_ids, tenant_id):
 
 def _apply_prompt_defaults(req):
     prompt_config = req.setdefault("prompt_config", {})
+    kb_ids = req.get("kb_ids") or []
     for key, value in _DEFAULT_PROMPT_CONFIG.items():
         temp = prompt_config.get(key)
         if (key == "system" and not temp) or key not in prompt_config:
-            prompt_config[key] = deepcopy(value)
+            if key == "system" and not kb_ids:
+                # No dataset bound: do not seed the dataset-oriented default system prompt.
+                # Its hard-coded "The answer you are looking for is not found in the dataset!"
+                # sentence would otherwise be sent verbatim to the model on the no-dataset path.
+                prompt_config[key] = ""
+            else:
+                prompt_config[key] = deepcopy(value)
 
-    if req.get("kb_ids") and not prompt_config.get("parameters") and "{knowledge}" in prompt_config.get("system", ""):
+    if kb_ids and not prompt_config.get("parameters") and "{knowledge}" in prompt_config.get("system", ""):
         prompt_config["parameters"] = [{"key": "knowledge", "optional": False}]
     if not any(p.get("key") == "date" for p in prompt_config.get("parameters", [])):
         prompt_config.setdefault("parameters", []).append({"key": "date", "optional": True})
