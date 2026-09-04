@@ -1117,7 +1117,7 @@ def not_title(txt):
     return re.search(r"[,;，。；！!]", txt)
 
 
-def tree_merge(bull, sections, depth):
+def tree_merge(bull, sections, depth, chunk_token_num=0):
     if not sections or bull < 0:
         return sections
     if isinstance(sections[0], str):
@@ -1158,7 +1158,7 @@ def tree_merge(bull, sections, depth):
     if target_level == len(BULLET_PATTERN[bull]) + 2:
         target_level = sorted_levels[-2] if len(sorted_levels) > 1 else sorted_levels[0]
 
-    root = Node(level=0, depth=target_level, texts=[])
+    root = Node(level=0, depth=target_level, chunk_token_num=chunk_token_num, texts=[])
     root.build_tree(lines)
 
     return [element for element in root.get_tree() if element]
@@ -1894,9 +1894,10 @@ def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
 
 
 class Node:
-    def __init__(self, level, depth=-1, texts=None):
+    def __init__(self, level, depth=-1, chunk_token_num=0, texts=None):
         self.level = level
         self.depth = depth
+        self.chunk_token_num = chunk_token_num
         self.texts = texts or []
         self.children = []
 
@@ -1953,8 +1954,37 @@ class Node:
         texts = node.get_texts()
         child = node.get_children()
 
+        def _tok(s):
+            # Position tags (@@page\tx0\t...##) are not body content, so strip
+            # them before counting, matching hierarchical_merge's budget
+            # accounting.
+            return num_tokens_from_string(re.sub(r"@@[0-9]+.*", "", s))
+
+        def _emit(title_parts, body_parts):
+            # Split an over-long accumulation into chunk_token_num-budgeted
+            # pieces instead of joining it whole, mirroring hierarchical_merge's
+            # overflow split for a hierarchy group: title_parts is repeated on
+            # every emitted piece (its tokens count against that piece's
+            # budget) so a continuation chunk never loses the heading path. A
+            # non-positive chunk_token_num (unset) preserves today's
+            # single-chunk behaviour.
+            if not self.chunk_token_num or self.chunk_token_num <= 0 or not body_parts:
+                tree_list.append("\n".join(title_parts + body_parts))
+                return
+            title_n = sum(_tok(t) for t in title_parts)
+            cur, cur_n = [], title_n
+            for t in body_parts:
+                n = _tok(t)
+                if cur and cur_n + n > self.chunk_token_num:
+                    tree_list.append("\n".join(title_parts + cur))
+                    cur, cur_n = [], title_n
+                cur.append(t)
+                cur_n += n
+            if cur:
+                tree_list.append("\n".join(title_parts + cur))
+
         if level == 0 and texts:
-            tree_list.append("\n".join(titles + texts))
+            _emit(titles, texts)
 
         # Titles within configured depth are accumulated into the current path
         if 1 <= level <= self.depth:
@@ -1964,11 +1994,14 @@ class Node:
 
         # Body outside the depth limit becomes its own chunk under the current title path
         if level > self.depth and texts:
-            tree_list.append("\n".join(path_titles + texts))
+            _emit(path_titles, texts)
 
-        # A leaf title within depth emits its title path as a chunk (header-only section)
+        # A leaf title within depth emits its title path as a chunk (header-only section).
+        # texts[0] is this node's own heading and texts[1:] is any overflow body merged
+        # onto it; split only the body and repeat the heading path on every piece so a
+        # continuation chunk never loses the title.
         elif not child and (1 <= level <= self.depth):
-            tree_list.append("\n".join(path_titles))
+            _emit(titles + texts[:1], texts[1:])
 
         # Recurse into children with the updated title path
         for c in child:
