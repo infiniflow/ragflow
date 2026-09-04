@@ -171,7 +171,7 @@ function ConditionCards({
           />
         </CardContent>
       </Card>
-      <Button variant={'ghost'} onClick={() => remove(index)}>
+      <Button variant={'ghost'} type="button" onClick={() => remove(index)}>
         <X />
       </Button>
     </div>
@@ -219,7 +219,7 @@ export function MetadataFilterConditions({
       <div className="flex items-center justify-between">
         <FormLabel>{t('chat.conditions')}</FormLabel>
         <DropdownMenu>
-          <DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild>
             <Button variant={'ghost'} type="button">
               <Plus />
             </Button>
