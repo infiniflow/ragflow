@@ -20,7 +20,7 @@ import re
 
 from deepdoc.parser.utils import get_text
 from rag.app import naive
-from rag.nlp import rag_tokenizer, tokenize
+from rag.nlp import rag_tokenizer, tokenize, DEFAULT_DELIMITER
 from deepdoc.parser import PdfParser, ExcelParser, HtmlParser
 from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper_naive
 from rag.app.naive import by_plaintext, PARSERS
@@ -65,7 +65,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     Supported file formats are docx, pdf, excel, txt.
     One file forms a chunk which maintains original text order.
     """
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC"})
     eng = lang.lower() == "english"  # is_english(cks)
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):

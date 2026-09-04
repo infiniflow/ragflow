@@ -1,4 +1,4 @@
-import { debugRunLimitsTooltipKey } from '@/utils/backend-runtime';
+import { debugRunLimitsTooltipKey } from './debug-run-limits';
 
 describe('debugRunLimitsTooltipKey', () => {
   it('returns the key only for a dataflow (ingestion pipeline) canvas on golang', () => {

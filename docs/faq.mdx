@@ -426,13 +426,58 @@ The status of a Docker container status does not necessarily reflect the status 
    The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
    :::
 
-3. If your container keeps restarting, ensure `vm.max_map_count` >= 262144 as per [this README](https://github.com/infiniflow/ragflow?tab=readme-ov-file#-start-up-the-server). Updating the `vm.max_map_count` value in **/etc/sysctl.conf** is required, if you wish to keep your change permanent. Note that this configuration works only for Linux.
+3. If your container keeps restarting, ensure `vm.max_map_count` >= 262144. On Linux, update **/etc/sysctl.conf** to keep the change permanent. For macOS, see the following FAQ.
 
 ---
 
 ### Can't start ES container and get `Elasticsearch did not exit normally`
 
-This is because you forgot to update the `vm.max_map_count` value in **/etc/sysctl.conf** and your change to this value was reset after a system reboot.
+On Linux, this is because you forgot to update the `vm.max_map_count` value in **/etc/sysctl.conf** and your change to this value was reset after a system reboot.
+
+---
+
+### How do I configure `vm.max_map_count` on macOS?
+
+`vm.max_map_count` is a Linux kernel parameter required only by Elasticsearch. It does not affect RAGFlow deployments that use Infinity as the document engine.
+
+On Docker Desktop, set the value in its Linux virtual machine:
+
+```bash
+docker run --rm --privileged alpine sysctl -w vm.max_map_count=262144
+```
+
+This setting is temporary and is reset when Docker Desktop restarts.
+
+On Colima, check the current value inside its virtual machine:
+
+```bash
+colima ssh -- sysctl vm.max_map_count
+```
+
+To set the value temporarily:
+
+```bash
+colima ssh -- sudo sysctl -w vm.max_map_count=262144
+```
+
+For a persistent setting, run `colima start --edit` and add a provision script to `colima.yaml`:
+
+```yaml
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      sysctl -w vm.max_map_count=262144
+```
+
+Then restart Colima:
+
+```bash
+colima stop
+colima start
+```
+
+*Contributed by [@helloxjade](https://github.com/helloxjade).*
 
 ---
 

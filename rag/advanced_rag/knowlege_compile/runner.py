@@ -197,6 +197,7 @@ async def _upsert_dataset_nav_from_page_index(
     doc_name: str,
     progress_cb: Callable[..., None],
     cancel_check: Callable[[], bool],
+    llm_pool: LLMCallPool,
 ) -> None:
     page_index_templates = [(template_id, parser_cfg) for template_id, parser_cfg in active_templates if _is_page_index_template(parser_cfg)]
     if not page_index_templates:
@@ -255,13 +256,19 @@ async def _upsert_dataset_nav_from_page_index(
         )
 
         progress_cb(msg=f"page_index: updating dataset navigation for doc {doc_id} ...")
+        pooled_chat_mdl = llm_pool.wrap(
+            chat_mdl,
+            priority=20,
+            label="dataset-nav:page-index",
+            context=f"{doc_id}:dataset-nav",
+        )
         await upsert_dataset_nav_doc(
             tenant_id,
             kb_id,
             doc_id,
             "\n\n".join(summaries),
             embd_mdl=embedding_model,
-            chat_mdl=chat_mdl,
+            chat_mdl=pooled_chat_mdl,
         )
     except TaskCanceledException:
         raise
@@ -286,6 +293,7 @@ async def run_structure_compile_over_batches(
     progress_cb: Callable[..., None],
     cancel_check: Callable[[], bool] = lambda: False,
     record: Callable[[str, dict], None] | None = None,
+    llm_pool: LLMCallPool | None = None,
 ) -> dict[str, dict]:
     """Extract + merge structures for every non-``tree`` template over an
     async stream of chunk batches, then run the optional synthesis phase.
@@ -294,7 +302,8 @@ async def run_structure_compile_over_batches(
     chat model in ``chat_mdl_by_tid``. Chunks arrive as an async iterator of
     batches so callers can stream them from the doc store or hand over an
     in-memory list; each ``dict`` must expose ``id`` and text
-    (``content_with_weight`` / ``text``).
+    (``content_with_weight`` / ``text``). ``llm_pool`` may be supplied by the
+    task orchestrator so tree and non-tree phases share adaptive concurrency.
 
     Returns ``{template_id: {"inserted", "updated", "duplicates_dropped"}}``.
     Raises :class:`TaskCanceledException` when ``cancel_check`` trips.
@@ -305,7 +314,7 @@ async def run_structure_compile_over_batches(
         return {}
 
     total = len(active_templates)
-    llm_pool = LLMCallPool(DOC_STRUCTURE_LLM_POOL_SIZE)
+    llm_pool = llm_pool or LLMCallPool(DOC_STRUCTURE_LLM_POOL_SIZE)
 
     accumulators: dict[str, list[dict]] = {tid: [] for tid, _ in active_templates}
     template_kinds: dict[str, str] = {tid: _compilation_template_kind((cfg or {}).get("kind")) for tid, cfg in active_templates}
@@ -613,6 +622,7 @@ async def run_structure_compile_over_batches(
         doc_name=doc_name,
         progress_cb=progress_cb,
         cancel_check=cancel_check,
+        llm_pool=llm_pool,
     )
     # Timeline entity cleanup must happen after every flush has completed;
     # otherwise an entity can look isolated in one flush and be referenced by

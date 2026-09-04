@@ -33,7 +33,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 import { useParams } from 'react-router';
 
-import { AgentApiAction } from './use-agent-request';
+import { AgentKeys } from './use-agent-request';
 
 export const enum CompilationTemplateGroupApiAction {
   FetchCompilationTemplateGroups = 'fetchCompilationTemplateGroups',
@@ -180,7 +180,13 @@ export const useDeleteCompilationTemplateGroup = () => {
         });
         // The agents page lists groups merged into /agents results.
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchAgentListByPage],
+          queryKey: AgentKeys.list(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: AgentKeys.filters(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: AgentKeys.tags(),
         });
       }
       return data?.data ?? true;
