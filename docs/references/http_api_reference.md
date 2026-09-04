@@ -5572,13 +5572,13 @@ Updates configurations for a specified memory.
 - Body:
   - `"name"`: `string`
   - `"avatar"`: `string`
-  - `"permission"`: `string`
+  - `"permissions"`: `string`
   - `"llm_id"`: `string`
   - `"description"`: `string`
   - `"memory_size"`: `int`
   - `"forgetting_policy"`: `string`
   - `"temperature"`: `float`
-  - `"system_promot"`: `string`
+  - `"system_prompt"`: `string`
   - `"user_prompt"`: `string`
 
 ##### Request example
@@ -5611,7 +5611,7 @@ curl --location --request PUT 'http://{address}/api/v1/memories/d6775d4eeada11f0
 
   - Maximum 65535 characters
 
-- `permission`: (*Body parameter*), `enum<string>`, *Optional*
+- `permissions`: (*Body parameter*), `enum<string>`, *Optional*
 
   The updated memory permission. Available options:
 

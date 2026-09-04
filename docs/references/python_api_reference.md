@@ -2318,7 +2318,7 @@ Configurations to update. Available configurations:
 
   - Maximum 65535 characters
 
-- `permission`:  `enum<string>`, *Optional*
+- `permissions`:  `enum<string>`, *Optional*
 
   The updated memory permission. Available options:
 
