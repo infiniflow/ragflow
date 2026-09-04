@@ -2590,6 +2590,17 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
     result = _alteration_result(alteration_current_doc_ids, involved_doc_ids, eligible_doc_ids)
     if chunk_changes is not None:
         result.update(chunk_changes)
+    if kind == "wiki":
+        from rag.advanced_rag.knowlege_compile.wiki_incremental import _wiki_load_refine_failures
+
+        refine_failures = await _wiki_load_refine_failures(kb.tenant_id, dataset_id)
+        result.update(
+            {
+                "retry_required": bool(refine_failures),
+                "retry_page_count": len(refine_failures),
+                "retry_page_slugs": sorted(refine_failures),
+            }
+        )
     return True, result
 
 
