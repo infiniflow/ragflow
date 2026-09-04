@@ -197,7 +197,7 @@ def find_codec(blob):
     return "utf-8"
 
 
-def decode_text(blob, context="text"):
+def decode_text(blob, document_type="text"):
     """Decode document bytes without silently accepting weak codec guesses."""
     bom_codecs = (
         (b"\x00\x00\xfe\xff", "utf-32-be"),
@@ -221,11 +221,11 @@ def decode_text(blob, context="text"):
     if encoding and encoding.lower().replace("-", "") in {"gb2312", "gbk"}:
         encoding = "gb18030"
     if not encoding or confidence < 0.8:
-        raise UnicodeError(f"Unable to reliably detect {context} encoding (confidence={confidence:.2f})")
+        raise UnicodeError(f"Unable to reliably detect {document_type} encoding (confidence={confidence:.2f})")
     try:
         return blob.decode(encoding), encoding
     except (LookupError, UnicodeDecodeError) as exc:
-        raise UnicodeError(f"Unable to decode {context} as {encoding}") from exc
+        raise UnicodeError(f"Unable to decode {document_type} as {encoding}") from exc
 
 
 QUESTION_PATTERN = [

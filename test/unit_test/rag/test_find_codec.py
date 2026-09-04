@@ -175,12 +175,12 @@ def decode_text(find_codec):
 @pytest.mark.p2
 def test_decode_text_preserves_gbk_and_gb18030(decode_text):
     gbk = "项目名称,核心系统重构".encode("gbk")
-    text, encoding = decode_text(gbk, context="CSV document")
+    text, encoding = decode_text(gbk, document_type="CSV document")
     assert text == "项目名称,核心系统重构"
     assert encoding == "gb18030"
 
     gb18030_only = "𠀀".encode("gb18030")
-    text, encoding = decode_text(gb18030_only, context="CSV document")
+    text, encoding = decode_text(gb18030_only, document_type="CSV document")
     assert text == "𠀀"
     assert encoding == "gb18030"
 
@@ -188,7 +188,7 @@ def test_decode_text_preserves_gbk_and_gb18030(decode_text):
 @pytest.mark.p2
 def test_decode_text_rejects_undetectable_bytes_without_loss(decode_text):
     with pytest.raises(UnicodeError, match="CSV document"):
-        decode_text(b"prefix\xc3suffix", context="CSV document")
+        decode_text(b"prefix\xc3suffix", document_type="CSV document")
 
 
 @pytest.mark.p2

@@ -1002,7 +1002,7 @@ class Markdown(MarkdownParser):
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
         """Parse markdown into text sections and optional standalone table chunks."""
         if binary is not None:
-            txt, _ = decode_text(binary, context="Markdown document")
+            txt, _ = decode_text(binary, document_type="Markdown document")
         else:
             with open(filename, "r") as f:
                 txt = f.read()

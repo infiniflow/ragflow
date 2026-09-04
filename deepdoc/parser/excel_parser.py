@@ -35,7 +35,7 @@ class RAGFlowExcelParser:
         else:
             file_like_object.seek(0)
             binary = file_like_object.read()
-        text, _ = decode_text(binary, context="CSV document")
+        text, _ = decode_text(binary, document_type="CSV document")
         return pd.read_csv(StringIO(text), on_bad_lines="skip")
 
     @staticmethod

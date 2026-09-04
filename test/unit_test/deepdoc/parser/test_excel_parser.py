@@ -61,7 +61,7 @@ def _test_find_codec(binary):
 
 
 _mod.find_codec = _test_find_codec
-_mod.decode_text = lambda binary, context="text": (binary.decode(_test_find_codec(binary)), _test_find_codec(binary))
+_mod.decode_text = lambda binary, document_type="text": (binary.decode(_test_find_codec(binary)), _test_find_codec(binary))
 
 
 def _make_xlsx(n_data_rows):

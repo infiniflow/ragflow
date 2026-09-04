@@ -37,7 +37,7 @@ TITLE_TAGS = {"h1": "#", "h2": "##", "h3": "###", "h4": "####", "h5": "#####", "
 class RAGFlowHtmlParser:
     def __call__(self, fnm, binary=None, chunk_token_num=512):
         if binary is not None:
-            txt, _ = decode_text(binary, context="HTML document")
+            txt, _ = decode_text(binary, document_type="HTML document")
         else:
             with open(fnm, "r", encoding=get_encoding(fnm)) as f:
                 txt = f.read()

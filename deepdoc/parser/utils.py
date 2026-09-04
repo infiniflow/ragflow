@@ -24,7 +24,7 @@ from rag.nlp import decode_text
 def get_text(fnm: str, binary=None) -> str:
     txt = ""
     if binary is not None:
-        txt, _ = decode_text(binary, context="text document")
+        txt, _ = decode_text(binary, document_type="text document")
     else:
         with open(fnm, "r") as f:
             while True:

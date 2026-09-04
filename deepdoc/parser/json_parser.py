@@ -31,7 +31,7 @@ class RAGFlowJsonParser:
         self.min_chunk_size = min_chunk_size if min_chunk_size is not None else max(max_chunk_size - 200, 50)
 
     def __call__(self, binary):
-        txt, _ = decode_text(binary, context="JSON document")
+        txt, _ = decode_text(binary, document_type="JSON document")
 
         if self.is_jsonl_format(txt):
             sections = self._parse_jsonl(txt)
