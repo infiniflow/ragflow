@@ -276,24 +276,24 @@ jobs:
       - name: Provision NLTK data for unit tests
         if: steps.detect_changes.outputs.has_python_changes == 'true'
         run: |
-          # download_deps.py writes NLTK data to <repo_root>/nltk_data/ when
-          # invoked from the repo root. conftest.py finds it from there.
-          # On CI runners the data is pre-cached at /opt/ragflow_deps/nltk_data;
-          # copy it to avoid a network download that the sandbox blocks.
-          NLTK_TARGET="${GITHUB_WORKSPACE}/nltk_data"
-          if [ -d "/opt/ragflow_deps/nltk_data" ]; then
-            echo "Copying NLTK data from runner cache"
-            cp -r /opt/ragflow_deps/nltk_data "${NLTK_TARGET}"
-          else
-            echo "Runner cache not found; downloading NLTK data"
-            uv run python - <<'PYEOF'
-          import nltk, os
-          target = os.path.join(os.environ["GITHUB_WORKSPACE"], "nltk_data")
-          os.makedirs(target, exist_ok=True)
-          for name in ("punkt_tab", "punkt", "wordnet"):
-              nltk.download(name, download_dir=target, quiet=True)
-          PYEOF
+          # The runner pre-installs NLTK corpora under /usr/share/nltk_data but
+          # some packages (wordnet) are stored only as .zip archives there. NLTK
+          # needs them unpacked. We:
+          #   1. Point NLTK_DATA at the system directory so punkt_tab is found.
+          #   2. Unzip wordnet.zip in-place so NLTK can load it as a directory.
+          # This avoids any network download, which the runner SSRF policy blocks.
+          SYSTEM_NLTK="/usr/share/nltk_data"
+          echo "NLTK_DATA=${SYSTEM_NLTK}" >> "${GITHUB_ENV}"
+
+          WORDNET_ZIP="${SYSTEM_NLTK}/corpora/wordnet.zip"
+          WORDNET_DIR="${SYSTEM_NLTK}/corpora/wordnet"
+          if [ -f "${WORDNET_ZIP}" ] && [ ! -d "${WORDNET_DIR}" ]; then
+            echo "Unpacking wordnet.zip → ${WORDNET_DIR}"
+            sudo unzip -q "${WORDNET_ZIP}" -d "${SYSTEM_NLTK}/corpora/"
           fi
+
+          echo "NLTK search paths after setup:"
+          uv run python -c "import nltk; [print(' ', p) for p in nltk.data.path]"
 
       - name: Run unit test
         if: steps.detect_changes.outputs.has_python_changes == 'true'
