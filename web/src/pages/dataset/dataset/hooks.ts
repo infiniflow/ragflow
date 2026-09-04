@@ -1,11 +1,13 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { pickByBackend } from '@/utils/backend-variant';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import { formatBytes } from '@/utils/file-util';
 import { useCallback, useMemo, useState } from 'react';
 import { ILogInfo } from '../process-log-modal';
 import { RunningStatus } from './constant';
 import { useFetchDocumentsByIds } from '@/hooks/use-document-request';
+import { isDocumentQueued } from './utils';
 
 const PollIntervalMs = 5000;
 
@@ -43,7 +45,14 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         processBeginAt: formatDate(source.process_begin_at),
         chunkNumber: source.chunk_count,
         duration: formatSecondsToHumanReadable(source.process_duration || 0),
-        status: source.run as RunningStatus,
+        status: pickByBackend({
+          // The Go backend reports a queued document via ingestion_status
+          // while the legacy run field stays UNSTART; surface it as QUEUED.
+          go: isDocumentQueued(source)
+            ? RunningStatus.QUEUED
+            : (source.run as RunningStatus),
+          python: source.run as RunningStatus,
+        }),
         details: source.progress_msg,
       };
     }

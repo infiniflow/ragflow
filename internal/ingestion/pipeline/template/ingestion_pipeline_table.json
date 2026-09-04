@@ -207,7 +207,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
@@ -235,7 +235,7 @@
                             }
                         },
                         "label": "TableChunker",
-                        "name": "Table Chunker_0"
+                        "name": "Table Chunker"
                     },
                     "id": "TableChunker:FastFoxesJump",
                     "measured": {
@@ -263,7 +263,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_0"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:DeepLakesShine",
                     "measured": {

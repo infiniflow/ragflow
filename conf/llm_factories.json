@@ -3011,6 +3011,13 @@
             "url": "https://integrate.api.nvidia.com/v1"
         },
         {
+            "name": "llmman",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "LM-Studio",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",

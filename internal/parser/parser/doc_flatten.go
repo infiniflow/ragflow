@@ -54,43 +54,10 @@ func flattenDocIR(irJSON string) string {
 			parts = append(parts, t)
 		}
 		for _, el := range sec.Elements {
-			if t := docElementText(el); t != "" {
+			if t := docxElementText(el, " | "); t != "" {
 				parts = append(parts, t)
 			}
 		}
 	}
 	return strings.Join(parts, "\n")
-}
-
-// docElementText returns the plain-text rendering of a single IR element for
-// the .doc flatten path. It mirrors docxElementText but separates table cells
-// with " | " (docxElementText concatenates them) so flattened table text
-// stays readable. Returns "" for image and unknown types.
-func docElementText(el docxIRElement) string {
-	switch el.Type {
-	case "paragraph", "heading":
-		return joinDOCXIRRuns(el.contentRuns())
-	case "table":
-		var rows []string
-		for _, row := range el.Rows {
-			var cells []string
-			for _, cell := range row.Cells {
-				cells = append(cells, joinCellText(cell))
-			}
-			rows = append(rows, strings.Join(cells, " | "))
-		}
-		return strings.Join(rows, "\n")
-	case "list":
-		var lines []string
-		for _, item := range el.Items {
-			if t := extractTextFromListItem(item); t != "" {
-				lines = append(lines, t)
-			}
-		}
-		return strings.Join(lines, "\n")
-	case "text_box":
-		return extractTextFromBlockElements(el.contentBlocks())
-	default:
-		return ""
-	}
 }

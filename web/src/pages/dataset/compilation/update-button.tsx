@@ -21,6 +21,7 @@ type CompilationUpdateButtonProps = {
   newlyUploaded: number;
   removed: number;
   changed?: number;
+  retryPageCount?: number;
   loading: boolean;
   tooltip: string;
   onClick: () => void;
@@ -33,6 +34,7 @@ export function CompilationUpdateButton({
   newlyUploaded,
   removed,
   changed = 0,
+  retryPageCount = 0,
   loading,
   tooltip,
   onClick,
@@ -72,6 +74,11 @@ export function CompilationUpdateButton({
                 {changed > 0 && (
                   <Badge variant="secondary" className="ml-1">
                     {changed}
+                  </Badge>
+                )}
+                {retryPageCount > 0 && (
+                  <Badge variant="destructive" className="ml-1">
+                    {retryPageCount}
                   </Badge>
                 )}
                 <WandSparkles />
