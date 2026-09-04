@@ -665,13 +665,6 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
-        # Knowledge-compilation rows share the chunk index, but some only store
-        # content_with_weight and a vector. Normalize them to the chunk contract
-        # before reranking and response assembly.
-        for chunk in sres.field.values():
-            if "content_ltks" not in chunk:
-                chunk["content_ltks"] = rag_tokenizer.tokenize(str(chunk.get("content_with_weight") or ""))
-
         term_similarity_weight = 1 - vector_similarity_weight
         logging.debug(
             "[Search] retrieval weights: trace_id=%s kb_count=%s similarity_threshold=%s vector_similarity_weight=%s full_text_weight=%s rerank_enabled=%s",
