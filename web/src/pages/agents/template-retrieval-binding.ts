@@ -1,5 +1,7 @@
 import { cloneDeep } from 'lodash';
+import { Operator } from '@/constants/agent';
 import { DSL } from '@/interfaces/database/agent';
+import { RetrievalFrom } from '@/pages/agent/constant';
 
 /**
  * Retrieval params live in two views of a DSL: the canvas graph
@@ -33,11 +35,11 @@ function walkRetrievalParams(
     for (const node of graph.nodes) {
       const label = node?.data?.label;
       const form = node?.data?.form;
-      if (label === 'Retrieval') {
+      if (label === Operator.Retrieval) {
         pushParams(form);
-      } else if (label === 'Agent') {
+      } else if (label === Operator.Agent) {
         for (const tool of form?.tools ?? []) {
-          if (tool?.component_name === 'Retrieval') {
+          if (tool?.component_name === Operator.Retrieval) {
             pushParams(tool?.params);
           }
         }
@@ -49,11 +51,11 @@ function walkRetrievalParams(
   if (components && typeof components === 'object') {
     for (const component of Object.values(components)) {
       const obj = (component as Record<string, any>)?.obj;
-      if (obj?.component_name === 'Retrieval') {
+      if (obj?.component_name === Operator.Retrieval) {
         pushParams(obj?.params);
-      } else if (obj?.component_name === 'Agent') {
+      } else if (obj?.component_name === Operator.Agent) {
         for (const tool of obj?.params?.tools ?? []) {
-          if (tool?.component_name === 'Retrieval') {
+          if (tool?.component_name === Operator.Retrieval) {
             pushParams(tool?.params);
           }
         }
@@ -83,12 +85,12 @@ export function countUnboundRetrieval(
     return { datasetCount, memoryCount };
   }
   for (const { params } of walkRetrievalParams(dsl)) {
-    if (params.retrieval_from === 'dataset') {
+    if (params.retrieval_from === RetrievalFrom.Dataset) {
       const ids = params.dataset_ids ?? params.kb_ids;
       if (!Array.isArray(ids) || ids.length === 0) {
         datasetCount++;
       }
-    } else if (params.retrieval_from === 'memory') {
+    } else if (params.retrieval_from === RetrievalFrom.Memory) {
       const ids = params.memory_ids;
       if (!Array.isArray(ids) || ids.length === 0) {
         memoryCount++;
@@ -114,14 +116,20 @@ export function bindUnboundRetrieval(
   }
   const next = cloneDeep(dsl) as Record<string, any>;
   for (const { params } of walkRetrievalParams(next)) {
-    if (params.retrieval_from === 'dataset' && datasetIds.length > 0) {
+    if (
+      params.retrieval_from === RetrievalFrom.Dataset &&
+      datasetIds.length > 0
+    ) {
       const ids = params.dataset_ids ?? params.kb_ids;
       if (!Array.isArray(ids) || ids.length === 0) {
         params.dataset_ids = datasetIds;
         delete params.kb_ids;
       }
     }
-    if (params.retrieval_from === 'memory' && memoryIds.length > 0) {
+    if (
+      params.retrieval_from === RetrievalFrom.Memory &&
+      memoryIds.length > 0
+    ) {
       const ids = params.memory_ids;
       if (!Array.isArray(ids) || ids.length === 0) {
         params.memory_ids = memoryIds;
