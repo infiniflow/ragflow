@@ -47,7 +47,12 @@ from api.utils.api_utils import (
     get_result,
     server_error_response,
 )
-from api.utils.image_utils import store_chunk_image
+from api.utils.image_utils import (
+    IMAGE_UPDATE_MODE_REMOVE,
+    IMAGE_UPDATE_MODES,
+    remove_chunk_image,
+    store_chunk_image,
+)
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -80,16 +85,42 @@ def _decode_chunk_image_base64(image_base64):
     return image_binary, None
 
 
-def _store_chunk_image_or_error(dataset_id, chunk_id, image_binary):
+def _parse_image_update_mode(req):
+    if "image_update_mode" not in req:
+        return "append", None
+    mode = req.get("image_update_mode")
+    if not isinstance(mode, str):
+        return None, "`image_update_mode` must be a string"
+    mode = mode.strip().lower()
+    if mode not in IMAGE_UPDATE_MODES:
+        return None, "`image_update_mode` must be one of: append, replace, remove"
+    return mode, None
+
+
+def _store_chunk_image_or_error(dataset_id, chunk_id, image_binary, mode="append"):
     try:
-        store_chunk_image(dataset_id, chunk_id, image_binary)
+        store_chunk_image(dataset_id, chunk_id, image_binary, mode=mode)
     except Exception:
         logging.exception(
-            "Failed to store chunk image. dataset_id=%s chunk_id=%s",
+            "Failed to store chunk image. dataset_id=%s chunk_id=%s mode=%s",
+            dataset_id,
+            chunk_id,
+            mode,
+        )
+        return "Failed to store chunk image"
+    return None
+
+
+def _remove_chunk_image_or_error(dataset_id, chunk_id):
+    try:
+        remove_chunk_image(dataset_id, chunk_id)
+    except Exception:
+        logging.exception(
+            "Failed to remove chunk image. dataset_id=%s chunk_id=%s",
             dataset_id,
             chunk_id,
         )
-        return "Failed to store chunk image"
+        return "Failed to remove chunk image"
     return None
 
 
@@ -1220,15 +1251,26 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             d["tag_feas"] = validate_tag_features(req["tag_feas"])
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
-    if "image_base64" in req:
-        image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
-        if image_err:
-            return get_error_data_result(message=image_err)
-        store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)
-        if store_err:
-            return get_error_data_result(message=store_err)
-        d["img_id"] = f"{dataset_id}-{chunk_id}"
-        d["doc_type_kwd"] = "image"
+    remove_image_after_update = False
+    if "image_update_mode" in req or "image_base64" in req:
+        image_mode, mode_err = _parse_image_update_mode(req)
+        if mode_err:
+            return get_error_data_result(message=mode_err)
+        if image_mode == IMAGE_UPDATE_MODE_REMOVE:
+            d["img_id"] = ""
+            d["doc_type_kwd"] = "text"
+            remove_image_after_update = True
+        elif "image_base64" in req:
+            image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
+            if image_err:
+                return get_error_data_result(message=image_err)
+            store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary, image_mode)
+            if store_err:
+                return get_error_data_result(message=store_err)
+            d["img_id"] = f"{dataset_id}-{chunk_id}"
+            d["doc_type_kwd"] = "image"
+        else:
+            return get_error_data_result(message="`image_base64` is required when `image_update_mode` is `append` or `replace`")
 
     embd_id = DocumentService.get_embd_id(document_id)
     model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
@@ -1248,7 +1290,12 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     )
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
-    settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(dataset_tenant_id), dataset_id)
+    if not settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(dataset_tenant_id), dataset_id):
+        return get_error_data_result(message="Index updating failure")
+    if remove_image_after_update:
+        remove_err = _remove_chunk_image_or_error(dataset_id, chunk_id)
+        if remove_err:
+            return get_error_data_result(message=remove_err)
     return get_result()
 
 
