@@ -1599,8 +1599,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                 code=RetCode.OPERATING_ERROR,
             )
 
-        # Keep the original workflow execution path, but assign a session_id so the
-        # response shape stays closer to the older agent completion contract.
+        # Load the caller's runtime replica as the workflow template. Session-owned
+        # history and execution state are reset after Canvas instantiation below.
         query = req.get("query", "") or req.get("question", "")
         files = req.get("files", [])
         inputs = req.get("inputs", {})
@@ -1691,7 +1691,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             from agent.canvas import Canvas
 
             canvas = Canvas(dsl_str, str(tenant_id), task_id=session_id, canvas_id=agent_id, custom_header=custom_header)
-            canvas.clear_history()
+            canvas.start_new_session()
         except Exception as exc:
             return server_error_response(exc)
         turn_id = get_uuid()
@@ -2641,7 +2641,15 @@ def _attachment_request_metadata():
 async def _stream_agent_attachment(tenant_id, attachment_id, *, inline: bool):
     attachment_id = attachment_id or request.view_args.get("attachment_id")
     content_type, ext, filename = _attachment_request_metadata()
-    data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+    # Chat uploads are written to the per-user downloads bucket (FileService.put_blob),
+    # while agent-generated attachments are written under the bare tenant id. Probe
+    # both so this endpoint serves either; attachment ids are UUIDs, so the two
+    # buckets cannot both hold a given id.
+    data = None
+    for bucket in (f"{tenant_id}-downloads", tenant_id):
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, attachment_id)
+        if data:
+            break
     if not data:
         return get_data_error_result(message="document not found")
     response = await make_response(data)

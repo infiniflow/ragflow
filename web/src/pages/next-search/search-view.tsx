@@ -231,6 +231,9 @@ export default function SearchingView({
                 </div>
                 <div className="w-44">
                   <TopSelect
+                    max={
+                      searchData.search_config.rerank_candidates_count ?? 100
+                    }
                     value={pageSize}
                     onChange={handleTopChange}
                   ></TopSelect>
@@ -256,7 +259,7 @@ export default function SearchingView({
                             <div
                               dangerouslySetInnerHTML={{
                                 __html: sanitizeHtmlWithImagesAsText(
-                                  chunk.content_with_weight,
+                                  chunk.highlight || chunk.content_with_weight,
                                 ).trim(),
                               }}
                               className={classNames(

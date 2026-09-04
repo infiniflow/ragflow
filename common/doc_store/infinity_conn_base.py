@@ -85,6 +85,19 @@ def _int_env(name: str, default: int) -> int:
 _META_RETRY_MAX = _int_env("INFINITY_META_RETRY_MAX", 5)
 _META_RETRY_BASE_DELAY_MS = _int_env("INFINITY_META_RETRY_BASE_DELAY_MS", 50)
 
+# Health-check retry budget for the connection-pool initializers
+# (InfinityConnectionBase.__init__ and InfinityConnectionPool.__init__).
+# The startup wait budget: 8 attempts with base 5s, capped at
+# HEALTH_CHECK_MAX_DELAY_SECONDS per sleep, gives a worst case of
+# ~255s (5+10+20+40+60+60+60 for attempts 0-6, since the last attempt
+# never sleeps) -- well beyond the original 120s ceiling, but still
+# absorbing the brief blips that used to crash the worker at module
+# import. Keep this in mind when sizing startup timeouts and liveness
+# probes that wait on the initial connection.
+MAX_RETRIES = 8
+HEALTH_CHECK_BASE_DELAY_SECONDS = 5
+HEALTH_CHECK_MAX_DELAY_SECONDS = 60
+
 
 def _is_meta_contention_error(exc: BaseException) -> bool:
     """Return True iff ``exc`` is the RocksDB metadata-counter "Resource busy".
@@ -168,7 +181,7 @@ class InfinityConnectionBase(DocStoreConnection):
         self.connPool = None
         self.logger.info(f"Use Infinity {infinity_uri} as the doc engine.")
         conn_pool = INFINITY_CONN.get_conn_pool()
-        for _ in range(24):
+        for attempt in range(MAX_RETRIES):
             try:
                 inf_conn = conn_pool.get_conn()
                 res = inf_conn.show_current_node()
@@ -178,14 +191,32 @@ class InfinityConnectionBase(DocStoreConnection):
                     conn_pool.release_conn(inf_conn)
                     break
                 conn_pool.release_conn(inf_conn)
-                self.logger.warning(f"Infinity status: {res.server_status}. Waiting Infinity {infinity_uri} to be healthy.")
-                time.sleep(5)
+                self.logger.warning(
+                    "Infinity status %s on attempt %d/%d, waiting Infinity %s to be healthy.",
+                    res.server_status,
+                    attempt + 1,
+                    MAX_RETRIES,
+                    infinity_uri,
+                )
+                if attempt == MAX_RETRIES - 1:
+                    msg = f"Infinity {infinity_uri} status {res.server_status} after {MAX_RETRIES} attempts."
+                    self.logger.error(msg)
+                    raise Exception(msg)
+                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2**attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
             except Exception as e:
+                self.logger.warning(
+                    "Infinity connection attempt %d/%d to %s failed: %s",
+                    attempt + 1,
+                    MAX_RETRIES,
+                    infinity_uri,
+                    e,
+                )
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 conn_pool = INFINITY_CONN.refresh_conn_pool()
-                self.logger.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
-                time.sleep(5)
+                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2**attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
         if self.connPool is None:
-            msg = f"Infinity {infinity_uri} is unhealthy in 120s."
+            msg = f"Infinity {infinity_uri} is unhealthy after {MAX_RETRIES} attempts."
             self.logger.error(msg)
             raise Exception(msg)
         self.logger.info(f"Infinity {infinity_uri} is healthy.")

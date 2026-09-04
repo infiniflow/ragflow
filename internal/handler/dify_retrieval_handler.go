@@ -268,7 +268,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		DocIDs:              docIDs,
 		Page:                1,
 		PageSize:            pageSize,
-		Top:                 topK,
+		KNNTopK:             topK,
 		SimilarityThreshold: scoreThreshold,
 		EmbeddingModel:      embModel,
 	}
@@ -364,6 +364,11 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		delete(ch, "vector")
 
 		meta := make(map[string]interface{})
+		if metaFields := metaMap[docID]; metaFields != nil {
+			for k, v := range metaFields {
+				meta[k] = v
+			}
+		}
 
 		meta["doc_id"] = docID
 		meta["document_id"] = docID

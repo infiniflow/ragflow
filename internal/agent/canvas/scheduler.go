@@ -250,7 +250,7 @@ func emitEventFromCtx(ctx context.Context, ev RunEvent) {
 	if meta == nil || meta.Events == nil {
 		return
 	}
-	PushEvent(meta.Events, ev)
+	PushEvent(ctx, meta.Events, ev)
 }
 
 func sanitizeNodeInputs(inputs map[string]any) map[string]any {

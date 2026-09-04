@@ -44,6 +44,11 @@ TEST_CSV = b"""row_id,title,content,country,category
 TEST_DUPLICATE_COLUMNS_CSV = b"""name,name,name_2
 Alice,Engineer,Team A
 """
+TEST_PARTIAL_NUMERIC_CSV = b"""row_id,amount,note
+1,100,first
+2,N/A,second
+3,300,third
+"""
 
 FILENAME = "test.csv"
 KB_ID = "test_kb_id"
@@ -294,3 +299,113 @@ def test_chunk_updates_table_column_names(table_module, mock_update_kb: MagicMoc
 def test_chunk_count_matches_row_count(table_module, mock_update_kb: MagicMock):
     chunks = _run_chunk(table_module, {}, mock_update_kb)
     assert len(chunks) == 3
+
+
+# Regression for #18287: Infinity/OceanBase/SereneDB store chunk_data
+# keyed by the original column name, and the SQL prompt examples
+# reference those exact keys via `json_extract_string(chunk_data,
+# '$.FieldName')`. Keys must therefore be the original column names
+# — not the pinyin form (`py_clmns[i].lower()`), which silently
+# broke non-ASCII columns because the LLM was told `xing_ming` but
+# `chunk_data` was keyed by `姓名`.
+def _enable_infinity(monkeypatch):
+    monkeypatch.setattr(settings, "DOC_ENGINE_INFINITY", True)
+    monkeypatch.setattr(settings, "DOC_ENGINE_OCEANBASE", False)
+
+
+def _enable_oceanbase(monkeypatch):
+    monkeypatch.setattr(settings, "DOC_ENGINE_INFINITY", False)
+    monkeypatch.setattr(settings, "DOC_ENGINE_OCEANBASE", True)
+
+
+def test_chunk_infinity_field_map_uses_original_column_names(table_module, mock_update_kb: MagicMock, monkeypatch):
+    _enable_infinity(monkeypatch)
+    _run_chunk(table_module, {}, mock_update_kb)
+    payload = mock_update_kb.call_args.args[1]
+    field_map = payload["field_map"]
+    # field_map keys must equal the original column names so they line up
+    # with chunk_data storage keys used by the SQL prompt's
+    # `json_extract_string(chunk_data, '$.FieldName')` examples.
+    assert set(field_map.keys()) == {"row_id", "title", "content", "country", "category"}
+    # No pinyin (e.g. "row_id_tks") should leak into field_map keys —
+    # pinyin belongs in the type-suffixed ES path, not the Infinity
+    # JSON-extract path.
+    assert not any(k.endswith("_tks") for k in field_map.keys())
+    # Keys must be the raw column name verbatim. Under the buggy
+    # implementation `row_id` was being rewritten to `"row id"`, which
+    # the SQL prompt's `$.row id` could not match against
+    # `chunk_data["row_id"]`. Values, however, get underscore-to-space
+    # formatting applied (so the LLM sees a human-readable label), but
+    # the key must NOT be reformatted.
+    assert "row_id" in field_map
+    assert "row id" not in field_map
+    assert field_map["row_id"] == "row id"
+
+
+def test_chunk_oceanbase_field_map_uses_original_column_names(table_module, mock_update_kb: MagicMock, monkeypatch):
+    _enable_oceanbase(monkeypatch)
+    _run_chunk(table_module, {}, mock_update_kb)
+    payload = mock_update_kb.call_args.args[1]
+    field_map = payload["field_map"]
+    assert set(field_map.keys()) == {"row_id", "title", "content", "country", "category"}
+    assert not any(k.endswith("_tks") for k in field_map.keys())
+    assert "row_id" in field_map
+    assert "row id" not in field_map
+    assert field_map["row_id"] == "row id"
+
+
+def test_chunk_infinity_field_map_non_ascii_columns_are_keys(table_module, mock_update_kb: MagicMock, monkeypatch):
+    """The original bug repros here: a non-ASCII column would be keyed by
+    its pinyin form (`xing_ming`) under the old behavior, so the LLM
+    is told a key that doesn't exist in `chunk_data`. After the fix the
+    field_map key IS the original column name."""
+    _enable_infinity(monkeypatch)
+    test_csv = b"row_id,\xe5\xa7\x93\xe5\x90\x8d,\xe9\x95\xbf\xe5\xba\xa6\n1,Alice,42\n"  # row_id, 姓名, 长度
+    table_module.chunk(
+        FILENAME,
+        binary=test_csv,
+        callback=_noop_callback,
+        kb_id=KB_ID,
+        parser_config={},
+        lang="Chinese",
+    )
+    payload = mock_update_kb.call_args.args[1]
+    field_map = payload["field_map"]
+    # The original column names — including the non-ASCII ones — must
+    # appear verbatim as keys so the SQL prompt's `$.姓名` matches the
+    # JSON extraction in chunk_data.
+    assert "\u59d3\u540d" in field_map  # 姓名
+    assert "\u957f\u5ea6" in field_map  # 长度
+    assert not any(k.endswith("_tks") for k in field_map.keys())
+
+
+@pytest.mark.parametrize(
+    ("column", "expected_type"),
+    [
+        (["1", "2", "3", "N/A"], "int"),
+        (["1.5", "2.5", "3.5", "see note"], "float"),
+        (["yes", "no", "yes", "unknown"], "bool"),
+        (["2025-01-01", "2025-02-01", "ongoing"], "datetime"),
+    ],
+)
+def test_column_data_type_keeps_cells_it_cannot_convert(table_module, column, expected_type):
+    converted, ty = table_module.column_data_type(list(column))
+    assert ty == expected_type
+    assert converted[-1] == column[-1]
+    assert None not in converted
+
+
+def test_chunk_keeps_unconvertible_cell_in_content(table_module, mock_update_kb: MagicMock):
+    chunks = table_module.chunk(
+        FILENAME,
+        binary=TEST_PARTIAL_NUMERIC_CSV,
+        callback=_noop_callback,
+        kb_id=KB_ID,
+        parser_config={},
+        lang="Chinese",
+    )
+    assert len(chunks) == 3
+    assert chunks[0]["amount_long"] == 100
+    assert chunks[2]["amount_long"] == 300
+    assert chunks[1].get("amount_long") != "N/A"
+    assert "- amount: N/A" in chunks[1]["content_with_weight"]

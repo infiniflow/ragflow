@@ -29,8 +29,8 @@
 //   tool.RetrievalRequest.Query      → nlp.RetrievalRequest.Question
 //   tool.RetrievalRequest.DatasetIDs → nlp.RetrievalRequest.KbIDs
 //   tool.RetrievalRequest.TopN       → nlp.RetrievalRequest.PageSize
-//   tool.RetrievalRequest.TopK       → nlp.RetrievalRequest.Top
-//                                       (fallback Top=TopN*4 so rerank
+//   tool.RetrievalRequest.TopK       → nlp.RetrievalRequest.KNNTopK
+//                                       (fallback KNNTopK=TopN*4 so rerank
 //                                        has headroom)
 //   tool.RetrievalRequest.KeywordsSimilarityWeight
 //                                    → nlp.RetrievalRequest.VectorSimilarityWeight
@@ -325,11 +325,14 @@ func nlpRequestFromRetrieval(
 		Aggs:           boolPtr(false),
 		Highlight:      boolPtr(false),
 	}
+	if req.RerankCandidatesCount != 0 {
+		nlpReq.RerankCandidatesCount = &req.RerankCandidatesCount
+	}
 	if req.TopK > 0 {
-		nlpReq.Top = &req.TopK
+		nlpReq.KNNTopK = &req.TopK
 	} else if topN > 0 {
 		rerankBudget := topN * 4
-		nlpReq.Top = &rerankBudget
+		nlpReq.KNNTopK = &rerankBudget
 	}
 	if req.SimilarityThreshold != nil {
 		nlpReq.SimilarityThreshold = req.SimilarityThreshold

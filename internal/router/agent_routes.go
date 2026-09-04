@@ -57,9 +57,7 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 
 	// File operations.
 	g.GET("/download", h.DownloadAgentFile)
-	g.GET("/attachments/:attachment_id/download", h.DownloadAttachment)
 	g.GET("/attachments/:attachment_id/preview", h.PreviewAttachment)
-	g.POST("/:canvas_id/upload", h.UploadAgentFile)
 
 	// Component introspection + debug.
 	g.GET("/:canvas_id/components/:component_id/input-form", h.GetComponentInputForm)

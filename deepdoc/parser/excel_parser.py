@@ -14,12 +14,12 @@
 import logging
 import re
 import sys
-from io import BytesIO
+from io import BytesIO, StringIO
 
 import pandas as pd
 from openpyxl import Workbook, load_workbook
 
-from rag.nlp import find_codec
+from rag.nlp import decode_text, find_codec
 from rag.utils.lazy_image import LazyImage
 
 # copied from `/openpyxl/cell/cell.py`
@@ -27,6 +27,17 @@ ILLEGAL_CHARACTERS_RE = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
 
 
 class RAGFlowExcelParser:
+    @staticmethod
+    def _read_csv(file_like_object):
+        if isinstance(file_like_object, str):
+            with open(file_like_object, "rb") as file:
+                binary = file.read()
+        else:
+            file_like_object.seek(0)
+            binary = file_like_object.read()
+        text, _ = decode_text(binary, document_type="CSV document")
+        return pd.read_csv(StringIO(text), on_bad_lines="skip")
+
     @staticmethod
     def _load_excel_to_workbook(file_like_object):
         if isinstance(file_like_object, bytes):
@@ -41,8 +52,7 @@ class RAGFlowExcelParser:
             logging.info("Not an Excel file, converting CSV to Excel Workbook")
 
             try:
-                file_like_object.seek(0)
-                df = pd.read_csv(file_like_object, on_bad_lines="skip")
+                df = RAGFlowExcelParser._read_csv(file_like_object)
                 return RAGFlowExcelParser._dataframe_to_workbook(df)
 
             except Exception as e_csv:
@@ -213,7 +223,7 @@ class RAGFlowExcelParser:
                 return ""
             return str(v).strip()
 
-        for sheetname in wb.sheetnames:
+        for sheet_idx, sheetname in enumerate(wb.sheetnames):
             ws = wb[sheetname]
             try:
                 rows = RAGFlowExcelParser._get_rows_limited(ws)
@@ -228,6 +238,7 @@ class RAGFlowExcelParser:
             for t in list(rows[0]):
                 tb_rows_0 += f"<th>{escape(_fmt(t.value))}</th>"
             tb_rows_0 += "</tr>"
+            col_max = max((len(r) for r in rows), default=1)
 
             # rows[0] is the header; split the remaining data rows into
             # ceil(n_data / chunk_rows) chunks. Using +1 here over-counts by one
@@ -235,10 +246,12 @@ class RAGFlowExcelParser:
             # a spurious header-only chunk.
             n_data_rows = len(rows) - 1
             for chunk_i in range((n_data_rows + chunk_rows - 1) // chunk_rows):
+                row_start = 2 + chunk_i * chunk_rows
+                row_end = min(1 + (chunk_i + 1) * chunk_rows, len(rows))
                 tb = ""
                 tb += f"<table><caption>{sheetname}</caption>"
                 tb += tb_rows_0
-                for r in list(rows[1 + chunk_i * chunk_rows : min(1 + (chunk_i + 1) * chunk_rows, len(rows))]):
+                for r in list(rows[1 + chunk_i * chunk_rows : row_end]):
                     tb += "<tr>"
                     for i, c in enumerate(r):
                         if c.value is None:
@@ -247,7 +260,9 @@ class RAGFlowExcelParser:
                             tb += f"<td>{escape(_fmt(c.value))}</td>"
                     tb += "</tr>"
                 tb += "</table>\n"
-                tb_chunks.append(tb)
+                # position: (sheet_idx 0-based, row_start, row_end, col_start, col_end)
+                # for add_positions which increments the first component to 1-based.
+                tb_chunks.append((tb, (sheet_idx, row_start, row_end, 1, col_max)))
 
         return tb_chunks
 
@@ -260,8 +275,7 @@ class RAGFlowExcelParser:
             df = pd.read_excel(file_like_object)
         except Exception as e:
             logging.warning(f"Parse spreadsheet error: {e}, trying to interpret as CSV file")
-            file_like_object.seek(0)
-            df = pd.read_csv(file_like_object, on_bad_lines="skip")
+            df = RAGFlowExcelParser._read_csv(file_like_object)
         df = df.replace(r"^\s*$", "", regex=True)
         return df.to_markdown(index=False)
 
@@ -270,7 +284,7 @@ class RAGFlowExcelParser:
         wb = RAGFlowExcelParser._load_excel_to_workbook(file_like_object)
 
         res = []
-        for sheetname in wb.sheetnames:
+        for sheet_idx, sheetname in enumerate(wb.sheetnames):
             ws = wb[sheetname]
             try:
                 rows = RAGFlowExcelParser._get_rows_limited(ws)
@@ -280,11 +294,15 @@ class RAGFlowExcelParser:
             if not rows:
                 continue
             ti = list(rows[0])
-            for r in list(rows[1:]):
+            for row_idx, r in enumerate(list(rows[1:]), start=2):
                 fields = []
+                col_min, col_max = None, None
                 for i, c in enumerate(r):
                     if c.value is None or str(c.value).strip() == "":
                         continue
+                    col = i + 1
+                    col_min = col if col_min is None else min(col_min, col)
+                    col_max = col if col_max is None else max(col_max, col)
                     t = str(ti[i].value) if i < len(ti) else ""
                     t += ("：" if t else "") + str(c.value)
                     fields.append(t)
@@ -293,7 +311,7 @@ class RAGFlowExcelParser:
                 line = "; ".join(fields)
                 if sheetname.lower().find("sheet") < 0:
                     line += " ——" + sheetname
-                res.append(line)
+                res.append((line, (sheet_idx, row_idx, row_idx, col_min or 1, col_max or 1)))
         return res
 
     @staticmethod

@@ -119,7 +119,7 @@ Usage:
 
 If no pipeline is currently available, you can use the entry provided in the pipeline area to go to **Agent** and create one.
 
-> Note: For pipeline creation, node configuration, and flow orchestration, see **Agent > Pipeline**.
+> Note: For pipeline creation, node configuration, and flow orchestration, see [**Ingestion Pipeline**](../../guides/agent/agent_overview.md).
 
 ### Auto Metadata: Automatic Metadata Configuration
 
@@ -145,7 +145,7 @@ After saving, the system generates corresponding metadata from document content 
 - **update_time**: Records the document update time.
 - **file_name**: Records the document file name.
 
-Select the fields to use, enable their switches, and then click **Save** to save the configuration. Generated metadata can be used in document management and retrieval filtering. To view or edit generated metadata, see **Metadata Management**.
+Select the fields to use, enable their switches, and then click **Save** to save the configuration. Generated metadata can be used in document management and retrieval filtering. To view or edit generated metadata, [**Metadata management**](../dataset/metadata_management.md).
 
 ### Table Column Role Configuration
 
@@ -182,4 +182,4 @@ The **Data source** area is used to associate the current dataset with data sour
 
 Click **Link data source** and select the data source to associate from existing data sources. After association, the current dataset can use the data provided by that data source. This area is only used to establish and manage the association between the dataset and data sources. It does not provide data source creation or connection configuration.
 
-> Tip: To add a new data source, or configure data source connection information, synchronization methods, and other settings, see the data source-related chapters. After adding the data source, return to the dataset configuration page to associate it.
+> Tip: To add a new data source, or configure data source connection information, synchronization methods, and other settings, see [**Data source**](../../guides/data_source/overview_and_page_management.md). After adding the data source, return to the dataset configuration page to associate it.

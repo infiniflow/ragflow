@@ -23,6 +23,7 @@ import (
 	"io"
 	"math/rand"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/service"
 	syncerconnector "ragflow/internal/syncer/connector"
 	"time"
@@ -34,9 +35,31 @@ var errSyncTaskCanceled = errors.New("sync task canceled")
 
 const syncCancelCheckInterval = time.Second
 
+// SyncRunnerConfig controls per-task document processing.
+type SyncRunnerConfig struct {
+	ItemRetryCount        int
+	ItemRetryBaseDelay    time.Duration
+	MaxAnchorRestartCount int
+}
+
+func checkTaskCanceled(taskDAO *dao.SyncTaskDAO, ctx context.Context, taskID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	canceled, err := taskDAO.IsTaskCanceled(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if canceled {
+		return errSyncTaskCanceled
+	}
+	return nil
+}
+
 // SyncRunner executes one SYNC task by submitting source batches as BatchJobs.
 type SyncRunner struct {
-	config      TaskCoordinatorConfig
+	config      SyncRunnerConfig
+	taskDAO     *dao.SyncTaskDAO
 	taskService *service.SyncTaskService
 	sink        service.DocumentSink
 	idResolver  *service.DocumentIDResolver
@@ -45,15 +68,24 @@ type SyncRunner struct {
 }
 
 // NewSyncRunner creates a SYNC runner.
-func NewSyncRunner(config TaskCoordinatorConfig, taskService *service.SyncTaskService, sink service.DocumentSink, idResolver *service.DocumentIDResolver, queue *SyncJobQueue, checkpoints SyncCheckpointStore) *SyncRunner {
+func NewSyncRunner(config SyncRunnerConfig, taskDAO *dao.SyncTaskDAO, taskService *service.SyncTaskService, sink service.DocumentSink, idResolver *service.DocumentIDResolver, queue *SyncJobQueue, checkpoints SyncCheckpointStore) *SyncRunner {
+	if config.ItemRetryCount <= 0 {
+		config.ItemRetryCount = 1
+	}
+	if config.ItemRetryBaseDelay <= 0 {
+		config.ItemRetryBaseDelay = time.Second
+	}
+	if config.MaxAnchorRestartCount <= 0 {
+		config.MaxAnchorRestartCount = 2
+	}
 	if checkpoints == nil {
 		checkpoints = newMemorySyncCheckpointStore()
 	}
-	return &SyncRunner{config: config, taskService: taskService, sink: sink, idResolver: idResolver, queue: queue, checkpoints: checkpoints}
+	return &SyncRunner{config: config, taskDAO: taskDAO, taskService: taskService, sink: sink, idResolver: idResolver, queue: queue, checkpoints: checkpoints}
 }
 
 // Run executes all sync batches and commits the final waterline.
-func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContext, connector syncerconnector.Connector) (string, error) {
+func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, connector syncerconnector.Connector) (string, error) {
 	// sink is nil means this syncer task cannot write it to document, it will fail anyway
 	if r.sink == nil {
 		return "", errors.New("document sink is not configured")
@@ -76,21 +108,15 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContex
 	if err != nil {
 		return "", err
 	}
-	session, err := connector.OpenSync(ctx, syncerconnector.SyncRequest{
-		TaskID:        taskContext.Task.ID,
-		ConnectorID:   taskContext.Connector.ID,
-		KBID:          taskContext.Knowledgebase.ID,
-		SourceType:    sourceType,
-		Fingerprints:  fingerprints,
-		FromBeginning: checkpointState.WindowStart == nil,
-		WindowStart:   checkpointState.WindowStart,
-		WindowEnd:     checkpointState.WindowEnd,
-		Resume:        checkpointState.Checkpoint,
-	})
+	session, err := r.openSyncSession(ctx, taskContext, sourceType, fingerprints, &checkpointState, connector)
 	if err != nil {
 		return "", err
 	}
-	defer session.Close()
+	defer func() {
+		if session != nil {
+			_ = session.Close()
+		}
+	}()
 
 	// prepare sourceType, waterline, stats, resultChan
 	stats := statsFromCheckpointState(checkpointState) // count `add`, `updated`, `skipped`
@@ -98,7 +124,7 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContex
 
 	for {
 		// check if task has been canceled
-		if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil {
+		if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
 			return "", err
 		}
 
@@ -110,6 +136,20 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContex
 		if nextErr != nil {
 			if err = r.collectResults(ctx, taskContext.Task.ID, resultChans, &checkpointState, &stats); err != nil {
 				return "", err
+			}
+			if errors.Is(nextErr, syncerconnector.ErrSyncResumeInvalid) {
+				if checkpointState.RestartCount >= r.config.MaxAnchorRestartCount {
+					return "", nextErr
+				}
+				_ = session.Close()
+				session = nil
+				resultChans = nil
+				session, err = r.restartSyncSession(ctx, taskContext, sourceType, fingerprints, &checkpointState, connector)
+				if err != nil {
+					return "", err
+				}
+				stats = service.SyncStats{}
+				continue
 			}
 			return "", nextErr
 		}
@@ -126,7 +166,7 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContex
 		return "", err
 	}
 
-	if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil {
+	if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
 		return "", err
 	}
 	nextTaskID, err := r.taskService.CompleteSync(ctx, taskContext, checkpointState.WindowEnd, stats)
@@ -139,6 +179,52 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext service.SyncTaskContex
 		common.Info("delete sync checkpoint completed", zap.String("task_id", taskContext.Task.ID))
 	}
 	return nextTaskID, nil
+}
+
+func (r *SyncRunner) openSyncSession(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, fingerprints map[string]string, checkpointState *syncerconnector.SyncCheckpointState, connector syncerconnector.Connector) (syncerconnector.SyncSession, error) {
+	session, err := connector.OpenSync(ctx, syncerconnector.SyncRequest{
+		TaskID:        taskContext.Task.ID,
+		ConnectorID:   taskContext.Connector.ID,
+		KBID:          taskContext.Knowledgebase.ID,
+		SourceType:    sourceType,
+		Fingerprints:  fingerprints,
+		FromBeginning: checkpointState.WindowStart == nil,
+		WindowStart:   checkpointState.WindowStart,
+		WindowEnd:     checkpointState.WindowEnd,
+		Resume:        checkpointState.Checkpoint,
+	})
+	if err != nil {
+		if errors.Is(err, syncerconnector.ErrSyncResumeInvalid) && checkpointState.RestartCount < r.config.MaxAnchorRestartCount {
+			restartErr := r.resetCheckpointForRestart(ctx, taskContext.Task.ID, checkpointState)
+			if restartErr != nil {
+				return nil, restartErr
+			}
+			return r.openSyncSession(ctx, taskContext, sourceType, fingerprints, checkpointState, connector)
+		}
+		return nil, err
+	}
+	return session, nil
+}
+
+func (r *SyncRunner) restartSyncSession(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, fingerprints map[string]string, checkpointState *syncerconnector.SyncCheckpointState, connector syncerconnector.Connector) (syncerconnector.SyncSession, error) {
+	if err := r.resetCheckpointForRestart(ctx, taskContext.Task.ID, checkpointState); err != nil {
+		return nil, err
+	}
+	return r.openSyncSession(ctx, taskContext, sourceType, fingerprints, checkpointState, connector)
+}
+
+// resetCheckpointForRestart discards committed progress and restarts the same
+// source window when the resume anchor is no longer valid.
+func (r *SyncRunner) resetCheckpointForRestart(ctx context.Context, taskID string, checkpointState *syncerconnector.SyncCheckpointState) error {
+	checkpointState.RestartCount++
+	checkpointState.Checkpoint = nil
+	checkpointState.NextCommitSeq = 1
+	checkpointState.Added = 0
+	checkpointState.Updated = 0
+	checkpointState.Skipped = 0
+	checkpointState.ErrorCount = 0
+	checkpointState.ErrorMsg = ""
+	return r.checkpoints.SaveSyncCheckpoint(ctx, taskID, *checkpointState)
 }
 
 func (r *SyncRunner) collectResults(ctx context.Context, taskID string, resultChans []<-chan syncJobResult, checkpointState *syncerconnector.SyncCheckpointState, stats *service.SyncStats) error {
@@ -169,7 +255,7 @@ func (r *SyncRunner) collectResults(ctx context.Context, taskID string, resultCh
 	return nil
 }
 
-func (r *SyncRunner) prepareCheckpoint(ctx context.Context, taskContext service.SyncTaskContext, windowStart *time.Time, windowEnd time.Time) (syncerconnector.SyncCheckpointState, error) {
+func (r *SyncRunner) prepareCheckpoint(ctx context.Context, taskContext dao.SyncTaskContext, windowStart *time.Time, windowEnd time.Time) (syncerconnector.SyncCheckpointState, error) {
 	state, err := r.checkpoints.LoadSyncCheckpoint(ctx, taskContext.Task.ID)
 	if err != nil {
 		return syncerconnector.SyncCheckpointState{}, err
@@ -219,7 +305,7 @@ func applyStatsToCheckpointState(state *syncerconnector.SyncCheckpointState, sta
 }
 
 // submitBatch submits one source batch as one BatchJob.
-func (r *SyncRunner) submitBatch(ctx context.Context, taskContext service.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, batch syncerconnector.SyncBatch) (<-chan syncJobResult, error) {
+func (r *SyncRunner) submitBatch(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, batch syncerconnector.SyncBatch) (<-chan syncJobResult, error) {
 	resultChan, err := r.queue.submit(ctx, func(jobCtx context.Context) (service.SyncStats, error) {
 		return r.processDocuments(jobCtx, taskContext, sourceType, session, batch.Documents)
 	}, batch.Checkpoint)
@@ -246,7 +332,7 @@ func cloneSyncCheckpoint(checkpoint *syncerconnector.SyncCheckpoint) *syncerconn
 }
 
 // processDocuments
-func (r *SyncRunner) processDocuments(ctx context.Context, taskContext service.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, documents []syncerconnector.SourceDocument) (service.SyncStats, error) {
+func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, documents []syncerconnector.SourceDocument) (service.SyncStats, error) {
 	stats := service.SyncStats{}
 
 	var firstErr error
@@ -256,7 +342,7 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext service.S
 			return stats, err
 		}
 		if lastCancelCheck.IsZero() || time.Since(lastCancelCheck) >= syncCancelCheckInterval {
-			if err := r.checkCanceled(ctx, taskContext.Task.ID); err != nil {
+			if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
 				return stats, err
 			}
 			lastCancelCheck = time.Now()
@@ -274,7 +360,7 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext service.S
 }
 
 // processDocumentWithRetry retries transient item failures.
-func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext service.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
+func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
 	var lastErr error
 	for attempt := 1; attempt <= r.config.ItemRetryCount; attempt++ {
 		if err := ctx.Err(); err != nil {
@@ -311,25 +397,8 @@ func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext s
 	return service.DocumentUpsertResult{}, lastErr
 }
 
-// checkCanceled check if the task has been canceled
-func (r *SyncRunner) checkCanceled(ctx context.Context, taskID string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	canceled, err := r.taskService.IsCanceled(ctx, taskID)
-	if err != nil {
-		return err
-	}
-
-	if canceled {
-		return errSyncTaskCanceled
-	}
-	return nil
-}
-
 // processDocument resolves IDs, skips unchanged fingerprints, fetches blobs, and upserts.
-func (r *SyncRunner) processDocument(ctx context.Context, taskContext service.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
+func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
 	resolved, err := r.idResolver.Resolve(ctx, taskContext.Knowledgebase.ID, taskContext.Connector.ID, sourceType, sourceDocument.SourceID)
 	if err != nil {
 		return service.DocumentUpsertResult{}, err

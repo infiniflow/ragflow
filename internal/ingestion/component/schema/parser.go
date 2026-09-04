@@ -85,7 +85,7 @@ func (ParserParam) Defaults() ParserParam {
 			"markdown":    {"text", "json"},
 			"text&code":   {"text", "json"},
 			"html":        {"text", "json"},
-			"audio":       {"json"},
+			"audio":       {"text", "json"},
 			"video":       {},
 			"epub":        {"text", "json"},
 			"json":        {"json"},

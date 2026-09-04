@@ -79,6 +79,77 @@ class MockChatModel:
         pass
 
 
+@pytest.mark.asyncio
+async def test_load_refine_failures_decodes_persisted_page_markers(monkeypatch):
+    store = MagicMock()
+    store.index_exist.return_value = True
+    store.get_fields.return_value = {
+        "row-1": {
+            "slug_kwd": ["entity/alice"],
+            "content_with_weight": json.dumps({"entity_names": ["Alice"], "error": "429"}),
+        },
+        "row-2": {"slug_kwd": "entity/bob", "content_with_weight": "{}"},
+    }
+
+    async def fake_thread_pool_exec(*args, **kwargs):
+        return object()
+
+    monkeypatch.setattr(_wiki.settings, "docStoreConn", store)
+    monkeypatch.setattr(_wiki, "thread_pool_exec", fake_thread_pool_exec)
+
+    failures = await _wiki._wiki_load_refine_failures("tenant", "kb")
+
+    assert failures == {
+        "entity/alice": {"entity_names": ["Alice"], "error": "429"},
+        "entity/bob": {},
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        "**ERROR**: ERROR_MAX_RETRIES - upstream unavailable",
+        "partial response\n**ERROR**: ERROR_SERVER - connection lost",
+        ("**ERROR**: ERROR_GENERIC - invalid request", 0),
+    ],
+)
+async def test_chat_mdl_ask_raises_for_model_error_response(response):
+    chat_mdl = MockChatModel(response)
+
+    with pytest.raises(RuntimeError, match="Wiki LLM call failed"):
+        await _wiki._chat_mdl_ask(chat_mdl, "system", "user")
+
+
+@pytest.mark.asyncio
+async def test_chat_mdl_ask_returns_normal_response():
+    response = "SUMMARY: Apple\n\nApple is a company."
+
+    assert await _wiki._chat_mdl_ask(MockChatModel(response), "system", "user") == response
+
+
+@pytest.mark.asyncio
+async def test_refine_page_does_not_persist_model_error_response():
+    doc_store = make_doc_store()
+
+    with patch("common.settings.docStoreConn", doc_store):
+        with pytest.raises(RuntimeError, match="Wiki LLM call failed"):
+            await _wiki._wiki_refine_page(
+                mode="generate",
+                page_id="entity/Apple",
+                page_title="Apple",
+                existing_page=None,
+                chat_mdl=MockChatModel("**ERROR**: ERROR_MAX_RETRIES - upstream unavailable"),
+                embd_mdl=MockEmbeddingModel(),
+                tenant_id="t1",
+                kb_id="kb1",
+                page_version=0,
+            )
+
+    doc_store.insert.assert_not_called()
+    doc_store.update.assert_not_called()
+
+
 def make_doc_store(search_results: list[dict] | None = None):
     """Create a mock settings.docStoreConn."""
     conn = MagicMock()
@@ -1099,6 +1170,60 @@ async def test_finalize_auto_links_mentions():
 
 
 @pytest.mark.asyncio
+async def test_finalize_auto_link_prefers_longest_name_without_nested_links():
+    search_results = [
+        {
+            "_source": {
+                "slug_kwd": "entity/虎牢关",
+                "title_kwd": "虎牢关",
+                "md_with_weight": "虎牢关是关隘。",
+                "page_type_kwd": "entity",
+            }
+        },
+        {
+            "_source": {
+                "slug_kwd": "entity/关",
+                "title_kwd": "关",
+                "md_with_weight": "关是称谓。",
+                "page_type_kwd": "entity",
+            }
+        },
+        {
+            "_source": {
+                "slug_kwd": "concept/虎牢关之战",
+                "title_kwd": "虎牢关之战",
+                "md_with_weight": "虎牢关之战发生在关前。",
+                "page_type_kwd": "concept",
+            }
+        },
+    ]
+    doc_store = make_doc_store(search_results)
+
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(f"{_wiki.__name__}._load_canonical_entities", new_callable=AsyncMock, return_value={}),
+    ):
+        await _wiki._wiki_finalize(tenant_id="t1", kb_id="kb1", embd_mdl=None)
+
+    update = next(args[0][1] for args in doc_store.update.call_args_list if args[0][0].get("id") == "concept/虎牢关之战")
+    body = update["md_with_weight"]
+    assert "[虎牢关](artifact/kb1/entity/虎牢关)" in body
+    assert "[关](artifact/kb1/entity/关)前" in body
+    assert "[虎牢[" not in body
+
+
+def test_find_unlinked_mention_skips_raw_and_rendered_links():
+    content = "[[entity/虎牢关|虎牢关]]与[虎牢关](artifact/kb1/entity/虎牢关)，关前"
+    assert _wiki._wiki_find_unlinked_mention(content, "虎牢关") == -1
+    assert _wiki._wiki_find_unlinked_mention(content, "关") == content.index("关前")
+
+
+def test_find_unlinked_mention_skips_unterminated_raw_link():
+    content = "before [[entity/X|Name"
+    assert _wiki._wiki_find_unlinked_mention(content, "Name") == -1
+
+
+@pytest.mark.asyncio
 async def test_finalize_preserves_merged_entity_name_as_link_label():
     """A merged page must not replace a member mention with its page title."""
     search_results = [
@@ -1139,13 +1264,6 @@ async def test_finalize_preserves_merged_entity_name_as_link_label():
 
     update = next(args[0][1] for args in doc_store.update.call_args_list if args[0][0].get("id") == "entity/曹操")
     assert "[治世之能臣，乱世之奸雄](artifact/kb1/entity/五色棒)" in update["md_with_weight"]
-
-
-def test_inside_wikilink():
-    content = "before [[entity/X]] after"
-    assert _wiki._inside_wikilink(content, content.index("entity"))
-    assert not _wiki._inside_wikilink(content, content.index("before"))
-    assert not _wiki._inside_wikilink(content, content.index("after"))
 
 
 def test_extract_outlinks_from_content():

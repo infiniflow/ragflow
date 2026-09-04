@@ -223,6 +223,20 @@ func (b *PythonIntermediateTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf
 
 func (b *PythonIntermediateTableBuilder) Name() string { return "py-intermediate" }
 
+func maxf(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minf(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // RegisterReplayTableBuilder installs a TableBuilder factory that returns the
 // replay builder whenever the DocAnalyzer is a PythonIntermediateDocAnalyzer,
 // and otherwise falls back to the production DeepDoc builder. Safe to call

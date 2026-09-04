@@ -103,7 +103,7 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.0` (the RAGFlow Docker image without embedding models).
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.1` (the RAGFlow Docker image without embedding models).
 
 :::tip NOTE
 If you cannot download the RAGFlow Docker image, try the following mirrors.
@@ -149,7 +149,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 ### `ragflow`
 
 - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
-- `port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+- `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.
 
 ### `mysql`
 
@@ -186,7 +186,7 @@ s3:
 - `region_name`: Must be `auto`.
 - `endpoint_url`: `https://t3.storage.dev`, or `https://fly.storage.tigris.dev` on Fly.io.
 - `addressing_style`: Must be `virtual`.
-- `bucket` / `prefix_path`: Optional. Enables single-bucket mode — see [Migrate from multi-bucket to single-bucket mode](/migration#migrate-from-multi-bucket-to-single-bucket-mode).
+- `bucket` / `prefix_path`: Optional. Enables single-bucket mode — see [Migrate from multi-bucket to single-bucket mode](../migration/backup_and_migration.md#migrate-from-multi-bucket-to-single-bucket-mode).
 
 When using an external storage backend, you can remove the `minio` service from `docker-compose-base.yml`.
 
@@ -214,7 +214,7 @@ The OAuth configuration for signing up or signing in to RAGFlow using a third-pa
   - `userinfo_url`: URL for obtaining user information (username, email, etc.).
   - `issuer`: Base URL of the identity provider. OIDC clients can dynamically obtain the identity provider's metadata (`authorization_url`, `token_url`, `userinfo_url`) through `issuer`.
   - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
-  - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/v1/user/oauth/callback/<channel>`. For local configuration, you can directly use `http://127.0.0.1:80/v1/user/oauth/callback/<channel>`.
+  - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/api/v1/auth/oauth/<channel>/callback`. For local configuration, you can directly use `http://127.0.0.1:80/api/v1/auth/oauth/<channel>/callback`.
 
 :::tip NOTE
 The following are best practices for configuring various third-party authentication methods. You can configure one or multiple third-party authentication methods for Ragflow:
@@ -227,7 +227,7 @@ oauth:
     authorization_url: "https://your-oauth-provider.com/oauth/authorize"
     token_url: "https://your-oauth-provider.com/oauth/token"
     userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
-    redirect_uri: "https://your-app.com/v1/user/oauth/callback/oauth2"
+    redirect_uri: "https://your-app.com/api/v1/auth/oauth/oauth2/callback"
 
   oidc:
     display_name: "OIDC"
@@ -235,7 +235,7 @@ oauth:
     client_secret: "your_client_secret"
     issuer: "https://your-oauth-provider.com/oidc"
     scope: "openid email profile"
-    redirect_uri: "https://your-app.com/v1/user/oauth/callback/oidc"
+    redirect_uri: "https://your-app.com/api/v1/auth/oauth/oidc/callback"
 
   github:
     # https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app
@@ -244,7 +244,7 @@ oauth:
     display_name: "Github"
     client_id: "your_client_id"
     client_secret: "your_client_secret"
-    redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
+    redirect_uri: "https://your-app.com/api/v1/auth/oauth/github/callback"
 ```
 :::
 

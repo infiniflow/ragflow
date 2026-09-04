@@ -289,7 +289,7 @@ class KnowledgebaseService(CommonService):
         # find team kb and owned kb
         kbs = cls.model.select(*fields).where(cls._visibility_and_status_filter(tenant_ids, user_id))
         # sort by create_time asc
-        kbs.order_by(cls.model.create_time.asc())
+        kbs = kbs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later.
         offset, limit = 0, 50
         res = []
@@ -394,11 +394,9 @@ class KnowledgebaseService(CommonService):
                 if k not in old:
                     old[k] = v
                     continue
-                if isinstance(v, dict):
-                    assert isinstance(old[k], dict)
+                if isinstance(v, dict) and isinstance(old[k], dict):
                     dfs_update(old[k], v)
-                elif isinstance(v, list):
-                    assert isinstance(old[k], list)
+                elif isinstance(v, list) and isinstance(old[k], list):
                     old[k] = list(set(old[k] + v))
                 else:
                     old[k] = v

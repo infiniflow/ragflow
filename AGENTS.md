@@ -12,7 +12,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 
 ## Current stack
 - Backend: Python 3.13+, Quart-based API server, Peewee ORM, async workers.
-- Frontend: React + TypeScript + Vite in `web/`.
+- Frontend: React + TypeScript + Vite in `web/` (dual-backend Go/Python variant conventions: see `web/CLAUDE.md`).
 - Go: the repository also has a substantial Go module for servers, ingestion, parser/runtime, CLI, and supporting services.
 - Runtime services commonly include MySQL/PostgreSQL, Redis, MinIO, and Elasticsearch/Infinity/OpenSearch depending on configuration.
 

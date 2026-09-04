@@ -212,11 +212,11 @@ func TestNewSelfManagedProviderFromConfig_MinimalConfig(t *testing.T) {
 func TestNewSelfManagedProviderFromConfig_FullConfig(t *testing.T) {
 	t.Parallel()
 	cfg := map[string]any{
-		"EXECUTOR_MANAGER_URL":       "https://custom.example:9999/",
-		"EXECUTOR_MANAGER_TIMEOUT":   float64(45), // JSON-decoded number
-		"EXECUTOR_MANAGER_POOL_SIZE": float64(10),
-		"BASE_PYTHON_IMAGE":          "registry.example.com/py:latest",
-		"BASE_NODEJS_IMAGE":          "registry.example.com/node:20",
+		"endpoint":          "https://custom.example:9999/",
+		"timeout":           float64(45), // JSON-decoded seconds
+		"pool_size":         float64(10),
+		"base_python_image": "registry.example.com/py:latest",
+		"base_nodejs_image": "registry.example.com/node:20",
 	}
 	p := newSelfManagedProviderFromConfig(cfg)
 	if p.endpoint != "https://custom.example:9999" {
@@ -241,7 +241,7 @@ func TestNewSelfManagedProviderFromConfig_FullConfig(t *testing.T) {
 func TestNewSelfManagedProviderFromConfig_TimeoutAsString(t *testing.T) {
 	t.Parallel()
 	cfg := map[string]any{
-		"EXECUTOR_MANAGER_TIMEOUT": "1m30s",
+		"timeout": "1m30s",
 	}
 	p := newSelfManagedProviderFromConfig(cfg)
 	if p.timeout != 90*time.Second {
@@ -381,7 +381,7 @@ func TestBuildProviderFromConfig_UnknownType(t *testing.T) {
 func TestBuildProviderFromConfig_SelfManaged_HappyPath(t *testing.T) {
 	t.Parallel()
 	p, err := buildProviderFromConfig(ProviderSelfManaged, map[string]any{
-		"EXECUTOR_MANAGER_URL": "http://example.invalid:9999",
+		"endpoint": "http://example.invalid:9999",
 	})
 	if err != nil {
 		t.Fatalf("buildProviderFromConfig: %v", err)
@@ -437,10 +437,10 @@ func TestLoadFromSettingsWithReader_HappyPath(t *testing.T) {
 		rows: map[string][]entity.SystemSettings{
 			"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "self_managed"}},
 			"sandbox.self_managed": {{Name: "sandbox.self_managed", Value: `{
-				"EXECUTOR_MANAGER_URL": "` + srv.URL + `",
-				"EXECUTOR_MANAGER_TIMEOUT": "5s",
-				"EXECUTOR_MANAGER_POOL_SIZE": 7,
-				"BASE_PYTHON_IMAGE": "reg.example.com/py:1"
+				"endpoint": "` + srv.URL + `",
+				"timeout": "5s",
+				"pool_size": 7,
+				"base_python_image": "reg.example.com/py:1"
 			}`}},
 		},
 	}
@@ -649,8 +649,8 @@ func TestReloadFromSettingsWithReader(t *testing.T) {
 		rows: map[string][]entity.SystemSettings{
 			"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "self_managed"}},
 			"sandbox.self_managed": {{Name: "sandbox.self_managed", Value: `{
-				"EXECUTOR_MANAGER_URL": "` + srv.URL + `",
-				"EXECUTOR_MANAGER_TIMEOUT": "5s"
+				"endpoint": "` + srv.URL + `",
+				"timeout": "5s"
 			}`}},
 		},
 	}
@@ -667,5 +667,65 @@ func TestReloadFromSettingsWithReader(t *testing.T) {
 	sm := m.Provider().(*SelfManagedProvider)
 	if sm.endpoint != srv.URL {
 		t.Errorf("endpoint = %q, want %q (from settings after reload)", sm.endpoint, srv.URL)
+	}
+}
+
+// TestLoadFromSettingsWithReader_CanonicalSchemaTokenPropagation verifies
+// the full settings-driven path against the canonical lowercase persisted
+// JSON: LoadFromSettingsWithReader builds the provider from the
+// sandbox.self_managed row, and the executor manager receives the
+// Authorization header derived from the row's api_token on /run. This is
+// the configuration-level counterpart of the request-level bearer test in
+// self_managed_test.go.
+func TestLoadFromSettingsWithReader_CanonicalSchemaTokenPropagation(t *testing.T) {
+	var capturedAuth string
+	var authSeen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/run":
+			capturedAuth, authSeen = r.Header.Get("Authorization"), true
+			handleRun(t, w, r, "ok", "")
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	ctx := t.Context()
+
+	// The exact lowercase shape the admin panel persists; only endpoint and
+	// api_token are set so the env fallbacks for the other fields stay
+	// exercised.
+	r := &fakeSettingsReader{
+		rows: map[string][]entity.SystemSettings{
+			"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "self_managed"}},
+			"sandbox.self_managed": {{Name: "sandbox.self_managed", Value: `{
+				"endpoint": "` + srv.URL + `",
+				"api_token": "canonical-settings-secret"
+			}`}},
+		},
+	}
+	m := &ProviderManager{}
+	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); err != nil {
+		t.Fatalf("LoadFromSettingsWithReader: %v", err)
+	}
+	sm, ok := m.Provider().(*SelfManagedProvider)
+	if !ok {
+		t.Fatalf("provider type = %T, want *SelfManagedProvider", m.Provider())
+	}
+	if sm.apiToken != "canonical-settings-secret" {
+		t.Errorf("apiToken = %q, want canonical-settings-secret (from lowercase settings row)", sm.apiToken)
+	}
+	inst, err := sm.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	if _, err := sm.ExecuteCode(ctx, inst, "def main(): return 1", "python", 5, nil); err != nil {
+		t.Fatalf("ExecuteCode: %v", err)
+	}
+	if !authSeen || capturedAuth != "Bearer canonical-settings-secret" {
+		t.Errorf("Authorization header = %q (seen=%v), want Bearer canonical-settings-secret", capturedAuth, authSeen)
 	}
 }

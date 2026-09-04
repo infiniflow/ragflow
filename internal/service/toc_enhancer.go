@@ -461,10 +461,11 @@ func (e *TOCEnhancer) scoreEntries(ctx context.Context, entries []tocEntry, limi
 
 	var scores []tocRelevanceScore
 	maxRetry := 2
-	var lastAns, lastErr string
+	var lastAns string
+	var lastErr error
 	for attempt := 0; attempt < maxRetry; attempt++ {
 		currentUser := userPrompt
-		if attempt > 0 && lastAns != "" && lastErr != "" {
+		if attempt > 0 && lastAns != "" && lastErr != nil {
 			currentUser += fmt.Sprintf(
 				"\nGenerated JSON is as following:\n%s\nBut exception while loading:\n%s\nPlease reconsider and correct it.",
 				lastAns, lastErr,
@@ -496,15 +497,15 @@ func (e *TOCEnhancer) scoreEntries(ctx context.Context, entries []tocEntry, limi
 			repaired = raw
 		}
 		if err = json.Unmarshal([]byte(repaired), &scores); err != nil {
-			lastErr = err.Error()
+			lastErr = err
 			common.Warn("TOC enhancer: JSON parse failed, retrying",
 				zap.Error(err), zap.Int("attempt", attempt))
 			continue
 		}
 		break
 	}
-	if len(scores) == 0 && lastErr != "" {
-		return nil, fmt.Errorf("toc scoring: parse failed after retries: %s", lastErr)
+	if len(scores) == 0 && lastErr != nil {
+		return nil, fmt.Errorf("toc scoring: parse failed after retries: %w", lastErr)
 	}
 
 	id2score := make(map[string][]float64)

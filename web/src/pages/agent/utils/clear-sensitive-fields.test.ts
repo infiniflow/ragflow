@@ -4,6 +4,7 @@ jest.mock('@/constants/agent', () => ({
     TavilyExtract: 'TavilyExtract',
     Google: 'Google',
     KeenableSearch: 'KeenableSearch',
+    YouComSearch: 'YouComSearch',
     BGPT: 'Bing',
     QueritContents: 'QueritContents',
     QueritSearch: 'QueritSearch',
@@ -107,6 +108,42 @@ describe('clearSensitiveFields', () => {
     expect(sanitized.components.querit.obj.params.count).toBe(5);
     expect(dsl.graph.nodes[0].data.form.api_key).toBe('graph-secret');
     expect(dsl.components.querit.obj.params.api_key).toBe('component-secret');
+  });
+
+  it('clears a You.com key from a canvas node and from a tool record', () => {
+    const dsl = {
+      graph: {
+        nodes: [
+          {
+            data: {
+              label: Operator.YouComSearch,
+              form: {
+                api_key: 'ydc-graph-secret',
+                freshness: 'week',
+              },
+            },
+          },
+        ],
+      },
+      tools: [
+        {
+          component_name: Operator.YouComSearch,
+          params: {
+            api_key: 'ydc-tool-secret',
+            top_n: 10,
+          },
+        },
+      ],
+    };
+
+    const sanitized = clearSensitiveFields(dsl);
+
+    expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+    expect(sanitized.graph.nodes[0].data.form.freshness).toBe('week');
+    expect(sanitized.tools[0].params.api_key).toBe('');
+    expect(sanitized.tools[0].params.top_n).toBe(10);
+    expect(dsl.graph.nodes[0].data.form.api_key).toBe('ydc-graph-secret');
+    expect(dsl.tools[0].params.api_key).toBe('ydc-tool-secret');
   });
 
   it('does not change standalone graph export behavior for other tools', () => {

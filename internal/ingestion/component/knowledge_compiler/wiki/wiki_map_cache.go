@@ -26,6 +26,8 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
+const wikiMapActiveStateSchemaVersion = "topic-path-v2"
+
 type wikiMapChunkVersion struct {
 	index       int
 	chunk       common.Chunk
@@ -43,7 +45,8 @@ func (p *wikiPipeline) runVersionedMap() error {
 	}
 	llmFingerprint := wikiMapHash(p.llmID)
 	p.activeStateKey = wikiMapHash(strings.Join([]string{
-		p.tenantID, p.datasetID, p.docID, templateFingerprint, llmFingerprint, "active",
+		p.tenantID, p.datasetID, p.docID, templateFingerprint, llmFingerprint,
+		wikiMapActiveStateSchemaVersion, "active",
 	}, "\x00"))
 	p.previousActiveState = wikiMapActiveSnapshot{Chunks: map[string]wikiMapActiveChunk{}}
 	if activeStore, ok := p.deps.WikiMapVersions.(common.WikiMapActiveStateStore); ok {
@@ -275,9 +278,14 @@ func splitWikiExtractByChunk(extract wikiExtract, batch []common.Chunk) map[stri
 			out[chunkID] = part
 		}
 	}
-	for chunkID, part := range out {
-		part.Topics = append(part.Topics, extract.Topics...)
-		out[chunkID] = part
+	for _, topic := range extract.Topics {
+		for _, chunkID := range wikiMapItemChunkIDs(topic.SourceChunkIDs, known) {
+			part := out[chunkID]
+			topicCopy := topic
+			topicCopy.SourceChunkIDs = []string{chunkID}
+			part.Topics = append(part.Topics, topicCopy)
+			out[chunkID] = part
+		}
 	}
 	return out
 }

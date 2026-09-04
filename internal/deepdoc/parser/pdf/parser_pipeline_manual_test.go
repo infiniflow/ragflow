@@ -3,7 +3,6 @@
 package pdf
 
 import (
-	"context"
 	"encoding/base64"
 	"os"
 	"path/filepath"
@@ -18,7 +17,7 @@ import (
 // Build tag: cgo && manual — skipped in regular integration runs due to
 // long runtime (27+ PDFs each requiring DeepDoc DLA+TSR+OCR).
 func TestIntegration_NoCrash(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	pdfDir := filepath.Join("testdata", "pdfs")
 	entries, err := os.ReadDir(pdfDir)
@@ -48,7 +47,7 @@ func TestIntegration_NoCrash(t *testing.T) {
 
 			cfg := pdf.DefaultParserConfig()
 			p := NewParser(cfg)
-			result, err := p.ParseRaw(context.Background(), eng, client)
+			result, err := p.ParseRaw(t.Context(), eng, client)
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}

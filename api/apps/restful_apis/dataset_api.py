@@ -513,9 +513,11 @@ async def search_datasets(tenant_id):
     """Search (retrieval test) across multiple datasets.
 
     POST /api/v1/datasets/search
-    JSON body: {"dataset_ids": list[str] (required), "question": str (required), "doc_ids": list[str], "top_k": int, "page": int, "size": int,
-               "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
+    JSON body: {"dataset_ids": list[str] (required), "question": str (required), "doc_ids": list[str], "knn_top_k": int (default 1024), "knn_num_candidates": int (default 2048), "page": int, "page_size": int, "size": int (fallback),
+               "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool, "highlight": bool,
                "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
+    The legacy "top_k" parameter is accepted as an alias for "knn_top_k".
+    "knn_num_candidates" currently applies only to Elasticsearch.
     Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
     Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
     """
@@ -536,9 +538,11 @@ async def search(tenant_id, dataset_id):
     """Search (retrieval test) within a dataset.
 
     POST /api/v1/datasets/<dataset_id>/search
-    JSON body: {"question": str (required), "doc_ids": list[str], "top_k": int, "page": int, "size": int,
+    JSON body: {"question": str (required), "doc_ids": list[str], "knn_top_k": int (default 1024), "knn_num_candidates": int (default 2048), "page": int, "page_size": int, "size": int (fallback),
                "similarity_threshold": float, "vector_similarity_weight": float, "use_kg": bool,
                "cross_languages": list[str], "keyword": bool, "meta_data_filter": dict, "include_knowledge_compilation": bool (default true)}
+    The legacy "top_k" parameter is accepted as an alias for "knn_top_k".
+    "knn_num_candidates" currently applies only to Elasticsearch.
     Success: {"code": 0, "data": {"chunks": [...], "total": int, "labels": [...]}}
     Errors: ARGUMENT_ERROR (101) for invalid payload; DATA_ERROR (102) for access denied or internal errors.
     """
@@ -695,7 +699,9 @@ async def get_wiki_graph(tenant_id, dataset_id):
     - ``top_n`` (a.k.a. ``topN``): override the entity budget (default 128).
 
     Only entities referenced by at least one relation are returned.
-    Success: ``{"code": 0, "data": {"entities":[…],"relations":[…]}}``.
+    Success: ``{"code": 0, "data": {"entities":[…],"relations":[…],
+    "total_entities":int,"total_relations":int,
+    "returned_entities":int,"returned_relations":int}}``.
     """
     try:
         node = request.args.get("node", None)
@@ -744,9 +750,17 @@ async def get_dataset_structure(tenant_id, dataset_id):
     dataset (written when a template has ``dataset_merge`` enabled). Response
     mirrors the per-document structure graph so the frontend reuses its view::
 
-        {"code": 0, "data": {"kind": "<kind>", "templates": [
-            {"template_id", "template_name", "kind", "entities", "relations"}
-        ]}}
+        {"code": 0, "data": {
+            "kind": "<kind>",
+            "total_entities": 100,
+            "total_relations": 200,
+            "returned_entities": 80,
+            "returned_relations": 150,
+            "templates": [{
+                "template_id": "<template_id>", "template_name": "<template_name>",
+                "kind": "<kind>", "entities": [], "relations": [],
+            }],
+        }}
     """
     try:
         kind = request.args.get("kind", "")

@@ -54,6 +54,7 @@ from ._common import (
     knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
     run_chunked_pipeline as _run_chunked_pipeline,
     stable_row_id as _stable_row_id,
+    env_int as _env_int,
 )
 
 
@@ -90,8 +91,8 @@ from .structure import (
 WIKI_MAP_COMPILE_KWD = "wiki_map_extract"
 WIKI_MAP_STATE_COMPILE_KWD = "wiki_map_state"
 WIKI_MAP_STATE_META_COMPILE_KWD = "wiki_map_state_meta"
-DEFAULT_WIKI_MAP_WORKERS = 20
-DEFAULT_WIKI_MAP_TIMEOUT = 600
+DEFAULT_WIKI_MAP_WORKERS = _env_int("WIKI_MAP_WORKERS", 20, minimum=1)
+DEFAULT_WIKI_MAP_TIMEOUT = _env_int("WIKI_MAP_TIMEOUT", 600, minimum=1)
 
 
 async def _wiki_disabled_doc_ids(kb_id: str) -> set[str]:
@@ -844,7 +845,7 @@ async def _wiki_scan_current_chunk_state(
         while True:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                ["id", "doc_id", "content_with_weight", "compile_kwd"],
+                ["id", "doc_id", "content_with_weight"],
                 [],
                 {
                     "doc_id": [doc_id],
@@ -858,18 +859,8 @@ async def _wiki_scan_current_chunk_state(
                 index,
                 [kb_id],
             )
-            rows = settings.docStoreConn.get_fields(res, ["id", "doc_id", "content_with_weight", "compile_kwd"]) or {}
+            rows = settings.docStoreConn.get_fields(res, ["id", "doc_id", "content_with_weight"]) or {}
             for row_id, row in rows.items():
-                # The source-chunk query also has a backend-level
-                # ``must_not exists compile_kwd`` guard. Keep this explicit
-                # check because some doc-store implementations do not apply
-                # that nested filter consistently. Derived Wiki/structure
-                # rows must never become MAP inputs or chunk deltas.
-                compile_kwd = row.get("compile_kwd")
-                if isinstance(compile_kwd, (list, tuple, set)):
-                    compile_kwd = next((str(value).strip() for value in compile_kwd if value), "")
-                if str(compile_kwd or "").strip():
-                    continue
                 chunk_id = str(row.get("id") or row_id or "")
                 if chunk_id:
                     state[chunk_id] = {
@@ -922,39 +913,6 @@ async def _wiki_load_active_map_state(
         if len(rows) < 1000:
             break
         offset += 1000
-    # Active snapshots are normally source-only because they are committed
-    # from _wiki_scan_current_chunk_state. Older snapshots, however, may have
-    # been created before derived rows were excluded. If a historical state ID
-    # still exists in the index and carries compile_kwd, it is a compiled
-    # product rather than an original chunk and must not be counted as a
-    # deleted source chunk. Missing rows are intentionally retained: they are
-    # the legitimate deleted/removed source chunks we need to report.
-    chunk_ids = list(state)
-    for start in range(0, len(chunk_ids), 500):
-        batch_ids = chunk_ids[start : start + 500]
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                ["id", "compile_kwd"],
-                [],
-                {"id": batch_ids},
-                [],
-                OrderByExpr(),
-                0,
-                len(batch_ids),
-                index,
-                [kb_id],
-            )
-            rows = settings.docStoreConn.get_fields(res, ["id", "compile_kwd"]) or {}
-        except Exception:
-            logging.exception("wiki_map: failed to validate historical source snapshot")
-            continue
-        for row_id, row in rows.items():
-            compile_kwd = row.get("compile_kwd")
-            if isinstance(compile_kwd, (list, tuple, set)):
-                compile_kwd = next((str(value).strip() for value in compile_kwd if value), "")
-            if str(compile_kwd or "").strip():
-                state.pop(str(row.get("id") or row_id), None)
     return state
 
 
@@ -1398,7 +1356,7 @@ WIKI_REDUCE_COMPILE_KWD = "wiki_reduce_result"
 DEFAULT_WIKI_REDUCE_MERGE_THRESHOLD = 0.95
 DEFAULT_WIKI_REDUCE_AMBIGUOUS_LOW = 0.75
 DEFAULT_WIKI_REDUCE_AMBIGUOUS_BATCH = 50
-DEFAULT_WIKI_REDUCE_TIMEOUT = 60
+DEFAULT_WIKI_REDUCE_TIMEOUT = _env_int("WIKI_REDUCE_TIMEOUT", 60, minimum=1)
 
 
 # System prompt for the LLM disambiguation batch. The shared engine
@@ -1906,7 +1864,7 @@ WIKI_PLAN_COMPILE_KWD = "wiki_compilation_plan"
 WIKI_PAGE_COMPILE_KWD = "wiki_page"
 DEFAULT_WIKI_PLAN_UPDATE_THRESHOLD = 0.95
 DEFAULT_WIKI_PLAN_MAYBE_THRESHOLD = 0.60
-DEFAULT_WIKI_PLAN_TIMEOUT = 600  # ~10 min — the planning call emits one big
+DEFAULT_WIKI_PLAN_TIMEOUT = _env_int("WIKI_PLAN_TIMEOUT", 600, minimum=1)  # ~10 min — the planning call emits one big
 # JSON plan and reasoning models can spend a
 # long time thinking before emitting tokens.
 # Override via the ``llm_timeout`` arg to
@@ -2842,11 +2800,11 @@ async def wiki_plan_from_reduction(
 
 
 WIKI_DRAFT_COMPILE_KWD = "wiki_page_draft"
-DEFAULT_WIKI_REFINE_WORKERS = 4
-DEFAULT_WIKI_REFINE_TIMEOUT = 300
+DEFAULT_WIKI_REFINE_WORKERS = _env_int("WIKI_REFINE_WORKERS", 4, minimum=1)
+DEFAULT_WIKI_REFINE_TIMEOUT = _env_int("WIKI_REFINE_TIMEOUT", 300, minimum=1)
 WIKI_REFINE_SOURCE_BUDGET_CHARS = 60_000
 WIKI_MERGE_BODY_SHRINK_THRESHOLD = 0.7
-WIKI_MERGE_TIMEOUT = 600
+WIKI_MERGE_TIMEOUT = _env_int("WIKI_MERGE_TIMEOUT", 600, minimum=1)
 
 
 WIKI_TEMPLATE_EXAMPLE = (
@@ -3956,6 +3914,8 @@ async def wiki_refine_from_plan(
     semaphore = asyncio.Semaphore(max_workers) if max_workers and max_workers > 0 else None
     completed = 0
     completed_lock = asyncio.Lock()
+    progress_updates = 20
+    report_every = max(1, (total + progress_updates - 1) // progress_updates)
 
     async def _write_one(plan_item: dict) -> Optional[dict]:
         nonlocal completed
@@ -3965,7 +3925,6 @@ async def wiki_refine_from_plan(
         page_type = plan_item.get("page_type") or "concept"
 
         async def _run() -> Optional[dict]:
-            nonlocal completed
             try:
                 evidence = _wiki_assemble_evidence(
                     plan_item,
@@ -4049,7 +4008,7 @@ async def wiki_refine_from_plan(
                 }
             except Exception:
                 logging.exception("wiki_refine: writer failed for slug=%s", slug)
-                return None
+                raise
 
             # Searchable wiki_page persistence has moved to the task
             # handler so the doc-storage schema can be controlled in one
@@ -4066,21 +4025,27 @@ async def wiki_refine_from_plan(
             except Exception:
                 logging.exception("wiki_refine: persist_draft failed for slug=%s", slug)
 
-            if callback:
+            return page
+
+        result: Optional[dict] = None
+        try:
+            if semaphore is not None:
+                async with semaphore:
+                    result = await _run()
+            else:
+                result = await _run()
+            return result
+        finally:
+            if callback and result is not None:
                 async with completed_lock:
                     completed += 1
                     done = completed
-                progress = 0.1 + 0.85 * (done / total)
-                try:
-                    callback(progress, f"wiki REFINE: {done}/{total} pages written ({slug})")
-                except Exception:
-                    pass
-            return page
-
-        if semaphore is not None:
-            async with semaphore:
-                return await _run()
-        return await _run()
+                if done % report_every == 0 or done == total:
+                    progress = 0.1 + 0.85 * (done / total)
+                    try:
+                        callback(progress, f"wiki REFINE: {done}/{total} pages completed")
+                    except Exception:
+                        logging.exception("wiki REFINE progress callback failed")
 
     tasks = [asyncio.create_task(_write_one(p)) for p in pending]
     if tasks:

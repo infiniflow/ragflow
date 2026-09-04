@@ -61,7 +61,7 @@ func TestOCRRecognizeWithRotation_ShortCrop_NoRotation(t *testing.T) {
 	doc := &fakeRotateDoc{wideText: "Hello", tallText: "x"}
 	p := &Parser{}
 
-	texts, err := p.ocrRecognizeWithRotation(context.Background(), doc, crop)
+	texts, err := p.ocrRecognizeWithRotation(t.Context(), doc, crop)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestOCRRecognizeWithRotation_TallCrop_PicksBestScore(t *testing.T) {
 	doc := &fakeRotateDoc{wideText: "Hello world", tallText: "x", wideScore: 0.95, tallScore: 0.30}
 	p := &Parser{}
 
-	texts, err := p.ocrRecognizeWithRotation(context.Background(), doc, crop)
+	texts, err := p.ocrRecognizeWithRotation(t.Context(), doc, crop)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestOCRRecognizeWithRotation_TallCrop_TieKeepsZero(t *testing.T) {
 	doc := &fakeRotateDoc{wideText: "AB", tallText: "CD", wideScore: 0.5, tallScore: 0.5}
 	p := &Parser{}
 
-	texts, err := p.ocrRecognizeWithRotation(context.Background(), doc, crop)
+	texts, err := p.ocrRecognizeWithRotation(t.Context(), doc, crop)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -472,6 +472,13 @@ func (s *mysqlScheduler) SetError(ctx context.Context, datasetID, token, errMsg 
 
 const progressMessageMaxLength = 3000
 
+func timestampProgressMessage(message string) string {
+	if message == "" {
+		return ""
+	}
+	return time.Now().Format("15:04:05") + " " + message
+}
+
 func appendProgressMessage(previous, message string) string {
 	if message == "" {
 		return previous
@@ -778,6 +785,19 @@ func (f *FakeScheduler) Provision(_ context.Context) error { return nil }
 // Publish appends one doc event and pushes a notify (same contract as MySQL).
 func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string, variants []string) error {
 	return f.publishEntry(tenantID, datasetID, BacklogEntry{DocID: docID, EventType: eventType, Variants: variants})
+}
+
+// PublishedCount returns the total number of backlog events published across
+// all datasets. Tests use it to assert that a code path did not trigger a
+// dataset-level knowledge-compile rebuild (PublishCompleted).
+func (f *FakeScheduler) PublishedCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, r := range f.rows {
+		n += len(r.backlog)
+	}
+	return n
 }
 
 func (f *FakeScheduler) publishEntry(tenantID, datasetID string, entry BacklogEntry) error {

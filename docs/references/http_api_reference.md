@@ -36,7 +36,7 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 | **POST** `/api/v1/chats_openai/{chat_id}/chat/completions`                        | **POST** `/api/v1/openai/{chat_id}/chat/completions`                                |
 | **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           | **PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           |
 | **POST** `/api/v1/chats/{chat_id}/completions`                                    | **POST** `/api/v1/chat/completions`                                                 |
-| **POST** `/api/v1/sessions/related_questions`                                     | **POST** `/api/v1/chat/recommandation`                                              |
+| **POST** `/api/v1/sessions/related_questions`                                     | **POST** `/api/v1/chat/recommendation`                                              |
 | **PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` | **PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` |
 | **GET** `/v1/system/healthz`                                                      | **GET** `/api/v1/system/healthz`                                                    |
 | **POST** `/v1/document/upload_info`                                               | **POST** `/api/v1/documents/upload`                                                 |
@@ -853,10 +853,6 @@ curl --request PUT \
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
       - Minimum: `1`
-    - `"raptor"`: `object` RAPTOR-specific settings.
-      - Defaults to: `{"use_raptor": false}`
-    - `"graphrag"`: `object` GRAPHRAG-specific settings.
-      - Defaults to: `{"use_graphrag": false}`
     - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
       - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
       - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
@@ -1036,365 +1032,6 @@ Failure:
 }
 ```
 
- ---
-
-### Get knowledge graph
-
-**GET** `/api/v1/datasets/{dataset_id}/knowledge_graph`
-
-Retrieves the knowledge graph of a specified dataset.
-
-#### Request
-
-- Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/knowledge_graph`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/knowledge_graph \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-- `dataset_id`: (*Path parameter*)
-  The ID of the target dataset.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code": 0,
-    "data": {
-        "graph": {
-            "directed": false,
-            "edges": [
-                {
-                    "description": "The notice is a document issued to convey risk warnings and operational alerts.<SEP>The notice is a specific instance of a notification document issued under the risk warning framework.",
-                    "keywords": ["9", "8"],
-                    "source": "notice",
-                    "source_id": ["8a46cdfe4b5c11f0a5281a58e595aa1c"],
-                    "src_id": "xxx",
-                    "target": "xxx",
-                    "tgt_id": "xxx",
-                    "weight": 17.0
-                }
-            ],
-            "graph": {
-                "source_id": ["8a46cdfe4b5c11f0a5281a58e595aa1c", "8a7eb6424b5c11f0a5281a58e595aa1c"]
-            },
-            "multigraph": false,
-            "nodes": [
-                {
-                    "description": "xxx",
-                    "entity_name": "xxx",
-                    "entity_type": "ORGANIZATION",
-                    "id": "xxx",
-                    "pagerank": 0.10804906590624092,
-                    "rank": 3,
-                    "source_id": ["8a7eb6424b5c11f0a5281a58e595aa1c"]
-                }
-            ]
-        },
-        "mind_map": {}
-    }
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 102,
-    "message": "The dataset doesn't exist"
-}
-```
-
----
-
-### Delete knowledge graph
-
-**DELETE** `/api/v1/datasets/{dataset_id}/knowledge_graph`
-
-Removes the knowledge graph of a specified dataset.
-
-#### Request
-
-- Method: DELETE
-- URL: `/api/v1/datasets/{dataset_id}/knowledge_graph`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request DELETE \
-     --url http://{address}/api/v1/datasets/{dataset_id}/knowledge_graph \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-- `dataset_id`: (*Path parameter*)
-  The ID of the target dataset.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code": 0,
-    "data": true
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 102,
-    "message": "The dataset doesn't exist"
-}
-```
-
----
-
-### Construct knowledge graph
-
-**POST** `/api/v1/datasets/{dataset_id}/run_graphrag`
-
-Constructs a knowledge graph from a specified dataset.
-
-#### Request
-
-- Method: POST
-- URL: `/api/v1/datasets/{dataset_id}/run_graphrag`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request POST \
-     --url http://{address}/api/v1/datasets/{dataset_id}/run_graphrag \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-- `dataset_id`: (*Path parameter*)
-  The ID of the target dataset.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code":0,
-    "data":{
-      "graphrag_task_id":"e498de54bfbb11f0ba028f704583b57b"
-    }
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 102,
-    "message": "Invalid Dataset ID"
-}
-```
-
----
-
-### Get knowledge graph construction status
-
-**GET** `/api/v1/datasets/{dataset_id}/trace_graphrag`
-
-Retrieves the knowledge graph construction status for a specified dataset.
-
-#### Request
-
-- Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/trace_graphrag`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/trace_graphrag \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-- `dataset_id`: (*Path parameter*)
-  The ID of the target dataset.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code":0,
-    "data":{
-        "begin_at":"Wed, 12 Nov 2025 19:36:56 GMT",
-        "chunk_ids":"",
-        "create_date":"Wed, 12 Nov 2025 19:36:56 GMT",
-        "create_time":1762947416350,
-        "digest":"39e43572e3dcd84f",
-        "doc_id":"44661c10bde211f0bc93c164a47ffc40",
-        "from_page":100000000,
-        "id":"e498de54bfbb11f0ba028f704583b57b",
-        "priority":0,
-        "process_duration":2.45419,
-        "progress":1.0,
-        "progress_msg":"19:36:56 created task graphrag\n19:36:57 Task has been received.\n19:36:58 [GraphRAG] doc:083661febe2411f0bc79456921e5745f has no available chunks, skip generation.\n19:36:58 [GraphRAG] build_subgraph doc:44661c10bde211f0bc93c164a47ffc40 start (chunks=1, timeout=10000000000s)\n19:36:58 Graph already contains 44661c10bde211f0bc93c164a47ffc40\n19:36:58 [GraphRAG] build_subgraph doc:44661c10bde211f0bc93c164a47ffc40 empty\n19:36:58 [GraphRAG] kb:33137ed0bde211f0bc93c164a47ffc40 no subgraphs generated successfully, end.\n19:36:58 Knowledge Graph done (0.72s)","retry_count":1,
-        "task_type":"graphrag",
-        "to_page":100000000,
-        "update_date":"Wed, 12 Nov 2025 19:36:58 GMT",
-        "update_time":1762947418454
-    }
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 102,
-    "message": "Invalid Dataset ID"
-}
-```
-
----
-
-### Construct RAPTOR
-
-**POST** `/api/v1/datasets/{dataset_id}/run_raptor`
-
-Construct a RAPTOR from a specified dataset.
-
-#### Request
-
-- Method: POST
-- URL: `/api/v1/datasets/{dataset_id}/run_raptor`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request POST \
-     --url http://{address}/api/v1/datasets/{dataset_id}/run_raptor \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-- `dataset_id`: (*Path parameter*)
-  The ID of the target dataset.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code":0,
-    "data":{
-        "raptor_task_id":"50d3c31cbfbd11f0ba028f704583b57b"
-    }
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 102,
-    "message": "Invalid Dataset ID"
-}
-```
-
----
-
-### Get RAPTOR construction status
-
-**GET** `/api/v1/datasets/{dataset_id}/trace_raptor`
-
-Retrieves the RAPTOR construction status for a specified dataset.
-
-#### Request
-
-- Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/trace_raptor`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/trace_raptor \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-- `dataset_id`: (*Path parameter*)
-  The ID of the target dataset.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code":0,
-    "data":{
-        "begin_at":"Wed, 12 Nov 2025 19:47:07 GMT",
-        "chunk_ids":"",
-        "create_date":"Wed, 12 Nov 2025 19:47:07 GMT",
-        "create_time":1762948027427,
-        "digest":"8b279a6248cb8fc6",
-        "doc_id":"44661c10bde211f0bc93c164a47ffc40",
-        "from_page":100000000,
-        "id":"50d3c31cbfbd11f0ba028f704583b57b",
-        "priority":0,
-        "process_duration":0.948244,
-        "progress":1.0,
-        "progress_msg":"19:47:07 created task raptor\n19:47:07 Task has been received.\n19:47:07 Processing...\n19:47:07 Processing...\n19:47:07 Indexing done (0.01s).\n19:47:07 Task done (0.29s)",
-        "retry_count":1,
-        "task_type":"raptor",
-        "to_page":100000000,
-        "update_date":"Wed, 12 Nov 2025 19:47:07 GMT",
-        "update_time":1762948027948
-    }
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 102,
-    "message": "Invalid Dataset ID"
-}
-```
-
 ---
 
 ## FILE MANAGEMENT WITHIN DATASET
@@ -1518,13 +1155,13 @@ Failure:
 
 ### Update document
 
-**PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}`
+**PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 
 Updates configurations for a specified document.
 
 #### Request
 
-- Method: PUT
+- Method: PATCH
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 - Headers:
   - `'content-Type: application/json'`
@@ -1538,7 +1175,7 @@ Updates configurations for a specified document.
 ##### Request example
 
 ```bash
-curl --request PUT \
+curl --request PATCH \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --header 'Content-Type: application/json' \
@@ -1787,8 +1424,8 @@ curl --request GET \
   Filter by file suffix. Supports multiple values, e.g., `pdf`, `txt`, and `docx`. Defaults to all suffixes.
 - `run`: (*Filter parameter*), `array[string]`
   Filter by document processing status. Supports numeric, text, and mixed formats:
-  - Numeric format: `["0", "1", "2", "3", "4"]`
-  - Text format: `[UNSTART, RUNNING, CANCEL, DONE, FAIL]`
+  - Numeric format: `["0", "1", "2", "3", "4", "5"]`
+  - Text format: `[UNSTART, RUNNING, CANCEL, DONE, FAIL, SCHEDULE]`
   - Mixed format: `[UNSTART, 1, DONE]` (mixing numeric and text formats)
   - Status mapping:
     - `0` / `UNSTART`: Document not yet processed
@@ -1796,6 +1433,7 @@ curl --request GET \
     - `2` / `CANCEL`: Document processing was canceled
     - `3` / `DONE`: Document processing completed successfully
     - `4` / `FAIL`: Document processing failed
+    - `5` / `SCHEDULE`: Document is scheduled and waiting to be processed
   Defaults to all statuses.
 - `metadata_condition`: (*Filter parameter*), `object` (JSON in query)
   Optional metadata filter applied to documents when `document_ids` is not provided. Uses the same structure as retrieval:
@@ -2810,7 +2448,10 @@ Retrieves chunks from specified datasets.
   - `"page_size"`: `integer`
   - `"similarity_threshold"`: `float`
   - `"vector_similarity_weight"`: `float`
-  - `"top_k"`: `integer`
+  - `"top_k"`: `integer` (deprecated; use `"knn_top_k"`)
+  - `"knn_top_k"`: `integer`
+  - `"knn_num_candidates"`: `integer`
+  - `"rerank_candidates_count"`: `integer`
   - `"rerank_id"`: `string`
   - `"keyword"`: `boolean`
   - `"highlight"`: `boolean`
@@ -2818,6 +2459,7 @@ Retrieves chunks from specified datasets.
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
   - `"toc_enhance"`: `boolean`
+  - `"include_knowledge_compilation"`: `boolean`
 
 ##### Request example
 
@@ -2831,6 +2473,10 @@ curl --request POST \
           "question": "What is advantage of ragflow?",
           "dataset_ids": ["b2a62730759d11ef987d0242ac120004"],
           "document_ids": ["77df9ef4759a11ef8bdd0242ac120004"],
+          "knn_top_k": 1024,
+          "knn_num_candidates": 2048,
+          "rerank_candidates_count": 64,
+          "include_knowledge_compilation": true,
           "metadata_condition": {
             "logic": "and",
             "conditions": [
@@ -2866,7 +2512,15 @@ curl --request POST \
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
   The weight of vector cosine similarity. Defaults to `0.3`. If x represents the weight of vector cosine similarity, then (1 - x) is the term similarity weight.
 - `"top_k"`: (*Body parameter*), `integer`
+  **Deprecated.** An alias for `"knn_top_k"`. If both parameters are provided, `"knn_top_k"` takes precedence.
+- `"knn_top_k"`: (*Body parameter*), `integer`
   The number of chunks engaged in vector cosine computation. Defaults to `1024`.
+- `"knn_num_candidates"`: (*Body parameter*), `integer`
+  The number of approximate nearest-neighbor candidates considered for vector search. It must be greater than or equal to `"knn_top_k"`. Defaults to the greater of `2048` and `"knn_top_k"`. This parameter currently applies only to Elasticsearch.
+- `"rerank_candidates_count"`: (*Body parameter*), `integer`
+  The number of initial retrieval candidates to rank. It must be at least `"page"` multiplied by `"page_size"`. Defaults to `64`.
+- `"include_knowledge_compilation"`: (*Body parameter*), `boolean`
+  Whether to include knowledge-compilation chunks in the results. Defaults to `true`.
 - `"use_kg"`: (*Body parameter*), `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/dataset/advanced/construct_knowledge_graph.md) for details.
 - `"toc_enhance"`: (*Body parameter*), `boolean`
@@ -5425,7 +5079,7 @@ Failure:
 
 ### Generate related questions
 
-**POST** `/api/v1/chat/recommandation`
+**POST** `/api/v1/chat/recommendation`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
@@ -5444,7 +5098,7 @@ The chat model autonomously determines the number of questions to generate based
 #### Request
 
 - Method: POST
-- URL: `/api/v1/chat/recommandation`
+- URL: `/api/v1/chat/recommendation`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -5456,7 +5110,7 @@ The chat model autonomously determines the number of questions to generate based
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/chat/recommandation \
+     --url http://{address}/api/v1/chat/recommendation \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '{
@@ -6438,7 +6092,7 @@ curl --location 'http://{address}/api/v1/messages' \
 
 - `user_id`: (*Body parameter*), `string`, *Optional*
 
-  The user participating in the conversation with the agent. Defaults to `None`.
+  The user participating in the conversation with the agent. Honoured only when the request is authenticated with an API key. Any other authentication, whether a JWT bearer token or a browser session, ignores it and attributes the message to the authenticated user. Surrounding whitespace is stripped, and a value that is missing, blank or not a string falls back to the API key owner.
 
 - `user_input`: (*Body parameter*), `string`, *Required*
 

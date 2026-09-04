@@ -100,7 +100,7 @@ func TestRouteSufficiencyVerdict(t *testing.T) {
 // TestDirectSearch_Merges asserts direct search merges chunks and flags empty.
 func TestDirectSearch_Merges(t *testing.T) {
 	kb := &Kbinfos{}
-	res := DirectSearch(context.Background(), func(_ context.Context, _, _ string) ([]map[string]interface{}, []map[string]interface{}) {
+	res := DirectSearch(t.Context(), func(_ context.Context, _, _ string) ([]map[string]interface{}, []map[string]interface{}) {
 		return []map[string]interface{}{{"chunk_id": "a", "content_with_weight": "alpha"}}, nil
 	}, "q", "", kb)
 	if res.EmptyResult || !kb.HasChunks() {
@@ -111,7 +111,7 @@ func TestDirectSearch_Merges(t *testing.T) {
 // TestDirectSearch_Empty asserts direct search flags empty when no chunks.
 func TestDirectSearch_Empty(t *testing.T) {
 	kb := &Kbinfos{}
-	res := DirectSearch(context.Background(), func(_ context.Context, _, _ string) ([]map[string]interface{}, []map[string]interface{}) {
+	res := DirectSearch(t.Context(), func(_ context.Context, _, _ string) ([]map[string]interface{}, []map[string]interface{}) {
 		return nil, nil
 	}, "q", "", kb)
 	if !res.EmptyResult {
@@ -124,7 +124,7 @@ func TestDirectSearch_Empty(t *testing.T) {
 func TestDecomposeAndSearch_Verifies(t *testing.T) {
 	claims := []*ClaimTarget{{ClaimID: "c0", Description: "fact 42 about X"}}
 	kb := &Kbinfos{}
-	res := DecomposeAndSearch(context.Background(),
+	res := DecomposeAndSearch(t.Context(),
 		func(_ context.Context, _, _ string) ([]map[string]interface{}, []map[string]interface{}) {
 			return []map[string]interface{}{{"chunk_id": "x", "content_with_weight": "the value is 42"}}, nil
 		},

@@ -120,8 +120,8 @@ class BaseTitleChunker(ABC):
         """Hard-split a boundary-less run into <= cap-token pieces.
 
         Mirrors common.token_utils.truncate semantics (prefix bounded by
-        ``cap`` tokens). Falls back to a character prefix if the tokenizer is
-        unavailable so the ceiling still holds.
+        ``cap`` tokens). Falls back to a character prefix if the tokenizer
+        rejects the input so the ceiling still holds.
         """
         out = []
         rest = text or ""
@@ -129,8 +129,9 @@ class BaseTitleChunker(ABC):
             try:
                 head = truncate(rest, cap)
             except (ValueError, TypeError, UnicodeError):
-                # Tokenizer unavailable/failed; fall back to a character prefix
-                # so the ceiling still holds instead of raising.
+                # Tokenizer rejected the input; fall back to a character prefix
+                # so the ceiling still holds. An unavailable BPE table raises
+                # from truncate and is not caught here; see _token_count.
                 head = rest[:cap]
             # truncate decodes the first `cap` tokens; when that lands mid
             # multibyte character it emits a U+FFFD, which is not a true prefix
@@ -151,8 +152,8 @@ class BaseTitleChunker(ABC):
         """Re-split one oversized text chunk into <= cap sub-chunks.
 
         Sentence boundaries are tried first; any remaining over-cap segment is
-        hard-split. PDF coordinates follow plan A: the original (coarse,
-        page-level) positions attach to the first sub-chunk only.
+        hard-split. Every sub-chunk keeps the original (coarse, page-level)
+        positions so each still gets its preview image and highlight.
         """
         text = chunk.get("text") or ""
         sentences = self._split_text_by_sentences(text)
@@ -183,22 +184,25 @@ class BaseTitleChunker(ABC):
         has_positions = PDF_POSITIONS_KEY in chunk
         orig_positions = chunk.get(PDF_POSITIONS_KEY)
         out = []
-        for i, group in enumerate(final_groups):
+        for group in final_groups:
             sub = dict(chunk)
             sub["text"] = group
-            # Plan A: the original (coarse, page-level) coordinates attach to the
-            # first sub-chunk only; subsequent sub-chunks carry none.
+            # Every sub-chunk keeps the original (coarse, page-level)
+            # coordinates so the preview-image/position restore pass covers
+            # all sub-chunks. Each sub-chunk owns a deep copy so no two of
+            # them alias the same position list.
             if has_positions:
-                sub[PDF_POSITIONS_KEY] = orig_positions if i == 0 else []
+                sub[PDF_POSITIONS_KEY] = deepcopy(orig_positions)
             out.append(sub)
         return out
 
     def _token_count(self, text):
         """Count tokens for ``text``.
 
-        ``num_tokens_from_string`` returns 0 when the encoder is unavailable;
-        in that case fall back to the character count so the cap is still
-        enforced rather than silently skipped.
+        ``num_tokens_from_string`` returns 0 when it cannot encode the input;
+        fall back to the character count so the cap is still enforced. An
+        unavailable BPE table raises from it, as it does from ``truncate``
+        above, so the chunking task fails instead of counting characters.
         """
         n = num_tokens_from_string(text or "")
         if n == 0 and text:

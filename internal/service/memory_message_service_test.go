@@ -22,16 +22,16 @@
 package service
 
 import (
-	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestQueueSaveToMemoryTask_NilService: a nil receiver surfaces
 // a clear error rather than panicking.
 func TestQueueSaveToMemoryTask_NilService(t *testing.T) {
 	var s *MemoryMessageService
-	_, err := s.QueueSaveToMemoryTask(context.Background(), []string{"m1"}, MemoryMessage{AgentID: "a1"})
+	_, err := s.QueueSaveToMemoryTask(t.Context(), []string{"m1"}, MemoryMessage{AgentID: "a1"})
 	if err == nil {
 		t.Fatal("expected error from nil service")
 	}
@@ -44,7 +44,7 @@ func TestQueueSaveToMemoryTask_NilService(t *testing.T) {
 // short-circuits to an empty result with no error.
 func TestQueueSaveToMemoryTask_EmptyMemoryList(t *testing.T) {
 	s := &MemoryMessageService{memories: nil} // no lookups happen
-	res, err := s.QueueSaveToMemoryTask(context.Background(), nil, MemoryMessage{AgentID: "a1"})
+	res, err := s.QueueSaveToMemoryTask(t.Context(), nil, MemoryMessage{AgentID: "a1"})
 	if err != nil {
 		t.Fatalf("QueueSaveToMemoryTask: %v", err)
 	}
@@ -58,12 +58,37 @@ func TestQueueSaveToMemoryTask_EmptyMemoryList(t *testing.T) {
 // up front.
 func TestQueueSaveToMemoryTask_MissingAgentID(t *testing.T) {
 	s := &MemoryMessageService{}
-	_, err := s.QueueSaveToMemoryTask(context.Background(), []string{"m1"}, MemoryMessage{})
+	_, err := s.QueueSaveToMemoryTask(t.Context(), []string{"m1"}, MemoryMessage{})
 	if err == nil {
 		t.Fatal("expected error for missing AgentID")
 	}
 	if !strings.Contains(err.Error(), "AgentID") {
 		t.Errorf("error = %v, want AgentID-required error", err)
+	}
+}
+
+// TestBuildRawMessage_ValidAtServerLocal: valid_at is stamped as a
+// server-local wall-clock string, not UTC — otherwise memories asked at
+// 10:05 local show up as 02:05. The clock is pinned to a fixed instant in a
+// fixed non-UTC location so the assertion holds on any host, including UTC
+// CI runners.
+func TestBuildRawMessage_ValidAtServerLocal(t *testing.T) {
+	pinMemoryNow(t, time.Date(2026, 8, 20, 10, 5, 0, 0, time.FixedZone("UTC+8", 8*3600)))
+
+	raw := buildRawMessage(42, "mem-1", MemoryMessage{
+		UserID:        "u1",
+		AgentID:       "a1",
+		SessionID:     "s1",
+		UserInput:     "hi",
+		AgentResponse: "hello",
+	})
+
+	got, ok := raw["valid_at"].(string)
+	if !ok {
+		t.Fatalf("valid_at = %#v, want string", raw["valid_at"])
+	}
+	if want := "2026-08-20 10:05:00"; got != want {
+		t.Fatalf("valid_at = %q, want server-local wall clock %q (UTC-shifted would be %q)", got, want, "2026-08-20 02:05:00")
 	}
 }
 

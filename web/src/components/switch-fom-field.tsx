@@ -19,6 +19,7 @@ import {
   FormField,
   FormItem,
   FormLabel,
+  FormMessage,
 } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
@@ -52,7 +53,9 @@ export function SwitchFormField({
             'justify-between': !vertical,
           })}
         >
-          <FormLabel tooltip={tooltip}>{label}</FormLabel>
+          <FormLabel className="w-fit" tooltip={tooltip}>
+            {label}
+          </FormLabel>
           <FormControl>
             <Switch
               checked={field.value}
@@ -61,6 +64,7 @@ export function SwitchFormField({
               className="!m-0"
             />
           </FormControl>
+          <FormMessage />
         </FormItem>
       )}
     />

@@ -66,7 +66,8 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
 
   const newlyUploaded = alteration?.newly_uploaded ?? 0;
   const removed = alteration?.removed ?? 0;
-  const hasChanges = newlyUploaded > 0 || removed > 0;
+  const retryPageCount = alteration?.retry_page_count ?? 0;
+  const hasChanges = newlyUploaded > 0 || removed > 0 || retryPageCount > 0;
 
   const handleRunEnd = useCallback(() => {
     queryClient.invalidateQueries({
@@ -76,7 +77,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
     });
   }, [queryClient, knowledgeBaseId, kind]);
-  
+
   useRunEndEffect(structureStatus, handleRunEnd);
 
   const entityOptions = useMemo<SelectWithSearchFlagOptionType[]>(
@@ -168,6 +169,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
             hasChanges={hasChanges}
             newlyUploaded={newlyUploaded}
             removed={removed}
+            retryPageCount={retryPageCount}
             loading={alterationLoading || runLoading}
             tooltip={t('knowledgeCompilation.updateStructureTooltip', {
               newlyUploaded,
@@ -193,6 +195,8 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       <RepresentationRenderer
         template={template}
         highlightNodeId={selectedEntityName || null}
+        totalEntities={data?.total_entities}
+        returnedEntities={data?.returned_entities}
       />
       <UpdateLogSheet
         open={updateSheetOpen}

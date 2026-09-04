@@ -65,7 +65,10 @@ type AnswerResult struct {
 // we still want the model to attempt an answer or plainly state it cannot — not
 // a canned "no evidence" string. Mirrors Python, which only short-circuits on
 // empty evidence when an explicit empty_response is configured.
-func FormalizeAnswer(ctx context.Context, db *gorm.DB, question string, kb *Kbinfos, partial, abstain, empty bool, caveat string, forceLLM bool) AnswerResult {
+// systemPrompt, when non-empty, is prepended to the final-answer system prompt
+// so the agentic graph honors a configured dialog system prompt (mirrors Python
+// RAGTools.system_prompt + formalize_answer).
+func FormalizeAnswer(ctx context.Context, db *gorm.DB, question string, kb *Kbinfos, partial, abstain, empty bool, caveat string, forceLLM bool, systemPrompt string) AnswerResult {
 	if abstain {
 		return AnswerResult{FinalAnswer: abstainMessage, Abstained: true}
 	}
@@ -102,6 +105,9 @@ func FormalizeAnswer(ctx context.Context, db *gorm.DB, question string, kb *Kbin
 	}
 
 	system := strings.ReplaceAll(finalAnswerSystem, "{cite_rules}", defaultCiteRules)
+	if strings.TrimSpace(systemPrompt) != "" {
+		system = strings.TrimSpace(systemPrompt) + "\n\n" + system
+	}
 	inv := chat.GetDefaultInvoker()
 	if inv == nil {
 		return AnswerResult{FinalAnswer: "I'm sorry, the chat invoker is not configured."}

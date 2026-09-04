@@ -28,6 +28,22 @@ import (
 
 const datasetLogDocumentID = "graph_raptor_x"
 
+// Dataset ingestion logs use the status values exposed by the Python API and
+// consumed by the shared frontend. The Go scheduler uses a different set of
+// internal terminal names, so translate them at the persistence boundary.
+func datasetLogOperationStatus(status string) string {
+	switch status {
+	case common.COMPLETED:
+		return "DONE"
+	case common.FAILED:
+		return "FAIL"
+	case common.STOPPED, common.STOPPING:
+		return "CANCEL"
+	default:
+		return status
+	}
+}
+
 func datasetCompileLogID(claimToken string) string {
 	sum := sha256.Sum256([]byte("wiki-dataset-log\x00" + claimToken))
 	return hex.EncodeToString(sum[:16])
@@ -39,7 +55,7 @@ func startDatasetCompileLog(ctx context.Context, tenantID, datasetID, claimToken
 	}
 	now := time.Now()
 	status := "1"
-	message := fmt.Sprintf("Created automatic Wiki dataset task for %d document event(s)", len(entries))
+	message := timestampProgressMessage(fmt.Sprintf("Created automatic Wiki dataset task for %d document event(s)", len(entries)))
 	entryData := make([]any, 0, len(entries))
 	for _, entry := range entries {
 		entryData = append(entryData, map[string]any{
@@ -82,7 +98,7 @@ func updateDatasetCompileLog(ctx context.Context, claimToken string, progress fl
 	if log.ProgressMsg != nil {
 		progressMessage = *log.ProgressMsg
 	}
-	progressMessage = appendProgressMessage(progressMessage, message)
+	progressMessage = appendProgressMessage(progressMessage, timestampProgressMessage(message))
 	duration := log.ProcessDuration
 	if log.ProcessBeginAt != nil {
 		duration = max(0, time.Since(*log.ProcessBeginAt).Seconds())
@@ -108,7 +124,7 @@ func finishDatasetCompileLog(ctx context.Context, claimToken, operationStatus, m
 	if log.ProgressMsg != nil {
 		progressMessage = *log.ProgressMsg
 	}
-	progressMessage = appendProgressMessage(progressMessage, message)
+	progressMessage = appendProgressMessage(progressMessage, timestampProgressMessage(message))
 	duration := log.ProcessDuration
 	if log.ProcessBeginAt != nil {
 		duration = max(0, time.Since(*log.ProcessBeginAt).Seconds())
@@ -117,6 +133,6 @@ func finishDatasetCompileLog(ctx context.Context, claimToken, operationStatus, m
 		"progress":         progress,
 		"progress_msg":     progressMessage,
 		"process_duration": duration,
-		"operation_status": operationStatus,
+		"operation_status": datasetLogOperationStatus(operationStatus),
 	}).Error
 }

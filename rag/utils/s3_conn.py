@@ -32,7 +32,7 @@ class RAGFlowS3:
         self.access_key = self.s3_config.get("access_key", None)
         self.secret_key = self.s3_config.get("secret_key", None)
         self.session_token = self.s3_config.get("session_token", None)
-        self.region_name = self.s3_config.get("region_name", None)
+        self.region_name = self.s3_config.get("region_name") or self.s3_config.get("region")
         self.endpoint_url = self.s3_config.get("endpoint_url", None)
         self.signature_version = self.s3_config.get("signature_version", None)
         self.addressing_style = self.s3_config.get("addressing_style", None)
@@ -44,7 +44,13 @@ class RAGFlowS3:
     def use_default_bucket(method):
         def wrapper(self, bucket, *args, **kwargs):
             # If there is a default bucket, use the default bucket
+            # but preserve the original bucket identifier so callers that
+            # need it as a key prefix (e.g. remove_bucket in single-bucket
+            # mode) can still scope the operation to the logical bucket.
+            original_bucket = bucket
             actual_bucket = self.bucket if self.bucket else bucket
+            if self.bucket:
+                kwargs["_orig_bucket"] = original_bucket
             return method(self, actual_bucket, *args, **kwargs)
 
         return wrapper
@@ -113,15 +119,15 @@ class RAGFlowS3:
         return exists
 
     def health(self):
-        bucket = self.bucket
-        fnm = "txtxtxtxt1"
-        fnm, binary = f"{self.prefix_path}/{fnm}" if self.prefix_path else fnm, b"_t@@@1"
-        if not self.bucket_exists(bucket):
-            self.conn[0].create_bucket(Bucket=bucket)
-            logging.debug(f"create bucket {bucket} ********")
-
-        r = self.conn[0].upload_fileobj(BytesIO(binary), bucket, fnm)
-        return r
+        try:
+            if self.bucket:
+                self.conn[0].head_bucket(Bucket=self.bucket)
+            else:
+                self.conn[0].list_buckets()
+            return True
+        except Exception as e:
+            logging.warning(f"S3 health check failed: {e}")
+            return False
 
     def get_properties(self, bucket, key):
         return {}
@@ -232,15 +238,75 @@ class RAGFlowS3:
             logging.exception(f"Fail to move {src_bucket}/{src_path} -> {dest_bucket}/{dest_path}")
             return False
 
+    def _delete_object_batches(self, bucket, pages):
+        """Delete the objects listed in ``pages`` (an iterable of ListObjects
+        pages) in batches. Handles versioned buckets by deleting every listed
+        version and delete marker. Raises RuntimeError if any key fails."""
+        for page in pages:
+            objects = []
+            for obj in page.get("Versions", []) + page.get("DeleteMarkers", []):
+                entry = {"Key": obj["Key"]}
+                if "VersionId" in obj:
+                    entry["VersionId"] = obj["VersionId"]
+                objects.append(entry)
+            if not objects:
+                continue
+            result = self.conn[0].delete_objects(Bucket=bucket, Delete={"Objects": objects})
+            if result.get("Errors"):
+                failed = ", ".join(err.get("Key", "?") for err in result["Errors"])
+                raise RuntimeError(f"S3 object deletion failed for keys: {failed}")
+
+    def _head_bucket_or_none(self, bucket):
+        """Return the head_bucket response, or None only when the bucket does
+        not exist. Other client errors (403 Forbidden, 400) propagate so the
+        caller's error handler reports them instead of treating the bucket as
+        absent."""
+        try:
+            return self.conn[0].head_bucket(Bucket=bucket)
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "") if isinstance(e.response, dict) else ""
+            if code in ("404", "NoSuchBucket", "NotFound"):
+                return None
+            raise
+
+    def _delete_all_versions(self, bucket, prefix=None):
+        """Delete every object version and delete marker under ``bucket``
+        (optionally scoped to ``prefix``). Raises if any batch fails."""
+        paginator = self.conn[0].get_paginator("list_object_versions")
+        pages = paginator.paginate(Bucket=bucket, Prefix=prefix) if prefix is not None else paginator.paginate(Bucket=bucket)
+        self._delete_object_batches(bucket, pages)
+
     @use_default_bucket
-    def rm_bucket(self, bucket, *args, **kwargs):
-        for conn in self.conn:
-            try:
-                if not conn.bucket_exists(bucket):
-                    continue
-                for o in conn.list_objects_v2(Bucket=bucket):
-                    conn.delete_object(bucket, o.object_name)
-                conn.delete_bucket(Bucket=bucket)
-                return
-            except Exception as e:
-                logging.error(f"Fail rm {bucket}: " + str(e))
+    def remove_bucket(self, bucket, **kwargs):
+        orig_bucket = kwargs.pop("_orig_bucket", None)
+        try:
+            if self.bucket:
+                # Single bucket mode: remove objects with the logical-bucket
+                # prefix, but do not remove the physical bucket. The prefix
+                # matches the write path: use_prefix_path only prepends the
+                # "{prefix_path}/{bucket}/" segment when prefix_path is set.
+                if not self.prefix_path:
+                    # A shared physical bucket with no prefix_path stores keys
+                    # without a logical-bucket segment, so no cleanup prefix
+                    # can scope this deletion to one knowledge base: run it
+                    # and the whole bucket's data would go. Refuse instead;
+                    # shared-bucket namespacing needs its own migration story.
+                    logging.error(
+                        "Refusing to remove logical bucket %s: STORAGE_S3 bucket is shared without a prefix_path, which cannot be scoped to one knowledge base",
+                        orig_bucket or bucket,
+                    )
+                    return
+                prefix = f"{self.prefix_path}/{orig_bucket}/" if orig_bucket else f"{self.prefix_path}/"
+                self._delete_all_versions(bucket, prefix)
+            else:
+                if self._head_bucket_or_none(bucket) is None:
+                    return
+                self._delete_all_versions(bucket)
+                self.conn[0].delete_bucket(Bucket=bucket)
+        except Exception:
+            # Storage deletions must not fail silently: lifecycle callers
+            # (knowledge-base and account deletion) remove metadata after this
+            # returns, so re-raise after logging the failure mode. str(e) is
+            # omitted because S3 error responses can embed signed request URLs.
+            logging.exception(f"Fail to remove bucket {bucket}")
+            raise

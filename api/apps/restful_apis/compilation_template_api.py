@@ -16,7 +16,7 @@
 
 from quart import Response
 
-from api.apps import current_user, login_required
+from api.apps import login_required
 from api.apps.restful_apis.utils.compilation_template_validation import validate_template_payload
 from api.db.services.compilation_template_service import CompilationTemplateService
 from api.utils.api_utils import get_json_result, server_error_response
@@ -48,7 +48,6 @@ def list_builtin_templates() -> Response:
                 }
                 for template in CompilationTemplateService.load_builtins_from_files()
             ]
-        templates = CompilationTemplateService.fill_default_llm_for_templates(templates, current_user.id)
         return get_json_result(data=templates)
     except Exception as exc:
         return server_error_response(exc)

@@ -118,18 +118,35 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 		t.Errorf("MinerU.Net doc_parse suffix=%q", minerU.URLSuffix.DocumentParse)
 	}
 
-	paddleOCR := pm.FindProvider("PaddleOCR.Net")
+	paddleOCR := pm.FindProvider("PaddleOCR")
 	if paddleOCR == nil {
-		t.Fatal("PaddleOCR.Net provider not found")
+		t.Fatal("PaddleOCR provider not found")
 	}
 	if _, ok := paddleOCR.ModelDriver.(*PaddleOCRModel); !ok {
-		t.Fatalf("PaddleOCR.Net ModelDriver=%T, want *models.PaddleOCRModel", paddleOCR.ModelDriver)
+		t.Fatalf("PaddleOCR ModelDriver=%T, want *models.PaddleOCRModel", paddleOCR.ModelDriver)
 	}
-	if paddleOCR.Class != "paddleocr.net" {
-		t.Errorf("PaddleOCR.Net class=%q", paddleOCR.Class)
+	if paddleOCR.Class != "paddleocr" {
+		t.Errorf("PaddleOCR class=%q", paddleOCR.Class)
 	}
 	if paddleOCR.URLSuffix.OCR != "v2/ocr/jobs" {
-		t.Errorf("PaddleOCR.Net OCR suffix=%q", paddleOCR.URLSuffix.OCR)
+		t.Errorf("PaddleOCR OCR suffix=%q", paddleOCR.URLSuffix.OCR)
+	}
+}
+
+func TestBedrockConfigPreservesEmbeddingMaxTokens(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "bedrock.json")
+	defer restore()
+
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	model, err := GetProviderManager().GetModelByName("Bedrock", "cohere.embed-english-v3")
+	if err != nil {
+		t.Fatalf("GetModelByName: %v", err)
+	}
+	if model.MaxTokens == nil || *model.MaxTokens != 512 {
+		t.Fatalf("MaxTokens = %v, want 512", model.MaxTokens)
 	}
 }
 
@@ -155,15 +172,15 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 		t.Errorf("MinerU doc_parse suffix=%q", minerU.URLSuffix.DocumentParse)
 	}
 
-	paddleOCR := pm.FindProvider("PaddleOCR")
+	paddleOCR := pm.FindProvider("PaddleOCR.local")
 	if paddleOCR == nil {
-		t.Fatal("PaddleOCR provider not found")
+		t.Fatal("PaddleOCR.local provider not found")
 	}
 	if _, ok := paddleOCR.ModelDriver.(*PaddleOCRLocalModel); !ok {
-		t.Fatalf("PaddleOCR ModelDriver=%T, want *models.PaddleOCRLocalModel", paddleOCR.ModelDriver)
+		t.Fatalf("PaddleOCR.local ModelDriver=%T, want *models.PaddleOCRLocalModel", paddleOCR.ModelDriver)
 	}
 	if paddleOCR.URLSuffix.OCR != "layout-parsing" {
-		t.Errorf("PaddleOCR OCR suffix=%q", paddleOCR.URLSuffix.OCR)
+		t.Errorf("PaddleOCR.local OCR suffix=%q", paddleOCR.URLSuffix.OCR)
 	}
 }
 
@@ -289,22 +306,22 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName: %v", err)
 	}
-	if *model.MaxOutput != 32768 || *model.ContentLength != 131072 {
-		t.Errorf("deepseek/deepseek-r1 max_output=%d content_length=%d", *model.MaxOutput, *model.ContentLength)
+	if *model.MaxOutput != 32768 || *model.ContextLength != 131072 {
+		t.Errorf("deepseek/deepseek-r1 max_output=%d context_length=%d", *model.MaxOutput, *model.ContextLength)
 	}
 	model, err = pm.GetModelByName("ppio", "deepseek/deepseek-v4-pro")
 	if err != nil {
 		t.Fatalf("GetModelByName v4 pro: %v", err)
 	}
-	if *model.MaxOutput != 393216 || *model.ContentLength != 1048576 {
-		t.Errorf("deepseek/deepseek-v4-pro max_output=%d content_length=%d", *model.MaxOutput, *model.ContentLength)
+	if *model.MaxOutput != 393216 || *model.ContextLength != 1048576 {
+		t.Errorf("deepseek/deepseek-v4-pro max_output=%d context_length=%d", *model.MaxOutput, *model.ContextLength)
 	}
 	model, err = pm.GetModelByName("ppio", "deepseek/deepseek-v4-flash")
 	if err != nil {
 		t.Fatalf("GetModelByName v4 flash: %v", err)
 	}
-	if *model.MaxOutput != 393216 || *model.ContentLength != 1048576 {
-		t.Errorf("deepseek/deepseek-v4-flash max_output=%d content_length=%d", *model.MaxOutput, *model.ContentLength)
+	if *model.MaxOutput != 393216 || *model.ContextLength != 1048576 {
+		t.Errorf("deepseek/deepseek-v4-flash max_output=%d context_length=%d", *model.MaxOutput, *model.ContextLength)
 	}
 	if !model.ModelTypeMap["chat"] {
 		t.Errorf("deepseek/deepseek-v4-flash missing chat type map")
@@ -367,8 +384,8 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName DeepSeek-V4-Pro: %v", err)
 	}
-	if *deepSeekV4Pro.MaxOutput != 393216 || *deepSeekV4Pro.ContentLength != 1048576 {
-		t.Errorf("DeepSeek-V4-Pro max_output=%d content_length=%d", *deepSeekV4Pro.MaxOutput, *deepSeekV4Pro.ContentLength)
+	if *deepSeekV4Pro.MaxOutput != 393216 || *deepSeekV4Pro.ContextLength != 1048576 {
+		t.Errorf("DeepSeek-V4-Pro max_output=%d context_length=%d", *deepSeekV4Pro.MaxOutput, *deepSeekV4Pro.ContextLength)
 	}
 	if !deepSeekV4Pro.ModelTypeMap["chat"] {
 		t.Errorf("DeepSeek-V4-Pro model types=%v, want chat", deepSeekV4Pro.ModelTypes)
@@ -378,8 +395,8 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName Kimi-K2.6: %v", err)
 	}
-	if *kimiK26.MaxOutput != 65536 || *kimiK26.ContentLength != 262144 {
-		t.Errorf("Kimi-K2.6 max_output=%d content_length=%d", *kimiK26.MaxOutput, *kimiK26.ContentLength)
+	if *kimiK26.MaxOutput != 65536 || *kimiK26.ContextLength != 262144 {
+		t.Errorf("Kimi-K2.6 max_output=%d context_length=%d", *kimiK26.MaxOutput, *kimiK26.ContextLength)
 	}
 	if !kimiK26.ModelTypeMap["chat"] || !kimiK26.ModelTypeMap["vision"] {
 		t.Errorf("Kimi-K2.6 model types=%v, want chat+vision", kimiK26.ModelTypes)
@@ -389,7 +406,7 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName GLM-5.1: %v", err)
 	}
-	if *glm51.MaxOutput != 128000 || *glm51.ContentLength != 200000 {
-		t.Errorf("GLM-5.1 max_output=%d content_length=%d", *glm51.MaxOutput, *glm51.ContentLength)
+	if *glm51.MaxOutput != 128000 || *glm51.ContextLength != 200000 {
+		t.Errorf("GLM-5.1 max_output=%d context_length=%d", *glm51.MaxOutput, *glm51.ContextLength)
 	}
 }

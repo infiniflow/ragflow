@@ -161,7 +161,9 @@ func (c *BitbucketConnector) OpenSync(ctx context.Context, request SyncRequest) 
 		windowStart: request.WindowStart,
 		windowEnd:   request.WindowEnd,
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -592,7 +594,10 @@ func (s *bitbucketSyncSession) nextDocumentPage(ctx context.Context) ([]bitbucke
 			sourceID:   doc.SourceID,
 		})
 	}
-	documents = s.filterResumedDocuments(repo, pageURL, documents)
+	documents, err = s.filterResumedDocuments(repo, pageURL, documents)
+	if err != nil {
+		return nil, err
+	}
 	if page.Next == "" || len(page.Values) == 0 {
 		s.advanceRepo()
 	} else {
@@ -609,16 +614,19 @@ func (s *bitbucketSyncSession) advanceRepo() {
 }
 
 // applyResume advances a sync session to the last committed Bitbucket position.
-func (s *bitbucketSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+func (s *bitbucketSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("bitbucket sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor bitbucketSyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return
+		return fmt.Errorf("bitbucket sync cursor is invalid: %w", ErrSyncResumeInvalid)
 	}
 	if cursor.RepoSlug == "" {
-		return
+		return fmt.Errorf("bitbucket sync cursor has no resume anchor: %w", ErrSyncResumeInvalid)
 	}
 	for index, repo := range s.repos {
 		if repo != cursor.RepoSlug {
@@ -630,35 +638,32 @@ func (s *bitbucketSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 		s.resumePageURL = cursor.PageURL
 		s.resumeOffset = cursor.PageOffset
 		s.resumeSource = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
-		return
+		if s.resumeSource == "" {
+			return fmt.Errorf("bitbucket sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+		}
+		return nil
 	}
+	return fmt.Errorf("bitbucket resume repo %q was not found in the current listing: %w", cursor.RepoSlug, ErrSyncResumeInvalid)
 }
 
 // filterResumedDocuments drops documents through the committed checkpoint.
-func (s *bitbucketSyncSession) filterResumedDocuments(repo, pageURL string, candidates []bitbucketBufferedDocument) []bitbucketBufferedDocument {
-	if s.resumeRepo == "" || repo != s.resumeRepo || pageURL != s.resumePageURL {
-		return candidates
+func (s *bitbucketSyncSession) filterResumedDocuments(repo, pageURL string, candidates []bitbucketBufferedDocument) ([]bitbucketBufferedDocument, error) {
+	if s.resumeRepo == "" {
+		return candidates, nil
+	}
+	if repo != s.resumeRepo || pageURL != s.resumePageURL {
+		return nil, fmt.Errorf("bitbucket resume page no longer matches checkpoint page: %w", ErrSyncResumeInvalid)
 	}
 	if s.resumeSource != "" {
 		for index, candidate := range candidates {
 			if candidate.sourceID == s.resumeSource {
 				s.clearResume()
-				return candidates[index+1:]
+				return candidates[index+1:], nil
 			}
 		}
+		return nil, fmt.Errorf("bitbucket resume anchor %q was not found on %s: %w", s.resumeSource, pageURL, ErrSyncResumeInvalid)
 	}
-	if s.resumeOffset > 0 {
-		filtered := candidates[:0]
-		for _, candidate := range candidates {
-			if candidate.offset > s.resumeOffset {
-				filtered = append(filtered, candidate)
-			}
-		}
-		s.clearResume()
-		return filtered
-	}
-	s.clearResume()
-	return candidates
+	return nil, fmt.Errorf("bitbucket sync cursor has no source anchor: %w", ErrSyncResumeInvalid)
 }
 
 func (s *bitbucketSyncSession) clearResume() {

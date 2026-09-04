@@ -42,6 +42,7 @@ def _load_generator(monkeypatch):
 
     token_utils = ModuleType("common.token_utils")
     token_utils.encoder = SimpleNamespace()
+    token_utils.get_encoder = lambda: token_utils.encoder
     token_utils.num_tokens_from_string = len
     monkeypatch.setitem(sys.modules, "common.token_utils", token_utils)
 

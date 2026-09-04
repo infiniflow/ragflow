@@ -18,20 +18,13 @@ import queritLogo from '@/assets/querit.png';
 import serplyLogo from '@/assets/serply.png';
 import tavilyLogo from '@/assets/svg/tavily.svg';
 import youcomLogo from '@/assets/svg/youcom.svg';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { WebSearchProvider } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import { prefixName } from '@/utils/form';
 import { useFormContext, useWatch } from 'react-hook-form';
 import PasswordInput from './originui/password-input';
-import {
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from './ui/form';
+import { SelectWithSearch } from './originui/select-with-search';
 
 interface IProps {
   prefix?: string;
@@ -119,55 +112,44 @@ export function WebSearchFormField({ prefix = '' }: IProps) {
 
   return (
     <>
-      <FormField
-        control={form.control}
+      <RAGFlowFormItem
         name={providerName}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel tooltip={t('webSearchProviderTip')}>
-              {t('webSearchProvider')}
-            </FormLabel>
-            <FormControl>
-              <RAGFlowSelect
-                {...field}
-                value={field.value}
-                options={providerOptions}
-                placeholder={t('webSearchProviderPlaceholder')}
-                triggerTestId="web-search-provider"
-                optionTestIdPrefix="web-search-provider-option"
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
+        label={t('webSearchProvider')}
+        tooltip={t('webSearchProviderTip')}
+      >
+        {(field) => (
+          <SelectWithSearch
+            value={field.value}
+            onChange={field.onChange}
+            options={providerOptions}
+            placeholder={t('webSearchProviderPlaceholder')}
+            allowClear
+            testId="web-search-provider"
+            optionTestIdPrefix="web-search-provider-option"
+          />
         )}
-      />
+      </RAGFlowFormItem>
       {keyConfig && (
-        <FormField
+        <RAGFlowFormItem
           key={selectedProvider}
-          control={form.control}
           name={prefixName(prefix, keyConfig.name)}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel tooltip={t(keyConfig.tip)}>
-                {keyConfig.label}
-              </FormLabel>
-              <FormControl>
-                <PasswordInput
-                  {...field}
-                  value={field.value ?? ''}
-                  placeholder={t(keyConfig.placeholder)}
-                  autoComplete="new-password"
-                />
-              </FormControl>
-              <FormDescription>
-                <a href={keyConfig.helpUrl} target="_blank" rel="noreferrer">
-                  {t('tavilyApiKeyHelp')}
-                </a>
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
+          label={keyConfig.label}
+          tooltip={t(keyConfig.tip)}
+          description={
+            <a href={keyConfig.helpUrl} target="_blank" rel="noreferrer">
+              {t('tavilyApiKeyHelp')}
+            </a>
+          }
+        >
+          {(field) => (
+            <PasswordInput
+              {...field}
+              value={field.value ?? ''}
+              placeholder={t(keyConfig.placeholder)}
+              autoComplete="new-password"
+            />
           )}
-        />
+        </RAGFlowFormItem>
       )}
     </>
   );

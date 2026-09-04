@@ -81,8 +81,8 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
-		return parseSpreadsheetWithTCADP(
-			filename, data, "XLS",
+		return parseWithTCADP(
+			ctx, filename, data, "XLS",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 			p.OutputFormat,
@@ -108,13 +108,20 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 
 	var html strings.Builder
+	var warnings []string
 	for _, sheet := range sheets {
-		html.WriteString(renderSheetTables(f, sheet, chunkRows))
+		rendered, sheetWarnings, err := renderSheetTables(f, sheet, chunkRows)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
+		}
+		html.WriteString(rendered)
+		warnings = append(warnings, sheetWarnings...)
 	}
 
 	return ParseResult{
 		OutputFormat: "html",
 		File:         map[string]any{"name": filename, "format": "xls"},
 		HTML:         html.String(),
+		Warnings:     warnings,
 	}
 }

@@ -702,9 +702,8 @@ class GithubConnector(CheckpointedConnectorWithPermSyncGH[GithubConnectorCheckpo
                             continue
 
                         try:
-                            test_repo = self.github_client.get_repo(f"{self.repo_owner}/{repo_name}")
+                            self.github_client.get_repo(f"{self.repo_owner}/{repo_name}")
                             logging.info(f"Successfully accessed repository: {self.repo_owner}/{repo_name}")
-                            test_repo.get_contents("")
                             valid_repos = True
                             # If at least one repo is valid, we can proceed
                             break
@@ -717,8 +716,7 @@ class GithubConnector(CheckpointedConnectorWithPermSyncGH[GithubConnectorCheckpo
                         raise ConnectorValidationError(error_msg)
                 else:
                     # Single repository (backward compatibility)
-                    test_repo = self.github_client.get_repo(f"{self.repo_owner}/{self.repositories}")
-                    test_repo.get_contents("")
+                    self.github_client.get_repo(f"{self.repo_owner}/{self.repositories}")
             else:
                 # Try to get organization first
                 try:

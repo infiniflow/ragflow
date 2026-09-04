@@ -22,7 +22,9 @@ export default {
       stop: '停止',
       resume: '恢复',
       namePlaceholder: '请输入名称',
+      nameSlashError: '名称不能包含 "/"',
       descriptionPlaceholder: '请输入描述',
+      descriptionMaxLength: '描述最多 {{max}} 个字符。',
       next: '下一步',
       create: '创建',
       edit: '编辑',
@@ -42,6 +44,7 @@ export default {
       viewLess: '收起',
       comingSoon: '即将推出',
       download: '下载',
+      figure: '图',
       close: '关闭',
       preview: '预览',
       move: '移动',
@@ -63,6 +66,7 @@ export default {
       search: '搜索',
       reset: '重置',
       noDataFound: '没有找到数据。',
+      searchOrEnterToAdd: '搜索或输入后回车添加',
       noData: '暂无数据',
       bedrockCredentialsHint:
         '提示：ACCESS KEY / SECRET KEY 可留空，以启用 AWS IAM 自动验证。',
@@ -477,7 +481,7 @@ export default {
         '请完成召回测试：确保你的配置可以从数据库召回正确的文本块。如果你调整了这里的默认设置，比如关键词相似度权重，请注意这里的改动不会被自动保存。请务必在聊天助手设置或者召回算子设置处同步更新相关设置。',
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
-        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 0.2，也就是说文本块的混合相似度得分至少 20 才会被召回。',
+        '我们使用混合相似度得分来评估两行文本之间的距离。 它是加权关键词相似度和向量余弦相似度。 如果查询和块之间的相似度小于此阈值，则该块将被过滤掉。默认设置为 20，也就是说文本块的混合相似度得分至少 20 才会被召回。',
       vectorSimilarityWeight: '向量相似度权重',
       vectorSimilarityWeightTip:
         '我们使用混合相似性评分来评估两行文本之间的距离。它是加权关键字相似性和矢量余弦相似性或 Rerank 得分（0〜1）。两个权重的总和为1.0。',
@@ -500,6 +504,7 @@ export default {
       runningStatus2: '取消',
       runningStatus3: '成功',
       runningStatus4: '失败',
+      runningStatusQueued: '排队中',
       pageRanges: '页码范围',
       pageRangesTip:
         '页码范围：定义需要解析的页面范围。 不包含在这些范围内的页面将被忽略。',
@@ -507,9 +512,11 @@ export default {
       fromMessage: '缺少起始页码',
       toPlaceholder: '到',
       toMessage: '缺少结束页码（不包含）',
+      pageRangeFromInvalid: '起始页码必须为大于 0 的整数',
+      pageRangeToInvalid: '结束页码必须为不小于起始页码的整数',
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
-        '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dev/select_pdf_parser。',
+        '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
       taskPageSize: '任务页面大小',
       taskPageSizeMessage: '请输入您的任务页面大小！',
       taskPageSizeTip: `如果使用布局识别，PDF 文件将被分成连续的组。 布局分析将在组之间并行执行，以提高处理速度。 “任务页面大小”决定组的大小。 页面大小越大，将页面之间的连续文本分割成不同块的机会就越低。`,
@@ -539,7 +546,7 @@ export default {
         '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
 
       html4excel: '表格转 HTML',
-      html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dev/enable_excel2html。`,
+      html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
       autoKeywords: '自动关键词提取',
       autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
       autoQuestions: '自动问题提取',
@@ -616,6 +623,9 @@ export default {
       rebuildTip: '从所有已关联的数据源重新下载文件并再次解析。',
       baseInfo: '基础信息',
       globalIndex: '全局索引',
+      globalIndexModel: '索引模型',
+      globalIndexModelTip:
+        '用于生成自动元数据、自动关键词和自动问题。模型性能会影响生成质量。',
       dataSource: '数据源',
       linkSourceSetTip: '管理与此知识库的数据源链接',
       linkDataSource: '链接数据源',
@@ -826,7 +836,7 @@ export default {
       createTemplate: '创建模板',
       scopeFile: '文件',
       pageRank: '页面排名',
-      pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dev/set_page_rank。`,
+      pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '标签',
       frequency: '频次',
       searchTags: '搜索标签',
@@ -844,7 +854,7 @@ export default {
       <li>在给你的知识库文本块批量打标签之前，你需要先生成标签集作为样本。 </li>
       <li>自动关键词提取功能中的关键词由 LLM 生成，此过程相对耗时，并且会产生一定的 Token 消耗。 </li>
       </ul>
-      <p> 详见：https://ragflow.io/docs/dev/use_tag_sets </p>
+      <p> 详见：https://ragflow.io/docs/dataset_configuration#basic-information </p>
       `,
       tags: '标签',
       addTag: '增加标签',
@@ -931,7 +941,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       emptyResponse: '空回复',
       emptyResponsePlaceholder: '在知识库中未找到您要寻找的答案！',
       emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。仅在思考模式是简单模式时候生效。`,
-      emptyResponseMessage: `当知识库中未检索到任何相关信息时，将触发空响应。由于未选择任何知识库，因此请清除“空响应”。`,
+      emptyResponseMessage: `当知识库中未检索到任何相关信息时，将触发空回复。由于未选择任何知识库，因此请清除“空回复”。`,
       setAnOpener: '设置开场白',
       setAnOpenerInitial: `你好！ 我是你的助理，有什么可以帮到你的吗？`,
       setAnOpenerTip: '您想如何欢迎您的客户？',
@@ -960,10 +970,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '当LLM回答问题时，你需要LLM遵循的说明，比如角色设计、答案长度和答案语言等。如果您的模型原生支持在问答中推理，可以通过 //no_thinking 关闭自动推理。',
       topN: 'Top N',
       topNTip: `并非所有相似度得分高于“相似度阈值”的块都会被提供给大语言模型。 LLM 只能看到这些“Top N”块。`,
+      rerankCandidatesCount: '重排候选数',
+      rerankCandidatesCountTip: '用于重排的候选分块数量。',
+      rerankCandidatesCountValidation: '重排候选数必须大于或等于 Top N。',
       variable: '变量',
       variableTip: `你可以通过对话 API，并配合变量设置来动态调整大模型的系统提示词。
       {knowledge}为系统预留变量，代表从指定知识库召回的文本块。
-      “系统提示词”中的所有变量都必须用大括号{}括起来。详见 https://ragflow.io/docs/dev/set_chat_variables。`,
+      “系统提示词”中的所有变量都必须用大括号{}括起来。详见 https://ragflow.io/docs/chat_configuration#system-prompt。`,
       add: '新增',
       key: '关键字',
       variableKeyMessage: '请输入变量 key',
@@ -1003,11 +1016,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       thinking: '思考中...',
+      thinkingMode: '思考',
       thought: '思考完成',
       thinkingDefault: '系统默认',
       thinkingEnabled: '开启',
       thinkingDisabled: '关闭',
-      thinkingLevelNone: 'None',
+      thinkingLevelNone: 'Naive',
       thinkingLevelLow: 'Low',
       thinkingLevelLowDescription: '快速响应',
       thinkingLevelMedium: 'Medium',
@@ -1040,6 +1054,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       created: '创建于',
       action: '操作',
       embedModalTitle: '嵌入网站',
+      embedUserIdPlaceholder: '例如：user-001',
+      embedUserIdTooltip:
+        '用于标识嵌入页面终端用户的字符串，最长 255 个字符，会作为 userId 参数附加到嵌入链接中。',
       published: '已发布',
       publishedTooltip:
         '在嵌入中使用已发布的版本。启用后，生成的 URL 将包含 release=true。',
@@ -1092,7 +1109,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
       queritApiKeyMessage: '请输入你的 Querit API Key',
-      serplyApiKeyTip: '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
+      serplyApiKeyTip:
+        '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入你的 Serply API Key',
       youcomApiKeyTip:
         '可选。You.com 在限速端点上无需 API Key 即可使用；填写 Key 可解除限速。',
@@ -1249,6 +1267,17 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       sharepointSiteUrlTip:
         '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
+      azureDevOpsPatTip: '需要具有 Code (Read) 权限的个人访问令牌。',
+      azureDevOpsOrganizationTip:
+        '组织名称（例如 contoso），或自托管 Azure DevOps Server 的集合地址（例如 https://tfs.contoso.com/DefaultCollection）。',
+      azureDevOpsProjectsTip:
+        '以逗号分隔的团队项目名称。例如：Project1,Project2',
+      azureDevOpsRepositoriesTip:
+        '以逗号分隔的仓库。可使用 project/repo 形式以区分同名仓库。',
+      azureDevOpsOrganizationScopeTip: '将索引该组织中令牌可见的所有仓库。',
+      azureDevOpsContentTypesTip:
+        '选择要索引的内容：源文件、拉取请求，或两者。',
+      azure_devopsDescription: '连接 Azure DevOps 以同步仓库文件和拉取请求。',
       bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
       bitbucketTopWorkspaceTip:
         '要索引的 Bitbucket 工作区（例如：https://bitbucket.org/atlassian/workspace 中的 "atlassian"）',
@@ -1377,6 +1406,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceFieldWikiBaseUrl: 'Wiki 基础 URL',
       dataSourceFieldIsCloud: '是否为云版本',
       dataSourceFieldIndexMode: '索引模式',
+      dataSourceFieldAzureDevOpsPat: 'Azure DevOps 个人访问令牌',
+      dataSourceFieldAzureDevOpsOrganization: 'Azure DevOps 组织',
+      dataSourceFieldAzureDevOpsRepositories: '仓库',
+      dataSourceFieldAzureDevOpsContentTypes: '内容类型',
+      dataSourceOptionOrganization: '组织',
+      dataSourceOptionCode: '代码',
+      dataSourceOptionPullRequests: '拉取请求',
+      dataSourceOptionBoth: '两者',
       dataSourceFieldPageId: '页面 ID',
       dataSourceFieldSpaceKey: '空间标识（Space Key）',
       dataSourceFieldIndexRecursively: '递归索引',
@@ -1696,6 +1733,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       instanceNameMessage: '请输入实例名称！',
       instanceNameTip: '用于在同一厂商下唯一标识该实例的名称。',
       instanceNamePlaceholder: '请输入实例名称',
+      instanceNameExists: '实例名称已存在',
       deleteInstance: '删除实例',
       modelName: '模型名称',
       modelID: '模型ID',
@@ -1871,6 +1909,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       listModelsEmpty: '暂无可用模型',
       listModelsLoading: '正在加载模型…',
       selectModelBeforeVerify: '请至少选择一个模型后再验证。',
+      selectModelBeforeSave: '请先发现并选择至少一个模型后再保存。',
       addCustomModel: '添加自定义模型',
       addCustomModelTitle: '添加自定义模型',
       batchAddModels: '添加全部模型',
@@ -1915,7 +1954,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       fieldRule: '规则',
       addField: '添加字段',
       editField: '编辑字段',
-      selectFieldType: '选择字段类型',
+      selectFieldType: '选择或输入字段类型',
       fieldTypeExists: '该字段类型已存在',
       example: '示例',
       instruction: 'Instruction',
@@ -1953,11 +1992,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       compilationTitleSuffix: '的数据集',
       llmWiki: 'Wiki',
       skills: 'To Skills',
-      navTree: 'PageIndex',
+      navTree: 'Tree/Page index',
       graph: 'Graph',
       structureMindmap: 'Mindmap',
       structureTimeline: 'Timeline',
-      noWikiPages: '暂无 Wiki 页面',
+      noWikiPages: '暂无 Wiki',
       noSkills: '暂无 Skills',
       noStructureGraph: '暂无 Graph',
       noStructureMindmap: '暂无 Mindmap',
@@ -1966,6 +2005,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       topics: 'Topic',
       selectArtifact: '从目录中选择一个条目以查看详情',
       searchEntity: '搜索 Entity',
+      graphEntityCount: '实体 {{returned}} / {{total}}',
       sourceDocuments: '来源文档',
       clearWikiTitle: '清空 Wiki',
       clearWikiDescription:
@@ -2004,6 +2044,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       skillDeleteDescription: '确定要删除该 Skill 吗？',
       navTitle: 'PageIndex',
       navEmpty: '暂无导航节点',
+      navLoadFailed: '加载目录树失败',
+      navChildLoadFailed: '加载子节点失败',
       navLoading: '加载中...',
       navSelectNode: '选择子节点以查看详情',
       navNoDescription: '暂无描述',
@@ -2202,11 +2244,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
       flattenMediaToText: '禁用视觉模型',
       flattenMediaToTextTip: '将图片和表格区块按普通文本处理，并跳过视觉增强。',
+      enableChildrenDelimiters: '子块用于检索',
       merge: '合并',
       split: '拆分',
       script: '脚本',
       iterationItemDescription:
         '它是迭代过程中的当前元素，可以被后续流程引用和操作。',
+      maxConcurrency: '最大并发数',
+      maxConcurrencyTip: '0 或 1 表示逐项串行。大于 1 时按该数量并行处理。',
       guidingQuestion: '引导问题',
       onFailure: '异常时',
       userPromptDefaultValue:
@@ -2224,6 +2269,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       maxRounds: '最大反思轮数',
       delayAfterError: '错误后延迟',
       maxRetries: '最大重试轮数',
+      toolTimeout: '工具调用超时',
+      toolTimeoutTip:
+        '单次工具调用（含 MCP 工具）的超时秒数。长时间运行的工具请调大该值。',
       maxSteps: '最大步数',
       headless: '无头模式',
       enableDefaultExtensions: '启用默认扩展',
@@ -2351,6 +2399,17 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       searXNG: 'SearXNG',
       searXNGDescription:
         '该组件通过您提供的 SearXNG 实例地址进行搜索。请设置 Top N 和实例 URL。',
+      youComSearch: 'You.com',
+      youComSearchDescription:
+        '基于 You.com 自有索引的网络搜索组件。每条结果附带从页面提取的多段文本，而不只是一段摘要。默认无需 API Key 即可使用（免密钥免费额度）；配置 Key 可解除限速。',
+      youComFreshness: '时间范围',
+      youComFreshnessTip: '按发布时间的新旧程度筛选结果。',
+      youComFreshnessAny: '不限时间',
+      youComFreshnessDay: '一天内',
+      youComFreshnessWeek: '一周内',
+      youComFreshnessMonth: '一个月内',
+      youComFreshnessYear: '一年内',
+      youComApiKeyTip: '可选。留空则使用免密钥的免费额度。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       browser: 'Browser',
@@ -2698,6 +2757,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       optional: '可选项',
       pasteFileLink: '粘贴文件链接',
       testRun: '试运行',
+      debugRunLimits:
+        '调试运行用于验证流程能否正常执行：PDF 仅解析前 2 页（其他格式解析全部）；若含分块节点，仅取前 3 个分块预览；若含知识编译节点，仅本地验证、不会触发知识库重建或通知。',
       template: '模板转换',
       templateDescription:
         '该组件用于排版各种组件的输出。1、支持 Jinja2 模板,会先将输入转为对象后进行模版渲染2、同时保留原使用{参数}字符串替换的方式',
@@ -2870,8 +2931,18 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       },
       parser: '解析器',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
-      tokenizer: '分词器',
-      tokenizerRequired: '请先添加 Tokenizer 节点',
+      tokenizer: '索引器',
+      tokenizerRequired: '请先添加索引器节点',
+      nodeFormInvalid: '无法保存：“{{name}}” 配置有误，请先修正',
+      agentModelMissing: '无法保存：“{{name}}” 未选择模型，请先选择',
+      retrievalDatasetRequired: '请选择知识库',
+      retrievalDatasetMissing: '无法保存：“{{name}}” 未选择知识库，请先选择',
+      retrievalTemplateDatasetHint:
+        '该模板包含 {{count}} 处未绑定知识库的数据集检索。请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
+      retrievalMemoryRequired: '请选择记忆库',
+      retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆库，请先选择',
+      retrievalTemplateMemoryHint:
+        '该模板包含 {{count}} 处未绑定记忆库的记忆检索。请在下方选择一个记忆库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       tokenChunker: '按 Token 分块',
@@ -2886,7 +2957,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       compiler: '编译器',
       compilerDescription: '使用知识编译模板将文档块编译为知识工件。',
       outputFormat: '输出格式',
-      fileFormats: '文件类型',
       fileFormatOptions: {
         pdf: 'PDF',
         spreadsheet: '表格',
@@ -2902,7 +2972,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         video: '视频',
       },
       fields: '字段',
-      addParser: '增加解析器',
       rule: '规则',
       addRule: '增加规则',
       addRegularExpressions: '增加正则表达式',
@@ -2938,7 +3007,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
 从给定的文本内容中提取最重要的关键词/短语。
 
 要求
-- 总结文本内容，并给出最重要的5个关键词/短语。
+- 总结文本内容，并给出最重要的{{ topn }}个关键词/短语。
 - 关键词必须与给定的文本内容使用相同的语言。
 - 关键词之间用英文逗号分隔。
 - 仅输出关键词。`,
@@ -2946,10 +3015,10 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
 你是一名文本分析员。
 
 任务
-针对给定的文本内容提出3个问题。
+针对给定的文本内容提出{{ topn }}个问题。
 
 要求
-- 理解并总结文本内容，并提出最重要的3个问题。
+- 理解并总结文本内容，并提出最重要的{{ topn }}个问题。
 - 问题的含义不应重叠。
 - 问题应尽可能涵盖文本的主要内容。
 - 问题必须与给定的文本内容使用相同的语言。

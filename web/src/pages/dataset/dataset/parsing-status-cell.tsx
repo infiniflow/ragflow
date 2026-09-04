@@ -14,15 +14,15 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { CircleQuestionMark, CircleX } from 'lucide-react';
+import { CircleQuestionMark, CircleX, Clock3 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DocumentType, RunningStatus } from './constant';
+import { DocumentType, IngestionTaskStatus, RunningStatus } from './constant';
 import { ParsingCard } from './parsing-card';
 import { ReparseDialog } from './reparse-dialog';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
-import { isParserRunning } from './utils';
+import { isDocumentProcessing } from './utils';
 const IconMap = {
   [RunningStatus.UNSTART]: (
     <IconFontFill name="play" className="text-accent-primary size-[1em]" />
@@ -109,6 +109,7 @@ export function ParsingStatusCell({
   record: IDocumentInfo;
   showLog: (record: IDocumentInfo) => void;
 } & UseChangeDocumentParserShowType) {
+  const { t } = useTranslation();
   const { run, progress, chunk_count, id } = record;
   const operationIcon = IconMap[run];
   const p = Number((progress * 100).toFixed(2));
@@ -118,7 +119,11 @@ export function ParsingStatusCell({
     showModal: showReparseDialogModal,
     hideModal: hideReparseDialogModal,
   } = useHandleRunDocumentByIds(id);
-  const isRunning = isParserRunning(run);
+  const isRunning = isDocumentProcessing(record);
+  const isQueued =
+    record.ingestion_status === IngestionTaskStatus.CREATED ||
+    record.ingestion_status === IngestionTaskStatus.SCHEDULED;
+  const isStopping = record.ingestion_status === IngestionTaskStatus.STOPPING;
   const isZeroChunk = chunk_count === 0;
 
   const handleOperationIconClick = (option?: {
@@ -139,39 +144,49 @@ export function ParsingStatusCell({
     <section
       className="flex gap-8 items-center"
       data-testid="document-parse-status"
-      data-state={ParseStatusStateMap[run] ?? 'unknown'}
+      data-state={isQueued ? 'queued' : (ParseStatusStateMap[run] ?? 'unknown')}
     >
       {showParse && (
         <div className="flex items-center gap-2">
           <Separator orientation="vertical" className="h-[1em]" />
 
-          {isParserRunning(run) ? (
+          {isRunning ? (
             <>
-              <Button
-                size="auto"
-                variant="static"
-                onClick={() => handleShowLog(record)}
-              >
-                <Progress value={p} className="h-1 flex-1 min-w-10" />
-                <div className="flex items-center gap-1">
-                  {p}%
-                  <sup className="inline-flex">
-                    <CircleQuestionMark className="size-[1.25em]" />
-                  </sup>
-                </div>
-              </Button>
+              {isQueued ? (
+                <Button
+                  size="auto"
+                  variant="static"
+                  onClick={() => handleShowLog(record)}
+                >
+                  <Clock3 className="size-[1em]" />
+                  {t('knowledgeDetails.runningStatusQueued')}
+                </Button>
+              ) : (
+                <Button
+                  size="auto"
+                  variant="static"
+                  onClick={() => handleShowLog(record)}
+                >
+                  <Progress value={p} className="h-1 flex-1 min-w-10" />
+                  <div className="flex items-center gap-1">
+                    {p}%
+                    <span className="inline-flex items-center">
+                      <CircleQuestionMark className="size-[1em]" />
+                    </span>
+                  </div>
+                </Button>
+              )}
 
               <Button
                 variant="ghost"
                 size="icon-xs"
+                disabled={isStopping}
                 onClick={() => showReparseDialogModal()}
-                // onClick={
-                //   isZeroChunk || isRunning
-                //     ? handleOperationIconClick(false)
-                //     : () => {}
-                // }
               >
-                {operationIcon}
+                <CircleX
+                  color="rgba(var(--state-error))"
+                  className="size-[1em]"
+                />
               </Button>
             </>
           ) : (
@@ -197,7 +212,6 @@ export function ParsingStatusCell({
             (isZeroChunk && !record?.parser_config?.enable_metadata) ||
             isRunning
           }
-          // hidden={false}
           enable_metadata={record?.parser_config?.enable_metadata}
           handleOperationIconClick={handleOperationIconClick}
           chunk_num={chunk_count}

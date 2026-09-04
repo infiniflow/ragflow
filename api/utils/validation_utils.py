@@ -24,7 +24,7 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin
 from uuid import UUID
 
 from quart import Request
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator, ValidationInfo
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator, ValidationInfo
 from pydantic_core import PydanticCustomError
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
@@ -533,7 +533,7 @@ class UpdateDocumentReq(Base):
         """Validate an optional document parser method."""
         if chunk_method:
             # Validate chunk method if present
-            valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "tag"}
+            valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "audio", "tag"}
             if chunk_method not in valid_chunk_method:
                 raise PydanticCustomError("format_invalid", "`chunk_method` {chunk_method} doesn't exist", {"chunk_method": chunk_method})
 
@@ -981,8 +981,11 @@ class SearchDatasetReq(BaseModel):
     question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1), Field(...)]
     doc_ids: Annotated[list[str], Field(default=[])]
     page: Annotated[int, Field(default=1, ge=1)]
-    size: Annotated[int, Field(default=30, ge=1)]
-    top_k: Annotated[int, Field(default=1024, ge=1)]
+    page_size: Annotated[int | None, Field(default=None, ge=1, le=100)]
+    size: Annotated[int, Field(default=30, ge=1, le=100)]
+    rerank_candidates_count: Annotated[int, Field(default=64, ge=1)]
+    knn_top_k: Annotated[int, Field(default=1024, ge=1, le=2048, validation_alias=AliasChoices("knn_top_k", "top_k"))]
+    knn_num_candidates: Annotated[int, Field(default=2048, ge=1, le=10000)]
     similarity_threshold: Annotated[float, Field(default=0.0, ge=0.0, le=1.0)]
     vector_similarity_weight: Annotated[float, Field(default=0.3, ge=0.0, le=1.0)]
     use_kg: Annotated[bool, Field(default=False)]
@@ -993,6 +996,12 @@ class SearchDatasetReq(BaseModel):
     tenant_rerank_id: Annotated[str | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
     include_knowledge_compilation: Annotated[bool, Field(default=True)]
+
+    @model_validator(mode="after")
+    def validate_knn_parameters(self):
+        if self.knn_num_candidates < self.knn_top_k:
+            raise ValueError("knn_num_candidates must be greater than or equal to knn_top_k")
+        return self
 
 
 class SearchDatasetsReq(BaseModel):
@@ -1004,18 +1013,28 @@ class SearchDatasetsReq(BaseModel):
     question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1), Field(...)]
     doc_ids: Annotated[list[str], Field(default=[])]
     page: Annotated[int, Field(default=1, ge=1)]
-    size: Annotated[int, Field(default=30, ge=1)]
-    top_k: Annotated[int, Field(default=1024, ge=1)]
+    page_size: Annotated[int | None, Field(default=None, ge=1, le=100)]
+    size: Annotated[int, Field(default=30, ge=1, le=100)]
+    rerank_candidates_count: Annotated[int, Field(default=64, ge=1)]
+    knn_top_k: Annotated[int, Field(default=1024, ge=1, le=2048, validation_alias=AliasChoices("knn_top_k", "top_k"))]
+    knn_num_candidates: Annotated[int, Field(default=2048, ge=1, le=10000)]
     similarity_threshold: Annotated[float, Field(default=0.0, ge=0.0, le=1.0)]
     vector_similarity_weight: Annotated[float, Field(default=0.3, ge=0.0, le=1.0)]
     use_kg: Annotated[bool, Field(default=False)]
     cross_languages: Annotated[list[str], Field(default=[])]
     keyword: Annotated[bool, Field(default=False)]
+    highlight: Annotated[bool, Field(default=False)]
     search_id: Annotated[str | None, Field(default=None)]
     rerank_id: Annotated[str | None, Field(default=None)]
     tenant_rerank_id: Annotated[str | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
     include_knowledge_compilation: Annotated[bool, Field(default=True)]
+
+    @model_validator(mode="after")
+    def validate_knn_parameters(self):
+        if self.knn_num_candidates < self.knn_top_k:
+            raise ValueError("knn_num_candidates must be greater than or equal to knn_top_k")
+        return self
 
 
 class BaseListReq(BaseModel):
@@ -1197,6 +1216,11 @@ def validate_chunk_method(doc, chunk_method=None):
     """
     if chunk_method is not None and len(chunk_method) == 0:  # will not be detected in UpdateDocumentReq
         return "`chunk_method` (empty string) is not valid", RetCode.DATA_ERROR
-    if doc.type == FileType.VISUAL or re.search(r"\.(ppt|pptx|pages)$", doc.name):
-        return "Not supported yet!", RetCode.DATA_ERROR
+    if (
+        (doc.type == FileType.VISUAL and chunk_method != "picture")
+        or (doc.type == FileType.AURAL and chunk_method != "audio")
+        or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and chunk_method != "presentation")
+        or (re.search(r"\.(msg|eml)$", doc.name) and chunk_method != "email")
+    ):
+        return "the automatically detected parser type cannot be changed", RetCode.DATA_ERROR
     return None, None

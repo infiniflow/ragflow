@@ -73,8 +73,8 @@ func TestPictureParser_ParseWithResult_NilSetup(t *testing.T) {
 	if res.Err != nil {
 		t.Errorf("unexpected error for nil setup: %v", res.Err)
 	}
-	if res.OutputFormat != "text" {
-		t.Errorf("OutputFormat = %q, want text", res.OutputFormat)
+	if res.OutputFormat != "json" {
+		t.Errorf("OutputFormat = %q, want json (image only allows json)", res.OutputFormat)
 	}
 	file, ok := res.File["doc_type_kwd"].(string)
 	if !ok || file != "image" {
@@ -92,8 +92,8 @@ func TestPictureParser_ParseWithResult_ValidExtensions(t *testing.T) {
 		if res.Err != nil {
 			t.Errorf("unexpected error for .%s: %v", ext, res.Err)
 		}
-		if res.OutputFormat != "text" {
-			t.Errorf("OutputFormat = %q for .%s, want text", res.OutputFormat, ext)
+		if res.OutputFormat != "json" {
+			t.Errorf("OutputFormat = %q for .%s, want json (image only allows json)", res.OutputFormat, ext)
 		}
 	}
 }

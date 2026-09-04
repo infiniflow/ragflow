@@ -57,7 +57,7 @@ func TestInsertChunksFindsLaterVectorAndWaitsForSeekDBIndexRefresh(t *testing.T)
 	mock.ExpectExec(regexp.QuoteMeta("CALL DBMS_INDEX_MANAGER.REFRESH()")).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	_, err = engine.InsertChunks(context.Background(), []map[string]interface{}{
+	_, err = engine.InsertChunks(t.Context(), []map[string]interface{}{
 		{
 			"id": "memory-1_1", "message_id": "1", "memory_id": "memory-1",
 			"content": "without a vector",
@@ -102,7 +102,7 @@ func TestInsertChunksReturnsNormalizationErrorWithoutPanic(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectRollback()
 
-	_, err = engine.InsertChunks(context.Background(), []map[string]interface{}{{
+	_, err = engine.InsertChunks(t.Context(), []map[string]interface{}{{
 		"id": "memory-1_1", "message_id": "1", "q_2_vec": "invalid",
 	}}, tableName, "memory-1")
 	if err == nil {
@@ -126,7 +126,7 @@ func TestUpdateChunksRejectsUnsupportedRemoveType(t *testing.T) {
 		WithArgs("legacy_doc", tableName).
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
 
-	err = engine.UpdateChunks(context.Background(), map[string]interface{}{"id": "memory-1_1"},
+	err = engine.UpdateChunks(t.Context(), map[string]interface{}{"id": "memory-1_1"},
 		map[string]interface{}{"remove": []string{"forget_at"}}, tableName, "memory-1")
 	if err == nil {
 		t.Fatal("UpdateChunks() error = nil, want unsupported remove type error")

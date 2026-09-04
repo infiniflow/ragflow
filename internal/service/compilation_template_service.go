@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -96,7 +97,7 @@ type WikiPreset struct {
 	ID          string `json:"id"`
 	Topic       string `json:"topic"`
 	Instruction string `json:"instruction"`
-	PageExample string `json:"page_example"`
+	Example     string `json:"example"`
 }
 
 // CompilationTemplateService implements the read-side compilation template
@@ -175,7 +176,7 @@ func (s *CompilationTemplateService) LoadWikiPresets() ([]*WikiPreset, error) {
 			ID:          strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name())),
 			Topic:       strings.TrimSpace(yamlStr(doc["topic"])),
 			Instruction: yamlStr(doc["instruction"]),
-			PageExample: yamlStr(doc["page_example"]),
+			Example:     yamlStr(doc["example"]),
 		})
 	}
 	return presets, nil
@@ -199,7 +200,7 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 		}
 	}
 	if desc, ok := req["description"]; ok {
-		if descStr, ok2 := desc.(string); !ok2 || len(descStr) > 1024 {
+		if descStr, ok2 := desc.(string); !ok2 || utf8.RuneCountInString(descStr) > 1024 {
 			return errors.New("invalid template description")
 		}
 	}
@@ -223,7 +224,7 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 		default:
 			return errors.New("invalid template config")
 		}
-		if len(fmt.Sprint(configMap["global_rules"])) > 4096 {
+		if utf8.RuneCountInString(yamlStr(configMap["global_rules"])) > 4096 {
 			return errors.New("global compilation rules is too long")
 		}
 		for _, section := range []string{"entity", "relation"} {
@@ -243,10 +244,10 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 				if strings.TrimSpace(yamlStr(fm["description"])) == "" {
 					return fmt.Errorf("%s field description is required", capitalizeTitle(section))
 				}
-				if len(yamlStr(fm["description"])) > 1024 {
+				if utf8.RuneCountInString(yamlStr(fm["description"])) > 1024 {
 					return fmt.Errorf("%s field description is too long", capitalizeTitle(section))
 				}
-				if len(yamlStr(fm["rule"])) > 1024 {
+				if utf8.RuneCountInString(yamlStr(fm["rule"])) > 1024 {
 					return fmt.Errorf("%s field rule is too long", capitalizeTitle(section))
 				}
 			}
@@ -265,10 +266,10 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 						if strings.TrimSpace(yamlStr(fm["subject"])) == "" {
 							return errors.New("claim subject is required")
 						}
-						if len(yamlStr(fm["statement"])) > 1024 {
+						if utf8.RuneCountInString(yamlStr(fm["statement"])) > 1024 {
 							return errors.New("claim statement is too long")
 						}
-						if len(yamlStr(fm["subject"])) > 1024 {
+						if utf8.RuneCountInString(yamlStr(fm["subject"])) > 1024 {
 							return errors.New("claim subject is too long")
 						}
 					case "concept":
@@ -278,10 +279,10 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 						if strings.TrimSpace(yamlStr(fm["definition_excerpt"])) == "" {
 							return errors.New("concept definition excerpt is required")
 						}
-						if len(yamlStr(fm["term"])) > 1024 {
+						if utf8.RuneCountInString(yamlStr(fm["term"])) > 1024 {
 							return errors.New("concept term is too long")
 						}
-						if len(yamlStr(fm["definition_excerpt"])) > 1024 {
+						if utf8.RuneCountInString(yamlStr(fm["definition_excerpt"])) > 1024 {
 							return errors.New("concept definition excerpt is too long")
 						}
 					}

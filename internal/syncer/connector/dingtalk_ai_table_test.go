@@ -209,6 +209,29 @@ func TestDingTalkAITableConnectorOpenSyncFiltersByRecordLastModifiedTime(t *test
 	}
 }
 
+func TestDingTalkAITableConnectorOpenSyncResumeRejectsMissingCheckpoint(t *testing.T) {
+	connector := &DingTalkAITableConnector{
+		tableID:     "table-1",
+		operatorID:  "operator-1",
+		accessToken: "token-1",
+		batchSize:   10,
+		apiBaseURL:  dingTalkAITableAPIBaseURL,
+		getSheets: func(ctx context.Context) ([]dingTalkAITableSheet, error) {
+			return []dingTalkAITableSheet{{ID: "sheet-1", Name: "Projects"}}, nil
+		},
+		listRecords: func(ctx context.Context, sheetID, nextToken string, maxResults int) ([]dingTalkAITableRecord, string, error) {
+			return []dingTalkAITableRecord{
+				{ID: "rec-1", LastModifiedTime: time.UnixMilli(1780000000000).UnixMilli(), Fields: map[string]any{"Title": "Roadmap"}},
+			}, "", nil
+		},
+	}
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
 func TestDingTalkAITableConnectorValidateConnectorSetting(t *testing.T) {
 	config := map[string]any{
 		"table_id":    "table-1",

@@ -35,7 +35,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
@@ -125,7 +125,11 @@ def _load_canvas_module(monkeypatch):
 
     # `api.*` services imported at the top of canvas.py
     _stub_module("api.db.services.file_service", FileService=MagicMock())
-    _stub_module("api.db.services.llm_service", LLMBundle=MagicMock())
+    _stub_module(
+        "api.db.services.llm_service",
+        LLMBundle=MagicMock(),
+        resolve_llm_setting=lambda *_args, **_kwargs: {},
+    )
     _stub_module("api.db.services.task_service", has_canceled=MagicMock(return_value=False))
     _stub_module(
         "api.db.joint_services.tenant_model_service",

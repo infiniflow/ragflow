@@ -20,10 +20,9 @@ import AvatarNameDescription from '@/components/avatar-name-description';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
 import { MetadataFilter } from '@/components/metadata-filter';
-import { ModelTreeSelect } from '@/components/model-tree-select';
+import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { Button } from '@/components/ui/button';
-import { SingleFormSlider } from '@/components/ui/dual-range-slider';
 import {
   Form,
   FormControl,
@@ -32,16 +31,19 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
@@ -51,6 +53,7 @@ import {
   useUpdateSearch,
 } from '../next-searches/hooks';
 import { RerankFormFields } from '@/components/rerank';
+import { resolveInitialLlmSetting } from './llm-setting-defaults';
 import {
   SearchSettingFormData,
   useRevalidatePersistedModels,
@@ -74,10 +77,23 @@ function SearchSetting({
   const { search_config } = data || {};
   const { llm_setting } = search_config || {};
   const { t } = useTranslation();
-  const { formSchema, modelsFetched } = useSearchSettingFormSchema();
+  const { formSchema: searchSettingSchema, modelsFetched } =
+    useSearchSettingFormSchema();
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    searchSettingSchema,
+    search_config?.kb_ids,
+    'search_config.kb_ids',
+  );
   const formMethods = useForm<SearchSettingFormData>({
     resolver: zodResolver(formSchema),
+    mode: 'onChange',
   });
+
+  useRevalidateStaleDatasetIds(
+    formMethods,
+    datasetsFetched,
+    'search_config.kb_ids',
+  );
   const descriptionDefaultValue = t('search.descriptionValue');
   const resetForm = useCallback(() => {
     formMethods.reset({
@@ -95,16 +111,13 @@ function SearchSetting({
         use_kg: false,
         rerank_id: search_config?.rerank_id || '',
         use_rerank: search_config?.rerank_id ? true : false,
-        top_k: search_config?.top_k || 1024,
+        rerank_candidates_count: search_config?.rerank_candidates_count ?? 100,
         summary: search_config?.summary || false,
         chat_id: search_config?.chat_id || '',
         llm_setting: {
           llm_id: search_config?.chat_id || '',
           parameter: llm_setting?.parameter || '',
-          temperature: llm_setting?.temperature || 0,
-          top_p: llm_setting?.top_p || 0,
-          frequency_penalty: llm_setting?.frequency_penalty || 0,
-          presence_penalty: llm_setting?.presence_penalty || 0,
+          ...resolveInitialLlmSetting(llm_setting),
         },
         chat_settingcross_languages: [],
         highlight: false,
@@ -199,15 +212,6 @@ function SearchSetting({
     referenceMetadataEnabled,
     formMethods,
   ]);
-
-  // Reset top_k to 1024 only when user actively disables rerank (from true to false)
-  const prevRerankEnabled = useRef<boolean | undefined>(undefined);
-  useEffect(() => {
-    if (prevRerankEnabled.current === true && rerankModelEnabled === false) {
-      formMethods.setValue('search_config.top_k', 1024);
-    }
-    prevRerankEnabled.current = rerankModelEnabled;
-  }, [rerankModelEnabled, formMethods]);
 
   const { updateSearch } = useUpdateSearch();
   const [formSubmitLoading, setFormSubmitLoading] = useState(false);
@@ -385,6 +389,10 @@ function SearchSetting({
               similarityWeightName="search_config.vector_similarity_weight"
               numberInputClassName="rounded-sm"
             ></SimilaritySliderFormField>
+            <RerankCandidatesCountFormField
+              name="search_config.rerank_candidates_count"
+              defaultValue={100}
+            ></RerankCandidatesCountFormField>
             {/* Rerank Model */}
             <FormField
               control={formMethods.control}
@@ -403,7 +411,10 @@ function SearchSetting({
             />
             {rerankModelEnabled && (
               <>
-                <RerankFormFields prefix={'search_config.'}></RerankFormFields>
+                <RerankFormFields
+                  prefix={'search_config.'}
+                  required
+                ></RerankFormFields>
               </>
             )}
             {/* AI Summary */}
@@ -423,12 +434,9 @@ function SearchSetting({
               )}
             />
             {aiSummaryEnabled && (
-              // <LlmSettingFieldItems
-              //   prefix="search_config.llm_setting"
-              //   options={aiSummeryModelOptions}
-              // ></LlmSettingFieldItems>
               <LlmSettingFieldItems
                 prefix="search_config.llm_setting"
+                llmRequired
                 showFields={[
                   'temperature',
                   'top_p',

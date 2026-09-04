@@ -76,7 +76,7 @@ func TestOCRDetectAndRecognize_WarpsCrop(t *testing.T) {
 		boxes:   []pdf.OCRBox{box},
 		texts:   []pdf.OCRText{{Text: "x", Confidence: 0.9}},
 	}
-	got := p.ocrDetectAndRecognize(context.Background(), page, cap, 0, "warp")
+	got := p.ocrDetectAndRecognize(t.Context(), page, cap, 0, "warp")
 	if len(got) != 1 {
 		t.Fatalf("expected 1 text box, got %d", len(got))
 	}
@@ -171,7 +171,7 @@ func TestOCRMergeChars_WarpsEmptyBoxCrop(t *testing.T) {
 		boxes:   []pdf.OCRBox{box},
 		texts:   []pdf.OCRText{{Text: "x", Confidence: 0.9}},
 	}
-	got := p.ocrMergeChars(context.Background(), page, chars, cap, 0)
+	got := p.ocrMergeChars(t.Context(), page, chars, cap, 0)
 	if len(got) == 0 {
 		t.Fatal("expected at least one text box from the merge path")
 	}

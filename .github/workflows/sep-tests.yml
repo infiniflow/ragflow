@@ -30,6 +30,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'ci' && format('-ignore-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
+# infiniflow/onnxruntime_go is a fresh org mirror that is not yet present in the
+# public Go checksum database / proxy. Mark it private so Go skips the proxy and
+# sumdb for this path and resolves it directly from GitHub (Go's default
+# GOPROXY keeps the ",direct" fallback). Required for the in-process DeepDoc
+# backend to build against github.com/infiniflow/onnxruntime_go.
+env:
+  GOPRIVATE: github.com/infiniflow/onnxruntime_go
+
 jobs:
   ragflow_preflight:
     name: ragflow_preflight
@@ -45,6 +53,7 @@ jobs:
       has_go_changes: ${{ steps.detect_changes.outputs.has_go_changes }}
       has_python_changes: ${{ steps.detect_changes.outputs.has_python_changes }}
       has_web_changes: ${{ steps.detect_changes.outputs.has_web_changes }}
+      has_native_deepdoc_changes: ${{ steps.detect_changes.outputs.has_native_deepdoc_changes }}
       api_proxy_schemes: ${{ steps.detect_changes.outputs.api_proxy_schemes }}
     steps:
       - name: Ensure workspace ownership
@@ -134,6 +143,13 @@ jobs:
 #            fi
 #          fi
 
+      # lefthook's web-checks hook resolves oxlint/oxfmt through
+      # tools/hooks/web_tools.sh, which needs node and npm on PATH.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Run Lefthook on changed files
         run: |
           set -euo pipefail
@@ -158,6 +174,10 @@ jobs:
             # applying --fix or `git add`, so CI only checks and reports
             # failures instead of rewriting the working tree.
             LEFTHOOK_CHECK_ONLY=1 lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
+            # web-checks is a separate hook because it is not wired into local
+            # commits: it installs a Node toolchain that only CI has a reason to
+            # pay for. It is always check-only, so it needs no CHECK_ONLY flag.
+            lefthook run web-checks --files-from-stdin --no-auto-install < "$changed_files"
           fi
 
       - name: Set test level
@@ -179,11 +199,13 @@ jobs:
           has_go=false
           has_python=false
           has_web=false
+          has_native_deepdoc=false
 
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
             has_go=true
             has_python=true
             has_web=true
+            has_native_deepdoc=true
           else
             if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
               CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }})
@@ -199,9 +221,11 @@ jobs:
             while IFS= read -r file; do
               case "$file" in
                 # Docker, test, SDK, and workflow changes can alter either server path.
-                Dockerfile|docker/**|.github/workflows/**|sdk/**)
+                # build.sh also controls the C++/native build, so it must trigger native backend.
+                Dockerfile|Dockerfile_ci|docker/**|.github/workflows/**|sdk/**|build.sh)
                   has_go=true
                   has_python=true
+                  has_native_deepdoc=true
                   ;;
                 test/unit_test/**)
                   has_python=true
@@ -210,7 +234,14 @@ jobs:
                   has_go=true
                   has_python=true
                   ;;
-                *.go|go.mod|go.sum|build.sh)              has_go=true ;;
+                # DeepDoc native backend (Go inference layer, C++ static lib, pinned testdata).
+                # Must come BEFORE the generic "*.go"/"*.py" rules, otherwise deepdoc/*.go
+                # would be caught by "*.go" first and never set has_native_deepdoc.
+                internal/deepdoc/**|internal/binding/cpp/**|internal/deepdoc/native/testdata.ref)
+                  has_go=true
+                  has_native_deepdoc=true
+                  ;;
+                *.go|go.mod|go.sum)                       has_go=true ;;
                 *.py|pyproject.toml|requirements*.txt)    has_python=true ;;
                 web/*)                                    has_web=true ;;
               esac
@@ -220,6 +251,7 @@ jobs:
               has_go=true
               has_python=true
               has_web=true
+              has_native_deepdoc=true
             fi
           fi
 
@@ -238,8 +270,9 @@ jobs:
           echo "has_go_changes=${has_go}"        >> $GITHUB_OUTPUT
           echo "has_python_changes=${has_python}" >> $GITHUB_OUTPUT
           echo "has_web_changes=${has_web}"       >> $GITHUB_OUTPUT
+          echo "has_native_deepdoc_changes=${has_native_deepdoc}" >> $GITHUB_OUTPUT
           echo "api_proxy_schemes=${api_proxy_schemes}" >> $GITHUB_OUTPUT
-          echo "Go: ${has_go}, Python: ${has_python}, Web: ${has_web}, proxy schemes: ${api_proxy_schemes}"
+          echo "Go: ${has_go}, Python: ${has_python}, Web: ${has_web}, Native DeepDoc: ${has_native_deepdoc}, proxy schemes: ${api_proxy_schemes}"
 
       - name: Prepare Python test environment
         if: steps.detect_changes.outputs.has_python_changes == 'true'
@@ -382,23 +415,42 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
+      - name: Run ORT deps-download regression guard
+        if: env.API_PROXY_SCHEME == 'go'
+        # Pure-Python, local, needs no API keys or model downloads; guards the
+        # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
+        # depends on (notably the version-bump path C2 hardened). Run it in
+        # isolation so the test/testcases conftest (which requires
+        # SILICONFLOW_API_KEY) cannot fail the collection.
+        run: |
+          set -euo pipefail
+          uv sync --python 3.13 --group test --frozen
+          uv run pytest ragflow_deps/test_download_go_deps.py -q
+
       - name: Build ragflow:nightly
         run: |
           set -euo pipefail
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
           mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
-          # Pass the Gitee personal access token to the Docker build as a BuildKit secret
-          # (mounted inside the builder at /run/secrets/gitee_token, never persisted in any layer).
-          GITEE_TOKEN_FILE="$(mktemp)"
-          printf '%s' '${GITEE_TOKEN}' > "${GITEE_TOKEN_FILE}"
+          # Pass the Gitee personal access token to the Docker build via --build-arg GITEE_TOKEN.
+          # Dockerfile_go / Dockerfile_ci read it from ARG GITEE_TOKEN (NOT a BuildKit secret),
+          # so the runner must expose GITEE_TOKEN as an environment variable (e.g. via the
+          # runner's docker-compose `environment:` mapping sourced from its .env file).
+          # Pick the Dockerfile matching the API proxy scheme:
+          #   - go  -> Dockerfile_go  (Go-native image)
+          #   - *   -> Dockerfile_ci  (Python/legacy image)
+          if [ "${API_PROXY_SCHEME}" = "go" ]; then
+            DOCKERFILE=Dockerfile_go
+          else
+            DOCKERFILE=Dockerfile_ci
+          fi
           (
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
-            echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME}"
+            echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME} (dockerfile=${DOCKERFILE})"
             ##sudo docker pull ubuntu:24.04
-            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --secret id=gitee_token,src=${GITEE_TOKEN_FILE} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f "${DOCKERFILE}" -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
-          rm -f "${GITEE_TOKEN_FILE}"
 
       - name: Prepare Python test environment
         if: env.API_PROXY_SCHEME != 'web'
@@ -436,7 +488,7 @@ jobs:
           # Engine-specific offset partitions keep concurrent engine jobs from
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
-               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222)
+               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
                PARTITION_SIZE=6000
                case "${DOC_ENGINE}" in
                  elasticsearch) PARTITION_BASE=1000 ;;
@@ -596,10 +648,20 @@ jobs:
                SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + PORT_OFFSET))
                SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
                SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
+               EXPOSE_CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
+               CLICKHOUSE_HTTP_PORT=$((8123 + PORT_OFFSET))
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+          # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
+          # container, so the Go server process reads COMPOSE_PROFILES and
+          # TEI_MODEL from .env-go (not .env). Without syncing these two,
+          # the Go server's checkModelAvailable TEI bypass never triggers
+          # because .env-go's COMPOSE_PROFILES lacks "tei-", causing
+          # PATCH /models/default to fail for the Builtin/Local embedding
+          # model and datasets to be created with an empty embedding_model.
+               sed -i '/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d' .env-go
                {
                  echo ""
                  echo "ES_PORT=${ES_PORT}"
@@ -623,12 +685,32 @@ jobs:
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
+                 echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
+                 echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
+                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
+                 else
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
+                 fi
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                  echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
                } >> .env
+          # Sync COMPOSE_PROFILES and TEI_MODEL into .env-go so the Go
+          # server container (env_file: .env-go) sees the same TEI bypass
+          # config as the Python container. Only these two affect the
+          # in-process checkModelAvailable logic; other .env keys are
+          # either yml-interpolation-only or already correct in .env-go.
+               {
+                 echo ""
+                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
+                 else
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
+                 fi
+                 echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
+               } >> .env-go
                if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
                  RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
                else
@@ -648,9 +730,14 @@ jobs:
 
       - name: Start ragflow:nightly for Infinity
         run: |
-          sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
+          if [ "${API_PROXY_SCHEME}" = "go" ]; then
+            COMPOSE_FILE=docker/docker-compose-go.yml
+          else
+            COMPOSE_FILE=docker/docker-compose.yml
+          fi
+          sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
-          sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} up -d
+          sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
 
       - name: Run sdk tests against Infinity
         if: env.API_PROXY_SCHEME == 'python'
@@ -861,8 +948,13 @@ jobs:
       - name: Stop ragflow:nightly for Infinity
         if: ${{ always() }}
         run: |
+          if [ "${API_PROXY_SCHEME}" = "go" ]; then
+            COMPOSE_FILE=docker/docker-compose-go.yml
+          else
+            COMPOSE_FILE=docker/docker-compose.yml
+          fi
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
-          sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
+          sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           if [[ -n ${RAGFLOW_IMAGE} ]]; then
             sudo docker rmi -f ${RAGFLOW_IMAGE}
@@ -1001,23 +1093,42 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
+      - name: Run ORT deps-download regression guard
+        if: env.API_PROXY_SCHEME == 'go'
+        # Pure-Python, local, needs no API keys or model downloads; guards the
+        # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
+        # depends on (notably the version-bump path C2 hardened). Run it in
+        # isolation so the test/testcases conftest (which requires
+        # SILICONFLOW_API_KEY) cannot fail the collection.
+        run: |
+          set -euo pipefail
+          uv sync --python 3.13 --group test --frozen
+          uv run pytest ragflow_deps/test_download_go_deps.py -q
+
       - name: Build ragflow:nightly
         run: |
           set -euo pipefail
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
           mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
-          # Pass the Gitee personal access token to the Docker build as a BuildKit secret
-          # (mounted inside the builder at /run/secrets/gitee_token, never persisted in any layer).
-          GITEE_TOKEN_FILE="$(mktemp)"
-          printf '%s' '${GITEE_TOKEN }' > "${GITEE_TOKEN_FILE}"
+          # Pass the Gitee personal access token to the Docker build via --build-arg GITEE_TOKEN.
+          # Dockerfile_go / Dockerfile_ci read it from ARG GITEE_TOKEN (NOT a BuildKit secret),
+          # so the runner must expose GITEE_TOKEN as an environment variable (e.g. via the
+          # runner's docker-compose `environment:` mapping sourced from its .env file).
+          # Pick the Dockerfile matching the API proxy scheme:
+          #   - go  -> Dockerfile_go  (Go-native image)
+          #   - *   -> Dockerfile_ci  (Python/legacy image)
+          if [ "${API_PROXY_SCHEME}" = "go" ]; then
+            DOCKERFILE=Dockerfile_go
+          else
+            DOCKERFILE=Dockerfile_ci
+          fi
           (
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
-            echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME}"
+            echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME} (dockerfile=${DOCKERFILE})"
             ##sudo docker pull ubuntu:24.04
-            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --secret id=gitee_token,src=${GITEE_TOKEN_FILE} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f "${DOCKERFILE}" -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
-          rm -f "${GITEE_TOKEN_FILE}"
 
       - name: Prepare Python test environment
         if: env.API_PROXY_SCHEME != 'web'
@@ -1055,7 +1166,7 @@ jobs:
           # Engine-specific offset partitions keep concurrent engine jobs from
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
-               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222)
+               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
                PARTITION_SIZE=6000
                case "${DOC_ENGINE}" in
                  elasticsearch) PARTITION_BASE=1000 ;;
@@ -1215,10 +1326,20 @@ jobs:
                SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + PORT_OFFSET))
                SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
                SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
+               EXPOSE_CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
+               CLICKHOUSE_HTTP_PORT=$((8123 + PORT_OFFSET))
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+          # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
+          # container, so the Go server process reads COMPOSE_PROFILES and
+          # TEI_MODEL from .env-go (not .env). Without syncing these two,
+          # the Go server's checkModelAvailable TEI bypass never triggers
+          # because .env-go's COMPOSE_PROFILES lacks "tei-", causing
+          # PATCH /models/default to fail for the Builtin/Local embedding
+          # model and datasets to be created with an empty embedding_model.
+               sed -i '/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d' .env-go
                {
                  echo ""
                  echo "ES_PORT=${ES_PORT}"
@@ -1242,12 +1363,32 @@ jobs:
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
+                 echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
+                 echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
+                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
+                 else
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
+                 fi
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                  echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
                } >> .env
+          # Sync COMPOSE_PROFILES and TEI_MODEL into .env-go so the Go
+          # server container (env_file: .env-go) sees the same TEI bypass
+          # config as the Python container. Only these two affect the
+          # in-process checkModelAvailable logic; other .env keys are
+          # either yml-interpolation-only or already correct in .env-go.
+               {
+                 echo ""
+                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
+                 else
+                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
+                 fi
+                 echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
+               } >> .env-go
                if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
                  RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
                else
@@ -1267,9 +1408,14 @@ jobs:
 
       - name: Start ragflow:nightly for Elasticsearch
         run: |
-          sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
+          if [ "${API_PROXY_SCHEME}" = "go" ]; then
+            COMPOSE_FILE=docker/docker-compose-go.yml
+          else
+            COMPOSE_FILE=docker/docker-compose.yml
+          fi
+          sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
-          sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} up -d
+          sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
 
       - name: Run sdk tests against Elasticsearch
         if: env.API_PROXY_SCHEME == 'python'
@@ -1475,8 +1621,13 @@ jobs:
       - name: Stop ragflow:nightly for Elasticsearch
         if: ${{ always() }}
         run: |
+          if [ "${API_PROXY_SCHEME}" = "go" ]; then
+            COMPOSE_FILE=docker/docker-compose-go.yml
+          else
+            COMPOSE_FILE=docker/docker-compose.yml
+          fi
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
-          sudo docker compose -f docker/docker-compose.yml -p ${COMPOSE_PROJECT_NAME} down -v || true
+          sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           if [[ -n ${RAGFLOW_IMAGE} ]]; then
             sudo docker rmi -f ${RAGFLOW_IMAGE}
@@ -1488,3 +1639,86 @@ jobs:
               sudo docker network rm "${guard}" >/dev/null 2>&1 || true
             done
           fi
+
+  ragflow_native_backend:
+    name: ragflow_native_backend
+    # Runs AFTER both per-engine go jobs (which contain the doc-engine-specific
+    # server build + Python RESTFUL correctness runs). The DeepDoc native
+    # backend is doc-engine-independent, so running it ONCE here — instead of
+    # duplicated (and memory-competing) inside each go job — removes the
+    # redundant second -race pass and the concurrent -race OOM risk. Running it
+    # last also keeps a flaky -race OOM from ever obscuring the functional
+    # verdict produced by the go jobs.
+    needs: [ragflow_tests_infinity, ragflow_tests_elasticsearch]
+    # Skip unless DeepDoc native backend code/build/testdata actually changed.
+    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_native_deepdoc_changes == 'true' }}
+    runs-on: [ "self-hosted", "ragflow-test" ]
+    steps:
+      - name: Ensure workspace ownership
+        run: |
+          echo "Workflow triggered by ${{ github.event_name }}"
+          echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          allow-unsafe-pr-checkout: true
+
+      - name: Build C++ static library (ragflow native backend)
+        # Produces librag_tokenizer_c_api.a with the re2 symbols renamed into
+        # the ragtokre2_ namespace (so it no longer collides with onnxruntime's
+        # bundled re2 copy at link time). Only the .a is needed for the native
+        # integration tests; the per-engine go jobs build the full server.
+        run: |
+          set -euo pipefail
+          BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_native_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
+          cleanup_builder() {
+            if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
+              sudo docker rm -f -v "${BUILDER_CONTAINER}" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup_builder EXIT
+
+          TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
+          sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
+            -e TZ="${TZ}" \
+            -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
+            -v "${PWD}:/ragflow" \
+            -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
+            infiniflow/infinity_builder:ubuntu22_clang20
+          sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
+
+      - name: Cache external DeepDoc testdata
+        # The native backend tests fetch pinned test assets from
+        # infiniflow/ragflow-testdata (see scripts/fetch_deepdoc_testdata.sh).
+        # Cache them across runs, keyed by the pinned ref recorded in
+        # internal/deepdoc/native/testdata.ref so a ref bump invalidates the cache.
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/ragflow-testdata
+          key: deepdoc-testdata-${{ hashFiles('internal/deepdoc/native/testdata.ref') }}
+
+      - name: Run in-process DeepDoc backend integration tests (correctness + race)
+        # Doc-engine-independent: the same native backend (det/layout/tsr/rec
+        # ONNX models + onnxruntime) is exercised regardless of DOC_ENGINE, so
+        # it is run ONCE here instead of duplicated inside each go job.
+        #
+        # Inside build.sh, the golden/comparison tests run WITHOUT -race (no
+        # race-detection value, ~10x memory tax) and only the concurrency
+        # correctness tests run WITH -race (see run_native_integration_tests).
+        #
+        # XDG_CACHE_HOME is pinned to a workspace path so the test fetch script
+        # and this job's actions/cache step agree on a single, deterministic
+        # location (the self-hosted runner's $HOME is not stable across steps).
+        env:
+          MODEL_DIR: /opt/ragflow-deepdoc-models
+          CGO_ENABLED: '1'
+          DEEPDOC_NATIVE_REQUIRED: '1'
+          XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+        run: |
+          set -euo pipefail
+          ./build.sh --test-native
+
