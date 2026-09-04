@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/agent/retrievalbridge"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/channels"
+	"ragflow/internal/cmdargs"
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
@@ -66,97 +67,8 @@ import (
 	"ragflow/internal/utility"
 )
 
-type serverArgs struct {
-	mode          *string // admin | api | ingestor | syncer
-	helpFlag      bool
-	versionFlag   bool
-	debugLog      bool
-	migrateDB     bool
-	configPath    *string // Used by admin, api; user defined config path
-	initSuperUser bool    // Used by admin;
-	port          *int    // Used by admin, api
-	adminHost     *string // Used by api, ingestor, syncer for heartbeat
-	adminPort     *int    // Used by api, ingestor, syncer for heartbeat, "ip:port"
-	name          *string // server name
-}
-
-func parseArgs() (*serverArgs, error) {
-	args := &serverArgs{}
-
-	var serverMode string
-	var configPath string
-	for i := 1; i < len(os.Args); i++ {
-		arg := os.Args[i]
-		switch arg {
-		case "--admin":
-			serverMode = "admin"
-			args.mode = &serverMode
-		case "--migrate":
-			args.migrateDB = true
-		case "--ingestor":
-			serverMode = "ingestor"
-			args.mode = &serverMode
-		case "--api":
-			serverMode = "api"
-			args.mode = &serverMode
-		case "--syncer":
-			serverMode = "syncer"
-			args.mode = &serverMode
-		case "-h", "--help":
-			args.helpFlag = true
-		case "-v", "--version":
-			args.versionFlag = true
-		case "--debug":
-			args.debugLog = true
-		case "-f", "--config":
-			if i+1 >= len(os.Args) {
-				return nil, fmt.Errorf("%s requires a value", arg)
-			}
-			i++
-			configPath = os.Args[i]
-			args.configPath = &configPath
-		case "--init-superuser":
-			args.initSuperUser = true
-		case "-p", "--port":
-			if i+1 >= len(os.Args) {
-				return nil, errors.New("--port requires a value")
-			}
-			i++
-			port, convErr := strconv.Atoi(os.Args[i])
-			if convErr != nil {
-				return nil, fmt.Errorf("invalid port: %w", convErr)
-			}
-			args.port = &port
-			if port <= 0 || port > 65535 {
-				return nil, fmt.Errorf("invalid port: %d", port)
-			}
-		case "--admin-host":
-			if i+1 >= len(os.Args) {
-				return nil, errors.New("--admin-host requires a value")
-			}
-			i++
-			parts := strings.SplitN(os.Args[i], ":", 2)
-			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-				return nil, errors.New("--admin-host must be in the form 'ip:port'")
-			}
-			ip, portStr := parts[0], parts[1]
-			port, convErr := strconv.Atoi(portStr)
-			if convErr != nil {
-				return nil, fmt.Errorf("failed to parse admin port: %w", convErr)
-			}
-			args.adminHost = &ip
-			args.adminPort = &port
-		case "--name":
-			if i+1 >= len(os.Args) {
-				return nil, errors.New("--name requires a value")
-			}
-			i++
-			args.name = &os.Args[i]
-		default:
-			return nil, fmt.Errorf("unknown parameter: %s", arg)
-		}
-	}
-	return args, nil
+func parseArgs() (*cmdargs.ServerArgs, error) {
+	return cmdargs.Parse()
 }
 
 // registerNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
@@ -164,16 +76,17 @@ func parseArgs() (*serverArgs, error) {
 // compiled into the server built with -tags cgo, which statically links the
 // ONNX Runtime backend (libonnxruntime.a); the unit-test tier builds without
 // cgo and stays free of the onnxruntime dependency.
-func printHelp(args *serverArgs) {
+func printHelp(args *cmdargs.ServerArgs) {
 	switch {
 	case args.mode == nil:
-		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer|--migrate [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
 		fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
 		fmt.Fprintf(os.Stderr, "  --api          \tRun as API server\n")
 		fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n")
-		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n\n")
+		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n")
+		fmt.Fprintf(os.Stderr, "  --migrate      \tRun database migration and exit (0 on success, non-zero on failure)\n\n")
 		fmt.Fprintf(os.Stderr, "Common options:\n")
 		fmt.Fprintf(os.Stderr, "  --config string\tPath to configuration file\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
@@ -235,12 +148,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if arguments.helpFlag || arguments.mode == nil {
+	if arguments.HelpFlag || arguments.Mode == nil {
 		printHelp(arguments)
 		os.Exit(1)
 	}
 
-	if arguments.versionFlag {
+	if arguments.VersionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
 		os.Exit(1)
 	}
@@ -248,22 +161,22 @@ func main() {
 	// Initialize local variables (runtime variables from Redis)
 	err = server.InitLocalVariables()
 	if err != nil {
-		fmt.Printf("Failed to start %s server: %v\n", *arguments.mode, err)
+		fmt.Printf("Failed to start %s server: %v\n", *arguments.Mode, err)
 		os.Exit(1)
 	}
 
 	// Temporary logger initialization
 	var logFileName string
 	var serverName string
-	if arguments.name != nil {
-		serverName = *arguments.name
+	if arguments.Name != nil {
+		serverName = *arguments.Name
 	} else {
-		serverName = fmt.Sprintf("%s_server", *arguments.mode)
+		serverName = fmt.Sprintf("%s_server", *arguments.Mode)
 	}
 	logFileName = fmt.Sprintf("%s.log", serverName)
 
 	logLevel := "info"
-	if arguments.debugLog {
+	if arguments.DebugLog {
 		logLevel = "debug"
 	}
 
@@ -273,8 +186,8 @@ func main() {
 
 	// Initialize configuration
 	var configPath string
-	if arguments.configPath != nil {
-		configPath = *arguments.configPath
+	if arguments.ConfigPath != nil {
+		configPath = *arguments.ConfigPath
 	}
 
 	if err = server.Init(configPath); err != nil {
@@ -284,27 +197,41 @@ func main() {
 
 	globalConfig := server.GetConfig()
 
+	// Standalone one-shot migration mode. Runs InitDB with migrateDB=true
+	// (GORM auto-migrations + manual migrations + Go-exclusive runtime
+	// tables) and exits with code 0 on success, non-zero on failure. See
+	// #19270. No HTTP daemon, no Redis init, no storage init — migration
+	// only.
+	if *arguments.Mode == "migrate" {
+		common.Info("Running standalone database migration...")
+		if err = dao.InitDB(ctx, true); err != nil {
+			common.Fatal("Standalone database migration failed", zap.Error(err))
+		}
+		common.Info("Standalone database migration completed successfully")
+		return
+	}
+
 	// override default port if provided
-	switch *arguments.mode {
+	switch *arguments.Mode {
 	case "api":
 		registerNativeDeepDoc()
 		apiServerConfig := globalConfig.GetAPIServerConfig()
 		port := apiServerConfig.HTTPPort
-		if arguments.port != nil {
-			port = *arguments.port
+		if arguments.Port != nil {
+			port = *arguments.Port
 			apiServerConfig.HTTPPort = port
 		}
-		if arguments.name == nil {
+		if arguments.Name == nil {
 			serverName = fmt.Sprintf("api_server_%d", port)
 		}
 	case "admin":
 		adminServerConfig := globalConfig.GetAdminServerConfig()
 		port := adminServerConfig.HTTPPort
-		if arguments.port != nil {
-			port = *arguments.port
+		if arguments.Port != nil {
+			port = *arguments.Port
 			adminServerConfig.HTTPPort = port
 		}
-		if arguments.name == nil {
+		if arguments.Name == nil {
 			serverName = fmt.Sprintf("admin_server_%d", port)
 		}
 	case "ingestor":
@@ -319,7 +246,7 @@ func main() {
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
 	default:
-		err = errors.New(*arguments.mode)
+		err = errors.New(*arguments.Mode)
 		common.Error("invalid server mode", err)
 		os.Exit(1)
 	}
@@ -338,7 +265,7 @@ func main() {
 		logLevel = "info"
 	}
 
-	if arguments.debugLog {
+	if arguments.DebugLog {
 		logLevel = "debug"
 	}
 
@@ -359,11 +286,11 @@ func main() {
 	}
 
 	// Print all configuration settings
-	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, globalConfig.GetMode()))
+	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.Mode, serverName, globalConfig.GetMode()))
 	server.PrintAll()
 
 	// Initialize database
-	if err = dao.InitDB(ctx, arguments.migrateDB); err != nil {
+	if err = dao.InitDB(ctx, arguments.MigrateDB); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
 
@@ -400,11 +327,11 @@ func main() {
 	}
 	defer server.ShutdownServer(ctx)
 
-	if arguments.name == nil {
-		arguments.name = &serverName
+	if arguments.Name == nil {
+		arguments.Name = &serverName
 	}
 
-	switch *arguments.mode {
+	switch *arguments.Mode {
 	case "api":
 		if err = runAPI(ctx, arguments); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
@@ -426,12 +353,12 @@ func main() {
 			os.Exit(1)
 		}
 	default:
-		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
+		fmt.Printf("Invalid server mode: %s\n", *arguments.Mode)
 		os.Exit(1)
 	}
 }
 
-func runAdmin(ctx context.Context, args *serverArgs) error {
+func runAdmin(ctx context.Context, args *cmdargs.ServerArgs) error {
 
 	globalConfig := server.GetConfig()
 	serverMode := globalConfig.GetMode()
@@ -548,7 +475,7 @@ func startHeartbeat(serverType common.ServerType, serverID string, port int, hea
 	return heartbeatReporter
 }
 
-func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArgs) error {
+func runIngestor(ctx context.Context, cancel context.CancelFunc, args *cmdargs.ServerArgs) error {
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
 	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
@@ -647,7 +574,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	return nil
 }
 
-func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs) error {
+func runSyncer(ctx context.Context, cancel context.CancelFunc, args *cmdargs.ServerArgs) error {
 	globalConfig := server.GetConfig()
 	syncerConfig := globalConfig.GetSyncerConfig()
 	fileSyncer := syncer.NewSyncer(syncerConfig.MaxConcurrentSyncs)
@@ -693,7 +620,7 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs)
 	return nil
 }
 
-func runAPI(ctx context.Context, args *serverArgs) error {
+func runAPI(ctx context.Context, args *cmdargs.ServerArgs) error {
 	// Initialize admin status (default: unavailable=1)
 	local.InitAdminStatus(1, "admin server not connected")
 
