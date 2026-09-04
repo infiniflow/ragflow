@@ -25,6 +25,8 @@ import urllib3
 from common.decorator import singleton
 from common import settings
 
+MAX_RETRIES = 3
+
 
 def _build_minio_http_client():
     """
@@ -143,7 +145,7 @@ class RAGFlowMinio:
     @use_default_bucket
     @use_prefix_path
     def put(self, bucket, fnm, binary, tenant_id=None):
-        for _ in range(3):
+        for attempt in range(MAX_RETRIES):
             try:
                 # Note: bucket must already exist - we don't have permission to create buckets
                 if not self.bucket and not self.conn.bucket_exists(bucket):
@@ -152,9 +154,11 @@ class RAGFlowMinio:
                 r = self.conn.put_object(bucket, fnm, BytesIO(binary), len(binary))
                 return r
             except Exception:
-                logging.exception(f"Fail to put {bucket}/{fnm}:")
+                logging.exception(f"Fail to put {bucket}/{fnm} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2 ** attempt)
 
     @use_default_bucket
     @use_prefix_path
@@ -167,15 +171,25 @@ class RAGFlowMinio:
     @use_default_bucket
     @use_prefix_path
     def get(self, bucket, filename, tenant_id=None):
-        for _ in range(1):
+        for attempt in range(MAX_RETRIES):
             try:
                 r = self.conn.get_object(bucket, filename)
                 return r.read()
-            except Exception:
-                logging.exception(f"Fail to get {bucket}/{filename}")
+            except S3Error as e:
+                if e.code in ["NoSuchKey", "NoSuchBucket", "ResourceNotFound"]:
+                    return None
+                logging.exception(f"Fail to get {bucket}/{filename} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
                 self.__open__()
-                time.sleep(1)
-        return
+                time.sleep(2 ** attempt)
+            except Exception:
+                logging.exception(f"Fail to get {bucket}/{filename} (attempt {attempt + 1}/{MAX_RETRIES})")
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                self.__open__()
+                time.sleep(2 ** attempt)
+        return None
 
     @use_default_bucket
     @use_prefix_path
