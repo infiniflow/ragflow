@@ -119,14 +119,14 @@ export function CreateAgentForm({
   }, [navigate]);
 
   async function onSubmit(data: FormSchemaType) {
-    if (retrievalBindings?.datasetCount > 0 && isEmpty(data.dataset_ids)) {
+    if ((retrievalBindings?.datasetCount ?? 0) > 0 && isEmpty(data.dataset_ids)) {
       form.setError('dataset_ids', {
         type: 'manual',
         message: t('flow.retrievalDatasetRequired'),
       });
       return;
     }
-    if (retrievalBindings?.memoryCount > 0 && isEmpty(data.memory_ids)) {
+    if ((retrievalBindings?.memoryCount ?? 0) > 0 && isEmpty(data.memory_ids)) {
       form.setError('memory_ids', {
         type: 'manual',
         message: t('flow.retrievalMemoryRequired'),
@@ -176,7 +176,7 @@ export function CreateAgentForm({
         {!isCompiler && memoryHint && (
           <section className="space-y-4">
             <p className="text-sm text-text-secondary">{memoryHint}</p>
-            <MemoriesFormField required />
+            <MemoriesFormField label={t('header.memories')} required />
           </section>
         )}
       </form>
