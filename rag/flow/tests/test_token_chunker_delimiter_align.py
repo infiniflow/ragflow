@@ -8,6 +8,7 @@ even at the same ``chunk_token_size`` the two paths produced different chunks.
 This test pins the canvas default to the canonical delimiter set so a canvas
 node left at its default config chunks identically to the General parser.
 """
+
 import asyncio
 import types
 
@@ -70,8 +71,4 @@ def test_canvas_default_chunking_matches_general():
     general = naive_merge(SAMPLE, 512, DEFAULT_DELIMITER, 0)
     general_texts = [c.strip() for c in general if c.strip()]
 
-    assert canvas_texts == general_texts, (
-        f"Canvas default chunking differs from General.\n"
-        f"canvas ({len(canvas_texts)} chunks): {canvas_texts}\n"
-        f"general ({len(general_texts)} chunks): {general_texts}"
-    )
+    assert canvas_texts == general_texts, f"Canvas default chunking differs from General.\ncanvas ({len(canvas_texts)} chunks): {canvas_texts}\ngeneral ({len(general_texts)} chunks): {general_texts}"
