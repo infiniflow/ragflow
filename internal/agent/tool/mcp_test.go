@@ -30,13 +30,27 @@ import (
 
 // TestMCPToolAdapter_InfoReturnsMCPDescriptor: the eino ToolInfo
 // surface matches the underlying MCP tool's name, description, and
-// input schema.
+// input schema. The input schema is fed in the real wire shape the
+// MCP client produces (full JSON Schema object) so the advertised
+// parameters come from "properties" — never the schema's top-level
+// keys ("type"/"properties"/"required").
 func TestMCPToolAdapter_InfoReturnsMCPDescriptor(t *testing.T) {
 	mcp := mcpclient.Tool{
 		Name:        "search_docs",
 		Description: "search internal docs",
 		InputSchema: map[string]any{
-			"query": map[string]any{"type": "string"},
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "the search query",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "max results",
+				},
+			},
+			"required": []any{"query"},
 		},
 	}
 	a := NewMCPToolAdapter(mcp)
@@ -55,6 +69,87 @@ func TestMCPToolAdapter_InfoReturnsMCPDescriptor(t *testing.T) {
 	}
 	if info.ParamsOneOf == nil {
 		t.Error("expected non-nil ParamsOneOf")
+	}
+
+	payload, err := json.Marshal(info)
+	if err != nil {
+		t.Fatalf("marshal ToolInfo: %v", err)
+	}
+	var decoded struct {
+		Params map[string]struct {
+			Type     string `json:"Type"`
+			Desc     string `json:"Desc"`
+			Required bool   `json:"Required"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("unmarshal ToolInfo: %v", err)
+	}
+	if len(decoded.Params) != 2 {
+		t.Fatalf("expected 2 params, got %d: %s", len(decoded.Params), payload)
+	}
+	for _, leaked := range []string{"type", "properties", "required"} {
+		if _, ok := decoded.Params[leaked]; ok {
+			t.Errorf("schema top-level key %q leaked into advertised params: %s", leaked, payload)
+		}
+	}
+
+	query, ok := decoded.Params["query"]
+	if !ok {
+		t.Fatalf("expected advertised param 'query', got %s", payload)
+	}
+	if query.Type != "string" {
+		t.Errorf("query.Type=%q, want string", query.Type)
+	}
+	if query.Desc != "the search query" {
+		t.Errorf("query.Desc=%q, want 'the search query'", query.Desc)
+	}
+	if !query.Required {
+		t.Errorf("query should be required per inputSchema.required")
+	}
+
+	limit, ok := decoded.Params["limit"]
+	if !ok {
+		t.Fatalf("expected advertised param 'limit', got %s", payload)
+	}
+	if limit.Type != "integer" {
+		t.Errorf("limit.Type=%q, want integer", limit.Type)
+	}
+	if limit.Required {
+		t.Errorf("limit should not be required")
+	}
+}
+
+// TestMCPToolAdapter_InfoWithoutPropertiesFallsBackToFreeForm: a tool
+// whose schema has no "properties" map advertises no params (eino falls
+// back to free-form args) and does not leak schema top-level keys.
+func TestMCPToolAdapter_InfoWithoutPropertiesFallsBackToFreeForm(t *testing.T) {
+	mcp := mcpclient.Tool{
+		Name:        "no_schema",
+		Description: "tool without property definitions",
+		InputSchema: map[string]any{"type": "object"},
+	}
+	a := NewMCPToolAdapter(mcp)
+	info, err := a.Info(t.Context())
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if info.ParamsOneOf == nil {
+		t.Error("expected non-nil ParamsOneOf")
+	}
+
+	payload, err := json.Marshal(info)
+	if err != nil {
+		t.Fatalf("marshal ToolInfo: %v", err)
+	}
+	var decoded struct {
+		Params map[string]json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("unmarshal ToolInfo: %v", err)
+	}
+	if len(decoded.Params) != 0 {
+		t.Errorf("expected no advertised params, got %s", payload)
 	}
 }
 
