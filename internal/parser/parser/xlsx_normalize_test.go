@@ -40,6 +40,27 @@ func TestXLSXParser_NormalizesInvalidSheetName(t *testing.T) {
 	}
 }
 
+func TestNormalizeXLSXForReadPreservesWorkbookXMLOutsideSheetName(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Name")
+	})
+	data = xlsxWithWorkbookSheetName(t, data, "Visible:Data")
+	original := readXLSXEntry(t, data, xlsxWorkbookXML)
+
+	normalized, _, changed, err := normalizeXLSXForRead(data)
+	if err != nil {
+		t.Fatalf("normalizeXLSXForRead: %v", err)
+	}
+	if !changed {
+		t.Fatal("normalizeXLSXForRead: want changed workbook")
+	}
+
+	want := strings.Replace(string(original), `name="Visible:Data"`, `name="Visible_Data"`, 1)
+	if got := string(readXLSXEntry(t, normalized, xlsxWorkbookXML)); got != want {
+		t.Fatalf("normalized workbook.xml changed bytes outside sheet name:\n got: %s\nwant: %s", got, want)
+	}
+}
+
 func TestXLSXParser_NormalizesEmojiSheetNameWithinUTF16Limit(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "Name")
@@ -162,6 +183,34 @@ func xlsxWithWorksheetXML(t *testing.T, data []byte, worksheet string) []byte {
 	return rewriteXLSXEntry(t, data, "xl/worksheets/sheet1.xml", func([]byte) []byte {
 		return []byte(worksheet)
 	})
+}
+
+func readXLSXEntry(t *testing.T, data []byte, entry string) []byte {
+	t.Helper()
+	src, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("open source xlsx: %v", err)
+	}
+	for _, file := range src.File {
+		if file.Name != entry {
+			continue
+		}
+		r, err := file.Open()
+		if err != nil {
+			t.Fatalf("open %s: %v", entry, err)
+		}
+		content, err := io.ReadAll(r)
+		closeErr := r.Close()
+		if err != nil {
+			t.Fatalf("read %s: %v", entry, err)
+		}
+		if closeErr != nil {
+			t.Fatalf("close %s: %v", entry, closeErr)
+		}
+		return content
+	}
+	t.Fatalf("XLSX entry %q not found", entry)
+	return nil
 }
 
 func rewriteXLSXEntry(t *testing.T, data []byte, entry string, rewrite func([]byte) []byte) []byte {

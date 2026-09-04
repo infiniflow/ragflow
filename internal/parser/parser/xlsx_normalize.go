@@ -101,45 +101,230 @@ func normalizeXLSXForRead(data []byte) ([]byte, []string, bool, error) {
 }
 
 func normalizeWorkbookSheetNames(workbook []byte) ([]byte, []string, bool, error) {
-	dec := xml.NewDecoder(bytes.NewReader(workbook))
 	var out bytes.Buffer
-	enc := xml.NewEncoder(&out)
 	used := make([]string, 0)
 	changed := false
 	var warnings []string
 
-	for {
-		tok, err := dec.Token()
-		if err == io.EOF {
+	lastWrite := 0
+	for offset := 0; offset < len(workbook); {
+		start := bytes.IndexByte(workbook[offset:], '<')
+		if start < 0 {
 			break
 		}
+		start += offset
+		if end, skipped, err := xmlNonElementEnd(workbook, start); err != nil {
+			return nil, nil, false, err
+		} else if skipped {
+			offset = end + 1
+			continue
+		}
+		end, err := xmlStartTagEnd(workbook, start)
 		if err != nil {
-			return nil, nil, false, fmt.Errorf("decode workbook XML: %w", err)
+			return nil, nil, false, err
 		}
-		if start, ok := tok.(xml.StartElement); ok && start.Name.Local == "sheet" {
-			for i := range start.Attr {
-				if start.Attr[i].Name.Local != "name" {
-					continue
-				}
-				original := start.Attr[i].Value
-				normalized := normalizedXLSXSheetName(original, used)
-				used = append(used, normalized)
-				if normalized != original {
-					start.Attr[i].Value = normalized
-					changed = true
-					warnings = append(warnings, fmt.Sprintf("XLSX normalized sheet name %q to %q", original, normalized))
-				}
+		tag := workbook[start : end+1]
+		if !isSheetStartTag(tag) {
+			offset = end + 1
+			continue
+		}
+
+		valueStart, valueEnd, quote, found, err := sheetNameAttributeBounds(tag)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		if !found {
+			offset = end + 1
+			continue
+		}
+		original, err := decodeXMLAttributeValue(tag[valueStart:valueEnd], quote)
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("decode XLSX sheet name: %w", err)
+		}
+		normalized := normalizedXLSXSheetName(original, used)
+		used = append(used, normalized)
+		if normalized != original {
+			out.Write(workbook[lastWrite:start])
+			out.Write(tag[:valueStart])
+			out.WriteString(encodeXMLAttributeValue(normalized, quote))
+			out.Write(tag[valueEnd:])
+			lastWrite = end + 1
+			offset = end + 1
+			changed = true
+			warnings = append(warnings, fmt.Sprintf("XLSX normalized sheet name %q to %q", original, normalized))
+			continue
+		}
+		offset = end + 1
+	}
+	if !changed {
+		return workbook, warnings, false, nil
+	}
+	out.Write(workbook[lastWrite:])
+	return out.Bytes(), warnings, true, nil
+}
+
+func xmlNonElementEnd(data []byte, start int) (int, bool, error) {
+	for _, marker := range []struct {
+		prefix []byte
+		suffix []byte
+	}{
+		{[]byte("<!--"), []byte("-->")},
+		{[]byte("<![CDATA["), []byte("]]>")},
+		{[]byte("<?"), []byte("?>")},
+	} {
+		if !bytes.HasPrefix(data[start:], marker.prefix) {
+			continue
+		}
+		end := bytes.Index(data[start+len(marker.prefix):], marker.suffix)
+		if end < 0 {
+			return 0, false, fmt.Errorf("scan workbook XML: unterminated markup at byte %d", start)
+		}
+		return start + len(marker.prefix) + end + len(marker.suffix) - 1, true, nil
+	}
+	return 0, false, nil
+}
+
+func xmlStartTagEnd(data []byte, start int) (int, error) {
+	var quote byte
+	for i := start + 1; i < len(data); i++ {
+		switch data[i] {
+		case '\'', '"':
+			if quote == 0 {
+				quote = data[i]
+			} else if quote == data[i] {
+				quote = 0
 			}
-			tok = start
-		}
-		if err := enc.EncodeToken(tok); err != nil {
-			return nil, nil, false, fmt.Errorf("encode workbook XML: %w", err)
+		case '>':
+			if quote == 0 {
+				return i, nil
+			}
 		}
 	}
-	if err := enc.Flush(); err != nil {
-		return nil, nil, false, fmt.Errorf("finish workbook XML: %w", err)
+	return 0, fmt.Errorf("scan workbook XML: unterminated tag at byte %d", start)
+}
+
+func isSheetStartTag(tag []byte) bool {
+	if len(tag) < len("<sheet") || tag[0] != '<' {
+		return false
 	}
-	return out.Bytes(), warnings, changed, nil
+	i := 1
+	for i < len(tag) && !isXMLSpace(tag[i]) && tag[i] != '/' && tag[i] != '>' {
+		i++
+	}
+	name := tag[1:i]
+	if colon := bytes.LastIndexByte(name, ':'); colon >= 0 {
+		name = name[colon+1:]
+	}
+	return bytes.Equal(name, []byte("sheet"))
+}
+
+func sheetNameAttributeBounds(tag []byte) (int, int, byte, bool, error) {
+	i := 1
+	for i < len(tag) && !isXMLSpace(tag[i]) && tag[i] != '/' && tag[i] != '>' {
+		i++
+	}
+	for i < len(tag) {
+		for i < len(tag) && isXMLSpace(tag[i]) {
+			i++
+		}
+		if i >= len(tag) || tag[i] == '/' || tag[i] == '>' {
+			return 0, 0, 0, false, nil
+		}
+		nameStart := i
+		for i < len(tag) && !isXMLSpace(tag[i]) && tag[i] != '=' && tag[i] != '/' && tag[i] != '>' {
+			i++
+		}
+		name := tag[nameStart:i]
+		for i < len(tag) && isXMLSpace(tag[i]) {
+			i++
+		}
+		if i >= len(tag) || tag[i] != '=' {
+			return 0, 0, 0, false, fmt.Errorf("scan workbook XML: invalid sheet attribute %q", name)
+		}
+		i++
+		for i < len(tag) && isXMLSpace(tag[i]) {
+			i++
+		}
+		if i >= len(tag) || (tag[i] != '\'' && tag[i] != '"') {
+			return 0, 0, 0, false, fmt.Errorf("scan workbook XML: unquoted sheet attribute %q", name)
+		}
+		quote := tag[i]
+		i++
+		valueStart := i
+		for i < len(tag) && tag[i] != quote {
+			i++
+		}
+		if i >= len(tag) {
+			return 0, 0, 0, false, fmt.Errorf("scan workbook XML: unterminated sheet attribute %q", name)
+		}
+		valueEnd := i
+		i++
+		if xmlLocalName(name) == "name" {
+			return valueStart, valueEnd, quote, true, nil
+		}
+	}
+	return 0, 0, 0, false, nil
+}
+
+func decodeXMLAttributeValue(value []byte, quote byte) (string, error) {
+	var attr struct {
+		Value string `xml:"value,attr"`
+	}
+	encoded := make([]byte, 0, len(value)+20)
+	encoded = append(encoded, "<sheet value="...)
+	encoded = append(encoded, quote)
+	encoded = append(encoded, value...)
+	encoded = append(encoded, quote, '/', '>')
+	if err := xml.Unmarshal(encoded, &attr); err != nil {
+		return "", err
+	}
+	return attr.Value, nil
+}
+
+func encodeXMLAttributeValue(value string, quote byte) string {
+	var out strings.Builder
+	for _, r := range value {
+		switch r {
+		case '&':
+			out.WriteString("&amp;")
+		case '<':
+			out.WriteString("&lt;")
+		case '>':
+			out.WriteString("&gt;")
+		case '\'':
+			if quote == '\'' {
+				out.WriteString("&apos;")
+			} else {
+				out.WriteRune(r)
+			}
+		case '"':
+			if quote == '"' {
+				out.WriteString("&quot;")
+			} else {
+				out.WriteRune(r)
+			}
+		case '\t':
+			out.WriteString("&#x9;")
+		case '\n':
+			out.WriteString("&#xA;")
+		case '\r':
+			out.WriteString("&#xD;")
+		default:
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
+}
+
+func isXMLSpace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
+}
+
+func xmlLocalName(name []byte) string {
+	if colon := bytes.LastIndexByte(name, ':'); colon >= 0 {
+		name = name[colon+1:]
+	}
+	return string(name)
 }
 
 func normalizedXLSXSheetName(name string, used []string) string {
