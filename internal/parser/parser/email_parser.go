@@ -511,26 +511,13 @@ func walkHTMLBodyText(n *html.Node, w *leafWriter) {
 	}
 }
 
-// decodeMailPayload attempts multiple charset decodings.
-// Mirrors Python's _decode_payload with fallback chain:
-// utf-8 → gb2312 → gbk → gb18030 → latin1 → utf-8 (ignore).
+// decodeMailPayload attempts charset decoding using the unified DecodeToUTF8 helper.
 func decodeMailPayload(payload []byte, charset string) string {
 	if len(payload) == 0 {
 		return ""
 	}
-	if decoded, _, ok := decodeFirstCharsetMatch(payload, buildCharsetChain(charset)); ok {
-		return decoded
-	}
-	return string(payload)
-}
-
-func buildCharsetChain(declared string) []string {
-	chain := make([]string, 0, 7)
-	if declared != "" {
-		chain = append(chain, declared)
-	}
-	chain = append(chain, "utf-8", "gb2312", "gbk", "gb18030", "latin1")
-	return chain
+	decoded, _ := DecodeToUTF8(payload, charset)
+	return string(decoded)
 }
 
 // parseMSG parses an Outlook .msg (OLE2 compound document) file using the
