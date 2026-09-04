@@ -470,7 +470,12 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 	case common.STOPPING:
 		// Task was requested to stop before worker dequeued it. Finalize as STOPPED and ack.
 		common.Info(fmt.Sprintf("task %s is stopping, finalize as STOPPED", taskMessage.TaskID))
-		e.markStopped(e.ctx, task.ID)
+		if !e.markStopped(e.ctx, task.ID) {
+			if nackErr := handle.Nack(); nackErr != nil {
+				common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), nackErr)
+			}
+			return
+		}
 		if ackErr := handle.Ack(); ackErr != nil {
 			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
 		}

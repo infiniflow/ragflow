@@ -846,3 +846,37 @@ func TestExecuteTask_CancelledWhileQueuedAcksAndSkips(t *testing.T) {
 		t.Fatal("expected task released from currentTasks after executeTask finished")
 	}
 }
+
+// TestProcessMessage_StoppingTaskFinalizesAndAcks verifies that a task in STOPPING
+// status received by processMessage is finalized to STOPPED and Acked.
+func TestProcessMessage_StoppingTaskFinalizesAndAcks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.STOPPING).Error; err != nil {
+		t.Fatalf("set task to STOPPING: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
+
+	ingestor.processMessage(handle)
+
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("STOPPING task: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 0 {
+		t.Fatalf("expected 0 tasks enqueued for STOPPING task, got %d", len(ingestor.taskChan))
+	}
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("task status = %q, want %q", task.Status, common.STOPPED)
+	}
+}

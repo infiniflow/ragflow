@@ -267,8 +267,12 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 	case common.STOPPING:
 		// User requested stop again on an already-stopping task: finalize to STOPPED
 		// and clean up the cancel flag so the task does not remain stuck.
+		task, err = s.transition(ctx, taskID, common.STOPPED)
+		if err != nil {
+			return nil, err
+		}
 		clearCancelFlag(ctx, taskID)
-		return s.transition(ctx, taskID, common.STOPPED)
+		return task, nil
 	default:
 		return task, nil
 	}
@@ -486,18 +490,22 @@ func (s *IngestionTaskService) ScheduleCreatedTasks(ctx context.Context) error {
 	// Clean up orphaned STOPPING tasks on startup: since the previous worker process
 	// exited, no worker is running them. Finalize them as STOPPED.
 	stoppingTasks, err := s.ingestionTaskDAO.ListByStatus(ctx, dao.DB, common.STOPPING)
-	if err == nil {
-		for _, task := range stoppingTasks {
-			_ = s.MarkStopped(ctx, task.ID)
-			clearCancelFlag(ctx, task.ID)
+	if err != nil {
+		return err
+	}
+	var recoveryErr error
+	for _, task := range stoppingTasks {
+		if stopErr := s.MarkStopped(ctx, task.ID); stopErr != nil {
+			recoveryErr = errors.Join(recoveryErr, fmt.Errorf("finalize stopping task %s: %w", task.ID, stopErr))
+			continue
 		}
+		clearCancelFlag(ctx, task.ID)
 	}
 
 	tasks, err := s.ingestionTaskDAO.ListByStatus(ctx, dao.DB, common.CREATED)
 	if err != nil {
 		return err
 	}
-	var recoveryErr error
 	for _, task := range tasks {
 		if err := s.enqueueTask(task.ID); err != nil {
 			recoveryErr = errors.Join(recoveryErr, fmt.Errorf("schedule created task %s: %w", task.ID, err))
