@@ -119,7 +119,10 @@ export function CreateAgentForm({
   }, [navigate]);
 
   async function onSubmit(data: FormSchemaType) {
-    if ((retrievalBindings?.datasetCount ?? 0) > 0 && isEmpty(data.dataset_ids)) {
+    if (
+      (retrievalBindings?.datasetCount ?? 0) > 0 &&
+      isEmpty(data.dataset_ids)
+    ) {
       form.setError('dataset_ids', {
         type: 'manual',
         message: t('flow.retrievalDatasetRequired'),
