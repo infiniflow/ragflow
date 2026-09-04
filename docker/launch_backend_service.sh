@@ -226,6 +226,21 @@ ensure_db_init() {
     echo "Database tables initialized."
 }
 
+# ensure_go_migrate runs the Go-side database migration (GORM auto-migrate
+# + manual migrations for Go-exclusive tables) synchronously and exits with
+# code 0 on success, non-zero on failure. It is a fail-fast step: if it
+# returns non-zero, `set -e` in the calling context will abort the script
+# before any background daemons are launched, so dependent services never
+# start against an incomplete schema. See #19270.
+ensure_go_migrate() {
+    if [[ ! -x bin/ragflow_server ]]; then
+        echo "bin/ragflow_server not found; skipping Go migration."
+        return 0
+    fi
+    echo "Running Go database migration..."
+    bin/ragflow_server --migrate
+}
+
 run_mysql_migrations() {
     local db_type="${DB_TYPE:-mysql}"
     db_type="${db_type,,}"
@@ -311,6 +326,7 @@ fi
 if [[ "$START_RAGFLOW" -eq 1 ]]; then
   ensure_db_init
   run_mysql_migrations
+  ensure_go_migrate
 fi
 
 # Start task executors

@@ -259,6 +259,21 @@ function ensure_db_init() {
     echo "Database tables initialized."
 }
 
+# ensure_go_migrate runs the Go-side database migration (GORM auto-migrate
+# + manual migrations for Go-exclusive tables) synchronously and exits with
+# code 0 on success, non-zero on failure. It is a fail-fast step: if it
+# returns non-zero, `set -e` in the calling context will abort the entrypoint
+# before any background daemons are launched, so dependent services never
+# start against an incomplete schema. See #19270.
+ensure_go_migrate() {
+    if [[ ! -x bin/ragflow_server ]]; then
+        echo "bin/ragflow_server not found; skipping Go migration."
+        return 0
+    fi
+    echo "Running Go database migration..."
+    bin/ragflow_server --migrate
+}
+
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
@@ -293,9 +308,16 @@ if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
     fi
 fi
 
+# Run the Go database migration synchronously before any background
+# daemons. `--migrate` is a standalone one-shot mode in ragflow_server that
+# exits 0 on success and non-zero on failure, so a migration error here
+# aborts the entrypoint under `set -e` and dependent services never start
+# against an incomplete schema. See #19270.
+ensure_go_migrate
+
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
-    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer --migrate &
+    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer &
 fi
 
 sleep 5
@@ -309,7 +331,7 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         echo "Starting Admin go server..."
-        run_with_restart "Admin go server" bin/ragflow_server --admin --migrate &
+        run_with_restart "Admin go server" bin/ragflow_server --admin &
     fi
 fi
 
@@ -324,7 +346,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         echo "Starting RAGFlow go server..."
-        run_with_restart "RAGFlow go server" bin/ragflow_server --api --migrate &
+        run_with_restart "RAGFlow go server" bin/ragflow_server --api &
     fi
 fi
 
