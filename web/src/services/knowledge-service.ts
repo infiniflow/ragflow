@@ -282,7 +282,11 @@ export function deleteKnowledgeGraph(knowledgeId: string) {
 }
 
 export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
-  request.get(api.kbList, { params: params ? { ...params, owner_ids: params.owner_ids?.join(',') } : params });
+  request.get(api.kbList, {
+    params: params
+      ? { ...params, owner_ids: params.owner_ids?.join(',') }
+      : params,
+  });
 
 // Fetch datasets by a set of IDs via the `ids` query param (comma-joined).
 // Used to echo back already-selected datasets whose names are not present

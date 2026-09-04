@@ -84,9 +84,9 @@ const RaptorFormFields = ({
   const clusteringMethod = useWatch({ name: ClusteringMethodField });
   const selectedClusteringMethod = useMemo(
     () =>
-      (clusteringMethod ??
-        form.getValues(ClusteringMethodField) ??
-        'gmm') as 'gmm' | 'ahc',
+      (clusteringMethod ?? form.getValues(ClusteringMethodField) ?? 'gmm') as
+        | 'gmm'
+        | 'ahc',
     [clusteringMethod, form],
   );
 
