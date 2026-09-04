@@ -256,7 +256,17 @@ func DecodeToUTF8(data []byte, hint string) ([]byte, string) {
 		}
 	}
 
-	// 2. XML declaration check (e.g. <?xml version="1.0" encoding="GB2312"?> in EPUB XHTML).
+	// 2. BOM prescan (Byte Order Mark).
+	// RFC 7303 §3.2 and XML specs define BOM as the authoritative physical encoding signature
+	// that overrides conflicting in-band text declarations (e.g. UTF-8 BOM with <?xml encoding="ISO-8859-1"?>).
+	// When contentType is "", DetermineEncoding reports certain=true strictly when a physical BOM is present.
+	if enc, name, certain := htmlcharset.DetermineEncoding(data, ""); certain && enc != nil {
+		if decoded, err := decodeTransform(data, enc.NewDecoder()); err == nil {
+			return []byte(decoded), name
+		}
+	}
+
+	// 3. XML declaration check (e.g. <?xml version="1.0" encoding="GB2312"?> in EPUB XHTML).
 	// Evaluated before the UTF-8 fast-path so that 7-bit ASCII-compatible escape encodings
 	// like HZ-GB-2312 declared in XML are decoded rather than treated as valid ASCII UTF-8.
 	if xmlEnc := declaredXMLEncoding(data); xmlEnc != "" && canonicalCharsetLabel(xmlEnc) != "utf8" && isRecognizedCharset(xmlEnc) {
@@ -265,12 +275,12 @@ func DecodeToUTF8(data []byte, hint string) ([]byte, string) {
 		}
 	}
 
-	// 3. Fast-path: already valid UTF-8.
+	// 4. Fast-path: already valid UTF-8.
 	if utf8.Valid(data) {
 		return data, "utf-8"
 	}
 
-	// 4. Document prescan via DetermineEncoding (handles BOM, HTML meta charset, and Content-Type)
+	// 5. Document prescan via DetermineEncoding (handles HTML meta charset, and Content-Type)
 	contentType := ""
 	if strings.Contains(hint, "/") {
 		contentType = hint
@@ -282,14 +292,14 @@ func DecodeToUTF8(data []byte, hint string) ([]byte, string) {
 		}
 	}
 
-	// 5. Statistical detection with chardet (confidence >= 90)
+	// 6. Statistical detection with chardet (confidence >= 90)
 	if label := detectedCharset(data); label != "" {
 		if decoded, err := decodeWithCharset(data, label); err == nil {
 			return []byte(decoded), label
 		}
 	}
 
-	// 6. Fallback chain: gb18030 -> big5 -> shift_jis -> euc-kr -> iso-8859-1
+	// 7. Fallback chain: gb18030 -> big5 -> shift_jis -> euc-kr -> iso-8859-1
 	if decoded, label, ok := decodeFirstCharsetMatch(data, fallbackCharsetLabels); ok {
 		return []byte(decoded), label
 	}

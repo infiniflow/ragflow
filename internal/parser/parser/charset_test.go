@@ -12,6 +12,7 @@ import (
 	"golang.org/x/text/encoding/korean"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/encoding/traditionalchinese"
+	"golang.org/x/text/encoding/unicode"
 )
 
 // TestCharsetEncodingSharedLabelContract locks the single-label contract of
@@ -260,5 +261,33 @@ func TestDecodeToUTF8_UnrecognizedHint_UTF8Payload(t *testing.T) {
 	}
 	if string(out) != string(utf8Text) {
 		t.Errorf("unrecognized hint corrupted UTF-8 text; got %q, want %q", string(out), string(utf8Text))
+	}
+}
+
+func TestDecodeToUTF8_BOMOverridesConflictingXMLDeclaration(t *testing.T) {
+	// RFC 7303: UTF-8 BOM (\xef\xbb\xbf) takes precedence over a conflicting XML declaration (e.g. ISO-8859-1).
+	conflictXML := append([]byte("\xef\xbb\xbf"), []byte(`<?xml version="1.0" encoding="ISO-8859-1"?><html><body>中文测试内容</body></html>`)...)
+	out, label := DecodeToUTF8(conflictXML, "application/xhtml+xml")
+	if label != "utf-8" {
+		t.Errorf("got label %q, want utf-8", label)
+	}
+	if !strings.Contains(string(out), "中文测试内容") {
+		t.Fatalf("UTF-8 BOM was overridden by XML ISO-8859-1; got: %s", string(out))
+	}
+}
+
+func TestDecodeToUTF8_UTF16LEBOM(t *testing.T) {
+	// UTF-16LE with BOM (\xff\xfe) must decode to valid UTF-8.
+	src := "UTF-16LE 中文测试"
+	utf16Bytes, err := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewEncoder().Bytes([]byte(src))
+	if err != nil {
+		t.Fatalf("UTF-16 encode: %v", err)
+	}
+	out, label := DecodeToUTF8(utf16Bytes, "text/plain")
+	if label != "utf-16le" {
+		t.Errorf("got label %q, want utf-16le", label)
+	}
+	if !strings.Contains(string(out), src) {
+		t.Errorf("got %q, want containing %q", string(out), src)
 	}
 }
