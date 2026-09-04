@@ -524,7 +524,7 @@ async def rank_memories_async(chat_mdl, goal: str, sub_goal: str, tool_call_summ
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
 
 
-async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: dict = None) -> dict:
+async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: dict = None, descriptions: dict = None) -> dict:
     """Generate metadata filter conditions from a user query using an LLM.
 
     Args:
@@ -532,6 +532,9 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: di
         meta_data: Dict of {key: set of values} - e.g. {"character": {"Caocao", "Liubei"}, "year": {2026}}
         query: User question (e.g. "Caocao in 2026")
         constraints: Optional dict of {key: operator} to constrain which op to use for a key
+        descriptions: Optional dict of {key: description} explaining what a key means,
+            for value spaces whose values are codes the model cannot interpret on
+            sight ("SP", "DRP"). Sourced from the dataset's own metadata config.
 
     Returns:
         Dict with "logic" ("and"/"or") and "conditions" list.
@@ -551,8 +554,17 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: di
     for key, values in meta_data.items():
         meta_data_structure[key] = list(values.keys()) if isinstance(values, dict) else values
 
+    # Only the keys actually offered: a description for a key the model cannot
+    # filter on is noise it may act upon. json.dumps({}) is "{}", which the
+    # template would happily render, so fall to None while it is still a dict.
+    offered = {k: v for k, v in (descriptions or {}).items() if k in meta_data_structure and v}
+
     sys_prompt = PROMPT_JINJA_ENV.from_string(META_FILTER).render(
-        current_date=datetime.datetime.today().strftime("%Y-%m-%d"), metadata_keys=json.dumps(meta_data_structure), user_question=query, constraints=json.dumps(constraints) if constraints else None
+        current_date=datetime.datetime.today().strftime("%Y-%m-%d"),
+        metadata_keys=json.dumps(meta_data_structure),
+        user_question=query,
+        constraints=json.dumps(constraints) if constraints else None,
+        metadata_descriptions=json.dumps(offered, ensure_ascii=False) if offered else None,
     )
     user_prompt = "Generate filters:"
     ans = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}])

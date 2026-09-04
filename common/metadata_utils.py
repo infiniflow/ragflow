@@ -205,6 +205,46 @@ async def apply_meta_data_filter(
             cached_metas = metas_loader() if metas_loader else {}
         return cached_metas
 
+    cached_descriptions: dict | None = None
+
+    def _get_key_descriptions() -> dict:
+        """What each metadata key means, taken from the dataset's own config.
+
+        RAGFlow already stores a description per metadata key --
+        ``parser_config.metadata``, edited at /datasets/<id>/metadata/config --
+        but only the parse-time extractor reads it. gen_meta_filter is handed
+        the bare value lists, so a value space made of codes ("SP", "DRP",
+        "PSV") leaves it nothing to map the wording of a question onto: it can
+        see that "SP" is a possible phase, not that the question asking about a
+        building permit means that one.
+
+        Best effort. A dataset without a config contributes nothing, the
+        lookup is skipped entirely for ``manual`` filters, and the first
+        non-empty description for a key wins when several datasets are searched
+        together.
+        """
+        nonlocal cached_descriptions
+        if cached_descriptions is not None:
+            return cached_descriptions
+        cached_descriptions = {}
+        if not kb_ids:
+            return cached_descriptions
+        try:
+            from api.db.services.knowledgebase_service import KnowledgebaseService
+
+            for kb_id in kb_ids:
+                ok, kb = KnowledgebaseService.get_by_id(kb_id)
+                if not ok or not kb:
+                    continue
+                schema = turn2jsonschema((kb.parser_config or {}).get("metadata") or {})
+                for key, prop in (schema.get("properties") or {}).items():
+                    description = (prop or {}).get("description")
+                    if description and key not in cached_descriptions:
+                        cached_descriptions[key] = description
+        except Exception:
+            logging.exception("Metadata key descriptions could not be read for kb_ids=%s", kb_ids)
+        return cached_descriptions
+
     def _run_metadata_filter(conditions: list[dict], logic: str) -> list[str]:
         """Run conditions through ES/Infinity push-down when possible, in-memory otherwise."""
         return filter_doc_ids_by_metadata(kb_ids or [], conditions, logic, _get_metas)
@@ -237,7 +277,7 @@ async def apply_meta_data_filter(
         return constrained
 
     if method == "auto":
-        filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
+        filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question, descriptions=_get_key_descriptions())
         logging.debug(f"Metadata filter(auto) generated: {filters}")
         doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
@@ -259,7 +299,7 @@ async def apply_meta_data_filter(
             current_metas = _get_metas()
             filtered_metas = {key: current_metas[key] for key in selected_keys if key in current_metas}
             if filtered_metas:
-                filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
+                filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints, descriptions=_get_key_descriptions())
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
                 doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
