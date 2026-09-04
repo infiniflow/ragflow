@@ -1110,7 +1110,13 @@ async def run_document_structure_compile(handler, embedding_model: LLMBundle) ->
     chat_mdl_by_tid = {template_id: chat_mdl for template_id, _ in active_templates}
     from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
 
-    llm_pool = LLMCallPool(DOC_STRUCTURE_LLM_POOL_SIZE)
+    def _on_llm_error(label: str, context: str | None, error_type: str) -> None:
+        ctx.progress_cb(msg=f"LLM call failed ({label}, {context or 'no context'}): {error_type}")
+
+    llm_pool = LLMCallPool(
+        DOC_STRUCTURE_LLM_POOL_SIZE,
+        on_error=_on_llm_error,
+    )
 
     tree_templates: list[tuple[str, dict]] = []
     non_tree_templates: list[tuple[str, dict]] = []

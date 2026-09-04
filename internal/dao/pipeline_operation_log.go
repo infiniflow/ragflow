@@ -25,6 +25,30 @@ import (
 	"gorm.io/gorm"
 )
 
+var legacyPipelineOperationStatuses = map[string]string{
+	"0": "UNSTART",
+	"1": "RUNNING",
+	"2": "CANCEL",
+	"3": "DONE",
+	"4": "FAIL",
+	"5": "SCHEDULE",
+}
+
+func normalizePipelineOperationStatuses(statuses []string) []string {
+	if len(statuses) == 0 {
+		return statuses
+	}
+	normalized := make([]string, len(statuses))
+	for i, status := range statuses {
+		if canonical, ok := legacyPipelineOperationStatuses[status]; ok {
+			normalized[i] = canonical
+		} else {
+			normalized[i] = status
+		}
+	}
+	return normalized
+}
+
 // graphRaptorFakeDocID is the placeholder document_id used for dataset-level
 // (graph/raptor/mindmap) pipeline logs, mirroring GRAPH_RAPTOR_FAKE_DOC_ID in
 // api/db/services/task_service.py.
@@ -86,7 +110,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 		query = query.Where("LOWER(document_name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
 	}
 	if len(operationStatus) > 0 {
-		query = query.Where("operation_status IN ?", operationStatus)
+		query = query.Where("operation_status IN ?", normalizePipelineOperationStatuses(operationStatus))
 	}
 	if createDateFrom != "" {
 		query = query.Where("create_date >= ?", createDateFrom)

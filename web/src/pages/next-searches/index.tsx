@@ -21,6 +21,7 @@ import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { buildOwnersFilter } from '@/utils/list-filter-util';
@@ -41,10 +42,12 @@ export default function SearchList() {
     isLoading,
     pagination,
     searchString,
+    setSearchString,
     handleInputChange,
     setPagination,
     refetch: refetchList,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   } = useFetchSearchList();
   const owners = [
@@ -77,7 +80,13 @@ export default function SearchList() {
     },
     [setPagination],
   );
-  useGoToPreviousPageOnEmpty(list?.data?.search_apps?.length, isLoading);
+  useGoToPreviousPageOnEmpty(list?.data?.search_apps?.length, isLoading, {
+    deletionKey: ListDeletionKey.SearchList,
+    searchString,
+    setSearchString,
+    filterValue,
+    setFilterValue,
+  });
 
   const [searchUrl, setSearchUrl] = useSearchParams();
   const isCreate = searchUrl.get('isCreate') === 'true';

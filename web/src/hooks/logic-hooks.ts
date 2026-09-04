@@ -14,6 +14,8 @@
  *  limitations under the License.
  */
 
+import { FilterValue } from '@/components/list-filter-bar/interface';
+import { hasActiveFilter } from '@/components/list-filter-bar/utils';
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { MessageType } from '@/constants/chat';
@@ -31,6 +33,10 @@ import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { buildMessageUuid } from '@/utils/chat';
+import {
+  consumeListDeletionMarker,
+  discardListDeletionMarker,
+} from '@/utils/list-deletion-util';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { has, isEmpty, omit } from 'lodash';
@@ -127,15 +133,53 @@ export const useGetPaginationWithRouter = () => {
 };
 
 // When the current page becomes empty (e.g. after deleting the last card on
-// the last page), navigate back to the previous page automatically.
+// the last page), navigate back to the previous page automatically. When the
+// empty page was caused by a deletion (recorded via markListItemsDeleted) and
+// a search or filter is active, clear them and jump to the first page of the
+// unfiltered list instead — the filtered result set no longer exists, so the
+// previous page of it would be meaningless.
 export const useGoToPreviousPageOnEmpty = (
   listLength: number | undefined,
   loading: boolean = false,
+  options?: {
+    deletionKey?: string;
+    searchString?: string;
+    setSearchString?: (value: string) => void;
+    filterValue?: FilterValue;
+    setFilterValue?: (value: FilterValue) => void;
+  },
 ) => {
   const { pagination, setPagination } = useGetPaginationWithRouter();
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   useEffect(() => {
-    if (!loading && listLength === 0 && pagination.current > 1) {
+    if (loading || listLength !== 0 || pagination.current <= 1) {
+      return;
+    }
+
+    const {
+      deletionKey,
+      searchString,
+      setSearchString,
+      filterValue,
+      setFilterValue,
+    } = optionsRef.current ?? {};
+    const clearedByDeletion =
+      deletionKey &&
+      (Boolean(searchString) || hasActiveFilter(filterValue)) &&
+      consumeListDeletionMarker(deletionKey);
+
+    if (clearedByDeletion) {
+      setSearchString?.('');
+      setFilterValue?.({});
+      setPagination({ page: 1, pageSize: pagination.pageSize });
+    } else {
+      if (deletionKey) {
+        // The empty page was not caused by a deletion (e.g. a search with no
+        // matches); drop any stale marker so it cannot fire later.
+        discardListDeletionMarker(deletionKey);
+      }
       setPagination({
         page: pagination.current - 1,
         pageSize: pagination.pageSize,
@@ -156,7 +200,13 @@ export const useHandleSearchChange = () => {
     [setPagination],
   );
 
-  return { handleInputChange, searchString, pagination, setPagination };
+  return {
+    handleInputChange,
+    searchString,
+    setSearchString,
+    pagination,
+    setPagination,
+  };
 };
 
 export const useGetPagination = (options?: { pageSize?: number }) => {
