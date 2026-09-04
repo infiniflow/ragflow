@@ -23,9 +23,13 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode/utf16"
 )
 
-const xlsxWorkbookXML = "xl/workbook.xml"
+const (
+	xlsxWorkbookXML       = "xl/workbook.xml"
+	maxXLSXSheetNameUnits = 31
+)
 
 // normalizeXLSXForRead rewrites only invalid workbook sheet names so Excelize
 // can read otherwise intact sheet data. It leaves every non-workbook ZIP entry
@@ -100,7 +104,7 @@ func normalizeWorkbookSheetNames(workbook []byte) ([]byte, []string, bool, error
 	dec := xml.NewDecoder(bytes.NewReader(workbook))
 	var out bytes.Buffer
 	enc := xml.NewEncoder(&out)
-	used := make(map[string]struct{})
+	used := make([]string, 0)
 	changed := false
 	var warnings []string
 
@@ -119,7 +123,7 @@ func normalizeWorkbookSheetNames(workbook []byte) ([]byte, []string, bool, error
 				}
 				original := start.Attr[i].Value
 				normalized := normalizedXLSXSheetName(original, used)
-				used[strings.ToLower(normalized)] = struct{}{}
+				used = append(used, normalized)
 				if normalized != original {
 					start.Attr[i].Value = normalized
 					changed = true
@@ -138,7 +142,7 @@ func normalizeWorkbookSheetNames(workbook []byte) ([]byte, []string, bool, error
 	return out.Bytes(), warnings, changed, nil
 }
 
-func normalizedXLSXSheetName(name string, used map[string]struct{}) string {
+func normalizedXLSXSheetName(name string, used []string) string {
 	var b strings.Builder
 	for _, r := range strings.Trim(name, "'") {
 		switch r {
@@ -148,24 +152,45 @@ func normalizedXLSXSheetName(name string, used map[string]struct{}) string {
 			b.WriteRune(r)
 		}
 	}
-	base := truncateSheetName(b.String(), 31)
+	base := truncateSheetName(b.String(), maxXLSXSheetNameUnits)
 	if base == "" {
 		base = "Sheet"
 	}
 	name = base
 	for suffix := 2; ; suffix++ {
-		if _, exists := used[strings.ToLower(name)]; !exists {
+		if !containsEqualFold(used, name) {
 			return name
 		}
 		tail := fmt.Sprintf("_%d", suffix)
-		name = truncateSheetName(base, 31-len([]rune(tail))) + tail
+		name = truncateSheetName(base, maxXLSXSheetNameUnits-utf16UnitCount(tail)) + tail
 	}
 }
 
-func truncateSheetName(name string, max int) string {
-	runes := []rune(name)
-	if len(runes) <= max {
-		return name
+func containsEqualFold(names []string, name string) bool {
+	for _, candidate := range names {
+		if strings.EqualFold(candidate, name) {
+			return true
+		}
 	}
-	return string(runes[:max])
+	return false
+}
+
+func truncateSheetName(name string, maxUnits int) string {
+	units := 0
+	for i, r := range name {
+		width := utf16.RuneLen(r)
+		if units+width > maxUnits {
+			return name[:i]
+		}
+		units += width
+	}
+	return name
+}
+
+func utf16UnitCount(name string) int {
+	units := 0
+	for _, r := range name {
+		units += utf16.RuneLen(r)
+	}
+	return units
 }

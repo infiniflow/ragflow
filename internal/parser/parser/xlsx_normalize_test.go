@@ -3,6 +3,7 @@ package parser
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/xml"
 	"io"
 	"strings"
 	"testing"
@@ -36,6 +37,52 @@ func TestXLSXParser_NormalizesInvalidSheetName(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(res.Warnings, "\n"), "Visible:Data") {
 		t.Fatalf("warnings = %v, want sheet-name normalization warning", res.Warnings)
+	}
+}
+
+func TestXLSXParser_NormalizesEmojiSheetNameWithinUTF16Limit(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Name")
+		mustSetCell(t, f, "Sheet1", "A2", "Alice")
+	})
+	data = xlsxWithWorkbookSheetName(t, data, strings.Repeat("😀", 31)+":")
+
+	p, err := NewXLSXParser("")
+	if err != nil {
+		t.Fatalf("NewXLSXParser: %v", err)
+	}
+	res := p.ParseWithResult(t.Context(), "emoji-sheet-name.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if !strings.Contains(xlsxTableHTML(res), "Alice") {
+		t.Fatalf("parsed table = %q, want Alice", xlsxTableHTML(res))
+	}
+}
+
+func TestNormalizeWorkbookSheetNamesAvoidsEqualFoldCollisions(t *testing.T) {
+	workbook := []byte(`<workbook><sheets><sheet name="'Σ'"/><sheet name="ς"/></sheets></workbook>`)
+	normalized, _, changed, err := normalizeWorkbookSheetNames(workbook)
+	if err != nil {
+		t.Fatalf("normalizeWorkbookSheetNames: %v", err)
+	}
+	if !changed {
+		t.Fatal("normalizeWorkbookSheetNames: want changed workbook")
+	}
+
+	var result struct {
+		Sheets []struct {
+			Name string `xml:"name,attr"`
+		} `xml:"sheets>sheet"`
+	}
+	if err := xml.Unmarshal(normalized, &result); err != nil {
+		t.Fatalf("Unmarshal normalized workbook: %v", err)
+	}
+	if len(result.Sheets) != 2 {
+		t.Fatalf("normalized sheets = %d, want 2", len(result.Sheets))
+	}
+	if strings.EqualFold(result.Sheets[0].Name, result.Sheets[1].Name) {
+		t.Fatalf("normalized sheet names %q and %q collide under EqualFold", result.Sheets[0].Name, result.Sheets[1].Name)
 	}
 }
 
