@@ -40,8 +40,9 @@ PDF_OXIDE_VERSION="0.3.73"
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
 # (--undefined=OrtGetApiBase + --dynamic-list, no --whole-archive); OrtGetApiBase
-# is then resolved via dlopen(self), so no libonnxruntime.so is needed at
-# runtime. Downloaded by ragflow_deps/download_go_deps.py (and
+# is then resolved via dlopen(NULL) (the process-global symbol table, not the
+# executable's own path), so no libonnxruntime.so is needed at runtime.
+# Downloaded by ragflow_deps/download_go_deps.py (and
 # ragflow_deps/download_deps.py) into onnxruntime/static_lib.
 ONNXRUNTIME_STATIC_PREFIX="${HOME}/ragflow-native-libs/onnxruntime/static_lib"
 
