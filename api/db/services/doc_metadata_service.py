@@ -34,6 +34,23 @@ from common.metadata_utils import dedupe_list
 
 METADATA_ID_BATCH_SIZE = 10000
 
+# ES rejects a search that would build more than search.max_buckets buckets
+# (65,536 by default). One composite aggregation per metadata key shares that
+# budget, so the per-key page size is divided out of it rather than fixed.
+# This bounds a single round trip, not the answer: a key whose values fill a
+# page is re-requested from its after_key until exhausted.
+ES_MAX_BUCKETS = 65536
+META_VALUE_SPACE_PAGE_SIZE = 1000
+
+
+class MetaValueSpaceIncomplete(Exception):
+    """The metadata value space could not be read in full.
+
+    Distinct from a failure to read it at all: callers must not answer with a
+    partial value space, and must not quietly substitute the result-window
+    limited scan, which is incomplete in the same way.
+    """
+
 
 def _es_response_total(response: Any) -> int | None:
     """Extract the exact total hit count from an ES search response.
@@ -757,6 +774,154 @@ class DocMetadataService:
         except Exception as e:
             logging.error(f"Error getting metadata for document {doc_id}: {e}")
             return {}
+
+    @classmethod
+    def _agg_fields_from_mapping_es(cls, index_name: str) -> dict[str, str]:
+        """Map each metadata key to the ES field path that can be aggregated on.
+
+        ``meta_fields`` is mapped ``dynamic: true``, so the index mapping already
+        enumerates every key ever indexed for the tenant. Reading it costs one
+        cheap metadata call and -- unlike scanning documents -- cannot miss a key
+        just because the documents carrying it happen to sort late.
+
+        Returns {} when the backend is not ES or the mapping cannot be read, so
+        the caller can fall back to the document scan.
+        """
+        es = getattr(settings.docStoreConn, "es", None)
+        if es is None:
+            return {}
+        try:
+            mapping = es.indices.get_mapping(index=index_name)
+        except Exception as e:
+            logging.warning(f"Cannot read mapping of {index_name}: {e}")
+            return {}
+
+        raw = getattr(mapping, "body", mapping)
+        props = {}
+        for body in raw.values():
+            props = body.get("mappings", {}).get("properties", {}).get("meta_fields", {}).get("properties", {})
+            if props:
+                break
+
+        fields = {}
+        for key, spec in props.items():
+            typ = spec.get("type")
+            if typ == "text" and "keyword" in (spec.get("fields") or {}):
+                # text is analysed and not aggregatable; its keyword subfield is
+                fields[key] = f"meta_fields.{key}.keyword"
+            elif typ in ("keyword", "long", "integer", "short", "byte", "double", "float", "boolean", "date"):
+                fields[key] = f"meta_fields.{key}"
+        return fields
+
+    @classmethod
+    @DB.connection_context()
+    def get_meta_value_space_by_kbs(cls, kb_ids: list[str]) -> dict:
+        """Every distinct metadata value per key: {key: [value, ...]}.
+
+        Deliberately not get_flatted_meta_by_kbs(), which pages the doc-meta
+        index with from/size and stops at the doc store's result window: past
+        it, gen_meta_filter is offered the metadata of an arbitrary prefix and
+        asked to pick a value that may not be in it. A composite aggregation is
+        not bound by that window, and its cost scales with the metadata's
+        cardinality rather than the document count, so the result is complete
+        for a dataset of any size.
+
+        Raises MetaValueSpaceIncomplete when the doc store answers with partial
+        results, rather than returning a space that silently omits values.
+
+        Falls back to flattening get_flatted_meta_by_kbs() on non-ES backends,
+        so behaviour there is unchanged.
+        """
+        if not kb_ids:
+            return {}
+
+        def _fallback() -> dict:
+            metas = cls.get_flatted_meta_by_kbs(kb_ids)
+            return {k: list(v.keys()) if isinstance(v, dict) else list(v) for k, v in metas.items()}
+
+        try:
+            kb = Knowledgebase.get_by_id(kb_ids[0])
+            if not kb:
+                return {}
+            index_name = cls._get_doc_meta_index_name(kb.tenant_id)
+            if not settings.docStoreConn.index_exist(index_name, ""):
+                return {}
+
+            fields = cls._agg_fields_from_mapping_es(index_name)
+            if not fields:
+                logging.debug("[get_meta_value_space_by_kbs] source=paged-scan reason=no-aggregatable-fields kb_count=%d", len(kb_ids))
+                return _fallback()
+
+            es = settings.docStoreConn.es
+            query = {"bool": {"filter": [{"terms": {"kb_id": list(kb_ids)}}]}}
+            # composite, not terms: a terms aggregation returns only the top
+            # `size` values and drops the rest silently, which is the same class
+            # of incompleteness this method exists to remove. composite pages
+            # instead, so the page size bounds a round trip rather than the
+            # answer.
+            #
+            # All keys travel in one request, each as its own composite
+            # aggregation with its own after_key. Only a key whose values filled
+            # an entire page is carried into another round, so the common case --
+            # every key below the page size -- costs exactly one search.
+            page_size = max(1, min(META_VALUE_SPACE_PAGE_SIZE, ES_MAX_BUCKETS // max(1, len(fields))))
+            space: dict[str, list[str]] = {}
+            after: dict[str, dict] = {}
+            pending = dict(fields)
+            requests = 0
+            while pending:
+                aggs = {}
+                for key, field in pending.items():
+                    composite = {"size": page_size, "sources": [{key: {"terms": {"field": field}}}]}
+                    if key in after:
+                        composite["after"] = after[key]
+                    aggs[f"vs_{key}"] = {"composite": composite}
+                # allow_partial_search_results=False: the client's default lets ES
+                # answer HTTP 200 with some shards missing, and a value absent
+                # because its shard failed is indistinguishable here from a value
+                # that does not exist. Filtering on that silently drops matching
+                # documents, so refuse the answer instead.
+                res = es.search(
+                    index=index_name,
+                    body={"size": 0, "query": query, "aggs": aggs},
+                    allow_partial_search_results=False,
+                )
+                requests += 1
+                payload = getattr(res, "body", res)
+                shards = payload.get("_shards") or {}
+                if payload.get("timed_out") or shards.get("failed"):
+                    raise MetaValueSpaceIncomplete(f"partial aggregation response for kb_ids={kb_ids}: timed_out={payload.get('timed_out')}, shards={shards}")
+                result = payload.get("aggregations", {})
+                unfinished = {}
+                for key, field in pending.items():
+                    agg = result.get(f"vs_{key}")
+                    if agg is None:
+                        # A requested aggregation that came back absent is not an
+                        # empty result; treating it as one would silently drop the
+                        # whole key from the value space.
+                        raise MetaValueSpaceIncomplete(f"aggregation vs_{key} missing from the response for kb_ids={kb_ids}")
+                    buckets = agg.get("buckets") or []
+                    if buckets:
+                        space.setdefault(key, []).extend(str(b["key"][key]) for b in buckets)
+                    if len(buckets) == page_size and agg.get("after_key"):
+                        after[key] = agg["after_key"]
+                        unfinished[key] = field
+                pending = unfinished
+
+            logging.debug(
+                "[get_meta_value_space_by_kbs] source=aggregation kb_count=%d key_count=%d value_count=%d requests=%d",
+                len(kb_ids), len(space), sum(len(values) for values in space.values()), requests,
+            )
+            return space
+
+        except MetaValueSpaceIncomplete:
+            # Deliberately not _fallback(): the paged scan is result-window
+            # limited, so substituting it here would answer an incomplete read
+            # with a differently incomplete one.
+            raise
+        except Exception:
+            logging.exception(f"get_meta_value_space_by_kbs failed for {kb_ids}; falling back to the paged scan")
+            return _fallback()
 
     @classmethod
     @DB.connection_context()

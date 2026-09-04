@@ -540,7 +540,34 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: di
         current_date=datetime.datetime.today().strftime("%Y-%m-%d"), metadata_keys=json.dumps(meta_data_structure), user_question=query, constraints=json.dumps(constraints) if constraints else None
     )
     user_prompt = "Generate filters:"
-    ans = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}])
+
+    # The metadata block is the whole value space of the dataset, so its size is
+    # set by the data rather than by anything here -- a high-cardinality key can
+    # push the system prompt past the model's context on its own. Bound it like
+    # the other generators in this module do, so an oversized value space costs
+    # a trimmed prompt (and, if the answer then fails to parse, no filter at
+    # all) instead of a failed model request.
+    #
+    # Unlike keyword_extraction/question_proposal above, the FITTED system
+    # content is what gets sent: they pass the original rendered prompt and keep
+    # only msg[1:], which silently discards the trim of the part that is large.
+    msg = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}]
+    used, msg = message_fit_in(msg, chat_mdl.max_length)
+    if msg[0]["content"] != sys_prompt:
+        # The conditions returned here are applied as a hard document scope, so
+        # a filter chosen from a value list that lost entries would exclude
+        # matching documents -- and the model cannot report that it only saw
+        # part of the metadata. Return no conditions instead, which leaves the
+        # search unscoped, and skip the model call that could only produce an
+        # answer we must not use.
+        logging.warning(
+            "gen_meta_filter: the metadata value space does not fit max_length=%s (needed>%s, keys=%s); "
+            "returning no conditions so the search stays unscoped rather than filtered on a partial value list.",
+            chat_mdl.max_length, used, len(meta_data_structure),
+        )
+        return {"logic": "and", "conditions": []}
+
+    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
     ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
     try:
         ans = json_repair.loads(ans)
