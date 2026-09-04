@@ -641,7 +641,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 }
 
 type DropProviderInstanceRequest struct {
-	Instances []string `json:"instances" binding:"required"`
+	Instances []string `json:"instances" binding:"required,min=1,dive,required"`
 }
 
 func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
