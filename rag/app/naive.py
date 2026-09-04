@@ -53,7 +53,7 @@ from common.text_utils import normalize_arabic_presentation_forms
 from rag.nlp import (
     concat_img,
     DEFAULT_DELIMITER,
-    find_codec,
+    decode_text,
     naive_merge,
     naive_merge_with_images,
     naive_merge_docx,
@@ -1002,8 +1002,7 @@ class Markdown(MarkdownParser):
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
         """Parse markdown into text sections and optional standalone table chunks."""
         if binary is not None:
-            encoding = find_codec(binary)
-            txt = binary.decode(encoding, errors="ignore")
+            txt, _ = decode_text(binary, context="Markdown document")
         else:
             with open(filename, "r") as f:
                 txt = f.read()
