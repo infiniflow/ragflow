@@ -301,8 +301,8 @@ func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
 //   - Supports pagination and keyword search
 //
 // Query Parameters:
-//   - memory_type (optional): Memory type filter, supports comma-separated multiple types
-//   - tenant_id (optional): Tenant ID filter
+//   - memory_type (optional): Memory type filter, supports repeated keys and comma-separated multiple types
+//   - tenant_id (optional): Tenant ID filter, supports repeated keys and comma-separated multiple IDs
 //   - storage_type (optional): Storage type filter
 //   - keywords (optional): Keyword search (fuzzy match on name)
 //   - page (optional): Page number, default 1
@@ -322,8 +322,6 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	}
 
 	// Parse query parameters
-	memoryTypesParam := c.Query("memory_type")
-	tenantIDsParam := c.Query("tenant_id")
 	storageType := c.Query("storage_type")
 	keywords := c.Query("keywords")
 	pageStr := c.DefaultQuery("page", "1")
@@ -341,24 +339,24 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 		pageSize = 50
 	}
 
-	// Parse memory_type parameter (supports comma separation)
+	// Parse memory_type parameter (repeated query keys and comma separation)
 	var memoryTypes []string
-	if memoryTypesParam != "" {
-		if strings.Contains(memoryTypesParam, ",") {
-			memoryTypes = strings.Split(memoryTypesParam, ",")
-		} else {
-			memoryTypes = []string{memoryTypesParam}
+	for _, item := range c.QueryArray("memory_type") {
+		for _, value := range strings.Split(item, ",") {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				memoryTypes = append(memoryTypes, trimmed)
+			}
 		}
 	}
 
-	// Parse tenant_id parameter
+	// Parse tenant_id parameter (repeated query keys and comma separation)
 	// If not specified, service will get all tenants associated with the user
 	var tenantIDs []string
-	if tenantIDsParam != "" {
-		if strings.Contains(tenantIDsParam, ",") {
-			tenantIDs = strings.Split(tenantIDsParam, ",")
-		} else {
-			tenantIDs = []string{tenantIDsParam}
+	for _, item := range c.QueryArray("tenant_id") {
+		for _, value := range strings.Split(item, ",") {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				tenantIDs = append(tenantIDs, trimmed)
+			}
 		}
 	}
 
