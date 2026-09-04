@@ -298,7 +298,16 @@ func (l *ListOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map
 	}
 	items, ok := raw.([]any)
 	if !ok {
-		return nil, fmt.Errorf("ListOperations: input is not a list (got %T)", raw)
+		// A nil value means the referenced variable was never written in
+		// this run — typically an upstream node routed around by a
+		// conditional branch. That is "no variable passed in", not a
+		// misconfiguration: operate on an empty list so the canvas run
+		// survives. Non-nil non-list values remain a hard error.
+		if raw == nil {
+			items = []any{}
+		} else {
+			return nil, fmt.Errorf("ListOperations: input is not a list (got %T)", raw)
+		}
 	}
 
 	var out []any
