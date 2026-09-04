@@ -54,11 +54,16 @@ uv run python3 ragflow_deps/download_deps.py
 > ```bash
 > RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_go_deps.py + download_deps.py
 > PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
-> # NOTE: the ONNX Runtime static lib fetched by download_go_deps.py is
-> # linux-x64 ONLY (onnxruntime-linux-x64-static_lib-*). On darwin_* / non-amd64
-> # PLATFORM values the production DeepDoc backend cannot be linked, so those
-> # PLATFORM examples cover office_oxide/pdfium/pdf_oxide only — ORT is a
-> # Linux-amd64 link dependency here.
+> # Native libs are fetched for the *host* platform by download_go_deps.py
+> # (override with RAGFLOW_TARGET_OS / RAGFLOW_TARGET_ARCH). ONNX Runtime now
+> # ships static libs for linux-x64, linux-aarch64, osx-x64 and osx-arm64, so the
+> # production DeepDoc backend links on all four. On Linux the link force-pulls
+> # OrtGetApiBase and exports just it (--undefined=OrtGetApiBase + --dynamic-list,
+> # no --whole-archive) with -fuse-ld=lld + -lstdc++; on macOS (ld64) it uses
+> # -force_load + -export_dynamic + -lc++ instead, since ld64 has no GNU ld
+> # equivalents. The macOS path is written but NOT yet verified on real
+> # Apple-Silicon hardware — confirm the dlopen(NULL) resolution of OrtGetApiBase
+> # there. (待 Mac 验证)
 >
 > # Resolve the version-stamped ORT archive path FIRST, in its own unquoted
 > # assignment: the shell does not expand `*` inside the double-quoted
@@ -90,10 +95,14 @@ uv run python3 ragflow_deps/download_deps.py
 > All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
 >
 > **ONNX Runtime is mandatory for the production binary.** The in-process (Go)
-> DeepDoc backend is statically linked against `libonnxruntime.a` (no
-> `--whole-archive`; `OrtGetApiBase` is force-pulled with
-> `-Wl,--undefined=OrtGetApiBase` and exported via `--dynamic-list`), and
-> `OrtGetApiBase` is resolved at runtime through `dlopen(NULL)`. The org
+> DeepDoc backend is statically linked against `libonnxruntime.a`. On Linux the
+> only symbol that must be visible process-wide is `OrtGetApiBase`: it is
+> force-pulled with `-Wl,--undefined=OrtGetApiBase` and exported via
+> `--dynamic-list` (no `--whole-archive`, so unreferenced kernels are dropped).
+> On macOS (ld64) the archives are instead pulled in with `-force_load` and
+> exported with `-export_dynamic`, since ld64 has no GNU ld equivalents; this
+> path is written but NOT yet verified on real Apple-Silicon hardware. In both
+> cases `OrtGetApiBase` is resolved at runtime through `dlopen(NULL)`. The org
 > `onnxruntime_go` binding
 > (github.com/infiniflow/onnxruntime_go, the mirror of yalue/onnxruntime_go) only
 > needs `-ldl` to *compile*, so a binary built **without** ORT links
