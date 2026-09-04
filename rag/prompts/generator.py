@@ -19,15 +19,15 @@ import json
 import logging
 import re
 from copy import deepcopy
-from typing import Tuple
-from jinja2.sandbox import SandboxedEnvironment
-import json_repair
 
+import json_repair
+from jinja2.sandbox import SandboxedEnvironment
+
+from common.constants import TAG_FLD
 from common.misc_utils import hash_str2int
+from common.token_utils import get_encoder, num_tokens_from_string
 from rag.nlp import rag_tokenizer
 from rag.prompts.template import load_prompt
-from common.constants import TAG_FLD
-from common.token_utils import encoder, num_tokens_from_string
 
 STOP_TOKEN = "<|STOP|>"
 COMPLETE_TASK = "complete_task"
@@ -83,7 +83,8 @@ def message_fit_in(msg, max_length=4000):
 
     def trim_content(content, limit):
         limit = max(0, limit)
-        return encoder.decode(encoder.encode(content)[:limit])
+        enc = get_encoder()
+        return enc.decode(enc.encode(content)[:limit])
 
     c = count()
     if c < max_length:
@@ -253,9 +254,9 @@ async def question_proposal(chat_mdl, content, topn=3):
 
 
 async def full_question(tenant_id=None, llm_id=None, messages=[], language=None, chat_mdl=None):
-    from common.constants import LLMType
-    from api.db.services.llm_service import LLMBundle
     from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_type
+    from api.db.services.llm_service import LLMBundle
+    from common.constants import LLMType
 
     if not chat_mdl:
         model_types = resolve_model_type(tenant_id, llm_id)
@@ -289,13 +290,13 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
 
 
 async def cross_languages(tenant_id, llm_id, query, languages=[]):
-    from common.constants import LLMType
-    from api.db.services.llm_service import LLMBundle
     from api.db.joint_services.tenant_model_service import (
         get_tenant_default_model_by_type,
         resolve_model_config,
         resolve_model_type,
     )
+    from api.db.services.llm_service import LLMBundle
+    from common.constants import LLMType
 
     if llm_id and "vision" in resolve_model_type(tenant_id, llm_id):
         chat_model_config = resolve_model_config(tenant_id, LLMType.VISION, llm_id)
@@ -459,7 +460,7 @@ async def next_step_async(chat_mdl, history: list, tools_description: list[dict]
     return json_str, tk_cnt
 
 
-async def reflect_async(chat_mdl, history: list[dict], tool_call_res: list[Tuple], user_defined_prompts: dict = {}):
+async def reflect_async(chat_mdl, history: list[dict], tool_call_res: list[tuple], user_defined_prompts: dict = {}):
     tool_calls = [{"name": p[0], "result": p[1]} for p in tool_call_res]
     goal = history[1]["content"]
     template = PROMPT_JINJA_ENV.from_string(user_defined_prompts.get("reflection", REFLECT))
@@ -472,13 +473,13 @@ async def reflect_async(chat_mdl, history: list[dict], tool_call_res: list[Tuple
     _, msg = message_fit_in(hist, chat_mdl.max_length)
     ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
     ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-    return """
+    return f"""
 **Observation**
-{}
+{json.dumps(tool_calls, ensure_ascii=False, indent=2)}
 
 **Reflection**
-{}
-    """.format(json.dumps(tool_calls, ensure_ascii=False, indent=2), ans)
+{ans}
+    """
 
 
 def form_message(system_prompt, user_prompt):
@@ -834,7 +835,7 @@ def split_chunks(chunks, max_length: int):
 async def run_toc_from_text(chunks, chat_mdl, callback=None):
     input_budget = int(chat_mdl.max_length * INPUT_UTILIZATION) - num_tokens_from_string(TOC_FROM_TEXT_USER + TOC_FROM_TEXT_SYSTEM)
 
-    input_budget = 1024 if input_budget > 1024 else input_budget
+    input_budget = min(input_budget, 1024)
     chunk_sections = split_chunks(chunks, input_budget)
     titles = []
 
@@ -944,7 +945,7 @@ async def relevant_chunks_with_toc(query: str, toc: list[dict], chat_mdl, topn: 
                 if id not in id2score:
                     id2score[id] = []
                 id2score[id].append(sc["score"] / 5.0)
-        for id in id2score.keys():
+        for id in id2score:
             id2score[id] = np.mean(id2score[id])
         return [(id, sc) for id, sc in list(id2score.items()) if sc >= 0.3][:topn]
     except Exception as e:

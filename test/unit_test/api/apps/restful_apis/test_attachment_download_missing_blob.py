@@ -127,7 +127,7 @@ def _load_agent_api(monkeypatch, *, storage_get):
         get_json_result=lambda *_a, **_k: {"kind": "json_result"},
         server_error_response=lambda e: {"kind": "server_error", "error": str(e)},
         add_tenant_id_to_kwargs=lambda func: func,
-        get_request_json=lambda: {},
+        get_request_json=dict,
         # Used as `@validate_request(...)` decorator factory at module level, so it
         # must return an identity decorator (the lenient fallback would return None
         # and `@None` raises TypeError during import).
@@ -227,3 +227,34 @@ class TestAttachmentDownloadMissingBlob:
         result = asyncio.run(module.download_attachment(tenant_id="t1", attachment_id="good"))
         # SimpleNamespace from our _make_response stub
         assert hasattr(result, "payload") and result.payload == b"PDFDATA"
+
+    def test_chat_upload_served_from_downloads_bucket(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Chat uploads land in '<tenant>-downloads', not the bare tenant bucket.
+
+        The endpoint is also used to preview chat attachments, which
+        FileService.put_blob writes under '<tenant>-downloads'. Reading only the
+        bare tenant id returned 'document not found' for every one of them.
+        """
+        probed = []
+
+        def storage_get(bucket, _fnm, *_args, **_kwargs):
+            probed.append(bucket)
+            return b"CHATUPLOAD" if bucket == "t1-downloads" else None
+
+        module = _load_agent_api(monkeypatch, storage_get=storage_get)
+        result = asyncio.run(module.download_attachment(tenant_id="t1", attachment_id="chat-upload"))
+        assert hasattr(result, "payload") and result.payload == b"CHATUPLOAD"
+        assert probed == ["t1-downloads"]
+
+    def test_agent_attachment_falls_back_to_bare_tenant(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Agent-generated attachments live under the bare tenant id."""
+        probed = []
+
+        def storage_get(bucket, _fnm, *_args, **_kwargs):
+            probed.append(bucket)
+            return b"AGENTDOC" if bucket == "t1" else None
+
+        module = _load_agent_api(monkeypatch, storage_get=storage_get)
+        result = asyncio.run(module.download_attachment(tenant_id="t1", attachment_id="agent-doc"))
+        assert hasattr(result, "payload") and result.payload == b"AGENTDOC"
+        assert probed == ["t1-downloads", "t1"]

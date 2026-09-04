@@ -28,7 +28,6 @@ from werkzeug.exceptions import BadRequest
 
 from api.apps import current_user, login_required
 from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
-from api.db.services.llm_service import resolve_llm_setting
 from api.db.joint_services.tenant_model_service import (
     get_api_key,
     get_composite_model_name_by_id,
@@ -41,7 +40,7 @@ from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
 from api.db.services.dialog_service import DialogService, gen_mindmap, rag_agent
 from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
-from api.db.services.llm_service import LLMBundle
+from api.db.services.llm_service import LLMBundle, resolve_llm_setting
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import (
@@ -52,9 +51,9 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.pagination_utils import validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size, DEFAULT_PAGE, DEFAULT_PAGE_SIZE
-from common.constants import LLMType, RetCode, StatusEnum
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from common import settings
+from common.constants import LLMType, RetCode, StatusEnum
 from common.misc_utils import get_uuid, thread_pool_exec
 from rag.prompts.generator import chunks_format
 from rag.prompts.template import load_prompt
@@ -396,12 +395,19 @@ async def _validate_dataset_ids(dataset_ids, tenant_id):
 
 def _apply_prompt_defaults(req):
     prompt_config = req.setdefault("prompt_config", {})
+    kb_ids = req.get("kb_ids") or []
     for key, value in _DEFAULT_PROMPT_CONFIG.items():
         temp = prompt_config.get(key)
         if (key == "system" and not temp) or key not in prompt_config:
-            prompt_config[key] = deepcopy(value)
+            if key == "system" and not kb_ids:
+                # No dataset bound: do not seed the dataset-oriented default system prompt.
+                # Its hard-coded "The answer you are looking for is not found in the dataset!"
+                # sentence would otherwise be sent verbatim to the model on the no-dataset path.
+                prompt_config[key] = ""
+            else:
+                prompt_config[key] = deepcopy(value)
 
-    if req.get("kb_ids") and not prompt_config.get("parameters") and "{knowledge}" in prompt_config.get("system", ""):
+    if kb_ids and not prompt_config.get("parameters") and "{knowledge}" in prompt_config.get("system", ""):
         prompt_config["parameters"] = [{"key": "knowledge", "optional": False}]
     if not any(p.get("key") == "date" for p in prompt_config.get("parameters", [])):
         prompt_config.setdefault("parameters", []).append({"key": "date", "optional": True})
@@ -1153,7 +1159,7 @@ async def transcription():
         try:
             os.remove(temp_audio_path)
         except Exception as e:
-            logging.error(f"Failed to remove temp audio file: {str(e)}")
+            logging.error(f"Failed to remove temp audio file: {e!s}")
         if "**ERROR**" in text:
             return get_data_error_result(message=text)
         return get_json_result(data={"text": text})
@@ -1169,7 +1175,7 @@ async def transcription():
             try:
                 os.remove(temp_audio_path)
             except Exception as e:
-                logging.error(f"Failed to remove temp audio file: {str(e)}")
+                logging.error(f"Failed to remove temp audio file: {e!s}")
 
     return Response(event_stream(), content_type="text/event-stream")
 

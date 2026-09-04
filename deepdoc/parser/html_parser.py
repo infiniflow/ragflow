@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 #  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
@@ -15,13 +14,15 @@
 #  limitations under the License.
 #
 
-from rag.nlp import find_codec, rag_tokenizer
+import html
 import logging
 import re
 import uuid
+
 import chardet
-from bs4 import BeautifulSoup, NavigableString, Tag, Comment
-import html
+from bs4 import BeautifulSoup, Comment, NavigableString, Tag
+
+from rag.nlp import decode_text, rag_tokenizer
 
 
 def get_encoding(file):
@@ -37,8 +38,7 @@ TITLE_TAGS = {"h1": "#", "h2": "##", "h3": "###", "h4": "####", "h5": "#####", "
 class RAGFlowHtmlParser:
     def __call__(self, fnm, binary=None, chunk_token_num=512):
         if binary is not None:
-            encoding = find_codec(binary)
-            txt = binary.decode(encoding, errors="ignore")
+            txt, _ = decode_text(binary, document_type="HTML document")
         else:
             with open(fnm, "r", encoding=get_encoding(fnm)) as f:
                 txt = f.read()
@@ -227,7 +227,7 @@ class RAGFlowHtmlParser:
         "豈-﫿"  # CJK Compatibility Ideographs
         "가-힯"  # Hangul syllables
     )
-    _ATOM_RE = re.compile(r"[{s}]|[^\s{s}]+|\s+".format(s=_SPACELESS))
+    _ATOM_RE = re.compile(rf"[{_SPACELESS}]|[^\s{_SPACELESS}]+|\s+")
 
     @classmethod
     def _token_count(cls, text):

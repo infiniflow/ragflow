@@ -37,11 +37,12 @@ that file replaces ``num_tokens_from_string`` with ``lambda text: 1`` and
 ``naive_merge`` with a function returning ``[]``. Golden values captured under
 those stubs would be systematically wrong.
 
-``num_tokens_from_string`` swallows every exception and returns 0
-(``common/token_utils.py``), so an unavailable tiktoken encoding silently turns
-every token budget into "never exceeded" and collapses each case into a single
-chunk. That failure looks like a legitimate baseline, so ``_assert_tokenizer_alive``
-runs first and aborts the capture rather than writing a poisoned golden.
+``num_tokens_from_string`` (``common/token_utils.py``) builds the tiktoken encoder
+on first use and lets an unavailable encoding raise, but a failed encode of a
+valid string is swallowed and reported as 0, which silently turns every token
+budget into "never exceeded" and collapses each case into a single chunk. That
+failure looks like a legitimate baseline, so ``_assert_tokenizer_alive`` runs
+first and aborts the capture on either shape rather than writing a poisoned golden.
 """
 
 from __future__ import annotations
@@ -52,7 +53,7 @@ import json
 import subprocess
 import sys
 import types
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 TOOL_DIR = Path(__file__).resolve().parent
@@ -125,23 +126,26 @@ def _assert_tokenizer_alive() -> None:
     """Abort unless the real tiktoken encoder is loaded and counting.
 
     Every token-budget decision in ``naive_merge`` reads
-    ``num_tokens_from_string``. When that returns 0 the budget is never
-    exceeded and every case degenerates to one chunk -- a plausible-looking
-    baseline that is entirely an artefact of the capture environment.
+    ``num_tokens_from_string``, which fails in two shapes: an unavailable BPE
+    table raises out of the lazy encoder build, and a failed encode of a valid
+    string is reported as 0. The raise would only crash the capture; the 0 means
+    the budget is never exceeded and every case degenerates to one chunk -- a
+    plausible-looking baseline that is entirely an artefact of the capture
+    environment. Both abort here before any golden is written.
     """
     from rag.nlp import num_tokens_from_string
 
     probe = "RAGFlow chunker parity tokenizer liveness probe."
-    got = num_tokens_from_string(probe)
+    hint = "Fix the encoding first: uv run python3 ragflow_deps/download_deps.py (provides ragflow_deps/cl100k_base.tiktoken)."
+    # Two shapes to catch. common/token_utils.py builds the encoder on first use and
+    # lets that failure propagate, so an unavailable BPE table raises here; a failure
+    # to encode an otherwise valid string is still reported as 0.
+    try:
+        got = num_tokens_from_string(probe)
+    except Exception as exc:
+        sys.exit(f"tokenizer is dead: num_tokens_from_string() raised {exc!r}.\n{hint}")
     if got <= 0:
-        sys.exit(
-            "tokenizer is dead: num_tokens_from_string() returned "
-            f"{got} for a {len(probe)}-character probe.\n"
-            "common/token_utils.py returns 0 on any encoder failure, so capturing now "
-            "would write goldens where no token budget is ever exceeded.\n"
-            "Fix the encoding first: uv run python3 ragflow_deps/download_deps.py "
-            "(provides ragflow_deps/cl100k_base.tiktoken)."
-        )
+        sys.exit(f"tokenizer is dead: num_tokens_from_string() returned {got} for a {len(probe)}-character probe, so capturing now would write goldens where no token budget is ever exceeded.\n{hint}")
 
 
 def run_case(case: dict) -> dict:
@@ -196,7 +200,7 @@ def write_manifest() -> None:
     MANIFEST.write_text(
         json.dumps(
             {
-                "captured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "captured_at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "commit": commit,
                 "python": sys.version.split()[0],
                 "command": CAPTURE_CMD,

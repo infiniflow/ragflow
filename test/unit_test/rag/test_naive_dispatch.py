@@ -45,7 +45,6 @@ from common.parser_config_utils import (
     normalize_layout_recognizer,
 )
 
-
 # --------------------------------------------------------------------------- #
 # has_mineru_options
 # --------------------------------------------------------------------------- #
@@ -218,6 +217,7 @@ def naive_module():
             DEFAULT_DELIMITER="\n!?;。；！？",
             num_tokens_from_string=lambda s: len((s or "").split()),
             find_codec=lambda b: "utf-8",
+            decode_text=lambda b, document_type="text": (b.decode("utf-8"), "utf-8"),
             rag_tokenizer=types.SimpleNamespace(tokenize=lambda s: ((s or "").split(), [])),
             concat_img=lambda *a, **k: None,
             naive_merge=lambda *a, **k: [],
