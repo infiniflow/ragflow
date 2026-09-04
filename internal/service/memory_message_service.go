@@ -170,7 +170,7 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 			})
 			continue
 		}
-		if err = queueMemoryTask(ctx, memoryID, mem.TenantID, rawMessageID, task, msg); err != nil {
+		if err = queueMemoryTask(ctx, fmt.Sprint(task["id"]), memoryID, mem.TenantID, rawMessageID, msg); err != nil {
 			res.Failed = append(res.Failed, MemoryFailure{
 				MemoryID: memoryID,
 				FailMsg:  err.Error(),
@@ -278,7 +278,9 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 		}
 		vectorDim = len(vector)
 		message[fmt.Sprintf("q_%d_vec", len(vector))] = vector
-		message["id"] = fmt.Sprintf("%s_%v", message["memory_id"], message["message_id"])
+		if id, ok := message["id"].(string); !ok || id == "" {
+			message["id"] = fmt.Sprintf("%s_%v", message["memory_id"], message["message_id"])
+		}
 		message["doc_id"] = message["memory_id"]
 	}
 
@@ -339,12 +341,14 @@ func taskFromRow(row map[string]any) *entity.Task {
 	}
 }
 
-func queueMemoryTask(ctx context.Context, memoryID, tenantID string, rawMessageID int64, task map[string]any, msg MemoryMessage) error {
-	taskID := fmt.Sprint(task["id"])
+// queueMemoryTask publishes a memory-extraction task to NATS (tasks.RAGFLOW).
+// taskID is the durable task row's id (buildTaskRow) and the sole identity on
+// the envelope; the payload carries only business parameters — memory_id,
+// source_id, and the dialogue to extract. Identity is deliberately NOT
+// duplicated into the payload so the consumer never has two ids that could
+// disagree (the envelope TaskID is authoritative end to end).
+func queueMemoryTask(ctx context.Context, taskID, memoryID, tenantID string, rawMessageID int64, msg MemoryMessage) error {
 	message := map[string]any{
-		"id":        taskID,
-		"task_id":   taskID,
-		"task_type": task["task_type"],
 		"memory_id": memoryID,
 		"tenant_id": tenantID,
 		"source_id": rawMessageID,

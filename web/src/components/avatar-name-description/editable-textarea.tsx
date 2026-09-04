@@ -115,7 +115,7 @@ export function EditableTextarea({
               onKeyDown={handleKeyDown}
               placeholder={finalPlaceholder}
               className={cn(
-                'min-h-[28px] text-sm text-text-secondary resize-none px-2 py-0.5',
+                'min-h-[28px] text-sm text-text-secondary resize-none px-2 py-0.5 overflow-auto',
                 textareaClassName,
               )}
               autoSize={{ minRows, maxRows }}

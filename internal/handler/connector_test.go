@@ -48,11 +48,11 @@ func (s fakeConnectorService) CreateConnector(context.Context, string, *service.
 	return s.connector, nil
 }
 
-func (s fakeConnectorService) GetConnector(context.Context, string, string) (*entity.Connector, common.ErrorCode, error) {
+func (s fakeConnectorService) GetConnector(context.Context, string, string) (*entity.Connector, error) {
 	if s.err != nil {
-		return nil, s.code, s.err
+		return nil, s.err
 	}
-	return s.connector, common.CodeSuccess, nil
+	return s.connector, nil
 }
 
 func (s fakeConnectorService) UpdateConnector(context.Context, string, string, *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
@@ -142,6 +142,91 @@ func (s fakeConnectorService) ResumeFailedSync(context.Context, string, string, 
 		return false, s.code, s.err
 	}
 	return true, common.CodeSuccess, nil
+}
+
+func TestConnectorHandlerGetConnector(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name        string
+		connectorID string
+		service     fakeConnectorService
+		wantCode    common.ErrorCode
+		wantData    interface{}
+		wantMsg     string
+	}{
+		{
+			name:        "success",
+			connectorID: "connector-1",
+			service: fakeConnectorService{
+				connector: &entity.Connector{ID: "connector-1", TenantID: "tenant-1", Name: "REST source"},
+			},
+			wantCode: common.CodeSuccess,
+			wantData: map[string]interface{}{
+				"id": "connector-1",
+			},
+			wantMsg: "success",
+		},
+		{
+			name:        "unauthorized",
+			connectorID: "connector-1",
+			service:     fakeConnectorService{err: service.ErrConnectorNoAuth},
+			wantCode:    common.CodeAuthenticationError,
+			wantData:    false,
+			wantMsg:     "no authorization",
+		},
+		{
+			name:        "not found",
+			connectorID: "connector-missing",
+			service:     fakeConnectorService{err: service.ErrConnectorNotFound},
+			wantCode:    common.CodeDataError,
+			wantData:    nil,
+			wantMsg:     "Can't find this Connector!",
+		},
+		{
+			name:        "missing id",
+			connectorID: "",
+			service:     fakeConnectorService{err: service.ErrConnectorIDRequired},
+			wantCode:    common.CodeDataError,
+			wantData:    nil,
+			wantMsg:     "connector_id is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &ConnectorHandler{connectorService: tt.service}
+			resp := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(resp)
+			c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/connectors/"+tt.connectorID, nil)
+			c.Params = gin.Params{{Key: "connector_id", Value: tt.connectorID}}
+			c.Set("user", &entity.User{ID: "user-1"})
+
+			h.GetConnector(c)
+
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+				t.Fatalf("unmarshal response: %v", err)
+			}
+			if body["code"] != float64(tt.wantCode) {
+				t.Fatalf("code=%v want=%v body=%v", body["code"], tt.wantCode, body)
+			}
+			if tt.wantMsg != "" && body["message"] != tt.wantMsg {
+				t.Fatalf("message=%v want=%v body=%v", body["message"], tt.wantMsg, body)
+			}
+			if wantData, ok := tt.wantData.(map[string]interface{}); ok {
+				data, ok := body["data"].(map[string]interface{})
+				if !ok {
+					t.Fatalf("data=%v body=%v", body["data"], body)
+				}
+				if data["id"] != wantData["id"] {
+					t.Fatalf("data id=%v want=%v body=%v", data["id"], wantData, body)
+				}
+			} else if body["data"] != tt.wantData {
+				t.Fatalf("data=%v want=%v body=%v", body["data"], tt.wantData, body)
+			}
+		})
+	}
 }
 
 func TestConnectorHandlerStartBoxWebOAuth(t *testing.T) {

@@ -2,7 +2,6 @@
 package pregel
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/harness/graph/channels"
@@ -171,7 +170,7 @@ func TestBumpStep(t *testing.T) {
 	optimized := NewPregelOptimizedEngine(baseEngine, nil)
 
 	t.Run("bump step for dependent tasks", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// Simulate task completion
 		updatedChannels := map[string]struct{}{
@@ -346,7 +345,7 @@ func TestOptimizedApplyWrites(t *testing.T) {
 	optimized := NewPregelOptimizedEngine(baseEngine, nil)
 
 	t.Run("apply writes with bump_step", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// Create a registry with a channel
 		registry := channels.NewRegistry()
@@ -398,7 +397,7 @@ func TestPrepareNextTasksOptimized(t *testing.T) {
 	optimized := NewPregelOptimizedEngine(baseEngine, nil)
 
 	t.Run("prepare next tasks with optimization", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 
 		tasks, triggers, err := optimized.PrepareNextTasksOptimized(
 			ctx,

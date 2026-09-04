@@ -216,6 +216,47 @@ def _rotate_point_clockwise(x, y, angle, width, height):
 
 
 @pytest.mark.p1
+@pytest.mark.parametrize(
+    ("env_value", "explicit_value", "expected_orientation_calls"),
+    [
+        (None, None, 1),
+        ("false", None, 0),
+        ("true", None, 1),
+        ("1", None, 1),
+        ("yes", None, 1),
+        ("true", False, 0),
+        ("false", True, 1),
+    ],
+)
+def test_table_transformer_resolves_auto_rotate_from_argument_or_environment(monkeypatch, env_value, explicit_value, expected_orientation_calls):
+    module = _load_pdf_parser(monkeypatch)
+    parser = module.RAGFlowPdfParser.__new__(module.RAGFlowPdfParser)
+    parser.page_layout = [[{"type": "table", "x0": 0, "top": 0, "x1": 10, "bottom": 10}]]
+    parser.page_images = [_FakeImage()]
+    parser.boxes = []
+    parser.tbl_det = lambda imgs: [[] for _ in imgs]
+    parser._ocr_rotated_tables = lambda *_args, **_kwargs: None
+
+    orientation_calls = []
+
+    def evaluate_orientation(table_img):
+        orientation_calls.append(table_img)
+        return 0, table_img, {}
+
+    parser._evaluate_table_orientation = evaluate_orientation
+
+    if env_value is None:
+        monkeypatch.delenv("TABLE_AUTO_ROTATE", raising=False)
+    else:
+        monkeypatch.setenv("TABLE_AUTO_ROTATE", env_value)
+
+    kwargs = {} if explicit_value is None else {"auto_rotate": explicit_value}
+    parser._table_transformer_job(1, **kwargs)
+
+    assert len(orientation_calls) == expected_orientation_calls
+
+
+@pytest.mark.p1
 @pytest.mark.parametrize(("page_index", "page_offset", "zoom"), [(0, 0, 1), (1, 500, 2)])
 def test_table_transformer_maps_tsr_crop_coordinates_to_page_coordinates(monkeypatch, page_index, page_offset, zoom):
     module = _load_pdf_parser(monkeypatch)

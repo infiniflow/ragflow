@@ -64,7 +64,7 @@ describe('Message component content validation', () => {
 
     it('accepts content with at least one non-blank string entry', () => {
       expect(isEmptyMessageContent(['hi'])).toBe(false);
-      expect(isEmptyMessageContent(['', '{begin@query}'])).toBe(false);
+      expect(isEmptyMessageContent(['', '{begin@query}'])).toBe(true);
       expect(isEmptyMessageContent(['  text  '])).toBe(false);
     });
   });

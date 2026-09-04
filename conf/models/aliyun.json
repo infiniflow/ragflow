@@ -16,7 +16,7 @@
   "models": [
     {
       "name": "qwen-flash",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -35,7 +35,7 @@
     },
     {
       "name": "qwen3-vl-plus",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "vision",
