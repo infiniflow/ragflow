@@ -188,7 +188,9 @@ def extract_links_from_pdf(pdf_bytes: bytes):
 
         for page in pdf.pages:
             annots = page.get("/Annots")
-            if not annots or isinstance(annots, PyPDF2.generic.IndirectObject):
+            if isinstance(annots, PyPDF2.generic.IndirectObject):
+                annots = annots.get_object()
+            if not annots:
                 continue
             for annot in annots:
                 obj = annot.get_object()
