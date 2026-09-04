@@ -245,7 +245,7 @@ check_office_oxide_deps() {
         echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
         echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
         echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
-        echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/office_oxide-linux-x86_64.tar.gz"
+        echo "    rm -rf ~/ragflow-native-libs/office_oxide $(office_oxide_asset)"
         echo "    uv run python3 ragflow_deps/download_go_deps.py"
         exit 1
     fi

@@ -78,13 +78,30 @@ def host_platform():
     Defaults to the host machine, overridable via RAGFLOW_TARGET_OS /
     RAGFLOW_TARGET_ARCH so a CI image can be baked for a foreign arch.
     """
-    goos = os.environ.get("RAGFLOW_TARGET_OS")
-    goarch = os.environ.get("RAGFLOW_TARGET_ARCH")
-    if not goos:
-        goos = {"Linux": "linux", "Darwin": "darwin"}.get(_platform.system(), "linux")
-    if not goarch:
-        machine = _platform.machine().lower()
-        goarch = "arm64" if machine in ("arm64", "aarch64") else "amd64"
+    raw_os = os.environ.get("RAGFLOW_TARGET_OS")
+    raw_arch = os.environ.get("RAGFLOW_TARGET_ARCH")
+    if not raw_os:
+        raw_os = _platform.system()  # "Linux" / "Darwin" / ...
+    if not raw_arch:
+        raw_arch = _platform.machine().lower()  # x86_64 / arm64 / aarch64 / ...
+
+    # Normalize the same aliases build.sh's detect_target_platform accepts, so
+    # `RAGFLOW_TARGET_OS=Linux RAGFLOW_TARGET_ARCH=x86_64` (valid for build.sh)
+    # does not raise KeyError when indexing the per-platform asset maps below.
+    goos = {"linux": "linux", "darwin": "darwin"}.get(raw_os.lower())
+    if goos is None:
+        raise SystemExit(
+            f"Unsupported RAGFLOW_TARGET_OS={raw_os!r}; expected linux or darwin "
+            f"(aliases Linux/Darwin also accepted)."
+        )
+    goarch = {"amd64": "amd64", "x86_64": "amd64", "arm64": "arm64", "aarch64": "arm64"}.get(
+        raw_arch.lower()
+    )
+    if goarch is None:
+        raise SystemExit(
+            f"Unsupported RAGFLOW_TARGET_ARCH={raw_arch!r}; expected amd64 or arm64 "
+            f"(aliases x86_64/aarch64 also accepted)."
+        )
     return goos, goarch
 
 
@@ -213,6 +230,11 @@ def extract_onnxruntime(static_lib_dir, archive_path, expected_dir):
         return False
     expected_path = os.path.join(static_lib_dir, expected_dir)
     if os.path.isdir(expected_path) and has_static_archives(expected_path):
+        # Already present: still prune any co-resident foreign-platform or stale
+        # ORT dir so a later build.sh `find ... -name '*.a'` cannot link two ORT
+        # builds. build.sh's ort_dir_prefix guard also filters by platform, but
+        # trimming here keeps the cache platform-exclusive.
+        prune_stale_onnxruntime(static_lib_dir, expected_dir)
         print(f"  ✓ onnxruntime/static_lib ({expected_dir}) already extracted")
         return True
     prune_stale_onnxruntime(static_lib_dir, expected_dir)
