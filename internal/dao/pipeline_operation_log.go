@@ -168,6 +168,27 @@ func (dao *PipelineOperationLogDAO) GetByIDAndKBID(ctx context.Context, db *gorm
 	return &log, nil
 }
 
+// GetByID fetches a single pipeline operation log by id, regardless of
+// knowledge base. Callers that must scope to a dataset use
+// GetByIDAndKBID instead.
+func (dao *PipelineOperationLogDAO) GetByID(ctx context.Context, db *gorm.DB, logID string) (*entity.PipelineOperationLog, error) {
+	var log entity.PipelineOperationLog
+	if err := db.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
+		return nil, err
+	}
+	return &log, nil
+}
+
+// UpdateDSL replaces the DSL stored on a pipeline operation log. Used by the
+// dataflow rerun endpoint to persist the front-end's edited component
+// configuration plus the rerun entry point (dsl.path = [component_id]),
+// mirroring Python's PipelineOperationLogService.update_by_id(id, {"dsl": dsl}).
+func (dao *PipelineOperationLogDAO) UpdateDSL(ctx context.Context, db *gorm.DB, logID string, dsl entity.JSONMap) error {
+	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
+		Where("id = ?", logID).
+		Update("dsl", dsl).Error
+}
+
 // Create inserts a new pipeline operation log.
 func (dao *PipelineOperationLogDAO) Create(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
 	return db.WithContext(ctx).Create(log).Error
