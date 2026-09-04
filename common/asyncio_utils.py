@@ -26,9 +26,7 @@ class LoopLocalSemaphore:
 
     def __init__(self, value: int):
         self._value = int(value)
-        self._semaphores: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
-            weakref.WeakKeyDictionary()
-        )
+        self._semaphores: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
 
     def _get(self) -> asyncio.Semaphore:
         loop = asyncio.get_running_loop()

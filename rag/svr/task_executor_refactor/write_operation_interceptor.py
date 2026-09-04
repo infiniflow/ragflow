@@ -20,6 +20,7 @@ Provides a mechanism to intercept write operations during comparison mode.
 The interceptor consumes pre-recorded return values (from production execution)
 and returns them one by one when the corresponding methods are called.
 """
+
 import logging
 from typing import Any, Dict, List
 
@@ -34,7 +35,7 @@ ALLOWED_METHOD_NAMES = {
     "delete_raptor_chunks",
     "handle_save_to_memory_task",
     "docStoreConn.insert",
-    "docStoreConn.delete"
+    "docStoreConn.delete",
 }
 
 _NO_DEFAULT = object()
@@ -80,7 +81,7 @@ class WriteOperationInterceptor:
         for key in ALLOWED_METHOD_NAMES:
             self._recorded_values[key] = list(recorded_values.get(key, []))
 
-    def intercept(self, method_name: str, default_value = _NO_DEFAULT) -> Any:
+    def intercept(self, method_name: str, default_value=_NO_DEFAULT) -> Any:
         """Intercept a method call and return the next pre-recorded value.
 
         Args:
@@ -96,10 +97,7 @@ class WriteOperationInterceptor:
             IndexError: If the recorded values list for method_name is empty.
         """
         if method_name not in ALLOWED_METHOD_NAMES:
-            raise ValueError(
-                f"Cannot intercept method '{method_name}'. "
-                f"Allowed method names: {ALLOWED_METHOD_NAMES}"
-            )
+            raise ValueError(f"Cannot intercept method '{method_name}'. Allowed method names: {ALLOWED_METHOD_NAMES}")
 
         if method_name not in self._recorded_values:
             raise KeyError(f"No recorded values found for method '{method_name}'")
@@ -113,7 +111,6 @@ class WriteOperationInterceptor:
 
         return values_list.pop(0)
 
-
     def remaining_count(self, method_name: str) -> int:
         """Get the number of remaining recorded values for a method.
 
@@ -126,7 +123,6 @@ class WriteOperationInterceptor:
         if method_name not in self._recorded_values:
             return 0
         return len(self._recorded_values[method_name])
-
 
     def remaining_values(self):
         return {k: list(v) for k, v in self._recorded_values.items()}

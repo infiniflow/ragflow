@@ -40,6 +40,9 @@ func setupKBTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
+	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+		t.Fatalf("failed to migrate user_tenant: %v", err)
+	}
 
 	return db
 }
@@ -66,6 +69,56 @@ func stringPtr(s string) *string {
 	return &s
 }
 
+func createKBAccessFixture(t *testing.T, db *gorm.DB, id, permission, status string) {
+	t.Helper()
+	kb := &entity.Knowledgebase{ID: id, TenantID: "owner", CreatedBy: "owner", Name: id, EmbdID: "embd", Permission: permission, Status: stringPtr(status)}
+	if err := db.Create(kb).Error; err != nil {
+		t.Fatalf("failed to create KB: %v", err)
+	}
+}
+
+func createUserTenant(t *testing.T, db *gorm.DB, userID, tenantID, status string) {
+	t.Helper()
+	row := &entity.UserTenant{ID: userID + "-" + tenantID, UserID: userID, TenantID: tenantID, Role: "normal", InvitedBy: "owner", Status: stringPtr(status)}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatalf("failed to create user_tenant: %v", err)
+	}
+}
+
+func TestKnowledgebaseDAO_Accessible(t *testing.T) {
+	db := setupKBTestDB(t)
+	dao := NewKnowledgebaseDAO()
+	ctx := t.Context()
+
+	createKBAccessFixture(t, db, "private", string(entity.TenantPermissionMe), string(entity.StatusValid))
+	createKBAccessFixture(t, db, "team", string(entity.TenantPermissionTeam), string(entity.StatusValid))
+	createKBAccessFixture(t, db, "unknown", "", string(entity.StatusValid))
+	createKBAccessFixture(t, db, "invalid", string(entity.TenantPermissionTeam), string(entity.StatusInvalid))
+	createUserTenant(t, db, "member", "owner", string(entity.StatusValid))
+	createUserTenant(t, db, "revoked", "owner", string(entity.StatusInvalid))
+
+	tests := []struct {
+		name, kbID, userID string
+		want               bool
+	}{
+		{"owner private", "private", "owner", true},
+		{"member private", "private", "member", false},
+		{"member team", "team", "member", true},
+		{"revoked member team", "team", "revoked", false},
+		{"unrelated team", "team", "other", false},
+		{"member unknown permission", "unknown", "member", false},
+		{"invalid KB", "invalid", "owner", false},
+		{"missing KB", "missing", "owner", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dao.Accessible(ctx, db, tt.kbID, tt.userID); got != tt.want {
+				t.Fatalf("Accessible(%q, %q) = %v, want %v", tt.kbID, tt.userID, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestKnowledgebaseDAO_DecreaseDocumentNum(t *testing.T) {
 	db := setupKBTestDB(t)
 	pushDB(t, db)
@@ -73,12 +126,13 @@ func TestKnowledgebaseDAO_DecreaseDocumentNum(t *testing.T) {
 
 	testKnowledgebase(t, db, "kb-1", 5, 100, 50)
 
-	err := dao.DecreaseDocumentNum("kb-1", 1, 20, 10)
+	ctx := t.Context()
+	err := dao.DecreaseDocumentNum(ctx, db, "kb-1", 1, 20, 10)
 	if err != nil {
 		t.Fatalf("DecreaseDocumentNum failed: %v", err)
 	}
 
-	kb, err := dao.GetByID("kb-1")
+	kb, err := dao.GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("GetByID failed: %v", err)
 	}
@@ -98,14 +152,16 @@ func TestKnowledgebaseDAO_DecreaseDocumentNum_ZeroDecrement(t *testing.T) {
 	pushDB(t, db)
 	dao := NewKnowledgebaseDAO()
 
+	ctx := t.Context()
+
 	testKnowledgebase(t, db, "kb-2", 3, 60, 15)
 
-	err := dao.DecreaseDocumentNum("kb-2", 0, 0, 0)
+	err := dao.DecreaseDocumentNum(ctx, db, "kb-2", 0, 0, 0)
 	if err != nil {
 		t.Fatalf("DecreaseDocumentNum failed: %v", err)
 	}
 
-	kb, err := dao.GetByID("kb-2")
+	kb, err := dao.GetByID(ctx, db, "kb-2")
 	if err != nil {
 		t.Fatalf("GetByID failed: %v", err)
 	}

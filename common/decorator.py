@@ -59,6 +59,7 @@ def timing(func=None, *, name=None, context=None):
     log = logging.getLogger(__name__)
 
     if inspect.iscoroutinefunction(func):
+
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             start = time.perf_counter()
@@ -70,8 +71,10 @@ def timing(func=None, *, name=None, context=None):
                 log.debug(f"[TIMING] {func_name} took {elapsed:.3f}s")
                 if context is not None:
                     context.record(f"{func_name}_time", elapsed)
+
         return async_wrapper
     else:
+
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             start = time.perf_counter()
@@ -83,4 +86,5 @@ def timing(func=None, *, name=None, context=None):
                 log.debug(f"[TIMING] {func_name} took {elapsed:.3f}s")
                 if context is not None:
                     context.record(f"{func_name}_time", elapsed)
+
         return sync_wrapper

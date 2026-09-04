@@ -1,4 +1,4 @@
-// Package canvas — state unit tests (Worker A, Phase 1).
+// Package canvas — state unit tests.
 package canvas
 
 import (
@@ -145,14 +145,12 @@ func TestCanvasState_ConcurrentReadWrite(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	for g := 0; g < 8; g++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := 0; i < 200; i++ {
 				_, _ = s.GetVar(cpnID(i%50) + "@v")
 				s.SetVar(cpnID(i%50), "v", i)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

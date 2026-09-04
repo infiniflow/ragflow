@@ -21,6 +21,7 @@ table: newly added bots are started, deleted ones are stopped, and edited ones
 messages are answered with a RAG completion routed through the conversation
 wired to that bot. Replaces the standalone ``server.py`` entrypoint.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,7 +34,16 @@ import threading
 LOGGER = logging.getLogger(__name__)
 
 # Channel packages bundled under api/channels that self-register on import.
-_BUNDLED_CHANNELS = ("feishu", "discord", "telegram", "line", "wecom")
+_BUNDLED_CHANNELS = (
+    "feishu",
+    "discord",
+    "telegram",
+    "line",
+    "wecom",
+    "qqbot",
+    "dingtalk",
+    "whatsapp",
+)
 
 # How often (seconds) to reconcile running channels against the database.
 _RECONCILE_INTERVAL_SECS = 10
@@ -78,9 +88,7 @@ def _build_one(account_id: str, channel: str, credential: dict):
     from api.channels.core.registry import build_channels
 
     # account_id == chat_channel.id.
-    instances = build_channels(
-        {"channels": {channel: {"accounts": {account_id: credential}}}}
-    )
+    instances = build_channels({"channels": {channel: {"accounts": {account_id: credential}}}})
     return instances[0] if instances else None
 
 
@@ -107,7 +115,7 @@ def _make_chat_handler(ch):
 
         # account_id == chat_channel.id; re-read so a re-connected dialog applies live.
         e, cc = ChatChannelService.get_by_id(ch.account_id)
-        if not e or not cc.dialog_id:
+        if not e or not cc.chat_id:
             LOGGER.info(
                 "[%s:%s] no dialog connected; ignoring message",
                 ch.channel_id,
@@ -115,12 +123,12 @@ def _make_chat_handler(ch):
             )
             return
 
-        e, dia = DialogService.get_by_id(cc.dialog_id)
+        e, dia = DialogService.get_by_id(cc.chat_id)
         if not e:
-            LOGGER.warning("[%s:%s] connected dialog not found: %s", ch.channel_id, ch.account_id, cc.dialog_id)
+            LOGGER.warning("[%s:%s] connected dialog not found: %s", ch.channel_id, ch.account_id, cc.chat_id)
             return
 
-        conv = ConversationService.get_or_create_for_channel(cc.dialog_id, ch.account_id, msg.chat_id)
+        conv = ConversationService.get_or_create_for_channel(cc.chat_id, ch.account_id, msg.chat_id)
         if conv is None:
             LOGGER.warning("[%s:%s] failed to get conversation for chat %s", ch.channel_id, ch.account_id, msg.chat_id)
             return
@@ -144,7 +152,10 @@ def _make_chat_handler(ch):
 
         answer_text = ""
         try:
-            async for ans in async_chat(dia, history, False, quote=False):
+            chat_kwargs = {"quote": False}
+            if "{knowledge}" in (dia.prompt_config or {}).get("system", ""):
+                chat_kwargs["knowledge"] = ""
+            async for ans in async_chat(dia, history, False, **chat_kwargs):
                 structure_answer(conv, ans, message_id, conv.id)
                 answer_text = (ans or {}).get("answer", "") or ""
                 ConversationService.update_by_id(conv.id, conv.to_dict())
@@ -208,13 +219,17 @@ async def _start_channel(running: dict, account_id: str, channel: str, credentia
     return True
 
 
-async def _reconcile(running: dict, failed: dict) -> None:
+async def _reconcile(running: dict, failed: dict, stop_event: threading.Event) -> None:
     """Diff desired (DB) vs running channels and apply start/stop/restart.
 
     ``failed`` remembers configs that could not be started so they are not
     retried (and re-logged) every tick until their credentials change.
     """
+    if stop_event.is_set():
+        return
     desired = await asyncio.to_thread(_desired_channels)
+    if stop_event.is_set():
+        return
 
     # Stop channels that were removed or whose credentials/type changed.
     for account_id in list(running.keys()):
@@ -227,6 +242,16 @@ async def _reconcile(running: dict, failed: dict) -> None:
     for account_id in list(failed.keys()):
         if account_id not in desired or desired[account_id][2] != failed[account_id]:
             failed.pop(account_id, None)
+
+    active_whatsapp = any(channel == "whatsapp" for channel, _, _ in desired.values())
+    if not active_whatsapp:
+        active_whatsapp = any(entry["ch"].channel_id == "whatsapp" for entry in running.values())
+    from api.channels.whatsapp.gateway import sync_whatsapp_gateway
+
+    try:
+        await sync_whatsapp_gateway(active_whatsapp)
+    except Exception:
+        LOGGER.exception("failed to sync WhatsApp gateway enabled=%s", active_whatsapp)
 
     # Start channels that are new (skip ones already known to fail with this config).
     for account_id, (channel, credential, fp) in desired.items():
@@ -245,7 +270,12 @@ async def run_channels(stop_event: threading.Event) -> None:
     try:
         while not stop_event.is_set():
             try:
-                await _reconcile(running, failed)
+                await _reconcile(running, failed, stop_event)
+            except RuntimeError as ex:
+                if stop_event.is_set():
+                    LOGGER.info("chat channel reconcile stopped")
+                    break
+                LOGGER.error("chat channel reconcile failed: %s", ex)
             except Exception as ex:
                 LOGGER.error("chat channel reconcile failed: %s", ex)
 

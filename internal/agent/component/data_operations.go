@@ -44,6 +44,8 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 const componentNameDataOperations = "DataOperations"
@@ -182,7 +184,7 @@ func (d *DataOperationsComponent) Name() string { return d.name }
 
 // Invoke loads input_objects from the configured query refs, then
 // dispatches to the operation-specific helper.
-func (d *DataOperationsComponent) Invoke(ctx context.Context, _ map[string]any) (map[string]any, error) {
+func (d *DataOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
 		return nil, fmt.Errorf("DataOperations: %w", err)
@@ -245,8 +247,8 @@ func (d *DataOperationsComponent) Invoke(ctx context.Context, _ map[string]any) 
 }
 
 // Stream mirrors Invoke; DataOperations is a single-shot transform.
-func (d *DataOperationsComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := d.Invoke(ctx, inputs)
+func (d *DataOperationsComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := d.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +260,28 @@ func (d *DataOperationsComponent) Stream(ctx context.Context, inputs map[string]
 
 // Inputs returns an empty surface — all config is in the param.
 func (d *DataOperationsComponent) Inputs() map[string]string {
-	return map[string]string{}
+	return map[string]string{
+		"query":         "List of data items to operate on. Can override the static DSL param.",
+		"operations":    "Operation name: literal_eval, select_keys, filter, update, remove, rename. Overrides DSL param.",
+		"select_keys":   "List of keys to keep (for select_keys operation). Overrides DSL param.",
+		"filter_values": "List of {key, op, value} filters (for filter operation). Overrides DSL param.",
+		"updates":       "List of {key, value} updates (for update operation). Overrides DSL param.",
+		"remove_keys":   "List of keys to remove (for remove operation). Overrides DSL param.",
+		"rename_keys":   "List of {old_key, new_key} mappings (for rename operation). Overrides DSL param.",
+	}
+}
+
+func (d *DataOperationsComponent) GetInputForm() map[string]any {
+	res := make(map[string]any)
+	for _, input := range d.param.Query {
+		for k, v := range getInputElementsFromText(input) {
+			res[k] = map[string]any{
+				"name": v["name"],
+				"type": "line",
+			}
+		}
+	}
+	return res
 }
 
 // Outputs returns the transformed payload.

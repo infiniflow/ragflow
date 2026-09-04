@@ -7,19 +7,20 @@ import {
 } from '@/components/ui/popover';
 import { Radio } from '@/components/ui/radio';
 import { Segmented } from '@/components/ui/segmented';
-import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { LucideFilter, Plus } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChunkTextMode } from '../../constant';
 interface ChunkResultBarProps {
-  changeChunkTextMode: React.Dispatch<React.SetStateAction<string | number>>;
+  className?: string;
+  changeChunkTextMode: (mode: ChunkTextMode) => void;
   available: number | undefined;
   selectAllChunk: (value: boolean) => void;
   handleSetAvailable: (value: number | undefined) => void;
   createChunk: () => void;
-  handleInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  searchString: string;
+  handleInputChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  searchString?: string;
 }
 export default function ChunkResultBar({
   className,
@@ -31,7 +32,7 @@ export default function ChunkResultBar({
   handleInputChange,
   searchString,
 }: ChunkResultBarProps) {
-  const { t } = useTranslate('chunk');
+  const { t } = useTranslation('translation', { keyPrefix: 'chunk' });
   const [textSelectValue, setTextSelectValue] = useState<string | number>(
     ChunkTextMode.Full,
   );
@@ -58,7 +59,7 @@ export default function ChunkResultBar({
 
   const changeTextSelectValue = (value: string | number) => {
     setTextSelectValue(value);
-    changeChunkTextMode(value);
+    changeChunkTextMode(value as ChunkTextMode);
   };
   return (
     <div className={cn('flex justify-end gap-4', className)}>
@@ -76,7 +77,6 @@ export default function ChunkResultBar({
           <Button
             variant="outline"
             size="icon"
-            // className="bg-bg-card text-text-secondary hover:bg-card"
           >
             <LucideFilter />
           </Button>
@@ -88,21 +88,14 @@ export default function ChunkResultBar({
 
       <SearchInput
         className="w-28"
-        placeholder={t('search')}
+        placeholder={t('search', { keyPrefix: 'common' })}
         onChange={handleInputChange}
         value={searchString}
       />
 
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={() => createChunk()}
-        // className="bg-bg-card text-primary hover:bg-card"
-      >
+      <Button variant="outline" size="icon" onClick={() => createChunk()}>
         <Plus size={44} />
       </Button>
-      {/* <div className="w-[20px]"></div>
-      <div className="w-[20px]"></div> */}
     </div>
   );
 }

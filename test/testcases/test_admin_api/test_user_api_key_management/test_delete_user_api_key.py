@@ -157,7 +157,7 @@ class TestDeleteUserApiKey:
         res: Any = requests.post(url=url, json=register_data)
         res: dict[str, Any] = res.json()
         if res.get("code") != 0 and "has already registered" not in res.get("message"):
-            raise Exception(f"Failed to create second user: {res.get("message")}")
+            raise Exception(f"Failed to create second user: {res.get('message')}")
 
         # Generate a token for the test user
         generate_response: dict[str, Any] = generate_user_api_key(admin_session, user_name)

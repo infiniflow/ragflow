@@ -21,13 +21,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"ragflow/internal/server"
+	"ragflow/internal/common"
+	"ragflow/internal/server/config"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	s3Config "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	"go.uber.org/zap"
 )
@@ -37,30 +39,31 @@ type S3Storage struct {
 	client     *s3.Client
 	bucket     string
 	prefixPath string
-	config     *server.S3Config
+	config     config.S3Config
 }
 
 // NewS3Storage creates a new S3 storage instance
-func NewS3Storage(config *server.S3Config) (*S3Storage, error) {
+func NewS3Storage(ctx context.Context, config config.S3Config) (*S3Storage, error) {
 	storage := &S3Storage{
-		config: config,
+		bucket:     config.Bucket,
+		prefixPath: config.PrefixPath,
+		config:     config,
 	}
 
-	if err := storage.connect(); err != nil {
+	if err := storage.connect(ctx); err != nil {
 		return nil, err
 	}
 
 	return storage, nil
 }
 
-func (s *S3Storage) connect() error {
-	ctx := context.Background()
+func (s *S3Storage) connect(ctx context.Context) error {
 
-	var opts []func(*config.LoadOptions) error
+	var opts []func(*s3Config.LoadOptions) error
 
 	// Configure region
 	if s.config.Region != "" {
-		opts = append(opts, config.WithRegion(s.config.Region))
+		opts = append(opts, s3Config.WithRegion(s.config.Region))
 	}
 
 	// Configure credentials if provided
@@ -70,11 +73,11 @@ func (s *S3Storage) connect() error {
 			s.config.SecretKey,
 			s.config.SessionToken,
 		)
-		opts = append(opts, config.WithCredentialsProvider(creds))
+		opts = append(opts, s3Config.WithCredentialsProvider(creds))
 	}
 
 	// Load configuration
-	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	cfg, err := s3Config.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
@@ -91,9 +94,9 @@ func (s *S3Storage) connect() error {
 	return nil
 }
 
-func (s *S3Storage) reconnect() {
-	if err := s.connect(); err != nil {
-		zap.L().Error("Failed to reconnect to S3", zap.Error(err))
+func (s *S3Storage) reconnect(ctx context.Context) {
+	if err := s.connect(ctx); err != nil {
+		common.Error("Failed to reconnect to S3", err, zap.Error(err))
 	}
 }
 
@@ -104,15 +107,23 @@ func (s *S3Storage) resolveBucketAndPath(bucket, fnm string) (string, string) {
 	}
 
 	actualPath := fnm
-	if s.prefixPath != "" {
+	if s.bucket != "" {
+		prefix := s.prefixPath
+		if prefix != "" {
+			prefix += "/"
+		}
+		actualPath = fmt.Sprintf("%s%s/%s", prefix, bucket, fnm)
+	} else if s.prefixPath != "" {
 		actualPath = fmt.Sprintf("%s/%s/%s", s.prefixPath, bucket, fnm)
 	}
 
 	return actualBucket, actualPath
 }
 
+func (s *S3Storage) Type() string { return "s3" }
+
 // Health checks S3 service availability
-func (s *S3Storage) Health() bool {
+func (s *S3Storage) Health(ctx context.Context) bool {
 	bucket := s.bucket
 	if bucket == "" {
 		bucket = "health-check-bucket"
@@ -124,15 +135,13 @@ func (s *S3Storage) Health() bool {
 	}
 	binary := []byte("_t@@@1")
 
-	ctx := context.Background()
-
 	// Ensure bucket exists
-	if !s.BucketExists(bucket) {
+	if !s.BucketExists(ctx, bucket) {
 		_, err := s.client.CreateBucket(ctx, &s3.CreateBucketInput{
 			Bucket: aws.String(bucket),
 		})
 		if err != nil {
-			zap.L().Error("Failed to create bucket for health check", zap.String("bucket", bucket), zap.Error(err))
+			common.Error("Failed to create bucket for health check", err, zap.String("bucket", bucket), zap.Error(err))
 			return false
 		}
 	}
@@ -146,7 +155,7 @@ func (s *S3Storage) Health() bool {
 	})
 
 	if err != nil {
-		zap.L().Error("Health check failed", zap.Error(err))
+		common.Error("Health check failed", err, zap.Error(err))
 		return false
 	}
 
@@ -154,24 +163,27 @@ func (s *S3Storage) Health() bool {
 }
 
 // Put uploads an object to S3
-func (s *S3Storage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
+func (s *S3Storage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
-
-	ctx := context.Background()
 
 	for i := 0; i < 2; i++ {
 		// Ensure bucket exists
-		if !s.BucketExists(bucket) {
+		if !s.BucketExists(ctx, bucket) {
 			_, err := s.client.CreateBucket(ctx, &s3.CreateBucketInput{
 				Bucket: aws.String(bucket),
 			})
 			if err != nil {
-				zap.L().Error("Failed to create bucket", zap.String("bucket", bucket), zap.Error(err))
-				s.reconnect()
-				time.Sleep(time.Second)
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return ctxErr
+				}
+				common.Error("Failed to create bucket", err, zap.String("bucket", bucket), zap.Error(err))
+				s.reconnect(ctx)
+				if err = sleepOrAbort(ctx, time.Second); err != nil {
+					return err
+				}
 				continue
 			}
-			zap.L().Info("Created bucket", zap.String("bucket", bucket))
+			common.Info("Created bucket", zap.String("bucket", bucket))
 		}
 
 		reader := bytes.NewReader(binary)
@@ -181,9 +193,14 @@ func (s *S3Storage) Put(bucket, fnm string, binary []byte, tenantID ...string) e
 			Body:   reader,
 		})
 		if err != nil {
-			zap.L().Error("Failed to put object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
-			s.reconnect()
-			time.Sleep(time.Second)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			common.Error("Failed to put object", err, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
+			s.reconnect(ctx)
+			if err = sleepOrAbort(ctx, time.Second); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -194,10 +211,8 @@ func (s *S3Storage) Put(bucket, fnm string, binary []byte, tenantID ...string) e
 }
 
 // Get retrieves an object from S3
-func (s *S3Storage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+func (s *S3Storage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
-
-	ctx := context.Background()
 
 	for i := 0; i < 2; i++ {
 		result, err := s.client.GetObject(ctx, &s3.GetObjectInput{
@@ -205,17 +220,21 @@ func (s *S3Storage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) 
 			Key:    aws.String(fnm),
 		})
 		if err != nil {
-			zap.L().Error("Failed to get object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
-			s.reconnect()
+			common.Error("Failed to get object", err, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
+			s.reconnect(ctx)
 			time.Sleep(time.Second)
 			continue
 		}
-		defer result.Body.Close()
-
 		buf := new(bytes.Buffer)
-		if _, err := buf.ReadFrom(result.Body); err != nil {
-			zap.L().Error("Failed to read object data", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
-			s.reconnect()
+
+		readErr := func() error {
+			defer result.Body.Close()
+			_, err = buf.ReadFrom(result.Body)
+			return err
+		}()
+		if readErr != nil {
+			common.Error("Failed to read object data", readErr, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(readErr))
+			s.reconnect(ctx)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -227,17 +246,15 @@ func (s *S3Storage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) 
 }
 
 // Remove removes an object from S3
-func (s *S3Storage) Remove(bucket, fnm string, tenantID ...string) error {
+func (s *S3Storage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
-
-	ctx := context.Background()
 
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(fnm),
 	})
 	if err != nil {
-		zap.L().Error("Failed to remove object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
+		common.Error("Failed to remove object", err, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 		return err
 	}
 
@@ -245,10 +262,8 @@ func (s *S3Storage) Remove(bucket, fnm string, tenantID ...string) error {
 }
 
 // ObjExist checks if an object exists in S3
-func (s *S3Storage) ObjExist(bucket, fnm string, tenantID ...string) bool {
+func (s *S3Storage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
 	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
-
-	ctx := context.Background()
 
 	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(bucket),
@@ -264,11 +279,29 @@ func (s *S3Storage) ObjExist(bucket, fnm string, tenantID ...string) bool {
 	return true
 }
 
-// GetPresignedURL generates a presigned URL for accessing an object
-func (s *S3Storage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
-	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
+func (s *S3Storage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
 
-	ctx := context.Background()
+	listInput := &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+	}
+
+	result, err := s.client.ListObjectsV2(ctx, listInput)
+	if err != nil {
+		return nil, err
+	}
+
+	var objects []string
+
+	for _, obj := range result.Contents {
+		objects = append(objects, *obj.Key)
+	}
+
+	return objects, nil
+}
+
+// GetPresignedURL generates a presigned URL for accessing an object
+func (s *S3Storage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
 
 	presignClient := s3.NewPresignClient(s.client)
 
@@ -278,8 +311,8 @@ func (s *S3Storage) GetPresignedURL(bucket, fnm string, expires time.Duration, t
 			Key:    aws.String(fnm),
 		}, s3.WithPresignExpires(expires))
 		if err != nil {
-			zap.L().Error("Failed to generate presigned URL", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
-			s.reconnect()
+			common.Error("Failed to generate presigned URL", err, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
+			s.reconnect(ctx)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -291,19 +324,17 @@ func (s *S3Storage) GetPresignedURL(bucket, fnm string, expires time.Duration, t
 }
 
 // BucketExists checks if a bucket exists
-func (s *S3Storage) BucketExists(bucket string) bool {
+func (s *S3Storage) BucketExists(ctx context.Context, bucket string) bool {
 	actualBucket := bucket
 	if s.bucket != "" {
 		actualBucket = s.bucket
 	}
 
-	ctx := context.Background()
-
 	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(actualBucket),
 	})
 	if err != nil {
-		zap.L().Debug("Bucket does not exist or error", zap.String("bucket", actualBucket), zap.Error(err))
+		common.Debug("Bucket does not exist or error", zap.String("bucket", actualBucket), zap.Error(err))
 		return false
 	}
 
@@ -311,65 +342,103 @@ func (s *S3Storage) BucketExists(bucket string) bool {
 }
 
 // RemoveBucket removes a bucket and all its objects
-func (s *S3Storage) RemoveBucket(bucket string) error {
-	actualBucket := bucket
-	if s.bucket != "" {
-		actualBucket = s.bucket
+func (s *S3Storage) RemoveBucket(ctx context.Context, bucket string) error {
+	actualBucket, prefix := s.resolveBucketAndPrefix(bucket)
+	exists, err := s.bucketExistsForRemoval(ctx, actualBucket)
+	if err != nil {
+		return err
 	}
-
-	ctx := context.Background()
-
-	// Check if bucket exists
-	if !s.BucketExists(actualBucket) {
+	if !exists {
 		return nil
 	}
 
-	// List and delete all objects
-	listInput := &s3.ListObjectsV2Input{
-		Bucket: aws.String(actualBucket),
+	if err := s.removeObjects(ctx, actualBucket, prefix); err != nil {
+		return err
+	}
+	if s.bucket != "" {
+		return nil
 	}
 
-	for {
-		result, err := s.client.ListObjectsV2(ctx, listInput)
-		if err != nil {
-			zap.L().Error("Failed to list objects", zap.String("bucket", actualBucket), zap.Error(err))
-			return err
-		}
-
-		for _, obj := range result.Contents {
-			_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-				Bucket: aws.String(actualBucket),
-				Key:    obj.Key,
-			})
-			if err != nil {
-				zap.L().Error("Failed to delete object", zap.String("bucket", actualBucket), zap.Error(err))
-			}
-		}
-
-		if result.IsTruncated == nil || !*result.IsTruncated {
-			break
-		}
-		listInput.ContinuationToken = result.NextContinuationToken
-	}
-
-	// Delete bucket
-	_, err := s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+	_, err = s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
 		Bucket: aws.String(actualBucket),
 	})
 	if err != nil {
-		zap.L().Error("Failed to delete bucket", zap.String("bucket", actualBucket), zap.Error(err))
+		common.Error("Failed to delete bucket", err, zap.String("bucket", bucket), zap.Error(err))
 		return err
 	}
 
 	return nil
 }
 
+func (s *S3Storage) resolveBucketAndPrefix(bucket string) (string, string) {
+	if s.bucket == "" {
+		return bucket, ""
+	}
+	prefix := s.prefixPath
+	if prefix != "" {
+		prefix += "/"
+	}
+	return s.bucket, prefix + bucket + "/"
+}
+
+func (s *S3Storage) bucketExistsForRemoval(ctx context.Context, bucket string) (bool, error) {
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucket)})
+	if err == nil {
+		return true, nil
+	}
+	if isS3BucketNotFound(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("head S3 bucket %q: %w", bucket, err)
+}
+
+func (s *S3Storage) removeObjects(ctx context.Context, bucket, prefix string) error {
+	versions := s3.NewListObjectVersionsPaginator(s.client, &s3.ListObjectVersionsInput{
+		Bucket: aws.String(bucket),
+		Prefix: aws.String(prefix),
+	})
+	for versions.HasMorePages() {
+		page, err := versions.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("list S3 object versions in %q: %w", bucket, err)
+		}
+		toDelete := make([]types.ObjectIdentifier, 0, len(page.Versions)+len(page.DeleteMarkers))
+		for _, version := range page.Versions {
+			toDelete = append(toDelete, types.ObjectIdentifier{Key: version.Key, VersionId: version.VersionId})
+		}
+		for _, marker := range page.DeleteMarkers {
+			toDelete = append(toDelete, types.ObjectIdentifier{Key: marker.Key, VersionId: marker.VersionId})
+		}
+		if err := s.deleteObjects(ctx, bucket, toDelete); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *S3Storage) deleteObjects(ctx context.Context, bucket string, objects []types.ObjectIdentifier) error {
+	for len(objects) > 0 {
+		count := min(len(objects), 1000)
+		output, err := s.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(bucket),
+			Delete: &types.Delete{Objects: objects[:count], Quiet: aws.Bool(true)},
+		})
+		if err != nil {
+			return fmt.Errorf("delete S3 objects in %q: %w", bucket, err)
+		}
+		if len(output.Errors) > 0 {
+			failed := output.Errors[0]
+			return fmt.Errorf("delete S3 object %q (version %q): %s: %s", aws.ToString(failed.Key), aws.ToString(failed.VersionId), aws.ToString(failed.Code), aws.ToString(failed.Message))
+		}
+		objects = objects[count:]
+	}
+	return nil
+}
+
 // Copy copies an object from source to destination
-func (s *S3Storage) Copy(srcBucket, srcPath, destBucket, destPath string) bool {
+func (s *S3Storage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	srcBucket, srcPath = s.resolveBucketAndPath(srcBucket, srcPath)
 	destBucket, destPath = s.resolveBucketAndPath(destBucket, destPath)
-
-	ctx := context.Background()
 
 	copySource := fmt.Sprintf("%s/%s", srcBucket, srcPath)
 
@@ -379,7 +448,7 @@ func (s *S3Storage) Copy(srcBucket, srcPath, destBucket, destPath string) bool {
 		CopySource: aws.String(copySource),
 	})
 	if err != nil {
-		zap.L().Error("Failed to copy object", zap.String("src", copySource), zap.String("dest", fmt.Sprintf("%s/%s", destBucket, destPath)), zap.Error(err))
+		common.Error("Failed to copy object", err, zap.String("src", copySource), zap.String("dest", fmt.Sprintf("%s/%s", destBucket, destPath)), zap.Error(err))
 		return false
 	}
 
@@ -387,16 +456,24 @@ func (s *S3Storage) Copy(srcBucket, srcPath, destBucket, destPath string) bool {
 }
 
 // Move moves an object from source to destination
-func (s *S3Storage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
-	if s.Copy(srcBucket, srcPath, destBucket, destPath) {
-		if err := s.Remove(srcBucket, srcPath); err != nil {
-			zap.L().Error("Failed to remove source object after copy", zap.String("bucket", srcBucket), zap.String("key", srcPath), zap.Error(err))
+func (s *S3Storage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	if s.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
+		if err := s.Remove(ctx, srcBucket, srcPath); err != nil {
+			common.Error("Failed to remove source object after copy", err, zap.String("bucket", srcBucket), zap.String("key", srcPath), zap.Error(err))
+			rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			err = s.Remove(rollbackCtx, destBucket, destPath)
+			if err != nil {
+				common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(err))
+			}
 			return false
 		}
 		return true
 	}
 	return false
 }
+
+func (s *S3Storage) Close() error { return nil }
 
 // isNotFound checks if the error is a not found error
 func isS3NotFound(err error) bool {
@@ -406,6 +483,17 @@ func isS3NotFound(err error) bool {
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "404" || apiErr.ErrorCode() == "NoSuchKey"
+	}
+	return false
+}
+
+func isS3BucketNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "404" || apiErr.ErrorCode() == "NoSuchBucket"
 	}
 	return false
 }

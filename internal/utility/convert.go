@@ -71,6 +71,22 @@ func StringPtr(s string) *string {
 	return &s
 }
 
+// ConfigBool reads a Python JSON bool/string flag.
+func ConfigBool[M ~map[string]any](config M, key string) bool {
+	value, ok := config[key]
+	if !ok {
+		return false
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return typed == "1" || typed == "true" || typed == "TRUE"
+	default:
+		return false
+	}
+}
+
 // ParseInt64 parses a string to int64.
 // If parsing fails, it returns 0.
 //
@@ -133,10 +149,7 @@ func ConvertHexToPositionIntArray(hexStr string) interface{} {
 	// Group by 5 elements
 	var result [][]int
 	for i := 0; i < len(intVals); i += 5 {
-		end := i + 5
-		if end > len(intVals) {
-			end = len(intVals)
-		}
+		end := min(i+5, len(intVals))
 		result = append(result, intVals[i:end])
 	}
 

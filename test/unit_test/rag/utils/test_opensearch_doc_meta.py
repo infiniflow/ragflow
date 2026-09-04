@@ -28,6 +28,7 @@ The OpenSearch and Elasticsearch SDKs are imported at module load; mocking
 the underlying client lets us exercise OSConnection methods in isolation
 without a live cluster.
 """
+
 from __future__ import annotations
 
 import sys
@@ -140,9 +141,7 @@ class TestOSConnectionMetaSurface:
     def test_create_doc_meta_idx_exists(self):
         cls = _resolve_os_connection_class()
         assert callable(getattr(cls, "create_doc_meta_idx", None)), (
-            "OSConnection.create_doc_meta_idx is required so the metadata "
-            "PATCH path does not raise AttributeError on OpenSearch backends "
-            "(issue #14570)."
+            "OSConnection.create_doc_meta_idx is required so the metadata PATCH path does not raise AttributeError on OpenSearch backends (issue #14570)."
         )
 
     def test_refresh_idx_exists(self):
@@ -173,17 +172,21 @@ class TestCreateDocMetaIdx:
         fake_indices.create.return_value = {"acknowledged": True}
         cls = _resolve_os_connection_class()
 
-        with patch.object(cls, "index_exist", return_value=False), \
-             patch("rag.utils.opensearch_conn.os.path.exists", return_value=True), \
-             patch(
-                 "rag.utils.opensearch_conn.open",
-                 new=_open_returning_payload({
-                     "settings": {"index": {"number_of_shards": 2}},
-                     "mappings": {"properties": {"meta_fields": {"type": "object"}}},
-                 }),
-                 create=True,
-             ), \
-             patch("opensearchpy.client.IndicesClient", return_value=fake_indices):
+        with (
+            patch.object(cls, "index_exist", return_value=False),
+            patch("rag.utils.opensearch_conn.os.path.exists", return_value=True),
+            patch(
+                "rag.utils.opensearch_conn.open",
+                new=_open_returning_payload(
+                    {
+                        "settings": {"index": {"number_of_shards": 2}},
+                        "mappings": {"properties": {"meta_fields": {"type": "object"}}},
+                    }
+                ),
+                create=True,
+            ),
+            patch("opensearchpy.client.IndicesClient", return_value=fake_indices),
+        ):
             result = conn.create_doc_meta_idx("ragflow_doc_meta_t1")
 
         assert result == {"acknowledged": True}
@@ -197,8 +200,7 @@ class TestCreateDocMetaIdx:
     def test_returns_false_when_mapping_file_missing(self):
         conn = _make_os_connection()
         cls = _resolve_os_connection_class()
-        with patch.object(cls, "index_exist", return_value=False), \
-             patch("rag.utils.opensearch_conn.os.path.exists", return_value=False):
+        with patch.object(cls, "index_exist", return_value=False), patch("rag.utils.opensearch_conn.os.path.exists", return_value=False):
             assert conn.create_doc_meta_idx("ragflow_doc_meta_t1") is False
 
     def test_returns_false_when_create_call_explodes(self):
@@ -210,14 +212,16 @@ class TestCreateDocMetaIdx:
         fake_indices = MagicMock()
         fake_indices.create.side_effect = RuntimeError("opensearch unreachable")
 
-        with patch.object(cls, "index_exist", return_value=False), \
-             patch("rag.utils.opensearch_conn.os.path.exists", return_value=True), \
-             patch(
-                 "rag.utils.opensearch_conn.open",
-                 new=_open_returning_payload({"settings": {}, "mappings": {}}),
-                 create=True,
-             ), \
-             patch("opensearchpy.client.IndicesClient", return_value=fake_indices):
+        with (
+            patch.object(cls, "index_exist", return_value=False),
+            patch("rag.utils.opensearch_conn.os.path.exists", return_value=True),
+            patch(
+                "rag.utils.opensearch_conn.open",
+                new=_open_returning_payload({"settings": {}, "mappings": {}}),
+                create=True,
+            ),
+            patch("opensearchpy.client.IndicesClient", return_value=fake_indices),
+        ):
             assert conn.create_doc_meta_idx("ragflow_doc_meta_t1") is False
 
 
@@ -229,9 +233,7 @@ class TestRefreshIdx:
 
     def test_returns_false_on_not_found(self):
         conn = _make_os_connection()
-        conn.os.indices.refresh.side_effect = opensearchpy.NotFoundError(
-            404, "index_not_found_exception", {}
-        )
+        conn.os.indices.refresh.side_effect = opensearchpy.NotFoundError(404, "index_not_found_exception", {})
         assert conn.refresh_idx("missing_idx") is False
 
     def test_swallows_other_errors_and_returns_false(self):
@@ -249,9 +251,7 @@ class TestCountIdx:
 
     def test_missing_index_reads_as_zero(self):
         conn = _make_os_connection()
-        conn.os.count.side_effect = opensearchpy.NotFoundError(
-            404, "index_not_found_exception", {}
-        )
+        conn.os.count.side_effect = opensearchpy.NotFoundError(404, "index_not_found_exception", {})
         assert conn.count_idx("ragflow_doc_meta_t1") == 0
 
     def test_other_failure_returns_negative_one(self):
@@ -282,7 +282,5 @@ class TestReplaceMetaFields:
 
     def test_returns_false_when_doc_missing(self):
         conn = _make_os_connection()
-        conn.os.update.side_effect = opensearchpy.NotFoundError(
-            404, "document_missing_exception", {}
-        )
+        conn.os.update.side_effect = opensearchpy.NotFoundError(404, "document_missing_exception", {})
         assert conn.replace_meta_fields("ragflow_doc_meta_t1", "absent", {"a": 1}) is False

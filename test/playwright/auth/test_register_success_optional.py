@@ -26,9 +26,7 @@ def _debug_register_response(page, response_info: dict) -> None:
     if isinstance(message, str) and len(message) > 300:
         message = message[:300]
     print(
-        "[auth-debug] register_response "
-        f"url={response_info.get('__url__')} status={response_info.get('__status__')} "
-        f"code={response_info.get('code')} message={message}",
+        f"[auth-debug] register_response url={response_info.get('__url__')} status={response_info.get('__status__')} code={response_info.get('code')} message={message}",
         flush=True,
     )
     try:
@@ -54,7 +52,8 @@ def _wait_for_auth_not_loading(page, timeout_ms: int = 5000) -> None:
           if (!status) return true;
           return status.getAttribute('data-state') !== 'loading';
         }
-        """ % auth_status_selector,
+        """
+        % auth_status_selector,
         timeout=timeout_ms,
     )
 
@@ -166,15 +165,12 @@ def step_03_submit_registration(
                         ),
                         snap("retry_submitted" if retried else "submitted"),
                     ),
-                    lambda resp: resp.request.method == "POST"
-                    and "/api/v1/users" in resp.url,
+                    lambda resp: resp.request.method == "POST" and "/api/v1/users" in resp.url,
                     timeout_ms=RESULT_TIMEOUT_MS,
                 )
             except PlaywrightTimeoutError as exc:
                 snap("failure")
-                raise AssertionError(
-                    f"Register response not received in time. url={page.url} email={current_email}"
-                ) from exc
+                raise AssertionError(f"Register response not received in time. url={page.url} email={current_email}") from exc
 
         _debug_register_response(page, response_info)
 

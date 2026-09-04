@@ -89,7 +89,7 @@ class EmbeddingUtils:
     ) -> List[str]:
         """Prepare texts for dataflow embedding.
 
-        Extracts content from 'questions', 'summary', or 'text' fields
+        Extracts content from 'questions', 'summary', 'text', or 'content_with_weight' fields
         (in priority order).
 
         Args:
@@ -100,7 +100,7 @@ class EmbeddingUtils:
         """
         texts = []
         for chunk in chunks:
-            text = chunk.get("questions", chunk.get("summary", chunk.get("text", "")))
+            text = chunk.get("questions") or chunk.get("summary") or chunk.get("text") or chunk.get("content_with_weight") or ""
             texts.append(text)
         return texts
 
@@ -180,11 +180,7 @@ class EmbeddingUtils:
         if not title_weight:
             title_weight = cls.DEFAULT_TITLE_WEIGHT
 
-        if (
-            title_vecs is not None
-            and content_vecs.ndim == 2
-            and title_vecs.shape == content_vecs.shape
-        ):
+        if title_vecs is not None and content_vecs.ndim == 2 and title_vecs.shape == content_vecs.shape:
             return title_weight * title_vecs + (1 - title_weight) * content_vecs
         return content_vecs
 

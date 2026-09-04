@@ -1,14 +1,13 @@
-// Package component implements the RAGFlow agent canvas components in Go.
+// Package component implements the RAGFlow agent canvas components
+// in Go following the 5-tier porting strategy (T1–T5; see
+// docs/develop/agent-go-port-design.md §4.1).
 //
-// See plan: .claude/plans/agent-go-port.md §2.11 (5-tier porting strategy).
-// Phase 2 P0 batch covers 8 components: LLM, Agent, ExitLoop, Switch,
-// Categorize, Begin, Message, Invoke.
-//
-// Component is the runtime contract every RAGFlow component implements;
-// it is a richer interface than internal/agent/runtime.Component (which
-// is the minimal Invoke-only surface canvas needs at build time). Any
-// concrete *Component here satisfies runtime.Component structurally,
-// which is how the canvas builder consumes a registered component via
+// Component is the runtime contract every RAGFlow component
+// implements; it is a richer interface than
+// internal/agent/runtime.Component (which is the minimal Invoke-only
+// surface canvas needs at build time). Any concrete *Component here
+// satisfies runtime.Component structurally, which is how the canvas
+// builder consumes a registered component via
 // runtime.DefaultFactory().
 //
 // ParamError and ErrNotImplemented are aliased from runtime so the
@@ -20,6 +19,8 @@ import (
 	"context"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 // Component is the runtime contract every RAGFlow component implements.
@@ -43,13 +44,13 @@ type Component interface {
 	// parameter map (variable references already substituted by the canvas
 	// engine). Returns the output map; components should put their public
 	// outputs at top-level keys.
-	Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error)
+	Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error)
 
 	// Stream is the streaming variant. The default implementation may
 	// return a buffered channel that emits the same payload as Invoke, then
 	// closes — components that natively stream (LLM, Message) override.
 	// May return (nil, nil) for non-streaming components.
-	Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error)
+	Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error)
 
 	// Inputs returns parameter metadata: param_name → description.
 	Inputs() map[string]string
@@ -82,3 +83,15 @@ var ErrNotImplemented = runtime.ErrNotImplemented
 // &ParamError{Field: ..., Reason: ...} continues to work; the value
 // it produces is the same type runtime.SetDefaultFactory consumers see.
 type ParamError = runtime.ParamError
+
+// BeOutput wraps a single output value into the canonical
+// {"content": v} frame downstream components (Message, VariableAggregator)
+// consume. Mirrors agent/component/base.py:ComponentBase.be_output
+// (restored by PR #16363 after the agent refactor dropped it). Most
+// components can just return `map[string]any{"content": v}` inline,
+// but this helper keeps the wrapper construction in one place so
+// error/empty paths can produce a uniform output shape without
+// duplicating the literal everywhere.
+func BeOutput(v any) map[string]any {
+	return map[string]any{"content": v}
+}

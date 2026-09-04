@@ -11,10 +11,12 @@ import {
 import { RAGFlowSelect } from '@/components/ui/select';
 import { useTranslation } from 'react-i18next';
 import { INextOperatorForm } from '../../interface';
+import { useOwnerTenantId } from '../../context';
 import { GoogleLanguageOptions } from '../../options';
 
 const RewriteQuestionForm = ({ form }: INextOperatorForm) => {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
 
   return (
     <Form {...form}>
@@ -28,6 +30,7 @@ const RewriteQuestionForm = ({ form }: INextOperatorForm) => {
           name="llm_id"
           label={t('chat.model')}
           tooltip={t('chat.modelTip')}
+          ownerTenantId={ownerTenantId}
         />
         <FormField
           control={form.control}

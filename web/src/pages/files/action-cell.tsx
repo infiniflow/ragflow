@@ -5,6 +5,7 @@ import {
 import { FileIcon } from '@/components/icon-font';
 import NewDocumentLink from '@/components/new-document-link';
 import { Button } from '@/components/ui/button';
+import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useDownloadFile } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,7 @@ import { isFolderType, isKnowledgeBaseType } from './util';
 type IProps = Pick<CellContext<IFile, unknown>, 'row'> &
   Pick<UseHandleConnectToKnowledgeReturnType, 'showConnectToKnowledgeModal'> &
   Pick<UseRenameCurrentFileReturnType, 'showFileRenameModal'> &
+  Pick<UseRowSelectionType, 'setRowSelection'> &
   UseMoveDocumentShowType;
 
 export function ActionCell({
@@ -41,6 +43,7 @@ export function ActionCell({
   showConnectToKnowledgeModal,
   showFileRenameModal,
   showMoveFileModal,
+  setRowSelection,
 }: IProps) {
   const record = row.original;
   const documentId = record.id;
@@ -74,9 +77,18 @@ export function ActionCell({
 
   const { handleRemoveFile } = useHandleDeleteFile();
 
-  const onRemoveFile = useCallback(() => {
-    handleRemoveFile([documentId]);
-  }, [handleRemoveFile, documentId]);
+  const onRemoveFile = useCallback(async () => {
+    const code = await handleRemoveFile([documentId]);
+    if (code === 0) {
+      // Prune the deleted file from the multi-selection so the bulk
+      // operation bar doesn't keep counting it.
+      setRowSelection((previous) => {
+        const next = { ...previous };
+        delete next[documentId];
+        return next;
+      });
+    }
+  }, [handleRemoveFile, documentId, setRowSelection]);
 
   if (isSkillsFolder) {
     return null;

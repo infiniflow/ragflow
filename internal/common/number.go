@@ -16,7 +16,10 @@
 
 package common
 
-import "strconv"
+import (
+	"math"
+	"strconv"
+)
 
 // PyFloat64 is a float64 that serializes to JSON using the same format as Python's json.dumps.
 // Python uses the "shortest unique representation" algorithm (dtoa) for float64,
@@ -97,10 +100,10 @@ func ConvertFloatsToPyFormat(v interface{}) interface{} {
 // the O(n * eps) of a naive left-to-right loop.
 //
 // This implementation matches numpy's exact pairwise summation algorithm:
-// - For n < 16: uses naive left-to-right sum (matching numpy's small-array optimization)
-// - For n >= 16: processes pairs left-to-right, carrying any odd element to the end
-//   of the next level. This matches numpy's pairwise reduction in
-//   numpy/core/src/umath/reduction.c.
+//   - For n < 16: uses naive left-to-right sum (matching numpy's small-array optimization)
+//   - For n >= 16: processes pairs left-to-right, carrying any odd element to the end
+//     of the next level. This matches numpy's pairwise reduction in
+//     numpy/core/src/umath/reduction.c.
 //
 // xs is modified in place. Pass a copy if the caller still needs the input.
 //
@@ -149,4 +152,30 @@ func GetInt(value interface{}) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// CoalesceInt returns *val if val is non-nil and positive; otherwise returns
+// defaultVal. It is useful for optional int parameters (e.g. pagination)
+// where nil or a value <= 0 means "use the default".
+func CoalesceInt(val *int, defaultVal int) int {
+	if val != nil && *val > 0 {
+		return *val
+	}
+	return defaultVal
+}
+
+// IsZeroVector reports whether every element of v is zero. An empty or nil
+// slice is considered a zero vector.
+func IsZeroVector(v []float64) bool {
+	for _, x := range v {
+		if x != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func AlmostEqual64(a, b float64) bool {
+	const epsilon = 1e-9
+	return math.Abs(a-b) <= epsilon
 }

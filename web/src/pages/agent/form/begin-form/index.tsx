@@ -20,6 +20,7 @@ import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { AgentDialogueMode, BeginQueryType } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
 import { QueryTable } from './query-table';
@@ -38,6 +39,7 @@ const ModeOptions = [
 
 function BeginForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
 
   const values = useValues(node);
 
@@ -207,6 +209,7 @@ function BeginForm({ node }: INextOperatorForm) {
                 horizontal={false}
                 showMineruOptions={false}
                 showPaddleocrOptions={false}
+                ownerTenantId={ownerTenantId}
               ></LayoutRecognizeFormField>
             )}
           </>

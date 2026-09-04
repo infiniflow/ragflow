@@ -55,7 +55,7 @@ export default {
       submit: 'إرسال',
       clear: 'مسح',
       embedIntoSite: 'تضمين في صفحة الويب',
-      openInNewTab: 'الدردشة في علامة تبويب جديدة',
+      openInNewTab: 'فتح في علامة تبويب جديدة',
       previousPage: 'سابق',
       nextPage: 'التالي',
       add: 'يضيف',
@@ -73,6 +73,7 @@ export default {
       },
       selected: 'محدد',
       seeAll: 'عرض الكل',
+      owner: 'المالك',
     },
     login: {
       loginTitle: 'سجّل الدخول إلى حسابك',
@@ -207,7 +208,6 @@ export default {
       metadata: {
         fields: 'الحقول',
         selectFiles: 'الملفات المحددة ({{count}})',
-        type: 'يكتب',
         fieldNameInvalid:
           'يمكن أن يحتوي اسم الحقل على أحرف أو شرطات سفلية فقط.',
         builtIn: 'مدمج',
@@ -235,6 +235,7 @@ export default {
         value: 'قيمة',
         action: 'فعل',
         field: 'مجال',
+        type: 'نوع',
         description: 'وصف',
         fieldName: 'اسم الحقل',
         editMetadata: 'تحرير البيانات الوصفية',
@@ -335,7 +336,7 @@ export default {
         'قم بإجراء اختبار استرجاع للتحقق مما إذا كان RAGFlow يمكنه استرداد المحتوى المقصود لـ LLM. إذا قمت بتعديل الإعدادات الافتراضية، مثل وزن تشابه الكلمة الرئيسية أو حد التشابه، لتحقيق النتائج المثلى، فاعلم أن هذه التغييرات لن يتم حفظها تلقائيًا. يجب عليك تطبيقها على إعدادات مساعد الدردشة أو إعدادات مكون وكيل الاسترداد.',
       similarityThreshold: 'عتبة التشابه',
       similarityThresholdTip:
-        'يستخدم RAGFlow إما مزيجًا من تشابه الكلمات الرئيسية المرجحة وتشابه جيب التمام المتجه المرجح، أو مزيجًا من تشابه الكلمات الرئيسية المرجحة ودرجة إعادة الترتيب المرجحة أثناء الاسترجاع. تحدد هذه المعلمة الحد الأدنى لأوجه التشابه بين استعلام المستخدم والقطع. سيتم استبعاد أي قطعة ذات درجة تشابه أقل من هذا الحد من النتائج. افتراضيًا، يتم تعيين العتبة على 0.2. وهذا يعني أنه سيتم استرداد الأجزاء ذات درجة التشابه الهجين 20 أو أعلى فقط.',
+        'يستخدم RAGFlow إما مزيجًا من تشابه الكلمات الرئيسية المرجحة وتشابه جيب التمام المتجه المرجح، أو مزيجًا من تشابه الكلمات الرئيسية المرجحة ودرجة إعادة الترتيب المرجحة أثناء الاسترجاع. تحدد هذه المعلمة الحد الأدنى لأوجه التشابه بين استعلام المستخدم والقطع. سيتم استبعاد أي قطعة ذات درجة تشابه أقل من هذا الحد من النتائج. افتراضيًا، يتم تعيين العتبة على 20. وهذا يعني أنه سيتم استرداد الأجزاء ذات درجة التشابه الهجين 20 أو أعلى فقط.',
       vectorSimilarityWeight: 'ناقل تشابه الوزن',
       vectorSimilarityWeightTip:
         'يؤدي هذا إلى تعيين وزن تشابه الكلمات الرئيسية في درجة التشابه المجمعة، إما المستخدمة مع تشابه جيب التمام المتجه أو مع درجة إعادة الترتيب. مجموع الوزنين يجب أن يساوي 1.0.',
@@ -358,6 +359,7 @@ export default {
       runningStatus2: 'تم الإلغاء',
       runningStatus3: 'نجاح',
       runningStatus4: 'يفشل',
+      runningStatusQueued: 'في الانتظار',
       pageRanges: 'نطاقات الصفحات',
       pageRangesTip:
         'نطاق الصفحات التي سيتم تحليلها؛ لن تتم معالجة الصفحات التي تقع خارج هذا النطاق.',
@@ -400,7 +402,7 @@ export default {
         'يمكن أن يتكون المحدد أو الفاصل من حرف خاص واحد أو عدة أحرف. إذا كانت هناك أحرف متعددة، فتأكد من أنها محاطة بعلامات التحديد الخلفية (``). على سبيل المثال، إذا قمت بتكوين المحددات الخاصة بك على النحو التالي: \\n`##`;، فسيتم فصل النصوص الخاصة بك عند فواصل الأسطر ورموز التجزئة المزدوجة (##) والفواصل المنقوطة.',
       html4excel: 'إكسل إلى HTML',
       html4excelTip:
-        'استخدم مع طريقة التقطيع العامة. عند التعطيل، سيتم تحليل جداول البيانات (XLSX أو XLS(Excel 97-2003)) الموجودة في قاعدة المعرفة إلى أزواج قيمة المفتاح. عند التمكين، سيتم تحليلها إلى جداول HTML، مع تقسيم كل 12 صفًا إذا كان الجدول الأصلي يحتوي على أكثر من 12 صفًا. راجع https://ragflow.io/docs/dev/enable_excel2html للحصول على التفاصيل.',
+        'استخدم مع طريقة التقطيع العامة. عند التعطيل، سيتم تحليل جداول البيانات (XLSX أو XLS(Excel 97-2003)) الموجودة في قاعدة المعرفة إلى أزواج قيمة المفتاح. عند التمكين، سيتم تحليلها إلى جداول HTML، مع تقسيم كل 12 صفًا إذا كان الجدول الأصلي يحتوي على أكثر من 12 صفًا. راجع https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration للحصول على التفاصيل.',
       autoKeywords: 'الكلمة الرئيسية التلقائية',
       autoKeywordsTip:
         'قم باستخراج الكلمات الرئيسية N تلقائيًا لكل مجموعة لزيادة تصنيفها للاستعلامات التي تحتوي على تلك الكلمات الرئيسية. انتبه إلى أنه سيتم استهلاك الرموز المميزة الإضافية بواسطة نموذج الفهرسة المحدد في "التكوين". يمكنك التحقق من الكلمات الأساسية المضافة أو تحديثها لمقطع من قائمة المقاطع. للحصول على التفاصيل، راجع https://ragflow.io/docs/dev/autokeyword_autoquestion.',
@@ -420,7 +422,7 @@ export default {
     },
     knowledgeConfiguration: {
       globalIndexModelTip:
-        'يستخدم لإنشاء الرسوم البيانية المعرفية و RAPTOR وبيانات التعريف التلقائية والكلمات الرئيسية التلقائية والسؤال التلقائي. سيؤثر أداء النموذج على جودة التوليد.',
+        'يستخدم لإنشاء بيانات التعريف التلقائية والكلمات الرئيسية التلقائية والأسئلة التلقائية. سيؤثر أداء النموذج على جودة التوليد.',
       globalIndexModel: 'نموذج الفهرسة',
       settings: 'إعدادات',
       autoMetadataTip:
@@ -465,9 +467,6 @@ export default {
       dataSource: 'مصدر البيانات',
       linkSourceSetTip: 'إدارة ربط مصدر البيانات بمجموعة البيانات هذه',
       linkDataSource: 'ربط مصدر البيانات',
-      tocExtraction: 'فهرس الصفحة',
-      tocExtractionTip:
-        'بالنسبة للقطع الموجودة، قم بإنشاء جدول محتويات هرمي (دليل واحد لكل ملف). أثناء الاستعلامات، عند تنشيط "تحسين الدليل"، سيستخدم النظام نموذجًا كبيرًا لتحديد عناصر الدليل ذات الصلة بسؤال المستخدم، وبالتالي تحديد الأجزاء ذات الصلة.',
       deleteGenerateModalContent:
         "<p>حذف النتائج <strong class='text-text-primary'>{{type}}</strong> التي تم إنشاؤها\n        سيؤدي إلى إزالة جميع الكيانات والعلاقات المشتقة من مجموعة البيانات هذه.\n        ستبقى ملفاتك الأصلية سليمة.<p>\n        <br/>\n        هل تريد الاستمرار؟",
       extractRaptor: 'استخراج رابتور',
@@ -478,8 +477,7 @@ export default {
       setDefaultTip: '',
       setDefault: 'تعيين كافتراضي',
       editLinkDataPipeline: 'تعديل مسار الابتلاع',
-      linkPipelineSetTip:
-        'إدارة ربط خط أنابيب الاستيعاب مع مجموعة البيانات هذه',
+      linkPipelineSetTip: 'إدارة ربط خط أنابيب الاستيعاب مع مجموعة البيانات هذه',
       default: 'تقصير',
       dataPipeline: 'تبديل أو تكوين مسار الابتلاع.',
       linkDataPipeline: 'ربط خط أنابيب استيعاب',
@@ -589,7 +587,7 @@ export default {
       vietnamese: 'الفيتنامية',
       pageRank: 'رتبة الصفحة',
       pageRankTip:
-        'يمكنك تعيين درجة أعلى لتصنيف الصفحات لقواعد معرفية محددة أثناء الاسترجاع. تتم إضافة النتيجة المقابلة إلى درجات التشابه الهجينة للأجزاء المستردة من قواعد المعرفة هذه، مما يؤدي إلى زيادة ترتيبها. راجع https://ragflow.io/docs/dev/set_page_rank للحصول على التفاصيل.',
+        'يمكنك تعيين درجة أعلى لتصنيف الصفحات لقواعد معرفية محددة أثناء الاسترجاع. تتم إضافة النتيجة المقابلة إلى درجات التشابه الهجينة للأجزاء المستردة من قواعد المعرفة هذه، مما يؤدي إلى زيادة ترتيبها. راجع https://ragflow.io/docs/dataset_configuration#basic-information للحصول على التفاصيل.',
       tagName: 'علامة',
       frequency: 'تكرار',
       searchTags: 'علامات البحث',
@@ -597,7 +595,7 @@ export default {
       tagTable: 'طاولة',
       tagSet: 'مجموعات العلامات',
       tagSetTip:
-        '<p> حدد قاعدة معرفية واحدة أو عدة قواعد لوضع علامات تلقائية على الأجزاء في قاعدة المعرفة الخاصة بك. راجع https://ragflow.io/docs/dev/use_tag_sets للحصول على التفاصيل.</p>\n<p> سيتم أيضًا وضع علامة على استعلام المستخدم تلقائيًا.</p>\nتعمل ميزة وضع العلامات التلقائي هذه على تحسين عملية الاسترجاع عن طريق إضافة طبقة أخرى من المعرفة الخاصة بالمجال إلى مجموعة البيانات الموجودة.\n<p>الفرق بين العلامة التلقائية والكلمة الرئيسية التلقائية:</p>\n<ul>\n  <li>قاعدة معارف العلامة هي مجموعة قريبة محددة من قبل المستخدم، في حين يمكن اعتبار الكلمات الأساسية المستخرجة بواسطة LLM مجموعة مفتوحة.</li>\n  <li>يجب عليك تحميل مجموعات العلامات بتنسيقات محددة قبل تشغيل ميزة وضع العلامات التلقائي.</li>\n  <li> تعتمد ميزة الكلمات الأساسية التلقائية على LLM وتستهلك عددًا كبيرًا من الرموز المميزة.</li>\n</ul>',
+        '<p> حدد قاعدة معرفية واحدة أو عدة قواعد لوضع علامات تلقائية على الأجزاء في قاعدة المعرفة الخاصة بك. راجع https://ragflow.io/docs/dataset_configuration#basic-information للحصول على التفاصيل.</p>\n<p> سيتم أيضًا وضع علامة على استعلام المستخدم تلقائيًا.</p>\nتعمل ميزة وضع العلامات التلقائي هذه على تحسين عملية الاسترجاع عن طريق إضافة طبقة أخرى من المعرفة الخاصة بالمجال إلى مجموعة البيانات الموجودة.\n<p>الفرق بين العلامة التلقائية والكلمة الرئيسية التلقائية:</p>\n<ul>\n  <li>قاعدة معارف العلامة هي مجموعة قريبة محددة من قبل المستخدم، في حين يمكن اعتبار الكلمات الأساسية المستخرجة بواسطة LLM مجموعة مفتوحة.</li>\n  <li>يجب عليك تحميل مجموعات العلامات بتنسيقات محددة قبل تشغيل ميزة وضع العلامات التلقائي.</li>\n  <li> تعتمد ميزة الكلمات الأساسية التلقائية على LLM وتستهلك عددًا كبيرًا من الرموز المميزة.</li>\n</ul>',
       topnTags: 'علامات Top-N',
       tags: 'العلامات',
       addTag: 'إضافة علامة',
@@ -625,6 +623,8 @@ export default {
         text: 'نص',
       },
       chunk: 'قطعة',
+      createChunk: 'إنشاء مقطع',
+      editChunk: 'تعديل المقطع',
       bulk: 'حجم كبير',
       selectAll: 'حدد الكل',
       enabledSelected: 'تمكين المحدد',
@@ -701,7 +701,7 @@ export default {
         'لن يتم إرسال جميع الأجزاء ذات درجة التشابه أعلى من "عتبة التشابه" إلى LLM. يؤدي هذا إلى تحديد قطع "Top N" من القطع المستردة.',
       variable: 'عامل',
       variableTip:
-        'عند استخدامها مع واجهات برمجة تطبيقات إدارة مساعد الدردشة الخاصة بـ RAGFlow، يمكن للمتغيرات أن تساعد في تطوير إستراتيجيات موجهة للنظام أكثر مرونة. سيتم استخدام المتغيرات المحددة بواسطة "موجه النظام" كجزء من المطالبات الخاصة بـ LLM. {knowledge} هو متغير خاص محجوز يمثل الأجزاء المستردة من قاعدة (قواعد) المعرفة المحددة، ويجب وضع جميع المتغيرات بين قوسين متعرجين {} في "موجه النظام". راجع https://ragflow.io/docs/dev/set_chat_variables للحصول على التفاصيل.',
+        'عند استخدامها مع واجهات برمجة تطبيقات إدارة مساعد الدردشة الخاصة بـ RAGFlow، يمكن للمتغيرات أن تساعد في تطوير إستراتيجيات موجهة للنظام أكثر مرونة. سيتم استخدام المتغيرات المحددة بواسطة "موجه النظام" كجزء من المطالبات الخاصة بـ LLM. {knowledge} هو متغير خاص محجوز يمثل الأجزاء المستردة من قاعدة (قواعد) المعرفة المحددة، ويجب وضع جميع المتغيرات بين قوسين متعرجين {} في "موجه النظام". راجع https://ragflow.io/docs/chat_configuration#system-prompt للحصول على التفاصيل.',
       add: 'يضيف',
       key: 'مفتاح',
       optional: 'خياري',
@@ -830,6 +830,12 @@ export default {
         'أثناء تحليل المستند، تم إنشاء معلومات جدول المحتويات (راجع خيار "تمكين استخراج جدول المحتويات" في الطريقة العامة). يسمح هذا للنموذج الكبير بإرجاع عناصر جدول المحتويات ذات الصلة باستعلام المستخدم، وبالتالي استخدام هذه العناصر لاسترداد الأجزاء ذات الصلة وتطبيق الترجيح على هذه القطع أثناء عملية الفرز. يحاكي هذا الأسلوب سلوك الإنسان في البحث عن المعلومات في الكتب.',
       batchDeleteSessions: 'حذف دفعة',
       deleteSelectedConfirm: 'هل تريد حذف الجلسة/الجلسات المحددة ({{count}})؟',
+      showChunkMetadata: 'عرض بيانات التعريف للمقطع',
+      showChunkMetadataTip:
+        'عرض بيانات التعريف للمستند (مثل العنوان ورقم الصفحة وتاريخ الرفع) جنبًا إلى جنب مع مقاطع النص المسترجعة',
+      metadataFields: 'حقول البيانات التعريفية',
+      metadataFieldsTip:
+        'حدد حقول البيانات التعريفية التي تريد عرضها مع كل مقطع',
     },
     setting: {
       Verify: 'يؤكد',
@@ -918,6 +924,7 @@ export default {
         'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
+      azure_devopsDescription: 'اربط Azure DevOps لمزامنة ملفات المستودع وطلبات السحب.',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
       bitbucketTopWorkspaceTip:
         'The Bitbucket workspace to index (e.g., "atlassian" from https://bitbucket.org/atlassian/workspace ).',
@@ -942,7 +949,7 @@ export default {
       moodleDescription:
         'Connect to your Moodle LMS to sync course content, forums, and resources.',
       moodleUrlTip:
-        'The base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
+        'The Base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
       moodleTokenTip:
         'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
       seafileDescription:
@@ -1127,7 +1134,7 @@ export default {
       modelType: 'نوع النموذج',
       modelTypeMessage: 'الرجاء إدخال نوع النموذج الخاص بك!',
       addLlmBaseUrl: 'عنوان URL الأساسي',
-      baseUrlNameMessage: 'الرجاء إدخال عنوان URL الأساسي الخاص بك!',
+      baseUrlNameMessage: 'الرجاء إدخال عنوان URL الأساسي الخاص بك',
       paddleocr: {
         apiUrl: 'عنوان URL لواجهة برمجة تطبيقات PaddleOCR',
         apiUrlPlaceholder:
@@ -1149,13 +1156,13 @@ export default {
       endpointIDMessage: 'يرجى إدخال Model ID للنموذج',
       addArkApiKey: 'فولك ARK_API_KEY',
       ArkApiKeyMessage: 'الرجاء إدخال ARK_API_KEY الخاص بك',
-      bedrockModelNameMessage: 'الرجاء إدخال اسم النموذج الخاص بك!',
+      bedrockModelNameMessage: 'الرجاء إدخال اسم النموذج الخاص بك',
       addBedrockEngineAK: 'مفتاح الوصول',
       bedrockAKMessage: 'الرجاء إدخال مفتاح الوصول الخاص بك',
       addBedrockSK: 'المفتاح السري',
       bedrockSKMessage: 'الرجاء إدخال المفتاح السري الخاص بك',
       bedrockRegion: 'منطقة أوس',
-      bedrockRegionMessage: 'الرجاء التحديد!',
+      bedrockRegionMessage: 'الرجاء التحديد',
       'us-east-2': 'شرق الولايات المتحدة (أوهايو)',
       'us-east-1': 'شرق الولايات المتحدة (شمال فرجينيا)',
       'us-west-1': 'غرب الولايات المتحدة (شمال كاليفورنيا)',
@@ -1200,8 +1207,8 @@ export default {
       SparkAPIPasswordMessage: 'يرجى إدخال كلمة مرور API الخاصة بك',
       addSparkAPPID: 'معرف تطبيق سبارك',
       SparkAPPIDMessage: 'يرجى إدخال معرف التطبيق الخاص بك',
-      addSparkAPISecret: 'سبارك API Secret',
-      SparkAPISecretMessage: 'يرجى إدخال APISecret الخاص بك',
+      addSparkAPISecret: 'سبارك API SECRET',
+      SparkAPISecretMessage: 'يرجى إدخال API SECRET الخاص بك',
       addSparkAPIKey: 'سبارك APIKey',
       SparkAPIKeyMessage: 'الرجاء إدخال APIKey الخاص بك',
       yiyanModelNameMessage: 'الرجاء إدخال اسم النموذج',
@@ -1277,7 +1284,7 @@ export default {
         chat: 'محادثة',
         embedding: 'التضمين',
         rerank: 'إعادة الترتيب',
-        sequence2text: 'تسلسل2نص',
+        sequence2text: 'ASR',
         tts: 'تحويل النص إلى كلام',
         image2text: 'التعرف الضوئي على الحروف',
         speech2text: 'ASR',
@@ -2227,6 +2234,10 @@ export default {
       },
       saveToMemory: 'حفظ في الذاكرة',
       retrievalFrom: 'الاسترجاع من',
+      tags: 'العلامات',
+      canvasCategory: 'فئة قماش',
+      id: 'ID',
+      logTitle: 'العنوان',
     },
     llmTools: {
       bad_calculator: {
@@ -2284,6 +2295,7 @@ export default {
       okText: 'يحفظ',
       cancelText: 'يلغي',
       chooseDataset: 'الرجاء تحديد مجموعة البيانات أولا',
+      selectLocalePlaceholder: 'اختر لغة',
     },
     language: {
       english: 'الإنجليزية',

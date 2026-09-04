@@ -17,7 +17,10 @@
 package dao
 
 import (
+	"context"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // TimeRecordDAO time record data access object
@@ -29,14 +32,14 @@ func NewTimeRecordDAO() *TimeRecordDAO {
 }
 
 // Create inserts a new record
-func (dao *TimeRecordDAO) Create(record *entity.TimeRecord) error {
-	return DB.Create(record).Error
+func (dao *TimeRecordDAO) Create(ctx context.Context, db *gorm.DB, record *entity.TimeRecord) error {
+	return db.WithContext(ctx).Create(record).Error
 }
 
 // GetRecent retrieves the most recently inserted records (ordered by ID descending)
-func (dao *TimeRecordDAO) GetRecent(limit int) ([]*entity.TimeRecord, error) {
+func (dao *TimeRecordDAO) GetRecent(ctx context.Context, db *gorm.DB, limit int) ([]*entity.TimeRecord, error) {
 	var records []*entity.TimeRecord
-	err := DB.Order("id DESC").Limit(limit).Find(&records).Error
+	err := db.WithContext(ctx).Order("id DESC").Limit(limit).Find(&records).Error
 	if err != nil {
 		return nil, err
 	}
@@ -44,21 +47,21 @@ func (dao *TimeRecordDAO) GetRecent(limit int) ([]*entity.TimeRecord, error) {
 }
 
 // GetCount returns the total number of records
-func (dao *TimeRecordDAO) GetCount() (int64, error) {
+func (dao *TimeRecordDAO) GetCount(ctx context.Context, db *gorm.DB) (int64, error) {
 	var count int64
-	err := DB.Model(&entity.TimeRecord{}).Count(&count).Error
+	err := db.WithContext(ctx).Model(&entity.TimeRecord{}).Count(&count).Error
 	return count, err
 }
 
 // DeleteOldest removes the oldest records (smallest ID) with limit
-func (dao *TimeRecordDAO) DeleteOldest(limit int64) error {
-	return DB.Exec("DELETE FROM time_records ORDER BY id ASC LIMIT ?", limit).Error
+func (dao *TimeRecordDAO) DeleteOldest(ctx context.Context, db *gorm.DB, limit int64) error {
+	return db.WithContext(ctx).Exec("DELETE FROM time_records ORDER BY id ASC LIMIT ?", limit).Error
 }
 
 // GetByID retrieves a single record by its ID
-func (dao *TimeRecordDAO) GetByID(id int64) (*entity.TimeRecord, error) {
+func (dao *TimeRecordDAO) GetByID(ctx context.Context, db *gorm.DB, id int64) (*entity.TimeRecord, error) {
 	var record entity.TimeRecord
-	err := DB.First(&record, id).Error
+	err := db.WithContext(ctx).First(&record, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -66,17 +69,17 @@ func (dao *TimeRecordDAO) GetByID(id int64) (*entity.TimeRecord, error) {
 }
 
 // GetAll retrieves all records
-func (dao *TimeRecordDAO) GetAll() ([]*entity.TimeRecord, error) {
+func (dao *TimeRecordDAO) GetAll(ctx context.Context, db *gorm.DB) ([]*entity.TimeRecord, error) {
 	var records []*entity.TimeRecord
-	err := DB.Find(&records).Error
+	err := db.WithContext(ctx).Find(&records).Error
 	return records, err
 }
 
 // KeepLatest keeps the latest N records and deletes older ones
-func (dao *TimeRecordDAO) KeepLatest(count int64) error {
+func (dao *TimeRecordDAO) KeepLatest(ctx context.Context, db *gorm.DB, count int64) error {
 	// Step 1: Get the maximum ID
 	var maxID int64
-	if err := DB.Model(&entity.TimeRecord{}).Select("COALESCE(MAX(id), 0)").Scan(&maxID).Error; err != nil {
+	if err := db.WithContext(ctx).Model(&entity.TimeRecord{}).Select("COALESCE(MAX(id), 0)").Scan(&maxID).Error; err != nil {
 		return err
 	}
 
@@ -94,10 +97,10 @@ func (dao *TimeRecordDAO) KeepLatest(count int64) error {
 	}
 
 	// Step 3: Delete records with ID <= threshold
-	return DB.Where("id <= ?", thresholdID).Delete(&entity.TimeRecord{}).Error
+	return db.WithContext(ctx).Where("id <= ?", thresholdID).Delete(&entity.TimeRecord{}).Error
 }
 
 // DeleteAll deletes all records
-func (dao *TimeRecordDAO) DeleteAll() error {
-	return DB.Where("1=1").Delete(&entity.TimeRecord{}).Error
+func (dao *TimeRecordDAO) DeleteAll(ctx context.Context, db *gorm.DB) error {
+	return db.WithContext(ctx).Where("1=1").Delete(&entity.TimeRecord{}).Error
 }

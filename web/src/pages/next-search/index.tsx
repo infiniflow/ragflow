@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Button } from '@/components/ui/button';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { Settings } from 'lucide-react';
@@ -37,10 +53,10 @@ export default function SearchPage() {
       className="size-full flex-1 relative px-5 pb-5 flex pt-4"
       data-testid="search-detail"
     >
-      <div className="flex gap-3 w-full bg-bg-base border-0.5 border-border-button">
-        <div className="flex-1 min-w-0">
+      <div className="flex gap-3 flex-1 min-w-0 bg-bg-base border-0.5 border-border-button">
+        <div className="flex-1 min-w-0 overflow-hidden">
           {!isSearching && (
-            <div className="animate-fade-in-down">
+            <div className="animate-fade-in-down h-full overflow-x-hidden overflow-y-auto">
               <SearchHome
                 setIsSearching={setIsSearching}
                 isSearching={isSearching}
@@ -66,6 +82,7 @@ export default function SearchPage() {
           <SearchSetting
             open={openSetting}
             setOpen={setOpenSetting}
+            className="shrink-0 max-w-full"
             data={SearchData as ISearchAppDetailProps}
           />
         )}
@@ -73,7 +90,7 @@ export default function SearchPage() {
 
       <Button
         variant="transparent"
-        className="bg-bg-card ml-5"
+        className="bg-bg-card ml-5 shrink-0"
         onClick={() => setOpenSetting(!openSetting)}
       >
         <Settings className="text-text-secondary" />

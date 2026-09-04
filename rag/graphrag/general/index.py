@@ -221,11 +221,7 @@ async def load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
         "source_id": [doc_id],
     }
     try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields, [], condition, [], OrderByExpr(),
-            0, 1, search.index_name(tenant_id), [kb_id]
-        )
+        res = await thread_pool_exec(settings.docStoreConn.search, fields, [], condition, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [kb_id])
         field_map = settings.docStoreConn.get_fields(res, fields)
         for cid, row in field_map.items():
             content = row.get("content_with_weight", "")
@@ -237,19 +233,22 @@ async def load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
                 sg.graph["source_id"] = [doc_id]
                 logging.info(
                     "Checkpoint hit: subgraph for doc %s (tenant=%s kb=%s) found at chunk %s",
-                    doc_id, tenant_id, kb_id, cid,
+                    doc_id,
+                    tenant_id,
+                    kb_id,
+                    cid,
                 )
                 return sg
             except Exception:
-                logging.exception(
-                    "Failed to parse subgraph JSON for doc %s chunk %s", doc_id, cid
-                )
+                logging.exception("Failed to parse subgraph JSON for doc %s chunk %s", doc_id, cid)
     except Exception:
         logging.exception("Failed to load subgraph from store for doc %s", doc_id)
         return None
     logging.info(
         "Checkpoint miss: no subgraph for doc %s (tenant=%s kb=%s)",
-        doc_id, tenant_id, kb_id,
+        doc_id,
+        tenant_id,
+        kb_id,
     )
     return None
 
@@ -327,19 +326,11 @@ async def run_graphrag_for_kb(
         chunks = []
         current_chunk = ""
 
-        raw_chunks = list(settings.retriever.chunk_list(
-            doc_id,
-            tenant_id,
-            [kb_id],
-            fields=fields_for_chunks,
-            sort_by_position=True,
-            retrieve_all=True
-        ))
+        raw_chunks = list(settings.retriever.chunk_list(doc_id, tenant_id, [kb_id], fields=fields_for_chunks, sort_by_position=True, retrieve_all=True))
 
         callback(msg=f"[GraphRAG] chunk_list returned {len(raw_chunks)} raw chunks for doc:{doc_id}")
 
-        contents = [content for chunk in raw_chunks if (content := chunk.get("content_with_weight", ""))
-]
+        contents = [content for chunk in raw_chunks if (content := chunk.get("content_with_weight", ""))]
         # For NER-based extractionm, no need to batch extract entity and relation
         if _select_extractor_type(graphrag_config) == "ner":
             return contents
@@ -398,6 +389,7 @@ async def run_graphrag_for_kb(
 
                 _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before subgraph generation for doc {doc_id}.", callback)
                 try:
+
                     async def build_subgraph_attempt():
                         checkpoint_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
                         if checkpoint_sg:
@@ -492,6 +484,7 @@ async def run_graphrag_for_kb(
             union_nodes.update(set(sg.nodes()))
 
             try:
+
                 async def merge_subgraph_attempt():
                     current_graph = await get_graph(tenant_id, kb_id)
                     if current_graph and doc_id in current_graph.graph.get("source_id", []):
@@ -651,6 +644,90 @@ async def run_graphrag_for_kb(
     }
 
 
+
+import re as _re
+
+_GRAPH_FIELD_SEP = "<SEP>"
+
+_NEGATIVE_JUDGMENT_PATTERN = _re.compile(
+    "|".join([
+        r"no clear relationship",
+        r"no direct relationship",
+        r"no explicit relation(ship)?",
+        r"does not provide (a )?(clear |specific )?relationship",
+        r"does not (directly )?(link|mention)",
+        r"not (clearly )?(mentioned|specified|provided) (in|within) the text",
+        r"unrelated entities",
+        r"there is no (direct |clear )?relationship",
+        r"no relationship (is )?(mentioned|found|indicated)",
+        r"different contexts,? with no",
+        r"not directly (linked|related|connected)",
+    ]),
+    _re.IGNORECASE,
+)
+
+_SUBJECT_PATTERN = _re.compile(
+    r"^(?:Lord |Lady |Sir |Dr\.? |Mr\.? |Mrs\.? |Ms\.? )?"
+    r"([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+)?)"
+    r"(?:'s\b|\s+(?:is|was|has|does|are|were|shows|owns|plays|works|practices|idolizes|recognized|listed|another|also|lives|resides))"
+)
+
+
+def _relationship_looks_valid(rel: dict) -> bool:
+    """Returns False if this relationship should be dropped: either the
+    extraction model explicitly judged there to be no relationship, or the
+    description text's subject doesn't plausibly match either endpoint
+    (a sign the fact was misattributed to the wrong entity during batch
+    extraction/gleaning).
+
+    Conservative by design: only drops when we have positive evidence of a
+    problem. When in doubt, keeps the edge.
+
+    Logs a debug-level trace at each drop point (distinguishing the two
+    drop reasons) so individual decisions can be diagnosed in production
+    without changing the filtering behavior itself.
+    """
+    desc = rel.get("description", "") or ""
+    src_id = rel.get("src_id", "")
+    tgt_id = rel.get("tgt_id", "")
+
+    if not desc:
+        return True
+
+    if _NEGATIVE_JUDGMENT_PATTERN.search(desc):
+        logging.debug(
+            "GraphRAG: dropping relation %r -> %r reason=negative_judgment description=%r",
+            src_id, tgt_id, desc[:160],
+        )
+        return False
+
+    src_id_u = (src_id or "").upper()
+    tgt_id_u = (tgt_id or "").upper()
+
+    segments = desc.split(_GRAPH_FIELD_SEP)
+    subjects = []
+    for seg in segments:
+        m = _SUBJECT_PATTERN.match(seg.strip())
+        if m:
+            subjects.append(m.group(1).strip().upper())
+
+    if not subjects:
+        return True
+
+    def matches_endpoint(name: str) -> bool:
+        return name in src_id_u or src_id_u in name or name in tgt_id_u or tgt_id_u in name
+
+    mismatches = [s for s in subjects if not matches_endpoint(s)]
+    is_valid = len(mismatches) < len(subjects)
+    if not is_valid:
+        logging.debug(
+            "GraphRAG: dropping relation %r -> %r reason=subject_mismatch "
+            "detected_subjects=%r matched_neither_endpoint description=%r",
+            src_id, tgt_id, subjects, desc[:160],
+        )
+    return is_valid
+
+
 async def generate_subgraph(
     extractor: Extractor,
     tenant_id: str,
@@ -688,12 +765,16 @@ async def generate_subgraph(
         subgraph.add_node(ent["entity_name"], **ent)
 
     ignored_rels = 0
+    ignored_invalid_rels = 0
     for rel in rels:
         _has_cancel_and_exit(task_id, f"Task {task_id} cancelled during relationship processing for doc {doc_id}.", callback)
 
         assert "description" in rel, f"relation {rel} does not have description"
         if not subgraph.has_node(rel["src_id"]) or not subgraph.has_node(rel["tgt_id"]):
             ignored_rels += 1
+            continue
+        if not _relationship_looks_valid(rel):
+            ignored_invalid_rels += 1
             continue
         rel["source_id"] = [doc_id]
         subgraph.add_edge(
@@ -703,6 +784,8 @@ async def generate_subgraph(
         )
     if ignored_rels:
         callback(msg=f"ignored {ignored_rels} relations due to missing entities.")
+    if ignored_invalid_rels:
+        callback(msg=f"ignored {ignored_invalid_rels} relations due to negative-judgment or misattributed description text.")
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before tidying subgraph for doc {doc_id}.", callback)
     tidy_graph(subgraph, callback, check_attribute=False)
 
@@ -717,8 +800,18 @@ async def generate_subgraph(
     }
     cid = chunk_id(chunk)
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before saving subgraph for doc {doc_id}.", callback)
-    await thread_pool_exec(settings.docStoreConn.delete,{"knowledge_graph_kwd": "subgraph", "source_id": doc_id},search.index_name(tenant_id),kb_id,)
-    await thread_pool_exec(settings.docStoreConn.insert,[{"id": cid, **chunk}],search.index_name(tenant_id),kb_id,)
+    await thread_pool_exec(
+        settings.docStoreConn.delete,
+        {"knowledge_graph_kwd": "subgraph", "source_id": doc_id},
+        search.index_name(tenant_id),
+        kb_id,
+    )
+    await thread_pool_exec(
+        settings.docStoreConn.insert,
+        [{"id": cid, **chunk}],
+        search.index_name(tenant_id),
+        kb_id,
+    )
     now = asyncio.get_running_loop().time()
     callback(msg=f"generated subgraph for doc {doc_id} in {now - start:.2f} seconds.")
     return subgraph
@@ -883,8 +976,15 @@ async def extract_community(
     try:
         existing_res = await thread_pool_exec(
             settings.docStoreConn.search,
-            ["id"], [], {"knowledge_graph_kwd": ["community_report"]}, [], OrderByExpr(),
-            0, 10000, search.index_name(tenant_id), [kb_id],
+            ["id"],
+            [],
+            {"knowledge_graph_kwd": ["community_report"]},
+            [],
+            OrderByExpr(),
+            0,
+            10000,
+            search.index_name(tenant_id),
+            [kb_id],
         )
         existing_fields = settings.docStoreConn.get_fields(existing_res, ["id"])
         old_ids = list(existing_fields.keys())

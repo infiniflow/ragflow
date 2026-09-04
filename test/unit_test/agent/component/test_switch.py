@@ -1,3 +1,5 @@
+import pytest
+
 from agent.component.switch import Switch, SwitchParam
 
 
@@ -53,6 +55,44 @@ def test_switch_non_empty_and_condition_still_matches():
     param.end_cpn_ids = ["else_target"]
 
     cpn = _switch(param, {"answer": "yes"})
+    cpn._invoke()
+
+    assert cpn.output("_next") == ["case_target"]
+    assert cpn.output("next") == ["case_target"]
+
+
+@pytest.mark.p1
+def test_switch_none_input_contains_falls_through_to_else():
+    param = SwitchParam()
+    param.conditions = [
+        {
+            "logical_operator": "and",
+            "items": [{"cpn_id": "answer", "operator": "contains", "value": "foo"}],
+            "to": ["case_target"],
+        }
+    ]
+    param.end_cpn_ids = ["else_target"]
+
+    cpn = _switch(param, {"answer": None})
+    cpn._invoke()
+
+    assert cpn.output("_next") == ["else_target"]
+    assert cpn.output("next") == ["else_target"]
+
+
+@pytest.mark.p1
+def test_switch_none_value_contains_does_not_raise():
+    param = SwitchParam()
+    param.conditions = [
+        {
+            "logical_operator": "and",
+            "items": [{"cpn_id": "answer", "operator": "contains", "value": None}],
+            "to": ["case_target"],
+        }
+    ]
+    param.end_cpn_ids = ["else_target"]
+
+    cpn = _switch(param, {"answer": "foobar"})
     cpn._invoke()
 
     assert cpn.output("_next") == ["case_target"]

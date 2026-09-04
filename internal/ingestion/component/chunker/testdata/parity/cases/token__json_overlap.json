@@ -1,0 +1,22 @@
+{
+ "id": "token__json_overlap",
+ "component": "TokenChunker",
+ "param": {
+  "chunk_token_size": 128,
+  "delimiters": [
+   "\n"
+  ],
+  "overlapped_percent": 0.1
+ },
+ "input": {
+  "name": "ov.json",
+  "output_format": "json",
+  "json": [
+   {
+    "text": "RAGFlow chunks documents for retrieval.\nEach chunk fits a token budget.\nOverlap preserves context across boundaries.\nThe API exposes dataset and chat endpoints.\nA web UI manages knowledge bases.\nBatch ingestion processes large corpora.",
+    "doc_type_kwd": "text"
+   }
+  ]
+ },
+ "notes": "Overlapped_percent=10 on json path; both sides should apply overlap."
+}

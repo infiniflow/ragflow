@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -30,7 +29,6 @@ func TestQWeather_BuildURL(t *testing.T) {
 	// Not t.Parallel(): this test reads the package-level
 	// `qweatherEndpoint` var, which other tests (running in parallel)
 	// temporarily replace with a httptest.Server URL.
-
 
 	cases := []struct {
 		name     string
@@ -89,6 +87,7 @@ func TestQWeather_BuildURL(t *testing.T) {
 }
 
 func TestQWeather_ParseResponse(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	var gotQuery url.Values
@@ -118,7 +117,7 @@ func TestQWeather_ParseResponse(t *testing.T) {
 	})
 	tool := NewQWeatherToolWith(helper)
 
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"api_key":"K-abc","location":"101010100"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -158,6 +157,7 @@ func TestQWeather_ParseResponse(t *testing.T) {
 }
 
 func TestQWeather_UpstreamBusinessError(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -175,7 +175,7 @@ func TestQWeather_UpstreamBusinessError(t *testing.T) {
 	})
 	tool := NewQWeatherToolWith(helper)
 
-	_, err := tool.InvokableRun(context.Background(),
+	_, err := tool.InvokableRun(ctx,
 		`{"api_key":"K-abc","location":"000000000"}`)
 	if err == nil {
 		t.Fatal("expected error for non-200 upstream code, got nil")
@@ -186,10 +186,11 @@ func TestQWeather_UpstreamBusinessError(t *testing.T) {
 }
 
 func TestQWeather_RejectsMissingAPIKey(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	tool := NewQWeatherTool()
-	_, err := tool.InvokableRun(context.Background(),
+	_, err := tool.InvokableRun(ctx,
 		`{"location":"101010100"}`)
 	if err == nil {
 		t.Fatal("expected error for missing api_key")
@@ -200,10 +201,11 @@ func TestQWeather_RejectsMissingAPIKey(t *testing.T) {
 }
 
 func TestQWeather_RejectsMissingLocation(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	tool := NewQWeatherTool()
-	_, err := tool.InvokableRun(context.Background(),
+	_, err := tool.InvokableRun(ctx,
 		`{"api_key":"K-abc"}`)
 	if err == nil {
 		t.Fatal("expected error for missing location")
@@ -214,10 +216,11 @@ func TestQWeather_RejectsMissingLocation(t *testing.T) {
 }
 
 func TestQWeather_Info(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	tool := NewQWeatherTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}

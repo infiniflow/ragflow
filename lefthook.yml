@@ -1,0 +1,105 @@
+# There are 6 fix-capable jobs and 5 pure-check jobs in pre-commit, plus a
+# CI-only `web-checks` hook at the bottom of this file.
+# Dual-mode pre-commit: by default (local dev) jobs fix and stage changes
+# (`stage_fixed: true` batches the `git add` per job to avoid the index lock
+# that parallel `git add` calls would hit). In CI, set LEFTHOOK_CHECK_ONLY=1
+# to skip --fix on every fix-capable job. With no files modified, `stage_fixed`
+# becomes a no-op, so CI only verifies and exits non-zero on issues.
+#
+# NOTE: every `run:` block is written in POSIX-sh-compatible syntax
+# (`[` ... `]` with `=` for string compare) instead of bash `[[` ...
+# `]]`. Lefthook executes scripts via `/bin/sh`, which is `dash` on
+# most Linux CI runners and would otherwise fail with
+# `sh: 1: [[: not found`. Keeping the hooks POSIX avoids pinning
+# lefthook to bash and keeps them portable to macOS/Linux/containers.
+pre-commit:
+  parallel: true
+  jobs:
+    - name: end-of-file-fixer
+      stage_fixed: true
+      run: |
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
+          python3 tools/hooks/check_files.py eof
+        else
+          python3 tools/hooks/check_files.py eof --fix
+        fi
+    - name: trailing-whitespace
+      stage_fixed: true
+      run: |
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
+          python3 tools/hooks/check_files.py trailing-whitespace
+        else
+          python3 tools/hooks/check_files.py trailing-whitespace --fix
+        fi
+    - name: mixed-line-ending
+      stage_fixed: true
+      run: |
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
+          python3 tools/hooks/check_files.py mixed-line-ending
+        else
+          python3 tools/hooks/check_files.py mixed-line-ending --fix
+        fi
+    - name: ruff
+      glob: "*.py"
+      stage_fixed: true
+      run: |
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
+          ruff check {staged_files}
+        else
+          ruff check --fix {staged_files}
+        fi
+    - name: ruff-format
+      glob: "*.py"
+      stage_fixed: true
+      run: |
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
+          ruff format --check {staged_files}
+        else
+          ruff format {staged_files}
+        fi
+    - name: gofmt
+      glob: "*.go"
+      stage_fixed: true
+      run: |
+        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
+          unformatted=$(gofmt -l {staged_files})
+          if [ -n "$unformatted" ]; then
+            echo "The following Go files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+        else
+          gofmt -w {staged_files}
+        fi
+    - name: check-yaml
+      run: python3 tools/hooks/check_files.py yaml
+    - name: check-json
+      run: python3 tools/hooks/check_files.py json
+    - name: check-case-conflict
+      run: python3 tools/hooks/check_files.py case-conflict
+    - name: check-merge-conflict
+      run: python3 tools/hooks/check_files.py merge-conflict
+    - name: check-symlinks
+      run: python3 tools/hooks/check_files.py symlinks
+
+# CI-only hook. Local commits deliberately do not lint or format web/: the
+# toolchain is a Node dependency that backend contributors have no other reason
+# to install. sep-tests.yml runs `lefthook run web-checks` on the files a pull
+# request changed, and that run is what blocks. To get the same feedback by
+# hand, run `npm run lint` / `npm run format` from web/.
+web-checks:
+  # Sequential: on a cold cache both jobs would otherwise run the same
+  # `npm install --prefix` into the same directory at once. Piped, the first one
+  # installs and the second reuses.
+  piped: true
+  jobs:
+    - name: web-oxfmt
+      glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
+      exclude: &web_exclude ["web/**/*.min.js", "web/**/*.min.css", "web/package-lock.json", "web/node_modules/**", "web/.next/**", "web/dist/**"]
+      root: "web/"
+      run: '"$(../tools/hooks/web_tools.sh)/oxfmt" --check {files}'
+    - name: web-oxlint
+      glob: "web/**/*.{js,jsx,ts,tsx}"
+      exclude: *web_exclude
+      root: "web/"
+      run: '"$(../tools/hooks/web_tools.sh)/oxlint" {files}'

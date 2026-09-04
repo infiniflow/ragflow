@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "python_engine": "deepdoc.parser.html_parser.RAGFlowHtmlParser",
+    "generator": "rag/flow/parser/parser.py:_html (HtmlParser()(name, blob, 512))",
+    "sample": "internal/parser/parser/testdata/html.sample.en.html",
+    "delimiter": "\\n!?;。；！？",
+    "separate_tables": false,
+    "accepted_divergences": ["table"],
+    "note": "No generator script is committed. To regenerate: call RAGFlowHtmlParser.read_text_recursively on the sample at chunk_token_num=512, apply the TITLE_TAGS heading prefix (\"# \"/\"## \" …) inline, emit every block (including the inline <table>…</table> markup) as a {\"text\": …, \"doc_type_kwd\": \"text\"} record, then wrap in {meta, items}. Go also appends a structured doc_type_kwd:\"table\" item; that extra record is excluded via meta.accepted_divergences in the alignment test."
+  },
+  "items": [
+    {
+      "text": "# Product Guide",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "Step 1: Open the app. Step 2: Click Settings to complete the setup.",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "<table>\n<tr><th>Name</th><th>Age</th></tr>\n<tr><td>Alice</td><td>30</td></tr>\n<tr><td>Bob</td><td>25</td></tr>\n</table>",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "## Terms of Use",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "Welcome to our smart assistant, which helps you complete tasks quickly.",
+      "doc_type_kwd": "text"
+    }
+  ]
+}

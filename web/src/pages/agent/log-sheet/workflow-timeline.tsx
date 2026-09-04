@@ -23,11 +23,11 @@ import { ITraceData } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import { get, isEmpty } from 'lodash';
-import { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { Operator } from '../constant';
 import { JsonViewer } from '../form/components/json-viewer';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
-import OperatorIcon from '../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import ToolTimelineItem from './tool-timeline-item';
 type LogFlowTimelineProps = Pick<
   ReturnType<typeof useCacheChatLog>,
@@ -51,6 +51,7 @@ export const typeMap = {
   textProcessing: t('flow.logTimeline.textProcessing'),
   tavilySearch: t('flow.logTimeline.tavilySearch'),
   tavilyExtract: t('flow.logTimeline.tavilyExtract'),
+  queritSearch: t('flow.logTimeline.queritSearch'),
   exeSQL: t('flow.logTimeline.exeSQL'),
   google: t('flow.logTimeline.google'),
   duckDuckGo: t('flow.logTimeline.google'),
@@ -103,7 +104,7 @@ export const WorkFlowTimeline = ({
     data: traceData,
     setMessageId,
     setISStopFetchTrace,
-  } = useFetchMessageTrace(canvasId);
+  } = useFetchMessageTrace(canvasId, isShare);
 
   useEffect(() => {
     setMessageId(currentMessageId);
@@ -200,10 +201,10 @@ export const WorkFlowTimeline = ({
         const inputs = getInputsOrOutputs(nodeDataList, 'inputs');
         const outputs = getInputsOrOutputs(nodeDataList, 'outputs');
         const nodeLabel = x.data.component_type;
+        const itemKey = `${x.data.component_id}-${idx}`;
         return (
-          <>
+          <React.Fragment key={itemKey}>
             <TimelineItem
-              key={idx}
               step={idx}
               className="group-data-[orientation=vertical]/timeline:ms-10 group-data-[orientation=vertical]/timeline:not-last:pb-8"
             >
@@ -323,13 +324,12 @@ export const WorkFlowTimeline = ({
             </TimelineItem>
             {hasTrace(x.data.component_id) && (
               <ToolTimelineItem
-                key={'tool_' + idx}
                 tools={filterTrace(x.data.component_id)}
                 sendLoading={sendLoading}
                 isShare={isShare}
               ></ToolTimelineItem>
             )}
-          </>
+          </React.Fragment>
         );
       })}
     </Timeline>

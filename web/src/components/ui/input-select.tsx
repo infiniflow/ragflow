@@ -55,6 +55,8 @@ export interface InputSelectProps {
   multi?: boolean;
   /** Type of input: text, number, date, or datetime */
   type?: 'text' | 'number' | 'date' | 'datetime';
+  /** Auto-complete attribute for the input */
+  autoComplete?: string;
 }
 
 /** Internal display for single-select selected value. Click label to re-edit (string labels only). */
@@ -113,21 +115,29 @@ const SingleSelectDisplay: React.FC<{
 };
 
 const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
-  ({
-    options = [],
-    value = [],
-    onChange,
-    placeholder = 'Select tags...',
-    className,
-    style,
-    multi = false,
-    type = 'text',
-  }) => {
+  (
+    {
+      options = [],
+      value = [],
+      onChange,
+      placeholder = 'Select tags...',
+      className,
+      style,
+      multi = false,
+      type = 'text',
+      autoComplete = 'new-password',
+    },
+    ref,
+  ) => {
     const [inputValue, setInputValue] = React.useState('');
     const [open, setOpen] = React.useState(false);
     const [isFocused, setIsFocused] = React.useState(false);
     const inputRef = React.useRef<HTMLInputElement>(null);
     const { t } = useTranslation();
+
+    React.useImperativeHandle(ref, () => inputRef.current as HTMLInputElement, [
+      inputRef,
+    ]);
 
     // Normalize value to array for consistent handling based on type
     const normalizedValue = React.useMemo(() => {
@@ -299,7 +309,13 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
         // Return single value if not multi-select, otherwise return array
         let result: string | number | Date | string[] | number[] | Date[];
         if (multi) {
-          result = newValue;
+          if (type === 'number') {
+            result = newValue as number[];
+          } else if (type === 'date' || type === 'datetime') {
+            result = newValue as Date[];
+          } else {
+            result = newValue as string[];
+          }
         } else {
           if (type === 'number') {
             result = newValue[0] || 0;
@@ -504,6 +520,7 @@ const InputSelect = React.forwardRef<HTMLInputElement, InputSelectProps>(
               onClick={(e) => e.stopPropagation()}
               onFocus={handleInputFocus}
               onBlur={handleInputBlur}
+              autoComplete={autoComplete}
             />
           )}
         </div>

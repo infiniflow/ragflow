@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -25,6 +24,7 @@ import (
 
 func TestJin10_StubsUnsupported(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	cases := []struct {
 		name string
@@ -47,7 +47,7 @@ func TestJin10_StubsUnsupported(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			tool := NewJin10Tool()
-			out, err := tool.InvokableRun(context.Background(), tc.args)
+			out, err := tool.InvokableRun(ctx, tc.args)
 			if err == nil {
 				t.Fatalf("expected error, got nil (out=%s)", out)
 			}
@@ -70,9 +70,10 @@ func TestJin10_StubsUnsupported(t *testing.T) {
 
 func TestJin10_RejectsMalformedJSON(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewJin10Tool()
-	_, err := tool.InvokableRun(context.Background(), `{not json`)
+	_, err := tool.InvokableRun(ctx, `{not json`)
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
@@ -83,9 +84,10 @@ func TestJin10_RejectsMalformedJSON(t *testing.T) {
 
 func TestJin10_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewJin10Tool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}

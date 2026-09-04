@@ -70,6 +70,7 @@ type parallelOptions struct {
 	runOpts             []compose.Option
 	checkpointBuilder   func(nodeKey string, index int) string
 	enableSubCheckpoint bool
+	contextBuilder      func(ctx context.Context, item any, index int) context.Context
 }
 
 // WithParallelMaxConcurrency caps the number of per-item sub-workflow
@@ -142,6 +143,19 @@ func WithParallelCheckpointIDBuilder(b func(nodeKey string, index int) string) P
 func WithParallelEnableSubCheckpoint(enable bool) ParallelOption {
 	return func(o *parallelOptions) {
 		o.enableSubCheckpoint = enable
+	}
+}
+
+// WithParallelContextBuilder decorates the per-item sub-workflow
+// context before Invoke. This lets callers attach item-scoped runtime
+// state without changing the outer []I -> []O parallel API.
+func WithParallelContextBuilder(
+	b func(ctx context.Context, item any, index int) context.Context,
+) ParallelOption {
+	return func(o *parallelOptions) {
+		if b != nil {
+			o.contextBuilder = b
+		}
 	}
 }
 
@@ -250,7 +264,7 @@ func AddParallelNode[I, O any](
 	}
 	compiled, err := sub.Compile(ctx, compileOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %v", ErrParallelCompileFailed, key, err)
+		return nil, fmt.Errorf("%w: %s: %w", ErrParallelCompileFailed, key, err)
 	}
 
 	lambda, err := compose.AnyLambda[[]I, []O, struct{}](
@@ -315,7 +329,7 @@ func runParallelInvoke[I, O any](
 	if isResume && prev != nil {
 		var restored []I
 		if rErr := json.Unmarshal(prev.OriginalInputsJSON, &restored); rErr != nil {
-			return nil, fmt.Errorf("%w: decode original_inputs_json: %v", ErrParallelResumeStateInvalid, rErr)
+			return nil, fmt.Errorf("%w: decode original_inputs_json: %w", ErrParallelResumeStateInvalid, rErr)
 		}
 		effectiveItems = restored
 	}
@@ -501,7 +515,7 @@ func loadParallelSnapshot(ctx context.Context) (*ParallelInterruptState, bool, e
 	if raw, ok := ctx.Value(parallelResumeBackdoorKey{}).([]byte); ok && len(raw) > 0 {
 		var st ParallelInterruptState
 		if err := json.Unmarshal(raw, &st); err != nil {
-			return nil, false, fmt.Errorf("%w: decode state: %v", ErrParallelResumeStateInvalid, err)
+			return nil, false, fmt.Errorf("%w: decode state: %w", ErrParallelResumeStateInvalid, err)
 		}
 		if st.TotalCount < 0 {
 			return nil, false, fmt.Errorf("%w: negative total_count", ErrParallelResumeStateInvalid)
@@ -517,7 +531,7 @@ func loadParallelSnapshot(ctx context.Context) (*ParallelInterruptState, bool, e
 	}
 	var st ParallelInterruptState
 	if err := json.Unmarshal(payload, &st); err != nil {
-		return nil, false, fmt.Errorf("%w: decode state: %v", ErrParallelResumeStateInvalid, err)
+		return nil, false, fmt.Errorf("%w: decode state: %w", ErrParallelResumeStateInvalid, err)
 	}
 	if st.TotalCount < 0 {
 		return nil, false, fmt.Errorf("%w: negative total_count", ErrParallelResumeStateInvalid)
@@ -649,6 +663,9 @@ func runParallelFanout[I, O any](
 
 		// Bridge store wiring for this item.
 		subCtx = withParallelBridgeState(subCtx, bridgeState)
+		if options.contextBuilder != nil {
+			subCtx = options.contextBuilder(subCtx, items[idx], idx)
+		}
 
 		invokeOpts := make([]compose.Option, 0, len(options.runOpts)+1)
 		if options.enableSubCheckpoint && cpID != "" {

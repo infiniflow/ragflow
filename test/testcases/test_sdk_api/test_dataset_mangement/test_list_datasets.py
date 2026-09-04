@@ -17,8 +17,57 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from configs import HOST_ADDRESS, INVALID_API_TOKEN
+from configs import HOST_ADDRESS, INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE
 from ragflow_sdk import RAGFlow
+
+
+class _ListDatasetsResponse:
+    def json(self):
+        return {"code": 0, "data": []}
+
+
+class TestListDatasetsArgumentValidation:
+    @pytest.fixture(autouse=True)
+    def set_tenant_info(self):
+        return None
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "params",
+        [{"id": "dataset-id", "ids": ["dataset-id"]}, {"id": "dataset-id", "ids": [""]}],
+    )
+    def test_rejects_conflicting_id_and_ids_before_get(self, monkeypatch, params):
+        client = RAGFlow("token", HOST_ADDRESS)
+        get_calls = []
+        monkeypatch.setattr(client, "get", lambda *_args, **_kwargs: get_calls.append((_args, _kwargs)))
+
+        with pytest.raises(ValueError, match="^Cannot use both 'id' and 'ids' parameters at the same time\\.$"):
+            client.list_datasets(**params)
+
+        assert get_calls == []
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "params",
+        [{"id": "dataset-id"}, {"ids": ["dataset-id"]}, {"id": None, "ids": None}, {"id": "dataset-id", "ids": []}, {"id": "", "ids": ["dataset-id"]}],
+    )
+    def test_preserves_nonconflicting_id_and_ids(self, monkeypatch, params):
+        client = RAGFlow("token", HOST_ADDRESS)
+        get_calls = []
+
+        def _get(path, params=None, json=None):
+            get_calls.append((path, params, json))
+            return _ListDatasetsResponse()
+
+        monkeypatch.setattr(client, "get", _get)
+        assert client.list_datasets(**params) == []
+        assert get_calls == [
+            (
+                "/datasets",
+                {"page": 1, "page_size": 30, "orderby": "create_time", "desc": True, "id": params.get("id"), "ids": params.get("ids"), "name": None},
+                None,
+            )
+        ]
 
 
 class TestAuthorization:
@@ -26,8 +75,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, "<Unauthorized '401: Unauthorized'>"),
-            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
+            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
+            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
         ],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):
@@ -250,14 +299,14 @@ class TestDatasetsList:
         params = {"id": "not_uuid"}
         with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "Invalid UUID format" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_not_uuid1(self, client):
         params = {"id": uuid.uuid4().hex}
         with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_wrong_uuid(self, client):
@@ -271,7 +320,7 @@ class TestDatasetsList:
         params = {"id": ""}
         with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
+        assert "Invalid UUID format" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_none(self, client):
