@@ -71,14 +71,26 @@ uv run python3 ragflow_deps/download_deps.py
 > # version dir — build.sh refuses to link two ORT versions.
 > ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/*/lib/libonnxruntime.a)"
 >
-> # The binding reaches ORT with dlopen(NULL)+dlsym("OrtGetApiBase"), so
-> # OrtGetApiBase is the only symbol that must be visible process-wide. Export
-> # just it — not via a "local: *" version script, which hides Go's runtime type
-> # symbols and breaks PIE absolute relocations. There is deliberately no
-> # --whole-archive, so unreferenced kernels are dropped. Write the dynamic
-> # list to .cache/ (gitignored), matching build.sh.
-> mkdir -p .cache
-> printf '{\n  OrtGetApiBase;\n};\n' > .cache/ort_dynamic_list.txt
+> # Link flags differ between Linux (GNU ld) and macOS (ld64). On macOS the
+> # path below is written but NOT yet verified on real Apple-Silicon hardware
+> # (see "待 Mac 验证" above) — prefer `build.sh` which derives the same flags.
+> if [ "$(uname -s)" = "Darwin" ]; then
+>   ORT_LINK="-Wl,-export_dynamic"
+>   for a in ${ORT_A}; do ORT_LINK="${ORT_LINK} -Wl,-force_load,${a}"; done
+>   ORT_LINK="${ORT_LINK} -lc++"
+>   SYS_LIBS="-lm -lpthread -ldl -lutil -lc"
+> else
+>   # The binding reaches ORT with dlopen(NULL)+dlsym("OrtGetApiBase"), so
+>   # OrtGetApiBase is the only symbol that must be visible process-wide. Export
+>   # just it via --dynamic-list — not a "local: *" version script, which hides
+>   # Go's runtime type symbols and breaks PIE absolute relocations. There is
+>   # deliberately no --whole-archive, so unreferenced kernels are dropped.
+>   # The dynamic list lives in .cache/ (gitignored), matching build.sh.
+>   mkdir -p .cache
+>   printf '{\n  OrtGetApiBase;\n};\n' > .cache/ort_dynamic_list.txt
+>   ORT_LINK="-Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=.cache/ort_dynamic_list.txt ${ORT_A} -lstdc++"
+>   SYS_LIBS="-fuse-ld=lld -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
+> fi
 >
 > export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
 > export CGO_LDFLAGS="\
@@ -87,9 +99,8 @@ uv run python3 ragflow_deps/download_deps.py
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
 >     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
->     -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=.cache/ort_dynamic_list.txt ${ORT_A} -lstdc++ \
->     -fuse-ld=lld \
->     -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
+>     ${ORT_LINK} \
+>     ${SYS_LIBS}"
 > ```
 >
 > All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.

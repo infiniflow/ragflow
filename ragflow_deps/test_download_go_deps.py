@@ -17,6 +17,7 @@ from download_go_deps import (
     _ort_asset,
     extract_onnxruntime,
     has_static_archives,
+    host_platform,
 )
 
 
@@ -118,3 +119,38 @@ def test_ort_asset_names_match_upstream_layout():
         "onnxruntime-osx-arm64-static_lib-1.23.2.zip",
         "onnxruntime-osx-arm64-static_lib-1.23.2",
     )
+    assert _ort_asset("darwin", "amd64") == (
+        "onnxruntime-osx-x86_64-static_lib-1.23.2.zip",
+        "onnxruntime-osx-x86_64-static_lib-1.23.2",
+    )
+
+
+def test_host_platform_normalizes_aliases(monkeypatch):
+    # build.sh's detect_target_platform accepts Linux/Darwin + x86_64/amd64
+    # aliases; host_platform must normalize the same way or it KeyErrors when
+    # indexing the per-platform asset maps.
+    monkeypatch.setenv("RAGFLOW_TARGET_OS", "Linux")
+    monkeypatch.setenv("RAGFLOW_TARGET_ARCH", "x86_64")
+    assert host_platform() == ("linux", "amd64")
+    monkeypatch.setenv("RAGFLOW_TARGET_OS", "Darwin")
+    monkeypatch.setenv("RAGFLOW_TARGET_ARCH", "aarch64")
+    assert host_platform() == ("darwin", "arm64")
+
+
+def test_prunes_foreign_platform_dir_on_short_circuit(tmp_path):
+    """When the expected ORT dir is already extracted, the short-circuit return
+    must still prune a co-resident foreign-platform dir (defense-in-depth;
+    build.sh's ort_dir_prefix guard also filters by platform at link time)."""
+    static_lib = tmp_path / "onnxruntime" / "static_lib"
+    dir_name = "onnxruntime-linux-x64-static_lib-1.23.2-glibc2_28"
+    expected = static_lib / dir_name
+    (expected / "lib").mkdir(parents=True)
+    (expected / "lib" / "libonnxruntime.a").write_bytes(b"linux-ort")
+    foreign = static_lib / "onnxruntime-osx-arm64-static_lib-1.23.2"
+    (foreign / "lib").mkdir(parents=True)
+    (foreign / "lib" / "libonnxruntime.a").write_bytes(b"mac-ort")
+
+    archive = make_ort_zip(tmp_path / f"{dir_name}.zip", dir_name)
+    assert extract_onnxruntime(str(static_lib), str(archive), dir_name) is True
+    assert not foreign.exists(), "foreign dir must be pruned even on short-circuit"
+    assert expected.is_dir()
