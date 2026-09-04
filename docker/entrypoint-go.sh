@@ -288,9 +288,17 @@ if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
         # a GaussDB metadata database.
         echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
     else
-        tools/scripts/run_migrations.sh
+        #tools/scripts/run_migrations.sh
+        echo ""
     fi
 fi
+
+if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
+    echo "Starting data sync..."
+    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer --migrate &
+fi
+
+sleep 5
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
 
@@ -301,7 +309,7 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         echo "Starting Admin go server..."
-        run_with_restart "Admin go server" bin/ragflow_server --admin &
+        run_with_restart "Admin go server" bin/ragflow_server --admin --migrate &
     fi
 fi
 
@@ -316,14 +324,11 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         echo "Starting RAGFlow go server..."
-        run_with_restart "RAGFlow go server" bin/ragflow_server --api &
+        run_with_restart "RAGFlow go server" bin/ragflow_server --api --migrate &
     fi
 fi
 
-if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
-    echo "Starting data sync..."
-    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer &
-fi
+
 
 #if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
 #    start_mcp_server

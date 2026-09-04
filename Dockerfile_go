@@ -8,7 +8,7 @@ ARG NEED_MIRROR=1
 #Optional parameter
 #If set NEED_MIRROR=1, and set GITEE_TOKEN="xxxxx" , donwload source from gitee.
 #If don't set GITEE_TOKEN , download from github
-#ARG GITEE_TOKEN=""
+ARG GITEE_TOKEN
 
 WORKDIR /ragflow
 
@@ -59,9 +59,9 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     #libglib2.0-0 libglx-mesa0 libgl1 pkg-config libgdiplus default-jdk libatk-bridge2.0-0 \
     #libgtk-4-1 libnss3 xdg-utils libjemalloc-dev gnupg unzip curl wget git vim less \
     #ghostscript pandoc texlive texlive-latex-extra texlive-xetex texlive-lang-chinese \
-    #fonts-freefont-ttf fonts-noto-cjk postgresql-client
+    #fonts-freefont-ttf fonts-noto-cjk postgresql-client libjemalloc2
 
-    apt --no-install-recommends install -y ca-certificates libjemalloc2 curl vim unzip iproute2 && \
+    apt --no-install-recommends install -y ca-certificates curl vim unzip iproute2 && \
     rm -rf /var/lib/apt/lists/*
 
 # Download resource from GitHub to /usr/share/infinity
@@ -112,25 +112,6 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
 # exclusively in the `web-builder` stage and never reaches the final image.
 
 
-
-# ── cpp-builder stage ──────────────────────────────────────────────
-# Compile C++ static library (librag_tokenizer_c_api.a) using the
-# infinity_builder image which ships clang-20, cmake and other C++
-# tooling.  This stage is independent from the base image so that the
-# heavy C++ build toolchain does not bloat the final production image.
-FROM infiniflow/infinity_builder:ubuntu22_clang20 AS cpp-builder
-USER root
-SHELL ["/bin/bash", "-c"]
-
-ARG NEED_MIRROR=1
-WORKDIR /ragflow
-
-COPY internal/binding/cpp internal/binding/cpp
-COPY build.sh ./
-
-RUN git config --global safe.directory "*" && \
-    cd /ragflow && ./build.sh --cpp
-
 # ── go-builder stage ──
 FROM infiniflow/github_action_runner:latest AS go-builder
 USER root
@@ -142,13 +123,48 @@ COPY cmd cmd
 COPY go.mod go.sum ./
 COPY build.sh ./
 
+# Download and extract ONNX Runtime static archives into the user-cache path
+# that build.sh expects (ONNXRUNTIME_STATIC_PREFIX =
+# ~/ragflow-native-libs/onnxruntime/static_lib).
+#
+# The github_action_runner base image does NOT ship native libs at
+# /opt/ragflow-native-libs, so build.sh's _seed_from_system finds nothing
+# and silently skips ORT linking — the resulting binary then fails at
+# startup with "no in-process DeepDoc backend serving" because
+# dlopen(NULL)/dlsym can't find OrtGetApiBase.
+#
+# We download ONLY the ORT static zip (not the full download_deps.py, which
+# also pulls chrome/tika/nltk/huggingface models that the Go build doesn't
+# need). These .a files are consumed at link time only; they do NOT enter
+# the final production image (only COPY --from=go-builder /ragflow/bin does).
+#
+# Seed the ONNX Runtime static archives from the runner image's system
+# pre-bake into the user-cache path that build.sh expects
+# (ONNXRUNTIME_STATIC_PREFIX = ~/ragflow-native-libs/onnxruntime/static_lib).
+# Without this, build.sh's _seed_from_system finds the archives only under
+# /opt and silently skips ORT linking — the resulting binary then fails at
+# startup with "no in-process DeepDoc backend serving" because
+# dlopen(NULL)/dlsym can't find OrtGetApiBase.
+# Use ${HOME} (not a hard-coded /root) so the cache path matches
+# build.sh's ONNXRUNTIME_STATIC_PREFIX regardless of the image's HOME.
+# These .a files are consumed at link time only; they do NOT enter the
+# final production image (only COPY --from=go-builder /ragflow/bin does).
+ARG ORT_VERSION=1.23.2
+RUN set -eux; \
+    mkdir -p "${HOME}/ragflow-native-libs/onnxruntime"; \
+    cp -rn /opt/ragflow-native-libs/onnxruntime/* "${HOME}/ragflow-native-libs/onnxruntime/"; \
+    find "${HOME}/ragflow-native-libs/onnxruntime/static_lib" -name '*.a' | head -5
+
 # Overwrite C++ build artifact from cpp-builder
-COPY --from=cpp-builder \
-     /ragflow/internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.a \
-     /ragflow/internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.a
+#COPY --from=cpp-builder \
+#     /ragflow/internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.a \
+#     /ragflow/internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.a
 
 RUN git config --global safe.directory "*" && \
-    ./build.sh -s --go
+    cd /ragflow && ./build.sh --cpp
+
+RUN git config --global safe.directory "*" && \
+    ./build.sh --go
 
 
 # ── web-builder stage ──
@@ -196,7 +212,7 @@ USER root
 WORKDIR /ragflow
 
 # Copy the compiled Go backend binaries (set exec bits at copy time to avoid a redundant chmod layer)
-COPY --from=go-builder --chmod=755 /ragflow/bin/ /ragflow/bin/
+COPY --from=go-builder --chmod=755 /ragflow/bin/ragflow_server /ragflow/bin/ragflow_server
 
 ENV PYTHONPATH=/ragflow/
 
@@ -209,8 +225,6 @@ RUN mkdir -p /etc/nginx/conf.d /var/log/nginx
 
 COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
 COPY docker/nginx/ragflow.conf.golang \
-#     docker/nginx/ragflow.conf.python \
-      docker/nginx/ragflow.conf.hybrid \
      /etc/nginx/conf.d/
 
 RUN rm -f /etc/nginx/sites-enabled/default
@@ -218,6 +232,7 @@ RUN rm -f /etc/nginx/sites-enabled/default
 
 COPY conf conf
 COPY agent/templates agent/templates
+COPY rag/prompts rag/prompts
 
 # Wiki page-structure presets read at runtime by the Go backend
 # (CompilationTemplateService.LoadWikiPresets).
