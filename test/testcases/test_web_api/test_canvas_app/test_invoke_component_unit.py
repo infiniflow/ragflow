@@ -142,6 +142,30 @@ def _make_invoke(module, *, url="http://example.com", method="get", headers="", 
 
 
 @pytest.mark.p2
+def test_arg_ref_missing_falls_back_to_value(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(
+        module,
+        variables=[{"key": "query", "ref": "missing", "value": "fallback"}],
+    )
+    invoke._canvas.get_variable_value.side_effect = KeyError("missing")
+
+    assert invoke._resolve_arg_value(invoke._param.variables[0], {}) == "fallback"
+
+
+@pytest.mark.p2
+def test_arg_ref_value_still_has_priority(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(
+        module,
+        variables=[{"key": "query", "ref": "token", "value": "fallback"}],
+        variable_values={"token": "from-canvas"},
+    )
+
+    assert invoke._resolve_arg_value(invoke._param.variables[0], {}) == "from-canvas"
+
+
+@pytest.mark.p2
 def test_header_single_variable(monkeypatch):
     module = _load_invoke_module(monkeypatch)
     invoke = _make_invoke(
