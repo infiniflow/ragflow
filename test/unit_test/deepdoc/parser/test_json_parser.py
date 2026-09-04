@@ -61,6 +61,27 @@ _json_spec.loader.exec_module(_json_mod)
 RAGFlowJsonParser = _json_mod.RAGFlowJsonParser
 
 
+# The BOM tests below call ``__call__`` which routes through ``find_codec``;
+# the rest of the test file calls ``_parse_json`` / ``_parse_jsonl`` directly
+# and so does not need the codec stub. Replace the rag.nlp MagicMock with a
+# thin shim that exposes a working ``find_codec`` so the new tests can
+# exercise the byte-decode + BOM-strip path.
+def _stub_find_codec(blob):
+    for enc in ("utf-8", "utf-8-sig", "gb18030", "latin-1"):
+        try:
+            blob.decode(enc)
+            return enc
+        except UnicodeDecodeError:
+            continue
+    return "utf-8"
+
+
+_nlp_stub = mock.MagicMock()
+_nlp_stub.find_codec = _stub_find_codec
+sys.modules["rag.nlp"] = _nlp_stub
+_json_mod.find_codec = _stub_find_codec
+
+
 def test_top_level_scalars_do_not_crash():
     # Previously raised IndexError instead of returning a chunk.
     parser = RAGFlowJsonParser()
@@ -84,3 +105,53 @@ def test_objects_and_arrays_still_chunk():
     parser = RAGFlowJsonParser()
     assert parser._parse_json('{"a": 1}') == ['{"a": 1}']
     assert parser._parse_json("[1, 2, 3]") != []
+
+
+# Regression for #19179: a leading UTF-8 BOM (U+FEFF) used to silently zero
+# out a .json / .jsonl / .ldjson upload because ``json.loads`` rejects the
+# BOM as garbage and the bare ``except json.JSONDecodeError`` in
+# ``_parse_json`` / ``_parse_jsonl`` swallowed the failure. The fix strips
+# a leading BOM at the top of ``__call__`` so the rest of the pipeline
+# never sees it.
+UTF8_BOM = b"\xef\xbb\xbf"
+
+
+def test_json_with_bom_is_chunked():
+    parser = RAGFlowJsonParser()
+    # .json object, with BOM -> one chunk
+    chunks = parser(UTF8_BOM + b'{"a": 1}')
+    assert chunks == ['{"a": 1}']
+    # .json top-level array, with BOM -> the array is converted to a dict
+    # by the parser (convert_lists=True), so both elements fit in one chunk
+    # together. The point of this test is that the BOM no longer zeros
+    # the result, not the chunk boundary.
+    chunks = parser(UTF8_BOM + b'[{"a": 1}, {"b": 2}]')
+    assert len(chunks) == 1
+    assert chunks[0] == '{"0": {"a": 1}, "1": {"b": 2}}'
+
+
+def test_jsonl_with_bom_keeps_every_record():
+    parser = RAGFlowJsonParser()
+    # Previously, the first record was dropped because its leading BOM made
+    # ``json.loads`` raise on it (the bare ``except: continue`` swallowed
+    # that record only). After the fix, every record comes through.
+    for n in (2, 3, 5, 20):
+        payload = UTF8_BOM + b"\n".join((b'{"i": ' + str(i).encode() + b"}") for i in range(n))
+        chunks = parser(payload)
+        # split_json produces one chunk per object for small inputs.
+        assert len(chunks) == n, f"expected {n} chunks, got {len(chunks)}"
+
+
+def test_bom_only_input_does_not_crash():
+    parser = RAGFlowJsonParser()
+    # A BOM with no payload is a degenerate file, but should not raise.
+    # It falls through both parser branches and returns an empty list.
+    assert parser(UTF8_BOM) == []
+    assert parser(UTF8_BOM + b"\n") == []
+
+
+def test_no_bom_path_unchanged():
+    parser = RAGFlowJsonParser()
+    # Sanity: the BOM-stripping branch is a no-op for clean input.
+    assert parser(b'{"a": 1}') == ['{"a": 1}']
+    assert parser(b'{"a": 1}\n{"b": 2}') == parser(UTF8_BOM + b'{"a": 1}\n{"b": 2}')
