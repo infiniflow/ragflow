@@ -15,6 +15,7 @@
  */
 
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
 import {
   ICreateCompilationTemplateGroupRequestBody,
@@ -29,6 +30,7 @@ import {
   updateCompilationTemplateGroup,
 } from '@/services/compilation-template-group-service';
 import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 import { useParams } from 'react-router';
@@ -188,6 +190,7 @@ export const useDeleteCompilationTemplateGroup = () => {
         queryClient.invalidateQueries({
           queryKey: AgentKeys.tags(),
         });
+        markListItemsDeleted(ListDeletionKey.AgentList);
       }
       return data?.data ?? true;
     },
