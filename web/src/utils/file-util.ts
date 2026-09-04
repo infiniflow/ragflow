@@ -90,8 +90,8 @@ export const transformBase64ToFile = (
 //    is not valid UTF-8, which GB2312/GBK Chinese text almost always is.
 // 3. GBK fallback — covers GB2312/GBK/GB18030 single- and double-byte text.
 //    Browsers map the 'gb2312' label to the same decoder as 'gbk'.
-export const decodeBlobText = async (blob: Blob): Promise<string> => {
-  const buffer = await blob.arrayBuffer();
+export const decodeBlobText = async (data: BlobPart): Promise<string> => {
+  const buffer = await new Blob([data]).arrayBuffer();
   const bytes = new Uint8Array(buffer, 0, Math.min(3, buffer.byteLength));
   if (bytes[0] === 0xff && bytes[1] === 0xfe) {
     return new TextDecoder('utf-16le').decode(buffer);
