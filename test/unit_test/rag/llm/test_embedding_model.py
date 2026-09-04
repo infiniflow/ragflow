@@ -25,6 +25,8 @@
   (the old ``8196`` overshoot is gone);
 * ``ZhipuEmbed`` / ``OllamaEmbed`` now batch — ``ceil(n / batch_size)`` requests
   with input order and output shape preserved.
+* Direct embedding adapters omit LiteLLM controls while RAGcon keeps its
+  proxy-specific setting.
 """
 
 import json
@@ -44,7 +46,10 @@ from rag.llm.embedding_model import (
     MistralEmbed,
     NvidiaEmbed,
     OllamaEmbed,
+    OpenAI_APIEmbed,
     OpenAIEmbed,
+    RAGconEmbed,
+    TogetherAIEmbed,
     ZhipuEmbed,
 )
 from common.exceptions import ModelException
@@ -82,6 +87,37 @@ def _make_openai(cls=OpenAIEmbed, total_tokens=None):
     embed.client = MagicMock()
     embed.client.embeddings.create = MagicMock(side_effect=_openai_create(total_tokens=total_tokens))
     return embed
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize("embed_cls", [TogetherAIEmbed, OpenAI_APIEmbed])
+def test_direct_openai_embedding_does_not_send_litellm_drop_params(embed_cls):
+    """Strict embedding APIs reject LiteLLM-only request fields."""
+
+    def _strict_create(**kwargs):
+        if kwargs.get("extra_body", {}).get("drop_params"):
+            raise RuntimeError("Unrecognized request arguments supplied: drop_params")
+        return _OpenAIResp([[0.0] for _ in kwargs["input"]], total_tokens=1)
+
+    embed = _make_openai(cls=embed_cls)
+    embed.client.embeddings.create = MagicMock(side_effect=_strict_create)
+
+    vectors, tokens = embed.encode(["hello"])
+
+    assert vectors.shape == (1, 1)
+    assert tokens == 1
+    assert "extra_body" not in embed.client.embeddings.create.call_args.kwargs
+
+
+@pytest.mark.p1
+def test_ragcon_embedding_sends_litellm_drop_params():
+    embed = _make_openai(cls=RAGconEmbed, total_tokens=1)
+
+    vectors, tokens = embed.encode(["hello"])
+
+    assert vectors.shape == (1, 3)
+    assert tokens == 1
+    assert embed.client.embeddings.create.call_args.kwargs["extra_body"] == {"drop_params": True}
 
 
 # --------------------------------------------------------------------------- #
