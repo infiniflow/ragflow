@@ -6,18 +6,10 @@
 //  copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 //
 
-// Package messagefit trims a message list so its total token count fits
-// within a budget. It mirrors Python's rag/prompts/generator.py:message_fit_in.
-//
-// The package is shared by the agent canvas LLM component and the ingestion
-// Extractor component. Callers convert their message type to []Message, call
-// Fit, and send the returned kept messages (at keptIdx into the input).
-package messagefit
+package tokenizer
 
 import (
 	"slices"
-
-	"ragflow/internal/tokenizer"
 )
 
 // Message is the minimal representation the fitter needs. Both the agent's
@@ -99,7 +91,7 @@ func Fit(msgs []Message, budget int) (kept []Message, keptIdx []int, count int) 
 
 	// Step 3: trim proportionally.
 	if len(kept) == 1 {
-		kept[0].Content = tokenizer.TrimContentToTokenLimit(kept[0].Content, budget)
+		kept[0].Content = TrimContentToTokenLimit(kept[0].Content, budget)
 		return kept, keptIdx, countTokens(kept)
 	}
 
@@ -116,9 +108,9 @@ func Fit(msgs []Message, budget int) (kept []Message, keptIdx []int, count int) 
 	last := &kept[len(kept)-1]
 	ll := 0
 	for i := range sys {
-		ll += tokenizer.NumTokensFromString(sys[i].Content)
+		ll += NumTokensFromString(sys[i].Content)
 	}
-	ll2 := tokenizer.NumTokensFromString(last.Content)
+	ll2 := NumTokensFromString(last.Content)
 	total := ll + ll2
 	if total <= 0 {
 		return kept, keptIdx, 0
@@ -128,12 +120,12 @@ func Fit(msgs []Message, budget int) (kept []Message, keptIdx []int, count int) 
 		// System dominates: preserve the last message and give the
 		// remaining budget to the system messages.
 		preserved := min(ll2, budget)
-		last.Content = tokenizer.TrimContentToTokenLimit(last.Content, preserved)
+		last.Content = TrimContentToTokenLimit(last.Content, preserved)
 		trimSystems(sys, max(0, budget-preserved))
 	} else {
 		preserved := min(ll, budget)
 		trimSystems(sys, preserved)
-		last.Content = tokenizer.TrimContentToTokenLimit(last.Content, max(0, budget-preserved))
+		last.Content = TrimContentToTokenLimit(last.Content, max(0, budget-preserved))
 	}
 	return kept, keptIdx, countTokens(kept)
 }
@@ -154,7 +146,7 @@ func trimSystems(sys []Message, budget int) {
 	}
 	total := 0
 	for i := range sys {
-		total += tokenizer.NumTokensFromString(sys[i].Content)
+		total += NumTokensFromString(sys[i].Content)
 	}
 	if total <= 0 {
 		return
@@ -163,21 +155,21 @@ func trimSystems(sys []Message, budget int) {
 	for i := range sys {
 		limit := remaining
 		if i < len(sys)-1 {
-			tokens := tokenizer.NumTokensFromString(sys[i].Content)
+			tokens := NumTokensFromString(sys[i].Content)
 			limit = int(float64(budget) * float64(tokens) / float64(total))
 			if limit > remaining {
 				limit = remaining
 			}
 		}
-		sys[i].Content = tokenizer.TrimContentToTokenLimit(sys[i].Content, limit)
-		remaining -= tokenizer.NumTokensFromString(sys[i].Content)
+		sys[i].Content = TrimContentToTokenLimit(sys[i].Content, limit)
+		remaining -= NumTokensFromString(sys[i].Content)
 	}
 }
 
 func countTokens(msgs []Message) int {
 	total := 0
 	for i := range msgs {
-		total += tokenizer.NumTokensFromString(msgs[i].Content)
+		total += NumTokensFromString(msgs[i].Content)
 	}
 	return total
 }
