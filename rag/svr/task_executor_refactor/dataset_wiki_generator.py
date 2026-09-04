@@ -87,23 +87,23 @@ WIKI_MAP_BATCH_CHUNKS = 64
 WIKI_MAP_LLM_POOL_SIZE = env_int("WIKI_MAP_LLM_POOL_SIZE", 20, minimum=1)
 
 # Global MAP admission limit: active calls plus calls waiting in the pool.
-WIKI_MAP_MAX_PENDING = env_int("WIKI_MAP_MAX_PENDING", 25, minimum=1)
+WIKI_MAP_MAX_PENDING = env_int("WIKI_MAP_MAX_PENDING", 25, minimum=WIKI_MAP_LLM_POOL_SIZE)
 
-# Keep only a small number of outer batches buffered. With 20 workers this
-# bounds the in-memory MAP work to roughly 25 batches (20 active + 5 waiting).
+# Keep only a small number of outer batches buffered. Together with the
+# configured worker and pending limits, this bounds in-memory MAP work.
 WIKI_MAP_QUEUE_SIZE = 5
 
 # REFINE pages are independent. Keep enough page workers to feed the shared
-# pool; the pool itself still caps actual LLM requests at 20.
-WIKI_REFINE_WORKERS = env_int("WIKI_REFINE_WORKERS", WIKI_MAP_LLM_POOL_SIZE, minimum=1)
+# pool; the pool itself still caps actual LLM requests at the configured size.
+WIKI_REFINE_WORKERS = env_int("WIKI_REFINE_WORKERS", 4, minimum=1)
 
 
 def _create_wiki_llm_pool(progress: Callable) -> LLMCallPool:
     def _on_concurrency_change(old: int, new: int, reason: str) -> None:
         progress(msg=f"LLM pool concurrency {old} -> {new} ({reason}).")
 
-    def _on_error(label: str, context: str | None, error: BaseException | str) -> None:
-        progress(msg=f"LLM call failed ({label}, {context or 'no context'}): {error}")
+    def _on_error(label: str, context: str | None, error_type: str) -> None:
+        progress(msg=f"LLM call failed ({label}, {context or 'no context'}): {error_type}")
 
     pool = LLMCallPool(
         WIKI_MAP_LLM_POOL_SIZE,

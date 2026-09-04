@@ -64,11 +64,11 @@ DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = env_int("DOC_STRUCTURE_COMPILE_BATCH_CHUNKS
 # Structure compilation packs chunks up to half of the model context.
 # ``compile_structure_from_text`` applies the exact prompt-aware packing again
 # before the LLM call.
-STRUCTURE_CONTEXT_FRACTION = env_float("STRUCTURE_CONTEXT_FRACTION", 0.5, minimum=0.01)
+STRUCTURE_CONTEXT_FRACTION = env_float("STRUCTURE_CONTEXT_FRACTION", 0.5, minimum=0.01, maximum=1.0)
 STRUCTURE_DEFAULT_CONTEXT = env_int("STRUCTURE_DEFAULT_CONTEXT", 100_000, minimum=1)
-KNOWLEDGE_GRAPH_CONTEXT_FRACTION = env_float("KNOWLEDGE_GRAPH_CONTEXT_FRACTION", 0.1, minimum=0.01)
+KNOWLEDGE_GRAPH_CONTEXT_FRACTION = env_float("KNOWLEDGE_GRAPH_CONTEXT_FRACTION", 0.1, minimum=0.01, maximum=1.0)
 KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS = env_int("KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS", 2048, minimum=1)
-KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS = env_int("KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS", 4096, minimum=1)
+KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS = env_int("KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS", 4096, minimum=KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS)
 
 # Bound the number of batch/template extraction calls in flight. Results are
 # committed in submission order so accumulator updates and merge flushes stay

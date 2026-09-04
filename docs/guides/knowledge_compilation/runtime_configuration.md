@@ -15,16 +15,17 @@ variables. In the Docker deployment, set them in `docker/.env` and restart the
 RAGFlow service for the changes to take effect.
 
 The values below are the defaults. If an environment variable is not set, its
-default value is used. Invalid values are ignored and the default value is
-used instead.
+default value is used. Invalid values are replaced with the default value.
+Values below a configured minimum or above a configured maximum are clamped to
+the valid range and logged.
 
 ## Wiki Configuration
 
 | Environment variable | Default | Description |
 | --- | ---: | --- |
 | `WIKI_MAP_LLM_POOL_SIZE` | `20` | Maximum number of concurrent LLM calls allowed by the Wiki task's shared LLM pool. |
-| `WIKI_MAP_MAX_PENDING` | `25` | Maximum number of active and waiting calls admitted by the Wiki LLM pool. |
-| `WIKI_REFINE_WORKERS` | `20` | Number of page-refinement workers. Actual LLM concurrency is still limited by the shared pool. |
+| `WIKI_MAP_MAX_PENDING` | `25` | Maximum number of active and waiting calls admitted by the Wiki LLM pool. The effective value is never lower than `WIKI_MAP_LLM_POOL_SIZE`. |
+| `WIKI_REFINE_WORKERS` | `4` | Number of page-refinement workers. Actual LLM concurrency is still limited by the shared pool. |
 | `WIKI_MAP_WORKERS` | `20` | Default worker count used by direct Wiki MAP calls. |
 | `WIKI_MAP_TIMEOUT` | `600` seconds | Timeout for one Wiki MAP extraction call. |
 | `WIKI_REDUCE_TIMEOUT` | `60` seconds | Timeout for one Wiki REDUCE disambiguation call. |
@@ -43,11 +44,11 @@ value does not force every provider to receive that many concurrent requests.
 | `DOC_STRUCTURE_LLM_POOL_SIZE` | `20` | Maximum number of concurrent LLM calls for a document Structure Compile task. |
 | `DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT` | `15` | Maximum number of structure batch/template operations in flight. |
 | `DOC_STRUCTURE_COMPILE_BATCH_CHUNKS` | `4` | Number of source chunks passed to one outer Structure Compile batch. |
-| `STRUCTURE_CONTEXT_FRACTION` | `0.5` | Fraction of the model context window used when packing structure batches. |
+| `STRUCTURE_CONTEXT_FRACTION` | `0.5` | Fraction of the model context window used when packing structure batches, clamped to `(0, 1]`. |
 | `STRUCTURE_DEFAULT_CONTEXT` | `100000` tokens | Fallback model context size when the model does not provide one. |
-| `KNOWLEDGE_GRAPH_CONTEXT_FRACTION` | `0.1` | Fraction of the model context window used for Knowledge Graph batches. |
+| `KNOWLEDGE_GRAPH_CONTEXT_FRACTION` | `0.1` | Fraction of the model context window used for Knowledge Graph batches, clamped to `(0, 1]`. |
 | `KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS` | `2048` tokens | Minimum Knowledge Graph batch size. |
-| `KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS` | `4096` tokens | Maximum Knowledge Graph batch size. |
+| `KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS` | `4096` tokens | Maximum Knowledge Graph batch size. The effective value is never lower than `KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS`. |
 | `STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S` | `120` seconds | Time limit for the Structure Compile chain-correction LLM step. |
 
 The regular Structure Compile entity/relation extraction path does not define
@@ -67,6 +68,13 @@ These variables apply to the shared adaptive LLM pool:
 After a rate-limit response, the pool lowers the effective concurrency for the
 affected model and retries the request. Successful calls gradually restore
 the model's concurrency up to the configured pool limit.
+
+The pool normalizes `max_pending` to at least the configured pool size, and
+normalizes the retry maximum delay to at least the retry base delay.
+
+When all retries are exhausted, the backend records the detailed failure in
+its service log and the frontend task log receives only the stage, context, and
+error type. Provider response bodies are not forwarded to the frontend.
 
 ## Example
 

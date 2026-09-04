@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import string
 from typing import Any, Awaitable, Callable, Iterable, Optional
@@ -63,10 +64,11 @@ def env_int(name: str, default: int, *, minimum: int | None = None) -> int:
     if minimum is not None and value < minimum:
         logging.warning("Environment variable %s=%d is below minimum %d; using %d", name, value, minimum, minimum)
         value = minimum
+    logging.debug("Resolved environment variable %s=%d", name, value)
     return value
 
 
-def env_float(name: str, default: float, *, minimum: float | None = None) -> float:
+def env_float(name: str, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
     """Read a non-empty float environment override, or return ``default``."""
     raw = os.getenv(name)
     if raw is None or not raw.strip():
@@ -77,9 +79,16 @@ def env_float(name: str, default: float, *, minimum: float | None = None) -> flo
         except ValueError:
             logging.warning("Invalid float environment variable %s=%r; using %s", name, raw, default)
             value = default
+    if not math.isfinite(value):
+        logging.warning("Environment variable %s=%r is not finite; using %s", name, value, default)
+        value = default
     if minimum is not None and value < minimum:
         logging.warning("Environment variable %s=%s is below minimum %s; using %s", name, value, minimum, minimum)
         value = minimum
+    if maximum is not None and value > maximum:
+        logging.warning("Environment variable %s=%s is above maximum %s; using %s", name, value, maximum, maximum)
+        value = maximum
+    logging.debug("Resolved environment variable %s=%s", name, value)
     return value
 
 

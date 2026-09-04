@@ -218,7 +218,30 @@ def test_llm_call_pool_reports_final_call_error():
                 context="kb:doc",
             )
 
-        assert errors == [("wiki-map", "kb:doc", "provider unavailable")]
+        assert errors == [("wiki-map", "kb:doc", "RuntimeError")]
+
+    asyncio.run(exercise())
+
+
+def test_llm_call_pool_reports_terminal_error_result():
+    async def exercise():
+        errors = []
+        pool = LLMCallPool(
+            2,
+            rate_limit_retries=0,
+            on_error=lambda label, context, error_type: errors.append((label, context, error_type)),
+        )
+
+        result = await pool.call(
+            lambda: _return("**ERROR**: provider unavailable"),
+            model_key="provider/model",
+            priority=1,
+            label="wiki-plan",
+            context="kb:plan",
+        )
+
+        assert result == "**ERROR**: provider unavailable"
+        assert errors == [("wiki-plan", "kb:plan", "ProviderErrorResult")]
 
     asyncio.run(exercise())
 

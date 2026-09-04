@@ -134,7 +134,7 @@ class LLMCallPool:
         rate_limit_retry_max_delay: float = LLM_POOL_RATE_LIMIT_RETRY_MAX_DELAY,
         clock: Callable[[], float] = time.monotonic,
         on_concurrency_change: Callable[[int, int, str], None] | None = None,
-        on_error: Callable[[str, str | None, BaseException | str], None] | None = None,
+        on_error: Callable[[str, str | None, str], None] | None = None,
     ):
         self.max_concurrency = max(1, int(max_concurrency))
         self.max_pending = max(self.max_concurrency, int(max_pending or self.max_concurrency))
@@ -275,10 +275,17 @@ class LLMCallPool:
             logging.exception("LLM pool concurrency change callback failed")
 
     def _notify_error(self, label: str, context: str | None, error: BaseException | str) -> None:
+        error_type = type(error).__name__ if isinstance(error, BaseException) else "ProviderErrorResult"
+        logging.error(
+            "LLM pool terminal call failure label=%s context=%s error_type=%s",
+            label,
+            context,
+            error_type,
+        )
         if self._on_error is None:
             return
         try:
-            self._on_error(label, context, error)
+            self._on_error(label, context, error_type)
         except Exception:
             logging.exception("LLM pool error callback failed")
 
