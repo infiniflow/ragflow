@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"sync"
 
-	ort "github.com/yalue/onnxruntime_go"
+	ort "github.com/infiniflow/onnxruntime_go"
 )
 
 var (
@@ -36,15 +36,17 @@ var (
 // call multiple times; only the first takes effect. Call it once at process
 // start (the CLI does this from main).
 //
-// This fork links ONNX Runtime statically (libonnxruntime.a is linked into the
-// binary with --whole-archive and exported via -Wl,--export-dynamic; see
-// build.sh: ONNX_RUNTIME_STATIC_DIR). The forked onnxruntime_go binding
-// resolves OrtGetApiBase from the running binary itself via dlopen(NULL) (the
+// The in-process DeepDoc backend links ONNX Runtime statically (libonnxruntime.a
+// is linked into the binary with --whole-archive and exported via
+// -Wl,--export-dynamic; see build.sh: ONNX_RUNTIME_STATIC_DIR). The org
+// onnxruntime_go binding (github.com/infiniflow/onnxruntime_go) resolves
+// OrtGetApiBase from the running binary itself via dlopen(NULL) (the
 // process-global symbol table), so no external libonnxruntime.so is needed and
 // there is no dynamic .so deployment. A main executable CANNOT be dlopen'd by
 // its own file path (glibc refuses), which is exactly why the binding uses the
-// NULL handle instead of a path. InitORT therefore takes no library path; the
-// fork's SetSharedLibraryPath is a retained no-op.
+// NULL handle instead of a path. InitORT therefore takes no library path;
+// ragflow never calls SetSharedLibraryPath, so the binding resolves ORT from the
+// running binary via dlopen(NULL).
 func InitORT() error {
 	ortOnce.Do(func() {
 		ortInitErr = ort.InitializeEnvironment()
