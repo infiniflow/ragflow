@@ -188,9 +188,22 @@ class Invoke(ComponentBase, ABC):
         if not self._param.headers:
             return {}
 
-        headers = json.loads(self._param.headers)
+        try:
+            headers = json.loads(self._param.headers)
+        except json.JSONDecodeError as exc:
+            logging.warning(
+                "Invoke headers are not valid JSON, ignoring headers. raw=%r error=%s",
+                self._param.headers,
+                exc,
+            )
+            return {}
+
         if not isinstance(headers, dict):
-            raise ValueError("Invoke headers must be a JSON object.")
+            logging.warning(
+                "Invoke headers JSON is of type %s, expected an object; ignoring headers.",
+                type(headers).__name__,
+            )
+            return {}
 
         return {key: self._resolve_header_text(value, kwargs) if isinstance(value, str) else value for key, value in headers.items()}
 
