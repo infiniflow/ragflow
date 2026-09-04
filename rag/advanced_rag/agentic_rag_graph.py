@@ -1094,8 +1094,8 @@ def build_agentic_graph(
         finally:
             tools.kbinfos = orig_kbinfos
         if not sca_payload:
-            _LOG.info("[SCA] unavailable; accepting current draft.")
-            return {"verdict": {"status": "SUFFICIENT"}, "sca": {}, "sca_view_id": view_id}
+            _LOG.info("[SCA] unavailable; marking INSUFFICIENT so unresolved slots can drive another research round.")
+            return {"verdict": {"status": "INSUFFICIENT"}, "sca": {}, "sca_view_id": view_id}
         status = "SUFFICIENT" if sca_payload.get("is_sufficient") else "INSUFFICIENT"
         _LOG.info("[SCA] verdict=%s (confidence=%s; view=%d/%d)", status, sca_payload.get("confidence"), len(view), len(chunks))
         return {"verdict": {"status": status}, "sca": sca_payload, "sca_view_id": view_id}
@@ -1113,8 +1113,19 @@ def build_agentic_graph(
                 _LOG.error("[QueryRewriter] state.sca arrived as %r — upstream node returned an un-awaited call!", repr(state.get("sca"))[:160])
         gaps = [g for g in _sca_gaps_to_rewrite(sca_payload) if isinstance(g, tuple)]
         if not gaps:
-            _LOG.info("[QueryRewriter] SCA insufficient but no concrete gap; accepting the draft.")
-            return {"no_progress": True}
+            # A timed-out/unavailable SCA has no structured gap payload, but an
+            # unresolved slot table still provides precise retrieval directions.
+            # Keep the research loop alive instead of accepting an unresolved
+            # draft as if it were sufficient.
+            for us in state.get("unresolved_slots") or []:
+                if not isinstance(us, dict):
+                    continue
+                clues = [str(q).strip() for q in (us.get("question_clues") or [])[:2] if str(q).strip()]
+                for clue in clues:
+                    gaps.append((clue, clue))
+            if not gaps:
+                _LOG.info("[QueryRewriter] SCA insufficient but no concrete gap; accepting the draft.")
+                return {"no_progress": True}
 
         # Information-augmented rewriting (the Google-style lever): instead of
         # rule-based dedupe, give the rewriter FULL VISIBILITY — what was tried
