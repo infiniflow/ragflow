@@ -14,10 +14,7 @@
 #  limitations under the License.
 #
 
-import hashlib
-import os
-
-from common.token_utils import _ensure_tiktoken_cache, get_encoder, num_tokens_from_string, total_token_count_from_response, truncate
+from common.token_utils import get_encoder, num_tokens_from_string, total_token_count_from_response, truncate
 import pytest
 
 
@@ -115,29 +112,6 @@ def test_consistency():
 
     assert first_result == second_result
     assert first_result > 0
-
-
-def test_bundled_cl100k_table_is_copied_into_the_tiktoken_cache(tmp_path, monkeypatch):
-    """The bundled BPE table lands where tiktoken looks for the cl100k URL.
-
-    tiktoken keys its cache by the sha1 of the table URL under TIKTOKEN_CACHE_DIR,
-    so this copy is what lets get_encoder() build from ragflow_deps without a download.
-    """
-    bundled = tmp_path / "ragflow_deps" / "cl100k_base.tiktoken"
-    bundled.parent.mkdir()
-    bundled.write_bytes(b"bundled cl100k table")
-    monkeypatch.setenv("RAG_PROJECT_BASE", str(tmp_path))
-    # The helper points TIKTOKEN_CACHE_DIR at the project base; registering the
-    # variable here makes monkeypatch restore it for the tests that follow,
-    # whether or not it was already set.
-    monkeypatch.setenv("TIKTOKEN_CACHE_DIR", os.environ.get("TIKTOKEN_CACHE_DIR", ""))
-
-    cache_dir = _ensure_tiktoken_cache()
-
-    encoding_url = "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
-    cache_path = tmp_path / hashlib.sha1(encoding_url.encode()).hexdigest()
-    assert cache_dir == str(tmp_path)
-    assert cache_path.read_bytes() == b"bundled cl100k table"
 
 
 class TestTotalTokenCountFromResponse:

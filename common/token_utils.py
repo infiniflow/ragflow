@@ -48,23 +48,17 @@ os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
 # Nothing in `rag.nlp` wants the encoder itself; it imports `num_tokens_from_string`.
 # The build ran regardless, so an unreachable blob host failed any import that reached
 # this file, including unit tests that never tokenize anything.
-_encoder = None
-# Serializes the one-time build so concurrent first callers share a single encoder.
-_encoder_lock = threading.Lock()
+# tiktoken caches each built encoding in `tiktoken.registry.ENCODINGS`, so this
+# module keeps no cache of its own.
 
 
 def get_encoder():
-    """Return the shared cl100k_base encoder, building it on first use.
+    """Return the cl100k_base encoder, building it on first use.
 
     Failures propagate: a missing BPE table is a real problem and callers must not
     silently treat it as an empty tokenization.
     """
-    global _encoder
-    if _encoder is None:
-        with _encoder_lock:
-            if _encoder is None:
-                _encoder = tiktoken.get_encoding("cl100k_base")
-    return _encoder
+    return tiktoken.get_encoding("cl100k_base")
 
 
 # Per-run token usage sink. An agent run (Canvas.run) installs a mutable dict here
