@@ -276,47 +276,79 @@ jobs:
       - name: Provision NLTK data for unit tests
         if: steps.detect_changes.outputs.has_python_changes == 'true'
         run: |
-          # The runner has NLTK corpora under /usr/share/nltk_data, but packages
-          # like wordnet may only exist as .zip archives there. NLTK needs them
-          # unpacked into directories.
-          # We extract any .zip archives from system NLTK locations into the
-          # workspace nltk_data directory using Python's built-in zipfile module
-          # (avoiding external tools like `unzip` which may not be installed).
-          echo "NLTK_DATA=${GITHUB_WORKSPACE}/nltk_data:/usr/share/nltk_data" >> "${GITHUB_ENV}"
+          set -euo pipefail
 
-          uv run python - <<'PYEOF'
-          import glob, os, zipfile
+          # The self-hosted runner stores NLTK packages as root-owned zip files.
+          # Reading them directly as the runner user fails with EACCES, while
+          # downloading replacements is blocked by the runner's SSRF policy.
+          # Copy the three required archives into the workspace with sudo, then
+          # unpack and validate them as the runner user.
+          NLTK_TARGET="${GITHUB_WORKSPACE}/nltk_data"
+          rm -rf "${NLTK_TARGET}"
+          mkdir -p "${NLTK_TARGET}/tokenizers" "${NLTK_TARGET}/corpora"
 
-          workspace = os.environ.get("GITHUB_WORKSPACE", os.getcwd())
-          target_root = os.path.join(workspace, "nltk_data")
+          copy_nltk_archive() {
+            local relative_path="$1"
+            local source=""
+            for root in /usr/share/nltk_data /usr/local/share/nltk_data; do
+              if sudo test -f "${root}/${relative_path}"; then
+                source="${root}/${relative_path}"
+                break
+              fi
+            done
+            if [ -z "${source}" ]; then
+              echo "Missing required NLTK archive: ${relative_path}" >&2
+              return 1
+            fi
+            echo "Copying ${source}"
+            sudo cp "${source}" "${NLTK_TARGET}/${relative_path}"
+            sudo chown "$(id -u):$(id -g)" "${NLTK_TARGET}/${relative_path}"
+            chmod 0644 "${NLTK_TARGET}/${relative_path}"
+          }
 
-          for search_dir in ("/usr/share/nltk_data", "/usr/local/share/nltk_data"):
-              if not os.path.isdir(search_dir):
-                  continue
-              for zip_path in glob.glob(os.path.join(search_dir, "**", "*.zip"), recursive=True):
-                  rel_dir = os.path.relpath(os.path.dirname(zip_path), search_dir)
-                  target_dir = os.path.join(target_root, rel_dir)
-                  os.makedirs(target_dir, exist_ok=True)
-                  try:
-                      with zipfile.ZipFile(zip_path, "r") as zf:
-                          zip_stem = os.path.splitext(os.path.basename(zip_path))[0]
-                          dest_check = os.path.join(target_dir, zip_stem)
-                          if os.path.isdir(dest_check):
-                              continue
-                          print(f"Unpacking {zip_path} -> {target_dir}")
-                          first = zf.namelist()[0] if zf.namelist() else ""
-                          if first.startswith(zip_stem + "/"):
-                              zf.extractall(target_dir)
-                          else:
-                              os.makedirs(dest_check, exist_ok=True)
-                              zf.extractall(dest_check)
-                  except Exception as e:
-                      print(f"Warning: failed to unpack {zip_path}: {e}")
+          copy_nltk_archive tokenizers/punkt_tab.zip
+          copy_nltk_archive tokenizers/punkt.zip
+          copy_nltk_archive corpora/wordnet.zip
 
-          print("Provisioned NLTK data:")
-          for root, dirs, files in os.walk(target_root):
-              if dirs or files:
-                  print(f"  {root}: {dirs[:5]} ({len(files)} files)")
+          NLTK_DATA="${NLTK_TARGET}" uv run python - <<'PYEOF'
+          import os
+          import zipfile
+
+          root = os.environ["NLTK_DATA"]
+          archives = (
+              ("tokenizers", "punkt_tab"),
+              ("tokenizers", "punkt"),
+              ("corpora", "wordnet"),
+          )
+          for category, package in archives:
+              archive = os.path.join(root, category, f"{package}.zip")
+              destination = os.path.join(root, category)
+              with zipfile.ZipFile(archive) as package_zip:
+                  bad_member = package_zip.testzip()
+                  if bad_member is not None:
+                      raise RuntimeError(f"Corrupt NLTK archive {archive}: {bad_member}")
+                  members = [name for name in package_zip.namelist() if not name.startswith("__MACOSX/")]
+                  prefix = f"{package}/"
+                  if not members or not all(name == package or name.startswith(prefix) for name in members):
+                      raise RuntimeError(f"Unexpected layout in {archive}: expected entries below {prefix}")
+                  package_zip.extractall(destination)
+              print(f"Unpacked {archive} -> {os.path.join(destination, package)}")
+          PYEOF
+
+          echo "NLTK_DATA=${NLTK_TARGET}" >> "${GITHUB_ENV}"
+
+          # Validate real tokenizer/lemmatizer calls, not only directory names.
+          # The command exits non-zero if any resource is absent or malformed.
+          NLTK_DATA="${NLTK_TARGET}" uv run python - <<'PYEOF'
+          import nltk
+          from nltk.corpus import wordnet
+          from nltk.tokenize import word_tokenize
+
+          for resource in ("tokenizers/punkt_tab", "tokenizers/punkt", "corpora/wordnet"):
+              print(f"[OK] {resource} -> {nltk.data.find(resource)}")
+          assert word_tokenize("NLTK data is ready.")
+          assert wordnet.synsets("document")
+          print("NLTK tokenizer and WordNet smoke checks passed")
           PYEOF
 
       - name: Run unit test

@@ -48,6 +48,7 @@ for _nltk_candidate in (
 # (download name, resource path used by nltk.data.find)
 _REQUIRED_NLTK_DATA = (
     ("punkt_tab", "tokenizers/punkt_tab"),
+    ("punkt", "tokenizers/punkt"),
     ("wordnet", "corpora/wordnet"),
 )
 for _name, _find_path in _REQUIRED_NLTK_DATA:
