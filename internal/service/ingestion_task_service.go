@@ -264,6 +264,11 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 			rc.Set(ctx, fmt.Sprintf("%s-cancel", taskID), "x", 1*time.Hour)
 		}
 		return task, nil
+	case common.STOPPING:
+		// User requested stop again on an already-stopping task: finalize to STOPPED
+		// and clean up the cancel flag so the task does not remain stuck.
+		clearCancelFlag(ctx, taskID)
+		return s.transition(ctx, taskID, common.STOPPED)
 	default:
 		return task, nil
 	}
@@ -478,6 +483,16 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 // single startup recovery pass; a publish error leaves the task CREATED for a
 // future startup or explicit parse request to retry.
 func (s *IngestionTaskService) ScheduleCreatedTasks(ctx context.Context) error {
+	// Clean up orphaned STOPPING tasks on startup: since the previous worker process
+	// exited, no worker is running them. Finalize them as STOPPED.
+	stoppingTasks, err := s.ingestionTaskDAO.ListByStatus(ctx, dao.DB, common.STOPPING)
+	if err == nil {
+		for _, task := range stoppingTasks {
+			_ = s.MarkStopped(ctx, task.ID)
+			clearCancelFlag(ctx, task.ID)
+		}
+	}
+
 	tasks, err := s.ingestionTaskDAO.ListByStatus(ctx, dao.DB, common.CREATED)
 	if err != nil {
 		return err

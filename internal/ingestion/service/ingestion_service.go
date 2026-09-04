@@ -434,7 +434,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		return
 	}
 
-	task, err := e.ingestionTaskSvc.StartRunning(e.ctx, taskMessage.TaskID)
+	task, err := e.ingestionTaskSvc.GetTask(e.ctx, taskMessage.TaskID)
 	if err != nil {
 		if errors.Is(err, common.ErrTaskNotFound) {
 			common.Warn(fmt.Sprintf("task %s not found, skipping", taskMessage.TaskID))
@@ -446,7 +446,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		// Recoverable activation failure (e.g. a DB blip): nack for
 		// redelivery instead of dropping the message or killing the
 		// consumer.
-		common.Error(fmt.Sprintf("error setting task %s to running", taskMessage.TaskID), err)
+		common.Error(fmt.Sprintf("error loading task %s", taskMessage.TaskID), err)
 		if nackErr := handle.Nack(); nackErr != nil {
 			common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), nackErr)
 		}
@@ -467,7 +467,15 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
 		}
 		return
-	case common.RUNNING:
+	case common.STOPPING:
+		// Task was requested to stop before worker dequeued it. Finalize as STOPPED and ack.
+		common.Info(fmt.Sprintf("task %s is stopping, finalize as STOPPED", taskMessage.TaskID))
+		e.markStopped(e.ctx, task.ID)
+		if ackErr := handle.Ack(); ackErr != nil {
+			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
+		}
+		return
+	case common.CREATED, common.SCHEDULED, common.RUNNING:
 		// Guard against MQ redelivery: if another worker in this
 		// process is already processing this task, renew the redelivered
 		// message's lease and skip instead of scheduling it again. The
@@ -482,9 +490,6 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		}
 		claimedTaskID = task.ID
 	default:
-		// Unreachable given StartRunning normalizes every status to
-		// RUNNING/COMPLETED/STOPPED/FAILED, but defensive: ack-skip an
-		// unknown status instead of enqueuing it for execution.
 		common.Warn(fmt.Sprintf("task %s in unexpected status %s, ack-skip", taskMessage.TaskID, task.Status))
 		if ackErr := handle.Ack(); ackErr != nil {
 			common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), ackErr)
@@ -500,12 +505,8 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 	// Push to the task channel. Use a blocking send so backpressure is
 	// applied at the consumer: the consume loop waits for a free worker slot
 	// instead of dropping the message. Dropping on backpressure is unsafe
-	// because StartRunning (above) has already flipped the task — and its
-	// document — to RUNNING in the DB, and there is no scan-and-re-enqueue
-	// path on completion. A Nack that exceeds the broker's MaxDeliver (16,
-	// with no dead-letter in nats.go) would permanently lose the task and
-	// leave the document stuck in RUNNING — the "files get stuck after the
-	// first few parse" defect.
+	// because dropping unhandled tasks would permanently lose them and leave
+	// the document in an unfinished state.
 	//
 	// The in-flight claim (set just above) guards against a redelivery racing
 	// the blocked send: a duplicate delivery sees claimTask fail, renews its
@@ -515,19 +516,17 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		claimedTaskID = "" // executeTask owns the release now
 		common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.ID, len(e.taskChan), cap(e.taskChan)))
 	case <-e.ctx.Done():
-		// Shutdown won the race after StartRunning already flipped the task
-		// to RUNNING: finalize it as STOPPED so the row cannot linger in
-		// non-terminal RUNNING with no in-flight worker (the user can
-		// retry). The message is left unsettled - on redelivery the terminal
-		// STOPPED status ack-skips it. Both paths
-		// run with a detached 2s timeout so shutdown is not slowed by a
-		// stalled DB.
+		// Shutdown won the race before the task entered the channel:
+		// finalize as STOPPED so the row cannot linger with no in-flight worker.
+		// The message is left unsettled - on redelivery the terminal
+		// STOPPED status ack-skips it. Both paths run with a detached
+		// 2s timeout so shutdown is not slowed by a stalled DB.
 		stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		if e.markStopped(stopCtx, task.ID) {
 			common.Info(fmt.Sprintf("Ingestor shutting down; task %s finalized as STOPPED", task.ID))
 		} else {
-			common.Warn(fmt.Sprintf("Ingestor shutting down; task %s left RUNNING for NATS redelivery", task.ID))
+			common.Warn(fmt.Sprintf("Ingestor shutting down; task %s left for NATS redelivery", task.ID))
 		}
 		return
 	}
@@ -678,6 +677,49 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext
 	// Release the claim when executeTask returns so that a future
 	// redelivery (after restart) can re-claim the task.
 	defer e.releaseTask(task.ID)
+
+	runningTask, err := e.ingestionTaskSvc.StartRunning(ctx, task.ID)
+	if err != nil {
+		if errors.Is(err, common.ErrTaskNotFound) {
+			common.Warn(fmt.Sprintf("task %s not found, skipping", task.ID))
+			if taskCtx.Handle != nil {
+				if ackErr := taskCtx.Handle.Ack(); ackErr != nil {
+					common.Error(fmt.Sprintf("error ack task %s", task.ID), ackErr)
+				}
+			}
+			return
+		}
+		common.Error(fmt.Sprintf("error setting task %s to running", task.ID), err)
+		if taskCtx.Handle != nil {
+			if nackErr := taskCtx.Handle.Nack(); nackErr != nil {
+				common.Error(fmt.Sprintf("error nack task %s", task.ID), nackErr)
+			}
+		}
+		return
+	}
+	if runningTask == nil {
+		common.Info(fmt.Sprintf("task %s is already removed", task.ID))
+		if taskCtx.Handle != nil {
+			if ackErr := taskCtx.Handle.Ack(); ackErr != nil {
+				common.Error(fmt.Sprintf("error ack task %s", task.ID), ackErr)
+			}
+		}
+		return
+	}
+
+	taskCtx.IngestionTask = runningTask
+	task = runningTask
+
+	switch task.Status {
+	case common.COMPLETED, common.STOPPED, common.FAILED:
+		common.Info(fmt.Sprintf("task %s is already %s, skipping execution", task.ID, task.Status))
+		if taskCtx.Handle != nil {
+			if ackErr := taskCtx.Handle.Ack(); ackErr != nil {
+				common.Error(fmt.Sprintf("error ack task %s", task.ID), ackErr)
+			}
+		}
+		return
+	}
 
 	// Derive a per-task cancelable context so that an external cancel
 	// signal (Redis cancel flag, mirrored from Python's {task_id}-cancel)

@@ -204,8 +204,9 @@ func TestProcessMessage_TaskNotFoundAcks(t *testing.T) {
 	}
 }
 
-// TestProcessMessage_CreatedTaskStartsRunning verifies that a worker can claim
-// a task after NATS accepts its message but before the API records SCHEDULED.
+// TestProcessMessage_CreatedTaskStartsRunning verifies that a task remains in its
+// queued status (CREATED) while sitting in the channel, and only transitions to
+// RUNNING when the worker actually starts executing it.
 func TestProcessMessage_CreatedTaskStartsRunning(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -232,8 +233,23 @@ func TestProcessMessage_CreatedTaskStartsRunning(t *testing.T) {
 	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
 		t.Fatalf("reload task: %v", err)
 	}
-	if task.Status != common.RUNNING {
-		t.Fatalf("status = %q, want %q", task.Status, common.RUNNING)
+	if task.Status != common.CREATED {
+		t.Fatalf("status = %q, want %q (must remain CREATED while queued in channel)", task.Status, common.CREATED)
+	}
+
+	// Worker picks up task and executes it: should transition to RUNNING.
+	taskCtx := <-ingestor.taskChan
+	var ranWithRunningStatus bool
+	ingestor.runDocumentTask = func(ctx context.Context, it *entity.IngestionTask) error {
+		var current entity.IngestionTask
+		if err := db.Where("id = ?", taskID).First(&current).Error; err == nil {
+			ranWithRunningStatus = current.Status == common.RUNNING
+		}
+		return nil
+	}
+	ingestor.executeTask(context.Background(), taskCtx)
+	if !ranWithRunningStatus {
+		t.Fatalf("expected task status to be RUNNING during execution")
 	}
 }
 
@@ -437,16 +453,17 @@ func TestProcessMessage_ShutdownRaceMarksStopped(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait until StartRunning flipped the task RUNNING and processMessage
-	// is blocked on the full channel.
+	// Wait until processMessage claimed the task and is blocked on the full channel.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		var task entity.IngestionTask
-		if err := db.Where("id = ?", taskID).First(&task).Error; err == nil && task.Status == common.RUNNING {
+		ingestor.tasksMu.Lock()
+		_, claimed := ingestor.currentTasks[taskID]
+		ingestor.tasksMu.Unlock()
+		if claimed {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("task never reached RUNNING; processMessage did not reach the blocking send")
+			t.Fatal("task was never claimed; processMessage did not reach the blocking send")
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
@@ -761,5 +778,71 @@ func TestExecuteMemoryTaskAlreadyCompletedAcks(t *testing.T) {
 	ingestor.executeMemoryTask(context.Background(), taskCtx)
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("already-completed memory task: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// TestExecuteTask_CancelledWhileQueuedAcksAndSkips verifies that when a task is
+// cancelled while queued in the worker channel (before a worker starts it),
+// RequestStop transitions it to STOPPED, and executeTask skips execution and
+// acks the message.
+func TestExecuteTask_CancelledWhileQueuedAcksAndSkips(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.SCHEDULED).Error; err != nil {
+		t.Fatalf("set task to SCHEDULED: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	var runDocumentTaskCalled bool
+	ingestor.runDocumentTask = func(ctx context.Context, it *entity.IngestionTask) error {
+		runDocumentTaskCalled = true
+		return nil
+	}
+
+	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
+	ingestor.processMessage(handle)
+
+	if len(ingestor.taskChan) != 1 {
+		t.Fatalf("expected 1 task enqueued, got %d", len(ingestor.taskChan))
+	}
+
+	// Task should still be SCHEDULED while queued.
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.SCHEDULED {
+		t.Fatalf("task status = %q, want %q", task.Status, common.SCHEDULED)
+	}
+
+	// User cancels the task while it is still queued.
+	if _, err := ingestor.ingestionTaskSvc.RequestStop(context.Background(), taskID); err != nil {
+		t.Fatalf("RequestStop failed: %v", err)
+	}
+
+	// RequestStop on a SCHEDULED task transitions directly to STOPPED.
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("task status after cancel = %q, want %q", task.Status, common.STOPPED)
+	}
+
+	// Worker now picks up the task context from the channel and executes it.
+	taskCtx := <-ingestor.taskChan
+	ingestor.executeTask(context.Background(), taskCtx)
+
+	if runDocumentTaskCalled {
+		t.Fatal("expected runDocumentTask NOT to be called for cancelled task")
+	}
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("cancelled queued task: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if _, stillClaimed := ingestor.currentTasks[taskID]; stillClaimed {
+		t.Fatal("expected task released from currentTasks after executeTask finished")
 	}
 }
