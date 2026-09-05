@@ -172,35 +172,22 @@ class RAGFlowExcelParser:
 
         max_col = min(ws.max_column or 1, 50)
 
-        def row_has_data(row_idx):
-            for col_idx in range(1, max_col + 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
+        # Inspect instantiated cells directly to avoid materializing all rows
+        # when max_row is inflated by sparse worksheet metadata.
+        last_data_row = 0
+        cells = getattr(ws, "_cells", None)
+
+        if cells is not None:
+            for cell in cells.values():
+                if cell.column > max_col:
+                    continue
                 if cell.value is not None and str(cell.value).strip():
-                    return True
-            return False
-
-        if not any(row_has_data(i) for i in range(1, min(101, max_row + 1))):
-            return 0
-
-        left, right = 1, max_row
-        last_data_row = 1
-
-        while left <= right:
-            mid = (left + right) // 2
-            found = False
-            for r in range(mid, min(mid + 10, max_row + 1)):
-                if row_has_data(r):
-                    found = True
-                    last_data_row = max(last_data_row, r)
-                    break
-            if found:
-                left = mid + 1
-            else:
-                right = mid - 1
-
-        for r in range(last_data_row, min(last_data_row + 500, max_row + 1)):
-            if row_has_data(r):
-                last_data_row = r
+                    last_data_row = max(last_data_row, cell.row)
+        else:
+            for row in ws.iter_rows(min_row=1, max_row=max_row, max_col=max_col):
+                for cell in row:
+                    if cell.value is not None and str(cell.value).strip():
+                        last_data_row = max(last_data_row, cell.row)
 
         return last_data_row
 
