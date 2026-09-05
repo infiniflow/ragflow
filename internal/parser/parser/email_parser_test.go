@@ -1191,7 +1191,7 @@ func TestReadMailBody_AttachmentPreservesRaw(t *testing.T) {
 	ap.Write([]byte(base64.StdEncoding.EncodeToString(gbk)))
 	mw.Close()
 
-	_, _, attachments := readMailBody(strings.NewReader(buf.String()), "multipart/mixed; boundary="+mw.Boundary(), true)
+	_, _, attachments := readMailBody(strings.NewReader(buf.String()), "multipart/mixed; boundary="+mw.Boundary(), "", true)
 	if len(attachments) != 1 {
 		t.Fatalf("expected 1 attachment, got %d: %#v", len(attachments), attachments)
 	}
@@ -1294,9 +1294,75 @@ func TestReadMailBody_DeclaredBodyCharsets(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			text, _, _ := readMailBody(strings.NewReader(string(tt.body)), "text/plain; charset="+tt.charset, false)
+			text, _, _ := readMailBody(strings.NewReader(string(tt.body)), "text/plain; charset="+tt.charset, "", false)
 			if text != "中文" {
 				t.Errorf("readMailBody(charset=%s) = %q, want 中文", tt.charset, text)
+			}
+		})
+	}
+}
+
+// TestParseEML_SinglePartTransferEncoding verifies that a single-part body
+// is decoded by its Content-Transfer-Encoding, as a multipart part already is.
+func TestParseEML_SinglePartTransferEncoding(t *testing.T) {
+	const plain = "Quarterly revenue was 12.5 million.\n"
+	b64 := base64.StdEncoding.EncodeToString([]byte(plain))
+
+	tests := []struct {
+		name     string
+		headers  string
+		body     string
+		wantText string
+		wantHTML string
+	}{
+		{
+			name:     "base64 text/plain",
+			headers:  "Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64",
+			body:     b64,
+			wantText: plain,
+		},
+		{
+			name:     "quoted-printable text/plain",
+			headers:  "Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: quoted-printable",
+			body:     "Quarterly revenue was 12=2E5 million=2E",
+			wantText: "Quarterly revenue was 12.5 million.",
+		},
+		{
+			name:     "base64 text/html",
+			headers:  "Content-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64",
+			body:     base64.StdEncoding.EncodeToString([]byte("<p>Quarterly revenue</p>")),
+			wantHTML: "<p>Quarterly revenue</p>",
+		},
+		{
+			// Positive control: the multipart path already decodes the same
+			// body, so the two paths must agree.
+			name:     "base64 in multipart/alternative",
+			headers:  "Content-Type: multipart/alternative; boundary=\"BB\"",
+			body:     "--BB\r\nContent-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" + b64 + "\r\n--BB--",
+			wantText: plain,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := "From: sender@example.com\r\nTo: recipient@example.com\r\n" +
+				"Subject: Q3\r\n" + tt.headers + "\r\n\r\n" + tt.body + "\r\n"
+
+			p := NewEmailParser()
+			p.ConfigureFromSetup(map[string]any{"output_format": "json"})
+			result := p.ParseWithResult(t.Context(), "test.eml", []byte(raw))
+			if result.Err != nil {
+				t.Fatalf("unexpected error: %v", result.Err)
+			}
+			item := result.JSON[0]
+
+			text, _ := item["text"].(string)
+			if strings.TrimRight(text, "\r\n") != strings.TrimRight(tt.wantText, "\r\n") {
+				t.Errorf("text = %q, want %q", text, tt.wantText)
+			}
+			html, _ := item["text_html"].(string)
+			if strings.TrimRight(html, "\r\n") != strings.TrimRight(tt.wantHTML, "\r\n") {
+				t.Errorf("text_html = %q, want %q", html, tt.wantHTML)
 			}
 		})
 	}
