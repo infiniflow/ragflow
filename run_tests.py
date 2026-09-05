@@ -75,8 +75,6 @@ def _is_color_supported() -> bool:
             # Signatures for console mode read and write APIs
             kernel32.GetConsoleMode.argtypes = [wintypes.HANDLE, POINTER(wintypes.DWORD)]
             kernel32.GetConsoleMode.restype = wintypes.BOOL
-            kernel32.SetConsoleMode.argtypes = [wintypes.HANDLE, wintypes.DWORD]
-            kernel32.SetConsoleMode.restype = wintypes.BOOL
 
             handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
             if handle == INVALID_HANDLE_VALUE:
