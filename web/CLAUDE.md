@@ -64,6 +64,7 @@ Respect explicit boundaries from the user. If the user says **"only fix the sele
 For translation tasks, add keys **only to the explicitly requested language files** (commonly `src/locales/zh.ts` and `src/locales/en.ts`). Do not auto-propagate changes to all language files unless the user explicitly asks.
 
 - **Style for `en.ts`**: Sentence case — first word capitalized, rest lowercase (e.g., `referenceAnswer: 'Reference answer'`). Proper nouns remain as-is.
+- **Reuse existing translation keys.** Before adding a key, search the locale files for identical text — common actions (`confirm`, `cancel`, `save`, `delete`, ...) already live under `translation.common`. Reference the existing key instead of adding a duplicate.
 
 ### React Component Refactoring
 
@@ -155,3 +156,7 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 - **Project utilities first**: Before reaching for a third-party library, check if the project already has an existing utility or hook that covers the need.
 - **Extract and share**: If repeated logic cannot be satisfied by an existing project utility or a third-party library, extract it into an appropriate shared hook (`src/hooks/`) or utility file (`src/utils/`).
 - **Check for duplicate patterns before adding**: When asked to add logic (validation, existence checks, API calls, etc.), first search for existing hooks/functions that do the same or similar thing — especially in the same file or sibling hooks. If a hook already does X, call it instead of re-implementing X inline. This applies to mutations calling mutations, utility wrappers, and boilerplate around API calls.
+- **Reuse existing definitions before adding new ones.** Before introducing a constant, enum, helper function, hook, or component, search for an existing one that covers the need: check the feature's own `constant/`/`hooks/`/`utils/` first, then shared locations (`src/constants/`, `src/hooks/`, `src/utils/`, `src/components/`). If one exists, import and use it — do not declare a parallel copy or re-implement it inline.
+- **Use enums and named constants instead of raw literals.** Comparisons and assignments against a fixed set of values (e.g. `operatorType`, `retrieval_from`) must reference the project's defined enums/constants — e.g. `Operator` from `@/constants/agent`, `RetrievalFrom` from `src/pages/agent/constant` — not string/number literals. When adding a field with a new fixed set of values, define the enum in the nearest `constant` file first.
+- **Reuse types; infer rather than redeclare.** Import shared shapes from `src/interfaces/database/` / `src/interfaces/request/` instead of declaring parallel interfaces. For types derived from existing code, infer with `ReturnType<typeof fn>` / `Parameters<typeof fn>` from the owning hook/util — a hand-written copy drifts when the source changes.
+- **Reuse icon components before adding assets.** Use `lucide-react` for general icons. For file-type and operator icons use the project's existing components (`SvgIcon`, `IconFont`, `OperatorIcon`, `FileIcon`) instead of importing SVG assets directly or adding new ones.
