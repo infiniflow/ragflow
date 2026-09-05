@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 
 from quart import Response, request
 
@@ -27,6 +28,8 @@ from common.constants import VALID_MCP_SERVER_TYPES
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 from common.misc_utils import get_uuid, thread_pool_exec
 from common.ssrf_guard import assert_url_is_safe, pin_dns_global
+
+logger = logging.getLogger(__name__)
 
 
 def _get_mcp_ids_from_args() -> list[str]:
@@ -58,12 +61,14 @@ def _export_mcp_servers(mcp_ids: list[str]) -> dict | None:
 
 
 def _assert_mcp_url_is_safe(url, invalid_message: str = "Invalid url.") -> tuple[str, str, str | None]:
+    """Validate MCP URLs without leaking SSRF guard internals to API clients."""
     if not isinstance(url, str) or not url:
         return "", "", invalid_message
     try:
         hostname, resolved_ip = assert_url_is_safe(url)
     except ValueError as exc:
-        return "", "", str(exc)
+        logger.warning("MCP URL safety check failed: %s", exc)
+        return "", "", invalid_message
     return hostname, resolved_ip, None
 
 
