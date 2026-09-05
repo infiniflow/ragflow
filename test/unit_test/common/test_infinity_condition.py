@@ -262,6 +262,31 @@ class TestLegacyVarcharColumnsUseFilterFulltext:
 
 
 # ---------------------------------------------------------------------------
+# String literal escaping
+# ---------------------------------------------------------------------------
+
+
+class TestStringLiteralEscaping:
+    """Every condition branch must keep apostrophes inside SQL literals."""
+
+    def test_field_keyword_list_escapes_apostrophes(self):
+        result = _translate({"source_id": ["o'brien"]}, {})
+        assert result == "(filter_fulltext('source_id', 'o''brien'))"
+
+    def test_field_keyword_scalar_escapes_apostrophes(self):
+        result = _translate({"source_id": "o'brien"}, {})
+        assert result == "filter_fulltext('source_id', 'o''brien')"
+
+    def test_plain_list_escapes_apostrophes(self):
+        result = _translate({"status": ["o'brien"]}, {})
+        assert result == "status IN ('o''brien')"
+
+    def test_plain_string_escapes_apostrophes(self):
+        result = _translate({"status": "o'brien"}, {})
+        assert result == "status='o''brien'"
+
+
+# ---------------------------------------------------------------------------
 # Unknown / missing columns
 # ---------------------------------------------------------------------------
 
