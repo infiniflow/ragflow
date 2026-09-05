@@ -66,7 +66,6 @@ export const showTagItems = (parserId: DocumentParserType) => {
 const UseRaptorField = 'parser_config.raptor.use_raptor';
 const RandomSeedField = 'parser_config.raptor.random_seed';
 const ClusteringMethodField = 'parser_config.raptor.clustering_method';
-const ClusteringMethodExtField = 'parser_config.raptor.ext.clustering_method';
 const TreeBuilderField = 'parser_config.raptor.tree_builder';
 const MaxClusterMax = 1024;
 
@@ -83,15 +82,12 @@ const RaptorFormFields = ({
   const { t } = useTranslate('knowledgeConfiguration');
   const useRaptor = useWatch({ name: UseRaptorField });
   const clusteringMethod = useWatch({ name: ClusteringMethodField });
-  const extClusteringMethod = useWatch({ name: ClusteringMethodExtField });
   const selectedClusteringMethod = useMemo(
     () =>
-      (clusteringMethod ??
-        extClusteringMethod ??
-        form.getValues(ClusteringMethodField) ??
-        form.getValues(ClusteringMethodExtField) ??
-        'gmm') as 'gmm' | 'ahc',
-    [clusteringMethod, extClusteringMethod, form],
+      (clusteringMethod ?? form.getValues(ClusteringMethodField) ?? 'gmm') as
+        | 'gmm'
+        | 'ahc',
+    [clusteringMethod, form],
   );
 
   const handleGenerate = useCallback(() => {
@@ -113,10 +109,10 @@ const RaptorFormFields = ({
   );
 
   useEffect(() => {
-    if (!clusteringMethod && !extClusteringMethod) {
+    if (!clusteringMethod) {
       handleClusteringMethodChange('gmm');
     }
-  }, [clusteringMethod, extClusteringMethod, handleClusteringMethodChange]);
+  }, [clusteringMethod, handleClusteringMethodChange]);
 
   return (
     <>
