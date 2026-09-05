@@ -17,12 +17,17 @@
 package utility
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestParseCallResult_TextBlocksConcatenated: text content
@@ -106,21 +111,51 @@ func TestParseCallResult_Empty(t *testing.T) {
 }
 
 // TestCallTool_StreamableHTTP: drive the full session
-// (initialize → notifications/initialized → tools/call) against
+// (initialize → notifications/initialized → tools/call → DELETE) against
 // a local httptest server. Verifies the request shape, the
-// session id propagation, and the response parsing.
+// rendered headers, session id propagation, request order, and
+// response parsing.
 func TestCallTool_StreamableHTTP(t *testing.T) {
 	defer allowLoopbackForTests(t)()
+	var deleteCount int32
+	var mu sync.Mutex
+	var requestOrder []string
+	recordRequest := func(method string) {
+		mu.Lock()
+		defer mu.Unlock()
+		requestOrder = append(requestOrder, method)
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Errorf("Authorization=%q, want rendered header", got)
+		}
+		if r.Method == http.MethodDelete {
+			atomic.AddInt32(&deleteCount, 1)
+			recordRequest(http.MethodDelete)
+			if got := r.Header.Get(sessionHeader); got != "test-session-42" {
+				t.Errorf("DELETE session header=%q, want test-session-42", got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("request method=%s, want POST or DELETE", r.Method)
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+			return
+		}
 		body, _ := io.ReadAll(r.Body)
 		var req jsonRPCRequest
 		_ = json.Unmarshal(body, &req)
+		recordRequest(req.Method)
 		w.Header().Set("Content-Type", "application/json")
 		// First call (initialize) returns a session id.
 		if req.Method == "initialize" {
 			w.Header().Set(sessionHeader, "test-session-42")
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-03-26"}}`))
 			return
+		}
+		if got := r.Header.Get(sessionHeader); got != "test-session-42" {
+			t.Errorf("%s session header=%q, want test-session-42", req.Method, got)
 		}
 		// tools/call returns the canned result.
 		if req.Method == "tools/call" {
@@ -140,8 +175,16 @@ func TestCallTool_StreamableHTTP(t *testing.T) {
 		ServerType: TransportStreamableHTTP,
 		ToolName:   "echo",
 		Arguments:  json.RawMessage(`{"msg":"hi"}`),
+		Headers: map[string]string{
+			"${header_name}": "Bearer ${token}",
+			sessionHeader:    "stale-session",
+		},
+		Variables: map[string]string{
+			"header_name": "Authorization",
+			"token":       "test-token",
+		},
 		HTTPClient: srv.Client(),
-		Timeout:    srv.Client().Timeout,
+		Timeout:    2 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("CallTool: %v", err)
@@ -151,6 +194,281 @@ func TestCallTool_StreamableHTTP(t *testing.T) {
 	}
 	if res.IsError {
 		t.Errorf("IsError should be false")
+	}
+	if got := atomic.LoadInt32(&deleteCount); got != 1 {
+		t.Errorf("DELETE count=%d, want 1", got)
+	}
+	mu.Lock()
+	gotOrder := strings.Join(requestOrder, ",")
+	mu.Unlock()
+	if want := "initialize,notifications/initialized,tools/call,DELETE"; gotOrder != want {
+		t.Errorf("request order=%q, want %q", gotOrder, want)
+	}
+}
+
+func TestCallTool_StreamableHTTPSessionTerminationStatusPreservesResult(t *testing.T) {
+	defer allowLoopbackForTests(t)()
+
+	for _, status := range []int{http.StatusMethodNotAllowed, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var deleteCount int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					atomic.AddInt32(&deleteCount, 1)
+					w.WriteHeader(status)
+					return
+				}
+				body, _ := io.ReadAll(r.Body)
+				var req jsonRPCRequest
+				_ = json.Unmarshal(body, &req)
+				w.Header().Set("Content-Type", "application/json")
+				switch req.Method {
+				case "initialize":
+					w.Header().Set(sessionHeader, "test-session")
+					_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":0,"result":{}}`))
+				case "tools/call":
+					_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"kept"}]}}`))
+				default:
+					w.WriteHeader(http.StatusAccepted)
+				}
+			}))
+
+			res, err := CallTool(t.Context(), CallOptions{
+				URL:        srv.URL,
+				ServerType: TransportStreamableHTTP,
+				ToolName:   "echo",
+				Arguments:  json.RawMessage(`{}`),
+				HTTPClient: srv.Client(),
+				Timeout:    2 * time.Second,
+			})
+			srv.Close()
+			if err != nil {
+				t.Fatalf("CallTool returned cleanup error: %v", err)
+			}
+			if res.Text != "kept" {
+				t.Errorf("Text=%q, want kept", res.Text)
+			}
+			if got := atomic.LoadInt32(&deleteCount); got != 1 {
+				t.Errorf("DELETE count=%d, want 1", got)
+			}
+		})
+	}
+}
+
+func TestCallTool_StreamableHTTPDeletesAfterMalformedInitializeResponse(t *testing.T) {
+	defer allowLoopbackForTests(t)()
+	var deleteCount int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			atomic.AddInt32(&deleteCount, 1)
+			if got := r.Header.Get(sessionHeader); got != "test-session" {
+				t.Errorf("DELETE session header=%q, want test-session", got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set(sessionHeader, "test-session")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":`))
+	}))
+	defer srv.Close()
+
+	_, err := CallTool(t.Context(), CallOptions{
+		URL:        srv.URL,
+		ServerType: TransportStreamableHTTP,
+		ToolName:   "echo",
+		Arguments:  json.RawMessage(`{}`),
+		HTTPClient: srv.Client(),
+		Timeout:    2 * time.Second,
+	})
+	if err == nil || !strings.Contains(err.Error(), "parse MCP response") {
+		t.Fatalf("CallTool error=%v, want initialize response parse error", err)
+	}
+	if got := atomic.LoadInt32(&deleteCount); got != 1 {
+		t.Errorf("DELETE count=%d after malformed initialize response, want 1", got)
+	}
+}
+
+func TestCallTool_StreamableHTTPSessionTerminationDoesNotFollowRedirect(t *testing.T) {
+	defer allowLoopbackForTests(t)()
+
+	for _, status := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var sourceDeleteCount int32
+			var targetDeleteCount int32
+			redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					atomic.AddInt32(&targetDeleteCount, 1)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer redirectTarget.Close()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					atomic.AddInt32(&sourceDeleteCount, 1)
+					w.Header().Set("Location", redirectTarget.URL)
+					w.WriteHeader(status)
+					return
+				}
+				body, _ := io.ReadAll(r.Body)
+				var req jsonRPCRequest
+				_ = json.Unmarshal(body, &req)
+				w.Header().Set("Content-Type", "application/json")
+				switch req.Method {
+				case "initialize":
+					w.Header().Set(sessionHeader, "test-session")
+					_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":0,"result":{}}`))
+				case "tools/call":
+					_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"kept"}]}}`))
+				default:
+					w.WriteHeader(http.StatusAccepted)
+				}
+			}))
+			defer srv.Close()
+
+			res, err := CallTool(t.Context(), CallOptions{
+				URL:        srv.URL,
+				ServerType: TransportStreamableHTTP,
+				ToolName:   "echo",
+				Arguments:  json.RawMessage(`{}`),
+				HTTPClient: srv.Client(),
+				Timeout:    2 * time.Second,
+			})
+			if err != nil {
+				t.Fatalf("CallTool returned cleanup error: %v", err)
+			}
+			if res.Text != "kept" {
+				t.Errorf("Text=%q, want kept", res.Text)
+			}
+			if got := atomic.LoadInt32(&sourceDeleteCount); got != 1 {
+				t.Errorf("source DELETE count=%d, want 1", got)
+			}
+			if got := atomic.LoadInt32(&targetDeleteCount); got != 0 {
+				t.Errorf("redirect target DELETE count=%d, want 0", got)
+			}
+		})
+	}
+}
+
+func TestCallTool_StreamableHTTPDeletesAfterCallerCancellation(t *testing.T) {
+	defer allowLoopbackForTests(t)()
+	var deleteCount int32
+	callStarted := make(chan struct{}, 1)
+	deleteStarted := make(chan struct{}, 1)
+	deleteStopped := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			atomic.AddInt32(&deleteCount, 1)
+			deleteStarted <- struct{}{}
+			<-r.Context().Done()
+			deleteStopped <- struct{}{}
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var req jsonRPCRequest
+		_ = json.Unmarshal(body, &req)
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "initialize":
+			w.Header().Set(sessionHeader, "test-session")
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":0,"result":{}}`))
+		case "tools/call":
+			callStarted <- struct{}{}
+			<-r.Context().Done()
+		default:
+			w.WriteHeader(http.StatusAccepted)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := CallTool(ctx, CallOptions{
+			URL:        srv.URL,
+			ServerType: TransportStreamableHTTP,
+			ToolName:   "echo",
+			Arguments:  json.RawMessage(`{}`),
+			HTTPClient: srv.Client(),
+			Timeout:    250 * time.Millisecond,
+		})
+		errCh <- err
+	}()
+
+	select {
+	case <-callStarted:
+		cancel()
+	case <-time.After(2 * time.Second):
+		t.Fatal("tools/call did not start")
+	}
+	select {
+	case <-deleteStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("session DELETE did not start after caller cancellation")
+	}
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("CallTool error=nil after caller cancellation")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("CallTool error=%v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("CallTool did not return within the session cleanup budget")
+	}
+	select {
+	case <-deleteStopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("session DELETE context was not canceled at the cleanup deadline")
+	}
+	if got := atomic.LoadInt32(&deleteCount); got != 1 {
+		t.Errorf("DELETE count=%d after cancellation, want 1", got)
+	}
+}
+
+func TestCallTool_StreamableHTTPWithoutSessionIDSkipsDelete(t *testing.T) {
+	defer allowLoopbackForTests(t)()
+	var deleteCount int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			atomic.AddInt32(&deleteCount, 1)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var req jsonRPCRequest
+		_ = json.Unmarshal(body, &req)
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "initialize":
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":0,"result":{}}`))
+		case "tools/call":
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"ok"}]}}`))
+		default:
+			w.WriteHeader(http.StatusAccepted)
+		}
+	}))
+	defer srv.Close()
+
+	res, err := CallTool(t.Context(), CallOptions{
+		URL:        srv.URL,
+		ServerType: TransportStreamableHTTP,
+		ToolName:   "echo",
+		Arguments:  json.RawMessage(`{}`),
+		HTTPClient: srv.Client(),
+		Timeout:    2 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if res.Text != "ok" {
+		t.Errorf("Text=%q, want ok", res.Text)
+	}
+	if got := atomic.LoadInt32(&deleteCount); got != 0 {
+		t.Errorf("DELETE count=%d without session id, want 0", got)
 	}
 }
 
