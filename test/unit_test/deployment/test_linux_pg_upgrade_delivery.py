@@ -54,6 +54,8 @@ def test_upgrade_has_data_and_rollback_gates() -> None:
     assert "docker volume rm" not in script
     assert "is already installed and healthy; no upgrade is required" in script
     assert "Target ${RELEASE_VERSION} is older than installed" in script
+    assert 'SANDBOX_LOGS=$(sudo docker logs "${SANDBOX_CONTAINER}" 2>&1)' in script
+    assert 'docker logs "${SANDBOX_CONTAINER}" 2>&1 | grep -Eq' not in script
 
 
 def test_offline_upgrade_preflights_before_loading_images() -> None:

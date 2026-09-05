@@ -1,6 +1,6 @@
 schema_version: 1
 upstream_base: cb93883f3f8c975eecb2fed81210effeb3bdb06f
-head: 5100b7e3b2720f968b071b28d336e4dcae2e940d
+head: 490d10e40e00ffaa07c262905d2672d41e67c732
 changes:
 - id: CORE-eva-integration
   owner: fork-maintainer
@@ -99,7 +99,7 @@ changes:
   - path: admin/server/routes.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: admin/server/services.py
     committed: M
     staged: null
@@ -107,91 +107,91 @@ changes:
   - path: api/apps/__init__.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/apps/restful_apis/dataset_api.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/apps/restful_apis/file_commit_api.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/apps/restful_apis/system_api.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/apps/restful_apis/user_api.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/db/services/knowledgebase_service.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/testcases/restful_api/test_file_commit_routes_unit.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/testcases/restful_api/test_user_tenant_routes_unit.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/testcases/test_web_api/test_system_app/test_apps_init_unit.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/unit_test/api/db/services/test_dataset_access_permissions.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/components/chunk-card/index.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/index.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/dataset/dataset/dataset-table.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/dataset/dataset/index.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/dataset/dataset/parsing-status-cell.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/dataset/dataset/use-dataset-table-columns.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/dataset/knowledge-graph/index.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/dataset/sidebar/index.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/datasets/dataset-card.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/datasets/index.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/user-setting/index.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/user-setting/sidebar/index.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
 - id: CORE-observability
   owner: fork-maintainer
   reason: Audit feed and trace/health integration across API, worker, Go and web.
@@ -251,25 +251,25 @@ changes:
     for newer upstream
   paths:
   - path: api/apps/llm_app.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/apps/restful_apis/models_api.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/apps/restful_apis/provider_api.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/apps/services/models_api_service.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/db/joint_services/tenant_model_service.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: internal/entity/models/ollama.go
     committed: M
     staged: null
@@ -283,21 +283,21 @@ changes:
     staged: null
     unstaged: null
   - path: test/unit_test/api/apps/services/test_models_api_service_list_tenant_added_models.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/unit_test/api/db/joint_services/test_tenant_model_service_max_tokens.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/unit_test/rag/llm/test_chat_model_thinking_policy.py
     committed: M
     staged: null
     unstaged: null
   - path: web/src/pages/user-setting/setting-model/components/system-setting.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
 - id: CORE-persistence
   owner: fork-maintainer
   reason: Central registration of extension tables alongside upstream models and local
@@ -416,7 +416,7 @@ changes:
   - path: api/apps/restful_apis/connector_api.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/db/services/connector_service.py
     committed: M
     staged: null
@@ -464,11 +464,11 @@ changes:
   - path: test/testcases/restful_api/test_connector_routes_unit.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/testcases/test_web_api/test_connector_app/test_connector_routes_unit.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/unit_test/rag/test_sync_data_source.py
     committed: M
     staged: null
@@ -501,13 +501,13 @@ changes:
     staged: null
     unstaged: null
   - path: api/apps/restful_apis/chat_channel_api.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/apps/restful_apis/document_api.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/apps/restful_apis/search_api.py
     committed: M
     staged: null
@@ -515,7 +515,7 @@ changes:
   - path: api/apps/services/dataset_api_service.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/db/services/file_service.py
     committed: M
     staged: null
@@ -523,7 +523,7 @@ changes:
   - path: api/utils/api_utils.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/utils/file_utils.py
     committed: M
     staged: null
@@ -553,13 +553,13 @@ changes:
     staged: null
     unstaged: null
   - path: web/src/pages/user-setting/chat-channel/hooks.ts
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/services/chat-channel-service.ts
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
 - id: CORE-deployment
   owner: fork-maintainer
   reason: Own release/install/upgrade, ASR/sandbox packaging and startup composition;
@@ -591,7 +591,7 @@ changes:
   - path: conf/system_settings.json
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: docker/.env
     committed: M
     staged: null
@@ -863,7 +863,7 @@ changes:
   - path: web/src/layouts/components/global-navbar.tsx
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/layouts/components/header.tsx
     committed: M
     staged: null
@@ -1135,7 +1135,7 @@ changes:
   - path: web/src/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/components/chunk-result-bar/index.tsx
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/dataflow-result/chunker.tsx
     committed: M
     staged: null
@@ -1203,7 +1203,7 @@ changes:
   - path: web/src/pages/dataset/dataset-setting/index.tsx
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/dataset/dataset-setting/utils.ts
     committed: M
     staged: null
@@ -1311,7 +1311,7 @@ changes:
   - path: web/src/pages/user-setting/data-source/data-source-detail-page/index.tsx
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/user-setting/data-source/data-source-detail-page/log-table.tsx
     committed: M
     staged: null
@@ -1335,7 +1335,7 @@ changes:
   - path: web/src/pages/user-setting/setting-model/index.tsx
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/user-setting/setting-team/hooks.ts
     committed: M
     staged: null
@@ -1343,7 +1343,7 @@ changes:
   - path: web/src/routes.tsx
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/services/admin-service.ts
     committed: M
     staged: null
@@ -1375,7 +1375,7 @@ changes:
   - path: web/src/utils/api.ts
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/utils/chat.ts
     committed: M
     staged: null
@@ -1436,7 +1436,7 @@ changes:
   - path: AGENTS.md
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: docs/release_notes.md
     committed: M
     staged: null
@@ -1532,7 +1532,7 @@ changes:
   - path: test/unit_test/api/apps/services/test_delete_datasets.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/unit_test/rag/conftest.py
     committed: M
     staged: null
