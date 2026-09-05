@@ -11,10 +11,12 @@ import { useRenameDataset } from './use-rename-dataset';
 
 export type DatasetCardProps = {
   dataset: IDataset;
+  readOnly?: boolean;
 } & Pick<ReturnType<typeof useRenameDataset>, 'showDatasetRenameModal'>;
 
 export function DatasetCard({
   dataset,
+  readOnly = false,
   showDatasetRenameModal,
 }: DatasetCardProps) {
   const { navigateToDataset } = useNavigatePage();
@@ -26,13 +28,16 @@ export function DatasetCard({
         description: `${dataset.document_count} ${t('knowledgeDetails.files')}`,
       }}
       moreDropdown={
-        <DatasetDropdown
-          showDatasetRenameModal={showDatasetRenameModal}
-          dataset={dataset}
-        >
-          <MoreButton></MoreButton>
-        </DatasetDropdown>
+        readOnly ? undefined : (
+          <DatasetDropdown
+            showDatasetRenameModal={showDatasetRenameModal}
+            dataset={dataset}
+          >
+            <MoreButton data-testid={`dataset-actions-${dataset.id}`} />
+          </DatasetDropdown>
+        )
       }
+      testId={`dataset-card-${dataset.id}`}
       sharedBadge={<SharedBadge>{dataset.nickname}</SharedBadge>}
       onClick={navigateToDataset(dataset.id)}
     />

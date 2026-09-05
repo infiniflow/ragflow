@@ -18,6 +18,8 @@ import types
 import warnings
 from types import SimpleNamespace
 
+import pytest
+
 # xgboost imports pkg_resources and emits a deprecation warning that is promoted
 # to error in our pytest configuration; ignore it for this unit test module.
 warnings.filterwarnings(
@@ -67,6 +69,7 @@ from api.db import TenantPermission
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.access_group_service import AccessGroupService
+from api.db.services.managed_resource_service import ManagedResourceService
 from common.constants import StatusEnum
 
 
@@ -78,12 +81,17 @@ def _unwrapped_doc_accessible():
     return DocumentService.accessible.__func__.__wrapped__
 
 
-def _legacy_dataset_access(monkeypatch):
+@pytest.fixture(autouse=True)
+def _regular_user(monkeypatch):
+    monkeypatch.setattr(ManagedResourceService, "user_is_superuser", staticmethod(lambda _user_id: False))
+
+
+def _no_dataset_grants(monkeypatch):
     monkeypatch.setattr(AccessGroupService, "allowed_dataset_ids", classmethod(lambda cls, user_id: None))
 
 
 def test_private_dataset_is_not_accessible_to_other_tenant_member(monkeypatch):
-    _legacy_dataset_access(monkeypatch)
+    _no_dataset_grants(monkeypatch)
     kb = SimpleNamespace(
         id="kb-private",
         tenant_id="owner-1",
@@ -100,8 +108,8 @@ def test_private_dataset_is_not_accessible_to_other_tenant_member(monkeypatch):
     assert _unwrapped_kb_accessible()(KnowledgebaseService, "kb-private", "member-2") is False
 
 
-def test_team_dataset_is_accessible_to_joined_tenant_member(monkeypatch):
-    _legacy_dataset_access(monkeypatch)
+def test_team_dataset_requires_explicit_assignment(monkeypatch):
+    _no_dataset_grants(monkeypatch)
     kb = SimpleNamespace(
         id="kb-team",
         tenant_id="owner-1",
@@ -115,11 +123,11 @@ def test_team_dataset_is_accessible_to_joined_tenant_member(monkeypatch):
         lambda _user_id: [{"tenant_id": "owner-1"}],
     )
 
-    assert _unwrapped_kb_accessible()(KnowledgebaseService, "kb-team", "member-2") is True
+    assert _unwrapped_kb_accessible()(KnowledgebaseService, "kb-team", "member-2") is False
 
 
 def test_document_access_respects_dataset_permission(monkeypatch):
-    _legacy_dataset_access(monkeypatch)
+    _no_dataset_grants(monkeypatch)
     doc = SimpleNamespace(id="doc-1", kb_id="kb-private")
 
     monkeypatch.setattr(DocumentService, "get_by_id", classmethod(lambda cls, doc_id: (True, doc)))
@@ -151,3 +159,97 @@ def test_explicit_group_grant_allows_private_dataset(monkeypatch):
     monkeypatch.setattr(AccessGroupService, "allowed_dataset_ids", classmethod(lambda cls, user_id: {"kb-private"}))
 
     assert _unwrapped_kb_accessible()(KnowledgebaseService, "kb-private", "member-2") is True
+
+
+def test_dataset_owner_still_requires_explicit_assignment(monkeypatch):
+    _no_dataset_grants(monkeypatch)
+    kb = SimpleNamespace(id="kb-owned", tenant_id="owner-1", permission=TenantPermission.ME.value, status=StatusEnum.VALID.value)
+    monkeypatch.setattr(KnowledgebaseService, "get_by_id", classmethod(lambda cls, kb_id: (True, kb)))
+
+    assert _unwrapped_kb_accessible()(KnowledgebaseService, "kb-owned", "owner-1") is False
+
+
+def test_superuser_can_access_any_valid_dataset(monkeypatch):
+    kb = SimpleNamespace(id="kb-private", tenant_id="owner-1", permission=TenantPermission.ME.value, status=StatusEnum.VALID.value)
+    monkeypatch.setattr(KnowledgebaseService, "get_by_id", classmethod(lambda cls, kb_id: (True, kb)))
+    monkeypatch.setattr(ManagedResourceService, "user_is_superuser", staticmethod(lambda _user_id: True))
+
+    assert _unwrapped_kb_accessible()(KnowledgebaseService, "kb-private", "admin-1") is True
+
+
+def test_explicit_grant_does_not_expose_invalid_dataset(monkeypatch):
+    kb = SimpleNamespace(
+        id="kb-deleted",
+        tenant_id="owner-1",
+        permission=TenantPermission.ME.value,
+        status=StatusEnum.INVALID.value,
+    )
+    monkeypatch.setattr(
+        KnowledgebaseService,
+        "get_by_id",
+        classmethod(lambda cls, kb_id: (True, kb)),
+    )
+    monkeypatch.setattr(
+        AccessGroupService,
+        "allowed_dataset_ids",
+        classmethod(lambda cls, user_id: {"kb-deleted"}),
+    )
+
+    assert (
+        _unwrapped_kb_accessible()(
+            KnowledgebaseService,
+            "kb-deleted",
+            "member-2",
+        )
+        is False
+    )
+
+
+def test_superuser_cannot_access_invalid_dataset(monkeypatch):
+    kb = SimpleNamespace(
+        id="kb-deleted",
+        tenant_id="owner-1",
+        permission=TenantPermission.ME.value,
+        status=StatusEnum.INVALID.value,
+    )
+    monkeypatch.setattr(
+        KnowledgebaseService,
+        "get_by_id",
+        classmethod(lambda cls, kb_id: (True, kb)),
+    )
+    monkeypatch.setattr(
+        ManagedResourceService,
+        "user_is_superuser",
+        staticmethod(lambda _user_id: True),
+    )
+
+    assert (
+        _unwrapped_kb_accessible()(
+            KnowledgebaseService,
+            "kb-deleted",
+            "admin-1",
+        )
+        is False
+    )
+
+
+def test_missing_dataset_is_fail_closed_for_superuser(monkeypatch):
+    monkeypatch.setattr(
+        KnowledgebaseService,
+        "get_by_id",
+        classmethod(lambda cls, kb_id: (False, None)),
+    )
+    monkeypatch.setattr(
+        ManagedResourceService,
+        "user_is_superuser",
+        staticmethod(lambda _user_id: True),
+    )
+
+    assert (
+        _unwrapped_kb_accessible()(
+            KnowledgebaseService,
+            "kb-missing",
+            "admin-1",
+        )
+        is False
+    )

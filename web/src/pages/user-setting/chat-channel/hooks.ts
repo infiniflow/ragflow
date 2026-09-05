@@ -2,10 +2,10 @@ import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import chatChannelService, {
   deleteChatChannel,
+  fetchChatChannelDialogs,
   fetchChatChannelDetail,
   updateChatChannel,
 } from '@/services/chat-channel-service';
-import chatService from '@/services/next-chat-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { useCallback, useMemo, useState } from 'react';
@@ -192,11 +192,8 @@ export const useChatChannelDialogList = () => {
     queryKey: ChatChannelKeys.dialogs(),
     initialData: [],
     queryFn: async () => {
-      const { data } = await chatService.listChats(
-        { params: { page_size: 100, page: 1 }, data: {} },
-        true,
-      );
-      return data?.data?.chats ?? [];
+      const { data } = await fetchChatChannelDialogs();
+      return data?.data ?? [];
     },
   });
   return { dialogs: data, isFetching };

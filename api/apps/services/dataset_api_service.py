@@ -130,11 +130,17 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
         if not delete_all:
             return True, {"success_count": 0}
         else:
-            ids = [kb.id for kb in KnowledgebaseService.query(tenant_id=tenant_id)]
+            from api.db.services.managed_resource_service import ManagedResourceService
+
+            owner_id = ManagedResourceService.owner_id(tenant_id)
+            ids = [kb.id for kb in KnowledgebaseService.query(tenant_id=owner_id)]
 
     error_kb_ids = []
     for kb_id in ids:
-        kb = KnowledgebaseService.get_or_none(id=kb_id, tenant_id=tenant_id)
+        if not KnowledgebaseService.accessible(kb_id, tenant_id):
+            error_kb_ids.append(kb_id)
+            continue
+        kb = KnowledgebaseService.get_or_none(id=kb_id)
         if kb is None:
             error_kb_ids.append(kb_id)
             continue
@@ -146,7 +152,7 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
     success_count = 0
     for kb_id, kb in kb_id_instance_pairs:
         for doc in DocumentService.query(kb_id=kb_id):
-            if not DocumentService.remove_document(doc, tenant_id):
+            if not DocumentService.remove_document(doc, kb.tenant_id):
                 errors.append(f"Remove document '{doc.id}' error for dataset '{kb_id}'")
                 continue
             f2d = File2DocumentService.get_by_document_id(doc.id)
@@ -256,9 +262,11 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     if not req:
         return False, "No properties were modified"
 
-    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
-    if kb is None:
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+    kb = KnowledgebaseService.get_or_none(id=dataset_id)
+    if kb is None:
+        return False, "Invalid Dataset ID"
 
     # Extract ext field for additional parameters
     ext_fields = req.pop("ext", {})
@@ -328,14 +336,14 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         req["pipeline_id"] = ""
 
     if "name" in req and req["name"].lower() != kb.name.lower():
-        exists = KnowledgebaseService.get_or_none(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)
+        exists = KnowledgebaseService.get_or_none(name=req["name"], tenant_id=kb.tenant_id, status=StatusEnum.VALID.value)
         if exists:
             return False, f"Dataset name '{req['name']}' already exists"
 
     if "embd_id" in req:
         if not req["embd_id"]:
             req["embd_id"] = kb.embd_id
-        ok, err = verify_embedding_availability(req["embd_id"], tenant_id)
+        ok, err = verify_embedding_availability(req["embd_id"], kb.tenant_id)
         if not ok:
             return False, err
 
@@ -363,7 +371,7 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         return False, "Dataset updated failed"
 
     # Link connectors to the dataset
-    errors = Connector2KbService.link_connectors(kb.id, [conn for conn in connectors], tenant_id)
+    errors = Connector2KbService.link_connectors(kb.id, [conn for conn in connectors], kb.tenant_id)
     if errors:
         logging.error("Link KB errors: %s", errors)
 
@@ -660,9 +668,11 @@ def get_auto_metadata(dataset_id: str, tenant_id: str):
     :param tenant_id: tenant ID
     :return: (success, result) or (success, error_message)
     """
-    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
-    if kb is None:
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+    kb = KnowledgebaseService.get_or_none(id=dataset_id)
+    if kb is None:
+        return False, "Invalid Dataset ID"
     parser_cfg = kb.parser_config or {}
     return True, {"metadata": parser_cfg.get("metadata") or [], "built_in_metadata": parser_cfg.get("built_in_metadata") or []}
 
@@ -676,9 +686,11 @@ async def update_auto_metadata(dataset_id: str, tenant_id: str, cfg: dict):
     :param cfg: auto-metadata configuration
     :return: (success, result) or (success, error_message)
     """
-    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
-    if kb is None:
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+    kb = KnowledgebaseService.get_or_none(id=dataset_id)
+    if kb is None:
+        return False, "Invalid Dataset ID"
 
     parser_cfg = kb.parser_config or {}
     parser_cfg["metadata"] = cfg.get("metadata")
@@ -911,8 +923,8 @@ def run_embedding(dataset_id: str, tenant_id: str):
 
     kb_table_num_map = {}
     for doc in documents:
-        doc["tenant_id"] = tenant_id
-        DocumentService.run(tenant_id, doc, kb_table_num_map)
+        doc["tenant_id"] = kb.tenant_id
+        DocumentService.run(kb.tenant_id, doc, kb_table_num_map)
 
     return True, {"scheduled_count": len(documents)}
 
@@ -1249,7 +1261,7 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
 
     logging.info("check_embedding: dataset=%s tenant=%s embd_id=%s", dataset_id, tenant_id, embd_id)
 
-    ok, err = verify_embedding_availability(embd_id, tenant_id)
+    ok, err = verify_embedding_availability(embd_id, kb.tenant_id)
     if not ok:
         return False, err
 

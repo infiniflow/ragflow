@@ -19,7 +19,7 @@ from quart import request
 
 from api.apps import login_required
 from api.utils.api_utils import (
-    add_tenant_id_to_kwargs,
+    add_managed_resource_owner_id_to_kwargs,
     get_error_argument_result,
     get_error_data_result,
     get_result,
@@ -29,7 +29,7 @@ from api.apps.services import provider_api_service
 
 @manager.route("/providers", methods=["GET"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 def list_providers(tenant_id: str = None):
     """
     List providers.
@@ -70,7 +70,7 @@ def list_providers(tenant_id: str = None):
 
 @manager.route("/providers", methods=["PUT"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 async def add_provider(tenant_id: str = None):
     """
     Add a provider for the tenant.
@@ -160,7 +160,7 @@ def show_provider(provider_id_or_name: str):
 
 @manager.route("/providers/<provider_id_or_name>", methods=["DELETE"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 def delete_provider(tenant_id: str = None, provider_id_or_name: str = None):
     """
     Delete a provider and all its models for the tenant.
@@ -287,7 +287,7 @@ def show_provider_model(provider_id_or_name: str, model_name: str):
 
 @manager.route("/providers/<provider_id_or_name>/instances", methods=["POST"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 async def create_provider_instance(tenant_id: str = None, provider_id_or_name: str = None):
     """
     Create a provider instance.
@@ -426,7 +426,7 @@ async def verify_provider_api_key(provider_id_or_name: str = None):
 
 @manager.route("/providers/<provider_id_or_name>/instances", methods=["GET"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 def list_provider_instances(tenant_id: str = None, provider_id_or_name: str = None):
     """
     List provider instances.
@@ -470,7 +470,7 @@ def list_provider_instances(tenant_id: str = None, provider_id_or_name: str = No
 
 @manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>", methods=["GET"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 def show_provider_instance(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None):
     """
     Show a provider instance.
@@ -514,7 +514,7 @@ def show_provider_instance(tenant_id: str = None, provider_id_or_name: str = Non
 
 @manager.route("/providers/<provider_id_or_name>/instances", methods=["DELETE"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 async def drop_provider_instances(tenant_id: str = None, provider_id_or_name: str = None):
     """
     Drop provider instances.
@@ -575,7 +575,7 @@ async def drop_provider_instances(tenant_id: str = None, provider_id_or_name: st
 
 @manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models", methods=["GET"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 def list_instance_models(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None):
     """
     List models for a provider instance.
@@ -630,7 +630,7 @@ def list_instance_models(tenant_id: str = None, provider_id_or_name: str = None,
 
 @manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models", methods=["PUT"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 async def update_instance_models(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str):
     """
     Batch update model_type for models in instance.
@@ -690,7 +690,7 @@ async def update_instance_models(tenant_id: str, provider_id_or_name: str, insta
 
 @manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models", methods=["POST"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 async def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str):
     """
     Add a model to an instance.
@@ -763,7 +763,7 @@ async def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instan
 
 @manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models/<path:model_name>", methods=["PATCH"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 async def enable_or_disable_model(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None, model_name: str = None):
     """
     Enable or disable a model.
@@ -833,7 +833,7 @@ async def enable_or_disable_model(tenant_id: str = None, provider_id_or_name: st
 
 @manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models/<path:model_name>", methods=["POST"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 async def chat_to_model(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None, model_name: str = None):
     """
     Chat to a model.

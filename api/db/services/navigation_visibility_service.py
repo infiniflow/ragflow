@@ -20,7 +20,9 @@ from api.db.services.system_settings_service import SystemSettingsService
 
 
 NAVIGATION_VISIBILITY_SETTING = "navigation.visible_sections"
+NAVIGATION_VISIBILITY_VERSION = 2
 NAVIGATION_SECTIONS = (
+    "home",
     "dataset",
     "chat",
     "search",
@@ -30,6 +32,7 @@ NAVIGATION_SECTIONS = (
     "business_documents",
     "file_manager",
 )
+ACCESS_CONTROLLED_NAVIGATION_SECTIONS = tuple(section for section in NAVIGATION_SECTIONS if section != "home")
 
 
 def validate_visible_sections(value: object) -> list[str]:
@@ -54,6 +57,23 @@ def get_visible_sections() -> list[str]:
         return list(NAVIGATION_SECTIONS)
 
     try:
-        return validate_visible_sections(json.loads(settings[0].value))
+        stored = json.loads(settings[0].value)
+        if isinstance(stored, dict):
+            if stored.get("version") != NAVIGATION_VISIBILITY_VERSION:
+                raise ValueError("Unknown navigation visibility version")
+            return validate_visible_sections(stored.get("visible_sections"))
+
+        # Settings written before the home toggle existed implicitly kept Home
+        # visible. Preserve that behavior until the administrator saves v2.
+        return validate_visible_sections(["home", *stored])
     except (TypeError, ValueError, json.JSONDecodeError):
         return list(NAVIGATION_SECTIONS)
+
+
+def serialize_visible_sections(value: object) -> str:
+    return json.dumps(
+        {
+            "version": NAVIGATION_VISIBILITY_VERSION,
+            "visible_sections": validate_visible_sections(value),
+        }
+    )

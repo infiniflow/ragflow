@@ -329,6 +329,10 @@ const routeConfigOptions = [
         Component: () =>
           import('@/pages/user-setting/data-source/data-source-detail-page'),
       },
+      {
+        path: `${Routes.UserSetting}/*`,
+        element: <Navigate to={`${Routes.UserSetting}/profile`} replace />,
+      },
     ],
   },
   {

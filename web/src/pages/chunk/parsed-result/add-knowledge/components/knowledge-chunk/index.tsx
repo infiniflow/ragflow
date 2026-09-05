@@ -36,9 +36,12 @@ import {
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
 import { LucideArrowBigLeft } from 'lucide-react';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import styles from './index.module.less';
 
 const Chunk = () => {
+  const { data: userInfo } = useFetchUserInfo();
+  const canManage = Boolean(userInfo?.is_superuser);
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   const { removeChunk } = useDeleteChunkByIds();
   const {
@@ -233,16 +236,19 @@ const Chunk = () => {
                     available={available}
                     selectAllChunk={selectAllChunk}
                     handleSetAvailable={handleSetAvailable}
+                    readOnly={!canManage}
                   />
 
-                  <CheckboxSets
-                    className="h-8"
-                    selectAllChunk={selectAllChunk}
-                    switchChunk={handleSwitchChunk}
-                    removeChunk={handleRemoveChunk}
-                    checked={selectedChunkIds.length === data.length}
-                    selectedChunkIds={selectedChunkIds}
-                  />
+                  {canManage && (
+                    <CheckboxSets
+                      className="h-8"
+                      selectAllChunk={selectAllChunk}
+                      switchChunk={handleSwitchChunk}
+                      removeChunk={handleRemoveChunk}
+                      checked={selectedChunkIds.length === data.length}
+                      selectedChunkIds={selectedChunkIds}
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-4 flex-1 overflow-y-auto min-h-0">
@@ -260,6 +266,7 @@ const Chunk = () => {
                       selected={item.chunk_id === selectedChunkId}
                       textMode={textMode}
                       t={dataUpdatedAt}
+                      readOnly={!canManage}
                     />
                   ))}
                 </div>
@@ -280,7 +287,7 @@ const Chunk = () => {
         </CardContent>
       </Card>
 
-      {chunkUpdatingVisible && (
+      {canManage && chunkUpdatingVisible && (
         <CreatingModal
           doc_id={documentId}
           chunkId={chunkId}

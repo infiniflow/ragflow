@@ -6,6 +6,7 @@ import {
   useFetchAvailableProviders,
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IInstanceModel, IProviderInstance } from '@/interfaces/database/llm';
 import type {
   IAddProviderInstanceRequestBody,
@@ -22,7 +23,7 @@ import ProviderModal, { IViewModeOkPayload } from './modal/provider-modal';
 import SoMarkModal from './modal/somark-modal';
 import { splitProviderPayload } from './payload-utils';
 
-const ModelProviders = () => {
+const AdminModelProviders = () => {
   // Retained special modals
   const {
     bedrockAddingLoading,
@@ -404,6 +405,20 @@ const ModelProviders = () => {
       ></SoMarkModal>
     </div>
   );
+};
+
+const ModelProviders = () => {
+  const { data: userInfo } = useFetchUserInfo();
+
+  if (!userInfo?.is_superuser) {
+    return (
+      <div className="flex w-full border-[0.5px] border-border-button rounded-lg px-5 overflow-auto">
+        <SystemSetting chatOnly />
+      </div>
+    );
+  }
+
+  return <AdminModelProviders />;
 };
 
 export default ModelProviders;

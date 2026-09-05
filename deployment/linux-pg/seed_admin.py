@@ -18,6 +18,8 @@ def main() -> None:
     from api.db.db_models import DB
     from api.db.init_data import init_superuser
     from api.db.services import UserService
+    from api.db.services.managed_resource_service import MANAGED_RESOURCE_OWNER_SETTING
+    from api.db.services.system_settings_service import SystemSettingsService
 
     email = required("BOOTSTRAP_ADMIN_EMAIL")
     password = required("BOOTSTRAP_ADMIN_PASSWORD")
@@ -30,6 +32,16 @@ def main() -> None:
             raise RuntimeError(f"Expected one bootstrap user for {email}, found {len(users)}")
         if not users[0].is_superuser:
             raise RuntimeError("Bootstrap user exists but is not a superuser")
+        owner_settings = list(SystemSettingsService.get_by_name(MANAGED_RESOURCE_OWNER_SETTING))
+        if owner_settings:
+            SystemSettingsService.update_by_name(MANAGED_RESOURCE_OWNER_SETTING, {"value": email})
+        else:
+            SystemSettingsService.save(
+                name=MANAGED_RESOURCE_OWNER_SETTING,
+                source="admin",
+                data_type="string",
+                value=email,
+            )
 
     print(f"bootstrap_admin={email}")
     print("bootstrap_superuser=true")

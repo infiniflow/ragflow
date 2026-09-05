@@ -46,7 +46,6 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.canvas_service import UserCanvasService
-from api.common.check_team_permission import check_kb_team_permission
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.utils.api_utils import (
     construct_json_result,
@@ -55,6 +54,7 @@ from api.utils.api_utils import (
     get_result,
     get_json_result,
     server_error_response,
+    add_managed_resource_owner_id_to_kwargs,
     add_tenant_id_to_kwargs,
     get_request_json,
     get_error_argument_result,
@@ -106,7 +106,7 @@ def _normalize_parser_config_compilation_template_group_ids(parser_config) -> bo
 
 @manager.route("/documents/upload", methods=["POST"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
+@add_managed_resource_owner_id_to_kwargs
 async def upload_info(tenant_id: str):
     """
     Upload a document and get its parsed info.
@@ -222,7 +222,7 @@ async def update_document(tenant_id, dataset_id, document_id):
     req = await get_request_json()
 
     # Verify ownership and existence of dataset and document
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message="You don't own the dataset.")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
@@ -274,17 +274,17 @@ async def update_document(tenant_id, dataset_id, document_id):
 
     # pipeline_id provided - reset document for reparse
     if update_doc_req.pipeline_id:
-        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=update_doc_req.pipeline_id):
+        if error := reset_document_for_reparse(doc, kb.tenant_id, pipeline_id=update_doc_req.pipeline_id):
             return error
     # chunk method provided - the update method will check if it's different with existing one
     elif update_doc_req.chunk_method:
-        if error := update_chunk_method(req, doc, tenant_id):
+        if error := update_chunk_method(req, doc, kb.tenant_id):
             return error
         if parser_config_template_group_changed and doc.parser_id.lower() == req["chunk_method"].lower():
-            if error := reset_document_for_reparse(doc, tenant_id):
+            if error := reset_document_for_reparse(doc, kb.tenant_id):
                 return error
     elif parser_config_template_group_changed:
-        if error := reset_document_for_reparse(doc, tenant_id):
+        if error := reset_document_for_reparse(doc, kb.tenant_id):
             return error
 
     if "enabled" in req:  # already checked in UpdateDocumentReq - it's int if present
@@ -500,15 +500,15 @@ async def upload_document(dataset_id, tenant_id):
         logging.error(f"Can't find the dataset with ID {dataset_id}!")
         return get_error_data_result(message=f"Can't find the dataset with ID {dataset_id}!", code=RetCode.DATA_ERROR)
 
-    if not check_kb_team_permission(kb, tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         logging.error("No authorization.")
         return get_error_data_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     if upload_type == "web":
-        return await _upload_web_document(dataset_id, kb, tenant_id)
+        return await _upload_web_document(dataset_id, kb, kb.tenant_id)
 
     if upload_type == "empty":
-        return await _upload_empty_document(dataset_id, kb, tenant_id)
+        return await _upload_empty_document(dataset_id, kb, kb.tenant_id)
 
     if upload_type != "local":
         return get_error_data_result(
@@ -516,7 +516,7 @@ async def upload_document(dataset_id, tenant_id):
             code=RetCode.ARGUMENT_ERROR,
         )
 
-    return await _upload_local_documents(kb, tenant_id)
+    return await _upload_local_documents(kb, kb.tenant_id)
 
 
 async def _upload_web_document(dataset_id, kb, tenant_id):
@@ -1179,7 +1179,10 @@ async def delete_documents(tenant_id, dataset_id):
             doc_ids = unique_doc_ids
 
         # Delete documents using existing FileService.delete_docs
-        errors = await thread_pool_exec(FileService.delete_docs, doc_ids, tenant_id)
+        e, kb = KnowledgebaseService.get_by_id(dataset_id)
+        if not e:
+            return get_error_data_result(message="Can't find this dataset!")
+        errors = await thread_pool_exec(FileService.delete_docs, doc_ids, kb.tenant_id)
 
         if errors:
             return get_error_data_result(message=str(errors))
@@ -1232,7 +1235,7 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
         description: Document updated successfully.
     """
     # Verify ownership and existence of dataset
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message="You don't own the dataset.")
 
     # Verify document exists in the dataset
@@ -1545,6 +1548,10 @@ async def parse_documents(tenant_id, dataset_id):
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    e, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not e:
+        return get_error_data_result(message="Can't find this dataset!")
+    dataset_tenant_id = kb.tenant_id
 
     req = await get_request_json()
     if req is None:
@@ -1597,11 +1604,11 @@ async def parse_documents(tenant_id, dataset_id):
 
                 DocumentService.update_by_id(doc_id, info)
                 TaskService.filter_delete([Task.doc_id == doc_id])
-                if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
-                    settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc.kb_id)
+                if settings.docStoreConn.index_exist(search.index_name(dataset_tenant_id), doc.kb_id):
+                    settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(dataset_tenant_id), doc.kb_id)
 
                 doc_dict = doc.to_dict()
-                DocumentService.run(tenant_id, doc_dict, kb_table_num_map)
+                DocumentService.run(dataset_tenant_id, doc_dict, kb_table_num_map)
                 success_count += 1
 
             result = {"success_count": success_count}
@@ -1658,6 +1665,10 @@ async def stop_parse_documents(tenant_id, dataset_id):
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    e, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not e:
+        return get_error_data_result(message="Can't find this dataset!")
+    dataset_tenant_id = kb.tenant_id
 
     req = await get_request_json()
     if req is None:
@@ -1715,7 +1726,7 @@ async def stop_parse_documents(tenant_id, dataset_id):
                     },
                 )
                 logging.debug("Appended cancellation marker to progress_msg on stop-parse for doc %s", doc_id)
-                index_name = search.index_name(tenant_id)
+                index_name = search.index_name(dataset_tenant_id)
                 if settings.docStoreConn.index_exist(index_name, doc.kb_id):
                     settings.docStoreConn.delete({"doc_id": doc.id}, index_name, doc.kb_id)
                 success_count += 1
@@ -1979,7 +1990,7 @@ async def batch_update_document_status(tenant_id, dataset_id):
         return get_error_argument_result(message=f'"Status" must be either 0 or 1:{status}!')
 
     # Verify dataset ownership
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message="You don't own the dataset.")
 
     e, kb = KnowledgebaseService.get_by_id(dataset_id)

@@ -15,6 +15,7 @@ import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
 import { useFetchKnowledgeGraph } from '@/hooks/use-knowledge-request';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
@@ -31,6 +32,7 @@ export function SideBar({ dataset: data }: PropType) {
   const pathName = useSecondPathName();
   const { id } = useParams();
   const { data: routerData } = useFetchKnowledgeGraph();
+  const { data: userInfo } = useFetchUserInfo();
   const { t } = useTranslation();
 
   const items = useMemo(() => {
@@ -65,8 +67,10 @@ export function SideBar({ dataset: data }: PropType) {
       });
     }
 
-    return list;
-  }, [t, routerData]);
+    return userInfo?.is_superuser
+      ? list
+      : list.filter((item) => item.key !== Routes.DataSetSetting);
+  }, [t, routerData, userInfo?.is_superuser]);
 
   return (
     <aside className="flex flex-col w-64 relative">
@@ -117,6 +121,7 @@ export function SideBar({ dataset: data }: PropType) {
                 <Button
                   asLink
                   block
+                  data-testid={`dataset-nav-${item.key.slice(1)}`}
                   variant="ghost"
                   className={cn(
                     'justify-start gap-2.5 px-3 relative h-10 text-base',

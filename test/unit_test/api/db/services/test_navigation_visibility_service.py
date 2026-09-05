@@ -7,7 +7,8 @@ from api.db.services import navigation_visibility_service as service
 
 
 def test_validate_visible_sections_returns_canonical_order():
-    assert service.validate_visible_sections(["file_manager", "chat"]) == [
+    assert service.validate_visible_sections(["file_manager", "home", "chat"]) == [
+        "home",
         "chat",
         "file_manager",
     ]
@@ -22,14 +23,31 @@ def test_validate_visible_sections_rejects_invalid_values(value):
         service.validate_visible_sections(value)
 
 
-def test_get_visible_sections_reads_persisted_value(monkeypatch):
+def test_get_visible_sections_reads_versioned_persisted_value(monkeypatch):
+    monkeypatch.setattr(
+        service.SystemSettingsService,
+        "get_by_name",
+        lambda _name: [SimpleNamespace(value=json.dumps({"version": 2, "visible_sections": ["memory", "dataset"]}))],
+    )
+
+    assert service.get_visible_sections() == ["dataset", "memory"]
+
+
+def test_get_visible_sections_keeps_home_for_legacy_setting(monkeypatch):
     monkeypatch.setattr(
         service.SystemSettingsService,
         "get_by_name",
         lambda _name: [SimpleNamespace(value=json.dumps(["memory", "dataset"]))],
     )
 
-    assert service.get_visible_sections() == ["dataset", "memory"]
+    assert service.get_visible_sections() == ["home", "dataset", "memory"]
+
+
+def test_serialize_visible_sections_records_current_version():
+    assert json.loads(service.serialize_visible_sections(["chat"])) == {
+        "version": 2,
+        "visible_sections": ["chat"],
+    }
 
 
 @pytest.mark.parametrize("records", [[], [SimpleNamespace(value="not-json")]])

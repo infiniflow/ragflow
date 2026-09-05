@@ -88,7 +88,13 @@
       "name": "navigation.visible_sections",
       "source": "admin",
       "data_type": "json",
-      "value": "[\"dataset\", \"chat\", \"search\", \"agent\", \"memory\", \"catalog\", \"business_documents\", \"file_manager\"]"
+      "value": "{\"version\": 2, \"visible_sections\": [\"home\", \"dataset\", \"chat\", \"search\", \"agent\", \"memory\", \"catalog\", \"business_documents\", \"file_manager\"]}"
+    },
+    {
+      "name": "managed_resources.owner_email",
+      "source": "admin",
+      "data_type": "string",
+      "value": "admin@ragflow.io"
     },
     {
       "name": "business_documents.eva_connector_id",

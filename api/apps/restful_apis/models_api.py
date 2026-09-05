@@ -17,8 +17,9 @@ import logging
 
 from quart import request
 
-from api.apps import login_required
+from api.apps import current_user, login_required
 from api.apps.services import models_api_service
+from api.db.services.managed_resource_service import ManagedResourceService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     get_error_argument_result,
@@ -71,7 +72,8 @@ def get_added_models(tenant_id: str):
     """
     model_type_filter = request.args.get("type")
     try:
-        success, result = models_api_service.list_tenant_added_models(tenant_id, model_type_filter)
+        catalog_tenant_id = ManagedResourceService.owner_id(tenant_id)
+        success, result = models_api_service.list_tenant_added_models(catalog_tenant_id, model_type_filter)
         if success:
             return get_result(data=result)
         else:
@@ -124,7 +126,9 @@ def get_default_models(tenant_id: str):
                         type: boolean
     """
     try:
-        success, result = models_api_service.list_tenant_default_models(tenant_id)
+        catalog_tenant_id = ManagedResourceService.owner_id(tenant_id)
+        default_tenant_id = catalog_tenant_id if getattr(current_user, "is_superuser", False) else tenant_id
+        success, result = models_api_service.list_managed_default_models(default_tenant_id, catalog_tenant_id)
         if success:
             return get_result(data=result)
         else:
@@ -188,7 +192,16 @@ async def set_default_models(tenant_id: str):
     model_type = data["model_type"]
 
     try:
-        success, msg = models_api_service.set_tenant_default_models(tenant_id, model_provider, model_instance, model_name, model_type)
+        catalog_tenant_id = ManagedResourceService.owner_id(tenant_id)
+        success, msg = models_api_service.set_managed_default_model(
+            tenant_id,
+            catalog_tenant_id,
+            bool(getattr(current_user, "is_superuser", False)),
+            model_provider,
+            model_instance,
+            model_name,
+            model_type,
+        )
         if success:
             logging.info(f"success: {success}, msg: {msg}")
             return get_result(message=msg)

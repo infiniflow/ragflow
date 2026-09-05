@@ -227,7 +227,7 @@ def get_config():
     if user:
         policy = AccessGroupService.effective_policy(user.id)
         if policy is not None and not getattr(user, "is_superuser", False):
-            visible_sections = [section for section in visible_sections if section in policy["sections"]]
+            visible_sections = [section for section in visible_sections if section == "home" or section in policy["sections"]]
 
     return get_json_result(
         data={

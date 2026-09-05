@@ -25,6 +25,7 @@ import { UseRenameDocumentShowType } from './use-rename-document';
 
 type UseDatasetTableColumnsType = UseChangeDocumentParserShowType &
   UseRenameDocumentShowType & {
+    readOnly?: boolean;
     showLog: (record: IDocumentInfo) => void;
     showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
   };
@@ -34,6 +35,7 @@ export function useDatasetTableColumns({
   showRenameModal,
   showManageMetadataModal,
   showLog,
+  readOnly = false,
 }: UseDatasetTableColumnsType) {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
@@ -169,6 +171,7 @@ export function useDatasetTableColumns({
         const id = row.original.id;
         return (
           <Switch
+            disabled={readOnly}
             checked={row.getValue('status') === '1'}
             onCheckedChange={(e) => {
               setDocumentStatus({
@@ -195,6 +198,7 @@ export function useDatasetTableColumns({
         const length = Object.keys(row.getValue('meta_fields') || {}).length;
         return (
           <Button
+            disabled={readOnly}
             variant="static"
             size="auto"
             onClick={() => {
@@ -242,6 +246,7 @@ export function useDatasetTableColumns({
         return (
           <ParseDropdownButton
             record={row.original}
+            readOnly={readOnly}
             showChangeParserModal={showChangeParserModal}
           />
         );
@@ -254,6 +259,7 @@ export function useDatasetTableColumns({
         return (
           <ParsingStatusCell
             record={row.original}
+            readOnly={readOnly}
             showChangeParserModal={showChangeParserModal}
             showLog={showLog}
           />
@@ -277,5 +283,7 @@ export function useDatasetTableColumns({
     },
   ];
 
-  return columns;
+  return readOnly
+    ? columns.filter((column) => column.id !== 'select' && column.id !== 'actions')
+    : columns;
 }

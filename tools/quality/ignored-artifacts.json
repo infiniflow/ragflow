@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-05T16:14:04.838864+00:00",
+  "scopes": [
+    "deployment/linux-pg",
+    "agent/business_requirements",
+    "services/asr-online-service"
+  ],
+  "scope_policy": "Bounded scan of extension/release roots, untracked ignored files only. Not a global ignored-file inventory or runtime-data backup. Tracked files in ignored directories remain in file-inventory.json.",
+  "excluded_directories": [
+    "deployment/linux-pg/__pycache__",
+    "services/asr-online-service/.pytest_cache",
+    "services/asr-online-service/.venv",
+    "services/asr-online-service/src/asr_service/__pycache__",
+    "services/asr-online-service/src/asr_service/api/__pycache__",
+    "services/asr-online-service/src/asr_service/http/__pycache__",
+    "services/asr-online-service/src/asr_service/jobs/__pycache__",
+    "services/asr-online-service/src/asr_service/models/__pycache__",
+    "services/asr-online-service/src/asr_service/models/engines/__pycache__",
+    "services/asr-online-service/src/asr_service/pipeline/__pycache__",
+    "services/asr-online-service/src/asr_service/tools/__pycache__",
+    "services/asr-online-service/tests/__pycache__",
+    "services/asr-online-service/tests/smoke/__pycache__",
+    "services/asr-online-service/uploads"
+  ],
+  "records": [
+    {
+      "path": "agent/business_requirements/document_constructor_components.png",
+      "bytes": 114611,
+      "modified_at": "2026-08-31T14:27:20.372049+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "agent/business_requirements/document_constructor_components.puml",
+      "bytes": 2244,
+      "modified_at": "2026-08-31T14:23:13.350104+00:00",
+      "kind": "ignored_source_or_document",
+      "sha256": "4e4aee8a6fb1375527830a350aca41d8f445938fef98e159b1518746b9486baa"
+    },
+    {
+      "path": "agent/business_requirements/document_constructor_components.svg",
+      "bytes": 8822,
+      "modified_at": "2026-08-31T14:27:12.514850+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "agent/business_requirements/document_constructor_data_flow.puml",
+      "bytes": 2165,
+      "modified_at": "2026-08-31T14:26:17.933000+00:00",
+      "kind": "ignored_source_or_document",
+      "sha256": "b9d2e0f2fbde838a8dd424e8fce6e235af6695aecefb802aa7475b5e9aaa1bce"
+    },
+    {
+      "path": "agent/business_requirements/document_constructor_dfd.png",
+      "bytes": 102259,
+      "modified_at": "2026-08-31T14:26:53.430076+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "agent/business_requirements/document_constructor_dfd.svg",
+      "bytes": 8044,
+      "modified_at": "2026-08-31T14:26:44.995284+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "agent/business_requirements/document_constructor_dfd_v2.png",
+      "bytes": 126633,
+      "modified_at": "2026-08-31T13:59:16.157825+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "agent/business_requirements/document_constructor_dfd_v3.png",
+      "bytes": 123975,
+      "modified_at": "2026-08-31T13:59:51.968420+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "agent/business_requirements/document_constructor_microservices.png",
+      "bytes": 75604,
+      "modified_at": "2026-08-31T14:47:26.590248+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "agent/business_requirements/document_constructor_microservices.puml",
+      "bytes": 2828,
+      "modified_at": "2026-08-31T14:47:11.639399+00:00",
+      "kind": "ignored_source_or_document",
+      "sha256": "088e6a3cb7448c67829d58cb7dc24ad20f7c4347d87367a6254177667d03858a"
+    },
+    {
+      "path": "agent/business_requirements/document_constructor_microservices.svg",
+      "bytes": 24093,
+      "modified_at": "2026-08-31T14:47:26.779005+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "deployment/linux-pg/ragflow-linux-pg-v1.6.0-registry.tar.gz",
+      "bytes": 124554194,
+      "modified_at": "2026-09-03T19:21:21.857476+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "deployment/linux-pg/ragflow-linux-pg-v1.6.0-registry.tar.gz.sha256",
+      "bytes": 106,
+      "modified_at": "2026-09-03T19:21:22.047812+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.11.0-upgrade/ragflow-linux-pg-v1.11.0-offline.tar.gz",
+      "bytes": 4924575024,
+      "modified_at": "2026-09-04T17:57:16.958329+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.11.0-upgrade/ragflow-linux-pg-v1.11.0-offline.tar.gz.sha256",
+      "bytes": 106,
+      "modified_at": "2026-09-04T17:57:26.567158+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.11.1-upgrade/ragflow-linux-pg-v1.11.1-offline.tar.gz",
+      "bytes": 4924580578,
+      "modified_at": "2026-09-04T19:10:40.661716+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.11.1-upgrade/ragflow-linux-pg-v1.11.1-offline.tar.gz.sha256",
+      "bytes": 106,
+      "modified_at": "2026-09-04T19:10:50.195260+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.11.2-upgrade/ragflow-linux-pg-v1.11.2-offline.tar.gz",
+      "bytes": 4924580186,
+      "modified_at": "2026-09-04T20:00:08.440587+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.11.2-upgrade/ragflow-linux-pg-v1.11.2-offline.tar.gz.sha256",
+      "bytes": 106,
+      "modified_at": "2026-09-04T20:00:18.545361+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.12.0-upgrade/ragflow-linux-pg-v1.12.0-offline.tar.gz",
+      "bytes": 11236238700,
+      "modified_at": "2026-09-05T08:13:44.889486+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.12.0-upgrade/ragflow-linux-pg-v1.12.0-offline.tar.gz.sha256",
+      "bytes": 107,
+      "modified_at": "2026-09-05T08:13:52.224519+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "services/asr-online-service/artifacts/0e402bf1-6a7b-4117-a2d8-d572dd612c6f/result.json",
+      "bytes": 45,
+      "modified_at": "2026-09-03T16:27:18.991233+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "services/asr-online-service/artifacts/7a556935-b627-482d-bc65-1455285aa4a1/result.json",
+      "bytes": 46,
+      "modified_at": "2026-08-27T11:58:07.068310+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "services/asr-online-service/artifacts/99836716-4bb5-499e-946b-71cd81e21dac/result.docx",
+      "bytes": 36591,
+      "modified_at": "2026-09-03T16:27:16.709793+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "services/asr-online-service/artifacts/99836716-4bb5-499e-946b-71cd81e21dac/result.json",
+      "bytes": 65,
+      "modified_at": "2026-09-03T16:27:16.670314+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "services/asr-online-service/artifacts/99836716-4bb5-499e-946b-71cd81e21dac/result.txt",
+      "bytes": 22,
+      "modified_at": "2026-09-03T16:27:16.671876+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "services/asr-online-service/artifacts/bd5f0dce-0fba-4577-a1db-2fb97c135ee8/result.json",
+      "bytes": 195,
+      "modified_at": "2026-09-03T16:27:14.679526+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "services/asr-online-service/artifacts/c8bffa24-6137-4884-8257-c860c1825ca8/result.json",
+      "bytes": 78,
+      "modified_at": "2026-09-03T16:27:14.015883+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "services/asr-online-service/artifacts/d9f4ef12-2f07-477e-b8f1-b2c0d1405f93/result.json",
+      "bytes": 46,
+      "modified_at": "2026-09-03T16:27:15.563229+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    },
+    {
+      "path": "services/asr-online-service/uv.lock",
+      "bytes": 52,
+      "modified_at": "2026-09-03T16:22:45.490396+00:00",
+      "kind": "ignored_artifact_or_local_config",
+      "digest_policy": "metadata only; contents not read or backed up"
+    }
+  ]
+}

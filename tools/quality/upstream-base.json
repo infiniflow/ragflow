@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/infiniflow/ragflow",
+  "commit": "cb93883f3f8c975eecb2fed81210effeb3bdb06f",
+  "tree": "24f48284fedd4d7be28380953ff65b58261397c3",
+  "project_version_at_base": "0.26.4",
+  "release_tag": null,
+  "selection": "Verified upstream content baseline at the shallow fork boundary; reconstructed from actual first-parent trees, not latest graph merge-base.",
+  "evidence_file": "tools/quality/upstream-evidence.json",
+  "source_commit_url": "https://github.com/infiniflow/ragflow/commit/cb93883f3f8c975eecb2fed81210effeb3bdb06f",
+  "shallow_history_boundary": true,
+  "earlier_history": "Not present locally; official GitHub confirms the original parent and tree.",
+  "ancestry_only_merge": {
+    "commit": "64f0bfdf0e724d006d61563a76964bf140bcfb4e",
+    "first_parent": "268a5a9d60e19982ac329ec045d0ff9b0228b26b",
+    "second_parent": "28ce77fe5f1e4301d3672221b509418d3c7acb77",
+    "merge_and_first_parent_tree": "bcc60fea39d9f27034943c3001bc226e6c10b518",
+    "meaning": "Same tree as first parent. No content change in this merge; cannot certify second-parent content as adopted."
+  }
+}

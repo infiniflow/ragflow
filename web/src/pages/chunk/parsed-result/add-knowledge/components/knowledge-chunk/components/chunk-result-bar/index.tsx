@@ -21,6 +21,7 @@ interface ChunkResultBarProps {
   createChunk: (id?: string) => void;
   handleInputChange?: React.ChangeEventHandler<HTMLInputElement>;
   searchString?: string;
+  readOnly?: boolean;
 }
 export default function ChunkResultBar({
   className,
@@ -31,6 +32,7 @@ export default function ChunkResultBar({
   createChunk,
   handleInputChange,
   searchString,
+  readOnly = false,
 }: ChunkResultBarProps) {
   const { t } = useTranslate('chunk');
   const [textSelectValue, setTextSelectValue] = useState<string | number>(
@@ -94,14 +96,15 @@ export default function ChunkResultBar({
         value={searchString}
       />
 
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={() => createChunk()}
-        // className="bg-bg-card text-primary hover:bg-card"
-      >
-        <Plus size={44} />
-      </Button>
+      {!readOnly && (
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => createChunk()}
+        >
+          <Plus size={44} />
+        </Button>
+      )}
       {/* <div className="w-[20px]"></div>
       <div className="w-[20px]"></div> */}
     </div>

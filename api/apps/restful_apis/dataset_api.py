@@ -19,6 +19,7 @@ from peewee import OperationalError
 from quart import request
 from common.constants import RetCode
 from api.apps import login_required, current_user
+from api.db.services.managed_resource_service import ManagedResourceService
 from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_json_result, get_result, add_tenant_id_to_kwargs
 from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.validation_utils import (
@@ -142,9 +143,8 @@ async def create(tenant_id: str = None):
         return get_error_argument_result(err)
 
     try:
-        if not tenant_id:
-            tenant_id = current_user.id
-        success, result = await dataset_api_service.create_dataset(tenant_id, req)
+        owner_id = ManagedResourceService.owner_id(tenant_id or current_user.id)
+        success, result = await dataset_api_service.create_dataset(owner_id, req)
         if success:
             return get_result(data=result)
         else:

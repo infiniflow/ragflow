@@ -18,13 +18,16 @@ import {
   RunningStatus,
 } from '@/constants/knowledge';
 import { PermissionRole } from '@/constants/permission';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IConnector, IDataset } from '@/interfaces/database/dataset';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
+import { Routes } from '@/routes';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createContext, useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { Navigate, useParams } from 'react-router';
 import { z } from 'zod';
 import {
   GenerateType,
@@ -64,7 +67,7 @@ const enum MethodValue {
   NER = 'ner',
 }
 
-export default function DatasetSettings() {
+function DatasetSettingsContent() {
   const { t } = useTranslation();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -394,4 +397,26 @@ export default function DatasetSettings() {
       </Card>
     </div>
   );
+}
+
+export default function DatasetSettings() {
+  const { data: userInfo, loading } = useFetchUserInfo();
+  const { id } = useParams();
+  const roleIsKnown = typeof userInfo?.is_superuser === 'boolean';
+
+  if (loading && !roleIsKnown) {
+    return (
+      <div
+        aria-busy="true"
+        data-testid="dataset-settings-access-loading"
+        className="size-full"
+      />
+    );
+  }
+
+  if (!userInfo?.is_superuser) {
+    return <Navigate to={Routes.Dataset + '/' + id} replace />;
+  }
+
+  return <DatasetSettingsContent />;
 }

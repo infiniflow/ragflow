@@ -61,7 +61,7 @@ export function EvaCredentialProfile() {
 
   const items = credentialsQuery.data ?? [];
   return (
-    <>
+    <section data-testid="settings-eva-profile">
       <div className="flex items-start gap-4">
         <label className="w-[190px] text-sm font-medium">
           {t('evaApiToken')}
@@ -96,6 +96,7 @@ export function EvaCredentialProfile() {
               <Button
                 type="button"
                 variant="outline"
+                data-testid={`eva-token-edit-${item.connector_id}`}
                 onClick={() => {
                   setEditing(item);
                   setToken('');
@@ -110,6 +111,7 @@ export function EvaCredentialProfile() {
                 <Button
                   type="button"
                   variant="ghost"
+                  data-testid={`eva-token-delete-${item.connector_id}`}
                   onClick={() => setRemoving(item)}
                   aria-label={t('evaTokenDelete')}
                 >
@@ -134,6 +136,8 @@ export function EvaCredentialProfile() {
 
       <Modal
         open={Boolean(editing)}
+        testId="eva-token-edit-modal"
+        okButtonTestId="eva-token-save"
         title={editing?.configured ? t('evaTokenReplace') : t('evaTokenAdd')}
         maskClosable={false}
         confirmLoading={saveMutation.isPending}
@@ -157,6 +161,7 @@ export function EvaCredentialProfile() {
           <p className="text-sm text-text-secondary">{editing?.scope}</p>
           <PasswordInput
             value={token}
+            data-testid="eva-token-input"
             maxLength={4096}
             autoComplete="new-password"
             placeholder={t('evaApiToken')}
@@ -172,6 +177,8 @@ export function EvaCredentialProfile() {
 
       <Modal
         open={Boolean(removing)}
+        testId="eva-token-delete-modal"
+        okButtonTestId="eva-token-delete-confirm"
         title={t('evaTokenDelete')}
         type="warning"
         confirmLoading={deleteMutation.isPending}
@@ -192,6 +199,6 @@ export function EvaCredentialProfile() {
           {t('evaTokenDeleteConfirmation')}
         </p>
       </Modal>
-    </>
+    </section>
   );
 }

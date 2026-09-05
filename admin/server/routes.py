@@ -37,6 +37,7 @@ from api.db.services.business_document_settings_service import (
 from api.db.services.navigation_visibility_service import (
     NAVIGATION_VISIBILITY_SETTING,
     get_visible_sections,
+    serialize_visible_sections,
     validate_visible_sections,
 )
 from roles import RoleMgr
@@ -560,7 +561,10 @@ def set_navigation_visibility():
 
     try:
         visible_sections = validate_visible_sections(data["visible_sections"])
-        SettingsMgr.update_by_name(NAVIGATION_VISIBILITY_SETTING, json.dumps(visible_sections))
+        SettingsMgr.update_by_name(
+            NAVIGATION_VISIBILITY_SETTING,
+            serialize_visible_sections(visible_sections),
+        )
         return success_response({"visible_sections": visible_sections})
     except (AdminException, ValueError) as e:
         return error_response(str(e), 400)

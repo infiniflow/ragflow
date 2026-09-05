@@ -103,6 +103,7 @@ export default {
   // chat channel
   chatChannelSet: `${restAPIv1}/chat-channels`,
   chatChannelList: `${restAPIv1}/chat-channels`,
+  chatChannelDialogs: `${restAPIv1}/chat-channels/dialogs`,
   chatChannelDetail: (id: string) => `${restAPIv1}/chat-channels/${id}`,
   chatChannelUpdate: (id: string) => `${restAPIv1}/chat-channels/${id}`,
   chatChannelDel: (id: string) => `${restAPIv1}/chat-channels/${id}`,

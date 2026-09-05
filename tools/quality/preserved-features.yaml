@@ -1,0 +1,293 @@
+schema_version: 1
+stage: T0
+status: Inventory only; test existence verified, behavior runs deferred to T1
+features:
+- id: KEEP-business-documents
+  owner: fork-maintainer
+  module: business-documents
+  invariants:
+  - Documents, revisions, evidence and decisions survive updates
+  - Role/tenant checks, command idempotency, revision conflicts, worker and exports
+  - Document settings and EVA linkage
+  entrypoints:
+  - api/apps/restful_apis/business_document_api.py
+  - api/apps/business_documents/worker.py
+  - web/src/pages/business-documents/index.tsx
+  evidence_paths:
+  - test/unit_test/api/apps/business_documents
+  - test/unit_test/api/apps/restful_apis/test_business_document_api_contract.py
+  - test/evals/business_documents
+  - test/integration/test_business_document_postgres.py
+  - test/playwright/e2e/test_business_documents_ui.py
+  - web/src/pages/business-documents/index.test.tsx
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-eva-integration
+  owner: fork-maintainer
+  module: eva-integration
+  invariants:
+  - Read credentials and personal write credentials remain distinct
+  - Published pages, source links and synchronization state
+  - Retry does not duplicate external publication
+  entrypoints:
+  - common/data_source/eva_wiki_connector.py
+  - api/apps/business_documents/eva_changes.py
+  - api/db/services/user_external_credential_service.py
+  evidence_paths:
+  - test/unit_test/data_source/test_eva_wiki_connector.py
+  - test/unit_test/api/apps/business_documents/test_eva_document_changes.py
+  - test/unit_test/api/db/services/test_user_external_credential_service.py
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-openmetadata
+  owner: fork-maintainer
+  module: openmetadata
+  invariants:
+  - Connector sync/metadata and source identifiers
+  - Dataset authorization for copilot and agent retrieval
+  - Persisted component names and settings
+  entrypoints:
+  - api/apps/restful_apis/openmetadata_api.py
+  - agent/component/openmetadata.py
+  - common/data_source/openmetadata_connector.py
+  evidence_paths:
+  - test/unit_test/data_source/test_openmetadata_connector.py
+  - test/unit_test/agent/test_openmetadata_component.py
+  - test/unit_test/api/apps/services/test_openmetadata_agent_service.py
+  - test/unit_test/api/apps/services/test_openmetadata_copilot_service.py
+  - test/unit_test/api/apps/restful_apis/test_openmetadata_routes_unit.py
+  - web/src/pages/openmetadata/index.test.tsx
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-asr
+  owner: fork-maintainer
+  module: asr
+  invariants:
+  - Audio/video transcription and OpenAI-compatible endpoints
+  - ASR job states, model configuration and error reporting
+  - Voice input in document workflow
+  entrypoints:
+  - services/asr-online-service/openapi/asr.yaml
+  - services/asr-online-service/src/asr_service/main.py
+  - rag/app/audio.py
+  evidence_paths:
+  - services/asr-online-service/tests
+  - test/unit_test/rag/app/test_audio_video_transcription.py
+  - test/unit_test/api/utils/test_api_file_utils.py
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-mrz-assets
+  owner: fork-maintainer
+  module: mrz-assets
+  invariants:
+  - Template DSL, model inputs and extraction result contract
+  entrypoints:
+  - agent/templates/mrz_document_reader.json
+  - api/db/template_utils.py
+  - internal/dao/canvas_template_seed.go
+  evidence_paths:
+  - test/unit_test/agent/test_mrz_document_reader_template.py
+  - internal/dao/canvas_template_seed_test.go
+  - test/unit_test/api/db/test_template_utils.py
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-access-policy
+  owner: fork-maintainer
+  module: access-policy
+  invariants:
+  - Membership, section and dataset grants
+  - Server authorization across API and admin
+  - Visibility controls do not replace backend permissions
+  entrypoints:
+  - api/db/services/access_group_service.py
+  - api/db/services/navigation_visibility_service.py
+  - api/apps/__init__.py
+  - admin/server/routes.py
+  evidence_paths:
+  - test/unit_test/api/db/services/test_access_group_service.py
+  - test/unit_test/admin/test_access_groups.py
+  - test/unit_test/api/db/services/test_dataset_access_permissions.py
+  - test/unit_test/api/db/services/test_navigation_visibility_service.py
+  - test/testcases/restful_api/test_user_tenant_routes_unit.py
+  - web/src/pages/admin/access-groups.test.tsx
+  - test/playwright/e2e/test_navigation_visibility_admin.py
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-observability
+  owner: fork-maintainer
+  module: observability
+  invariants:
+  - Audit records and actor/tenant attribution
+  - Health endpoints and service status
+  - Correlation and telemetry configuration
+  entrypoints:
+  - api/db/services/audit_service.py
+  - admin/server/audit_feed.py
+  - common/observability.py
+  - web/src/utils/telemetry.ts
+  evidence_paths:
+  - test/unit_test/admin/test_audit_feed.py
+  - test/unit_test/admin/test_service_status_config.py
+  - test/unit_test/common/test_observability.py
+  - test/unit_test/api/utils/test_admin_service_health.py
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-models-runtime
+  owner: fork-maintainer
+  module: models-runtime
+  invariants:
+  - Provider selection and reasoning request shape
+  - Model configuration and test coverage of thinking policy
+  entrypoints:
+  - rag/llm/chat_model.py
+  - internal/entity/models/ollama.go
+  evidence_paths:
+  - test/unit_test/rag/llm/test_chat_model_thinking_policy.py
+  - internal/entity/models/ollama_test.go
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-persistence
+  owner: fork-maintainer
+  module: persistence
+  invariants:
+  - BusinessDocument*, SystemAuditEvent, UserExternalCredential and AccessGroup* data
+  - Table identifiers, relations and initialization
+  - Timestamp round trips
+  entrypoints:
+  - api/db/db_models.py
+  - common/time_utils.py
+  evidence_paths:
+  - test/integration/test_business_document_postgres.py
+  - test/unit_test/api/db/services/test_access_group_service.py
+  - test/unit_test/api/apps/business_documents/test_business_document_service.py
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-agent-runtime
+  owner: fork-maintainer
+  module: agent-runtime
+  invariants:
+  - Canvas/DSL, cancellation and persisted sessions
+  - OpenAI responses, citations and usage
+  - Session permissions and invoke behavior
+  entrypoints:
+  - agent/canvas.py
+  - api/apps/restful_apis/agent_api.py
+  - internal/handler/agent.go
+  - internal/handler/agent_openai.go
+  evidence_paths:
+  - internal/handler/agent_test.go
+  - internal/handler/bot_test.go
+  - internal/agent/component/invoke_test.go
+  - test/unit_test/api/apps/restful_apis/test_get_agent_session.py
+  - test/unit_test/api/apps/restful_apis/test_rerun_agent_authorization.py
+  - test/unit_test/api/apps/restful_apis/test_agentbots_access_control.py
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-ingestion-connectors
+  owner: fork-maintainer
+  module: ingestion-connectors
+  invariants:
+  - Connector sync/cursors, parsing and task retry/cancel
+  - Dataset file associations
+  - Explicit private database-host allowlist; URL checks retain their contract
+  entrypoints:
+  - common/data_source/__init__.py
+  - rag/svr/sync_data_source.py
+  - rag/svr/task_executor.py
+  - api/db/services/task_service.py
+  evidence_paths:
+  - test/unit_test/rag/test_sync_data_source.py
+  - test/testcases/restful_api/test_connector_routes_unit.py
+  - test/unit_test/common/test_ssrf_guard.py
+  - test/unit_test/data_source/test_html_utils.py
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-api-files-chat
+  owner: fork-maintainer
+  module: api-files-chat
+  invariants:
+  - Attachment upload/download, missing-blob errors and dataset access
+  - Chat/search streams and response shape
+  - No loss of authorization checks
+  entrypoints:
+  - api/apps/restful_apis/chat_api.py
+  - api/apps/restful_apis/search_api.py
+  - api/db/services/file_service.py
+  evidence_paths:
+  - test/unit_test/api/apps/restful_apis/test_attachment_download_missing_blob.py
+  - test/unit_test/api/db/services/test_file_service_upload_document.py
+  - test/testcases/restful_api/test_search_datasets_consistency.py
+  - test/playwright/e2e/test_next_apps_chat.py
+  - test/playwright/e2e/test_next_apps_search.py
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-deployment
+  owner: fork-maintainer
+  module: deployment
+  invariants:
+  - Linux registry/offline/source delivery
+  - PostgreSQL/object storage and migration order
+  - ASR sandbox, service wiring, secrets/config and recovery
+  entrypoints:
+  - deployment/linux-pg/README.md
+  - deployment/linux-pg/docker-compose.release.yml
+  - docker/docker-compose.local.yml
+  - api/ragflow_server.py
+  evidence_paths:
+  - test/unit_test/deployment/test_linux_pg_upgrade_delivery.py
+  - services/asr-online-service/tests/test_install_contract.py
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-frontend-foundation
+  owner: fork-maintainer
+  module: frontend-foundation
+  invariants:
+  - Existing routes, auth/session transport, localization and controls
+  - Diagram/markdown rendering and file previews
+  - Frontend build and typing; no upstream UI loss
+  entrypoints:
+  - web/src/routes.tsx
+  - web/src/main.tsx
+  - web/src/utils/request.ts
+  - web/src/utils/next-request.ts
+  evidence_paths:
+  - web/package.json
+  - web/src/components/diagram-code-block/index.test.tsx
+  - web/src/components/highlight-markdown/__tests__/index.test.tsx
+  - web/src/layouts/components/global-navbar.test.tsx
+  - web/src/pages/agent/utils/tests/dsl-bridge.test.ts
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'
+- id: KEEP-quality-governance
+  owner: fork-maintainer
+  module: quality-governance
+  invariants:
+  - Regression selection and coverage scope
+  - Provenance evidence and no guessed upstream baseline
+  - Existing checks remain distinct from future architecture gates
+  entrypoints:
+  - AGENTS.md
+  - tools/quality/capture_inventory.py
+  - run_tests.py
+  - .github/workflows/tests.yml
+  evidence_paths:
+  - test/unit_test/tools/quality/test_capture_inventory.py
+  - test/unit_test/tools/hooks/test_check_files.py
+  - test/REGRESSION.md
+  execution_status: NOT_RUN_IN_T0
+  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
+    coverage gaps'

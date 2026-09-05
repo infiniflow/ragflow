@@ -34,6 +34,7 @@ from api.db.services.tenant_llm_service import TenantService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
+from api.db.services.managed_resource_service import ManagedResourceService
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | No
 
 
 def get_first_provider_model_name(tenant_id: str, provider_name: str, model_type: str | enum.Enum) -> str | None:
+    tenant_id = ManagedResourceService.owner_id(tenant_id)
     model_type_val = model_type if isinstance(model_type, str) else model_type.value
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
@@ -159,10 +161,12 @@ def ensure_paddleocr_from_env(tenant_id: str) -> str | None:
 
 
 def get_tenant_default_model_by_type(tenant_id: str, model_type: str | enum.Enum):
-    exist, tenant = TenantService.get_by_id(tenant_id)
+    catalog_tenant_id = ManagedResourceService.owner_id(tenant_id)
+    model_type_val = model_type if isinstance(model_type, str) else model_type.value
+    default_tenant_id = tenant_id if model_type_val == LLMType.CHAT.value else catalog_tenant_id
+    exist, tenant = TenantService.get_by_id(default_tenant_id)
     if not exist:
         raise LookupError("Tenant not found")
-    model_type_val = model_type if isinstance(model_type, str) else model_type.value
     model_name: str = ""
     match model_type_val:
         case LLMType.EMBEDDING.value:
@@ -181,9 +185,22 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str | enum.Enum
             raise Exception("OCR model name is required")
         case _:
             raise Exception(f"Unknown model type {model_type}")
+    if not model_name and model_type_val == LLMType.CHAT.value and default_tenant_id != catalog_tenant_id:
+        exist, catalog_tenant = TenantService.get_by_id(catalog_tenant_id)
+        if exist:
+            model_name = catalog_tenant.llm_id
     if not model_name:
         raise Exception(f"No default {model_type} model is set.")
-    return get_model_config_from_provider_instance(tenant_id, model_type, model_name)
+    try:
+        return get_model_config_from_provider_instance(catalog_tenant_id, model_type, model_name)
+    except (LookupError, ValueError):
+        if model_type_val != LLMType.CHAT.value or default_tenant_id == catalog_tenant_id:
+            raise
+        exist, catalog_tenant = TenantService.get_by_id(catalog_tenant_id)
+        catalog_model_name = catalog_tenant.llm_id if exist else ""
+        if not catalog_model_name or catalog_model_name == model_name:
+            raise
+        return get_model_config_from_provider_instance(catalog_tenant_id, model_type, catalog_model_name)
 
 
 def split_model_name(model_name: str):
@@ -254,6 +271,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
             "model_type": LLMType.EMBEDDING.value,
         }
 
+    tenant_id = ManagedResourceService.owner_id(tenant_id)
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
@@ -323,6 +341,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str | enum.En
 
 
 def get_api_key(tenant_id: str, model_name: str):
+    tenant_id = ManagedResourceService.owner_id(tenant_id)
     _, instance_name, provider_name = split_model_name(model_name)
 
     if not provider_name:
@@ -335,6 +354,7 @@ def get_api_key(tenant_id: str, model_name: str):
 
 
 def get_model_type_by_name(tenant_id: str, model_name: str):
+    tenant_id = ManagedResourceService.owner_id(tenant_id)
     pure_model_name, instance_name, provider_name = split_model_name(model_name)
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
@@ -393,6 +413,7 @@ def get_models_by_tenant_and_provider_and_model_type(tenant_id: str, provider_na
     Query TenantModel records by tenant_id, provider_name and model_name.
     Returns all matching model records under all instances of the specified provider.
     """
+    tenant_id = ManagedResourceService.owner_id(tenant_id)
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         return []

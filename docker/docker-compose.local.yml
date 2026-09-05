@@ -55,9 +55,19 @@ services:
       - ../api/db/services/connector_service.py:/ragflow/api/db/services/connector_service.py:ro
       - ../api/db/services/access_group_service.py:/ragflow/api/db/services/access_group_service.py:ro
       - ../api/db/services/business_document_settings_service.py:/ragflow/api/db/services/business_document_settings_service.py:ro
+      - ../api/db/services/knowledgebase_service.py:/ragflow/api/db/services/knowledgebase_service.py:ro
+      - ../api/db/services/managed_resource_service.py:/ragflow/api/db/services/managed_resource_service.py:ro
       - ../api/db/services/navigation_visibility_service.py:/ragflow/api/db/services/navigation_visibility_service.py:ro
       - ../api/db/services/user_external_credential_service.py:/ragflow/api/db/services/user_external_credential_service.py:ro
+      - ../api/db/joint_services/tenant_model_service.py:/ragflow/api/db/joint_services/tenant_model_service.py:ro
+      - ../api/apps/llm_app.py:/ragflow/api/apps/llm_app.py:ro
+      - ../api/apps/restful_apis/chat_channel_api.py:/ragflow/api/apps/restful_apis/chat_channel_api.py:ro
       - ../api/apps/restful_apis/connector_api.py:/ragflow/api/apps/restful_apis/connector_api.py:ro
+      - ../api/apps/restful_apis/dataset_api.py:/ragflow/api/apps/restful_apis/dataset_api.py:ro
+      - ../api/apps/restful_apis/document_api.py:/ragflow/api/apps/restful_apis/document_api.py:ro
+      - ../api/apps/restful_apis/file_commit_api.py:/ragflow/api/apps/restful_apis/file_commit_api.py:ro
+      - ../api/apps/restful_apis/models_api.py:/ragflow/api/apps/restful_apis/models_api.py:ro
+      - ../api/apps/restful_apis/provider_api.py:/ragflow/api/apps/restful_apis/provider_api.py:ro
       - ../api/apps/restful_apis/agent_api.py:/ragflow/api/apps/restful_apis/agent_api.py:ro
       - ../api/apps/restful_apis/bot_api.py:/ragflow/api/apps/restful_apis/bot_api.py:ro
       - ../api/apps/services/agent_file_service.py:/ragflow/api/apps/services/agent_file_service.py:ro
@@ -66,6 +76,7 @@ services:
       - ../api/apps/services/openmetadata_dataset_retrieval.py:/ragflow/api/apps/services/openmetadata_dataset_retrieval.py:ro
       - ../api/apps/restful_apis/openmetadata_api.py:/ragflow/api/apps/restful_apis/openmetadata_api.py:ro
       - ../api/apps/services/dataset_api_service.py:/ragflow/api/apps/services/dataset_api_service.py:ro
+      - ../api/apps/services/models_api_service.py:/ragflow/api/apps/services/models_api_service.py:ro
       - ../api/apps/business_documents:/ragflow/api/apps/business_documents:ro
       - ../api/apps/restful_apis/business_document_api.py:/ragflow/api/apps/restful_apis/business_document_api.py:ro
       - ../api/apps/restful_apis/system_api.py:/ragflow/api/apps/restful_apis/system_api.py:ro

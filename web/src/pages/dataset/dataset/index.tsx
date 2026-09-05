@@ -20,6 +20,7 @@ import {
 } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { LucidePlus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -37,6 +38,8 @@ import { useHandleUploadDocument } from './use-upload-document';
 
 export default function Dataset() {
   const { t } = useTranslation();
+  const { data: userInfo } = useFetchUserInfo();
+  const canManage = Boolean(userInfo?.is_superuser);
   const {
     documentUploadVisible,
     hideDocumentUploadModal,
@@ -143,6 +146,7 @@ export default function Dataset() {
     <Card
       as="article"
       className="mb-5 mr-5 min-w-[880px] bg-transparent shadow-none"
+      data-testid="dataset-documents"
     >
       <CardHeader as="header" className="p-5 space-y-0">
         <ListFilterBar
@@ -164,7 +168,11 @@ export default function Dataset() {
               </p>
             </div>
           }
-          preChildren={<Generate disabled={!(dataSetData.chunk_count > 0)} />}
+          preChildren={
+            canManage ? (
+              <Generate disabled={!(dataSetData.chunk_count > 0)} />
+            ) : undefined
+          }
           // preChildren={
           //   <Button
           //     variant={'ghost'}
@@ -197,26 +205,28 @@ export default function Dataset() {
           //   </Button>
           // }
         >
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="default">
-                <LucidePlus />
-                {t('knowledgeDetails.addFile')}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-auto min-w-40" align="end">
-              <DropdownMenuItem onClick={showDocumentUploadModal}>
-                {t('fileManager.uploadFile')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={showCreateModal}>
-                {t('knowledgeDetails.emptyFiles')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {canManage && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button data-testid="dataset-add-file" size="default">
+                  <LucidePlus />
+                  {t('knowledgeDetails.addFile')}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-auto min-w-40" align="end">
+                <DropdownMenuItem onClick={showDocumentUploadModal}>
+                  {t('fileManager.uploadFile')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={showCreateModal}>
+                  {t('knowledgeDetails.emptyFiles')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </ListFilterBar>
 
-        {rowSelectionIsEmpty || (
+        {canManage && !rowSelectionIsEmpty && (
           <BulkOperateBar
             className="!mt-2.5 !-mb-2.5"
             list={updatedList as BulkOperateItemType[]}
@@ -234,9 +244,10 @@ export default function Dataset() {
           setRowSelection={setRowSelection}
           showManageMetadataModal={showManageMetadataModal}
           loading={loading}
+          readOnly={!canManage}
         />
 
-        {documentUploadVisible && (
+        {canManage && documentUploadVisible && (
           <FileUploadDialog
             hideModal={hideDocumentUploadModal}
             onOk={onDocumentUploadOk}
@@ -245,7 +256,7 @@ export default function Dataset() {
             isTableParser={knowledgeBase?.chunk_method === 'table'}
           ></FileUploadDialog>
         )}
-        {createVisible && (
+        {canManage && createVisible && (
           <RenameDialog
             hideModal={hideCreateModal}
             onOk={onCreateOk}
@@ -253,7 +264,7 @@ export default function Dataset() {
             title={t('knowledgeDetails.fileName')}
           ></RenameDialog>
         )}
-        {manageMetadataVisible && (
+        {canManage && manageMetadataVisible && (
           <ManageMetadataModal
             title={
               metadataConfig.title || (
@@ -285,7 +296,7 @@ export default function Dataset() {
             otherData={metadataConfig.record}
           />
         )}
-        {reparseDialogVisible && (
+        {canManage && reparseDialogVisible && (
           <ReparseDialog
             hidden={
               chunkNum === 0 && !knowledgeBase?.parser_config?.enable_metadata

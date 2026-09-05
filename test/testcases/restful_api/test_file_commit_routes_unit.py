@@ -351,9 +351,13 @@ def _load_module(monkeypatch):
     class _StubKnowledgebaseService:
         @staticmethod
         def get_by_id(dataset_id):
-            if dataset_id == "ds-1":
+            if dataset_id in {"ds-1", "ds-denied"}:
                 return True, SimpleNamespace(name="test-ds", tenant_id="t1")
             return False, None
+
+        @staticmethod
+        def accessible(dataset_id, user_id):
+            return dataset_id == "ds-1" and user_id == "test-user"
 
     kb_svc_mod.KnowledgebaseService = _StubKnowledgebaseService
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_svc_mod)
@@ -407,6 +411,14 @@ def reset_db():
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────
+
+
+def test_dataset_resolver_enforces_dataset_access(monkeypatch):
+    module = _load_module(monkeypatch)
+
+    assert module._resolve_dataset_folder("ds-1") == "ds-1"
+    assert module._resolve_dataset_folder("ds-denied") is None
+    assert module._resolve_dataset_folder("missing") is None
 
 
 @pytest.mark.p2

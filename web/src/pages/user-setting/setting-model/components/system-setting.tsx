@@ -58,13 +58,14 @@ function ModelFieldItem({
           placeholder={t('selectModelPlaceholder')}
           showSearch
           allowClear={id !== 'llm_id'}
+          testId={`settings-default-${id}`}
         />
       </div>
     </div>
   );
 }
 
-function SystemSetting() {
+function SystemSetting({ chatOnly = false }: { chatOnly?: boolean }) {
   const { t } = useTranslate('setting');
   const defaultModelDictionary = useFetchDefaultModelDictionary();
   const { setDefaultModel } = useSetDefaultModel();
@@ -91,7 +92,7 @@ function SystemSetting() {
   );
 
   const llmList = useMemo(() => {
-    return [
+    const models = [
       {
         id: 'llm_id',
         label: t('chatModel'),
@@ -130,16 +131,24 @@ function SystemSetting() {
         tooltip: t('ttsModelTip'),
       },
     ];
-  }, [defaultModelDictionary, t]);
+    return chatOnly ? models.filter((item) => item.id === 'llm_id') : models;
+  }, [chatOnly, defaultModelDictionary, t]);
 
   return (
-    <article className="rounded-lg w-full">
+    <article
+      data-testid={
+        chatOnly
+          ? 'user-default-model-settings'
+          : 'admin-default-model-settings'
+      }
+      className="rounded-lg w-full"
+    >
       <header className="py-5">
         <h2 className="text-2xl font-medium text-text-primary">
-          {t('systemModelSettings')}
+          {chatOnly ? t('chatModel') : t('systemModelSettings')}
         </h2>
         <p className="mt-1 text-sm text-text-secondary ">
-          {t('systemModelDescription')}
+          {chatOnly ? t('chatModelTip') : t('systemModelDescription')}
         </p>
       </header>
 

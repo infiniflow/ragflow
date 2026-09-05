@@ -11,6 +11,7 @@ from test.playwright.helpers._next_apps_helpers import RESULT_TIMEOUT_MS
 DOCUMENT_ID = "doc-access-1"
 ACTOR_ID = "browser-viewer"
 ALL_SECTIONS = [
+    "home",
     "dataset",
     "chat",
     "search",

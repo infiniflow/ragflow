@@ -21,11 +21,9 @@ the quantization tag, such as `text-embedding-nomic-embed-text-v1.5@q8_0`).
 """
 
 import importlib.util
-import logging
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -95,9 +93,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
             # Default no-op; tests that need to observe the resolved provider
             # name passed by `_get_model_info` override this with
             # monkeypatch.setattr on the loaded stub.
-            get_by_tenant_id_and_provider_name=lambda tenant_id, provider_name: SimpleNamespace(
-                id="provider-1", provider_name=provider_name
-            ),
+            get_by_tenant_id_and_provider_name=lambda tenant_id, provider_name: SimpleNamespace(id="provider-1", provider_name=provider_name),
         ),
     )
     _stub(
@@ -105,9 +101,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
         "api.db.services.tenant_model_instance_service",
         TenantModelInstanceService=SimpleNamespace(
             get_by_provider_ids=lambda provider_ids: [instance],
-            get_by_provider_id_and_instance_name=lambda provider_id, instance_name: SimpleNamespace(
-                id="instance-1", provider_id=provider_id, instance_name=instance_name
-            ),
+            get_by_provider_id_and_instance_name=lambda provider_id, instance_name: SimpleNamespace(id="instance-1", provider_id=provider_id, instance_name=instance_name),
         ),
     )
     _stub(
@@ -117,9 +111,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
             get_models_by_provider_ids_and_instance_ids=lambda p_ids, i_ids: list(tenant_model_records),
             # Default returns an "active" model so `_get_model_info` treats
             # the row as enabled when exercising the bare-model branch.
-            get_by_provider_id_and_instance_id_and_model_type_and_model_name=lambda *args: SimpleNamespace(
-                status=1
-            ),
+            get_by_provider_id_and_instance_id_and_model_type_and_model_name=lambda *args: SimpleNamespace(status=1),
         ),
     )
 
@@ -142,7 +134,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
         monkeypatch,
         "common.constants",
         ActiveStatusEnum=SimpleNamespace(ACTIVE=SimpleNamespace(value=1), INACTIVE=SimpleNamespace(value=0), UNSUPPORTED=SimpleNamespace(value=2)),
-        LLMType=SimpleNamespace(EMBEDDING="embedding"),
+        LLMType=SimpleNamespace(EMBEDDING=SimpleNamespace(value="embedding")),
     )
     _stub(
         monkeypatch,
@@ -150,13 +142,7 @@ def _load_module(monkeypatch, *, tenant_model_records, factory_llm_infos=None):
         FACTORY_LLM_INFOS=factory_llm_infos if factory_llm_infos is not None else [],
     )
 
-    module_path = (
-        Path(__file__).resolve().parents[5]
-        / "api"
-        / "apps"
-        / "services"
-        / "models_api_service.py"
-    )
+    module_path = Path(__file__).resolve().parents[5] / "api" / "apps" / "services" / "models_api_service.py"
     spec = importlib.util.spec_from_file_location(
         "test_models_api_service_list_tenant_added_models",
         module_path,
@@ -272,6 +258,207 @@ def test_list_tenant_added_models_still_works_for_plain_model_names(monkeypatch)
     assert success is True
     assert len(result) == 1
     assert result[0]["name"] == "gemma-4-12b-it-qat"
+
+
+def test_regular_user_can_set_only_personal_chat_default(monkeypatch):
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    updates = []
+    tenant_service = stubs["user_service"].TenantService
+    monkeypatch.setattr(tenant_service, "get_by_id", lambda tenant_id: (True, SimpleNamespace(id=tenant_id)))
+    monkeypatch.setattr(tenant_service, "update_by_id", lambda tenant_id, values: updates.append((tenant_id, values)), raising=False)
+    monkeypatch.setattr(module, "_check_model_available", lambda *_args: (True, None))
+
+    success, _ = module.set_managed_default_model("user-1", "catalog-1", False, "OpenAI", "default", "gpt-test", "chat")
+
+    assert success is True
+    assert updates == [("user-1", {"llm_id": "gpt-test@default@OpenAI"})]
+
+
+def test_regular_user_cannot_change_system_model_default(monkeypatch):
+    module, _ = _load_module(monkeypatch, tenant_model_records=[])
+
+    success, message = module.set_managed_default_model("user-1", "catalog-1", False, "OpenAI", "default", "embed-test", "embedding")
+
+    assert success is False
+    assert "administrator" in message
+
+
+def test_regular_user_cannot_clear_personal_chat_default(monkeypatch):
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    updates = []
+    monkeypatch.setattr(
+        stubs["user_service"].TenantService,
+        "update_by_id",
+        lambda tenant_id, values: updates.append((tenant_id, values)),
+        raising=False,
+    )
+
+    success, message = module.set_managed_default_model("user-1", "catalog-1", False, "", "", "", "chat")
+
+    assert success is False
+    assert "required" in message
+    assert updates == []
+
+
+def test_regular_user_cannot_select_deepdoc_as_chat_default(monkeypatch):
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    updates = []
+    tenant_service = stubs["user_service"].TenantService
+    monkeypatch.setattr(tenant_service, "get_by_id", lambda tenant_id: (True, SimpleNamespace(id=tenant_id)))
+    monkeypatch.setattr(tenant_service, "update_by_id", lambda tenant_id, values: updates.append((tenant_id, values)), raising=False)
+
+    success, message = module.set_managed_default_model("user-1", "catalog-1", False, "infiniflow", "default", "deepdoc", "chat")
+
+    assert success is False
+    assert "provider" in message.lower()
+    assert updates == []
+
+
+@pytest.mark.parametrize(
+    ("provider", "instance", "name"),
+    [
+        ("OpenAI", "", "gpt-test"),
+        ("", "default", "gpt-test"),
+        ("OpenAI", "default", ""),
+    ],
+)
+def test_partial_default_model_identity_is_rejected(
+    monkeypatch,
+    provider,
+    instance,
+    name,
+):
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    updates = []
+    tenant_service = stubs["user_service"].TenantService
+    monkeypatch.setattr(
+        tenant_service,
+        "get_by_id",
+        lambda tenant_id: (True, SimpleNamespace(id=tenant_id)),
+    )
+    monkeypatch.setattr(
+        tenant_service,
+        "update_by_id",
+        lambda tenant_id, values: updates.append((tenant_id, values)),
+        raising=False,
+    )
+
+    success, message = module.set_managed_default_model("admin-1", "catalog-1", True, provider, instance, name, "chat")
+
+    assert success is False
+    assert "specified together" in message
+    assert updates == []
+
+
+def test_model_outside_managed_catalog_is_rejected_without_update(monkeypatch):
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    updates = []
+    tenant_service = stubs["user_service"].TenantService
+    monkeypatch.setattr(
+        tenant_service,
+        "get_by_id",
+        lambda tenant_id: (True, SimpleNamespace(id=tenant_id)),
+    )
+    monkeypatch.setattr(
+        tenant_service,
+        "update_by_id",
+        lambda tenant_id, values: updates.append((tenant_id, values)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        module,
+        "_check_model_available",
+        lambda *_args: (False, "Model is not available"),
+    )
+
+    success, message = module.set_managed_default_model("user-1", "catalog-1", False, "Legacy", "private", "removed", "chat")
+
+    assert success is False
+    assert message == "Model is not available"
+    assert updates == []
+
+
+@pytest.mark.parametrize(
+    ("missing_tenant", "expected_message"),
+    [
+        ("user-1", "Tenant not found"),
+        ("catalog-1", "Tenant not found"),
+    ],
+)
+def test_managed_default_listing_fails_when_required_tenant_is_missing(
+    monkeypatch,
+    missing_tenant,
+    expected_message,
+):
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    monkeypatch.setattr(
+        stubs["user_service"].TenantService,
+        "get_by_id",
+        lambda tenant_id: (False, None) if tenant_id == missing_tenant else (True, SimpleNamespace(id=tenant_id)),
+    )
+
+    success, message = module.list_managed_default_models("user-1", "catalog-1")
+
+    assert success is False
+    assert message == expected_message
+
+
+def test_superuser_changes_catalog_default(monkeypatch):
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    updates = []
+    tenant_service = stubs["user_service"].TenantService
+    monkeypatch.setattr(tenant_service, "get_by_id", lambda tenant_id: (True, SimpleNamespace(id=tenant_id)))
+    monkeypatch.setattr(tenant_service, "update_by_id", lambda tenant_id, values: updates.append((tenant_id, values)), raising=False)
+    monkeypatch.setattr(module, "_check_model_available", lambda *_args: (True, None))
+
+    success, _ = module.set_managed_default_model("admin-1", "catalog-1", True, "OpenAI", "default", "embed-test", "embedding")
+
+    assert success is True
+    assert updates == [("catalog-1", {"embd_id": "embed-test@default@OpenAI"})]
+
+
+def test_superuser_can_clear_catalog_default(monkeypatch):
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    updates = []
+    tenant_service = stubs["user_service"].TenantService
+    monkeypatch.setattr(
+        tenant_service,
+        "get_by_id",
+        lambda tenant_id: (True, SimpleNamespace(id=tenant_id)),
+    )
+    monkeypatch.setattr(
+        tenant_service,
+        "update_by_id",
+        lambda tenant_id, values: updates.append((tenant_id, values)),
+        raising=False,
+    )
+
+    success, _ = module.set_managed_default_model("admin-1", "catalog-1", True, "", "", "", "embedding")
+
+    assert success is True
+    assert updates == [("catalog-1", {"embd_id": ""})]
+
+
+def test_managed_defaults_fall_back_when_personal_chat_model_is_not_in_catalog(monkeypatch):
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    tenant_service = stubs["user_service"].TenantService
+    tenants = {
+        "user-1": SimpleNamespace(llm_id="removed@default@Legacy"),
+        "catalog-1": SimpleNamespace(llm_id="central@default@OpenAI"),
+    }
+    monkeypatch.setattr(tenant_service, "get_by_id", lambda tenant_id: (True, tenants[tenant_id]))
+
+    def _model_info(_tenant_id, default_model, model_type):
+        if model_type == "chat" and default_model == "central@default@OpenAI":
+            return {"model_type": "chat", "model_name": "central"}
+        return None
+
+    monkeypatch.setattr(module, "_get_model_info", _model_info)
+
+    success, result = module.list_managed_default_models("user-1", "catalog-1")
+
+    assert success is True
+    assert result == {"models": [{"model_type": "chat", "model_name": "central"}]}
 
 
 # NOTE: A unit test for the defensive try/except in the production code is

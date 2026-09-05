@@ -6,6 +6,7 @@ import pytest
 from playwright.sync_api import expect
 
 ALL_SECTIONS = [
+    "home",
     "dataset",
     "chat",
     "search",
@@ -193,6 +194,7 @@ def test_admin_selective_visibility_save_updates_desktop_navigation(page, base_u
     for section in ALL_SECTIONS:
         expect(page.get_by_test_id(f"navigation-section-{section}")).to_be_checked()
 
+    page.get_by_test_id("navigation-section-home").click()
     page.get_by_test_id("navigation-section-search").click()
     page.get_by_test_id("navigation-section-business_documents").click()
 
@@ -201,11 +203,12 @@ def test_admin_selective_visibility_save_updates_desktop_navigation(page, base_u
     with page.expect_request(lambda request: request.method == "PUT" and urlparse(request.url).path.rstrip("/") == "/api/v1/admin/navigation"):
         save.click()
 
-    expected = [section for section in ALL_SECTIONS if section not in {"search", "business_documents"}]
+    expected = [section for section in ALL_SECTIONS if section not in {"home", "search", "business_documents"}]
     assert stub.put_payloads == [{"visible_sections": expected}]
     expect(save).to_be_disabled()
 
     _open_business_documents(page, base_url)
+    expect(page.locator("[data-testid='nav-home']")).to_have_count(0)
     expect(page.locator("[data-testid='nav-search']")).to_have_count(0)
     expect(page.locator("[data-testid='nav-business-documents']")).to_have_count(0)
     expect(page.locator("[data-testid='nav-agent']:visible")).to_be_visible()
@@ -248,6 +251,7 @@ def test_mobile_navigation_shows_only_configured_sections(page, base_url):
     page.get_by_role("button", name="Menu").click()
     expect(page.get_by_role("link", name="Чат", exact=True)).to_be_visible()
     expect(page.get_by_role("link", name="Память", exact=True)).to_be_visible()
+    expect(page.get_by_role("link", name="Главная", exact=True)).to_have_count(0)
     expect(page.get_by_role("link", name="Поиск", exact=True)).to_have_count(0)
     expect(page.get_by_role("link", name="Документы", exact=True)).to_have_count(0)
 

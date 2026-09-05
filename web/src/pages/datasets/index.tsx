@@ -6,6 +6,7 @@ import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { useQueryClient } from '@tanstack/react-query';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
@@ -20,6 +21,8 @@ import { useSelectOwners } from './use-select-owners';
 
 export default function Datasets() {
   const { t } = useTranslation();
+  const { data: userInfo } = useFetchUserInfo();
+  const canManage = Boolean(userInfo?.is_superuser);
   const {
     visible,
     hideModal,
@@ -60,13 +63,13 @@ export default function Datasets() {
   const isCreate = searchUrl.get('isCreate') === 'true';
   const queryClient = useQueryClient();
   useEffect(() => {
-    if (isCreate) {
+    if (isCreate && canManage) {
       queryClient.invalidateQueries({ queryKey: ['tenantInfo'] });
       showModal();
       searchUrl.delete('isCreate');
       setSearchUrl(searchUrl);
     }
-  }, [isCreate, showModal, searchUrl, setSearchUrl, queryClient]);
+  }, [canManage, isCreate, showModal, searchUrl, setSearchUrl, queryClient]);
 
   return (
     <>
@@ -85,10 +88,12 @@ export default function Datasets() {
               onChange={handleFilterSubmit}
               icon={'datasets'}
             >
-              <Button onClick={showModal}>
-                <Plus className="size-[1em]" />
-                {t('knowledgeList.createKnowledgeBase')}
-              </Button>
+              {canManage && (
+                <Button data-testid="datasets-create" onClick={showModal}>
+                  <Plus className="size-[1em]" />
+                  {t('knowledgeList.createKnowledgeBase')}
+                </Button>
+              )}
             </ListFilterBar>
           </header>
 
@@ -98,6 +103,7 @@ export default function Datasets() {
                 {kbs.map((dataset) => (
                   <DatasetCard
                     dataset={dataset}
+                    readOnly={!canManage}
                     key={dataset.id}
                     showDatasetRenameModal={showDatasetRenameModal}
                   />
@@ -120,7 +126,7 @@ export default function Datasets() {
                 className="w-[480px] p-14"
                 isSearch
                 type={EmptyCardType.Dataset}
-                onClick={() => showModal()}
+                onClick={canManage ? () => showModal() : undefined}
               />
             </div>
           )}
@@ -135,18 +141,18 @@ export default function Datasets() {
             size="large"
             className="w-[480px] p-14"
             type={EmptyCardType.Dataset}
-            onClick={() => showModal()}
+            onClick={canManage ? () => showModal() : undefined}
           />
         </article>
       )}
-      {visible && (
+      {canManage && visible && (
         <DatasetCreatingDialog
           hideModal={hideModal}
           onOk={onCreateOk}
           loading={creatingLoading}
         ></DatasetCreatingDialog>
       )}
-      {datasetRenameVisible && (
+      {canManage && datasetRenameVisible && (
         <RenameDialog
           hideModal={hideDatasetRenameModal}
           onOk={onDatasetRenameOk}

@@ -75,7 +75,7 @@ def _resolve_dataset_folder(dataset_id):
     a query.
     """
     success, _kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not success:
+    if not success or not KnowledgebaseService.accessible(dataset_id, current_user.id):
         return None
     return dataset_id
 

@@ -55,10 +55,12 @@ const ParseStatusStateMap = {
 
 export function ParseDropdownButton({
   record,
+  readOnly = false,
   showChangeParserModal,
   // showSetMetaModal,
 }: {
   record: IDocumentInfo;
+  readOnly?: boolean;
 } & UseChangeDocumentParserShowType) {
   const { t } = useTranslation();
   const { pipeline_id, pipeline_name, chunk_method } = record;
@@ -67,6 +69,20 @@ export function ParseDropdownButton({
     showChangeParserModal(record);
   }, [record, showChangeParserModal]);
 
+  const label = pipeline_id
+    ? pipeline_name || pipeline_id
+    : chunk_method === 'naive'
+      ? 'general'
+      : chunk_method;
+
+  if (readOnly) {
+    return (
+      <Button variant="static" size="auto" className="capitalize" disabled>
+        {label}
+      </Button>
+    );
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -74,20 +90,12 @@ export function ParseDropdownButton({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="static" size="auto" className="capitalize">
-                {pipeline_id
-                  ? pipeline_name || pipeline_id
-                  : chunk_method === 'naive'
-                    ? 'general'
-                    : chunk_method}
+                {label}
               </Button>
             </TooltipTrigger>
             <TooltipContent>
               <p className="capitalize">
-                {pipeline_id
-                  ? pipeline_name || pipeline_id
-                  : chunk_method === 'naive'
-                    ? 'general'
-                    : chunk_method}
+                {label}
               </p>
             </TooltipContent>
           </Tooltip>
@@ -105,9 +113,11 @@ export function ParseDropdownButton({
 export function ParsingStatusCell({
   record,
   showLog,
+  readOnly = false,
 }: {
   record: IDocumentInfo;
   showLog: (record: IDocumentInfo) => void;
+  readOnly?: boolean;
 } & UseChangeDocumentParserShowType) {
   const { run, progress, chunk_count, id } = record;
   const operationIcon = IconMap[run];
@@ -161,37 +171,36 @@ export function ParsingStatusCell({
                 </div>
               </Button>
 
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => showReparseDialogModal()}
-                // onClick={
-                //   isZeroChunk || isRunning
-                //     ? handleOperationIconClick(false)
-                //     : () => {}
-                // }
-              >
-                {operationIcon}
-              </Button>
+              {!readOnly && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => showReparseDialogModal()}
+                >
+                  {operationIcon}
+                </Button>
+              )}
             </>
           ) : (
             <>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => {
-                  showReparseDialogModal();
-                }}
-              >
-                {operationIcon}
-              </Button>
+              {!readOnly && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => {
+                    showReparseDialogModal();
+                  }}
+                >
+                  {operationIcon}
+                </Button>
+              )}
 
               <ParsingCard record={record} handleShowLog={handleShowLog} />
             </>
           )}
         </div>
       )}
-      {reparseDialogVisible && (
+      {!readOnly && reparseDialogVisible && (
         <ReparseDialog
           hidden={
             (isZeroChunk && !record?.parser_config?.enable_metadata) ||

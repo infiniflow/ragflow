@@ -1,4 +1,5 @@
 export const NavigationSections = [
+  'home',
   'dataset',
   'chat',
   'search',

@@ -70,7 +70,8 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete):
         monkeypatch,
         "api.db.services.knowledgebase_service",
         KnowledgebaseService=SimpleNamespace(
-            get_or_none=lambda id, tenant_id: kb,
+            accessible=lambda kb_id, tenant_id: True,
+            get_or_none=lambda id: kb,
             delete_by_id=lambda kb_id: True,
             query=lambda **kwargs: [],
         ),

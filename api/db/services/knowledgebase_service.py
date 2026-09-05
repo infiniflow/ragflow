@@ -17,7 +17,6 @@ from datetime import datetime
 
 from peewee import fn, JOIN
 
-from api.db import TenantPermission
 from api.db.db_models import DB, Document, Knowledgebase, User, UserCanvas
 from api.db.services.common_service import CommonService
 from common.time_utils import current_timestamp, datetime_format
@@ -55,18 +54,17 @@ class KnowledgebaseService(CommonService):
         Build a Peewee filter expression representing knowledgebase visibility
         for a given user, combined with a valid-status constraint.
 
-        Visibility rules:
-        - Team KBs (`permission == TenantPermission.TEAM`) owned by any tenant in `joined_tenant_ids`
-        - KBs owned by the current user (`tenant_id == user_id`)
-        Always constrained to `StatusEnum.VALID`.
+        Superusers can see all valid datasets. Other users can see only datasets
+        explicitly assigned through an access group.
         """
-        visibility = (cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.tenant_id == user_id)
         from api.db.services.access_group_service import AccessGroupService
+        from api.db.services.managed_resource_service import ManagedResourceService
 
-        allowed_dataset_ids = AccessGroupService.allowed_dataset_ids(user_id)
-        if allowed_dataset_ids is not None:
-            visibility = cls.model.id.in_(allowed_dataset_ids) | (cls.model.tenant_id == user_id)
-        return visibility & (cls.model.status == StatusEnum.VALID.value)
+        if ManagedResourceService.user_is_superuser(user_id):
+            return cls.model.status == StatusEnum.VALID.value
+
+        allowed_dataset_ids = AccessGroupService.allowed_dataset_ids(user_id) or set()
+        return cls.model.id.in_(allowed_dataset_ids) & (cls.model.status == StatusEnum.VALID.value)
 
     @classmethod
     @DB.connection_context()
@@ -488,20 +486,15 @@ class KnowledgebaseService(CommonService):
         if kb.status != StatusEnum.VALID.value:
             return False
 
-        if kb.tenant_id == user_id:
+        from api.db.services.managed_resource_service import ManagedResourceService
+
+        if ManagedResourceService.user_is_superuser(user_id):
             return True
 
         from api.db.services.access_group_service import AccessGroupService
 
-        allowed_dataset_ids = AccessGroupService.allowed_dataset_ids(user_id)
-        if allowed_dataset_ids is not None:
-            return kb.id in allowed_dataset_ids
-
-        if kb.permission != TenantPermission.TEAM.value:
-            return False
-
-        joined_tenants = TenantService.get_joined_tenants_by_user_id(user_id)
-        return any(tenant["tenant_id"] == kb.tenant_id for tenant in joined_tenants)
+        allowed_dataset_ids = AccessGroupService.allowed_dataset_ids(user_id) or set()
+        return kb.id in allowed_dataset_ids
 
     @classmethod
     @DB.connection_context()

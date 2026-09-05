@@ -28,6 +28,7 @@ const emptyGroup = (): AdminService.AccessGroupInput => ({
 });
 
 const sectionLabels: Record<NavigationSection, string> = {
+  home: 'header.home',
   dataset: 'header.dataset',
   chat: 'header.chat',
   search: 'header.search',

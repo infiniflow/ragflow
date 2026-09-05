@@ -29,6 +29,7 @@ const NavigationVisibilityKeys = {
 };
 
 const SectionLabels: Record<NavigationSection, string> = {
+  home: 'header.home',
   dataset: 'header.dataset',
   chat: 'header.chat',
   search: 'header.search',

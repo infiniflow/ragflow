@@ -13,8 +13,8 @@ import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
 import {
   LucideBox,
-  LucideMessagesSquare,
   LucideLogOut,
+  LucideMessagesSquare,
   LucideServer,
   LucideUnplug,
   LucideUser,
@@ -29,11 +29,13 @@ const menuItems = (t: TFunction) => [
     icon: <LucideServer className="size-[1em]" />,
     label: t('setting.dataSources'),
     key: Routes.DataSource,
+    'data-testid': 'settings-nav-data-sources',
   },
   {
     icon: <LucideMessagesSquare className="size-[1em]" />,
     label: t('setting.chatChannels'),
     key: Routes.ChatChannel,
+    'data-testid': 'settings-nav-chat-channels',
   },
   {
     icon: <LucideBox className="size-[1em]" />,
@@ -45,21 +47,25 @@ const menuItems = (t: TFunction) => [
     icon: <IconFontFill name="mcp" className="size-[1em]" />,
     label: 'MCP',
     key: Routes.Mcp,
+    'data-testid': 'settings-nav-mcp',
   },
   {
     icon: <LucideUsers className="size-[1em]" />,
     label: t('setting.team'),
     key: Routes.Team,
+    'data-testid': 'settings-nav-team',
   },
   {
     icon: <LucideUser className="size-[1em]" />,
     label: t('setting.profile'),
     key: Routes.Profile,
+    'data-testid': 'settings-nav-profile',
   },
   {
     icon: <LucideUnplug className="size-[1em]" />,
     label: t('setting.api'),
     key: Routes.Api,
+    'data-testid': 'settings-nav-api',
   },
 ];
 
@@ -93,30 +99,36 @@ export function SideBar() {
 
       <nav className="flex-1 overflow-auto mt-4 py-1">
         <ul className="px-2 md:px-6 flex flex-col gap-2 md:gap-5 items-center md:items-stretch">
-          {menuItems(t).map((item) => {
-            const { key, icon, label, ...rest } = item;
+          {menuItems(t)
+            .filter(
+              (item) =>
+                userInfo?.is_superuser ||
+                [Routes.Model, Routes.Profile].includes(item.key),
+            )
+            .map((item) => {
+              const { key, icon, label, ...rest } = item;
 
-            return (
-              <li key={key} className="w-full md:w-auto">
-                <Button
-                  {...rest}
-                  block
-                  variant="ghost"
-                  aria-label={label}
-                  className={cn(
-                    'relative h-10 text-base max-md:size-10 max-md:p-0 max-md:justify-center justify-start gap-2.5 px-2 md:px-3',
-                    activeItemKey === key && 'bg-bg-card text-text-primary',
-                  )}
-                  onClick={handleMenuClick(key)}
-                >
-                  <span className="flex items-center gap-2.5 max-md:gap-0">
-                    {icon}
-                    <span className="hidden md:inline">{label}</span>
-                  </span>
-                </Button>
-              </li>
-            );
-          })}
+              return (
+                <li key={key} className="w-full md:w-auto">
+                  <Button
+                    {...rest}
+                    block
+                    variant="ghost"
+                    aria-label={label}
+                    className={cn(
+                      'relative h-10 text-base max-md:size-10 max-md:p-0 max-md:justify-center justify-start gap-2.5 px-2 md:px-3',
+                      activeItemKey === key && 'bg-bg-card text-text-primary',
+                    )}
+                    onClick={handleMenuClick(key)}
+                  >
+                    <span className="flex items-center gap-2.5 max-md:gap-0">
+                      {icon}
+                      <span className="hidden md:inline">{label}</span>
+                    </span>
+                  </Button>
+                </li>
+              );
+            })}
         </ul>
       </nav>
 

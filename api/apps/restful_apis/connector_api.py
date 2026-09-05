@@ -26,6 +26,7 @@ from google_auth_oauthlib.flow import Flow
 
 from api.db import InputType
 from api.db.services.connector_service import ConnectorService, SyncLogsService
+from api.db.services.managed_resource_service import ManagedResourceService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
 from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import RetCode, TaskStatus
@@ -39,6 +40,10 @@ from box_sdk_gen import BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _managed_owner_id() -> str:
+    return ManagedResourceService.owner_id(current_user.id)
 
 
 def _connector_auth_error(connector_id: str, user_id: str):
@@ -192,7 +197,7 @@ async def list_eva_wiki_projects():
     connector_id = str(req.get("connector_id") or "").strip()
     stored_config: dict[str, Any] = {}
     if connector_id:
-        if not ConnectorService.accessible(connector_id, current_user.id):
+        if not ConnectorService.accessible(connector_id, _managed_owner_id()):
             return _connector_auth_error(connector_id, current_user.id)
         found, connector = ConnectorService.get_by_id(connector_id)
         if not found:
@@ -226,7 +231,7 @@ async def list_eva_wiki_projects():
 @login_required
 async def update_connector(connector_id):
     """Update an accessible connector's polling configuration."""
-    if not ConnectorService.accessible(connector_id, current_user.id):
+    if not ConnectorService.accessible(connector_id, _managed_owner_id()):
         return _connector_auth_error(connector_id, current_user.id)
 
     req = await get_request_json()
@@ -293,7 +298,7 @@ async def create_connector():
         req["id"] = get_uuid()
         conn = {
             "id": req["id"],
-            "tenant_id": current_user.id,
+            "tenant_id": _managed_owner_id(),
             "name": req["name"],
             "source": req["source"],
             "input_type": InputType.POLL,
@@ -315,14 +320,14 @@ async def create_connector():
 @login_required
 def list_connector():
     """List connectors owned by the current tenant."""
-    return get_json_result(data=ConnectorService.list(current_user.id))
+    return get_json_result(data=ConnectorService.list(_managed_owner_id()))
 
 
 @manager.route("/connectors/<connector_id>", methods=["GET"])  # noqa: F821
 @login_required
 def get_connector(connector_id):
     """Return connector details when the current user can access it."""
-    if not ConnectorService.accessible(connector_id, current_user.id):
+    if not ConnectorService.accessible(connector_id, _managed_owner_id()):
         return _connector_auth_error(connector_id, current_user.id)
 
     e, conn = ConnectorService.get_by_id(connector_id)
@@ -335,7 +340,7 @@ def get_connector(connector_id):
 @login_required
 def list_logs(connector_id):
     """List sync logs for a connector the current user can access."""
-    if not ConnectorService.accessible(connector_id, current_user.id):
+    if not ConnectorService.accessible(connector_id, _managed_owner_id()):
         return _connector_auth_error(connector_id, current_user.id)
 
     req = request.args.to_dict(flat=True)
@@ -351,14 +356,14 @@ def list_logs(connector_id):
 @login_required
 async def rebuild(connector_id):
     """Schedule a rebuild for an accessible connector and knowledge base."""
-    if not ConnectorService.accessible(connector_id, current_user.id):
+    if not ConnectorService.accessible(connector_id, _managed_owner_id()):
         return _connector_auth_error(connector_id, current_user.id)
 
     req = await get_request_json()
     if "kb_id" not in req:
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message="required argument is missing: kb_id")
 
-    err = ConnectorService.rebuild(req["kb_id"], connector_id, current_user.id)
+    err = ConnectorService.rebuild(req["kb_id"], connector_id, _managed_owner_id())
     if err:
         return get_json_result(data=False, message=err, code=RetCode.SERVER_ERROR)
     return get_json_result(data=True)
@@ -368,7 +373,7 @@ async def rebuild(connector_id):
 @login_required
 def rm_connector(connector_id):
     """Delete an accessible connector after canceling its sync tasks."""
-    if not ConnectorService.accessible(connector_id, current_user.id):
+    if not ConnectorService.accessible(connector_id, _managed_owner_id()):
         return _connector_auth_error(connector_id, current_user.id)
 
     ConnectorService.cancel_tasks(connector_id)
@@ -387,7 +392,7 @@ async def test_connector(connector_id):
     so bad credentials, wrong location, or runaway scans surface before scheduled
     syncs run (and incur cost).
     """
-    if not ConnectorService.accessible(connector_id, current_user.id):
+    if not ConnectorService.accessible(connector_id, _managed_owner_id()):
         return _connector_auth_error(connector_id, current_user.id)
 
     ok, conn = ConnectorService.get_by_id(connector_id)

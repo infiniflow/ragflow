@@ -173,9 +173,6 @@ def _check_model_available(tenant_id: str, provider_name: str, instance_name: st
 
     Returns (success, error_message).
     """
-    if provider_name == "infiniflow" and instance_name == "default" and model_name == "deepdoc":
-        return True, None
-
     if model_type == "ocr" and provider_name == "infiniflow" and instance_name == "default" and model_name == "deepdoc":
         return True, None
 
@@ -244,6 +241,75 @@ def list_tenant_default_models(tenant_id: str):
             models.append(model_info)
 
     return True, {"models": models}
+
+
+def list_managed_default_models(user_tenant_id: str, catalog_tenant_id: str):
+    """Return personal chat default plus administrator-controlled system defaults."""
+
+    user_exists, user_tenant = TenantService.get_by_id(user_tenant_id)
+    catalog_exists, catalog_tenant = TenantService.get_by_id(catalog_tenant_id)
+    if not user_exists or not catalog_exists:
+        return False, "Tenant not found"
+
+    models = []
+    for model_type, field_name in MODEL_TYPE_TO_FIELD.items():
+        if model_type == "chat":
+            personal_default = getattr(user_tenant, field_name, None)
+            catalog_default = getattr(catalog_tenant, field_name, None)
+            default_model = personal_default or catalog_default
+        else:
+            default_model = getattr(catalog_tenant, field_name, None)
+        model_info = _get_model_info(catalog_tenant_id, default_model, model_type)
+        if model_type == "chat" and not model_info and personal_default and catalog_default:
+            model_info = _get_model_info(catalog_tenant_id, catalog_default, model_type)
+        if model_info:
+            models.append(model_info)
+    return True, {"models": models}
+
+
+def set_managed_default_model(
+    user_tenant_id: str,
+    catalog_tenant_id: str,
+    is_superuser: bool,
+    model_provider: str,
+    model_instance: str,
+    model_name: str,
+    model_type: str,
+):
+    """Set central defaults for admins or a personal chat default for a user."""
+
+    if not is_superuser and model_type != "chat":
+        return False, "Only an administrator can change system model defaults"
+    if not is_superuser and not all((model_provider, model_instance, model_name)):
+        return False, "A personal default chat model is required"
+
+    field_name = MODEL_TYPE_TO_FIELD.get(model_type)
+    if not field_name:
+        return False, f"model type '{model_type}' is invalid"
+
+    target_tenant_id = catalog_tenant_id if is_superuser else user_tenant_id
+    exists, _ = TenantService.get_by_id(target_tenant_id)
+    if not exists:
+        return False, "Tenant not found"
+
+    if not model_provider and not model_instance and not model_name:
+        default_model = ""
+    elif model_provider and model_instance and model_name:
+        success, message = _check_model_available(
+            catalog_tenant_id,
+            model_provider,
+            model_instance,
+            model_name,
+            model_type,
+        )
+        if not success:
+            return False, message
+        default_model = f"{model_name}@{model_instance}@{model_provider}"
+    else:
+        return False, "model_provider, model_instance and model_name must be specified together"
+
+    TenantService.update_by_id(target_tenant_id, {field_name: default_model})
+    return True, "success"
 
 
 def set_tenant_default_models(tenant_id: str, model_provider: str, model_instance: str, model_name: str, model_type: str):

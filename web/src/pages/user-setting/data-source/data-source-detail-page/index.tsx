@@ -13,6 +13,7 @@ import { t } from 'i18next';
 import { isEqual } from 'lodash';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
+import { SettingsAccessGuard } from '../../settings-access-guard';
 import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
@@ -30,7 +31,7 @@ import {
 } from '../hooks';
 import { DataSourceLogsTable } from './log-table';
 
-const SourceDetailPage = () => {
+const SourceDetailPageContent = () => {
   const formRef = useRef<DynamicFormRef>(null);
 
   const { data: detail } = useFetchDataSourceDetail();
@@ -280,4 +281,11 @@ const SourceDetailPage = () => {
     </div>
   );
 };
+
+const SourceDetailPage = () => (
+  <SettingsAccessGuard adminOnly>
+    <SourceDetailPageContent />
+  </SettingsAccessGuard>
+);
+
 export default SourceDetailPage;

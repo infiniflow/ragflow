@@ -44,6 +44,7 @@ export type DatasetTableProps = Pick<
   'documents' | 'setPagination' | 'pagination' | 'loading'
 > &
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> & {
+    readOnly?: boolean;
     showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
   };
 
@@ -54,6 +55,7 @@ export function DatasetTable({
   rowSelection,
   setRowSelection,
   showManageMetadataModal,
+  readOnly = false,
 }: DatasetTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -94,6 +96,7 @@ export function DatasetTable({
     showRenameModal,
     showManageMetadataModal,
     showLog,
+    readOnly,
   });
 
   const currentPagination = useMemo(() => {
@@ -187,7 +190,7 @@ export function DatasetTable({
           ></RAGFlowPagination>
         </div>
       </div>
-      {changeParserVisible && (
+      {!readOnly && changeParserVisible && (
         <ChunkMethodDialog
           documentId={changeParserRecord.id}
           parserId={changeParserRecord.chunk_method}
@@ -201,7 +204,7 @@ export function DatasetTable({
         ></ChunkMethodDialog>
       )}
 
-      {renameVisible && (
+      {!readOnly && renameVisible && (
         <RenameDialog
           visible={renameVisible}
           onOk={onRenameOk}

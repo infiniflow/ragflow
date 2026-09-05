@@ -15,7 +15,7 @@ from api.db.db_models import (
     Knowledgebase,
     User,
 )
-from api.db.services.navigation_visibility_service import NAVIGATION_SECTIONS
+from api.db.services.navigation_visibility_service import ACCESS_CONTROLLED_NAVIGATION_SECTIONS
 from common.misc_utils import get_uuid
 from common.constants import StatusEnum
 from common.time_utils import current_timestamp, datetime_format
@@ -73,11 +73,11 @@ def validate_group_payload(payload, *, partial=False):
         if not partial or field in payload:
             result[field] = _normalize_ids(payload.get(field, []), field)
     if "sections" in result:
-        unknown = sorted(set(result["sections"]) - set(NAVIGATION_SECTIONS))
+        unknown = sorted(set(result["sections"]) - set(ACCESS_CONTROLLED_NAVIGATION_SECTIONS))
         if unknown:
             raise AccessGroupValidationError(f"Unknown sections: {', '.join(unknown)}")
         selected = set(result["sections"])
-        result["sections"] = [item for item in NAVIGATION_SECTIONS if item in selected]
+        result["sections"] = [item for item in ACCESS_CONTROLLED_NAVIGATION_SECTIONS if item in selected]
     return result
 
 
@@ -114,7 +114,7 @@ class AccessGroupService:
             group["user_ids"] = sorted(users[group["id"]])
             group["dataset_ids"] = sorted(datasets[group["id"]])
             selected = set(sections[group["id"]])
-            group["sections"] = [item for item in NAVIGATION_SECTIONS if item in selected]
+            group["sections"] = [item for item in ACCESS_CONTROLLED_NAVIGATION_SECTIONS if item in selected]
         return groups
 
     @staticmethod
@@ -124,7 +124,7 @@ class AccessGroupService:
         datasets = list(
             Knowledgebase.select(Knowledgebase.id, Knowledgebase.name, Knowledgebase.tenant_id).where(Knowledgebase.status == StatusEnum.VALID.value).order_by(Knowledgebase.name.asc()).dicts()
         )
-        return {"users": users, "datasets": datasets, "sections": list(NAVIGATION_SECTIONS)}
+        return {"users": users, "datasets": datasets, "sections": list(ACCESS_CONTROLLED_NAVIGATION_SECTIONS)}
 
     @staticmethod
     def _replace_links(group_id, payload):

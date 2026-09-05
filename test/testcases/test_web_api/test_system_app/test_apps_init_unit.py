@@ -61,8 +61,38 @@ def _load_apps_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 
     services_mod = ModuleType("api.db.services")
+    services_mod.__path__ = []
     services_mod.UserService = _DummyUserService
     monkeypatch.setitem(sys.modules, "api.db.services", services_mod)
+
+    access_group_mod = ModuleType("api.db.services.access_group_service")
+
+    class _StubAccessGroupService:
+        @staticmethod
+        def has_section_access(_user, _section):
+            return True
+
+    access_group_mod.AccessGroupService = _StubAccessGroupService
+    access_group_mod.section_for_blueprint = lambda _blueprint: None
+    monkeypatch.setitem(
+        sys.modules,
+        "api.db.services.access_group_service",
+        access_group_mod,
+    )
+
+    managed_resource_mod = ModuleType("api.db.services.managed_resource_service")
+
+    class _StubManagedResourceService:
+        @staticmethod
+        def request_allowed(_user, _blueprint, _endpoint, _method):
+            return True
+
+    managed_resource_mod.ManagedResourceService = _StubManagedResourceService
+    monkeypatch.setitem(
+        sys.modules,
+        "api.db.services.managed_resource_service",
+        managed_resource_mod,
+    )
 
     commands_mod = ModuleType("api.utils.commands")
     commands_mod.register_commands = lambda _app: None
@@ -202,16 +232,14 @@ def test_load_user_api_token_fallback_and_fallback_exception(monkeypatch, caplog
 
 
 @pytest.mark.p2
-def test_load_user_session_fallback(monkeypatch, caplog):
+def test_load_user_uses_session_only_without_authorization(monkeypatch):
     quart_app, apps_module = _load_apps_module(monkeypatch)
 
     valid_token = "a" * 32
     valid_user = SimpleNamespace(id="user-1", email="oidc@example.com", access_token=valid_token)
-    invalid_token_user = SimpleNamespace(id="user-1", email="oidc@example.com", access_token="INVALID_deadbeef")
-    short_token_user = SimpleNamespace(id="user-1", email="oidc@example.com", access_token="too-short")
 
     async def _case():
-        # No Authorization header but a valid session: helper resolves the user.
+        # Without an Authorization header, the OIDC browser session is accepted.
         async with quart_app.test_request_context("/"):
             from quart import session
 
@@ -219,55 +247,24 @@ def test_load_user_session_fallback(monkeypatch, caplog):
             monkeypatch.setattr(apps_module.UserService, "query", lambda **_kw: [valid_user])
             assert apps_module._load_user() is valid_user
 
-        # Malformed bearer header still falls back to session.
+        # A malformed bearer header is rejected even when a session is present.
         async with quart_app.test_request_context("/", headers={"Authorization": "Bearer"}):
             from quart import session
 
             session["_user_id"] = "user-1"
             monkeypatch.setattr(apps_module.UserService, "query", lambda **_kw: [valid_user])
-            assert apps_module._load_user() is valid_user
-
-        # Logout-revoked tokens (INVALID_ prefix) are rejected even with a session.
-        async with quart_app.test_request_context("/"):
-            from quart import session
-
-            session["_user_id"] = "user-1"
-            monkeypatch.setattr(apps_module.UserService, "query", lambda **_kw: [invalid_token_user])
             assert apps_module._load_user() is None
 
-        # Short tokens are rejected (matches the JWT-path length floor).
-        async with quart_app.test_request_context("/"):
-            from quart import session
-
-            session["_user_id"] = "user-1"
-            monkeypatch.setattr(apps_module.UserService, "query", lambda **_kw: [short_token_user])
-            assert apps_module._load_user() is None
-
-        # No session and no header → still None.
+        # No session and no header is also unauthenticated.
         async with quart_app.test_request_context("/"):
             assert apps_module._load_user() is None
-
-        # Database errors during the session lookup are swallowed and logged.
-        async with quart_app.test_request_context("/"):
-            from quart import session
-
-            session["_user_id"] = "user-1"
-
-            def _raise(**_kw):
-                raise RuntimeError("db down")
-
-            monkeypatch.setattr(apps_module.UserService, "query", _raise)
-            with caplog.at_level(logging.ERROR):
-                assert apps_module._load_user() is None
 
     _run(_case())
-    assert "load_user from session failed" in caplog.text
 
 
 @pytest.mark.p2
-def test_load_user_session_fallback_after_token_paths_fail(monkeypatch):
-    """JWT-decode failures and API-token exhaustion must still fall through
-    to the session and return the user, not None."""
+def test_load_user_rejects_request_after_token_paths_fail(monkeypatch):
+    """JWT and API-token failures must not be rescued by a browser session."""
     quart_app, apps_module = _load_apps_module(monkeypatch)
 
     valid_token = "b" * 32
@@ -280,13 +277,13 @@ def test_load_user_session_fallback_after_token_paths_fail(monkeypatch):
     monkeypatch.setattr(apps_module.APIToken, "query", lambda **_kw: [])
 
     async def _case():
-        # JWT decode fails AND API-token query returns nothing → session wins.
+        # JWT decode and API-token lookup both fail; the session is ignored.
         async with quart_app.test_request_context("/", headers={"Authorization": "Bearer junk"}):
             from quart import session
 
             session["_user_id"] = "user-1"
             monkeypatch.setattr(apps_module.UserService, "query", lambda **_kw: [valid_user])
-            assert apps_module._load_user() is valid_user
+            assert apps_module._load_user() is None
 
     _run(_case())
 
@@ -296,7 +293,11 @@ def test_login_required_timing_and_login_user_inactive(monkeypatch, caplog):
     quart_app, apps_module = _load_apps_module(monkeypatch)
 
     monkeypatch.setenv("RAGFLOW_API_TIMING", "1")
-    monkeypatch.setattr(apps_module, "current_user", SimpleNamespace(id="tenant-1"))
+    monkeypatch.setattr(
+        apps_module,
+        "_load_user",
+        lambda _auth_types=None: SimpleNamespace(id="tenant-1"),
+    )
 
     @apps_module.login_required
     async def _timed_handler():
@@ -312,6 +313,56 @@ def test_login_required_timing_and_login_user_inactive(monkeypatch, caplog):
 
     _run(_case())
     assert "api_timing login_required" in caplog.text
+
+
+@pytest.mark.p1
+def test_login_required_blocks_direct_managed_route_before_handler(monkeypatch):
+    quart_app, apps_module = _load_apps_module(monkeypatch)
+    from quart import Blueprint
+
+    user = SimpleNamespace(id="user-1", is_superuser=False)
+    monkeypatch.setattr(apps_module, "_load_user", lambda _auth_types=None: user)
+    policy_calls = []
+    managed_resource_module = sys.modules["api.db.services.managed_resource_service"]
+
+    def _request_allowed(actor, blueprint, endpoint, method):
+        policy_calls.append((actor.id, blueprint, endpoint, method))
+        return method == "GET"
+
+    monkeypatch.setattr(
+        managed_resource_module.ManagedResourceService,
+        "request_allowed",
+        _request_allowed,
+    )
+    handled_methods = []
+    blueprint = Blueprint("mcp_api", __name__)
+
+    @blueprint.route("/direct-managed", methods=["GET", "POST"])
+    @apps_module.login_required
+    async def direct_managed():
+        from quart import request
+
+        handled_methods.append(request.method)
+        return {"ok": True}
+
+    quart_app.register_blueprint(blueprint)
+
+    async def _case():
+        client = quart_app.test_client()
+        denied = await client.post("/direct-managed")
+        allowed = await client.get("/direct-managed")
+
+        assert denied.status_code == 403
+        assert (await denied.get_json())["message"] == ("Only an administrator can change this managed resource.")
+        assert allowed.status_code == 200
+        assert await allowed.get_json() == {"ok": True}
+
+    _run(_case())
+    assert handled_methods == ["GET"]
+    assert policy_calls == [
+        ("user-1", "mcp_api", "mcp_api.direct_managed", "POST"),
+        ("user-1", "mcp_api", "mcp_api.direct_managed", "GET"),
+    ]
 
 
 @pytest.mark.p2

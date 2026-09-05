@@ -22,6 +22,9 @@ const chatChannelService = registerServer<keyof typeof methods>(
 export const fetchChatChannelDetail = (id: string) =>
   request.get(api.chatChannelDetail(id));
 
+export const fetchChatChannelDialogs = () =>
+  request.get(api.chatChannelDialogs);
+
 export const updateChatChannel = (id: string, data: Record<string, any>) =>
   request.patch(api.chatChannelUpdate(id), { data });
 

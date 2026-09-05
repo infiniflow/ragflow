@@ -18,11 +18,20 @@ import logging
 from api.apps import current_user, login_required
 from api.db.services.chat_channel_service import ChatChannelService
 from api.db.services.dialog_service import DialogService
+from api.db.services.managed_resource_service import ManagedResourceService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
-from common.constants import RetCode
+from common.constants import RetCode, StatusEnum
 from common.misc_utils import get_uuid
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _managed_owner_id() -> str:
+    return ManagedResourceService.owner_id(current_user.id)
+
+
+def _managed_dialog_tenant_ids() -> set[str]:
+    return {_managed_owner_id(), current_user.id}
 
 
 def _chat_channel_auth_error(channel_id: str, user_id: str):
@@ -37,7 +46,13 @@ def _chat_channel_auth_error(channel_id: str, user_id: str):
 async def create_chat_channel():
     """Create a chat channel bot owned by the current tenant."""
     req = await get_request_json()
-    channel = {"id": get_uuid(), "tenant_id": current_user.id, "name": req["name"], "channel": req["channel"], "config": req.get("config") or {}, "chat_id": req.get("chat_id") or None}
+    owner_id = _managed_owner_id()
+    chat_id = req.get("chat_id") or None
+    if chat_id:
+        e, dialog = DialogService.get_by_id(chat_id)
+        if not e or dialog.tenant_id not in _managed_dialog_tenant_ids():
+            return get_data_error_result(message="Can't find this managed chat assistant!")
+    channel = {"id": get_uuid(), "tenant_id": owner_id, "name": req["name"], "channel": req["channel"], "config": req.get("config") or {}, "chat_id": chat_id}
     ChatChannelService.insert(**channel)
 
     e, conn = ChatChannelService.get_by_id(channel["id"])
@@ -50,14 +65,28 @@ async def create_chat_channel():
 @login_required
 def list_chat_channel():
     """List chat channel bots owned by the current tenant."""
-    return get_json_result(data=ChatChannelService.list(current_user.id))
+    return get_json_result(data=ChatChannelService.list(_managed_owner_id()))
+
+
+@manager.route("/chat-channels/dialogs", methods=["GET"])  # noqa: F821
+@login_required
+def list_chat_channel_dialogs():
+    """List assistants owned by the managed account for channel connections."""
+    dialogs = {}
+    for tenant_id in _managed_dialog_tenant_ids():
+        for dialog in DialogService.query(
+            tenant_id=tenant_id,
+            status=StatusEnum.VALID.value,
+        ):
+            dialogs[dialog.id] = {"id": dialog.id, "name": dialog.name}
+    return get_json_result(data=list(dialogs.values()))
 
 
 @manager.route("/chat-channels/<channel_id>", methods=["GET"])  # noqa: F821
 @login_required
 def get_chat_channel(channel_id):
     """Return a chat channel bot's details when the current user can access it."""
-    if not ChatChannelService.accessible(channel_id, current_user.id):
+    if not ChatChannelService.accessible(channel_id, _managed_owner_id()):
         return _chat_channel_auth_error(channel_id, current_user.id)
 
     e, conn = ChatChannelService.get_by_id(channel_id)
@@ -70,7 +99,8 @@ def get_chat_channel(channel_id):
 @login_required
 async def update_chat_channel(channel_id):
     """Update an accessible chat channel bot's name/config/status."""
-    if not ChatChannelService.accessible(channel_id, current_user.id):
+    owner_id = _managed_owner_id()
+    if not ChatChannelService.accessible(channel_id, owner_id):
         return _chat_channel_auth_error(channel_id, current_user.id)
 
     e, conn = ChatChannelService.get_by_id(channel_id)
@@ -86,7 +116,7 @@ async def update_chat_channel(channel_id):
         e, dia = DialogService.get_by_id(req["chat_id"])
         if not e:
             return get_data_error_result(message="Can't find this chat assistant!")
-        if dia.tenant_id != conn.tenant_id:
+        if dia.tenant_id not in _managed_dialog_tenant_ids():
             return _chat_channel_auth_error(channel_id, current_user.id)
 
     update_fields = {fld: req[fld] for fld in ["name", "config", "chat_id"] if fld in req}
@@ -103,7 +133,7 @@ async def update_chat_channel(channel_id):
 @login_required
 def rm_chat_channel(channel_id):
     """Delete an accessible chat channel bot."""
-    if not ChatChannelService.accessible(channel_id, current_user.id):
+    if not ChatChannelService.accessible(channel_id, _managed_owner_id()):
         return _chat_channel_auth_error(channel_id, current_user.id)
 
     ChatChannelService.delete_by_id(channel_id)
@@ -114,7 +144,7 @@ def rm_chat_channel(channel_id):
 @login_required
 def get_chat_channel_runtime(channel_id):
     """Return live runtime metadata for a running chat channel."""
-    if not ChatChannelService.accessible(channel_id, current_user.id):
+    if not ChatChannelService.accessible(channel_id, _managed_owner_id()):
         return _chat_channel_auth_error(channel_id, current_user.id)
 
     e, conn = ChatChannelService.get_by_id(channel_id)

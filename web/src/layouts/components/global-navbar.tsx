@@ -48,7 +48,13 @@ const menuItems: Array<{
   section?: NavigationSection;
   'data-testid'?: string;
 }> = [
-  { path: Routes.Root, name: 'header.home', icon: LucideHouse },
+  {
+    path: Routes.Root,
+    name: 'header.home',
+    icon: LucideHouse,
+    section: 'home',
+    'data-testid': 'nav-home',
+  },
   {
     path: Routes.Datasets,
     name: 'header.dataset',

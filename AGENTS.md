@@ -9,7 +9,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - Keep local business logic in its owning module. Put calls to upstream behind narrow adapters and keep core registration/wiring changes small, justified, and tested. Do not create a plugin framework or duplicate the upstream implementation for isolation.
 - Do not add mass moves, unrelated formatting, or a package-manager switch to a feature or cleanup task. A necessary core fix is allowed and must have a reason and focused verification.
 - Read the [architecture](docs/develop/architecture-and-code-quality-ru.md) for boundaries, the [transition plan](docs/develop/architecture-transition-ru.md) for stages and working instructions, and the [rule catalog](docs/develop/architecture-checks-ru.md) for applicable checks.
-- These documents specify future registries and CI gates. Do not claim they exist or pass before implementation and verification. Do not create placeholder registries with guessed upstream SHAs or empty baselines.
+- T0 provenance registries and their capture command are documented in [the inventory report](docs/develop/t0-provenance-report-ru.md). Refresh affected records for the actual working snapshot; the report does not certify behavior. Architecture/dead-code runners and CI gates remain future work. Do not claim they exist or pass before implementation and verification, or create placeholder registries with guessed upstream SHAs or empty baselines.
 
 ## Core stance
 - Treat obsolete owned code as liability; verify current consumers, dynamic registrations, persisted DSL and external contracts before removal.

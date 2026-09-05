@@ -474,6 +474,16 @@ def _load_user_app(monkeypatch):
     services_pkg.__path__ = []
     monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
 
+    managed_resource_mod = ModuleType("api.db.services.managed_resource_service")
+
+    class _StubManagedResourceService:
+        @staticmethod
+        def owner_id(fallback_tenant_id):
+            return fallback_tenant_id
+
+    managed_resource_mod.ManagedResourceService = _StubManagedResourceService
+    monkeypatch.setitem(sys.modules, "api.db.services.managed_resource_service", managed_resource_mod)
+
     file_service_mod = ModuleType("api.db.services.file_service")
 
     class _StubFileService:

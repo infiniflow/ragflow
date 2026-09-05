@@ -21,7 +21,7 @@ jest.mock('react-i18next', () => ({
 }));
 
 describe('DesktopNavbar', () => {
-  it('shows only globally visible sections while keeping home', () => {
+  it('shows only globally visible sections, including home', () => {
     mockUseSystemConfig.mockReturnValue({
       config: {
         registerEnabled: 1,
@@ -36,7 +36,7 @@ describe('DesktopNavbar', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('link', { name: /home/i })).toBeInTheDocument();
+    expect(screen.queryByTestId('nav-home')).not.toBeInTheDocument();
     expect(screen.getByTestId('nav-chat')).toBeInTheDocument();
     expect(screen.getByTestId('nav-agent')).toBeInTheDocument();
     expect(screen.queryByTestId('nav-search')).not.toBeInTheDocument();

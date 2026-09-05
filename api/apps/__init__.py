@@ -281,6 +281,18 @@ def login_required(func: Callable[P, Awaitable[T]] = None, auth_types=None) -> C
                     code=RetCode.OPERATING_ERROR,
                     message="This section is not available for your access groups.",
                 ), 403
+            from api.db.services.managed_resource_service import ManagedResourceService
+
+            if not ManagedResourceService.request_allowed(
+                user,
+                request.blueprint,
+                request.endpoint,
+                request.method,
+            ):
+                return get_json_result(
+                    code=RetCode.OPERATING_ERROR,
+                    message="Only an administrator can change this managed resource.",
+                ), 403
             return await current_app.ensure_async(func)(*args, **kwargs)
 
         return wrapper

@@ -27,6 +27,7 @@ interface IProps {
   clickChunkCard: (chunkId: string) => void;
   textMode: ChunkTextMode;
   t?: string | number; // Cache-busting key for images
+  readOnly?: boolean;
 }
 
 const ChunkCard = ({
@@ -39,6 +40,7 @@ const ChunkCard = ({
   clickChunkCard,
   textMode,
   t: imageCacheKey,
+  readOnly = false,
 }: IProps) => {
   const { t } = useTranslation();
   const available = Number(item.available_int);
@@ -54,7 +56,7 @@ const ChunkCard = ({
   };
 
   const handleContentDoubleClick = () => {
-    editChunk(item.chunk_id);
+    if (!readOnly) editChunk(item.chunk_id);
   };
 
   const handleContentClick = () => {
@@ -88,11 +90,13 @@ const ChunkCard = ({
       </span>
 
       <div className="flex items-start justify-between gap-2.5">
-        <Checkbox
-          className="mt-1"
-          onCheckedChange={handleCheck}
-          checked={checked}
-        />
+        {!readOnly && (
+          <Checkbox
+            className="mt-1"
+            onCheckedChange={handleCheck}
+            checked={checked}
+          />
+        )}
 
         {/* Using <Tooltip> instead of <Popover> to avoid flickering when hovering over the image */}
         {item.image_id && (
@@ -140,6 +144,7 @@ const ChunkCard = ({
 
         <div>
           <Switch
+            disabled={readOnly}
             checked={enabled}
             onCheckedChange={onChange}
             aria-readonly
