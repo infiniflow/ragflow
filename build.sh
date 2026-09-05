@@ -238,12 +238,14 @@ check_pdf_oxide_deps() {
         # The marker here differs from office_oxide: instead of a standalone
         # "0.1.9" line it is "pdf_oxide <version>" merged into Rust's string
         # constant pool, so a whole-line match cannot be used. Extract the
-        # version and compare it exactly — a substring match would let a pin of
-        # "0.3.7" accept a 0.3.73 lib. The "pdf_oxide " prefix keeps bare
-        # version numbers of vendored dependencies out of the match.
+        # version and compare it exactly. The pattern captures the whole dotted
+        # version, so the exact comparison rejects both a truncated pin
+        # ("0.3.7" vs "0.3.73") and a suffix ("0.3.73.1" vs "0.3.73"). The
+        # "pdf_oxide " prefix keeps bare version numbers of vendored
+        # dependencies out of the match.
         local found_version
         found_version=$(strings "$lib_path" 2>/dev/null \
-            | grep -oE "pdf_oxide [0-9]+\.[0-9]+\.[0-9]+" | head -1 | cut -d' ' -f2)
+            | grep -oE "pdf_oxide [0-9.]+" | head -1 | cut -d' ' -f2)
         if [ "$found_version" != "$PDF_OXIDE_VERSION" ]; then
             echo -e "${RED}Error: pdf_oxide native lib version mismatch${NC}"
             echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
