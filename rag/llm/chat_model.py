@@ -1937,10 +1937,31 @@ class LiteLLMBase(ABC):
     def __init__(self, key, model_name, base_url=None, **kwargs):
         self.timeout = int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
         self.provider = kwargs.get("provider", "")
-        self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
+        # #19262: the Tongyi-Qianwen / Dashscope factory default base URL is
+        # ``dashscope.aliyuncs.com/compatible-mode/v1`` (the OpenAI-compatible
+        # endpoint). LiteLLM's ``dashscope/`` prefix routes to the *native*
+        # DashScope SDK instead, which rejects the request format with a
+        # generic 102. Both the default and any user-supplied alternative
+        # that targets the OpenAI-compatible endpoint must therefore skip
+        # the prefix; only requests to the native endpoint
+        # (``/api/v1``) keep it.
+        #
+        # Restrict the prefix-skip to the two DashScope-family
+        # providers — a non-DashScope provider with a custom URL ending
+        # in ``/compatible-mode/v1`` would lose its required LiteLLM
+        # prefix and send an invalid model name.
+        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/")
+        if self._is_dashscope_family_provider() and self._targets_openai_compatible_endpoint(self.base_url):
+            logger.debug(
+                "DashScope-family provider=%s targeting OpenAI-compatible endpoint — dropping dashscope/ prefix on model_name=%s",
+                self.provider,
+                model_name,
+            )
+            self.prefix = ""
+        else:
+            self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
         self.model_name = f"{self.prefix}{model_name}"
         self.api_key = key
-        self.base_url = (base_url or FACTORY_DEFAULT_BASE_URL.get(self.provider, "")).rstrip("/")
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
         self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
@@ -1974,6 +1995,36 @@ class LiteLLMBase(ABC):
                 self.group_id = ""
         else:
             self.group_id = ""
+
+    def _is_dashscope_family_provider(self) -> bool:
+        """True iff ``self.provider`` is the DashScope / Tongyi-Qianwen
+        family — the two providers whose LiteLLM prefix (``dashscope/``)
+        routes through the same ``dashscope.aliyuncs.com`` endpoint and
+        must be skipped for the OpenAI-compatible base URL to work.
+
+        Restrict the OpenAI-compatible prefix-skip to this family: a
+        non-DashScope provider with a custom URL ending in
+        ``/compatible-mode/v1`` would lose its required LiteLLM prefix
+        and send an invalid model name.
+        """
+        return self.provider in (
+            SupportedLiteLLMProvider.Tongyi_Qianwen,
+            SupportedLiteLLMProvider.Dashscope,
+        )
+
+    @staticmethod
+    def _targets_openai_compatible_endpoint(base_url: str) -> bool:
+        """True iff ``base_url`` looks like the DashScope OpenAI-compatible
+        endpoint (``*/compatible-mode/v1``).
+
+        Issue #19262: the Tongyi-Qianwen / Dashscope factory default base
+        URL is the OpenAI-compatible endpoint, so the bare model name
+        (e.g. ``qwen-turbo``) must reach LiteLLM. The native DashScope
+        SDK path (``dashscope/...`` to ``*/api/v1``) keeps the prefix.
+        """
+        if not base_url:
+            return True
+        return base_url.rstrip("/").endswith("/compatible-mode/v1")
 
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
