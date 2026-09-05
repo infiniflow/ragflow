@@ -110,8 +110,8 @@ async def _list(monkeypatch, query_string):
 @pytest.mark.asyncio
 async def test_repeated_memory_type_keys_all_reach_the_service(monkeypatch):
     """`rag.list_memory(memory_type=["episodic", "procedural"])` puts the list on
-    the wire as `?memory_type=episodic&memory_type=procedural`. Reading the key
-    with `.get` kept only `episodic`."""
+    the wire as `?memory_type=episodic&memory_type=procedural`. Every value of
+    the repeated key reaches the service, in the order sent."""
     response, calls = await _list(monkeypatch, "memory_type=episodic&memory_type=procedural")
 
     assert response["code"] == 0
@@ -121,7 +121,7 @@ async def test_repeated_memory_type_keys_all_reach_the_service(monkeypatch):
 @pytest.mark.p1
 @pytest.mark.asyncio
 async def test_comma_joined_memory_type_reaches_the_service(monkeypatch):
-    """The form the web client and the HTTP reference use has to keep working."""
+    """One comma-joined value is split into its parts before reaching the service."""
     _, calls = await _list(monkeypatch, "memory_type=episodic%2Cprocedural")
 
     assert calls[0]["filter_params"]["memory_type"] == ["episodic", "procedural"]
@@ -156,7 +156,7 @@ async def test_owner_ids_and_ids_reach_the_service_in_both_forms(monkeypatch):
 
 @pytest.mark.p1
 @pytest.mark.asyncio
-async def test_id_filters_are_still_counted_against_the_public_maximum(monkeypatch):
+async def test_id_filters_are_counted_against_the_public_maximum(monkeypatch):
     """`validate_rest_api_ids` caps both fields at REST_API_MAX_IDS. The count
     has to be taken over every value sent, in either form."""
     for field_name in ("owner_ids", "ids"):
@@ -189,9 +189,9 @@ async def test_storage_type_stays_a_single_value(monkeypatch):
 @pytest.mark.p1
 @pytest.mark.asyncio
 async def test_absent_filters_are_not_invented(monkeypatch):
-    """A key that was not sent stays out of the dict, as before this change. The
-    service treats a missing key and an empty list alike, so this pins the
-    route's contract, not a query outcome."""
+    """A key that was not sent stays out of the filter dict. The service treats
+    a missing key and an empty list alike, so this pins the route's contract,
+    not a query outcome."""
     _, calls = await _list(monkeypatch, "page=2&page_size=10")
 
     assert calls[0]["filter_params"] == {}
