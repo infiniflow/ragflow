@@ -416,7 +416,10 @@ func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Docume
 		}
 	}
 
-	if upErr := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"run": string(entity.TaskStatusCancel)}); upErr != nil {
+	if upErr := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+		"run":      string(entity.TaskStatusCancel),
+		"progress": 0,
+	}); upErr != nil {
 		return fmt.Errorf("failed to update document %s: %w", doc.ID, upErr)
 	}
 	return nil

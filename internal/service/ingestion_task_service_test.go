@@ -492,6 +492,50 @@ func TestIngestionTaskServiceRequestStopTransitionsCreatedTaskToStopped(t *testi
 	}
 }
 
+func TestIngestionTaskServiceRequestStopFinalizesStoppingTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("status", common.STOPPING).Error; err != nil {
+		t.Fatalf("set STOPPING: %v", err)
+	}
+	ctx := t.Context()
+
+	svc := NewIngestionTaskService()
+	task, err := svc.RequestStop(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("RequestStop failed: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("status = %q, want %q", task.Status, common.STOPPED)
+	}
+}
+
+func TestScheduleCreatedTasksRecoversOrphanedStoppingTasks(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-stopping", "user-1", "doc-1", "kb-1")
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-stopping").
+		Update("status", common.STOPPING).Error; err != nil {
+		t.Fatalf("set STOPPING: %v", err)
+	}
+	ctx := t.Context()
+
+	svc := NewIngestionTaskService()
+	if err := svc.ScheduleCreatedTasks(ctx); err != nil {
+		t.Fatalf("ScheduleCreatedTasks failed: %v", err)
+	}
+
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-stopping")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("status = %q, want %q", task.Status, common.STOPPED)
+	}
+}
+
 func TestIngestionTaskServiceMarkCompletedRejectsNonRunningTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
