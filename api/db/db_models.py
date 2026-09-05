@@ -1976,12 +1976,107 @@ def alter_db_add_column(migrator, table_name, column_name, column_type):
         pass
 
 
-def alter_db_column_type(migrator, table_name, column_name, new_column_type):
+def alter_db_column_type(migrator, table_name, column_name, new_column_type, cast=None):
+    """ALTER TABLE <t> ALTER COLUMN <c> TYPE <new>.
+
+    ``cast`` is only honoured on PostgreSQL/GaussDB (which both derive from
+    ``PostgresqlMigrator``) and is rendered as the ``USING <cast>`` clause
+    that Peewee's ``PostgresqlMigrator.alter_column_type`` requires when the
+    old and new types aren't implicitly cast-compatible — e.g. a varchar column
+    holding legacy string enum values to INTEGER. MySQL/OceanBase ignore
+    ``cast``.
+    """
     try:
-        migrate(migrator.alter_column_type(table_name, column_name, new_column_type))
+        kwargs = {}
+        if cast is not None and isinstance(migrator, PostgresqlMigrator):
+            kwargs["cast"] = cast
+        migrate(migrator.alter_column_type(table_name, column_name, new_column_type, **kwargs))
     except Exception as ex:
         logging.critical(f"Failed to alter {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name} type, error: {ex}")
         pass
+
+
+def migrate_tenant_model_model_type_to_integer(migrator):
+    """Convert `tenant_model.model_type` to INTEGER on upgrade.
+
+    In v0.27.0 the ORM declares ``model_type`` as an ``IntegerField`` bitmask
+    (bit 0 = chat, bit 1 = embedding, ...), and the query layer uses
+    bitwise operators like ``model_type & 1`` to filter by capability
+    (``api/db/joint_services/tenant_model_service.py``). On an in-place
+    upgrade from v0.26.x the column was created as a varchar and stays
+    varchar, so the bitwise query fails with
+    ``operator does not exist: character varying & integer`` and every
+    model-config lookup breaks.
+
+    On a database that was created before v0.27.0, the column may also
+    contain the legacy string enum names (``"chat"``, ``"embedding"``,
+    ``"asr"``, ``"vision"``, ``"rerank"``, ``"tts"``, ``"ocr"`` and the
+    ``"speech2text"`` / ``"image2text"`` aliases) instead of integer
+    bitmasks. PostgreSQL and GaussDB will refuse to cast those to INTEGER
+    on the ALTER, so we coerce them first using the same
+    ``MODEL_TYPE_TO_INT`` mapping the one-shot data-migration script
+    (``tools/scripts/mysql_migration.py::TenantModelIdMigrationStage``)
+    relies on. The pre-cleanup is a no-op on rows that already hold an
+    integer (the migration is idempotent).
+
+    The ALTER itself needs an explicit ``USING model_type::integer`` cast on
+    PostgreSQL / GaussDB. Peewee's ``PostgresqlMigrator.alter_column_type``
+    only emits the ``USING`` clause when a ``cast`` argument is supplied
+    (``playhouse/migrate.py:alter_column_type``), so the helper passes the
+    cast and ``alter_db_column_type`` forwards it on PG/GaussDB only. MySQL
+    and OceanBase ignore ``cast``. See issue #18755.
+    """
+    if not (DB.table_exists("tenant_model") and DB.column_exists("tenant_model", "model_type")):
+        return
+
+    # Pre-cleanup: coerce legacy string enum values to integer bitmasks so
+    # the ALTER below does not fail on PostgreSQL / GaussDB when the
+    # column contains non-numeric data. Matches
+    # tools/scripts/mysql_migration.py::TenantModelIdMigrationStage.MODEL_TYPE_TO_INT.
+    _MODEL_TYPE_STRING_TO_INT = {
+        "chat": 1,
+        "embedding": 2,
+        "asr": 4,
+        "speech2text": 4,
+        "vision": 8,
+        "image2text": 8,
+        "rerank": 16,
+        "tts": 32,
+        "ocr": 64,
+    }
+    try:
+        for legacy_name, bitmask in _MODEL_TYPE_STRING_TO_INT.items():
+            cursor = DB.execute_sql(
+                "UPDATE tenant_model SET model_type = %s WHERE model_type = %s",
+                (bitmask, legacy_name),
+            )
+            if cursor.rowcount:
+                logging.info(
+                    "Converted %s rows in tenant_model.model_type from %r to %d before the type change",
+                    cursor.rowcount,
+                    legacy_name,
+                    bitmask,
+                )
+    except Exception as ex:
+        # If the pre-cleanup fails we still attempt the ALTER below —
+        # `alter_db_column_type` will log the failure and continue. The
+        # worst case is the column stays varchar; the application will
+        # surface the original error and a maintainer can intervene.
+        logging.warning("Failed to pre-cleanup tenant_model.model_type: %s", ex)
+
+    # PostgreSQL / GaussDB require a USING clause when the source type
+    # (varchar) is not implicitly cast-compatible with the target type
+    # (integer). Without the cast, the ALTER fails with
+    # ``column "model_type" cannot be cast automatically to type integer``
+    # and the migration helper logs the failure and moves on, leaving the
+    # column varchar and every model-config lookup broken.
+    alter_db_column_type(
+        migrator,
+        "tenant_model",
+        "model_type",
+        IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=chat, 2=embedding, 4=asr, 8=vision, 16=rerank, 32=tts, 64=ocr"),
+        cast="model_type::integer",
+    )
 
 
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
@@ -2483,6 +2578,13 @@ def migrate_db():
     # Run after all alter_db_* calls so newly added compatible columns, such as
     # user_canvas.tags, exist before their GaussDB NOT NULL constraints relax.
     relax_gaussdb_empty_string_compatible_columns()
+    # Convert legacy tenant_model.model_type to INTEGER on upgrade. The ORM
+    # declares it as an IntegerField bitmask and the query layer uses bitwise
+    # operators; on an in-place upgrade the column would otherwise stay
+    # varchar and the bitwise query fails. Safe to run on every startup:
+    # Peewee's alter_column_type is a no-op when the column already matches
+    # the target type. See #18755.
+    migrate_tenant_model_model_type_to_integer(migrator)
 
     # Drop both the explicit "idx_*" name from later migrations AND the
     # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
