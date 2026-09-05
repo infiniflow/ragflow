@@ -19,7 +19,6 @@ import { AgentChatContext } from '../context';
 import DebugContent from '../debug-content';
 import { useAwaitComponentData } from '../hooks/use-chat-logic';
 import { useIsTaskMode } from '../hooks/use-get-begin-query';
-import { useGetFileIcon } from './use-get-file-icon';
 
 function AgentChatBox() {
   const { data: canvasInfo, refetch } = useFetchAgent();
@@ -40,7 +39,6 @@ function AgentChatBox() {
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
-  useGetFileIcon();
   const { data: userInfo } = useFetchUserInfo();
   const { uploadAgentFile, loading } = useUploadAgentFileWithProgress();
 
