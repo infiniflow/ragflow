@@ -1133,6 +1133,10 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	if !ok {
 		return fmt.Errorf("invalid chunk format")
 	}
+	existingDocumentID, ok := existing["doc_id"].(string)
+	if !ok || existingDocumentID != req.DocumentID {
+		return fmt.Errorf("chunk not found")
+	}
 
 	// Build update dict
 	d := make(map[string]interface{})
@@ -1210,7 +1214,8 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 
 	// Call update
 	condition := map[string]interface{}{
-		"id": req.ChunkID,
+		"id":     req.ChunkID,
+		"doc_id": req.DocumentID,
 	}
 
 	err = s.docEngine.UpdateChunks(ctx, condition, d, indexName, req.DatasetID)
