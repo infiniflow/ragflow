@@ -31,6 +31,7 @@ from zai import ZhipuAiClient
 from common import settings
 from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
+from common.llm_request_context import openai_user_kwargs
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.key_utils import _normalize_replicate_key
 from rag.llm.mws_utils import mws_api_url, require_mws_token
@@ -267,12 +268,14 @@ class OpenAIEmbed(Base):
         self.model_name = model_name
 
     def _call(self, batch):
-        # extra_body is forwarded verbatim to the provider. \`drop_params\` is
+        # extra_body is forwarded verbatim to the provider. `drop_params` is
         # an OpenRouter-specific convention; Together AI (and any strict
         # OpenAI-compatible provider) rejects it with HTTP 400
-        # "Unrecognized request arguments supplied: drop_params". Send only
-        # fields that every OpenAI-compatible provider accepts.
-        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float")
+        # "Unrecognized request arguments supplied: drop_params".
+        # `user` is OpenAI-standard and is only sent when LLM request context
+        # is active. Local servers that reject unknown fields (LocalAI,
+        # LM Studio, Xinference) use their own embed classes and omit it.
+        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", **openai_user_kwargs())
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
     def encode(self, texts: list):
@@ -295,6 +298,7 @@ class LocalAIEmbed(Base):
         self.model_name = model_name.split("___")[0]
 
     def _call(self, batch):
+        # Local servers often reject OpenAI's optional `user` field.
         res = self.client.embeddings.create(input=batch, model=self.model_name)
         # Local servers (LocalAI / LM Studio) usually omit usage data; fall back
         # to a local tiktoken count rather than fabricating a fixed number.
@@ -539,6 +543,7 @@ class XinferenceEmbed(Base):
         self.model_name = model_name
 
     def _call(self, batch):
+        # Xinference's OpenAI-compatible server may reject unknown fields such as `user`.
         res = self.client.embeddings.create(input=batch, model=self.model_name)
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
@@ -1489,7 +1494,7 @@ class OpenRouterEmbed(Base):
         if self.provider_order:
             order = [s.strip() for s in self.provider_order.split(",") if s.strip()]
             extra_body["provider"] = {"order": order, "allow_fallbacks": False}
-        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body=extra_body)
+        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body=extra_body, **openai_user_kwargs())
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
     def encode(self, texts: list):

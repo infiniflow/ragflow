@@ -98,6 +98,7 @@ from rag.svr.task_executor_limiter import (
 )
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
+from common.llm_request_context import normalize_llm_user_id, reset_llm_request_context, set_llm_request_context
 from rag.utils.table_es_metadata import (
     aggregate_table_doc_metadata,
     merge_table_parser_config_from_kb,
@@ -171,6 +172,15 @@ DONE_TASKS = 0
 FAILED_TASKS = 0
 
 CURRENT_TASKS = {}
+
+
+def _redact_task_user(task: dict) -> dict:
+    """Copy a task dict for logs/heartbeat without the raw end-user identifier."""
+    payload = dict(task)
+    if "user_id" in payload:
+        payload["user_id"] = True
+    return payload
+
 
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get("WORKER_HEARTBEAT_TIMEOUT", "120"))
 # Recycle the worker process after this many completed tasks to release memory
@@ -305,6 +315,10 @@ async def collect():
             task["tenant_id"] = msg["tenant_id"]
         task["source_id"] = msg["source_id"]
         task["message_dict"] = msg["message_dict"]
+    # Redis-only: Task rows have no user_id column. Copy it onto the in-memory
+    # task so handle_task can install LLM request context for embedding calls.
+    if msg.get("user_id"):
+        task["user_id"] = msg["user_id"]
     return redis_msg, task
 
 
@@ -1781,8 +1795,9 @@ async def handle_task() -> bool:
     task_type = task["task_type"]
     pipeline_task_type = TASK_TYPE_TO_PIPELINE_TASK_TYPE.get(task_type, PipelineTaskType.PARSE) or PipelineTaskType.PARSE
     task_id = task["id"]
+    ctx_token = set_llm_request_context(user_id=normalize_llm_user_id(task.get("user_id")))
     try:
-        CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
+        CURRENT_TASKS[task["id"]] = _redact_task_user(copy.deepcopy(task))
         run_mode = os.environ.get("TE_RUN_MODE", "0")
         logging.info(f"TE_RUN_MODE is {run_mode}")
 
@@ -1805,7 +1820,7 @@ async def handle_task() -> bool:
 
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)
-        logging.info(f"handle_task done for task {json.dumps(task)}")
+        logging.info(f"handle_task done for task {json.dumps(_redact_task_user(task))}")
     except TaskCanceledException as e:
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)
@@ -1822,8 +1837,9 @@ async def handle_task() -> bool:
         except Exception as e:
             logging.exception(f"[Exception]: {str(e)}")
             pass
-        logging.exception(f"handle_task got exception for task {json.dumps(task)}")
+        logging.exception(f"handle_task got exception for task {json.dumps(_redact_task_user(task))}")
     finally:
+        reset_llm_request_context(ctx_token)
         if not task.get("dataflow_id", ""):
             referred_document_id = None
             if task_type in _KB_FANOUT_TASK_TYPES:
