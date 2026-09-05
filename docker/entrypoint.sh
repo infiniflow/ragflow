@@ -259,6 +259,24 @@ function ensure_db_init() {
     echo "Database tables initialized."
 }
 
+# ensure_go_migrate runs the Go-side database migration (GORM auto-migrate
+# + manual migrations for Go-exclusive tables) synchronously and exits with
+# code 0 on success, non-zero on failure. It is a fail-fast step: if it
+# returns non-zero, `set -e` in the calling context will abort the entrypoint
+# before any background daemons are launched, so dependent services never
+# start against an incomplete schema. See #19270.
+ensure_go_migrate() {
+    if [[ ! -x bin/ragflow_server ]]; then
+        echo "bin/ragflow_server not found; skipping Go migration."
+        return 0
+    fi
+    if [[ "${API_PROXY_SCHEME:-python}" != "go" && "${API_PROXY_SCHEME:-python}" != "hybrid" ]]; then
+        return 0
+    fi
+    echo "Running Go database migration..."
+    bin/ragflow_server --migrate
+}
+
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
@@ -306,6 +324,7 @@ fi
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     ensure_docling
     ensure_db_init
+    ensure_go_migrate
 
     echo "Starting nginx..."
     /usr/sbin/nginx -c /etc/nginx/nginx.conf
