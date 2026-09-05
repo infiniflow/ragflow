@@ -13,12 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import base64
 import binascii
+import contextvars
 import datetime
 import json
 import logging
+import math
+import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import xxhash
 from pydantic import BaseModel, Field, validator
@@ -26,7 +32,7 @@ from quart import request
 
 from api.apps import login_required
 from api.apps.services import structure_graph_common as sgc
-from api.db.db_models import Document, Task
+from api.db.db_models import DB, Document, Task
 from api.db.joint_services.tenant_model_service import (
     get_tenant_default_model_by_type,
     resolve_model_config,
@@ -66,6 +72,63 @@ from rag.prompts.generator import cross_languages, keyword_extraction
 
 DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
 DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
+
+
+def _positive_env(name, default, cast):
+    """Read a strictly positive environment value or return its default."""
+    raw = os.environ.get(name, default)
+    try:
+        value = cast(raw)
+    except (TypeError, ValueError):
+        logging.warning("Invalid %s=%r; falling back to %s", name, raw, default)
+        return cast(default)
+    if not math.isfinite(value) or value <= 0:
+        logging.warning("Invalid %s=%r; expected a positive finite value, falling back to %s", name, raw, default)
+        return cast(default)
+    return value
+
+
+_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS = _positive_env("RAGFLOW_ADD_CHUNK_TIMEOUT_SECONDS", "60", float)
+_ADD_CHUNK_WORKERS = _positive_env("RAGFLOW_ADD_CHUNK_WORKERS", "1", int)
+_ADD_CHUNK_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_ADD_CHUNK_WORKERS,
+    thread_name_prefix="add-chunk",
+)
+_ADD_CHUNK_IN_FLIGHT = set()
+_ADD_CHUNK_IN_FLIGHT_LOCK = threading.Lock()
+
+
+class _AddChunkOperationTimeout(TimeoutError):
+    """Raised when add-chunk work exceeds its request deadline."""
+
+
+async def _run_add_chunk_operation(func, *args, stop_event=None, on_done=None):
+    """Run blocking add-chunk work in the route's dedicated executor.
+
+    Timing out cancels work that is still queued and releases the request task,
+    but Python cannot stop a callable that is already running in a thread. The
+    dedicated pool limits concurrent lingering operations without occupying
+    Quart's default executor or event loop.
+    """
+    loop = asyncio.get_running_loop()
+    ctx = contextvars.copy_context()
+    worker_future = _ADD_CHUNK_EXECUTOR.submit(ctx.run, func, *args)
+    if on_done is not None:
+        worker_future.add_done_callback(on_done)
+    future = asyncio.wrap_future(worker_future, loop=loop)
+    try:
+        done, _ = await asyncio.wait({future}, timeout=_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS)
+    except asyncio.CancelledError:
+        if stop_event is not None:
+            stop_event.set()
+        future.cancel()
+        raise
+    if not done:
+        if stop_event is not None:
+            stop_event.set()
+        future.cancel()
+        raise _AddChunkOperationTimeout
+    return await future
 
 
 def _decode_chunk_image_base64(image_base64):
@@ -1086,12 +1149,58 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     embd_id = DocumentService.get_embd_id(document_id)
     model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
-    v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
-    v = 0.1 * v[0] + 0.9 * v[1]
-    d[f"q_{len(v)}_vec"] = v.tolist()
-    settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
+    stop_event = threading.Event()
+    index_name = search.index_name(dataset_tenant_id)
+    with _ADD_CHUNK_IN_FLIGHT_LOCK:
+        overlaps_in_flight = chunk_id in _ADD_CHUNK_IN_FLIGHT
+        if not overlaps_in_flight:
+            _ADD_CHUNK_IN_FLIGHT.add(chunk_id)
 
-    DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+    def _clear_in_flight(_future):
+        with _ADD_CHUNK_IN_FLIGHT_LOCK:
+            _ADD_CHUNK_IN_FLIGHT.discard(chunk_id)
+
+    def _add_chunk_sync():
+        """Embed, index, and count one chunk as one consistency unit."""
+        if stop_event.is_set():
+            return None
+        existing_at_start = settings.docStoreConn.get(chunk_id, index_name, [dataset_id])
+        if stop_event.is_set():
+            return None
+        v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
+        if stop_event.is_set():
+            return None
+        v = 0.1 * v[0] + 0.9 * v[1]
+        d[f"q_{len(v)}_vec"] = v.tolist()
+        if stop_event.is_set():
+            return None
+        with DB.lock(f"add_chunk:{chunk_id}", max(1, math.ceil(_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS))):
+            if stop_event.is_set():
+                return None
+            existing = settings.docStoreConn.get(chunk_id, index_name, [dataset_id])
+            if stop_event.is_set():
+                return None
+            if existing is not None and (overlaps_in_flight or existing_at_start is None):
+                return d
+            settings.docStoreConn.insert([d], index_name, dataset_id)
+        DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+        return d
+
+    try:
+        stored_chunk = await _run_add_chunk_operation(
+            _add_chunk_sync,
+            stop_event=stop_event,
+            on_done=None if overlaps_in_flight else _clear_in_flight,
+        )
+    except _AddChunkOperationTimeout:
+        message = f"Chunk creation timed out after {_ADD_CHUNK_OPERATION_TIMEOUT_SECONDS:g} seconds"
+        logging.error("%s; the worker may still be running. dataset_id=%s document_id=%s chunk_id=%s", message, dataset_id, document_id, chunk_id)
+        return get_result(code=RetCode.EXCEPTION_ERROR, message=message)
+    except Exception:
+        if not overlaps_in_flight:
+            _clear_in_flight(None)
+        raise
+
     key_mapping = {
         "id": "id",
         "content_with_weight": "content",
@@ -1106,7 +1215,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         "img_id": "image_id",
         "doc_type_kwd": "doc_type_kwd",
     }
-    renamed_chunk = {new_key: d[key] for key, new_key in key_mapping.items() if key in d}
+    renamed_chunk = {new_key: stored_chunk[key] for key, new_key in key_mapping.items() if key in stored_chunk}
     _ = Chunk(**renamed_chunk)
     return get_result(data={"chunk": renamed_chunk})
 
