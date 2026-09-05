@@ -695,7 +695,7 @@ class SoMarkParser(RAGFlowPdfParser):
 
         # Normalize input to a real PDF file on disk.
         temp_pdf: Optional[Path] = None
-        if binary:
+        if binary is not None:
             tmp_dir = Path(tempfile.mkdtemp(prefix="somark_bin_pdf_"))
             file_name = Path(filepath).stem.replace(" ", "") + ".pdf"
             temp_pdf = tmp_dir / file_name
