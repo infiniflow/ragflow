@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -810,21 +811,107 @@ func TestIngestionTaskServiceScheduleCreatedTasksContinuesAfterPublishFailure(t 
 	}
 }
 
-func TestIngestionTaskServiceCreateAndEnqueueRejectsActiveExistingTask(t *testing.T) {
+func TestIngestionTaskServiceCreateAndEnqueueSupersedesInFlightTask(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		existing   string
+		wantStatus string
+	}{
+		{
+			// A parse canceled at progress 0 whose worker has not finalized the
+			// stop yet leaves the task in STOPPING; re-parsing waits a bounded
+			// window for the worker, then force-finalizes and re-queues.
+			name:       "stopping",
+			existing:   common.STOPPING,
+			wantStatus: common.SCHEDULED,
+		},
+		{
+			// A task queued but never claimed by a worker (e.g. its queue
+			// message was lost) must not block re-parsing either.
+			name:       "scheduled",
+			existing:   common.SCHEDULED,
+			wantStatus: common.SCHEDULED,
+		},
+		{
+			// A task whose worker died mid-run stays RUNNING with no owner;
+			// re-parsing must stop it (the only RUNNING→CREATED path in the
+			// transition table is RUNNING→STOPPING→STOPPED→CREATED) and queue
+			// a fresh run.
+			name:       "running",
+			existing:   common.RUNNING,
+			wantStatus: common.SCHEDULED,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", tc.existing)
+
+			publisher := &recordingTaskPublisher{}
+			svc := NewIngestionTaskService()
+			svc.taskPublisher = publisher
+			// No live worker in the test: do not pay the full production
+			// window before force-finalizing the in-flight task.
+			svc.supersedeTerminalWait = 50 * time.Millisecond
+
+			task, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+				DocumentID: "doc-1",
+				UserID:     "user-1",
+				DatasetID:  "kb-1",
+				Status:     common.CREATED,
+			})
+			if err != nil {
+				t.Fatalf("CreateAndEnqueue failed: %v", err)
+			}
+
+			if task.ID != "task-1" {
+				t.Fatalf("task ID = %q, want task-1 (superseded in place)", task.ID)
+			}
+			if task.Status != tc.wantStatus {
+				t.Fatalf("status = %q, want %q", task.Status, tc.wantStatus)
+			}
+			if len(publisher.messages) != 1 || publisher.messages[0].TaskID != task.ID {
+				t.Fatalf("unexpected published messages: %+v", publisher.messages)
+			}
+
+			reloaded, err := dao.NewIngestionTaskDAO().GetByDocumentID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatalf("reload task: %v", err)
+			}
+			if reloaded == nil || reloaded.Status != tc.wantStatus {
+				t.Fatalf("expected superseded task to be re-queued, task=%+v", reloaded)
+			}
+		})
+	}
+}
+
+// TestIngestionTaskServiceCreateAndEnqueueRearmsCompletedTask locks in that a
+// document whose previous parse COMPLETED can be re-parsed without first
+// deleting its ingestion task: the terminal task row is re-armed in place,
+// mirroring the FAILED/STOPPED handling.
+func TestIngestionTaskServiceCreateAndEnqueueRearmsCompletedTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	ctx := t.Context()
-	_, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED})
-	if err == nil {
-		t.Fatal("expected CreateAndEnqueue to reject existing created task")
+	task, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1",
+		UserID:     "user-1",
+		DatasetID:  "kb-1",
+		Status:     common.CREATED,
+	})
+	if err != nil {
+		t.Fatalf("CreateAndEnqueue failed: %v", err)
 	}
-	if len(publisher.messages) != 0 {
-		t.Fatalf("expected no published messages, got %+v", publisher.messages)
+	if task.ID != "task-1" || task.Status != common.SCHEDULED {
+		t.Fatalf("task = %s/%s, want task-1/SCHEDULED", task.ID, task.Status)
+	}
+	if len(publisher.messages) != 1 || publisher.messages[0].TaskID != task.ID {
+		t.Fatalf("unexpected published messages: %+v", publisher.messages)
 	}
 }
 

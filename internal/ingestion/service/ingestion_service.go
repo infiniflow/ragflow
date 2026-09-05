@@ -708,10 +708,31 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext
 	})
 }
 
-// markStopped transitions the task to STOPPED (terminal). It first calls
-// RequestStop to handle RUNNING → STOPPING, then MarkStopped for the final
-// STOPPING → STOPPED transition. Finally it cleans up the Redis cancel flag
-// so that a future retry of the same task does not immediately re-cancel.
+// ownsTaskRun reports whether the calling run still owns the task: a newer
+// run (created by a supersede/re-parse) bumps the run counter, so a mismatch
+// means this run's terminal write must be skipped. A run whose counter could
+// not be read (myRun <= 0) conservatively keeps ownership. Uses a detached
+// context: it is called from failure/cancel paths whose context is typically
+// already cancelled.
+func (e *Ingestor) ownsTaskRun(taskID string, myRun int) bool {
+	if myRun <= 0 {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(e.ctx), 2*time.Second)
+	defer cancel()
+	current, ok := e.ingestionTaskSvc.CurrentRunCount(ctx, taskID)
+	if !ok {
+		return true
+	}
+	return current == myRun
+}
+
+// markStopped transitions the task to STOPPED (terminal). A RUNNING task
+// first goes through RequestStop (RUNNING → STOPPING); a STOPPING task is
+// settled directly; any other status (terminal, or CREATED/SCHEDULED because
+// a supersede re-armed the task for a newer run) is treated as settled with
+// nothing to finalize. Finally it cleans up the Redis cancel flag so that a
+// future retry of the same task does not immediately re-cancel.
 // The caller's context is detached before touching the DB: markStopped runs
 // on failure/cancel/shutdown paths whose context is typically already
 // cancelled, and a contaminated context would make the terminal write fail
@@ -719,9 +740,28 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext
 func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if _, err := e.ingestionTaskSvc.RequestStop(ctx, taskID); err != nil {
-		common.Error(fmt.Sprintf("markStopped: RequestStop task %s: %v", taskID, err), err)
+	// Only a RUNNING/STOPPING task still belongs to this run. A task in
+	// CREATED/SCHEDULED here was re-armed for a newer run by a supersede
+	// (re-parse of a canceled document); finalizing it would kill the
+	// replacement run before it starts, so treat it as already settled.
+	// Terminal statuses need no work either.
+	task, err := e.ingestionTaskSvc.GetTask(ctx, taskID)
+	if err != nil {
+		common.Error(fmt.Sprintf("markStopped: load task %s: %v", taskID, err), err)
 		return false
+	}
+	switch task.Status {
+	case common.RUNNING:
+		if _, err := e.ingestionTaskSvc.RequestStop(ctx, taskID); err != nil {
+			common.Error(fmt.Sprintf("markStopped: RequestStop task %s: %v", taskID, err), err)
+			return false
+		}
+	case common.STOPPING:
+	default:
+		// COMPLETED/STOPPED/FAILED: already terminal. CREATED/SCHEDULED:
+		// re-armed by a newer run - nothing this run may finalize.
+		common.Info(fmt.Sprintf("markStopped: task %s is %s; nothing to finalize for this run", taskID, task.Status))
+		return true
 	}
 	if err := e.ingestionTaskSvc.MarkStopped(ctx, taskID); err != nil {
 		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
@@ -781,6 +821,11 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		}
 		return ok
 	}
+	// Capture this run's counter: if a re-parse supersedes this run (the task
+	// is force-finalized and re-armed while this worker is still inside a
+	// non-cancellable section), a newer run bumps the counter and this run
+	// must not overwrite the newer run's terminal state or document progress.
+	myRun, _ := e.ingestionTaskSvc.CurrentRunCount(dbCtx, task.ID)
 	checkpointExists := e.checkpointExists
 	if checkpointExists == nil {
 		checkpointExists = canvas.RedisCheckpointExists
@@ -824,6 +869,10 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	if err := e.runDocumentTask(ctx, task); err != nil {
 		if errors.Is(err, context.Canceled) {
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
+			if !e.ownsTaskRun(task.ID, myRun) {
+				common.Info(fmt.Sprintf("Task %s run %d superseded by a newer run; skip cancel finalize", task.ID, myRun))
+				return true
+			}
 			e.markCancelProgress(task)
 			stopped := e.markStopped(ctx, task.ID)
 			if stopped {
@@ -833,6 +882,10 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
+			if !e.ownsTaskRun(task.ID, myRun) {
+				common.Info(fmt.Sprintf("Task %s run %d superseded by a newer run; skip timeout finalize", task.ID, myRun))
+				return true
+			}
 			e.markTimeoutProgress(task)
 			ok := e.markFailed(ctx, task.ID)
 			if ok {
@@ -841,6 +894,10 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			return ok
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
+		if !e.ownsTaskRun(task.ID, myRun) {
+			common.Info(fmt.Sprintf("Task %s run %d superseded by a newer run; skip failure finalize", task.ID, myRun))
+			return true
+		}
 		ok := e.markFailed(ctx, task.ID)
 		if ok {
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
@@ -848,6 +905,10 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		return ok
 	}
 
+	if !e.ownsTaskRun(task.ID, myRun) {
+		common.Info(fmt.Sprintf("Task %s run %d superseded by a newer run; skip completion", task.ID, myRun))
+		return true
+	}
 	if err := e.completeTask(ctx, task.ID); err != nil {
 		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
 		return false
