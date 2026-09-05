@@ -205,3 +205,68 @@ def test_call_emits_zero_based_sheet_index():
     assert sheets == {0, 1}
     second = next(pos for _, pos in lines if pos[0] == 1)
     assert second == (1, 2, 2, 1, 1)
+
+
+# Regression for #19185: a spreadsheet whose used range exceeds 10,000 rows
+# and contains a blank run in the middle used to lose every row past the
+# first 500 of the second data region. ``_get_actual_row_count`` did a
+# binary search for the first data window, then capped the forward
+# extension at ``last_data_row + 500``, so a 600-row blank run between
+# two data regions returned 200 instead of 1000.
+#
+# The fix removes the 500-row cap; the forward scan now runs all the way
+# to ``max_row``. The fast path below 10,000 rows (``if max_row <= 10000:
+# return max_row``) is unchanged, so a plain 1000-row sheet still returns
+# 1000 with no scan.
+def _make_two_region_xlsx(used_max, gap_start, gap_len, last_data_row):
+    """Top data block: rows 1..gap_start. Gap: rows gap_start+1..
+    gap_start+gap_len. Bottom data block: rows gap_start+gap_len+1..
+    last_data_row. ``used_max`` is unused in the data; openpyxl's
+    ``max_row`` will reflect ``last_data_row`` because that's the
+    highest row we touch.
+    """
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    for r in range(1, gap_start + 1):
+        ws.cell(row=r, column=1, value=f"top{r}")
+    for r in range(gap_start + gap_len + 1, last_data_row + 1):
+        ws.cell(row=r, column=1, value=f"bot{r}")
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read(), last_data_row
+
+
+@pytest.mark.p2
+def test_row_number_skips_large_blank_run_in_big_sheet():
+    # Reporter's reproducer shape: 200 rows at the top, a 600-row blank
+    # run, 200 more rows of data, ``max_row`` in the high thousands. The
+    # pre-fix code returned 201 (200 + the binary-search probe row)
+    # because the forward extension was capped at 500.
+    binary, expected = _make_two_region_xlsx(used_max=None, gap_start=200, gap_len=600, last_data_row=1000)
+    assert RAGFlowExcelParser.row_number("fixture.xlsx", binary) == expected
+
+
+@pytest.mark.p2
+def test_row_number_returns_full_data_count_when_gap_under_500():
+    # Sanity: a small gap (under the pre-fix 500 cap) was already correct.
+    binary, expected = _make_two_region_xlsx(used_max=None, gap_start=200, gap_len=100, last_data_row=600)
+    assert RAGFlowExcelParser.row_number("fixture.xlsx", binary) == expected
+
+
+@pytest.mark.p2
+def test_row_number_returns_max_row_directly_for_small_sheets():
+    # The fast path (``max_row <= 10000: return max_row``) is unchanged
+    # for a plain 400-row sheet with no gap. Build a one-region sheet.
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    for r in range(1, 401):
+        ws.cell(row=r, column=1, value=f"r{r}")
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    assert RAGFlowExcelParser.row_number("fixture.xlsx", buf.read()) == 400
