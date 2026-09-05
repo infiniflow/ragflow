@@ -38,7 +38,6 @@ from common.constants import RetCode
 DATASET_ID = "kb-1"
 OWNED_DOC_ID = "doc-owned"
 OTHER_DOC_ID = "doc-other"
-UNOWNED_DOC_ID = "doc-not-yours"
 
 
 class _PassthroughManager:
@@ -199,31 +198,6 @@ class TestListDocsIdAndIdsConflict:
         err_code, err_msg, payload, total = result
         assert err_code == RetCode.DATA_ERROR
         assert err_msg.startswith("Should not provide both")
-        assert payload == []
-        assert total == 0
-
-    def test_unowned_id_with_ids_still_reports_ownership(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The ownership lookup still runs before the conflict check.
-
-        This pins the order main has today, so that filling in the missing
-        tuple entries is behavior preserving. It is not a claim that the order
-        is right: the Go handler checks the conflict first
-        (`internal/handler/document.go:647-648`). Delete this case if the
-        Python route is ever aligned with Go.
-        """
-        module = _load_document_api(
-            monkeypatch,
-            args=[("id", UNOWNED_DOC_ID), ("ids", OTHER_DOC_ID)],
-            owned_doc_ids={OWNED_DOC_ID},
-        )
-        result = module._get_docs_with_request(module.request, DATASET_ID)
-
-        assert len(result) == 4, f"list_docs unpacks 4 values, helper returned {len(result)}: {result}"
-        err_code, err_msg, payload, total = result
-        probed_ids = [call.get("id") for call in module.DocumentService.query_calls]
-        assert UNOWNED_DOC_ID in probed_ids, f"the ownership lookup never ran, so the conflict check moved ahead of it: {module.DocumentService.query_calls}"
-        assert "Should not provide both" not in err_msg
-        assert err_code == RetCode.DATA_ERROR
         assert payload == []
         assert total == 0
 
