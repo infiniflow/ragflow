@@ -173,6 +173,23 @@ FAILED_TASKS = 0
 CURRENT_TASKS = {}
 
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get("WORKER_HEARTBEAT_TIMEOUT", "120"))
+# Recycle the worker process after this many completed tasks to release memory
+# that long-lived libraries cannot reclaim on their own -- notably ONNX
+# Runtime's BFCArena, which holds every chunk it allocates until the
+# InferenceSession is destroyed. The supervisor loop in `docker/entrypoint.sh`
+# (`while true; do ... task_executor.py & wait; sleep 1; done`) restarts the
+# process automatically after a clean exit.
+# 0 disables recycling and preserves the existing behaviour. A small value such
+# as 20 helps on lower-VRAM consumer GPUs where cumulative arena fragmentation
+# eventually surfaces as "Available memory of 0" allocation failures.
+# The threshold is a soft one: tasks already in flight when it is reached are
+# allowed to finish, so a worker may complete up to MAX_CONCURRENT_TASKS - 1
+# extra tasks before it exits.
+MAX_TASKS_PER_WORKER = int(os.environ.get("MAX_TASKS_PER_WORKER", "0"))
+# Only used when recycling is enabled: how long to let in-flight task_managers
+# finish before cancelling them, so a single hung task cannot block the exit.
+RECYCLE_SHUTDOWN_TIMEOUT = float(os.environ.get("RECYCLE_SHUTDOWN_TIMEOUT", "300"))
+_completed_task_count = 0
 stop_event = threading.Event()
 
 
@@ -1746,12 +1763,18 @@ async def do_handle_task(task):
                 logging.exception(f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled, exception: {e}")
 
 
-async def handle_task():
+async def handle_task() -> bool:
+    """Pull one task off the queue and process it.
+
+    Returns True if a real task was processed (success or failure), False if the
+    queue was empty and the call was an idle poll, so callers can tell work apart
+    from idling and e.g. avoid advancing the recycle counter during quiet periods.
+    """
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
         await asyncio.sleep(5)
-        return
+        return False
 
     logging.info(f"handle_task begin for task {json.dumps(task)}")
 
@@ -1814,6 +1837,7 @@ async def handle_task():
             get_recording_context().save_func_return_value("PipelineOperationLogService.record_pipeline_operation", ret)
 
     redis_msg.ack()
+    return True
 
 
 async def get_server_ip() -> str:
@@ -1909,9 +1933,16 @@ async def report_status():
 
 
 async def task_manager():
+    global _completed_task_count
+    processed = False
     try:
-        await handle_task()
+        processed = await handle_task()
     finally:
+        if processed and MAX_TASKS_PER_WORKER > 0:
+            _completed_task_count += 1
+            if _completed_task_count >= MAX_TASKS_PER_WORKER:
+                logging.warning(f"[recycle] reached MAX_TASKS_PER_WORKER={MAX_TASKS_PER_WORKER}; signalling a clean exit so the supervisor can restart the worker.")
+                stop_event.set()
         task_limiter.release()
 
 
@@ -1960,9 +1991,24 @@ async def main():
     try:
         while not stop_event.is_set():
             await task_limiter.acquire()
+            if stop_event.is_set():
+                # Another task_manager signalled shutdown while we were blocked
+                # on the semaphore; bail out cleanly instead of picking up one
+                # more task, so the supervisor can restart the worker.
+                logging.info("[recycle] stop_event observed after acquiring task_limiter; releasing the semaphore and exiting the main loop.")
+                task_limiter.release()
+                break
             t = asyncio.create_task(task_manager())
             tasks.append(t)
     finally:
+        if MAX_TASKS_PER_WORKER > 0 and tasks:
+            # Recycling is a planned exit, so let in-flight task_managers finish
+            # instead of discarding their work -- but bound the wait so a single
+            # hung task cannot keep the worker alive forever.
+            _, pending = await asyncio.wait(tasks, timeout=RECYCLE_SHUTDOWN_TIMEOUT)
+            if pending:
+                logging.warning(f"[recycle] {len(pending)} task(s) still running after {RECYCLE_SHUTDOWN_TIMEOUT}s grace; cancelling them.")
+            tasks = list(pending)
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
