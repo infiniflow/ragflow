@@ -67,6 +67,22 @@ from rag.prompts.generator import run_toc_from_text
 from common import settings
 
 
+_EMBEDDING_FACTORIES_REQUIRING_API_KEY = frozenset(
+    {
+        "Azure-OpenAI",
+        "OpenAI",
+        "OpenAI-API-Compatible",
+    }
+)
+
+
+def _embedding_config_has_missing_credentials(model_config: dict) -> bool:
+    """Return whether a credentialed embedding factory has no usable credential."""
+    factory = model_config.get("llm_factory")
+    has_credential = bool(model_config.get("api_key") or model_config.get("api_key_payload"))
+    return factory in _EMBEDDING_FACTORIES_REQUIRING_API_KEY and not has_credential
+
+
 def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> list[str]:
     """Resolve a doc's parser_config to compile-template ids by
     looking up configured groups. Returns ``[]`` if the doc has no
@@ -336,11 +352,35 @@ class TaskHandler:
                 try:
                     embd_model_config = get_model_config_by_id(task_tenant_id, LLMType.EMBEDDING, ctx.tenant_embd_id)
                 except LookupError:
-                    embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+                    # The cached tenant-model binding may disappear after a task is queued; record the recovery context.
+                    logging.info(
+                        "Recovering stale embedding model binding for task %s in tenant %s with model %s",
+                        ctx.id,
+                        task_tenant_id,
+                        task_embedding_id or "tenant-default",
+                    )
+                    if task_embedding_id:
+                        embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+                    else:
+                        embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
+                else:
+                    if _embedding_config_has_missing_credentials(embd_model_config):
+                        logging.info(
+                            "Refreshing embedding model credentials for tenant %s with model %s",
+                            task_tenant_id,
+                            task_embedding_id or "tenant-default",
+                        )
+                        if task_embedding_id:
+                            embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+                        else:
+                            # Queued tasks without a model name must follow the current tenant default.
+                            embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
             elif task_embedding_id:
                 embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
             else:
                 embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
+            if _embedding_config_has_missing_credentials(embd_model_config):
+                raise LookupError("Embedding model credentials are missing after resolving the current configuration")
             embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language)
             vts, _ = embedding_model.encode(["ok"])
             return embedding_model, len(vts[0])
