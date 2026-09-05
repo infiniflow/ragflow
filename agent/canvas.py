@@ -469,6 +469,40 @@ class Canvas(Graph):
                 langfuse_run_attrs.set(None)
             reset_llm_request_context(_req_ctx_token)
 
+    def _schedulable(self, f: int, t: int) -> int:
+        """Reorder the batch window ``path[f:t]`` so it only holds runnable nodes.
+
+        Everything in the window is dispatched concurrently, so a node may only read
+        output a component produced in an earlier batch. A node waiting on another
+        member of the window is moved behind it and runs in the next batch; a node
+        waiting on something that was never scheduled is dropped, as before. Returns
+        the new end of the window.
+        """
+        if self.path[0].lower().find("userfillup") >= 0:
+            return t
+
+        finished = set(self.path[:f])
+        window = set(self.path[f:t])
+        ready, deferred = [], []
+        for cpn_id in self.path[f:t]:
+            cpn = self.get_component_obj(cpn_id)
+            if cpn.component_name.lower() in ["begin", "userfillup"]:
+                ready.append(cpn_id)
+                continue
+            waiting_on = [c for c in cpn.get_dependency_ids() if c != cpn_id]
+            if any(c in window for c in waiting_on):
+                deferred.append(cpn_id)
+            elif all(c in finished for c in waiting_on):
+                ready.append(cpn_id)
+
+        if not ready and deferred:
+            # Every candidate waits on another candidate, which takes a cycle in the
+            # canvas. Run them anyway so the workflow still terminates.
+            ready, deferred = deferred, []
+
+        self.path[f:t] = ready + deferred
+        return f + len(ready)
+
     async def _run_impl(self, **kwargs):
         self.globals["sys.date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st = time.perf_counter()
@@ -569,33 +603,18 @@ class Canvas(Graph):
                     call_ctx = contextvars.copy_context()
                     await loop.run_in_executor(self._thread_pool, partial(call_ctx.run, bound_call))
 
-            i = f
-            while i < t:
+            for i in range(f, t):
                 cpn = self.get_component_obj(self.path[i])
-                task_fn = None
-                call_kwargs = None
 
                 if cpn.component_name.lower() in ["begin", "userfillup"]:
                     call_kwargs = {"inputs": kwargs.get("inputs", {})}
-                    task_fn = cpn.invoke
-                    i += 1
                 else:
-                    for _, ele in cpn.get_input_elements().items():
-                        if isinstance(ele, dict) and ele.get("_cpn_id") and ele.get("_cpn_id") not in self.path[:i] and self.path[0].lower().find("userfillup") < 0:
-                            self.path.pop(i)
-                            t -= 1
-                            break
-                    else:
-                        call_kwargs = cpn.get_input()
-                        task_fn = cpn.invoke
-                        i += 1
-
-                if task_fn is None:
-                    continue
+                    call_kwargs = cpn.get_input()
+                task_fn = cpn.invoke
 
                 _logger.debug(
                     "[Canvas] Invoking component '%s' (%s) with inputs: %s",
-                    self.get_component_name(self.path[i - 1]),
+                    self.get_component_name(self.path[i]),
                     cpn.component_name,
                     json.dumps(call_kwargs, ensure_ascii=False, default=str)[:500],
                 )
@@ -638,7 +657,7 @@ class Canvas(Graph):
         partials = []
         tts_mdl = None
         while idx < len(self.path):
-            to = len(self.path)
+            to = self._schedulable(idx, len(self.path))
             for i in range(idx, to):
                 yield decorate(
                     "node_started",
@@ -652,7 +671,6 @@ class Canvas(Graph):
                     },
                 )
             await _run_batch(idx, to)
-            to = len(self.path)
             # post-processing of components invocation
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])
@@ -827,7 +845,7 @@ class Canvas(Graph):
                     nonlocal other_branch
                     if other_branch:
                         return
-                    if self.path[-1] == cpn_id:
+                    if self.path[-1] == cpn_id or cpn_id in self.path[to:]:
                         return
                     self.path.append(cpn_id)
 
