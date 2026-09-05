@@ -252,10 +252,53 @@ def _resolve_instance_for_model(provider_obj, instance_name: str, model_name: st
     raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
 
 
+def _composite_from_bare_model_id(tenant_id, model_type: str | enum.Enum, model_id: str) -> str | None:
+    """Build the composite ``name@instance@provider`` form from a bare
+    ``tenant_model.id`` by reading the row directly. Returns ``None``
+    if the row does not exist, the type does not match, the provider /
+    instance is missing, or the tenant has no access to the provider.
+
+    Used as a defensive fallback by :func:`resolve_model_config` when
+    the primary ``get_model_config_by_id`` lookup fails for a model_ref
+    that has no ``@`` -- typically because the row exists but the
+    type / status / tenant-access check failed.
+    """
+    model_type_val = model_type if isinstance(model_type, str) else model_type.value
+    exist, model_obj = TenantModelService.get_by_id(model_id)
+    if not exist:
+        return None
+    if not (model_obj.model_type & calculate_model_type(model_type_val)):
+        return None
+    if model_obj.status in (ActiveStatusEnum.INACTIVE.value, ActiveStatusEnum.UNSUPPORTED.value):
+        return None
+    ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+    if not ok:
+        return None
+    if tenant_id != provider_obj.tenant_id:
+        joined_tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+        joined_tenant_ids = [t["tenant_id"] for t in joined_tenants]
+        if provider_obj.tenant_id not in joined_tenant_ids:
+            return None
+    ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+    if not ok:
+        return None
+    return f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
+
+
 def resolve_model_config(tenant_id, model_type: str | enum.Enum, model_ref: str):
     try:
         return get_model_config_by_id(tenant_id, model_type, model_ref)
     except LookupError:
+        # If the model_ref is a bare ``tenant_model.id`` (no '@') and the
+        # primary id-based lookup raised (status / type / tenant-access
+        # check failed), the bare id cannot be split by split_model_name
+        # and the provider-instance fallback would also fail. Build the
+        # composite ``name@instance@provider`` from the row directly and
+        # try the provider-instance lookup with that. See issue #18398.
+        if "@" not in model_ref:
+            composite = _composite_from_bare_model_id(tenant_id, model_type, model_ref)
+            if composite:
+                return get_model_config_from_provider_instance(tenant_id, model_type, composite)
         return get_model_config_from_provider_instance(tenant_id, model_type, model_ref)
 
 
