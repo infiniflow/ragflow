@@ -20,9 +20,8 @@ returned it as a 2-tuple while `list_docs` unpacks 4, so the request raised
 `ValueError` and the caller got EXCEPTION_ERROR with a Python repr instead of
 the error the helper wrote.
 
-The cases below pin the shape (four values), the error the helper already
-builds, and the order the checks run in today, so that filling in the missing
-tuple entries stays behavior preserving.
+The cases below pin the shape (four values) and the error the helper already
+builds.
 """
 
 import importlib.util
@@ -74,10 +73,8 @@ def _load_document_api(monkeypatch, *, args, owned_doc_ids):
     the route actually uses.
     """
     request_stub = SimpleNamespace(method="GET", args=MultiDict(args))
-    query_calls: list[dict] = []
 
     def _document_query(**kwargs):
-        query_calls.append(kwargs)
         return [SimpleNamespace()] if kwargs.get("id") in owned_doc_ids else []
 
     _stub(
@@ -107,10 +104,8 @@ def _load_document_api(monkeypatch, *, args, owned_doc_ids):
         "api.db.services.document_service",
         DocumentService=SimpleNamespace(
             # Only the id/name ownership probes in _get_docs_with_request call
-            # this; a hit is a non-empty list. Every call is recorded so a test
-            # can read which checks ran and in what order.
+            # this; a hit is a non-empty list.
             query=_document_query,
-            query_calls=query_calls,
             get_by_kb_id=lambda *_a, **_k: ([], 0),
         ),
     )
