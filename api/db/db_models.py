@@ -1984,6 +1984,58 @@ def alter_db_column_type(migrator, table_name, column_name, new_column_type):
         pass
 
 
+# Tables and columns that store a reference to tenant_model.id (32-char hex)
+# live below in migrate_tenant_id_columns_to_varchar. Before the v0.27.0 schema
+# change, they were INTEGER columns holding the legacy llm_name / embd_id
+# string. After v0.27.0 the application code writes tenant_model.id (a 32-char
+# hex PK) into them, so the column type must be VARCHAR(32) to match the ORM.
+# On a fresh install the ORM creates the right type; on an in-place upgrade the
+# existing INTEGER column would otherwise stay INTEGER and writes would fail
+# with "invalid input syntax for type integer". See issue #18756.
+
+
+def migrate_tenant_id_columns_to_varchar(migrator):
+    """Convert legacy INTEGER tenant_*_id columns to VARCHAR(32) on upgrade.
+
+    Runs on every database type Peewee supports (MySQL, PostgreSQL, GaussDB,
+    OceanBase) so the in-place upgrade no longer requires a separate MySQL-only
+    one-shot script. Peewee's ``alter_column_type`` is a no-op when the column
+    already matches the target type, so re-running this on a fresh install or
+    on a database that has already been migrated is safe. See issue #18756.
+    """
+    # --- tenant ---------------------------------------------------------
+    if DB.table_exists("tenant") and DB.column_exists("tenant", "tenant_llm_id"):
+        alter_db_column_type(migrator, "tenant", "tenant_llm_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+    if DB.table_exists("tenant") and DB.column_exists("tenant", "tenant_embd_id"):
+        alter_db_column_type(migrator, "tenant", "tenant_embd_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+    if DB.table_exists("tenant") and DB.column_exists("tenant", "tenant_asr_id"):
+        alter_db_column_type(migrator, "tenant", "tenant_asr_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+    if DB.table_exists("tenant") and DB.column_exists("tenant", "tenant_img2txt_id"):
+        alter_db_column_type(migrator, "tenant", "tenant_img2txt_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+    if DB.table_exists("tenant") and DB.column_exists("tenant", "tenant_rerank_id"):
+        alter_db_column_type(migrator, "tenant", "tenant_rerank_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+    if DB.table_exists("tenant") and DB.column_exists("tenant", "tenant_tts_id"):
+        alter_db_column_type(migrator, "tenant", "tenant_tts_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+    if DB.table_exists("tenant") and DB.column_exists("tenant", "tenant_ocr_id"):
+        alter_db_column_type(migrator, "tenant", "tenant_ocr_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+
+    # --- knowledgebase --------------------------------------------------
+    if DB.table_exists("knowledgebase") and DB.column_exists("knowledgebase", "tenant_embd_id"):
+        alter_db_column_type(migrator, "knowledgebase", "tenant_embd_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+
+    # --- dialog ---------------------------------------------------------
+    if DB.table_exists("dialog") and DB.column_exists("dialog", "tenant_llm_id"):
+        alter_db_column_type(migrator, "dialog", "tenant_llm_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+    if DB.table_exists("dialog") and DB.column_exists("dialog", "tenant_rerank_id"):
+        alter_db_column_type(migrator, "dialog", "tenant_rerank_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+
+    # --- memory ---------------------------------------------------------
+    if DB.table_exists("memory") and DB.column_exists("memory", "tenant_embd_id"):
+        alter_db_column_type(migrator, "memory", "tenant_embd_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+    if DB.table_exists("memory") and DB.column_exists("memory", "tenant_llm_id"):
+        alter_db_column_type(migrator, "memory", "tenant_llm_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+
+
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
     try:
         migrate(migrator.rename_column(table_name, old_column_name, new_column_name))
@@ -2483,6 +2535,11 @@ def migrate_db():
     # Run after all alter_db_* calls so newly added compatible columns, such as
     # user_canvas.tags, exist before their GaussDB NOT NULL constraints relax.
     relax_gaussdb_empty_string_compatible_columns()
+    # Convert legacy INTEGER tenant_*_id reference columns to VARCHAR(32) so
+    # the v0.27.0+ application code can write tenant_model.id (a 32-char hex
+    # PK) into them. Safe to run on every startup: Peewee's alter_column_type
+    # is a no-op when the column already matches the target type. See #18756.
+    migrate_tenant_id_columns_to_varchar(migrator)
 
     # Drop both the explicit "idx_*" name from later migrations AND the
     # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
