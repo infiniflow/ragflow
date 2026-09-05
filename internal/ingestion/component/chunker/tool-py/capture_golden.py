@@ -53,7 +53,7 @@ import json
 import subprocess
 import sys
 import types
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 TOOL_DIR = Path(__file__).resolve().parent
@@ -200,7 +200,7 @@ def write_manifest() -> None:
     MANIFEST.write_text(
         json.dumps(
             {
-                "captured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "captured_at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "commit": commit,
                 "python": sys.version.split()[0],
                 "command": CAPTURE_CMD,

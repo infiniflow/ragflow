@@ -54,11 +54,14 @@ uv run python3 ragflow_deps/download_deps.py
 > ```bash
 > RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_go_deps.py + download_deps.py
 > PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
-> # NOTE: the ONNX Runtime static lib fetched by download_go_deps.py is
-> # linux-x64 ONLY (onnxruntime-linux-x64-static_lib-*). On darwin_* / non-amd64
-> # PLATFORM values the production DeepDoc backend cannot be linked, so those
-> # PLATFORM examples cover office_oxide/pdfium/pdf_oxide only — ORT is a
-> # Linux-amd64 link dependency here.
+> # Native libs are fetched for the *host* platform by download_go_deps.py
+> # (override with RAGFLOW_TARGET_OS / RAGFLOW_TARGET_ARCH). ONNX Runtime now
+> # ships static libs for linux-x64, linux-aarch64, osx-x64 and osx-arm64, so the
+> # production DeepDoc backend links on all four. On Linux the link uses
+> # --whole-archive + -fuse-ld=lld + -lstdc++; on macOS (ld64) it uses
+> # -force_load + -export_dynamic + -lc++ instead. The macOS path is written but
+> # NOT yet verified on real Apple-Silicon hardware — confirm the dlopen(NULL)
+> # resolution of OrtGetApiBase there. (待 Mac 验证)
 >
 > # Resolve the version-stamped ORT archive path FIRST, in its own unquoted
 > # assignment: the shell does not expand `*` inside the double-quoted
@@ -67,6 +70,19 @@ uv run python3 ragflow_deps/download_deps.py
 > # version dir — build.sh refuses to link two ORT versions.
 > ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/*/lib/libonnxruntime.a)"
 >
+> # Link flags differ between Linux (GNU ld) and macOS (ld64). On macOS the
+> # path below is written but NOT yet verified on real Apple-Silicon hardware
+> # (see "待 Mac 验证" above) — prefer `build.sh` which derives the same flags.
+> if [ "$(uname -s)" = "Darwin" ]; then
+>   ORT_LINK="-Wl,-export_dynamic"
+>   for a in ${ORT_A}; do ORT_LINK="${ORT_LINK} -Wl,-force_load,${a}"; done
+>   ORT_LINK="${ORT_LINK} -lc++"
+>   SYS_LIBS="-lm -lpthread -ldl -lutil -lc"
+> else
+>   ORT_LINK="-Wl,--export-dynamic -Wl,--whole-archive ${ORT_A} -Wl,--no-whole-archive -lstdc++"
+>   SYS_LIBS="-fuse-ld=lld -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
+> fi
+>
 > export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
 > export CGO_LDFLAGS="\
 >     ${RAGFLOW_DEPS}/office_oxide/lib/liboffice_oxide.a \
@@ -74,9 +90,8 @@ uv run python3 ragflow_deps/download_deps.py
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
 >     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
->     -Wl,--export-dynamic -Wl,--whole-archive ${ORT_A} -Wl,--no-whole-archive -lstdc++ \
->     -fuse-ld=lld \
->     -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
+>     ${ORT_LINK} \
+>     ${SYS_LIBS}"
 > ```
 >
 > All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.

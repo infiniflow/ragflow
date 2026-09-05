@@ -30,9 +30,9 @@ mirroring ``capture_golden.py::_assert_tokenizer_alive``.
 import asyncio
 import types
 
+from common.token_utils import num_tokens_from_string
 from rag.flow.chunker.token_chunker import TokenChunker, TokenChunkerParam
 from rag.nlp import naive_merge
-from common.token_utils import num_tokens_from_string
 
 
 def _build_token_chunker(param: dict) -> TokenChunker:

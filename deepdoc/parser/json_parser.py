@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 #  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #

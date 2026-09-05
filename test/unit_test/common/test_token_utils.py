@@ -14,8 +14,9 @@
 #  limitations under the License.
 #
 
-from common.token_utils import get_encoder, num_tokens_from_string, total_token_count_from_response, truncate
 import pytest
+
+from common.token_utils import get_encoder, num_tokens_from_string, total_token_count_from_response, truncate
 
 
 class TestNumTokensFromString:
@@ -84,7 +85,6 @@ class TestNumTokensFromString:
         # This test verifies the exception handling in the function.
         # The function should return 0 when encoding fails
         # Note: We can't easily simulate encoding errors without mocking
-        pass
 
 
 # Additional parameterized tests for efficiency

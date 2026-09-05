@@ -25,17 +25,12 @@ import json
 import logging
 import time
 from functools import partial, wraps
-from typing import Set
 
-from api.utils.file_response import (
-    apply_download_file_response_headers,
-    apply_preview_file_response_headers,
-    resolve_attachment_content_type,
-)
 import jwt
-from quart import Response, jsonify, request, make_response
+from peewee import MySQLDatabase, PostgresqlDatabase
+from quart import Response, jsonify, make_response, request
 
-from api.apps import AUTH_JWT, AUTH_API, AUTH_BETA, current_user, login_required
+from api.apps import AUTH_API, AUTH_BETA, AUTH_JWT, current_user, login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
 from api.db.db_models import Task
@@ -43,36 +38,42 @@ from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import (
     CanvasTemplateService,
     UserCanvasService,
-    completion as agent_completion,
     completion_openai,
+)
+from api.db.services.canvas_service import (
+    completion as agent_completion,
 )
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, TaskService, queue_dataflow
-from api.db.services.user_service import TenantService, UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
+from api.db.services.user_service import TenantService, UserService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     check_duplicate_ids,
     get_data_error_result,
     get_error_data_result,
     get_json_result,
-    get_result,
     get_request_json,
+    get_result,
     server_error_response,
     validate_request,
 )
+from api.utils.file_response import (
+    apply_download_file_response_headers,
+    apply_preview_file_response_headers,
+    resolve_attachment_content_type,
+)
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from common import settings
-from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
-from peewee import MySQLDatabase, PostgresqlDatabase
+from common.ssrf_guard import assert_host_is_safe
 
 # Keeps strong references to fire-and-forget tasks so they are not GC'd before completion.
-_background_tasks: Set[asyncio.Task] = set()
+_background_tasks: set[asyncio.Task] = set()
 
 
 def _canvas_json_default(obj):
@@ -85,7 +86,7 @@ def _canvas_json_default(obj):
     consumers never receive opaque ``str(partial(...))`` representations.
     """
     if callable(obj):
-        return None
+        return
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
@@ -398,7 +399,7 @@ async def _run_workflow_session(
     except Exception as exc:
         logging.exception(exc)
         canvas.cancel_task()
-        return get_result(data=f"**ERROR**: {str(exc)}")
+        return get_result(data=f"**ERROR**: {exc!s}")
 
     if not final_ans:
         # Canvas produced no events (e.g. caller sent an empty query). The
@@ -1396,6 +1397,7 @@ async def test_db_connection():
             ibm_db.close(conn)
         elif req["db_type"] == "trino":
             import os
+
             import trino
 
             db_name = req["database"]
@@ -1793,12 +1795,10 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                 # final_ans so the non-stream response shape stays unchanged.
                 run_usage = ans.get("data", {}).get("usage")
                 continue
-            if ans.get("event") == "message_end":
-                final_ans = ans
-            elif ans.get("event") == "user_inputs" and not final_ans:
+            if ans.get("event") == "message_end" or ans.get("event") == "user_inputs" and not final_ans:
                 final_ans = ans
         except Exception as exc:
-            return get_result(data=f"**ERROR**: {str(exc)}")
+            return get_result(data=f"**ERROR**: {exc!s}")
 
     if not final_ans:
         # Same contract as the new-session path: even when the canvas
@@ -2073,7 +2073,7 @@ async def _webhook_impl(agent_id: str, is_test: bool):
                 **decode_kwargs,
             )
         except Exception as e:
-            raise Exception(f"Invalid JWT: {str(e)}")
+            raise Exception(f"Invalid JWT: {e!s}")
 
         raw_required_claims = jwt_cfg.get("required_claims", [])
         if isinstance(raw_required_claims, str):
@@ -2209,7 +2209,7 @@ async def _webhook_impl(agent_id: str, is_test: bool):
             try:
                 value = auto_cast_value(raw_value, field_type)
             except Exception as e:
-                raise Exception(f"{name}.{field} auto-cast failed: {str(e)}")
+                raise Exception(f"{name}.{field} auto-cast failed: {e!s}")
 
             # 4. Type validation
             if not validate_type(value, field_type):
@@ -2531,7 +2531,7 @@ async def webhook_trace(agent_id: str):
         return base64.urlsafe_b64encode(sig).decode("utf-8").rstrip("=")
 
     def decode_webhook_id(enc_id: str, webhooks: dict) -> str | None:
-        for ts in webhooks.keys():
+        for ts in webhooks:
             if encode_webhook_id(ts) == enc_id:
                 return ts
         return None

@@ -161,7 +161,7 @@ def test_find_codec_utf8_wins_over_confident_wrong_detection(find_codec, monkeyp
         "detect",
         lambda blob: {"encoding": "cp1254", "confidence": 0.99},
     )
-    blob = "Ελληνικά".encode("utf-8")
+    blob = "Ελληνικά".encode()
     assert find_codec(blob) == "utf-8"
 
 
@@ -193,6 +193,6 @@ def test_decode_text_rejects_undetectable_bytes_without_loss(decode_text):
 
 @pytest.mark.p2
 def test_decode_text_accepts_literal_replacement_character(decode_text):
-    text, encoding = decode_text("literal � content".encode("utf-8"))
+    text, encoding = decode_text("literal � content".encode())
     assert text == "literal � content"
     assert encoding == "utf-8"

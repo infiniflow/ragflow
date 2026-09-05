@@ -18,8 +18,8 @@ import asyncio
 import importlib.util
 import re
 import sys
-from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from enum import Enum
 from functools import wraps
 from pathlib import Path
@@ -32,7 +32,6 @@ from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import encode_avatar
 from test.testcases.utils.file_utils import create_image_file
-
 
 DEFAULT_CHAT_EMPTY_RESPONSE = "Sorry! No relevant content was found in the knowledge base!"
 DEFAULT_CHAT_PROLOGUE = "Hi! I'm your assistant. What can I do for you?"
@@ -628,7 +627,8 @@ def _load_chat_routes_unit_module(monkeypatch):
     common_constants_mod.LLMType = _StubLLMType
     common_constants_mod.RetCode = _StubRetCode
     common_constants_mod.StatusEnum = _StubStatusEnum
-    from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
+    from common.constants import MAXIMUM_PAGE_NUMBER as _MPN
+    from common.constants import MAXIMUM_TASK_PAGE_NUMBER as _MTPN
 
     common_constants_mod.MAXIMUM_PAGE_NUMBER = _MPN
     common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
@@ -1106,7 +1106,7 @@ def test_chat_audio_speech_routes_unit(monkeypatch):
         def tts(self, txt):
             if not txt:
                 return []
-            yield f"chunk-{txt}".encode("utf-8")
+            yield f"chunk-{txt}".encode()
 
     monkeypatch.setattr(module, "get_tenant_default_model_by_type", lambda *_args, **_kwargs: {"llm_name": "tts-x"})
     monkeypatch.setattr(module, "LLMBundle", lambda *_args, **_kwargs: _TTSOk())

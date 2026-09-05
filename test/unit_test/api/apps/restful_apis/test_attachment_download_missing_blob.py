@@ -127,7 +127,7 @@ def _load_agent_api(monkeypatch, *, storage_get):
         get_json_result=lambda *_a, **_k: {"kind": "json_result"},
         server_error_response=lambda e: {"kind": "server_error", "error": str(e)},
         add_tenant_id_to_kwargs=lambda func: func,
-        get_request_json=lambda: {},
+        get_request_json=dict,
         # Used as `@validate_request(...)` decorator factory at module level, so it
         # must return an identity decorator (the lenient fallback would return None
         # and `@None` raises TypeError during import).
