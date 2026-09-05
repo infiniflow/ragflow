@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -267,7 +268,7 @@ func (n *NatsEngine) GetMessages(messageCount int) ([]common.TaskHandle, error) 
 		return nil, fmt.Errorf("failed to fetch messages: %w", err)
 	}
 	for msg := range messages.Messages() {
-		resultMessages = append(resultMessages, NewNatsMessageHandle(msg))
+		resultMessages = append(resultMessages, NewNatsMessageHandle(msg, n.consumer.CachedInfo().Config.BackOff))
 	}
 	return resultMessages, nil
 }
@@ -282,11 +283,13 @@ func (n *NatsEngine) CheckStatus() string {
 
 type NatsMessageHandle struct {
 	message jetstream.Msg
+	backOff []time.Duration
 }
 
-func NewNatsMessageHandle(message jetstream.Msg) *NatsMessageHandle {
+func NewNatsMessageHandle(message jetstream.Msg, backOff []time.Duration) *NatsMessageHandle {
 	return &NatsMessageHandle{
 		message: message,
+		backOff: slices.Clone(backOff),
 	}
 }
 
@@ -304,7 +307,23 @@ func (m *NatsMessageHandle) Ack() error {
 }
 
 func (m *NatsMessageHandle) Nack() error {
-	return m.message.Nak()
+	if len(m.backOff) == 0 {
+		return m.message.Nak()
+	}
+
+	// JetStream applies BackOff to acknowledgement timeouts, but a plain
+	// Nak bypasses it and redelivers immediately. Use the same schedule for
+	// explicit task failures so a transient outage cannot burn through
+	// MaxDeliver before the dependency recovers.
+	metadata, err := m.message.Metadata()
+	if err != nil {
+		return fmt.Errorf("read task delivery metadata for retry backoff: %w", err)
+	}
+	if metadata.NumDelivered == 0 {
+		return errors.New("task delivery count must be positive for retry backoff")
+	}
+	delayIndex := min(metadata.NumDelivered-1, uint64(len(m.backOff)-1))
+	return m.message.NakWithDelay(m.backOff[delayIndex])
 }
 
 func (m *NatsMessageHandle) InProgress() error {
