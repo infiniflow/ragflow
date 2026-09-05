@@ -455,7 +455,9 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         priority (int, optional): Priority level for task queueing (default is 0).
 
     Note:
-        - For PDF documents, tasks are created per page range based on configuration
+        - For PDF documents, tasks are created per page range based on configuration.
+          A resume PDF and a MinerU PDF are the two exceptions. Each gets one task that
+          covers every configured range
         - For Excel documents, tasks are created per row range
         - Task digests are calculated for optimization and reuse
         - Previous task chunks may be reused if available
@@ -500,7 +502,16 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         if doc["parser_id"] == "resume":
             # The resume parser ignores from_page and to_page, so every task parses the whole
             # file. Collapse the configured ranges into one range to keep a resume document at a single task.
+            logging.info("Document %s uses the resume parser, so one task covers the whole file instead of the ranges %s", doc["id"], page_ranges)
             page_ranges = [(1, MAXIMUM_PAGE_NUMBER)]
+        if is_mineru and len(page_ranges) > 1:
+            # One task per configured range means one full upload per range, which is
+            # the cost unsplit-task mode exists to remove. Cover every range with a
+            # single span instead. MinerUParser._select_configured_pages then drops
+            # the blocks that fall in the gaps between the ranges.
+            merged = [(min(s for s, _ in page_ranges), max(e for _, e in page_ranges))]
+            logging.info("Document %s merged MinerU page ranges %s into one task span %s", doc["id"], page_ranges, merged)
+            page_ranges = merged
         for s, e in page_ranges:
             s -= 1
             s = max(0, s)
