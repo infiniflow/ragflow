@@ -475,29 +475,46 @@ class Canvas(Graph):
         Everything in the window is dispatched concurrently, so a node may only read
         output a component produced in an earlier batch. A node waiting on another
         member of the window is moved behind it and runs in the next batch; a node
-        waiting on something that was never scheduled is dropped, as before. Returns
-        the new end of the window.
+        waiting on something that was never scheduled is dropped, as before, and so
+        is anything left waiting on what was dropped. Returns the new end of the
+        window.
         """
         if self.path[0].lower().find("userfillup") >= 0:
             return t
 
         finished = set(self.path[:f])
         window = set(self.path[f:t])
-        ready, deferred = [], []
+        waiting_on = {}
         for cpn_id in self.path[f:t]:
             cpn = self.get_component_obj(cpn_id)
             if cpn.component_name.lower() in ["begin", "userfillup"]:
-                ready.append(cpn_id)
+                waiting_on[cpn_id] = []
+            else:
+                waiting_on[cpn_id] = [c for c in cpn.get_dependency_ids() if c != cpn_id]
+
+        while True:
+            # A dependency that is neither finished nor still in the window will never
+            # produce output, so its dependents cannot run either.
+            unavailable = {c for c in window if any(d not in finished and d not in window for d in waiting_on[c])}
+            if not unavailable:
+                break
+            window -= unavailable
+
+        ready, deferred = [], []
+        for cpn_id in self.path[f:t]:
+            if cpn_id not in window:
+                _logger.debug("[Canvas] Dropping '%s', upstream %s never ran", cpn_id, [d for d in waiting_on[cpn_id] if d not in finished])
                 continue
-            waiting_on = [c for c in cpn.get_dependency_ids() if c != cpn_id]
-            if any(c in window for c in waiting_on):
+            if any(c in window for c in waiting_on[cpn_id]):
+                _logger.debug("[Canvas] Holding '%s' for the next batch, it reads %s", cpn_id, [c for c in waiting_on[cpn_id] if c in window])
                 deferred.append(cpn_id)
-            elif all(c in finished for c in waiting_on):
+            else:
                 ready.append(cpn_id)
 
         if not ready and deferred:
             # Every candidate waits on another candidate, which takes a cycle in the
             # canvas. Run them anyway so the workflow still terminates.
+            _logger.debug("[Canvas] %s reference each other, dispatching anyway", deferred)
             ready, deferred = deferred, []
 
         self.path[f:t] = ready + deferred

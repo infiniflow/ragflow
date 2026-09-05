@@ -256,6 +256,18 @@ def _unreachable_dependency_graph():
     )
 
 
+def _dropped_upstream_graph():
+    """`a` and `b` share a window, `a` waits on a node nobody scheduled."""
+    return _dsl(
+        {
+            "begin": _node("Begin", {}, ["a", "b"], []),
+            "a": _node("Echo", {"text": "[{ghost@result}]"}, ["b"], ["ghost"]),
+            "b": _node("Echo", {"text": "[{a@result}]"}, [], ["a"]),
+            "ghost": _node("Echo", {"text": "never scheduled"}, [], []),
+        }
+    )
+
+
 def _two_join_graph():
     """Both joins land in the same batch as `c`, so both are held back together."""
     return _dsl(
@@ -338,6 +350,17 @@ def test_node_whose_upstream_was_never_scheduled_is_dropped(canvas_stack):
 
     assert trace.ran("a")
     assert not trace.ran("sink")
+
+
+@pytest.mark.p1
+def test_a_drop_carries_to_the_node_reading_it(canvas_stack):
+    canvas_module, trace, _ = canvas_stack
+    _run(canvas_module, _dropped_upstream_graph())
+
+    # `b` is deferred behind `a` and `a` is then dropped, so `b` has nothing to read.
+    # Without the cascade it is the only candidate left and the cycle fallback runs it.
+    assert not trace.ran("a")
+    assert not trace.ran("b")
 
 
 @pytest.mark.p1
