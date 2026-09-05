@@ -517,3 +517,62 @@ func TestListOperations_InputsDocMatchesAllowlist(t *testing.T) {
 		}
 	}
 }
+
+// TestListOperations_MissingInputOperatesOnEmptyList pins the fix for
+// "ListOperations errors when no variable is passed in": when the query
+// variable resolves to nil (the referenced upstream node never ran, e.g.
+// it was routed around by a conditional branch), the component must
+// operate on an empty list instead of failing the whole canvas run.
+func TestListOperations_MissingInputOperatesOnEmptyList(t *testing.T) {
+	for _, op := range []string{"nth", "head", "tail", "filter", "sort", "drop_duplicates"} {
+		c, err := NewListOperationsComponent(map[string]any{
+			"query":      "cpn_never_ran@result",
+			"operations": op,
+			"n":          1,
+		})
+		if err != nil {
+			t.Fatalf("op %s: NewListOperationsComponent: %v", op, err)
+		}
+		state := canvas.NewCanvasState("run-1", "task-1")
+		ctx := canvas.WithState(t.Context(), state)
+
+		out, err := c.Invoke(ctx, nil, nil)
+		if err != nil {
+			t.Fatalf("op %s: Invoke: %v", op, err)
+		}
+		got, ok := out["result"].([]any)
+		if !ok || got == nil {
+			t.Fatalf("op %s: result should be a non-nil empty list, got %#v", op, out["result"])
+		}
+		if len(got) != 0 {
+			t.Errorf("op %s: result should be empty, got %v", op, got)
+		}
+		if out["first"] != nil || out["last"] != nil {
+			t.Errorf("op %s: first/last should be nil for empty result, got %v/%v", op, out["first"], out["last"])
+		}
+	}
+}
+
+// TestListOperations_NonListInputStillErrors: a non-nil, non-list value is
+// a real misconfiguration and must keep failing loudly (#11364 contract).
+func TestListOperations_NonListInputStillErrors(t *testing.T) {
+	c, err := NewListOperationsComponent(map[string]any{
+		"query":      "cpn_0@xs",
+		"operations": "head",
+		"n":          1,
+	})
+	if err != nil {
+		t.Fatalf("NewListOperationsComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-1", "task-1")
+	state.Outputs["cpn_0"] = map[string]any{"xs": "not-a-list"}
+	ctx := canvas.WithState(t.Context(), state)
+
+	_, err = c.Invoke(ctx, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for non-list input")
+	}
+	if !strings.Contains(err.Error(), "input is not a list") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
