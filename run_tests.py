@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import List
 import platform
 from enum import Enum
-# NOTE：This comment is used to re‑run CI to pinpoint the root cause of the issue.
 
 
 class Colors(Enum):
@@ -83,12 +82,11 @@ def _is_color_supported() -> bool:
             if handle == INVALID_HANDLE_VALUE:
                 return False
             mode = wintypes.DWORD()
-            if not kernel32.GetConsoleMode(handle, byref(mode)):
-                return False
             ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x04
-            new_mode = mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING
-            success = kernel32.SetConsoleMode(handle, new_mode)
-            return bool(success)
+            if kernel32.GetConsoleMode(handle, byref(mode)):
+                vt_enabled = bool(mode.value & ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+                return vt_enabled
+            return False
         except BaseException as e:
             if isinstance(e, (SystemExit, KeyboardInterrupt)):
                 raise e
