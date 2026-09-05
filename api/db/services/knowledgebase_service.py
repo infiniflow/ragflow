@@ -60,7 +60,13 @@ class KnowledgebaseService(CommonService):
         - KBs owned by the current user (`tenant_id == user_id`)
         Always constrained to `StatusEnum.VALID`.
         """
-        return ((cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value)
+        visibility = (cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.tenant_id == user_id)
+        from api.db.services.access_group_service import AccessGroupService
+
+        allowed_dataset_ids = AccessGroupService.allowed_dataset_ids(user_id)
+        if allowed_dataset_ids is not None:
+            visibility = cls.model.id.in_(allowed_dataset_ids) | (cls.model.tenant_id == user_id)
+        return visibility & (cls.model.status == StatusEnum.VALID.value)
 
     @classmethod
     @DB.connection_context()
@@ -484,6 +490,12 @@ class KnowledgebaseService(CommonService):
 
         if kb.tenant_id == user_id:
             return True
+
+        from api.db.services.access_group_service import AccessGroupService
+
+        allowed_dataset_ids = AccessGroupService.allowed_dataset_ids(user_id)
+        if allowed_dataset_ids is not None:
+            return kb.id in allowed_dataset_ids
 
         if kb.permission != TenantPermission.TEAM.value:
             return False

@@ -1,6 +1,7 @@
+import json
 import re
 import time
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from playwright.sync_api import expect
 
@@ -174,6 +175,8 @@ def _select_first_dataset_and_save(
     timeout_ms: int = RESULT_TIMEOUT_MS,
     response_timeout_ms: int = 30000,
     post_save_ready_locator=None,
+    dataset_id: str | None = None,
+    dataset_name: str | None = None,
 ) -> None:
     chat_root = page.locator("[data-testid='chat-detail']")
     search_root = page.locator("[data-testid='search-detail']")
@@ -241,7 +244,7 @@ def _select_first_dataset_and_save(
         combo_text = combobox.inner_text()
     except Exception:
         combo_text = ""
-    if combo_text and not re.search(r"please\s+select|select", combo_text, re.I):
+    if not dataset_id and combo_text and not re.search(r"please\s+select|select", combo_text, re.I):
         return
 
     save_button = scope_root.locator(f"[data-testid='{save_testid}']")
@@ -278,6 +281,15 @@ def _select_first_dataset_and_save(
         raise AssertionError(f"Dataset option popover did not open. combobox_testid={combobox_testid!r} last_list_text={last_list_text[:200]!r}")
 
     def _pick_first_dataset_option(options_root) -> bool:
+        if dataset_id:
+            assert dataset_name, "A dataset name is required for explicit selection"
+            search_input = page.locator("[cmdk-input]:visible")
+            search_input.fill(dataset_name)
+            option = options_root.get_by_role("option").filter(has=page.get_by_text(dataset_name, exact=True))
+            expect(option).to_be_visible(timeout=timeout_ms)
+            if option.locator("div.bg-primary").count() == 0:
+                option.click()
+            return True
         search_input = options_root.locator("[cmdk-input], input[placeholder*='Search']").first
         if search_input.count() > 0:
             try:
@@ -347,9 +359,9 @@ def _select_first_dataset_and_save(
             kb_ids = search_config.get("kb_ids")
             if not isinstance(kb_ids, list):
                 kb_ids = payload.get("kb_ids")
-            return isinstance(kb_ids, list) and len(kb_ids) > 0
+            return isinstance(kb_ids, list) and (dataset_id in kb_ids if dataset_id else len(kb_ids) > 0)
         kb_ids = payload.get("kb_ids")
-        return isinstance(kb_ids, list) and len(kb_ids) > 0
+        return isinstance(kb_ids, list) and (dataset_id in kb_ids if dataset_id else len(kb_ids) > 0)
 
     response_url_pattern = "/api/v1/chats" if save_testid == "chat-settings-save" else "/api/v1/searches/"
     last_payload = {}
@@ -403,7 +415,36 @@ def _select_first_dataset_and_save(
     )
 
 
+def _is_chat_completion_request(request, prompt: str) -> bool:
+    if request.method != "POST" or urlparse(request.url).path != "/api/v1/chat/completions":
+        return False
+    payload = request.post_data_json
+    messages = payload.get("messages", []) if isinstance(payload, dict) else []
+    return bool(messages and messages[-1].get("role") == "user" and messages[-1].get("content") == prompt)
+
+
+def _assert_successful_chat_stream(response) -> None:
+    assert response.status == 200, f"Chat completion HTTP {response.status}"
+    answer_found = False
+    completed = False
+    for frame in re.split(r"\r?\n\r?\n", response.text()):
+        data_lines = [line[5:].strip() for line in frame.splitlines() if line.startswith("data:")]
+        if not data_lines:
+            continue
+        event = json.loads("\n".join(data_lines))
+        assert event.get("code") == 0, f"Chat stream returned an error: {event}"
+        data = event.get("data")
+        if isinstance(data, dict) and str(data.get("answer") or "").strip():
+            answer_found = True
+        if data is True:
+            completed = True
+    assert completed, "Chat stream did not emit its terminal success event"
+    assert answer_found, "Chat stream completed without an answer"
+
+
 def _send_chat_and_wait_done(page, text: str, timeout_ms: int = 60000) -> None:
+    answers = page.locator("[data-testid='chat-detail'] [class*='messageItemLeft']")
+    answer_count = answers.count()
     textarea = page.locator("[data-testid='chat-textarea']")
     expect(textarea).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     tag_name = ""
@@ -455,37 +496,19 @@ def _send_chat_and_wait_done(page, text: str, timeout_ms: int = 60000) -> None:
             send_button = composer.get_by_role("button", name=re.compile(r"send message", re.I))
         if send_button is None or send_button.count() == 0:
             send_button = composer.locator("button", has_text=re.compile(r"send message", re.I))
-    if send_button is not None and send_button.count() > 0:
-        send_button.first.click()
-        send_used = True
-    else:
-        textarea.press("Enter")
-        send_used = False
-
-    status_marker = page.locator("[data-testid='chat-stream-status']").first
-    try:
-        expect(status_marker).to_have_attribute("data-status", "idle", timeout=timeout_ms)
-    except Exception as exc:
-        try:
-            # Some UI builds remove the stream-status marker when generation finishes.
-            expect(page.locator("[data-testid='chat-stream-status']")).to_have_count(0, timeout=timeout_ms)
-            return
-        except Exception:
-            pass
-        try:
-            marker_count = page.locator("[data-testid='chat-stream-status']").count()
-        except Exception:
-            marker_count = -1
-        try:
-            status_value = status_marker.get_attribute("data-status")
-        except Exception:
-            status_value = None
-        raise AssertionError(
-            "Chat stream status marker not idle within timeout. "
-            f"url={page.url} marker_count={marker_count} status={status_value!r} "
-            f"tag={tag_name!r} contenteditable={contenteditable!r} "
-            f"typed_value={typed_value!r} send_button_used={send_used}"
-        ) from exc
+    with page.expect_event(
+        "requestfinished",
+        predicate=lambda request: _is_chat_completion_request(request, text),
+        timeout=timeout_ms,
+    ) as completion:
+        if send_button is not None and send_button.count() > 0:
+            send_button.first.click()
+        else:
+            textarea.press("Enter")
+    _assert_successful_chat_stream(completion.value.response())
+    expect(answers).to_have_count(answer_count + 1, timeout=timeout_ms)
+    expect(answers.last.locator("[class*='messageText']")).to_have_text(re.compile(r"\S"), timeout=timeout_ms)
+    expect(page.get_by_test_id("chat-stream-status")).to_have_count(0, timeout=timeout_ms)
 
 
 def _wait_for_url_regex(page, pattern: str, timeout_ms: int = RESULT_TIMEOUT_MS) -> None:

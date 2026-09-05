@@ -136,7 +136,12 @@ export function QuestionItem({
                     {status.label}
                   </Badge>
                 </div>
-                <h3 className="mt-2 text-sm font-medium leading-6 text-text-primary">
+                <h3
+                  className={cn(
+                    'mt-2 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-text-primary',
+                    !expanded && 'line-clamp-2',
+                  )}
+                >
                   {question.text}
                 </h3>
               </div>

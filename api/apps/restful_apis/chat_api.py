@@ -1244,6 +1244,17 @@ async def session_completion(chat_id_in_arg=""):
             e, dia = await thread_pool_exec(DialogService.get_by_id, chat_id)
             if not e:
                 return get_data_error_result(message="Chat not found!")
+            inaccessible = [
+                kb_id
+                for kb_id in (getattr(dia, "kb_ids", None) or [])
+                if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=current_user.id)
+            ]
+            if inaccessible:
+                return get_json_result(
+                    data=False,
+                    message="No authorization for one or more configured datasets.",
+                    code=RetCode.AUTHENTICATION_ERROR,
+                ), 403
             if session_id:
                 e, conv = await thread_pool_exec(ConversationService.get_by_id, session_id)
                 if not e:

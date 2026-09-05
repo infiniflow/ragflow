@@ -91,6 +91,7 @@ lib-cov
 # Coverage directory used by tools like istanbul
 coverage
 *.lcov
+/.coverage
 
 # nyc test coverage
 .nyc_output
@@ -274,3 +275,4 @@ internal/deepdoc/parser/docx/tool/
 /agent/business_requirements/document_constructor_*.svg
 /intake-complete.png
 /review-revision-1.png
+/deployment/linux-pg

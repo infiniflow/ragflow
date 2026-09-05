@@ -63,7 +63,8 @@ const (
 
 // InvokeComponent is the HTTP client node. Stateless across invocations.
 type InvokeComponent struct {
-	name string
+	name             string
+	proxyDialContext func(context.Context, string, string) (net.Conn, error)
 }
 
 // NewInvokeComponent constructs an Invoke component.
@@ -213,6 +214,10 @@ func (i *InvokeComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 			Timeout:   timeout,
 			KeepAlive: 30 * time.Second,
 		}
+		proxyDialContext := pinnedProxyDialer.DialContext
+		if i.proxyDialContext != nil {
+			proxyDialContext = i.proxyDialContext
+		}
 		client = &http.Client{
 			Timeout: timeout,
 			Transport: otelhttp.NewTransport(&http.Transport{
@@ -227,9 +232,9 @@ func (i *InvokeComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 					// default dialer.
 					host, port, splitErr := net.SplitHostPort(addr)
 					if splitErr != nil || host != proxyURL.Hostname() || proxyIP == "" {
-						return pinnedProxyDialer.DialContext(ctx, network, addr)
+						return proxyDialContext(ctx, network, addr)
 					}
-					return pinnedProxyDialer.DialContext(ctx, network, net.JoinHostPort(proxyIP, port))
+					return proxyDialContext(ctx, network, net.JoinHostPort(proxyIP, port))
 				},
 				TLSHandshakeTimeout:   timeout,
 				ResponseHeaderTimeout: timeout,

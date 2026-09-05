@@ -2,7 +2,7 @@ import pytest
 from playwright.sync_api import expect
 
 from test.playwright.helpers.auth_selectors import LOGIN_TAB, NICKNAME_INPUT, REGISTER_TAB
-from test.playwright.helpers.flow_steps import flow_params, require
+from test.playwright.helpers.flow_steps import require
 
 
 def step_01_open_login(flow_page, flow_state, login_url, active_auth_context, step, snap):
@@ -65,6 +65,6 @@ STEPS = [
 
 @pytest.mark.p1
 @pytest.mark.auth
-@pytest.mark.parametrize("step_fn", flow_params(STEPS))
-def test_toggle_login_register_flow(step_fn, flow_page, flow_state, login_url, active_auth_context, step, snap):
-    step_fn(flow_page, flow_state, login_url, active_auth_context, step, snap)
+def test_toggle_login_register_flow(flow_page, flow_state, login_url, active_auth_context, step, snap):
+    for _, step_fn in STEPS:
+        step_fn(flow_page, flow_state, login_url, active_auth_context, step, snap)

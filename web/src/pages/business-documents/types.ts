@@ -208,6 +208,7 @@ export interface BusinessDocumentJobSummary {
 export interface BusinessDocumentProjection {
   document_id: string;
   owner_id?: string;
+  owner_name?: string | null;
   access_role?: BusinessDocumentRole;
   permissions?: BusinessDocumentPermissions;
   title: string;
@@ -269,6 +270,7 @@ export interface BusinessDocumentCapabilities {
 export interface BusinessDocumentAssignableUser {
   user_id: string;
   nickname: string;
+  email: string;
   role: BusinessDocumentRole;
 }
 

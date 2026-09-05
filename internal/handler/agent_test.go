@@ -883,36 +883,149 @@ func TestAgentChatCompletions_DerivesStructuredUserInputFromInputs(t *testing.T)
 // returns an empty (closed) channel. Used to assert on argument
 // derivation without exercising the runner.
 type captureChatRunner struct {
-	captured *any
+	captured  *any
+	sessionID *string
+	events    []canvas.RunEvent
 }
 
-func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _ string, userInput any) (<-chan canvas.RunEvent, error) {
-	*c.captured = userInput
-	ch := make(chan canvas.RunEvent)
+func (c *captureChatRunner) RunAgent(_ context.Context, _, _, sessionID, _ string, userInput any) (<-chan canvas.RunEvent, error) {
+	if c.captured != nil {
+		*c.captured = userInput
+	}
+	if c.sessionID != nil {
+		*c.sessionID = sessionID
+	}
+	ch := make(chan canvas.RunEvent, len(c.events))
+	for _, event := range c.events {
+		ch <- event
+	}
 	close(ch)
 	return ch, nil
 }
 
 // TestAgentChatCompletions_OpenAICompat_NonStreamReturnsChoices covers
-// the openai-compatible non-stream branch — the test contract requires
-// "choices" at the top level (not inside data).
+// the complete non-streaming adapter: it invokes the canvas with the last
+// user message, returns the real answer at top-level choices, and preserves
+// references and runtime token usage.
 func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsChoices(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
-		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"model":"m","messages":[{"role":"user","content":"hi"}]}`))
+		strings.NewReader(`{"agent_id":"a1","query":"native-query-must-not-win","openai-compatible":true,"model":"client-model","metadata":{"id":"session-from-metadata"},"messages":[{"role":"user","content":"first"},{"role":"assistant","content":"previous"},{"role":"user","content":"actual question"}]}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	var capturedInput any
+	var capturedSessionID string
+	runner := &captureChatRunner{
+		captured:  &capturedInput,
+		sessionID: &capturedSessionID,
+		events: []canvas.RunEvent{
+			{Type: "message", Data: `{"content":"real agent answer","reference":[{"id":"chunk-1"}]}`},
+			{Type: "message_end", Data: `{"reference":[{"id":"chunk-1"}]}`},
+			{Type: "workflow_finished", Data: `{"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}`},
+			{Type: "done"},
+		},
+	}
+	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
 
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if _, ok := resp["choices"]; !ok {
-		t.Errorf("response should contain top-level 'choices', got keys: %v", resp)
+	if capturedInput != "actual question" {
+		t.Fatalf("RunAgent input = %#v, want last user message", capturedInput)
+	}
+	if capturedSessionID != "session-from-metadata" {
+		t.Fatalf("RunAgent sessionID = %q, want metadata.id", capturedSessionID)
+	}
+	var response struct {
+		ID      string           `json:"id"`
+		Object  string           `json:"object"`
+		Model   string           `json:"model"`
+		Usage   agentOpenAIUsage `json:"usage"`
+		Choices []struct {
+			Message struct {
+				Role      string                   `json:"role"`
+				Content   string                   `json:"content"`
+				Reference []map[string]interface{} `json:"reference"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, w.Body.String())
+	}
+	if response.ID != "session-from-metadata" || response.Object != "chat.completion" || response.Model != "a1" {
+		t.Errorf("unexpected response identity: id=%q object=%q model=%q", response.ID, response.Object, response.Model)
+	}
+	if len(response.Choices) != 1 || response.Choices[0].Message.Content != "real agent answer" || response.Choices[0].FinishReason != "stop" {
+		t.Fatalf("unexpected choices: %#v", response.Choices)
+	}
+	if len(response.Choices[0].Message.Reference) != 1 || response.Choices[0].Message.Reference[0]["id"] != "chunk-1" {
+		t.Errorf("reference was not preserved: %#v", response.Choices[0].Message.Reference)
+	}
+	if response.Usage.PromptTokens != 7 || response.Usage.CompletionTokens != 3 || response.Usage.TotalTokens != 10 {
+		t.Errorf("usage = %#v, want 7/3/10", response.Usage)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_StreamReturnsChunksAndDone(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","session_id":"session-1","openai-compatible":true,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "message", Data: `{"content":"streamed answer","reference":[{"id":"chunk-1"}]}`},
+		{Type: "message_end", Data: `{}`},
+		{Type: "workflow_finished", Data: `{"usage":{"prompt_tokens":2,"completion_tokens":4,"total_tokens":6}}`},
+		{Type: "done"},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Fatalf("Content-Type = %q, want text/event-stream", got)
+	}
+	frames := strings.Split(strings.TrimSpace(w.Body.String()), "\n\n")
+	if len(frames) != 3 {
+		t.Fatalf("SSE frame count = %d, want content + final + DONE; body=%q", len(frames), w.Body.String())
+	}
+	if frames[2] != "data: [DONE]" {
+		t.Fatalf("last frame = %q, want data: [DONE]", frames[2])
+	}
+	var contentChunk struct {
+		Object  string `json:"object"`
+		Choices []struct {
+			Delta struct {
+				Content string `json:"content"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(frames[0], "data: ")), &contentChunk); err != nil {
+		t.Fatalf("decode content chunk: %v", err)
+	}
+	if len(contentChunk.Choices) != 1 || contentChunk.Choices[0].Delta.Content != "streamed answer" || contentChunk.Object != "chat.completion.chunk" {
+		t.Errorf("unexpected content chunk: %#v", contentChunk)
+	}
+	var finalChunk struct {
+		Usage   agentOpenAIUsage `json:"usage"`
+		Choices []struct {
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(frames[1], "data: ")), &finalChunk); err != nil {
+		t.Fatalf("decode final chunk: %v", err)
+	}
+	if len(finalChunk.Choices) != 1 || finalChunk.Choices[0].FinishReason != "stop" {
+		t.Errorf("final chunk missing stop: %#v", finalChunk)
+	}
+	if finalChunk.Usage.PromptTokens != 2 || finalChunk.Usage.CompletionTokens != 4 || finalChunk.Usage.TotalTokens != 6 {
+		t.Errorf("final usage = %#v, want 2/4/6", finalChunk.Usage)
 	}
 }
 

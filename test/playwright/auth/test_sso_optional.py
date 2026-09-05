@@ -2,7 +2,7 @@ import re
 
 import pytest
 
-from test.playwright.helpers.flow_steps import flow_params, require
+from test.playwright.helpers.flow_steps import require
 
 
 def step_01_open_login(flow_page, flow_state, login_url, active_auth_context, step, snap):
@@ -43,6 +43,6 @@ STEPS = [
 
 @pytest.mark.p1
 @pytest.mark.auth
-@pytest.mark.parametrize("step_fn", flow_params(STEPS))
-def test_sso_optional_flow(step_fn, flow_page, flow_state, login_url, active_auth_context, step, snap):
-    step_fn(flow_page, flow_state, login_url, active_auth_context, step, snap)
+def test_sso_optional_flow(flow_page, flow_state, login_url, active_auth_context, step, snap):
+    for _, step_fn in STEPS:
+        step_fn(flow_page, flow_state, login_url, active_auth_context, step, snap)

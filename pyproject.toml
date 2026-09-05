@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "1.12.0"
+version = "1.13.0"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -323,11 +323,9 @@ addopts = [
 [tool.coverage.run]
 # Source paths - adjust according to your project structure
 source = [
-    # "../../api/db/services",
-    # Add more directories if needed:
-    "../../common",
-    # "../../utils",
+    "api/", "rag/", "common/", "deepdoc/", "agent/",
 ]
+branch = true
 
 # Files/directories to exclude
 omit = [

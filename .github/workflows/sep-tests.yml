@@ -35,6 +35,18 @@ jobs:
     # https://github.com/orgs/community/discussions/26261
     if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
     runs-on: [ "self-hosted", "ragflow-test" ]
+    services:
+      regression-postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: regression
+          POSTGRES_PASSWORD: regression-only
+          POSTGRES_DB: regression
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U regression -d regression"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     outputs:
       http_api_test_level: ${{ steps.test_level.outputs.http_api_test_level }}
       has_go_changes: ${{ steps.detect_changes.outputs.has_go_changes }}
@@ -215,6 +227,26 @@ jobs:
           echo "Start to run unit test"
           python3 run_tests.py -i
 
+      - name: Business document branch coverage gate
+        if: steps.detect_changes.outputs.has_python_changes == 'true'
+        run: |
+          source .venv/bin/activate
+          pytest test/unit_test/api/apps/business_documents test/unit_test/api/apps/restful_apis/test_business_document_api_contract.py --cov=api/apps/business_documents --cov-branch --cov-fail-under=79 --cov-report=xml:coverage-business-documents.xml
+
+      - name: Deterministic business document requirements
+        if: steps.detect_changes.outputs.has_python_changes == 'true'
+        run: |
+          source .venv/bin/activate
+          pytest test/evals/business_documents/test_golden_dialogue_harness.py test/evals/business_documents/test_live_quality_scorer.py
+
+      - name: PostgreSQL transaction races
+        if: steps.detect_changes.outputs.has_python_changes == 'true'
+        env:
+          BUSINESS_DOCUMENT_TEST_POSTGRES_DSN: postgresql://regression:regression-only@host.docker.internal:${{ job.services.regression-postgres.ports['5432'] }}/regression
+        run: |
+          source .venv/bin/activate
+          pytest test/integration/test_business_document_postgres.py
+
 
 
   ragflow_tests_infinity:
@@ -268,33 +300,10 @@ jobs:
 
       - name: Run Go unit tests
         if: env.HAS_GO == 'true'
-        # Runs after `./build.sh --go`, which guarantees the C++ static
-        # library (librag_tokenizer_c_api.a) is present on disk. The Go
-        # test binaries link against it transitively through
-        # `internal/binding`, so running `go test` before the C++ build
-        # fails the link step.
-        #
-        # Excludes packages whose tests fail for environmental reasons
-        # unrelated to the diff:
-        #   - internal/storage:   TestMinioStorage_* needs a MinIO server
-        #     at localhost:9000; not started by this job.
-        #   - internal/tokenizer: tests need /usr/share/infinity/resource
-        #     dict files, only mounted inside the docker builder, not
-        #     in the Go test environment.
-        #   - internal/handler:   TestListAgentVersionsHandler_Success and
-        #     sqlite setup (e.g. "no such table: user_tenant") are
-        #     pre-existing flakes unrelated to the diff.
-        run: |
-          set -euo pipefail
-          PKGS=$(go list ./... 2>/dev/null \
-            | grep -v '/internal/storage$' \
-            | grep -v '/internal/tokenizer$' \
-            | grep -v '/internal/handler$' || true)
-          if [ -z "$PKGS" ]; then
-            ./build.sh --test
-          else
-            ./build.sh --test -- $PKGS
-          fi
+        env:
+          RAGFLOW_TEST_DOCKER_HOST: host.docker.internal
+          RAGFLOW_TEST_BIND_ADDRESS: 0.0.0.0
+        run: bash test/run_go_regression.sh
 
       - name: Build ragflow:nightly
         if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
@@ -442,6 +451,8 @@ jobs:
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                } >> .env
                echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
+               echo "RAGFLOW_BASE_URL=http://host.docker.internal:${SVR_WEB_HTTP_PORT}" >> ${GITHUB_ENV}
+               echo "ADMIN_HOST_ADDRESS=http://host.docker.internal:${ADMIN_SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
                # Patch entrypoint.sh for coverage
                sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
@@ -494,6 +505,20 @@ jobs:
             exit 1
           fi
           source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/restful_api 2>&1 | tee infinity_restful_api_test.log
+
+      - name: Run test_web_api against Infinity
+        if: env.HAS_PYTHON == 'true'
+        run: |
+          source .venv/bin/activate
+          export http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY=""
+          pytest --level=${HTTP_API_TEST_LEVEL} --junitxml=infinity-test_web_api.xml test/testcases/test_web_api
+
+      - name: Run test_admin_api against Infinity
+        if: env.HAS_PYTHON == 'true'
+        run: |
+          source .venv/bin/activate
+          export http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY=""
+          pytest --level=${HTTP_API_TEST_LEVEL} --junitxml=infinity-test_admin_api.xml test/testcases/test_admin_api
 
       - name: RAGFlow CLI retrieval test Infinity
         if: env.HAS_PYTHON == 'true'
@@ -606,6 +631,14 @@ jobs:
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "import 'test/benchmark/test_docs/Doc1.pdf,test/benchmark/test_docs/Doc2.pdf' into dataset '$DATASET'"
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "parse dataset '$DATASET' sync"
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "Benchmark 16 100 search 'what are these documents about' on datasets '$DATASET'"
+
+      - name: Live browser upload chat and search against Infinity
+        if: env.HAS_PYTHON == 'true'
+        run: |
+          source .venv/bin/activate
+          export http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY=""
+          python -m playwright install --with-deps chromium
+          pytest test/playwright/e2e/test_dataset_upload_parse.py test/playwright/e2e/test_next_apps_chat.py test/playwright/e2e/test_next_apps_search.py
 
       - name: Stop ragflow to save coverage Infinity
         if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}
@@ -725,33 +758,10 @@ jobs:
 
       - name: Run Go unit tests
         if: env.HAS_GO == 'true'
-        # Runs after `./build.sh --go`, which guarantees the C++ static
-        # library (librag_tokenizer_c_api.a) is present on disk. The Go
-        # test binaries link against it transitively through
-        # `internal/binding`, so running `go test` before the C++ build
-        # fails the link step.
-        #
-        # Excludes packages whose tests fail for environmental reasons
-        # unrelated to the diff:
-        #   - internal/storage:   TestMinioStorage_* needs a MinIO server
-        #     at localhost:9000; not started by this job.
-        #   - internal/tokenizer: tests need /usr/share/infinity/resource
-        #     dict files, only mounted inside the docker builder, not
-        #     in the Go test environment.
-        #   - internal/handler:   TestListAgentVersionsHandler_Success and
-        #     sqlite setup (e.g. "no such table: user_tenant") are
-        #     pre-existing flakes unrelated to the diff.
-        run: |
-          set -euo pipefail
-          PKGS=$(go list ./... 2>/dev/null \
-            | grep -v '/internal/storage$' \
-            | grep -v '/internal/tokenizer$' \
-            | grep -v '/internal/handler$' || true)
-          if [ -z "$PKGS" ]; then
-            ./build.sh --test
-          else
-            ./build.sh --test -- $PKGS
-          fi
+        env:
+          RAGFLOW_TEST_DOCKER_HOST: host.docker.internal
+          RAGFLOW_TEST_BIND_ADDRESS: 0.0.0.0
+        run: bash test/run_go_regression.sh
 
       - name: Build ragflow:nightly
         if: env.HAS_GO == 'true' || env.HAS_PYTHON == 'true' || env.HAS_WEB == 'true'
@@ -899,6 +909,8 @@ jobs:
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                } >> .env
                echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
+               echo "RAGFLOW_BASE_URL=http://host.docker.internal:${SVR_WEB_HTTP_PORT}" >> ${GITHUB_ENV}
+               echo "ADMIN_HOST_ADDRESS=http://host.docker.internal:${ADMIN_SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
                # Patch entrypoint.sh for coverage
                sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
@@ -951,6 +963,20 @@ jobs:
             exit 1
           fi
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/restful_api 2>&1 | tee es_restful_api_test.log
+
+      - name: Run test_web_api against Elasticsearch
+        if: env.HAS_PYTHON == 'true'
+        run: |
+          source .venv/bin/activate
+          export http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY=""
+          pytest --level=${HTTP_API_TEST_LEVEL} --junitxml=elasticsearch-test_web_api.xml test/testcases/test_web_api
+
+      - name: Run test_admin_api against Elasticsearch
+        if: env.HAS_PYTHON == 'true'
+        run: |
+          source .venv/bin/activate
+          export http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY=""
+          pytest --level=${HTTP_API_TEST_LEVEL} --junitxml=elasticsearch-test_admin_api.xml test/testcases/test_admin_api
 
       - name: RAGFlow CLI retrieval test Elasticsearch
         if: env.HAS_PYTHON == 'true'
@@ -1063,6 +1089,14 @@ jobs:
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "import 'test/benchmark/test_docs/Doc1.pdf,test/benchmark/test_docs/Doc2.pdf' into dataset '$DATASET'"
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "parse dataset '$DATASET' sync"
           run_cli "${LOG_FILE}" $CLI --type user --host "$USER_HOST" --port "$USER_PORT" --username "$EMAIL" --password "$PASS" command "Benchmark 16 100 search 'what are these documents about' on datasets '$DATASET'"
+
+      - name: Live browser upload chat and search against Elasticsearch
+        if: env.HAS_PYTHON == 'true'
+        run: |
+          source .venv/bin/activate
+          export http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY=""
+          python -m playwright install --with-deps chromium
+          pytest test/playwright/e2e/test_dataset_upload_parse.py test/playwright/e2e/test_next_apps_chat.py test/playwright/e2e/test_next_apps_search.py
 
       - name: Stop ragflow to save coverage Elasticsearch
         if: ${{ !cancelled() && env.HAS_PYTHON == 'true' }}

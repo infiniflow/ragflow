@@ -18,7 +18,9 @@ package component
 
 import (
 	"context"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -302,14 +304,9 @@ func TestInvoke_NoRedirects_NotFollowed(t *testing.T) {
 // to the IP we validated, even if a subsequent DNS lookup
 // returns a different answer.
 //
-// This test uses a public IP (8.8.8.8) as the proxy
-// "resolved IP" so the dial target is well-known. The
-// proxy URL itself is unreachable on the test network, so
-// the dial will fail — but with an error that mentions
-// the IP we dialled, not the original hostname. That
-// proves the pinning path is active. We un-set
-// ALLOW_ANY_HOST so the SSRF guard accepts a public-IP
-// URL but the dial still happens through our code path.
+// The test replaces only the final TCP dial so it can capture the
+// address selected by the production transport without relying on
+// external routing or timeout error formatting.
 //
 // Target host is a literal IP (8.8.8.8) — proxy mode
 // fail-closes for hostname targets because the proxy
@@ -319,14 +316,7 @@ func TestInvoke_NoRedirects_NotFollowed(t *testing.T) {
 func TestInvoke_ProxyDNSPin(t *testing.T) {
 	setupAllowAnyHost(t, false)
 	// The validated proxy IP we will pin the dial to.
-	// 192.88.99.1 is the 6to4 anycast prefix — a real public
-	// IP that the SSRF guard accepts (not in any block-list
-	// range) but is highly unlikely to be listening on port
-	// 9999 in the test environment, so the dial fails fast
-	// with "connection refused" carrying the IP we pinned.
-	// Earlier versions used 1.1.1.1, but Cloudflare's edge
-	// network has started responding on 9999, so we switched
-	// to a less-likely-to-listen anycast prefix.
+	// 192.88.99.1 is a public address accepted by the SSRF guard.
 	const pinnedProxyIP = "192.88.99.1"
 
 	// Build a small Invoke call with a proxy URL whose
@@ -344,21 +334,16 @@ func TestInvoke_ProxyDNSPin(t *testing.T) {
 	}
 	t.Cleanup(func() { utility.LookupHost = originalLookup })
 
-	// We expect the dial to fail (no proxy server at
-	// 1.1.1.1:9999). The error message tells us whether
-	// the pin was active: with the fix, the dial targets
-	// 1.1.1.1:9999; without the fix, the Go transport
-	// would have re-resolved the hostname and dialed a
-	// different IP (or refused to dial because the
-	// stubbed hostname is unreachable).
 	c, _ := NewInvokeComponent(nil)
-	// Tight per-call timeout so the test fails fast — the request
-	// will hang waiting for the unreachable proxy (1.1.1.1:9999)
-	// to respond, and the default 30s client timeout would make
-	// this test take 30s on every run.
+	invoke := c.(*InvokeComponent)
+	var dialedAddress string
+	invoke.proxyDialContext = func(_ context.Context, _ string, address string) (net.Conn, error) {
+		dialedAddress = address
+		return nil, errors.New("controlled proxy dial failure")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_, err := c.Invoke(ctx, map[string]any{
+	_, err := invoke.Invoke(ctx, map[string]any{
 		"method":  "GET",
 		"url":     "http://8.8.8.8/api",
 		"proxy":   "http://proxy.test.invalid:9999",
@@ -367,15 +352,8 @@ func TestInvoke_ProxyDNSPin(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected dial error (no proxy listening), got nil")
 	}
-	// The dial error must reference 1.1.1.1:9999 (the
-	// pinned IP) — NOT the unresolved proxy.test.invalid
-	// hostname, which would prove the dialer fell through
-	// to the default resolver.
-	if !strings.Contains(err.Error(), pinnedProxyIP+":9999") {
-		t.Fatalf("dial error = %v; want pinned proxy IP %s:9999 "+
-			"(connection-refused is acceptable; an absent IP means "+
-			"the dialer fell through to the default resolver and the "+
-			"pinning regression went undetected)", err, pinnedProxyIP)
+	if dialedAddress != pinnedProxyIP+":9999" {
+		t.Fatalf("dial address = %q; want pinned proxy IP %s:9999", dialedAddress, pinnedProxyIP)
 	}
 }
 

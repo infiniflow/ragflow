@@ -1030,7 +1030,8 @@ def test_logout_setting_profile_matrix_unit(monkeypatch):
 
 
 @pytest.mark.p2
-def test_personal_eva_credential_profile_routes_never_return_token(monkeypatch):
+@pytest.mark.parametrize("standalone", [False, True])
+def test_personal_eva_credential_profile_routes_never_return_token(monkeypatch, standalone):
     module = _load_user_app(monkeypatch)
     connector = SimpleNamespace(
         id="eva-connector-1",
@@ -1038,6 +1039,10 @@ def test_personal_eva_credential_profile_routes_never_return_token(monkeypatch):
         source="eva_wiki",
         config={"api_base_url": "https://eva.example/api/"},
     )
+
+    documents_settings_mod = ModuleType("api.db.services.business_document_settings_service")
+    documents_settings_mod.get_documents_eva_connection = lambda: connector if standalone else None
+    monkeypatch.setitem(sys.modules, "api.db.services.business_document_settings_service", documents_settings_mod)
 
     class _ProfileField:
         def __eq__(self, other):
@@ -1059,10 +1064,10 @@ def test_personal_eva_credential_profile_routes_never_return_token(monkeypatch):
 
         @staticmethod
         def select():
-            return _ConnectorQuery([connector])
+            return _ConnectorQuery([] if standalone else [connector])
 
     class _ConnectorService:
-        accessible = staticmethod(lambda connector_id, user_id: connector_id == connector.id and user_id == "current-user")
+        accessible = staticmethod(lambda connector_id, user_id: not standalone and connector_id == connector.id and user_id == "current-user")
         get_by_id = staticmethod(lambda connector_id: (connector_id == connector.id, connector if connector_id == connector.id else None))
 
     calls = []

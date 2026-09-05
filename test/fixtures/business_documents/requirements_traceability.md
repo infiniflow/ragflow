@@ -21,9 +21,9 @@ documented behavior is not considered covered by a UI rendering alone.
 | Section 4.3 contains BPMN 2.0, accompanying text and an explicit negative alternative | AST semantic validator | `test_business_document_service.py::test_required_sections_cannot_be_empty_and_child_headings_are_nested`; canonical live/scorer fixture assertions | covered |
 | Section 5.5 Monitoring is mandatory | Template and AST validator | `test_business_requirements_assets.py::test_template_preserves_published_semantic_outline`; required-section test | covered |
 | Revisions are immutable and stale AI results cannot commit | Optimistic state version and hashes | `test_business_document_service.py::test_stale_worker_result_cannot_create_revision`; section-hash test | covered |
-| Same idempotency key cannot create duplicate jobs/events | Command ledger | idempotency tests in `test_business_document_service.py` | covered |
-| Authenticated authors can discover, open and edit all business documents; unknown document ids remain non-enumerable | Shared document query scope | `test_business_document_service.py::test_authors_can_open_foreign_documents_while_unknown_ids_stay_non_enumerable`; `test_business_document_service.py::test_shared_access_list_and_server_assigned_chat` | covered |
-| Authors cannot delete either their own or another author's document; administrators can edit and hard-delete any document | Role policy, DELETE API and guarded UI action | `test_business_document_service.py::test_authors_share_read_and_edit_access_while_only_admin_can_delete`; `test_business_document_service.py::test_only_admin_can_delete_document_and_all_owned_rows_are_removed`; `web/src/pages/business-documents/index.test.tsx` | covered |
+| Same idempotency key cannot create duplicate jobs/events | Command ledger | idempotency tests in `test_business_document_service.py`; opt-in PostgreSQL races in `test/integration/test_business_document_postgres.py` | covered |
+| Authenticated authors can discover and open all business documents, but edit only their own; moderators may edit other authors' documents | Shared document query scope and command authorization | `test_business_document_service.py::test_authors_can_open_foreign_documents_while_unknown_ids_stay_non_enumerable`; `test_business_document_service.py::test_business_document_role_matrix_controls_create_edit_delete_and_assignment` | covered |
+| Authors cannot delete documents; extended moderators and administrators can delete and assign documents | Role policy, DELETE API and guarded UI action | `test_business_document_service.py::test_business_document_role_matrix_controls_create_edit_delete_and_assignment`; `test_business_document_service.py::test_extended_moderator_can_delete_document_and_all_owned_rows_are_removed`; `test_business_document_service.py::test_extended_moderator_assigns_document_and_admin_manages_document_roles`; `web/src/pages/business-documents/index.test.tsx` | covered |
 | Revision history identifies the user whose answer, decision, comment or EVA synchronization contributed to the revision | Event actor audit and history UI | `test_business_document_service.py::test_confirmed_anchored_comment_may_request_a_cross_section_change`; `web/src/pages/business-documents/index.test.tsx` | covered |
 | A document with active background work cannot be deleted | Delete command gate | `test_business_document_service.py::test_admin_cannot_delete_document_while_background_operation_is_active` | covered |
 | Every REST route is authenticated | REST decorators | `test_business_document_api_contract.py::test_http_surface_is_exact_and_every_route_requires_login` | covered |
@@ -39,7 +39,7 @@ documented behavior is not considered covered by a UI rendering alone.
 ## Coverage boundaries
 
 - API inventory: 21 protected routes under `/api/v1/business-documents`,
-  including role-aware paginated document list, administrator-only hard delete,
+  including role-aware paginated document list, privileged hard delete,
   jobs, export list and role-checked download.
 - UI inventory: create screen plus protected workbench, document pane,
   protocol pane, loading/error/conflict/busy states.
@@ -49,6 +49,11 @@ documented behavior is not considered covered by a UI rendering alone.
 - Deterministic worker, pinned dataset retrieval, Markdown/DOCX/EvaWiki and
   object-storage contracts are covered with injected adapters. The scripted
   golden gate is a state-machine gate, not a model-quality claim.
+- Real PostgreSQL transaction tests use `BUSINESS_DOCUMENT_TEST_POSTGRES_DSN`
+  and a disposable schema per test. They exercise simultaneous same-key replay,
+  different-key optimistic conflicts and exclusive worker claims on independent
+  connections. They skip when the DSN is absent; SQLite tests alone do not
+  demonstrate PostgreSQL concurrency behavior.
 - The separate live lane is enabled only by
   `BUSINESS_DOCUMENT_LIVE_LLM=1` together with an explicit
   `BUSINESS_DOCUMENT_LIVE_TENANT_ID`. Flag `1` without a tenant fails instead

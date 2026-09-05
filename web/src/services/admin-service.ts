@@ -297,15 +297,53 @@ export const setNavigationVisibility = (
     { visible_sections: visibleSections },
   );
 
+export const listAccessGroups = () =>
+  request.get<ResponseData<{ items: AdminService.AccessGroup[] }>>(
+    api.adminAccessGroups,
+  );
+
+export const getAccessGroupOptions = () =>
+  request.get<ResponseData<AdminService.AccessGroupOptions>>(
+    api.adminAccessGroupOptions,
+  );
+
+export const createAccessGroup = (group: AdminService.AccessGroupInput) =>
+  request.post<ResponseData<AdminService.AccessGroup>>(
+    api.adminAccessGroups,
+    group,
+  );
+
+export const updateAccessGroup = (
+  groupId: string,
+  group: AdminService.AccessGroupInput,
+) =>
+  request.put<ResponseData<AdminService.AccessGroup>>(
+    api.adminAccessGroup(groupId),
+    group,
+  );
+
+export const deleteAccessGroup = (groupId: string) =>
+  request.delete<ResponseData<boolean>>(api.adminAccessGroup(groupId));
+
 export const getBusinessDocumentsSettings = () =>
   request.get<ResponseData<AdminService.BusinessDocumentsSettings>>(
     api.adminBusinessDocumentsSettings,
   );
 
-export const setBusinessDocumentsSettings = (evaConnectorId: string | null) =>
+export const setBusinessDocumentsSettings = (
+  connection: AdminService.BusinessDocumentsEvaConnectionInput | null,
+) =>
   request.put<ResponseData<AdminService.BusinessDocumentsSettings>>(
     api.adminBusinessDocumentsSettings,
-    { eva_connector_id: evaConnectorId },
+    { eva_connection: connection },
+  );
+
+export const discoverBusinessDocumentsEvaSpaces = (
+  connection: AdminService.BusinessDocumentsEvaConnectionInput,
+) =>
+  request.post<ResponseData<{ items: { id: string; name: string }[] }>>(
+    `${api.adminBusinessDocumentsSettings}/eva-spaces`,
+    { eva_connection: connection },
   );
 
 // Sandbox settings APIs

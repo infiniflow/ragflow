@@ -54,6 +54,14 @@ export function ProtocolPane({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const allowed = useMemo(() => new Set(allowedCommands), [allowedCommands]);
   const canComment = allowed.has('ADD_COMMENT');
+  const questions = reviewCycle?.questions ?? [];
+  const proposals = reviewCycle?.proposals ?? [];
+  const answeredCount = questions.filter((q) => q.status === 'ANSWERED').length;
+  const cancelledCount = questions.filter(
+    (q) => q.status === 'CANCELLED',
+  ).length;
+  const questionCount = questions.length - cancelledCount;
+  const decidedCount = proposals.filter((p) => p.decision !== 'PENDING').length;
 
   useEffect(() => {
     if (!revision) onClearSelection();
@@ -148,13 +156,13 @@ export function ProtocolPane({
   return (
     <aside
       className="flex min-h-0 flex-col border-s border-border-button bg-bg-component"
-      aria-label="Протокол"
+      aria-label="Обсуждение"
       data-testid="business-document-protocol"
     >
       <div className="flex h-11 shrink-0 items-center justify-between border-b border-border-button px-5">
         <div className="flex items-center gap-2 text-sm font-medium">
           <MessageSquareText className="size-4 text-text-secondary" />
-          Протокол
+          Обсуждение
         </div>
         {reviewCycleNumber > 0 && (
           <span className="font-mono text-xs text-text-secondary">
@@ -162,6 +170,63 @@ export function ProtocolPane({
           </span>
         )}
       </div>
+
+      {(questions.length > 0 || proposals.length > 0) && (
+        <div
+          className="grid shrink-0 grid-cols-2 gap-4 border-b border-border-button px-5 py-2"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          data-testid="business-document-review-progress"
+        >
+          {[
+            {
+              label: 'Ответы',
+              value: answeredCount,
+              total: questionCount,
+              detail: cancelledCount ? `Закрыто: ${cancelledCount}` : '',
+              description: 'Ответы на вопросы',
+            },
+            {
+              label: 'Предложения',
+              value: decidedCount,
+              total: proposals.length,
+              detail:
+                !proposalDecisionsOpen && decidedCount < proposals.length
+                  ? `Без решения: ${proposals.length - decidedCount}`
+                  : '',
+              description: 'Решения по предложениям',
+            },
+          ].map(({ label, value, total, detail, description }) => (
+            <div key={label} className="min-w-0" title={description}>
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-text-secondary">{label}</span>
+                <span className="font-medium tabular-nums text-text-primary">
+                  {total ? `${value}/${total}` : '—'}
+                </span>
+              </div>
+              {total > 0 && (
+                <div
+                  role="progressbar"
+                  aria-label={description}
+                  aria-valuemin={0}
+                  aria-valuemax={total}
+                  aria-valuenow={value}
+                  className="mt-1.5 h-1 overflow-hidden rounded-full bg-bg-card"
+                >
+                  <div
+                    className={`h-full rounded-full transition-[width] motion-reduce:transition-none ${value === total ? 'bg-state-success' : 'bg-accent-primary'}`}
+                    style={{ width: `${(value / total) * 100}%` }}
+                  />
+                </div>
+              )}
+              {detail && (
+                <p className="mt-1 text-[10px] text-text-secondary">{detail}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div
         ref={scrollContainerRef}
@@ -175,7 +240,7 @@ export function ProtocolPane({
           >
             <MessageSquareText className="mx-auto size-7 stroke-[1.25] text-text-disabled" />
             <p className="mt-3 text-sm font-medium text-text-primary">
-              Протокол пока пуст
+              Обсуждение пока пусто
             </p>
             <p className="mt-1 text-xs leading-5 text-text-secondary">
               Вопросы, предложения и комментарии появятся здесь.

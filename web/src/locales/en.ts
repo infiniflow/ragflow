@@ -1690,7 +1690,7 @@ Example: Virtual Hosted Style`,
       evaApiToken: 'EVA API token',
       evaTokenLoading: 'Loading EVA connections…',
       evaTokenNoConnectors:
-        'There are no accessible EVA connectors to configure.',
+        'No EVA connections are available. Configure a connection in Documents administration or Data sources.',
       evaTokenConfigured: 'Personal token configured',
       evaTokenNotConfigured: 'Personal token not configured',
       evaTokenHowToGet:
@@ -3294,6 +3294,21 @@ Important structured information may include: names, dates, locations, events, k
       userManagement: 'User management',
       sandboxSettings: 'Sandbox settings',
       navigationVisibility: 'Section visibility',
+      accessGroups: 'Access groups',
+      accessGroupsPage: {
+        new: 'New group',
+        create: 'Create group',
+        edit: 'Edit group',
+        name: 'Name',
+        description: 'Description',
+        users: 'Users',
+        datasets: 'Data sources',
+        sections: 'Available sections',
+        save: 'Save group',
+        saved: 'Access group saved',
+        deleteConfirm: 'Delete this access group?',
+        summary: 'Users: {{users}}, sources: {{datasets}}, sections: {{sections}}',
+      },
       businessDocumentsSettings: 'Documents',
       audit: 'Audit',
       registrationWhitelist: 'Registration whitelist',
@@ -3362,19 +3377,28 @@ Important structured information may include: names, dates, locations, events, k
       },
 
       businessDocumentsSettingsPage: {
-        description: 'Choose the EVA Wiki space used by the Documents section.',
-        evaSpace: 'EVA Wiki space',
-        evaSpacePlaceholder: 'Select a space',
-        evaSpacesEmpty: 'No EVA Wiki spaces are configured',
+        description:
+          'Configure a separate EVA connection for Documents. No data source is required.',
+        api_base_url: 'EVA API URL',
+        web_base_url: 'EVA web URL',
+        token: 'Shared EVA read token',
+        tokenSaved: 'Token saved. Leave blank to keep it.',
+        tokenOptional: 'Optional',
+        tokenHelp:
+          'The shared token reads documents and lists spaces. Without it, documents use the personal token from Profile. EVA writes always use the personal token.',
+        clearToken: 'Remove the saved shared token',
+        evaSpace: 'EVA space',
         evaSpaceHelp:
-          'EVA document search, opening, and editing are restricted to the selected space.',
-        selectedUnavailable:
-          'The previously selected space is no longer available. Select another one.',
-        createConnectorFirst:
-          'Create an EVA Wiki connector and select its space first.',
+          'Enter a space ID or load spaces using the shared token. Search and changes are limited to this space. Rebind documents after changing the API or space.',
+        loadSpaces: 'Load spaces',
+        loadingSpaces: 'Loading…',
+        evaSpacesEmpty: 'No accessible spaces',
+        verify_ssl: 'Verify SSL certificate',
+        include_archived: 'Include archived pages and spaces',
+        disconnect: 'Disconnect',
         save: 'Save',
-        saving: 'Saving...',
-        saved: 'The EVA Wiki space for Documents was updated.',
+        saving: 'Saving…',
+        saved: 'The EVA connection for Documents was updated.',
       },
 
       sandboxSettingsPage: {

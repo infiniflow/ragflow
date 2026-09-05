@@ -26,7 +26,10 @@ const config: Config = {
   ],
   coverageThreshold: {
     global: {
-      lines: 1,
+      lines: 8,
+      statements: 8,
+      functions: 14,
+      branches: 47,
     },
   },
   testPathIgnorePatterns: ['/node_modules/', '/dist/'],

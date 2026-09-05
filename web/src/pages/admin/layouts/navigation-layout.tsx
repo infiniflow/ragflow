@@ -13,6 +13,7 @@ import {
   LucideSquareUserRound,
   LucideUserCog,
   LucideUserStar,
+  LucideUsersRound,
   LucideZap,
 } from 'lucide-react';
 
@@ -58,6 +59,11 @@ const AdminNavigationLayout = () => {
         path: Routes.AdminNavigationVisibility,
         name: t('admin.navigationVisibility'),
         icon: <LucideMenu className="size-[1em]" />,
+      },
+      {
+        path: Routes.AdminAccessGroups,
+        name: t('admin.accessGroups'),
+        icon: <LucideUsersRound className="size-[1em]" />,
       },
       {
         path: Routes.AdminBusinessDocumentsSettings,

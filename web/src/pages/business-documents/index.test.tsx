@@ -508,6 +508,16 @@ test('uses semantic status colors for questions and proposals', async () => {
   renderPage();
 
   const questions = await screen.findAllByTestId('business-document-question');
+  const progress = screen.getByTestId('business-document-review-progress');
+  expect(progress).toHaveTextContent('Ответы1/2');
+  expect(progress).toHaveTextContent('Предложения2/3');
+  expect(progress).toHaveTextContent('Закрыто: 1');
+  expect(
+    screen.getByRole('progressbar', { name: 'Ответы на вопросы' }),
+  ).toHaveAttribute('aria-valuemax', '2');
+  expect(
+    screen.getByRole('progressbar', { name: 'Решения по предложениям' }),
+  ).toHaveAttribute('aria-valuenow', '2');
   expect(questions.find((item) => item.dataset.status === 'OPEN')).toHaveClass(
     'bg-accent-primary/5',
   );
@@ -554,6 +564,12 @@ test('renders an undecided proposal as closed history after review completion', 
   renderPage();
 
   const status = await screen.findByTestId('proposal-status-proposal-12');
+  expect(
+    screen.getByTestId('business-document-review-progress'),
+  ).toHaveTextContent('Без решения: 1');
+  expect(
+    screen.getByRole('progressbar', { name: 'Решения по предложениям' }),
+  ).toHaveAttribute('aria-valuenow', '0');
   expect(status).toHaveTextContent('Не принято');
   expect(status).toHaveClass('text-text-disabled');
   expect(screen.getByTestId('closed-proposal-proposal-12')).toHaveTextContent(
@@ -1580,7 +1596,7 @@ test('renders document and protocol empty states during intake', async () => {
   ).toHaveTextContent('Черновик ещё не создан');
   expect(
     screen.getByTestId('business-document-protocol-empty'),
-  ).toHaveTextContent('Протокол пока пуст');
+  ).toHaveTextContent('Обсуждение пока пусто');
 });
 
 test('uses the canonical backend command to request a draft', async () => {
@@ -1945,12 +1961,14 @@ test('allows an extended moderator to assign a document owner', async () => {
   const assigned = {
     ...projection,
     owner_id: 'author-2',
+    owner_name: 'Второй автор',
     access_role: 'EXTENDED_MODERATOR' as const,
     permissions: { read: true, edit: true, delete: true, assign: true },
   };
   mockedFetch.mockResolvedValueOnce({
     ...projection,
     owner_id: 'author-1',
+    owner_name: 'Первый автор',
     access_role: 'EXTENDED_MODERATOR',
     permissions: { read: true, edit: true, delete: true, assign: true },
   });
@@ -1959,11 +1977,13 @@ test('allows an extended moderator to assign a document owner', async () => {
       {
         user_id: 'author-1',
         nickname: 'Первый автор',
+        email: 'author-1@example.com',
         role: 'AUTHOR_CREATOR',
       },
       {
         user_id: 'author-2',
         nickname: 'Второй автор',
+        email: 'author-2@example.com',
         role: 'AUTHOR_EDITOR',
       },
     ],
@@ -1972,6 +1992,10 @@ test('allows an extended moderator to assign a document owner', async () => {
   renderPage('/business-documents/doc-1');
 
   fireEvent.click(await screen.findByTestId('business-document-owner-select'));
+  expect(screen.getByText('Владелец: Первый автор')).toBeVisible();
+  expect(
+    screen.getByTestId('business-document-owner-option-author-2'),
+  ).toHaveTextContent('Второй автор (author-2@example.com)');
   fireEvent.click(
     await screen.findByTestId('business-document-owner-option-author-2'),
   );
@@ -1980,7 +2004,7 @@ test('allows an extended moderator to assign a document owner', async () => {
   await waitFor(() =>
     expect(mockedAssignOwner).toHaveBeenCalledWith('doc-1', 'author-2', 18),
   );
-  expect(await screen.findByText('Владелец: author-2')).toBeVisible();
+  expect(await screen.findByText('Владелец: Второй автор')).toBeVisible();
 });
 
 test('shows hard delete only for an administrator and confirms it', async () => {

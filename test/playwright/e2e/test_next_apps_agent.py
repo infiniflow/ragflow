@@ -5,7 +5,7 @@ import pytest
 from playwright.sync_api import expect
 
 from test.playwright.helpers._auth_helpers import ensure_authed
-from test.playwright.helpers.flow_steps import flow_params, require
+from test.playwright.helpers.flow_steps import require
 from test.playwright.helpers._next_apps_helpers import (
     RESULT_TIMEOUT_MS,
     _fill_and_save_create_modal,
@@ -381,9 +381,7 @@ STEPS = [
 
 @pytest.mark.p1
 @pytest.mark.auth
-@pytest.mark.parametrize("step_fn", flow_params(STEPS))
 def test_agent_create_then_import_json_then_run_and_wait_idle_flow(
-    step_fn,
     flow_page,
     flow_state,
     base_url,
@@ -395,14 +393,15 @@ def test_agent_create_then_import_json_then_run_and_wait_idle_flow(
     auth_click,
     seeded_user_credentials,
 ):
-    step_fn(
-        flow_page,
-        flow_state,
-        base_url,
-        login_url,
-        active_auth_context,
-        step,
-        snap,
-        auth_click,
-        seeded_user_credentials,
-    )
+    for _, step_fn in STEPS:
+        step_fn(
+            flow_page,
+            flow_state,
+            base_url,
+            login_url,
+            active_auth_context,
+            step,
+            snap,
+            auth_click,
+            seeded_user_credentials,
+        )

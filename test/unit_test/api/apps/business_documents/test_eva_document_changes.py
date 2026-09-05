@@ -115,15 +115,18 @@ def database():
 
 @pytest.fixture(autouse=True)
 def personal_mutation_client(monkeypatch):
+    original = EvaDocumentChangeService._mutation_client
     monkeypatch.setattr(
         EvaDocumentChangeService,
         "_mutation_client",
         staticmethod(lambda connector, _actor_id: (connector.mutation_client, 1)),
     )
+    return original
 
 
 @pytest.fixture(autouse=True)
 def configured_documents_eva_space(monkeypatch):
+    monkeypatch.setattr(EVA_CHANGES_MODULE, "get_documents_eva_connection", lambda **_kwargs: None)
     monkeypatch.setattr(
         EVA_CHANGES_MODULE,
         "get_business_documents_eva_connector_id",
@@ -1022,3 +1025,44 @@ def test_stale_publishing_reservation_can_resume_after_process_loss(database):
         BusinessDocumentError("LATE_FAILURE", "late failure", 502),
     )
     assert EvaDocumentChangeService.get_change(TENANT, AUTHOR, created["change_id"])["workflow_state"] == "PUBLISHED"
+
+
+def test_standalone_connection_search_and_binding_do_not_use_data_sources(monkeypatch):
+    from api.db.services.business_document_settings_service import DocumentsEvaConnection
+
+    connection = DocumentsEvaConnection(id="documents-connection", config=_eva_connector({"eva_api_token": "shared"}).config)
+    monkeypatch.setattr(EVA_CHANGES_MODULE, "get_business_documents_eva_connector_id", lambda: connection.id)
+    monkeypatch.setattr(EVA_CHANGES_MODULE, "get_documents_eva_connection", lambda **_kwargs: connection)
+
+    def unexpected(*_args):
+        raise AssertionError("Standalone Documents must not require a data source")
+
+    monkeypatch.setattr(ConnectorService, "accessible", unexpected)
+    monkeypatch.setattr(ConnectorService, "get_by_id", unexpected)
+    remote = FakeEvaClient().document
+    monkeypatch.setattr(EVA_CHANGES_MODULE.EvaWikiConnector, "search_documents", lambda *_args: [{"id": remote["id"], "code": remote["code"], "web_url": remote["web_url"]}])
+    monkeypatch.setattr(EVA_CHANGES_MODULE.EvaWikiConnector, "get_document_for_edit", lambda *_args: remote)
+    result = EvaDocumentChangeService.search_sources(AUTHOR)
+    assert result["items"][0]["connector_id"] == connection.id
+    binding = EvaDocumentChangeService.resolve_page_url(AUTHOR, remote["web_url"])
+    assert binding["status"] == "CONNECTED"
+    assert binding["connector_id"] == connection.id
+    with pytest.raises(BusinessDocumentError) as error:
+        EvaDocumentChangeService._connector("old-connection", AUTHOR)
+    assert error.value.code == "EVA_SPACE_SCOPE_VIOLATION"
+
+
+def test_standalone_writes_use_personal_token_only(monkeypatch, personal_mutation_client):
+    from api.db.services.business_document_settings_service import DocumentsEvaConnection
+    from unittest.mock import Mock
+
+    connection = DocumentsEvaConnection(id="documents-connection", config=_eva_connector({"eva_api_token": "shared-read-token"}).config)
+    credential = SimpleNamespace(secret="personal-write-token", credential_version=7)
+    get_token = Mock(return_value=credential)
+    monkeypatch.setattr(UserExternalCredentialService, "get_eva_wiki_token", get_token)
+    client = Mock()
+    monkeypatch.setattr(EVA_CHANGES_MODULE, "EvaWikiMutationClient", Mock(return_value=client))
+    writer, version = personal_mutation_client(connection, AUTHOR)
+    get_token.assert_called_once_with(AUTHOR, connection.config["api_base_url"])
+    assert writer is client and version == 7
+    client.load_credentials.assert_called_once_with({"eva_api_token": "personal-write-token"})

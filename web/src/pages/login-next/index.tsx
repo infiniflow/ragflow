@@ -6,7 +6,8 @@ import {
   useLoginWithChannel,
   useRegister,
 } from '@/hooks/use-login-request';
-import { useSystemConfig } from '@/hooks/use-system-request';
+import { SystemConfigKeys, useSystemConfig } from '@/hooks/use-system-request';
+import { useQueryClient } from '@tanstack/react-query';
 import { rsaPsw } from '@/utils';
 import { useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -248,6 +249,7 @@ function LoginFormContent({
 const Login = () => {
   const [title, setTitle] = useState('login');
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { login, loading: signLoading } = useLogin();
   const { register, loading: registerLoading } = useRegister();
   const { channels, loading: channelsLoading } = useLoginChannels();
@@ -338,6 +340,9 @@ const Login = () => {
           password: rsaPassWord,
         });
         if (code === 0) {
+          await queryClient.invalidateQueries({
+            queryKey: SystemConfigKeys.all,
+          });
           navigate('/');
         }
       } else {

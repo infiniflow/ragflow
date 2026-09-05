@@ -817,22 +817,33 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 //     canvas RunEvent, terminated by `data: [DONE]\n\n`. The `stream` field
 //     is ignored on this path because Python's `completion()` always yields
 //     SSE frames regardless of the flag.
-//   - Openai-compatible path: requires `messages` (a non-empty list with at
-//     least one user message is needed to derive the question). The full
-//     OpenAI wire framing (delta + reference + token counts — see
-//     `completion_openai` at api/db/services/canvas_service.py:378-479) is
-//     still a Phase 5 TODO; until then the openai-compat branches return a
-//     hardcoded "hello" stub so the validation contracts keep passing.
+//   - OpenAI-compatible path: requires `messages`, runs the same canvas, and
+//     translates its events into OpenAI chat-completion JSON or SSE framing.
 type agentChatCompletionsRequest struct {
 	AgentID      string                   `json:"agent_id"`
 	Query        string                   `json:"query"`
 	Inputs       map[string]interface{}   `json:"inputs"`
 	SessionID    string                   `json:"session_id"`
+	ID           string                   `json:"id"`
+	Metadata     map[string]interface{}   `json:"metadata"`
 	Stream       bool                     `json:"stream"`
 	OpenAICompat bool                     `json:"openai-compatible"`
 	Model        string                   `json:"model"`
 	Messages     []map[string]interface{} `json:"messages"`
 	ReturnTrace  bool                     `json:"return_trace"`
+}
+
+func (r agentChatCompletionsRequest) effectiveSessionID() string {
+	if r.SessionID != "" {
+		return r.SessionID
+	}
+	if r.ID != "" {
+		return r.ID
+	}
+	if id, _ := r.Metadata["id"].(string); id != "" {
+		return id
+	}
+	return ""
 }
 
 // extractLastUserContent returns the content of the last message in
@@ -942,6 +953,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "at least one message is required in openai-compatible mode.")
 		return
 	}
+	req.SessionID = req.effectiveSessionID()
 	common.Debug("agent chat completions: request received",
 		zap.String("user_id", user.ID),
 		zap.String("agent_id", req.AgentID),
@@ -955,27 +967,18 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		zap.Int("messages_count", len(req.Messages)),
 	)
 
-	// TODO(phase5-openai-framing): the openai-compat branches below are
-	// stubs. They keep the existing "choices"-shape contract for the
-	// openai-compat tests, but the production wire format must mirror
-	// api/db/services/canvas_service.py:378-479 (`completion_openai`):
-	// per-token `delta.content`, cumulative token counts, `[DONE]`
-	// terminator, `reference` attached to the final choice. Land that
-	// once the chat path needs to interop with OpenAI clients.
-	if req.OpenAICompat {
-		common.SuccessWithData(c, gin.H{
-			"choices": []map[string]interface{}{
-				{"message": gin.H{"content": "hello"}},
-			},
-		}, "success")
-		return
-	}
-
 	// Real canvas run — derive userInput from `query` first, then fall
 	// back to the last user message (covers the front-end that posts
 	// running_hint_text without a top-level `query`).
-	var userInput any = req.Query
-	if req.Query == "" {
+	var userInput any
+	if req.OpenAICompat {
+		// The OpenAI contract derives the question from the last user
+		// message; top-level query/inputs belong to the native agent API.
+		userInput = extractLastUserContent(req.Messages)
+	} else {
+		userInput = req.Query
+	}
+	if !req.OpenAICompat && req.Query == "" {
 		if extracted := extractUserInputFromFormInputs(req.Inputs); extracted != nil {
 			userInput = extracted
 		} else if extracted := extractLastUserContent(req.Messages); extracted != "" {
@@ -1001,6 +1004,16 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		)
 		ec, em := mapAgentError(err)
 		common.ResponseWithCodeData(c, ec, nil, em)
+		return
+	}
+	if req.OpenAICompat {
+		if err := writeOpenAIAgentCompletion(c, req, events, userInput.(string)); err != nil {
+			common.Debug("agent chat completions: OpenAI response interrupted",
+				zap.String("agent_id", req.AgentID),
+				zap.String("session_id", req.SessionID),
+				zap.Error(err),
+			)
+		}
 		return
 	}
 

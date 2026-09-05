@@ -595,7 +595,7 @@ func TestDownloadAttachment_OK(t *testing.T) {
 	h := &AgentHandler{fileService: &fakeFileService{blob: []byte("PDF-DATA")}}
 	g := r.Group("/api/v1/agents")
 	inlineRegisterAgentRoutes(g, h)
-	w := doJSON(r, http.MethodGet, "/api/v1/agents/attachments/00000000-0000-0000-0000-000000000001/download?ext=pdf", "")
+	w := doJSON(r, http.MethodGet, "/api/v1/agents/attachments/00000000-0000-0000-0000-000000000001/download?ext=pdf&filename=report.pdf", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
 	}
@@ -606,13 +606,13 @@ func TestDownloadAttachment_OK(t *testing.T) {
 		t.Errorf("Content-Type = %q, want application/pdf", ct)
 	}
 	cd := w.Header().Get("Content-Disposition")
-	if !strings.Contains(cd, "00000000-0000-0000-0000-000000000001") {
-		t.Errorf("Content-Disposition = %q, want contains '00000000-0000-0000-0000-000000000001'", cd)
+	if !strings.Contains(cd, `filename="report.pdf"`) {
+		t.Errorf("Content-Disposition = %q, want filename=report.pdf", cd)
 	}
 }
 
-// TestDownloadAttachment_DefaultExt covers criterion 4.
-func TestDownloadAttachment_DefaultExt(t *testing.T) {
+// TestDownloadAttachment_UnknownTypeDefaultsToBinary covers criterion 4.
+func TestDownloadAttachment_UnknownTypeDefaultsToBinary(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
@@ -626,8 +626,50 @@ func TestDownloadAttachment_DefaultExt(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
-	if ct := w.Header().Get("Content-Type"); ct != "text/markdown" {
-		t.Errorf("Content-Type = %q, want text/markdown (default ext)", ct)
+	if ct := w.Header().Get("Content-Type"); ct != "application/octet-stream" {
+		t.Errorf("Content-Type = %q, want application/octet-stream", ct)
+	}
+	if cd := w.Header().Get("Content-Disposition"); !strings.Contains(cd, `filename="file"`) {
+		t.Errorf("Content-Disposition = %q, want safe fallback filename=file", cd)
+	}
+}
+
+func TestDownloadAttachment_ContentTypes(t *testing.T) {
+	tests := []struct {
+		name        string
+		query       string
+		contentType string
+	}{
+		{name: "PDF document", query: "ext=pdf", contentType: "application/pdf"},
+		{name: "Word document", query: "ext=docx", contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+		{name: "plain text", query: "ext=txt", contentType: "text/plain"},
+		{name: "Markdown", query: "ext=markdown", contentType: "text/markdown"},
+		{name: "HTML", query: "ext=html", contentType: "text/html"},
+		{name: "PNG image", query: "ext=png", contentType: "image/png"},
+		{name: "CSV artifact", query: "ext=csv", contentType: "text/csv"},
+		{name: "JSON artifact", query: "ext=json", contentType: "application/json"},
+		{name: "explicit MIME type", query: "mime_type=audio%2Fmpeg", contentType: "audio/mpeg"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			r := gin.New()
+			r.Use(func(c *gin.Context) {
+				c.Set("user", &entity.User{ID: "tenant-x"})
+				c.Next()
+			})
+			h := &AgentHandler{fileService: &fakeFileService{blob: []byte("data")}}
+			g := r.Group("/api/v1/agents")
+			inlineRegisterAgentRoutes(g, h)
+			w := doJSON(r, http.MethodGet, "/api/v1/agents/attachments/file-id/download?"+test.query, "")
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", w.Code)
+			}
+			if contentType := w.Header().Get("Content-Type"); contentType != test.contentType {
+				t.Errorf("Content-Type = %q, want %q", contentType, test.contentType)
+			}
+		})
 	}
 }
 

@@ -36,6 +36,9 @@ const FlipCard3D = (props: IProps) => {
             {/* Front Face */}
             <div
               className="absolute inset-0 flex items-center justify-center backface-hidden rotate-y-0"
+              {...(isFlipped ? { inert: '' } : {})}
+              aria-hidden={isFlipped}
+              style={{ pointerEvents: isFlipped ? 'none' : 'auto' }}
               {...(!isFlipped ? { 'data-testid': 'auth-card-active' } : {})}
             >
               <FlipFaceContext.Provider value="front">
@@ -46,6 +49,9 @@ const FlipCard3D = (props: IProps) => {
             {/* Back Face */}
             <div
               className="absolute inset-0 flex items-center justify-center backface-hidden rotate-y-180"
+              {...(!isFlipped ? { inert: '' } : {})}
+              aria-hidden={!isFlipped}
+              style={{ pointerEvents: isFlipped ? 'auto' : 'none' }}
               {...(isFlipped ? { 'data-testid': 'auth-card-active' } : {})}
             >
               <FlipFaceContext.Provider value="back">

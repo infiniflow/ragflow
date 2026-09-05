@@ -105,6 +105,13 @@ class Retrieval(ToolBase, ABC):
                 kb_ids.append(kb.id)
 
         filtered_kb_ids: list[str] = list(set([kb_id for kb_id in kb_ids if kb_id]))
+        inaccessible = [
+            kb_id
+            for kb_id in filtered_kb_ids
+            if not KnowledgebaseService.accessible(kb_id, self._canvas._tenant_id)
+        ]
+        if inaccessible:
+            raise PermissionError("No authorization for one or more selected datasets.")
 
         kbs = KnowledgebaseService.get_by_ids(filtered_kb_ids)
         if not kbs:

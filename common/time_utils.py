@@ -14,6 +14,7 @@
 #  limitations under the License.
 
 import datetime
+import calendar
 import logging
 import time
 
@@ -51,7 +52,13 @@ def timestamp_to_date(timestamp, format_string="%Y-%m-%d %H:%M:%S"):
         timestamp = current_timestamp()
         logging.debug("timestamp_to_date received empty timestamp; using current_timestamp() fallback")
     timestamp = int(timestamp) / 1000
-    time_array = time.localtime(timestamp)
+    try:
+        time_array = time.localtime(timestamp)
+    except (OSError, OverflowError, ValueError):
+        # Windows CRT rejects some valid pre-epoch timestamps. Use the local
+        # standard-time offset as a portable fallback for that range.
+        local_date = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=timestamp - time.timezone)
+        time_array = local_date.timetuple()
     str_date = time.strftime(format_string, time_array)
     return str_date
 
@@ -72,7 +79,14 @@ def date_string_to_timestamp(time_str, format_string="%Y-%m-%d %H:%M:%S"):
         1704067200000
     """
     time_array = time.strptime(time_str, format_string)
-    time_stamp = int(time.mktime(time_array) * 1000)
+    try:
+        seconds = time.mktime(time_array)
+    except (OSError, OverflowError, ValueError):
+        # calendar.timegm is portable for the epoch boundary where the Windows
+        # CRT cannot evaluate mktime. time.timezone converts local standard
+        # time back to UTC seconds.
+        seconds = calendar.timegm(time_array) + time.timezone
+    time_stamp = int(seconds * 1000)
     return time_stamp
 
 

@@ -9,7 +9,7 @@ import pytest
 from playwright.sync_api import expect
 
 from test.playwright.helpers._auth_helpers import ensure_authed
-from test.playwright.helpers.flow_steps import flow_params, require
+from test.playwright.helpers.flow_steps import require
 from test.playwright.helpers.response_capture import capture_response
 from test.playwright.helpers.datasets import (
     delete_uploaded_file,
@@ -647,9 +647,7 @@ STEPS = [
 
 @pytest.mark.p1
 @pytest.mark.auth
-@pytest.mark.parametrize("step_fn", flow_params(STEPS))
 def test_dataset_upload_parse_and_delete_flow(
-    step_fn,
     flow_page,
     flow_state,
     base_url,
@@ -663,16 +661,17 @@ def test_dataset_upload_parse_and_delete_flow(
     seeded_user_credentials,
     tmp_path,
 ):
-    step_fn(
-        flow_page,
-        flow_state,
-        base_url,
-        login_url,
-        active_auth_context,
-        step,
-        snap,
-        auth_click,
-        seeded_user_credentials,
-        tmp_path,
-        ensure_dataset_ready,
-    )
+    for _, step_fn in STEPS:
+        step_fn(
+            flow_page,
+            flow_state,
+            base_url,
+            login_url,
+            active_auth_context,
+            step,
+            snap,
+            auth_click,
+            seeded_user_credentials,
+            tmp_path,
+            ensure_dataset_ready,
+        )

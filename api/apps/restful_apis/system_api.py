@@ -219,13 +219,21 @@ def get_config():
                         type: integer 0 means disabled, 1 means enabled
                         description: Whether user registration is enabled
     """
+    from api.db.services.access_group_service import AccessGroupService
     from api.db.services.navigation_visibility_service import get_visible_sections
+
+    visible_sections = get_visible_sections()
+    user = current_user
+    if user:
+        policy = AccessGroupService.effective_policy(user.id)
+        if policy is not None and not getattr(user, "is_superuser", False):
+            visible_sections = [section for section in visible_sections if section in policy["sections"]]
 
     return get_json_result(
         data={
             "registerEnabled": settings.REGISTER_ENABLED,
             "disablePasswordLogin": settings.DISABLE_PASSWORD_LOGIN,
-            "visibleSections": get_visible_sections(),
+            "visibleSections": visible_sections,
         }
     )
 

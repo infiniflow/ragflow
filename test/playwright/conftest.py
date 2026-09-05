@@ -21,11 +21,11 @@ from urllib.request import Request, urlopen
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 PLAYWRIGHT_TEST_DIR = Path(__file__).resolve().parent
-ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts"
+ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts" / os.getenv("PW_BROWSER", "chromium")
 BASE_URL_DEFAULT = "http://127.0.0.1"
 LOGIN_PATH_DEFAULT = "/login"
 DEFAULT_TIMEOUT_MS = 30000
@@ -326,10 +326,7 @@ def _is_malformed_tenant_model_value(value: str | None) -> bool:
     if "#" in text:
         return True
     if "@" in text:
-        if text.count("@") != 1:
-            return True
-        model_name, factory = text.rsplit("@", 1)
-        if not model_name or not factory:
+        if not all(part.strip() for part in text.rsplit("@", 2)):
             return True
     return False
 
@@ -343,10 +340,7 @@ def _normalize_tenant_model_value(value: str | None) -> str:
     if not text:
         return ""
     if "@" in text:
-        if text.count("@") != 1:
-            return ""
-        model_name, factory = text.rsplit("@", 1)
-        if not model_name or not factory:
+        if not all(part.strip() for part in text.rsplit("@", 2)):
             return ""
     return text
 
@@ -589,6 +583,14 @@ def _step(label: str, enabled: bool) -> None:
 def pytest_runtest_makereport(item, call):
     outcome = yield
     report = outcome.get_result()
+    if report.when == "call" and report.passed:
+        for fixture_name in ("page", "flow_page"):
+            browser_page = item.funcargs.get(fixture_name)
+            errors = getattr(browser_page, "_diag", {}).get("page_errors", [])
+            if errors:
+                report.outcome = "failed"
+                report.longrepr = f"{item.nodeid}: {len(errors)} unhandled browser exception(s); see browser failure artifacts"
+                break
     setattr(item, f"_rep_{report.when}", report)
 
 
@@ -687,19 +689,18 @@ def smoke_login_url(login_url: str) -> str:
 
 
 @pytest.fixture(scope="session")
-def browser():
+def browser(playwright):
     browser_name = os.getenv("PW_BROWSER", "chromium")
     headless = _env_bool("PW_HEADLESS", True)
     slow_mo = _env_int("PW_SLOWMO_MS", 0)
-    with sync_playwright() as playwright:
-        if not hasattr(playwright, browser_name):
-            raise ValueError(f"Unsupported browser: {browser_name}")
-        browser_type = getattr(playwright, browser_name)
-        browser_instance = browser_type.launch(headless=headless, slow_mo=slow_mo)
-        try:
-            yield browser_instance
-        finally:
-            browser_instance.close()
+    if not hasattr(playwright, browser_name):
+        raise ValueError(f"Unsupported browser: {browser_name}")
+    browser_type = getattr(playwright, browser_name)
+    browser_instance = browser_type.launch(headless=headless, slow_mo=slow_mo)
+    try:
+        yield browser_instance
+    finally:
+        browser_instance.close()
 
 
 @pytest.fixture
@@ -777,12 +778,9 @@ def page(context, request):
         page_instance.close()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def flow_context(browser, request):
-    try:
-        browser_context_args = request.getfixturevalue("browser_context_args")
-    except Exception:
-        browser_context_args = {}
+    browser_context_args = request.getfixturevalue("browser_context_args")
     if browser_context_args is None:
         browser_context_args = {}
     args = dict(browser_context_args)
@@ -792,14 +790,14 @@ def flow_context(browser, request):
     ctx.close()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def flow_page(flow_context):
     page_instance = _configure_page(flow_context.new_page())
     yield page_instance
     page_instance.close()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def flow_state():
     return {}
 
@@ -809,12 +807,9 @@ def _flow_artifacts(request):
     if "flow_page" not in request.fixturenames:
         yield
         return
+    page_instance = request.getfixturevalue("flow_page")
+    context = request.getfixturevalue("flow_context")
     yield
-    try:
-        page_instance = request.getfixturevalue("flow_page")
-        context = request.getfixturevalue("flow_context")
-    except Exception:
-        return
     _write_artifacts_if_failed(page_instance, context, request)
 
 
@@ -940,7 +935,7 @@ def run_id() -> str:
     return safe
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def ensure_auth_context(
     flow_page,
     login_url: str,
@@ -960,7 +955,7 @@ def ensure_auth_context(
         }
         """
     try:
-        if "/login" not in page_instance.url:
+        if page_instance.url.startswith(("http://", "https://")) and "/login" not in page_instance.url:
             page_instance.wait_for_function(token_wait_js, timeout=1500)
             return page_instance
     except Exception:
@@ -1008,7 +1003,7 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
         my_llms_data = _response_data(my_llms_payload)
 
     if not has_provider:
-        pytest.skip("No model provider configured and ZHIPU_AI_API_KEY is not set.")
+        pytest.fail("Live browser tests require a configured model provider or ZHIPU_AI_API_KEY.")
 
     _, tenant_payload = _api_request_json(_build_url(base_url, "/api/v1/users/me/models"), headers=headers)
     tenant_data = _response_data(tenant_payload)
@@ -1029,7 +1024,7 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
         if not target_llm and _provider_has_model(my_llms_data, "ZHIPU-AI", "glm-4-flash"):
             target_llm = "glm-4-flash@ZHIPU-AI"
     if not target_llm:
-        pytest.skip("Provider exists but no canonical default llm_id could be inferred for tenant setup.")
+        pytest.fail("Live browser tests require a valid default tenant llm_id.")
 
     target_embd = current_embd
     if not target_embd or _is_malformed_tenant_model_value(target_embd):
@@ -1094,7 +1089,7 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
     }
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def ensure_model_provider_configured(
     ensure_auth_context,
     base_url: str,
@@ -1173,7 +1168,7 @@ def _ensure_dataset_ready_via_api(base_url: str, auth_header: str, dataset_name:
     }
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def ensure_dataset_ready(
     ensure_model_provider_configured,
     base_url: str,
@@ -1204,7 +1199,7 @@ def ensure_dataset_ready(
     return payload
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def ensure_chat_ready(ensure_dataset_ready):
     return ensure_dataset_ready
 

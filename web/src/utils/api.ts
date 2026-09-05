@@ -454,6 +454,10 @@ export default {
 
   adminGetSystemVersion: `${restAPIv1}/admin/version`,
   adminNavigationVisibility: `${restAPIv1}/admin/navigation`,
+  adminAccessGroups: `${restAPIv1}/admin/access-groups`,
+  adminAccessGroupOptions: `${restAPIv1}/admin/access-groups/options`,
+  adminAccessGroup: (groupId: string) =>
+    `${restAPIv1}/admin/access-groups/${groupId}`,
   adminBusinessDocumentsSettings: `${restAPIv1}/admin/business-documents`,
   adminAuditEvents: `${restAPIv1}/admin/audit-events`,
 

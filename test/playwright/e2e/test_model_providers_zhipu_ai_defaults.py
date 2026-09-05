@@ -3,7 +3,7 @@ import os
 import pytest
 from playwright.sync_api import expect
 
-from test.playwright.helpers.flow_steps import flow_params, require
+from test.playwright.helpers.flow_steps import require
 from test.playwright.helpers.auth_selectors import EMAIL_INPUT, PASSWORD_INPUT, SUBMIT_BUTTON
 from test.playwright.helpers.auth_waits import wait_for_login_complete
 from test.playwright.helpers.response_capture import capture_response
@@ -283,9 +283,7 @@ STEPS = [
 
 @pytest.mark.p1
 @pytest.mark.auth
-@pytest.mark.parametrize("step_fn", flow_params(STEPS))
 def test_add_zhipu_ai_set_defaults_persist_flow(
-    step_fn,
     flow_page,
     flow_state,
     base_url,
@@ -296,14 +294,15 @@ def test_add_zhipu_ai_set_defaults_persist_flow(
     auth_click,
     seeded_user_credentials,
 ):
-    step_fn(
-        flow_page,
-        flow_state,
-        base_url,
-        login_url,
-        active_auth_context,
-        step,
-        snap,
-        auth_click,
-        seeded_user_credentials,
-    )
+    for _, step_fn in STEPS:
+        step_fn(
+            flow_page,
+            flow_state,
+            base_url,
+            login_url,
+            active_auth_context,
+            step,
+            snap,
+            auth_click,
+            seeded_user_credentials,
+        )

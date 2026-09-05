@@ -204,6 +204,25 @@ def test_failed_optimistic_cas_rolls_back_child_write_but_records_rejection(data
 
 
 @pytest.mark.p0
+def test_job_insert_failure_rolls_back_claimed_document_version(database, monkeypatch):
+    document = _create()
+    event_count = BusinessDocumentEvent.select().count()
+
+    def fail_insert(**kwargs):
+        raise RuntimeError("job storage unavailable")
+
+    monkeypatch.setattr(BusinessDocumentJob, "create", fail_insert)
+    with pytest.raises(RuntimeError, match="job storage unavailable"):
+        BusinessDocumentService.execute_command(TENANT, AUTHOR, document["document_id"], _command(document, "REQUEST_INTAKE_ASSESSMENT"))
+    persisted = BusinessDocument.get_by_id(document["document_id"])
+    assert persisted.state_version == document["state_version"]
+    assert persisted.operation_state == document["operation_state"]
+    assert BusinessDocumentJob.select().count() == 0
+    assert BusinessDocumentCommand.select().count() == 0
+    assert BusinessDocumentEvent.select().count() == event_count
+
+
+@pytest.mark.p0
 def test_concurrent_idempotency_insert_replays_winning_ledger(database, monkeypatch):
     document = _create()
     command = _command(document, "REQUEST_INTAKE_ASSESSMENT", key="same-key-race")
@@ -339,6 +358,52 @@ def test_full_workflow_is_versioned_idempotent_and_append_only(database):
 
 
 @pytest.mark.p0
+@pytest.mark.parametrize("feedback_type", ["ANSWER_QUESTION", "DECIDE_PROPOSAL", "ADD_COMMENT"])
+def test_partial_review_feedback_can_be_assessed_once_without_changing_revision(database, feedback_type):
+    questions = _question_batch("REVIEW")
+    questions["questions"].extend(_question_batch("REVIEW", "other_audience")["questions"])
+    document = _request_and_complete_draft(_create(), review_questions=questions, proposals=[{"text": "Уточнить метрику"}, {"text": "Добавить ограничение"}])
+    revision = deepcopy(document["current_revision"])
+    assert "REQUEST_REVIEW_ASSESSMENT" not in document["allowed_commands"]
+    with pytest.raises(BusinessDocumentError) as caught:
+        BusinessDocumentService.execute_command(TENANT, AUTHOR, document["document_id"], _command(document, "REQUEST_REVIEW_ASSESSMENT"))
+    assert caught.value.code == "OPEN_REVIEW_QUESTIONS"
+
+    payload = {
+        "ANSWER_QUESTION": {"question_id": document["protocol"]["questions"][0]["question_id"], "selected_option_id": "individuals", "custom_answer": None},
+        "DECIDE_PROPOSAL": {"proposal_id": document["protocol"]["proposals"][0]["proposal_id"], "decision": "ACCEPTED"},
+        "ADD_COMMENT": {"revision_id": revision["revision_id"], "section_id": None, "text": "Уточнить сроки", "anchor": None},
+    }[feedback_type]
+    BusinessDocumentService.execute_command(TENANT, AUTHOR, document["document_id"], _command(document, feedback_type, payload))
+    document = BusinessDocumentService.get_document(TENANT, document["document_id"], AUTHOR)
+    assert "REQUEST_REVIEW_ASSESSMENT" in document["allowed_commands"]
+    assert "ANSWER_QUESTION" in document["allowed_commands"]
+    assert "APPLY_CHANGES" not in document["allowed_commands"]
+
+    document = _complete_review_assessment(document)
+    assert document["current_revision"] == revision
+    assert any(question["status"] == "OPEN" for question in document["protocol"]["questions"])
+    assert len(document["protocol"]["questions"]) == 2
+    assert len(document["protocol"]["proposals"]) == 2
+    assert "REQUEST_REVIEW_ASSESSMENT" not in document["allowed_commands"]
+    assert "APPLY_CHANGES" not in document["allowed_commands"]
+    assessment = BusinessDocumentEvent.get((BusinessDocumentEvent.document_id == document["document_id"]) & (BusinessDocumentEvent.event_type == "ReviewAssessed"))
+    assert assessment.payload["outcome"] == "NEEDS_INPUT"
+    with pytest.raises(BusinessDocumentError) as caught:
+        BusinessDocumentService.execute_command(TENANT, AUTHOR, document["document_id"], _command(document, "REQUEST_REVIEW_ASSESSMENT"))
+    assert caught.value.code == "OPEN_REVIEW_QUESTIONS"
+
+    BusinessDocumentService.execute_command(
+        TENANT,
+        AUTHOR,
+        document["document_id"],
+        _command(document, "ADD_COMMENT", {"revision_id": revision["revision_id"], "section_id": None, "text": "Ещё одно уточнение", "anchor": None}),
+    )
+    document = BusinessDocumentService.get_document(TENANT, document["document_id"], AUTHOR)
+    assert "REQUEST_REVIEW_ASSESSMENT" in document["allowed_commands"]
+
+
+@pytest.mark.p0
 def test_apply_is_rejected_while_review_question_is_open_without_mutation_or_job(database):
     document = _request_and_complete_draft(_create(), review_questions=_question_batch("REVIEW"))
     revision = deepcopy(document["current_revision"])
@@ -402,6 +467,7 @@ def test_shared_access_list_and_server_assigned_chat(database):
 
     shared = BusinessDocumentService.get_document("another-tenant", first["document_id"], "another-user")
     assert shared["document_id"] == first["document_id"]
+    assert shared["owner_name"] == "Первый автор"
     assert shared["permissions"]["edit"] is False
     with pytest.raises(BusinessDocumentError) as caught:
         _create(chat_id="client-controlled")
@@ -509,6 +575,10 @@ def test_extended_moderator_assigns_document_and_admin_manages_document_roles(da
     document = _create()
 
     users = BusinessDocumentService.list_access_users("moderator-1", access_role="EXTENDED_MODERATOR")
+    assert {(item["nickname"], item["email"]) for item in users["items"]} == {
+        ("Первый автор", "author-1@example.com"),
+        ("Второй автор", "author-2@example.com"),
+    }
     assert {(item["user_id"], item["role"]) for item in users["items"]} == {
         (AUTHOR, "AUTHOR_CREATOR"),
         ("author-2", "AUTHOR_CREATOR"),
@@ -530,6 +600,7 @@ def test_extended_moderator_assigns_document_and_admin_manages_document_roles(da
         access_role="EXTENDED_MODERATOR",
     )
     assert assigned["owner_id"] == "author-2"
+    assert assigned["owner_name"] == "Второй автор"
     assert assigned["state_version"] == document["state_version"] + 1
     assignment_event = BusinessDocumentEvent.get((BusinessDocumentEvent.document_id == document["document_id"]) & (BusinessDocumentEvent.event_type == "DocumentAssigned"))
     assert assignment_event.actor_id == "moderator-1"

@@ -1,22 +1,9 @@
 # Project instructions for Copilot
 
-## How to run (minimum)
-- Install:
-  - python -m venv .venv && source .venv/bin/activate
-  - pip install -r requirements.txt
-- Run:
-  - (fill) e.g. uvicorn app.main:app --reload
-- Verify:
-  - (fill) curl http://127.0.0.1:8000/health
+Read [AGENTS.md](../AGENTS.md) before changing this repository. It is the shared operating guide for architecture, upstream preservation, code ownership and validation commands.
 
-## Project layout (what matters)
-- app/: API entrypoints + routers
-- services/: business logic
-- configs/: config loading (.env)
-- docs/: documents
-- tests/: pytest
+Use the [transition plan](../docs/develop/architecture-transition-ru.md) for implementation stages and developer/reviewer instructions, and the [rule catalog](../docs/develop/architecture-checks-ru.md) to select checks. New architecture runners and registries described there are planned until implemented; never report a planned check as passing.
 
-## Conventions
-- Prefer small, incremental changes.
-- Add logging for new flows.
-- Add/adjust tests for behavior changes.
+The actual stack is Python/Quart under `api`, `rag`, `agent`, React/TypeScript/Vite under `web`, and Go under `cmd`/`internal`. Preserve the upstream structure, isolate owned business logic, and keep changes to standard code justified and local.
+
+Use repository commands and prepared environments. Python checks are targeted pytest/Ruff; frontend commands come from `web/package.json`; Go tests use `build.sh` with its native dependencies. See [REGRESSION.md](../test/REGRESSION.md) for the existing lanes and their environment requirements. Do not substitute a generic app layout or run live suites against shared data.

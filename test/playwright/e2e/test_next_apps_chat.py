@@ -8,7 +8,7 @@ from playwright.sync_api import expect
 
 from test.playwright.helpers.flow_context import FlowContext
 from test.playwright.helpers._auth_helpers import ensure_authed
-from test.playwright.helpers.flow_steps import flow_params, require
+from test.playwright.helpers.flow_steps import require
 from test.playwright.helpers._next_apps_helpers import (
     RESULT_TIMEOUT_MS,
     _fill_and_save_create_modal,
@@ -104,9 +104,7 @@ STEPS = [
 
 @pytest.mark.p1
 @pytest.mark.auth
-@pytest.mark.parametrize("step_fn", flow_params(STEPS))
 def test_chat_create_select_dataset_and_receive_answer_flow(
-    step_fn,
     flow_page,
     flow_state,
     base_url,
@@ -127,7 +125,8 @@ def test_chat_create_select_dataset_and_receive_answer_flow(
         auth_click=auth_click,
         seeded_user_credentials=seeded_user_credentials,
     )
-    step_fn(ctx, step, snap)
+    for _, step_fn in STEPS:
+        step_fn(ctx, step, snap)
 
 
 MM_REQUEST_METHOD_WHITELIST = {"POST", "PUT", "PATCH"}
@@ -738,9 +737,7 @@ MM_STEPS = [
 
 @pytest.mark.p1
 @pytest.mark.auth
-@pytest.mark.parametrize("step_fn", flow_params(MM_STEPS))
 def test_chat_detail_multi_model_mode_coverage_flow(
-    step_fn,
     flow_page,
     flow_state,
     base_url,
@@ -761,4 +758,5 @@ def test_chat_detail_multi_model_mode_coverage_flow(
         auth_click=auth_click,
         seeded_user_credentials=seeded_user_credentials,
     )
-    step_fn(ctx, step, snap)
+    for _, step_fn in MM_STEPS:
+        step_fn(ctx, step, snap)

@@ -44,7 +44,7 @@ def ensure_authed(
         """
 
     try:
-        if "/login" not in page.url:
+        if page.url.startswith(("http://", "https://")) and "/login" not in page.url:
             page.wait_for_function(token_wait_js, timeout=2000)
             return
     except Exception:

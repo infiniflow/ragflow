@@ -20,8 +20,8 @@ Compares /api/v1/datasets/search endpoint responses for consistency between Pyth
 
 When an LLM is involved (rerank_id, keyword, or cross_languages is set), both sides
 call the LLM independently and the chunk *count*, ordering, and scores can drift
-across runs and between Python/Go. The test logs the per-chunk chunk_id + similarity
-for human inspection but skips strict count/order/score comparisons in those cases.
+across runs and between Python/Go. These known-answer queries must still return
+nonempty, well-formed results confined to the requested datasets and documents.
 
 When no LLM is involved, both servers run the same deterministic retrieval path
 with no non-deterministic dependencies, so the responses are expected to be
@@ -33,6 +33,7 @@ runs against the pre-built data. Cleanup happens automatically at module teardow
 """
 
 import logging
+import math
 import os
 import sys
 import pytest
@@ -180,6 +181,32 @@ def compare_chunks(python_chunk, go_chunk):
                 raise AssertionError(f"Field '{field}': python={p_val}, go={g_val}")
 
 
+def assert_search_invariants(data, dataset_ids, cfg, *, require_results):
+    """Check retrieval contracts independently of another server's answer."""
+    chunks = data["chunks"]
+    assert isinstance(chunks, list), "chunks must be a list"
+    total = data["total"]
+    assert type(total) is int and total >= len(chunks), "invalid total"
+    if require_results:
+        assert chunks, "known-answer query returned no chunks"
+    if cfg.get("size") is not None:
+        assert len(chunks) <= cfg["size"], "page exceeds requested size"
+    seen = set()
+    for chunk in chunks:
+        assert isinstance(chunk, dict), "chunk must be an object"
+        chunk_id = chunk["chunk_id"]
+        assert isinstance(chunk_id, str) and chunk_id, "missing chunk id"
+        assert chunk_id not in seen, "duplicate chunk id"
+        seen.add(chunk_id)
+        assert chunk["kb_id"] in dataset_ids, "chunk outside requested datasets"
+        assert isinstance(chunk["doc_id"], str) and chunk["doc_id"], "missing document id"
+        if cfg.get("doc_ids"):
+            assert chunk["doc_id"] in cfg["doc_ids"], "chunk outside requested documents"
+        for field in ("similarity", "term_similarity", "vector_similarity"):
+            score = chunk[field]
+            assert type(score) in (int, float) and math.isfinite(score), f"invalid {field}"
+
+
 def search_and_compare(rest_client, dataset_ids, cfg):
     """Perform search on both servers and compare results.
 
@@ -243,6 +270,8 @@ def search_and_compare(rest_client, dataset_ids, cfg):
     logger.info(f"  Go chunks:     {[(c.get('chunk_id', '?'), c.get('similarity', 0)) for c in go_chunks]}")
 
     llm_involved = bool(cfg.get("rerank_id") or cfg.get("keyword") or cfg.get("cross_languages"))
+    for data in (python_data["data"], go_data["data"]):
+        assert_search_invariants(data, ids, cfg, require_results=llm_involved)
     if not llm_involved:
         assert len(python_chunks) == len(go_chunks), f"Chunk count differs: python={len(python_chunks)}, go={len(go_chunks)}"
         for i, (p_chunk, g_chunk) in enumerate(zip(python_chunks, go_chunks)):
@@ -255,7 +284,7 @@ def search_and_compare(rest_client, dataset_ids, cfg):
         if python_total != go_total:
             raise AssertionError(f"total differs: python={python_total}, go={go_total}")
 
-    return len(python_chunks), len(python_chunks)
+    return python_data["data"]["total"], len(python_chunks)
 
 
 def _upload_and_parse(rest_client, dataset_id, text, filename="doc.txt"):
@@ -473,7 +502,7 @@ def test_search_datasets_consistency_basic(rest_client, all_datasets):
         cfg_str = ", ".join(f"{k}={v}" for k, v in cfg.items())
         logger.info(f"\n--- Testing: {cfg_str} ---")
         total, chunk_count = search_and_compare(rest_client, dataset_id, cfg)
-        logger.info(f"SUCCESS: Python and Go responses match for {chunk_count} chunks, total={total}")
+        logger.info(f"SUCCESS: search contracts validated; Python chunks={chunk_count}, total={total}")
 
 
 # ---------------------------------------------------------------------------
@@ -556,7 +585,7 @@ def test_search_datasets_consistency_with_search_id(rest_client, all_datasets):
         cfg_str = ", ".join(f"{k}={v}" for k, v in cfg.items())
         logger.info(f"\n--- Testing with search_id: {cfg_str} ---")
         total, chunk_count = search_and_compare(rest_client, dataset_id, cfg)
-        logger.info(f"SUCCESS: Python and Go responses match for {chunk_count} chunks, total={total}")
+        logger.info(f"SUCCESS: search contracts validated; Python chunks={chunk_count}, total={total}")
 
 
 # ---------------------------------------------------------------------------
@@ -581,7 +610,7 @@ def test_search_datasets_consistency_multi_dataset(rest_client, all_datasets):
         cfg_str = ", ".join(f"{k}={v}" for k, v in cfg.items())
         logger.info(f"\n--- Multi-dataset Testing: {cfg_str} ---")
         total, chunk_count = search_and_compare(rest_client, both_ids, cfg)
-        logger.info(f"SUCCESS: Python and Go responses match for {chunk_count} chunks, total={total}")
+        logger.info(f"SUCCESS: search contracts validated; Python chunks={chunk_count}, total={total}")
 
 
 # ---------------------------------------------------------------------------
@@ -609,4 +638,4 @@ def test_search_datasets_consistency_english(rest_client, all_datasets):
         cfg_str = ", ".join(f"{k}={v}" for k, v in cfg.items())
         logger.info(f"\n--- Testing (English): {cfg_str} ---")
         total, chunk_count = search_and_compare(rest_client, dataset_id, cfg)
-        logger.info(f"SUCCESS: Python and Go responses match for {chunk_count} chunks, total={total}")
+        logger.info(f"SUCCESS: search contracts validated; Python chunks={chunk_count}, total={total}")

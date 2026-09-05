@@ -132,9 +132,14 @@ def _revision(*, number=3, author_id="author-1", author_name="Первый ав�
 
 def _projection(role, *, owner_id="author-1", state_version=18):
     permissions = _permissions(role, owner_id)
+    owner_names = {
+        "author-1": "Первый автор",
+        "author-2": "Второй автор",
+    }
     return {
         "document_id": DOCUMENT_ID,
         "owner_id": owner_id,
+        "owner_name": owner_names.get(owner_id),
         "access_role": role,
         "permissions": permissions,
         "title": "Чужой регламент",
@@ -284,11 +289,13 @@ class BusinessDocumentsAccessStub:
                             {
                                 "user_id": "author-1",
                                 "nickname": "Первый автор",
+                                "email": "author-1@example.test",
                                 "role": "AUTHOR_CREATOR",
                             },
                             {
                                 "user_id": "author-2",
                                 "nickname": "Второй автор",
+                                "email": "author-2@example.test",
                                 "role": "AUTHOR_EDITOR",
                             },
                         ]
@@ -599,7 +606,7 @@ def test_extended_moderator_assigns_foreign_document_to_another_author(page, bas
     page.get_by_test_id("business-document-owner-option-author-2").click()
     page.get_by_test_id("business-document-assign-owner").click()
 
-    expect(page.get_by_text("Владелец: author-2", exact=True)).to_be_visible()
+    expect(page.get_by_text("Владелец: Второй автор", exact=True)).to_be_visible()
     assert stub.mutations == [
         (
             "PUT",
@@ -620,7 +627,7 @@ def test_owner_assignment_conflict_keeps_previous_owner_and_shows_error(page, ba
     page.get_by_test_id("business-document-assign-owner").click()
 
     expect(page.get_by_role("alert")).to_contain_text("Документ уже изменён другим пользователем")
-    expect(page.get_by_text("Владелец: author-1", exact=True)).to_be_visible()
+    expect(page.get_by_text("Владелец: Первый автор", exact=True)).to_be_visible()
     assert stub.owner_id == "author-1"
 
 

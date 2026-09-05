@@ -48,7 +48,11 @@ def _load_agent_api_for_rerun(monkeypatch, *, documents_info, accessible):
 
     acc_fn = accessible if callable(accessible) else (lambda *_a, **_k: accessible)
 
-    _stub(monkeypatch, "api.apps", current_user=SimpleNamespace(id="user-owner"), login_required=lambda func: func)
+    apps_module = _stub(monkeypatch, "api.apps", current_user=SimpleNamespace(id="user-owner"), login_required=lambda func: func)
+    apps_module.__path__ = []
+    services_module = _stub(monkeypatch, "api.apps.services")
+    services_module.__path__ = []
+    _stub(monkeypatch, "api.apps.services.agent_file_service", upload_agent_files=lambda *_a, **_k: None)
     _stub(monkeypatch, "api.apps.services.canvas_replica_service", CanvasReplicaService=SimpleNamespace())
     _stub(monkeypatch, "api.db", CanvasCategory=SimpleNamespace())
 

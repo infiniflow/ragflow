@@ -53,7 +53,8 @@ def admin_session() -> requests.Session:
     try:
         admin_login(session)
     except Exception as e:
-        pytest.skip(f"Admin login failed: {e}")
+        session.close()
+        pytest.fail(f"Admin test setup could not authenticate: {type(e).__name__}")
     return session
 
 

@@ -764,6 +764,44 @@ class UserTenant(DataBaseModel):
         db_table = "user_tenant"
 
 
+class AccessGroup(DataBaseModel):
+    """Administrator-managed group used by the local access policy."""
+
+    id = CharField(max_length=32, primary_key=True)
+    name = CharField(max_length=128, null=False, unique=True)
+    description = TextField(null=True)
+
+    class Meta:
+        db_table = "access_group"
+
+
+class AccessGroupUser(DataBaseModel):
+    group_id = CharField(max_length=32, null=False, index=True)
+    user_id = CharField(max_length=32, null=False, index=True)
+
+    class Meta:
+        db_table = "access_group_user"
+        primary_key = CompositeKey("group_id", "user_id")
+
+
+class AccessGroupDataset(DataBaseModel):
+    group_id = CharField(max_length=32, null=False, index=True)
+    dataset_id = CharField(max_length=32, null=False, index=True)
+
+    class Meta:
+        db_table = "access_group_dataset"
+        primary_key = CompositeKey("group_id", "dataset_id")
+
+
+class AccessGroupSection(DataBaseModel):
+    group_id = CharField(max_length=32, null=False, index=True)
+    section = CharField(max_length=64, null=False, index=True)
+
+    class Meta:
+        db_table = "access_group_section"
+        primary_key = CompositeKey("group_id", "section")
+
+
 class UserExternalCredential(DataBaseModel):
     """Encrypted external-service credential owned by one RAGFlow user."""
 

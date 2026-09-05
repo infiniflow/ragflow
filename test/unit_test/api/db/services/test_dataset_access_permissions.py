@@ -66,6 +66,7 @@ _install_cv2_stub_if_unavailable()
 from api.db import TenantPermission
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.access_group_service import AccessGroupService
 from common.constants import StatusEnum
 
 
@@ -77,7 +78,12 @@ def _unwrapped_doc_accessible():
     return DocumentService.accessible.__func__.__wrapped__
 
 
+def _legacy_dataset_access(monkeypatch):
+    monkeypatch.setattr(AccessGroupService, "allowed_dataset_ids", classmethod(lambda cls, user_id: None))
+
+
 def test_private_dataset_is_not_accessible_to_other_tenant_member(monkeypatch):
+    _legacy_dataset_access(monkeypatch)
     kb = SimpleNamespace(
         id="kb-private",
         tenant_id="owner-1",
@@ -95,6 +101,7 @@ def test_private_dataset_is_not_accessible_to_other_tenant_member(monkeypatch):
 
 
 def test_team_dataset_is_accessible_to_joined_tenant_member(monkeypatch):
+    _legacy_dataset_access(monkeypatch)
     kb = SimpleNamespace(
         id="kb-team",
         tenant_id="owner-1",
@@ -112,9 +119,35 @@ def test_team_dataset_is_accessible_to_joined_tenant_member(monkeypatch):
 
 
 def test_document_access_respects_dataset_permission(monkeypatch):
+    _legacy_dataset_access(monkeypatch)
     doc = SimpleNamespace(id="doc-1", kb_id="kb-private")
 
     monkeypatch.setattr(DocumentService, "get_by_id", classmethod(lambda cls, doc_id: (True, doc)))
     monkeypatch.setattr(KnowledgebaseService, "accessible", classmethod(lambda cls, kb_id, user_id: False))
 
     assert _unwrapped_doc_accessible()(DocumentService, "doc-1", "member-2") is False
+
+
+def test_team_dataset_requires_group_grant_for_grouped_user(monkeypatch):
+    kb = SimpleNamespace(id="kb-team", tenant_id="owner-1", permission=TenantPermission.TEAM.value, status=StatusEnum.VALID.value)
+    monkeypatch.setattr(KnowledgebaseService, "get_by_id", classmethod(lambda cls, kb_id: (True, kb)))
+    monkeypatch.setattr(AccessGroupService, "allowed_dataset_ids", classmethod(lambda cls, user_id: {"kb-other"}))
+
+    assert _unwrapped_kb_accessible()(KnowledgebaseService, "kb-team", "member-2") is False
+
+
+def test_team_dataset_allows_group_grant_for_grouped_user(monkeypatch):
+    kb = SimpleNamespace(id="kb-team", tenant_id="owner-1", permission=TenantPermission.TEAM.value, status=StatusEnum.VALID.value)
+    monkeypatch.setattr(KnowledgebaseService, "get_by_id", classmethod(lambda cls, kb_id: (True, kb)))
+    monkeypatch.setattr(AccessGroupService, "allowed_dataset_ids", classmethod(lambda cls, user_id: {"kb-team"}))
+    monkeypatch.setattr("api.db.services.knowledgebase_service.TenantService.get_joined_tenants_by_user_id", lambda _user_id: [{"tenant_id": "owner-1"}])
+
+    assert _unwrapped_kb_accessible()(KnowledgebaseService, "kb-team", "member-2") is True
+
+
+def test_explicit_group_grant_allows_private_dataset(monkeypatch):
+    kb = SimpleNamespace(id="kb-private", tenant_id="owner-1", permission=TenantPermission.ME.value, status=StatusEnum.VALID.value)
+    monkeypatch.setattr(KnowledgebaseService, "get_by_id", classmethod(lambda cls, kb_id: (True, kb)))
+    monkeypatch.setattr(AccessGroupService, "allowed_dataset_ids", classmethod(lambda cls, user_id: {"kb-private"}))
+
+    assert _unwrapped_kb_accessible()(KnowledgebaseService, "kb-private", "member-2") is True

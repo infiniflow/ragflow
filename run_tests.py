@@ -202,9 +202,9 @@ EXAMPLES:
 
         # Add coverage
         if self.coverage:
-            # Relative path from test directory to source code
-            source_path = str(self.project_root / "common")
-            cmd.extend(["--cov", source_path, "--cov-report", "html", "--cov-report", "term"])
+            for source in ("api", "rag", "common", "deepdoc", "agent"):
+                cmd.extend(["--cov", str(self.project_root / source)])
+            cmd.extend(["--cov-branch", "--cov-report", "html", "--cov-report", "term"])
 
         # Add parallel execution
         if self.parallel:

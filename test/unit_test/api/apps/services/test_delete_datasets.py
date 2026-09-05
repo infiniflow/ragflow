@@ -79,6 +79,7 @@ def _load_delete_datasets_module(monkeypatch, *, f2d_rows, file_filter_delete):
         monkeypatch,
         "api.db.services.connector_service",
         Connector2KbService=SimpleNamespace(),
+        ConnectorService=SimpleNamespace(),
     )
     _stub(
         monkeypatch,

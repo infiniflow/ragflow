@@ -206,7 +206,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	result, err := h.chunkSvc.RetrievalTest(svcReq, user.ID)
 	if err != nil {
 		common.Warn("search bot retrieval test failed", zap.String("error", err.Error()))
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeServerError, nil, "retrieval test failed")
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "retrieval test failed")
 		return
 	}
 

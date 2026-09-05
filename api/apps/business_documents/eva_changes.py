@@ -33,7 +33,7 @@ from peewee import fn
 
 from api.apps.business_documents.errors import BusinessDocumentError, ConflictError, ValidationError
 from api.db.db_models import BusinessDocumentEvaChange, BusinessDocumentEvaChangeEvent, Connector
-from api.db.services.business_document_settings_service import get_business_documents_eva_connector_id
+from api.db.services.business_document_settings_service import DocumentsEvaConnection, get_business_documents_eva_connector_id, get_documents_eva_connection
 from api.db.services.connector_service import ConnectorService
 from api.db.services.user_external_credential_service import (
     ExternalCredentialDecryptionError,
@@ -209,7 +209,8 @@ class EvaDocumentChangeService:
                 "The EVA document is outside the space configured for the Documents section",
                 403,
             )
-        if actor_id is not None and not ConnectorService.accessible(configured, actor_id):
+        connection = get_documents_eva_connection()
+        if actor_id is not None and not (connection and connection.id == configured) and not ConnectorService.accessible(configured, actor_id):
             raise BusinessDocumentError(
                 "EVA_SPACE_FORBIDDEN",
                 "The EVA Wiki space configured for the Documents section is not accessible",
@@ -218,21 +219,24 @@ class EvaDocumentChangeService:
         return configured
 
     @classmethod
-    def _connector(cls, connector_id: str, actor_id: str) -> tuple[Connector, EvaWikiConnector]:
+    def _connector(cls, connector_id: str, actor_id: str) -> tuple[Connector | DocumentsEvaConnection, EvaWikiConnector]:
         """Build the EVA reader used by interactive document management.
 
-        The connector service token remains the primary credential. A personal
-        token is used only when that shared token is not configured, so
-        background connector synchronization keeps its existing credential
-        boundary while the current user can still browse EVA documents.
+        The Documents connection's shared token is the primary read credential;
+        a missing shared token allows the current user's personal token.
         """
 
         configured_connector_id = cls._require_configured_connector(connector_id, actor_id)
-        exists, connector = ConnectorService.get_by_id(configured_connector_id)
-        if not exists or connector.source != DocumentSource.EVA_WIKI.value:
-            raise BusinessDocumentError("EVA_CONNECTOR_NOT_FOUND", "EVA Wiki connector not found", 404)
-        if not ConnectorService.accessible(connector.id, actor_id):
-            raise BusinessDocumentError("EVA_CONNECTOR_FORBIDDEN", "EVA Wiki connector is not accessible", 403)
+        try:
+            connector = get_documents_eva_connection(with_token=True)
+        except ConnectorValidationError as error:
+            raise cls._map_external_error(error) from error
+        if connector is not None and connector.id != configured_connector_id:
+            raise BusinessDocumentError("EVA_SPACE_SCOPE_VIOLATION", "The Documents EVA connection changed; retry the operation", 409)
+        if connector is None:
+            exists, connector = ConnectorService.get_by_id(configured_connector_id)
+            if not exists or connector.source != DocumentSource.EVA_WIKI.value:
+                raise BusinessDocumentError("EVA_CONNECTOR_NOT_FOUND", "EVA Wiki connector not found", 404)
         config = dict(connector.config or {})
         client = EvaWikiConnector(
             api_base_url=config.get("api_base_url", ""),
@@ -259,7 +263,7 @@ class EvaDocumentChangeService:
         return connector, client
 
     @classmethod
-    def _mutation_client(cls, connector: Connector, actor_id: str) -> tuple[EvaWikiMutationClient, int]:
+    def _mutation_client(cls, connector: Connector | DocumentsEvaConnection, actor_id: str) -> tuple[EvaWikiMutationClient, int]:
         config = dict(connector.config or {})
         credential = UserExternalCredentialService.get_eva_wiki_token(actor_id, config.get("api_base_url", ""))
         client = EvaWikiMutationClient(
@@ -333,10 +337,9 @@ class EvaDocumentChangeService:
     def resolve_page_url(cls, actor_id: str, page_url: object) -> dict[str, Any]:
         """Resolve a user-facing EVA URL without ever requesting that URL directly.
 
-        The URL is matched only against already configured, accessible EVA
-        connectors. An unmatched URL remains a useful read-only link; connector
-        capabilities are exposed only after the page is verified through EVA's
-        authenticated API.
+        The URL is matched against the Documents connection. An unmatched URL
+        remains a read-only link; capabilities require verification through
+        EVA's authenticated API.
         """
 
         normalized_url = cls._validate_text(page_url, "eva_page_url", maximum=2048)

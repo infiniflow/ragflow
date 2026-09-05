@@ -1,0 +1,59 @@
+name: browser-regression
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.13'
+      - name: Install frontend dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: Frontend unit tests
+        if: matrix.browser == 'chromium'
+        working-directory: web
+        run: pnpm test --runInBand
+      - name: Build frontend
+        working-directory: web
+        run: pnpm build
+      - name: Install browser test dependencies
+        run: |
+          uv venv --python 3.13
+          uv pip install pytest pytest-asyncio pytest-playwright pycryptodomex
+          .venv/bin/python -m playwright install --with-deps ${{ matrix.browser }}
+      - name: Run isolated browser journeys
+        run: .venv/bin/python test/run_browser_regression.py --browser ${{ matrix.browser }}
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-${{ matrix.browser }}
+          path: test/playwright/artifacts

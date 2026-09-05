@@ -75,6 +75,7 @@ export enum Routes {
   AdminUserManagement = `${Admin}/users`,
   AdminSandboxSettings = `${Admin}/sandbox-settings`,
   AdminNavigationVisibility = `${Admin}/navigation`,
+  AdminAccessGroups = `${Admin}/access-groups`,
   AdminBusinessDocumentsSettings = `${Admin}/business-documents`,
   AdminAudit = `${Admin}/audit`,
   AdminWhitelist = `${Admin}/whitelist`,
@@ -412,6 +413,10 @@ const routeConfigOptions = [
               {
                 path: Routes.AdminNavigationVisibility,
                 Component: () => import('@/pages/admin/navigation-visibility'),
+              },
+              {
+                path: Routes.AdminAccessGroups,
+                Component: () => import('@/pages/admin/access-groups'),
               },
               {
                 path: Routes.AdminBusinessDocumentsSettings,

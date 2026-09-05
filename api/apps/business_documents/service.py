@@ -287,12 +287,13 @@ class BusinessDocumentService:
     ) -> dict[str, Any]:
         access = BusinessDocumentAccess(actor_id, access_role, is_admin)
         access.require_assign()
-        users = User.select(User.id, User.nickname, User.business_document_role, User.is_superuser).where((User.status == "1") & (User.is_active == "1"))
+        users = User.select(User.id, User.nickname, User.email, User.business_document_role, User.is_superuser).where((User.status == "1") & (User.is_active == "1"))
         return {
             "items": [
                 {
                     "user_id": user.id,
                     "nickname": user.nickname,
+                    "email": user.email,
                     "role": (BusinessDocumentRole.ADMIN.value if user.is_superuser else cls._normalized_access_role(user.business_document_role).value),
                 }
                 for user in users.order_by(User.nickname.asc(), User.id.asc())
@@ -858,8 +859,8 @@ class BusinessDocumentService:
             return cls._request_job(document, actor_id, envelope, "ASSESS_INTAKE", OperationState.ANALYZING)
         if envelope.type == CommandType.REQUEST_REVIEW_ASSESSMENT:
             cls._require_lifecycle(document, LifecycleState.REVIEW)
-            if cls._open_questions(document, "REVIEW"):
-                raise ConflictError("OPEN_REVIEW_QUESTIONS", "Answer open review questions before reassessment")
+            if cls._open_questions(document, "REVIEW") and not cls._has_unassessed_review_feedback(document.id):
+                raise ConflictError("OPEN_REVIEW_QUESTIONS", "Add new review feedback before reassessment while questions remain open")
             return cls._request_job(document, actor_id, envelope, "ASSESS_REVIEW", OperationState.ANALYZING_REVIEW)
         if envelope.type == CommandType.REQUEST_DRAFT:
             cls._require_lifecycle(document, LifecycleState.INTAKE)
@@ -952,6 +953,10 @@ class BusinessDocumentService:
         }[job_type]
         dedupe_key = _stable_hash({"document_id": document.id, "job_type": job_type, "source_state_version": new_version})
         now = current_timestamp()
+        # Claim the document version before inserting the unique job. Competing
+        # commands then fail with a version conflict, and the surrounding
+        # savepoint rolls back this update if job creation fails.
+        cls._optimistic_update(document, {"operation_state": operation_state.value, "last_error": None, "state_version": new_version})
         BusinessDocumentJob.create(
             id=job_id,
             document_id=document.id,
@@ -976,7 +981,6 @@ class BusinessDocumentService:
             correlation_id=envelope.command_id,
             **_timestamps(),
         )
-        cls._optimistic_update(document, {"operation_state": operation_state.value, "last_error": None, "state_version": new_version})
         event_id = cls._create_event(
             document.id,
             new_version,
@@ -1927,6 +1931,7 @@ class BusinessDocumentService:
             "tenant_id": document.tenant_id,
             "owner_id": document.owner_id,
             "access_role": access.role.value,
+            "owner_name": cls._user_display_name(document.owner_id),
             "permissions": permissions,
             "chat_id": document.chat_id,
             "document_type": document.document_type,
@@ -2044,6 +2049,8 @@ class BusinessDocumentService:
             commands = [CommandType.DECIDE_PROPOSAL.value, CommandType.ADD_COMMENT.value, CommandType.ARCHIVE.value]
             if cls._open_questions_by_values(document_id, "REVIEW", review_cycle):
                 commands.append(CommandType.ANSWER_QUESTION.value)
+                if cls._has_unassessed_review_feedback(document_id):
+                    commands.append(CommandType.REQUEST_REVIEW_ASSESSMENT.value)
             elif cls._assessment_is_current(
                 document_id,
                 "ReviewAssessed",
@@ -2079,6 +2086,18 @@ class BusinessDocumentService:
             )
         }
         return [question_id for question_id in question_ids if question_id not in answered]
+
+    @staticmethod
+    def _has_unassessed_review_feedback(document_id):
+        feedback_types = {"QuestionAnswered", "ProposalDecided", "AuthorCommentAdded", "EvaDocumentPulled"}
+        boundaries = {"DraftCreated", "ReviewCycleStarted", "ReviewAssessed"}
+        latest = (
+            BusinessDocumentEvent.select(BusinessDocumentEvent.event_type)
+            .where((BusinessDocumentEvent.document_id == document_id) & (BusinessDocumentEvent.event_type.in_(feedback_types | boundaries)))
+            .order_by(BusinessDocumentEvent.sequence.desc())
+            .first()
+        )
+        return latest is not None and latest.event_type in feedback_types
 
     @staticmethod
     def _assessment_is_current(document_id, assessment_event_type, invalidating_event_types, review_cycle):

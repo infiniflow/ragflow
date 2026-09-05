@@ -26,12 +26,13 @@ from flask_login import current_user, login_required, logout_user
 
 from auth import login_verify, login_admin, check_admin_auth
 from responses import success_response, error_response
-from services import UserMgr, ServiceMgr, UserServiceMgr, SettingsMgr, ConfigMgr, EnvironmentsMgr, SandboxMgr
+from services import AccessGroupMgr, UserMgr, ServiceMgr, UserServiceMgr, SettingsMgr, ConfigMgr, EnvironmentsMgr, SandboxMgr
+from api.db.services.access_group_service import AccessGroupValidationError
 from api.db.services.business_document_settings_service import (
-    BUSINESS_DOCUMENTS_EVA_CONNECTOR_SETTING,
-    get_business_documents_eva_connector_id,
-    list_business_documents_eva_spaces,
-    validate_business_documents_eva_connector_id,
+    BUSINESS_DOCUMENTS_EVA_CONNECTION_SETTING,
+    discover_business_documents_eva_spaces,
+    get_business_documents_settings as documents_settings,
+    prepare_business_documents_connection,
 )
 from api.db.services.navigation_visibility_service import (
     NAVIGATION_VISIBILITY_SETTING,
@@ -450,6 +451,53 @@ def get_user_permission(user_name: str):
         return error_response(str(e), 500)
 
 
+@admin_bp.route("/access-groups", methods=["GET"])
+@login_required
+@check_admin_auth
+def list_access_groups():
+    return success_response({"items": AccessGroupMgr.list_groups()})
+
+
+@admin_bp.route("/access-groups/options", methods=["GET"])
+@login_required
+@check_admin_auth
+def access_group_options():
+    return success_response(AccessGroupMgr.options())
+
+
+@admin_bp.route("/access-groups", methods=["POST"])
+@login_required
+@check_admin_auth
+def create_access_group():
+    try:
+        return success_response(AccessGroupMgr.create(request.get_json(silent=True)))
+    except AccessGroupValidationError as error:
+        return error_response(str(error), 400)
+
+
+@admin_bp.route("/access-groups/<group_id>", methods=["PUT"])
+@login_required
+@check_admin_auth
+def update_access_group(group_id):
+    try:
+        return success_response(AccessGroupMgr.update(group_id, request.get_json(silent=True)))
+    except AccessGroupValidationError as error:
+        return error_response(str(error), 400)
+    except LookupError as error:
+        return error_response(str(error), 404)
+
+
+@admin_bp.route("/access-groups/<group_id>", methods=["DELETE"])
+@login_required
+@check_admin_auth
+def delete_access_group(group_id):
+    try:
+        AccessGroupMgr.delete(group_id)
+        return success_response(True)
+    except LookupError as error:
+        return error_response(str(error), 404)
+
+
 @admin_bp.route("/variables", methods=["PUT"])
 @login_required
 @check_admin_auth
@@ -520,21 +568,11 @@ def set_navigation_visibility():
         return error_response(str(e), 500)
 
 
-def _business_documents_settings_response():
-    selected_connector_id = get_business_documents_eva_connector_id()
-    spaces = list_business_documents_eva_spaces()
-    return {
-        "eva_connector_id": selected_connector_id,
-        "eva_spaces": spaces,
-        "selected_space_available": any(space["connector_id"] == selected_connector_id for space in spaces),
-    }
-
-
 @admin_bp.route("/business-documents", methods=["GET"])
 @login_required
 @check_admin_auth
 def get_business_documents_settings():
-    return success_response(_business_documents_settings_response())
+    return success_response(documents_settings())
 
 
 @admin_bp.route("/business-documents", methods=["PUT"])
@@ -542,17 +580,31 @@ def get_business_documents_settings():
 @check_admin_auth
 def set_business_documents_settings():
     data = request.get_json(silent=True)
-    if not isinstance(data, dict) or "eva_connector_id" not in data:
-        return error_response("eva_connector_id is required", 400)
+    if not isinstance(data, dict) or "eva_connection" not in data:
+        return error_response("eva_connection is required", 400)
 
     try:
-        connector_id = validate_business_documents_eva_connector_id(data["eva_connector_id"])
-        SettingsMgr.update_by_name(BUSINESS_DOCUMENTS_EVA_CONNECTOR_SETTING, connector_id or "")
-        return success_response(_business_documents_settings_response())
+        connection = prepare_business_documents_connection(data["eva_connection"])
+        SettingsMgr.update_by_name(BUSINESS_DOCUMENTS_EVA_CONNECTION_SETTING, json.dumps(connection))
+        return success_response(documents_settings())
     except (AdminException, ValueError) as e:
         return error_response(str(e), 400)
     except Exception as e:
         return error_response(str(e), 500)
+
+
+@admin_bp.route("/business-documents/eva-spaces", methods=["POST"])
+@login_required
+@check_admin_auth
+def discover_documents_eva_spaces():
+    from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError, InsufficientPermissionsError
+
+    data = request.get_json(silent=True)
+    try:
+        spaces = discover_business_documents_eva_spaces(data.get("eva_connection") if isinstance(data, dict) else None)
+        return success_response({"items": spaces})
+    except (ValueError, ConnectorMissingCredentialError, ConnectorValidationError, InsufficientPermissionsError) as error:
+        return error_response(str(error), 400)
 
 
 @admin_bp.route("/configs", methods=["GET"])

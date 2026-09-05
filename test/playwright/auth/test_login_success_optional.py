@@ -15,7 +15,7 @@ from test.playwright.helpers.auth_selectors import (
 )
 from test.playwright.helpers.auth_waits import wait_for_login_complete
 from test.playwright.helpers.env_utils import env_bool
-from test.playwright.helpers.flow_steps import flow_params, require
+from test.playwright.helpers.flow_steps import require
 
 DEMO_EMAIL = "qa@infiniflow.com"
 DEMO_PASSWORD = "123"
@@ -212,9 +212,7 @@ STEPS = [
 
 @pytest.mark.p1
 @pytest.mark.auth
-@pytest.mark.parametrize("step_fn", flow_params(STEPS))
 def test_login_success_optional_flow(
-    step_fn,
     flow_page,
     flow_state,
     login_url,
@@ -224,13 +222,14 @@ def test_login_success_optional_flow(
     auth_click,
     seeded_user_credentials,
 ):
-    step_fn(
-        flow_page,
-        flow_state,
-        login_url,
-        active_auth_context,
-        step,
-        snap,
-        auth_click,
-        seeded_user_credentials,
-    )
+    for _, step_fn in STEPS:
+        step_fn(
+            flow_page,
+            flow_state,
+            login_url,
+            active_auth_context,
+            step,
+            snap,
+            auth_click,
+            seeded_user_credentials,
+        )

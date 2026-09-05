@@ -14,7 +14,7 @@ from test.playwright.helpers.auth_selectors import (
     REGISTER_TAB,
     SUBMIT_BUTTON,
 )
-from test.playwright.helpers.flow_steps import flow_params, require
+from test.playwright.helpers.flow_steps import require
 from test.playwright.helpers.response_capture import capture_response_json
 
 RESULT_TIMEOUT_MS = 15000
@@ -70,7 +70,7 @@ def _wait_for_login_outcome(page, post_login_path: str | None, timeout_ms: int =
         }
         """
         % auth_status_selector,
-        post_login_path,
+        arg=post_login_path,
         timeout=timeout_ms,
     )
 
@@ -281,9 +281,7 @@ STEPS = [
 
 @pytest.mark.p0
 @pytest.mark.auth
-@pytest.mark.parametrize("step_fn", flow_params(STEPS))
 def test_register_then_login_flow(
-    step_fn,
     flow_page,
     flow_state,
     login_url,
@@ -296,16 +294,17 @@ def test_register_then_login_flow(
     reg_nickname,
     reg_email_unique,
 ):
-    step_fn(
-        flow_page,
-        flow_state,
-        login_url,
-        active_auth_context,
-        step,
-        snap,
-        auth_click,
-        reg_email,
-        reg_password,
-        reg_nickname,
-        reg_email_unique,
-    )
+    for _, step_fn in STEPS:
+        step_fn(
+            flow_page,
+            flow_state,
+            login_url,
+            active_auth_context,
+            step,
+            snap,
+            auth_click,
+            reg_email,
+            reg_password,
+            reg_nickname,
+            reg_email_unique,
+        )

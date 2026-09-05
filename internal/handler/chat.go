@@ -413,7 +413,7 @@ func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 	}
 	if err != nil {
 		if err.Error() == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeDataError, false, "No authorization")
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())

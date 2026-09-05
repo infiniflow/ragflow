@@ -29,6 +29,7 @@ from api.db.services.user_service import TenantService, UserTenantService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.system_settings_service import SystemSettingsService
 from api.db.services.api_service import APITokenService
+from api.db.services.access_group_service import AccessGroupService
 from api.db.db_models import APIToken
 from api.utils.crypt import decrypt
 from api.utils import health_utils
@@ -267,6 +268,14 @@ class UserServiceMgr:
 
         tenants: list[dict[str, Any]] = UserTenantService.get_tenants_by_user_id(user.id)
         return tenants
+
+
+class AccessGroupMgr:
+    list_groups = staticmethod(AccessGroupService.list_groups)
+    options = staticmethod(AccessGroupService.options)
+    create = staticmethod(AccessGroupService.create)
+    update = staticmethod(AccessGroupService.update)
+    delete = staticmethod(AccessGroupService.delete)
 
 
 class ServiceMgr:

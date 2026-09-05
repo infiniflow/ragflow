@@ -1,7 +1,7 @@
 import pytest
 
 from test.playwright.helpers.flow_context import FlowContext
-from test.playwright.helpers.flow_steps import flow_params, require
+from test.playwright.helpers.flow_steps import require
 
 
 def step_01_open_login(ctx: FlowContext, step, snap):
@@ -49,8 +49,7 @@ STEPS = [
 @pytest.mark.smoke
 @pytest.mark.p0
 @pytest.mark.auth
-@pytest.mark.parametrize("step_fn", flow_params(STEPS))
-def test_auth_page_smoke_flow(step_fn, flow_page, flow_state, base_url, smoke_login_url, step, snap):
+def test_auth_page_smoke_flow(flow_page, flow_state, base_url, smoke_login_url, step, snap):
     ctx = FlowContext(
         page=flow_page,
         state=flow_state,
@@ -58,7 +57,8 @@ def test_auth_page_smoke_flow(step_fn, flow_page, flow_state, base_url, smoke_lo
         login_url=smoke_login_url,
         smoke_login_url=smoke_login_url,
     )
-    step_fn(ctx, step, snap)
+    for _, step_fn in STEPS:
+        step_fn(ctx, step, snap)
 
 
 def _format_diag(page, response, reason: str) -> str:

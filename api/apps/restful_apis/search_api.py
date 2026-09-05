@@ -25,6 +25,7 @@ from api.apps import current_user, login_required
 from api.constants import DATASET_NAME_LIMIT
 from api.db.db_models import DB
 from api.db.services import duplicate_name
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
@@ -219,6 +220,13 @@ async def completion(search_id):
     kb_ids = search_config.get("kb_ids") or req.get("kb_ids") or []
     if not kb_ids:
         return get_data_error_result(message="`kb_ids` is required.")
+    inaccessible = [kb_id for kb_id in kb_ids if not KnowledgebaseService.accessible(kb_id, uid)]
+    if inaccessible:
+        return get_json_result(
+            data=False,
+            message="No authorization for one or more configured datasets.",
+            code=RetCode.AUTHENTICATION_ERROR,
+        ), 403
 
     async def stream():
         nonlocal req, uid, kb_ids, search_config

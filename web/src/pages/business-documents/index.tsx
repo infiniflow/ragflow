@@ -953,7 +953,7 @@ export default function BusinessDocumentsPage() {
             {operationLabels[document.operation_state]}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-secondary">
-            <span>Владелец: {document.owner_id || 'не назначен'}</span>
+            <span>Владелец: {document.owner_name || 'не назначен'}</span>
             {document.permissions?.assign && (
               <>
                 <div className="min-w-56">
@@ -963,7 +963,7 @@ export default function BusinessDocumentsPage() {
                     options={(accessUsersQuery.data?.items ?? []).map(
                       (user) => ({
                         value: user.user_id,
-                        label: `${user.nickname} (${user.user_id})`,
+                        label: `${user.nickname} (${user.email})`,
                       }),
                     )}
                     placeholder="Выберите владельца"

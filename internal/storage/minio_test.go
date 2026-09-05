@@ -18,81 +18,63 @@ package storage
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
 	"fmt"
-	"log"
 	"os"
-	"ragflow/internal/utility"
 	"testing"
 	"time"
 
 	"ragflow/internal/server"
 )
 
-// getMinioConfig returns MinIO configuration for testing
-// Configuration can be loaded from environment variables or config file
-func getMinioConfig() (*server.MinioConfig, error) {
-
-	// Initialize configuration
-	if err := server.Init(""); err != nil {
-		return nil, err
-	}
-
-	// Try to get configuration from environment variables first
-	config := server.GetConfig().StorageEngine.Minio
-
-	log.Printf("MinioConfig: %+v", config)
-	return config, nil
-}
-
-// getEnv gets environment variable or returns default value
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-// getEnvBool gets environment variable as bool or returns default value
-func getEnvBool(key string, defaultValue bool) bool {
-	if value := os.Getenv(key); value != "" {
-		return value == "true" || value == "1" || value == "yes"
-	}
-	return defaultValue
-}
-
-// newTestMinioStorage creates a new MinIO storage instance for testing
+// newTestMinioStorage connects only to an explicitly configured test service.
 func newTestMinioStorage(t *testing.T) *MinioStorage {
-	rootDir := utility.GetProjectRoot()
-	t.Chdir(rootDir)
-	t.Chdir(rootDir)
-
-	config, err := getMinioConfig()
-
-	if err != nil {
-		t.Skipf("Skipping test: failed to get MinIO configuration: %v", err)
-		return nil
+	t.Helper()
+	endpoint := os.Getenv("RAGFLOW_TEST_MINIO_ENDPOINT")
+	if endpoint == "" {
+		t.Skip("Set RAGFLOW_TEST_MINIO_ENDPOINT to run MinIO integration tests")
+	}
+	config := &server.MinioConfig{
+		Host:     endpoint,
+		User:     os.Getenv("RAGFLOW_TEST_MINIO_USER"),
+		Password: os.Getenv("RAGFLOW_TEST_MINIO_PASSWORD"),
+		Secure:   false,
+	}
+	if config.User == "" || config.Password == "" {
+		t.Fatal("Configured MinIO tests require RAGFLOW_TEST_MINIO_USER and RAGFLOW_TEST_MINIO_PASSWORD")
 	}
 	storage, err := NewMinioStorage(config)
 	if err != nil {
-		t.Skipf("Skipping test: failed to connect to MinIO: %v", err)
+		t.Fatalf("Failed to construct configured MinIO client: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := storage.client.ListBuckets(ctx); err != nil {
+		t.Fatalf("Configured MinIO test service is unreachable or credentials were rejected: %v", err)
 	}
 	return storage
 }
 
+func newMinioTestBucket(t *testing.T, storage *MinioStorage) string {
+	t.Helper()
+	suffix := make([]byte, 12)
+	if _, err := rand.Read(suffix); err != nil {
+		t.Fatalf("Failed to generate test bucket name: %v", err)
+	}
+	bucket := fmt.Sprintf("ragflow-test-%x", suffix)
+	t.Cleanup(func() {
+		if storage.BucketExists(bucket) {
+			if err := storage.RemoveBucket(bucket); err != nil {
+				t.Errorf("Failed to clean up test bucket %s: %v", bucket, err)
+			}
+		}
+	})
+	return bucket
+}
+
 func TestNewMinioStorage(t *testing.T) {
-	rootDir := utility.GetProjectRoot()
-	t.Chdir(rootDir)
-
-	config, err := getMinioConfig()
-	if err != nil {
-		t.Skipf("Skipping test: failed to get MinIO configuration: %v", err)
-		return
-	}
-
-	storage, err := NewMinioStorage(config)
-	if err != nil {
-		t.Skipf("Skipping test: failed to connect to MinIO: %v", err)
-	}
+	storage := newTestMinioStorage(t)
 
 	if storage == nil {
 		t.Error("Expected storage to be non-nil")
@@ -138,7 +120,7 @@ func TestMinioStorage_Health(t *testing.T) {
 func TestMinioStorage_PutAndGet(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := "test-bucket"
+	bucket := newMinioTestBucket(t, storage)
 	key := "test-file.txt"
 	content := []byte("Hello, MinIO Test!")
 
@@ -168,7 +150,7 @@ func TestMinioStorage_PutAndGet(t *testing.T) {
 func TestMinioStorage_Put_EmptyData(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := "test-bucket"
+	bucket := newMinioTestBucket(t, storage)
 	key := "empty-file.txt"
 	content := []byte{}
 
@@ -190,7 +172,7 @@ func TestMinioStorage_Put_EmptyData(t *testing.T) {
 func TestMinioStorage_Put_LargeData(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := "test-bucket"
+	bucket := newMinioTestBucket(t, storage)
 	key := "large-file.bin"
 	// Create 1MB of data
 	content := make([]byte, 1024*1024)
@@ -219,7 +201,7 @@ func TestMinioStorage_Put_LargeData(t *testing.T) {
 func TestMinioStorage_Get_NonExistent(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := "test-bucket"
+	bucket := newMinioTestBucket(t, storage)
 	key := "non-existent-file.txt"
 
 	_, err := storage.Get(bucket, key)
@@ -231,7 +213,7 @@ func TestMinioStorage_Get_NonExistent(t *testing.T) {
 func TestMinioStorage_Remove(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := "test-bucket"
+	bucket := newMinioTestBucket(t, storage)
 	key := "file-to-delete.txt"
 	content := []byte("Delete me")
 
@@ -263,7 +245,7 @@ func TestMinioStorage_Remove(t *testing.T) {
 func TestMinioStorage_Remove_NonExistent(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := "test-bucket"
+	bucket := newMinioTestBucket(t, storage)
 	key := "non-existent-file.txt"
 
 	// Removing a non-existent object should not error
@@ -276,7 +258,7 @@ func TestMinioStorage_Remove_NonExistent(t *testing.T) {
 func TestMinioStorage_ObjExist(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := "test-bucket"
+	bucket := newMinioTestBucket(t, storage)
 	key := "existence-test.txt"
 	content := []byte("Test content")
 
@@ -305,7 +287,7 @@ func TestMinioStorage_ObjExist(t *testing.T) {
 func TestMinioStorage_GetPresignedURL(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := "test-bucket"
+	bucket := newMinioTestBucket(t, storage)
 	key := "presigned-test.txt"
 	content := []byte("Presigned URL test content")
 
@@ -337,7 +319,7 @@ func TestMinioStorage_GetPresignedURL(t *testing.T) {
 func TestMinioStorage_GetPresignedURL_NonExistent(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := "test-bucket"
+	bucket := newMinioTestBucket(t, storage)
 	key := "non-existent-presigned.txt"
 
 	_, err := storage.GetPresignedURL(bucket, key, 5*time.Minute)
@@ -349,7 +331,7 @@ func TestMinioStorage_GetPresignedURL_NonExistent(t *testing.T) {
 func TestMinioStorage_BucketExists(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := fmt.Sprintf("test-bucket-exists-%d", time.Now().Unix())
+	bucket := newMinioTestBucket(t, storage)
 
 	// Check non-existent bucket
 	exists := storage.BucketExists(bucket)
@@ -376,7 +358,7 @@ func TestMinioStorage_BucketExists(t *testing.T) {
 func TestMinioStorage_RemoveBucket(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := fmt.Sprintf("test-bucket-remove-%d", time.Now().Unix())
+	bucket := newMinioTestBucket(t, storage)
 
 	// Create bucket with some objects
 	err := storage.Put(bucket, "file1.txt", []byte("content1"))
@@ -411,9 +393,9 @@ func TestMinioStorage_RemoveBucket(t *testing.T) {
 func TestMinioStorage_Copy(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	srcBucket := "test-bucket-src"
+	srcBucket := newMinioTestBucket(t, storage)
 	srcKey := "source-file.txt"
-	destBucket := "test-bucket-dest"
+	destBucket := newMinioTestBucket(t, storage)
 	destKey := "copied-file.txt"
 	content := []byte("Content to copy")
 
@@ -453,9 +435,9 @@ func TestMinioStorage_Copy(t *testing.T) {
 func TestMinioStorage_Copy_NonExistentSource(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	srcBucket := "test-bucket-src"
+	srcBucket := newMinioTestBucket(t, storage)
 	srcKey := "non-existent-source.txt"
-	destBucket := "test-bucket-dest"
+	destBucket := newMinioTestBucket(t, storage)
 	destKey := "should-not-exist.txt"
 
 	success := storage.Copy(srcBucket, srcKey, destBucket, destKey)
@@ -474,9 +456,9 @@ func TestMinioStorage_Copy_NonExistentSource(t *testing.T) {
 func TestMinioStorage_Move(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	srcBucket := "test-bucket-src"
+	srcBucket := newMinioTestBucket(t, storage)
 	srcKey := "file-to-move.txt"
-	destBucket := "test-bucket-dest"
+	destBucket := newMinioTestBucket(t, storage)
 	destKey := "moved-file.txt"
 	content := []byte("Content to move")
 
@@ -521,9 +503,9 @@ func TestMinioStorage_Move(t *testing.T) {
 func TestMinioStorage_Move_NonExistentSource(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	srcBucket := "test-bucket-src"
+	srcBucket := newMinioTestBucket(t, storage)
 	srcKey := "non-existent-source.txt"
-	destBucket := "test-bucket-dest"
+	destBucket := newMinioTestBucket(t, storage)
 	destKey := "should-not-exist.txt"
 
 	success := storage.Move(srcBucket, srcKey, destBucket, destKey)
@@ -535,7 +517,7 @@ func TestMinioStorage_Move_NonExistentSource(t *testing.T) {
 func TestMinioStorage_MultipleObjectsInBucket(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := fmt.Sprintf("test-multi-%d", time.Now().Unix())
+	bucket := newMinioTestBucket(t, storage)
 	numObjects := 10
 
 	// Create multiple objects
@@ -581,7 +563,7 @@ func TestMinioStorage_MultipleObjectsInBucket(t *testing.T) {
 func TestMinioStorage_SpecialCharactersInKey(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := "test-bucket"
+	bucket := newMinioTestBucket(t, storage)
 	specialKeys := []string{
 		"file with spaces.txt",
 		"file-with-dashes.txt",
@@ -618,7 +600,7 @@ func TestMinioStorage_SpecialCharactersInKey(t *testing.T) {
 func TestMinioStorage_TenantID(t *testing.T) {
 	storage := newTestMinioStorage(t)
 
-	bucket := "test-bucket"
+	bucket := newMinioTestBucket(t, storage)
 	key := "tenant-test.txt"
 	content := []byte("Tenant test content")
 	tenantID := "tenant-123"

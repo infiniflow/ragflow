@@ -229,16 +229,44 @@ declare namespace AdminService {
     visible_sections: import('@/constants/navigation').NavigationSection[];
   };
 
-  export type BusinessDocumentsEvaSpace = {
-    connector_id: string;
-    connector_name: string;
-    project_name: string;
+  export type AccessGroup = {
+    id: string;
+    name: string;
+    description: string;
+    user_ids: string[];
+    dataset_ids: string[];
+    sections: import('@/constants/navigation').NavigationSection[];
+  };
+
+  export type AccessGroupInput = Omit<AccessGroup, 'id'>;
+
+  export type AccessGroupOptions = {
+    users: Array<
+      Pick<ListUsersItem, 'id' | 'email' | 'nickname' | 'is_superuser'>
+    >;
+    datasets: Array<{ id: string; name: string; tenant_id: string }>;
+    sections: import('@/constants/navigation').NavigationSection[];
+  };
+
+  export type BusinessDocumentsEvaConnection = {
+    api_base_url: string;
+    web_base_url: string;
+    project_id: string;
+    verify_ssl: boolean;
+    include_archived: boolean;
+    token_configured: boolean;
   };
 
   export type BusinessDocumentsSettings = {
-    eva_connector_id: string | null;
-    eva_spaces: BusinessDocumentsEvaSpace[];
-    selected_space_available: boolean;
+    eva_connection: BusinessDocumentsEvaConnection;
+  };
+
+  export type BusinessDocumentsEvaConnectionInput = Omit<
+    BusinessDocumentsEvaConnection,
+    'token_configured'
+  > & {
+    eva_api_token?: string;
+    clear_token?: boolean;
   };
 
   export type AuditEventSource =

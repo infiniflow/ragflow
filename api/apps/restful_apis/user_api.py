@@ -416,18 +416,28 @@ async def user_profile():
 
 
 def _accessible_eva_profile_connectors(user_id: str) -> list:
+    from api.db.services.business_document_settings_service import get_documents_eva_connection
     from api.db.db_models import Connector
     from api.db.services.connector_service import ConnectorService
     from common.data_source.config import DocumentSource
 
-    return [connector for connector in Connector.select().where(Connector.source == DocumentSource.EVA_WIKI.value).order_by(Connector.name.asc()) if ConnectorService.accessible(connector.id, user_id)]
+    connection = get_documents_eva_connection()
+    connectors = [
+        connector for connector in Connector.select().where(Connector.source == DocumentSource.EVA_WIKI.value).order_by(Connector.name.asc()) if ConnectorService.accessible(connector.id, user_id)
+    ]
+    return ([connection] if connection else []) + [connector for connector in connectors if not connection or connector.id != connection.id]
 
 
 def _eva_profile_connector(connector_id: str, user_id: str):
+    from api.db.services.business_document_settings_service import get_documents_eva_connection
     from api.db.services.connector_service import ConnectorService
     from common.data_source.config import DocumentSource
 
-    found, connector = ConnectorService.get_by_id(str(connector_id or "").strip())
+    connector_id = str(connector_id or "").strip()
+    connection = get_documents_eva_connection()
+    if connection and connection.id == connector_id:
+        return connection
+    found, connector = ConnectorService.get_by_id(connector_id)
     if not found or connector.source != DocumentSource.EVA_WIKI.value or not ConnectorService.accessible(connector.id, user_id):
         return None
     return connector

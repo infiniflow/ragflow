@@ -13,6 +13,7 @@
     "preview": "vite preview",
     "storybook": "storybook dev -p 6006",
     "test": "jest --no-cache --coverage",
+    "test:focused": "jest --no-cache --no-coverage",
     "type-check": "tsc --noEmit"
   },
   "overrides": {
