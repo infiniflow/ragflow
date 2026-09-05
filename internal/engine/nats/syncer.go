@@ -239,7 +239,7 @@ func (n *NatsEngine) SubscribeSyncerTasks(ctx context.Context, handler func(comm
 	}
 
 	consumeCtx, err := consumer.Consume(func(msg jetstream.Msg) {
-		handler(NewNatsMessageHandle(msg, consumer.CachedInfo().Config.BackOff))
+		handler(newNatsMessageHandle(msg, consumer.CachedInfo().Config.BackOff))
 	})
 	if err != nil {
 		return err

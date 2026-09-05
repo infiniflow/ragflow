@@ -268,7 +268,7 @@ func (n *NatsEngine) GetMessages(messageCount int) ([]common.TaskHandle, error) 
 		return nil, fmt.Errorf("failed to fetch messages: %w", err)
 	}
 	for msg := range messages.Messages() {
-		resultMessages = append(resultMessages, NewNatsMessageHandle(msg, n.consumer.CachedInfo().Config.BackOff))
+		resultMessages = append(resultMessages, newNatsMessageHandle(msg, n.consumer.CachedInfo().Config.BackOff))
 	}
 	return resultMessages, nil
 }
@@ -286,7 +286,7 @@ type NatsMessageHandle struct {
 	backOff []time.Duration
 }
 
-func NewNatsMessageHandle(message jetstream.Msg, backOff []time.Duration) *NatsMessageHandle {
+func newNatsMessageHandle(message jetstream.Msg, backOff []time.Duration) *NatsMessageHandle {
 	return &NatsMessageHandle{
 		message: message,
 		backOff: slices.Clone(backOff),

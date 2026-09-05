@@ -25,7 +25,7 @@ func TestTaskNackUsesConsumerBackOff(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			msg := &retryTestMessage{metadata: &jetstream.MsgMetadata{NumDelivered: tc.delivered}}
 			schedule := []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, 60 * time.Second}
-			handle := NewNatsMessageHandle(msg, schedule)
+			handle := newNatsMessageHandle(msg, schedule)
 			// A consumer configuration refresh must not mutate an in-flight task's policy.
 			clear(schedule)
 			if err := handle.Nack(); err != nil {
@@ -41,7 +41,7 @@ func TestTaskNackUsesConsumerBackOff(t *testing.T) {
 func TestTaskNackWithoutBackOffPreservesImmediateRetry(t *testing.T) {
 	wantErr := errors.New("send nak failed")
 	msg := &retryTestMessage{ackErr: wantErr}
-	if err := NewNatsMessageHandle(msg, nil).Nack(); !errors.Is(err, wantErr) {
+	if err := newNatsMessageHandle(msg, nil).Nack(); !errors.Is(err, wantErr) {
 		t.Fatalf("Nack error = %v, want %v", err, wantErr)
 	}
 	if msg.immediateNacks != 1 || msg.delayedNacks != 0 {
@@ -59,7 +59,7 @@ func TestTaskNackMetadataFailureLeavesMessageUnsettled(t *testing.T) {
 		{"zero delivery count", &retryTestMessage{metadata: &jetstream.MsgMetadata{}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := NewNatsMessageHandle(tc.msg, []time.Duration{time.Second}).Nack()
+			err := newNatsMessageHandle(tc.msg, []time.Duration{time.Second}).Nack()
 			if err == nil {
 				t.Fatal("Nack succeeded with invalid delivery metadata")
 			}
@@ -76,7 +76,7 @@ func TestTaskNackMetadataFailureLeavesMessageUnsettled(t *testing.T) {
 func TestTaskNackReturnsDelayedNakError(t *testing.T) {
 	wantErr := errors.New("connection closed")
 	msg := &retryTestMessage{metadata: &jetstream.MsgMetadata{NumDelivered: 1}, ackErr: wantErr}
-	if err := NewNatsMessageHandle(msg, []time.Duration{time.Second}).Nack(); !errors.Is(err, wantErr) {
+	if err := newNatsMessageHandle(msg, []time.Duration{time.Second}).Nack(); !errors.Is(err, wantErr) {
 		t.Fatalf("Nack error = %v, want %v", err, wantErr)
 	}
 	if msg.delayedNacks != 1 || msg.immediateNacks != 0 {
@@ -86,6 +86,8 @@ func TestTaskNackReturnsDelayedNakError(t *testing.T) {
 
 // Exercise the public task path against an embedded JetStream server. A plain
 // Nak would redeliver immediately even though the consumer specifies BackOff.
+// The server runs in-process with temporary storage and automatic cleanup;
+// no external service is required by this default-tier test.
 func TestTaskRetriesFollowExistingConsumerBackOff(t *testing.T) {
 	engine := setupSyncerNATSEngine(t)
 	t.Cleanup(engine.nc.Close)
