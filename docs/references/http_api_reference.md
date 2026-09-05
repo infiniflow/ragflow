@@ -134,7 +134,12 @@ curl --request POST \
   - `reference_metadata`: `object` - include document metadata in each reference chunk.
     - `include`: `boolean` - enable document metadata in reference chunks.
     - `fields`: `list[string]` - optional allowlist of metadata keys. Omit to include all. Use an empty list to include none.
-  - `metadata_condition`: `object` - metadata filter conditions applied to retrieval results.
+  - `metadata_condition`: `object` - metadata filter conditions applied to retrieval results before generation. Only chunks whose parent document's metadata satisfies the conditions are retrieved.
+    - `logic`: `string` - how multiple conditions are combined: `"and"` (default) requires every condition to match; `"or"` requires at least one to match.
+    - `conditions`: `list[object]` - the metadata filters to apply. Each condition object contains:
+      - `name`: `string` - the metadata key to filter on. Must match a key present in the document's metadata.
+      - `comparison_operator`: `string` - how `value` is compared against the metadata key. Supported operators: `"is"`, `"not is"`, `"contains"`, `"not contains"`, `"in"`, `"not in"`, `"start with"`, `"end with"`, `"empty"`, `"not empty"`, `">"`, `"<"`, `">="`, `"<="`, `"!="`.
+      - `value`: `string` - the value compared against the metadata key. Ignored by the `"empty"` and `"not empty"` operators.
 
 #### Response
 
