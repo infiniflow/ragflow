@@ -21,6 +21,19 @@ config:
       never replace a title with a fact or conclusion. Do not downgrade an actual
       chapter heading to a fact. For other entities, use concise atomic,
       source-grounded names and descriptions. Do not invent.
+    # Extra output keys rendered into the Response Format skeleton. A key
+    # described only inside a type's `rule` is never emitted by the model — it
+    # must appear in the skeleton (see _struct_render_type_fields).
+    output_fields:
+      - name: evidence
+        type: list
+        required: false
+        description: >-
+          verbatim source sentences supporting this claim, copied exactly.
+          Emit only for type `fact` or `conclusion`; omit for `title`.
+        shape: >-
+          [{"quote": "<verbatim source sentence, copied exactly>",
+          "chunk_id": "<source chunk id the sentence was taken from>"}]
     fields:
       - type: title
         description: the heading text (clean, no page numbers or leader dots)
@@ -40,10 +53,18 @@ config:
         rule: |
           - Preserve important dates, numbers, names, units, qualifiers, and values.
           - Do not merge unrelated facts into one entity.
+          - Emit an `evidence` field: the verbatim source sentence this fact rests
+            on, copied exactly (no paraphrase, no truncation, no added words).
+          - Set `evidence.chunk_id` to the source chunk the sentence was taken
+            from. Omit `evidence` entirely when no single sentence supports the
+            fact — a quote that cannot be verified is worse than none.
       - type: conclusion
         description: a source-supported finding, outcome, or conclusion belonging to a title
         rule: |
           - State the conclusion concisely and do not add unsupported interpretation.
+          - Emit an `evidence` field: the verbatim source sentence supporting this
+            conclusion, copied exactly, with `evidence.chunk_id` set to its source
+            chunk. Omit `evidence` when no single sentence supports it.
   relation:
     description: >-
       You are an expert logical reasoning assistant specializing in document

@@ -25,7 +25,10 @@ import {
   IDocumentInfo,
   IDocumentInfoFilter,
 } from '@/interfaces/database/document';
-import { IStructureGraphResponse } from '@/interfaces/database/document-structure';
+import {
+  IClaimsResponse,
+  IStructureGraphResponse,
+} from '@/interfaces/database/document-structure';
 import {
   IChangeParserConfigRequestBody,
   IDocumentMetaRequestBody,
@@ -99,6 +102,20 @@ export const DocumentStructureKeys = {
       datasetId,
       documentId,
       keywords,
+    ] as const,
+  claims: (
+    datasetId: string,
+    documentId: string,
+    templateId: string | undefined,
+    chunkIds: string[] | undefined,
+  ) =>
+    [
+      DocumentStructureApiAction.FetchDocumentStructureGraph,
+      'claims',
+      datasetId,
+      documentId,
+      templateId,
+      ...(chunkIds ?? []),
     ] as const,
 };
 
@@ -820,6 +837,43 @@ export function useFetchDocumentStructureGraph(keywords?: string) {
     documentId,
     keywords,
   );
+
+  return { data, loading };
+}
+
+// Claims are fetched per leaf cluster on demand: the tree shows only a count
+// badge, so the payload (statement + verbatim evidence) loads when the user
+// opens that cluster. chunkIds scopes the query server-side.
+export function useFetchDocumentClaims(
+  chunkIds: string[] | undefined,
+  templateId: string | undefined,
+) {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const enabled = !!datasetId && !!documentId && !!chunkIds?.length;
+
+  const { data, isFetching: loading } = useQuery<IClaimsResponse | null>({
+    queryKey: DocumentStructureKeys.claims(
+      datasetId,
+      documentId,
+      templateId,
+      chunkIds,
+    ),
+    enabled,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } =
+        await documentStructureService.getDocumentStructureClaims(
+          datasetId,
+          documentId,
+          {
+            chunk_ids: chunkIds?.join(','),
+            template_id: templateId,
+            limit: 100,
+          },
+        );
+      return data?.data ?? null;
+    },
+  });
 
   return { data, loading };
 }

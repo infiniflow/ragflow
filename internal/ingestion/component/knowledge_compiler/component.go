@@ -608,6 +608,30 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 			// same storage contract as the structure variant, so both share
 			// applyStructureGraphColumns.
 			return applyStructureGraphColumns(doc, p, kind)
+		case "claim":
+			// Claim rows are searchable on their own (global KNN) but are NOT
+			// part of the structure graph: they carry no relation, and a
+			// relation-less row would be rendered as a root in the artifacts
+			// tree. So they deliberately skip knowledge_graph_kwd, which keeps
+			// them out of the artifacts query (it filters
+			// knowledge_graph_kwd=["entity","relation"]) without a frontend
+			// change. Python mirrors this in _struct_upsert_tree_claim_rows.
+			if v := metaString(p.Meta, "name"); v != "" {
+				if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
+					return err
+				}
+			}
+			if v := metaString(p.Meta, "entity_type"); v != "" {
+				if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
+					return err
+				}
+			}
+			if v, ok := metaInt(p.Meta, "mention_count"); ok {
+				if err := doc.SetExtraValue("mention_count_int", v); err != nil {
+					return err
+				}
+			}
+			return nil
 		default:
 			// RAPTOR summary/root rows: raptor_kwd tags the node kind;
 			// raptor_layer_int records tree depth.

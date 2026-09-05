@@ -453,6 +453,11 @@ class Compiler(ProcessBase, LLM):
             if bool(raptor_cfg.get("rechunk")):
                 self._compile_progress(msg="Compiler: tree rechunking is not supported for in-memory pipeline chunks; keeping original chunks.")
 
+            # Claims are keyed by chunk id on the tree dict (see
+            # RaptorService.build_doc_tree); pull them off before projecting so
+            # the graph blob stays a pure structure payload.
+            claims_by_chunk = tree.pop("claims_by_chunk", None) if isinstance(tree, dict) else None
+
             await rewrite_duplicate_tree_names(tree, pooled_chat_mdl)
             after_graph = raptor_tree_to_graph(tree)
             try:
@@ -471,6 +476,25 @@ class Compiler(ProcessBase, LLM):
                     kb_id,
                     doc_id,
                     doc_name,
+                    compile_kwd="tree",
+                    compilation_template_id=template_id,
+                )
+                # Claims become their own searchable rows so global KNN can hit
+                # them directly instead of only via beam descent. Best-effort:
+                # a failure here must not cost us the tree. Called even when
+                # there are no claims, so a recompile that yields none clears
+                # the rows a previous run wrote.
+                from rag.advanced_rag.knowlege_compile.structure import (
+                    _struct_upsert_tree_claim_rows,
+                )
+
+                await _struct_upsert_tree_claim_rows(
+                    claims_by_chunk,
+                    tenant_id,
+                    kb_id,
+                    doc_id,
+                    doc_name,
+                    embedding_model,
                     compile_kwd="tree",
                     compilation_template_id=template_id,
                 )

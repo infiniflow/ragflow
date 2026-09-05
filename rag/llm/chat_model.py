@@ -226,6 +226,17 @@ def _apply_model_family_policies(
         elif provider == SupportedLiteLLMProvider.ZHIPU_AI and "glm" in model_name_lower and thinking_type:
             _pop_thinking_controls()
             sanitized_gen_conf["thinking"] = {"type": thinking_type}
+        elif provider == SupportedLiteLLMProvider.MiniMax:
+            # MiniMax reasoning models (MiniMax-M1/M3) read `thinking` in the
+            # request body and ignore `reasoning_effort`. `thinking` is NOT a
+            # standard OpenAI-compatible param, so LiteLLM's drop_params=True
+            # would drop a top-level key; it must ride in extra_body (merged
+            # verbatim into the body). Without this, MiniMax keeps
+            # chain-of-thought on, which slows extraction and can hang a batch
+            # on a long COT.
+            if thinking_type:
+                _pop_thinking_controls()
+                _merge_extra_body(sanitized_gen_conf, {"thinking": {"type": thinking_type}})
 
         return sanitized_gen_conf, sanitized_kwargs
 
@@ -238,6 +249,7 @@ def _move_litellm_provider_body_fields(provider: SupportedLiteLLMProvider | str 
         SupportedLiteLLMProvider.Dashscope: {"enable_thinking"},
         SupportedLiteLLMProvider.Moonshot: {"thinking"},
         SupportedLiteLLMProvider.ZHIPU_AI: {"thinking"},
+        SupportedLiteLLMProvider.MiniMax: {"thinking"},
     }.get(provider, set())
 
     body = completion_args.get("extra_body")

@@ -15,6 +15,7 @@
 #
 import asyncio
 import logging
+import os
 import re
 
 import numpy as np
@@ -24,6 +25,7 @@ from common.connection_utils import timeout
 from common.exceptions import TaskCanceledException
 from common.token_utils import truncate
 from rag.graphrag.utils import (
+    LoopLocalSemaphore,
     chat_limiter,
     get_embed_cache,
     get_llm_cache,
@@ -33,6 +35,349 @@ from rag.graphrag.utils import (
 from common.misc_utils import thread_pool_exec
 
 from ._common import knowledge_compile_gen_conf
+
+# Claim extraction has its own concurrency budget, decoupled from the global
+# chat_limiter (which also serves clustering and embedding). MiniMax's API only
+# tolerates ~4 concurrent requests, so default to 4 and let it be overridden via
+# MAX_CONCURRENT_CLAIM_CHATS. On rate-limit errors each call backs off and retries
+# instead of letting the limiter itself scale up and hammer the API.
+_claim_limiter = LoopLocalSemaphore(int(os.environ.get("MAX_CONCURRENT_CLAIM_CHATS", 4)))
+
+# Claim extraction runs before clustering so the cluster summaries can be built
+# from the claims of their member chunks instead of the raw chunk text (see
+# ``build_doc_tree`` and rag/advanced_rag/knowlege_compile/claim_evidence.md
+# §7). Claims are the atoms the tree is later read through; the raw text is only
+# used as a fallback when a chunk yields none.
+#
+# Claims are extracted in small fixed-size batches (2-4 chunks per call, see
+# ``_pack_claim_batches``) run in parallel under a dedicated concurrency budget
+# (``_claim_limiter``). Each chunk in a batch is marked as a TARGET,
+# and every claim is attributed to the chunk it was quoted from; the validation
+# gate then drops any quote that cannot be located in that chunk. One chunk per
+# call trades LLM-call count for per-target recall and exact quote validation.
+
+# The claim-extraction system prompt. ``extract_claims_for_chunks`` renders one
+# or more ``<TARGET>`` chunks; each is a chunk the model must harvest claims
+# from. Every claim carries the id of the chunk it was taken from, so quotes are
+# validated against the right text and cross-chunk contamination is caught by
+# the gate.
+_CLAIM_EXTRACTION_PROMPT = """## Task
+You are a high-recall claim harvester for the TARGET chunks below. For EACH
+TARGET chunk, extract EVERY explicit atomic claim that chunk supports: factual
+assertions AND explicitly expressed opinions, beliefs, judgments, assessments,
+recommendations, preferences, intentions, predictions, and hypotheses. Do not
+rank claims, summarize, merge claims, or omit a claim because it seems minor.
+
+A claim must be:
+- Self-contained: readable without the surrounding text, with named subjects.
+  Never write "the article", "the document", "it says", or a bare pronoun.
+  Resolve the referent to its name when attribution makes the claim clearer.
+- Faithful: stated only if that TARGET chunk supports it. Never invent,
+  strengthen, or infer. Preserve modality, uncertainty, negation, and
+  attribution exactly.
+- Atomic: exactly one fact. Split compound sentences.
+
+## Response Format
+Reply with a single JSON object: {"items": [{"type": "claim", "name": "<the claim, one sentence>", "description": "<optional restatement for retrieval>", "source_chunk_ids": ["<CHUNK_ID it was taken from>"], "evidence": [{"quote": "<the verbatim source sentence>", "chunk_id": "<CHUNK_ID it was taken from>"}]}, ...]}.
+
+Rules:
+- `evidence.quote` MUST be a CONTIGUOUS verbatim substring of the chunk cited
+  by `evidence.chunk_id`: same words, same order, no paraphrase, no truncation,
+  no added words. A quote that cannot be found verbatim is rejected downstream,
+  so never restate.
+- `evidence.chunk_id` and `source_chunk_ids` MUST identify the exact chunk the
+  claim and quote came from. Never cross-attribute a quote to a different chunk.
+- Keep each quote concise and under 240 characters.
+- For tables, infoboxes and bullet lists, the quote MUST be the raw cell/row
+  text exactly as it appears — keep its separators and order. Do NOT turn a
+  table row like "Starring | Penn Badgley | Elizabeth Lail" into a sentence
+  like "Starring Penn Badgley Elizabeth Lail"; that is a paraphrase and will
+  be rejected.
+- Preserve numbers, units, dates, names and qualifiers exactly.
+- Distribute claims across all TARGET chunks; do not skip a chunk because you
+  reached the cap — the cap is per chunk, not per batch.
+- If a TARGET chunk contains no extractable assertion, emit no claim for it.
+- Keep claims in the same language as the source.
+Return JSON only, no commentary."""
+
+
+def _render_claim_source(batch: list[tuple]) -> str:
+    """Render the user prompt body for one claim-extraction call.
+
+    Every chunk in the batch is marked as a TARGET, so the model harvests claims
+    for all of them in one call. Each chunk carries its own id, which both pins
+    the claim attribution and lets the validation gate check the quote against
+    the right text.
+    """
+    lines = ["## Source Text"]
+    for cid, text in batch:
+        lines.append(f"[CHUNK_ID: {cid} (TARGET)]")
+        lines.append(text)
+        lines.append("[END_CHUNK]")
+    lines.append("\n## Output (JSON only):")
+    return "\n".join(lines)
+
+
+# Chunks per claim-extraction call. Empirically 2-4 is the sweet spot: a single
+# chunk under-utilises the call (one clean target but ~75s), while packing too
+# many raises latency superlinearly and makes the model drop trailing chunks.
+# 4 * ~512 tok = ~2k tok/call, which stays inside the attention window.
+_CLAIM_BATCH_SIZE = 4
+
+
+def _pack_claim_batches(entries: list[tuple]) -> list[list[tuple]]:
+    """Group chunks into fixed-size batches (``_CLAIM_BATCH_SIZE``).
+
+    ``entries`` is ``(chunk_id, text)``. Batches of 2-4 chunks cut the LLM-call
+    count several-fold versus one chunk per call while keeping each call small
+    enough that the model still covers every target (see _CLAIM_BATCH_SIZE).
+    """
+    bs = max(1, int(_CLAIM_BATCH_SIZE))
+    return [entries[i : i + bs] for i in range(0, len(entries), bs)]
+
+
+async def extract_claims_for_chunks(
+    chunks: list[tuple],
+    llm_model,
+    *,
+    task_id: str = "",
+    callback=None,
+) -> dict[str, list[dict]]:
+    """Extract claim/evidence pairs for RAPTOR's layer-0 chunks.
+
+    ``chunks`` is the ``(text, vec, source_chunk_ids)`` list handed to the tree
+    builder. Returns ``{chunk_id: [claim_payload, ...]}`` keyed by the chunk the
+    claim came from, so the builder can look up a cluster's claims by its
+    members' ids.
+
+    Chunks are grouped into fixed-size batches (see ``_pack_claim_batches``) and
+    all batches run in parallel, gated by the shared ``chat_limiter`` so the
+    LLM-call concurrency stays bounded. Each claim is attributed to the chunk it
+    was quoted from (model-provided ``source_chunk_ids`` filtered to the batch,
+    then the evidence gate validates the quote against that chunk's text).
+
+    Best-effort: extraction never fails the build. On error a batch simply
+    contributes no claims and the tree falls back to raw text for it.
+    """
+
+    if not chunks or llm_model is None:
+        return {}
+
+    entries = []
+    for c in chunks:
+        text = c[0]
+        ids = c[2] if len(c) > 2 and isinstance(c[2], (list, tuple)) else []
+        cid = next((str(s) for s in ids if s), "")
+        if text and cid:
+            entries.append((cid, text))
+    if not entries:
+        return {}
+
+    batches = _pack_claim_batches(entries)
+
+    claims_by_chunk: dict[str, list[dict]] = {}
+
+    total_chunks = len(entries)
+    if not total_chunks:
+        return claims_by_chunk
+
+    # Fan every batch's claim extraction out in parallel. Each task is gated by
+    # its own concurrency budget (_claim_limiter, default 4) so we never exceed
+    # the LLM API's limit even though we launch one task per batch. This turns
+    # the old serial loop into ~ceil(batches / concurrency) rounds.
+    tasks = []
+    batch_size_of: dict = {}
+    for batch in batches:
+        # Hand each batch only its own text. The gate falls back to scanning
+        # every chunk it is given when a quote cites none, so passing the whole
+        # document would let a quote match an unrelated chunk that merely
+        # happens to contain the same sentence — and would silently attribute
+        # the claim to the wrong source.
+        batch_text_by_id = {cid: text for cid, text in batch}
+        t = asyncio.create_task(_extract_claim_for_chunk(batch, llm_model, batch_text_by_id))
+        tasks.append(t)
+        batch_size_of[t] = len(batch)
+    processed = 0
+    try:
+        # asyncio.as_completed returns an ASYNC iterator (3.10+); a plain ``for``
+        # would never await ``_wait_for_one`` and silently break extraction.
+        async for coro in asyncio.as_completed(tasks):
+            # Progress counts chunks (the user-visible unit), not batches — a
+            # batch holds _CLAIM_BATCH_SIZE chunks, so show the real figure.
+            processed += batch_size_of[coro]
+            if callback:
+                callback(prog=processed / total_chunks, msg=f"tree-template: extracting claims for chunk {processed}/{total_chunks}")
+            try:
+                result = await coro
+            except TaskCanceledException:
+                for t in tasks:
+                    t.cancel()
+                raise
+            except Exception as exc:
+                logging.warning(f"[RAPTOR] claim extraction failed for a chunk: {exc}")
+                continue
+            if result:
+                _, claims = result
+                # A batch covers several chunks, so group each claim under its
+                # own source chunk id (validated in _extract_claim_for_chunk).
+                for cl in claims:
+                    cid = (cl.get("source_chunk_ids") or [None])[0]
+                    if cid:
+                        claims_by_chunk.setdefault(cid, []).append(cl)
+    finally:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+
+    if callback:
+        callback(prog=1.0, msg=f"Extracted claims for {len(claims_by_chunk)} chunk(s)")
+    return claims_by_chunk
+
+
+# Substrings that mean "slow down and retry" rather than "permanent failure".
+_RETRYABLE_LLM_ERR = (
+    "rate limit",
+    "429",
+    "tpm limit",
+    "too many requests",
+    "requests per minute",
+    "server",
+    "503",
+    "502",
+    "504",
+    "500",
+    "unavailable",
+    "timeout",
+    "timed out",
+)
+
+
+async def _extract_claim_for_chunk(batch, llm_model, text_by_id):
+    """Run claim extraction for one batch of chunks (``_CLAIM_BATCH_SIZE`` of them).
+
+    One LLM call, gated by the shared ``chat_limiter`` so total concurrency stays
+    bounded. On a rate-limit / server / timeout error the call backs off with
+    exponential delay and retries, then gives up and returns ``None`` so the
+    tree falls back to raw text for those chunks.
+
+    Returns ``(label, [claim_payload, ...])`` when the batch yields claims (each
+    claim carries its own validated ``source_chunk_ids``), else ``None``.
+    """
+    from rag.prompts.generator import gen_json
+    from .structure import _struct_apply_evidence_gate
+
+    user = _render_claim_source(batch)
+    batch_ids = {cid for cid, _ in batch}
+
+    ans = None
+    attempt = 0
+    while True:
+        try:
+            async with _claim_limiter:
+                ans = await gen_json(
+                    _CLAIM_EXTRACTION_PROMPT,
+                    user,
+                    llm_model,
+                    knowledge_compile_gen_conf(llm_model),
+                )
+            break
+        except TaskCanceledException:
+            raise
+        except Exception as exc:
+            es = str(exc).lower()
+            retryable = any(k in es for k in _RETRYABLE_LLM_ERR)
+            attempt += 1
+            if not retryable or attempt >= 3:
+                logging.warning(f"[RAPTOR] claim extraction gave up for batch of {len(batch)}: {exc}")
+                return None
+            # Exponential back-off + jitter: slow down so the API stops
+            # rejecting us, rather than hammering it while it recovers.
+            delay = 2.0 * (2 ** (attempt - 1)) * (0.7 + 0.6 * ((attempt * 13) % 10) / 10)
+            logging.warning(f"[RAPTOR] claim extraction retry {attempt}/3 after {delay:.1f}s: {exc}")
+            await asyncio.sleep(delay)
+
+    items = (ans or {}).get("items") if isinstance(ans, dict) else None
+    if not isinstance(items, list):
+        return None
+
+    claims = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name") or "").strip()
+        if not name:
+            continue
+        # A batch holds several chunks, so the model must say which chunk a claim
+        # came from. Keep only ids that are actually in this batch (a hallucinated
+        # id pointing at text the model never saw cannot be validated). Missing
+        # attribution is recovered from the verified evidence below; a claim that
+        # neither the model nor its evidence can place is dropped.
+        src = [str(s) for s in (it.get("source_chunk_ids") or []) if s]
+        it["name"] = name
+        it["type"] = "claim"
+        it["source_chunk_ids"] = [s for s in src if s in batch_ids]
+        if not it.get("description"):
+            it["description"] = name
+        claims.append(it)
+
+    if not claims:
+        return None
+    # Split "the model gave us no quote" from "the gate rejected the quote", so
+    # a low evidence yield can be attributed correctly.
+    emitted = sum(1 for cl in claims if cl.get("evidence"))
+    verified, rejected = _struct_apply_evidence_gate(claims, text_by_id, "soft")
+    logging.info(
+        "[RAPTOR] claim extraction batch=%s chunks=%d claims=%d emitted_evidence=%d verified=%d rejected=%d",
+        ",".join(batch_ids),
+        len(batch),
+        len(claims),
+        emitted,
+        verified,
+        rejected,
+    )
+
+    # Recover attribution from the evidence that survived the gate: the chunk a
+    # quote was located in IS where the claim came from. Falling back to
+    # batch[0][0] instead would file every unattributed claim under an arbitrary
+    # chunk — and after rechunking, under one that no longer exists.
+    attributed: list[dict] = []
+    for cl in claims:
+        if cl.get("source_chunk_ids"):
+            attributed.append(cl)
+            continue
+        derived = next(
+            (e.get("chunk_id") for e in cl.get("evidence") or [] if isinstance(e, dict) and e.get("chunk_id") in batch_ids),
+            None,
+        )
+        if derived is None:
+            logging.info("[RAPTOR] dropped claim with no attributable source: %s", cl.get("name"))
+            continue
+        cl["source_chunk_ids"] = [derived]
+        attributed.append(cl)
+
+    if not attributed:
+        return None
+    return batch[0][0], attributed
+
+
+def format_claims_for_summary(claims: list[dict]) -> str:
+    """Render a chunk's claims as the summary input for its cluster.
+
+    Each claim is rendered with the verbatim quote that backs it, so the
+    abstraction above sees the facts *and* their grounding rather than a
+    reflowed paraphrase.
+    """
+    lines = []
+    for c in claims:
+        name = (c.get("name") or "").strip()
+        if not name:
+            continue
+        quotes = [(e or {}).get("quote", "") for e in (c.get("evidence") or []) if isinstance(e, dict) and e.get("quote")]
+        if quotes:
+            lines.append(f'- {name}\n  Evidence: "{quotes[0]}"')
+        else:
+            lines.append(f"- {name}")
+    return "\n".join(lines)
 
 
 class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
@@ -261,6 +606,35 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 raise RuntimeError(f"RAPTOR aborted after {self._error_count} errors. Last error: {exc}") from exc
             return None
 
+    @staticmethod
+    def _cluster_input_texts(
+        ck_idx: list[int],
+        chunks: list,
+        claims_by_chunk: dict[str, list[dict]] | None,
+        n_originals: int,
+    ) -> list[str]:
+        """Build the summary input for one cluster.
+
+        Layer-0 chunks (``i < n_originals``) that yielded claims contribute
+        their rendered claims; anything else — upper-layer summaries, and
+        chunks with no claims — contributes its text. So only the bottom of the
+        tree is claim-fed, and the abstraction layers above keep summarizing
+        the (now claim-derived) summaries beneath them.
+        """
+        if not claims_by_chunk:
+            return [chunks[i][0] for i in ck_idx]
+        texts = []
+        for i in ck_idx:
+            rendered = ""
+            if i < n_originals:
+                ids = chunks[i][2] if len(chunks[i]) > 2 else []
+                cid = next((str(s) for s in ids if s), "")
+                claims = claims_by_chunk.get(cid) if cid else None
+                if claims:
+                    rendered = format_claims_for_summary(claims)
+            texts.append(rendered or chunks[i][0])
+        return texts
+
     async def __call__(
         self,
         chunks,
@@ -268,8 +642,17 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         callback=None,
         task_id: str = "",
         is_tree: bool = False,
+        claims_by_chunk: dict[str, list[dict]] | None = None,
     ):
         """Build summary chunks and layer boundaries for RAPTOR retrieval.
+
+        ``claims_by_chunk`` maps a layer-0 chunk id to the claims extracted from
+        it (see ``extract_claims_for_chunks``). When supplied, a cluster's
+        summary input is built from its members' claims instead of their raw
+        text — claims are far more compact than the source, so the per-chunk
+        truncation in ``_summarize_texts`` no longer discards content, and the
+        resulting abstraction is guaranteed to agree with the claims attached to
+        the         same cluster. Chunks with no claims fall back to their raw text.
 
         ``chunks`` accepts either the legacy 2-tuple shape
         ``(text, vec)`` or the provenance-carrying 3-tuple shape
@@ -339,7 +722,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             """
             nonlocal chunks
 
-            texts = [chunks[i][0] for i in ck_idx]
+            texts = self._cluster_input_texts(ck_idx, chunks, claims_by_chunk, n_originals)
             result = await self._summarize_texts(texts, callback, task_id)
             if result is not None:
                 # ``dict.fromkeys`` is the cheapest way to de-dup a

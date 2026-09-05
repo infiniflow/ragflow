@@ -72,39 +72,12 @@ func payloadChunkIDs(payload map[string]any) []string {
 	return nil
 }
 
-// payloadDescription is the embedding input for a tree-graph entity/relation:
-// the concatenated string values of every field except description (lists
-// flattened), matching Python _struct_payload_description.
+// payloadDescription is the index text for a tree-graph entity/relation. It
+// delegates to common.PayloadDescription — the shared implementation the
+// structure variant also uses — so both variants index compiled rows the same
+// way and both match Python _struct_payload_description.
 func payloadDescription(payload map[string]any) string {
-	keys := make([]string, 0, len(payload))
-	for k := range payload {
-		if k != "description" {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-	var parts []string
-	for _, k := range keys {
-		switch v := payload[k].(type) {
-		case string:
-			if v != "" {
-				parts = append(parts, v)
-			}
-		case []string:
-			for _, e := range v {
-				if e != "" {
-					parts = append(parts, e)
-				}
-			}
-		case []any:
-			for _, e := range v {
-				if s, ok := e.(string); ok && s != "" {
-					parts = append(parts, s)
-				}
-			}
-		}
-	}
-	return strings.Join(parts, " ")
+	return common.PayloadDescription(payload, nil)
 }
 
 // payloadJSON serialises a payload the way Python's json.dumps(ensure_ascii=
@@ -323,6 +296,125 @@ func buildTreeGraph(ctx context.Context, deps common.Deps, docID string, product
 			"compile_kwd": "tree",
 		},
 	})
+	return out, nil
+}
+
+// sortedKeys returns the claim map's chunk ids in a stable order, so repeated
+// compilations produce the same product sequence (and therefore the same row
+// ids) even though Go map iteration is randomized.
+func sortedKeys(m map[string][]Claim) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// buildTreeClaimProducts turns extracted claims into their own searchable rows.
+//
+// Claims are deliberately NOT part of the structure graph: they carry no
+// relation, and a row with no relation would be rendered as a root in the
+// artifacts tree. They get kind "claim" so the writer can give them
+// entity_type_kwd="claim" while leaving knowledge_graph_kwd unset — which keeps
+// them out of the artifacts query (it filters knowledge_graph_kwd=["entity",
+// "relation"]) without any frontend change.
+//
+// The embedding excludes evidence, matching the page_index claim path and the
+// Python implementation: the geometric layer indexes the claim, not the raw
+// source it was verified against.
+//
+// templateID scopes the row to the compilation template that produced it, like
+// Python's _struct_upsert_tree_claim_rows: it is stamped on the product and
+// mixed into the row id, so two templates that extract the same claim from the
+// same document get two rows instead of overwriting each other — and a
+// template-scoped cleanup can remove one without touching the other.
+func buildTreeClaimProducts(ctx context.Context, deps common.Deps, docID string, claimsByChunk map[string][]Claim, templateID string) ([]common.Product, error) {
+	if len(claimsByChunk) == 0 {
+		return nil, nil
+	}
+	if deps.Embed == nil {
+		return nil, fmt.Errorf("tree: embedder required to build claim rows")
+	}
+
+	var payloads []map[string]any
+	var descs []string
+	for _, chunkID := range sortedKeys(claimsByChunk) {
+		for _, c := range claimsByChunk[chunkID] {
+			name := strings.TrimSpace(c.Name)
+			if name == "" {
+				continue
+			}
+			payload := map[string]any{
+				"type":             "claim",
+				"name":             name,
+				"description":      c.Description,
+				"source_chunk_ids": []string{chunkID},
+			}
+			if len(c.Evidence) > 0 {
+				ev := make([]map[string]any, 0, len(c.Evidence))
+				for _, e := range c.Evidence {
+					ev = append(ev, map[string]any{
+						"quote":    e.Quote,
+						"chunk_id": e.ChunkID,
+						"start":    e.Start,
+						"end":      e.End,
+					})
+				}
+				payload["evidence"] = ev
+			}
+			// Exclusion is the default in payloadDescription, so evidence never
+			// reaches the vector.
+			descs = append(descs, payloadDescription(payload))
+			payloads = append(payloads, payload)
+		}
+	}
+	if len(payloads) == 0 {
+		return nil, nil
+	}
+
+	vecs, err := deps.Embed.Encode(ctx, descs)
+	if err != nil {
+		return nil, err
+	}
+	// One vector per payload, no exceptions: a short read means the vectors no
+	// longer line up with the payloads, and writing claim rows with missing or
+	// mismatched vectors would silently corrupt retrieval. Fail before writing
+	// anything so a bad batch never leaves half-embedded claims behind.
+	if len(vecs) != len(payloads) {
+		return nil, fmt.Errorf("tree: embedder returned %d vector(s) for %d claim payload(s)", len(vecs), len(payloads))
+	}
+
+	out := make([]common.Product, 0, len(payloads))
+	for i, payload := range payloads {
+		vec := vecs[i]
+		content := payloadJSON(payload)
+		// Mirror Python _struct_to_doc_storage_doc, which mixes the template id
+		// into the row-id seed (row_seed_extras): without it two templates that
+		// extract an identical claim from the same document would share a row id
+		// and silently overwrite one another.
+		idParts := []string{content, docID}
+		if templateID != "" {
+			idParts = append(idParts, templateID)
+		}
+		out = append(out, common.Product{
+			ID:         common.StableRowID(idParts...),
+			DocID:      docID,
+			TemplateID: templateID,
+			TenantID:   deps.TenantID,
+			Variant:    common.VariantTree,
+			Content:    content,
+			Vector:     vec,
+			Meta: map[string]any{
+				"kind":             "claim",
+				"compile_kwd":      "tree",
+				"entity_type":      "claim",
+				"name":             payload["name"],
+				"source_chunk_ids": []string{payload["source_chunk_ids"].([]string)[0]},
+				"mention_count":    1,
+			},
+		})
+	}
 	return out, nil
 }
 

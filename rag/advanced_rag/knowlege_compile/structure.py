@@ -479,13 +479,25 @@ def _struct_render_fields(fields: list, language: str) -> Tuple[str, str]:
     return "\n".join(lines), "{ " + ", ".join(skeleton_parts) + " }"
 
 
-def _struct_render_type_fields(fields: list, language: str, *, kind: str) -> Tuple[str, str]:
+def _struct_render_type_fields(
+    fields: list,
+    language: str,
+    *,
+    kind: str,
+    extra_fields: list | None = None,
+) -> Tuple[str, str]:
     """Render the new compilation-template field shape.
 
     New templates define allowed item ``type`` values with descriptions/rules,
     rather than arbitrary output field names. The extraction output keeps a
     stable shape so downstream merge logic can compare concrete items instead
     of collapsing every item into the template type.
+
+    ``extra_fields`` declares additional output keys a template may ask for
+    (claim/evidence compilation adds ``evidence``). The Response Format below
+    is what actually fixes the model's output shape — a key described only in
+    a type's ``rule`` text but absent from the skeleton is silently dropped by
+    the model — so extra keys must be rendered into the skeleton here.
     """
     lines: list[str] = []
     type_values: list[str] = []
@@ -509,17 +521,49 @@ def _struct_render_type_fields(fields: list, language: str, *, kind: str) -> Tup
         type_values.append("other")
         lines.append("- type: other")
 
+    # Extra output keys the template declared. Rendered into the skeleton so the
+    # model actually emits them, and described so it knows their shape.
+    extra_parts: list[str] = []
+    for ef in extra_fields or []:
+        if not isinstance(ef, dict):
+            continue
+        name = ef.get("name")
+        name = name.strip() if isinstance(name, str) else ""
+        if not name:
+            continue
+        desc = _struct_localize(ef.get("description"), language)
+        optional = "optional, omit when not applicable" if ef.get("required") is False else "required"
+        header = f"- {name} ({ef.get('type', 'str')}, {optional})"
+        lines.append(f"{header}: {desc}" if desc else header)
+        shape = _struct_localize(ef.get("shape"), language)
+        if shape:
+            extra_parts.append(f'"{name}": {shape}')
+        else:
+            ftype = ef.get("type", "str")
+            placeholder = {
+                "list": "[...]",
+                "int": "<int>",
+                "float": "<float>",
+                "bool": "<true|false>",
+            }.get(ftype, "<string>")
+            extra_parts.append(f'"{name}": {placeholder}')
+    extra_skeleton = (", " + ", ".join(extra_parts)) if extra_parts else ""
+
     if kind == "relation":
         skeleton = (
             '{ "type": "<one of: '
             + "|".join(type_values)
-            + '>", "source": "<known entity name>", "target": "<known entity name>", "description": "<evidence or relation description>", "source_chunk_ids": ["<source chunk id>", ...] }'
+            + '>", "source": "<known entity name>", "target": "<known entity name>", "description": "<evidence or relation description>", "source_chunk_ids": ["<source chunk id>", ...]'
+            + extra_skeleton
+            + " }"
         )
     else:
         skeleton = (
             '{ "type": "<one of: '
             + "|".join(type_values)
-            + '>", "name": "<exact extracted item text>", "description": "<evidence, definition, or detail from the source>", "source_chunk_ids": ["<source chunk id>", ...] }'
+            + '>", "name": "<exact extracted item text>", "description": "<evidence, definition, or detail from the source>", "source_chunk_ids": ["<source chunk id>", ...]'
+            + extra_skeleton
+            + " }"
         )
     return "\n".join(lines), skeleton
 
@@ -549,8 +593,18 @@ def _struct_hypergraph_prompts(parser_config: dict, language: str = "en", rechun
     ent_fields = _struct_get(entities_cfg, "fields", default=[]) or []
     rel_fields = _struct_get(relations_cfg, "fields", default=[]) or []
     if uses_template_shape:
-        ent_fields_text, ent_skel = _struct_render_type_fields(ent_fields, language, kind="entity")
-        rel_fields_text, rel_skel = _struct_render_type_fields(rel_fields, language, kind="relation")
+        ent_fields_text, ent_skel = _struct_render_type_fields(
+            ent_fields,
+            language,
+            kind="entity",
+            extra_fields=_struct_get(entities_cfg, "output_fields", default=[]) or [],
+        )
+        rel_fields_text, rel_skel = _struct_render_type_fields(
+            rel_fields,
+            language,
+            kind="relation",
+            extra_fields=_struct_get(relations_cfg, "output_fields", default=[]) or [],
+        )
     else:
         ent_fields_text, ent_skel = _struct_render_fields(ent_fields, language)
         rel_fields_text, rel_skel = _struct_render_fields(rel_fields, language)
@@ -774,6 +828,172 @@ async def _struct_extract_hypergraph(
     return nodes, edges, chunk_id_map, rechunked_chunks
 
 
+# Claim/evidence compilation (see claim_evidence.md).
+#
+# Evidence is a verbatim quote plus the character span it was found at:
+#   {"quote": str, "chunk_id": str, "start": int, "end": int}
+# The quote must be locatable in the chunk it cites; anything that cannot be
+# located is discarded rather than trusted, which is the whole point of the
+# compiled form.
+_EVIDENCE_GATE_MODES = ("soft", "hard")
+
+# Default is soft: drop the unverified evidence but keep the claim. The ISC
+# paper drops the claim, but that was validated on single-document dialogue QA;
+# enumeration / multi-hop questions degrade badly when data is discarded, so
+# hard mode is opt-in via the template's ``evidence_gate_mode``.
+_EVIDENCE_GATE_DEFAULT = "soft"
+
+
+def _struct_evidence_gate_mode(parser_config: dict) -> str:
+    mode = parser_config.get("evidence_gate_mode") if isinstance(parser_config, dict) else None
+    if isinstance(mode, str) and mode.strip().lower() in _EVIDENCE_GATE_MODES:
+        return mode.strip().lower()
+    return _EVIDENCE_GATE_DEFAULT
+
+
+def _struct_relation_expects_evidence(parser_config: dict) -> bool:
+    """Whether relation items are expected to carry evidence.
+
+    Only templates that list ``evidence`` under ``relation.output_fields`` ask
+    the model for relation evidence. Gating relations unconditionally would
+    strip the field from payloads that legitimately have none, changing the
+    stored shape for every configuration that never asked for it.
+    """
+    relations_cfg = _struct_get(parser_config, "relation", default={}) or {}
+    if not isinstance(relations_cfg, dict):
+        return False
+    fields = _struct_get(relations_cfg, "output_fields", default=[]) or []
+    if not isinstance(fields, (list, tuple)):
+        return False
+    return any(isinstance(f, str) and f.strip().lower() == "evidence" for f in fields)
+
+
+def _struct_normalize_for_match(text: str) -> tuple[str, list[int]]:
+    """Collapse whitespace runs, returning the normalized text and, for each
+    normalized index, the index of the character it came from.
+
+    Matching against whitespace-normalized text tolerates the reflowing an LLM
+    introduces when it copies a sentence, while the index map lets the caller
+    report offsets against the original chunk text.
+    """
+    chars: list[str] = []
+    index_map: list[int] = []
+    prev_space = False
+    for i, ch in enumerate(text or ""):
+        if ch.isspace():
+            if prev_space:
+                continue
+            chars.append(" ")
+            index_map.append(i)
+            prev_space = True
+        else:
+            chars.append(ch)
+            index_map.append(i)
+            prev_space = False
+    return "".join(chars), index_map
+
+
+def _struct_locate_evidence(quote: str, text: str) -> tuple[int, int] | None:
+    """Locate ``quote`` in ``text``, returning (start, end) or None."""
+    if not quote or not text:
+        return None
+    norm_text, index_map = _struct_normalize_for_match(text)
+    norm_quote, _ = _struct_normalize_for_match(quote)
+    if not norm_quote:
+        return None
+    pos = norm_text.find(norm_quote)
+    if pos < 0:
+        return None
+    end_norm = pos + len(norm_quote) - 1
+    return index_map[pos], index_map[end_norm] + 1
+
+
+def _struct_apply_evidence_gate(
+    items: list[dict],
+    text_by_chunk_id: dict[str, str],
+    mode: str = _EVIDENCE_GATE_DEFAULT,
+) -> tuple[int, int]:
+    """Validate and locate the evidence quotes carried by extracted claims.
+
+    Every quote must be locatable in a chunk the claim cites. Quotes that
+    cannot be located are dropped. ``mode`` decides what happens to a claim
+    left with no verified evidence: ``"soft"`` keeps it (evidence omitted),
+    ``"hard"`` drops the claim.
+
+    ``items`` is filtered in place. Returns (verified, rejected) counts.
+    """
+    if mode not in _EVIDENCE_GATE_MODES:
+        mode = _EVIDENCE_GATE_DEFAULT
+    verified = 0
+    rejected = 0
+    if not text_by_chunk_id:
+        return verified, rejected
+
+    keep: list[dict] = []
+    for payload in items:
+        if not isinstance(payload, dict):
+            continue
+        raw_evidence = payload.get("evidence")
+        if not isinstance(raw_evidence, (list, tuple)) or not raw_evidence:
+            payload.pop("evidence", None)
+            keep.append(payload)
+            continue
+
+        located: list[dict] = []
+        for entry in raw_evidence:
+            if not isinstance(entry, dict):
+                continue
+            quote = entry.get("quote")
+            if not isinstance(quote, str) or not quote.strip():
+                continue
+            # Prefer the chunk the model cited; fall back to scanning every
+            # chunk in the batch when it cited none (or cited one that is not
+            # in this batch).
+            cited = entry.get("chunk_id")
+            candidates = [cited] if isinstance(cited, str) and cited in text_by_chunk_id else list(text_by_chunk_id)
+            for chunk_id in candidates:
+                span = _struct_locate_evidence(quote, text_by_chunk_id.get(chunk_id) or "")
+                if span is None:
+                    continue
+                start, end = span
+                located.append({"quote": quote, "chunk_id": chunk_id, "start": start, "end": end})
+                break
+
+        if located:
+            payload["evidence"] = located
+            verified += len(located)
+            keep.append(payload)
+            continue
+
+        rejected += 1
+        payload.pop("evidence", None)
+        if mode == "soft":
+            keep.append(payload)
+
+    items[:] = keep
+    return verified, rejected
+
+
+def _struct_batch_text_by_chunk_id(
+    packed: list[dict],
+    chunk_id_map: dict | None,
+) -> dict[str, str]:
+    """Map the chunk ids assigned to this batch's claims to their text.
+
+    Without rechunking the ids are the original parse chunks. With rechunking
+    the ids are the formal chunks whose text is the concatenation of their
+    source chunks — the gate must validate against whatever text the claim
+    actually points at, so both shapes are handled here.
+    """
+    source_text = {e["chunk_id"]: (e.get("text") or "") for e in packed if e.get("chunk_id")}
+    if not chunk_id_map:
+        return source_text
+    grouped: dict[str, list[str]] = {}
+    for src_id, new_id in chunk_id_map.items():
+        grouped.setdefault(str(new_id), []).append(str(src_id))
+    return {new_id: "\n\n".join(source_text[s] for s in srcs if s in source_text) for new_id, srcs in grouped.items()}
+
+
 def _struct_payload_chunk_ids(payload: dict, batch_ids: list) -> list:
     """Keep only model-selected chunk IDs that belong to the current batch."""
     raw_ids = payload.get("source_chunk_ids")
@@ -793,10 +1013,36 @@ def _struct_payload_chunk_ids(payload: dict, batch_ids: list) -> list:
 _struct_embed = _encode
 
 
-def _struct_payload_description(payload: dict) -> str:
-    """Concat string values of every non-description field (lists flattened)."""
+# Payload keys that must never reach the embedding or the BM25 columns.
+#
+# ``evidence`` carries verbatim source quotes for claim/evidence compilation.
+# Feeding it into the vector would embed a mixed "claim + raw source" unit
+# instead of the claim the geometric layer is meant to index, and a
+# ``list[dict]`` value would stringify to a Python dict repr (``{'quote': ...}``)
+# and pollute the tokens. Kept out of BM25 in the first phase too so the
+# payload change stays isolated from any recall change.
+_STRUCT_INDEX_EXCLUDED_KEYS = frozenset({"evidence"})
+
+
+def _struct_payload_description(payload: dict, excluded: frozenset[str] | set[str] | None = None) -> str:
+    """Concat string values of every non-description field (lists flattened).
+
+    ``excluded`` names payload keys to skip. Callers that build the embedding
+    and the BM25 columns pass different exclusion sets so evidence text can be
+    kept out of the vector while leaving the door open for a separate BM25
+    trial.
+    """
+    skip = _STRUCT_INDEX_EXCLUDED_KEYS if excluded is None else excluded
     parts: list[str] = []
-    for k, v in payload.items():
+    # Keys are visited in sorted order to match the Go implementation
+    # (common.PayloadDescription). Go maps carry no insertion order, so that
+    # side sorts; iterating this dict in insertion order would feed the two
+    # runtimes different text — and therefore different vectors — for the very
+    # same payload.
+    for k in sorted(payload):
+        if k in skip:
+            continue
+        v = payload[k]
         if isinstance(v, (list, tuple)):
             for item in v:
                 if item is None:
@@ -836,7 +1082,7 @@ def _struct_graph_entity(payload: dict, source_chunk_ids: list | None = None) ->
     if isinstance(source_chunk_ids, str):
         source_chunk_ids = [source_chunk_ids]
     source_chunk_ids = _struct_union_chunk_ids(source_chunk_ids)
-    return {
+    entity = {
         "aliases": aliases,
         "mention_count": 1,
         "name": name,
@@ -844,6 +1090,16 @@ def _struct_graph_entity(payload: dict, source_chunk_ids: list | None = None) ->
         "type": typ or "other",
         "description": str(description).strip() if description is not None else "",
     }
+    # page_index fact/conclusion payloads carry gate-verified verbatim evidence
+    # (page_index.yaml's evidence field). The artifacts detail panel renders it
+    # next to the description; rows compiled before the field existed simply
+    # omit it.
+    evidence = payload.get("evidence")
+    if isinstance(evidence, list):
+        verified = [e for e in evidence if isinstance(e, dict) and str(e.get("quote") or "").strip()]
+        if verified:
+            entity["evidence"] = verified
+    return entity
 
 
 def _struct_graph_relation(payload: dict) -> dict | None:
@@ -1036,6 +1292,17 @@ def _struct_to_doc_storage_doc(
     if name_value:
         doc["name_kwd"] = name_value.lower()
 
+    # Row role: tree_node / title / fact / conclusion / claim. Stamped onto
+    # ``entity_type_kwd`` — the schema-backed role column Go already writes via
+    # applyStructureGraphColumns, and the one ``internal/service/graph`` filters
+    # on. Python's structure compile used to omit it, which made the two
+    # runtimes emit divergent rows for the same compilation template. Relations
+    # have no role, so only entity rows are stamped.
+    if kind == "entity":
+        entity_type = str(payload.get("type") or "").strip()
+        if entity_type:
+            doc["entity_type_kwd"] = entity_type
+
     if template_id_str:
         doc["compilation_template_ids"] = [template_id_str]
     if compilation_template_kind:
@@ -1107,6 +1374,24 @@ async def _struct_process_batch(
         except Exception as e:
             logging.exception(f"compile_structure_from_text: extraction failed for batch {batch_idx}: {e}")
             return _RechunkedDocs()
+
+        # Validate claim evidence while the batch's source text is still in
+        # hand: every quote must be locatable in the chunk it cites, otherwise
+        # it is discarded. Runs before embedding so the vector is built from
+        # the surviving payload. Relations are gated the same way whenever the
+        # template asks them to carry evidence.
+        if items or relations:
+            text_by_chunk = _struct_batch_text_by_chunk_id(packed, chunk_id_map)
+            gate_mode = _struct_evidence_gate_mode(parser_config)
+            verified = rejected = 0
+            if items:
+                verified, rejected = _struct_apply_evidence_gate(items, text_by_chunk, gate_mode)
+            if relations and _struct_relation_expects_evidence(parser_config):
+                rel_verified, rel_rejected = _struct_apply_evidence_gate(relations, text_by_chunk, gate_mode)
+                verified += rel_verified
+                rejected += rel_rejected
+            if verified or rejected:
+                logging.info(f"compile_structure_from_text: doc={doc_id} batch {batch_idx}: evidence verified={verified} rejected={rejected}")
 
         payloads = items + relations
         kinds = ["entity"] * len(items) + ["relation"] * len(relations)
@@ -2651,6 +2936,176 @@ async def _struct_upsert_graph_json(
         )
     else:
         await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
+
+
+# Upper bound on the claim rows listed when deciding which previous rows the
+# new payload no longer covers. Claims are one row each, so a very large
+# document reaches the low thousands; anything past the limit is left for the
+# next recompile rather than costing an unbounded scan.
+_STRUCT_CLAIM_ROW_SCAN_LIMIT = 4096
+
+
+async def _struct_existing_claim_row_ids(index: str, kb_id: str, condition: dict) -> list[str]:
+    """Return the ids of the claim rows matching ``condition``.
+
+    Lets the caller tell "overwrite this row" from "drop this row" without
+    deleting first: only ids the new payload does not cover are removed, and
+    nothing is deleted until the replacement rows are safely written.
+    """
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    select_fields = ["id"]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            select_fields,
+            [],
+            condition,
+            [],
+            OrderByExpr(),
+            0,
+            _STRUCT_CLAIM_ROW_SCAN_LIMIT,
+            index,
+            [kb_id],
+        )
+    except Exception:
+        # Failing to list is not a reason to skip the upsert: without ids we
+        # simply keep whatever is already stored.
+        logging.exception("tree claims: could not list existing claim rows")
+        return []
+    field_map = settings.docStoreConn.get_fields(res, select_fields) or {}
+    return [str(rid) for rid in field_map if rid]
+
+
+async def _struct_upsert_tree_claim_rows(
+    claims_by_chunk: dict,
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    doc_name: str,
+    embedding_model,
+    compile_kwd: str = "tree",
+    compilation_template_id: str | None = None,
+) -> int:
+    """Persist tree claim/evidence rows for one document.
+
+    Claims are stored as their own rows (``entity_type_kwd="claim"``) with their
+    own embeddings, so global KNN can hit them directly instead of only reaching
+    them through beam descent (see claim_evidence.md §6.2). They carry no
+    ``knowledge_graph_kwd``, matching the convention that column is reserved for
+    the entity/relation rows the artifacts tree renders.
+
+    Returns the number of claim rows written.
+    """
+    from common import settings
+    from rag.nlp import search as _rag_search
+
+    payloads: list[tuple[str, dict]] = []
+    for chunk_id, claims in (claims_by_chunk or {}).items():
+        if not isinstance(claims, list):
+            continue
+        for claim in claims:
+            if not isinstance(claim, dict):
+                continue
+            name = str(claim.get("name") or "").strip()
+            if not name:
+                continue
+            payload = {
+                "type": "claim",
+                "name": name,
+                "description": claim.get("description") or name,
+                "source_chunk_ids": [chunk_id],
+            }
+            if claim.get("evidence"):
+                payload["evidence"] = claim["evidence"]
+            payloads.append((chunk_id, payload))
+
+    index = _rag_search.index_name(tenant_id)
+
+    # Scoped to this document and template: a claim row's id hashes its payload,
+    # so a re-parse with different claims leaves the previous rows behind unless
+    # they are removed explicitly.
+    delete_condition = {
+        "doc_id": [doc_id],
+        "compile_kwd": [compile_kwd],
+        "entity_type_kwd": ["claim"],
+    }
+    if compilation_template_id:
+        delete_condition["compilation_template_ids"] = [compilation_template_id]
+
+    if not payloads:
+        # Recompiling to zero claims must still clear what was stored: the
+        # caller only knows the new payload, and stale rows would keep answering
+        # queries with facts the document no longer has.
+        await thread_pool_exec(settings.docStoreConn.delete, delete_condition, index, kb_id)
+        logging.info(
+            "tree claims: doc=%s template=%s yielded no claims; removed stale claim rows",
+            doc_id,
+            compilation_template_id,
+        )
+        return 0
+
+    # Evidence is excluded from the embedding input, consistent with the
+    # page_index claim path.
+    embeddings = await _struct_embed(embedding_model, [_struct_payload_description(p) for _, p in payloads])
+    if len(embeddings) != len(payloads):
+        raise ValueError(f"Claim embedding count mismatch: {len(embeddings)} != {len(payloads)}")
+
+    rows = []
+    for (chunk_id, payload), vector in zip(payloads, embeddings):
+        # Claims are searchable on their own (global KNN over their own
+        # embeddings) but are NOT part of the structure graph: they carry no
+        # relation, and a relation-less row would be rendered as a root in the
+        # artifacts tree. So they deliberately skip knowledge_graph_kwd (empty
+        # kind), which keeps them out of the artifacts query (build_bucket
+        # filters knowledge_graph_kwd=["entity","relation"]).
+        # entity_type_kwd is stamped explicitly — _struct_to_doc_storage_doc
+        # only derives it when kind == "entity", and claims intentionally pass an
+        # empty kind. Both behaviours mirror
+        # internal/ingestion/.../component.go case "claim".
+        row = _struct_to_doc_storage_doc(
+            payload,
+            compile_kwd,
+            doc_id,
+            doc_name,
+            [chunk_id],
+            vector,
+            "",
+            compilation_template_id=compilation_template_id,
+        )
+        row["entity_type_kwd"] = "claim"
+        rows.append(row)
+
+    # An unchanged claim hashes to the same row id, so the insert below simply
+    # overwrites it — those rows must survive the cleanup that follows.
+    new_ids = {row["id"] for row in rows}
+    stale_ids = [rid for rid in await _struct_existing_claim_row_ids(index, kb_id, delete_condition) if rid not in new_ids]
+
+    # Insert BEFORE delete: the doc store has no transaction, so ordering IS the
+    # rollback. A failed insert leaves the previous claim rows untouched, while
+    # deleting first would drop them and leave the document with no claims at all
+    # if the write then failed.
+    await thread_pool_exec(settings.docStoreConn.insert, rows, index, kb_id)
+    if stale_ids:
+        try:
+            await thread_pool_exec(settings.docStoreConn.delete, {"id": stale_ids}, index, kb_id)
+        except Exception:
+            # The new rows are already readable, so leaving a few stale ones
+            # behind is the lesser evil; the next recompile clears them.
+            logging.exception(
+                "tree claims: failed to remove %d stale claim row(s) for doc=%s template=%s",
+                len(stale_ids),
+                doc_id,
+                compilation_template_id,
+            )
+    logging.info(
+        "tree claims: upserted %d claim row(s) for doc=%s template=%s",
+        len(rows),
+        doc_id,
+        compilation_template_id or "legacy",
+    )
+    return len(rows)
 
 
 async def _struct_upsert_tree_graph_rows(

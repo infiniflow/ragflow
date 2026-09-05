@@ -114,7 +114,13 @@ func renderFields(fields []any, lang string) (string, string) {
 
 // renderTypeFields mirrors _struct_render_type_fields (new compilation-template
 // shape: allowed item `type` values with descriptions/rules).
-func renderTypeFields(fields []any, lang, kind string) (string, string) {
+//
+// extraFields declares additional output keys a template may ask for
+// (claim/evidence compilation adds "evidence"). The Response Format below is
+// what actually fixes the model's output shape — a key described only inside a
+// type's "rule" text but absent from the skeleton is silently dropped by the
+// model — so these keys must be rendered into the skeleton here.
+func renderTypeFields(fields []any, lang, kind string, extraFields []any) (string, string) {
 	var lines []string
 	var typeValues []string
 	for _, raw := range fields {
@@ -140,11 +146,63 @@ func renderTypeFields(fields []any, lang, kind string) (string, string) {
 		lines = append(lines, "- type: other")
 	}
 	oneOf := strings.Join(typeValues, "|")
+
+	// Extra output keys the template declared. Rendered into the skeleton so the
+	// model actually emits them, and described so it knows their shape.
+	var extraSkel []string
+	for _, raw := range extraFields {
+		ef, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := ef["name"].(string)
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		desc := common.Localize(common.Get(ef, "description"), lang)
+		optional := "required"
+		if req, exists := ef["required"].(bool); exists && !req {
+			optional = "optional, omit when not applicable"
+		}
+		ftype, _ := ef["type"].(string)
+		if ftype == "" {
+			ftype = "str"
+		}
+		header := fmt.Sprintf("- %s (%s, %s)", name, ftype, optional)
+		if desc != "" {
+			lines = append(lines, header+": "+desc)
+		} else {
+			lines = append(lines, header)
+		}
+
+		if shape := common.Localize(common.Get(ef, "shape"), lang); shape != "" {
+			extraSkel = append(extraSkel, fmt.Sprintf("%q: %s", name, shape))
+			continue
+		}
+		placeholder := "<string>"
+		switch ftype {
+		case "list":
+			placeholder = "[...]"
+		case "int":
+			placeholder = "<int>"
+		case "float":
+			placeholder = "<float>"
+		case "bool":
+			placeholder = "<true|false>"
+		}
+		extraSkel = append(extraSkel, fmt.Sprintf("%q: %s", name, placeholder))
+	}
+	var extraSuffix string
+	if len(extraSkel) > 0 {
+		extraSuffix = ", " + strings.Join(extraSkel, ", ")
+	}
+
 	var skeleton string
 	if kind == "relation" {
-		skeleton = `{ "type": "<one of: ` + oneOf + `>", "source": "<known entity name>", "target": "<known entity name>", "description": "<evidence or relation description>", "source_chunk_ids": ["<source chunk id>", ...] }`
+		skeleton = `{ "type": "<one of: ` + oneOf + `>", "source": "<known entity name>", "target": "<known entity name>", "description": "<evidence or relation description>", "source_chunk_ids": ["<source chunk id>", ...]` + extraSuffix + ` }`
 	} else {
-		skeleton = `{ "type": "<one of: ` + oneOf + `>", "name": "<exact extracted item text>", "description": "<evidence, definition, or detail from the source>", "source_chunk_ids": ["<source chunk id>", ...] }`
+		skeleton = `{ "type": "<one of: ` + oneOf + `>", "name": "<exact extracted item text>", "description": "<evidence, definition, or detail from the source>", "source_chunk_ids": ["<source chunk id>", ...]` + extraSuffix + ` }`
 	}
 	return strings.Join(lines, "\n"), skeleton
 }
@@ -190,8 +248,8 @@ func HypergraphPrompts(parserConfig map[string]any, lang string) (nodePrompt, ed
 
 	var entFieldsText, entSkel, relFieldsText, relSkel string
 	if usesTemplateShape {
-		entFieldsText, entSkel = renderTypeFields(entFields, lang, "entity")
-		relFieldsText, relSkel = renderTypeFields(relFields, lang, "relation")
+		entFieldsText, entSkel = renderTypeFields(entFields, lang, "entity", configOutputFields(entitiesCfg))
+		relFieldsText, relSkel = renderTypeFields(relFields, lang, "relation", configOutputFields(relationsCfg))
 	} else {
 		entFieldsText, entSkel = renderFields(entFields, lang)
 		relFieldsText, relSkel = renderFields(relFields, lang)
@@ -364,6 +422,27 @@ func configFields(cfg map[string]any) []any {
 		return nil
 	}
 	switch v := cfg["fields"].(type) {
+	case []any:
+		return v
+	case []map[string]any:
+		out := make([]any, 0, len(v))
+		for _, f := range v {
+			out = append(out, f)
+		}
+		return out
+	}
+	return nil
+}
+
+// configOutputFields extracts cfg["output_fields"] as a []any (nil when
+// absent). These declare extra keys the model should emit beyond the fixed
+// shape — claim/evidence compilation uses it for "evidence". See
+// renderTypeFields for why they must reach the skeleton.
+func configOutputFields(cfg map[string]any) []any {
+	if cfg == nil {
+		return nil
+	}
+	switch v := cfg["output_fields"].(type) {
 	case []any:
 		return v
 	case []map[string]any:

@@ -3,14 +3,18 @@ import { ExpandableSearchInput } from '@/components/expandable-search-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { SkeletonCard } from '@/components/skeleton-card';
 import { Button } from '@/components/ui/button';
-import { useDeleteDocumentStructureGraph } from '@/hooks/use-document-request';
+import {
+  useDeleteDocumentStructureGraph,
+  useFetchDocumentClaims,
+} from '@/hooks/use-document-request';
 import { Trash2 } from 'lucide-react';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   type ClickableNode,
   RepresentationRenderer,
 } from '@/components/structure-graph/representation-renderer';
+import { ClaimsPanel, NodeDetailPanel } from './components/claim-list';
 import { RepresentationSelect } from './components/representation-select';
 import { useGraphEntitySearch } from './hooks/use-graph-entity-search';
 
@@ -22,6 +26,11 @@ function Representation({ onNodeClick }: RepresentationProps) {
   const { t } = useTranslation();
   const { deleteDocumentStructureGraph, loading: deleting } =
     useDeleteDocumentStructureGraph();
+
+  const [claimsLeaf, setClaimsLeaf] = useState<ClickableNode | null>(null);
+  const [evidenceDetail, setEvidenceDetail] = useState<ClickableNode | null>(
+    null,
+  );
 
   const {
     data,
@@ -40,6 +49,26 @@ function Representation({ onNodeClick }: RepresentationProps) {
     handleTemplateChange,
     handleNodeClick,
   } = useGraphEntitySearch(onNodeClick);
+
+  // Tree leaves carry a claim-count badge: clicking one opens its claims here
+  // in addition to the usual chunk navigation. Branch clicks close the panel —
+  // they are pure structure and their descendants own the claims.
+  const { data: claimsData, loading: claimsLoading } = useFetchDocumentClaims(
+    claimsLeaf?.source_chunk_ids,
+    selectedTemplateId,
+  );
+
+  const handleNodeClickWithClaims = useCallback(
+    (node: ClickableNode) => {
+      // Tree leaf cluster → its claims panel; a node carrying verified
+      // evidence (page_index fact/conclusion) → its detail panel. Both also
+      // forward to the usual chunk navigation.
+      setClaimsLeaf(node.hasChildren === false ? node : null);
+      setEvidenceDetail(node.evidence?.length ? node : null);
+      handleNodeClick(node);
+    },
+    [handleNodeClick],
+  );
 
   const handleDelete = useCallback(async () => {
     if (!selectedTemplateId) return;
@@ -95,13 +124,32 @@ function Representation({ onNodeClick }: RepresentationProps) {
         </div>
       )}
       {!(loading && !data) && templates.length > 0 && (
-        <RepresentationRenderer
-          template={selectedTemplate}
-          onNodeClick={handleNodeClick}
-          highlightNodeId={highlightNodeId}
-          totalEntities={data?.total_entities}
-          returnedEntities={data?.returned_entities}
-        />
+        <>
+          <RepresentationRenderer
+            template={selectedTemplate}
+            onNodeClick={handleNodeClickWithClaims}
+            highlightNodeId={highlightNodeId}
+            totalEntities={data?.total_entities}
+            returnedEntities={data?.returned_entities}
+          />
+          {claimsLeaf && (
+            <ClaimsPanel
+              clusterName={claimsLeaf.name}
+              claims={claimsData?.claims ?? []}
+              total={claimsData?.total ?? 0}
+              loading={claimsLoading}
+              onClose={() => setClaimsLeaf(null)}
+            />
+          )}
+          {evidenceDetail && (
+            <NodeDetailPanel
+              nodeName={evidenceDetail.name}
+              description={evidenceDetail.description}
+              evidence={evidenceDetail.evidence ?? []}
+              onClose={() => setEvidenceDetail(null)}
+            />
+          )}
+        </>
       )}
     </section>
   );

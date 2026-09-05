@@ -494,6 +494,32 @@ class RaptorService:
         )
 
         raptor_input = [(content, vctr, [chunk_id] if chunk_id else []) for content, vctr, chunk_id in chunks]
+
+        # Extract claims first so every cluster is summarized from the claims of
+        # its member chunks rather than from truncated raw text. Chunks that
+        # yield no claims silently fall back to their raw text, so a failed
+        # extraction degrades to the previous behavior instead of breaking the
+        # build.
+        claims_by_chunk: Dict[str, list] = {}
+        if raptor_config.get("extract_claims", True):
+            try:
+                from rag.advanced_rag.knowlege_compile.raptor import extract_claims_for_chunks
+
+                claims_by_chunk = await extract_claims_for_chunks(
+                    raptor_input,
+                    chat_mdl,
+                    task_id=self._task_context.id,
+                    callback=self._task_context.progress_cb,
+                )
+                logging.info(
+                    "build_doc_tree: claims extracted for %d/%d chunk(s)",
+                    len(claims_by_chunk),
+                    len(raptor_input),
+                )
+            except Exception:
+                logging.exception("build_doc_tree: claim extraction failed; summarizing from raw text")
+                claims_by_chunk = {}
+
         try:
             tree, _ = await raptor(
                 raptor_input,
@@ -501,6 +527,7 @@ class RaptorService:
                 self._task_context.progress_cb,
                 self._task_context.id,
                 is_tree=True,
+                claims_by_chunk=claims_by_chunk,
             )
         except NotImplementedError:
             # PSI builder — not supported in tree mode; surface as None
@@ -509,6 +536,8 @@ class RaptorService:
                 "build_doc_tree: PSI builder doesn't support is_tree; skipping",
             )
             return None
+        if isinstance(tree, dict) and claims_by_chunk:
+            tree["claims_by_chunk"] = claims_by_chunk
         return tree if isinstance(tree, dict) else None
 
     async def _generate_raptor_legacy_rows(

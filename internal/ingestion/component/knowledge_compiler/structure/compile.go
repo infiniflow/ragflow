@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -126,37 +125,11 @@ func payloadChunkIDs(payload map[string]any, batchIDs []string) []string {
 }
 
 // payloadDescription mirrors _struct_payload_description: concat the string
-// values of every field (lists flattened) with single spaces. Go maps lose
-// JSON insertion order, so keys are sorted to keep the embedding input (and
-// therefore the row vector) deterministic across runs.
+// values of every field (lists flattened) with single spaces. It delegates to
+// common.PayloadDescription, the shared implementation the tree variant also
+// uses, so the two variants cannot drift apart.
 func payloadDescription(payload map[string]any) string {
-	keys := make([]string, 0, len(payload))
-	for k := range payload {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var parts []string
-	appendValue := func(v any) {
-		s := strings.TrimSpace(stringOf(v))
-		if s != "" {
-			parts = append(parts, s)
-		}
-	}
-	for _, k := range keys {
-		switch v := payload[k].(type) {
-		case []any:
-			for _, item := range v {
-				appendValue(item)
-			}
-		case []string:
-			for _, item := range v {
-				appendValue(item)
-			}
-		default:
-			appendValue(v)
-		}
-	}
-	return strings.Join(parts, " ")
+	return common.PayloadDescription(payload, nil)
 }
 
 // payloadJSON serialises a payload the way Python's json.dumps(ensure_ascii=
