@@ -54,12 +54,30 @@ class Dealer:
     # connection pool under concurrency. Doc existence is stable within seconds, so
     # a short TTL lets us skip the DB round-trip for repeats.
     _DOC_EXISTS_TTL = 120.0
+    _DOC_EXISTS_MAX_OPTIMISTIC_ATTEMPTS = 2
 
     def __init__(self, dataStore: DocStoreConnection):
+        """Initialize search helpers and the process-local document-existence cache."""
         self.qryr = query.FulltextQueryer()
         self.dataStore = dataStore
         self._doc_exists_cache: OrderedDict = OrderedDict()
         self._doc_exists_lock = threading.Lock()
+        self._doc_exists_cache_epoch = 0
+
+    def invalidate_doc_ids(self, doc_ids: list[str]) -> None:
+        """Remove document-existence entries after documents are deleted."""
+        if not doc_ids:
+            return
+
+        with self._doc_exists_lock:
+            self._doc_exists_cache_epoch += 1
+            cache_epoch = self._doc_exists_cache_epoch
+            invalidated_count = 0
+            for doc_id in doc_ids:
+                if self._doc_exists_cache.pop(doc_id, None) is not None:
+                    invalidated_count += 1
+
+        logging.debug("Invalidated %s document-existence cache entries at epoch %s.", invalidated_count, cache_epoch)
 
     @dataclass
     class SearchResult:
@@ -82,21 +100,11 @@ class Dealer:
         return MatchDenseExpr(vector_column_name, embedding_data, "float", "cosine", top_k, {"similarity": similarity, "num_candidates": num_candidates})
 
     async def _existing_doc_ids(self, doc_ids: list[str]) -> set[str]:
+        """Return IDs that still have document rows, using the short-lived cache."""
         if not doc_ids:
             return set()
 
         unique_doc_ids = list(dict.fromkeys(doc_ids))
-        now = time.time()
-
-        # Fast path: serve every doc_id from the short-lived cache if it is fresh.
-        with self._doc_exists_lock:
-            cached = {d: v for d, v in self._doc_exists_cache.items() if now - v[0] < self._DOC_EXISTS_TTL}
-            hit = {d for d in unique_doc_ids if d in cached and cached[d][1]}
-            miss = [d for d in unique_doc_ids if d not in cached]
-
-        if not miss:
-            return hit
-
         # Run the existence check on the MAIN thread against the shared peewee pool.
         # Doing it through ``thread_pool_exec`` spins up a fresh thread per call; the
         # pooled MySQL connection gets bound to that (short-lived) thread's local pool
@@ -106,17 +114,54 @@ class Dealer:
         # returning properly; the query itself is small and the cache makes this rare.
         from api.db.services.document_service import DocumentService
 
-        found = {row["id"] for row in DocumentService.get_by_ids(miss).dicts()}
+        for _ in range(self._DOC_EXISTS_MAX_OPTIMISTIC_ATTEMPTS):
+            now = time.time()
 
-        # Merge results; a missing doc is recorded as False so repeat queries skip it too.
+            # Fast path: serve every doc_id from the short-lived cache if it is fresh.
+            with self._doc_exists_lock:
+                cache_epoch = self._doc_exists_cache_epoch
+                cached = {d: v for d, v in self._doc_exists_cache.items() if now - v[0] < self._DOC_EXISTS_TTL}
+                hit = {d for d in unique_doc_ids if d in cached and cached[d][1]}
+                miss = [d for d in unique_doc_ids if d not in cached]
+
+            if not miss:
+                return hit
+
+            found = {row["id"] for row in DocumentService.get_by_ids(miss).dicts()}
+
+            # Merge results; a missing doc is recorded as False so repeat queries skip it too.
+            with self._doc_exists_lock:
+                # Discard the whole result when a deletion raced the DB lookup. Both
+                # cached hits and database rows may now be stale, so retry them under
+                # the new epoch instead of returning this snapshot to the caller.
+                if cache_epoch != self._doc_exists_cache_epoch:
+                    continue
+
+                for d in miss:
+                    self._doc_exists_cache[d] = (now, d in found)
+                # Bound the cache so it cannot grow unbounded across many documents.
+                while len(self._doc_exists_cache) > 4096:
+                    self._doc_exists_cache.popitem(last=False)
+
+                return hit.union(found)
+
+        # Continuous deletions can invalidate every optimistic snapshot. Make
+        # bounded progress by performing one final lookup while invalidation is
+        # excluded. Query every requested ID so a cached positive entry cannot
+        # survive a deletion that committed just before this lock was acquired.
         with self._doc_exists_lock:
-            for d in miss:
+            now = time.time()
+            found = {row["id"] for row in DocumentService.get_by_ids(unique_doc_ids).dicts()}
+            for d in unique_doc_ids:
                 self._doc_exists_cache[d] = (now, d in found)
-            # Bound the cache so it cannot grow unbounded across many documents.
             while len(self._doc_exists_cache) > 4096:
                 self._doc_exists_cache.popitem(last=False)
 
-        return hit.union(found)
+        logging.debug(
+            "Document-existence lookup used a locked fallback after %s invalidated snapshots.",
+            self._DOC_EXISTS_MAX_OPTIMISTIC_ATTEMPTS,
+        )
+        return found
 
     async def _prune_deleted_chunks(self, sres: SearchResult) -> SearchResult:
         # Temporary safety net:

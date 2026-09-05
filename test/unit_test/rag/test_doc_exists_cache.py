@@ -15,6 +15,7 @@
 #
 """Unit tests for the doc-existence cache behind Dealer._prune_deleted_chunks."""
 
+import logging
 import sys
 import threading
 import types
@@ -57,9 +58,11 @@ finally:
 
 
 def _dealer():
+    """Build a Dealer with only the cache state needed by these unit tests."""
     dealer = Dealer.__new__(Dealer)
     dealer._doc_exists_cache = OrderedDict()
     dealer._doc_exists_lock = threading.Lock()
+    dealer._doc_exists_cache_epoch = 0
     return dealer
 
 
@@ -112,6 +115,102 @@ async def test_existing_doc_is_served_from_cache_without_a_second_query(monkeypa
     assert first == {"live-doc"}
     assert second == {"live-doc"}
     assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_deleting_cached_doc_invalidates_positive_entry(monkeypatch):
+    """Invalidating a positive entry must force the next lookup back to the database."""
+    dealer = _dealer()
+    existing_ids = {"doc-1"}
+    calls = _stub_document_service(monkeypatch, existing_ids)
+
+    assert await dealer._existing_doc_ids(["doc-1"]) == {"doc-1"}
+    existing_ids.remove("doc-1")
+    dealer.invalidate_doc_ids(["doc-1"])
+
+    assert await dealer._existing_doc_ids(["doc-1"]) == set()
+    assert calls == [["doc-1"], ["doc-1"]]
+
+
+def test_invalidation_logs_count_and_epoch_without_document_ids(caplog):
+    """Invalidation logs operational counts without exposing document identifiers."""
+    dealer = _dealer()
+    dealer._doc_exists_cache["sensitive-doc-id"] = (0, True)
+
+    with caplog.at_level(logging.DEBUG):
+        dealer.invalidate_doc_ids(["sensitive-doc-id", "uncached-doc-id"])
+
+    assert "Invalidated 1 document-existence cache entries at epoch 1." in caplog.text
+    assert "sensitive-doc-id" not in caplog.text
+    assert "uncached-doc-id" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_invalidation_during_db_check_does_not_repopulate_cache(monkeypatch):
+    """An in-flight stale lookup must be retried instead of returned or cached."""
+    dealer = _dealer()
+    calls = []
+
+    class _Rows:
+        def __init__(self, rows, invalidate=False):
+            self._rows = rows
+            self._invalidate = invalidate
+
+        def dicts(self):
+            if self._invalidate:
+                dealer.invalidate_doc_ids(["doc-1"])
+            return self._rows
+
+    class _DocumentService:
+        @staticmethod
+        def get_by_ids(doc_ids):
+            calls.append(list(doc_ids))
+            if len(calls) == 1:
+                return _Rows([{"id": "doc-1"}], invalidate=True)
+            return _Rows([])
+
+    module = types.ModuleType("api.db.services.document_service")
+    module.DocumentService = _DocumentService
+    monkeypatch.setitem(sys.modules, "api.db.services.document_service", module)
+
+    assert await dealer._existing_doc_ids(["doc-1"]) == set()
+    assert calls == [["doc-1"], ["doc-1"]]
+    assert dealer._doc_exists_cache["doc-1"][1] is False
+
+
+@pytest.mark.asyncio
+async def test_repeated_invalidation_uses_bounded_locked_fallback(monkeypatch):
+    """Repeated invalidations must end in one locked lookup instead of livelock."""
+    dealer = _dealer()
+    calls = []
+    lock_states = []
+
+    class _Rows:
+        def __init__(self, rows, invalidate=False):
+            self._rows = rows
+            self._invalidate = invalidate
+
+        def dicts(self):
+            if self._invalidate:
+                dealer.invalidate_doc_ids(["doc-1"])
+            return self._rows
+
+    class _DocumentService:
+        @staticmethod
+        def get_by_ids(doc_ids):
+            calls.append(list(doc_ids))
+            lock_states.append(dealer._doc_exists_lock.locked())
+            optimistic = len(calls) <= dealer._DOC_EXISTS_MAX_OPTIMISTIC_ATTEMPTS
+            return _Rows([{"id": "doc-1"}] if optimistic else [], invalidate=optimistic)
+
+    module = types.ModuleType("api.db.services.document_service")
+    module.DocumentService = _DocumentService
+    monkeypatch.setitem(sys.modules, "api.db.services.document_service", module)
+
+    assert await dealer._existing_doc_ids(["doc-1"]) == set()
+    assert calls == [["doc-1"], ["doc-1"], ["doc-1"]]
+    assert lock_states == [False, False, True]
+    assert dealer._doc_exists_cache["doc-1"][1] is False
 
 
 @pytest.mark.asyncio
