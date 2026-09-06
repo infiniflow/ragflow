@@ -1011,6 +1011,8 @@ func TestAddChunkSuccess(t *testing.T) {
 
 	engine := &addChunkTestEngine{}
 	var incrementTokenNum, incrementChunkNum int64
+	language := "Slovak"
+	var tokenizeLanguages []string
 	svc := &ChunkService{
 		docEngine:   engine,
 		kbDAO:       dao.NewKnowledgebaseDAO(),
@@ -1019,7 +1021,7 @@ func TestAddChunkSuccess(t *testing.T) {
 			return datasetIDArg == datasetID && userIDArg == userID
 		},
 		getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
-			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
+			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1", Language: &language}, nil
 		},
 		getEmbeddingModelFunc: func(string, string) (*models.EmbeddingModel, error) {
 			driver := &stubEmbeddingDriver{
@@ -1039,9 +1041,15 @@ func TestAddChunkSuccess(t *testing.T) {
 			incrementChunkNum = chunkNum
 			return nil
 		},
-		tokenizeFunc:            func(text string) (string, error) { return text, nil },
-		fineGrainedTokenizeFunc: func(text string) (string, error) { return text + "_fg", nil },
-		numTokensFunc:           func(text string) int { return len(text) },
+		tokenizeFunc: func(text, lang string) (string, error) {
+			tokenizeLanguages = append(tokenizeLanguages, lang)
+			return text, nil
+		},
+		fineGrainedTokenizeFunc: func(text, lang string) (string, error) {
+			tokenizeLanguages = append(tokenizeLanguages, lang)
+			return text + "_fg", nil
+		},
+		numTokensFunc: func(text string) int { return len(text) },
 	}
 
 	resp, err := svc.AddChunk(ctx, &service.AddChunkRequest{
@@ -1082,6 +1090,15 @@ func TestAddChunkSuccess(t *testing.T) {
 	}
 	if inserted["img_id"] != nil {
 		t.Fatalf("did not expect image id in inserted chunk: %#v", inserted)
+	}
+	// A manual chunk is tokenized like the dataset's parsed chunks.
+	if len(tokenizeLanguages) != 4 {
+		t.Fatalf("tokenizer calls = %v, want 4", tokenizeLanguages)
+	}
+	for _, lang := range tokenizeLanguages {
+		if lang != language {
+			t.Fatalf("tokenized with language %q, want %q", lang, language)
+		}
 	}
 	vec, ok := inserted["q_2_vec"].([]float64)
 	if !ok {
@@ -1159,8 +1176,8 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 		getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
 			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
 		},
-		tokenizeFunc:            func(text string) (string, error) { return text, nil },
-		fineGrainedTokenizeFunc: func(text string) (string, error) { return text + "_fg", nil },
+		tokenizeFunc:            func(text, _ string) (string, error) { return text, nil },
+		fineGrainedTokenizeFunc: func(text, _ string) (string, error) { return text + "_fg", nil },
 		numTokensFunc:           func(text string) int { return len(text) },
 		getEmbeddingModelFunc: func(string, string) (*models.EmbeddingModel, error) {
 			driver := &stubEmbeddingDriver{
@@ -1257,8 +1274,8 @@ func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
 			incrementCalls++
 			return nil
 		},
-		tokenizeFunc:            func(text string) (string, error) { return text, nil },
-		fineGrainedTokenizeFunc: func(text string) (string, error) { return text + "_fg", nil },
+		tokenizeFunc:            func(text, _ string) (string, error) { return text, nil },
+		fineGrainedTokenizeFunc: func(text, _ string) (string, error) { return text + "_fg", nil },
 		numTokensFunc:           func(text string) int { return len(text) },
 	}
 
