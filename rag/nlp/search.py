@@ -232,7 +232,7 @@ class Dealer:
             logging.debug("Dealer.search TOTAL: {}".format(total))
         else:
             highlightFields = []
-            matchText, keywords = self.qryr.question(qst, min_match=(0.3 if min_match else 0))
+            matchText, keywords = self.qryr.question(qst, min_match=(0.3 if min_match else 0), language=req.get("language"))
             if emb_mdl is None:
                 matchExprs = [matchText] if matchText else []
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
@@ -275,7 +275,7 @@ class Dealer:
                         res = await thread_pool_exec(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
                         total = self.dataStore.get_total(res)
                     else:
-                        matchText, _ = self.qryr.question(qst, min_match=(0.1 if min_match else 0))
+                        matchText, _ = self.qryr.question(qst, min_match=(0.1 if min_match else 0), language=req.get("language"))
                         matchDense.extra_options["similarity"] = 0.17
                         res = await thread_pool_exec(
                             self.dataStore.search,
@@ -495,14 +495,14 @@ class Dealer:
             out[cid] = v
         return out
 
-    def rerank_with_knn(self, sres, query, knn_scores: dict[str, float], tkweight=0.3, vtweight=0.7, cfield="content_ltks", rank_feature: dict | None = None):
+    def rerank_with_knn(self, sres, query, knn_scores: dict[str, float], tkweight=0.3, vtweight=0.7, cfield="content_ltks", rank_feature: dict | None = None, language: str | None = None):
         """
         Merge ES-side KNN cosine similarity with locally computed term
         similarity using the user-configured weights. Replaces the older
         local-only rerank() for the ES path, which depended on shipping
         chunk vectors back to the application.
         """
-        _, keywords = self.qryr.question(query)
+        _, keywords = self.qryr.question(query, language=language)
 
         for i in sres.ids:
             if isinstance(sres.field[i].get("important_kwd", []), str):
@@ -522,8 +522,8 @@ class Dealer:
         sim = tkweight * tksim + vtweight * vtsim + rank_fea
         return sim, tksim, vtsim
 
-    def rerank(self, sres, query, tkweight=0.3, vtweight=0.7, cfield="content_ltks", rank_feature: dict | None = None):
-        _, keywords = self.qryr.question(query)
+    def rerank(self, sres, query, tkweight=0.3, vtweight=0.7, cfield="content_ltks", rank_feature: dict | None = None, language: str | None = None):
+        _, keywords = self.qryr.question(query, language=language)
         vector_size = len(sres.query_vector)
         vector_column = f"q_{vector_size}_vec"
         zero_vector = [0.0] * vector_size
@@ -555,8 +555,8 @@ class Dealer:
 
         return sim + rank_fea, tksim, vtsim
 
-    def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3, vtweight=0.7, cfield="content_ltks", rank_feature: dict | None = None):
-        _, keywords = self.qryr.question(query)
+    def rerank_by_model(self, rerank_mdl, sres, query, tkweight=0.3, vtweight=0.7, cfield="content_ltks", rank_feature: dict | None = None, language: str | None = None):
+        _, keywords = self.qryr.question(query, language=language)
 
         for i in sres.ids:
             if isinstance(sres.field[i].get("important_kwd", []), str):
@@ -610,6 +610,7 @@ class Dealer:
         rerank_candidates_count=64,
         knn_top_k=1024,  # Advanced knn parameter
         knn_num_candidates=2048,  # Advanced knn parameter
+        language: str | None = None,
     ):
         """
         Pagination is neither efficient nor reliable for this retrieval when rerank is enabled because the system must:
@@ -644,6 +645,7 @@ class Dealer:
             "vector_similarity_weight": vector_similarity_weight,
             "knn_top_k": knn_top_k,
             "knn_num_candidates": knn_num_candidates,
+            "language": language,
         }
         if isinstance(must_not, dict) and must_not:
             req["must_not"] = must_not
@@ -681,6 +683,7 @@ class Dealer:
                 term_similarity_weight,
                 vector_similarity_weight,
                 rank_feature=rank_feature,
+                language=language,
             )
         else:
             if settings.DOC_ENGINE_INFINITY:
@@ -698,6 +701,7 @@ class Dealer:
                     term_similarity_weight,
                     vector_similarity_weight,
                     rank_feature=rank_feature,
+                    language=language,
                 )
             elif settings.DOC_ENGINE_GAUSSDB:
                 # GaussDB computes fusion and PageRank in SQL; tag features are
@@ -720,6 +724,7 @@ class Dealer:
                     term_similarity_weight,
                     vector_similarity_weight,
                     rank_feature=rank_feature,
+                    language=language,
                 )
 
         sim_np = np.array(sim, dtype=np.float64)
@@ -888,12 +893,12 @@ class Dealer:
         doc[TAG_FLD] = {a.replace(".", "_"): c for a, c in tag_fea if c > 0}
         return True
 
-    def tag_query(self, question: str, tenant_ids: str | list[str], kb_ids: list[str], all_tags, topn_tags=3, S=1000):
+    def tag_query(self, question: str, tenant_ids: str | list[str], kb_ids: list[str], all_tags, topn_tags=3, S=1000, language: str | None = None):
         if isinstance(tenant_ids, str):
             idx_nms = index_name(tenant_ids)
         else:
             idx_nms = [index_name(tid) for tid in tenant_ids]
-        match_txt, _ = self.qryr.question(question, min_match=0.0)
+        match_txt, _ = self.qryr.question(question, min_match=0.0, language=language)
         res = self.dataStore.search([], [], {}, [match_txt], OrderByExpr(), 0, 0, idx_nms, kb_ids, ["tag_kwd"])
         aggs = self.dataStore.get_aggregation(res, "tag_kwd")
         if not aggs:

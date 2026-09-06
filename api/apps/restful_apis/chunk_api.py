@@ -126,6 +126,19 @@ class Chunk(BaseModel):
         return value
 
 
+def _set_dataset_tokenizer_language(dataset_id):
+    """Point the shared tokenizer at the dataset's language before manual
+    chunk tokenization. Returns an error response when the dataset lookup
+    fails, else None. set_language() logs the resolved language."""
+    from rag.nlp import rag_tokenizer
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return get_error_data_result(message=f"Dataset {dataset_id} not found.")
+    rag_tokenizer.tokenizer.set_language(kb.language or "English")
+    return None
+
+
 def _map_doc(doc):
     key_mapping = {
         "chunk_num": "chunk_count",
@@ -336,6 +349,8 @@ async def stop_parsing(tenant_id, dataset_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def retrieval_test(tenant_id, dataset_id=None):
+    from rag.nlp import dataset_language  # local: rag.nlp is stubbed in several test modules
+
     req = await get_request_json()
     if dataset_id:
         req["dataset_ids"] = [dataset_id]
@@ -506,6 +521,7 @@ async def retrieval_test(tenant_id, dataset_id=None):
             trace_id=search_id,
             must_not=None if include_knowledge_compilation else {"exists": "compile_kwd"},
             rerank_candidates_count=rerank_candidates_count,
+            language=dataset_language(kbs),
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
@@ -1105,6 +1121,9 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         if not all(isinstance(q, str) for q in req["questions"]):
             return get_error_data_result("`questions` must be a list of strings")
 
+    err = _set_dataset_tokenizer_language(dataset_id)
+    if err is not None:
+        return err
     chunk_id = xxhash.xxh64((req["content"] + document_id).encode("utf-8")).hexdigest()
     d = {
         "id": chunk_id,
@@ -1256,6 +1275,9 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             return get_error_data_result(message="`content` is required")
     else:
         content = chunk.get("content_with_weight", "")
+    err = _set_dataset_tokenizer_language(dataset_id)
+    if err is not None:
+        return err
     d = {"id": chunk_id, "content_with_weight": content}
     d["content_ltks"] = rag_tokenizer.tokenize(d["content_with_weight"])
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])

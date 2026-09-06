@@ -99,6 +99,7 @@ _KBINFOS = {
 
 _KB = SimpleNamespace(
     id="kb-1",
+    language="English",
     embd_id="text-embedding-ada-002@OpenAI",
     tenant_embd_id="text-embedding-ada-002@OpenAI",
     tenant_id="tenant-1",

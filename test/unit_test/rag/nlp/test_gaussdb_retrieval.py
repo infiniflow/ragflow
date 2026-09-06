@@ -204,7 +204,7 @@ class FakeGaussDBStore:
 
 
 class FakeQueryer:
-    def question(self, text, min_match=0.3):
+    def question(self, text, min_match=0.3, language=None):
         return MatchTextExpr(["content_with_weight"], text, 1024), [text]
 
 

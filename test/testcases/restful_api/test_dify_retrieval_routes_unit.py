@@ -49,6 +49,7 @@ class _DummyKB:
         self.tenant_id = tenant_id
         self.embd_id = embd_id
         self.tenant_embd_id = tenant_embd_id
+        self.language = None
 
 
 class _DummyRetriever:
@@ -142,7 +143,7 @@ def _load_dify_retrieval_module(monkeypatch):
     class _StubKnowledgebaseService:
         @staticmethod
         def get_by_id(*_args, **_kwargs):
-            return True, SimpleNamespace(tenant_id="tenant-1", embd_id="embd-1", tenant_embd_id="tm-embd-1")
+            return True, SimpleNamespace(tenant_id="tenant-1", embd_id="embd-1", tenant_embd_id="tm-embd-1", language=None)
 
         @staticmethod
         def accessible(*_args, **_kwargs):

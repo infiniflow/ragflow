@@ -26,7 +26,7 @@ from common.doc_store.doc_store_base import MatchTextExpr, FusionExpr
 
 
 class _DummyFulltextQueryer:
-    def question(self, text, min_match=0):
+    def question(self, text, min_match=0, language=None):
         return MatchTextExpr(fields=["content_ltks"], matching_text=text, topn=10, extra_options={}), ["keyword"]
 
     def token_similarity(self, keywords, documents):
