@@ -289,7 +289,7 @@ class InfinityConnection(InfinityConnectionBase):
             table_name = f"{index_name}_{memory_id}"
             table_instance = db_instance.get_table(table_name)
             column_name_list = [r[0] for r in table_instance.show_columns().rows()]
-            output_fields = [self.convert_message_field_to_infinity(f, column_name_list) for f in select_fields]
+            output_fields = self.convert_select_fields([*select_fields, "id"], column_name_list)
             builder = table_instance.output(output_fields)
             filter_cond = self.equivalent_condition_to_str(condition, db_instance.get_table(table_name))
             builder.filter(filter_cond)
@@ -303,9 +303,7 @@ class InfinityConnection(InfinityConnectionBase):
                         order_by_expr_list.append((order_field_name, SortType.Desc))
             builder.sort(order_by_expr_list)
             builder.offset(0).limit(limit)
-            mem_res, _ = builder.option({"total_hits_count": True}).to_df()
-            res = self.concat_dataframes(mem_res, output_fields)
-            res.head(limit)
+            res, _ = builder.option({"total_hits_count": True}).to_df()
         finally:
             self.connPool.release_conn(inf_conn)
         return res
@@ -321,7 +319,7 @@ class InfinityConnection(InfinityConnectionBase):
             table_name = f"{index_name}_{memory_id}"
             table_instance = db_instance.get_table(table_name)
             column_name_list = [r[0] for r in table_instance.show_columns().rows()]
-            output_fields = [self.convert_message_field_to_infinity(f, column_name_list) for f in select_fields]
+            output_fields = self.convert_select_fields([*select_fields, "id"], column_name_list)
             builder = table_instance.output(output_fields)
             filter_cond = self.equivalent_condition_to_str(condition, db_instance.get_table(table_name))
             builder.filter(filter_cond)
@@ -335,9 +333,7 @@ class InfinityConnection(InfinityConnectionBase):
                         order_by_expr_list.append((order_field_name, SortType.Desc))
             builder.sort(order_by_expr_list)
             builder.offset(0).limit(limit)
-            mem_res, _ = builder.option({"total_hits_count": True}).to_df()
-            res = self.concat_dataframes(mem_res, output_fields)
-            res.head(limit)
+            res, _ = builder.option({"total_hits_count": True}).to_df()
         finally:
             self.connPool.release_conn(inf_conn)
         return res
