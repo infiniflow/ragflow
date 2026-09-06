@@ -38,6 +38,7 @@ import (
 type DatasetsHandler struct {
 	datasetsService       *dataset.DatasetService
 	metadataService       *service.MetadataService
+	aggregateTagsService  aggregateTagsService
 	searchDatasetsService searchDatasetsService
 	searchDatasetService  searchDatasetService
 }
@@ -63,6 +64,7 @@ func NewDatasetsHandler(datasetsService *dataset.DatasetService, metadataService
 		metadataService: metadataService,
 	}
 	if datasetsService != nil {
+		h.aggregateTagsService = datasetsService
 		h.searchDatasetsService = datasetsService
 		h.searchDatasetService = datasetsService
 	}
@@ -968,6 +970,10 @@ func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
 	common.SuccessWithData(c, data, "success")
 }
 
+type aggregateTagsService interface {
+	AggregateTags(context.Context, []string, string) ([]map[string]interface{}, common.ErrorCode, error)
+}
+
 // AggregateTags handles GET /api/v1/datasets/tags/aggregation.
 // @Summary Aggregate dataset tags
 // @Description Aggregate tags across multiple datasets
@@ -988,24 +994,32 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 	datasetIDs := make([]string, 0, len(rawIDs))
 
 	for _, rawID := range rawIDs {
-		tempID := strings.TrimSpace(rawID)
-		if tempID != "" {
-			datasetIDs = append(datasetIDs, tempID)
+		if rawID != "" {
+			datasetIDs = append(datasetIDs, rawID)
 		}
 	}
 	if len(datasetIDs) == 0 {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Lack of dataset_ids in query parameters")
+		common.ErrorWithCode(c, common.CodeDataError, "Lack of dataset_ids in query parameters")
+		return
+	}
+	if len(datasetIDs) > 100 {
+		common.ErrorWithCode(c, common.CodeArgumentError, "dataset_ids must contain at most 100 IDs")
 		return
 	}
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.AggregateTags(ctx, datasetIDs, user.ID)
+	result, code, err := h.aggregateTagsService.AggregateTags(ctx, datasetIDs, user.ID)
 	if err != nil {
+		if code == common.CodeServerError {
+			common.Warn(fmt.Sprintf("aggregate dataset tags failed: %v", err))
+			common.ErrorWithCode(c, common.CodeDataError, "Internal server error")
+			return
+		}
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
-	common.SuccessWithData(c, result, "success")
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": result})
 }
 
 // GetCompilationStatus returns the dataset-level knowledge-compile lifecycle
