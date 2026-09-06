@@ -825,6 +825,7 @@ func (s *ChatPipelineService) AsyncChat(
 							RerankModel:            rerankModel,
 							EmbeddingModel:         embModel,
 							Aggs:                   func() *bool { v := true; return &v }(),
+							Language:               entity.KnowledgebasesLanguage(kbs),
 						}
 
 						result, retErr := retrievalSvc.Retrieval(ctx, req)
