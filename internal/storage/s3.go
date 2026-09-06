@@ -29,6 +29,7 @@ import (
 	s3Config "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	"go.uber.org/zap"
 )
@@ -44,7 +45,9 @@ type S3Storage struct {
 // NewS3Storage creates a new S3 storage instance
 func NewS3Storage(ctx context.Context, config config.S3Config) (*S3Storage, error) {
 	storage := &S3Storage{
-		config: config,
+		bucket:     config.Bucket,
+		prefixPath: config.PrefixPath,
+		config:     config,
 	}
 
 	if err := storage.connect(ctx); err != nil {
@@ -104,7 +107,13 @@ func (s *S3Storage) resolveBucketAndPath(bucket, fnm string) (string, string) {
 	}
 
 	actualPath := fnm
-	if s.prefixPath != "" {
+	if s.bucket != "" {
+		prefix := s.prefixPath
+		if prefix != "" {
+			prefix += "/"
+		}
+		actualPath = fmt.Sprintf("%s%s/%s", prefix, bucket, fnm)
+	} else if s.prefixPath != "" {
 		actualPath = fmt.Sprintf("%s/%s/%s", s.prefixPath, bucket, fnm)
 	}
 
@@ -334,53 +343,95 @@ func (s *S3Storage) BucketExists(ctx context.Context, bucket string) bool {
 
 // RemoveBucket removes a bucket and all its objects
 func (s *S3Storage) RemoveBucket(ctx context.Context, bucket string) error {
-	actualBucket := bucket
-	if s.bucket != "" {
-		actualBucket = s.bucket
+	actualBucket, prefix := s.resolveBucketAndPrefix(bucket)
+	exists, err := s.bucketExistsForRemoval(ctx, actualBucket)
+	if err != nil {
+		return err
 	}
-
-	// Check if bucket exists
-	if !s.BucketExists(ctx, actualBucket) {
+	if !exists {
 		return nil
 	}
 
-	// List and delete all objects
-	listInput := &s3.ListObjectsV2Input{
-		Bucket: aws.String(actualBucket),
+	if err := s.removeObjects(ctx, actualBucket, prefix); err != nil {
+		return err
+	}
+	if s.bucket != "" {
+		return nil
 	}
 
-	for {
-		result, err := s.client.ListObjectsV2(ctx, listInput)
-		if err != nil {
-			common.Error("Failed to list objects", err, zap.String("bucket", actualBucket), zap.Error(err))
-			return err
-		}
-
-		for _, obj := range result.Contents {
-			_, err = s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-				Bucket: aws.String(actualBucket),
-				Key:    obj.Key,
-			})
-			if err != nil {
-				common.Error("Failed to delete object", err, zap.String("bucket", actualBucket), zap.Error(err))
-			}
-		}
-
-		if result.IsTruncated == nil || !*result.IsTruncated {
-			break
-		}
-		listInput.ContinuationToken = result.NextContinuationToken
-	}
-
-	// Delete bucket
-	_, err := s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+	_, err = s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
 		Bucket: aws.String(actualBucket),
 	})
 	if err != nil {
-		common.Error("Failed to delete bucket", err, zap.String("bucket", actualBucket), zap.Error(err))
+		common.Error("Failed to delete bucket", err, zap.String("bucket", bucket), zap.Error(err))
 		return err
 	}
 
+	return nil
+}
+
+func (s *S3Storage) resolveBucketAndPrefix(bucket string) (string, string) {
+	if s.bucket == "" {
+		return bucket, ""
+	}
+	prefix := s.prefixPath
+	if prefix != "" {
+		prefix += "/"
+	}
+	return s.bucket, prefix + bucket + "/"
+}
+
+func (s *S3Storage) bucketExistsForRemoval(ctx context.Context, bucket string) (bool, error) {
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucket)})
+	if err == nil {
+		return true, nil
+	}
+	if isS3BucketNotFound(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("head S3 bucket %q: %w", bucket, err)
+}
+
+func (s *S3Storage) removeObjects(ctx context.Context, bucket, prefix string) error {
+	versions := s3.NewListObjectVersionsPaginator(s.client, &s3.ListObjectVersionsInput{
+		Bucket: aws.String(bucket),
+		Prefix: aws.String(prefix),
+	})
+	for versions.HasMorePages() {
+		page, err := versions.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("list S3 object versions in %q: %w", bucket, err)
+		}
+		toDelete := make([]types.ObjectIdentifier, 0, len(page.Versions)+len(page.DeleteMarkers))
+		for _, version := range page.Versions {
+			toDelete = append(toDelete, types.ObjectIdentifier{Key: version.Key, VersionId: version.VersionId})
+		}
+		for _, marker := range page.DeleteMarkers {
+			toDelete = append(toDelete, types.ObjectIdentifier{Key: marker.Key, VersionId: marker.VersionId})
+		}
+		if err := s.deleteObjects(ctx, bucket, toDelete); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *S3Storage) deleteObjects(ctx context.Context, bucket string, objects []types.ObjectIdentifier) error {
+	for len(objects) > 0 {
+		count := min(len(objects), 1000)
+		output, err := s.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(bucket),
+			Delete: &types.Delete{Objects: objects[:count], Quiet: aws.Bool(true)},
+		})
+		if err != nil {
+			return fmt.Errorf("delete S3 objects in %q: %w", bucket, err)
+		}
+		if len(output.Errors) > 0 {
+			failed := output.Errors[0]
+			return fmt.Errorf("delete S3 object %q (version %q): %s: %s", aws.ToString(failed.Key), aws.ToString(failed.VersionId), aws.ToString(failed.Code), aws.ToString(failed.Message))
+		}
+		objects = objects[count:]
+	}
 	return nil
 }
 
@@ -432,6 +483,17 @@ func isS3NotFound(err error) bool {
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "404" || apiErr.ErrorCode() == "NoSuchKey"
+	}
+	return false
+}
+
+func isS3BucketNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "404" || apiErr.ErrorCode() == "NoSuchBucket"
 	}
 	return false
 }

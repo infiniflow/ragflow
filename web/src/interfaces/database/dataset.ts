@@ -286,6 +286,9 @@ export interface IArtifactAlteration {
   changed_doc_ids: string[];
   involved_doc_ids: string[];
   eligible_doc_ids: string[];
+  retry_required?: boolean;
+  retry_page_count?: number;
+  retry_page_slugs?: string[];
 }
 
 export interface IArtifactGraphRelation {

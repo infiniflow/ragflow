@@ -259,8 +259,8 @@ func HasModelFiles(dir string) bool {
 // ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py)
 // — NOT a single source of truth. The download URL and extracted dir name are
 // built from those ORT_VERSION constants, not from this one. The Go binding
-// (github.com/yalue/onnxruntime_go, forked to
-// github.com/xugangqiang/onnxruntime_go) and the pip onnxruntime== pin must
+// (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
+// and the pip onnxruntime== pin must
 // track this MINOR version: the binding uses its own release numbering
 // (v1.23.0 <-> ORT 1.23.x) but is ABI-compatible with this native release on
 // the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),

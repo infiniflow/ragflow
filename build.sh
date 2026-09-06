@@ -402,12 +402,12 @@ build_go() {
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
     echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY and $RAGFLOW_SERVER_BINARY"
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
-        go build "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        go build -tags cgo,static "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -tags cgo "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
+        go build -tags cgo,static "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
         cmd/ragflow_server.go
 
 
@@ -513,8 +513,8 @@ setup_cgo_env() {
             return 1
             ;;
     esac
-    # Statically link libonnxruntime*.a into the binary. The forked Go binding
-    # (onnxruntime_go, github.com/xugangqiang/onnxruntime_go) resolves
+    # Statically link libonnxruntime*.a into the binary. The org Go binding
+    # (onnxruntime_go, github.com/infiniflow/onnxruntime_go) resolves
     # OrtGetApiBase with dlopen(NULL), so the symbols must (a) be pulled in
     # wholesale with --whole-archive (ORT registers its execution providers
     # lazily at runtime, beyond what a normal link would keep) and (b) be
@@ -604,7 +604,7 @@ run_go_tests() {
     fi
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go test -count=1 "$@"
+        go test -tags cgo,static -count=1 "$@"
 
     run_native_tests
 }
@@ -622,7 +622,7 @@ run_native_tests() {
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags cgo -count=1 ./internal/deepdoc/native/... )
+      go test -tags cgo,static -count=1 ./internal/deepdoc/native/... )
 }
 
 # Run the model-backed integration tests of the native package and the
@@ -651,20 +651,20 @@ run_native_integration_tests() {
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo integration fetch_testdata" -count=1 ./internal/deepdoc/native/... )
+      go test -tags "cgo static integration fetch_testdata" -count=1 ./internal/deepdoc/native/... )
 
     print_section "Running native integration concurrency tests (race detector on)"
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo integration fetch_testdata" -race -count=1 \
+      go test -tags "cgo static integration fetch_testdata" -race -count=1 \
       -run 'TestInferenceConcurrency' ./internal/deepdoc/native/... )
 
     print_section "Running native_analyzer race tests (race detector on)"
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo integration fetch_testdata" -race -count=1 \
+      go test -tags "cgo static integration fetch_testdata" -race -count=1 \
       ./internal/deepdoc/parser/pdf/inference/native_analyzer/... )
 }
 
@@ -683,7 +683,7 @@ run_go_tests_tagged() {
     fi
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go test -tags "${tags}" -count=1 "$@"
+        go test -tags "${tags} static" -count=1 "$@"
 }
 
 # Clean build artifacts

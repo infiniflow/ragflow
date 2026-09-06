@@ -824,6 +824,9 @@ def test_documents_update_parser_config_contract(rest_client, create_dataset, tm
                 assert doc_parser_config == DEFAULT_PARSER_CONFIG, (parser_config, list_body)
             else:
                 for key, value in parser_config.items():
+                    if key in {"graphrag", "raptor"}:
+                        assert key not in doc_parser_config, (parser_config, list_body)
+                        continue
                     if isinstance(value, dict):
                         for sub_key, sub_value in value.items():
                             assert doc_parser_config[key][sub_key] == sub_value, (parser_config, list_body)

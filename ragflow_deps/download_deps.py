@@ -35,6 +35,10 @@ import os
 import shutil
 import urllib.request
 
+# NLTK >=3.10 refuses proxied downloads (SSRF guard) unless opted in; the
+# runners sit behind a proxy, so allow proxied fetches before importing nltk.
+os.environ.setdefault("NLTK_ALLOW_PROXIED_URLOPEN", "1")
+
 import nltk
 from huggingface_hub import snapshot_download
 
@@ -254,7 +258,9 @@ if __name__ == "__main__":
         print(f"  Skipping onnxruntime static check: no .a found under {ort_static_dir}")
 
     local_dir = os.path.abspath("nltk_data")
-    for data in ["wordnet", "punkt", "punkt_tab"]:
+    # NLTK >=3.8.2 gates `wordnet` behind `omw-1.4`; both must be provisioned
+    # or tokenization-backed paths raise LookupError at runtime.
+    for data in ["omw-1.4", "wordnet", "punkt", "punkt_tab"]:
         print(f"Downloading nltk {data}...")
         nltk.download(data, download_dir=local_dir)
 
