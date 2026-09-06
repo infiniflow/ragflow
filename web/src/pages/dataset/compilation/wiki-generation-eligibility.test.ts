@@ -18,12 +18,27 @@ describe('canGenerateWiki', () => {
     ).toBe(false);
   });
 
-  it('requires an ingestion pipeline', () => {
+  it('requires an ingestion pipeline or builtin wiki compiler config', () => {
     expect(canGenerateWiki(dataset())).toBe(false);
   });
 
   it('allows pipeline-backed datasets', () => {
     expect(canGenerateWiki(dataset({ pipeline_id: 'pipeline-id' }))).toBe(true);
+  });
+
+  it('allows builtin datasets with a saved wiki compiler operator', () => {
+    expect(
+      canGenerateWiki(
+        dataset({
+          parser_config: {
+            'Compiler:BuiltinWiki': {
+              compilation_template_group_id: 'wiki-group',
+              llm_id: 'chat-model',
+            },
+          },
+        }),
+      ),
+    ).toBe(true);
   });
 
   it('ignores a blank pipeline id', () => {

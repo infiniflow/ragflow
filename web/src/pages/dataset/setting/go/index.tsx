@@ -31,6 +31,7 @@ import LinkDataSource, {
 } from './components/link-data-source';
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
+import { OptionalWikiOperatorItem } from './components/optional-wiki-operator';
 import {
   useConnectorHandlers,
   useFetchDatasetSettingOnMount,
@@ -222,6 +223,9 @@ export default function DatasetSetting() {
                   <ParseTypeItem line={1} name="parse_type" />
                   {parseType === ParseType.BuiltIn && (
                     <BuiltinPipelineItem line={1} name="parser_id" />
+                  )}
+                  {parseType === ParseType.BuiltIn && !!builtinPipelineId && (
+                    <OptionalWikiOperatorItem line={1} />
                   )}
                   {parseType === ParseType.Pipeline && (
                     <DataFlowSelect

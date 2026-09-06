@@ -827,6 +827,11 @@ export default {
       entityTypes: 'Entity 类型',
       compilationTemplate: '算子',
       compilationTemplateRequired: '请选择算子',
+      wikiOperator: 'Wiki',
+      wikiOperatorLabel: 'Wiki 算子',
+      wikiOperatorPlaceholder: '选择 Wiki 算子',
+      wikiOperatorTip:
+        '可为内置模板可选添加 Wiki 算子，无需配置自定义 pipeline 即可基于分块生成 Wiki 页面。',
       createTemplate: '创建模板',
       scopeFile: '文件',
       pageRank: '页面排名',

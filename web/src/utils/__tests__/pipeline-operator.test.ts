@@ -1,4 +1,9 @@
-import { buildOperatorNode } from '@/utils/pipeline-operator';
+import {
+  appendOptionalCompilerNodes,
+  buildOperatorNode,
+  BuiltinCompilerOperatorId,
+  hasCompilerOperatorConfig,
+} from '@/utils/pipeline-operator';
 
 let mockIsGoBackend = true;
 jest.mock('@/utils/backend-runtime', () => ({
@@ -99,5 +104,34 @@ describe('buildOperatorNode dataset-level metadata precedence', () => {
     const form = (node.data as Record<string, any>).form;
     expect(form.fields).toBe('text');
     expect(form).not.toHaveProperty('metadata');
+  });
+});
+
+describe('optional builtin compiler helpers', () => {
+  it('detects compiler operator config keys', () => {
+    expect(
+      hasCompilerOperatorConfig({
+        'Compiler:BuiltinWiki': { compilation_template_group_id: 'g1' },
+      }),
+    ).toBe(true);
+    expect(hasCompilerOperatorConfig({})).toBe(false);
+  });
+
+  it('appends a compiler tab before the tokenizer', () => {
+    const nodes = [
+      { id: 'Parser:A', data: { label: 'Parser', operatorId: 'Parser:A' } },
+      {
+        id: 'Tokenizer:B',
+        data: { label: 'Tokenizer', operatorId: 'Tokenizer:B' },
+      },
+    ] as any[];
+    const merged = appendOptionalCompilerNodes(nodes, {
+      [BuiltinCompilerOperatorId]: {
+        compilation_template_group_id: 'wiki-group',
+      },
+    });
+    expect(merged).toHaveLength(3);
+    expect((merged[1].data as any).label).toBe('Compiler');
+    expect((merged[2].data as any).label).toBe('Tokenizer');
   });
 });

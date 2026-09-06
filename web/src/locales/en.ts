@@ -914,6 +914,11 @@ Paragraphs:
       entityTypes: 'Entity types',
       compilationTemplate: 'Operator',
       compilationTemplateRequired: 'Please select an operator',
+      wikiOperator: 'Wiki',
+      wikiOperatorLabel: 'Wiki operator',
+      wikiOperatorPlaceholder: 'Select a wiki operator',
+      wikiOperatorTip:
+        'Optionally add the Wiki operator to generate wiki pages from built-in template chunks without configuring a custom pipeline.',
       createTemplate: 'Create template',
       scopeFile: 'File',
       vietnamese: 'Vietnamese',

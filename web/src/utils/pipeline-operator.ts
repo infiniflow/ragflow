@@ -18,6 +18,7 @@ import { Operator } from '@/constants/agent';
 import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
   getInitialExtractorValues,
+  initialCompilationValues,
   initialGoExtractorValues,
   initialParserValues,
   initialTitleChunkerValues,
@@ -35,8 +36,45 @@ import { cloneDeep, isEmpty } from 'lodash';
 
 export const FileNodeId = 'File';
 
+/** Stable operator id for the optional Wiki/Compiler on built-in templates. */
+export const BuiltinCompilerOperatorId = 'Compiler:BuiltinWiki';
+
 export function getOperatorType(operatorId: string): Operator {
   return (operatorId.split(':')[0] || operatorId) as Operator;
+}
+
+export function isCompilerOperatorId(operatorId: string): boolean {
+  return getOperatorType(operatorId) === Operator.Compiler;
+}
+
+export function findCompilerOperatorIds(
+  parserConfig?: Record<string, any>,
+): string[] {
+  if (!parserConfig || typeof parserConfig !== 'object') {
+    return [];
+  }
+  return Object.keys(parserConfig).filter(isCompilerOperatorId);
+}
+
+export function hasCompilerOperatorConfig(
+  parserConfig?: Record<string, any>,
+): boolean {
+  return findCompilerOperatorIds(parserConfig).length > 0;
+}
+
+export function createBuiltinCompilerNode(
+  parserConfig?: Record<string, any>,
+): RAGFlowNodeType {
+  const operatorId = findCompilerOperatorIds(parserConfig)[0] ?? BuiltinCompilerOperatorId;
+  const dslNode: RAGFlowNodeType = {
+    id: operatorId,
+    data: {
+      label: Operator.Compiler,
+      name: 'Wiki',
+      form: cloneDeep(initialCompilationValues),
+    },
+  };
+  return buildOperatorNode(dslNode, parserConfig ?? {});
 }
 
 // The dataset-level metadata group stored at parser_config.metadata. The group
@@ -509,11 +547,56 @@ export function buildPipelineOperatorNodes(
   }
 
   // Map ordered IDs to nodes, excluding File
-  return orderedIds
+  const nodes = orderedIds
     .filter((id) => id !== FileNodeId)
     .map((id) => nodeById.get(id))
     .filter((node): node is RAGFlowNodeType => node !== undefined)
     .map((node) => buildOperatorNode(node, pipelineParserConfig));
+
+  return appendOptionalCompilerNodes(nodes, pipelineParserConfig);
+}
+
+/**
+ * Appends optional Compiler nodes saved in parser_config but absent from the
+ * built-in template DSL (e.g. the Wiki operator added in dataset settings).
+ */
+export function appendOptionalCompilerNodes(
+  nodes: RAGFlowNodeType[],
+  pipelineParserConfig: Record<string, any> = {},
+): RAGFlowNodeType[] {
+  const existingIds = new Set(
+    nodes.map(
+      (node) =>
+        (node.data as Record<string, any>)?.operatorId ||
+        node.id ||
+        node.data?.label ||
+        '',
+    ),
+  );
+  const extraCompilerIds = findCompilerOperatorIds(pipelineParserConfig).filter(
+    (id) => !existingIds.has(id),
+  );
+  if (extraCompilerIds.length === 0) {
+    return nodes;
+  }
+
+  const tokenizerIndex = nodes.findIndex(
+    (node) => getOperatorType(
+      (node.data as Record<string, any>)?.operatorId ||
+        node.id ||
+        node.data?.label ||
+        '',
+    ) === Operator.Tokenizer,
+  );
+  const insertAt = tokenizerIndex >= 0 ? tokenizerIndex : nodes.length;
+  const compilerNodes = extraCompilerIds.map(() =>
+    createBuiltinCompilerNode(pipelineParserConfig),
+  );
+  return [
+    ...nodes.slice(0, insertAt),
+    ...compilerNodes,
+    ...nodes.slice(insertAt),
+  ];
 }
 
 /**

@@ -289,6 +289,36 @@ def _pipeline_compiler_llm_id(pipeline_id: str) -> str | None:
     return None
 
 
+def _parser_config_compiler_llm_id(parser_config) -> str | None:
+    """Return the chat model configured on a parser_config Compiler operator."""
+
+    def _find_llm_id(value) -> str | None:
+        if isinstance(value, dict):
+            llm_id = value.get("llm_id")
+            if isinstance(llm_id, str) and llm_id.strip():
+                return llm_id.strip()
+            for child in value.values():
+                found = _find_llm_id(child)
+                if found:
+                    return found
+        elif isinstance(value, list):
+            for child in value:
+                found = _find_llm_id(child)
+                if found:
+                    return found
+        return None
+
+    if not isinstance(parser_config, dict):
+        return None
+    for key, config in parser_config.items():
+        if not isinstance(key, str) or not key.startswith("Compiler:"):
+            continue
+        llm_id = _find_llm_id(config)
+        if llm_id:
+            return llm_id
+    return _find_llm_id(parser_config)
+
+
 def _validate_wiki_eligible_docs(eligible: list[tuple[dict, str]]) -> dict[str, str]:
     """Validate one Wiki template and return each doc's pipeline chat model."""
     template_ids = {template_id for _, template_id in eligible}
@@ -298,11 +328,15 @@ def _validate_wiki_eligible_docs(eligible: list[tuple[dict, str]]) -> dict[str, 
     for doc, _ in eligible:
         doc_id = str(doc.get("id") or "")
         pipeline_id = (doc.get("pipeline_id") or "").strip()
-        if not pipeline_id:
-            raise ValueError(f"Wiki document {doc_id} must use a pipeline")
-        llm_id = _pipeline_compiler_llm_id(pipeline_id)
+        llm_id = None
+        if pipeline_id:
+            llm_id = _pipeline_compiler_llm_id(pipeline_id)
         if not llm_id:
-            raise ValueError(f"Wiki document {doc_id} pipeline Compiler must configure an LLM")
+            llm_id = _parser_config_compiler_llm_id(doc.get("parser_config") or {})
+        if not llm_id:
+            if pipeline_id:
+                raise ValueError(f"Wiki document {doc_id} pipeline Compiler must configure an LLM")
+            raise ValueError(f"Wiki document {doc_id} built-in Compiler must configure an LLM")
         pipeline_chat_llm_ids[doc_id] = llm_id
     return pipeline_chat_llm_ids
 

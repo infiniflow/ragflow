@@ -440,11 +440,25 @@ def _parser_config_compilation_template_group_ids(parser_config) -> list[str]:
                 ids.append(gid)
         return ids
 
+    def _collect_from_value(value, out: list[str], seen: set[str]) -> None:
+        if isinstance(value, dict):
+            for key in ("compilation_template_group_id", "compilation_template_group_ids"):
+                for gid in _normalize(value.get(key)):
+                    if gid not in seen:
+                        seen.add(gid)
+                        out.append(gid)
+            for child in value.values():
+                _collect_from_value(child, out, seen)
+        elif isinstance(value, list):
+            for child in value:
+                _collect_from_value(child, out, seen)
+
     if not isinstance(parser_config, dict):
         return []
-    if "compilation_template_group_id" in parser_config:
-        return _normalize(parser_config.get("compilation_template_group_id"))
-    return []
+    ids: list[str] = []
+    seen: set[str] = set()
+    _collect_from_value(parser_config, ids, seen)
+    return ids
 
 
 def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> list[str]:

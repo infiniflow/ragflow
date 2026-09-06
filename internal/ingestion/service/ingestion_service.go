@@ -1141,6 +1141,11 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 			if lerr != nil {
 				return "", "", lerr
 			}
+			parserConfig := map[string]any(docTaskCtx.Doc.ParserConfig)
+			dsl, lerr = pipelinepkg.AugmentBuiltinDSLWithCompiler(dsl, parserConfig)
+			if lerr != nil {
+				return "", "", lerr
+			}
 			return dsl, parserID, nil
 		})
 	}
