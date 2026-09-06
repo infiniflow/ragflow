@@ -24,7 +24,7 @@ import { appendVoiceTranscript, VoiceInput } from './voice-input';
 const stateLabels: Record<EvaDocumentChangeState, string> = {
   EDITING: 'Вариант агента',
   GENERATING_DRAFT: 'Агент готовит черновик',
-  APPROVED: 'Согласовано',
+  APPROVED: 'Изменения подтверждены',
   PREPARING_EVA_DRAFT: 'Запись черновика',
   EVA_DRAFT_READY: 'Черновик в EVA',
   PUBLISHING: 'Публикация',

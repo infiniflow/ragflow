@@ -2437,6 +2437,7 @@ test('asks for confirmation and force-overwrites a changed EVA document', async 
 
   renderPage('/business-documents/eva/change-1');
   const prepareDraftButton = await screen.findByTestId('prepare-eva-draft');
+  expect(screen.getByText('Изменения подтверждены')).toBeVisible();
   expect(prepareDraftButton).toHaveTextContent('Сохранить как черновик в EVA');
   fireEvent.click(prepareDraftButton);
 

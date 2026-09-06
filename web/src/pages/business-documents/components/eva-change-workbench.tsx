@@ -45,7 +45,7 @@ import { appendVoiceTranscript, VoiceInput } from './voice-input';
 const stateLabels: Record<EvaDocumentChangeState, string> = {
   EDITING: 'Черновик агента',
   GENERATING_DRAFT: 'Агент готовит черновик',
-  APPROVED: 'Согласовано',
+  APPROVED: 'Изменения подтверждены',
   PREPARING_EVA_DRAFT: 'Запись черновика в EVA',
   EVA_DRAFT_READY: 'Черновик сохранён в EVA',
   PUBLISHING: 'Публикация в EVA',
@@ -56,7 +56,7 @@ const eventLabels: Record<string, string> = {
   CHANGE_REQUEST_CREATED: 'Зафиксирована исходная версия',
   AI_DRAFT_REQUESTED: 'Агент начал подготовку',
   AI_DRAFT_GENERATED: 'Агент подготовил доработку',
-  DRAFT_APPROVED: 'Изменения согласованы',
+  DRAFT_APPROVED: 'Изменения подтверждены',
   EVA_DRAFT_SAVED: 'Черновик записан в EVA',
   EVA_DOCUMENT_PUBLISHED: 'Документ опубликован в EVA',
   EXTERNAL_OPERATION_RETRIED: 'Внешняя операция возобновлена',
