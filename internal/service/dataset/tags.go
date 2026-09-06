@@ -96,7 +96,7 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 	return result, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string) ([][2]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New("lack of \"Dataset ID\"")
@@ -113,7 +113,10 @@ func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string)
 		return nil, common.CodeServerError, errors.New("document engine is not initialized")
 	}
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
-	if err != nil || kb == nil {
+	if err != nil && !dao.IsNotFoundErr(err) {
+		return nil, common.CodeServerError, fmt.Errorf("failed to load dataset: %w", err)
+	}
+	if kb == nil || err != nil {
 		return nil, common.CodeDataError, errors.New("invalid Dataset ID")
 	}
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
@@ -124,7 +127,7 @@ func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string)
 		return nil, common.CodeServerError, fmt.Errorf("failed to inspect chunk store: %w", err)
 	}
 	if !exists {
-		return []map[string]interface{}{}, common.CodeSuccess, nil
+		return [][2]interface{}{}, common.CodeSuccess, nil
 	}
 	const pageSize = 10000
 	counts := make(map[string]int)
@@ -141,6 +144,9 @@ func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string)
 		})
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to list tags: %w", err)
+		}
+		if searchResp == nil {
+			return nil, common.CodeServerError, errors.New("document engine returned no search result")
 		}
 		for _, agg := range d.docEngine.GetAggregation(searchResp.Chunks, "tag_kwd") {
 			tag, _ := agg["key"].(string)
@@ -167,7 +173,7 @@ func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string)
 		}
 	}
 	if len(counts) == 0 {
-		return []map[string]interface{}{}, common.CodeSuccess, nil
+		return [][2]interface{}{}, common.CodeSuccess, nil
 	}
 	tags := make([]string, 0, len(counts))
 	for tag := range counts {
@@ -179,12 +185,9 @@ func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string)
 		}
 		return tags[i] < tags[j]
 	})
-	result := make([]map[string]interface{}, 0, len(tags))
+	result := make([][2]interface{}, 0, len(tags))
 	for _, tag := range tags {
-		result = append(result, map[string]interface{}{
-			"key":   tag,
-			"count": counts[tag],
-		})
+		result = append(result, [2]interface{}{tag, counts[tag]})
 	}
 	return result, common.CodeSuccess, nil
 }
