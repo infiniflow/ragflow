@@ -23,9 +23,10 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 
 	datasetIDsByTenant := make(map[string][]string)
 	for _, rawID := range datasetIDs {
+		inputID := rawID
 		rawID = strings.TrimSpace(rawID)
 		if rawID == "" {
-			continue
+			return nil, common.CodeDataError, fmt.Errorf("No authorization for dataset '%s'", inputID)
 		}
 		datasetID, err := normalizeDatasetID(rawID)
 		if err != nil {

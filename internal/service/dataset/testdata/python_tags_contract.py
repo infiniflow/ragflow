@@ -61,6 +61,9 @@ def main():
     assert change == {"remove": {"tag_kwd": "old-tag"}, "add": {"tag_kwd": " new-tag "}}
     assert index == "ragflow_user-1" and dataset == kb_id
 
+    namespace["KnowledgebaseService"].accessible = lambda dataset_id, _: dataset_id == kb_id
+    assert namespace["aggregate_tags"]([" "], "user-1") == (False, "No authorization for dataset ' '")
+
     ret_code = SimpleNamespace(SUCCESS=0, DATA_ERROR=102, ARGUMENT_ERROR=101)
     response = {"RetCode": ret_code, "_safe_jsonify": lambda value: value}
     load_functions("api/utils/api_utils.py", ["get_result", "get_error_data_result", "get_error_argument_result"], response)

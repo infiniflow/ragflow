@@ -432,3 +432,20 @@ func TestDatasetServiceAggregateTagsBackendFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestDatasetServiceAggregateTagsRejectsWhitespaceOnlyID(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	kbID := "123e4567e89b12d3a456426614174000"
+	insertAggregateTagsKB(t, kbID, "user-1", string(entity.TenantPermissionMe), 1)
+	for _, ids := range [][]string{{" "}, {kbID, " "}} {
+		docEngine := &aggregateTagsMockEngine{}
+		result, code, err := testDatasetServiceForAggregateTags(t, docEngine).AggregateTags(t.Context(), ids, "user-1")
+		if err == nil || code != common.CodeDataError || err.Error() != "No authorization for dataset ' '" || result != nil {
+			t.Fatalf("ids=%q result=%v code=%d err=%v; want Python authorization error", ids, result, code, err)
+		}
+		if len(docEngine.requests) != 0 {
+			t.Fatal("invalid dataset list must not query the document engine")
+		}
+	}
+}

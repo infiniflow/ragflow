@@ -4,7 +4,7 @@ These checks cover the existing Go routes listed in #15240:
 
 - `GET /api/v1/datasets/{dataset_id}/tags`: JSON tag/count pairs, including an empty array when no tags exist.
 - `GET /api/v1/datasets/tags/aggregation`: query actual stores even when `doc_num` is zero; preserve tenant grouping and access checks; reject more than 100 nonempty IDs.
-- `PUT /api/v1/datasets/{dataset_id}/tags`: preserve the original match, replacement, and response strings. Python strips only the removal operand.
+- `PUT /api/v1/datasets/{dataset_id}/tags`: preserve the original match, replacement, and response strings at the service boundary. Python strips only the removal operand there; the selected document engine may normalize values further.
 
 All three use the Python success envelope (`code`, `data`) and error envelope (`code`, `message`). Internal failures return code 102 and `Internal server error`; the Go server retains details in its log.
 
@@ -52,4 +52,4 @@ curl --fail-with-body -sS -H "Authorization: Bearer $RAGFLOW_TOKEN" \
 # Expected: {"code":102,"message":"Lack of dataset_ids in query parameters"}.
 ```
 
-Repeat listing with a user who cannot access the disposable dataset: the response must contain `no authorization`, with no tags. Verify list and aggregate responses for a dataset with an absent chunk store, and verify the exact renamed values in the document engine. Application errors use HTTP 200, so inspect the JSON `code` as well as curl's exit status.
+Repeat listing with a user who cannot access the disposable dataset: the response must contain `no authorization`, with no tags. Verify list and aggregate responses for a dataset with an absent chunk store. Compare persisted renamed tags with Python using the same document engine: Elasticsearch trims added tag whitespace in both implementations. Application errors use HTTP 200, so inspect the JSON `code` as well as curl's exit status.
