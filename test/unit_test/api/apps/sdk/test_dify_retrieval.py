@@ -230,7 +230,7 @@ class TestDifyRetrievalTenantCheck:
         """
         import logging
 
-        owner_kb = SimpleNamespace(id="kb-victim", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-victim", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         request_body = {
             "knowledge_id": "kb-victim",
             "query": "VICTIM_SECRET",
@@ -268,7 +268,7 @@ class TestDifyRetrievalTenantCheck:
     @pytest.mark.p1
     def test_same_tenant_request_succeeds(self, monkeypatch):
         """When the caller's tenant owns the KB, retrieval proceeds normally."""
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         request_body = {
             "knowledge_id": "kb-owner",
             "query": "hello",
@@ -299,7 +299,7 @@ class TestDifyRetrievalTenantCheck:
         ``TEAM`` KB, a member of that tenant. In the second case the caller's tenant
         is not the KB's, so an index named after the caller holds none of its chunks.
         """
-        team_kb = SimpleNamespace(id="kb-shared", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        team_kb = SimpleNamespace(id="kb-shared", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language=None)
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, team_kb),
@@ -350,7 +350,7 @@ class TestDifyRetrievalArgumentValidation:
 
     @pytest.mark.p1
     def test_empty_knowledge_id_returns_argument_error(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -367,7 +367,7 @@ class TestDifyRetrievalArgumentValidation:
 
     @pytest.mark.p1
     def test_missing_query_returns_argument_error(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -383,7 +383,7 @@ class TestDifyRetrievalArgumentValidation:
 
     @pytest.mark.p1
     def test_missing_knowledge_id_field_returns_argument_error(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -400,7 +400,7 @@ class TestDifyRetrievalArgumentValidation:
 
     @pytest.mark.p1
     def test_empty_query_returns_argument_error(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -416,7 +416,7 @@ class TestDifyRetrievalArgumentValidation:
 
     @pytest.mark.p1
     def test_invalid_top_k_returns_argument_error(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -436,7 +436,7 @@ class TestDifyRetrievalArgumentValidation:
 
     @pytest.mark.p1
     def test_invalid_score_threshold_returns_argument_error(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -455,7 +455,7 @@ class TestDifyRetrievalArgumentValidation:
 
     @pytest.mark.p1
     def test_retrieval_setting_values_are_forwarded(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -477,7 +477,7 @@ class TestDifyRetrievalArgumentValidation:
 
     @pytest.mark.p1
     def test_get_request_with_query_args(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -498,7 +498,7 @@ class TestDifyRetrievalArgumentValidation:
 
     @pytest.mark.p1
     def test_get_request_invalid_top_k_returns_argument_error(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -515,7 +515,7 @@ class TestDifyRetrievalArgumentValidation:
 
     @pytest.mark.p1
     def test_get_request_invalid_score_threshold_returns_argument_error(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -537,7 +537,7 @@ class TestDifyRetrievalRetrievalBehavior:
 
     @pytest.mark.p1
     def test_metadata_condition_empty_result_uses_sentinel(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -557,7 +557,7 @@ class TestDifyRetrievalRetrievalBehavior:
 
     @pytest.mark.p1
     def test_metadata_condition_matching_docs_are_forwarded(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -577,7 +577,7 @@ class TestDifyRetrievalRetrievalBehavior:
 
     @pytest.mark.p1
     def test_use_kg_inserts_graph_chunk_at_front(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -596,7 +596,7 @@ class TestDifyRetrievalRetrievalBehavior:
 
     @pytest.mark.p1
     def test_use_kg_empty_result_is_not_inserted(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -614,7 +614,7 @@ class TestDifyRetrievalRetrievalBehavior:
 
     @pytest.mark.p1
     def test_records_carry_full_metadata(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -635,7 +635,7 @@ class TestDifyRetrievalRetrievalBehavior:
 
     @pytest.mark.p1
     def test_records_carry_the_document_metadata(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -656,7 +656,7 @@ class TestDifyRetrievalRetrievalBehavior:
 
     @pytest.mark.p1
     def test_chunks_of_one_document_get_separate_metadata_dicts(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -678,7 +678,7 @@ class TestDifyRetrievalRetrievalBehavior:
 
     @pytest.mark.p1
     def test_no_chunks_returns_empty_records(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -693,7 +693,7 @@ class TestDifyRetrievalRetrievalBehavior:
 
     @pytest.mark.p1
     def test_not_found_exception_returns_404(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
@@ -711,7 +711,7 @@ class TestDifyRetrievalRetrievalBehavior:
 
     @pytest.mark.p1
     def test_other_exception_returns_server_error(self, monkeypatch):
-        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge", language="English")
         module = _load_dify_retrieval(
             monkeypatch,
             kb=(True, owner_kb),
