@@ -112,6 +112,40 @@ LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
     }
 )
 
+# Claude models that reject every sampling parameter (temperature / top_p / top_k -> HTTP 400).
+_CLAUDE_NO_SAMPLING_MARKERS = (
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable",
+    "claude-mythos",
+)
+
+
+def _apply_claude_sampling_policy(model_name_lower: str, *targets: dict) -> None:
+    """Drop, in place on every ``targets`` dict, the sampling parameters a Claude model would reject.
+
+    Applies to Claude served by Anthropic directly *and* through Bedrock (model names such as
+    ``eu.anthropic.claude-sonnet-4-6``). Two rules:
+
+    * Opus 4.7+, Sonnet 5, Fable/Mythos: no sampling parameter is accepted at all.
+    * Every other Claude (enforced from 4.1 on, older models tolerate either): ``temperature``
+      and ``top_p`` cannot both be specified -- Bedrock answers "temperature and top_p cannot
+      both be specified for this model". ``temperature`` is the primary UI knob, so ``top_p``
+      is the one dropped.
+    """
+    if "claude" not in model_name_lower:
+        return
+    if any(marker in model_name_lower for marker in _CLAUDE_NO_SAMPLING_MARKERS):
+        for target in targets:
+            for key in ("temperature", "top_p", "top_k"):
+                target.pop(key, None)
+        return
+    if any("temperature" in target for target in targets):
+        for target in targets:
+            target.pop("top_p", None)
+
 
 def _apply_model_family_policies(
     model_name: str,
@@ -204,10 +238,8 @@ def _apply_model_family_policies(
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
-        elif provider == SupportedLiteLLMProvider.Anthropic and model_name_lower in {"claude-opus-4-7", "claude-opus-4-8"}:
-            for key in ("temperature", "top_p", "top_k"):
-                sanitized_gen_conf.pop(key, None)
-                sanitized_kwargs.pop(key, None)
+        elif provider in {SupportedLiteLLMProvider.Anthropic, SupportedLiteLLMProvider.Bedrock}:
+            _apply_claude_sampling_policy(model_name_lower, sanitized_gen_conf, sanitized_kwargs)
 
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):

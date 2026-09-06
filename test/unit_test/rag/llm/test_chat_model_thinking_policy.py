@@ -17,7 +17,7 @@
 import pytest
 
 from rag.llm import SupportedLiteLLMProvider
-from rag.llm.chat_model import _apply_model_family_policies, _move_litellm_provider_body_fields
+from rag.llm.chat_model import _apply_claude_sampling_policy, _apply_model_family_policies, _move_litellm_provider_body_fields
 
 pytestmark = pytest.mark.p1
 
@@ -327,3 +327,70 @@ def test_litellm_provider_body_fields_preserve_existing_extra_body():
 
     assert completion_args["extra_body"] == {"seed": 1, "enable_thinking": False}
     assert "enable_thinking" not in completion_args
+
+
+CLAUDE_GEN_CONF = {"temperature": 0.8, "top_p": 0.9, "presence_penalty": 0.1, "frequency_penalty": 0.1}
+
+
+def _litellm_policies(model_name, provider, gen_conf):
+    sanitized, _ = _apply_model_family_policies(model_name, backend="litellm", provider=provider, gen_conf=gen_conf)
+    return sanitized
+
+
+def test_bedrock_claude_keeps_temperature_and_drops_top_p():
+    gen_conf = _litellm_policies("eu.anthropic.claude-sonnet-4-6", SupportedLiteLLMProvider.Bedrock, CLAUDE_GEN_CONF)
+
+    assert gen_conf["temperature"] == 0.8
+    assert "top_p" not in gen_conf
+    assert gen_conf["presence_penalty"] == 0.1
+
+
+def test_bedrock_claude_top_p_alone_is_preserved():
+    gen_conf = _litellm_policies("eu.anthropic.claude-sonnet-4-6", SupportedLiteLLMProvider.Bedrock, {"top_p": 0.9})
+
+    assert gen_conf == {"top_p": 0.9}
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "eu.anthropic.claude-opus-4-7-v1",
+        "eu.anthropic.claude-opus-4-8-v1:0",
+        "eu.anthropic.claude-opus-5",
+        "eu.anthropic.claude-sonnet-5",
+        "anthropic.claude-fable-5-1",
+    ],
+)
+def test_bedrock_claude_without_sampling_support_drops_all_sampling_params(model_name):
+    gen_conf = _litellm_policies(model_name, SupportedLiteLLMProvider.Bedrock, {**CLAUDE_GEN_CONF, "top_k": 40})
+
+    assert not {"temperature", "top_p", "top_k"} & set(gen_conf)
+    assert gen_conf["presence_penalty"] == 0.1
+
+
+def test_claude_sonnet_4_5_is_not_matched_as_sonnet_5():
+    gen_conf = _litellm_policies("eu.anthropic.claude-sonnet-4-5", SupportedLiteLLMProvider.Bedrock, CLAUDE_GEN_CONF)
+
+    assert gen_conf["temperature"] == 0.8
+    assert "top_p" not in gen_conf
+
+
+def test_anthropic_opus_4_8_still_drops_all_sampling_params():
+    gen_conf = _litellm_policies("claude-opus-4-8", SupportedLiteLLMProvider.Anthropic, CLAUDE_GEN_CONF)
+
+    assert not {"temperature", "top_p", "top_k"} & set(gen_conf)
+
+
+def test_bedrock_non_claude_model_is_untouched():
+    gen_conf = _litellm_policies("mistral.mistral-large-2402-v1:0", SupportedLiteLLMProvider.Bedrock, CLAUDE_GEN_CONF)
+
+    assert gen_conf == CLAUDE_GEN_CONF
+
+
+def test_claude_sampling_policy_drops_top_p_across_targets_when_temperature_is_anywhere():
+    gen_conf, kwargs = {"top_p": 0.9}, {"temperature": 0.2}
+
+    _apply_claude_sampling_policy("eu.anthropic.claude-sonnet-4-6", gen_conf, kwargs)
+
+    assert gen_conf == {}
+    assert kwargs == {"temperature": 0.2}
