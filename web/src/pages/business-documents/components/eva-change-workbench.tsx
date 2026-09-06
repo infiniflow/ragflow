@@ -17,9 +17,9 @@ import {
   approveEvaDocumentChange,
   BusinessDocumentConflictError,
   fetchEvaDocumentChange,
+  generateEvaDocumentChangeDraft,
   prepareEvaDocumentChange,
   publishEvaDocumentChange,
-  saveEvaDocumentChangeDraft,
 } from '@/services/business-document-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -30,10 +30,10 @@ import {
   FilePenLine,
   LoaderCircle,
   RefreshCw,
-  Save,
   Send,
+  Sparkles,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import type {
   EvaDocumentChange,
@@ -43,7 +43,8 @@ import type {
 import { appendVoiceTranscript, VoiceInput } from './voice-input';
 
 const stateLabels: Record<EvaDocumentChangeState, string> = {
-  EDITING: 'Редактирование',
+  EDITING: 'Черновик агента',
+  GENERATING_DRAFT: 'Агент готовит черновик',
   APPROVED: 'Согласовано',
   PREPARING_EVA_DRAFT: 'Запись черновика в EVA',
   EVA_DRAFT_READY: 'Черновик сохранён в EVA',
@@ -53,7 +54,8 @@ const stateLabels: Record<EvaDocumentChangeState, string> = {
 
 const eventLabels: Record<string, string> = {
   CHANGE_REQUEST_CREATED: 'Зафиксирована исходная версия',
-  DRAFT_UPDATED: 'Черновик обновлён',
+  AI_DRAFT_REQUESTED: 'Агент начал подготовку',
+  AI_DRAFT_GENERATED: 'Агент подготовил доработку',
   DRAFT_APPROVED: 'Изменения согласованы',
   EVA_DRAFT_SAVED: 'Черновик записан в EVA',
   EVA_DOCUMENT_PUBLISHED: 'Документ опубликован в EVA',
@@ -61,6 +63,7 @@ const eventLabels: Record<string, string> = {
 };
 
 const busyStates = new Set<EvaDocumentChangeState>([
+  'GENERATING_DRAFT',
   'PREPARING_EVA_DRAFT',
   'PUBLISHING',
 ]);
@@ -76,9 +79,8 @@ function updateCachedChange(
 
 export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
   const queryClient = useQueryClient();
-  const [draftMarkdown, setDraftMarkdown] = useState('');
-  const [loadedDraftKey, setLoadedDraftKey] = useState<string | null>(null);
-  const [view, setView] = useState<'draft' | 'diff'>('draft');
+  const [refinement, setRefinement] = useState('');
+  const [view, setView] = useState<'draft' | 'diff'>('diff');
   const [hasConflict, setHasConflict] = useState(false);
   const [overwriteAction, setOverwriteAction] =
     useState<EvaDocumentChangeAction | null>(null);
@@ -93,34 +95,6 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
   });
   const change = changeQuery.data;
 
-  useEffect(() => {
-    if (!change) return;
-    const draftKey = `${change.change_id}:${change.draft_content_hash}`;
-    if (loadedDraftKey === draftKey) return;
-    setDraftMarkdown(change.draft_markdown);
-    setLoadedDraftKey(draftKey);
-  }, [change, loadedDraftKey]);
-
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      if (!change) throw new Error('Доработка не загружена');
-      return saveEvaDocumentChangeDraft(changeId, {
-        expected_state_version: change.state_version,
-        draft_markdown: draftMarkdown,
-      });
-    },
-    onSuccess: (updated) => {
-      setHasConflict(false);
-      updateCachedChange(queryClient, changeId, updated);
-      setDraftMarkdown(updated.draft_markdown);
-    },
-    onError: (error) => {
-      if (error instanceof BusinessDocumentConflictError) {
-        setHasConflict(true);
-        void changeQuery.refetch();
-      }
-    },
-  });
   const actionMutation = useMutation({
     mutationFn: ({
       action,
@@ -130,6 +104,11 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
       forceOverwrite?: boolean;
     }) => {
       if (!change) throw new Error('Доработка не загружена');
+      if (action === 'GENERATE_DRAFT')
+        return generateEvaDocumentChangeDraft(changeId, {
+          expected_state_version: change.state_version,
+          ...(refinement.trim() ? { refinement: refinement.trim() } : {}),
+        });
       if (action === 'APPROVE')
         return approveEvaDocumentChange(changeId, change.state_version);
       if (action === 'PREPARE_EVA_DRAFT')
@@ -149,6 +128,8 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
     onSuccess: (updated) => {
       setHasConflict(false);
       setOverwriteAction(null);
+      setRefinement('');
+      if (updated.diff.changed) setView('diff');
       updateCachedChange(queryClient, changeId, updated);
     },
     onError: async (error, variables) => {
@@ -164,7 +145,9 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
         }
         setHasConflict(true);
         void changeQuery.refetch();
+        return;
       }
+      if (variables.action === 'GENERATE_DRAFT') void changeQuery.refetch();
     },
   });
 
@@ -172,11 +155,8 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
     () => new Set(change?.allowed_actions ?? []),
     [change?.allowed_actions],
   );
-  const hasUnsavedChanges = Boolean(
-    change && draftMarkdown !== change.draft_markdown,
-  );
-  const isPending = saveMutation.isPending || actionMutation.isPending;
-  const mutationError = saveMutation.error || actionMutation.error;
+  const isPending = actionMutation.isPending;
+  const mutationError = actionMutation.error;
 
   if (changeQuery.isLoading) {
     return (
@@ -343,7 +323,7 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
                 variant={view === 'draft' ? 'secondary' : 'ghost'}
                 onClick={() => setView('draft')}
               >
-                Черновик
+                Вариант агента
               </Button>
               <Button
                 size="sm"
@@ -358,58 +338,22 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
                 )}
               </Button>
             </div>
-            {hasUnsavedChanges && (
-              <span className="text-xs text-state-warning">
-                Есть несохранённые правки
-              </span>
-            )}
           </div>
 
           {view === 'draft' ? (
             <div className="flex min-h-0 flex-1 flex-col p-4">
-              <div className="relative flex min-h-0 flex-1">
-                <Textarea
-                  value={draftMarkdown}
-                  maxLength={1_000_000}
-                  resize="none"
-                  aria-label="Черновик документа EVA"
-                  className="min-h-[420px] flex-1 pe-11 font-mono text-[13px] leading-6"
-                  disabled={!allowed.has('SAVE_DRAFT') || isPending}
-                  onChange={(event) => setDraftMarkdown(event.target.value)}
-                />
-                <div className="absolute end-2 top-2">
-                  <VoiceInput
-                    label="Редактор EVA"
-                    disabled={!allowed.has('SAVE_DRAFT') || isPending}
-                    onTranscript={(transcript) =>
-                      setDraftMarkdown((value) =>
-                        appendVoiceTranscript(value, transcript, 1_000_000),
-                      )
-                    }
-                    testId="voice-input-eva-draft"
-                  />
-                </div>
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <p className="text-xs text-text-secondary">
-                  Markdown будет безопасно преобразован в HTML только при записи
-                  черновика EVA.
-                </p>
-                <Button
-                  variant="outline"
-                  disabled={
-                    !allowed.has('SAVE_DRAFT') ||
-                    !hasUnsavedChanges ||
-                    isPending
-                  }
-                  loading={saveMutation.isPending}
-                  onClick={() => saveMutation.mutate()}
-                  data-testid="save-eva-change-draft"
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border-button bg-bg-card/40 p-4 scrollbar-auto">
+                <pre
+                  className="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-text-primary"
+                  data-testid="eva-agent-draft"
                 >
-                  <Save className="size-4" />
-                  Сохранить
-                </Button>
+                  {change.draft_markdown}
+                </pre>
               </div>
+              <p className="mt-3 text-xs leading-5 text-text-secondary">
+                Текст формирует агент. Для корректировки результата уточните
+                задачу и запустите подготовку повторно.
+              </p>
             </div>
           ) : (
             <div
@@ -505,7 +449,7 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
               <span>
                 <span className="block font-medium">Подготовить diff</span>
                 <span className="mt-0.5 block text-xs text-text-secondary">
-                  Правки сохраняются только в «Агент Раггер».
+                  Агент формирует закрытый черновик по задаче автора.
                 </span>
               </span>
             </li>
@@ -551,13 +495,63 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
           </ol>
 
           <div className="mt-6 space-y-2">
+            {allowed.has('GENERATE_DRAFT') && (
+              <div className="mb-4 border-s-2 border-accent-primary ps-4">
+                <label className="block text-xs font-medium text-text-secondary">
+                  Уточнение для агента
+                </label>
+                <div className="relative mt-2">
+                  <Textarea
+                    value={refinement}
+                    maxLength={10000}
+                    autoSize={{ minRows: 3, maxRows: 8 }}
+                    resize="vertical"
+                    aria-label="Уточнение доработки EVA"
+                    placeholder="Необязательно: уточните, что нужно изменить в следующем варианте."
+                    className="pe-11"
+                    disabled={isPending}
+                    onChange={(event) => setRefinement(event.target.value)}
+                  />
+                  <div className="absolute end-2 top-2">
+                    <VoiceInput
+                      label="Уточнение доработки EVA"
+                      disabled={isPending}
+                      onTranscript={(transcript) =>
+                        setRefinement((value) =>
+                          appendVoiceTranscript(value, transcript, 10000),
+                        )
+                      }
+                      testId="voice-input-eva-refinement"
+                    />
+                  </div>
+                </div>
+                <Button
+                  className="mt-3 w-full"
+                  variant="outline"
+                  loading={
+                    actionMutation.isPending &&
+                    actionMutation.variables?.action === 'GENERATE_DRAFT'
+                  }
+                  disabled={isPending}
+                  onClick={() =>
+                    actionMutation.mutate({ action: 'GENERATE_DRAFT' })
+                  }
+                  data-testid="generate-eva-change-draft"
+                >
+                  <Sparkles className="size-4" />
+                  {change.diff.changed
+                    ? 'Пересобрать доработку'
+                    : 'Сформировать доработку'}
+                </Button>
+              </div>
+            )}
             {allowed.has('APPROVE') && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
                     className="w-full"
                     variant="accent"
-                    disabled={hasUnsavedChanges || isPending}
+                    disabled={isPending}
                   >
                     <CheckCircle2 className="size-4" />
                     Согласовать diff

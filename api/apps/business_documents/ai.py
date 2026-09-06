@@ -123,7 +123,7 @@ class RAGFlowLLMAdapter:
 
         model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
         task_type = input_payload.get("job_input", {}).get("task_type")
-        max_completion_tokens = 6144 if task_type == "GENERATE_DRAFT" else 4096
+        max_completion_tokens = 8192 if task_type in {"GENERATE_DRAFT", "GENERATE_EVA_CHANGE"} else 4096
         # The durable business-document queue owns retries and exposes each
         # failure to the user.  Provider-internal retries can otherwise keep a
         # single visible attempt inside repeated five-minute HTTP calls.
@@ -163,6 +163,29 @@ class BusinessDocumentAI:
         parsed = self._bind_change_plan_source_sections(job, parsed)
         parsed = self._filter_evidence_refs(parsed, evidence)
         return self._validate(job, parsed)
+
+    def generate_eva_change(self, tenant_id: str, base_markdown: str, change_request: str) -> dict[str, Any]:
+        """Generate a private EVA draft without granting the model write access."""
+
+        descriptor = prompt_descriptor("GENERATE_EVA_CHANGE")
+        if descriptor is None:
+            raise RuntimeError("EVA change prompt is unavailable")
+        schema = contract_schema("eva_change_draft")
+        system = prompt_text(descriptor["name"]).replace("`{{output_schema_json}}`", json.dumps(schema, ensure_ascii=False))
+        input_payload = {
+            "prompt": descriptor,
+            "job_input": {
+                "task_type": "GENERATE_EVA_CHANGE",
+                "base_markdown": base_markdown,
+                "change_request": change_request,
+            },
+        }
+        raw = self._adapter.generate(tenant_id, system, input_payload)
+        parsed = self._normalize_schema_versions(self._parse(raw))
+        if set(parsed) == {"eva_change_draft"} and isinstance(parsed["eva_change_draft"], dict):
+            parsed = parsed["eva_change_draft"]
+        validate_contract("eva_change_draft", parsed)
+        return parsed
 
     @staticmethod
     def _prompt(job: BusinessDocumentJob, evidence: dict[str, Any] | None = None) -> PromptBundle:

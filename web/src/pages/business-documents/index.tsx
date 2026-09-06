@@ -1234,7 +1234,7 @@ export default function BusinessDocumentsPage() {
               onClick={() => runDocumentCommand('START_REVIEW')}
             >
               <RotateCcw className="size-4" />
-              Начать новое ревью
+              Начать вносить изменения
             </Button>
           )}
           {allowed.has('REQUEST_REVIEW_ASSESSMENT') && (
@@ -1290,7 +1290,7 @@ export default function BusinessDocumentsPage() {
               onClick={() => runDocumentCommand('APPLY_CHANGES')}
             >
               <CheckCircle2 className="size-4" />
-              Завершить ревью
+              Применить исправления
             </Button>
           )}
           {allowed.has('ARCHIVE') && (

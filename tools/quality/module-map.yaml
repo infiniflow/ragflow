@@ -50,6 +50,7 @@ modules:
   - agent/business_requirements/contracts/change_plan.v1.schema.json
   - agent/business_requirements/contracts/command.v1.schema.json
   - agent/business_requirements/contracts/create_document.v1.schema.json
+  - agent/business_requirements/contracts/create_document.v2.schema.json
   - agent/business_requirements/contracts/document_draft.v1.schema.json
   - agent/business_requirements/contracts/question_batch.v1.schema.json
   - agent/business_requirements/contracts/review_plan.v1.schema.json
@@ -74,6 +75,10 @@ modules:
   - api/apps/business_documents/worker.py
   - api/apps/restful_apis/business_document_api.py
   - api/db/services/business_document_settings_service.py
+  - business_documents/__init__.py
+  - business_documents/domain/__init__.py
+  - business_documents/domain/names.py
+  - docs/develop/business-documents-eva-title-binding-ru.md
   - test/evals/business_documents/live_quality.py
   - test/evals/business_documents/test_golden_dialogue_harness.py
   - test/evals/business_documents/test_live_model_quality.py
@@ -133,6 +138,8 @@ modules:
   - web
   test_status: Located, not executed in T0; T1 establishes behavior baseline
   paths:
+  - agent/business_requirements/contracts/eva_change_draft.v1.schema.json
+  - agent/business_requirements/prompts/eva_change.v1.md
   - agent/tools/retrieval.py
   - api/apps/business_documents/eva_changes.py
   - api/apps/services/openmetadata_dataset_retrieval.py
@@ -337,6 +344,7 @@ modules:
   - test/testcases/restful_api/test_user_tenant_routes_unit.py
   - test/testcases/restful_api/test_file_commit_routes_unit.py
   - test/testcases/test_web_api/test_system_app/test_apps_init_unit.py
+  - test/testcases/test_web_api/test_system_app/test_system_routes_unit.py
   - test/playwright/e2e/test_managed_datasets_access_ui.py
   - test/playwright/e2e/test_managed_settings_access_ui.py
   - web/src/pages/admin/access-groups.test.tsx
@@ -372,6 +380,7 @@ modules:
   - test/testcases/restful_api/test_user_tenant_routes_unit.py
   - test/testcases/restful_api/test_file_commit_routes_unit.py
   - test/testcases/test_web_api/test_system_app/test_apps_init_unit.py
+  - test/testcases/test_web_api/test_system_app/test_system_routes_unit.py
   - test/unit_test/admin/test_access_groups.py
   - test/unit_test/api/db/services/test_access_group_service.py
   - test/unit_test/api/db/services/test_dataset_access_permissions.py
@@ -513,6 +522,8 @@ modules:
   paths:
   - api/db/db_models.py
   - common/time_utils.py
+  - test/integration/fixtures/upgrade_data_probe.py
+  - test/integration/test_previous_release_data_upgrade.py
 - id: agent-runtime
   title: Canvas, agent session and Go API integration
   owner: fork-maintainer
@@ -898,6 +909,8 @@ modules:
   - web/src/pages/dataset/knowledge-graph/util.ts
   - web/src/pages/files/use-upload-file.ts
   - web/src/pages/home/banner.tsx
+  - web/src/pages/home/index.test.tsx
+  - web/src/pages/home/index.tsx
   - web/src/pages/home/memory-list.tsx
   - web/src/pages/login-next/card.tsx
   - web/src/pages/login-next/index.tsx

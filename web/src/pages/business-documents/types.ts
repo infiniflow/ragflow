@@ -355,6 +355,7 @@ export interface BusinessDocumentCommandResult {
 
 export type EvaDocumentChangeState =
   | 'EDITING'
+  | 'GENERATING_DRAFT'
   | 'APPROVED'
   | 'PREPARING_EVA_DRAFT'
   | 'EVA_DRAFT_READY'
@@ -362,7 +363,7 @@ export type EvaDocumentChangeState =
   | 'PUBLISHED';
 
 export type EvaDocumentChangeAction =
-  | 'SAVE_DRAFT'
+  | 'GENERATE_DRAFT'
   | 'APPROVE'
   | 'PREPARE_EVA_DRAFT'
   | 'PUBLISH_EVA';

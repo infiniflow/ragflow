@@ -1636,8 +1636,9 @@ def test_verified_eva_binding_supports_governed_pull_and_outbound_change(databas
 
     captured_change = {}
 
-    def create_change(_tenant_id, _actor_id, raw):
+    def create_change(_tenant_id, _actor_id, raw, *, allow_prefilled_draft=False):
         captured_change.update(raw)
+        captured_change["allow_prefilled_draft"] = allow_prefilled_draft
         return {"change_id": "eva-change-1", "draft_markdown": raw["draft_markdown"]}
 
     monkeypatch.setattr(EvaDocumentChangeService, "create_change", staticmethod(create_change))
@@ -1652,6 +1653,7 @@ def test_verified_eva_binding_supports_governed_pull_and_outbound_change(databas
     assert captured_change["document_id"] == "eva-document-1"
     assert captured_change["document_name"] == document["title"]
     assert captured_change["draft_markdown"] == document["current_revision"]["body_markdown"]
+    assert captured_change["allow_prefilled_draft"] is True
 
     class EvaClient:
         @staticmethod

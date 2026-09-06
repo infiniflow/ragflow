@@ -645,6 +645,7 @@ class BusinessDocumentService:
                 "change_summary": change_summary[:50_000],
                 "draft_markdown": revision.body_markdown,
             },
+            allow_prefilled_draft=True,
         )
 
     @classmethod

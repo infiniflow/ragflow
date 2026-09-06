@@ -1,6 +1,6 @@
 schema_version: 1
 upstream_base: cb93883f3f8c975eecb2fed81210effeb3bdb06f
-head: 490d10e40e00ffaa07c262905d2672d41e67c732
+head: a9a442d5c6d259a55efd585f5149da0a16799428
 changes:
 - id: CORE-eva-integration
   owner: fork-maintainer
@@ -86,6 +86,7 @@ changes:
   - test/testcases/restful_api/test_user_tenant_routes_unit.py
   - test/testcases/restful_api/test_file_commit_routes_unit.py
   - test/testcases/test_web_api/test_system_app/test_apps_init_unit.py
+  - test/testcases/test_web_api/test_system_app/test_system_routes_unit.py
   - test/playwright/e2e/test_managed_datasets_access_ui.py
   - test/playwright/e2e/test_managed_settings_access_ui.py
   - web/src/pages/admin/access-groups.test.tsx
@@ -137,6 +138,10 @@ changes:
     staged: null
     unstaged: null
   - path: test/testcases/test_web_api/test_system_app/test_apps_init_unit.py
+    committed: M
+    staged: null
+    unstaged: null
+  - path: test/testcases/test_web_api/test_system_app/test_system_routes_unit.py
     committed: M
     staged: null
     unstaged: null
@@ -1236,6 +1241,10 @@ changes:
     committed: M
     staged: null
     unstaged: null
+  - path: web/src/pages/home/index.tsx
+    committed: M
+    staged: null
+    unstaged: null
   - path: web/src/pages/home/memory-list.tsx
     committed: M
     staged: null
@@ -1375,7 +1384,7 @@ changes:
   - path: web/src/utils/api.ts
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: web/src/utils/chat.ts
     committed: M
     staged: null

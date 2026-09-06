@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ragflow.local/contracts/eva_change_draft.v1.schema.json",
+  "title": "EVA document change draft",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "draft_markdown", "summary"],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "draft_markdown": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000000
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    }
+  }
+}

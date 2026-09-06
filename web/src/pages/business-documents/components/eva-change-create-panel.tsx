@@ -22,7 +22,8 @@ import type { EvaDocumentChangeState, EvaDocumentSource } from '../types';
 import { appendVoiceTranscript, VoiceInput } from './voice-input';
 
 const stateLabels: Record<EvaDocumentChangeState, string> = {
-  EDITING: 'Редактирование',
+  EDITING: 'Вариант агента',
+  GENERATING_DRAFT: 'Агент готовит черновик',
   APPROVED: 'Согласовано',
   PREPARING_EVA_DRAFT: 'Запись черновика',
   EVA_DRAFT_READY: 'Черновик в EVA',
@@ -30,10 +31,41 @@ const stateLabels: Record<EvaDocumentChangeState, string> = {
   PUBLISHED: 'Опубликовано',
 };
 
+type EvaChangeScenario = 'CHANGE' | 'AUDIT' | 'UPDATE';
+
+const scenarioOptions: Array<{
+  id: EvaChangeScenario;
+  label: string;
+  description: string;
+  instruction: string;
+}> = [
+  {
+    id: 'CHANGE',
+    label: 'Изменить',
+    description: 'Внести конкретные изменения по задаче.',
+    instruction: 'Сценарий: внести конкретные изменения в документ.',
+  },
+  {
+    id: 'AUDIT',
+    label: 'Проверить',
+    description: 'Найти проблемы и подготовить исправленный вариант.',
+    instruction:
+      'Сценарий: проверить документ на противоречия, пропуски и неясные требования, затем подготовить исправленный вариант в границах задачи автора.',
+  },
+  {
+    id: 'UPDATE',
+    label: 'Актуализировать',
+    description: 'Обновить документ по новым правилам или процессу.',
+    instruction:
+      'Сценарий: актуализировать документ по новым правилам, данным или процессу, указанным автором.',
+  },
+];
+
 export function EvaChangeCreatePanel() {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<EvaDocumentSource | null>(null);
+  const [scenario, setScenario] = useState<EvaChangeScenario>('CHANGE');
   const [changeSummary, setChangeSummary] = useState('');
   const searchMutation = useMutation({
     mutationFn: () => searchEvaDocumentSources(query.trim()),
@@ -58,10 +90,13 @@ export function EvaChangeCreatePanel() {
   const create = (event: FormEvent) => {
     event.preventDefault();
     if (!selected || !changeSummary.trim() || createMutation.isPending) return;
+    const scenarioInstruction = scenarioOptions.find(
+      (option) => option.id === scenario,
+    )!.instruction;
     createMutation.mutate({
       connector_id: selected.connector_id,
       document_id: selected.id,
-      change_summary: changeSummary.trim(),
+      change_summary: `${scenarioInstruction}\n\nЗадача автора:\n${changeSummary.trim()}`,
     });
   };
 
@@ -78,8 +113,9 @@ export function EvaChangeCreatePanel() {
         Документ EVA
       </h2>
       <p className="mt-2 text-sm leading-6 text-text-secondary">
-        Найдите опубликованный документ. Агент Раггер закрепит исходную версию и
-        не изменит EVA до отдельного подтверждения.
+        Найдите опубликованный документ и опишите результат. Агент Раггер
+        подготовит доработку и diff, но не изменит EVA до отдельного
+        подтверждения.
       </p>
 
       <form className="mt-6" onSubmit={search}>
@@ -186,6 +222,33 @@ export function EvaChangeCreatePanel() {
               {selected.version}
             </p>
           </div>
+          <div className="mt-5">
+            <p className="text-sm font-medium">Сценарий</p>
+            <div
+              className="mt-2 flex flex-wrap gap-2"
+              role="group"
+              aria-label="Сценарий доработки EVA"
+            >
+              {scenarioOptions.map((option) => (
+                <Button
+                  key={option.id}
+                  type="button"
+                  size="sm"
+                  variant={scenario === option.id ? 'secondary' : 'outline'}
+                  aria-pressed={scenario === option.id}
+                  onClick={() => setScenario(option.id)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs leading-5 text-text-secondary">
+              {
+                scenarioOptions.find((option) => option.id === scenario)!
+                  .description
+              }
+            </p>
+          </div>
           <label className="mt-5 block space-y-2 text-sm font-medium">
             <span>Что нужно изменить</span>
             <div className="relative">
@@ -226,7 +289,7 @@ export function EvaChangeCreatePanel() {
               disabled={!changeSummary.trim()}
             >
               <ArrowRight className="size-4" />
-              Открыть доработку
+              Подготовить доработку
             </Button>
           </div>
         </form>

@@ -280,8 +280,8 @@ export default {
   evaBusinessDocumentChanges: `${restAPIv1}/business-documents/eva/changes`,
   evaBusinessDocumentChange: (id: string) =>
     `${restAPIv1}/business-documents/eva/changes/${id}`,
-  evaBusinessDocumentChangeDraft: (id: string) =>
-    `${restAPIv1}/business-documents/eva/changes/${id}/draft`,
+  evaBusinessDocumentChangeGenerate: (id: string) =>
+    `${restAPIv1}/business-documents/eva/changes/${id}/generate`,
   evaBusinessDocumentChangeApprove: (id: string) =>
     `${restAPIv1}/business-documents/eva/changes/${id}/approve`,
   evaBusinessDocumentChangePrepare: (id: string) =>

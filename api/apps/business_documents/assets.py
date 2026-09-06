@@ -38,18 +38,21 @@ _CONTRACT_FILES = {
     "document_draft": "document_draft.v1.schema.json",
     "change_plan": "change_plan.v1.schema.json",
     "review_plan": "review_plan.v1.schema.json",
+    "eva_change_draft": "eva_change_draft.v1.schema.json",
 }
 _PROMPT_FILES = {
     "intake": ("intake.v1.md", "1"),
     "review": ("review.v1.md", "1"),
     "draft": ("draft.v1.md", "1"),
     "change_planner": ("change_planner.v1.md", "1"),
+    "eva_change": ("eva_change.v1.md", "1"),
 }
 _JOB_PROMPTS = {
     "ASSESS_INTAKE": "intake",
     "ASSESS_REVIEW": "review",
     "GENERATE_DRAFT": "draft",
     "PLAN_CHANGES": "change_planner",
+    "GENERATE_EVA_CHANGE": "eva_change",
 }
 
 

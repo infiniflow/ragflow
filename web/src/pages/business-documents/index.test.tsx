@@ -9,6 +9,7 @@ import {
   downloadBusinessDocumentExport,
   fetchBusinessDocument,
   fetchEvaDocumentChange,
+  generateEvaDocumentChangeDraft,
   listBusinessDocumentAccessUsers,
   listBusinessDocumentRevisions,
   listBusinessDocuments,
@@ -17,7 +18,6 @@ import {
   publishEvaDocumentChange,
   pullBusinessDocumentFromEva,
   rebindBusinessDocumentToEva,
-  saveEvaDocumentChangeDraft,
   searchEvaDocumentSources,
   submitBusinessDocumentCommand,
 } from '@/services/business-document-service';
@@ -95,7 +95,7 @@ jest.mock('@/services/business-document-service', () => {
     createEvaDocumentChange: jest.fn(),
     listEvaDocumentChanges: jest.fn(),
     fetchEvaDocumentChange: jest.fn(),
-    saveEvaDocumentChangeDraft: jest.fn(),
+    generateEvaDocumentChangeDraft: jest.fn(),
     approveEvaDocumentChange: jest.fn(),
     prepareEvaDocumentChange: jest.fn(),
     publishEvaDocumentChange: jest.fn(),
@@ -125,7 +125,7 @@ const mockedSearchEva = jest.mocked(searchEvaDocumentSources);
 const mockedCreateEva = jest.mocked(createEvaDocumentChange);
 const mockedListEva = jest.mocked(listEvaDocumentChanges);
 const mockedFetchEva = jest.mocked(fetchEvaDocumentChange);
-const mockedSaveEva = jest.mocked(saveEvaDocumentChangeDraft);
+const mockedGenerateEva = jest.mocked(generateEvaDocumentChangeDraft);
 const mockedApproveEva = jest.mocked(approveEvaDocumentChange);
 const mockedPrepareEva = jest.mocked(prepareEvaDocumentChange);
 const mockedPublishEva = jest.mocked(publishEvaDocumentChange);
@@ -291,7 +291,7 @@ const evaChange: EvaDocumentChange = {
       },
     ],
   },
-  allowed_actions: ['SAVE_DRAFT', 'APPROVE'],
+  allowed_actions: ['GENERATE_DRAFT', 'APPROVE'],
   events: [
     {
       event_id: 'event-1',
@@ -381,7 +381,7 @@ beforeEach(() => {
     page_size: 20,
   });
   mockedFetchEva.mockResolvedValue(evaChange);
-  mockedSaveEva.mockResolvedValue(evaChange);
+  mockedGenerateEva.mockResolvedValue(evaChange);
   mockedApproveEva.mockResolvedValue(evaChange);
   mockedPrepareEva.mockResolvedValue(evaChange);
   mockedPublishEva.mockResolvedValue(evaChange);
@@ -434,7 +434,7 @@ test('renders a dense read-only workbench from the server projection', async () 
     screen.getByTestId('business-document-comment-disposition'),
   ).toHaveTextContent('Подтверждено к правке');
   expect(screen.getByTestId('apply-changes-button')).toHaveTextContent(
-    'Завершить ревью',
+    'Применить исправления',
   );
   expect(screen.queryByRole('textbox', { name: 'Документ' })).toBeNull();
   expect(screen.getAllByTestId('business-document-section')[2]).toHaveAttribute(
@@ -1047,7 +1047,7 @@ test('keeps all agreed-state actions in a wrapping mobile header', async () => {
   expect(actions).toHaveClass('sm:w-auto');
   expect(title).toHaveClass('break-words', 'sm:truncate');
   expect(
-    screen.getByRole('button', { name: 'Начать новое ревью' }),
+    screen.getByRole('button', { name: 'Начать вносить изменения' }),
   ).toBeInTheDocument();
   expect(
     screen.getByRole('button', { name: 'Создать Markdown' }),
@@ -1946,7 +1946,9 @@ test('offers matching EVA pages and confirms replacement before binding', async 
   ).toHaveTextContent('полностью заменено содержимым документа');
   fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
   await waitFor(() =>
-    expect(screen.queryByTestId('eva-replace-confirmation')).not.toBeInTheDocument(),
+    expect(
+      screen.queryByTestId('eva-replace-confirmation'),
+    ).not.toBeInTheDocument(),
   );
   expect(mockedCreate).toHaveBeenCalledTimes(1);
 
@@ -1999,9 +2001,7 @@ test('creates without EVA binding after the user explicitly skips matches', asyn
     target: { value: 'Нужен новый клиентский сценарий.' },
   });
   fireEvent.click(screen.getByRole('button', { name: 'Начать работу' }));
-  fireEvent.click(
-    await screen.findByTestId('create-without-eva-binding'),
-  );
+  fireEvent.click(await screen.findByTestId('create-without-eva-binding'));
 
   await waitFor(() => expect(mockedCreate).toHaveBeenCalledTimes(2));
   expect(mockedCreate.mock.calls[1][0]).toEqual(
@@ -2226,7 +2226,7 @@ test('keeps a foreign document editable for admin and allows deletion from its w
   expect(
     await screen.findByTestId('business-document-delete-detail'),
   ).toBeVisible();
-  expect(screen.getByText('Завершить ревью')).toBeVisible();
+  expect(screen.getByText('Применить исправления')).toBeVisible();
   fireEvent.click(screen.getByTestId('business-document-delete-detail'));
   const dialog = await screen.findByRole('alertdialog');
   fireEvent.click(within(dialog).getByRole('button', { name: /^Удалить$/ }));
@@ -2244,7 +2244,7 @@ test('keeps a foreign document read-only for an author', async () => {
   renderPage('/business-documents/doc-1');
 
   expect(await screen.findByText(projection.title)).toBeVisible();
-  expect(screen.queryByText('Завершить ревью')).not.toBeInTheDocument();
+  expect(screen.queryByText('Применить исправления')).not.toBeInTheDocument();
   expect(
     screen.queryByTestId('business-document-delete-detail'),
   ).not.toBeInTheDocument();
@@ -2321,27 +2321,30 @@ test('finds an existing EVA document and opens a pinned change request', async (
   );
   fireEvent.click(screen.getByRole('button', { name: 'Найти документ EVA' }));
   fireEvent.click(await screen.findByTestId('eva-source-result'));
+  fireEvent.click(screen.getByRole('button', { name: 'Проверить' }));
   fireEvent.change(
     screen.getByRole('textbox', { name: 'Описание доработки' }),
     { target: { value: 'Уточнить ожидаемый результат.' } },
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Открыть доработку' }));
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Подготовить доработку' }),
+  );
 
   await waitFor(() => expect(mockedCreateEva).toHaveBeenCalledTimes(1));
   expect(mockedCreateEva.mock.calls[0][0]).toEqual({
     connector_id: 'connector-1',
     document_id: 'CmfDocument:doc-1',
-    change_summary: 'Уточнить ожидаемый результат.',
+    change_summary:
+      'Сценарий: проверить документ на противоречия, пропуски и неясные требования, затем подготовить исправленный вариант в границах задачи автора.\n\nЗадача автора:\nУточнить ожидаемый результат.',
   });
   expect(await screen.findByTestId('eva-change-workbench')).toBeVisible();
   expect(mockedFetchEva).toHaveBeenCalledWith('change-1');
 });
 
-test('shows a section diff and saves EVA changes only in the local draft', async () => {
+test('shows a read-only agent draft and regenerates it only from instructions', async () => {
   renderPage('/business-documents/eva/change-1');
 
   expect(await screen.findByTestId('eva-change-workbench')).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: /Diff/ }));
   expect(screen.getByTestId('eva-change-diff')).toHaveTextContent(
     'Старый текст.',
   );
@@ -2349,17 +2352,23 @@ test('shows a section diff and saves EVA changes only in the local draft', async
     'Новый текст.',
   );
 
-  fireEvent.click(screen.getByRole('button', { name: 'Черновик' }));
-  fireEvent.change(
-    screen.getByRole('textbox', { name: 'Черновик документа EVA' }),
-    { target: { value: '# Требования\n\n## Цель\n\nЕщё точнее.' } },
+  fireEvent.click(screen.getByRole('button', { name: 'Вариант агента' }));
+  expect(screen.getByTestId('eva-agent-draft')).toHaveTextContent(
+    'Новый текст.',
   );
-  fireEvent.click(screen.getByTestId('save-eva-change-draft'));
+  expect(
+    screen.queryByRole('textbox', { name: 'Черновик документа EVA' }),
+  ).not.toBeInTheDocument();
+  fireEvent.change(
+    screen.getByRole('textbox', { name: 'Уточнение доработки EVA' }),
+    { target: { value: 'Сделать цель измеримой.' } },
+  );
+  fireEvent.click(screen.getByTestId('generate-eva-change-draft'));
 
   await waitFor(() =>
-    expect(mockedSaveEva).toHaveBeenCalledWith('change-1', {
+    expect(mockedGenerateEva).toHaveBeenCalledWith('change-1', {
       expected_state_version: 2,
-      draft_markdown: '# Требования\n\n## Цель\n\nЕщё точнее.',
+      refinement: 'Сделать цель измеримой.',
     }),
   );
   expect(mockedPrepareEva).not.toHaveBeenCalled();
@@ -2372,7 +2381,7 @@ test('asks for confirmation and force-overwrites a changed EVA document', async 
     ...evaChange,
     state_version: 4,
     workflow_state: 'APPROVED',
-    allowed_actions: ['SAVE_DRAFT', 'PREPARE_EVA_DRAFT'],
+    allowed_actions: ['PREPARE_EVA_DRAFT'],
   };
   mockedFetchEva.mockResolvedValue(approvedChange);
   mockedPrepareEva

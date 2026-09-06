@@ -1,11 +1,11 @@
 import {
   assignBusinessDocumentOwner,
   createEvaDocumentChange,
+  generateEvaDocumentChangeDraft,
   listBusinessDocumentAccessUsers,
   listBusinessDocuments,
   prepareEvaDocumentChange,
   publishEvaDocumentChange,
-  saveEvaDocumentChangeDraft,
   searchEvaDocumentSources,
   submitBusinessDocumentCommand,
   updateBusinessDocumentUserRole,
@@ -156,15 +156,15 @@ test('uses a nested backend message without leaking an undefined transport error
   );
 });
 
-test('uses explicit EVA source, draft and publish endpoints', async () => {
+test('uses explicit EVA source, agent-generation and publish endpoints', async () => {
   const sourceResult = { items: [], connectors: [] };
   const change = { change_id: 'change-1' };
   mockedGet.mockResolvedValueOnce({ data: { code: 0, data: sourceResult } });
   mockedPost
     .mockResolvedValueOnce({ data: { code: 0, data: change } })
     .mockResolvedValueOnce({ data: { code: 0, data: change } })
+    .mockResolvedValueOnce({ data: { code: 0, data: change } })
     .mockResolvedValueOnce({ data: { code: 0, data: change } });
-  mockedPut.mockResolvedValueOnce({ data: { code: 0, data: change } });
 
   await expect(searchEvaDocumentSources('BR-42')).resolves.toEqual(
     sourceResult,
@@ -174,9 +174,9 @@ test('uses explicit EVA source, draft and publish endpoints', async () => {
     document_id: 'CmfDocument:doc-1',
     change_summary: 'Уточнить цель',
   });
-  await saveEvaDocumentChangeDraft('change-1', {
+  await generateEvaDocumentChangeDraft('change-1', {
     expected_state_version: 2,
-    draft_markdown: '# Draft',
+    refinement: 'Сделать формулировку измеримой',
   });
   await prepareEvaDocumentChange('change-1', 4, true);
   await publishEvaDocumentChange('change-1', 5);
@@ -195,19 +195,23 @@ test('uses explicit EVA source, draft and publish endpoints', async () => {
     },
     { skipErrorNotification: true },
   );
-  expect(mockedPut).toHaveBeenCalledWith(
-    api.evaBusinessDocumentChangeDraft('change-1'),
-    { expected_state_version: 2, draft_markdown: '# Draft' },
+  expect(mockedPost).toHaveBeenNthCalledWith(
+    2,
+    api.evaBusinessDocumentChangeGenerate('change-1'),
+    {
+      expected_state_version: 2,
+      refinement: 'Сделать формулировку измеримой',
+    },
     { skipErrorNotification: true },
   );
   expect(mockedPost).toHaveBeenNthCalledWith(
-    2,
+    3,
     api.evaBusinessDocumentChangePrepare('change-1'),
     { expected_state_version: 4, force_overwrite: true },
     { skipErrorNotification: true },
   );
   expect(mockedPost).toHaveBeenNthCalledWith(
-    3,
+    4,
     api.evaBusinessDocumentChangePublish('change-1'),
     { expected_state_version: 5 },
     { skipErrorNotification: true },

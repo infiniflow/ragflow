@@ -78,7 +78,7 @@ are Markdown, DOCX, and EvaWiki HTML code. Export never mutates a revision and
 never includes the review protocol. `START_REVIEW` opens a new append-only
 cycle on the same document; a different idea requires a new document/chat.
 
-### Existing EVA document change MVP
+### Existing EVA document change workflow
 
 An existing EVA page follows a separate change-request workflow. It does not
 enter the new-document intake lifecycle and is never overwritten as a side
@@ -89,10 +89,12 @@ effect of opening the workbench.
 2. The server reads the page from EVA and pins its document/project identity,
    published version tag, published HTML, normalized Markdown, and content
    hash in `BusinessDocumentEvaChange`.
-3. The author edits a private Markdown copy in RAGFlow. Every save regenerates
-   sanitized HTML and a heading-scoped line diff. Editing an approved copy
-   returns it to `EDITING` and clears the prior approval.
-4. `APPROVE` fixes the exact draft hash. `PREPARE_EVA_DRAFT` first rereads the
+3. The agent receives the pinned source and the author's change request as
+   untrusted data, generates a private Markdown variant, and the server creates
+   sanitized HTML plus a heading-scoped line diff. The document body is
+   read-only for the author; refinements are new natural-language instructions
+   that regenerate the complete private variant and clear any prior draft.
+4. `APPROVE` fixes the exact agent-draft hash. `PREPARE_EVA_DRAFT` first rereads the
    published EVA page, rejects source drift, writes only `text_draft`, and
    reads that draft back for verification.
 5. `PUBLISH_EVA` is a separate confirmation. It rereads both the published
@@ -104,10 +106,10 @@ effect of opening the workbench.
    finish idempotently. A late response from the previous worker cannot roll
    back or complete the renewed operation.
 
-The MVP is deliberately limited to one EVA page per change request and manual
-Markdown editing. Automatic drafting from the change summary, related-document
-packages, reviewer roles, comments, and three-way rebase are later increments;
-source drift currently blocks the write without touching the published page.
+The workflow is deliberately limited to one EVA page per change request.
+Related-document packages, reviewer roles, comments, explicit clarification
+questions, and three-way rebase are later increments; source drift currently
+blocks the write without touching the published page.
 
 ## State axes
 
@@ -190,7 +192,8 @@ The HTTP surface is rooted at `/api/v1/business-documents`:
 - `GET /eva/sources` searches published pages through accessible EVA connectors.
 - `POST /eva/changes` creates a pinned change request; `GET /eva/changes` and
   `GET /eva/changes/{id}` resume it.
-- `PUT /eva/changes/{id}/draft` saves the private draft and diff.
+- `POST /eva/changes/{id}/generate` regenerates the private agent draft from
+  natural-language instructions; direct document-body writes are not exposed.
 - `POST /eva/changes/{id}/approve`, `/prepare`, and `/publish` keep approval,
   EVA draft creation, and publication as explicit independent transitions.
 

@@ -61,14 +61,14 @@ def database():
         database.close()
 
 
-def _create():
+def _create(*, title="Проверяемый документ"):
     return BusinessDocumentService.create_document(
         TENANT,
         AUTHOR,
         {
             "schema_version": "1",
             "document_type": "business_requirements",
-            "title": "Проверяемый документ",
+            "title": title,
             "idea": "Создать проверяемый сервис",
         },
     )
@@ -272,6 +272,44 @@ class CapturingAdapter:
     def generate(self, tenant_id, system_prompt, input_payload):
         self.calls.append((tenant_id, system_prompt, input_payload))
         return self.response
+
+
+@pytest.mark.p0
+def test_eva_change_ai_uses_versioned_contract_and_untrusted_input_boundary():
+    adapter = CapturingAdapter(
+        {
+            "schema_version": 1,
+            "draft_markdown": "# Требования\n\nНовый результат.",
+            "summary": "Уточнён результат",
+        }
+    )
+
+    result = BusinessDocumentAI(adapter).generate_eva_change(
+        TENANT,
+        "# Требования\n\nСтарый результат.",
+        "Сделать результат измеримым.",
+    )
+
+    assert result["schema_version"] == "1"
+    tenant_id, system_prompt, input_payload = adapter.calls[0]
+    assert tenant_id == TENANT
+    assert "недоверенные данные" in system_prompt
+    assert '"draft_markdown"' in system_prompt
+    assert input_payload["prompt"] == prompt_descriptor("GENERATE_EVA_CHANGE")
+    assert input_payload["job_input"]["base_markdown"].endswith("Старый результат.")
+    assert input_payload["job_input"]["change_request"] == "Сделать результат измеримым."
+
+
+@pytest.mark.p0
+def test_eva_change_ai_rejects_unstructured_output():
+    with pytest.raises(BusinessDocumentError) as caught:
+        BusinessDocumentAI(CapturingAdapter({"draft_markdown": "# Без контракта"})).generate_eva_change(
+            TENANT,
+            "# Требования",
+            "Изменить документ",
+        )
+
+    assert caught.value.code == "INVALID_EVA_CHANGE_DRAFT"
 
 
 @pytest.mark.p0
@@ -846,7 +884,7 @@ def test_dead_operation_can_be_retried_and_draft_sources_are_snapshot_bound(data
     )
     assert idea_event_id in reviewed["protocol"]["proposals"][0]["source_event_ids"]
 
-    other = _create()
+    other = _create(title="Другой проверяемый документ")
     assessment = BusinessDocumentService.execute_command(
         TENANT,
         AUTHOR,

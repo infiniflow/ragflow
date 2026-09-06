@@ -338,13 +338,13 @@ export async function fetchEvaDocumentChange(changeId: string) {
   }
 }
 
-export async function saveEvaDocumentChangeDraft(
+export async function generateEvaDocumentChangeDraft(
   changeId: string,
-  input: { expected_state_version: number; draft_markdown: string },
+  input: { expected_state_version: number; refinement?: string },
 ) {
   try {
-    const response = await request.put(
-      api.evaBusinessDocumentChangeDraft(changeId),
+    const response = await request.post(
+      api.evaBusinessDocumentChangeGenerate(changeId),
       input,
       requestConfig(),
     );

@@ -101,6 +101,21 @@ class FakeEvaMutationClient:
         return True
 
 
+class FakeEvaChangeAI:
+    def __init__(self, draft_markdown, summary="Подготовлена тестовая доработка"):
+        self.draft_markdown = draft_markdown
+        self.summary = summary
+        self.calls = []
+
+    def generate_eva_change(self, tenant_id, base_markdown, change_request):
+        self.calls.append((tenant_id, base_markdown, change_request))
+        return {
+            "schema_version": "1",
+            "draft_markdown": self.draft_markdown,
+            "summary": self.summary,
+        }
+
+
 @pytest.fixture()
 def database():
     database = SqliteDatabase(":memory:")
@@ -151,6 +166,19 @@ def _create(client):
                 "change_summary": "Уточнить ожидаемый результат и ограничения.",
             },
         )
+
+
+def _generate(created, draft_markdown, refinement=""):
+    return EvaDocumentChangeService.generate_draft(
+        TENANT,
+        AUTHOR,
+        created["change_id"],
+        {
+            "expected_state_version": created["state_version"],
+            **({"refinement": refinement} if refinement else {}),
+        },
+        ai=FakeEvaChangeAI(draft_markdown),
+    )
 
 
 def _eva_connector(credentials):
@@ -381,21 +409,16 @@ def test_full_eva_change_flow_keeps_publish_as_separate_action(database):
 
     assert created["workflow_state"] == "EDITING"
     assert created["diff"]["changed"] is False
-    assert created["allowed_actions"] == ["SAVE_DRAFT"]
+    assert created["allowed_actions"] == ["GENERATE_DRAFT"]
 
-    draft = EvaDocumentChangeService.save_draft(
-        TENANT,
-        AUTHOR,
-        created["change_id"],
-        {
-            "expected_state_version": created["state_version"],
-            "draft_markdown": "# Бизнес-требования\n\n## Цель\n\nНовый проверяемый текст.",
-        },
+    draft = _generate(
+        created,
+        "# Бизнес-требования\n\n## Цель\n\nНовый проверяемый текст.",
     )
     assert draft["diff"]["changed_sections"] == 1
     assert draft["diff"]["added_lines"] == 1
     assert draft["diff"]["removed_lines"] == 1
-    assert draft["allowed_actions"] == ["SAVE_DRAFT", "APPROVE"]
+    assert draft["allowed_actions"] == ["GENERATE_DRAFT", "APPROVE"]
 
     approved = EvaDocumentChangeService.approve(
         TENANT,
@@ -404,7 +427,7 @@ def test_full_eva_change_flow_keeps_publish_as_separate_action(database):
         {"expected_state_version": draft["state_version"]},
     )
     assert approved["workflow_state"] == "APPROVED"
-    assert approved["allowed_actions"] == ["SAVE_DRAFT", "PREPARE_EVA_DRAFT"]
+    assert approved["allowed_actions"] == ["PREPARE_EVA_DRAFT"]
     assert client.document["draft_html"] == ""
 
     with patch.object(EvaDocumentChangeService, "_connector", return_value=(CONNECTOR, client)):
@@ -432,25 +455,80 @@ def test_full_eva_change_flow_keeps_publish_as_separate_action(database):
     assert "Новый проверяемый текст" in client.document["html"]
     assert [event["event_type"] for event in published["events"]] == [
         "CHANGE_REQUEST_CREATED",
-        "DRAFT_UPDATED",
+        "AI_DRAFT_REQUESTED",
+        "AI_DRAFT_GENERATED",
         "DRAFT_APPROVED",
         "EVA_DRAFT_SAVED",
         "EVA_DOCUMENT_PUBLISHED",
     ]
 
 
-def test_eva_writes_use_personal_mutation_client_while_reads_use_connector(database, monkeypatch):
-    reader = FakeEvaClient()
-    writer = FakeEvaMutationClient(reader.document)
-    created = _create(reader)
-    draft = EvaDocumentChangeService.save_draft(
+def test_agent_generation_uses_refinement_and_manual_prefill_is_rejected(database):
+    client = FakeEvaClient()
+    created = _create(client)
+    ai = FakeEvaChangeAI("# Бизнес-требования\n\n## Цель\n\nИзмеримый результат.")
+
+    generated = EvaDocumentChangeService.generate_draft(
         TENANT,
         AUTHOR,
         created["change_id"],
         {
             "expected_state_version": created["state_version"],
-            "draft_markdown": "# Бизнес-требования\n\n## Цель\n\nИзменение пользователя.",
+            "refinement": "Добавить измеримый результат.",
         },
+        ai=ai,
+    )
+
+    assert ai.calls == [
+        (
+            TENANT,
+            created["base_markdown"],
+            "Уточнить ожидаемый результат и ограничения.\n\nУточнение автора:\nДобавить измеримый результат.",
+        )
+    ]
+    assert generated["change_summary"].endswith("Добавить измеримый результат.")
+    assert generated["draft_markdown"].endswith("Измеримый результат.")
+    assert "GENERATE_DRAFT" in generated["allowed_actions"]
+
+    with (
+        patch.object(EvaDocumentChangeService, "_connector", return_value=(CONNECTOR, client)),
+        pytest.raises(BusinessDocumentError) as exc_info,
+    ):
+        EvaDocumentChangeService.create_change(
+            TENANT,
+            AUTHOR,
+            {
+                "connector_id": CONNECTOR.id,
+                "document_id": client.document["id"],
+                "change_summary": "Обойти агента.",
+                "draft_markdown": "# Ручной текст",
+            },
+        )
+
+    assert exc_info.value.code == "MANUAL_EVA_DRAFT_DISABLED"
+
+
+def test_unchanged_agent_result_restores_retryable_state(database):
+    client = FakeEvaClient()
+    created = _create(client)
+
+    with pytest.raises(BusinessDocumentError) as exc_info:
+        _generate(created, created["base_markdown"])
+
+    assert exc_info.value.code == "EVA_AI_DRAFT_UNCHANGED"
+    restored = EvaDocumentChangeService.get_change(TENANT, AUTHOR, created["change_id"])
+    assert restored["workflow_state"] == "EDITING"
+    assert restored["last_error"]["code"] == "EVA_AI_DRAFT_UNCHANGED"
+    assert restored["allowed_actions"] == ["GENERATE_DRAFT"]
+
+
+def test_eva_writes_use_personal_mutation_client_while_reads_use_connector(database, monkeypatch):
+    reader = FakeEvaClient()
+    writer = FakeEvaMutationClient(reader.document)
+    created = _create(reader)
+    draft = _generate(
+        created,
+        "# Бизнес-требования\n\n## Цель\n\nИзменение пользователя.",
     )
     approved = EvaDocumentChangeService.approve(
         TENANT,
@@ -488,14 +566,9 @@ def test_eva_writes_use_personal_mutation_client_while_reads_use_connector(datab
 def test_missing_personal_eva_token_blocks_write_and_restores_state(database, monkeypatch):
     reader = FakeEvaClient()
     created = _create(reader)
-    draft = EvaDocumentChangeService.save_draft(
-        TENANT,
-        AUTHOR,
-        created["change_id"],
-        {
-            "expected_state_version": created["state_version"],
-            "draft_markdown": "# Бизнес-требования\n\n## Цель\n\nИзменение пользователя.",
-        },
+    draft = _generate(
+        created,
+        "# Бизнес-требования\n\n## Цель\n\nИзменение пользователя.",
     )
     approved = EvaDocumentChangeService.approve(
         TENANT,
@@ -539,6 +612,7 @@ def test_change_can_start_from_an_agreed_business_document_revision(database):
                 "change_summary": "Синхронизация согласованной ревизии.",
                 "draft_markdown": "# Бизнес-требования\n\n## Цель\n\nТекст из конструктора.",
             },
+            allow_prefilled_draft=True,
         )
 
     assert created["workflow_state"] == "EDITING"
@@ -566,6 +640,7 @@ def test_agreed_business_document_can_initialize_and_publish_empty_eva_page(data
                 "change_summary": "Первоначальная публикация согласованной ревизии.",
                 "draft_markdown": ("# Бизнес-требования\n\n## Цель\n\nПервоначальный текст.\n\n```plantuml\n@startuml\nПользователь -> Система: Войти\n@enduml\n```"),
             },
+            allow_prefilled_draft=True,
         )
 
     assert created["base_markdown"] == ""
@@ -614,6 +689,7 @@ def test_empty_eva_initial_publish_recovers_after_prior_verification_failure(dat
                 "change_summary": "Повтор первоначальной публикации.",
                 "draft_markdown": "# Документ\n\n```plantuml\n@startuml\nA -> B\n@enduml\n```",
             },
+            allow_prefilled_draft=True,
         )
     approved = EvaDocumentChangeService.approve(
         TENANT,
@@ -670,14 +746,9 @@ def test_empty_eva_page_still_requires_an_initial_draft(database):
 def test_prepare_rejects_changed_published_source_and_keeps_it_untouched(database):
     client = FakeEvaClient()
     created = _create(client)
-    draft = EvaDocumentChangeService.save_draft(
-        TENANT,
-        AUTHOR,
-        created["change_id"],
-        {
-            "expected_state_version": created["state_version"],
-            "draft_markdown": "# Бизнес-требования\n\n## Цель\n\nНовый текст.",
-        },
+    draft = _generate(
+        created,
+        "# Бизнес-требования\n\n## Цель\n\nНовый текст.",
     )
     approved = EvaDocumentChangeService.approve(
         TENANT,
@@ -710,14 +781,9 @@ def test_prepare_rejects_changed_published_source_and_keeps_it_untouched(databas
 def test_prepare_force_overwrites_changed_published_source(database):
     client = FakeEvaClient()
     created = _create(client)
-    draft = EvaDocumentChangeService.save_draft(
-        TENANT,
-        AUTHOR,
-        created["change_id"],
-        {
-            "expected_state_version": created["state_version"],
-            "draft_markdown": "# Бизнес-требования\n\n## Цель\n\nПодтверждённая перезапись.",
-        },
+    draft = _generate(
+        created,
+        "# Бизнес-требования\n\n## Цель\n\nПодтверждённая перезапись.",
     )
     approved = EvaDocumentChangeService.approve(
         TENANT,
@@ -745,14 +811,9 @@ def test_prepare_force_overwrites_changed_published_source(database):
 def test_force_overwrite_must_be_boolean(database):
     client = FakeEvaClient()
     created = _create(client)
-    draft = EvaDocumentChangeService.save_draft(
-        TENANT,
-        AUTHOR,
-        created["change_id"],
-        {
-            "expected_state_version": created["state_version"],
-            "draft_markdown": "# Бизнес-требования\n\nИзменение.",
-        },
+    draft = _generate(
+        created,
+        "# Бизнес-требования\n\nИзменение.",
     )
     approved = EvaDocumentChangeService.approve(
         TENANT,
@@ -778,14 +839,9 @@ def test_force_overwrite_must_be_boolean(database):
 def test_publish_changed_source_requires_confirmation_and_force_overwrites(database):
     client = FakeEvaClient()
     created = _create(client)
-    draft = EvaDocumentChangeService.save_draft(
-        TENANT,
-        AUTHOR,
-        created["change_id"],
-        {
-            "expected_state_version": created["state_version"],
-            "draft_markdown": "# Бизнес-требования\n\n## Цель\n\nПодтверждённая публикация.",
-        },
+    draft = _generate(
+        created,
+        "# Бизнес-требования\n\n## Цель\n\nПодтверждённая публикация.",
     )
     approved = EvaDocumentChangeService.approve(
         TENANT,
@@ -839,14 +895,9 @@ def test_publish_changed_source_requires_confirmation_and_force_overwrites(datab
 def test_publish_requires_confirmation_when_only_eva_name_changed(database):
     client = FakeEvaClient()
     created = _create(client)
-    draft = EvaDocumentChangeService.save_draft(
-        TENANT,
-        AUTHOR,
-        created["change_id"],
-        {
-            "expected_state_version": created["state_version"],
-            "draft_markdown": "# Бизнес-требования\n\n## Цель\n\nУже опубликованный текст.",
-        },
+    draft = _generate(
+        created,
+        "# Бизнес-требования\n\n## Цель\n\nУже опубликованный текст.",
     )
     approved = EvaDocumentChangeService.approve(
         TENANT,
@@ -885,14 +936,9 @@ def test_publish_requires_confirmation_when_only_eva_name_changed(database):
 def test_markdown_html_is_sanitized_before_eva_draft(database):
     client = FakeEvaClient()
     created = _create(client)
-    draft = EvaDocumentChangeService.save_draft(
-        TENANT,
-        AUTHOR,
-        created["change_id"],
-        {
-            "expected_state_version": created["state_version"],
-            "draft_markdown": "# Title\n\n<script>alert(1)</script>\n\n[bad](javascript:alert(2))",
-        },
+    draft = _generate(
+        created,
+        "# Title\n\n<script>alert(1)</script>\n\n[bad](javascript:alert(2))",
     )
 
     stored = BusinessDocumentEvaChange.get_by_id(draft["change_id"])
@@ -903,14 +949,9 @@ def test_markdown_html_is_sanitized_before_eva_draft(database):
 def test_publish_recovers_when_eva_committed_before_client_error(database):
     client = FakeEvaClient()
     created = _create(client)
-    draft = EvaDocumentChangeService.save_draft(
-        TENANT,
-        AUTHOR,
-        created["change_id"],
-        {
-            "expected_state_version": created["state_version"],
-            "draft_markdown": "# Бизнес-требования\n\n## Цель\n\nОпубликованный текст.",
-        },
+    draft = _generate(
+        created,
+        "# Бизнес-требования\n\n## Цель\n\nОпубликованный текст.",
     )
     approved = EvaDocumentChangeService.approve(
         TENANT,
@@ -951,14 +992,9 @@ def test_publish_recovers_when_eva_committed_before_client_error(database):
 def test_stale_publishing_reservation_can_resume_after_process_loss(database):
     client = FakeEvaClient()
     created = _create(client)
-    draft = EvaDocumentChangeService.save_draft(
-        TENANT,
-        AUTHOR,
-        created["change_id"],
-        {
-            "expected_state_version": created["state_version"],
-            "draft_markdown": "# Бизнес-требования\n\n## Цель\n\nТекст после восстановления.",
-        },
+    draft = _generate(
+        created,
+        "# Бизнес-требования\n\n## Цель\n\nТекст после восстановления.",
     )
     approved = EvaDocumentChangeService.approve(
         TENANT,

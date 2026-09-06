@@ -20,7 +20,7 @@ EXPECTED_ROUTES = {
     "create_eva_business_document_change": ("/business-documents/eva/changes", ("POST",)),
     "list_eva_business_document_changes": ("/business-documents/eva/changes", ("GET",)),
     "get_eva_business_document_change": ("/business-documents/eva/changes/<change_id>", ("GET",)),
-    "save_eva_business_document_change_draft": ("/business-documents/eva/changes/<change_id>/draft", ("PUT",)),
+    "generate_eva_business_document_change_draft": ("/business-documents/eva/changes/<change_id>/generate", ("POST",)),
     "approve_eva_business_document_change": ("/business-documents/eva/changes/<change_id>/approve", ("POST",)),
     "prepare_eva_business_document_change": ("/business-documents/eva/changes/<change_id>/prepare", ("POST",)),
     "publish_eva_business_document_change": ("/business-documents/eva/changes/<change_id>/publish", ("POST",)),
@@ -77,7 +77,7 @@ def test_mutating_routes_read_json_and_all_routes_map_domain_errors():
         assert "thread_pool_exec" in called_names
         if name in {
             "create_eva_business_document_change",
-            "save_eva_business_document_change_draft",
+            "generate_eva_business_document_change_draft",
             "approve_eva_business_document_change",
             "prepare_eva_business_document_change",
             "publish_eva_business_document_change",
