@@ -19,6 +19,12 @@ type aggregateTagsMockEngine struct {
 	pagedSearchResults map[string]map[int]*types.SearchResult
 	searchErr          error
 	requests           []*types.SearchRequest
+	missingStores      map[string]bool
+	chunkStoreErr      error
+}
+
+func (m *aggregateTagsMockEngine) ChunkStoreExists(ctx context.Context, baseName, datasetID string) (bool, error) {
+	return !m.missingStores[datasetID], m.chunkStoreErr
 }
 
 func (m *aggregateTagsMockEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -317,7 +323,7 @@ func TestDatasetServiceAggregateTagsRequiresDocumentEngine(t *testing.T) {
 	}
 }
 
-func TestDatasetServiceAggregateTagsSkipsDatasetsWithoutDocuments(t *testing.T) {
+func TestDatasetServiceAggregateTagsIncludesZeroDocumentCount(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
@@ -350,8 +356,8 @@ func TestDatasetServiceAggregateTagsSkipsDatasetsWithoutDocuments(t *testing.T) 
 	if len(docEngine.requests) != 1 {
 		t.Fatalf("search requests=%d want=1", len(docEngine.requests))
 	}
-	if len(docEngine.requests[0].KbIDs) != 1 || docEngine.requests[0].KbIDs[0] != liveID {
-		t.Fatalf("KbIDs=%v want [%s]", docEngine.requests[0].KbIDs, liveID)
+	if len(docEngine.requests[0].KbIDs) != 2 || docEngine.requests[0].KbIDs[0] != emptyID || docEngine.requests[0].KbIDs[1] != liveID {
+		t.Fatalf("KbIDs=%v want [%s %s]", docEngine.requests[0].KbIDs, emptyID, liveID)
 	}
 
 	got := aggregateTagsResultMap(result)
@@ -379,5 +385,50 @@ func TestDatasetServiceAggregateTagsReturnsSearchError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to aggregate tags: boom") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDatasetServiceAggregateTagsMissingStores(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	missingID := "423e4567e89b12d3a456426614174003"
+	liveID := "523e4567e89b12d3a456426614174004"
+	insertAggregateTagsKB(t, missingID, "user-1", string(entity.TenantPermissionMe), 3)
+	insertAggregateTagsKB(t, liveID, "user-1", string(entity.TenantPermissionMe), 0)
+	docEngine := &aggregateTagsMockEngine{
+		missingStores: map[string]bool{missingID: true},
+		searchResults: map[string]*types.SearchResult{
+			"ragflow_user-1": {Chunks: []map[string]interface{}{{"tag_kwd": "live"}}},
+		},
+	}
+	svc := testDatasetServiceForAggregateTags(t, docEngine)
+	result, code, err := svc.AggregateTags(t.Context(), []string{missingID, liveID}, "user-1")
+	if err != nil || code != common.CodeSuccess || result == nil || len(result) != 0 || len(docEngine.requests) != 0 {
+		t.Fatalf("result=%v code=%d err=%v requests=%v; want Python empty result for missing first store", result, code, err, docEngine.requests)
+	}
+	result, code, err = svc.AggregateTags(t.Context(), []string{liveID}, "user-1")
+	if err != nil || code != common.CodeSuccess || aggregateTagsResultMap(result)["live"] != 1 {
+		t.Fatalf("result=%v code=%d err=%v; want zero-doc-count dataset tags", result, code, err)
+	}
+}
+
+func TestDatasetServiceAggregateTagsBackendFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		engine *aggregateTagsMockEngine
+	}{
+		{"store error", &aggregateTagsMockEngine{chunkStoreErr: errors.New("backend unavailable")}},
+		{"nil result", &aggregateTagsMockEngine{searchResults: map[string]*types.SearchResult{"ragflow_user-1": nil}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			kbID := "123e4567e89b12d3a456426614174000"
+			insertAggregateTagsKB(t, kbID, "user-1", string(entity.TenantPermissionMe), 1)
+			result, code, err := testDatasetServiceForAggregateTags(t, tc.engine).AggregateTags(t.Context(), []string{kbID}, "user-1")
+			if err == nil || code != common.CodeServerError || result != nil {
+				t.Fatalf("result=%v code=%d err=%v; want server error without partial data", result, code, err)
+			}
+		})
 	}
 }

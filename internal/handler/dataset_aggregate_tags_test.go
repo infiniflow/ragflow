@@ -1,78 +1,89 @@
 package handler
 
 import (
-	"encoding/json"
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
-
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 )
 
-func newAggregateTagsHandlerRouter(authenticated bool) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	h := &DatasetsHandler{}
-	r := gin.New()
-	r.GET("/api/v1/datasets/tags/aggregation", func(c *gin.Context) {
-		if authenticated {
-			c.Set("user", &entity.User{ID: "user-1"})
-		}
-		h.AggregateTags(c)
-	})
-	return r
+func TestDatasetsHandlerAggregateTags(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data []map[string]interface{}
+	}{
+		{"tags", []map[string]interface{}{{"value": "alpha", "count": 2}}},
+		{"empty", []map[string]interface{}{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeDatasetTagsService{tags: tc.data}
+			r := newDatasetTagsRouter(fake, true)
+			rec := httptest.NewRecorder()
+			ids := "," + tagDatasetID + ",, " + tagDatasetID + " ,"
+			r.ServeHTTP(rec, datasetTagRequest(context.Background(), http.MethodGet,
+				"/api/v1/datasets/tags/aggregation?dataset_ids="+url.QueryEscape(ids), ""))
+			assertDatasetTagResponse(t, rec, map[string]interface{}{"code": common.CodeSuccess, "data": tc.data})
+			if fake.calls != 1 || fake.userID != "user-1" || !reflect.DeepEqual(fake.datasetIDs, []string{tagDatasetID, " " + tagDatasetID + " "}) {
+				t.Fatalf("service calls = %d, user = %q, dataset IDs = %v", fake.calls, fake.userID, fake.datasetIDs)
+			}
+		})
+	}
 }
 
 func TestDatasetsHandlerAggregateTagsRequiresDatasetIDs(t *testing.T) {
-	r := newAggregateTagsHandlerRouter(true)
-
-	resp := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/tags/aggregation", nil)
-	r.ServeHTTP(resp, req)
-
-	if resp.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
-	}
-
-	var body struct {
-		Code    int         `json:"code"`
-		Data    interface{} `json:"data"`
-		Message string      `json:"message"`
-	}
-	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal response: %v body=%s", err, resp.Body.String())
-	}
-	if body.Code != int(common.CodeDataError) {
-		t.Fatalf("code=%d want=%d body=%s", body.Code, common.CodeDataError, resp.Body.String())
-	}
-	if body.Message != "Lack of dataset_ids in query parameters" {
-		t.Fatalf("message=%q want=%q", body.Message, "Lack of dataset_ids in query parameters")
-	}
-	if body.Data != nil {
-		t.Fatalf("data=%v want nil", body.Data)
+	for _, query := range []string{"", "?dataset_ids=,,,"} {
+		t.Run(query, func(t *testing.T) {
+			fake := &fakeDatasetTagsService{}
+			r := newDatasetTagsRouter(fake, true)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, datasetTagRequest(context.Background(), http.MethodGet,
+				"/api/v1/datasets/tags/aggregation"+query, ""))
+			assertDatasetTagResponse(t, rec, map[string]interface{}{
+				"code": common.CodeDataError, "message": "Lack of dataset_ids in query parameters",
+			})
+			if fake.calls != 0 {
+				t.Fatalf("invalid request called service %d times", fake.calls)
+			}
+		})
 	}
 }
 
-func TestDatasetsHandlerAggregateTagsRequiresAuth(t *testing.T) {
-	r := newAggregateTagsHandlerRouter(false)
-
-	resp := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/tags/aggregation?dataset_ids=123e4567-e89b-12d3-a456-426614174000", nil)
-	r.ServeHTTP(resp, req)
-
-	var body struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	}
-	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal response: %v body=%s", err, resp.Body.String())
-	}
-	if body.Code != int(common.CodeUnauthorized) {
-		t.Fatalf("code=%d want=%d body=%s", body.Code, common.CodeUnauthorized, resp.Body.String())
-	}
-	if body.Message != "User not found" {
-		t.Fatalf("message=%q want=%q", body.Message, "User not found")
+func TestDatasetsHandlerAggregateTagsIDLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		count int
+	}{
+		{"maximum accepted", 100},
+		{"maximum exceeded", 101},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ids := make([]string, tc.count)
+			for i := range ids {
+				ids[i] = tagDatasetID
+			}
+			fake := &fakeDatasetTagsService{tags: []map[string]interface{}{}}
+			r := newDatasetTagsRouter(fake, true)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, datasetTagRequest(context.Background(), http.MethodGet,
+				"/api/v1/datasets/tags/aggregation?dataset_ids="+strings.Join(ids, ","), ""))
+			if tc.count == 100 {
+				assertDatasetTagResponse(t, rec, map[string]interface{}{"code": common.CodeSuccess, "data": fake.tags})
+				if fake.calls != 1 || !reflect.DeepEqual(fake.datasetIDs, ids) {
+					t.Fatalf("service calls = %d, dataset IDs = %v", fake.calls, fake.datasetIDs)
+				}
+			} else {
+				assertDatasetTagResponse(t, rec, map[string]interface{}{
+					"code": common.CodeArgumentError, "message": "dataset_ids must contain at most 100 IDs",
+				})
+				if fake.calls != 0 {
+					t.Fatalf("oversized request called service %d times", fake.calls)
+				}
+			}
+		})
 	}
 }

@@ -76,14 +76,14 @@ func TestDatasetServiceRenameTagSuccess(t *testing.T) {
 	docEngine := &renameTagMockEngine{}
 	ctx := t.Context()
 
-	result, code, err := testDatasetServiceForRenameTag(t, docEngine).RenameTag(ctx, kbInput, "user-1", "old-tag ", "new-tag")
+	result, code, err := testDatasetServiceForRenameTag(t, docEngine).RenameTag(ctx, kbInput, "user-1", "old-tag ", " new-tag ")
 	if err != nil {
 		t.Fatalf("RenameTag failed: %v", err)
 	}
 	if code != common.CodeSuccess {
 		t.Fatalf("code=%d want=%d", code, common.CodeSuccess)
 	}
-	if result["from"] != "old-tag" || result["to"] != "new-tag" {
+	if result["from"] != "old-tag " || result["to"] != " new-tag " {
 		t.Fatalf("result=%v", result)
 	}
 	if len(docEngine.updateCalls) != 1 {
@@ -97,8 +97,8 @@ func TestDatasetServiceRenameTagSuccess(t *testing.T) {
 	if call.DatasetID != kbID {
 		t.Fatalf("datasetID=%q want=%q", call.DatasetID, kbID)
 	}
-	if got := call.Condition["tag_kwd"]; got != "old-tag" {
-		t.Fatalf("condition tag_kwd=%v want=%q", got, "old-tag")
+	if got := call.Condition["tag_kwd"]; got != "old-tag " {
+		t.Fatalf("condition tag_kwd=%v want=%q", got, "old-tag ")
 	}
 	if got := call.Condition["kb_id"]; got != kbID {
 		t.Fatalf("condition kb_id=%v want=%q", got, kbID)
@@ -109,8 +109,8 @@ func TestDatasetServiceRenameTagSuccess(t *testing.T) {
 	if got := remove["tag_kwd"]; got != "old-tag" {
 		t.Fatalf("remove tag_kwd=%v want=%q", got, "old-tag")
 	}
-	if got := add["tag_kwd"]; got != "new-tag" {
-		t.Fatalf("add tag_kwd=%v want=%q", got, "new-tag")
+	if got := add["tag_kwd"]; got != " new-tag " {
+		t.Fatalf("add tag_kwd=%v want=%q", got, " new-tag ")
 	}
 }
 
