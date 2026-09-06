@@ -60,6 +60,14 @@ def _load_system_module(monkeypatch):
     api_pkg.__path__ = [str(repo_root / "api")]
     monkeypatch.setitem(sys.modules, "api", api_pkg)
 
+    api_db_pkg = ModuleType("api.db")
+    api_db_pkg.__path__ = [str(repo_root / "api" / "db")]
+    monkeypatch.setitem(sys.modules, "api.db", api_db_pkg)
+
+    services_pkg = ModuleType("api.db.services")
+    services_pkg.__path__ = [str(repo_root / "api" / "db" / "services")]
+    monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
     apps_mod = ModuleType("api.apps")
     apps_mod.__path__ = [str(repo_root / "api" / "apps")]
     apps_mod.login_required = lambda fn: fn
@@ -100,6 +108,7 @@ def _load_system_module(monkeypatch):
         "message": message,
         "data": data,
     }
+    api_utils_mod.get_request_json = lambda: {}
     api_utils_mod.server_error_response = lambda exc: {
         "code": 100,
         "message": repr(exc),
@@ -107,6 +116,23 @@ def _load_system_module(monkeypatch):
     }
     api_utils_mod.generate_confirmation_token = lambda: "ragflow-abcdefghijklmnopqrstuvwxyz0123456789"
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    audit_service_mod = ModuleType("api.db.services.audit_service")
+    audit_service_mod.record_audit_event = lambda **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.db.services.audit_service", audit_service_mod)
+
+    access_group_service_mod = ModuleType("api.db.services.access_group_service")
+    access_group_service_mod.AccessGroupService = SimpleNamespace(effective_policy=lambda _user_id: None)
+    monkeypatch.setitem(sys.modules, "api.db.services.access_group_service", access_group_service_mod)
+
+    navigation_visibility_service_mod = ModuleType("api.db.services.navigation_visibility_service")
+    navigation_visibility_service_mod.get_visible_sections = lambda: ["home", "dataset", "chat"]
+    monkeypatch.setitem(sys.modules, "api.db.services.navigation_visibility_service", navigation_visibility_service_mod)
+
+    log_utils_mod = ModuleType("common.log_utils")
+    log_utils_mod.get_log_levels = lambda: {}
+    log_utils_mod.set_log_level = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "common.log_utils", log_utils_mod)
 
     api_service_mod = ModuleType("api.db.services.api_service")
     api_service_mod.APITokenService = SimpleNamespace(
@@ -220,3 +246,22 @@ def test_get_config_returns_register_enabled_unit(monkeypatch):
     res = module.get_config()
     assert res["code"] == 0
     assert res["data"]["registerEnabled"] is False
+
+
+@pytest.mark.p2
+def test_get_config_excludes_home_for_access_group_user(monkeypatch):
+    module = _load_system_module(monkeypatch)
+    access_group_service = sys.modules["api.db.services.access_group_service"]
+    navigation_visibility_service = sys.modules["api.db.services.navigation_visibility_service"]
+
+    monkeypatch.setattr(navigation_visibility_service, "get_visible_sections", lambda: ["home", "dataset", "chat"])
+    monkeypatch.setattr(
+        access_group_service.AccessGroupService,
+        "effective_policy",
+        lambda _user_id: {"dataset_ids": set(), "sections": {"chat"}},
+    )
+
+    res = module.get_config()
+
+    assert res["code"] == 0
+    assert res["data"]["visibleSections"] == ["chat"]
