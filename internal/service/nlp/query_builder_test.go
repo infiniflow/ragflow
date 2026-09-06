@@ -290,7 +290,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			expr, keywords := qb.Question(tt.txt, tt.tbl, tt.minMatch)
+			expr, keywords := qb.Question(tt.txt, tt.tbl, tt.minMatch, "")
 			if tt.expectNil && expr != nil {
 				t.Errorf("Question(%q) expected nil expr, got %v", tt.txt, expr)
 			}

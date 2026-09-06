@@ -699,6 +699,8 @@ RAGAnalyzer::~RAGAnalyzer() {
 void RAGAnalyzer::InitStemmer(Language language) {
     stemmer_->Init(language);
     use_lemmatizer_ = (language == STEM_LANG_ENGLISH);
+    use_stemmer_ = true;
+    fold_diacritics_ = false;
 }
 
 void RAGAnalyzer::SetLanguage(const std::string &language) {
@@ -706,6 +708,16 @@ void RAGAnalyzer::SetLanguage(const std::string &language) {
     std::transform(lang_key.begin(), lang_key.end(), lang_key.begin(), [](unsigned char c) { return std::tolower(c); });
     lang_key.erase(lang_key.find_last_not_of(" \t") + 1);
     lang_key.erase(0, lang_key.find_first_not_of(" \t"));
+
+    // Slovak and Czech have no Snowball stemmer. Instead their diacritics
+    // are folded to ASCII before tokenization, and stemming/lemmatization
+    // are disabled, matching rag_tokenizer.py.
+    if (lang_key == "slovak" || lang_key == "czech") {
+        fold_diacritics_ = true;
+        use_stemmer_ = false;
+        use_lemmatizer_ = false;
+        return;
+    }
 
     Language stem_lang = STEM_LANG_UNKNOWN;
     for (const auto &pair : SNOWBALL_LANGUAGE_MAP) {
@@ -716,8 +728,7 @@ void RAGAnalyzer::SetLanguage(const std::string &language) {
     }
 
     if (stem_lang != STEM_LANG_UNKNOWN) {
-        stemmer_->Init(stem_lang);
-        use_lemmatizer_ = (stem_lang == STEM_LANG_ENGLISH);
+        InitStemmer(stem_lang);
     }
 }
 
@@ -882,6 +893,71 @@ std::string RAGAnalyzer::StrQ2B(const std::string &input) {
                 output += static_cast<char>(0x80 | (codepoint & 0x3F));
             }
         }
+    }
+
+    return output;
+}
+
+// ASCII base letter for each codepoint in Latin-1 Supplement (U+00C0–U+00FF)
+// and Latin Extended-A (U+0100–U+017F), indexed by codepoint - 0xC0. Only
+// letters whose NFD decomposition is exactly one ASCII letter plus combining
+// marks are folded; '\0' marks a pass-through codepoint (Æ, Ð, ×, Ø, Þ, ß,
+// Đ, Ħ, ı, Ĳ, ĸ, Ŀ, Ł, ŉ, Ŋ, Œ, Ŧ, ſ and their case pairs). Derived from
+// Unicode NFD, the same rule rag_tokenizer.py applies at runtime through
+// unicodedata, so both sides fold identically.
+static constexpr char DIACRITICS_FOLD_TABLE[0x180 - 0xC0] = {
+    // clang-format off
+    // U+00C0 À Á Â Ã Ä Å Æ Ç È É Ê Ë Ì Í Î Ï
+    'A', 'A', 'A', 'A', 'A', 'A', 0, 'C', 'E', 'E', 'E', 'E', 'I', 'I', 'I', 'I',
+    // U+00D0 Ð Ñ Ò Ó Ô Õ Ö × Ø Ù Ú Û Ü Ý Þ ß
+    0, 'N', 'O', 'O', 'O', 'O', 'O', 0, 0, 'U', 'U', 'U', 'U', 'Y', 0, 0,
+    // U+00E0 à á â ã ä å æ ç è é ê ë ì í î ï
+    'a', 'a', 'a', 'a', 'a', 'a', 0, 'c', 'e', 'e', 'e', 'e', 'i', 'i', 'i', 'i',
+    // U+00F0 ð ñ ò ó ô õ ö ÷ ø ù ú û ü ý þ ÿ
+    0, 'n', 'o', 'o', 'o', 'o', 'o', 0, 0, 'u', 'u', 'u', 'u', 'y', 0, 'y',
+    // U+0100 Ā ā Ă ă Ą ą Ć ć Ĉ ĉ Ċ ċ Č č Ď ď
+    'A', 'a', 'A', 'a', 'A', 'a', 'C', 'c', 'C', 'c', 'C', 'c', 'C', 'c', 'D', 'd',
+    // U+0110 Đ đ Ē ē Ĕ ĕ Ė ė Ę ę Ě ě Ĝ ĝ Ğ ğ
+    0, 0, 'E', 'e', 'E', 'e', 'E', 'e', 'E', 'e', 'E', 'e', 'G', 'g', 'G', 'g',
+    // U+0120 Ġ ġ Ģ ģ Ĥ ĥ Ħ ħ Ĩ ĩ Ī ī Ĭ ĭ Į į
+    'G', 'g', 'G', 'g', 'H', 'h', 0, 0, 'I', 'i', 'I', 'i', 'I', 'i', 'I', 'i',
+    // U+0130 İ ı Ĳ ĳ Ĵ ĵ Ķ ķ ĸ Ĺ ĺ Ļ ļ Ľ ľ Ŀ
+    'I', 0, 0, 0, 'J', 'j', 'K', 'k', 0, 'L', 'l', 'L', 'l', 'L', 'l', 0,
+    // U+0140 ŀ Ł ł Ń ń Ņ ņ Ň ň ŉ Ŋ ŋ Ō ō Ŏ ŏ
+    0, 0, 0, 'N', 'n', 'N', 'n', 'N', 'n', 0, 0, 0, 'O', 'o', 'O', 'o',
+    // U+0150 Ő ő Œ œ Ŕ ŕ Ŗ ŗ Ř ř Ś ś Ŝ ŝ Ş ş
+    'O', 'o', 0, 0, 'R', 'r', 'R', 'r', 'R', 'r', 'S', 's', 'S', 's', 'S', 's',
+    // U+0160 Š š Ţ ţ Ť ť Ŧ ŧ Ũ ũ Ū ū Ŭ ŭ Ů ů
+    'S', 's', 'T', 't', 'T', 't', 0, 0, 'U', 'u', 'U', 'u', 'U', 'u', 'U', 'u',
+    // U+0170 Ű ű Ų ų Ŵ ŵ Ŷ ŷ Ÿ Ź ź Ż ż Ž ž ſ
+    'U', 'u', 'U', 'u', 'W', 'w', 'Y', 'y', 'Y', 'Z', 'z', 'Z', 'z', 'Z', 'z', 0,
+    // clang-format on
+};
+
+std::string RAGAnalyzer::FoldDiacritics(const std::string &input) {
+    std::string output;
+    output.reserve(input.size());
+
+    size_t i = 0;
+    while (i < input.size()) {
+        unsigned char c = input[i];
+        // Only 2-byte UTF-8 sequences can encode U+00C0–U+017F.
+        if ((c & 0xE0) == 0xC0 && i + 1 < input.size()) {
+            uint32_t codepoint = ((c & 0x1F) << 6) | (static_cast<unsigned char>(input[i + 1]) & 0x3F);
+            if (codepoint >= 0xC0 && codepoint < 0x180) {
+                if (char folded = DIACRITICS_FOLD_TABLE[codepoint - 0xC0]; folded != '\0') {
+                    output += folded;
+                    i += 2;
+                    continue;
+                }
+            }
+            output += input[i];
+            output += input[i + 1];
+            i += 2;
+            continue;
+        }
+        output += input[i];
+        i += 1;
     }
 
     return output;
@@ -1433,7 +1509,11 @@ void RAGAnalyzer::EnglishNormalize(const std::vector<std::string> &tokens, std::
                 term_to_stem = lowercase_term;
             }
             std::string stem_term;
-            stemmer_->Stem(term_to_stem, stem_term);
+            if (use_stemmer_) {
+                stemmer_->Stem(term_to_stem, stem_term);
+            } else {
+                stem_term = term_to_stem;
+            }
             res.push_back(stem_term);
         } else {
             res.push_back(t);
@@ -1768,8 +1848,17 @@ std::string PCRE2GlobalReplace(const std::string &text, const std::string &patte
 }
 
 std::string RAGAnalyzer::Tokenize(const std::string &line) {
+    // Fold diacritics to ASCII before any other processing when the
+    // language asks for it (Slovak, Czech).
+    std::string folded_line;
+    const std::string *input = &line;
+    if (fold_diacritics_) {
+        folded_line = FoldDiacritics(line);
+        input = &folded_line;
+    }
+
     // Python-style simple tokenization: re.sub(r"\\W+", " ", line)
-    std::string processed_line = PCRE2GlobalReplace(line, R"#(\W+)#", " ");
+    std::string processed_line = PCRE2GlobalReplace(*input, R"#(\W+)#", " ");
     std::string str1 = StrQ2B(processed_line);
     std::string strline;
     opencc_->convert(str1, strline);
@@ -1799,7 +1888,11 @@ std::string RAGAnalyzer::Tokenize(const std::string &line) {
                     term_to_stem = lowercase_term;
                 }
                 std::string stem_term;
-                stemmer_->Stem(term_to_stem, stem_term);
+                if (use_stemmer_) {
+                    stemmer_->Stem(term_to_stem, stem_term);
+                } else {
+                    stem_term = term_to_stem;
+                }
                 res.push_back(stem_term);
             }
             continue;
@@ -1832,9 +1925,23 @@ std::string RAGAnalyzer::Tokenize(const std::string &line) {
 }
 
 std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> RAGAnalyzer::TokenizeWithPosition(const std::string &line) {
+    // Fold diacritics to ASCII before any other processing when the
+    // language asks for it (Slovak, Czech). Folding shrinks 2-byte UTF-8
+    // letters to 1-byte ASCII, so byte offsets shift; like the StrQ2B and
+    // OpenCC stages below, a position mapping recovers offsets on the
+    // original input.
+    std::string folded_line;
+    std::vector<unsigned> fold_pos_mapping;
+    const std::string *input = &line;
+    if (fold_diacritics_) {
+        folded_line = FoldDiacritics(line);
+        BuildPositionMapping(line, folded_line, fold_pos_mapping);
+        input = &folded_line;
+    }
+
     // Python-style simple tokenization: re.sub(r"\W+", " ", line)
     // Get processed line and position mapping from PCRE2GlobalReplace
-    auto [processed_line, pcre2_pos_mapping] = PCRE2GlobalReplaceWithPosition(line, R"#(\W+)#", " ");
+    auto [processed_line, pcre2_pos_mapping] = PCRE2GlobalReplaceWithPosition(*input, R"#(\W+)#", " ");
 
     std::string str1 = StrQ2B(processed_line);
     std::string strline;
@@ -1850,7 +1957,7 @@ std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> 
     std::vector<unsigned> opencc_pos_mapping;
     BuildPositionMapping(str1, strline, opencc_pos_mapping);
 
-    // Combine all position mappings: strline -> str1 -> processed_line -> line
+    // Combine all position mappings: strline -> str1 -> processed_line -> (folded_)line
     std::vector<unsigned> final_pos_mapping;
     final_pos_mapping.resize(strline.size() + 1);
 
@@ -1862,19 +1969,26 @@ std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> 
                 if (processed_pos < pcre2_pos_mapping.size()) {
                     final_pos_mapping[i] = pcre2_pos_mapping[processed_pos].first;
                 } else {
-                    final_pos_mapping[i] = static_cast<unsigned>(line.size());
+                    final_pos_mapping[i] = static_cast<unsigned>(input->size());
                 }
             } else {
-                final_pos_mapping[i] = static_cast<unsigned>(line.size());
+                final_pos_mapping[i] = static_cast<unsigned>(input->size());
             }
         } else {
-            final_pos_mapping[i] = static_cast<unsigned>(line.size());
+            final_pos_mapping[i] = static_cast<unsigned>(input->size());
         }
     }
 
     // Fill the last position
     if (strline.size() < final_pos_mapping.size()) {
-        final_pos_mapping[strline.size()] = static_cast<unsigned>(line.size());
+        final_pos_mapping[strline.size()] = static_cast<unsigned>(input->size());
+    }
+
+    // Remap folded-line offsets back to the original input.
+    if (fold_diacritics_) {
+        for (auto &pos : final_pos_mapping) {
+            pos = pos < fold_pos_mapping.size() ? fold_pos_mapping[pos] : static_cast<unsigned>(line.size());
+        }
     }
 
     // Use SplitByLang to separate by language
@@ -1922,7 +2036,11 @@ std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> 
                             term_to_stem = lowercase_term;
                         }
                         std::string stem_term;
-                        stemmer_->Stem(term_to_stem, stem_term);
+                        if (use_stemmer_) {
+                            stemmer_->Stem(term_to_stem, stem_term);
+                        } else {
+                            stem_term = term_to_stem;
+                        }
 
                         tokens.push_back(stem_term);
 
@@ -2251,7 +2369,11 @@ void RAGAnalyzer::EnglishNormalizeWithPosition(const std::vector<std::string> &t
                 term_to_stem = lowercase_term;
             }
             std::string stem_term;
-            stemmer_->Stem(term_to_stem, stem_term);
+            if (use_stemmer_) {
+                stemmer_->Stem(term_to_stem, stem_term);
+            } else {
+                stem_term = term_to_stem;
+            }
 
             normalize_tokens.push_back(stem_term);
             normalize_positions.emplace_back(start_pos, end_pos);
