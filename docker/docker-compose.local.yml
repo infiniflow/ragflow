@@ -95,6 +95,7 @@ services:
       - ../admin/server/admin_server.py:/ragflow/admin/server/admin_server.py:ro
       - ../admin/server/services.py:/ragflow/admin/server/services.py:ro
       - ../agent/business_requirements:/ragflow/agent/business_requirements:ro
+      - ../business_documents:/ragflow/business_documents:ro
       - ../agent/canvas.py:/ragflow/agent/canvas.py:ro
       - ../agent/templates/mrz_document_reader.json:/ragflow/agent/templates/mrz_document_reader.json:ro
       - ../agent/component/openmetadata.py:/ragflow/agent/component/openmetadata.py:ro

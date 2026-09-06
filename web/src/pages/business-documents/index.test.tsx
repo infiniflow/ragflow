@@ -1754,7 +1754,7 @@ test('creates a new business requirements document', async () => {
 
   await waitFor(() => expect(mockedCreate).toHaveBeenCalledTimes(1));
   expect(mockedCreate.mock.calls[0][0]).toEqual({
-    schema_version: '1',
+    schema_version: '2',
     document_type: 'business_requirements',
     title: 'Новый продукт',
     idea: 'Нужен новый клиентский сценарий.',
@@ -1831,14 +1831,186 @@ test('optionally links a new document to an EVA page URL', async () => {
   });
   fireEvent.click(screen.getByRole('button', { name: 'Начать работу' }));
 
+  expect(
+    await screen.findByTestId('eva-replace-confirmation'),
+  ).toHaveTextContent('текущее содержимое страницы');
+  fireEvent.click(screen.getByTestId('confirm-eva-replace'));
+
   await waitFor(() =>
     expect(mockedCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         eva_page_url: 'https://eva.example.com/project/Document/BR-42',
+        eva_decision: { mode: 'BIND', confirm_replace: true },
       }),
       expect.anything(),
     ),
   );
+});
+
+test('offers matching EVA pages and confirms replacement before binding', async () => {
+  mockedCreate
+    .mockRejectedValueOnce(
+      new BusinessDocumentConflictError(
+        'Выберите страницу',
+        'EVA_BINDING_DECISION_REQUIRED',
+        {
+          matches: [
+            {
+              connector_id: 'connector-1',
+              connector_name: 'EVA Wiki',
+              eva_origin: 'https://eva-api.example.com',
+              id: 'CmfDocument:doc-42',
+              name: 'Новый продукт',
+              code: 'BR-42',
+              project_id: 'CmfProject:portal',
+              web_url: 'https://eva.example.com/project/Document/BR-42',
+              breadcrumbs: [
+                {
+                  id: 'CmfDocument:folder',
+                  name: 'Проекты',
+                  web_url: 'https://eva.example.com/project/Document/PROJECTS',
+                },
+                {
+                  id: 'CmfDocument:doc-42',
+                  name: 'Новый продукт',
+                  web_url: 'https://eva.example.com/project/Document/BR-42',
+                },
+              ],
+              hierarchy: 'Проекты › Новый продукт',
+              binding_available: true,
+            },
+            {
+              connector_id: 'connector-1',
+              connector_name: 'EVA Wiki',
+              eva_origin: 'https://eva-api.example.com',
+              id: 'CmfDocument:doc-occupied',
+              name: 'Новый продукт',
+              code: 'BR-99',
+              project_id: 'CmfProject:archive',
+              web_url: 'https://eva.example.com/archive/Document/BR-99',
+              breadcrumbs: [
+                {
+                  id: 'CmfDocument:archive',
+                  name: 'Архив',
+                  web_url: 'https://eva.example.com/archive/Document/ARCHIVE',
+                },
+                {
+                  id: 'CmfDocument:doc-occupied',
+                  name: 'Новый продукт',
+                  web_url: 'https://eva.example.com/archive/Document/BR-99',
+                },
+              ],
+              hierarchy: 'Архив › Новый продукт',
+              binding_available: false,
+              linked_document: {
+                document_id: 'existing-document',
+                title: 'Уже созданный документ',
+              },
+            },
+          ],
+        },
+      ),
+    )
+    .mockResolvedValueOnce(projection);
+  renderPage('/business-documents');
+
+  fireEvent.change(
+    screen.getByRole('textbox', { name: 'Название документа' }),
+    { target: { value: 'Новый продукт' } },
+  );
+  fireEvent.change(screen.getByRole('textbox', { name: 'Описание идеи' }), {
+    target: { value: 'Нужен новый клиентский сценарий.' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Начать работу' }));
+
+  expect(await screen.findByTestId('eva-title-match-banner')).toHaveTextContent(
+    'Проекты',
+  );
+  expect(screen.getByTestId('eva-title-match-banner')).toHaveTextContent(
+    'Уже привязана к документу «Уже созданный документ»',
+  );
+  expect(screen.getByRole('link', { name: 'Проекты' })).toHaveAttribute(
+    'href',
+    'https://eva.example.com/project/Document/PROJECTS',
+  );
+  expect(screen.getByRole('link', { name: 'Архив' })).toHaveAttribute(
+    'href',
+    'https://eva.example.com/archive/Document/ARCHIVE',
+  );
+  const bindButtons = screen.getAllByRole('button', { name: 'Привязать' });
+  expect(bindButtons).toHaveLength(2);
+  expect(bindButtons[1]).toBeDisabled();
+  fireEvent.click(bindButtons[0]);
+  expect(
+    await screen.findByTestId('eva-replace-confirmation'),
+  ).toHaveTextContent('полностью заменено содержимым документа');
+  fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
+  await waitFor(() =>
+    expect(screen.queryByTestId('eva-replace-confirmation')).not.toBeInTheDocument(),
+  );
+  expect(mockedCreate).toHaveBeenCalledTimes(1);
+
+  fireEvent.click(bindButtons[0]);
+  fireEvent.click(screen.getByTestId('confirm-eva-replace'));
+
+  await waitFor(() => expect(mockedCreate).toHaveBeenCalledTimes(2));
+  expect(mockedCreate.mock.calls[1][0]).toEqual(
+    expect.objectContaining({
+      schema_version: '2',
+      eva_page_url: 'https://eva.example.com/project/Document/BR-42',
+      eva_decision: { mode: 'BIND', confirm_replace: true },
+    }),
+  );
+});
+
+test('creates without EVA binding after the user explicitly skips matches', async () => {
+  mockedCreate
+    .mockRejectedValueOnce(
+      new BusinessDocumentConflictError(
+        'Выберите страницу',
+        'EVA_BINDING_DECISION_REQUIRED',
+        {
+          matches: [
+            {
+              connector_id: 'connector-1',
+              connector_name: 'EVA Wiki',
+              eva_origin: 'https://eva-api.example.com',
+              id: 'CmfDocument:doc-42',
+              name: 'Новый продукт',
+              code: 'BR-42',
+              project_id: 'CmfProject:portal',
+              web_url: 'https://eva.example.com/project/Document/BR-42',
+              breadcrumbs: [],
+              hierarchy: 'Проекты › Новый продукт',
+              binding_available: true,
+            },
+          ],
+        },
+      ),
+    )
+    .mockResolvedValueOnce(projection);
+  renderPage('/business-documents');
+
+  fireEvent.change(
+    screen.getByRole('textbox', { name: 'Название документа' }),
+    { target: { value: 'Новый продукт' } },
+  );
+  fireEvent.change(screen.getByRole('textbox', { name: 'Описание идеи' }), {
+    target: { value: 'Нужен новый клиентский сценарий.' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Начать работу' }));
+  fireEvent.click(
+    await screen.findByTestId('create-without-eva-binding'),
+  );
+
+  await waitFor(() => expect(mockedCreate).toHaveBeenCalledTimes(2));
+  expect(mockedCreate.mock.calls[1][0]).toEqual(
+    expect.objectContaining({
+      schema_version: '2',
+      eva_decision: { mode: 'SKIP' },
+    }),
+  );
+  expect(mockedCreate.mock.calls[1][0]).not.toHaveProperty('eva_page_url');
 });
 
 test('appends voice transcripts to document input fields', () => {

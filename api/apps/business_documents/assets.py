@@ -32,6 +32,7 @@ from api.apps.business_documents.errors import ValidationError
 _ASSET_ROOT = Path(__file__).resolve().parents[3] / "agent" / "business_requirements"
 _CONTRACT_FILES = {
     "create_document": "create_document.v1.schema.json",
+    "create_document_v2": "create_document.v2.schema.json",
     "command": "command.v1.schema.json",
     "question_batch": "question_batch.v1.schema.json",
     "document_draft": "document_draft.v1.schema.json",

@@ -292,12 +292,34 @@ export interface BusinessDocumentList {
 }
 
 export interface CreateBusinessDocumentRequest {
-  schema_version: '1';
+  schema_version: '1' | '2';
   document_type: 'business_requirements';
   title: string;
   idea: string;
   dataset_ids?: string[];
   eva_page_url?: string;
+  eva_decision?: { mode: 'SKIP' } | { mode: 'BIND'; confirm_replace: true };
+}
+
+export interface EvaPageBreadcrumb {
+  id: string;
+  name: string;
+  web_url: string;
+}
+
+export interface EvaTitleMatch {
+  connector_id: string;
+  connector_name: string;
+  eva_origin: string;
+  id: string;
+  name: string;
+  code: string;
+  project_id: string;
+  web_url: string;
+  breadcrumbs: EvaPageBreadcrumb[];
+  hierarchy: string;
+  binding_available: boolean;
+  linked_document?: { document_id: string; title?: string | null };
 }
 
 export interface BusinessDocumentEvaPullResult {

@@ -40,6 +40,7 @@ from api.db.db_models import (
     BusinessDocumentCommand,
     BusinessDocumentComment,
     BusinessDocumentEvent,
+    BusinessDocumentEvaBinding,
     BusinessDocumentJob,
     BusinessDocumentProposal,
     BusinessDocumentProposalDecision,
@@ -75,6 +76,211 @@ def _create(**overrides):
         **overrides,
     }
     return BusinessDocumentService.create_document(TENANT, AUTHOR, request)
+
+
+@pytest.mark.p0
+def test_document_titles_are_unique_after_unicode_case_and_whitespace_normalization(database):
+    first = _create(title="  Требования   CRM  ")
+
+    with pytest.raises(BusinessDocumentError) as caught:
+        _create(title="ТРЕБОВАНИЯ CRM")
+
+    assert caught.value.code == "DOCUMENT_TITLE_ALREADY_EXISTS"
+    assert BusinessDocument.select().count() == 1
+    assert first["title"] == "Требования CRM"
+
+
+@pytest.mark.p0
+def test_v1_cannot_bind_an_eva_page_without_the_v2_confirmation_contract(database):
+    with pytest.raises(BusinessDocumentError) as caught:
+        _create(eva_page_url="https://eva.example.com/project/Document/BR-42")
+
+    assert caught.value.code == "EVA_BINDING_REQUIRES_SCHEMA_V2"
+    assert BusinessDocument.select().count() == 0
+
+
+@pytest.mark.p0
+def test_v2_creation_requires_an_explicit_decision_for_matching_eva_pages(database, monkeypatch):
+    from api.apps.business_documents.eva_changes import EvaDocumentChangeService
+
+    match = {
+        "id": "CmfDocument:doc-1",
+        "name": "Переводы одной кнопкой",
+        "code": "BR-42",
+        "project_id": "CmfProject:portal",
+        "web_url": "https://eva.example.com/project/Document/BR-42",
+        "breadcrumbs": [{"id": "CmfDocument:doc-1", "name": "Переводы одной кнопкой", "web_url": "https://eva.example.com/project/Document/BR-42"}],
+        "hierarchy": "Переводы одной кнопкой",
+        "connector_id": "connector-1",
+        "connector_name": "EVA Wiki",
+        "eva_origin": "https://eva.example.com",
+    }
+    monkeypatch.setattr(EvaDocumentChangeService, "find_title_matches", staticmethod(lambda *_args: [match]))
+
+    with pytest.raises(BusinessDocumentError) as caught:
+        _create(schema_version="2")
+
+    assert caught.value.code == "EVA_BINDING_DECISION_REQUIRED"
+    assert caught.value.details["matches"][0]["binding_available"] is True
+    assert BusinessDocument.select().count() == 0
+
+
+@pytest.mark.p0
+def test_v2_skip_creates_the_document_without_an_eva_binding(database, monkeypatch):
+    from api.apps.business_documents.eva_changes import EvaDocumentChangeService
+
+    monkeypatch.setattr(
+        EvaDocumentChangeService,
+        "find_title_matches",
+        staticmethod(lambda *_args: pytest.fail("SKIP must not repeat EVA title search")),
+    )
+
+    created = _create(schema_version="2", eva_decision={"mode": "SKIP"})
+
+    assert created["eva_binding"] is None
+    assert BusinessDocumentEvaBinding.select().count() == 0
+
+
+@pytest.mark.p0
+def test_v2_binding_requires_replace_confirmation_and_matching_remote_title(database, monkeypatch):
+    from api.apps.business_documents.eva_changes import EvaDocumentChangeService
+
+    binding = {
+        "page_url": "https://eva.example.com/project/Document/BR-42",
+        "status": "CONNECTED",
+        "connector_id": "connector-1",
+        "eva_origin": "https://eva-api.example.com",
+        "project_id": "CmfProject:portal",
+        "document_id": "CmfDocument:doc-1",
+        "document_name": "Переводы одной кнопкой",
+    }
+    monkeypatch.setattr(EvaDocumentChangeService, "resolve_page_url", staticmethod(lambda *_args: binding))
+
+    with pytest.raises(BusinessDocumentError) as missing_confirmation:
+        _create(
+            schema_version="2",
+            eva_page_url=binding["page_url"],
+            eva_decision={"mode": "BIND", "confirm_replace": False},
+        )
+
+    assert missing_confirmation.value.code == "EVA_REPLACE_CONFIRMATION_REQUIRED"
+    created = _create(
+        schema_version="2",
+        eva_page_url=binding["page_url"],
+        eva_decision={"mode": "BIND", "confirm_replace": True},
+    )
+    assert created["eva_binding"]["document_id"] == "CmfDocument:doc-1"
+
+
+@pytest.mark.p0
+def test_one_eva_page_cannot_be_linked_to_different_documents(database, monkeypatch):
+    binding = {
+        "page_url": "https://eva.example.com/project/Document/BR-42",
+        "status": "CONNECTED",
+        "capabilities": ["OPEN", "PULL_FROM_EVA", "CREATE_EVA_CHANGE"],
+        "connector_id": "connector-1",
+        "eva_origin": "https://eva-api.example.com",
+        "project_id": "CmfProject:portal",
+        "document_id": "CmfDocument:doc-1",
+        "document_code": "BR-42",
+        "document_name": "Переводы одной кнопкой",
+    }
+    monkeypatch.setattr(BusinessDocumentService, "_resolve_create_eva_binding", staticmethod(lambda *_args: binding))
+    confirmed = {"mode": "BIND", "confirm_replace": True}
+    _create(schema_version="2", eva_page_url=binding["page_url"], eva_decision=confirmed)
+
+    with pytest.raises(BusinessDocumentError) as caught:
+        _create(title="Другой документ", schema_version="2", eva_page_url=binding["page_url"], eva_decision=confirmed)
+
+    assert caught.value.code == "EVA_PAGE_ALREADY_LINKED"
+    assert BusinessDocument.select().count() == 1
+    assert BusinessDocumentEvaBinding.select().count() == 1
+
+
+def test_legacy_event_backfill_populates_unique_eva_binding_projection(database, monkeypatch):
+    from api.apps.business_documents.eva_changes import EvaDocumentChangeService
+    from api.db.db_models import migrate_business_document_eva_bindings
+
+    binding = {
+        "page_url": "https://eva.example.com/project/Document/BR-42",
+        "status": "CONNECTED",
+        "connector_id": "connector-1",
+        "eva_origin": "https://eva-api.example.com",
+        "project_id": "CmfProject:portal",
+        "document_id": "CmfDocument:doc-1",
+        "document_name": "Переводы одной кнопкой",
+    }
+    monkeypatch.setattr(EvaDocumentChangeService, "resolve_page_url", staticmethod(lambda *_args: binding))
+    created = _create(
+        schema_version="2",
+        eva_page_url=binding["page_url"],
+        eva_decision={"mode": "BIND", "confirm_replace": True},
+    )
+    pull_event_id = BusinessDocumentService._create_event(
+        created["document_id"],
+        2,
+        "EvaDocumentPulled",
+        "USER",
+        AUTHOR,
+        {
+            "remote_version": "7",
+            "remote_content_hash": "sha256:remote-content",
+            "review_cycle": 3,
+        },
+        "legacy-pull",
+    )
+    BusinessDocumentEvaBinding.delete().execute()
+
+    migrate_business_document_eva_bindings()
+    migrate_business_document_eva_bindings()
+
+    projection = BusinessDocumentEvaBinding.get_by_id(created["document_id"])
+    assert projection.binding["page_url"] == binding["page_url"]
+    assert projection.binding["remote_version"] == "7"
+    assert projection.binding["last_pulled_content_hash"] == "sha256:remote-content"
+    assert projection.binding["last_pull_event_id"] == pull_event_id
+    assert projection.binding["last_pull_review_cycle"] == 3
+
+
+def test_matching_eva_page_reports_the_document_that_already_owns_it(database, monkeypatch):
+    from api.apps.business_documents.eva_changes import EvaDocumentChangeService
+
+    binding = {
+        "page_url": "https://eva.example.com/project/Document/BR-42",
+        "status": "CONNECTED",
+        "connector_id": "connector-1",
+        "eva_origin": "https://eva-api.example.com",
+        "project_id": "CmfProject:portal",
+        "document_id": "CmfDocument:doc-1",
+        "document_name": "Переводы одной кнопкой",
+    }
+    monkeypatch.setattr(EvaDocumentChangeService, "resolve_page_url", staticmethod(lambda *_args: binding))
+    owner = _create(
+        schema_version="2",
+        eva_page_url=binding["page_url"],
+        eva_decision={"mode": "BIND", "confirm_replace": True},
+    )
+    match = {
+        "id": binding["document_id"],
+        "name": "Другой документ",
+        "code": "BR-42",
+        "project_id": binding["project_id"],
+        "web_url": binding["page_url"],
+        "breadcrumbs": [],
+        "hierarchy": "Проекты › Другой документ",
+        "connector_id": binding["connector_id"],
+        "connector_name": "EVA Wiki",
+        "eva_origin": binding["eva_origin"],
+    }
+    monkeypatch.setattr(EvaDocumentChangeService, "find_title_matches", staticmethod(lambda *_args: [match]))
+
+    with pytest.raises(BusinessDocumentError) as caught:
+        _create(title="Другой документ", schema_version="2")
+
+    assert caught.value.code == "EVA_BINDING_DECISION_REQUIRED"
+    occupied = caught.value.details["matches"][0]
+    assert occupied["binding_available"] is False
+    assert occupied["linked_document"] == {"document_id": owner["document_id"], "title": "Переводы одной кнопкой"}
 
 
 def _command(document, command_type, payload=None, *, key=None, command_id=None, expected=None):
@@ -1347,7 +1553,11 @@ def test_link_only_eva_binding_can_be_reconnected_without_rewriting_creation_eve
         "document_name": "Документ1",
     }
     monkeypatch.setattr(EvaDocumentChangeService, "resolve_page_url", staticmethod(lambda _actor_id, _page_url: link_only))
-    document = _create(eva_page_url=link_only["page_url"])
+    document = _create(
+        schema_version="2",
+        eva_page_url=link_only["page_url"],
+        eva_decision={"mode": "BIND", "confirm_replace": True},
+    )
     created_event = BusinessDocumentEvent.get((BusinessDocumentEvent.document_id == document["document_id"]) & (BusinessDocumentEvent.event_type == "DocumentCreated"))
     original_created_payload = deepcopy(created_event.payload)
     monkeypatch.setattr(EvaDocumentChangeService, "resolve_page_url", staticmethod(lambda _actor_id, _page_url: connected))
@@ -1390,7 +1600,14 @@ def test_verified_eva_binding_supports_governed_pull_and_outbound_change(databas
         "resolve_page_url",
         staticmethod(lambda _actor_id, _page_url: binding),
     )
-    document = _request_and_complete_draft(_create(eva_page_url=binding["page_url"]))
+    document = _request_and_complete_draft(
+        _create(
+            title=binding["document_name"],
+            schema_version="2",
+            eva_page_url=binding["page_url"],
+            eva_decision={"mode": "BIND", "confirm_replace": True},
+        )
+    )
     document = _complete_review_assessment(document)
     requested = BusinessDocumentService.execute_command(
         TENANT,

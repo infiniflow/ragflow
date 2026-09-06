@@ -18,6 +18,7 @@ from common.data_source.exceptions import ConnectorMissingCredentialError, Conne
 from common.data_source.html_utils import parse_html_page_basic
 from common.data_source.interfaces import LoadConnector, PollConnector, SlimConnectorWithPermSync
 from common.data_source.models import BasicExpertInfo, Document, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SecondsSinceUnixEpoch, SlimDocument
+from business_documents.domain.names import normalize_title
 
 
 class EvaWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
@@ -354,6 +355,27 @@ class EvaWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 break
         return matches
 
+    def find_documents_by_exact_title(self, title: str) -> list[dict[str, Any]]:
+        """Return every accessible page whose normalized title matches exactly."""
+
+        self._validate_config()
+        expected = normalize_title(str(title or ""))
+        if not expected:
+            return []
+        pages = list(self._iter_entities("CmfDocument", self._PAGE_INDEX_FIELDS))
+        page_index = {str(page.get("id") or ""): page for page in pages if str(page.get("id") or "")}
+        matches: list[dict[str, Any]] = []
+        for page in pages:
+            name = str(page.get("name") or page.get("code") or page.get("id") or "")
+            if normalize_title(name) != expected:
+                continue
+            editable = self._editable_document(page, include_content=False)
+            editable["parent_id"] = str(page.get("parent_id") or "") or None
+            editable["breadcrumbs"] = self._page_breadcrumbs(str(page["id"]), page_index)
+            editable["hierarchy"] = " › ".join(item["name"] for item in editable["breadcrumbs"])
+            matches.append(editable)
+        return sorted(matches, key=lambda item: (normalize_title(str(item.get("hierarchy") or "")), str(item.get("id") or "")))
+
     def get_document_for_edit(self, document_id: str) -> dict[str, Any]:
         """Load one published page together with its current EVA draft."""
 
@@ -384,6 +406,26 @@ class EvaWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             result["html"] = raw_content
             result["draft_html"] = str(page.get("text_draft") or "")
         return result
+
+    def _page_breadcrumbs(self, page_id: str, page_index: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
+        breadcrumbs: list[dict[str, str]] = []
+        current_id = page_id
+        visited: set[str] = set()
+        while current_id in page_index and current_id not in visited:
+            visited.add(current_id)
+            page = page_index[current_id]
+            code = str(page.get("code") or "").strip()
+            name = str(page.get("name") or code or current_id)
+            breadcrumbs.append(
+                {
+                    "id": current_id,
+                    "name": name,
+                    "web_url": f"{self.web_base_url}/project/Document/{quote(code, safe='')}" if code else self.web_base_url,
+                }
+            )
+            current_id = str(page.get("parent_id") or "")
+        breadcrumbs.reverse()
+        return breadcrumbs
 
     @staticmethod
     def _document_version(page: dict[str, Any]) -> str:
@@ -874,7 +916,7 @@ class EvaWikiConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         args: list[Any] | None = None,
         call_kwargs: dict[str, Any] | None = None,
     ) -> Any:
-        endpoint = self._resolve_same_origin_api_url("api/")
+        endpoint = self._resolve_same_origin_api_url(f"api/?m={quote(method, safe='')}")
         request_payload: dict[str, Any] = {"method": method, "kwargs": kwargs, "callid": str(uuid.uuid4()), "jsonrpc": "2.2"}
         if args is not None:
             request_payload["args"] = args

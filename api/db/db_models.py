@@ -29,9 +29,11 @@ from quart_auth import AuthUser
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from peewee import (
     fn,
+    IntegrityError,
     InterfaceError,
     OperationalError,
     ProgrammingError,
+    Update,
     BigIntegerField,
     BooleanField,
     CharField,
@@ -1469,6 +1471,7 @@ class BusinessDocument(DataBaseModel):
     chat_id = CharField(max_length=128, null=False, unique=True)
     document_type = CharField(max_length=64, null=False, default="business_requirements", index=True)
     title = CharField(max_length=255, null=False)
+    title_key = CharField(max_length=64, null=False, unique=True)
     idea = TextField(null=False)
     dataset_ids = JSONField(null=False, default=list)
     template_version = CharField(max_length=64, null=False)
@@ -1483,6 +1486,19 @@ class BusinessDocument(DataBaseModel):
     class Meta:
         db_table = "business_document"
         indexes = ((("tenant_id", "chat_id"), True),)
+
+
+class BusinessDocumentEvaBinding(DataBaseModel):
+    """Current EVA page link for one governed business document."""
+
+    document_id = CharField(max_length=32, primary_key=True)
+    status = CharField(max_length=16, null=False, index=True)
+    page_url_key = CharField(max_length=64, null=False, unique=True)
+    eva_identity_key = CharField(max_length=64, null=True, unique=True)
+    binding = JSONField(null=False)
+
+    class Meta:
+        db_table = "business_document_eva_binding"
 
 
 class BusinessDocumentRevision(DataBaseModel):
@@ -1956,6 +1972,116 @@ def migrate_add_unique_email(migrator):
         logging.critical("Failed to add UNIQUE constraint on user.email: %s", ex)
 
 
+def migrate_business_document_title_key(migrator):
+    """Backfill and enforce the canonical unique title key."""
+
+    alter_db_add_column(migrator, "business_document", "title_key", CharField(max_length=64, null=True))
+    from business_documents.domain.names import title_key
+
+    rows = list(BusinessDocument.select(BusinessDocument.id, BusinessDocument.title, BusinessDocument.title_key))
+    by_key: dict[str, list[str]] = {}
+    for row in rows:
+        key = title_key(row.title)
+        by_key.setdefault(key, []).append(row.id)
+    duplicates = [ids for ids in by_key.values() if len(ids) > 1]
+    if duplicates:
+        sample = ", ".join("/".join(ids) for ids in duplicates[:5])
+        raise RuntimeError(f"Duplicate business document titles must be resolved before migration: {sample}")
+    with DB.atomic():
+        for row in rows:
+            key = title_key(row.title)
+            if row.title_key != key:
+                Update(
+                    BusinessDocument._meta.table,
+                    {BusinessDocument.title_key: key},
+                ).where(BusinessDocument.id == row.id).execute(DB)
+    try:
+        migrate(migrator.add_index("business_document", ("title_key",), unique=True))
+    except (OperationalError, ProgrammingError) as ex:
+        if "already exists" not in str(ex).lower() and "duplicate key name" not in str(ex).lower() and "1061" not in str(ex):
+            raise
+    if settings.DATABASE_TYPE.upper() == "POSTGRES":
+        DB.execute_sql("ALTER TABLE business_document ALTER COLUMN title_key SET NOT NULL")
+    else:
+        DB.execute_sql("ALTER TABLE business_document MODIFY title_key VARCHAR(64) NOT NULL")
+
+
+def migrate_business_document_eva_bindings():
+    """Project legacy event-backed EVA links into the uniquely constrained table."""
+
+    if not BusinessDocumentEvaBinding.table_exists():
+        return
+    linked_document_ids = set(BusinessDocumentEvaBinding.select(BusinessDocumentEvaBinding.document_id).scalars())
+    created_events = (
+        BusinessDocumentEvent.select()
+        .where(BusinessDocumentEvent.event_type == "DocumentCreated")
+        .order_by(BusinessDocumentEvent.document_id, BusinessDocumentEvent.sequence)
+    )
+    for created in created_events:
+        if created.document_id in linked_document_ids or not isinstance(created.payload, dict):
+            continue
+        binding = created.payload.get("eva_binding")
+        if not isinstance(binding, dict) or not binding.get("page_url"):
+            continue
+        latest_resolution = (
+            BusinessDocumentEvent.select()
+            .where(
+                (BusinessDocumentEvent.document_id == created.document_id)
+                & (BusinessDocumentEvent.event_type == "EvaBindingResolved")
+            )
+            .order_by(BusinessDocumentEvent.sequence.desc())
+            .first()
+        )
+        if latest_resolution is not None and isinstance(latest_resolution.payload, dict):
+            resolved = latest_resolution.payload.get("eva_binding")
+            if isinstance(resolved, dict) and resolved.get("page_url"):
+                binding = resolved
+        latest_pull = (
+            BusinessDocumentEvent.select()
+            .where(
+                (BusinessDocumentEvent.document_id == created.document_id)
+                & (BusinessDocumentEvent.event_type == "EvaDocumentPulled")
+            )
+            .order_by(BusinessDocumentEvent.sequence.desc())
+            .first()
+        )
+        if (
+            latest_pull is not None
+            and isinstance(latest_pull.payload, dict)
+            and (latest_resolution is None or latest_pull.sequence > latest_resolution.sequence)
+        ):
+            binding = dict(binding)
+            binding.update(
+                {
+                    "remote_version": latest_pull.payload.get("remote_version"),
+                    "remote_content_hash": latest_pull.payload.get("remote_content_hash"),
+                    "last_pulled_content_hash": latest_pull.payload.get("remote_content_hash"),
+                    "last_pulled_at": latest_pull.create_time,
+                    "last_pull_event_id": latest_pull.id,
+                    "last_pull_review_cycle": latest_pull.payload.get("review_cycle"),
+                }
+            )
+        page_url = str(binding["page_url"]).strip().rstrip("/").casefold()
+        origin = str(binding.get("eva_origin") or "").strip().rstrip("/").casefold()
+        project_id = str(binding.get("project_id") or "").strip()
+        document_id = str(binding.get("document_id") or "").strip()
+        identity = "\x1f".join((origin, project_id, document_id))
+        try:
+            BusinessDocumentEvaBinding.create(
+                document_id=created.document_id,
+                status=str(binding.get("status") or "LINK_ONLY"),
+                page_url_key=hashlib.sha256(page_url.encode("utf-8")).hexdigest(),
+                eva_identity_key=hashlib.sha256(identity.encode("utf-8")).hexdigest()
+                if origin and project_id and document_id
+                else None,
+                binding=dict(binding),
+            )
+        except IntegrityError as ex:
+            raise RuntimeError(
+                f"EVA page linked to multiple business documents; resolve document {created.document_id} before migration"
+            ) from ex
+
+
 def update_tenant_llm_to_id_primary_key():
     """Add ID and set to primary key step by step."""
     if settings.DATABASE_TYPE.upper() == "POSTGRES":
@@ -2104,6 +2230,8 @@ def migrate_db():
         "business_document_role",
         CharField(max_length=32, null=False, default="AUTHOR_CREATOR", index=True),
     )
+    migrate_business_document_title_key(migrator)
+    migrate_business_document_eva_bindings()
     alter_db_add_column(migrator, "business_document_revision", "author_id", CharField(max_length=32, null=True, index=True))
     alter_db_add_column(migrator, "business_document_job", "progress", FloatField(null=False, default=0.0))
     alter_db_add_column(migrator, "business_document_job", "progress_stage", CharField(max_length=32, null=False, default="QUEUED"))

@@ -26,7 +26,7 @@ if "api.apps" not in sys.modules:
 from api.apps.business_documents.errors import BusinessDocumentError
 from api.apps.business_documents.service import BusinessDocumentService
 from api.apps.business_documents.worker import BusinessDocumentJobQueue
-from api.db.db_models import BusinessDocument, BusinessDocumentCommand, BusinessDocumentEvent, BusinessDocumentJob, BusinessDocumentRevision, User
+from api.db.db_models import BusinessDocument, BusinessDocumentCommand, BusinessDocumentEvent, BusinessDocumentEvaBinding, BusinessDocumentJob, BusinessDocumentRevision, User
 
 
 @pytest.fixture
@@ -109,6 +109,82 @@ def _synchronize_document_reads(monkeypatch):
         return document
 
     monkeypatch.setattr(BusinessDocumentService, "_get_editable_document", staticmethod(get_document))
+
+
+@pytest.mark.p0
+def test_concurrent_document_creation_enforces_normalized_title_uniqueness(postgres_database, monkeypatch):
+    barrier = Barrier(2)
+    create = BusinessDocument.create
+
+    def synchronized_create(*args, **kwargs):
+        barrier.wait(timeout=10)
+        return create(*args, **kwargs)
+
+    monkeypatch.setattr(BusinessDocument, "create", synchronized_create)
+    results = _parallel(
+        postgres_database,
+        lambda index: BusinessDocumentService.create_document(
+            "pg-tenant",
+            "pg-author",
+            {
+                "schema_version": "1",
+                "document_type": "business_requirements",
+                "title": "  Concurrent   title  " if index == 0 else "CONCURRENT TITLE",
+                "idea": f"Concurrent request {index}",
+            },
+        ),
+    )
+
+    assert sum(isinstance(result, dict) for result in results) == 1
+    rejected = next(result for result in results if isinstance(result, BusinessDocumentError))
+    assert rejected.code == "DOCUMENT_TITLE_ALREADY_EXISTS"
+    assert BusinessDocument.select().count() == 1
+
+
+@pytest.mark.p0
+def test_concurrent_creation_enforces_unique_eva_identity(postgres_database, monkeypatch):
+    barrier = Barrier(2)
+    create_binding = BusinessDocumentEvaBinding.create
+
+    def synchronized_binding_create(*args, **kwargs):
+        barrier.wait(timeout=10)
+        return create_binding(*args, **kwargs)
+
+    def resolve_binding(_actor_id, raw, _schema_version, display_title):
+        suffix = "one" if display_title.endswith("one") else "two"
+        return {
+            "page_url": f"https://eva.example.test/project/Document/{suffix}",
+            "status": "CONNECTED",
+            "connector_id": "pg-connector",
+            "eva_origin": "https://eva-api.example.test",
+            "project_id": "pg-project",
+            "document_id": "shared-eva-document",
+            "document_name": display_title,
+        }
+
+    monkeypatch.setattr(BusinessDocumentEvaBinding, "create", synchronized_binding_create)
+    monkeypatch.setattr(BusinessDocumentService, "_resolve_create_eva_binding", staticmethod(resolve_binding))
+    results = _parallel(
+        postgres_database,
+        lambda index: BusinessDocumentService.create_document(
+            "pg-tenant",
+            "pg-author",
+            {
+                "schema_version": "2",
+                "document_type": "business_requirements",
+                "title": f"Concurrent EVA {'one' if index == 0 else 'two'}",
+                "idea": f"Concurrent EVA request {index}",
+                "eva_page_url": f"https://eva.example.test/request/{index}",
+                "eva_decision": {"mode": "BIND", "confirm_replace": True},
+            },
+        ),
+    )
+
+    assert sum(isinstance(result, dict) for result in results) == 1
+    rejected = next(result for result in results if isinstance(result, BusinessDocumentError))
+    assert rejected.code == "EVA_PAGE_ALREADY_LINKED"
+    assert BusinessDocument.select().count() == 1
+    assert BusinessDocumentEvaBinding.select().count() == 1
 
 
 @pytest.mark.p0

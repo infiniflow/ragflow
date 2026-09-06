@@ -334,6 +334,32 @@ class EvaDocumentChangeService:
         }
 
     @classmethod
+    def find_title_matches(cls, actor_id: str, title: str) -> list[dict[str, Any]]:
+        """Find exact-title pages in the EVA space configured for Documents."""
+
+        try:
+            connector_id = cls._configured_connector_id()
+        except BusinessDocumentError as error:
+            if error.code == "EVA_SPACE_NOT_CONFIGURED":
+                return []
+            raise
+        connector, client = cls._connector(connector_id, actor_id)
+        try:
+            documents = client.find_documents_by_exact_title(title)
+        except Exception as error:
+            raise cls._map_external_error(error) from error
+        eva_origin = EvaWikiConnector._url_origin(client.api_base_url)
+        return [
+            {
+                **document,
+                "connector_id": connector.id,
+                "connector_name": connector.name,
+                "eva_origin": eva_origin,
+            }
+            for document in documents
+        ]
+
+    @classmethod
     def resolve_page_url(cls, actor_id: str, page_url: object) -> dict[str, Any]:
         """Resolve a user-facing EVA URL without ever requesting that URL directly.
 
@@ -394,6 +420,7 @@ class EvaDocumentChangeService:
                 "status": "CONNECTED",
                 "capabilities": ["OPEN", "PULL_FROM_EVA", "CREATE_EVA_CHANGE"],
                 "connector_id": connector.id,
+                "eva_origin": EvaWikiConnector._url_origin(client.api_base_url),
                 "project_id": str(remote.get("project_id") or "") or None,
                 "document_id": str(remote.get("id") or "") or None,
                 "document_code": str(remote.get("code") or "") or None,

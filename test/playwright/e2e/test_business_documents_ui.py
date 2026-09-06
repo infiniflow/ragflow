@@ -190,7 +190,7 @@ def test_business_documents_list_validation_and_create_navigation(
     expect(page).to_have_url(re.compile(r"/business-documents/doc-ui-1$"))
     assert created_payloads == [
         {
-            "schema_version": "1",
+            "schema_version": "2",
             "document_type": "business_requirements",
             "title": "Новый регламент",
             "idea": "Согласовать единый процесс.",

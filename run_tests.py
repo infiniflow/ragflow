@@ -179,7 +179,7 @@ EXAMPLES:
 
     def build_pytest_command(self) -> List[str]:
         """Build the pytest command arguments"""
-        cmd = ["pytest"]
+        cmd = [sys.executable, "-m", "pytest"]
         if self.test_path:
             test_target = Path(self.test_path)
             if not test_target.is_absolute():

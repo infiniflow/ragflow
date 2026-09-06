@@ -85,6 +85,8 @@ import type {
   BusinessDocumentOperationState,
   BusinessDocumentRevision,
   BusinessDocumentSelection,
+  CreateBusinessDocumentRequest,
+  EvaTitleMatch,
 } from './types';
 
 const lifecycleLabels: Record<BusinessDocumentLifecycleState, string> = {
@@ -148,6 +150,9 @@ function CreateBusinessDocumentPage() {
   const [title, setTitle] = useState('');
   const [idea, setIdea] = useState('');
   const [evaPageUrl, setEvaPageUrl] = useState('');
+  const [evaMatches, setEvaMatches] = useState<EvaTitleMatch[]>([]);
+  const [pendingEvaBinding, setPendingEvaBinding] =
+    useState<EvaTitleMatch | null>(null);
   const [page, setPage] = useState(1);
   const [scope, setScope] = useState<'mine' | 'all'>('mine');
   const documentsQuery = useQuery({
@@ -165,6 +170,8 @@ function CreateBusinessDocumentPage() {
   const createMutation = useMutation({
     mutationFn: createBusinessDocument,
     onSuccess: async (document) => {
+      setEvaMatches([]);
+      setPendingEvaBinding(null);
       const command: BusinessDocumentCommand = {
         schema_version: '1',
         command_id: makeId('cmd-initial-analysis'),
@@ -182,6 +189,18 @@ function CreateBusinessDocumentPage() {
         navigate(`${Routes.BusinessDocuments}/${document.document_id}`);
       }
     },
+    onError: (error) => {
+      if (
+        error instanceof BusinessDocumentConflictError &&
+        error.code === 'EVA_BINDING_DECISION_REQUIRED' &&
+        error.details &&
+        typeof error.details === 'object' &&
+        'matches' in error.details &&
+        Array.isArray(error.details.matches)
+      ) {
+        setEvaMatches(error.details.matches as EvaTitleMatch[]);
+      }
+    },
   });
   const deleteMutation = useMutation({
     mutationFn: (documentId: string) => deleteBusinessDocument(documentId),
@@ -192,17 +211,41 @@ function CreateBusinessDocumentPage() {
     },
   });
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
+  const createDocument = (
+    evaDecision?: CreateBusinessDocumentRequest['eva_decision'],
+    selectedEvaPageUrl?: string,
+  ) => {
     if (!title.trim() || !idea.trim() || createMutation.isPending) return;
     createMutation.mutate({
-      schema_version: '1',
+      schema_version: '2',
       document_type: 'business_requirements',
       title: title.trim(),
       idea: idea.trim(),
       dataset_ids: [],
-      ...(evaPageUrl.trim() ? { eva_page_url: evaPageUrl.trim() } : {}),
+      ...(selectedEvaPageUrl ? { eva_page_url: selectedEvaPageUrl } : {}),
+      ...(evaDecision ? { eva_decision: evaDecision } : {}),
     });
+  };
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (evaPageUrl.trim()) {
+      setPendingEvaBinding({
+        connector_id: '',
+        connector_name: 'EVA Wiki',
+        eva_origin: '',
+        id: '',
+        name: title.trim(),
+        code: '',
+        project_id: '',
+        web_url: evaPageUrl.trim(),
+        breadcrumbs: [],
+        hierarchy: evaPageUrl.trim(),
+        binding_available: true,
+      });
+      return;
+    }
+    createDocument();
   };
 
   return (
@@ -495,7 +538,10 @@ function CreateBusinessDocumentPage() {
                   maxLength={200}
                   aria-label="Название документа"
                   placeholder="Например, Переводы одной кнопкой"
-                  onChange={(event) => setTitle(event.target.value)}
+                  onChange={(event) => {
+                    setTitle(event.target.value);
+                    setEvaMatches([]);
+                  }}
                   suffix={
                     <VoiceInput
                       label="Название"
@@ -547,17 +593,157 @@ function CreateBusinessDocumentPage() {
                   onChange={(event) => setEvaPageUrl(event.target.value)}
                 />
                 <span className="block text-xs font-normal leading-5 text-text-secondary">
-                  Необязательно. При доступном коннекторе появится обмен
-                  изменениями в обе стороны; иначе сохранится ссылка на
-                  страницу.
+                  Необязательно. Страница должна быть доступна через настроенное
+                  соединение EVA. Перед привязкой потребуется подтверждение
+                  будущей замены содержимого.
                 </span>
               </label>
 
-              {createMutation.error && (
-                <p className="mt-4 text-sm text-state-error" role="alert">
-                  {createMutation.error.message}
-                </p>
+              {evaMatches.length > 0 && (
+                <div
+                  className="mt-5 rounded-lg border border-state-warning/40 bg-state-warning/10 p-4"
+                  data-testid="eva-title-match-banner"
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-state-warning" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-text-primary">
+                        В EVA Wiki найдены страницы с таким названием
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-text-secondary">
+                        Выберите страницу для привязки или создайте документ без
+                        привязки.
+                      </p>
+                      <div className="mt-3 space-y-2">
+                        {evaMatches.map((match) => (
+                          <div
+                            key={match.id || match.web_url}
+                            className="rounded-md border border-border-button bg-bg-base p-3"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-text-primary">
+                                  {match.name}
+                                </p>
+                                <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-text-secondary">
+                                  {match.breadcrumbs.map((item, index) => (
+                                    <span
+                                      key={item.id}
+                                      className="flex items-center gap-1"
+                                    >
+                                      {index > 0 && (
+                                        <span aria-hidden="true">›</span>
+                                      )}
+                                      <a
+                                        href={item.web_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="hover:text-accent-primary hover:underline"
+                                      >
+                                        {item.name}
+                                      </a>
+                                    </span>
+                                  ))}
+                                  {match.breadcrumbs.length === 0 && (
+                                    <a
+                                      href={match.web_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="break-all hover:text-accent-primary hover:underline"
+                                    >
+                                      {match.hierarchy || match.web_url}
+                                    </a>
+                                  )}
+                                </div>
+                                {!match.binding_available && (
+                                  <p className="mt-2 text-xs text-state-error">
+                                    Уже привязана к документу «
+                                    {match.linked_document?.title ||
+                                      'другой документ'}
+                                    »
+                                  </p>
+                                )}
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                disabled={
+                                  !match.binding_available ||
+                                  createMutation.isPending
+                                }
+                                onClick={() => setPendingEvaBinding(match)}
+                              >
+                                Привязать
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="mt-3"
+                        disabled={createMutation.isPending}
+                        onClick={() => createDocument({ mode: 'SKIP' })}
+                        data-testid="create-without-eva-binding"
+                      >
+                        Создать без привязки
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               )}
+
+              <AlertDialog
+                open={pendingEvaBinding !== null}
+                onOpenChange={(open) => {
+                  if (!open) setPendingEvaBinding(null);
+                }}
+              >
+                <AlertDialogContent data-testid="eva-replace-confirmation">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Привязать страницу EVA?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      При последующей публикации этого документа текущее
+                      содержимое страницы «
+                      {pendingEvaBinding?.name || title.trim()}» будет полностью
+                      заменено содержимым документа. Продолжить?
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Отмена</AlertDialogCancel>
+                    <AlertDialogAction
+                      type="button"
+                      onClick={() => {
+                        const selected = pendingEvaBinding;
+                        setPendingEvaBinding(null);
+                        if (selected) {
+                          createDocument(
+                            { mode: 'BIND', confirm_replace: true },
+                            selected.web_url,
+                          );
+                        }
+                      }}
+                      data-testid="confirm-eva-replace"
+                    >
+                      Подтвердить и привязать
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+
+              {createMutation.error &&
+                !(
+                  createMutation.error instanceof
+                    BusinessDocumentConflictError &&
+                  createMutation.error.code === 'EVA_BINDING_DECISION_REQUIRED'
+                ) && (
+                  <p className="mt-4 text-sm text-state-error" role="alert">
+                    {createMutation.error.message}
+                  </p>
+                )}
 
               <div className="mt-6 flex scroll-mt-20 justify-end">
                 <Button

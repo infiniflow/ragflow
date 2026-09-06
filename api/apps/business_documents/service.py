@@ -46,6 +46,7 @@ from api.db.db_models import (
     BusinessDocumentCommand,
     BusinessDocumentComment,
     BusinessDocumentEvent,
+    BusinessDocumentEvaBinding,
     BusinessDocumentEvidenceSnapshot,
     BusinessDocumentExportArtifact,
     BusinessDocumentJob,
@@ -55,6 +56,7 @@ from api.db.db_models import (
     BusinessDocumentRevision,
     User,
 )
+from business_documents.domain.names import normalize_title, title_key
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
 
@@ -68,6 +70,7 @@ _MODEL_TABLES = (
     BusinessDocumentProposalDecision,
     BusinessDocumentComment,
     BusinessDocumentEvent,
+    BusinessDocumentEvaBinding,
     BusinessDocumentCommand,
     BusinessDocumentJob,
     BusinessDocumentExportArtifact,
@@ -90,6 +93,20 @@ def _sha256_text(value: str) -> str:
 def _stable_hash(value: object) -> str:
     raw = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return _sha256_text(raw)
+
+
+def _fixed_hash(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _binding_keys(binding: dict[str, Any]) -> tuple[str, str | None]:
+    page_url = str(binding.get("page_url") or "").strip().rstrip("/").casefold()
+    page_url_key = _fixed_hash(page_url)
+    eva_origin = str(binding.get("eva_origin") or "").strip().rstrip("/").casefold()
+    project_id = str(binding.get("project_id") or "").strip()
+    document_id = str(binding.get("document_id") or binding.get("id") or "").strip()
+    identity_key = _fixed_hash("\x1f".join((eva_origin, project_id, document_id))) if eva_origin and project_id and document_id else None
+    return page_url_key, identity_key
 
 
 def _canonical_semantic_text(value: str) -> str:
@@ -149,7 +166,24 @@ class BusinessDocumentService:
             raise ValidationError("INVALID_DOCUMENT", "Request body must be a JSON object")
         if "chat_id" in raw:
             raise ValidationError("CHAT_ID_NOT_ALLOWED", "chat_id is assigned by the business document channel")
-        validate_contract("create_document", raw)
+        schema_version = raw.get("schema_version")
+        if schema_version != "2" and raw.get("eva_page_url"):
+            raise ValidationError(
+                "EVA_BINDING_REQUIRES_SCHEMA_V2",
+                "EVA page binding requires create-document schema version 2 and explicit replacement confirmation",
+            )
+        if raw.get("eva_page_url"):
+            requested_decision = raw.get("eva_decision")
+            if (
+                not isinstance(requested_decision, dict)
+                or requested_decision.get("mode") != "BIND"
+                or requested_decision.get("confirm_replace") is not True
+            ):
+                raise ValidationError(
+                    "EVA_REPLACE_CONFIRMATION_REQUIRED",
+                    "Confirm that publishing this document will replace the current EVA page content",
+                )
+        validate_contract("create_document_v2" if schema_version == "2" else "create_document", raw)
         title = raw.get("title")
         idea = raw.get("idea")
         dataset_ids = raw.get("dataset_ids", [])
@@ -157,8 +191,12 @@ class BusinessDocumentService:
             raise ValidationError("INVALID_TITLE", "title must be a non-empty string")
         if not isinstance(idea, str) or not idea.strip():
             raise ValidationError("INVALID_IDEA", "idea must be a non-empty string")
+        display_title = " ".join(unicodedata.normalize("NFKC", title).strip().split())
+        normalized_title_key = title_key(display_title)
         ensure_dataset_access(actor_id, dataset_ids)
         ensure_dataset_embedding_compatibility(dataset_ids)
+        if BusinessDocument.select().where(BusinessDocument.title_key == normalized_title_key).exists():
+            raise ConflictError("DOCUMENT_TITLE_ALREADY_EXISTS", "A business document with this title already exists")
         document_id = get_uuid()
         chat_id = f"business-document:{document_id}"
         document_type = raw.get("document_type", "business_requirements")
@@ -172,47 +210,55 @@ class BusinessDocumentService:
             raise ValidationError("TEMPLATE_NOT_PUBLISHED", "Requested business requirements template version is not published")
         if policy_version != process_policy()["policy_version"]:
             raise ValidationError("POLICY_NOT_PUBLISHED", "Requested business requirements policy version is not published")
-        eva_binding = None
-        if raw.get("eva_page_url"):
-            from api.apps.business_documents.eva_changes import EvaDocumentChangeService
-
-            eva_binding = EvaDocumentChangeService.resolve_page_url(actor_id, raw["eva_page_url"])
+        eva_binding = cls._resolve_create_eva_binding(actor_id, raw, schema_version, display_title)
 
         database = BusinessDocument._meta.database
-        with database.atomic():
-            if BusinessDocument.select().where(BusinessDocument.chat_id == chat_id.strip()).exists():
-                raise ConflictError("CHAT_ALREADY_BOUND", "The RAGFlow chat is already bound to a business document")
-            BusinessDocument.create(
-                id=document_id,
-                tenant_id=tenant_id,
-                owner_id=actor_id,
-                chat_id=chat_id.strip(),
-                document_type=document_type,
-                title=title.strip(),
-                idea=idea.strip(),
-                dataset_ids=dataset_ids,
-                template_version=template_version.strip(),
-                policy_version=policy_version.strip(),
-                lifecycle_state=LifecycleState.INTAKE.value,
-                operation_state=OperationState.IDLE.value,
-                state_version=1,
-                active_review_cycle=0,
-                **_timestamps(),
-            )
-            cls._create_event(
-                document_id=document_id,
-                sequence=1,
-                event_type="DocumentCreated",
-                actor_type="USER",
-                actor_id=actor_id,
-                payload={
-                    "chat_id": chat_id.strip(),
-                    "document_type": document_type,
-                    "idea": idea.strip(),
-                    **({"eva_binding": eva_binding} if eva_binding else {}),
-                },
-                correlation_id=document_id,
-            )
+        try:
+            with database.atomic():
+                if BusinessDocument.select().where(BusinessDocument.title_key == normalized_title_key).exists():
+                    raise ConflictError("DOCUMENT_TITLE_ALREADY_EXISTS", "A business document with this title already exists")
+                if BusinessDocument.select().where(BusinessDocument.chat_id == chat_id.strip()).exists():
+                    raise ConflictError("CHAT_ALREADY_BOUND", "The RAGFlow chat is already bound to a business document")
+                BusinessDocument.create(
+                    id=document_id,
+                    tenant_id=tenant_id,
+                    owner_id=actor_id,
+                    chat_id=chat_id.strip(),
+                    document_type=document_type,
+                    title=display_title,
+                    title_key=normalized_title_key,
+                    idea=idea.strip(),
+                    dataset_ids=dataset_ids,
+                    template_version=template_version.strip(),
+                    policy_version=policy_version.strip(),
+                    lifecycle_state=LifecycleState.INTAKE.value,
+                    operation_state=OperationState.IDLE.value,
+                    state_version=1,
+                    active_review_cycle=0,
+                    **_timestamps(),
+                )
+                if eva_binding:
+                    cls._store_eva_binding(document_id, eva_binding)
+                cls._create_event(
+                    document_id=document_id,
+                    sequence=1,
+                    event_type="DocumentCreated",
+                    actor_type="USER",
+                    actor_id=actor_id,
+                    payload={
+                        "chat_id": chat_id.strip(),
+                        "document_type": document_type,
+                        "idea": idea.strip(),
+                        **({"eva_binding": eva_binding} if eva_binding else {}),
+                    },
+                    correlation_id=document_id,
+                )
+        except IntegrityError as error:
+            if BusinessDocument.select().where(BusinessDocument.title_key == normalized_title_key).exists():
+                raise ConflictError("DOCUMENT_TITLE_ALREADY_EXISTS", "A business document with this title already exists") from error
+            if eva_binding:
+                raise ConflictError("EVA_PAGE_ALREADY_LINKED", "The selected EVA page is already linked to another document") from error
+            raise
         return cls.get_document(tenant_id, document_id, actor_id, is_admin, access_role)
 
     @classmethod
@@ -477,6 +523,18 @@ class BusinessDocumentService:
                 },
                 get_uuid(),
             )
+            updated_binding = dict(current_binding)
+            updated_binding.update(
+                {
+                    "remote_version": str(remote.get("version") or "") or None,
+                    "remote_content_hash": remote_hash,
+                    "last_pulled_content_hash": remote_hash,
+                    "last_pulled_at": current_timestamp(),
+                    "last_pull_event_id": event_id,
+                    "last_pull_review_cycle": review_cycle,
+                }
+            )
+            cls._store_eva_binding(document.id, updated_binding, replace=True)
         projection = cls._project(cls._get_document(document_tenant_id, document_id), access)
         return {
             "document": projection,
@@ -539,6 +597,7 @@ class BusinessDocumentService:
                 {"eva_binding": resolved},
                 get_uuid(),
             )
+            cls._store_eva_binding(document.id, resolved, replace=True)
         return cls._project(cls._get_document(document_tenant_id, document_id), access)
 
     @classmethod
@@ -623,6 +682,7 @@ class BusinessDocumentService:
             if document.operation_state not in {OperationState.IDLE.value, OperationState.FAILED.value} or active_job.exists():
                 raise ConflictError("OPERATION_IN_PROGRESS", "A document with an active operation cannot be deleted")
             for model in (
+                BusinessDocumentEvaBinding,
                 BusinessDocumentEvidenceSnapshot,
                 BusinessDocumentExportArtifact,
                 BusinessDocumentJob,
@@ -2314,8 +2374,111 @@ class BusinessDocumentService:
                 )
         return basis
 
+    @classmethod
+    def _eva_matches_with_occupancy(cls, matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        keys: set[str] = set()
+        for match in matches:
+            page_url_key, identity_key = _binding_keys(match)
+            keys.add(page_url_key)
+            if identity_key:
+                keys.add(identity_key)
+        occupied = list(
+            BusinessDocumentEvaBinding.select().where(
+                (BusinessDocumentEvaBinding.page_url_key.in_(keys)) | (BusinessDocumentEvaBinding.eva_identity_key.in_(keys))
+            )
+        ) if keys else []
+        occupied_document_ids = [binding.document_id for binding in occupied]
+        documents = (
+            {row.id: row for row in BusinessDocument.select().where(BusinessDocument.id.in_(occupied_document_ids))}
+            if occupied_document_ids
+            else {}
+        )
+        occupied_by_key: dict[str, BusinessDocumentEvaBinding] = {}
+        for binding in occupied:
+            occupied_by_key[binding.page_url_key] = binding
+            if binding.eva_identity_key:
+                occupied_by_key[binding.eva_identity_key] = binding
+        result = []
+        for match in matches:
+            page_url_key, identity_key = _binding_keys(match)
+            existing = occupied_by_key.get(identity_key or "") or occupied_by_key.get(page_url_key)
+            item = dict(match)
+            item["binding_available"] = existing is None
+            if existing is not None:
+                document = documents.get(existing.document_id)
+                item["linked_document"] = {
+                    "document_id": existing.document_id,
+                    "title": document.title if document else None,
+                }
+            result.append(item)
+        return result
+
+    @classmethod
+    def _resolve_create_eva_binding(
+        cls,
+        actor_id: str,
+        raw: dict[str, Any],
+        schema_version: object,
+        display_title: str,
+    ) -> dict[str, Any] | None:
+        page_url = raw.get("eva_page_url")
+        if schema_version != "2":
+            return None
+
+        decision = raw.get("eva_decision")
+        decision_mode = str(decision.get("mode") or "") if isinstance(decision, dict) else ""
+        from api.apps.business_documents.eva_changes import EvaDocumentChangeService
+
+        if page_url:
+            binding = EvaDocumentChangeService.resolve_page_url(actor_id, page_url)
+            if binding.get("status") not in {"CONNECTED", "LINK_ONLY"}:
+                raise ConflictError("EVA_BINDING_UNAVAILABLE", "The selected EVA page could not be verified")
+            remote_title = str(binding.get("document_name") or "").strip()
+            if remote_title and normalize_title(remote_title) != normalize_title(display_title):
+                raise ConflictError(
+                    "EVA_PAGE_TITLE_CHANGED",
+                    "The selected EVA page no longer has the document title",
+                    {"actual_title": binding.get("document_name")},
+                )
+            return binding
+        if decision_mode == "SKIP":
+            return None
+        matches = EvaDocumentChangeService.find_title_matches(actor_id, display_title)
+        if matches:
+            raise ConflictError(
+                "EVA_BINDING_DECISION_REQUIRED",
+                "EVA Wiki contains pages with this title. Choose a page or continue without linking.",
+                {"matches": cls._eva_matches_with_occupancy(matches)},
+            )
+        return None
+
+    @staticmethod
+    def _store_eva_binding(document_id: str, binding: dict[str, Any], *, replace: bool = False) -> None:
+        page_url_key, identity_key = _binding_keys(binding)
+        values = {
+            "status": str(binding.get("status") or "LINK_ONLY"),
+            "page_url_key": page_url_key,
+            "eva_identity_key": identity_key,
+            "binding": dict(binding),
+            **_timestamps(),
+        }
+        try:
+            if replace:
+                existing = BusinessDocumentEvaBinding.get_or_none(BusinessDocumentEvaBinding.document_id == document_id)
+                if existing is not None:
+                    values.pop("create_time", None)
+                    values.pop("create_date", None)
+                    BusinessDocumentEvaBinding.update(**values).where(BusinessDocumentEvaBinding.document_id == document_id).execute()
+                    return
+            BusinessDocumentEvaBinding.create(document_id=document_id, **values)
+        except IntegrityError as error:
+            raise ConflictError("EVA_PAGE_ALREADY_LINKED", "The selected EVA page is already linked to another document") from error
+
     @staticmethod
     def _eva_binding(document: BusinessDocument) -> dict[str, Any] | None:
+        projection = BusinessDocumentEvaBinding.get_or_none(BusinessDocumentEvaBinding.document_id == document.id)
+        if projection is not None and isinstance(projection.binding, dict):
+            return dict(projection.binding)
         created = (
             BusinessDocumentEvent.select()
             .where((BusinessDocumentEvent.document_id == document.id) & (BusinessDocumentEvent.event_type == "DocumentCreated"))

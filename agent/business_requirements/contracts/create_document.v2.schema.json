@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ragflow:business-requirements:create-document:v2",
+  "title": "Create business requirements document with an explicit EVA decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "document_type", "title", "idea"],
+  "properties": {
+    "schema_version": {"const": "2"},
+    "document_type": {"const": "business_requirements"},
+    "title": {"type": "string", "minLength": 1, "maxLength": 255},
+    "idea": {"type": "string", "minLength": 1, "maxLength": 50000},
+    "dataset_ids": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 64}
+    },
+    "eva_page_url": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "format": "uri",
+      "pattern": "^https?://"
+    },
+    "eva_decision": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {"mode": {"const": "SKIP"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "confirm_replace"],
+          "properties": {
+            "mode": {"const": "BIND"},
+            "confirm_replace": {"const": true}
+          }
+        }
+      ]
+    },
+    "template_version": {"type": "string", "minLength": 1, "maxLength": 64},
+    "policy_version": {"type": "string", "minLength": 1, "maxLength": 64}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"eva_decision": {"properties": {"mode": {"const": "BIND"}}}},
+        "required": ["eva_decision"]
+      },
+      "then": {"required": ["eva_page_url"]}
+    }
+  ]
+}

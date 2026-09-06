@@ -185,6 +185,23 @@ def test_search_documents_returns_editable_source_metadata():
     ]
 
 
+def test_find_documents_by_exact_title_returns_all_matches_with_page_hierarchy():
+    connector = _connector()
+    root = _page(id="CmfDocument:00-root", name="Products", code="PRODUCTS", parent_id=PROJECT_ID)
+    first = _page(id="CmfDocument:01-first", name="Runbook", code="RUN-1", parent_id=root["id"])
+    second = _page(id="CmfDocument:02-second", name=" runbook ", code="RUN-2", parent_id=root["id"])
+    connector._session.post = MagicMock(return_value=_response({"result": [root, first, second]}))
+
+    documents = connector.find_documents_by_exact_title("RUNBOOK")
+
+    assert [document["id"] for document in documents] == ["CmfDocument:01-first", "CmfDocument:02-second"]
+    assert documents[0]["hierarchy"] == "Products › Runbook"
+    assert documents[0]["breadcrumbs"] == [
+        {"id": "CmfDocument:00-root", "name": "Products", "web_url": "https://eva.example.com/project/Document/PRODUCTS"},
+        {"id": "CmfDocument:01-first", "name": "Runbook", "web_url": "https://eva.example.com/project/Document/RUN-1"},
+    ]
+
+
 def test_editable_document_draft_and_publish_use_explicit_rpc_args():
     reader = _connector()
     assert not hasattr(reader, "update_document_draft")
