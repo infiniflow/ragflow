@@ -138,6 +138,11 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def put(self, bucket, fnm, binary, *args, **kwargs):
+        """Upload bytes, creating a missing bucket in the client's region.
+
+        Omit the location constraint for the default AWS region and services
+        that use ``auto`` to select their own location.
+        """
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
         for _ in range(1):
             try:
