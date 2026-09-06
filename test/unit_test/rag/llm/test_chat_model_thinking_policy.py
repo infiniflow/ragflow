@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 
+import logging
+
 import pytest
 
 from rag.llm import SupportedLiteLLMProvider
@@ -394,3 +396,15 @@ def test_claude_sampling_policy_drops_top_p_across_targets_when_temperature_is_a
 
     assert gen_conf == {}
     assert kwargs == {"temperature": 0.2}
+
+
+def test_claude_sampling_policy_logs_applied_policy(caplog):
+    with caplog.at_level(logging.DEBUG):
+        _apply_claude_sampling_policy("eu.anthropic.claude-sonnet-4-6", {"temperature": 0.8, "top_p": 0.9})
+        _apply_claude_sampling_policy("eu.anthropic.claude-opus-4-8-v1:0", {"temperature": 0.8})
+        _apply_claude_sampling_policy("eu.anthropic.claude-sonnet-4-6", {"top_p": 0.9})
+
+    messages = [record.getMessage() for record in caplog.records if "Claude sampling policy" in record.getMessage()]
+    assert len(messages) == 2
+    assert "dropped top_p for model eu.anthropic.claude-sonnet-4-6" in messages[0]
+    assert "dropped temperature/top_p/top_k for model eu.anthropic.claude-opus-4-8-v1:0" in messages[1]

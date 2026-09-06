@@ -141,10 +141,12 @@ def _apply_claude_sampling_policy(model_name_lower: str, *targets: dict) -> None
         for target in targets:
             for key in ("temperature", "top_p", "top_k"):
                 target.pop(key, None)
+        logging.debug("Claude sampling policy: dropped temperature/top_p/top_k for model %s (no sampling parameter accepted)", model_name_lower)
         return
     if any("temperature" in target for target in targets):
         for target in targets:
             target.pop("top_p", None)
+        logging.debug("Claude sampling policy: dropped top_p for model %s (temperature and top_p cannot both be specified)", model_name_lower)
 
 
 def _apply_model_family_policies(
