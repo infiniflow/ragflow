@@ -573,7 +573,7 @@ test('renders an undecided proposal as closed history after review completion', 
   expect(status).toHaveTextContent('Не принято');
   expect(status).toHaveClass('text-text-disabled');
   expect(screen.getByTestId('closed-proposal-proposal-12')).toHaveTextContent(
-    'Решение не было принято до завершения ревью.',
+    'Решение не было принято до завершения этапа внесения изменений.',
   );
   expect(
     screen.queryByTestId('accept-proposal-proposal-12'),
@@ -714,7 +714,7 @@ test('offers personal-token EVA actions for a verified page binding', async () =
   );
   expect(
     await screen.findByText(
-      'Новая версия EVA добавлена в ревью. Запустите анализ замечаний.',
+      'Новая версия EVA добавлена в цикл внесения изменений. Запустите анализ замечаний.',
     ),
   ).toBeVisible();
 });
@@ -2262,7 +2262,7 @@ test('shows the reviewed lifecycle and review operation labels', async () => {
     items: [
       {
         document_id: 'review-1',
-        title: 'Документ на ревью',
+        title: 'Документ на внесении изменений',
         lifecycle_state: 'REVIEW',
         operation_state: 'ANALYZING_REVIEW',
         state_version: 3,
@@ -2294,8 +2294,8 @@ test('shows the reviewed lifecycle and review operation labels', async () => {
   });
   renderPage('/business-documents');
 
-  expect(await screen.findByText('Ревью')).toBeInTheDocument();
-  expect(screen.getByText('Ревью пройдено')).toBeInTheDocument();
+  expect(await screen.findByText('Внесение изменений')).toBeInTheDocument();
+  expect(screen.getByText('Правки внесены')).toBeInTheDocument();
   expect(screen.getByText('В архиве')).toBeInTheDocument();
   expect(screen.getByText('Анализ замечаний')).toBeInTheDocument();
 });

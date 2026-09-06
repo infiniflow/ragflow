@@ -1,6 +1,6 @@
 schema_version: 1
 upstream_base: cb93883f3f8c975eecb2fed81210effeb3bdb06f
-head: 6b46d26d8ba49c298fa4051dedcf5ccec0fba450
+head: 4e22d179a3c9b41970fe7a609606da46206c393f
 changes:
 - id: CORE-eva-integration
   owner: fork-maintainer
@@ -138,11 +138,11 @@ changes:
   - path: test/testcases/restful_api/test_user_tenant_routes_unit.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/testcases/test_web_api/test_system_app/test_apps_init_unit.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/testcases/test_web_api/test_system_app/test_system_routes_unit.py
     committed: M
     staged: null
@@ -383,7 +383,7 @@ changes:
   - path: internal/handler/agent_test.go
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: internal/handler/bot_test.go
     committed: M
     staged: null
@@ -521,7 +521,7 @@ changes:
   - path: api/apps/restful_apis/chat_api.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: api/apps/restful_apis/chat_channel_api.py
     committed: M
     staged: null
@@ -670,7 +670,7 @@ changes:
   - path: web/index.html
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/jest-setup.ts
     committed: M
     staged: null
@@ -686,7 +686,7 @@ changes:
   - path: web/package.json
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/pnpm-lock.yaml
     committed: M
     staged: null
@@ -712,9 +712,9 @@ changes:
     staged: null
     unstaged: null
   - path: web/src/components/embed-container.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/components/embed-dialog/index.tsx
     committed: M
     staged: null
@@ -812,17 +812,17 @@ changes:
     staged: null
     unstaged: null
   - path: web/src/components/message-item/index.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/components/next-markdown-content/index.tsx
     committed: M
     staged: null
     unstaged: null
   - path: web/src/components/next-message-item/index.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/components/next-message-item/reference-document-list.tsx
     committed: M
     staged: null
@@ -898,15 +898,15 @@ changes:
   - path: web/src/layouts/components/global-navbar.tsx
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/layouts/components/header.tsx
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/layouts/components/mobile-menu-footer.tsx
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/locales/ar.ts
     committed: M
     staged: null
@@ -926,7 +926,7 @@ changes:
   - path: web/src/locales/en.ts
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/locales/es.ts
     committed: M
     staged: null
@@ -958,7 +958,7 @@ changes:
   - path: web/src/locales/ru.ts
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/locales/tr.ts
     committed: M
     staged: null
@@ -986,11 +986,11 @@ changes:
   - path: web/src/pages/admin/layouts/navigation-layout.tsx
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/admin/login.tsx
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/admin/roles.tsx
     committed: M
     staged: null
@@ -1290,7 +1290,7 @@ changes:
   - path: web/src/pages/login-next/index.tsx
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/pages/memories/hooks.ts
     committed: M
     staged: null
@@ -1462,9 +1462,9 @@ changes:
     for newer upstream
   paths:
   - path: .dockerignore
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: .github/copilot-instructions.md
     committed: M
     staged: null
@@ -1474,17 +1474,17 @@ changes:
     staged: null
     unstaged: null
   - path: .github/workflows/release.yml
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: .github/workflows/sep-tests.yml
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: .github/workflows/tests.yml
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: .gitignore
     committed: M
     staged: null
@@ -1492,15 +1492,15 @@ changes:
   - path: AGENTS.md
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: Dockerfile
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: build.sh
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: docs/release_notes.md
     committed: M
     staged: null
@@ -1510,21 +1510,21 @@ changes:
     staged: null
     unstaged: null
   - path: lefthook.yml
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: pyproject.toml
     committed: M
     staged: null
     unstaged: M
   - path: ragflow_deps/download_deps.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: ragflow_deps/download_go_deps.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: run_tests.py
     committed: M
     staged: null
@@ -1560,11 +1560,11 @@ changes:
   - path: test/playwright/conftest.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/playwright/e2e/test_dataset_upload_parse.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/playwright/e2e/test_model_providers_zhipu_ai_defaults.py
     committed: M
     staged: null
@@ -1576,11 +1576,11 @@ changes:
   - path: test/playwright/e2e/test_next_apps_chat.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/playwright/e2e/test_next_apps_search.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/playwright/helpers/_auth_helpers.py
     committed: M
     staged: null
@@ -1588,23 +1588,23 @@ changes:
   - path: test/playwright/helpers/_next_apps_helpers.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/playwright/helpers/datasets.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/playwright/helpers/flow_steps.py
     committed: M
     staged: null
     unstaged: null
   - path: test/testcases/configs.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/testcases/conftest.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/testcases/restful_api/test_system.py
     committed: M
     staged: null
@@ -1622,9 +1622,9 @@ changes:
     staged: null
     unstaged: null
   - path: test/unit_test/data_source/test_rest_api_connector.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/unit_test/rag/conftest.py
     committed: M
     staged: null

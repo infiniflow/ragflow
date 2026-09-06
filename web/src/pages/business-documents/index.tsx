@@ -91,8 +91,8 @@ import type {
 
 const lifecycleLabels: Record<BusinessDocumentLifecycleState, string> = {
   INTAKE: 'Сбор вводных',
-  REVIEW: 'Ревью',
-  AGREED: 'Ревью пройдено',
+  REVIEW: 'Внесение изменений',
+  AGREED: 'Правки внесены',
   ARCHIVED: 'В архиве',
 };
 
@@ -1001,7 +1001,7 @@ export default function BusinessDocumentsPage() {
       );
       setEvaSyncNotice(
         result.sync.changed
-          ? 'Новая версия EVA добавлена в ревью. Запустите анализ замечаний.'
+          ? 'Новая версия EVA добавлена в цикл внесения изменений. Запустите анализ замечаний.'
           : 'В EVA нет новых изменений после последней синхронизации.',
       );
       await queryClient.invalidateQueries({

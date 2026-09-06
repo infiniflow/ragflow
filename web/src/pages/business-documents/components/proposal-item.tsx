@@ -132,7 +132,7 @@ export function ProposalItem({
               className="mt-3 text-xs leading-5 text-text-secondary"
               data-testid={`closed-proposal-${proposal.proposal_id}`}
             >
-              Решение не было принято до завершения ревью.
+              Решение не было принято до завершения этапа внесения изменений.
             </p>
           )}
           {isPending && proposalDecisionsOpen && (
