@@ -159,6 +159,7 @@ def test_maintenance_results_preserve_ids_fields_order_scope_and_limit(store, me
     select_fields = ["message_id", "content", "content_embed"]
     kwargs = {"field_name": "forget_at_flt"} if method == "get_missing_field_message" else {}
     result = getattr(conn, method)(select_fields, "memory_tenant-1", "mem-1", limit=1, **kwargs)
+    conn.logger.debug("Maintenance query method=%s empty=%s result=%r", method, empty, result)
 
     assert isinstance(result, pd.DataFrame)
     docs = conn.get_fields(result, select_fields)
@@ -190,10 +191,11 @@ def test_maintenance_releases_connection_when_query_fails(store, monkeypatch, me
 )
 def test_fifo_prefers_forgotten_then_oldest_active_messages(store, rows, needed, expected_ids):
     """Verify eviction priority and byte accounting, including empty results."""
-    _, table = store
+    conn, table = store
     table.insert(rows)
     size = MessageService.calculate_message_size({"content": "remember this", "content_embed": [0.1, 0.2]})
     ids, removed_size = MessageService.pick_messages_to_delete_by_fifo("mem-1", "tenant-1", needed * size)
+    conn.logger.debug("FIFO requested_bytes=%s selected_ids=%s removed_bytes=%s", needed * size, ids, removed_size)
     assert ids == expected_ids
     assert removed_size == len(expected_ids) * size
 
@@ -201,10 +203,11 @@ def test_fifo_prefers_forgotten_then_oldest_active_messages(store, rows, needed,
 @pytest.mark.parametrize("empty", [False, True])
 def test_missing_field_service_accepts_dataframe_results(store, empty):
     """Normalize populated and empty maintenance DataFrames to message lists."""
-    _, table = store
+    conn, table = store
     if not empty:
         table.insert([message(3, 20), message(2), message(1)])
     result = MessageService.get_missing_field_messages("mem-1", "tenant-1", "forget_at_flt")
+    conn.logger.debug("Missing-field query empty=%s result=%r", empty, result)
     assert result == ([] if empty else [{"message_id": 1, "content": "remember this"}, {"message_id": 2, "content": "remember this"}])
 
 
@@ -227,7 +230,7 @@ async def test_capacity_overflow_evicts_old_messages_and_saves_new_message(store
     """Exercise FIFO deletion, embedding persistence and capacity accounting."""
     from api.db.joint_services import memory_message_service
 
-    _, table = store
+    conn, table = store
     table.insert([message(3, 20), message(2, 10), message(1)])
     one_message_size = MessageService.calculate_message_size({"content": "remember this", "content_embed": [0.1, 0.2]})
     memory = SimpleNamespace(
@@ -248,7 +251,9 @@ async def test_capacity_overflow_evicts_old_messages_and_saves_new_message(store
     monkeypatch.setattr(memory_message_service, "increase_memory_size_cache", increase)
     new_message = {"message_id": 4, "memory_id": "mem-1", "content": "remember this", "status": True}
 
+    conn.logger.debug("Capacity before save cached_bytes=%s limit_bytes=%s", 3 * one_message_size, memory.memory_size)
     result = await memory_message_service.embed_and_save(memory, [new_message])
+    conn.logger.debug("Capacity save result=%r cache_decreases=%s cache_increases=%s", result, decrease.call_args_list, increase.call_args_list)
 
     assert result == (True, "Message saved successfully.")
     assert table.db.execute("SELECT message_id FROM messages ORDER BY message_id").fetchall() == [(1,), (4,)]
