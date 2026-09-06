@@ -156,6 +156,29 @@ test('uses a nested backend message without leaking an undefined transport error
   );
 });
 
+test('localizes transport failures instead of exposing an English Axios message', async () => {
+  mockedGet.mockRejectedValueOnce({
+    isAxiosError: true,
+    message: 'Network Error',
+  });
+
+  await expect(listBusinessDocuments()).rejects.toThrow(
+    'Не удалось связаться с сервером. Проверьте подключение и повторите попытку.',
+  );
+});
+
+test('explains a server failure when the backend returned no message', async () => {
+  mockedGet.mockRejectedValueOnce({
+    isAxiosError: true,
+    message: 'Request failed with status code 503',
+    response: { status: 503, data: {} },
+  });
+
+  await expect(listBusinessDocuments()).rejects.toThrow(
+    'Сервер не смог выполнить запрос. Повторите попытку позже; если ошибка сохранится, обратитесь к администратору.',
+  );
+});
+
 test('uses explicit EVA source, agent-generation and publish endpoints', async () => {
   const sourceResult = { items: [], connectors: [] };
   const change = { change_id: 'change-1' };

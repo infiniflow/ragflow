@@ -42,7 +42,9 @@ The canonical positive journey must execute all of the following:
    changing the body.
 5. Reassess review input, resolve every clarification, and give every active
    input exactly one change/no-change disposition.
-6. Apply accepted changes to a new immutable revision and reach `AGREED`.
+6. Apply accepted changes to a new immutable revision. If proposals remain
+   undecided, stay in the same `REVIEW` cycle and expose their decisions;
+   otherwise reach `AGREED`.
 7. Generate, persist, list, and download Markdown/DOCX/EvaWiki artifacts for
    the agreed revision.
 8. Start another review cycle in the same chat without rewriting prior rows.
@@ -87,6 +89,9 @@ ledger entry.
 - long initial ideas cannot evict current revision/protocol context from a
   review/change retrieval query;
 - repeated semantic questions/proposals do not append duplicate protocol rows;
+- a partial change pass resolves each used input once, keeps undecided
+  proposals in the same `REVIEW` cycle, and cannot reuse an already applied
+  decision;
 - worker retry reuses the first pinned snapshot and rejects a lost lease;
 - missing/corrupt export bytes can be regenerated without poisoning that
   revision/format forever;
@@ -118,11 +123,12 @@ precision `>= 95%`.
 
 ## Golden dialogues
 
-`golden_dialogs/v1.json` is immutable once published. Each case contains an ID,
-priority, category, user turns, and hard assertions. The deterministic runner
-reports both case and assertion denominators by P0/P1 and fails on unknown,
-skipped, or unexecuted P0 behavior. Current coverage is 24/24 cases and 73/73
-hard assertions.
+Published golden suites are immutable. `golden_dialogs/v1.json` remains the
+original suite; `golden_dialogs/v2.json` is the active suite for partial review
+application. Each case contains an ID, priority, category, user turns, and hard
+assertions. The deterministic runner reports both case and assertion
+denominators by P0/P1 and fails on unknown, skipped, or unexecuted P0 behavior.
+Current coverage is 24/24 cases and 78/78 hard assertions.
 
 Adding or changing a requirement requires, in the same increment:
 

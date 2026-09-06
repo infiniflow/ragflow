@@ -1,0 +1,82 @@
+{
+  "platform": "linux-amd64",
+  "digest_source": "GitHub release asset API, verified 2026-09-05",
+  "dependencies": {
+    "pdfium-static": {
+      "version": "7809",
+      "archive": "pdfium-linux-x64-static.tgz",
+      "sha256": "13908bb2d40a6e017c4c5a6a7baecc6efd7b1c30392c8a79e80072d2b48b18eb",
+      "url": "https://github.com/kognitos/pdfium-static/releases/download/chromium/7809/pdfium-linux-x64-static.tgz",
+      "files": {
+        "LICENSE": "ba26c1263131696b86c10496b5066b918a20b7161822a80c274d0080105f6c93",
+        "PDFiumConfig.cmake": "1b8956e8a93059e1638ebf8cca4303af5f0ab82c6f5057d105424ef6c5da8ef2",
+        "VERSION": "293b5c7e652d0b60e44cd496c0c2794dcceeb98d157e15bb1ecd4db85802d6e0",
+        "args.gn": "82fa5438b32e0336befa62cdec10a25e920e4e31c0a1691980e118feefcbcc3a",
+        "include/fpdf_save.h": "96a78a3e3eb8a387dc4a35c1e87b430618e9ee8e7ceae9fea424baf1de6b497a",
+        "include/fpdf_doc.h": "d0096283d65d077137b6de70651a19d88abf742c4ee1149b5bcabb6fd94a902d",
+        "include/fpdf_signature.h": "eadfabc91722d1247321d31dab6a94f8284e36717c0019cc38f54b7c51ec826b",
+        "include/fpdf_javascript.h": "e1655b56183d1c7dcf68b1bcd73ebb67ee13ea44f506d03d46ed44e9bd0e974c",
+        "include/cpp/fpdf_deleters.h": "8020789862e81775e777c3bb6e44eb429eaba6cbf8904bdf2e915fa50d38c47d",
+        "include/cpp/fpdf_scopers.h": "8d2bd2da93bd5564660268203e66576dc82c23bd17157969758ab7c51355c055",
+        "include/fpdf_annot.h": "16d2e4359af3e54572e77a80baae0312bf0c9664dac313e6a7d2f0769d44d2e8",
+        "include/fpdf_fwlevent.h": "60585b9c92227790d7dcce482b2b8f8ebabc810c24aebc83cf6564fc140f06db",
+        "include/fpdf_ext.h": "ef813297753feeecd685ef60a6a6f1ad00f43156615d5570f827c9283e435461",
+        "include/fpdfview.h": "7c7c8aa3877d65f55856b4edc8c5feb03ab3f75d5f67feb6779813a2c875b72b",
+        "include/fpdf_searchex.h": "30cee4b25aa8015687a55fd628f84188aed8289e4bd5a3469b8813bbf3de8991",
+        "include/fpdf_structtree.h": "af808b7ca6878afc10ba79bb974be84fb73a96654c6bd5d4953d0176f198cbe8",
+        "include/fpdf_formfill.h": "7340dcbe4f12771ae5bb1cc3009b46ee139c132f118d0bcd0cba900b74aa1e47",
+        "include/fpdf_catalog.h": "7e6a79391f6153deb45bafe49ef4d6eb10f6382eed20fa92c2ee9941342e6668",
+        "include/fpdf_thumbnail.h": "b223e622889bca40e4ce709e934bc11a8696a054c97a605486eb7c214e4db197",
+        "include/fpdf_flatten.h": "b2cf5ed9a7ead79c6d6685a7369573f0a55b16cc9972537d1405f19847504ca3",
+        "include/fpdf_sysfontinfo.h": "ca596613053f4f168acafe0c9469c83a7ef94eb6cb5e59fe5e959308d428d90e",
+        "include/fpdf_ppo.h": "6706cbab8ad2e7841177cca2577c2bc78b3303ed1dbc17d5d724766d06a29b24",
+        "include/fpdfview.h.orig": "394c1e9bc8ba65eaf7de95f1e4f9b94f727a4026ef2b0a58b801a76742da4055",
+        "include/fpdf_transformpage.h": "15321dc2311ea60e04c28deb75a5decb560d29a3bc4b007588a9dbec6430f867",
+        "include/fpdf_dataavail.h": "23a4c77273cdc11b77f4d7ff40e9290429854cd45708f89c93c424b9ecfdab77",
+        "include/fpdf_progressive.h": "0e99f7e7d2a818ed56ff8529f7a90a121cc86cdecda6b1682eadd60259021b16",
+        "include/fpdf_attachment.h": "0d4c3228f69ea3ae4f4e5946957b35c28159a9f539de1acc2ec0fb5e5e0a11d9",
+        "include/fpdf_text.h": "4682f8553dc1d29bbee95cdcddefebbd96522c5be654807906240f8571593726",
+        "include/fpdf_edit.h": "2fca5f0ac79f9a8eca6aa51379a3772e4e875a090637d5a405f5eea34e34610d",
+        "lib/libc++.a": "9c2af956e425fafd6f8648581fc016cd16635e7c8d69aeaf422c0a26e6318185",
+        "lib/libpdfium.a": "93e7c31cd51b6d6e456166a89b5f74eb59a4b0f49778cd9fbfb9ee8ee40680a9",
+        "lib/libc++abi.a": "5418337aff2d9bc8f59d562cce0bb151d5023d8c67db39880abf4709571b9230",
+        "licenses/icu.txt": "e55522d81edc687a341a4411e0776e54ca654e90147f354a90458aaced4116af",
+        "licenses/zlib.txt": "33fd641c9f3b0e0be64bc78fea9e94807674cdd70c48477599226cb8956565fe",
+        "licenses/libjpeg_turbo.ijg": "75815e3bf6484201a3c3d17a1bbf10f2e8e3237f84df10a2357ea896db2a81d6",
+        "licenses/llvm-libc.txt": "ebcd9bbf783a73d05c53ba4d586b8d5813dcdf3bbec50265860ccc885e606f47",
+        "licenses/pdfium.txt": "961eacd9633fff6d051db7208b755e9210e30efac7adec3e6a6d52798f0ccf0e",
+        "licenses/lcms.txt": "5132b7530ae5acab7058634da86470d3d38bb01d70c2b67ba10c96bc62ced1af",
+        "licenses/libpng.txt": "bdb0a645ea18c60507d0368379b1ac5474b92255fcc2d115e07486a7672ba526",
+        "licenses/agg23.txt": "c110d3ea2ad77467ce0dcff7d3337e6c8be8049a5103f4b9bd5fd911a77972e5",
+        "licenses/libopenjpeg.txt": "c5ab0890a737c2dfa7ba675036554f6d17741d98629b0c2a145354d00617e6b2",
+        "licenses/libjpeg_turbo.md": "96f5b328adbb78eeaaec6980d73fd558cb1e4d62560ed615646bc3cf5e532430",
+        "licenses/freetype.txt": "f4b133e25df1f86ad3ffea453aa0e613f0474f34778dbbb3e437e7b2724937d8",
+        "licenses/libtiff.txt": "92b72ba97e6c2749c2a94bc0ef646b47080217f1e772a482b33cf5a5f98a6506",
+        "licenses/fast_float.txt": "e562f3f974ced7e69dd1db77b820b36bcf8f30377f1aa105723fba449c53c4e6",
+        "licenses/abseil.txt": "c79a7fea0e3cac04cd43f20e7b648e5a0ff8fa5344e644b0ee09ca1162b62747",
+        "licenses/simdutf.txt": "fc8dbc04e03ad4efc08a647ffe7f995b811a95bc04c0e85a56d5277c6593fa5f"
+      }
+    },
+    "pdf_oxide": {
+      "version": "0.3.67",
+      "archive": "pdf_oxide-go-ffi-linux-amd64.tar.gz",
+      "sha256": "b58fe1f8e6d0cc440c31e30d17fe56c5ee140742ab127f864f6e2c79837f65d3",
+      "url": "https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.67/pdf_oxide-go-ffi-linux-amd64.tar.gz",
+      "files": {
+        "lib/linux_amd64/libpdf_oxide.a": "88b7a2b5bcdb273aaa238f4e360d54032772a2562cd7d4f3229dc2234752bd4d",
+        "include/pdf_oxide.h": "a200346c8fcae423bf8978439fb220a05a1eeaf643e4a3c4865d71646de7d966"
+      }
+    },
+    "office_oxide": {
+      "version": "0.1.2",
+      "archive": "office_oxide-linux-x86_64.tar.gz",
+      "sha256": "43d2c392a95fc02e0980c4d96532ad48123fe6d14b7f3b2108aba8376537629a",
+      "url": "https://github.com/yfedoseev/office_oxide/releases/download/v0.1.2/native-linux-x86_64.tar.gz",
+      "files": {
+        "lib/liboffice_oxide.a": "b4627df268844eaa1b179a8da85021f37b32db4dc5ef011caf1b3e1c30aa2c00",
+        "lib/liboffice_oxide.so": "6f4c425b42b303d9627999e73b03d814e087f73bbcd0180aebc2d0a16a5dfa01",
+        "include/office_oxide_c/office_oxide.h": "526b1035190a99e6d211728f66f3349ee45d0027ec5601fc377d06fcbcbd2f30"
+      }
+    }
+  }
+}

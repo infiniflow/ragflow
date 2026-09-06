@@ -100,6 +100,7 @@ func TestListAgentVersionsHandler_Success(t *testing.T) {
 		UserCanvasID: "canvas-1",
 		Title:        sptr("v2"),
 		BaseModel: entity.BaseModel{
+			CreateTime: ptr(now.UnixMilli()),
 			UpdateTime: ptr(now.UnixMilli()),
 		},
 	})
@@ -108,6 +109,7 @@ func TestListAgentVersionsHandler_Success(t *testing.T) {
 		UserCanvasID: "canvas-1",
 		Title:        sptr("v1"),
 		BaseModel: entity.BaseModel{
+			CreateTime: ptr(now.Add(-time.Hour).UnixMilli()),
 			UpdateTime: ptr(now.Add(-time.Hour).UnixMilli()),
 		},
 	})

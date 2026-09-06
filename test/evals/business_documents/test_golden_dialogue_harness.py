@@ -7,7 +7,6 @@ from copy import deepcopy
 from dataclasses import dataclass
 import io
 import json
-import os
 from pathlib import Path
 import sys
 from types import ModuleType
@@ -46,7 +45,7 @@ from api.db.db_models import (
 from test.unit_test.api.apps.business_documents.helpers import required_section_blocks
 
 
-GOLDEN_PATH = Path(__file__).parents[3] / "agent" / "business_requirements" / "golden_dialogs" / "v1.json"
+GOLDEN_PATH = Path(__file__).parents[3] / "agent" / "business_requirements" / "golden_dialogs" / "v2.json"
 KNOWN_P1_GAPS: dict[str, str] = {}
 
 
@@ -511,20 +510,64 @@ class GoldenDialogueRunner:
         )
 
     def _g07(self, case):
-        projection = self._to_review(case, proposals=[self._proposal()])
-        proposal = projection["protocol"]["proposals"][0]
+        accepted_proposal = self._proposal()
+        pending_proposal = {
+            **self._proposal(),
+            "text": "Добавить SLA ответа CRM",
+            "rationale": "SLA требует отдельного решения автора",
+        }
+        projection = self._to_review(case, proposals=[accepted_proposal, pending_proposal])
+        review_cycle = projection["active_review_cycle"]
+        proposals = {proposal["text"]: proposal for proposal in projection["protocol"]["proposals"]}
         original = deepcopy(projection["current_revision"])
-        agreed = self._agree_without_changes(projection)
-        return GoldenObservation(
-            values={},
-            facts=frozenset(
+        decision = BusinessDocumentService.execute_command(
+            self.tenant_id,
+            self.actor_id,
+            projection["document_id"],
+            self._command(
+                projection,
+                "DECIDE_PROPOSAL",
                 {
-                    "proposal_decision_is_empty",
-                    "unanswered_proposal_not_applied",
-                }
-                if agreed["current_revision"]["content_hash"] == original["content_hash"] and proposal["text"] not in agreed["current_revision"]["body_markdown"] and proposal["decision"] == "PENDING"
-                else set()
+                    "proposal_id": proposals[accepted_proposal["text"]]["proposal_id"],
+                    "decision": "ACCEPTED",
+                },
             ),
+        )
+        projection = BusinessDocumentService.get_document(self.tenant_id, projection["document_id"], self.actor_id)
+        projection = self._assess_review(projection)
+        base_section = next(section for section in projection["current_revision"]["document_ast"]["sections"] if section["id"] == "5.5")
+        partially_applied = self._apply(
+            projection,
+            [
+                {
+                    "operation_id": "apply-one-of-two-proposals",
+                    "type": "REPLACE_SECTION_CONTENT",
+                    "section_id": "5.5",
+                    "expected_section_hash": section_hash(base_section),
+                    "source_event_ids": [decision["event_id"]],
+                    "content": {
+                        "blocks": [
+                            {
+                                "type": "paragraph",
+                                "text": accepted_proposal["text"],
+                            }
+                        ]
+                    },
+                }
+            ],
+        )
+        remaining = next(proposal for proposal in partially_applied["protocol"]["proposals"] if proposal["proposal_id"] == proposals[pending_proposal["text"]]["proposal_id"])
+        facts = {
+            "proposal_decision_is_empty" if remaining["decision"] == "PENDING" else "",
+            "unanswered_proposal_not_applied" if pending_proposal["text"] not in partially_applied["current_revision"]["body_markdown"] else "",
+            "accepted_proposal_is_applied" if accepted_proposal["text"] in partially_applied["current_revision"]["body_markdown"] else "",
+            "new_revision_created" if partially_applied["current_revision"]["revision_number"] == original["revision_number"] + 1 else "",
+            "proposal_decision_available" if "DECIDE_PROPOSAL" in partially_applied["allowed_commands"] else "",
+            "review_cycle_unchanged" if partially_applied["active_review_cycle"] == review_cycle else "",
+        }
+        return GoldenObservation(
+            values={"lifecycle_state": partially_applied["lifecycle_state"]},
+            facts=frozenset(facts - {""}),
         )
 
     def _g08(self, case):
@@ -1126,18 +1169,6 @@ class GoldenDialogueRunner:
         return GoldenObservation(values={}, facts=frozenset(facts - {""}))
 
 
-@pytest.fixture()
-def database():
-    database = SqliteDatabase(":memory:")
-    tables = BusinessDocumentService.model_tables()
-    with database.bind_ctx(tables, bind_refs=False, bind_backrefs=False):
-        database.connect()
-        database.create_tables(tables)
-        yield database
-        database.drop_tables(tables)
-        database.close()
-
-
 @dataclass(frozen=True)
 class ReleaseGateReport:
     case_failures: dict[str, list[str]]
@@ -1233,33 +1264,3 @@ def test_matcher_reports_missing_facts_and_value_mismatches():
         "error_code: expected one of ['STATE_VERSION_CONFLICT'], got None",
         "missing fact: no_events_appended",
     ]
-
-
-@pytest.mark.skipif(
-    os.environ.get("BUSINESS_DOCUMENT_LIVE_LLM") != "1",
-    reason="Set BUSINESS_DOCUMENT_LIVE_LLM=1 with a configured tenant model to run the live quality lane",
-)
-def test_live_llm_intake_quality_gate(database):
-    document = BusinessDocumentService.create_document(
-        "live-tenant",
-        "live-tenant",
-        {
-            "schema_version": "1",
-            "document_type": "business_requirements",
-            "title": "Live golden intake",
-            "idea": "Нужен сервис записи клиентов в отделение.",
-        },
-    )
-    command = {
-        "schema_version": "1",
-        "command_id": "live-golden-command",
-        "idempotency_key": "live-golden-idempotency",
-        "expected_state_version": document["state_version"],
-        "type": "REQUEST_INTAKE_ASSESSMENT",
-        "payload": {},
-    }
-    BusinessDocumentService.execute_command("live-tenant", "live-tenant", document["document_id"], command)
-    assert BusinessDocumentWorker(worker_id="live-golden-worker").run_once() is True
-    projection = BusinessDocumentService.get_document("live-tenant", document["document_id"], "live-tenant")
-    assert 2 <= len(projection["protocol"]["questions"]) <= 4
-    assert BusinessDocumentJob.get(BusinessDocumentJob.document_id == document["document_id"]).status == "COMPLETED"

@@ -1,6 +1,7 @@
 schema_version: 1
-stage: T0
-status: Inventory only; test existence verified, behavior runs deferred to T1
+stage: T1
+status: Local tests executed with explicit boundaries; T1 acceptance INCOMPLETE. See
+  docs/develop/t1-regression-report-ru.md
 features:
 - id: KEEP-business-documents
   owner: fork-maintainer
@@ -20,9 +21,13 @@ features:
   - test/integration/test_business_document_postgres.py
   - test/playwright/e2e/test_business_documents_ui.py
   - web/src/pages/business-documents/index.test.tsx
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  - test/playwright/e2e/test_business_document_live_intake.py
+  execution_status: PARTIAL_T1
+  next_action: C services/data/intake checks remain valid for C. Later controlled-evidence
+    real quality run failed at second intake with QUESTION_STAGE_CONFLICT plus LiteLLM
+    callback teardown; fix and rerun to draft before this boundary is refactored.
+    See T1 continuation evidence.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-business-documents
 - id: KEEP-eva-integration
   owner: fork-maintainer
   module: eva-integration
@@ -38,9 +43,11 @@ features:
   - test/unit_test/data_source/test_eva_wiki_connector.py
   - test/unit_test/api/apps/business_documents/test_eva_document_changes.py
   - test/unit_test/api/db/services/test_user_external_credential_service.py
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  execution_status: PARTIAL_T1
+  next_action: Obtain dedicated EVA QA configuration; exercise real reads, personal-token
+    writes, retry after uncertain response and recovery. Mocks and preserved database
+    rows do not prove external publication.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-eva-integration
 - id: KEEP-openmetadata
   owner: fork-maintainer
   module: openmetadata
@@ -59,9 +66,12 @@ features:
   - test/unit_test/api/apps/services/test_openmetadata_copilot_service.py
   - test/unit_test/api/apps/restful_apis/test_openmetadata_routes_unit.py
   - web/src/pages/openmetadata/index.test.tsx
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  - test/unit_test/agent/test_openmetadata_dynamic_registration.py
+  execution_status: PARTIAL_T1
+  next_action: Obtain dedicated OpenMetadata QA configuration; exercise real sync/copilot/agent
+    calls and browser journeys. Current DSL registration and mocked services pass
+    on C; historical saved DSL remains to verify.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-openmetadata
 - id: KEEP-asr
   owner: fork-maintainer
   module: asr
@@ -77,9 +87,11 @@ features:
   - services/asr-online-service/tests
   - test/unit_test/rag/app/test_audio_video_transcription.py
   - test/unit_test/api/utils/test_api_file_utils.py
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  - services/asr-online-service/tests/integration/test_tone_real_inference.py
+  execution_status: PARTIAL_T1
+  next_action: C real T-One inference and service unit tests pass. Verify microphone,
+    cancellation and broader recognition quality before changing those boundaries.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-asr
 - id: KEEP-mrz-assets
   owner: fork-maintainer
   module: mrz-assets
@@ -93,9 +105,10 @@ features:
   - test/unit_test/agent/test_mrz_document_reader_template.py
   - internal/dao/canvas_template_seed_test.go
   - test/unit_test/api/db/test_template_utils.py
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  execution_status: PARTIAL_T1
+  next_action: C template and Go seed tests pass. Add real MRZ image fixtures and
+    historical persisted DSL before extraction/runtime refactoring.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-mrz-assets
 - id: KEEP-access-policy
   owner: fork-maintainer
   module: access-policy
@@ -116,9 +129,12 @@ features:
   - test/testcases/restful_api/test_user_tenant_routes_unit.py
   - web/src/pages/admin/access-groups.test.tsx
   - test/playwright/e2e/test_navigation_visibility_admin.py
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  - test/unit_test/api/db/services/test_access_group_persistence.py
+  execution_status: PARTIAL_T1
+  next_action: C service/route and mocked browser role checks plus real PostgreSQL
+    group persistence pass. Complete live API/admin role matrix for each affected
+    endpoint.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-access-policy
 - id: KEEP-observability
   owner: fork-maintainer
   module: observability
@@ -136,9 +152,12 @@ features:
   - test/unit_test/admin/test_service_status_config.py
   - test/unit_test/common/test_observability.py
   - test/unit_test/api/utils/test_admin_service_health.py
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  - test/unit_test/api/db/services/test_audit_service.py
+  execution_status: PARTIAL_T1
+  next_action: C audit persistence/retention and service tests pass; selected old
+    audit rows survive upgrade. Complete browser audit feed and real telemetry delivery
+    journeys.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-observability
 - id: KEEP-models-runtime
   owner: fork-maintainer
   module: models-runtime
@@ -151,9 +170,14 @@ features:
   evidence_paths:
   - test/unit_test/rag/llm/test_chat_model_thinking_policy.py
   - internal/entity/models/ollama_test.go
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  - test/playwright/e2e/test_next_apps_chat.py
+  - test/playwright/e2e/test_business_document_live_intake.py
+  - test/testcases/restful_api/test_user_tenant_routes_unit.py
+  execution_status: PARTIAL_T1
+  next_action: C keyless provider route cases and live distinct Ollama model streams
+    pass. Verify live vision, thinking and other provider contracts before changing
+    them.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-models-runtime
 - id: KEEP-persistence
   owner: fork-maintainer
   module: persistence
@@ -168,9 +192,17 @@ features:
   - test/integration/test_business_document_postgres.py
   - test/unit_test/api/db/services/test_access_group_service.py
   - test/unit_test/api/apps/business_documents/test_business_document_service.py
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  - test/unit_test/common/test_time_utils.py
+  - test/unit_test/api/db/services/test_audit_service.py
+  - test/unit_test/api/db/services/test_access_group_persistence.py
+  - test/integration/test_previous_release_data_upgrade.py
+  - test/integration/fixtures/upgrade_data_probe.py
+  - test/integration/test_minio_backup_restore.py
+  execution_status: PARTIAL_T1
+  next_action: C old v1.12.0 initializers, selected row preservation, real PostgreSQL
+    DDL fault, dump/restore and independent MinIO archive pass. Rehearse coordinated
+    database/object backup with full release dependencies.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-persistence
 - id: KEEP-agent-runtime
   owner: fork-maintainer
   module: agent-runtime
@@ -190,9 +222,10 @@ features:
   - test/unit_test/api/apps/restful_apis/test_get_agent_session.py
   - test/unit_test/api/apps/restful_apis/test_rerun_agent_authorization.py
   - test/unit_test/api/apps/restful_apis/test_agentbots_access_control.py
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  execution_status: PARTIAL_T1
+  next_action: C Go handlers/components and Python authorization cases pass. Verify
+    historical saved DSL, cancellation and full real session/invoke journeys.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-agent-runtime
 - id: KEEP-ingestion-connectors
   owner: fork-maintainer
   module: ingestion-connectors
@@ -210,9 +243,13 @@ features:
   - test/testcases/restful_api/test_connector_routes_unit.py
   - test/unit_test/common/test_ssrf_guard.py
   - test/unit_test/data_source/test_html_utils.py
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  - test/playwright/e2e/test_live_document_roundtrip.py
+  - test/playwright/e2e/test_dataset_upload_parse.py
+  execution_status: PARTIAL_T1
+  next_action: C real upload/parse/delete and retrieval checks pass; full roundtrip
+    has a separately recorded selector correction replay. Complete connector-specific
+    retry/cursor/cancellation boundaries.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-ingestion-connectors
 - id: KEEP-api-files-chat
   owner: fork-maintainer
   module: api-files-chat
@@ -230,9 +267,14 @@ features:
   - test/testcases/restful_api/test_search_datasets_consistency.py
   - test/playwright/e2e/test_next_apps_chat.py
   - test/playwright/e2e/test_next_apps_search.py
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  - test/playwright/e2e/test_live_document_roundtrip.py
+  - test/playwright/e2e/test_dataset_upload_parse.py
+  - test/testcases/restful_api/test_user_tenant_routes_unit.py
+  execution_status: PARTIAL_T1
+  next_action: C live chat/search and distinct-model streams pass; full roundtrip
+    has a separately recorded selector correction replay. Complete remaining endpoint/tenant
+    contracts and stream cancellation.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-api-files-chat
 - id: KEEP-deployment
   owner: fork-maintainer
   module: deployment
@@ -248,9 +290,11 @@ features:
   evidence_paths:
   - test/unit_test/deployment/test_linux_pg_upgrade_delivery.py
   - services/asr-online-service/tests/test_install_contract.py
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  execution_status: PARTIAL_T1
+  next_action: C installer contracts, previous-release data and independent object
+    restore pass. Full installer/dependency recovery and upstream integration remain
+    T6 release rehearsals.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-deployment
 - id: KEEP-frontend-foundation
   owner: fork-maintainer
   module: frontend-foundation
@@ -269,9 +313,11 @@ features:
   - web/src/components/highlight-markdown/__tests__/index.test.tsx
   - web/src/layouts/components/global-navbar.test.tsx
   - web/src/pages/agent/utils/tests/dsl-bridge.test.ts
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  execution_status: PARTIAL_T1
+  next_action: C build/type/lint/Jest and Firefox/WebKit pass. C Chromium failure
+    and separate HTTP keep-alive correction replay are retained; complete uncovered
+    real route journeys.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-frontend-foundation
 - id: KEEP-quality-governance
   owner: fork-maintainer
   module: quality-governance
@@ -288,6 +334,13 @@ features:
   - test/unit_test/tools/quality/test_capture_inventory.py
   - test/unit_test/tools/hooks/test_check_files.py
   - test/REGRESSION.md
-  execution_status: NOT_RUN_IN_T0
-  next_action: 'T1: run applicable checks, fill negative cases and migration/recovery
-    coverage gaps'
+  - test/unit_test/playwright/test_page_error_gate.py
+  - test/unit_test/deployment/test_disposable_live_runner.py
+  - test/integration/live_ragflow/README.md
+  - test/unit_test/playwright/test_browser_server.py
+  - test/unit_test/tools/quality/test_inspect_python.py
+  execution_status: PARTIAL_T1
+  next_action: Partial T2 Python observation tool is documented in docs/develop/t2-python-analysis-ru.md.
+    Complete runtime/dynamic and other-language analysis, calibrate rules, then introduce
+    enforced policy in T3; T1 remains incomplete.
+  execution_evidence: docs/develop/t1-regression-results.json#KEEP-quality-governance

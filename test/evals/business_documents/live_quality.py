@@ -8,7 +8,7 @@ from typing import Any, Mapping, Sequence
 
 
 _MEASURABLE_CLAIM = re.compile(
-    r"\b\d+(?:[.,]\d+)?\s*(?:%|мс|ms|сек(?:\.|унд(?:а|ы)?)?|минут(?:а|ы)?|rps)\b",
+    r"\b\d+(?:[.,]\d+)?\s*(?:%(?!\w)|(?:мс|ms|сек(?:\.|унд(?:а|ы)?)?|минут(?:а|ы)?|rps)\b)",
     flags=re.IGNORECASE,
 )
 _CYRILLIC = re.compile(r"[А-Яа-яЁё]")

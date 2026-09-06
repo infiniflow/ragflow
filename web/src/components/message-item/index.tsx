@@ -99,7 +99,7 @@ const MessageItem = ({
             (item.role === MessageType.User ? (
               <RAGFlowAvatar
                 className="size-10"
-                avatar={avatar ?? '/logo.svg'}
+                avatar={avatar ?? '/app-icon.png'}
                 isPerson
                 name={nickname}
               />

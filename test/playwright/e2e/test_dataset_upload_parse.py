@@ -3,7 +3,7 @@ import json
 import re
 import time
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import pytest
 from playwright.sync_api import expect
@@ -33,7 +33,7 @@ def make_test_png(path: Path) -> Path:
 
 
 def extract_dataset_id_from_url(url: str) -> str:
-    match = re.search(r"/(?:datasets|dataset/dataset)/([^/?#]+)", url or "")
+    match = re.search(r"/dataset/files/([^/?#]+)", url or "")
     if not match:
         raise AssertionError(f"Unable to parse dataset id from url={url!r}")
     return match.group(1)
@@ -213,15 +213,14 @@ def step_01_login(
     tmp_path,
     ensure_dataset_ready,
 ):
-    repo_root = Path(__file__).resolve().parents[3]
-    file_paths = [
-        repo_root / "test/benchmark/test_docs/Doc1.pdf",
-        repo_root / "test/benchmark/test_docs/Doc2.pdf",
-        repo_root / "test/benchmark/test_docs/Doc3.pdf",
-    ]
-    for path in file_paths:
-        if not path.is_file():
-            pytest.fail(f"Missing upload fixture: {path}")
+    from reportlab.pdfgen.canvas import Canvas
+
+    file_paths = [tmp_path / f"Doc{index}.pdf" for index in range(1, 4)]
+    for index, path in enumerate(file_paths, 1):
+        pdf = Canvas(str(path))
+        pdf.drawString(50, 780, f"Synthetic RAGFlow regression document {index}.")
+        pdf.drawString(50, 755, "The violet observatory stores seven copper telescopes.")
+        pdf.save()
     flow_state["file_paths"] = [str(path) for path in file_paths]
     flow_state["filenames"] = [path.name for path in file_paths]
 
@@ -290,7 +289,7 @@ def step_03_create_dataset(
             if not fallback_id or not fallback_name:
                 raise
             page.goto(
-                urljoin(base_url.rstrip("/") + "/", f"/dataset/dataset/{fallback_id}"),
+                urljoin(base_url.rstrip("/") + "/", f"/dataset/files/{fallback_id}"),
                 wait_until="domcontentloaded",
             )
             wait_for_dataset_detail_ready(page, expect, timeout_ms=RESULT_TIMEOUT_MS * 2)
@@ -345,7 +344,7 @@ def step_03_create_dataset(
         except Exception:
             if created_kb_id:
                 page.goto(
-                    urljoin(base_url.rstrip("/") + "/", f"/dataset/dataset/{created_kb_id}"),
+                    urljoin(base_url.rstrip("/") + "/", f"/dataset/files/{created_kb_id}"),
                     wait_until="domcontentloaded",
                 )
             else:
@@ -379,7 +378,7 @@ def step_04_set_dataset_settings(
 
     with step("open dataset settings page"):
         page.goto(
-            urljoin(base_url.rstrip("/") + "/", f"/dataset/dataset-setting/{dataset_id}"),
+            urljoin(base_url.rstrip("/") + "/", f"/dataset/configuration/{dataset_id}"),
             wait_until="domcontentloaded",
         )
         expect(page.get_by_test_id("ds-settings-basic-name-input")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
@@ -413,7 +412,10 @@ def step_04_set_dataset_settings(
 
     with step("fill parser and metadata settings"):
         set_number_input(page, "ds-settings-parser-page-rank-input", 12)
-        select_combobox_option(page, "ds-settings-parser-pdf-parser-select", preferred_text="Plain Text")
+        pdf_parser = page.get_by_test_id("ds-settings-parser-pdf-parser-select")
+        pdf_parser.click()
+        page.get_by_role("dialog").get_by_text("Naive", exact=True).click()
+        expect(pdf_parser).to_have_text("Naive")
         set_number_input(page, "ds-settings-parser-recommended-chunk-size-input", 640)
         set_switch_state(page, "ds-settings-parser-child-chunk-switch", True)
         expect(page.get_by_test_id("ds-settings-parser-child-chunk-delimiter-input")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
@@ -515,6 +517,7 @@ def step_04_set_dataset_settings(
         for key in ("name", "language", "parser_config"):
             assert key in payload, f"Expected key {key!r} in /api/v1/datasets update payload"
         parser_config = payload.get("parser_config") or {}
+        assert parser_config.get("layout_recognize") == "Plain Text", "Naive PDF parser selection did not persist"
         assert parser_config.get("image_table_context_window") == parser_config.get("image_context_size") == parser_config.get("table_context_size"), (
             "Expected image/table context window transform keys to be aligned"
         )
@@ -522,7 +525,7 @@ def step_04_set_dataset_settings(
 
     with step("return to dataset detail for upload"):
         page.goto(
-            urljoin(base_url.rstrip("/") + "/", f"/dataset/dataset/{dataset_id}"),
+            urljoin(base_url.rstrip("/") + "/", f"/dataset/files/{dataset_id}"),
             wait_until="domcontentloaded",
         )
         wait_for_dataset_detail_ready(page, expect, timeout_ms=RESULT_TIMEOUT_MS)
@@ -573,11 +576,14 @@ def step_05_upload_files(
             def trigger():
                 save_button.click()
 
-            capture_response(
+            response = capture_response(
                 page,
                 trigger,
-                lambda resp: resp.request.method == "POST" and "/v1/document/upload" in resp.url,
+                lambda resp: resp.request.method == "POST" and urlparse(resp.url).path == f"/api/v1/datasets/{flow_state['dataset_id']}/documents",
             )
+            assert response.status == 200
+            payload = response.json()
+            assert payload.get("code") == 0 and len(payload.get("data", [])) == 1, "Upload did not create one document"
             expect(upload_modal).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
         snap(f"upload_{filename}_submitted")
 

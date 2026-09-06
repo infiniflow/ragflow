@@ -272,7 +272,7 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
             {mutationError.message}
           </div>
         )}
-        {change.last_error && (
+        {change.last_error && !mutationError && (
           <div
             className="flex items-center gap-3 border-b border-state-warning/40 bg-state-warning/5 px-5 py-2.5 text-sm"
             data-testid="eva-change-last-error"
@@ -412,11 +412,11 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
 
         <aside
           className="min-h-0 overflow-y-auto px-5 py-5 scrollbar-auto max-xl:col-span-2 max-xl:border-t max-xl:border-border-button max-lg:border-t"
-          aria-label="Согласование и публикация"
+          aria-label="Подтвердить запись в EVA"
         >
           <div className="flex items-center gap-2">
             <FilePenLine className="size-4 text-accent-primary" />
-            <h2 className="text-sm font-medium">Согласование и EVA</h2>
+            <h2 className="text-sm font-medium">Подтвердить запись в EVA</h2>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded-md border border-border-button bg-border-button text-center">
             <div className="bg-bg-base px-2 py-3">
@@ -439,7 +439,10 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
             </div>
           </div>
 
-          <ol className="mt-5 space-y-4 text-sm">
+          <ol
+            className="mt-5 space-y-4 text-sm"
+            aria-label="Этапы публикации в EVA"
+          >
             <li className="flex gap-3">
               <span
                 className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] ${change.diff.changed ? 'bg-accent-primary text-white' : 'bg-bg-card text-text-disabled'}`}
@@ -447,7 +450,7 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
                 1
               </span>
               <span>
-                <span className="block font-medium">Подготовить diff</span>
+                <span className="block font-medium">Сформировать черновик</span>
                 <span className="mt-0.5 block text-xs text-text-secondary">
                   Агент формирует закрытый черновик по задаче автора.
                 </span>
@@ -460,22 +463,12 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
                 2
               </span>
               <span>
-                <span className="block font-medium">Согласовать</span>
-                <span className="mt-0.5 block text-xs text-text-secondary">
-                  Фиксируется точный hash черновика.
+                <span className="block font-medium">
+                  Сохранить как черновик в EVA
                 </span>
-              </span>
-            </li>
-            <li className="flex gap-3">
-              <span
-                className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] ${['EVA_DRAFT_READY', 'PUBLISHING', 'PUBLISHED'].includes(change.workflow_state) ? 'bg-accent-primary text-white' : 'bg-bg-card text-text-disabled'}`}
-              >
-                3
-              </span>
-              <span>
-                <span className="block font-medium">Записать черновик EVA</span>
                 <span className="mt-0.5 block text-xs text-text-secondary">
-                  Опубликованная страница ещё не меняется.
+                  Фиксируется точный hash черновика; опубликованная страница ещё
+                  не меняется.
                 </span>
               </span>
             </li>
@@ -483,7 +476,7 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
               <span
                 className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] ${change.workflow_state === 'PUBLISHED' ? 'bg-state-success text-white' : 'bg-bg-card text-text-disabled'}`}
               >
-                4
+                3
               </span>
               <span>
                 <span className="block font-medium">Опубликовать</span>
@@ -554,13 +547,13 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
                     disabled={isPending}
                   >
                     <CheckCircle2 className="size-4" />
-                    Согласовать diff
+                    Подтвердить изменения
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>
-                      Согласовать текущий diff?
+                      Подтвердить текущие изменения?
                     </AlertDialogTitle>
                     <AlertDialogDescription>
                       Будет зафиксирована эта версия черновика. Любое
@@ -575,7 +568,7 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
                         actionMutation.mutate({ action: 'APPROVE' })
                       }
                     >
-                      Согласовать
+                      Подтвердить изменения
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -594,8 +587,8 @@ export function EvaChangeWorkbench({ changeId }: { changeId: string }) {
               >
                 <Send className="size-4" />
                 {change.workflow_state === 'PREPARING_EVA_DRAFT'
-                  ? 'Повторить запись черновика'
-                  : 'Записать черновик в EVA'}
+                  ? 'Повторить сохранение черновика'
+                  : 'Сохранить как черновик в EVA'}
               </Button>
             )}
             {allowed.has('PUBLISH_EVA') && (

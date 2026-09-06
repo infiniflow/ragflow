@@ -1631,6 +1631,7 @@ def _load_chat_routes_unit_module(monkeypatch):
     tenant_model_provider_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_provider_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
     tenant_model_provider_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
+    tenant_model_provider_mod.get_model_type_by_name = lambda *_args, **_kwargs: ["chat"]
 
     def _split_model_name(model_name):
         parts = model_name.split("@")
@@ -1642,7 +1643,6 @@ def _load_chat_routes_unit_module(monkeypatch):
             return parts[0], parts[1], parts[2]
 
     tenant_model_provider_mod.split_model_name = staticmethod(_split_model_name)
-    tenant_model_provider_mod.get_api_key = lambda *_args, **_kwargs: SimpleNamespace(id=1)
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_provider_mod)
 
     llm_service_mod = ModuleType("api.db.services.llm_service")
@@ -1766,3 +1766,57 @@ def test_list_chats_authorized_multi_tenant_unit(monkeypatch):
     assert {c["id"] for c in res["data"]["chats"]} == {"c1", "c2"}
     assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}
     assert captured["user_id"] == "tenant-1"
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    "api_key,model_types,model_type,unavailable",
+    [
+        ("", ["chat", "image2text"], "chat", None),
+        ("", ["image2text"], "image2text", None),
+        ("provider-secret", ["chat"], "chat", None),
+        ("", ["chat"], "chat", "Model not found"),
+        ("provider-secret", ["chat"], "chat", "Model is disabled"),
+        ("", ["chat"], "chat", "Provider belongs to another tenant"),
+    ],
+    ids=["keyless-chat", "keyless-vision", "keyed-chat", "missing-model", "disabled-model", "foreign-provider"],
+)
+def test_completion_validates_tenant_model_configuration_unit(monkeypatch, api_key, model_types, model_type, unavailable):
+    module = _load_chat_routes_unit_module(monkeypatch)
+    model_id = "local-model@default@Ollama"
+    lookups, generations = [], []
+
+    def resolve_types(**kwargs):
+        assert kwargs == {"tenant_id": "tenant-1", "model_name": model_id}
+        if unavailable == "Provider belongs to another tenant":
+            raise LookupError(unavailable)
+        return model_types
+
+    def resolve_model(**kwargs):
+        lookups.append(kwargs)
+        if unavailable:
+            raise LookupError(unavailable)
+        return {"api_key": api_key, "llm_name": "local-model", "model_type": model_type}
+
+    async def generate(dialog, messages, stream, **kwargs):
+        generations.append((dialog.tenant_id, dialog.llm_id, dialog.llm_setting, stream))
+        yield {"answer": "A completed answer"}
+
+    _set_request_json(monkeypatch, module, {"question": "Hello", "llm_id": model_id, "temperature": 0.2, "stream": False})
+    monkeypatch.setattr(module, "get_model_type_by_name", resolve_types)
+    monkeypatch.setattr(module, "get_model_config_from_provider_instance", resolve_model)
+    monkeypatch.setattr(module, "async_chat", generate)
+    monkeypatch.setattr(module, "structure_answer", lambda _conv, answer, *_args: answer)
+
+    result = _run(module.session_completion.__wrapped__())
+
+    if unavailable == "Provider belongs to another tenant":
+        assert lookups == []
+    else:
+        assert lookups == [{"tenant_id": "tenant-1", "model_name": model_id, "model_type": model_type}]
+    if unavailable:
+        assert result == {"code": 102, "data": None, "message": f"Cannot use specified model {model_id}."}
+        assert generations == []
+    else:
+        assert result == {"code": 0, "message": "", "data": {"answer": "A completed answer"}}
+        assert generations == [("tenant-1", model_id, {"temperature": 0.2}, False)]

@@ -1,6 +1,7 @@
 name: browser-regression
 
 on:
+  workflow_call:
   pull_request:
   push:
     branches: [main]
@@ -10,17 +11,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: browser-regression-${{ github.ref }}
+  group: browser-regression-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        browser: [chromium, firefox, webkit]
+    outputs:
+      manifest-sha256: ${{ steps.manifest.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
@@ -38,22 +37,177 @@ jobs:
         working-directory: web
         run: pnpm install --frozen-lockfile
       - name: Frontend unit tests
-        if: matrix.browser == 'chromium'
         working-directory: web
         run: pnpm test --runInBand
       - name: Build frontend
         working-directory: web
         run: pnpm build
+      - name: Record resolved browser build parameters
+        working-directory: web
+        run: |
+          node --input-type=module <<'JS'
+          import { resolveConfig } from 'vite';
+          import { writeFileSync } from 'node:fs';
+          const config = await resolveConfig({}, 'build', 'production');
+          writeFileSync('../browser-build-parameters.json', JSON.stringify({
+            minify: config.build.minify, sourcemap: config.build.sourcemap,
+          }));
+          JS
+      # This is the browser test build, not the Docker/release candidate.
+      - name: Record frontend artifact identity
+        id: manifest
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path('web/dist')
+          assert (root / 'index.html').is_file(), 'missing frontend build'
+          files = {}
+          for path in sorted(root.rglob('*')):
+              assert not path.is_symlink(), 'symlink in frontend build'
+              if path.is_file():
+                  files[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+          manifest = {
+              'schema': 1, 'purpose': 'mocked-browser-regression',
+              'sha': os.environ['GITHUB_SHA'],
+              'build': {'command': 'pnpm build', 'mode': 'production', 'node': '22', 'pnpm': '10'},
+              'vite': json.loads(Path('browser-build-parameters.json').read_text()),
+              'lock_sha256': hashlib.sha256(Path('web/pnpm-lock.yaml').read_bytes()).hexdigest(),
+              'files': files,
+          }
+          data = json.dumps(manifest, sort_keys=True).encode()
+          Path('browser-build.json').write_bytes(data)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print('sha256=' + hashlib.sha256(data).hexdigest(), file=output)
+          PY
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-build-${{ github.sha }}
+          path: |
+            web/dist
+            browser-build.json
+          include-hidden-files: true
+          if-no-files-found: error
+
+  browser:
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.13'
+      - name: Download frontend build
+        uses: actions/download-artifact@v5
+        with:
+          name: browser-build-${{ github.sha }}
+          path: .
+      - name: Verify frontend artifact
+        env:
+          EXPECTED_MANIFEST_SHA256: ${{ needs.frontend.outputs.manifest-sha256 }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          data = Path('browser-build.json').read_bytes()
+          assert hashlib.sha256(data).hexdigest() == os.environ['EXPECTED_MANIFEST_SHA256'], 'manifest digest mismatch'
+          manifest = json.loads(data)
+          assert manifest['schema'] == 1 and manifest['purpose'] == 'mocked-browser-regression'
+          assert manifest['sha'] == os.environ['GITHUB_SHA'], 'source SHA mismatch'
+          assert manifest['build'] == {'command': 'pnpm build', 'mode': 'production', 'node': '22', 'pnpm': '10'}
+          assert set(manifest['vite']) == {'minify', 'sourcemap'}
+          assert manifest['vite']['minify'] in (False, 'esbuild', 'terser')
+          assert manifest['vite']['sourcemap'] in (False, True, 'inline', 'hidden')
+          assert manifest['lock_sha256'] == hashlib.sha256(Path('web/pnpm-lock.yaml').read_bytes()).hexdigest(), 'lock mismatch'
+          root = Path('web/dist')
+          actual = {}
+          for path in sorted(root.rglob('*')):
+              assert not path.is_symlink(), 'symlink in frontend build'
+              if path.is_file():
+                  actual[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+          assert 'index.html' in actual and actual == manifest['files'], 'frontend files/digests mismatch'
+          PY
       - name: Install browser test dependencies
         run: |
           uv venv --python 3.13
           uv pip install pytest pytest-asyncio pytest-playwright pycryptodomex
           .venv/bin/python -m playwright install --with-deps ${{ matrix.browser }}
       - name: Run isolated browser journeys
+        env:
+          PYTEST_ADDOPTS: --junitxml=browser-junit.xml
         run: .venv/bin/python test/run_browser_regression.py --browser ${{ matrix.browser }}
+      - name: Record successful browser
+        env:
+          BROWSER: ${{ matrix.browser }}
+          MANIFEST_SHA256: ${{ needs.frontend.outputs.manifest-sha256 }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from tools.quality.browser_inventory import verify_junit
+          browser = os.environ['BROWSER']
+          assert browser in ('chromium', 'firefox', 'webkit')
+          inventory_result = verify_junit(Path('browser-junit.xml'))
+          Path('browser-result').mkdir()
+          Path('browser-result', browser + '.json').write_text(json.dumps({
+              'browser': browser, 'sha': os.environ['GITHUB_SHA'],
+              'manifest_sha256': os.environ['MANIFEST_SHA256'], 'result': 'success',
+              **inventory_result,
+          }))
+          PY
+      - name: Upload successful browser receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-result-${{ matrix.browser }}
+          path: browser-result/*.json
+          if-no-files-found: error
       - name: Upload browser failure evidence
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: browser-${{ matrix.browser }}
           path: test/playwright/artifacts
+
+  browser-gate:
+    if: always()
+    needs: [frontend, browser]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download browser receipts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: browser-result-*
+          path: browser-results
+      - name: Require every browser and matching artifact identity
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          MANIFEST_SHA256: ${{ needs.frontend.outputs.manifest-sha256 }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          from tools.quality.browser_inventory import expected_inventory
+          mandatory, inventory_digest = expected_inventory()
+          needs = json.loads(os.environ['NEEDS_JSON'])
+          assert set(needs) == {'frontend', 'browser'}, 'missing required job'
+          assert all(job['result'] == 'success' for job in needs.values()), 'required job not successful'
+          digest = os.environ['MANIFEST_SHA256']
+          assert re.fullmatch('[0-9a-f]{64}', digest), 'missing artifact digest'
+          expected = {'chromium', 'firefox', 'webkit'}
+          root = Path('browser-results')
+          assert {p.name for p in root.iterdir()} == {'browser-result-' + b for b in expected}, 'missing/extra browser artifact'
+          for browser in sorted(expected):
+              directory = root / ('browser-result-' + browser)
+              assert {p.name for p in directory.iterdir()} == {browser + '.json'}, 'invalid receipt file set'
+              receipt = json.loads((directory / (browser + '.json')).read_text())
+              count = receipt.pop('tests')
+              assert type(count) is int and count == len(mandatory), 'incomplete mandatory browser tests'
+              assert receipt == {'browser': browser, 'sha': os.environ['GITHUB_SHA'], 'manifest_sha256': digest, 'inventory_sha256': inventory_digest, 'result': 'success'}, 'browser receipt mismatch'
+          PY

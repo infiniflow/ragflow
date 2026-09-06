@@ -51,7 +51,10 @@ function unwrap<T>(payload: T | ApiEnvelope<T>): T {
   ) {
     const envelope = payload as ApiEnvelope<T>;
     if (envelope.code !== 0) {
-      throw new Error(envelope.message || 'Business document request failed');
+      throw new Error(
+        envelope.message ||
+          'Не удалось выполнить запрос бизнес-документа: сервер не сообщил причину.',
+      );
     }
     return envelope.data;
   }
@@ -70,6 +73,25 @@ export class BusinessDocumentConflictError extends Error {
   }
 }
 
+function requestFailureMessage(status?: number): string {
+  if (status === undefined) {
+    return 'Не удалось связаться с сервером. Проверьте подключение и повторите попытку.';
+  }
+  if (status === 401) {
+    return 'Сессия истекла. Войдите в систему снова и повторите действие.';
+  }
+  if (status === 403) {
+    return 'Недостаточно прав для этого действия. Если доступ необходим, обратитесь к администратору.';
+  }
+  if (status === 404) {
+    return 'Запрошенный объект не найден. Обновите страницу и проверьте, что он ещё доступен.';
+  }
+  if (status >= 500) {
+    return 'Сервер не смог выполнить запрос. Повторите попытку позже; если ошибка сохранится, обратитесь к администратору.';
+  }
+  return `Не удалось выполнить запрос документа (HTTP ${status}). Проверьте введённые данные и повторите действие.`;
+}
+
 function rethrowBusinessDocumentError(error: unknown): never {
   if (axios.isAxiosError(error)) {
     const payload = error.response?.data as
@@ -83,9 +105,7 @@ function rethrowBusinessDocumentError(error: unknown): never {
         payload?.data?.details,
       );
     }
-    throw new Error(
-      message || error.message || 'Не удалось выполнить запрос документа.',
-    );
+    throw new Error(message || requestFailureMessage(error.response?.status));
   }
   throw error;
 }

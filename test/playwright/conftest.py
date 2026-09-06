@@ -25,7 +25,7 @@ from playwright.sync_api import expect
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 PLAYWRIGHT_TEST_DIR = Path(__file__).resolve().parent
-ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts" / os.getenv("PW_BROWSER", "chromium")
+ARTIFACTS_DIR = Path(os.getenv("PW_ARTIFACTS_DIR", str(Path(__file__).resolve().parent / "artifacts" / os.getenv("PW_BROWSER", "chromium"))))
 BASE_URL_DEFAULT = "http://127.0.0.1"
 LOGIN_PATH_DEFAULT = "/login"
 DEFAULT_TIMEOUT_MS = 30000
@@ -1149,7 +1149,7 @@ def _ensure_dataset_ready_via_api(base_url: str, auth_header: str, dataset_name:
     _, create_payload = _api_request_json(
         _build_url(base_url, "/api/v1/datasets"),
         method="POST",
-        payload={"name": dataset_name},
+        payload={"name": dataset_name, "parse_type": 1, "chunk_method": "naive", "parser_config": {"auto_keywords": 0, "auto_questions": 0}},
         headers=headers,
     )
     created_data = _response_data(create_payload)
@@ -1200,8 +1200,16 @@ def ensure_dataset_ready(
 
 
 @pytest.fixture
-def ensure_chat_ready(ensure_dataset_ready):
-    return ensure_dataset_ready
+def ensure_parsed_dataset(ensure_dataset_ready, ensure_auth_context, base_url):
+    from test.playwright.helpers.parsed_document import parsed_document
+
+    with parsed_document(ensure_auth_context, base_url, ensure_dataset_ready) as dataset:
+        yield dataset
+
+
+@pytest.fixture
+def ensure_chat_ready(ensure_parsed_dataset):
+    return ensure_parsed_dataset
 
 
 @pytest.fixture

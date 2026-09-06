@@ -136,7 +136,7 @@ function AdminLogin() {
 
         <div className="absolute top-3 left-0 w-full">
           <div className="absolute mt-12 ml-12 flex items-center">
-            <img className="size-8 mr-5" src="/logo.svg" alt="logo" />
+            <img className="size-8 mr-5" src="/app-icon.png" alt="logo" />
             <span className="text-xl font-bold">Агент Раггер</span>
           </div>
 

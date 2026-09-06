@@ -39,6 +39,18 @@ function formatRevisionTime(value?: number | null) {
       });
 }
 
+function formatUserIdentity(name?: string | null, login?: string | null) {
+  const normalizedName = name?.trim();
+  const normalizedLogin = login?.trim();
+  if (normalizedName && normalizedLogin) {
+    return `${normalizedName} (${normalizedLogin})`;
+  }
+  if (normalizedLogin) {
+    return `Пользователь (${normalizedLogin})`;
+  }
+  return normalizedName || 'Пользователь недоступен';
+}
+
 interface RevisionHistoryPanelProps {
   revisions: BusinessDocumentRevision[];
   selectedRevisionId?: string;
@@ -134,10 +146,13 @@ export function RevisionHistoryPanel({
                     {formatRevisionTime(revision.created_at)}
                   </span>
                 </span>
-                {(revision.author_name || revision.author_id) && (
+                {revision.author_id && (
                   <span className="mt-1 block text-[11px] text-text-disabled">
                     Автор изменений:{' '}
-                    {revision.author_name || revision.author_id}
+                    {formatUserIdentity(
+                      revision.author_name,
+                      revision.author_login,
+                    )}
                   </span>
                 )}
                 {!revision.change_basis?.length && (
@@ -165,7 +180,11 @@ export function RevisionHistoryPanel({
                             </span>
                             {basis.initiated_by_actor_id && (
                               <span className="mt-0.5 block text-[11px] text-text-disabled">
-                                Инициировал: {basis.initiated_by_actor_id}
+                                Инициировал:{' '}
+                                {formatUserIdentity(
+                                  basis.initiated_by_actor_name,
+                                  basis.initiated_by_actor_login,
+                                )}
                               </span>
                             )}
                             {basis.actor_id && (
@@ -173,7 +192,13 @@ export function RevisionHistoryPanel({
                                 {basis.actor_type === 'USER'
                                   ? 'Изменил'
                                   : 'Исполнитель'}
-                                : {basis.actor_id}
+                                :{' '}
+                                {basis.actor_type === 'USER'
+                                  ? formatUserIdentity(
+                                      basis.actor_name,
+                                      basis.actor_login,
+                                    )
+                                  : basis.actor_id}
                               </span>
                             )}
                             <span className="mt-0.5 block whitespace-pre-wrap text-xs leading-5 text-text-secondary">

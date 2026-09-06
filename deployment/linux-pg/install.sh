@@ -22,6 +22,14 @@ GVISOR_BUNDLE_DIR=${GVISOR_BUNDLE_DIR:-}
 MIN_DOCKER_VERSION=24.0.0
 MIN_COMPOSE_VERSION=2.26.1
 
+[[ ${OFFLINE_INSTALL} == "0" || ${OFFLINE_INSTALL} == "1" ]] || { echo "OFFLINE_INSTALL must be 0 or 1." >&2; exit 1; }
+[[ ${REGISTRY_INSTALL} == "0" || ${REGISTRY_INSTALL} == "1" ]] || { echo "REGISTRY_INSTALL must be 0 or 1." >&2; exit 1; }
+[[ ${PREBUILT_FRONTEND} == "0" || ${PREBUILT_FRONTEND} == "1" ]] || { echo "PREBUILT_FRONTEND must be 0 or 1." >&2; exit 1; }
+[[ ${OFFLINE_INSTALL} != "1" || ${REGISTRY_INSTALL} != "1" ]] || {
+  echo "OFFLINE_INSTALL and REGISTRY_INSTALL cannot both be enabled." >&2
+  exit 1
+}
+
 if [[ $(uname -m) != "x86_64" ]]; then
   echo "Only x86_64 Linux is supported by this release package." >&2
   exit 1
@@ -112,7 +120,8 @@ else
   esac
 fi
 sudo systemctl enable --now docker
-if ! sudo docker info --format '{{json .Runtimes}}' | grep -q '"runsc"'; then
+DOCKER_RUNTIMES=$(sudo docker info --format '{{json .Runtimes}}')
+if ! grep -q '"runsc"' <<<"${DOCKER_RUNTIMES}"; then
   [[ -n ${GVISOR_BUNDLE_DIR} ]] || { echo 'Docker runsc runtime is not registered and no gVisor bundle was provided.' >&2; exit 1; }
   sudo env GVISOR_BUNDLE_DIR="${GVISOR_BUNDLE_DIR}" bash "${SCRIPT_DIR}/install_gvisor.sh"
 fi
@@ -257,7 +266,8 @@ grep -qx postgres <<<"${services}"
 for required_service in t-one-asr sandbox-executor-manager otel-collector tempo loki prometheus grafana; do
   grep -qx "${required_service}" <<<"${services}" || { echo "Required service is absent: ${required_service}" >&2; exit 1; }
 done
-sudo docker info --format '{{json .Runtimes}}' | grep -q '"runsc"' || { echo 'Docker runsc runtime is not registered.' >&2; exit 1; }
+DOCKER_RUNTIMES=$(sudo docker info --format '{{json .Runtimes}}')
+grep -q '"runsc"' <<<"${DOCKER_RUNTIMES}" || { echo 'Docker runsc runtime is not registered.' >&2; exit 1; }
 
 if [[ ${OFFLINE_INSTALL} == "1" ]]; then
   "${COMPOSE[@]}" up -d --no-build --pull never
@@ -286,7 +296,8 @@ SANDBOX_CONTAINER=$("${COMPOSE[@]}" ps -q sandbox-executor-manager)
 test -n "${ASR_CONTAINER}" -a -n "${SANDBOX_CONTAINER}"
 sudo docker exec "${ASR_CONTAINER}" python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9011/health/ready', timeout=10)"
 sudo docker exec "${SANDBOX_CONTAINER}" curl -fsS http://127.0.0.1:9385/healthz >/dev/null
-sudo docker logs "${SANDBOX_CONTAINER}" 2>&1 | grep -Eq 'Container pool initialization complete: [1-9][0-9]*/[1-9][0-9]* available'
+SANDBOX_LOGS=$(sudo docker logs "${SANDBOX_CONTAINER}" 2>&1)
+grep -Eq 'Container pool initialization complete: [1-9][0-9]*/[1-9][0-9]* available' <<<"${SANDBOX_LOGS}"
 sudo grep -Eq '^RAGFLOW_CREDENTIALS_KEY=[0-9a-f]{64}$' "${ENV_FILE}"
 sudo grep -Eq '^GRAFANA_ADMIN_PASSWORD=[0-9a-f]{64}$' "${ENV_FILE}"
 

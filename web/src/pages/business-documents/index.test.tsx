@@ -589,6 +589,7 @@ test('shows which comments, questions and AI proposals produced each revision', 
       ...projection.current_revision!,
       author_id: 'author-4',
       author_name: 'Мария Авторова',
+      author_login: 'maria@example.test',
       created_at: 1_788_200_000,
       change_basis: [
         {
@@ -596,6 +597,8 @@ test('shows which comments, questions and AI proposals produced each revision', 
           actor_id: 'ai-worker-1',
           actor_type: 'AI',
           initiated_by_actor_id: 'author-4',
+          initiated_by_actor_name: 'Мария Авторова',
+          initiated_by_actor_login: 'maria@example.test',
           type: 'INITIAL_DRAFT',
           title: 'Первичный черновик',
           summary: 'Исходная идея документа.',
@@ -604,6 +607,8 @@ test('shows which comments, questions and AI proposals produced each revision', 
           event_id: 'event-question',
           actor_id: 'author-2',
           actor_type: 'USER',
+          actor_name: 'Иван Редактор',
+          actor_login: 'ivan@example.test',
           type: 'QUESTION',
           title: 'Ответ на вопрос',
           summary: 'Как измеряется скорость перевода?',
@@ -614,6 +619,8 @@ test('shows which comments, questions and AI proposals produced each revision', 
           event_id: 'event-comment',
           actor_id: 'author-3',
           actor_type: 'USER',
+          actor_name: 'Анна Эксперт',
+          actor_login: 'anna@example.test',
           type: 'COMMENT',
           title: 'Комментарий автора',
           summary: 'Добавить негативный сценарий.',
@@ -645,19 +652,19 @@ test('shows which comments, questions and AI proposals produced each revision', 
     'Принятое предложение ИИ',
   );
   expect(screen.getByTestId('business-document-history')).toHaveTextContent(
-    'Изменил: author-2',
+    'Изменил: Иван Редактор (ivan@example.test)',
   );
   expect(screen.getByTestId('business-document-history')).toHaveTextContent(
-    'Изменил: author-3',
+    'Изменил: Анна Эксперт (anna@example.test)',
   );
   expect(screen.getByTestId('business-document-history')).toHaveTextContent(
-    'Инициировал: author-4',
+    'Инициировал: Мария Авторова (maria@example.test)',
   );
   expect(screen.getByTestId('business-document-history')).toHaveTextContent(
     'Исполнитель: ai-worker-1',
   );
   expect(screen.getByTestId('business-document-history')).toHaveTextContent(
-    'Автор изменений: Мария Авторова',
+    'Автор изменений: Мария Авторова (maria@example.test)',
   );
   expect(mockedListRevisions).toHaveBeenCalledWith('doc-1');
 });
@@ -1744,7 +1751,7 @@ test('creates a new business requirements document', async () => {
   fireEvent.change(
     screen.getByRole('textbox', { name: 'Название документа' }),
     {
-      target: { value: 'Новый продукт' },
+      target: { value: '  Новый продукт  ' },
     },
   );
   fireEvent.change(screen.getByRole('textbox', { name: 'Описание идеи' }), {
@@ -1756,7 +1763,7 @@ test('creates a new business requirements document', async () => {
   expect(mockedCreate.mock.calls[0][0]).toEqual({
     schema_version: '2',
     document_type: 'business_requirements',
-    title: 'Новый продукт',
+    title: '  Новый продукт  ',
     idea: 'Нужен новый клиентский сценарий.',
     dataset_ids: [],
   });
@@ -2351,6 +2358,32 @@ test('shows a read-only agent draft and regenerates it only from instructions', 
   expect(screen.getByTestId('eva-change-diff')).toHaveTextContent(
     'Новый текст.',
   );
+  const confirmationPane = screen.getByRole('complementary', {
+    name: 'Подтвердить запись в EVA',
+  });
+  expect(
+    within(confirmationPane).getByRole('heading', {
+      name: 'Подтвердить запись в EVA',
+    }),
+  ).toBeVisible();
+  expect(
+    within(
+      within(confirmationPane).getByRole('list', {
+        name: 'Этапы публикации в EVA',
+      }),
+    ).getAllByRole('listitem'),
+  ).toHaveLength(3);
+  expect(
+    within(confirmationPane).getByText('Сформировать черновик'),
+  ).toBeVisible();
+  expect(
+    within(confirmationPane).getByText('Сохранить как черновик в EVA'),
+  ).toBeVisible();
+  expect(
+    within(confirmationPane).getByRole('button', {
+      name: 'Подтвердить изменения',
+    }),
+  ).toBeVisible();
 
   fireEvent.click(screen.getByRole('button', { name: 'Вариант агента' }));
   expect(screen.getByTestId('eva-agent-draft')).toHaveTextContent(
@@ -2403,7 +2436,9 @@ test('asks for confirmation and force-overwrites a changed EVA document', async 
     });
 
   renderPage('/business-documents/eva/change-1');
-  fireEvent.click(await screen.findByTestId('prepare-eva-draft'));
+  const prepareDraftButton = await screen.findByTestId('prepare-eva-draft');
+  expect(prepareDraftButton).toHaveTextContent('Сохранить как черновик в EVA');
+  fireEvent.click(prepareDraftButton);
 
   expect(await screen.findByText('Перезаписать документ EVA?')).toBeVisible();
   expect(mockedPrepareEva).toHaveBeenNthCalledWith(1, 'change-1', 4, false);

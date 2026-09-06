@@ -1,6 +1,6 @@
 import pytest
 from playwright.sync_api import expect
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 from test.playwright.helpers._auth_helpers import ensure_authed
 from test.playwright.helpers.flow_steps import require
@@ -23,10 +23,7 @@ def _assert_search_result(response, document_id: str, snippet: str) -> None:
     assert payload.get("code") == 0, f"Retrieval failed: {payload}"
     data = payload.get("data") or {}
     assert data.get("total", 0) > 0, "Seeded query returned no results"
-    assert any(
-        chunk.get("doc_id") == document_id and snippet in chunk.get("content_with_weight", "")
-        for chunk in data.get("chunks", [])
-    ), "Retrieval did not return the seeded document and content"
+    assert any(chunk.get("doc_id") == document_id and snippet in chunk.get("content_with_weight", "") for chunk in data.get("chunks", [])), "Retrieval did not return the seeded document and content"
 
 
 def _is_search_response(response, query: str, dataset_id: str) -> bool:
@@ -35,32 +32,6 @@ def _is_search_response(response, query: str, dataset_id: str) -> bool:
         return False
     payload = request.post_data_json
     return isinstance(payload, dict) and payload.get("question") == query and dataset_id in payload.get("dataset_ids", [])
-
-
-def _api_data(response):
-    assert response.ok, f"Search fixture HTTP {response.status}"
-    payload = response.json()
-    assert payload.get("code") == 0, f"Search fixture failed: {payload}"
-    return payload.get("data")
-
-
-def _seed_search_document(page, base_url, state):
-    token = page.evaluate("localStorage.getItem('Authorization') || localStorage.getItem('Token')")
-    assert token, "Missing search fixture authorization"
-    headers = {"Authorization": token}
-    state["seed_headers"] = headers
-    dataset = state["dataset"]
-    url = urljoin(base_url, f"/api/v1/datasets/{dataset['kb_id']}/documents")
-    name = _unique_name("retrieval-proof") + ".txt"
-    document = _api_data(page.request.post(url + "?type=empty", headers=headers, data={"name": name}))
-    state["seed_document_id"] = document["id"]
-    state["seed_document_name"] = name
-    snippet = "RAGFlow retrieval proof: the violet observatory stores seven copper telescopes."
-    state["seed_snippet"] = snippet
-    _api_data(page.request.post(
-        url + f"/{document['id']}/chunks", headers=headers,
-        data={"content": snippet, "important_keywords": ["violet observatory", "copper telescopes"]},
-    ))
 
 
 def step_01_ensure_authed(
@@ -83,7 +54,6 @@ def step_01_ensure_authed(
             seeded_user_credentials=seeded_user_credentials,
         )
     flow_state["logged_in"] = True
-    _seed_search_document(flow_page, base_url, flow_state)
     snap("authed")
 
 
@@ -222,29 +192,24 @@ def test_search_create_select_dataset_and_results_appear_flow(
     flow_state,
     base_url,
     login_url,
-    ensure_dataset_ready,
+    ensure_parsed_dataset,
     active_auth_context,
     step,
     snap,
     auth_click,
     seeded_user_credentials,
 ):
-    flow_state["dataset"] = ensure_dataset_ready
-    try:
-        for _, step_fn in STEPS:
-            step_fn(
-                flow_page, flow_state, base_url, login_url, active_auth_context,
-                step, snap, auth_click, seeded_user_credentials,
-            )
-    finally:
-        if flow_state.get("seed_document_id"):
-            documents_url = urljoin(base_url, f"/api/v1/datasets/{ensure_dataset_ready['kb_id']}/documents")
-            _api_data(flow_page.request.delete(
-                documents_url,
-                headers=flow_state["seed_headers"], data={"ids": [flow_state["seed_document_id"]]},
-            ))
-            remaining = _api_data(flow_page.request.get(
-                documents_url, headers=flow_state["seed_headers"],
-                params={"ids": flow_state["seed_document_id"]},
-            ))
-            assert remaining["docs"] == [], "Seeded search document was not removed"
+    flow_state["dataset"] = ensure_parsed_dataset
+    flow_state.update({key: ensure_parsed_dataset[key] for key in ("seed_document_id", "seed_document_name", "seed_snippet")})
+    for _, step_fn in STEPS:
+        step_fn(
+            flow_page,
+            flow_state,
+            base_url,
+            login_url,
+            active_auth_context,
+            step,
+            snap,
+            auth_click,
+            seeded_user_credentials,
+        )

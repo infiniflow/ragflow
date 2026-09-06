@@ -15,7 +15,7 @@
 #
 
 from contextlib import contextmanager, nullcontext
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 from urllib.parse import urlparse
 
 import pytest
@@ -680,20 +680,15 @@ class TestNonRetriableErrors:
             with pytest.raises(ConnectorValidationError, match="non-retriable"):
                 c._fetch_page({})
 
-    def test_500_triggers_retry(self):
-        """500 should raise HTTPError (which the retry decorator catches)."""
-        with _mocked_rest_api_requests_and_dns() as mock_rl:
-            mock_rl.get.return_value = _mock_response({}, status_code=500)
+    @pytest.mark.parametrize("status_code", [500, 429])
+    def test_transient_http_error_retries_with_backoff(self, status_code):
+        """Exercise all attempts and delay values without spending 26s asleep."""
+        clock = MagicMock()
+        with _mocked_rest_api_requests_and_dns() as mock_rl, patch("retry.api.time", clock):
+            mock_rl.get.return_value = _mock_response({}, status_code=status_code)
             c = _make_connector(request_delay=0)
             c.load_credentials({})
             with pytest.raises(requests.HTTPError):
                 c._fetch_page({})
-
-    def test_429_triggers_retry(self):
-        """429 should raise HTTPError (retriable, not ConnectorValidationError)."""
-        with _mocked_rest_api_requests_and_dns() as mock_rl:
-            mock_rl.get.return_value = _mock_response({}, status_code=429)
-            c = _make_connector(request_delay=0)
-            c.load_credentials({})
-            with pytest.raises(requests.HTTPError):
-                c._fetch_page({})
+            assert mock_rl.get.call_count == 5
+            assert clock.sleep.call_args_list == [call(1), call(3), call(7), call(15)]

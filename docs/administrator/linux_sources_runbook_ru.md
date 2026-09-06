@@ -174,10 +174,26 @@ embedding-модели и ASR поставляются отдельно посл
 `ragflow-linux-pg-v1.12.0.tar.gz.sha256`, выполняет контрольную распаковку и
 проверяет обязательные файлы. В архив не входят `.git`, локальные `.env`, кэши,
 данные контейнеров, `node_modules`, `web/dist`, локальные build/test-артефакты,
-скачанные `ragflow_deps`, `output` и старые артефакты. Frontend будет собран на
-Linux из исходников поставки. Скрипт Git не вызывает: он упаковывает текущее
-состояние файлов, поэтому перед сборкой нужно завершить проверку всех изменений
-поставки.
+скачанные `ragflow_deps`, локальные model caches, `output`, старые артефакты и
+каталоги предыдущих release-сборок. Frontend будет собран на Linux из исходников
+поставки. Скрипт Git не вызывает: он упаковывает текущее состояние файлов,
+поэтому перед сборкой нужно завершить проверку всех изменений поставки.
+
+Для обновления существующего сервера compact source-архив обязан содержать
+проверенный frontend из этой же рабочей копии:
+
+```powershell
+corepack pnpm --dir web install --frozen-lockfile --ignore-scripts
+corepack pnpm --dir web run build
+./deployment/linux-pg/build_archive.ps1 `
+  -ReleaseVersion v1.12.0 `
+  -UseExistingFrontend
+```
+
+Builder проверит `web/dist/index.html`, включит `web/dist` и запишет
+`FRONTEND_MODE=prebuilt` в manifest. Обычный вызов без ключа оставляет frontend
+за пределами архива (`FRONTEND_MODE=excluded`) и предназначен для первой
+source-установки с доступом к build-зависимостям.
 
 `DEPLOYMENT-SOURCE.env` содержит `RELEASE_VERSION`, `PACKAGE_FORMAT`, режим
 сборки и время упаковки. Источником доверия служат утверждённая SHA-256 сумма и
@@ -215,7 +231,8 @@ cd /srv/ragflow-linux-pg
 cat DEPLOYMENT-SOURCE.env
 test -s deployment/linux-pg/install.sh
 test -s deployment/linux-pg/docker-compose.release.yml
-test -s deployment/linux-pg/seed_admin_asr.py
+test -s deployment/linux-pg/seed_admin.py
+test -s deployment/linux-pg/seed_asr.py
 test -s services/asr-online-service/Dockerfile
 ```
 
@@ -257,8 +274,8 @@ sudo env \
 6. Создаёт `docker/.env` с независимыми случайными паролями PostgreSQL,
    Elasticsearch, MinIO и Valkey, а также постоянным ключом шифрования
    персональных EVA-токенов.
-7. Валидирует объединённый Compose, требует `postgres` и аварийно завершает
-   работу, если активны `mysql` или не входящий в профиль `t-one-asr`.
+7. Валидирует объединённый Compose, требует `postgres`, `t-one-asr`, sandbox и
+   observability-сервисы и аварийно завершает работу, если активен `mysql`.
 8. Запускает все сервисы и ждёт полного RAGFlow health до 10 минут.
 9. Создаёт superuser и проверяет его через фактические сервисы RAGFlow.
 
@@ -290,7 +307,7 @@ unset ADMIN_PASSWORD
 
 ## 9. Единая команда Compose
 
-Для ручных операций использовать те же четыре слоя:
+Для ручных операций использовать те же пять слоёв:
 
 ```bash
 cd /opt/ragflow-pg/docker
@@ -302,6 +319,7 @@ rf_compose() {
     -f docker-compose.yml \
     -f docker-compose.local.yml \
     -f docker-compose.linux.local.yml \
+    -f docker-compose.observability.yml \
     -f ../deployment/linux-pg/docker-compose.release.yml \
     "$@"
 }
@@ -497,6 +515,7 @@ cd /srv/ragflow-linux-pg-v1.12.0-offline
 
 # Change gate: только проверки, без остановки приложения и миграций.
 sudo env \
+  SOURCE_DIR="$(mktemp -d)" \
   INSTALL_DIR=/opt/ragflow-pg \
   PROJECT_NAME=ragflow-pg \
   RAGFLOW_PORT=80 \
@@ -505,6 +524,7 @@ sudo env \
 
 # После подтверждения окна обслуживания.
 sudo env \
+  SOURCE_DIR="$(mktemp -d)" \
   INSTALL_DIR=/opt/ragflow-pg \
   PROJECT_NAME=ragflow-pg \
   RAGFLOW_PORT=80 \
@@ -517,6 +537,9 @@ sudo env \
 проверяет полный health и таблицу `system_audit_event`, но не загружает образы,
 не создаёт backup и не запускает миграции. Архив следует распаковывать только в
 новый каталог из `mktemp`, с `--no-same-owner --no-same-permissions`.
+Внутренний `SOURCE_DIR` также должен быть пустым для каждого вызова, включая
+`--check`: повторное использование распакованного source запрещено даже для
+той же версии. Предыдущий каталог сохраняется; указанные команды создают новый.
 
 Для registry-поставки заменить точку входа на `upgrade_registry.sh` и передать
 те же проверенные параметры registry, что и при первой установке. Скрипт
@@ -525,6 +548,33 @@ PostgreSQL dump и MinIO archive, атомарно меняет каталог �
 штатные идемпотентные schema migrations и принимает контур по полному health.
 Файлы операции находятся в `/var/backups/ragflow-pg/<timestamp>-<from>-to-<to>`;
 предыдущий код — в `/opt/ragflow-pg.previous-<timestamp>`.
+
+Компактный source-архив, собранный с `-UseExistingFrontend`, можно применить без
+обращения к registry, если все образы итогового Compose уже загружены:
+
+```bash
+cd /srv/ragflow-linux-pg-v1.12.0
+
+sudo env OFFLINE_INSTALL=1 \
+  INSTALL_DIR=/opt/ragflow-pg \
+  PROJECT_NAME=ragflow-pg \
+  RAGFLOW_PORT=80 \
+  BACKUP_ROOT=/var/backups/ragflow-pg \
+  bash deployment/linux-pg/upgrade.sh --check
+
+sudo env OFFLINE_INSTALL=1 \
+  INSTALL_DIR=/opt/ragflow-pg \
+  PROJECT_NAME=ragflow-pg \
+  RAGFLOW_PORT=80 \
+  BACKUP_ROOT=/var/backups/ragflow-pg \
+  BACKUP_MINIO=1 \
+  bash deployment/linux-pg/upgrade.sh
+```
+
+Preflight проверяет Compose, зарегистрированный `runsc` и наличие каждого
+образа до остановки приложения, backup и миграций. Отсутствующий образ является
+блокирующей ошибкой. Без `OFFLINE_INSTALL=1` source-upgrade выполняет локальную
+сборку и поэтому требует доступных build-зависимостей.
 
 ### Автоматический возврат кода
 
@@ -562,7 +612,7 @@ PostgreSQL dump и MinIO archive, атомарно меняет каталог �
 - [ ] `deployed-source.env` совпадает с manifest утверждённого архива.
 - [ ] Frontend собран из того же release-архива.
 - [ ] Постоянный `RAGFLOW_CREDENTIALS_KEY` сгенерирован и входит в защищённый backup.
-- [ ] Compose config валиден и содержит шесть ожидаемых сервисов.
+- [ ] Compose config валиден и содержит 13 ожидаемых постоянных сервисов.
 - [ ] Сервис и контейнер MySQL отсутствуют.
 - [ ] RAGFlow health возвращает `db/doc_engine/redis/storage=ok`.
 - [ ] PostgreSQL содержит схему RAGFlow; `DB_TYPE=postgres`.

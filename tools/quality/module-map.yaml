@@ -28,6 +28,7 @@ modules:
   - test/integration/test_business_document_postgres.py
   - test/playwright/e2e/test_business_documents_ui.py
   - web/src/pages/business-documents/index.test.tsx
+  - test/playwright/e2e/test_business_document_live_intake.py
   public_surfaces:
   - api/apps/restful_apis/business_document_api.py
   - api/apps/business_documents/worker.py
@@ -42,7 +43,9 @@ modules:
   - python-api-worker
   - web
   - postgres
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
   - agent/business_requirements/ARCHITECTURE.md
   - agent/business_requirements/README.md
@@ -56,6 +59,7 @@ modules:
   - agent/business_requirements/contracts/review_plan.v1.schema.json
   - agent/business_requirements/evals/rubric.v1.json
   - agent/business_requirements/golden_dialogs/v1.json
+  - agent/business_requirements/golden_dialogs/v2.json
   - agent/business_requirements/policies/process.v1.json
   - agent/business_requirements/policies/rendering.v1.json
   - agent/business_requirements/prompts/change_planner.v1.md
@@ -86,6 +90,7 @@ modules:
   - test/fixtures/business_documents/regression_evidence.md
   - test/fixtures/business_documents/requirements_traceability.md
   - test/integration/test_business_document_postgres.py
+  - test/playwright/e2e/test_business_document_live_intake.py
   - test/playwright/e2e/test_business_documents_access_ui.py
   - test/playwright/e2e/test_business_documents_ui.py
   - test/unit_test/admin/test_business_documents_settings.py
@@ -136,7 +141,9 @@ modules:
   runtime_profiles:
   - python-api-worker
   - web
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
   - agent/business_requirements/contracts/eva_change_draft.v1.schema.json
   - agent/business_requirements/prompts/eva_change.v1.md
@@ -171,6 +178,7 @@ modules:
   - test/unit_test/api/apps/services/test_openmetadata_copilot_service.py
   - test/unit_test/api/apps/restful_apis/test_openmetadata_routes_unit.py
   - web/src/pages/openmetadata/index.test.tsx
+  - test/unit_test/agent/test_openmetadata_dynamic_registration.py
   public_surfaces:
   - api/apps/restful_apis/openmetadata_api.py
   - agent/component/openmetadata.py
@@ -182,7 +190,9 @@ modules:
   runtime_profiles:
   - python-api-worker
   - web
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
   - agent/component/openmetadata.py
   - api/apps/restful_apis/openmetadata_api.py
@@ -192,6 +202,7 @@ modules:
   - common/openmetadata_agents.py
   - docs/openmetadata_copilot.md
   - test/unit_test/agent/test_openmetadata_component.py
+  - test/unit_test/agent/test_openmetadata_dynamic_registration.py
   - test/unit_test/api/apps/restful_apis/test_openmetadata_routes_unit.py
   - test/unit_test/api/apps/services/test_openmetadata_agent_service.py
   - test/unit_test/api/apps/services/test_openmetadata_copilot_service.py
@@ -214,6 +225,7 @@ modules:
   - services/asr-online-service/tests
   - test/unit_test/rag/app/test_audio_video_transcription.py
   - test/unit_test/api/utils/test_api_file_utils.py
+  - services/asr-online-service/tests/integration/test_tone_real_inference.py
   public_surfaces:
   - services/asr-online-service/openapi/asr.yaml
   - services/asr-online-service/src/asr_service/main.py
@@ -226,7 +238,9 @@ modules:
   - asr-service
   - python-api-worker
   - web
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
   - rag/app/audio.py
   - services/asr-online-service/.dockerignore
@@ -277,6 +291,7 @@ modules:
   - services/asr-online-service/src/asr_service/tools/__init__.py
   - services/asr-online-service/src/asr_service/tools/prefetch_models.py
   - services/asr-online-service/tests/conftest.py
+  - services/asr-online-service/tests/integration/test_tone_real_inference.py
   - services/asr-online-service/tests/smoke/test_windows_smoke_job_ffmpeg_fail.py
   - services/asr-online-service/tests/smoke/test_windows_smoke_no_ffmpeg.py
   - services/asr-online-service/tests/test_dependencies_contract.py
@@ -318,7 +333,9 @@ modules:
   runtime_profiles:
   - python-api-worker
   - go-native
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
   - agent/templates/mrz_document_reader.json
   - api/db/template_utils.py
@@ -350,6 +367,7 @@ modules:
   - web/src/pages/admin/access-groups.test.tsx
   - web/src/pages/user-setting/settings-access-policy.test.ts
   - test/playwright/e2e/test_navigation_visibility_admin.py
+  - test/unit_test/api/db/services/test_access_group_persistence.py
   public_surfaces:
   - api/db/services/access_group_service.py
   - api/db/services/managed_resource_service.py
@@ -363,25 +381,30 @@ modules:
   - python-api-worker
   - web
   - admin
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
   - admin/server/routes.py
   - admin/server/services.py
   - api/apps/__init__.py
+  - api/apps/restful_apis/dataset_api.py
+  - api/apps/restful_apis/file_commit_api.py
   - api/apps/restful_apis/system_api.py
   - api/apps/restful_apis/user_api.py
   - api/db/services/access_group_service.py
   - api/db/services/knowledgebase_service.py
   - api/db/services/managed_resource_service.py
   - api/db/services/navigation_visibility_service.py
-  - test/playwright/e2e/test_navigation_visibility_admin.py
   - test/playwright/e2e/test_managed_datasets_access_ui.py
   - test/playwright/e2e/test_managed_settings_access_ui.py
-  - test/testcases/restful_api/test_user_tenant_routes_unit.py
+  - test/playwright/e2e/test_navigation_visibility_admin.py
   - test/testcases/restful_api/test_file_commit_routes_unit.py
+  - test/testcases/restful_api/test_user_tenant_routes_unit.py
   - test/testcases/test_web_api/test_system_app/test_apps_init_unit.py
   - test/testcases/test_web_api/test_system_app/test_system_routes_unit.py
   - test/unit_test/admin/test_access_groups.py
+  - test/unit_test/api/db/services/test_access_group_persistence.py
   - test/unit_test/api/db/services/test_access_group_service.py
   - test/unit_test/api/db/services/test_dataset_access_permissions.py
   - test/unit_test/api/db/services/test_managed_resource_service.py
@@ -389,8 +412,6 @@ modules:
   - web/src/pages/admin/access-groups.test.tsx
   - web/src/pages/admin/access-groups.tsx
   - web/src/pages/admin/navigation-visibility.tsx
-  - api/apps/restful_apis/dataset_api.py
-  - api/apps/restful_apis/file_commit_api.py
   - web/src/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/components/chunk-card/index.tsx
   - web/src/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk/index.tsx
   - web/src/pages/dataset/dataset/dataset-table.tsx
@@ -420,6 +441,7 @@ modules:
   - test/unit_test/admin/test_service_status_config.py
   - test/unit_test/common/test_observability.py
   - test/unit_test/api/utils/test_admin_service_health.py
+  - test/unit_test/api/db/services/test_audit_service.py
   public_surfaces:
   - api/db/services/audit_service.py
   - admin/server/audit_feed.py
@@ -434,7 +456,9 @@ modules:
   - go-native
   - web
   - admin
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
   - admin/server/admin_server.py
   - admin/server/audit_feed.py
@@ -456,6 +480,7 @@ modules:
   - internal/observability/otel/provider.go
   - test/unit_test/admin/test_audit_feed.py
   - test/unit_test/admin/test_service_status_config.py
+  - test/unit_test/api/db/services/test_audit_service.py
   - test/unit_test/api/utils/test_admin_service_health.py
   - test/unit_test/common/test_observability.py
   - web/src/pages/admin/audit.tsx
@@ -474,6 +499,9 @@ modules:
   - internal/entity/models/ollama_test.go
   - test/unit_test/api/apps/services/test_models_api_service_list_tenant_added_models.py
   - test/unit_test/api/db/joint_services/test_tenant_model_service_max_tokens.py
+  - test/playwright/e2e/test_next_apps_chat.py
+  - test/playwright/e2e/test_business_document_live_intake.py
+  - test/testcases/restful_api/test_user_tenant_routes_unit.py
   public_surfaces:
   - rag/llm/chat_model.py
   - internal/entity/models/ollama.go
@@ -484,7 +512,9 @@ modules:
   runtime_profiles:
   - python-api-worker
   - go-native
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
   - api/apps/llm_app.py
   - api/apps/restful_apis/models_api.py
@@ -494,9 +524,9 @@ modules:
   - internal/entity/models/ollama.go
   - internal/entity/models/ollama_test.go
   - rag/llm/chat_model.py
-  - test/unit_test/rag/llm/test_chat_model_thinking_policy.py
   - test/unit_test/api/apps/services/test_models_api_service_list_tenant_added_models.py
   - test/unit_test/api/db/joint_services/test_tenant_model_service_max_tokens.py
+  - test/unit_test/rag/llm/test_chat_model_thinking_policy.py
   - web/src/pages/user-setting/setting-model/components/system-setting.tsx
 - id: persistence
   title: Shared data-model registration and time conversion
@@ -511,6 +541,12 @@ modules:
   - test/integration/test_business_document_postgres.py
   - test/unit_test/api/db/services/test_access_group_service.py
   - test/unit_test/api/apps/business_documents/test_business_document_service.py
+  - test/unit_test/common/test_time_utils.py
+  - test/unit_test/api/db/services/test_audit_service.py
+  - test/unit_test/api/db/services/test_access_group_persistence.py
+  - test/integration/test_previous_release_data_upgrade.py
+  - test/integration/fixtures/upgrade_data_probe.py
+  - test/integration/test_minio_backup_restore.py
   public_surfaces:
   - api/db/db_models.py
   - common/time_utils.py
@@ -518,11 +554,14 @@ modules:
   runtime_profiles:
   - python-api-worker
   - postgres
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
   - api/db/db_models.py
   - common/time_utils.py
   - test/integration/fixtures/upgrade_data_probe.py
+  - test/integration/test_minio_backup_restore.py
   - test/integration/test_previous_release_data_upgrade.py
 - id: agent-runtime
   title: Canvas, agent session and Go API integration
@@ -553,7 +592,9 @@ modules:
   runtime_profiles:
   - python-api-worker
   - go-native
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
   - agent/canvas.py
   - api/apps/restful_apis/agent_api.py
@@ -583,6 +624,8 @@ modules:
   - test/testcases/restful_api/test_connector_routes_unit.py
   - test/unit_test/common/test_ssrf_guard.py
   - test/unit_test/data_source/test_html_utils.py
+  - test/playwright/e2e/test_live_document_roundtrip.py
+  - test/playwright/e2e/test_dataset_upload_parse.py
   public_surfaces:
   - common/data_source/__init__.py
   - rag/svr/sync_data_source.py
@@ -596,7 +639,9 @@ modules:
   - persistence
   runtime_profiles:
   - python-api-worker
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
   - api/apps/restful_apis/connector_api.py
   - api/db/services/connector_service.py
@@ -630,6 +675,9 @@ modules:
   - test/testcases/restful_api/test_search_datasets_consistency.py
   - test/playwright/e2e/test_next_apps_chat.py
   - test/playwright/e2e/test_next_apps_search.py
+  - test/playwright/e2e/test_live_document_roundtrip.py
+  - test/playwright/e2e/test_dataset_upload_parse.py
+  - test/testcases/restful_api/test_user_tenant_routes_unit.py
   public_surfaces:
   - api/apps/restful_apis/chat_channel_api.py
   - api/apps/restful_apis/chat_api.py
@@ -643,12 +691,14 @@ modules:
   runtime_profiles:
   - python-api-worker
   - web
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
-  - api/apps/restful_apis/chat_channel_api.py
-  - api/apps/restful_apis/document_api.py
   - api/apps/restful_apis/bot_api.py
   - api/apps/restful_apis/chat_api.py
+  - api/apps/restful_apis/chat_channel_api.py
+  - api/apps/restful_apis/document_api.py
   - api/apps/restful_apis/search_api.py
   - api/apps/services/agent_file_service.py
   - api/apps/services/dataset_api_service.py
@@ -688,7 +738,9 @@ modules:
   runtime_profiles:
   - linux-postgres-release
   - local-docker
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
   - api/ragflow_server.py
   - cmd/ragflow_server.go
@@ -739,6 +791,7 @@ modules:
   - web/src/components/diagram-code-block/index.test.tsx
   - web/src/components/highlight-markdown/__tests__/index.test.tsx
   - web/src/layouts/components/global-navbar.test.tsx
+  - web/src/pages/home/index.test.tsx
   - web/src/pages/agent/utils/tests/dsl-bridge.test.ts
   public_surfaces:
   - web/src/routes.tsx
@@ -752,8 +805,11 @@ modules:
   - openmetadata
   runtime_profiles:
   - web
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
+  - docs/user-guide-ru/index.md
   - web/.env
   - web/index.html
   - web/jest-esbuild-transformer.cjs
@@ -762,6 +818,14 @@ modules:
   - web/package-lock.json
   - web/package.json
   - web/pnpm-lock.yaml
+  - web/public/app-icon.png
+  - web/public/user-guide/guide.css
+  - web/public/user-guide/index.html
+  - web/public/user-guide/screenshots/document-review.png
+  - web/public/user-guide/screenshots/documents-overview.png
+  - web/public/user-guide/screenshots/eva-title-match.png
+  - web/public/user-guide/screenshots/llm-setting.png
+  - web/public/user-guide/screenshots/profile.png
   - web/src/components/api-service/chat-overview-modal/backend-service-api.tsx
   - web/src/components/diagram-code-block/index.test.tsx
   - web/src/components/diagram-code-block/index.tsx
@@ -769,6 +833,7 @@ modules:
   - web/src/components/document-preview/pdf-preview.tsx
   - web/src/components/dynamic-form.tsx
   - web/src/components/edit-tag/index.tsx
+  - web/src/components/embed-container.tsx
   - web/src/components/embed-dialog/index.tsx
   - web/src/components/file-upload.tsx
   - web/src/components/floating-chat-widget-markdown.tsx
@@ -792,8 +857,10 @@ modules:
   - web/src/components/list-filter-bar/interface.ts
   - web/src/components/markdown-content/image-carousel.tsx
   - web/src/components/markdown-content/index.tsx
+  - web/src/components/message-item/index.tsx
   - web/src/components/message-input/next.tsx
   - web/src/components/next-markdown-content/index.tsx
+  - web/src/components/next-message-item/index.tsx
   - web/src/components/next-message-item/reference-document-list.tsx
   - web/src/components/originui/password-input.tsx
   - web/src/components/originui/timeline.tsx
@@ -804,6 +871,7 @@ modules:
   - web/src/conf.json
   - web/src/constants/agent.tsx
   - web/src/constants/navigation.ts
+  - web/src/constants/user-guide.ts
   - web/src/hooks/__tests__/logic-hooks-use-scroll-to-bottom.test.tsx
   - web/src/hooks/logic-hooks.ts
   - web/src/hooks/logic-hooks/use-row-selection.ts
@@ -815,7 +883,9 @@ modules:
   - web/src/interfaces/database/dataset.ts
   - web/src/layouts/components/global-navbar.test.tsx
   - web/src/layouts/components/global-navbar.tsx
+  - web/src/layouts/components/header-guide-link.test.tsx
   - web/src/layouts/components/header.tsx
+  - web/src/layouts/components/mobile-menu-footer.tsx
   - web/src/locales/ar.ts
   - web/src/locales/bg.ts
   - web/src/locales/config.ts
@@ -967,6 +1037,11 @@ modules:
   - test/unit_test/tools/quality/test_capture_inventory.py
   - test/unit_test/tools/hooks/test_check_files.py
   - test/REGRESSION.md
+  - test/unit_test/playwright/test_page_error_gate.py
+  - test/unit_test/deployment/test_disposable_live_runner.py
+  - test/integration/live_ragflow/README.md
+  - test/unit_test/playwright/test_browser_server.py
+  - test/unit_test/tools/quality/test_inspect_python.py
   public_surfaces:
   - AGENTS.md
   - tools/quality/capture_inventory.py
@@ -975,26 +1050,49 @@ modules:
   integration_dependencies: []
   runtime_profiles:
   - development-ci
-  test_status: Located, not executed in T0; T1 establishes behavior baseline
+  test_status: C results and separate scoped post-C test-harness replays are recorded
+    in docs/develop/t1-regression-results.json; feature-specific gaps remain, not
+    full T1 or release acceptance
   paths:
+  - .dockerignore
   - .github/actionlint.yaml
   - .github/copilot-instructions.md
   - .github/pull_request_template.md
   - .github/workflows/browser-regression.yml
+  - .github/workflows/release.yml
   - .github/workflows/sep-tests.yml
   - .github/workflows/tests.yml
   - .gitignore
   - AGENTS.md
+  - Dockerfile
+  - build.sh
   - docs/develop/architecture-and-code-quality-ru.md
   - docs/develop/architecture-checks-ru.md
   - docs/develop/architecture-transition-ru.md
   - docs/develop/continuous-code-simplification-ru.md
+  - docs/develop/process-speedup-status-ru.md
+  - docs/develop/process-speedup-task2-ru.md
   - docs/develop/t0-provenance-report-ru.md
+  - docs/develop/t1-regression-report-ru.md
+  - docs/develop/t1-regression-results.json
+  - docs/develop/t2-python-analysis-ru.md
+  - docs/develop/user-guide-structure-ru.css
+  - docs/develop/user-guide-structure-ru.html
+  - docs/develop/user-guide-structure-ru.md
   - docs/release_notes.md
   - internal/storage/minio_test.go
+  - lefthook.yml
   - pyproject.toml
+  - ragflow_deps/download_deps.py
+  - ragflow_deps/download_go_deps.py
+  - ragflow_deps/native-deps.json
+  - ragflow_deps/prepare_native.py
   - run_tests.py
   - test/REGRESSION.md
+  - test/integration/live_ragflow/README.md
+  - test/integration/live_ragflow/compose.yml
+  - test/integration/live_ragflow/runner.py
+  - test/integration/live_ragflow/seed_catalog.py
   - test/playwright/auth/test_login_success_optional.py
   - test/playwright/auth/test_register_success_optional.py
   - test/playwright/auth/test_register_then_login_flow.py
@@ -1005,6 +1103,7 @@ modules:
   - test/playwright/conftest.py
   - test/playwright/e2e/test_auth_boundaries_ui.py
   - test/playwright/e2e/test_dataset_upload_parse.py
+  - test/playwright/e2e/test_live_document_roundtrip.py
   - test/playwright/e2e/test_model_providers_zhipu_ai_defaults.py
   - test/playwright/e2e/test_next_apps_agent.py
   - test/playwright/e2e/test_next_apps_chat.py
@@ -1012,27 +1111,63 @@ modules:
   - test/playwright/e2e/test_upload_boundaries_ui.py
   - test/playwright/helpers/_auth_helpers.py
   - test/playwright/helpers/_next_apps_helpers.py
+  - test/playwright/helpers/datasets.py
   - test/playwright/helpers/flow_steps.py
+  - test/playwright/helpers/parsed_document.py
+  - test/playwright/mandatory-browser-cases.json
   - test/run_browser_regression.py
   - test/run_go_regression.sh
+  - test/testcases/configs.py
+  - test/testcases/conftest.py
   - test/testcases/restful_api/test_system.py
   - test/testcases/test_admin_api/conftest.py
   - test/testcases/test_web_api/test_user_app/test_user_app_unit.py
   - test/unit_test/api/apps/services/test_delete_datasets.py
   - test/unit_test/api/apps/services/test_search_consistency_assertions.py
+  - test/unit_test/data_source/test_rest_api_connector.py
+  - test/unit_test/deployment/test_disposable_live_runner.py
+  - test/unit_test/deployment/test_linux_pg_candidate_archive.py
+  - test/unit_test/deployment/test_linux_pg_offline_candidate.py
   - test/unit_test/deployment/test_linux_pg_upgrade_delivery.py
+  - test/unit_test/deployment/test_linux_pg_upgrade_recovery.py
+  - test/unit_test/deployment/test_offline_upgrade_source_identity.py
+  - test/unit_test/deployment/test_source_archive_native.py
+  - test/unit_test/deployment/test_upgrade_identity.py
+  - test/unit_test/playwright/test_browser_server.py
   - test/unit_test/playwright/test_live_prerequisites.py
+  - test/unit_test/playwright/test_page_error_gate.py
   - test/unit_test/playwright/test_result_assertions.py
   - test/unit_test/rag/conftest.py
+  - test/unit_test/test_live_model_profile.py
+  - test/unit_test/tools/hooks/jest_cache_probe.cjs
   - test/unit_test/tools/hooks/test_check_files.py
+  - test/unit_test/tools/hooks/test_process_preparation.py
+  - test/unit_test/tools/quality/test_browser_workflow.py
+  - test/unit_test/tools/quality/test_build_identity.py
+  - test/unit_test/tools/quality/test_candidate.py
   - test/unit_test/tools/quality/test_capture_inventory.py
+  - test/unit_test/tools/quality/test_docker_bundle.py
+  - test/unit_test/tools/quality/test_frontend_artifact.py
+  - test/unit_test/tools/quality/test_inspect_python.py
+  - test/unit_test/tools/quality/test_release_workflow.py
+  - test/unit_test/tools/quality/test_verify.py
   - tools/hooks/check_files.py
+  - tools/hooks/prepare_web.py
+  - tools/hooks/web_check.py
+  - tools/quality/browser_inventory.py
+  - tools/quality/candidate.py
   - tools/quality/capture_inventory.py
+  - tools/quality/checks.yaml
   - tools/quality/core-changes.yaml
+  - tools/quality/docker_bundle.py
   - tools/quality/file-inventory.json
+  - tools/quality/frontend_artifact.py
   - tools/quality/ignored-artifacts.json
+  - tools/quality/inspect_python.py
   - tools/quality/module-map.yaml
   - tools/quality/preserved-features.yaml
   - tools/quality/upstream-base.json
   - tools/quality/upstream-evidence.json
+  - tools/quality/verify.py
+  - tools/quality/write_build_identity.py
   - uv.lock

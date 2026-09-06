@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from flask import Flask
 from flask_login import LoginManager, UserMixin
 
@@ -54,9 +55,25 @@ def test_access_group_crud_routes(monkeypatch):
     assert client.delete("/api/v1/admin/access-groups/g1", headers=headers).json["data"] is True
 
 
-def test_access_group_routes_require_admin_login(monkeypatch):
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("GET", "/api/v1/admin/access-groups"),
+        ("GET", "/api/v1/admin/access-groups/options"),
+        ("POST", "/api/v1/admin/access-groups"),
+        ("PUT", "/api/v1/admin/access-groups/g1"),
+        ("DELETE", "/api/v1/admin/access-groups/g1"),
+    ],
+)
+def test_access_group_routes_require_admin_login(monkeypatch, method, path):
     app = _application(monkeypatch)
+
+    def forbidden_service_call(*_args, **_kwargs):
+        pytest.fail("Unauthorized request reached access-group service")
+
+    for name in ("list_groups", "options", "create", "update", "delete"):
+        monkeypatch.setattr(routes.AccessGroupMgr, name, forbidden_service_call)
     client = app.test_client()
-    assert client.get("/api/v1/admin/access-groups").status_code == 401
+    assert client.open(path, method=method, json={"name": "Unauthorized"}).status_code == 401
     monkeypatch.setattr(auth.UserService, "filter_by_id", lambda _id: SimpleNamespace(is_superuser=False, is_active=ActiveEnum.ACTIVE.value))
-    assert client.get("/api/v1/admin/access-groups", headers={"Authorization": "test"}).status_code == 403
+    assert client.open(path, method=method, json={"name": "Unauthorized"}, headers={"Authorization": "test"}).status_code == 403

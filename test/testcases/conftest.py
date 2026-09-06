@@ -15,8 +15,10 @@
 #
 
 import importlib
+import os
 import sys
 import types
+from pathlib import Path
 
 
 def _make_stub_getattr(module_name):
@@ -93,7 +95,7 @@ _install_scholarly_stub()
 
 import pytest
 import requests
-from configs import EMAIL, HOST_ADDRESS, PASSWORD, VERSION, ZHIPU_AI_API_KEY, SILICONFLOW_API_KEY
+from configs import EMAIL, HOST_ADDRESS, PASSWORD, VERSION
 
 MARKER_EXPRESSIONS = {
     "p1": "p1",
@@ -101,8 +103,23 @@ MARKER_EXPRESSIONS = {
     "p3": "p1 or p2 or p3",
 }
 
+# Reviewed provider-free API contracts. All other existing live tests retain
+# the cloud prerequisite unless explicitly classified with local_api.
+_LOCAL_API_MODULES = {
+    "restful_api/test_system.py",
+    "restful_api/test_router_contracts.py",
+    "test_web_api/test_system_app/test_system_basic.py",
+}
+_CLOUD_CREDENTIAL_NAMES = ("ZHIPU_AI_API_KEY", "SILICONFLOW_API_KEY")
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--model-profile",
+        choices=["cloud", "local"],
+        default="cloud",
+        help="cloud: existing provider-backed suite; local: reviewed provider-free API tests only (disposable stack required)",
+    )
     parser.addoption(
         "--level",
         action="store",
@@ -121,10 +138,53 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "local_api: reviewed API test that needs no cloud model setup")
+    config.addinivalue_line("markers", "cloud_models: test requiring configured cloud model providers")
     level = config.getoption("--level")
     config.option.markexpr = MARKER_EXPRESSIONS[level]
     if config.option.verbose > 0:
         print(f"\n[CONFIG] Active test level: {level}")
+
+
+def _require_cloud_credentials():
+    missing = [name for name in _CLOUD_CREDENTIAL_NAMES if not os.getenv(name, "").strip()]
+    if missing:
+        pytest.fail("Missing cloud model prerequisites: " + ", ".join(missing), pytrace=False)
+
+
+def _is_local_api(item):
+    if item.get_closest_marker("cloud_models") or "cloud_model_credentials" in item.fixturenames or "set_tenant_info" in item.fixturenames:
+        return False
+    if item.get_closest_marker("local_api"):
+        return True
+    relative = Path(item.path).resolve().relative_to(Path(__file__).resolve().parent).as_posix()
+    return relative in _LOCAL_API_MODULES
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):
+    # Check before fixture setup, including auth/session-scoped fixtures which
+    # can register users or create tokens. Missing prerequisites are errors,
+    # never skips, and --collect-only does not require a provider account.
+    if item.config.getoption("--model-profile") == "local":
+        if not _is_local_api(item):
+            pytest.fail("Test requires cloud models or has not been reviewed for --model-profile=local", pytrace=False)
+    else:
+        _require_cloud_credentials()
+
+
+@pytest.fixture(scope="session")
+def cloud_model_credentials(request):
+    if request.config.getoption("--model-profile") != "cloud":
+        pytest.fail("Cloud model fixture requires --model-profile=cloud", pytrace=False)
+    _require_cloud_credentials()
+    return {name: os.environ[name] for name in _CLOUD_CREDENTIAL_NAMES}
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _model_environment(request):
+    if request.config.getoption("--model-profile") == "cloud":
+        request.getfixturevalue("set_tenant_info")
 
 
 def register():
@@ -186,7 +246,7 @@ def get_added_models(auth, factory_name):
     return False
 
 
-def add_model_instance(auth):
+def add_model_instance(auth, credentials):
     add_provider_api = HOST_ADDRESS + "/api/v1/providers"
     authorization = {"Authorization": auth}
 
@@ -197,8 +257,8 @@ def add_model_instance(auth):
     provider_already_existed = set()
 
     providers = [
-        ("ZHIPU-AI", ZHIPU_AI_API_KEY),
-        ("SILICONFLOW", SILICONFLOW_API_KEY),
+        ("ZHIPU-AI", credentials["ZHIPU_AI_API_KEY"]),
+        ("SILICONFLOW", credentials["SILICONFLOW_API_KEY"]),
     ]
 
     for provider_name, api_key in providers:
@@ -256,11 +316,13 @@ def add_model_instance(auth):
             pytest.exit(f"Critical error in check added model: {provider_name} add model failed")
 
 
-@pytest.fixture(scope="session", autouse=True)
-def set_tenant_info(auth):
+@pytest.fixture(scope="session")
+def set_tenant_info(request):
+    credentials = request.getfixturevalue("cloud_model_credentials")
+    auth = request.getfixturevalue("auth")
     if not get_added_models(auth, "ZHIPU-AI") or not get_added_models(auth, "SILICONFLOW"):
         try:
-            add_model_instance(auth)
+            add_model_instance(auth, credentials)
         except Exception as e:
             pytest.exit(f"Error in set_tenant_info: {str(e)}")
     url = HOST_ADDRESS + "/api/v1/models/default"

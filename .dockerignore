@@ -15,6 +15,7 @@ __pycache__/
 # ── Frontend dependencies and build outputs ─────────────────────────────────
 web/node_modules/
 web/dist/
+web/coverage/
 
 # ── Runtime logs ────────────────────────────────────────────────────────────
 logs/
@@ -53,6 +54,14 @@ htmlcov/
 .coverage
 .hypothesis/
 .nox/
+# Git metadata is supplied through explicit Docker build args, never copied.
+.git
+# Generated release and QA payloads, not Dockerfile inputs.
+output/
+deployment/linux-pg/release-*/
+deployment/linux-pg/*.tar.gz
+deployment/linux-pg/*.tar.gz.sha256
+test/playwright/artifacts/
 
 # ── Docker env (contains secrets) ───────────────────────────────────────────
 docker/.env

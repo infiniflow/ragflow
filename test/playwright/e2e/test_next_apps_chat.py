@@ -2,6 +2,9 @@ import pytest
 from pathlib import Path
 from tempfile import gettempdir
 from time import monotonic, time
+from urllib.parse import urlparse
+
+from test.playwright.helpers.parsed_document import api_data
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
@@ -11,6 +14,7 @@ from test.playwright.helpers._auth_helpers import ensure_authed
 from test.playwright.helpers.flow_steps import require
 from test.playwright.helpers._next_apps_helpers import (
     RESULT_TIMEOUT_MS,
+    _assert_successful_chat_stream,
     _fill_and_save_create_modal,
     _goto_home,
     _nav_click,
@@ -79,7 +83,7 @@ def step_05_select_dataset(ctx: FlowContext, step, snap):
     require(ctx.state, "chat_created")
     page = ctx.page
     with step("select dataset"):
-        _select_first_dataset_and_save(page, timeout_ms=RESULT_TIMEOUT_MS)
+        _select_first_dataset_and_save(page, timeout_ms=RESULT_TIMEOUT_MS, dataset_id=ctx.state["dataset"]["kb_id"], dataset_name=ctx.state["dataset"]["kb_name"])
     ctx.state["chat_dataset_selected"] = True
     snap("chat_dataset_saved")
 
@@ -116,6 +120,7 @@ def test_chat_create_select_dataset_and_receive_answer_flow(
     auth_click,
     seeded_user_credentials,
 ):
+    flow_state["dataset"] = ensure_chat_ready
     ctx = FlowContext(
         page=flow_page,
         state=flow_state,
@@ -184,21 +189,6 @@ def _mm_open_settings_panel(page):
     return settings_root
 
 
-def _mm_click_model_option_by_testid(page, option_testid: str) -> None:
-    deadline = monotonic() + 8
-    while monotonic() < deadline:
-        option = page.locator(f"[data-testid='{option_testid}']").first
-        if option.count() == 0:
-            page.wait_for_timeout(120)
-            continue
-        try:
-            option.click(timeout=2000, force=True)
-            return
-        except Exception:
-            page.wait_for_timeout(120)
-    raise AssertionError(f"failed to click model option: {option_testid}")
-
-
 def _mm_dismiss_open_popovers(page) -> None:
     popovers = page.locator("[data-radix-popper-content-wrapper] [role='dialog']")
     for _ in range(4):
@@ -206,62 +196,6 @@ def _mm_dismiss_open_popovers(page) -> None:
             return
         page.keyboard.press("Escape")
         page.wait_for_timeout(120)
-
-
-def _mm_open_model_options(page, card, option_prefix: str):
-    options = page.locator(f"[data-testid^='{option_prefix}']")
-    deadline = monotonic() + 12
-    while monotonic() < deadline:
-        card.get_by_test_id("chat-detail-multimodel-card-model-select").click()
-        try:
-            expect(options.first).to_be_visible(timeout=1200)
-            return options
-        except AssertionError:
-            pass
-
-        popover_root = page.locator("[data-radix-popper-content-wrapper]").last
-        if popover_root.count() > 0:
-            popover_model_select = popover_root.locator("button[role='combobox']").first
-            if popover_model_select.count() > 0:
-                try:
-                    popover_model_select.click(timeout=1200)
-                except Exception:
-                    pass
-                try:
-                    expect(options.first).to_be_visible(timeout=1200)
-                    return options
-                except AssertionError:
-                    pass
-        page.wait_for_timeout(120)
-
-    raise AssertionError(f"no model options rendered for prefix={option_prefix!r} in multi-model selector")
-
-
-def _mm_click_generic_model_option(page, card_index: int, option_prefix: str) -> str:
-    popover_root = page.locator("[data-radix-popper-content-wrapper]").last
-    options = popover_root.locator("[role='option']")
-    expect(options.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-
-    option_count = options.count()
-    choose_index = 1 if option_count > 1 and card_index == 1 else 0
-    chosen = options.nth(choose_index)
-    chosen.scroll_into_view_if_needed()
-
-    for _ in range(3):
-        try:
-            chosen.click(timeout=2000, force=True)
-            break
-        except Exception:
-            page.wait_for_timeout(120)
-    else:
-        raise AssertionError("failed to click fallback generic model option")
-
-    chosen_testid = chosen.get_attribute("data-testid") or ""
-    if chosen_testid:
-        return chosen_testid
-
-    chosen_value = chosen.get_attribute("data-value") or chosen.get_attribute("value") or f"idx-{choose_index}"
-    return f"{option_prefix}{chosen_value}"
 
 
 def mm_step_01_ensure_authed_and_open_chat_list(ctx: FlowContext, step, snap):
@@ -307,7 +241,7 @@ def mm_step_03_select_dataset(ctx: FlowContext, step, snap):
     require(ctx.state, "mm_chat_detail_open")
     page = ctx.page
     with step("select dataset deterministically"):
-        _select_first_dataset_and_save(page, timeout_ms=RESULT_TIMEOUT_MS)
+        _select_first_dataset_and_save(page, timeout_ms=RESULT_TIMEOUT_MS, dataset_id=ctx.state["dataset"]["kb_id"], dataset_name=ctx.state["dataset"]["kb_name"])
         expect(page.get_by_test_id("chat-textarea")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     ctx.state["mm_dataset_selected"] = True
     snap("chat_mm_dataset_ready")
@@ -472,6 +406,7 @@ def mm_step_07_settings_open_close_cancel_save(ctx: FlowContext, step, snap):
         expect(settings_root).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
         settings_root = _mm_open_settings_panel(page)
+        settings_root.get_by_role("button", name="Edit Name", exact=True).click()
         name_input = settings_root.locator("input[name='name']").first
         expect(name_input).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         current_name = name_input.input_value()
@@ -483,24 +418,25 @@ def mm_step_07_settings_open_close_cancel_save(ctx: FlowContext, step, snap):
         expect(settings_root).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
         settings_root = _mm_open_settings_panel(page)
+        settings_root.get_by_role("button", name="Edit Name", exact=True).click()
+        current_name = name_input.input_value()
+        name_input.fill(f"{current_name}-save")
         dataset_combo = settings_root.get_by_test_id("chat-datasets-combobox")
         expect(dataset_combo).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         dataset_combo.click()
         options_root = page.locator("[data-testid='datasets-options']").first
         expect(options_root).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        option = options_root.locator("[data-testid^='datasets-option-']").first
-        if option.count() == 0:
-            option = options_root.locator("[role='option']").first
+        option = options_root.get_by_role("option").filter(has=page.get_by_text(ctx.state["dataset"]["kb_name"], exact=True))
         expect(option).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        option.click()
+        if option.locator("div.bg-primary").count() == 0:
+            option.click()
+        page.keyboard.press("Escape")
 
-        current_name = name_input.input_value()
-        name_input.fill(f"{current_name}-save")
         with page.expect_request(_mm_settings_save_request, timeout=RESULT_TIMEOUT_MS) as req_info:
             page.get_by_test_id("chat-settings-save").click()
         payload = _mm_payload_from_request(req_info.value)
         assert payload.get("name"), "missing name in /api/v1/chats payload"
-        assert "kb_ids" in payload, "missing kb_ids in /api/v1/chats payload"
+        assert ctx.state["dataset"]["kb_id"] in payload.get("dataset_ids", []), "missing selected dataset in /api/v1/chats payload"
         assert payload.get("llm_id"), "missing llm_id in /api/v1/chats payload"
         assert "llm_setting" in payload, "missing llm_setting in /api/v1/chats payload"
         assert "prompt_config" in payload, "missing prompt_config in /api/v1/chats payload"
@@ -524,7 +460,6 @@ def mm_step_08_enter_multimodel_view(ctx: FlowContext, step, snap):
         expect(cards).to_have_count(1, timeout=RESULT_TIMEOUT_MS)
         _mm_dismiss_open_popovers(page)
 
-    ctx.state["mm_option_prefix"] = "chat-detail-llm-option-"
     ctx.state["mm_multimodel_view_ready"] = True
     snap("chat_mm_multimodel_view_ready")
 
@@ -546,34 +481,32 @@ def mm_step_09_add_second_multimodel_card(ctx: FlowContext, step, snap):
 
 
 def mm_step_10_select_models_for_two_cards(ctx: FlowContext, step, snap):
-    require(ctx.state, "mm_multimodel_two_cards_ready", "mm_option_prefix")
+    require(ctx.state, "mm_multimodel_two_cards_ready")
     page = ctx.page
-    option_prefix = ctx.state["mm_option_prefix"]
-    with step("select models for two multi-model cards"):
-        mm_grid = page.get_by_test_id("chat-detail-multimodel-grid")
-        expect(mm_grid).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        selected_option_testids: list[str] = []
-
-        for card_index in (0, 1):
-            card = mm_grid.locator(f"[data-testid='chat-detail-multimodel-card'][data-card-index='{card_index}']").first
-            expect(card).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-            options = _mm_open_model_options(page, card, option_prefix)
-            option_testids = [tid for tid in options.evaluate_all("els => els.map(el => el.getAttribute('data-testid') || '')") if tid]
-            option_testids = list(dict.fromkeys(option_testids))
-
-            if option_testids:
-                if len(option_testids) > 1 and card_index == 1:
-                    chosen = option_testids[1]
-                else:
-                    chosen = option_testids[0]
-                selected_option_testids.append(chosen)
-                _mm_click_model_option_by_testid(page, chosen)
-            else:
-                chosen = _mm_click_generic_model_option(page, card_index, option_prefix)
-                selected_option_testids.append(chosen)
+    token = page.evaluate("localStorage.getItem('Authorization')")
+    available = api_data(page.request.get(ctx.base_url + "/api/v1/models", headers={"Authorization": token}))
+    distinct = {}
+    for model in available:
+        if "chat" in model["model_type"]:
+            distinct.setdefault(model["name"], model)
+    assert len(distinct) >= 2, "Two distinct configured chat models are required"
+    models = list(distinct.values())[:2]
+    selected = []
+    with step("select two distinct models for multi-model cards"):
+        for index, model in enumerate(models):
+            card = page.locator(f"[data-testid='chat-detail-multimodel-card'][data-card-index='{index}']")
+            trigger = card.get_by_test_id("chat-detail-multimodel-card-model-select")
+            trigger.click()
+            settings = page.get_by_role("dialog").last
+            expect(settings).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+            settings.locator("button[aria-haspopup='dialog']").first.click()
+            options = page.get_by_role("dialog").last
+            options.get_by_text(model["name"], exact=True).click()
             _mm_dismiss_open_popovers(page)
-
-    ctx.state["mm_selected_option_testids"] = selected_option_testids
+            expect(trigger).to_contain_text(model["name"])
+            selected.append(f"{model['name']}@{model['instance_name']}@{model['provider_name']}")
+    assert len(set(selected)) == 2
+    ctx.state["mm_selected_models"] = selected
     ctx.state["mm_models_selected"] = True
     snap("chat_mm_models_selected")
 
@@ -599,15 +532,29 @@ def mm_step_11_apply_multimodel_config(ctx: FlowContext, step, snap):
 
 
 def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
-    require(ctx.state, "mm_cards_configured", "mm_selected_option_testids", "mm_option_prefix")
+    require(ctx.state, "mm_cards_configured", "mm_selected_models")
     page = ctx.page
-    selected_option_testids = ctx.state["mm_selected_option_testids"]
-    option_prefix = ctx.state["mm_option_prefix"]
+    selected_model_ids = ctx.state["mm_selected_models"]
+    completion_responses = []
     completion_payloads: list[dict] = []
+    finished_requests = []
+    failed_requests = []
 
     def _on_completion_request(req):
-        if req.method.upper() in MM_REQUEST_METHOD_WHITELIST and "/api/v1/chats/" in req.url and "/sessions/" in req.url and req.url.rstrip("/").endswith("/completions"):
+        if req.method == "POST" and urlparse(req.url).path == "/api/v1/chat/completions":
             completion_payloads.append(_mm_payload_from_request(req))
+
+    def _on_completion_response(response):
+        if response.request.method == "POST" and urlparse(response.url).path == "/api/v1/chat/completions":
+            completion_responses.append(response)
+
+    def _on_completion_finished(request):
+        if request.method == "POST" and urlparse(request.url).path == "/api/v1/chat/completions":
+            finished_requests.append(request)
+
+    def _on_completion_failed(request):
+        if request.method == "POST" and urlparse(request.url).path == "/api/v1/chat/completions":
+            failed_requests.append(request.failure)
 
     with step("composer interactions and single send in multi-model mode"):
         attach_path = Path(gettempdir()) / f"chat-detail-attach-{int(time() * 1000)}.txt"
@@ -629,6 +576,8 @@ def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
             thinking_toggle.click()
             thinking_class_after = thinking_toggle.get_attribute("class") or ""
             assert thinking_class_after != thinking_class_before
+            thinking_toggle.click()
+            expect(thinking_toggle).to_have_class(thinking_class_before)
 
             internet_toggle = page.get_by_test_id("chat-detail-internet-toggle")
             if internet_toggle.count() > 0:
@@ -637,6 +586,8 @@ def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
                 internet_toggle.click()
                 internet_class_after = internet_toggle.get_attribute("class") or ""
                 assert internet_class_after != internet_class_before
+                internet_toggle.click()
+                expect(internet_toggle).to_have_class(internet_class_before)
 
             audio_toggle = page.get_by_test_id("chat-detail-audio-toggle")
             if audio_toggle.count() > 0:
@@ -646,6 +597,9 @@ def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
                 expect(audio_toggle).to_be_focused(timeout=RESULT_TIMEOUT_MS)
 
             page.on("request", _on_completion_request)
+            page.on("response", _on_completion_response)
+            page.on("requestfinished", _on_completion_finished)
+            page.on("requestfailed", _on_completion_failed)
             prompt = f"multi model send {int(time())}"
             textarea = page.get_by_test_id("chat-textarea")
             textarea.fill(prompt)
@@ -653,44 +607,30 @@ def mm_step_12_composer_and_single_send(ctx: FlowContext, step, snap):
             expect(send_btn).to_be_enabled(timeout=RESULT_TIMEOUT_MS)
             send_btn.click()
 
-            stream_status = page.get_by_test_id("chat-stream-status")
-            try:
-                expect(stream_status).to_be_visible(timeout=5000)
-            except AssertionError:
-                pass
-            try:
-                expect(stream_status.first).to_have_attribute("data-status", "idle", timeout=90000)
-            except AssertionError:
-                expect(stream_status).to_have_count(0, timeout=90000)
-
-            deadline = monotonic() + 8
-            while not completion_payloads and monotonic() < deadline:
+            deadline = monotonic() + 30
+            while len(completion_responses) < 2 and monotonic() < deadline:
                 page.wait_for_timeout(100)
+            assert len(completion_responses) == 2, "Both models must return a completion response"
+            deadline = monotonic() + 90
+            while len(finished_requests) < 2 and not failed_requests and monotonic() < deadline:
+                page.wait_for_timeout(100)
+            assert not failed_requests, f"Model completion request failed: {failed_requests}"
+            assert len(finished_requests) == 2, "Both model streams must finish within 90 seconds before reading their bodies"
+            for response in completion_responses:
+                _assert_successful_chat_stream(response)
+            expect(page.locator("[data-testid='chat-stream-status']:not([data-status='idle'])")).to_have_count(0, timeout=RESULT_TIMEOUT_MS)
         finally:
             page.remove_listener("request", _on_completion_request)
+            page.remove_listener("response", _on_completion_response)
+            page.remove_listener("requestfinished", _on_completion_finished)
+            page.remove_listener("requestfailed", _on_completion_failed)
             attach_path.unlink(missing_ok=True)
 
         assert completion_payloads, "no chat session completion request was captured"
         payloads_with_messages = [p for p in completion_payloads if p.get("messages")]
         assert payloads_with_messages, "completion requests did not include messages"
 
-        selected_model_ids = [tid.replace(option_prefix, "") for tid in selected_option_testids if tid.startswith(option_prefix)]
-        has_model_payload = any(
-            (p.get("llm_id") in selected_model_ids)
-            or ("llm_id" in p)
-            or any(
-                k in p
-                for k in (
-                    "temperature",
-                    "top_p",
-                    "presence_penalty",
-                    "frequency_penalty",
-                    "max_tokens",
-                )
-            )
-            for p in payloads_with_messages
-        )
-        assert has_model_payload, "no completion payload carried model-specific fields"
+        assert set(selected_model_ids) <= {payload.get("llm_id") for payload in payloads_with_messages}, "Both selected models must receive the prompt"
 
     ctx.state["mm_single_send_done"] = True
     snap("chat_mm_single_send_done")
@@ -749,6 +689,7 @@ def test_chat_detail_multi_model_mode_coverage_flow(
     auth_click,
     seeded_user_credentials,
 ):
+    flow_state["dataset"] = ensure_chat_ready
     ctx = FlowContext(
         page=flow_page,
         state=flow_state,

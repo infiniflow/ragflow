@@ -3,6 +3,7 @@ permissions:
   contents: read
 
 on:
+  workflow_call:
   push:
     branches:
       - 'main'
@@ -25,7 +26,7 @@ on:
 
 # https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -125,6 +126,7 @@ jobs:
             # LEFTHOOK_CHECK_ONLY=1 makes the pre-commit jobs verify without
             # applying --fix or `git add`, so CI only checks and reports
             # failures instead of rewriting the working tree.
+            python3 tools/hooks/prepare_web.py --files-from "$changed_files"
             LEFTHOOK_CHECK_ONLY=1 lefthook run pre-commit --files-from-stdin --no-auto-install < "$changed_files"
           fi
 
@@ -224,7 +226,9 @@ jobs:
         run: |
           set -euo pipefail
           sudo docker pull ubuntu:24.04
-          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+          build_version=$(git describe --tags --match='v*' --first-parent --always)
+          source_revision=$(git rev-parse HEAD)
+          sudo DOCKER_BUILDKIT=1 docker build --build-arg "RAGFLOW_BUILD_VERSION=${build_version}" --build-arg "RAGFLOW_SOURCE_REVISION=${source_revision}" --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
 
       - name: Prepare Python test environment
         run: |
@@ -665,7 +669,9 @@ jobs:
         run: |
           set -euo pipefail
           sudo docker pull ubuntu:24.04
-          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+          build_version=$(git describe --tags --match='v*' --first-parent --always)
+          source_revision=$(git rev-parse HEAD)
+          sudo DOCKER_BUILDKIT=1 docker build --build-arg "RAGFLOW_BUILD_VERSION=${build_version}" --build-arg "RAGFLOW_SOURCE_REVISION=${source_revision}" --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
 
       - name: Prepare Python test environment
         run: |

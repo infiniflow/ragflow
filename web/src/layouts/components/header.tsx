@@ -1,4 +1,3 @@
-import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -7,6 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { USER_GUIDE_URL } from '@/constants/user-guide';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
 import {
   useFetchUserInfo,
@@ -15,12 +15,9 @@ import {
 import { cn } from '@/lib/utils';
 import { TenantRole } from '@/pages/user-setting/constants';
 import { Routes } from '@/routes';
-import {
-  LucideChevronDown,
-  LucideCircleHelp,
-  LucideLanguages,
-} from 'lucide-react';
+import { LucideChevronDown, LucideLanguages } from 'lucide-react';
 import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router';
 import { BellButton } from './bell-button';
 import { DesktopNavbar, MobileNavbar } from './global-navbar';
@@ -36,6 +33,7 @@ export function Header({
 }: React.HTMLAttributes<HTMLElement>) {
   const { pathname } = useLocation();
   const changeLanguage = useChangeLanguage();
+  const { t } = useTranslation();
 
   const {
     data: { language = 'en', avatar, nickname },
@@ -81,7 +79,7 @@ export function Header({
               className="flex size-10 shrink-0 items-center justify-center"
             >
               <img
-                src={'/logo.svg'}
+                src={'/app-icon.png'}
                 alt="Логотип Агент Раггер"
                 className="size-10"
               />
@@ -104,28 +102,6 @@ export function Header({
           )}
           data-testid="auth-status"
         >
-          {!isCompact && (
-            <>
-              <a
-                className="inline-flex p-2 text-text-secondary hover:text-text-primary focus-visible:text-text-primary"
-                target="_blank"
-                href="https://discord.com/invite/NjYzJD3GM3"
-                rel="noreferrer noopener"
-              >
-                <IconFontFill name="a-DiscordIconSVGVectorIcon" />
-              </a>
-
-              <a
-                className="inline-flex p-2 text-text-secondary hover:text-text-primary focus-visible:text-text-primary"
-                target="_blank"
-                href="https://github.com/infiniflow/ragflow"
-                rel="noreferrer noopener"
-              >
-                <IconFontFill name="GitHub" />
-              </a>
-            </>
-          )}
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -163,13 +139,12 @@ export function Header({
               <Button
                 asLink
                 variant="ghost"
-                size="icon"
-                className="size-8"
-                to="https://ragflow.io/docs/dev/category/user-guides"
+                className="h-8 px-3"
+                to={USER_GUIDE_URL}
                 target="_blank"
                 rel="noreferrer noopener"
               >
-                <LucideCircleHelp className="size-[1em]" />
+                {t('header.instruction', { defaultValue: 'Инструкция' })}
               </Button>
 
               {hasNotification && <BellButton className="!size-8" />}
@@ -207,18 +182,12 @@ export function Header({
           ref={expandedRightMeasureRef}
           className="inline-flex shrink-0 items-center justify-end gap-4 text-text-badge"
         >
-          <a className="inline-flex p-2">
-            <IconFontFill name="a-DiscordIconSVGVectorIcon" />
-          </a>
-          <a className="inline-flex p-2">
-            <IconFontFill name="GitHub" />
-          </a>
           <Button variant="ghost" className="size-auto gap-1 px-4">
             {currentLanguage?.displayName}
             <LucideChevronDown className="size-[1em]" />
           </Button>
-          <Button variant="ghost" size="icon" className="size-8">
-            <LucideCircleHelp className="size-[1em]" />
+          <Button variant="ghost" className="h-8 px-3">
+            {t('header.instruction', { defaultValue: 'Инструкция' })}
           </Button>
           <ThemeButton className="!size-8" />
           {hasNotification && <BellButton className="!size-8" />}

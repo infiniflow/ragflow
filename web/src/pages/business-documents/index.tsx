@@ -219,7 +219,7 @@ function CreateBusinessDocumentPage() {
     createMutation.mutate({
       schema_version: '2',
       document_type: 'business_requirements',
-      title: title.trim(),
+      title,
       idea: idea.trim(),
       dataset_ids: [],
       ...(selectedEvaPageUrl ? { eva_page_url: selectedEvaPageUrl } : {}),

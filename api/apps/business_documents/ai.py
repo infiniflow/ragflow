@@ -65,6 +65,40 @@ def _active_change_input_event_ids(job_payload: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(event_ids))
 
 
+def _has_pinned_active_change_inputs(job_payload: dict[str, Any]) -> bool:
+    pinned = job_payload.get("active_change_input_event_ids")
+    return isinstance(pinned, list) and all(isinstance(event_id, str) for event_id in pinned)
+
+
+def _active_change_source_context(active_event_ids, source_sections, accepted_proposal_sources, question_sources, confirmed_comment_sources, no_change_comment_sources):
+    return (
+        {event_id: section_id for event_id, section_id in source_sections.items() if event_id in active_event_ids},
+        accepted_proposal_sources & active_event_ids,
+        question_sources & active_event_ids,
+        confirmed_comment_sources & active_event_ids,
+        no_change_comment_sources & active_event_ids,
+    )
+
+
+def _filter_change_plan_sources_to_active_inputs(output, entity_event_aliases, active_event_ids, *, enforce):
+    bound = deepcopy(output)
+    if not enforce:
+        return bound, False
+    changed = False
+    for operation in bound.get("operations", []):
+        if not isinstance(operation, dict) or not isinstance(operation.get("source_event_ids"), list):
+            continue
+        retained = []
+        for raw_event_id in operation["source_event_ids"]:
+            event_id = entity_event_aliases.get(raw_event_id, raw_event_id)
+            if event_id not in active_event_ids:
+                changed = True
+                continue
+            retained.append(raw_event_id)
+        operation["source_event_ids"] = retained
+    return bound, changed
+
+
 def _closed_review_question_context(job_payload: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Return compact answered-question constraints for review reassessment."""
 
@@ -169,7 +203,7 @@ class BusinessDocumentAI:
 
         descriptor = prompt_descriptor("GENERATE_EVA_CHANGE")
         if descriptor is None:
-            raise RuntimeError("EVA change prompt is unavailable")
+            raise RuntimeError("Шаблон запроса для подготовки доработки EVA недоступен")
         schema = contract_schema("eva_change_draft")
         system = prompt_text(descriptor["name"]).replace("`{{output_schema_json}}`", json.dumps(schema, ensure_ascii=False))
         input_payload = {
@@ -452,17 +486,17 @@ class BusinessDocumentAI:
             answer = question.get("answer")
             if isinstance(answer, dict) and isinstance(answer.get("source_event_id"), str):
                 event_id = answer["source_event_id"]
-                source_sections[event_id] = question["target_section_id"]
-                question_sources.add(event_id)
                 if isinstance(question.get("question_id"), str):
                     entity_event_aliases[question["question_id"]] = event_id
+                source_sections[event_id] = question["target_section_id"]
+                question_sources.add(event_id)
         for proposal in protocol.get("proposals", []):
             if isinstance(proposal, dict) and proposal.get("decision") == "ACCEPTED" and isinstance(proposal.get("target_section_id"), str) and isinstance(proposal.get("decision_event_id"), str):
                 event_id = proposal["decision_event_id"]
-                source_sections[event_id] = proposal["target_section_id"]
-                accepted_proposal_sources.add(event_id)
                 if isinstance(proposal.get("proposal_id"), str):
                     entity_event_aliases[proposal["proposal_id"]] = event_id
+                source_sections[event_id] = proposal["target_section_id"]
+                accepted_proposal_sources.add(event_id)
         for comment in protocol.get("comments", []):
             if not isinstance(comment, dict) or not isinstance(comment.get("source_event_id"), str):
                 continue
@@ -478,12 +512,26 @@ class BusinessDocumentAI:
             elif disposition_value == "NO_CHANGE":
                 no_change_comment_sources.add(event_id)
 
+        source_sections, accepted_proposal_sources, question_sources, confirmed_comment_sources, no_change_comment_sources = _active_change_source_context(
+            active_event_ids,
+            source_sections,
+            accepted_proposal_sources,
+            question_sources,
+            confirmed_comment_sources,
+            no_change_comment_sources,
+        )
+
         source_events = job.payload.get("source_events")
         eva_pull_sources = {
             event.get("event_id") for event in source_events or [] if isinstance(event, dict) and event.get("event_type") == "EvaDocumentPulled" and event.get("event_id") in active_event_ids
         }
 
-        bound = deepcopy(output)
+        bound, changed = _filter_change_plan_sources_to_active_inputs(
+            output,
+            entity_event_aliases,
+            active_event_ids,
+            enforce=_has_pinned_active_change_inputs(job.payload),
+        )
         acknowledgements = bound.get("acknowledged_no_change_event_ids")
         if not isinstance(acknowledgements, list):
             acknowledgements = []
@@ -493,7 +541,6 @@ class BusinessDocumentAI:
             if isinstance(operation, dict) and isinstance(operation.get("section_id"), str):
                 operations_by_section.setdefault(operation["section_id"], []).append(operation)
 
-        changed = False
         for operation in bound["operations"]:
             if not isinstance(operation, dict) or not isinstance(operation.get("source_event_ids"), list):
                 continue

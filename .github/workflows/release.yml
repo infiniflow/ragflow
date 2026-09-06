@@ -19,10 +19,21 @@ permissions:
 
 # https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: release-publication
+  cancel-in-progress: false
 
 jobs:
+  regression:
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+
+  separated_regression:
+    uses: ./.github/workflows/sep-tests.yml
+    secrets: inherit
+
+  browser_regression:
+    uses: ./.github/workflows/browser-regression.yml
+
   prepare:
     runs-on: [ "self-hosted", "ragflow-release" ]
     outputs:
@@ -37,6 +48,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}  # Use the secret as an environment variable
           fetch-depth: 0
           fetch-tags: true
@@ -68,22 +80,6 @@ jobs:
           echo "PRERELEASE=${PRERELEASE}" >> ${GITHUB_ENV}
           echo "release_tag=${RELEASE_TAG}" >> ${GITHUB_OUTPUT}
           echo "prerelease=${PRERELEASE}" >> ${GITHUB_OUTPUT}
-
-      - name: Move the existing mutable tag
-        # https://github.com/softprops/action-gh-release/issues/171
-        run: |
-          git fetch --tags
-          if [[ ${GITHUB_EVENT_NAME} == "schedule" ]]; then
-            # Determine if a given tag exists and matches a specific Git commit.
-            # actions/checkout@v6 fetch-tags doesn't work when triggered by schedule
-            if [ "$(git rev-parse -q --verify "refs/tags/${RELEASE_TAG}")" = "${GITHUB_SHA}" ]; then
-              echo "mutable tag ${RELEASE_TAG} exists and matches ${GITHUB_SHA}"
-            else
-              git tag -f ${RELEASE_TAG} ${GITHUB_SHA}
-              git push -f origin ${RELEASE_TAG}:refs/tags/${RELEASE_TAG}
-              echo "created/moved mutable tag ${RELEASE_TAG} to ${GITHUB_SHA}"
-            fi
-          fi
 
   build_cli:
     needs: prepare
@@ -148,6 +144,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           fetch-tags: true
@@ -484,6 +481,7 @@ jobs:
     needs:
       - prepare
       - build_cli
+      - release
     runs-on: [ "self-hosted", "ragflow-release" ]
 
     steps:
@@ -494,6 +492,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           fetch-tags: true
@@ -536,7 +535,10 @@ jobs:
   release:
     needs:
       - prepare
-      - publish_cli_assets
+      - build_cli
+      - regression
+      - separated_regression
+      - browser_regression
     runs-on: [ "self-hosted", "ragflow-release" ]
     env:
       RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
@@ -549,17 +551,38 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Build and push image
+      - name: Build release image
         run: |
-          sudo docker login --username infiniflow --password-stdin <<< ${{ secrets.DOCKERHUB_TOKEN }}
-          sudo docker build -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
-          sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
+          set -euo pipefail
+          build_version=$(git describe --tags --match='v*' --first-parent --always)
+          source_revision=$(git rev-parse HEAD)
+          sudo docker build --build-arg "RAGFLOW_BUILD_VERSION=${build_version}" --build-arg "RAGFLOW_SOURCE_REVISION=${source_revision}" -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
+
+      - name: Move the existing mutable tag
+        if: github.event_name == 'schedule'
+        run: |
+          set -euo pipefail
+          test "${RELEASE_TAG}" = nightly
+          git tag -f "${RELEASE_TAG}" "${GITHUB_SHA}"
+          git push -f origin "${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+
+      - name: Push release image
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          sudo docker login --username infiniflow --password-stdin <<< "${DOCKERHUB_TOKEN}"
           sudo docker push infiniflow/ragflow:${RELEASE_TAG}
-          sudo docker push infiniflow/ragflow:latest
+          if [[ "${PRERELEASE}" == "false" ]]; then
+            sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
+            sudo docker push infiniflow/ragflow:latest
+          fi
 
       - name: Build and push ragflow-sdk
         if: startsWith(github.ref, 'refs/tags/v')

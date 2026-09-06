@@ -98,3 +98,24 @@ def test_eva_scope_supports_ipv6_and_enforces_database_limit():
 
     with pytest.raises(ExternalCredentialError, match="EVA API URL is too long"):
         UserExternalCredentialService.normalize_http_scope("https://eva.example.com/" + "a" * 600)
+
+
+@pytest.mark.parametrize("other_user,other_scope", [("user-2", "https://eva.example.com"), ("user-1", "https://other-eva.example.com")])
+def test_eva_public_api_does_not_read_or_delete_other_credential(credential_database, other_user, other_scope):
+    UserExternalCredentialService.put_eva_wiki_token("user-1", "https://eva.example.com", "synthetic-token")
+    with pytest.raises(ExternalCredentialMissingError):
+        UserExternalCredentialService.get_eva_wiki_token(other_user, other_scope)
+    assert UserExternalCredentialService.delete_eva_wiki_token(other_user, other_scope) is False
+    assert UserExternalCredentialService.get_eva_wiki_token("user-1", "https://eva.example.com").secret == "synthetic-token"
+
+
+def test_eva_statuses_exclude_other_users_and_repeated_delete_is_safe(credential_database):
+    UserExternalCredentialService.put_eva_wiki_token("user-1", "https://eva.example.com", "synthetic-token-one")
+    UserExternalCredentialService.put_eva_wiki_token("user-2", "https://other-eva.example.com", "synthetic-token-two")
+    statuses = UserExternalCredentialService.list_eva_wiki_statuses("user-1")
+    assert set(statuses) == {"https://eva.example.com"}
+    assert set(statuses["https://eva.example.com"]) == {"configured", "scope", "credential_version", "update_time"}
+    assert UserExternalCredentialService.delete_eva_wiki_token("user-1", "https://eva.example.com") is True
+    assert UserExternalCredentialService.delete_eva_wiki_token("user-1", "https://eva.example.com") is False
+    assert UserExternalCredentialService.list_eva_wiki_statuses("user-1") == {}
+    assert UserExternalCredentialService.get_eva_wiki_token("user-2", "https://other-eva.example.com").secret == "synthetic-token-two"

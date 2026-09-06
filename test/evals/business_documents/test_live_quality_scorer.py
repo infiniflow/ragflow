@@ -40,17 +40,16 @@ Web -> Schedule: Проверить доступность
 Schedule --> Web: Результат проверки
 Web --> Клиент: Подтверждение или ошибка
 @enduml"""
-BPMN_SOURCE = """<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_1">
-  <process id="Process_Appointment" isExecutable="false">
-    <startEvent id="StartEvent_Request" />
-    <exclusiveGateway id="Gateway_Availability" />
-    <endEvent id="EndEvent_Confirmed" />
-    <endEvent id="EndEvent_Error" />
-    <sequenceFlow id="Flow_Start" sourceRef="StartEvent_Request" targetRef="Gateway_Availability" />
-    <sequenceFlow id="Flow_Available" name="Слот доступен" sourceRef="Gateway_Availability" targetRef="EndEvent_Confirmed" />
-    <sequenceFlow id="Flow_Error" name="Ошибка: слот недоступен" sourceRef="Gateway_Availability" targetRef="EndEvent_Error" />
-  </process>
-</definitions>"""
+ACTIVITY_SOURCE = """@startuml
+start
+:Клиент выбирает слот;
+if (Расписание доступно?) then (Да)
+  :Система подтверждает запись;
+else (Нет)
+  :Ошибка расписания, предложить повтор;
+endif
+stop
+@enduml"""
 
 
 def _document_ast():
@@ -76,7 +75,7 @@ def _document_ast():
             "type": "paragraph",
             "text": ("Клиент выбирает слот, система подтверждает запись. При ошибке расписания сервис предлагает повторить операцию. Слот удерживается 15 минут."),
         },
-        {"type": "bpmn", "source": BPMN_SOURCE},
+        {"type": "plantuml", "source": ACTIVITY_SOURCE},
     ]
     by_id["4.3"]["evidence_refs"] = [SCENARIO_REF]
     by_id["5.5"]["blocks"] = [
@@ -133,7 +132,7 @@ def test_scorer_passes_template_protocol_monitoring_and_grounded_references():
     assert plantuml["source"].strip().startswith("@startuml")
     assert plantuml["source"].strip().endswith("@enduml")
     assert any(block["type"] == "paragraph" for block in section_by_id["4.3"]["blocks"])
-    assert any(block["type"] == "bpmn" for block in section_by_id["4.3"]["blocks"])
+    assert any(block["type"] == "plantuml" for block in section_by_id["4.3"]["blocks"])
     score = score_document_quality(
         document,
         _protocol(),
@@ -177,3 +176,16 @@ def test_scorer_fails_missing_monitoring_bad_protocol_and_unsupported_claims():
     assert score.question_bounds_valid is False
     assert "7 секунд" in score.unsupported_measurable_claims
     assert score.grounded_reference_precision < 0.95
+
+
+@pytest.mark.parametrize("claim,unsupported", [("42%", ("42%",)), ("42% uptime", ("42%",)), ("99,9%", ())])
+def test_percentage_claims_affect_grounding_precision(claim, unsupported):
+    document = _document_ast()
+    monitoring = next(section for section in document["sections"] if section["id"] == "5.5")
+    monitoring["blocks"][0]["text"] += f" Дополнительный показатель: {claim}"
+
+    score = score_document_quality(document, _protocol(), TEMPLATE, RUBRIC, FACTS, SNAPSHOT)
+
+    assert score.unsupported_measurable_claims == unsupported
+    assert score.grounded_claim_count == 5
+    assert score.grounded_reference_precision == pytest.approx(5 / 6 if unsupported else 1)

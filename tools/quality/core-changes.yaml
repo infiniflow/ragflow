@@ -1,6 +1,6 @@
 schema_version: 1
 upstream_base: cb93883f3f8c975eecb2fed81210effeb3bdb06f
-head: a9a442d5c6d259a55efd585f5149da0a16799428
+head: 6b46d26d8ba49c298fa4051dedcf5ccec0fba450
 changes:
 - id: CORE-eva-integration
   owner: fork-maintainer
@@ -34,6 +34,7 @@ changes:
   - services/asr-online-service/tests
   - test/unit_test/rag/app/test_audio_video_transcription.py
   - test/unit_test/api/utils/test_api_file_utils.py
+  - services/asr-online-service/tests/integration/test_tone_real_inference.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -92,6 +93,7 @@ changes:
   - web/src/pages/admin/access-groups.test.tsx
   - web/src/pages/user-setting/settings-access-policy.test.ts
   - test/playwright/e2e/test_navigation_visibility_admin.py
+  - test/unit_test/api/db/services/test_access_group_persistence.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -136,11 +138,11 @@ changes:
   - path: test/testcases/restful_api/test_user_tenant_routes_unit.py
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: test/testcases/test_web_api/test_system_app/test_apps_init_unit.py
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: test/testcases/test_web_api/test_system_app/test_system_routes_unit.py
     committed: M
     staged: null
@@ -209,6 +211,7 @@ changes:
   - test/unit_test/admin/test_service_status_config.py
   - test/unit_test/common/test_observability.py
   - test/unit_test/api/utils/test_admin_service_health.py
+  - test/unit_test/api/db/services/test_audit_service.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -250,6 +253,9 @@ changes:
   - internal/entity/models/ollama_test.go
   - test/unit_test/api/apps/services/test_models_api_service_list_tenant_added_models.py
   - test/unit_test/api/db/joint_services/test_tenant_model_service_max_tokens.py
+  - test/playwright/e2e/test_next_apps_chat.py
+  - test/playwright/e2e/test_business_document_live_intake.py
+  - test/testcases/restful_api/test_user_tenant_routes_unit.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -315,6 +321,12 @@ changes:
   - test/integration/test_business_document_postgres.py
   - test/unit_test/api/db/services/test_access_group_service.py
   - test/unit_test/api/apps/business_documents/test_business_document_service.py
+  - test/unit_test/common/test_time_utils.py
+  - test/unit_test/api/db/services/test_audit_service.py
+  - test/unit_test/api/db/services/test_access_group_persistence.py
+  - test/integration/test_previous_release_data_upgrade.py
+  - test/integration/fixtures/upgrade_data_probe.py
+  - test/integration/test_minio_backup_restore.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -371,7 +383,7 @@ changes:
   - path: internal/handler/agent_test.go
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: internal/handler/bot_test.go
     committed: M
     staged: null
@@ -413,6 +425,8 @@ changes:
   - test/testcases/restful_api/test_connector_routes_unit.py
   - test/unit_test/common/test_ssrf_guard.py
   - test/unit_test/data_source/test_html_utils.py
+  - test/playwright/e2e/test_live_document_roundtrip.py
+  - test/playwright/e2e/test_dataset_upload_parse.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -492,6 +506,9 @@ changes:
   - test/testcases/restful_api/test_search_datasets_consistency.py
   - test/playwright/e2e/test_next_apps_chat.py
   - test/playwright/e2e/test_next_apps_search.py
+  - test/playwright/e2e/test_live_document_roundtrip.py
+  - test/playwright/e2e/test_dataset_upload_parse.py
+  - test/testcases/restful_api/test_user_tenant_routes_unit.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -504,7 +521,7 @@ changes:
   - path: api/apps/restful_apis/chat_api.py
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: api/apps/restful_apis/chat_channel_api.py
     committed: M
     staged: null
@@ -639,6 +656,7 @@ changes:
   - web/src/components/diagram-code-block/index.test.tsx
   - web/src/components/highlight-markdown/__tests__/index.test.tsx
   - web/src/layouts/components/global-navbar.test.tsx
+  - web/src/pages/home/index.test.tsx
   - web/src/pages/agent/utils/tests/dsl-bridge.test.ts
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
@@ -652,7 +670,7 @@ changes:
   - path: web/index.html
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: web/jest-setup.ts
     committed: M
     staged: null
@@ -668,7 +686,7 @@ changes:
   - path: web/package.json
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: web/pnpm-lock.yaml
     committed: M
     staged: null
@@ -693,6 +711,10 @@ changes:
     committed: M
     staged: null
     unstaged: null
+  - path: web/src/components/embed-container.tsx
+    committed: null
+    staged: null
+    unstaged: M
   - path: web/src/components/embed-dialog/index.tsx
     committed: M
     staged: null
@@ -789,10 +811,18 @@ changes:
     committed: M
     staged: null
     unstaged: null
+  - path: web/src/components/message-item/index.tsx
+    committed: null
+    staged: null
+    unstaged: M
   - path: web/src/components/next-markdown-content/index.tsx
     committed: M
     staged: null
     unstaged: null
+  - path: web/src/components/next-message-item/index.tsx
+    committed: null
+    staged: null
+    unstaged: M
   - path: web/src/components/next-message-item/reference-document-list.tsx
     committed: M
     staged: null
@@ -868,11 +898,15 @@ changes:
   - path: web/src/layouts/components/global-navbar.tsx
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: web/src/layouts/components/header.tsx
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
+  - path: web/src/layouts/components/mobile-menu-footer.tsx
+    committed: null
+    staged: null
+    unstaged: M
   - path: web/src/locales/ar.ts
     committed: M
     staged: null
@@ -892,7 +926,7 @@ changes:
   - path: web/src/locales/en.ts
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: web/src/locales/es.ts
     committed: M
     staged: null
@@ -924,7 +958,7 @@ changes:
   - path: web/src/locales/ru.ts
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: web/src/locales/tr.ts
     committed: M
     staged: null
@@ -952,11 +986,11 @@ changes:
   - path: web/src/pages/admin/layouts/navigation-layout.tsx
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: web/src/pages/admin/login.tsx
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: web/src/pages/admin/roles.tsx
     committed: M
     staged: null
@@ -1256,7 +1290,7 @@ changes:
   - path: web/src/pages/login-next/index.tsx
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: web/src/pages/memories/hooks.ts
     committed: M
     staged: null
@@ -1384,7 +1418,7 @@ changes:
   - path: web/src/utils/api.ts
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/utils/chat.ts
     committed: M
     staged: null
@@ -1417,11 +1451,20 @@ changes:
   - test/unit_test/tools/quality/test_capture_inventory.py
   - test/unit_test/tools/hooks/test_check_files.py
   - test/REGRESSION.md
+  - test/unit_test/playwright/test_page_error_gate.py
+  - test/unit_test/deployment/test_disposable_live_runner.py
+  - test/integration/live_ragflow/README.md
+  - test/unit_test/playwright/test_browser_server.py
+  - test/unit_test/tools/quality/test_inspect_python.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
+  - path: .dockerignore
+    committed: null
+    staged: null
+    unstaged: M
   - path: .github/copilot-instructions.md
     committed: M
     staged: null
@@ -1430,14 +1473,18 @@ changes:
     committed: M
     staged: null
     unstaged: null
+  - path: .github/workflows/release.yml
+    committed: null
+    staged: null
+    unstaged: M
   - path: .github/workflows/sep-tests.yml
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: .github/workflows/tests.yml
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: .gitignore
     committed: M
     staged: null
@@ -1445,7 +1492,15 @@ changes:
   - path: AGENTS.md
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
+  - path: Dockerfile
+    committed: null
+    staged: null
+    unstaged: M
+  - path: build.sh
+    committed: null
+    staged: null
+    unstaged: M
   - path: docs/release_notes.md
     committed: M
     staged: null
@@ -1454,8 +1509,20 @@ changes:
     committed: M
     staged: null
     unstaged: null
+  - path: lefthook.yml
+    committed: null
+    staged: null
+    unstaged: M
   - path: pyproject.toml
     committed: M
+    staged: null
+    unstaged: M
+  - path: ragflow_deps/download_deps.py
+    committed: null
+    staged: null
+    unstaged: M
+  - path: ragflow_deps/download_go_deps.py
+    committed: null
     staged: null
     unstaged: M
   - path: run_tests.py
@@ -1493,11 +1560,11 @@ changes:
   - path: test/playwright/conftest.py
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: test/playwright/e2e/test_dataset_upload_parse.py
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: test/playwright/e2e/test_model_providers_zhipu_ai_defaults.py
     committed: M
     staged: null
@@ -1509,11 +1576,11 @@ changes:
   - path: test/playwright/e2e/test_next_apps_chat.py
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: test/playwright/e2e/test_next_apps_search.py
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: test/playwright/helpers/_auth_helpers.py
     committed: M
     staged: null
@@ -1521,11 +1588,23 @@ changes:
   - path: test/playwright/helpers/_next_apps_helpers.py
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
+  - path: test/playwright/helpers/datasets.py
+    committed: null
+    staged: null
+    unstaged: M
   - path: test/playwright/helpers/flow_steps.py
     committed: M
     staged: null
     unstaged: null
+  - path: test/testcases/configs.py
+    committed: null
+    staged: null
+    unstaged: M
+  - path: test/testcases/conftest.py
+    committed: null
+    staged: null
+    unstaged: M
   - path: test/testcases/restful_api/test_system.py
     committed: M
     staged: null
@@ -1542,6 +1621,10 @@ changes:
     committed: M
     staged: null
     unstaged: null
+  - path: test/unit_test/data_source/test_rest_api_connector.py
+    committed: null
+    staged: null
+    unstaged: M
   - path: test/unit_test/rag/conftest.py
     committed: M
     staged: null

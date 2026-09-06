@@ -13,6 +13,7 @@ documented behavior is not considered covered by a UI rendering alone.
 | Author cannot edit the body directly | REST command allowlist and read-only UI document pane | `test_business_document_api_contract.py`; `web/src/pages/business-documents/index.test.tsx` | covered_by_lower_level |
 | Body remains unchanged while review questions are open | Command gate and immutable revisions | `test_business_document_service.py::test_apply_is_rejected_while_review_question_is_open_without_mutation_or_job` | covered |
 | Only accepted proposals may authorize a change | Source-event validator | `test_business_document_service.py::test_rejected_proposal_cannot_authorize_change` | covered |
+| Partial proposal application keeps remaining decisions open without reusing resolved inputs | Review lifecycle and change-source validator | `test_business_document_service.py::test_partial_proposal_changes_keep_review_open_and_apply_each_decision_once`; golden case `G07` | covered |
 | Questions, answers, proposals, decisions, and comments are append-only | Separate persistence models | `test_business_document_service.py::test_full_workflow_is_versioned_idempotent_and_append_only`; immutable-answer test | covered |
 | Comment may target a selected fragment in the current revision | Comment command and UI selection | service anchor negative/boundary tests; `web/src/pages/business-documents/index.test.tsx` | covered |
 | Anchored comments survive revision changes without silent re-anchoring | Projection anchor lifecycle | service anchor lifecycle tests; golden case `G11`; orphan marker in `ProtocolPane` | covered |
@@ -65,9 +66,9 @@ documented behavior is not considered covered by a UI rendering alone.
 
 ## Golden coverage matrix
 
-- P0: 19/19 cases, 100% hard assertions; release gate.
+- P0: 19/19 cases and 64/64 hard assertions; release gate.
 - P1: 5/5 cases and 14/14 hard assertions; release gate.
-- All cases: 24/24 and 73/73 hard assertions. No known deterministic golden
+- All cases: 24/24 and 78/78 hard assertions. No known deterministic golden
   gaps remain.
 - These counts describe scripted deterministic cases only. They do not satisfy
   the rubric's live-model gate or its 95% grounded-reference threshold.

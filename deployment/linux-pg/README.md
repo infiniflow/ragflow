@@ -168,8 +168,26 @@ Prometheus (`9090`) публикуются только на `127.0.0.1`.
 Скрипт не вызывает Git и упаковывает текущее состояние файлов. В архив не
 попадают `.git`, локальные `.env`, кэши, данные контейнеров, `node_modules`,
 `web/dist`, локальные build/test-артефакты, скачанные `ragflow_deps`, `output` и
-старые архивы. Перед сборкой нужно завершить проверку всех изменений, которые
-должны войти в поставку.
+локальные model caches, старые архивы и каталоги предыдущих release-сборок.
+Перед сборкой нужно завершить проверку всех изменений, которые должны войти в
+поставку.
+
+Для обновления через компактный source-архив frontend должен быть собран и
+включён явно:
+
+```powershell
+corepack pnpm --dir web install --frozen-lockfile --ignore-scripts
+corepack pnpm --dir web run build
+./deployment/linux-pg/build_archive.ps1 `
+  -ReleaseVersion v1.12.0 `
+  -UseExistingFrontend
+```
+
+Параметр `-UseExistingFrontend` требует `web/dist/index.html`, включает только
+готовый `web/dist` текущей рабочей копии и записывает
+`FRONTEND_MODE=prebuilt` в manifest. Без параметра manifest содержит
+`FRONTEND_MODE=excluded`, что подходит для первой source-установки: frontend
+соберёт `install.sh` на сервере.
 
 Результат:
 
@@ -248,11 +266,11 @@ superuser. Версия установленного архива сохраня
 
 ```bash
 # Сначала только проверка пакета, сервера, версии и Compose-конфигурации.
-sudo env INSTALL_DIR=/opt/ragflow-pg PROJECT_NAME=ragflow-pg \
+sudo env SOURCE_DIR="$(mktemp -d)" INSTALL_DIR=/opt/ragflow-pg PROJECT_NAME=ragflow-pg \
   bash ./upgrade_offline.sh --check
 
 # Затем плановое обновление с обязательным backup PostgreSQL и MinIO.
-sudo env INSTALL_DIR=/opt/ragflow-pg PROJECT_NAME=ragflow-pg \
+sudo env SOURCE_DIR="$(mktemp -d)" INSTALL_DIR=/opt/ragflow-pg PROJECT_NAME=ragflow-pg \
   BACKUP_ROOT=/var/backups/ragflow-pg BACKUP_MINIO=1 \
   bash ./upgrade_offline.sh
 ```
@@ -261,6 +279,9 @@ sudo env INSTALL_DIR=/opt/ragflow-pg PROJECT_NAME=ragflow-pg \
 `system_audit_event`, после чего завершается успешно без backup, миграций и
 повторной загрузки образов. Для распаковки всегда используйте новый каталог из
 `mktemp`; это исключает конфликт владельца и метаданных с предыдущей попыткой.
+`--check` тоже распаковывает payload: для последующего запуска нужен отдельный
+пустой `SOURCE_DIR`. Непустой каталог отклоняется независимо от версии; скрипт
+не удаляет предыдущую распаковку и не принимает её за содержимое нового пакета.
 
 Для registry-поставки используются те же параметры и `upgrade_registry.sh`;
 при шаблонном `images.env` дополнительно задаются `REGISTRY_PREFIX` и
@@ -281,3 +302,23 @@ Backup и предыдущий release-каталог сохраняются д�
 При ошибке до прохождения health скрипт возвращает прежний код и контейнеры.
 Миграции БД автоматически назад не откатываются: если старая версия несовместима
 с новой схемой, выполняется полное восстановление по процедуре ниже.
+
+Компактный source-архив для обновления должен быть собран с
+`-UseExistingFrontend`. Если все образы уже загружены и сервер не имеет доступа
+к внешним registry, сначала выполнить preflight без остановки приложения,
+backup и миграций, а затем обновление в режиме запрета pull/build:
+
+```bash
+sudo env OFFLINE_INSTALL=1 INSTALL_DIR=/opt/ragflow-pg PROJECT_NAME=ragflow-pg \
+  BACKUP_ROOT=/var/backups/ragflow-pg \
+  bash deployment/linux-pg/upgrade.sh --check
+
+sudo env OFFLINE_INSTALL=1 INSTALL_DIR=/opt/ragflow-pg PROJECT_NAME=ragflow-pg \
+  BACKUP_ROOT=/var/backups/ragflow-pg BACKUP_MINIO=1 \
+  bash deployment/linux-pg/upgrade.sh
+```
+
+В `--check` входят проверка Compose, `runsc` и наличия каждого образа итоговой
+конфигурации. При отсутствии любого образа проверка завершается до остановки
+приложения и создания backup. Без `OFFLINE_INSTALL=1` source-upgrade имеет право
+собирать локальные образы и требует доступных build-зависимостей.

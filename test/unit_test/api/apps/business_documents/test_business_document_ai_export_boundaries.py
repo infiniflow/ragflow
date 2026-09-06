@@ -755,6 +755,51 @@ def test_ai_binds_entity_aliases_and_completes_active_eva_change_dispositions():
     assert output["operations"][0]["source_event_ids"] == ["proposal-43"]
 
 
+@pytest.mark.p0
+def test_ai_drops_resolved_proposal_sources_from_a_later_partial_review_plan():
+    job = SimpleNamespace(
+        job_type="PLAN_CHANGES",
+        payload={
+            "active_change_input_event_ids": ["proposal-current-event"],
+            "protocol": {
+                "questions": [],
+                "proposals": [
+                    {
+                        "proposal_id": "proposal-resolved",
+                        "target_section_id": "5.5",
+                        "decision": "ACCEPTED",
+                        "decision_event_id": "proposal-resolved-event",
+                    },
+                    {
+                        "proposal_id": "proposal-current",
+                        "target_section_id": "5.5",
+                        "decision": "ACCEPTED",
+                        "decision_event_id": "proposal-current-event",
+                    },
+                ],
+                "comments": [],
+            },
+        },
+    )
+    output = {
+        "acknowledged_no_change_event_ids": [],
+        "operations": [
+            {
+                "section_id": "5.5",
+                "source_event_ids": ["proposal-resolved", "proposal-current"],
+            }
+        ],
+    }
+
+    normalized = BusinessDocumentAI._bind_change_plan_source_sections(job, output)
+
+    assert normalized["operations"][0]["source_event_ids"] == ["proposal-current-event"]
+    assert output["operations"][0]["source_event_ids"] == [
+        "proposal-resolved",
+        "proposal-current",
+    ]
+
+
 class MemoryStorage:
     def __init__(self, *, discard=False):
         self.discard = discard

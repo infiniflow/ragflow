@@ -24,6 +24,12 @@ import pytest
 from werkzeug.exceptions import Unauthorized as WerkzeugUnauthorized
 
 
+@pytest.fixture(scope="session", autouse=True)
+def set_tenant_info():
+    """Override the parent live-suite bootstrap for this isolated unit module."""
+    yield
+
+
 class _DummyAPIToken:
     @staticmethod
     def query(**_kwargs):

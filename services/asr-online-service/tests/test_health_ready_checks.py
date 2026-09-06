@@ -9,7 +9,7 @@ def test_ready_not_ready_when_ffmpeg_missing(monkeypatch):
         "sox": {"ok": True, "details": {"resolved_path": None, "checked_at": "now", "error": "check skipped (normalization disabled)"}},
     }
     monkeypatch.setattr("asr_service.settings.settings.enable_sox_normalize", False)
-    monkeypatch.setattr(app.state, "health_checks", checks, raising=False)
+    monkeypatch.setattr("asr_service.main._build_health_checks", lambda: checks)
 
     with TestClient(app) as client:
         response = client.get("/health/ready")

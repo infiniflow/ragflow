@@ -118,6 +118,7 @@ export default {
       memories: 'Память',
       openMetadata: 'Каталог',
       businessDocuments: 'Документы',
+      instruction: 'Инструкция',
     },
     openMetadata: {
       title: 'OpenMetadata Copilot',

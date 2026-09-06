@@ -67,9 +67,13 @@ proposal, and author comment must either authorize an operation or appear in
 `acknowledged_no_change_event_ids`. The domain verifies this disposition,
 current-cycle provenance, evidence references, and section hashes, applies
 operations to the stored base AST, validates the result, and renders Markdown
-itself. The model never supplies an authoritative full replacement body. A
-fully acknowledged no-op finalization agrees the current revision without
-manufacturing a duplicate.
+itself. The model never supplies an authoritative full replacement body. If
+undecided proposals remain, the service commits the authorized operations (or
+audits a fully acknowledged no-op), keeps the same review cycle in `REVIEW`,
+and exposes the remaining proposals for later decisions. Inputs resolved by a
+partial pass cannot authorize another change. The document reaches `AGREED`
+only after no proposal remains undecided; a final fully acknowledged no-op does
+not manufacture a duplicate revision.
 
 ### Export and continuation
 
@@ -231,10 +235,11 @@ uses a numeric `code` and places the stable domain identifier in
    and commits revision 1 plus the external review protocol.
 4. The author answers, accepts or rejects proposals, and adds general or
    anchored comments. A review assessment converts ambiguity into questions.
-5. Finalization requires every current-cycle answer, accepted proposal, and
+5. Finalization requires every currently active answer, accepted proposal, and
    comment to be used by exactly one operation or explicitly acknowledged as
    requiring no body change. The service applies valid operations to the base
-   AST and reaches `AGREED`.
+   AST. If proposals are still undecided, it remains in the same `REVIEW` cycle
+   with those proposals; otherwise it reaches `AGREED`.
 6. The author downloads Markdown/DOCX or copies EvaWiki code. A later review
    remains in the same document; a new idea starts a new document.
 
@@ -244,7 +249,8 @@ uses a numeric `code` and places the stable domain identifier in
   questions and `REQUEST_DRAFT` remains unavailable.
 - **Open review question:** finalization is rejected without a revision, job,
   or partial protocol mutation.
-- **Rejected or undecided proposal:** it cannot authorize a body change.
+- **Rejected or undecided proposal:** it cannot authorize a body change. An
+  undecided proposal keeps a partially applied document in `REVIEW`.
 - **Stale browser or worker:** optimistic version, base revision, and section
   hashes reject the write; the current revision remains unchanged.
 - **Duplicate request:** the command ledger replays the original response for

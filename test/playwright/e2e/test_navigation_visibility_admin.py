@@ -200,8 +200,10 @@ def test_admin_selective_visibility_save_updates_desktop_navigation(page, base_u
 
     save = page.get_by_test_id("navigation-visibility-save")
     expect(save).to_be_enabled()
-    with page.expect_request(lambda request: request.method == "PUT" and urlparse(request.url).path.rstrip("/") == "/api/v1/admin/navigation"):
+    # The request event can precede the route handler recording its payload.
+    with page.expect_response(lambda response: response.request.method == "PUT" and urlparse(response.url).path.rstrip("/") == "/api/v1/admin/navigation") as saved:
         save.click()
+    assert saved.value.status == 200
 
     expected = [section for section in ALL_SECTIONS if section not in {"home", "search", "business_documents"}]
     assert stub.put_payloads == [{"visible_sections": expected}]

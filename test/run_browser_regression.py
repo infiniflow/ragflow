@@ -28,6 +28,8 @@ class SPAServer(ThreadingHTTPServer):
 
 
 class SPAHandler(SimpleHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def do_GET(self):
         path = urlsplit(self.path).path
         if path.startswith(("/api/", "/v1/")):

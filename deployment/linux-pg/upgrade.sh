@@ -24,6 +24,12 @@ MIN_COMPOSE_VERSION=2.26.1
 [[ ${BACKUP_MINIO} == "0" || ${BACKUP_MINIO} == "1" ]] || { echo "BACKUP_MINIO must be 0 or 1." >&2; exit 1; }
 [[ ${ALLOW_DOWNGRADE} == "0" || ${ALLOW_DOWNGRADE} == "1" ]] || { echo "ALLOW_DOWNGRADE must be 0 or 1." >&2; exit 1; }
 [[ ${ALLOW_UNHEALTHY} == "0" || ${ALLOW_UNHEALTHY} == "1" ]] || { echo "ALLOW_UNHEALTHY must be 0 or 1." >&2; exit 1; }
+[[ ${OFFLINE_INSTALL} == "0" || ${OFFLINE_INSTALL} == "1" ]] || { echo "OFFLINE_INSTALL must be 0 or 1." >&2; exit 1; }
+[[ ${REGISTRY_INSTALL} == "0" || ${REGISTRY_INSTALL} == "1" ]] || { echo "REGISTRY_INSTALL must be 0 or 1." >&2; exit 1; }
+[[ ${OFFLINE_INSTALL} != "1" || ${REGISTRY_INSTALL} != "1" ]] || {
+  echo "OFFLINE_INSTALL and REGISTRY_INSTALL cannot both be enabled." >&2
+  exit 1
+}
 
 if [[ ${1:-} == "--check" ]]; then
   CHECK_ONLY=1
@@ -42,6 +48,24 @@ die() {
 manifest_value() {
   local manifest=$1 key=$2
   awk -F= -v key="${key}" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "${manifest}"
+}
+
+# Unsigned source identity metadata: not authenticity, running-image or schema proof.
+candidate_source_id() {
+  local path=$1 expected=${2#v} value
+  [[ -f ${path} && -r ${path} && ! -L ${path} ]] || die "Unreadable or linked candidate manifest: ${path}"
+  value=$(jq -er --arg expected "${expected}" '
+    select(type == "object")
+    | select((.source_id | type) == "string")
+    | select((.source_id | length) == 64)
+    | select(.source_id | test("^[0-9a-f]{64}$"))
+    | select((.identity.version | type) == "string")
+    | select(.identity.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+    | select($expected == "unknown" or .identity.version == $expected)
+    | .source_id
+  ' "${path}") || die "Invalid candidate source identity/version: ${path}"
+  [[ ${value} =~ ^[0-9a-f]{64}$ ]] || die "Invalid candidate source identity/version: ${path}"
+  printf '%s' "${value}"
 }
 
 env_value() {
@@ -95,6 +119,21 @@ validate_compose() {
   fi
 }
 
+verify_runsc_runtime() {
+  local docker_runtimes
+  docker_runtimes=$(sudo docker info --format '{{json .Runtimes}}')
+  grep -q '"runsc"' <<<"${docker_runtimes}" \
+    || die "Docker runsc runtime is not registered. Install the pinned gVisor bundle first."
+}
+
+verify_offline_images() {
+  local root=$1 image_name
+  while IFS= read -r image_name; do
+    [[ -z ${image_name} ]] && continue
+    sudo docker image inspect "${image_name}" >/dev/null || die "Offline image is not loaded: ${image_name}"
+  done < <(compose "${root}" config --images | sort -u)
+}
+
 verify_installed_audit_table() {
   local root=$1 postgres_container
   postgres_container=$(compose "${root}" ps -q postgres)
@@ -118,7 +157,7 @@ wait_for_health() {
   curl -fsS --max-time 10 "http://127.0.0.1:${RAGFLOW_PORT}/" >/dev/null
 }
 
-for command_name in awk curl flock jq rsync sed sha256sum sort tar tee; do
+for command_name in awk cmp curl flock jq rsync sed sha256sum sort tar tee; do
   command -v "${command_name}" >/dev/null || die "Required upgrade command is missing: ${command_name}"
 done
 [[ $(uname -m) == "x86_64" ]] || die "Only x86_64 Linux is supported."
@@ -145,9 +184,11 @@ sudo -v
 [[ -d ${INSTALL_DIR} ]] || die "Existing installation not found: ${INSTALL_DIR}"
 [[ -r ${INSTALL_DIR}/docker/.env ]] || die "Existing protected Docker environment is missing: ${INSTALL_DIR}/docker/.env"
 [[ -r ${INSTALL_DIR}/deployment/linux-pg/docker-compose.release.yml ]] || die "Existing Linux release overlay is missing."
+RECOVERY_REQUIRED_FILE=${SECRETS_DIR}/upgrade-recovery-required.env
 
 exec 9>"/run/lock/${PROJECT_NAME}.upgrade.lock"
 flock -n 9 || die "Another ${PROJECT_NAME} upgrade is already running."
+[[ ! -e ${RECOVERY_REQUIRED_FILE} ]] || die "Unresolved upgrade recovery: ${RECOVERY_REQUIRED_FILE}. Verify or restore data and release compatibility before clearing this marker; automatic retry is blocked."
 
 DOCKER_VERSION=$(sudo docker version --format '{{.Server.Version}}')
 COMPOSE_VERSION=$(sudo docker compose version --short)
@@ -171,10 +212,27 @@ if [[ -r ${SECRETS_DIR}/deployed-source.env ]]; then
   FROM_VERSION=$(manifest_value "${SECRETS_DIR}/deployed-source.env" RELEASE_VERSION)
   FROM_VERSION=${FROM_VERSION:-unknown}
 fi
+INCOMING_CANDIDATE=${SOURCE_ROOT}/DEPLOYMENT-CANDIDATE.json
+INSTALLED_CANDIDATE=${INSTALL_DIR}/DEPLOYMENT-CANDIDATE.json
+INCOMING_SOURCE_ID=
+INSTALLED_SOURCE_ID=
+if [[ -e ${INCOMING_CANDIDATE} || -L ${INCOMING_CANDIDATE} ]]; then
+  INCOMING_SOURCE_ID=$(candidate_source_id "${INCOMING_CANDIDATE}" "${RELEASE_VERSION}")
+fi
+if [[ -e ${INSTALLED_CANDIDATE} || -L ${INSTALLED_CANDIDATE} ]]; then
+  INSTALLED_SOURCE_ID=$(candidate_source_id "${INSTALLED_CANDIDATE}" "${FROM_VERSION}")
+  [[ -n ${INCOMING_SOURCE_ID} ]] || die "Refusing candidate identity downgrade to an unverified legacy package."
+fi
 if [[ ${FROM_VERSION} =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   from_plain=${FROM_VERSION#v}
   to_plain=${RELEASE_VERSION#v}
   if [[ ${from_plain} == "${to_plain}" ]]; then
+    if [[ -n ${INCOMING_SOURCE_ID} || -n ${INSTALLED_SOURCE_ID} ]]; then
+      [[ -n ${INCOMING_SOURCE_ID} && ${INCOMING_SOURCE_ID} == "${INSTALLED_SOURCE_ID}" ]] \
+        || die "Same version has missing or different source identity; no-op is prohibited."
+    else
+      echo "WARNING: legacy same-version no-op has unverified source identity." >&2
+    fi
     curl -fsS --max-time 10 "http://127.0.0.1:${RAGFLOW_PORT}/api/v1/system/healthz" \
       | jq -e '.status == "ok" and .db == "ok" and .redis == "ok" and .doc_engine == "ok" and .storage == "ok"' >/dev/null \
       || die "Release ${RELEASE_VERSION} is recorded as installed, but full health verification failed."
@@ -238,21 +296,36 @@ else
   printf 'SANDBOX_ENABLED=1\n' | sudo tee -a "${STAGE_DIR}/docker/.env" >/dev/null
 fi
 validate_compose "${STAGE_DIR}" 1
+verify_runsc_runtime
+if [[ ${OFFLINE_INSTALL} == "1" ]]; then
+  verify_offline_images "${STAGE_DIR}"
+fi
+
+# Resolve backup dependencies while the currently deployed application is still running.
+CURRENT_RAGFLOW_CONTAINER=$(compose "${INSTALL_DIR}" ps -q ragflow-cpu)
+[[ -n ${CURRENT_RAGFLOW_CONTAINER} ]] || die "RAGFlow container is not running before upgrade."
+RAGFLOW_BACKUP_IMAGE=$(sudo docker inspect "${CURRENT_RAGFLOW_CONTAINER}" --format '{{.Image}}')
+[[ -n ${RAGFLOW_BACKUP_IMAGE} ]] || die "Cannot resolve the current RAGFlow image for MinIO backup."
+sudo docker image inspect "${RAGFLOW_BACKUP_IMAGE}" >/dev/null
+POSTGRES_CONTAINER=$(compose "${INSTALL_DIR}" ps -q postgres)
+MINIO_CONTAINER=$(compose "${INSTALL_DIR}" ps -q minio)
+ES_CONTAINER=$(compose "${INSTALL_DIR}" ps -q es01)
+[[ -n ${POSTGRES_CONTAINER} ]] || die "PostgreSQL container is not running."
+[[ -n ${MINIO_CONTAINER} ]] || die "MinIO container is not running."
+[[ -n ${ES_CONTAINER} ]] || die "Elasticsearch container is not running."
+POSTGRES_DBNAME=$(env_value "${CURRENT_ENV}" POSTGRES_DBNAME rag_flow)
+POSTGRES_USER=$(env_value "${CURRENT_ENV}" POSTGRES_USER rag_flow)
 
 if [[ ${CHECK_ONLY} == "1" ]]; then
   echo "Upgrade preflight passed: ${FROM_VERSION} -> ${RELEASE_VERSION}"
   echo "Existing installation: ${INSTALL_DIR}"
   echo "Backup root: ${BACKUP_ROOT}"
   exit 0
-elif ! sudo docker info --format '{{json .Runtimes}}' | grep -q '"runsc"'; then
-  die "Docker runsc runtime is not registered. Install the pinned gVisor bundle first."
-elif [[ ${OFFLINE_INSTALL} == "1" ]]; then
-  while IFS= read -r image_name; do
-    [[ -z ${image_name} ]] && continue
-    sudo docker image inspect "${image_name}" >/dev/null || die "Offline image is not loaded: ${image_name}"
-  done < <(compose "${STAGE_DIR}" config --images | sort -u)
 elif [[ ${REGISTRY_INSTALL} == "1" ]]; then
   compose "${STAGE_DIR}" pull
+elif [[ ${OFFLINE_INSTALL} != "1" ]]; then
+  compose "${STAGE_DIR}" pull --ignore-buildable --policy missing
+  compose "${STAGE_DIR}" build
 fi
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
@@ -263,24 +336,30 @@ sudo install -d -m 0700 "${BACKUP_DIR}/config"
 
 APP_STOPPED=0
 SWITCHED=0
+DATA_MAY_HAVE_CHANGED=0
 upgrade_error() {
   local status=$?
   trap - ERR
   set +e
-  echo "Upgrade failed; attempting to restore the previous application release." >&2
-  if [[ ${SWITCHED} == "1" && -d ${PREVIOUS_DIR} ]]; then
+  if [[ ${DATA_MAY_HAVE_CHANGED} == "1" ]]; then
+    echo "Upgrade failed after the data-change boundary. Automatic code rollback is prohibited." >&2
+    compose "${INSTALL_DIR}" stop ragflow-cpu || echo "Could not stop the failed application; isolate it before recovery." >&2
+    echo "Recovery required: ${RECOVERY_REQUIRED_FILE}. Previous release and backups are preserved." >&2
+  elif [[ ${SWITCHED} == "1" && -d ${PREVIOUS_DIR} ]]; then
     compose "${INSTALL_DIR}" stop ragflow-cpu >/dev/null 2>&1 || true
-    sudo mv -- "${INSTALL_DIR}" "${FAILED_DIR}" || true
-    sudo mv -- "${PREVIOUS_DIR}" "${INSTALL_DIR}" || true
-    compose "${INSTALL_DIR}" up -d --no-build --pull never || true
+    if [[ ! -e ${INSTALL_DIR} ]] || sudo mv -- "${INSTALL_DIR}" "${FAILED_DIR}"; then
+      if sudo mv -- "${PREVIOUS_DIR}" "${INSTALL_DIR}"; then
+        compose "${INSTALL_DIR}" start ragflow-cpu || true
+      fi
+    fi
   elif [[ ${APP_STOPPED} == "1" ]]; then
-    compose "${INSTALL_DIR}" up -d --no-build --pull never || true
+    compose "${INSTALL_DIR}" start ragflow-cpu || true
   fi
   if [[ -n ${BACKUP_DIR:-} && -d ${BACKUP_DIR} ]]; then
-    printf 'FAILED_AT_UTC=%s\nFAILED_RELEASE=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${RELEASE_VERSION}" \
+    printf 'FAILED_AT_UTC=%s\nFAILED_RELEASE=%s\nDATA_MAY_HAVE_CHANGED=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${RELEASE_VERSION}" "${DATA_MAY_HAVE_CHANGED}" \
       | sudo tee "${BACKUP_DIR}/UPGRADE-FAILED.env" >/dev/null
   fi
-  echo "Database migrations are not automatically reversed. Use the restore procedure in the runbook if the old release is schema-incompatible." >&2
+  echo "Data restoration is not automatic or verified by this script. Follow the recovery runbook before restarting an older release." >&2
   exit "${status}"
 }
 trap upgrade_error ERR
@@ -290,22 +369,9 @@ upgrade_fail() {
   return 1
 }
 
-CURRENT_RAGFLOW_CONTAINER=$(compose "${INSTALL_DIR}" ps -q ragflow-cpu)
-[[ -n ${CURRENT_RAGFLOW_CONTAINER} ]] || upgrade_fail "RAGFlow container is not running before upgrade."
-RAGFLOW_BACKUP_IMAGE=$(sudo docker inspect "${CURRENT_RAGFLOW_CONTAINER}" --format '{{.Config.Image}}')
-[[ -n ${RAGFLOW_BACKUP_IMAGE} ]] || upgrade_fail "Cannot resolve the current RAGFlow image for MinIO backup."
-
-compose "${INSTALL_DIR}" stop ragflow-cpu
+# A failing stop may already have stopped a container; recover the old app too.
 APP_STOPPED=1
-
-POSTGRES_CONTAINER=$(compose "${INSTALL_DIR}" ps -q postgres)
-MINIO_CONTAINER=$(compose "${INSTALL_DIR}" ps -q minio)
-ES_CONTAINER=$(compose "${INSTALL_DIR}" ps -q es01)
-[[ -n ${POSTGRES_CONTAINER} ]] || upgrade_fail "PostgreSQL container is not running."
-[[ -n ${MINIO_CONTAINER} ]] || upgrade_fail "MinIO container is not running."
-[[ -n ${ES_CONTAINER} ]] || upgrade_fail "Elasticsearch container is not running."
-POSTGRES_DBNAME=$(env_value "${CURRENT_ENV}" POSTGRES_DBNAME rag_flow)
-POSTGRES_USER=$(env_value "${CURRENT_ENV}" POSTGRES_USER rag_flow)
+compose "${INSTALL_DIR}" stop ragflow-cpu
 
 sudo install -m 0600 "${CURRENT_ENV}" "${BACKUP_DIR}/config/docker.env"
 [[ ! -r ${INSTALL_DIR}/docker/.env.local ]] || sudo install -m 0600 "${INSTALL_DIR}/docker/.env.local" "${BACKUP_DIR}/config/docker.env.local"
@@ -351,11 +417,14 @@ sudo mv -- "${INSTALL_DIR}" "${PREVIOUS_DIR}"
 sudo mv -- "${STAGE_DIR}" "${INSTALL_DIR}"
 STAGE_DIR=
 
-if [[ ${OFFLINE_INSTALL} == "1" || ${REGISTRY_INSTALL} == "1" ]]; then
-  compose "${INSTALL_DIR}" up -d --no-build --pull never
-else
-  compose "${INSTALL_DIR}" up -d --build
-fi
+# The entrypoint may migrate data as soon as any new application process starts.
+# Persist the stop-point before starting it, including for interrupted upgrades.
+sudo install -d -m 0700 "${SECRETS_DIR}"
+printf 'TARGET_RELEASE=%s\nBACKUP_DIR=%s\nPREVIOUS_DIR=%s\n' "${RELEASE_VERSION}" "${BACKUP_DIR}" "${PREVIOUS_DIR}" \
+  | sudo tee "${RECOVERY_REQUIRED_FILE}" >/dev/null
+sudo chmod 0600 "${RECOVERY_REQUIRED_FILE}"
+DATA_MAY_HAVE_CHANGED=1
+compose "${INSTALL_DIR}" up -d --no-build --pull never
 wait_for_health "${BACKUP_DIR}/health-after.json"
 curl -fsS --max-time 10 http://127.0.0.1:3001/api/health | jq -e '.database == "ok"' >/dev/null
 curl -fsS --max-time 10 http://127.0.0.1:9090/-/ready >/dev/null
@@ -378,6 +447,14 @@ sudo docker exec "${POSTGRES_CONTAINER}" psql -U "${POSTGRES_USER}" -d "${POSTGR
 sudo docker exec "${POSTGRES_CONTAINER}" pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DBNAME}" --schema-only --no-owner \
   | sudo tee "${BACKUP_DIR}/postgres-schema-after.sql" >/dev/null
 
+if [[ -n ${INCOMING_SOURCE_ID} ]]; then
+  cmp -s -- "${INCOMING_CANDIDATE}" "${INSTALLED_CANDIDATE}" \
+    || upgrade_fail "Installed candidate manifest bytes differ from the incoming package."
+  DELIVERED_SOURCE_ID=$(candidate_source_id "${INSTALLED_CANDIDATE}" "${RELEASE_VERSION}")
+  [[ ${DELIVERED_SOURCE_ID} == "${INCOMING_SOURCE_ID}" ]] \
+    || upgrade_fail "Installed candidate identity changed during upgrade."
+fi
+
 sudo install -d -m 0700 "${SECRETS_DIR}"
 sudo install -m 0644 "${SOURCE_MANIFEST}" "${SECRETS_DIR}/deployed-source.env"
 printf 'UPGRADED_AT_UTC=%s\nPREVIOUS_VERSION=%s\nBACKUP_DIR=%s\nPREVIOUS_DIR=%s\n' \
@@ -388,6 +465,7 @@ printf 'COMPLETED_AT_UTC=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" | sudo tee "${BA
 (cd "${BACKUP_DIR}" && sudo sha256sum -c SHA256SUMS)
 
 trap - ERR
+sudo rm -- "${RECOVERY_REQUIRED_FILE}"
 SWITCHED=0
 APP_STOPPED=0
 compose "${INSTALL_DIR}" ps

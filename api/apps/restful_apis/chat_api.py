@@ -29,7 +29,7 @@ from quart import Response, request
 
 from api.apps import current_user, login_required
 from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key, split_model_name
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_model_type_by_name, split_model_name
 from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
 from api.db.services.dialog_service import DialogService, async_chat, gen_mindmap
@@ -1244,11 +1244,7 @@ async def session_completion(chat_id_in_arg=""):
             e, dia = await thread_pool_exec(DialogService.get_by_id, chat_id)
             if not e:
                 return get_data_error_result(message="Chat not found!")
-            inaccessible = [
-                kb_id
-                for kb_id in (getattr(dia, "kb_ids", None) or [])
-                if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=current_user.id)
-            ]
+            inaccessible = [kb_id for kb_id in (getattr(dia, "kb_ids", None) or []) if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id=kb_id, user_id=current_user.id)]
             if inaccessible:
                 return get_json_result(
                     data=False,
@@ -1292,7 +1288,12 @@ async def session_completion(chat_id_in_arg=""):
             conv.reference.append({"chunks": [], "doc_aggs": []})
 
         if chat_model_id:
-            if not await thread_pool_exec(get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
+            try:
+                model_types = await thread_pool_exec(get_model_type_by_name, tenant_id=dia.tenant_id, model_name=chat_model_id)
+            except LookupError:
+                return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
+            model_type = "chat" if "chat" in model_types else "image2text"
+            if await _validate_llm_id(chat_model_id, dia.tenant_id, {"model_type": model_type}):
                 return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
             dia.llm_id = chat_model_id
             dia.llm_setting = chat_model_config

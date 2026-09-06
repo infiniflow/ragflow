@@ -12,7 +12,7 @@ def wait_for_dataset_detail(page, timeout_ms: int) -> None:
     wait_js = """
         () => {
           const path = window.location.pathname || '';
-          return /^\\/datasets\\/.+/.test(path) || /^\\/dataset\\/dataset\\/.+/.test(path);
+          return /^\\/dataset\\/files\\/[^/]+$/.test(path);
         }
         """
     page.wait_for_function(wait_js, timeout=timeout_ms)

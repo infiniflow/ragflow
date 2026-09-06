@@ -24,7 +24,11 @@ if [[ ${runtime_path} != "/usr/local/bin/runsc" ]]; then
   sudo systemctl restart docker
 fi
 deadline=$((SECONDS + 60))
-until sudo docker info --format '{{json .Runtimes}}' | grep -q '"runsc"'; do
+while true; do
+  docker_runtimes=$(sudo docker info --format '{{json .Runtimes}}' 2>/dev/null || true)
+  if grep -q '"runsc"' <<<"${docker_runtimes}"; then
+    break
+  fi
   (( SECONDS < deadline )) || { echo 'Docker did not register runsc within 60 seconds.' >&2; exit 1; }
   sleep 2
 done

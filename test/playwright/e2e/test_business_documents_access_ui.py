@@ -99,12 +99,13 @@ def _permissions(role, owner_id):
     }
 
 
-def _revision(*, number=3, author_id="author-1", author_name="Первый автор"):
+def _revision(*, number=3, author_id="author-1", author_name="Первый автор", author_login="author-1@example.test"):
     return {
         "revision_id": f"revision-{number}",
         "revision_number": number,
         "author_id": author_id,
         "author_name": author_name,
+        "author_login": author_login,
         "document_ast": {
             "schema_version": "1",
             "document_type": "business_requirements",
@@ -326,8 +327,8 @@ class BusinessDocumentsAccessStub:
                 route,
                 _envelope(
                     [
-                        _revision(number=2, author_id="legacy-author", author_name=None),
-                        _revision(number=3, author_id="author-2", author_name="Мария Авторова"),
+                        _revision(number=2, author_id="legacy-author", author_name=None, author_login=None),
+                        _revision(number=3, author_id="author-2", author_name="Мария Авторова", author_login="maria@example.test"),
                     ]
                 ),
             )
@@ -698,15 +699,16 @@ def test_owner_assignment_conflict_keeps_previous_owner_and_shows_error(page, ba
 
 @pytest.mark.p1
 @pytest.mark.auth
-def test_revision_history_displays_named_and_legacy_change_authors(page, base_url):
+def test_revision_history_displays_named_and_unavailable_change_authors(page, base_url):
     stub = BusinessDocumentsAccessStub("AUTHOR_CREATOR")
     _open_document(page, base_url, stub)
 
     page.get_by_test_id("business-document-history-toggle").click()
     history = page.get_by_test_id("business-document-history")
     expect(history).to_be_visible()
-    expect(history).to_contain_text("Автор изменений: Мария Авторова")
-    expect(history).to_contain_text("Автор изменений: legacy-author")
+    expect(history).to_contain_text("Автор изменений: Мария Авторова (maria@example.test)")
+    expect(history).to_contain_text("Автор изменений: Пользователь недоступен")
+    expect(history).not_to_contain_text("legacy-author")
 
 
 @pytest.mark.p1

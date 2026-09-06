@@ -384,7 +384,7 @@ const Login = () => {
           <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
             <div className="w-12 h-12 p-2 rounded-lg flex items-center justify-center mr-3">
               <img
-                src={'/logo.svg'}
+                src={'/app-icon.png'}
                 alt="logo"
                 className="size-8 mr-[12] cursor-pointer"
               />

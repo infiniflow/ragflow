@@ -1,0 +1,91 @@
+name: ragflow-disposable-live
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: rag_flow
+      POSTGRES_USER: rag_flow
+      POSTGRES_PASSWORD: ${QA_STORAGE_PASSWORD:?required}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U rag_flow -d rag_flow"]
+      interval: 3s
+      retries: 30
+  redis:
+    image: valkey/valkey:8
+    environment:
+      QA_STORAGE_PASSWORD: ${QA_STORAGE_PASSWORD:?required}
+    command: [sh, -c, 'exec valkey-server --requirepass "$$QA_STORAGE_PASSWORD"']
+  minio:
+    image: pgsty/minio:RELEASE.2026-03-25T00-00-00Z
+    command: [server, /data]
+    environment:
+      MINIO_ROOT_USER: qa-storage
+      MINIO_ROOT_PASSWORD: ${QA_STORAGE_PASSWORD:?required}
+    volumes: [objects:/data]
+  es01:
+    image: elasticsearch:8.11.3
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: 'false'
+      ES_JAVA_OPTS: '-Xms512m -Xmx512m'
+    tmpfs: ['/tmp:mode=1777,size=512m']
+    volumes: [indexdata:/usr/share/elasticsearch/data]
+  plantuml-server:
+    image: plantuml/plantuml-server:jetty-v1.2026.6
+  app:
+    image: infiniflow/ragflow:v0.26.4
+    entrypoint: [bash, /ragflow/entrypoint.sh]
+    command: [--enable-adminserver, --init-superuser, --disable-datasync]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+      es01:
+        condition: service_started
+      plantuml-server:
+        condition: service_started
+    ports: ['127.0.0.1:19382:80', '127.0.0.1:19383:9381']
+    environment:
+      DB_TYPE: postgres
+      DOC_ENGINE: elasticsearch
+      API_PROXY_SCHEME: python
+      POSTGRES_HOST: postgres
+      POSTGRES_DBNAME: rag_flow
+      POSTGRES_USER: rag_flow
+      POSTGRES_PASSWORD: ${QA_STORAGE_PASSWORD:?required}
+      MINIO_HOST: minio
+      MINIO_USER: qa-storage
+      MINIO_PASSWORD: ${QA_STORAGE_PASSWORD:?required}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${QA_STORAGE_PASSWORD:?required}
+      ES_HOST: es01
+      USE_DOCLING: 'false'
+      REGISTER_ENABLED: 'true'
+      BUSINESS_DOCUMENT_WORKER_ENABLED: 'true'
+      PYTHONDONTWRITEBYTECODE: '1'
+      HF_HUB_OFFLINE: '1'
+      LLM_TIMEOUT_SECONDS: '180'
+      WAIT_FOR_BACKEND_BEFORE_NGINX: 'true'
+      RAGFLOW_BACKEND_READY_TIMEOUT_SECONDS: '300'
+    volumes:
+      - ../../api:/ragflow/api:ro
+      - ../../admin:/ragflow/admin:ro
+      - ../../common:/ragflow/common:ro
+      - ../../agent:/ragflow/agent:ro
+      - ../../rag:/ragflow/rag:ro
+      - resources:/ragflow/rag/res
+      - ../../deepdoc:/ragflow/deepdoc:ro
+      - ../../memory:/ragflow/memory:ro
+      - ../../web/dist:/ragflow/web/dist:ro
+      - ../../docker/entrypoint.sh:/ragflow/entrypoint.sh:ro
+      - ../../docker/service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template:ro
+      - ../../docker/nginx/ragflow.conf.python:/etc/nginx/conf.d/ragflow.conf.python:ro
+volumes:
+  pgdata:
+  objects:
+  indexdata:
+  resources:

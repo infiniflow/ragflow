@@ -194,7 +194,7 @@ def _select_first_dataset_and_save(
         try:
             if search_root.count() > 0 and search_root.is_visible():
                 scope_root = search_root
-                combobox_testid = "search-datasets-combobox"
+                combobox_testid = "chat-datasets-combobox"
                 save_testid = "search-settings-save"
         except Exception:
             pass
@@ -360,7 +360,7 @@ def _select_first_dataset_and_save(
             if not isinstance(kb_ids, list):
                 kb_ids = payload.get("kb_ids")
             return isinstance(kb_ids, list) and (dataset_id in kb_ids if dataset_id else len(kb_ids) > 0)
-        kb_ids = payload.get("kb_ids")
+        kb_ids = payload.get("dataset_ids")
         return isinstance(kb_ids, list) and (dataset_id in kb_ids if dataset_id else len(kb_ids) > 0)
 
     response_url_pattern = "/api/v1/chats" if save_testid == "chat-settings-save" else "/api/v1/searches/"

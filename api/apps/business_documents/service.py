@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import hashlib
+from itertools import chain
 import json
 import logging
 from datetime import datetime
@@ -174,11 +175,7 @@ class BusinessDocumentService:
             )
         if raw.get("eva_page_url"):
             requested_decision = raw.get("eva_decision")
-            if (
-                not isinstance(requested_decision, dict)
-                or requested_decision.get("mode") != "BIND"
-                or requested_decision.get("confirm_replace") is not True
-            ):
+            if not isinstance(requested_decision, dict) or requested_decision.get("mode") != "BIND" or requested_decision.get("confirm_replace") is not True:
                 raise ValidationError(
                     "EVA_REPLACE_CONFIRMATION_REQUIRED",
                     "Confirm that publishing this document will replace the current EVA page content",
@@ -246,6 +243,8 @@ class BusinessDocumentService:
                     actor_type="USER",
                     actor_id=actor_id,
                     payload={
+                        "submitted_title": title,
+                        "title": display_title,
                         "chat_id": chat_id.strip(),
                         "document_type": document_type,
                         "idea": idea.strip(),
@@ -418,7 +417,8 @@ class BusinessDocumentService:
     def list_revisions(cls, tenant_id: str, document_id: str, actor_id: str, is_admin: bool = False) -> list[dict[str, Any]]:
         cls._get_accessible_document(document_id)
         rows = BusinessDocumentRevision.select().where(BusinessDocumentRevision.document_id == document_id).order_by(BusinessDocumentRevision.revision_number.asc())
-        return [cls._revision_dict(row) for row in rows]
+        revisions = [cls._revision_dict(row, resolve_user_identities=False) for row in rows]
+        return cls._with_revision_user_identities(revisions)
 
     @classmethod
     def get_revision(cls, tenant_id: str, document_id: str, revision_id: str, actor_id: str, is_admin: bool = False) -> dict[str, Any]:
@@ -594,7 +594,11 @@ class BusinessDocumentService:
                 "EvaBindingResolved",
                 "USER",
                 actor_id,
-                {"eva_binding": resolved},
+                {
+                    "document_title": document.title,
+                    "previous_eva_binding": latest_binding,
+                    "eva_binding": resolved,
+                },
                 get_uuid(),
             )
             cls._store_eva_binding(document.id, resolved, replace=True)
@@ -958,6 +962,7 @@ class BusinessDocumentService:
                     "The change request does not target the current revision",
                     {"expected": document.current_revision_id, "actual": base_revision_id},
                 )
+            cls._require_applicable_review_inputs(document)
             return cls._request_job(document, actor_id, envelope, "PLAN_CHANGES", OperationState.APPLYING_CHANGES)
         if envelope.type == CommandType.START_REVIEW:
             cls._require_idle(document)
@@ -1449,6 +1454,7 @@ class BusinessDocumentService:
             raise ConflictError("STALE_AI_RESULT", "Change plan does not match the immutable job snapshot")
         operations = change_plan["operations"]
         acknowledged_no_change_event_ids = change_plan.get("acknowledged_no_change_event_ids", [])
+        active_inputs = cls._active_change_input_event_ids(document)
         source_event_ids: list[str] = []
         evidence_refs: list[str] = []
         for operation in operations:
@@ -1456,10 +1462,9 @@ class BusinessDocumentService:
                 raise ValidationError("UNSUPPORTED_CHANGE", "Every change operation requires source_event_ids")
             cls._validate_job_sources(job, operation["source_event_ids"])
             cls._validate_evidence_refs(execution, operation.get("evidence_refs", []))
-            cls._validate_change_sources(document, operation)
+            cls._validate_change_sources(document, operation, active_inputs)
             source_event_ids.extend(operation["source_event_ids"])
             evidence_refs.extend(operation.get("evidence_refs", []))
-        active_inputs = cls._active_change_input_event_ids(document)
         acknowledged = set(acknowledged_no_change_event_ids)
         invalid_acknowledgements = sorted(acknowledged - active_inputs)
         if invalid_acknowledgements:
@@ -1509,12 +1514,15 @@ class BusinessDocumentService:
                 "Every active review answer and comment must authorize a change or be explicitly acknowledged as no-change",
                 {"event_ids": sorted(missing_inputs)},
             )
+        pending_proposal_ids = cls._pending_proposal_ids(document)
+        review_continues = bool(pending_proposal_ids)
+        next_lifecycle_state = LifecycleState.REVIEW.value if review_continues else LifecycleState.AGREED.value
         if not operations:
             new_version = document.state_version + 1
             cls._optimistic_update(
                 document,
                 {
-                    "lifecycle_state": LifecycleState.AGREED.value,
+                    "lifecycle_state": next_lifecycle_state,
                     "operation_state": OperationState.IDLE.value,
                     "state_version": new_version,
                 },
@@ -1522,12 +1530,15 @@ class BusinessDocumentService:
             cls._create_event(
                 document.id,
                 new_version,
-                "ReviewAgreedWithoutChanges",
+                "ReviewContinuedWithoutChanges" if review_continues else "ReviewAgreedWithoutChanges",
                 "AI",
                 actor_id,
                 {
                     "job_id": job.id,
                     "revision_id": document.current_revision_id,
+                    "review_cycle": document.active_review_cycle,
+                    "review_continues": review_continues,
+                    "remaining_proposal_ids": pending_proposal_ids,
                     "acknowledged_no_change_event_ids": acknowledged_no_change_event_ids,
                     **cls._job_prompt_audit(job),
                     **({"execution": execution} if execution else {}),
@@ -1554,7 +1565,7 @@ class BusinessDocumentService:
         cls._optimistic_update(
             document,
             {
-                "lifecycle_state": LifecycleState.AGREED.value,
+                "lifecycle_state": next_lifecycle_state,
                 "operation_state": OperationState.IDLE.value,
                 "current_revision_id": revision_id,
                 "state_version": new_version,
@@ -1570,6 +1581,9 @@ class BusinessDocumentService:
                 "job_id": job.id,
                 "base_revision_id": job.base_revision_id,
                 "revision_id": revision_id,
+                "review_cycle": document.active_review_cycle,
+                "review_continues": review_continues,
+                "remaining_proposal_ids": pending_proposal_ids,
                 "requested_by_actor_id": cls._job_request_author(job, document.owner_id),
                 "source_event_ids": source_event_ids,
                 "acknowledged_no_change_event_ids": acknowledged_no_change_event_ids,
@@ -1730,7 +1744,7 @@ class BusinessDocumentService:
         return revision_id
 
     @classmethod
-    def _validate_change_sources(cls, document, operation):
+    def _validate_change_sources(cls, document, operation, active_input_event_ids):
         source_event_ids = operation["source_event_ids"]
         events = cls._validate_known_sources(document.id, source_event_ids)
         allowed_event_types = {"QuestionAnswered", "ProposalDecided", "AuthorCommentAdded", "EvaDocumentPulled"}
@@ -1759,6 +1773,12 @@ class BusinessDocumentService:
                     "Change source targets a different template section",
                     {"event_id": event.id, "source_section_id": source_section, "operation_section_id": operation["section_id"]},
                 )
+            if event.id not in active_input_event_ids:
+                raise ValidationError(
+                    "CHANGE_SOURCE_NOT_ACTIVE",
+                    "A resolved or superseded review input cannot authorize another document change",
+                    {"event_id": event.id},
+                )
 
     @classmethod
     def _validate_review_comment_dispositions(cls, document, output):
@@ -1775,11 +1795,7 @@ class BusinessDocumentService:
                 "Review assessment must classify every and only active-cycle comments",
                 {"missing_event_ids": missing, "unknown_event_ids": unknown},
             )
-        question_tags = {
-            _canonical_semantic_tag(question["semantic_tag"])
-            for question in output["questions"]
-            if isinstance(question, dict) and isinstance(question.get("semantic_tag"), str)
-        }
+        question_tags = {_canonical_semantic_tag(question["semantic_tag"]) for question in output["questions"] if isinstance(question, dict) and isinstance(question.get("semantic_tag"), str)}
         for disposition in dispositions:
             if disposition["disposition"] != "NEEDS_QUESTION":
                 continue
@@ -1797,9 +1813,7 @@ class BusinessDocumentService:
                 & (BusinessDocumentQuestion.semantic_tag == semantic_tag)
             )
             existing_answer = (
-                BusinessDocumentAnswer.get_or_none(
-                    (BusinessDocumentAnswer.document_id == document.id) & (BusinessDocumentAnswer.question_id == existing_question.id)
-                )
+                BusinessDocumentAnswer.get_or_none((BusinessDocumentAnswer.document_id == document.id) & (BusinessDocumentAnswer.question_id == existing_question.id))
                 if existing_question is not None
                 else None
             )
@@ -1811,10 +1825,7 @@ class BusinessDocumentService:
                         "comment_event_id": disposition["comment_event_id"],
                         "question_id": existing_question.id,
                         "question_semantic_tag": semantic_tag,
-                        "required_action": (
-                            "Use CONFIRMED_CHANGE or NO_CHANGE if the existing answer resolves the comment; "
-                            "otherwise emit a different question with a new semantic_tag"
-                        ),
+                        "required_action": ("Use CONFIRMED_CHANGE or NO_CHANGE if the existing answer resolves the comment; otherwise emit a different question with a new semantic_tag"),
                     },
                 )
         return dispositions
@@ -1862,48 +1873,102 @@ class BusinessDocumentService:
         return None, None
 
     @staticmethod
-    def _accepted_proposal_event_ids(document):
+    def _accepted_proposal_event_ids_by_values(document_id, review_cycle):
         proposal_ids = {
             row.id
             for row in BusinessDocumentProposal.select(BusinessDocumentProposal.id).where(
-                (BusinessDocumentProposal.document_id == document.id) & (BusinessDocumentProposal.review_cycle == document.active_review_cycle)
+                (BusinessDocumentProposal.document_id == document_id) & (BusinessDocumentProposal.review_cycle == review_cycle)
             )
         }
         return {
             event.id
-            for event in BusinessDocumentEvent.select().where((BusinessDocumentEvent.document_id == document.id) & (BusinessDocumentEvent.event_type == "ProposalDecided"))
+            for event in BusinessDocumentEvent.select().where((BusinessDocumentEvent.document_id == document_id) & (BusinessDocumentEvent.event_type == "ProposalDecided"))
             if event.payload.get("proposal_id") in proposal_ids and event.payload.get("decision") == "ACCEPTED"
         }
 
     @classmethod
-    def _active_change_input_event_ids(cls, document):
-        accepted = cls._accepted_proposal_event_ids(document)
+    def _accepted_proposal_event_ids(cls, document):
+        return cls._accepted_proposal_event_ids_by_values(document.id, document.active_review_cycle)
+
+    @staticmethod
+    def _pending_proposal_ids_by_values(document_id, review_cycle):
+        proposal_ids = [
+            row.id
+            for row in BusinessDocumentProposal.select(BusinessDocumentProposal.id)
+            .where((BusinessDocumentProposal.document_id == document_id) & (BusinessDocumentProposal.review_cycle == review_cycle))
+            .order_by(BusinessDocumentProposal.create_time.asc())
+        ]
+        if not proposal_ids:
+            return []
+        decided_proposal_ids = {
+            row.proposal_id
+            for row in BusinessDocumentProposalDecision.select(BusinessDocumentProposalDecision.proposal_id).where(
+                (BusinessDocumentProposalDecision.document_id == document_id) & (BusinessDocumentProposalDecision.proposal_id.in_(proposal_ids))
+            )
+        }
+        return [proposal_id for proposal_id in proposal_ids if proposal_id not in decided_proposal_ids]
+
+    @classmethod
+    def _pending_proposal_ids(cls, document):
+        return cls._pending_proposal_ids_by_values(document.id, document.active_review_cycle)
+
+    @classmethod
+    def _require_applicable_review_inputs(cls, document):
+        pending_proposal_ids = cls._pending_proposal_ids(document)
+        if not pending_proposal_ids or cls._active_change_input_event_ids(document):
+            return
+        raise ConflictError(
+            "PENDING_PROPOSAL_DECISIONS",
+            "Decide a pending proposal or add review feedback before applying changes",
+            {"proposal_ids": pending_proposal_ids},
+        )
+
+    @staticmethod
+    def _resolved_change_input_event_ids(document_id):
+        resolved: set[str] = set()
+        events = BusinessDocumentEvent.select(BusinessDocumentEvent.payload).where(
+            (BusinessDocumentEvent.document_id == document_id) & (BusinessDocumentEvent.event_type.in_(("ChangesApplied", "ReviewAgreedWithoutChanges", "ReviewContinuedWithoutChanges")))
+        )
+        for event in events:
+            if not isinstance(event.payload, dict):
+                continue
+            for key in ("source_event_ids", "acknowledged_no_change_event_ids"):
+                values = event.payload.get(key, [])
+                if isinstance(values, list):
+                    resolved.update(value for value in values if isinstance(value, str))
+        return resolved
+
+    @classmethod
+    def _active_change_input_event_ids_by_values(cls, document_id, review_cycle):
+        accepted = cls._accepted_proposal_event_ids_by_values(document_id, review_cycle)
         question_ids = {
             row.id
             for row in BusinessDocumentQuestion.select(BusinessDocumentQuestion.id).where(
-                (BusinessDocumentQuestion.document_id == document.id) & (BusinessDocumentQuestion.review_cycle == document.active_review_cycle) & (BusinessDocumentQuestion.stage == "REVIEW")
+                (BusinessDocumentQuestion.document_id == document_id) & (BusinessDocumentQuestion.review_cycle == review_cycle) & (BusinessDocumentQuestion.stage == "REVIEW")
             )
         }
         comment_ids = {
             row.id
-            for row in BusinessDocumentComment.select(BusinessDocumentComment.id).where(
-                (BusinessDocumentComment.document_id == document.id) & (BusinessDocumentComment.review_cycle == document.active_review_cycle)
-            )
+            for row in BusinessDocumentComment.select(BusinessDocumentComment.id).where((BusinessDocumentComment.document_id == document_id) & (BusinessDocumentComment.review_cycle == review_cycle))
         }
         related = {
             event.id
-            for event in BusinessDocumentEvent.select().where(BusinessDocumentEvent.document_id == document.id)
+            for event in BusinessDocumentEvent.select().where(BusinessDocumentEvent.document_id == document_id)
             if (event.event_type == "QuestionAnswered" and event.payload.get("question_id") in question_ids)
             or (event.event_type == "AuthorCommentAdded" and event.payload.get("comment_id") in comment_ids)
         }
         latest_eva_pull = (
             BusinessDocumentEvent.select()
-            .where((BusinessDocumentEvent.document_id == document.id) & (BusinessDocumentEvent.event_type == "EvaDocumentPulled"))
+            .where((BusinessDocumentEvent.document_id == document_id) & (BusinessDocumentEvent.event_type == "EvaDocumentPulled"))
             .order_by(BusinessDocumentEvent.sequence.desc())
             .first()
         )
-        eva_inputs = {latest_eva_pull.id} if latest_eva_pull is not None and latest_eva_pull.payload.get("review_cycle") == document.active_review_cycle else set()
-        return accepted | related | eva_inputs
+        eva_inputs = {latest_eva_pull.id} if latest_eva_pull is not None and latest_eva_pull.payload.get("review_cycle") == review_cycle else set()
+        return (accepted | related | eva_inputs) - cls._resolved_change_input_event_ids(document_id)
+
+    @classmethod
+    def _active_change_input_event_ids(cls, document):
+        return cls._active_change_input_event_ids_by_values(document.id, document.active_review_cycle)
 
     @staticmethod
     def _validate_known_sources(document_id, source_event_ids):
@@ -2118,7 +2183,9 @@ class BusinessDocumentService:
                 {"QuestionAnswered", "ProposalDecided", "AuthorCommentAdded", "EvaDocumentPulled"},
                 review_cycle=review_cycle,
             ):
-                commands.append(CommandType.APPLY_CHANGES.value)
+                pending_proposal_ids = cls._pending_proposal_ids_by_values(document_id, review_cycle)
+                if not pending_proposal_ids or cls._active_change_input_event_ids_by_values(document_id, review_cycle):
+                    commands.append(CommandType.APPLY_CHANGES.value)
             else:
                 commands.append(CommandType.REQUEST_REVIEW_ASSESSMENT.value)
             return commands
@@ -2214,14 +2281,15 @@ class BusinessDocumentService:
         return result
 
     @classmethod
-    def _revision_dict(cls, row):
+    def _revision_dict(cls, row, *, resolve_user_identities=True):
         sections = row.document_ast.get("sections", []) if isinstance(row.document_ast, dict) else []
         author_id = row.author_id or cls._legacy_revision_author(row)
-        return {
+        revision = {
             "revision_id": row.id,
             "revision_number": row.revision_number,
             "author_id": author_id,
-            "author_name": cls._user_display_name(author_id),
+            "author_name": None,
+            "author_login": None,
             "document_ast": row.document_ast,
             "body_markdown": row.body_markdown,
             "section_texts": {
@@ -2232,6 +2300,55 @@ class BusinessDocumentService:
             "created_at": row.create_time,
             "change_basis": cls._revision_change_basis(row),
         }
+        if resolve_user_identities:
+            return cls._with_revision_user_identities([revision])[0]
+        return revision
+
+    @classmethod
+    def _with_revision_user_identities(cls, revisions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        basis_items = list(chain.from_iterable((revision.get("change_basis") or []) for revision in revisions))
+        user_ids = {author_id for revision in revisions if isinstance((author_id := revision.get("author_id")), str) and author_id}
+        for basis in basis_items:
+            initiated_by_actor_id = basis.get("initiated_by_actor_id")
+            if isinstance(initiated_by_actor_id, str) and initiated_by_actor_id:
+                user_ids.add(initiated_by_actor_id)
+            actor_id = basis.get("actor_id")
+            if basis.get("actor_type") == "USER" and isinstance(actor_id, str) and actor_id:
+                user_ids.add(actor_id)
+
+        identities = cls._user_identities(user_ids)
+        for revision in revisions:
+            author_id = revision.get("author_id")
+            author = identities.get(author_id)
+            if author:
+                revision["author_name"] = author["name"]
+                revision["author_login"] = author["login"]
+        for basis in basis_items:
+            initiated_by = identities.get(basis.get("initiated_by_actor_id"))
+            if initiated_by:
+                basis["initiated_by_actor_name"] = initiated_by["name"]
+                basis["initiated_by_actor_login"] = initiated_by["login"]
+            actor = identities.get(basis.get("actor_id")) if basis.get("actor_type") == "USER" else None
+            if actor:
+                basis["actor_name"] = actor["name"]
+                basis["actor_login"] = actor["login"]
+        return revisions
+
+    @staticmethod
+    def _user_identities(user_ids: set[str]) -> dict[str, dict[str, str | None]]:
+        if not user_ids or User._meta.database is not BusinessDocumentRevision._meta.database:
+            return {}
+        try:
+            users = User.select(User.id, User.nickname, User.email).where(User.id.in_(user_ids))
+            return {
+                user.id: {
+                    "name": user.nickname or None,
+                    "login": user.email or None,
+                }
+                for user in users
+            }
+        except Exception:
+            return {}
 
     @staticmethod
     def _job_request_author(job: BusinessDocumentJob, fallback: str) -> str:
@@ -2383,17 +2500,9 @@ class BusinessDocumentService:
             keys.add(page_url_key)
             if identity_key:
                 keys.add(identity_key)
-        occupied = list(
-            BusinessDocumentEvaBinding.select().where(
-                (BusinessDocumentEvaBinding.page_url_key.in_(keys)) | (BusinessDocumentEvaBinding.eva_identity_key.in_(keys))
-            )
-        ) if keys else []
+        occupied = list(BusinessDocumentEvaBinding.select().where((BusinessDocumentEvaBinding.page_url_key.in_(keys)) | (BusinessDocumentEvaBinding.eva_identity_key.in_(keys)))) if keys else []
         occupied_document_ids = [binding.document_id for binding in occupied]
-        documents = (
-            {row.id: row for row in BusinessDocument.select().where(BusinessDocument.id.in_(occupied_document_ids))}
-            if occupied_document_ids
-            else {}
-        )
+        documents = {row.id: row for row in BusinessDocument.select().where(BusinessDocument.id.in_(occupied_document_ids))} if occupied_document_ids else {}
         occupied_by_key: dict[str, BusinessDocumentEvaBinding] = {}
         for binding in occupied:
             occupied_by_key[binding.page_url_key] = binding

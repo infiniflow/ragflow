@@ -56,6 +56,7 @@ export interface BusinessDocumentRevision {
   revision_number: number;
   author_id?: string | null;
   author_name?: string | null;
+  author_login?: string | null;
   document_ast: BusinessDocumentAst;
   section_texts: Record<string, string>;
   body_markdown: string;
@@ -74,7 +75,11 @@ export interface BusinessDocumentRevisionBasis {
   section_id?: string | null;
   actor_id?: string;
   actor_type?: 'USER' | 'AI' | 'SYSTEM';
+  actor_name?: string | null;
+  actor_login?: string | null;
   initiated_by_actor_id?: string | null;
+  initiated_by_actor_name?: string | null;
+  initiated_by_actor_login?: string | null;
   created_at?: number | null;
 }
 

@@ -463,6 +463,45 @@ def test_full_eva_change_flow_keeps_publish_as_separate_action(database):
     ]
 
 
+def test_state_transitions_load_eva_settings_outside_transactions(database, monkeypatch):
+    def configured_connector_id():
+        assert not database.in_transaction()
+        return CONNECTOR.id
+
+    monkeypatch.setattr(
+        EVA_CHANGES_MODULE,
+        "get_business_documents_eva_connector_id",
+        configured_connector_id,
+    )
+    client = FakeEvaClient()
+    created = _create(client)
+    draft = _generate(
+        created,
+        "# Бизнес-требования\n\n## Цель\n\nТранзакционно безопасный текст.",
+    )
+    approved = EvaDocumentChangeService.approve(
+        TENANT,
+        AUTHOR,
+        created["change_id"],
+        {"expected_state_version": draft["state_version"]},
+    )
+    with patch.object(EvaDocumentChangeService, "_connector", return_value=(CONNECTOR, client)):
+        prepared = EvaDocumentChangeService.prepare_eva_draft(
+            TENANT,
+            AUTHOR,
+            created["change_id"],
+            {"expected_state_version": approved["state_version"]},
+        )
+        published = EvaDocumentChangeService.publish(
+            TENANT,
+            AUTHOR,
+            created["change_id"],
+            {"expected_state_version": prepared["state_version"]},
+        )
+
+    assert published["workflow_state"] == "PUBLISHED"
+
+
 def test_agent_generation_uses_refinement_and_manual_prefill_is_rejected(database):
     client = FakeEvaClient()
     created = _create(client)
@@ -506,6 +545,7 @@ def test_agent_generation_uses_refinement_and_manual_prefill_is_rejected(databas
         )
 
     assert exc_info.value.code == "MANUAL_EVA_DRAFT_DISABLED"
+    assert exc_info.value.message == "Нельзя передать готовый текст доработки EVA: его формирует агент по задаче автора."
 
 
 def test_unchanged_agent_result_restores_retryable_state(database):
@@ -516,10 +556,57 @@ def test_unchanged_agent_result_restores_retryable_state(database):
         _generate(created, created["base_markdown"])
 
     assert exc_info.value.code == "EVA_AI_DRAFT_UNCHANGED"
+    assert exc_info.value.message == "Агент не изменил документ. Уточните, что именно нужно исправить, и повторите подготовку."
     restored = EvaDocumentChangeService.get_change(TENANT, AUTHOR, created["change_id"])
     assert restored["workflow_state"] == "EDITING"
     assert restored["last_error"]["code"] == "EVA_AI_DRAFT_UNCHANGED"
+    assert restored["last_error"]["message"] == exc_info.value.message
     assert restored["allowed_actions"] == ["GENERATE_DRAFT"]
+
+
+def test_agent_failure_explains_retry_and_restores_editing_state(database):
+    client = FakeEvaClient()
+    created = _create(client)
+
+    class FailingEvaChangeAI:
+        @staticmethod
+        def generate_eva_change(*_args):
+            raise RuntimeError("provider failed")
+
+    with pytest.raises(BusinessDocumentError) as exc_info:
+        EvaDocumentChangeService.generate_draft(
+            TENANT,
+            AUTHOR,
+            created["change_id"],
+            {"expected_state_version": created["state_version"]},
+            ai=FailingEvaChangeAI(),
+        )
+
+    assert exc_info.value.code == "EVA_AI_GENERATION_FAILED"
+    assert exc_info.value.message == ("Агент не смог подготовить доработку EVA. Повторите попытку; если ошибка сохранится, обратитесь к администратору.")
+    restored = EvaDocumentChangeService.get_change(TENANT, AUTHOR, created["change_id"])
+    assert restored["workflow_state"] == "EDITING"
+    assert restored["last_error"]["message"] == exc_info.value.message
+    assert restored["allowed_actions"] == ["GENERATE_DRAFT"]
+
+
+def test_generation_refinement_limit_is_explained_in_russian(database):
+    client = FakeEvaClient()
+    created = _create(client)
+
+    with pytest.raises(BusinessDocumentError) as exc_info:
+        EvaDocumentChangeService.generate_draft(
+            TENANT,
+            AUTHOR,
+            created["change_id"],
+            {
+                "expected_state_version": created["state_version"],
+                "refinement": "x" * 10_001,
+            },
+        )
+
+    assert exc_info.value.code == "INVALID_EVA_CHANGE"
+    assert exc_info.value.message == "Поле «уточнение для агента» не должно превышать 10 000 символов."
 
 
 def test_eva_writes_use_personal_mutation_client_while_reads_use_connector(database, monkeypatch):

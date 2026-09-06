@@ -1,6 +1,6 @@
 # Правила архитектуры: проверки и доказательства
 
-Дата: 2026-09-05. Статус: нормативная спецификация для ручного ревью и будущего автоматического контроля. Реестры происхождения T0 реализованы в [снимке инвентаризации](t0-provenance-report-ru.md); runners архитектуры, baseline нарушений и CI gates ещё не реализованы.
+Дата: 2026-09-06. Статус: нормативная спецификация для ревью и будущего автоматического контроля. Реестры происхождения T0 реализованы в [снимке инвентаризации](t0-provenance-report-ru.md); первый [наблюдательный Python-инструмент](t2-python-analysis-ru.md) реализован отдельно. Полные runners архитектуры, baseline нарушений и CI gates ещё не приняты.
 
 Связанные документы: [архитектура](architecture-and-code-quality-ru.md), [план перехода и инструкции](architecture-transition-ru.md), [существующие regression lanes](../../test/REGRESSION.md).
 
@@ -100,7 +100,7 @@ PostgreSQL lane: `.\.venv\Scripts\python.exe -m pytest test/integration/test_bus
 
 Go package lane в подготовленном Linux/native-окружении: `bash build.sh --test ./internal/ingestion/pipeline/...`; полный lane — `bash test/run_go_regression.sh` после подготовки нативной сборки. Не запускать сырые `go test`/`go build` на Windows как замену этому доказательству.
 
-Полные live API/UI lanes и условия их запуска описаны в [REGRESSION.md](../../test/REGRESSION.md). Они используют одноразовый стек: существующие fixtures могут удалять данные. Не направлять их на общую рабочую БД. Проверка upgrade/recovery собственных данных и новые архитектурные команды пока требуют реализации; готового runner для них этот документ не заявляет.
+Полные live API/UI lanes и условия их запуска описаны в [REGRESSION.md](../../test/REGRESSION.md). Они используют одноразовый стек: существующие fixtures могут удалять данные. Не направлять их на общую рабочую БД. Выбранные upgrade/recovery проверки реализованы и имеют ограничения в [T1](t1-regression-report-ru.md). Ограниченная команда `python tools/quality/inspect_python.py --module business-documents --output output/quality/python-analysis.json` формирует наблюдения, а не PASS архитектуры; точный профиль и коды выхода описаны в [T2](t2-python-analysis-ru.md).
 
 ## 5. Контракт будущих реестров
 

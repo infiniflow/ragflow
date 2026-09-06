@@ -83,8 +83,8 @@ class ControlledEvidenceSearch:
 
 
 @pytest.fixture()
-def database():
-    database = SqliteDatabase(":memory:")
+def database(tmp_path):
+    database = SqliteDatabase(tmp_path / "live-quality.sqlite")
     tables = BusinessDocumentService.model_tables()
     with database.bind_ctx(tables, bind_refs=False, bind_backrefs=False):
         database.connect()
@@ -169,7 +169,8 @@ def test_live_model_intake_draft_rubric_and_grounding(database, monkeypatch):
     assert config is not None
 
     monkeypatch.setattr(
-        "api.apps.business_documents.service.ensure_dataset_access",
+        sys.modules[BusinessDocumentService.__module__],
+        "ensure_dataset_access",
         lambda actor_id, dataset_ids: None,
     )
     document = BusinessDocumentService.create_document(
@@ -252,7 +253,9 @@ def test_live_model_intake_draft_rubric_and_grounding(database, monkeypatch):
     assert all(block["source"].strip().startswith("@startuml") and block["source"].strip().endswith("@enduml") for block in conceptual_diagrams)
     scenarios = next(section for section in document_ast["sections"] if section["id"] == "4.3")
     assert any(block["type"] in {"paragraph", "list", "table"} for block in scenarios["blocks"])
-    assert any(block["type"] == "bpmn" for block in scenarios["blocks"])
+    # validate_document_ast above also validates start/end, if/else and the
+    # explicitly negative branch required by the published activity contract.
+    assert any(block["type"] == "plantuml" for block in scenarios["blocks"])
     monitoring = next(section for section in document_ast["sections"] if section["id"] == "5.5")
     assert monitoring["blocks"], "Mandatory monitoring section is empty"
 

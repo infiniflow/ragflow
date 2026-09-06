@@ -4,12 +4,59 @@ param(
     [string]$ReleaseVersion,
     [string]$OutputDirectory = $PSScriptRoot,
     [switch]$UseExistingFrontend,
+    [string]$CandidateDirectory,
+    [string]$FrontendArtifact,
+    [string]$BundleCacheDirectory,
+    [string]$PythonCommand,
     [switch]$Overwrite
 )
 
 $ErrorActionPreference = 'Stop'
 $sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+$toolRoot = $sourceRoot
+$verifiedMode = [bool]($CandidateDirectory -or $FrontendArtifact -or $BundleCacheDirectory)
+if ($verifiedMode -and (-not $CandidateDirectory -or -not $FrontendArtifact -or -not $BundleCacheDirectory)) {
+    throw 'Verified offline mode requires CandidateDirectory, FrontendArtifact and BundleCacheDirectory together.'
+}
+function Invoke-QualityTool {
+    param([string]$ToolName, [string[]]$ArgumentList)
+    $result = & $PythonCommand (Join-Path $toolRoot "tools/quality/$ToolName") @ArgumentList
+    if ($LASTEXITCODE -ne 0) {
+        throw "Quality tool $ToolName rejected the inputs (exit $LASTEXITCODE)."
+    }
+    return ($result -join "`n")
+}
+if ($verifiedMode) {
+    if (-not $PythonCommand) {
+        $localPython = Join-Path $toolRoot '.venv/Scripts/python.exe'
+        $unixPython = Join-Path $toolRoot '.venv/bin/python'
+        $PythonCommand = if (Test-Path -LiteralPath $localPython) { $localPython }
+            elseif (Test-Path -LiteralPath $unixPython) { $unixPython }
+            else { (Get-Command python3 -ErrorAction Stop).Source }
+    }
+    $CandidateDirectory = [System.IO.Path]::GetFullPath($CandidateDirectory)
+    $FrontendArtifact = [System.IO.Path]::GetFullPath($FrontendArtifact)
+    $BundleCacheDirectory = [System.IO.Path]::GetFullPath($BundleCacheDirectory)
+    if ($BundleCacheDirectory -eq $CandidateDirectory -or
+        $BundleCacheDirectory.StartsWith($CandidateDirectory + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $CandidateDirectory.StartsWith($BundleCacheDirectory + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'BundleCacheDirectory and CandidateDirectory must be separate paths.'
+    }
+    $null = Invoke-QualityTool 'candidate.py' @('verify', '--candidate', $CandidateDirectory)
+    $candidateIdentity = Get-Content -LiteralPath (Join-Path $CandidateDirectory 'candidate.json') -Raw | ConvertFrom-Json
+    if ($ReleaseVersion -ne "v$($candidateIdentity.identity.version)") { throw 'ReleaseVersion does not match candidate identity.' }
+    $null = Invoke-QualityTool 'frontend_artifact.py' @('verify', '--candidate', $CandidateDirectory, '--archive', $FrontendArtifact)
+    $sourceRoot = Join-Path $CandidateDirectory 'source'
+}
+else {
+    Write-Warning 'Legacy offline packaging uses unverified workspace/frontend inputs; no candidate or artifact reuse proof is asserted.'
+}
+$deliveryRoot = Join-Path $sourceRoot 'deployment/linux-pg'
 $outputRoot = [System.IO.Path]::GetFullPath($OutputDirectory)
+if ($verifiedMode -and ($outputRoot -eq $sourceRoot -or
+    $outputRoot.StartsWith($sourceRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase))) {
+    throw 'OutputDirectory must not modify candidate source.'
+}
 $archiveName = "ragflow-linux-pg-$ReleaseVersion-offline.tar.gz"
 $archivePath = Join-Path $outputRoot $archiveName
 $checksumPath = $archivePath + '.sha256'
@@ -20,7 +67,7 @@ if (-not $Overwrite -and ((Test-Path -LiteralPath $archivePath) -or (Test-Path -
 }
 
 $requiredCommands = @('docker', 'tar')
-if (-not $UseExistingFrontend) { $requiredCommands += 'pnpm.cmd' }
+if (-not $UseExistingFrontend -and -not $verifiedMode) { $requiredCommands += 'pnpm.cmd' }
 foreach ($commandName in $requiredCommands) {
     if (-not (Get-Command $commandName -ErrorAction SilentlyContinue)) {
         throw "Required build command is missing: $commandName"
@@ -114,12 +161,54 @@ New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 
 try {
-    & (Join-Path $PSScriptRoot 'build_archive.ps1') `
-        -ReleaseVersion $ReleaseVersion `
-        -OutputDirectory $payloadRoot `
-        -Overwrite
+    $sourceArguments = @{ ReleaseVersion = $ReleaseVersion; OutputDirectory = $payloadRoot; Overwrite = $true }
+    if ($verifiedMode) {
+        $sourceArguments.CandidateDirectory = $CandidateDirectory
+        $sourceArguments.PythonCommand = $PythonCommand
+        $sourceCache = Join-Path $BundleCacheDirectory "source-$($candidateIdentity.source_id)"
+        $cachedSourceArchive = Join-Path $sourceCache $sourceArchiveName
+        $cachedSourceChecksum = $cachedSourceArchive + '.sha256'
+        $sourceArguments.OutputDirectory = $sourceCache
+        $sourceArguments.Overwrite = $false
+        if (Test-Path -LiteralPath $cachedSourceArchive) {
+            Write-Host "Reusing verified source cache: $sourceCache"
+        }
+        else {
+            if ((Test-Path -LiteralPath (Join-Path $CandidateDirectory 'artifact-linux-pg-source.json')) -or
+                (Test-Path -LiteralPath $cachedSourceChecksum)) {
+                throw 'Canonical source archive is missing from cache; recover its recorded bytes or use a new candidate.'
+            }
+            & (Join-Path $PSScriptRoot 'build_archive.ps1') @sourceArguments
+        }
+        $null = Invoke-QualityTool 'candidate.py' @('verify-artifact', '--candidate', $CandidateDirectory, '--artifact', $cachedSourceArchive, '--name', 'linux-pg-source')
+        $sourceHash = (Get-FileHash -LiteralPath $cachedSourceArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+        $sourceChecksumText = (Get-Content -LiteralPath $cachedSourceChecksum -Raw).TrimEnd("`r", "`n")
+        if ($sourceChecksumText -ne "$sourceHash  $sourceArchiveName") { throw 'Cached source checksum sidecar mismatch.' }
+        $sourceMetadata = (& $tarCommand.Source -xOf $cachedSourceArchive './DEPLOYMENT-SOURCE.env') -join "`n"
+        if ($LASTEXITCODE -ne 0 -or $sourceMetadata -notmatch '(?m)^FRONTEND_MODE=excluded$' -or
+            $sourceMetadata -notmatch "(?m)^SOURCE_ID=$($candidateIdentity.source_id)$") {
+            throw 'Cached canonical source must be source-only and match candidate SOURCE_ID.'
+        }
+        Copy-Item -LiteralPath $cachedSourceArchive -Destination $sourceArchivePath
+        Copy-Item -LiteralPath $cachedSourceChecksum -Destination $sourceChecksumPath
+        $null = Invoke-QualityTool 'candidate.py' @('verify-artifact', '--candidate', $CandidateDirectory, '--artifact', $sourceArchivePath, '--name', 'linux-pg-source')
+    }
+    else {
+        & (Join-Path $PSScriptRoot 'build_archive.ps1') @sourceArguments
+    }
 
-    if (-not $UseExistingFrontend) {
+    if ($verifiedMode) {
+        $verifiedFrontend = Join-Path $tempRoot 'frontend.tar.gz'
+        Copy-Item -LiteralPath $FrontendArtifact -Destination $verifiedFrontend
+        Copy-Item -LiteralPath ($FrontendArtifact + '.json') -Destination ($verifiedFrontend + '.json')
+        $null = Invoke-QualityTool 'frontend_artifact.py' @('verify', '--candidate', $CandidateDirectory, '--archive', $verifiedFrontend)
+        $frontendRoot = Join-Path $tempRoot 'frontend'
+        New-Item -ItemType Directory -Path (Join-Path $frontendRoot 'dist') -Force | Out-Null
+        Invoke-Tar -ArgumentList @('-xzf', $verifiedFrontend, '-C', (Join-Path $frontendRoot 'dist')) `
+            -ErrorMessage 'Verified frontend extraction failed.'
+        Copy-Item -LiteralPath ($verifiedFrontend + '.json') -Destination (Join-Path $payloadRoot 'frontend-build.json')
+    }
+    elseif (-not $UseExistingFrontend) {
         Push-Location (Join-Path $sourceRoot 'web')
         try {
             & pnpm.cmd install --frozen-lockfile --ignore-scripts
@@ -135,7 +224,8 @@ try {
             Pop-Location
         }
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot 'web\dist\index.html') -PathType Leaf)) {
+    if (-not $verifiedMode) { $frontendRoot = Join-Path $sourceRoot 'web' }
+    if (-not (Test-Path -LiteralPath (Join-Path $frontendRoot 'dist/index.html') -PathType Leaf)) {
         throw 'Frontend build did not create web/dist/index.html.'
     }
 
@@ -143,7 +233,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw 'T-One ASR image build failed.'
     }
-    & (Join-Path $PSScriptRoot 'prepare_gvisor_bundle.ps1') -Destination $gvisorBundlePath
+    & (Join-Path $deliveryRoot 'prepare_gvisor_bundle.ps1') -Destination $gvisorBundlePath
 
     foreach ($imageName in $dockerImages) {
         $platform = (& docker image inspect $imageName --format '{{.Os}}/{{.Architecture}}').Trim()
@@ -155,15 +245,24 @@ try {
         }
     }
 
-    Copy-LfText -Source (Join-Path $PSScriptRoot 'install_offline.sh') -Destination (Join-Path $packageRoot 'install_offline.sh')
-    Copy-LfText -Source (Join-Path $PSScriptRoot 'upgrade_offline.sh') -Destination (Join-Path $packageRoot 'upgrade_offline.sh')
+    Copy-LfText -Source (Join-Path $deliveryRoot 'install_offline.sh') -Destination (Join-Path $packageRoot 'install_offline.sh')
+    Copy-LfText -Source (Join-Path $deliveryRoot 'upgrade_offline.sh') -Destination (Join-Path $packageRoot 'upgrade_offline.sh')
 
-    Invoke-Tar -ArgumentList @('-czf', $frontendArchivePath, '-C', (Join-Path $sourceRoot 'web'), 'dist') `
+    Invoke-Tar -ArgumentList @('-czf', $frontendArchivePath, '-C', $frontendRoot, 'dist') `
         -ErrorMessage 'Frontend archive creation failed.'
 
-    & docker image save --output $dockerArchivePath @dockerImages
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Docker image archive creation failed.'
+    if ($verifiedMode) {
+        $imageArguments = @()
+        foreach ($imageName in $dockerImages) { $imageArguments += @('--image', $imageName) }
+        $bundle = Invoke-QualityTool 'docker_bundle.py' (@('materialize', '--candidate', $CandidateDirectory, '--cache', $BundleCacheDirectory) + $imageArguments) | ConvertFrom-Json
+        Copy-Item -LiteralPath $bundle.archive -Destination $dockerArchivePath
+        $dockerReceiptPath = Join-Path $payloadRoot 'docker-images.json'
+        Copy-Item -LiteralPath $bundle.receipt -Destination $dockerReceiptPath
+        $null = Invoke-QualityTool 'docker_bundle.py' (@('verify', '--candidate', $CandidateDirectory, '--archive', $dockerArchivePath, '--receipt', $dockerReceiptPath) + $imageArguments)
+    }
+    else {
+        & docker image save --output $dockerArchivePath @dockerImages
+        if ($LASTEXITCODE -ne 0) { throw 'Docker image archive creation failed.' }
     }
     Write-LfText -Path (Join-Path $payloadRoot 'docker-images.txt') -Lines $dockerImages
 
@@ -182,6 +281,12 @@ try {
         "DOCKER_IMAGE_COUNT=$($dockerImages.Count)"
         "PACKAGED_AT_UTC=$([DateTime]::UtcNow.ToString('o'))"
     )
+    if ($verifiedMode) {
+        $manifestLines += "SOURCE_ID=$($candidateIdentity.source_id)"
+        $manifestLines += 'CANDIDATE_VALIDATION=NOT_ASSERTED'
+        $manifestLines += 'FRONTEND_RECEIPT=frontend-build.json'
+        $manifestLines += 'DOCKER_IMAGES_RECEIPT=docker-images.json'
+    }
     Write-LfText -Path (Join-Path $packageRoot 'OFFLINE-PACKAGE.env') -Lines $manifestLines
 
     $checksumLines = @(
@@ -225,6 +330,15 @@ try {
             'payload/' + [System.IO.Path]::GetRelativePath($payloadRoot, $_.FullName).Replace('\', '/')
         }
     )
+    if ($verifiedMode) {
+        $null = Invoke-QualityTool 'candidate.py' @('verify', '--candidate', $CandidateDirectory)
+        $null = Invoke-QualityTool 'candidate.py' @('verify-artifact', '--candidate', $CandidateDirectory, '--artifact', $sourceArchivePath, '--name', 'linux-pg-source')
+        $currentIdentity = Get-Content -LiteralPath (Join-Path $CandidateDirectory 'candidate.json') -Raw | ConvertFrom-Json
+        if ($currentIdentity.source_id -ne $candidateIdentity.source_id) { throw 'Candidate changed during offline packaging.' }
+        $null = Invoke-QualityTool 'frontend_artifact.py' @('verify', '--candidate', $CandidateDirectory, '--archive', $verifiedFrontend)
+        $null = Invoke-QualityTool 'frontend_artifact.py' @('verify', '--candidate', $CandidateDirectory, '--archive', $FrontendArtifact)
+        $null = Invoke-QualityTool 'docker_bundle.py' (@('verify', '--candidate', $CandidateDirectory, '--archive', $dockerArchivePath, '--receipt', $dockerReceiptPath) + $imageArguments)
+    }
     Invoke-Tar -ArgumentList (@('-czf', $archivePath, '-C', $packageRoot) + $archiveEntries) `
         -ErrorMessage 'Offline archive creation failed.'
     Invoke-Tar -ArgumentList @('-tzf', $archivePath) `

@@ -1,13 +1,14 @@
 # Business requirements agent: regression evidence
 
-Run date: 2026-08-26. Environment: local Windows checkout `S:\ragflow`,
+Base run date: 2026-08-26; deterministic golden gate refreshed 2026-09-06.
+Environment: local Windows checkout `S:\ragflow`,
 in-memory SQLite, injected AI/RAGFlow dataset-search/object-storage adapters,
 mocked frontend HTTP. No production credentials or customer data were used.
 
 ## Verdict
 
 `pass` for the deterministic scripted state-machine gate. All 24 current golden cases
-and all 73 hard assertions execute through `BusinessDocumentService`, the
+and all 78 hard assertions execute through `BusinessDocumentService`, the
 leased worker, injected `BusinessDocumentAI`, pinned Evidence, or the concrete
 export service. This verdict is not a live-model quality pass.
 
@@ -15,7 +16,7 @@ export service. This verdict is not a live-model quality pass.
 
 | Lane | Command/evidence | Result |
 | --- | --- | --- |
-| Deterministic scripted state-machine gate | `uv run pytest -q test/evals/business_documents/test_golden_dialogue_harness.py` | P0 19/19 and 59/59 assertions; P1 5/5 and 14/14 assertions; all 24/24 and 73/73; opt-in legacy intake smoke skipped |
+| Deterministic scripted state-machine gate | `uv run pytest -q test/evals/business_documents/test_golden_dialogue_harness.py` | P0 19/19 and 64/64 assertions; P1 5/5 and 14/14 assertions; all 24/24 and 78/78 |
 | Live-quality scorer unit/config | `uv run pytest -q test/evals/business_documents/test_live_quality_scorer.py` | 3 passed; weighted rubric, controlled-reference precision, canonical PlantUML/BPMN fixture shape, hard-failure subset, honest config gating |
 | Real-model intake-to-draft quality | `uv run pytest -q test/evals/business_documents/test_live_model_quality.py` | not executed; default behavior verified as skipped, and flag `1` without tenant verified as an explicit failure |
 | Domain/worker/evidence/export/API/assets | Focused pytest over `test/unit_test/api/apps/business_documents`, REST contract, assets and all business-document evals | 72 passed, 2 skipped; both skips are opt-in live-model lanes and are not counted as passes |
@@ -39,8 +40,8 @@ export service. This verdict is not a live-model quality pass.
 - UI: `covered_by_lower_level` for create/resume, read-only body,
   allowed-command gating, loading/empty/error/conflict/busy states and artifact
   links. A running-stack Playwright journey is outside this deterministic gate.
-- Golden requirements: P0 `19/19` and `59/59` assertions; P1 `5/5` and
-  `14/14` assertions; all cases `24/24` and `73/73` assertions.
+- Golden requirements: P0 `19/19` and `64/64` assertions; P1 `5/5` and
+  `14/14` assertions; all cases `24/24` and `78/78` assertions.
 - Live quality: a separate opt-in test now runs the real tenant chat model
   through at least intake and draft, validates the exact published template,
   protocol separation, mandatory monitoring and question bounds, then computes

@@ -70,17 +70,13 @@ ALLOW_UNHEALTHY=${ALLOW_UNHEALTHY:-0}
 
 sudo -v
 if sudo test -e "${SOURCE_DIR}" && [[ -n $(sudo find "${SOURCE_DIR}" -mindepth 1 -maxdepth 1 -print -quit) ]]; then
-  extracted_version=$(sudo awk -F= '$1 == "RELEASE_VERSION" { print $2; exit }' "${SOURCE_DIR}/DEPLOYMENT-SOURCE.env" 2>/dev/null || true)
-  if [[ ${extracted_version} != "${RELEASE_VERSION}" || ! -s ${SOURCE_DIR}/web/dist/index.html ]]; then
-    echo "SOURCE_DIR contains a different or incomplete release: ${SOURCE_DIR}" >&2
-    exit 1
-  fi
-else
-  sudo install -d -m 0755 "${SOURCE_DIR}"
-  sudo tar -xzf "${PAYLOAD_DIR}/${SOURCE_ARCHIVE}" -C "${SOURCE_DIR}"
-  sudo install -d -m 0755 "${SOURCE_DIR}/web"
-  sudo tar -xzf "${PAYLOAD_DIR}/${FRONTEND_ARCHIVE}" -C "${SOURCE_DIR}/web"
+  echo "SOURCE_DIR is not empty: ${SOURCE_DIR}. Select a fresh SOURCE_DIR for this package; existing files were not changed." >&2
+  exit 1
 fi
+sudo install -d -m 0755 "${SOURCE_DIR}"
+sudo tar -xzf "${PAYLOAD_DIR}/${SOURCE_ARCHIVE}" -C "${SOURCE_DIR}"
+sudo install -d -m 0755 "${SOURCE_DIR}/web"
+sudo tar -xzf "${PAYLOAD_DIR}/${FRONTEND_ARCHIVE}" -C "${SOURCE_DIR}/web"
 sudo find "${SOURCE_DIR}" -type f -name '*.sh' -exec chmod 0755 {} +
 sudo test -s "${SOURCE_DIR}/web/dist/index.html"
 

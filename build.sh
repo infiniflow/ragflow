@@ -47,10 +47,12 @@ _seed_from_system() {
     echo "check if dep ${dep_name} exists in ${dep_dir} or ${sys_dir}"
 
     if [ -d "$dep_dir" ]; then
+        _verify_native_cache "$dep_name" "$(dirname "$dep_dir")"
         echo "  ${dep_name} → ${dep_dir} (user cache)"
         return 0  # already cached
     fi
     if [ -d "$sys_dir" ]; then
+        _verify_native_cache "$dep_name" "$SYSTEM_DEPS"
         echo "  ${dep_name} → ${sys_dir} (system)"
         mkdir -p "$(dirname "$dep_dir")"
         cp -r "$sys_dir" "$dep_dir"
@@ -58,6 +60,14 @@ _seed_from_system() {
     fi
     echo "  ${dep_name} not found in system or user cache"
     return 1
+}
+
+_verify_native_cache() {
+    # The pinned archive profile is linux-amd64; preserve other platform paths.
+    if [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "x86_64" ]; then
+        python3 "$PROJECT_ROOT/ragflow_deps/prepare_native.py" \
+            --check --name "$1" --target-root "$2" || exit 1
+    fi
 }
 
 echo -e "${GREEN}=== RAGFlow Go Server Build Script ===${NC}"
