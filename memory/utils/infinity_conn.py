@@ -279,6 +279,11 @@ class InfinityConnection(InfinityConnectionBase):
         return res, total_hits_count
 
     def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int = 512):
+        """Return forgotten messages ordered by their forgetting timestamp.
+
+        The DataFrame includes document IDs for field conversion, even when
+        empty, without modifying the caller's requested fields.
+        """
         condition = {"memory_id": memory_id, "exists": "forget_at_flt"}
         order_by = OrderByExpr()
         order_by.asc("forget_at_flt")
@@ -309,6 +314,11 @@ class InfinityConnection(InfinityConnectionBase):
         return res
 
     def get_missing_field_message(self, select_fields: list[str], index_name: str, memory_id: str, field_name: str, limit: int = 512):
+        """Return messages whose field still equals its schema default.
+
+        Order by validity timestamp and include document IDs in the DataFrame
+        so callers can convert both populated and empty results.
+        """
         condition = {"memory_id": memory_id, "must_not": {"exists": field_name}}
         order_by = OrderByExpr()
         order_by.asc("valid_at_flt")

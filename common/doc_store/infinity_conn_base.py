@@ -307,6 +307,11 @@ class InfinityConnectionBase(DocStoreConnection):
         return sep.join(lst)
 
     def equivalent_condition_to_str(self, condition: dict, table_instance=None, is_delete: bool = False) -> str | None:
+        """Translate structured filters into an Infinity scalar predicate.
+
+        Existence filters compare a field with its typed schema default and
+        require the table's column metadata.
+        """
         assert "_id" not in condition
         columns = {}
         if table_instance:
@@ -314,6 +319,7 @@ class InfinityConnectionBase(DocStoreConnection):
                 columns[n] = (ty, de)
 
         def exists(cln):
+            """Compare a column with its default, quoting text and JSON values."""
             nonlocal columns
             assert cln in columns, f"'{cln}' should be in '{columns}'."
             ty, de = columns[cln]

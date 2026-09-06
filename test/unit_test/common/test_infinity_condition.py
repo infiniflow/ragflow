@@ -149,6 +149,7 @@ _VARCHAR_COLS = {
     ],
 )
 def test_exists_compares_the_requested_field_to_its_typed_default(negated, column_type, default, literal):
+    """Check typed default literals for positive and negated existence filters."""
     condition = {"exists": "target"}
     if negated:
         condition = {"must_not": condition}

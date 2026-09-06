@@ -52,15 +52,18 @@ class MemoryTable:
     }
 
     def __init__(self):
+        """Create an isolated SQL table with the memory fields under test."""
         self.db = sqlite3.connect(":memory:")
         self.db.execute(
             "CREATE TABLE messages (id TEXT, memory_id TEXT, message_id INTEGER, content TEXT, q_2_vec TEXT, forget_at_flt REAL DEFAULT 0, valid_at_flt REAL DEFAULT 0, status_int INTEGER DEFAULT 1)"
         )
 
     def show_columns(self):
+        """Expose schema types and defaults in the Infinity client's format."""
         return SimpleNamespace(rows=lambda: [(name, ty, default, "") for name, (ty, default) in self.schema.items()])
 
     def output(self, fields):
+        """Begin a query with the requested projection and reset query state."""
         self.fields = fields
         self.predicate = "1=1"
         self.order = []
@@ -69,25 +72,31 @@ class MemoryTable:
         return self
 
     def filter(self, predicate):
+        """Set the scalar predicate that SQLite will evaluate."""
         self.predicate = predicate
         return self
 
     def sort(self, order):
+        """Set the field and direction pairs for result ordering."""
         self.order = order
         return self
 
     def offset(self, start):
+        """Set the number of matching rows to skip."""
         self.start = start
         return self
 
     def limit(self, count):
+        """Bound the number of rows returned by the query."""
         self.count = count
         return self
 
     def option(self, _options):
+        """Accept client options; this fixture always returns hit metadata."""
         return self
 
     def to_df(self):
+        """Execute the scalar query and return a DataFrame plus hit metadata."""
         order = ", ".join(f"{field} {'ASC' if direction == SortType.Asc else 'DESC'}" for field, direction in self.order)
         sql = f"SELECT {', '.join(self.fields)} FROM messages WHERE {self.predicate}"
         if order:
@@ -99,16 +108,19 @@ class MemoryTable:
         return frame, {"total_hits_count": len(frame)}
 
     def insert(self, documents):
+        """Insert messages while serializing embedding arrays for SQLite."""
         for document in documents:
             values = [json.dumps(value) if key == "q_2_vec" else value for key, value in document.items()]
             self.db.execute(f"INSERT INTO messages ({', '.join(document)}) VALUES ({', '.join('?' for _ in document)})", values)
 
     def delete(self, predicate):
+        """Delete matching rows and expose the client-style deletion count."""
         cursor = self.db.execute(f"DELETE FROM messages WHERE {predicate}")
         return SimpleNamespace(deleted_rows=cursor.rowcount)
 
 
 def message(number, forgotten=0.0, memory_id="mem-1"):
+    """Build a deterministic message with stable text and embedding sizes."""
     return {
         "id": f"{memory_id}_{number}",
         "memory_id": memory_id,
@@ -122,6 +134,7 @@ def message(number, forgotten=0.0, memory_id="mem-1"):
 
 @pytest.fixture
 def store(monkeypatch):
+    """Use production connector methods with a local table and no network I/O."""
     # The singleton decorator replaces the class with a closure. Avoid __init__,
     # which opens network connections, while retaining all production methods.
     cls = next(cell.cell_contents for cell in infinity_conn.InfinityConnection.__closure__ if isinstance(cell.cell_contents, type))
@@ -139,6 +152,7 @@ def store(monkeypatch):
 @pytest.mark.parametrize("method", ["get_forgotten_messages", "get_missing_field_message"])
 @pytest.mark.parametrize("empty", [False, True])
 def test_maintenance_results_preserve_ids_fields_order_scope_and_limit(store, method, empty):
+    """Verify maintenance projections, filtering and pagination end to end."""
     conn, table = store
     if not empty:
         table.insert([message(3, 20), message(2, 10), message(1), message(99, 1, "other-memory")])
@@ -156,6 +170,7 @@ def test_maintenance_results_preserve_ids_fields_order_scope_and_limit(store, me
 
 @pytest.mark.parametrize("method", ["get_forgotten_messages", "get_missing_field_message"])
 def test_maintenance_releases_connection_when_query_fails(store, monkeypatch, method):
+    """Ensure query errors propagate after the pooled connection is released."""
     conn, table = store
     monkeypatch.setattr(table, "to_df", MagicMock(side_effect=RuntimeError("query failed")))
     kwargs = {"field_name": "content"} if method == "get_missing_field_message" else {}
@@ -174,6 +189,7 @@ def test_maintenance_releases_connection_when_query_fails(store, monkeypatch, me
     ],
 )
 def test_fifo_prefers_forgotten_then_oldest_active_messages(store, rows, needed, expected_ids):
+    """Verify eviction priority and byte accounting, including empty results."""
     _, table = store
     table.insert(rows)
     size = MessageService.calculate_message_size({"content": "remember this", "content_embed": [0.1, 0.2]})
@@ -184,6 +200,7 @@ def test_fifo_prefers_forgotten_then_oldest_active_messages(store, rows, needed,
 
 @pytest.mark.parametrize("empty", [False, True])
 def test_missing_field_service_accepts_dataframe_results(store, empty):
+    """Normalize populated and empty maintenance DataFrames to message lists."""
     _, table = store
     if not empty:
         table.insert([message(3, 20), message(2), message(1)])
@@ -192,6 +209,7 @@ def test_missing_field_service_accepts_dataframe_results(store, empty):
 
 
 def test_missing_indexes_still_skip_result_conversion(monkeypatch):
+    """Keep absent-index results out of the connector's field converter."""
     conn = MagicMock()
     conn.get_forgotten_messages.return_value = None
     conn.get_missing_field_message.return_value = None
@@ -206,6 +224,7 @@ def test_missing_indexes_still_skip_result_conversion(monkeypatch):
 
 
 async def test_capacity_overflow_evicts_old_messages_and_saves_new_message(store, monkeypatch):
+    """Exercise FIFO deletion, embedding persistence and capacity accounting."""
     from api.db.joint_services import memory_message_service
 
     _, table = store
