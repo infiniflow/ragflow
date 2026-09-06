@@ -70,7 +70,7 @@ def _load_nav_module(monkeypatch, *, accessible=True, index_pack=("idx-1", None)
     if retriever is None:
         retriever = SimpleNamespace(retrieval=AsyncMock(return_value={"chunks": []}))
 
-    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1")
+    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1", language=None)
     knowledgebase_service = SimpleNamespace(
         accessible=MagicMock(return_value=accessible),
         get_by_id=MagicMock(return_value=(True, kb)),
@@ -445,7 +445,7 @@ async def test_chunk_agg_router_focuses_to_limit(monkeypatch):
     retriever = SimpleNamespace(retrieval=AsyncMock(return_value={"chunks": [{"doc_id": f"doc-{i}", "similarity": s} for i, s in [(5, 0.1), (1, 0.9), (3, 0.4), (2, 0.6), (4, 0.2)]]}))
     module, _, _ = _load_nav_module(monkeypatch, retriever=retriever)
     monkeypatch.setattr(module, "_NAV_DOC_FOCUS_LIMIT", 3)
-    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1")
+    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1", language=None)
 
     ok, payload = await module._search_layers_chunk_agg("tenant-1", "kb-1", "q", 12, None, kb)
     assert ok is True
@@ -460,7 +460,7 @@ async def test_chunk_agg_router_focus_limit_overrides_top_k(monkeypatch):
     retriever = SimpleNamespace(retrieval=AsyncMock(return_value={"chunks": [{"doc_id": f"doc-{i}", "similarity": 0.9 - i * 0.1} for i in range(8)]}))
     module, _, _ = _load_nav_module(monkeypatch, retriever=retriever)
     monkeypatch.setattr(module, "_NAV_DOC_FOCUS_LIMIT", 2)
-    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1")
+    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1", language=None)
 
     ok, payload = await module._search_layers_chunk_agg("tenant-1", "kb-1", "q", 12, None, kb)
     assert ok is True
@@ -478,7 +478,7 @@ async def test_chunk_mode_page_size_stays_bounded(monkeypatch):
     """
     retrieval = AsyncMock(return_value={"chunks": [{"doc_id": "doc-a", "similarity": 0.5}]})
     module, _, _ = _load_nav_module(monkeypatch, retriever=SimpleNamespace(retrieval=retrieval))
-    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1")
+    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1", language=None)
 
     await module._search_layers_chunks("tenant-1", "kb-1", "q", 12, None, kb)
     args, kw = retrieval.call_args
@@ -538,7 +538,7 @@ async def test_nav_doc_summaries_batch_loads_descriptions(monkeypatch):
             },
         },
     )
-    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1")
+    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1", language=None)
     summaries = await module._nav_doc_summaries(kb, ["doc-a", "doc-b"])
     assert summaries == {"doc-a": "Summary A", "doc-b": "Summary B"}
     # One query for the whole batch, not one per document.
