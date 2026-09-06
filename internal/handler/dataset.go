@@ -40,6 +40,7 @@ type DatasetsHandler struct {
 	metadataService       *service.MetadataService
 	searchDatasetsService searchDatasetsService
 	searchDatasetService  searchDatasetService
+	renameTagService      renameTagService
 }
 
 type searchDatasetsService interface {
@@ -65,6 +66,7 @@ func NewDatasetsHandler(datasetsService *dataset.DatasetService, metadataService
 	if datasetsService != nil {
 		h.searchDatasetsService = datasetsService
 		h.searchDatasetService = datasetsService
+		h.renameTagService = datasetsService
 	}
 	return h
 }
@@ -763,9 +765,8 @@ func (h *DatasetsHandler) ListTags(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
-type renameTagRequest struct {
-	FromTag string `json:"from_tag"`
-	ToTag   string `json:"to_tag"`
+type renameTagService interface {
+	RenameTag(context.Context, string, string, string, string) (map[string]interface{}, common.ErrorCode, error)
 }
 
 func (h *DatasetsHandler) RenameTag(c *gin.Context) {
@@ -778,36 +779,40 @@ func (h *DatasetsHandler) RenameTag(c *gin.Context) {
 
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Lack of from_tag or to_tag in request body")
+		common.ErrorWithCode(c, common.CodeDataError, "Lack of from_tag or to_tag in request body")
 		return
 	}
 	fromTagValue, hasFrom := payload["from_tag"]
 	toTagValue, hasTo := payload["to_tag"]
 	if !hasFrom || !hasTo {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Lack of from_tag or to_tag in request body")
+		common.ErrorWithCode(c, common.CodeDataError, "Lack of from_tag or to_tag in request body")
 		return
 	}
 	fromTag, okFrom := fromTagValue.(string)
 	toTag, okTo := toTagValue.(string)
 	if !okFrom || !okTo {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "from_tag and to_tag must be strings")
+		common.ErrorWithCode(c, common.CodeArgumentError, "from_tag and to_tag must be strings")
 		return
 	}
-	req := renameTagRequest{FromTag: fromTag, ToTag: toTag}
-	if strings.TrimSpace(req.FromTag) == "" || strings.TrimSpace(req.ToTag) == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "from_tag and to_tag must not be empty")
+	if strings.TrimSpace(fromTag) == "" || strings.TrimSpace(toTag) == "" {
+		common.ErrorWithCode(c, common.CodeArgumentError, "from_tag and to_tag must not be empty")
 		return
 	}
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.RenameTag(ctx, datasetID, user.ID, req.FromTag, req.ToTag)
+	result, code, err := h.renameTagService.RenameTag(ctx, datasetID, user.ID, fromTag, toTag)
 	if err != nil {
+		if code == common.CodeServerError {
+			common.Warn(fmt.Sprintf("rename dataset tag failed: %v", err))
+			common.ErrorWithCode(c, common.CodeDataError, "Internal server error")
+			return
+		}
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": result})
 }
 
 // DeleteKnowledgeGraph handles DELETE /api/v1/datasets/:dataset_id/graph.
