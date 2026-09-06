@@ -67,10 +67,11 @@ func Rerank(
 	cfield string,
 	qb *QueryBuilder,
 	rankFeature map[string]float64,
+	language string,
 ) (sim []float64, tsim []float64, vsim []float64, err error) {
 	// If reranker model is provided and there are results, use model reranking
 	if rerankModel != nil && total > 0 {
-		return RerankByModel(ctx, rerankModel, chunks, nil, nil, query, tkWeight, vtWeight, cfield, qb, rankFeature)
+		return RerankByModel(ctx, rerankModel, chunks, nil, nil, query, tkWeight, vtWeight, cfield, qb, rankFeature, language)
 	}
 
 	// Otherwise, use fallback logic based on engine type
@@ -86,7 +87,7 @@ func Rerank(
 	}
 
 	// For Elasticsearch: need to perform reranking and apply rank features
-	sim, tsim, vsim = RerankStandard(chunks, keywords, questionVector, query, tkWeight, vtWeight, cfield, qb, rankFeature)
+	sim, tsim, vsim = RerankStandard(chunks, keywords, questionVector, query, tkWeight, vtWeight, cfield, qb, rankFeature, language)
 	return sim, tsim, vsim, nil
 }
 
@@ -102,6 +103,7 @@ func RerankByModel(
 	cfield string,
 	qb *QueryBuilder,
 	rankFeature map[string]float64,
+	language string,
 ) (sim []float64, tsim []float64, vsim []float64, err error) {
 	if chunks == nil || len(chunks) == 0 {
 		return []float64{}, []float64{}, []float64{}, nil
@@ -114,7 +116,7 @@ func RerankByModel(
 	// Extract keywords from query
 	keywords := []string{}
 	if qb != nil {
-		_, keywords = qb.Question(query, "qa", 0.6)
+		_, keywords = qb.Question(query, "qa", 0.6, language)
 	}
 	common.Info("RerankByModel keywords extracted", zap.Any("keywords", keywords))
 
@@ -165,7 +167,7 @@ func RerankByModel(
 	}
 
 	// Calculate token similarity
-	tsim = TokenSimilarity(keywords, insTw, qb)
+	tsim = TokenSimilarity(keywords, insTw, qb, language)
 
 	// Get similarity scores from reranker model
 	rerankResponse, err := rerankModel.Rerank(ctx, models.RerankRequest{Query: query, Documents: docs}, rerankModel.APIConfig, &models.RerankConfig{}, nil)
@@ -285,6 +287,7 @@ func RerankStandard(
 	cfield string,
 	qb *QueryBuilder,
 	rankFeature map[string]float64,
+	language string,
 ) (sim []float64, tsim []float64, vsim []float64) {
 	chunkCount := len(chunks)
 	if chunkCount == 0 {
@@ -295,7 +298,7 @@ func RerankStandard(
 
 	// Compute keywords fresh from query
 	if qb != nil && len(keywords) == 0 {
-		_, keywords = qb.Question(query, "qa", 0.6)
+		_, keywords = qb.Question(query, "qa", 0.6, language)
 	}
 	common.Info("RerankStandard keywords", zap.Any("keywords", keywords))
 
@@ -340,7 +343,7 @@ func RerankStandard(
 	}
 
 	// Calculate hybrid similarity
-	sim, tsim, vsim = HybridSimilarity(questionVector, insEmbd, keywords, insTw, tkWeight, vtWeight, qb)
+	sim, tsim, vsim = HybridSimilarity(questionVector, insEmbd, keywords, insTw, tkWeight, vtWeight, qb, language)
 
 	// Apply rank feature scores (tag_score * 10 + pagerank)
 	// Always apply pageranks, even when rankFeature is nil/empty
@@ -384,6 +387,7 @@ func HybridSimilarity(
 	btkss [][]string,
 	tkWeight, vtWeight float64,
 	qb *QueryBuilder,
+	language string,
 ) (sim []float64, tsim []float64, vsim []float64) {
 	// Calculate vector similarities using cosine similarity
 	vsim = make([]float64, len(bvecs))
@@ -391,7 +395,7 @@ func HybridSimilarity(
 		vsim[i] = cosineSimilarity(avec, bvec)
 	}
 
-	tsim = TokenSimilarity(atks, btkss, qb)
+	tsim = TokenSimilarity(atks, btkss, qb, language)
 
 	// Check if all vector similarities are zero
 	allZero := true
@@ -417,11 +421,11 @@ func HybridSimilarity(
 }
 
 // TokenSimilarity calculates token-based similarity
-func TokenSimilarity(atks []string, btkss [][]string, qb *QueryBuilder) []float64 {
-	atksDict, atksKeyOrder := tokensToDict(atks, qb)
+func TokenSimilarity(atks []string, btkss [][]string, qb *QueryBuilder, language string) []float64 {
+	atksDict, atksKeyOrder := tokensToDict(atks, qb, language)
 	btkssDicts := make([]map[string]float64, len(btkss))
 	for i, btks := range btkss {
-		btkssDicts[i], _ = tokensToDict(btks, qb)
+		btkssDicts[i], _ = tokensToDict(btks, qb, language)
 	}
 
 	similarities := make([]float64, len(btkssDicts))
@@ -434,13 +438,13 @@ func TokenSimilarity(atks []string, btkss [][]string, qb *QueryBuilder) []float6
 
 // tokensToDict converts tokens to a weighted dictionary.
 // Also returns the insertion order of keys to match Python's dict insertion order.
-func tokensToDict(tks []string, qb *QueryBuilder) (map[string]float64, []string) {
+func tokensToDict(tks []string, qb *QueryBuilder, language string) (map[string]float64, []string) {
 	d := make(map[string]float64)
 	var keyOrder []string
 	if qb == nil || qb.termWeight == nil {
 		return d, keyOrder
 	}
-	wts := qb.termWeight.Weights(tks, false)
+	wts := qb.termWeight.Weights(tks, false, language)
 
 	for i, tw := range wts {
 		t := tw.Term
@@ -943,6 +947,7 @@ func RerankWithKNN(
 	cfield string,
 	qb *QueryBuilder,
 	rankFeature map[string]float64,
+	language string,
 ) (sim []float64, tsim []float64, vsim []float64) {
 	if len(ids) == 0 {
 		return []float64{}, []float64{}, []float64{}
@@ -969,7 +974,7 @@ func RerankWithKNN(
 	// Extract keywords from query
 	keywords := []string{}
 	if qb != nil {
-		_, keywords = qb.Question(query, "qa", 0.6)
+		_, keywords = qb.Question(query, "qa", 0.6, language)
 	}
 	common.Info("RerankWithKNN keywords", zap.Any("keywords", keywords))
 
@@ -1009,7 +1014,7 @@ func RerankWithKNN(
 	}
 
 	// Calculate token similarity
-	tsim = TokenSimilarity(keywords, insTw, qb)
+	tsim = TokenSimilarity(keywords, insTw, qb, language)
 	common.Info("RerankWithKNN tsim", zap.Float64s("tsim", tsim))
 
 	// Build vector similarity from knnScores - matches Python's np.array([knn_scores.get(chunk_id, 0.0) for chunk_id in sres.ids])
