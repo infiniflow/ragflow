@@ -18,7 +18,8 @@ def load_functions(path, names, namespace):
     assert {node.name for node in selected} == set(names)
     for node in selected:
         node.decorator_list = []
-    exec(compile(ast.Module(body=selected, type_ignores=[]), path, "exec"), namespace)
+    # Execute selected repository functions with fake I/O instead of importing the full server.
+    exec(compile(ast.Module(body=selected, type_ignores=[]), path, "exec"), namespace)  # noqa: S102
 
 
 def main():
@@ -83,11 +84,13 @@ def main():
         raise RuntimeError("private backend address")
 
     routes = dict(response)
-    routes.update({
-        "dataset_api_service": SimpleNamespace(list_tags=failing_service, aggregate_tags=failing_service, rename_tag=failing_service),
-        "logging": SimpleNamespace(exception=lambda *_: None),
-        "request": SimpleNamespace(args={"dataset_ids": kb_id}),
-    })
+    routes.update(
+        {
+            "dataset_api_service": SimpleNamespace(list_tags=failing_service, aggregate_tags=failing_service, rename_tag=failing_service),
+            "logging": SimpleNamespace(exception=lambda *_: None),
+            "request": SimpleNamespace(args={"dataset_ids": kb_id}),
+        }
+    )
     load_functions("api/apps/restful_apis/dataset_api.py", ["list_tags", "aggregate_tags", "rename_tag"], routes)
     expected_error = {"code": 102, "message": "Internal server error"}
     assert routes["list_tags"]("user-1", kb_id) == expected_error
