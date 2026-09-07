@@ -576,15 +576,23 @@ setup_cgo_env() {
             # with "local: *", which hides Go's runtime type symbols and breaks
             # the PIE absolute relocations). No --whole-archive, so GNU ld's
             # archive-level GC drops any ORT kernel/EP object nothing references.
-            local ort_dynamic_list
-            ort_dynamic_list="$(mktemp "${TMPDIR:-/tmp}/ort_dynamic.XXXXXX.txt")"
+            #
+            # The dynamic list is written to a STABLE, project-scoped path (not
+            # mktemp) so CGO_LDFLAGS is reproducible across builds and survives
+            # across invocations; its content never changes, so overwriting is
+            # safe and nothing leaks in /tmp. .cache/ is gitignored.
+            local ort_dynamic_list="${PROJECT_ROOT}/.cache/ort_dynamic_list.txt"
+            mkdir -p "$(dirname "$ort_dynamic_list")"
             printf '{\n  OrtGetApiBase;\n};\n' > "$ort_dynamic_list"
             # --undefined=OrtGetApiBase force-pulls the archive member that
             # defines OrtGetApiBase (the Go binding reaches ORT only via
             # dlsym("OrtGetApiBase"), so nothing references it at link time and
             # it would otherwise be GC'd). From there the minimal build's CPU-EP
             # registration call chain pulls in the operators the models use.
-            export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=$ort_dynamic_list$ort_a -lstdc++"
+            # The explicit space between $ort_dynamic_list and $ort_a keeps the
+            # two as separate linker arguments regardless of $ort_a's leading
+            # space.
+            export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=$ort_dynamic_list $ort_a -lstdc++"
             echo "  onnxruntime (static) → $ONNXRUNTIME_STATIC_PREFIX"
             # The re2 regex-library collision between onnxruntime.a and
             # librag_tokenizer_c_api.a is fixed at the .a level in build_cpp():
