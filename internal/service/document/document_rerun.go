@@ -112,8 +112,24 @@ func (s *DocumentService) RerunDocument(ctx context.Context, userID, logID strin
 
 	return s.StartParseDocuments(ctx, doc, kb, userID, StartParseOptions{
 		RerunWithDelete:  true,
-		RerunDSL:         entity.JSONMap(dsl),
+		RerunDSL:         rerunTaskDSL(dsl),
 		RerunLogID:       logID,
 		RerunComponentID: componentID,
 	})
+}
+
+// rerunTaskDSL copies the persisted log DSL for worker execution without
+// the partial-resume "path" marker, which is audit metadata on the log row
+// only and must not reach the execution path until the Go pipeline honors it.
+func rerunTaskDSL(dsl map[string]interface{}) entity.JSONMap {
+	if dsl == nil {
+		return nil
+	}
+	exec := make(map[string]interface{}, len(dsl))
+	for k, v := range dsl {
+		if k != "path" {
+			exec[k] = v
+		}
+	}
+	return entity.JSONMap(exec)
 }

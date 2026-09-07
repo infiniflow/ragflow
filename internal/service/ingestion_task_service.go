@@ -102,15 +102,10 @@ func (s *IngestionTaskService) ListByUser(ctx context.Context, userID string, da
 	return s.ingestionTaskDAO.ListByUserIDAndDatasetID(ctx, dao.DB, userID, *datasetID, page, pageSize)
 }
 
-func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID, userID string, docIDs []string, taskSchema ...entity.JSONMap) ([]*ParseDocumentResponse, error) {
+func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID, userID string, docIDs []string, schema entity.JSONMap) ([]*ParseDocumentResponse, error) {
 	uniqueDocIDs := common.Deduplicate(docIDs)
 	if len(uniqueDocIDs) == 0 {
 		return nil, fmt.Errorf("no documents to parse")
-	}
-
-	var schema entity.JSONMap
-	if len(taskSchema) > 0 {
-		schema = taskSchema[0]
 	}
 
 	// Populate this cache lazily so a batch avoids repeated knowledge-base reads.
@@ -593,6 +588,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 			return s.markScheduledAfterPublish(ctx, existing.ID)
 		case common.FAILED, common.STOPPED:
 			originalStatus := existing.Status
+			priorSchema := existing.Schema
 			existing, err = s.transition(ctx, existing.ID, common.CREATED)
 			if err != nil {
 				return nil, err
@@ -601,25 +597,29 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 				return nil, fmt.Errorf("clear previous run identity for task %s: %w", existing.ID, err)
 			}
 			existing.PipelineLogID = nil
-			if task.Schema != nil {
-				if err = s.ingestionTaskDAO.UpdateSchema(ctx, dao.DB, existing.ID, task.Schema); err != nil {
-					return nil, err
+			if err = s.ingestionTaskDAO.UpdateSchema(ctx, dao.DB, existing.ID, task.Schema); err != nil {
+				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus, priorSchema); rollbackErr != nil {
+					return nil, fmt.Errorf("update schema for task %s: %w (rollback failed: %w)", existing.ID, err, rollbackErr)
 				}
-				existing.Schema = task.Schema
+				return nil, err
 			}
+			existing.Schema = task.Schema
 			// The previous run is terminal, so any leftover Redis cancel flag
 			// is stale: a genuine cancel of the new run can only come through
 			// RequestStop once the task is RUNNING again. Clear it so the
 			// re-queued task is not cancelled at the worker's pre-start check.
 			clearCancelFlag(ctx, existing.ID)
 			if err = s.ensureRunIdentity(ctx, existing, kbCache); err != nil {
-				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
+				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus, priorSchema); rollbackErr != nil {
 					return nil, fmt.Errorf("ensure run identity for task %s: %w (rollback failed: %v)", existing.ID, err, rollbackErr)
 				}
 				return nil, fmt.Errorf("ensure run identity for task %s: %w", existing.ID, err)
 			}
 			if err = s.enqueueTask(existing.ID); err != nil {
 				s.settlePublishFailure(ctx, existing)
+				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus, priorSchema); rollbackErr != nil {
+					return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", existing.ID, err, rollbackErr)
+				}
 				return nil, err
 			}
 			return s.markScheduledAfterPublish(ctx, existing.ID)
@@ -645,7 +645,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 	return s.markScheduledAfterPublish(ctx, created.ID)
 }
 
-func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string) error {
+func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, status string, priorSchema entity.JSONMap) error {
 	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, []string{common.CREATED}, status)
 	if err != nil {
 		return err
@@ -653,7 +653,7 @@ func (s *IngestionTaskService) rollbackRetriedTask(ctx context.Context, taskID, 
 	if !updated {
 		return s.newTaskStatusConflictError(ctx, taskID, common.CREATED, status)
 	}
-	return nil
+	return s.ingestionTaskDAO.UpdateSchema(ctx, dao.DB, taskID, priorSchema)
 }
 
 func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID string) error {
