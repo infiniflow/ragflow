@@ -134,6 +134,7 @@ type MetadataConfigRequest struct {
 type CreateDatasetRequest struct {
 	Name           string  `json:"name" binding:"required"`
 	EmbeddingModel *string `json:"embedding_model,omitempty"`
+	Language       *string `json:"language,omitempty"`
 	Permission     *string `json:"permission,omitempty"`
 	ParserID       *string `json:"parser_id,omitempty"`
 	PipelineID     *string `json:"pipeline_id,omitempty"`
