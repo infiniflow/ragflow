@@ -911,28 +911,6 @@ export const useSelectItem = (defaultId?: string) => {
   return { selectedId, handleItemClick };
 };
 
-const ChunkTokenNumMap = {
-  naive: 128,
-  knowledge_graph: 8192,
-};
-
-export const useHandleChunkMethodSelectChange = (form: FormInstance) => {
-  // const form = Form.useFormInstance();
-  const handleChange = useCallback(
-    (value: string) => {
-      if (value in ChunkTokenNumMap) {
-        form.setFieldValue(
-          ['parser_config', 'chunk_token_num'],
-          ChunkTokenNumMap[value as keyof typeof ChunkTokenNumMap],
-        );
-      }
-    },
-    [form],
-  );
-
-  return handleChange;
-};
-
 // reset form fields when modal is form, closed
 export const useResetFormOnCloseModal = ({
   form,

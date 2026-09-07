@@ -941,7 +941,7 @@ def _get_docs_with_request(req, dataset_id: str):
     except ValueError as e:
         return RetCode.ARGUMENT_ERROR, str(e), [], 0
     if doc_id and len(doc_ids) > 0:
-        return RetCode.DATA_ERROR, f"Should not provide both 'id':{doc_id} and 'ids'{doc_ids}"
+        return RetCode.DATA_ERROR, f"Should not provide both 'id':{doc_id} and 'ids'{doc_ids}", [], 0
     if len(doc_ids) > 0:
         doc_ids_filter = doc_ids
 
