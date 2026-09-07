@@ -57,7 +57,7 @@
                                     "component_name": "TavilySearch",
                                     "name": "TavilySearch",
                                     "params": {
-                                        "api_key": "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",
+                                        "api_key": "",
                                         "days": 7,
                                         "exclude_domains": [],
                                         "include_answer": false,
@@ -651,7 +651,7 @@
                                         "component_name": "TavilySearch",
                                         "name": "TavilySearch",
                                         "params": {
-                                            "api_key": "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",
+                                            "api_key": "",
                                             "days": 7,
                                             "exclude_domains": [],
                                             "include_answer": false,

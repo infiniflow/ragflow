@@ -38,8 +38,14 @@ type Router struct {
 	searchHandler        *handler.SearchHandler
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
+	mcpHandler           *handler.MCPHandler
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
+	agentHandler         *handler.AgentHandler
+	searchBotHandler     *handler.SearchBotHandler
+	difyRetrievalHandler *handler.DifyRetrievalHandler
+	pluginHandler        *handler.PluginHandler
+	modelHandler         *handler.ModelHandler
 }
 
 // NewRouter create router
@@ -59,8 +65,14 @@ func NewRouter(
 	searchHandler *handler.SearchHandler,
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
+	mcpHandler *handler.MCPHandler,
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
+	agentHandler *handler.AgentHandler,
+	searchBotHandler *handler.SearchBotHandler,
+	difyRetrievalHandler *handler.DifyRetrievalHandler,
+	pluginHandler *handler.PluginHandler,
+	modelHandler *handler.ModelHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -78,13 +90,28 @@ func NewRouter(
 		searchHandler:        searchHandler,
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
+		mcpHandler:           mcpHandler,
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
+		agentHandler:         agentHandler,
+		searchBotHandler:     searchBotHandler,
+		difyRetrievalHandler: difyRetrievalHandler,
+		pluginHandler:        pluginHandler,
+		modelHandler:         modelHandler,
 	}
 }
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	// Mark all responses from Go with a header for debugging.
+	engine.Use(func(c *gin.Context) {
+		c.Header("X-API-Source", "go")
+		c.Next()
+	})
+
+	// Log all HTTP requests.
+	engine.Use(gin.Logger())
+
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
 
@@ -95,11 +122,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// User logout endpoint
 	engine.GET("/v1/user/logout", r.userHandler.Logout)
 
+	// OAuth callbacks are invoked by third-party providers and cannot rely on
+	// the RAGFlow auth middleware.
+	engine.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
+	engine.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+
 	apiNoAuth := engine.Group("/api/v1")
 	{
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
+		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
 
 		// User login channels endpoint
 		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
@@ -107,8 +140,22 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// User login by email endpoint
 		apiNoAuth.POST("/auth/login", r.userHandler.LoginByEmail)
 
+		// OAuth / OIDC login routes. The static "channels" segment is
+		// registered before the wildcard, so gin's tree resolves
+		// /auth/login/channels to GetLoginChannels and other values to
+		// OAuthLogin without conflict.
+		apiNoAuth.GET("/auth/login/:channel", r.userHandler.OAuthLogin)
+		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthCallback)
+
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
+
+		// Document images are embedded directly in pages and match Python's public route.
+		apiNoAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
+
+		// Google redirects here after Gmail / Google Drive web OAuth completes.
+		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
+		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
 	}
 
 	// Protected routes
@@ -153,6 +200,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			tenants := v1.Group("/tenants")
 			{
 				tenants.GET("", r.tenantHandler.TenantList)
+				tenants.PATCH("/:tenant_id", r.tenantHandler.AcceptTenantInvite)
+				tenants.GET("/:tenant_id/users", r.tenantHandler.ListTenantMembers)
+				tenants.POST("/:tenant_id/users", r.tenantHandler.AddTenantMember)
+				tenants.DELETE("/:tenant_id/users", r.tenantHandler.RemoveTenantMember)
 			}
 
 			v1.GET("/tenant/list", r.tenantHandler.TenantList)
@@ -162,10 +213,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				documents.POST("", r.documentHandler.CreateDocument)
 				documents.GET("", r.documentHandler.ListDocuments)
+				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
+				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
-				documents.POST("/parse", r.documentHandler.ParseDocuments)
 			}
 
 			// Chat routes
@@ -175,6 +227,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
 			}
+
+			// Searchbot routes
+			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
+			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
+			v1.POST("/searchbots/ask", r.searchBotHandler.Ask)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
@@ -186,14 +243,30 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
-				datasets.POST("/search", r.chunkHandler.RetrievalTest)
+				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
+				datasets.GET("/:dataset_id/metadata/summary", r.documentHandler.MetadataSummaryByDataset)
+
+				// Dataset ingestion logs
+				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
+				datasets.GET("/:dataset_id/ingestions", r.datasetsHandler.ListIngestionLogs)
+				datasets.GET("/:dataset_id/ingestions/:log_id", r.datasetsHandler.GetIngestionLog)
+
+				// Metadata Config
+				datasets.GET("/:dataset_id/metadata/config", r.datasetsHandler.GetMetadataConfig)
+				datasets.PUT("/:dataset_id/metadata/config", r.datasetsHandler.UpdateMetadataConfig)
 
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
+				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
+				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
+				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
+				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
+				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
+				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
 			}
 
 			// Search routes
@@ -280,14 +353,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances", r.providerHandler.ListProviderInstances)
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/balance", r.providerHandler.ShowInstanceBalance)
-				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckProviderConnection)
+				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckInstanceConnection)
+				provider.GET("/:provider_name/connection", r.providerHandler.CheckConnection)
 				provider.GET("/:provider_name/instances/:instance_name/tasks", r.providerHandler.ListTasks)
 				provider.GET("/:provider_name/instances/:instance_name/tasks/:task_id", r.providerHandler.ShowTask)
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
 				provider.DELETE("/:provider_name/instances", r.providerHandler.DropProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
 				provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.providerHandler.EnableOrDisableModel)
-				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddCustomModel)
+				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddModel)
 				provider.DELETE("/:provider_name/instances/:instance_name/models", r.providerHandler.DropInstanceModels)
 				v1.POST("/chat/completions", r.providerHandler.ChatToModel)
 				v1.POST("/embeddings", r.providerHandler.EmbedText)
@@ -304,21 +378,81 @@ func (r *Router) Setup(engine *gin.Engine) {
 				model.PATCH("/", r.tenantHandler.SetModels)
 			}
 
+			allModels := v1.Group("/all-models")
+			{
+				allModels.GET("", r.modelHandler.ListAllModels)
+			}
+
+			// Agent routes
+			agents := v1.Group("/agents")
+			{
+				agents.GET("", r.agentHandler.ListAgents)
+				agents.GET("/prompts", r.agentHandler.GetPrompts)
+				agents.GET("/templates", r.agentHandler.ListTemplates)
+				agents.POST("/test_db_connection", r.agentHandler.TestDBConnection)
+				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
+				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
+				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
+				agents.PUT("/:agent_id/tags", r.agentHandler.UpdateAgentTags)
+				agents.GET("/:agent_id/sessions", r.agentHandler.ListAgentSessions)
+				agents.GET("/:agent_id/sessions/:session_id", r.agentHandler.GetAgentSession)
+				agents.DELETE("/:agent_id/sessions/:session_id", r.agentHandler.DeleteAgentSessionItem)
+				agents.DELETE("/:agent_id/sessions", r.agentHandler.DeleteAgentSessions)
+			}
+
+			// Plugin routes
+			plugin := v1.Group("/plugin")
+			{
+				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
+			}
+
 			connector := v1.Group("/connectors")
 			{
 				connector.GET("/", r.connectorHandler.ListConnectors)
+				connector.POST("/", r.connectorHandler.CreateConnector)
+				connector.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
+				connector.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
+				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
+				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
+				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
+				connector.POST("/:connector_id/test", r.connectorHandler.TestConnector)
+			}
+
+			// MCP server routes. Per-server CRUD ships via separate PRs that
+			// share the same handler/service: GET list (#15253), GET by id
+			// (#15254), POST create (#15260, merged), PUT (#15261), DELETE
+			// (#15262, merged). This PR adds only the non-overlapping
+			// endpoints: import and test.
+			mcp := v1.Group("/mcp")
+			{
+				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
+				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
+				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
+				mcp.POST("/servers/import", r.mcpHandler.ImportMCPServers)
+				mcp.POST("/servers/:mcp_id/test", r.mcpHandler.TestMCPServer)
 			}
 
 			system := v1.Group("/system")
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
-				log := system.Group("/log")
+				system.GET("/status", r.systemHandler.GetStatus)
+				system.GET("/stats", r.systemHandler.GetStats)
+
+				config := system.Group("/config")
 				{
-					// /api/v1/system/log GET
-					log.GET("", r.systemHandler.GetLogLevel)
-					// /api/v1/system/log PUT
-					log.PUT("", r.systemHandler.SetLogLevel)
+					config.GET("/log", r.systemHandler.GetLogLevel)
+					config.PUT("/log", r.systemHandler.SetLogLevel)
 				}
+
+				//log := system.Group("/log")
+				//{
+				//	// /api/v1/system/log GET
+				//	log.GET("", r.systemHandler.GetLogLevel)
+				//	// /api/v1/system/log PUT
+				//	log.PUT("", r.systemHandler.SetLogLevel)
+				//}
 
 				tokens := system.Group("/tokens")
 				{
@@ -341,9 +475,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
 			kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
 			kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
-			kb.POST("/doc_engine_table", r.knowledgebaseHandler.CreateDatasetInDocEngine)   // Internal API only for GO
-			kb.DELETE("/doc_engine_table", r.knowledgebaseHandler.DeleteDatasetInDocEngine) // Internal API only for GO
-			kb.POST("/insert_from_file", r.knowledgebaseHandler.InsertDatasetFromFile)      // Internal API only for GO
 
 			// KB ID specific routes
 			kbByID := kb.Group("/:kb_id")
@@ -358,9 +489,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Tenant routes (per-tenant resources)
 		tenant := v1.Group("/tenant")
 		{
-			tenant.POST("/doc_engine_metadata_table", r.tenantHandler.CreateMetadataInDocEngine)   // Internal API only for GO
-			tenant.DELETE("/doc_engine_metadata_table", r.tenantHandler.DeleteMetadataInDocEngine) // Internal API only for GO
-			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile)      // Internal API only for GO
+			tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)                     // Internal API only for GO
+			tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)                   // Internal API only for GO
+			tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)               // Internal API only for GO
+			tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)             // Internal API only for GO
+			tenant.POST("/insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)     // Internal API only for GO
+			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile) // Internal API only for GO
 		}
 
 		// Document routes
@@ -369,23 +503,16 @@ func (r *Router) Setup(engine *gin.Engine) {
 			doc.POST("/list", r.documentHandler.ListDocuments)
 			doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
 			doc.POST("/set_meta", r.documentHandler.SetMeta)
+			doc.POST("/delete_meta", r.documentHandler.DeleteMeta) // Internal API only for GO
 		}
+
+		v1.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
 		// Chunk routes
 		chunk := v1.Group("/chunk")
 		{
 			chunk.POST("/list", r.chunkHandler.List)
 			chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
-			chunk.POST("/rm", r.chunkHandler.Remove)
-		}
-
-		// LLM routes
-		llm := authorized.Group("/v1/llm")
-		{
-			llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
-			llm.GET("/factories", r.llmHandler.Factories)
-			llm.GET("/list", r.llmHandler.ListApp)
-			llm.POST("/set_api_key", r.llmHandler.SetAPIKey)
 		}
 
 		// Chat routes
@@ -409,6 +536,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		connector := authorized.Group("/v1/connector")
 		{
 			connector.GET("/list", r.connectorHandler.ListConnectors)
+			connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+			connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 		}
 
 		// File routes
@@ -420,6 +549,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		}
 
 	}
+
+	// Dify retrieval routes
+	dify := authorized.Group("/api/v1/dify")
+	{
+		dify.POST("/retrieval", r.difyRetrievalHandler.Retrieval)
+		dify.GET("/retrieval", r.difyRetrievalHandler.Retrieval)
+	}
+	apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
 
 	// Handle undefined routes
 	engine.NoRoute(handler.HandleNoRoute)

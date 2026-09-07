@@ -251,7 +251,7 @@ These scripts create a dataset,
 upload/parse docs from test/benchmark/test_docs, run the benchmark, and clean up.
 The both script runs retrieval then chat on the same dataset, then deletes it.
 
-- Make sure to run ```uv sync --python 3.12 --group test ``` before running the commands.
+- Make sure to run ```uv sync --python 3.13 --group test ``` before running the commands.
 - It is also necessary to run these commands prior to initializing your containers if you plan on using the built-in embedded model: ```echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env``` 
   and ```echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env```
 

@@ -3,10 +3,8 @@ import {
   FormFieldType,
   RenderField,
 } from '@/components/dynamic-form';
-import {
-  SelectWithSearch,
-  SelectWithSearchFlagOptionType,
-} from '@/components/originui/select-with-search';
+import { ModelTreeSelect, ModelTypeMap } from '@/components/model-tree-select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,9 +17,8 @@ import {
 import { Radio } from '@/components/ui/radio';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
-import { LlmModelType, ParseType } from '@/constants/knowledge';
+import { ParseType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
 import { history } from '@/utils/simple-history-util';
 import { t } from 'i18next';
@@ -51,7 +48,6 @@ import {
   useHandleKbEmbedding,
   useHasParsedDocument,
   useSelectChunkMethodList,
-  useSelectEmbeddingModelOptions,
 } from '../hooks';
 interface IProps {
   line?: 1 | 2;
@@ -117,13 +113,12 @@ export const EmbeddingSelect = ({
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
-  const embeddingModelOptions = useSelectEmbeddingModelOptions();
   const { handleChange } = useHandleKbEmbedding();
 
   const oldValue = useMemo(() => {
     const embdStr = form.getValues(name || 'embedding_model');
     return embdStr || '';
-  }, [form]);
+  }, [form, name]);
   const [loading, setLoading] = useState(false);
   return (
     <Spin
@@ -132,14 +127,14 @@ export const EmbeddingSelect = ({
         'opacity-20': loading,
       })}
     >
-      <SelectWithSearch
+      <ModelTreeSelect
+        modelTypes={ModelTypeMap.embd_id}
         onChange={async (value) => {
           field.onChange(value);
           if (isEdit && disabled) {
             setLoading(true);
             const res = await handleChange({
               embed_id: value,
-              // callback: field.onChange,
             });
             if (res.code !== 0) {
               field.onChange(oldValue);
@@ -149,7 +144,6 @@ export const EmbeddingSelect = ({
         }}
         disabled={disabled && !isEdit}
         value={field.value}
-        options={embeddingModelOptions}
         placeholder={t('embeddingModelPlaceholder')}
         testId={testId}
       />
@@ -544,18 +538,14 @@ export const LLMSelect = ({
   disabled?: boolean;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Chat,
-    LlmModelType.Image2text,
-  ]);
   return (
-    <SelectWithSearch
-      onChange={async (value) => {
+    <ModelTreeSelect
+      modelTypes={ModelTypeMap.llm_id}
+      onChange={(value) => {
         field.onChange(value);
       }}
       disabled={disabled && !isEdit}
       value={field.value}
-      options={modelOptions as SelectWithSearchFlagOptionType[]}
       placeholder={t('embeddingModelPlaceholder')}
     />
   );

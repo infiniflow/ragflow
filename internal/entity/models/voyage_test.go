@@ -51,6 +51,20 @@ func TestVoyageName(t *testing.T) {
 	}
 }
 
+func TestVoyageNewModelWithCustomDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+	})
+
+	if model := NewVoyageModel(map[string]string{"default": "http://unused"}, URLSuffix{}); model == nil {
+		t.Fatal("NewVoyageModel returned nil")
+	}
+}
+
 func TestVoyageEmbedHappyPath(t *testing.T) {
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "voyage-3.5" {

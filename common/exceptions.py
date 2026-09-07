@@ -26,3 +26,9 @@ class ArgumentException(Exception):
 class NotFoundException(Exception):
     def __init__(self, msg):
         self.msg = msg
+
+class ModelException(Exception):
+    def __init__(self, msg, retryable=False):
+        super().__init__(msg)
+        self.msg = msg
+        self.retryable = retryable

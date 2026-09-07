@@ -546,6 +546,17 @@ class InfinityConnectionBase(DocStoreConnection):
             except Exception as e:
                 self.logger.warning(f"Failed to create index on kb_id for {table_name}: {e}")
 
+            # Create secondary index on meta_fields for metadata filter queries
+            try:
+                inf_table.create_index(
+                    f"idx_{table_name}_meta_fields",
+                    IndexInfo("meta_fields", IndexType.Secondary),
+                    ConflictType.Ignore,
+                )
+                self.logger.debug(f"INFINITY created secondary index on meta_fields for table {table_name}")
+            except Exception as e:
+                self.logger.warning(f"Failed to create index on meta_fields for {table_name}: {e}")
+
             self.logger.debug(f"INFINITY created document metadata table {table_name} with secondary indexes")
             return True
 

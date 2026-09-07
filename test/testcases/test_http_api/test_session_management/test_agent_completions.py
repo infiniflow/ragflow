@@ -58,7 +58,7 @@ def _agent_items(res):
 
 @pytest.fixture(scope="function")
 def agent_id(HttpApiAuth, request):
-    res = list_agents(HttpApiAuth, {"page_size": 1000})
+    res = list_agents(HttpApiAuth, {"page_size": 100})
     assert res["code"] == 0, res
     for agent in _agent_items(res):
         if agent.get("title") == AGENT_TITLE:

@@ -124,7 +124,7 @@ def test_openai_compatible_nonstream_shape(rest_client, create_chat):
     assert res.status_code == 200
     payload = res.json()
 
-    assert payload["object"] == "chat.completion", payload
+    assert payload.get("object") == "chat.completion", payload
     assert isinstance(payload["choices"], list) and payload["choices"], payload
     first_choice = payload["choices"][0]
     assert first_choice.get("finish_reason") == "stop", payload
@@ -138,6 +138,26 @@ def test_openai_compatible_nonstream_shape(rest_client, create_chat):
     assert usage["prompt_tokens"] > 0, usage
     assert usage["completion_tokens"] > 0, usage
     assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"], usage
+
+
+@pytest.mark.p2
+def test_openai_compatible_defaults_to_nonstream_when_stream_is_missing(rest_client, create_chat):
+    chat_id = create_chat("restful_openai_default_nonstream_chat")
+    res = rest_client.post(
+        f"/openai/{chat_id}/chat/completions",
+        json={
+            "model": "model",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+        timeout=60,
+    )
+    assert res.status_code == 200
+    assert "application/json" in res.headers.get("Content-Type", ""), res.headers.get("Content-Type", "")
+
+    payload = res.json()
+    assert payload["object"] == "chat.completion", payload
+    assert isinstance(payload["choices"], list) and payload["choices"], payload
+    assert payload["choices"][0].get("finish_reason") == "stop", payload
 
 
 @pytest.mark.p2

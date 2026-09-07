@@ -21,11 +21,10 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.task_service import TaskService
 from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default, queue_save_to_memory_task, query_message
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
-from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from memory.services.messages import MessageService
 from memory.utils.prompt_util import PromptAssembler
-from common.constants import MemoryType, ForgettingPolicy, LLMType
+from common.constants import MemoryType, ForgettingPolicy
 from common.exceptions import ArgumentException, NotFoundException
 from common.time_utils import current_timestamp, timestamp_to_date
 
@@ -104,9 +103,7 @@ async def create_memory(memory_info: dict):
         name=memory_name,
         memory_type=memory_type,
         embd_id=memory_info["embd_id"],
-        llm_id=memory_info["llm_id"],
-        tenant_llm_id=memory_info["tenant_llm_id"],
-        tenant_embd_id=memory_info["tenant_embd_id"]
+        llm_id=memory_info["llm_id"]
     )
     if success:
         return True, format_ret_data_from_memory(res)
@@ -133,7 +130,20 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
     }
     """
     current_memory = _require_memory_access(memory_id)
-    owner_tenant_id = current_memory.tenant_id
+
+    def _normalize_memory_type(value):
+        if value is None:
+            return []
+        if isinstance(value, int):
+            return sorted(get_memory_type_human(value))
+        if isinstance(value, list):
+            return sorted(str(v).strip().lower() for v in value if str(v).strip())
+        return sorted(str(value).strip().lower().split(","))
+
+    def _normalize_str(value):
+        if value is None:
+            return ""
+        return str(value).strip()
 
     update_dict = {}
     # check name length
@@ -150,32 +160,15 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
         if new_memory_setting["permissions"] not in [e.value for e in TenantPermission]:
             raise ArgumentException(f"Unknown permission '{new_memory_setting['permissions']}'.")
         update_dict["permissions"] = new_memory_setting["permissions"]
-    if ("tenant_llm_id" in new_memory_setting or "tenant_embd_id" in new_memory_setting) and not (
-        new_memory_setting.get("llm_id") or new_memory_setting.get("embd_id")
-    ):
-        raise ArgumentException(
-            "Do not set tenant_llm_id or tenant_embd_id directly; update llm_id and/or embd_id instead."
-        )
     if new_memory_setting.get("llm_id") or new_memory_setting.get("embd_id"):
         merged = {
             "llm_id": new_memory_setting.get("llm_id") or current_memory.llm_id,
             "embd_id": new_memory_setting.get("embd_id") or current_memory.embd_id,
         }
-        merged = ensure_tenant_model_id_for_params(owner_tenant_id, merged)
-        if not merged.get("tenant_llm_id"):
-            raise ArgumentException(
-                f"Tenant Model with name {merged['llm_id']} and type {LLMType.CHAT.value} not found"
-            )
-        if new_memory_setting.get("embd_id") and not merged.get("tenant_embd_id"):
-            raise ArgumentException(
-                f"Tenant Model with name {merged['embd_id']} and type {LLMType.EMBEDDING.value} not found"
-            )
         if new_memory_setting.get("llm_id"):
             update_dict["llm_id"] = merged["llm_id"]
         if new_memory_setting.get("embd_id"):
             update_dict["embd_id"] = merged["embd_id"]
-        update_dict["tenant_llm_id"] = merged["tenant_llm_id"]
-        update_dict["tenant_embd_id"] = merged.get("tenant_embd_id")
     if new_memory_setting.get("memory_type"):
         memory_type = set(new_memory_setting["memory_type"])
         invalid_type = memory_type - {e.name.lower() for e in MemoryType}
@@ -207,8 +200,21 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
     memory_dict.update({"memory_type": get_memory_type_human(current_memory.memory_type)})
     to_update = {}
     for k, v in update_dict.items():
-        if isinstance(v, list) and set(memory_dict[k]) != set(v):
-            to_update[k] = v
+        if k == "memory_type":
+            current_value = _normalize_memory_type(memory_dict.get(k))
+            new_value = _normalize_memory_type(v)
+            if current_value != new_value:
+                to_update[k] = new_value
+        elif k == "embd_id":
+            current_value = _normalize_str(memory_dict.get(k))
+            new_value = _normalize_str(v)
+            if current_value != new_value:
+                to_update[k] = new_value
+        elif isinstance(v, list):
+            current_value = sorted(str(item).strip() for item in memory_dict.get(k, []))
+            new_value = sorted(str(item).strip() for item in v)
+            if current_value != new_value:
+                to_update[k] = v
         elif memory_dict[k] != v:
             to_update[k] = v
 
@@ -216,7 +222,7 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
         return True, memory_dict
     # check memory empty when update embd_id, memory_type
     memory_size = get_memory_size_cache(memory_id, current_memory.tenant_id)
-    not_allowed_update = [f for f in ["tenant_embd_id", "embd_id", "memory_type"] if f in to_update and memory_size > 0]
+    not_allowed_update = [f for f in ["embd_id", "memory_type"] if f in to_update and memory_size > 0]
     if not_allowed_update:
         raise ArgumentException(f"Can't update {not_allowed_update} when memory isn't empty.")
     if "memory_type" in to_update:

@@ -39,7 +39,8 @@ def update_document_name_only(document_id, req_doc_name):
     informs = File2DocumentService.get_by_document_id(document_id)
     if informs:
         e, file = FileService.get_by_id(informs[0].file_id)
-        FileService.update_by_id(file.id, {"name": req_doc_name})
+        if e and file:
+            FileService.update_by_id(file.id, {"name": req_doc_name})
     # Add logic to update index - refer to rename method in document_app.py
     tenant_id = DocumentService.get_tenant_id(document_id)
     title_tks = rag_tokenizer.tokenize(req_doc_name)

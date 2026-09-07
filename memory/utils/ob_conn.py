@@ -568,6 +568,20 @@ class OBConnection(OBConnectionBase):
             return [row.get("id") for row in res.messages if row.get("id")]
         return []
 
+    def get_scores(self, res) -> dict[str, float]:
+        """Extract message ID to relevance score mapping from search results."""
+        out = {}
+        if isinstance(res, tuple):
+            res = res[0]
+        messages = res.messages if hasattr(res, 'messages') else []
+        for msg in messages:
+            msg_id = msg.get("id")
+            if msg_id is None:
+                continue
+            score = msg.get("_score")
+            out[msg_id] = float(score) if score is not None else 0.0
+        return out
+
     def get_fields(self, res, fields: list[str]) -> dict[str, dict]:
         """Get fields from search result."""
         if isinstance(res, tuple):

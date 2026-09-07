@@ -8,7 +8,7 @@ import {
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
 import { AgentChatContext } from '@/pages/agent/context';
-import { downloadFile } from '@/services/file-manager-service';
+import { downloadAgentFile } from '@/services/file-manager-service';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import {
   DeleteOutlined,
@@ -125,7 +125,7 @@ export const AssistantGroupButton = ({
             value="g"
             onClick={async () => {
               try {
-                const response = await downloadFile({
+                const response = await downloadAgentFile({
                   docId: attachment.doc_id,
                   ext: attachment.format,
                 });

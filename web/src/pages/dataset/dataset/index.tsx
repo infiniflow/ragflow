@@ -242,6 +242,7 @@ export default function Dataset() {
             onOk={onDocumentUploadOk}
             loading={documentUploadLoading}
             showParseOnCreation
+            isTableParser={knowledgeBase?.chunk_method === 'table'}
           ></FileUploadDialog>
         )}
         {createVisible && (

@@ -19,7 +19,7 @@ import itertools
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 import networkx as nx
 
@@ -27,6 +27,7 @@ from rag.graphrag.general.extractor import Extractor
 from rag.nlp import is_english
 import editdistance
 from rag.graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
+from rag.graphrag.checkpoints import resolution_checkpoint_key
 from rag.llm.chat_model import Base as CompletionLLM
 from rag.graphrag.utils import perform_variable_replacements, chat_limiter, GraphChange
 from api.db.services.task_service import has_canceled
@@ -71,7 +72,9 @@ class EntityResolution(Extractor):
                        subgraph_nodes: set[str],
                        prompt_variables: dict[str, Any] | None = None,
                        callback: Callable | None = None,
-                       task_id: str = "") -> EntityResolutionResult:
+                       task_id: str = "",
+                       checkpoints: dict[str, Any] | None = None,
+                       save_checkpoint: Callable[[str, Any], Awaitable[bool]] | None = None) -> EntityResolutionResult:
         """Call method definition."""
         if prompt_variables is None:
             prompt_variables = {}
@@ -106,19 +109,35 @@ class EntityResolution(Extractor):
         resolution_batch_size = 100
         max_concurrent_tasks = 5
         semaphore = asyncio.Semaphore(max_concurrent_tasks)
+        checkpoints = checkpoints or {}
 
         async def limited_resolve_candidate(candidate_batch, result_set, result_lock):
             nonlocal remain_candidates_to_resolve, callback
             async with semaphore:
                 try:
+                    checkpoint_key = resolution_checkpoint_key(candidate_batch[0], candidate_batch[1])
+                    checkpoint = checkpoints.get(checkpoint_key)
+                    if isinstance(checkpoint, list):
+                        async with result_lock:
+                            for pair in checkpoint:
+                                if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                                    result_set.add((pair[0], pair[1]))
+                        remain_candidates_to_resolve -= len(candidate_batch[1])
+                        callback(
+                            msg=f"Replayed {len(candidate_batch[1])} resolved pairs from checkpoint, "
+                                f"{remain_candidates_to_resolve} remain."
+                        )
+                        return
                     enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
                     timeout_sec = 280 if enable_timeout_assertion else 1_000_000_000
 
                     try:
-                        await asyncio.wait_for(
+                        selected_pairs = await asyncio.wait_for(
                             self._resolve_candidate(candidate_batch, result_set, result_lock, task_id),
                             timeout=timeout_sec
                         )
+                        if selected_pairs is not None and save_checkpoint:
+                            await save_checkpoint(checkpoint_key, [list(pair) for pair in selected_pairs])
                         remain_candidates_to_resolve -= len(candidate_batch[1])
                         callback(
                             msg=f"Resolved {len(candidate_batch[1])} pairs, "
@@ -219,10 +238,10 @@ class EntityResolution(Extractor):
 
             except asyncio.TimeoutError:
                 logging.warning("_resolve_candidate._async_chat timeout, skipping...")
-                return
+                return None
             except Exception as e:
                 logging.error(f"_resolve_candidate._async_chat failed: {e}")
-                return
+                return None
 
         logging.debug(f"_resolve_candidate chat prompt: {text}\nchat response: {response}")
         result = self._process_results(len(candidate_resolution_i[1]), response,
@@ -232,9 +251,11 @@ class EntityResolution(Extractor):
                                                             DEFAULT_ENTITY_INDEX_DELIMITER),
                                        self.prompt_variables.get(self._resolution_result_delimiter_key,
                                                             DEFAULT_RESOLUTION_RESULT_DELIMITER))
+        selected_pairs = [candidate_resolution_i[1][result_i[0] - 1] for result_i in result]
         async with resolution_result_lock:
-            for result_i in result:
-                resolution_result.add(candidate_resolution_i[1][result_i[0] - 1])
+            for pair in selected_pairs:
+                resolution_result.add(pair)
+        return selected_pairs
 
     def _process_results(
             self,
@@ -288,4 +309,3 @@ class EntityResolution(Extractor):
             return len(a & b) > 1
 
         return len(a & b)*1./max_l >= 0.8
-

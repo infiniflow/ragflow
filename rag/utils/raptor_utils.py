@@ -62,16 +62,28 @@ def _as_extra_dict(extra) -> dict:
     if isinstance(extra, dict):
         return extra
     if isinstance(extra, str) and extra:
+        # Try standard JSON first (double quotes)
         try:
             parsed = json.loads(extra)
+            return parsed if isinstance(parsed, dict) else {}
         except json.JSONDecodeError:
-            logging.warning(
-                "Ignoring malformed RAPTOR extra payload while collecting chunk metadata: %s",
-                extra[:200],
-                exc_info=True,
-            )
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
+            last_exc = True
+
+        # Fallback: try parsing Python dict literal (single quotes)
+        try:
+            import ast
+            parsed = ast.literal_eval(extra)
+            if isinstance(parsed, dict):
+                return parsed
+        except (ValueError, SyntaxError):
+            last_exc = True
+
+        logging.warning(
+            "Ignoring malformed RAPTOR extra payload while collecting chunk metadata: %s",
+            extra[:200],
+            exc_info=last_exc,
+        )
+        return {}
     return {}
 
 

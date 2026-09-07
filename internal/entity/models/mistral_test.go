@@ -339,7 +339,7 @@ func TestMistralListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if len(ids) != 3 || ids[0] != "mistral-large-latest" || ids[2] != "mistral-embed" {
+	if len(ids) != 3 || ids[0].Name != "mistral-large-latest" || ids[2].Name != "mistral-embed" {
 		t.Errorf("ids=%v, want [mistral-large-latest mistral-small-latest mistral-embed]", ids)
 	}
 }
@@ -387,6 +387,49 @@ func TestMistralRerankReturnsNoSuchMethod(t *testing.T) {
 	_, err := m.Rerank(&q, "what is rag?", []string{"a", "b"}, &APIConfig{}, &RerankConfig{TopN: 2})
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected 'no such method', got %v", err)
+	}
+}
+
+func TestMistralUnsupportedDefaultsReturnNoSuchMethod(t *testing.T) {
+	m := newMistralForTest("http://unused")
+	modelName := "mistral-large-latest"
+
+	checks := []struct {
+		name string
+		call func() error
+	}{
+		{"TranscribeAudio", func() error {
+			_, err := m.TranscribeAudio(&modelName, nil, &APIConfig{}, nil)
+			return err
+		}},
+		{"TranscribeAudioWithSender", func() error {
+			return m.TranscribeAudioWithSender(&modelName, nil, &APIConfig{}, nil, nil)
+		}},
+		{"AudioSpeech", func() error {
+			_, err := m.AudioSpeech(&modelName, nil, &APIConfig{}, nil)
+			return err
+		}},
+		{"AudioSpeechWithSender", func() error {
+			return m.AudioSpeechWithSender(&modelName, nil, &APIConfig{}, nil, nil)
+		}},
+		{"ParseFile", func() error {
+			_, err := m.ParseFile(&modelName, nil, nil, &APIConfig{}, nil)
+			return err
+		}},
+		{"ListTasks", func() error {
+			_, err := m.ListTasks(&APIConfig{})
+			return err
+		}},
+		{"ShowTask", func() error {
+			_, err := m.ShowTask("task-id", &APIConfig{})
+			return err
+		}},
+	}
+
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			requireNoSuchMethod(t, check.name, check.call())
+		})
 	}
 }
 

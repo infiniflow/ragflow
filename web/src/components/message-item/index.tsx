@@ -10,6 +10,7 @@ import { memo, useCallback, useMemo } from 'react';
 
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
+import { isEmpty } from 'lodash';
 import { DocumentDownloadButton } from '../document-download-button';
 import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
@@ -134,7 +135,7 @@ const MessageItem = ({
               ></UserGroupButton>
             )}
             {/* Show message content if there's any text besides the download */}
-            {messageContent && (
+            {(messageContent || sendLoading) && (
               <div
                 className={cn(
                   isAssistant
@@ -145,12 +146,16 @@ const MessageItem = ({
                   { '!bg-bg-card': !isAssistant },
                 )}
               >
-                <MarkdownContent
-                  loading={loading}
-                  content={messageContent}
-                  reference={reference}
-                  clickDocumentButton={clickDocumentButton}
-                ></MarkdownContent>
+                {sendLoading && isEmpty(messageContent) ? (
+                  'running...'
+                ) : (
+                  <MarkdownContent
+                    loading={loading}
+                    content={messageContent}
+                    reference={reference}
+                    clickDocumentButton={clickDocumentButton}
+                  ></MarkdownContent>
+                )}
               </div>
             )}
             {isAssistant && (

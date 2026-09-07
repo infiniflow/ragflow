@@ -356,7 +356,7 @@ export function useFilterQueryVariableOptionsByTypes({
   nodeIds = [],
   variablesExceptOperatorOutputs,
 }: {
-  types?: JsonSchemaDataType[];
+  types?: (JsonSchemaDataType | VariableType)[];
 } & BuildQueryVariableOptions) {
   const nextOptions = useBuildQueryVariableOptions({
     nodeIds,
@@ -370,15 +370,19 @@ export function useFilterQueryVariableOptionsByTypes({
             ...x,
             options: x.options.filter(
               (y) =>
-                types?.some((x) =>
-                  toLower(x).startsWith('array')
-                    ? toLower(y.type).includes(toLower(x))
-                    : toLower(y.type) === toLower(x),
-                ) ||
+                types?.some((x) => {
+                  const lowerX = toLower(x);
+                  const lowerYType = toLower(y.type);
+                  return lowerX.startsWith('array')
+                    ? lowerYType.includes(lowerX)
+                    : lowerYType === lowerX ||
+                        (lowerX === toLower(VariableType.File) &&
+                          lowerYType === `array<${lowerX}>`);
+                }) ||
                 // agent structured output
                 isAgentStructured(
                   y.value,
-                  y.value.slice(-AgentStructuredOutputField.length),
+                  y.value?.slice(-AgentStructuredOutputField.length),
                 ),
             ),
           };

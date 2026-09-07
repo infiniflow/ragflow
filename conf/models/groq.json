@@ -1,0 +1,102 @@
+{
+  "name": "Groq",
+  "url": {
+    "default": "https://api.groq.com/openai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "asr": "audio/transcriptions",
+    "tts": "audio/speech"
+  },
+  "class": "groq",
+  "models": [
+    {
+      "name": "llama-3.1-8b-instant",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "llama-3.3-70b-versatile",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "openai/gpt-oss-120b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "openai/gpt-oss-20b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "groq/compound",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "groq/compound-mini",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "openai/gpt-oss-20b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meta-llama/llama-4-scout-17b-16e-instruct",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-32b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "canopylabs/orpheus-v1-english",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "canopylabs/orpheus-arabic-saudi",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "whisper-large-v3-turbo",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "whisper-large-v3",
+      "model_types": [
+        "asr"
+      ]
+    }
+  ]
+}

@@ -9,7 +9,8 @@
     "embedding": "embeddings",
     "rerank": "rerank",
     "balance": "credits",
-    "tts": "audio/speech"
+    "tts": "audio/speech",
+    "asr": "audio/transcriptions"
   },
   "class": "openrouter",
   "models": [
@@ -51,6 +52,13 @@
       "max_tokens": 131072,
       "model_types": [
         "tts"
+      ]
+    },
+    {
+      "name": "openai/whisper-large-v3",
+      "max_tokens": 131072,
+      "model_types": [
+        "asr"
       ]
     }
   ]

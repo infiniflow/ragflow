@@ -197,6 +197,10 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToModelSetting = useCallback(() => {
+    navigate(`${Routes.UserSetting}${Routes.Model}`);
+  }, [navigate]);
+
   return {
     navigateToDatasetList,
     navigateToDataset,
@@ -223,5 +227,6 @@ export const useNavigatePage = () => {
     navigateToDataSourceDetail,
     navigateToMemory,
     navigateToMemoryList,
+    navigateToModelSetting,
   };
 };

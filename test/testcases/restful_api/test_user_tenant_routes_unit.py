@@ -392,6 +392,13 @@ class _DummyUser:
     def to_dict(self):
         return {"id": self.id, "email": self.email}
 
+    def to_safe_dict(self, *, for_self: bool = False):
+        _sensitive = {"password", "access_token", "email"}
+        result = {k: v for k, v in self.to_dict().items() if k not in _sensitive}
+        if for_self:
+            result["email"] = self.email
+        return result
+
 
 def _set_request_args(monkeypatch, module, args=None):
     monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args(args or {})))
@@ -612,10 +619,6 @@ def _load_user_app(monkeypatch):
     api_utils_mod.server_error_response = _server_error_response
     api_utils_mod.validate_request = _validate_request
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
-
-    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
-    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, params: params
-    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
 
     crypt_mod = ModuleType("api.utils.crypt")
     crypt_mod.decrypt = lambda value: value
@@ -1033,23 +1036,14 @@ def test_logout_setting_profile_matrix_unit(monkeypatch):
 def test_registration_helpers_and_register_route_matrix_unit(monkeypatch):
     module = _load_user_app(monkeypatch)
 
-    deleted = {"user": 0, "tenant": 0, "user_tenant": 0, "tenant_llm": 0}
+    deleted = {"user": 0, "tenant": 0, "user_tenant": 0}
     monkeypatch.setattr(module.UserService, "delete_by_id", lambda _user_id: deleted.__setitem__("user", deleted["user"] + 1))
     monkeypatch.setattr(module.TenantService, "delete_by_id", lambda _tenant_id: deleted.__setitem__("tenant", deleted["tenant"] + 1))
     monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(id="ut-1")])
     monkeypatch.setattr(module.UserTenantService, "delete_by_id", lambda _ut_id: deleted.__setitem__("user_tenant", deleted["user_tenant"] + 1))
 
-    class _DeleteQuery:
-        def where(self, *_args, **_kwargs):
-            return self
-
-        def execute(self):
-            deleted["tenant_llm"] += 1
-            return 1
-
-    monkeypatch.setattr(module.TenantLLM, "delete", lambda: _DeleteQuery())
     module.rollback_user_registration("user-1")
-    assert deleted == {"user": 1, "tenant": 1, "user_tenant": 1, "tenant_llm": 1}, deleted
+    assert deleted == {"user": 1, "tenant": 1, "user_tenant": 1}, deleted
 
     monkeypatch.setattr(module.UserService, "delete_by_id", lambda _user_id: (_ for _ in ()).throw(RuntimeError("u boom")))
     monkeypatch.setattr(module.TenantService, "delete_by_id", lambda _tenant_id: (_ for _ in ()).throw(RuntimeError("t boom")))
@@ -1059,7 +1053,6 @@ def test_registration_helpers_and_register_route_matrix_unit(monkeypatch):
         def where(self, *_args, **_kwargs):
             raise RuntimeError("llm boom")
 
-    monkeypatch.setattr(module.TenantLLM, "delete", lambda: _RaisingDeleteQuery())
     module.rollback_user_registration("user-2")
 
     monkeypatch.setattr(module.UserService, "save", lambda **_kwargs: False)
@@ -1498,13 +1491,20 @@ def _load_chat_routes_unit_module(monkeypatch):
     })
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
 
-    tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
-    tenant_llm_service_mod.TenantLLMService = type('TenantLLMService', (), {
-        'split_model_name_and_factory': staticmethod(lambda model: (model.split('@', 1)[0], model.split('@', 1)[1] if '@' in model else None)),
-        'query': staticmethod(lambda **_kwargs: [SimpleNamespace(id='llm-1')]),
-        'get_api_key': staticmethod(lambda *_args, **_kwargs: SimpleNamespace(id=1)),
-    })
-    monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)
+    tenant_model_provider_mod = ModuleType("api.db.joint_services.tenant_model_service")
+    tenant_model_provider_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
+    tenant_model_provider_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
+    def _split_model_name(model_name):
+        parts = model_name.split("@")
+        if len(parts) == 1:
+            return parts[0], "", ""
+        elif len(parts) == 2:
+            return parts[0], "default", parts[1]
+        else:
+            return parts[0], parts[1], parts[2]
+    tenant_model_provider_mod.split_model_name = staticmethod(_split_model_name)
+    tenant_model_provider_mod.get_api_key = lambda *_args, **_kwargs: SimpleNamespace(id=1)
+    monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_provider_mod)
 
     llm_service_mod = ModuleType("api.db.services.llm_service")
     llm_service_mod.LLMBundle = lambda *_args, **_kwargs: None
@@ -1513,11 +1513,6 @@ def _load_chat_routes_unit_module(monkeypatch):
     search_service_mod = ModuleType("api.db.services.search_service")
     search_service_mod.SearchService = SimpleNamespace()
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
-
-    tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
-    tenant_model_service_mod.get_model_config_by_type_and_name = lambda *_args, **_kwargs: {}
-    tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
-    monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
     user_service_mod = ModuleType("api.db.services.user_service")
     user_service_mod.UserService = type('UserService', (), {})
@@ -1540,10 +1535,6 @@ def _load_chat_routes_unit_module(monkeypatch):
     api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda func: func)
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
-
-    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
-    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, req: req
-    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
 
     rag_pkg = ModuleType("rag")
     rag_pkg.__path__ = [str(repo_root / 'rag')]

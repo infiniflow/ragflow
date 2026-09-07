@@ -24,7 +24,6 @@ export const PptPreviewer: React.FC<PptPreviewerProps> = ({
         console.error('Error loading document:', url);
       },
     });
-    console.log(res);
     try {
       const arrayBuffer = await res.data.arrayBuffer();
 

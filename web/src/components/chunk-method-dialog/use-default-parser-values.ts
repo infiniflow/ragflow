@@ -40,6 +40,7 @@ export function useDefaultParserValues() {
       entity_types: [],
       pages: [],
       metadata: [],
+      built_in_metadata: [],
       enable_metadata: false,
     };
 

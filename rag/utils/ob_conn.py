@@ -46,8 +46,11 @@ column_order_id = Column("_order_id", Integer, nullable=True, comment="chunk ord
 column_group_id = Column("group_id", String(256), nullable=True, comment="group id for external retrieval")
 column_mom_id = Column("mom_id", String(256), nullable=True, comment="parent chunk id")
 column_chunk_data = Column("chunk_data", JSON, nullable=True, comment="table parser row data")
+column_chunk_order_int = Column("chunk_order_int", Integer, nullable=True, comment="chunk order id for maintaining sequence")
 column_raptor_kwd = Column("raptor_kwd", String(256), nullable=True, comment="RAPTOR summary marker")
 column_raptor_layer_int = Column("raptor_layer_int", Integer, nullable=True, comment="RAPTOR summary layer")
+column_n_hop_with_weight = Column("n_hop_with_weight", LONGTEXT, nullable=True,
+                                  comment="JSON-encoded n-hop neighbour paths and weights for a graph entity")
 
 column_definitions: list[Column] = [
     Column("id", String(256), primary_key=True, comment="chunk id"),
@@ -86,6 +89,7 @@ column_definitions: list[Column] = [
     Column("weight_flt", Double, nullable=True, comment="the weight of community report"),
     Column("entities_kwd", ARRAY(String(256)), nullable=True, comment="node ids of entities"),
     Column("rank_flt", Double, nullable=True, comment="rank of this entity"),
+    column_n_hop_with_weight,
     Column("removed_kwd", String(256), nullable=True, index=True, server_default="'N'",
            comment="whether it has been deleted"),
     column_raptor_kwd,
@@ -96,6 +100,7 @@ column_definitions: list[Column] = [
     column_order_id,
     column_group_id,
     column_mom_id,
+    column_chunk_order_int,
 ]
 
 column_names: list[str] = [col.name for col in column_definitions]
@@ -132,12 +137,14 @@ FTS_COLUMNS_TKS: list[str] = [
 
 # Extra columns to add after table creation (for migration)
 EXTRA_COLUMNS: list[Column] = [
+    column_chunk_order_int,
     column_order_id,
     column_group_id,
     column_mom_id,
     column_chunk_data,
     column_raptor_kwd,
     column_raptor_layer_int,
+    column_n_hop_with_weight,
 ]
 
 
@@ -690,6 +697,8 @@ class OBConnection(OBConnectionBase):
             output_fields = ["id"] + output_fields
         if "_score" in output_fields:
             output_fields.remove("_score")
+        if "row_id()" in output_fields:
+            output_fields.remove("row_id()")
 
         if highlight_fields:
             for field in highlight_fields:
@@ -1015,7 +1024,13 @@ class OBConnection(OBConnectionBase):
                 orders: list[str] = []
                 if order_by:
                     for field, order in order_by.fields:
+                        if field not in column_types:
+                            logger.debug("OBConnection.search skipping ORDER BY field '%s': not in column_types", field)
+                            continue
                         if isinstance(column_types[field], ARRAY):
+                            if isinstance(column_types[field].item_type, ARRAY):
+                                logger.debug("OBConnection.search skipping ORDER BY field '%s': nested ARRAY not supported", field)
+                                continue
                             f = field + "_sort"
                             fields_expr += f", array_avg({field}) AS {f}"
                             field = f
@@ -1294,6 +1309,17 @@ class OBConnection(OBConnectionBase):
 
     def get_doc_ids(self, res) -> list[str]:
         return [row["id"] for row in res.chunks]
+
+    def get_scores(self, res) -> dict[str, float]:
+        """Extract chunk ID to relevance score mapping from search results."""
+        out = {}
+        for chunk in res.chunks:
+            chunk_id = chunk.get("id")
+            if chunk_id is None:
+                continue
+            score = chunk.get("_score")
+            out[chunk_id] = float(score) if score is not None else 0.0
+        return out
 
     def get_fields(self, res, fields: list[str]) -> dict[str, dict]:
         result = {}

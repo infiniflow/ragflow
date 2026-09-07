@@ -83,10 +83,10 @@ export function TestingResult({
         </FilterPopover>
       </header>
 
-      <div className="flex-1 h-0">
+      <>
         {data.chunks?.length > 0 && !loading && (
           <>
-            <section className="px-5 pb-5 flex flex-col gap-5 overflow-auto h-full scrollbar-thin">
+            <section className="px-5 pb-5 flex flex-col gap-5 overflow-auto scrollbar-thin min-h-0">
               {data.chunks?.map((x) => (
                 <article key={x.chunk_id}>
                   <Card className="px-5 py-2.5 bg-transparent shadow-none">
@@ -96,12 +96,14 @@ export function TestingResult({
                 </article>
               ))}
             </section>
-            <RAGFlowPagination
-              total={data.total}
-              onChange={onPaginationChange}
-              current={page}
-              pageSize={pageSize}
-            ></RAGFlowPagination>
+            <div className="p-2">
+              <RAGFlowPagination
+                total={data.total}
+                onChange={onPaginationChange}
+                current={page}
+                pageSize={pageSize}
+              ></RAGFlowPagination>
+            </div>
           </>
         )}
         {!data.chunks?.length && !loading && (
@@ -119,7 +121,7 @@ export function TestingResult({
             </div>
           </div>
         )}
-      </div>
+      </>
     </article>
   );
 }

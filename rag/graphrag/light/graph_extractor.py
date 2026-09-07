@@ -121,5 +121,5 @@ class GraphExtractor(Extractor):
         if self.callback:
             self.callback(
                 0.5 + 0.1 * len(out_results) / num_chunks,
-                msg=f"Entities extraction of chunk {chunk_seq} {len(out_results)}/{num_chunks} done, {len(maybe_nodes)} nodes, {len(maybe_edges)} edges, {token_count} tokens.",
+                msg=f"Entities extraction of chunk {chunk_seq+1} {len(out_results)}/{num_chunks} done, {len(maybe_nodes)} nodes, {len(maybe_edges)} edges, {token_count} tokens.",
             )

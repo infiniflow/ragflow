@@ -10,6 +10,27 @@
   "class": "voyage",
   "models": [
     {
+      "name": "voyage-4-large",
+      "max_tokens": 32000,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "voyage-4",
+      "max_tokens": 32000,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "voyage-4-lite",
+      "max_tokens": 32000,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
       "name": "voyage-3.5",
       "max_tokens": 327680,
       "model_types": [
@@ -49,6 +70,20 @@
       "max_tokens": 122880,
       "model_types": [
         "embedding"
+      ]
+    },
+    {
+      "name": "rerank-2.5",
+      "max_tokens": 32000,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "rerank-2.5-lite",
+      "max_tokens": 32000,
+      "model_types": [
+        "rerank"
       ]
     },
     {

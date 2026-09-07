@@ -108,6 +108,7 @@ export const useSendMessage = (controller: AbortController) => {
               : (derivedMessages ?? [])),
             message,
           ],
+          pass_all_history_messages: true,
           reasoning: enableThinking,
           internet: enableInternet,
         },

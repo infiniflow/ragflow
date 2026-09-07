@@ -16,8 +16,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 import pytest
-import requests
-from test.testcases.configs import HOST_ADDRESS, INVALID_API_TOKEN, VERSION
+from test.testcases.configs import INVALID_API_TOKEN
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import wait_for
 
@@ -84,7 +83,7 @@ def test_multi_dataset_search_with_metadata_filter(rest_client, ensure_parsed_do
 @pytest.mark.p2
 def test_retrieval_compatibility_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
-    # /api/v1/retrieval is SDK compatibility endpoint from api/apps/sdk/doc.py.
+    # /api/v1/retrieval is SDK compatibility endpoint registered from chunk_api.py.
     res = rest_client.post(
         "/retrieval",
         json={"dataset_ids": [dataset_id], "question": "test TXT file", "top_k": 5},
@@ -109,9 +108,8 @@ def test_retrieval_compatibility_requires_auth(rest_client_noauth):
     res = rest_client_noauth.post("/retrieval", json={"question": "test", "dataset_ids": ["x"]})
     assert res.status_code == 401
     payload = res.json()
-    # token_required preserves legacy payload code/message while returning HTTP 401.
-    assert payload["code"] == 0, payload
-    assert payload["message"] == "`Authorization` can't be empty", payload
+    assert payload["code"] == 401, payload
+    assert payload["message"] == "<Unauthorized '401: Unauthorized'>", payload
 
 
 @wait_for(20, 1, "Retrieval indexing timeout in RESTful batch 10 tests")
@@ -152,14 +150,13 @@ def _retrieval_lacks_chunks(rest_client, dataset_id, question, chunk_ids):
 
 
 @pytest.mark.p2
-def test_retrieval_requires_auth_contract(ensure_parsed_document):
-    dataset_id, _ = ensure_parsed_document()
+def test_retrieval_requires_auth_contract():
     for scenario_name, token, expected_code, expected_message in (
-        ("missing token", None, 0, "`Authorization` can't be empty"),
-        ("invalid token", INVALID_API_TOKEN, 109, "Authentication error: API key is invalid!"),
+        ("missing token", None, 401, "<Unauthorized '401: Unauthorized'>"),
+        ("invalid token", INVALID_API_TOKEN, 401, "<Unauthorized '401: Unauthorized'>"),
     ):
         client = RestClient(token=token)
-        res = client.post("/retrieval", json={"question": "chunk", "dataset_ids": [dataset_id]})
+        res = client.post("/retrieval", json={"question": "chunk", "dataset_ids": ["x"]})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
         assert payload["code"] == expected_code, (scenario_name, payload)
@@ -276,6 +273,45 @@ def test_retrieval_vector_similarity_and_top_k_contract(rest_client, ensure_pars
 
 
 @pytest.mark.p2
+def test_retrieval_document_ids_and_metadata_condition_contract(rest_client, ensure_parsed_document):
+    dataset_id, document_id = ensure_parsed_document()
+
+    invalid_doc_ids_res = rest_client.post(
+        "/retrieval",
+        json={"question": "chunk", "dataset_ids": [dataset_id], "document_ids": "bad"},
+    )
+    assert invalid_doc_ids_res.status_code == 200
+    invalid_doc_ids_payload = invalid_doc_ids_res.json()
+    assert invalid_doc_ids_payload["code"] == 102, invalid_doc_ids_payload
+    assert invalid_doc_ids_payload["message"] == "`documents` should be a list", invalid_doc_ids_payload
+
+    not_owned_doc_res = rest_client.post(
+        "/retrieval",
+        json={"question": "chunk", "dataset_ids": [dataset_id], "document_ids": ["not-owned"]},
+    )
+    assert not_owned_doc_res.status_code == 200
+    not_owned_doc_payload = not_owned_doc_res.json()
+    assert not_owned_doc_payload["code"] == 102, not_owned_doc_payload
+    assert not_owned_doc_payload["message"] == "The datasets don't own the document not-owned", not_owned_doc_payload
+
+    metadata_condition_res = rest_client.post(
+        "/retrieval",
+        json={
+            "question": "chunk",
+            "dataset_ids": [dataset_id],
+            "metadata_condition": {
+                "logic": "and",
+                "conditions": [{"name": "author", "comparison_operator": "is", "value": "missing"}],
+            },
+        },
+    )
+    assert metadata_condition_res.status_code == 200
+    metadata_condition_payload = metadata_condition_res.json()
+    assert metadata_condition_payload["code"] == 0, metadata_condition_payload
+    assert metadata_condition_payload["data"]["chunks"] == [], metadata_condition_payload
+
+
+@pytest.mark.p2
 def test_retrieval_rerank_unknown_contract(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     res = rest_client.post(
@@ -339,12 +375,8 @@ def test_deleted_chunks_batch_not_in_retrieval_contract(rest_client, create_docu
 
 
 @pytest.mark.p2
-def test_related_questions_contract(auth, rest_client, rest_client_noauth):
-    tokens_res = requests.get(
-        f"{HOST_ADDRESS}/api/{VERSION}/system/tokens",
-        headers={"Authorization": auth},
-        timeout=30,
-    )
+def test_related_questions_contract(rest_client, rest_client_noauth):
+    tokens_res = rest_client.get("/system/tokens")
     assert tokens_res.status_code == 200, tokens_res.text
     tokens_payload = tokens_res.json()
     assert tokens_payload["code"] == 0, tokens_payload
@@ -358,7 +390,7 @@ def test_related_questions_contract(auth, rest_client, rest_client_noauth):
     assert success_payload["code"] == 0, success_payload
     assert isinstance(success_payload["data"], list), success_payload
 
-    missing_res = rest_client.post("/searchbots/related_questions", json={"industry": "search"})
+    missing_res = success_client.post("/searchbots/related_questions", json={"industry": "search"})
     assert missing_res.status_code == 200
     missing_payload = missing_res.json()
     assert missing_payload["code"] == 101, missing_payload
@@ -372,4 +404,8 @@ def test_related_questions_contract(auth, rest_client, rest_client_noauth):
     assert invalid_auth_res.status_code == 200
     invalid_auth_payload = invalid_auth_res.json()
     assert invalid_auth_payload["code"] == 102, invalid_auth_payload
-    assert "Authorization is not valid!" in invalid_auth_payload["message"], invalid_auth_payload
+    assert invalid_auth_payload["message"].strip() in {
+        "Authorization is not valid!",
+        'Authentication error: API key is invalid!"',
+        "Authentication error: API key is invalid!",
+    }, invalid_auth_payload

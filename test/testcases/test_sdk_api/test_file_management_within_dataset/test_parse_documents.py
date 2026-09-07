@@ -15,7 +15,7 @@
 #
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import pytest
-from common import bulk_upload_documents
+from common import bulk_upload_documents, list_all_documents
 from ragflow_sdk import DataSet
 from ragflow_sdk.modules.document import Document
 from utils import wait_for
@@ -23,7 +23,7 @@ from utils import wait_for
 
 @wait_for(30, 1, "Document parsing timeout")
 def condition(_dataset: DataSet, _document_ids: list[str] = None):
-    documents = _dataset.list_documents(page_size=1000)
+    documents = _dataset.list_documents(page_size=100)
 
     if _document_ids is None:
         for document in documents:
@@ -40,14 +40,17 @@ def condition(_dataset: DataSet, _document_ids: list[str] = None):
 
 
 def validate_document_details(dataset, document_ids):
-    documents = dataset.list_documents(page_size=1000)
-    for document in documents:
-        if document.id in document_ids:
+    target_ids = set(document_ids)
+    found_ids = set()
+    for document in list_all_documents(dataset):
+        if document.id in target_ids:
+            found_ids.add(document.id)
             assert document.run == "DONE"
             assert len(document.process_begin_at) > 0
             assert document.process_duration > 0
             assert document.progress > 0
             assert "Task done" in document.progress_msg
+    assert found_ids == target_ids
 
 
 class TestDocumentsParse:
@@ -228,7 +231,9 @@ def test_async_cancel_parse_documents_raises_on_nonzero_code(add_dataset_func, m
 def test_parse_100_files(add_dataset_func, tmp_path):
     @wait_for(200, 1, "Document parsing timeout")
     def condition_inner(_dataset: DataSet, _count: int):
-        docs = _dataset.list_documents(page_size=_count * 2)
+        docs = list_all_documents(_dataset, limit=_count)
+        if len(docs) < _count:
+            return False
         for document in docs:
             if document.run != "DONE":
                 return False
@@ -248,7 +253,9 @@ def test_parse_100_files(add_dataset_func, tmp_path):
 def test_concurrent_parse(add_dataset_func, tmp_path):
     @wait_for(200, 1, "Document parsing timeout")
     def condition_inner(_dataset: DataSet, _count: int):
-        docs = _dataset.list_documents(page_size=_count * 2)
+        docs = list_all_documents(_dataset, limit=_count)
+        if len(docs) < _count:
+            return False
         for document in docs:
             if document.run != "DONE":
                 return False

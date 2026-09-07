@@ -72,6 +72,8 @@ const themeIcons = [
   LLMFactory.Meituan,
   LLMFactory.Longcat,
   LLMFactory.MinerU,
+  LLMFactory.JiekouAI,
+  LLMFactory.Perplexity,
 ];
 
 const svgIcons = [

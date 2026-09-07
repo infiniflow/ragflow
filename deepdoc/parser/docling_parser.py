@@ -477,7 +477,10 @@ class DoclingParser(RAGFlowPdfParser):
                     
             if callback:
                 callback(0.95, f"[Docling] Native chunks received: {len(sections)}")
-            return sections, tables
+            if sections:
+                return sections, tables
+
+            self.logger.warning("[Docling] Native chunking returned no usable chunks; trying standard response parsing.")
 
         # --- FALLBACK: Standard RAGFlow parsing for older docling servers ---
         docs = self._extract_remote_document_entries(response_json)

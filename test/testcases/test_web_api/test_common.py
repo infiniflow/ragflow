@@ -421,7 +421,7 @@ def document_get(auth, document_id, *, headers=HEADERS, data=None):
 
 def document_download(auth, attachment_id, *, ext="markdown", headers=HEADERS, data=None):
     res = requests.get(
-        url=f"{HOST_ADDRESS}/api/{VERSION}/documents/{attachment_id}/download",
+        url=f"{HOST_ADDRESS}/api/{VERSION}/agents/attachments/{attachment_id}/download",
         headers=headers,
         auth=auth,
         params={"ext": ext},

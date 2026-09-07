@@ -51,7 +51,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		protected.Use(r.handler.AuthMiddleware())
 		{
 
-			protected.GET("/logout", r.handler.Logout)
+			protected.POST("/logout", r.handler.Logout)
 			// Auth
 			protected.GET("/auth", r.handler.AuthCheck)
 
@@ -136,6 +136,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/models", r.handler.ListModels)
 				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
 			}
+
+			protected.GET("/ingestors", r.handler.ListIngestors)
+			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
+			protected.POST("/ingestion", r.handler.StartIngestionTask)  // start ingestion
+			protected.DELETE("/ingestion", r.handler.StopIngestionTask) // stop ingestion
+			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
+
 		}
 	}
 

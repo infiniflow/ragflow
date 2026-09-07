@@ -79,6 +79,71 @@ func NewAPI4ConversationDAO() *API4ConversationDAO {
 	return &API4ConversationDAO{}
 }
 
+// ConversationStatsRow is one daily aggregate row for api_4_conversation.
+type ConversationStatsRow struct {
+	Dt       string  `gorm:"column:dt"`
+	PV       int64   `gorm:"column:pv"`
+	UV       int64   `gorm:"column:uv"`
+	Tokens   float64 `gorm:"column:tokens"`
+	Duration float64 `gorm:"column:duration"`
+	Round    float64 `gorm:"column:round"`
+	ThumbUp  int64   `gorm:"column:thumb_up"`
+}
+
+// Stats returns daily conversation aggregates for a tenant.
+func (dao *API4ConversationDAO) Stats(tenantID, fromDate, toDate string, source *string) ([]ConversationStatsRow, error) {
+	var rows []ConversationStatsRow
+	dateExpr := "DATE_FORMAT(a.create_date, '%Y-%m-%d 00:00:00')"
+	db := DB.Table("api_4_conversation AS a").
+		Select(`
+			DATE_FORMAT(a.create_date, '%Y-%m-%d 00:00:00') AS dt,
+			COUNT(a.id) AS pv,
+			COUNT(DISTINCT a.user_id) AS uv,
+			COALESCE(SUM(a.tokens), 0) AS tokens,
+			COALESCE(SUM(a.duration), 0) AS duration,
+			COALESCE(AVG(a.round), 0) AS round,
+			COALESCE(SUM(a.thumb_up), 0) AS thumb_up
+		`).
+		Joins("JOIN dialog AS d ON a.dialog_id = d.id AND d.tenant_id = ?", tenantID).
+		Where("a.create_date >= ? AND a.create_date <= ?", fromDate, toDate)
+
+	if source == nil {
+		db = db.Where("a.source IS NULL")
+	} else {
+		db = db.Where("a.source = ?", *source)
+	}
+
+	err := db.Group(dateExpr).
+		Order(dateExpr).
+		Scan(&rows).Error
+	return rows, err
+}
+
+func (dao *API4ConversationDAO) GetBySessionID(sessionID, agentID string) (*entity.API4Conversation, error) {
+	var result entity.API4Conversation
+	tx := DB.Where("id = ? AND dialog_id = ?", sessionID, agentID).Find(&result)
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &result, nil
+}
+
+// ListIDsByAgentID lists conversation IDs for one agent.
+func (dao *API4ConversationDAO) ListIDsByAgentID(agentID string) ([]string, error) {
+	var ids []string
+	err := DB.Model(&entity.API4Conversation{}).Where("dialog_id = ?", agentID).Pluck("id", &ids).Error
+	return ids, err
+}
+
+// DeleteBySessionIDAndAgentID deletes API4Conversations by sessionID and agentID
+func (dao *API4ConversationDAO) DeleteBySessionIDAndAgentID(sessionID, agentID string) (int64, error) {
+	result := DB.Where("id = ? AND dialog_id = ?", sessionID, agentID).Delete(&entity.API4Conversation{})
+	return result.RowsAffected, result.Error
+}
+
 // DeleteByDialogIDs deletes API4Conversations by dialog IDs (hard delete)
 func (dao *API4ConversationDAO) DeleteByDialogIDs(dialogIDs []string) (int64, error) {
 	if len(dialogIDs) == 0 {

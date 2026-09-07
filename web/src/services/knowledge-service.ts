@@ -1,4 +1,3 @@
-import { Authorization } from '@/constants/authorization';
 import { IRenameTag } from '@/interfaces/database/dataset';
 import {
   IFetchDocumentListRequestBody,
@@ -6,21 +5,15 @@ import {
 } from '@/interfaces/request/knowledge';
 import { ProcessingType } from '@/pages/dataset/dataset-overview/dataset-common';
 import api from '@/utils/api';
-import { getAuthorization } from '@/utils/authorization-util';
 import registerServer from '@/utils/register-server';
 import request from '@/utils/request';
-import axios from 'axios';
 
 const {
   createKb,
   rmKb,
   kbList,
-  documentChangeStatus,
-  documentChangeParser,
   documentThumbnails,
   documentIngest,
-  documentUpload,
-  webCrawl,
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
@@ -41,30 +34,13 @@ const methods = {
     url: kbList,
     method: 'get',
   },
-  // document manager
-  documentChangeStatus: {
-    url: documentChangeStatus,
-    method: 'post',
-  },
   documentIngest: {
     url: documentIngest,
-    method: 'post',
-  },
-  documentChangeParser: {
-    url: documentChangeParser,
     method: 'post',
   },
   documentThumbnails: {
     url: documentThumbnails,
     method: 'get',
-  },
-  documentUpload: {
-    url: documentUpload,
-    method: 'post',
-  },
-  webCrawl: {
-    url: webCrawl,
-    method: 'post',
   },
   setMeta: {
     url: setMeta,
@@ -72,10 +48,6 @@ const methods = {
   },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
-    method: 'get',
-  },
-  documentFilter: {
-    url: api.getDatasetFilter,
     method: 'get',
   },
   getMeta: {
@@ -317,32 +289,15 @@ export const listDocument = (
 export const documentFilter = (kb_id: string) =>
   request.get(api.getDatasetFilter(kb_id), { params: {} });
 
-// Custom upload function that handles dynamic URL using axios directly
 export const uploadDocument = async (datasetId: string, formData: FormData) => {
   const url = api.documentUpload(datasetId);
-  const response = await axios.post(url, formData, {
-    headers: {
-      [Authorization]: getAuthorization(),
-    },
-  });
+  const response = await request.post(url, { data: formData });
   return response.data;
 };
 
 export const createDocument = async (datasetId: string, name: string) => {
   const response = await request.post(api.documentCreate(datasetId), {
     data: { name },
-  });
-  return response.data;
-};
-
-export const webCrawlDocument = async (
-  datasetId: string,
-  formData: FormData,
-) => {
-  const response = await axios.post(api.webCrawl(datasetId), formData, {
-    headers: {
-      [Authorization]: getAuthorization(),
-    },
   });
   return response.data;
 };

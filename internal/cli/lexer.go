@@ -94,6 +94,12 @@ func (l *Lexer) NextToken() Token {
 	case '-':
 		tok = newToken(TokenDash, l.ch)
 		l.readChar()
+	case '[':
+		tok = newToken(TokenLBracket, l.ch)
+		l.readChar()
+	case ']':
+		tok = newToken(TokenRBracket, l.ch)
+		l.readChar()
 	case '\'':
 		tok.Type = TokenQuotedString
 		tok.Value = l.readQuotedString('\'')
@@ -215,25 +221,19 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenActive, Value: ident}
 	case "ADMIN":
 		return Token{Type: TokenAdmin, Value: ident}
+	case "SERVER":
+		return Token{Type: TokenServer, Value: ident}
+	case "API":
+		return Token{Type: TokenAPI, Value: ident}
 	case "ADD":
 		return Token{Type: TokenAdd, Value: ident}
+	case "HOST":
+		return Token{Type: TokenHost, Value: ident}
 	case "DELETE":
 		return Token{Type: TokenDelete, Value: ident}
 	case "PASSWORD":
 		return Token{Type: TokenPassword, Value: ident}
 	case "DATASET":
-		// Check if followed by TABLE for compound token
-		if strings.ToUpper(l.peekToken()) == "TABLE" {
-			// Skip whitespace to TABLE
-			for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
-				l.readChar()
-			}
-			// Skip past TABLE
-			for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' || l.ch == '-' || l.ch == '.' {
-				l.readChar()
-			}
-			return Token{Type: TokenDatasetTable, Value: "DATASET TABLE"}
-		}
 		return Token{Type: TokenDataset, Value: ident}
 	case "DATASETS":
 		return Token{Type: TokenDatasets, Value: ident}
@@ -279,6 +279,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenVars, Value: ident}
 	case "CONFIGS":
 		return Token{Type: TokenConfigs, Value: ident}
+	case "CONFIG":
+		return Token{Type: TokenConfig, Value: ident}
 	case "ENVS":
 		return Token{Type: TokenEnvs, Value: ident}
 	case "KEY":
@@ -327,6 +329,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenHigh, Value: ident}
 	case "MAX":
 		return Token{Type: TokenMax, Value: ident}
+	case "STORE":
+		return Token{Type: TokenStore, Value: ident}
 	case "STREAM":
 		return Token{Type: TokenStream, Value: ident}
 	case "LS":
@@ -353,6 +357,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenGet, Value: ident}
 	case "SEARCH":
 		return Token{Type: TokenSearch, Value: ident}
+	case "RETRIEVE":
+		return Token{Type: TokenRetrieve, Value: ident}
 	case "CURRENT":
 		return Token{Type: TokenCurrent, Value: ident}
 	case "VISION":
@@ -430,6 +436,18 @@ func (l *Lexer) lookupIdent(ident string) Token {
 	case "REMOVE":
 		return Token{Type: TokenRemove, Value: ident}
 	case "CHUNK":
+		// Check if followed by STORE for compound token
+		if strings.ToUpper(l.peekToken()) == "STORE" {
+			// Skip whitespace to STORE
+			for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
+				l.readChar()
+			}
+			// Skip past STORE
+			for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' || l.ch == '-' || l.ch == '.' {
+				l.readChar()
+			}
+			return Token{Type: TokenChunkStore, Value: "CHUNK STORE"}
+		}
 		return Token{Type: TokenChunk, Value: ident}
 	case "CHUNKS":
 		return Token{Type: TokenChunks, Value: ident}
@@ -447,6 +465,16 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenTask, Value: ident}
 	case "TASKS":
 		return Token{Type: TokenTasks, Value: ident}
+	case "START":
+		return Token{Type: TokenStart, Value: ident}
+	case "STOP":
+		return Token{Type: TokenStop, Value: ident}
+	case "INGESTOR":
+		return Token{Type: TokenIngestor, Value: ident}
+	case "INGESTORS":
+		return Token{Type: TokenIngestors, Value: ident}
+	case "INGESTION":
+		return Token{Type: TokenIngestion, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
 	case "LEVEL":
@@ -455,6 +483,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenDebug, Value: ident}
 	case "INFO":
 		return Token{Type: TokenInfo, Value: ident}
+	case "IN":
+		return Token{Type: TokenIn, Value: ident}
 	case "WARN":
 		return Token{Type: TokenWarn, Value: ident}
 	case "ERROR":

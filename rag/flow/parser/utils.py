@@ -20,8 +20,7 @@ from bs4 import BeautifulSoup
 from docx import Document
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import (
-    get_model_config_by_type_and_name,
-    get_tenant_default_model_by_type,
+    get_tenant_default_model_by_type, get_model_config_from_provider_instance,
 )
 from common.constants import LLMType
 from deepdoc.parser.figure_parser import VisionFigureParser
@@ -173,7 +172,7 @@ def enhance_media_sections_with_vision(
 
     try:
         try:
-            vision_model_config = get_model_config_by_type_and_name(
+            vision_model_config = get_model_config_from_provider_instance(
                 tenant_id, LLMType.IMAGE2TEXT, vlm_conf["llm_id"]
             )
         except Exception:

@@ -786,6 +786,7 @@ export const NoDebugOperatorsList = [
   Operator.TitleChunker,
   Operator.Extractor,
   Operator.Tool,
+  Operator.Loop,
 ];
 
 export const NoCopyOperatorsList = [
@@ -978,6 +979,10 @@ export const initialDocGeneratorValues = {
   include_download_info_in_content: false,
   font_size: 12,
   outputs: {
+    doc_id: { type: 'string' },
+    filename: { type: 'string' },
+    mime_type: { type: 'string' },
+    size: { type: 'number' },
     download: { type: 'string' },
   },
 };

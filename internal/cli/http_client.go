@@ -31,8 +31,8 @@ type HTTPClient struct {
 	Host           string
 	Port           int
 	APIVersion     string
-	APIToken       string
-	LoginToken     string
+	APIToken       *string
+	LoginToken     *string
 	ConnectTimeout time.Duration
 	ReadTimeout    time.Duration
 	VerifySSL      bool
@@ -84,15 +84,15 @@ func (c *HTTPClient) Headers(authKind string, extra map[string]string) map[strin
 
 	switch authKind {
 	case "api":
-		if c.APIToken != "" {
-			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIToken)
-		} else if c.LoginToken != "" {
+		if c.APIToken != nil {
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", *c.APIToken)
+		} else if c.LoginToken != nil {
 			// Fallback to login token for API requests (user mode)
-			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.LoginToken)
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", *c.LoginToken)
 		}
 	case "web", "admin":
-		if c.LoginToken != "" {
-			headers["Authorization"] = c.LoginToken
+		if c.LoginToken != nil {
+			headers["Authorization"] = *c.LoginToken
 		}
 	}
 
@@ -121,6 +121,10 @@ func (r *Response) JSON() (map[string]interface{}, error) {
 
 // Request makes an HTTP request
 func (c *HTTPClient) Request(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
+	if c == nil {
+		return nil, fmt.Errorf("HTTP Client is nil")
+	}
+
 	url := c.BuildURL(path)
 	mergedHeaders := c.Headers(authKind, headers)
 
@@ -282,10 +286,10 @@ func (c *HTTPClient) UploadMultipart(path string, contentType string, body io.Re
 
 	// Set headers
 	req.Header.Set("Content-Type", contentType)
-	if c.APIToken != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.APIToken))
-	} else if c.LoginToken != "" {
-		req.Header.Set("Authorization", c.LoginToken)
+	if c.APIToken != nil {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *c.APIToken))
+	} else if c.LoginToken != nil {
+		req.Header.Set("Authorization", *c.LoginToken)
 	}
 
 	resp, err := c.client.Do(req)

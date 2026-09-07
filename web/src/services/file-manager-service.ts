@@ -13,7 +13,7 @@ const {
   getFile,
   moveFile,
   getDatasetDocumentFileDownload,
-  getDocumentFileDownload,
+  getAttachmentFileDownload,
 } = api;
 
 const methods = {
@@ -62,8 +62,8 @@ const fileManagerService = registerServer<keyof typeof methods>(
   request,
 );
 
-export const downloadFile = (data: { docId: string; ext: string }) => {
-  return request.get(getDocumentFileDownload(data.docId), {
+export const downloadAgentFile = (data: { docId: string; ext: string }) => {
+  return request.get(getAttachmentFileDownload(data.docId), {
     params: { ext: data.ext },
     responseType: 'blob',
   });

@@ -15,9 +15,9 @@ const (
 type ServerType string
 
 const (
-	ServerTypeAPI       ServerType = "api_server"     // API server
-	ServerTypeWorker    ServerType = "ingestor"       // Ingestion server
-	ServerTypeScheduler ServerType = "data_collector" // Data collection server
+	ServerTypeAPI           ServerType = "api_server"     // API server
+	ServerTypeIngestion     ServerType = "ingestor"       // Ingestion server
+	ServerTypeDataCollector ServerType = "data_collector" // Data collection server
 )
 
 type BaseMessage struct {

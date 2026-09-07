@@ -88,7 +88,7 @@ class Switch(ComponentBase, ABC):
                     self.set_output("_next", cond["to"])
                     return
 
-            if all(res):
+            if res and all(res):
                 self.set_output("next", [self._canvas.get_component_name(cpn_id) for cpn_id in cond["to"]])
                 self.set_output("_next", cond["to"])
                 return

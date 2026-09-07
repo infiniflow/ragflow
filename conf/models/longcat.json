@@ -4,7 +4,8 @@
     "default": "https://api.longcat.chat"
   },
   "url_suffix": {
-    "chat": "openai/v1/chat/completions"
+    "chat": "openai/v1/chat/completions",
+    "models": "openai/v1/models"
   },
   "class": "longcat",
   "models": [

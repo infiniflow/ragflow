@@ -33,10 +33,9 @@ from urllib.request import Request, urlopen
 from agent.component.base import ComponentBase
 from agent.component.llm import LLMParam
 from api.db import FileType
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.file_utils import filename_type
 from common import settings
 from common.connection_utils import timeout
@@ -83,6 +82,15 @@ class BrowserParam(LLMParam):
 
 class Browser(ComponentBase, ABC):
     component_name = "Browser"
+
+    def _prepare_input_values(self):
+        for key, meta in self.get_input_elements().items():
+            val = meta.get("value")
+            if val is None:
+                val = ""
+            elif not isinstance(val, str):
+                val = json.dumps(val, ensure_ascii=False)
+            self.set_input_value(key, val)
 
     def get_input_elements(self) -> dict[str, dict]:
         text_parts = [
@@ -394,9 +402,9 @@ class Browser(ComponentBase, ABC):
     def _build_browser_llm(self):
         from browser_use.llm import ChatBrowserUse, ChatOpenAI
 
-        chat_model_config = get_model_config_by_type_and_name(
+        chat_model_config = get_model_config_from_provider_instance(
             self._canvas.get_tenant_id(),
-            TenantLLMService.llm_id2llm_type(self._param.llm_id),
+            get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id),
             self._param.llm_id,
         )
         cfg = self._as_model_config_dict(chat_model_config)
@@ -417,12 +425,17 @@ class Browser(ComponentBase, ABC):
             llm_kwargs = {k: v for k, v in llm_kwargs.items() if v not in (None, "")}
             return ChatBrowserUse(**llm_kwargs)
 
+        # browser-use Agent defaults to json_schema response_format and may use tool_choice via
+        # ChatDeepSeek. Many providers (e.g. DeepSeek thinking models) reject both. Use ChatOpenAI
+        # with schema-in-prompt and without forced structured output on the first run.
         llm_kwargs = {
             "model": model_name,
             "api_key": cfg.get("api_key"),
             "base_url": base_url,
             "temperature": self._param.temperature,
             "max_retries": self._param.max_retries,
+            "add_schema_to_system_prompt": True,
+            "dont_force_structured_output": True,
         }
         llm_kwargs = {k: v for k, v in llm_kwargs.items() if v not in (None, "")}
         return ChatOpenAI(**llm_kwargs)
@@ -667,6 +680,7 @@ class Browser(ComponentBase, ABC):
         profile_dir = None
         persist_session = self._should_persist_session()
         try:
+            self._prepare_input_values()
             user_prompt = self._resolve_text(kwargs.get("prompts", self._param.prompts))
             with tempfile.TemporaryDirectory(prefix="browser_use_upload_") as upload_dir, tempfile.TemporaryDirectory(
                 prefix="browser_use_download_"

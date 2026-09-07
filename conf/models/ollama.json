@@ -1,9 +1,9 @@
 {
   "name": "ollama",
   "url_suffix": {
-    "chat": "chat/completions",
-    "models": "models",
-    "embedding": "embeddings"
+    "chat": "api/chat",
+    "models": "api/ps",
+    "embedding": "api/embed"
   },
   "class": "local"
 }

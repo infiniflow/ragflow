@@ -34,28 +34,11 @@ import (
 )
 
 // CometAPIModel implements ModelDriver for CometAPI AI.
-//
-// CometAPI exposes OpenAI-compatible chat and embeddings under
-// https://api.cometapi.com/v1, a public model catalog under
-// https://api.cometapi.com/api/models, and account quota data through the
-// separate query service at https://query.cometapi.com/user/quota.
 type CometAPIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewCometAPIModel creates a new CometAPI model instance.
-//
-// We clone http.DefaultTransport so we keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
-//
-// The Client itself has no Timeout. http.Client.Timeout would also
-// cap the time spent reading the response body, which would cut off
-// long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
-// callers wrap each request with context.WithTimeout instead.
 func NewCometAPIModel(baseURL map[string]string, urlSuffix URLSuffix) *CometAPIModel {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = 100
@@ -65,27 +48,22 @@ func NewCometAPIModel(baseURL map[string]string, urlSuffix URLSuffix) *CometAPIM
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &CometAPIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
-func (m *CometAPIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewCometAPIModel(baseURL, m.URLSuffix)
+func (c *CometAPIModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewCometAPIModel(baseURL, c.baseModel.URLSuffix)
 }
 
-func (m *CometAPIModel) Name() string {
+func (c *CometAPIModel) Name() string {
 	return "cometapi"
-}
-
-func validateCometAPIAPIKey(apiConfig *APIConfig) (string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return "", fmt.Errorf("api key is required")
-	}
-	return *apiConfig.ApiKey, nil
 }
 
 func validateCometAPIModelName(modelName string) error {
@@ -102,28 +80,17 @@ func cometapiRegion(apiConfig *APIConfig) string {
 	return "default"
 }
 
-// baseURLForRegion returns the base URL for the given region, or an
-// error if no entry exists. This makes a misconfigured region fail
-// fast with a clear message, instead of silently producing a relative
-// URL that the HTTP transport then rejects.
-func (m *CometAPIModel) baseURLForRegion(region string) (string, error) {
-	base, ok := m.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("cometapi: no base URL configured for region %q", region)
-	}
-	return strings.TrimRight(base, "/"), nil
-}
-
-func (m *CometAPIModel) endpointURL(region, suffix string) (string, error) {
-	baseURL, err := m.baseURLForRegion(region)
+func (c *CometAPIModel) endpointURL(region, suffix string) (string, error) {
+	baseURL, err := c.baseModel.GetBaseURL(&APIConfig{Region: &region})
 	if err != nil {
 		return "", err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(suffix, "/")), nil
 }
 
-func (m *CometAPIModel) balanceURL(apiKey string) string {
-	rawURL := strings.TrimSpace(m.URLSuffix.Balance)
+func (c *CometAPIModel) balanceURL(apiKey string) string {
+	rawURL := strings.TrimSpace(c.baseModel.URLSuffix.Balance)
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		rawURL = fmt.Sprintf("https://query.cometapi.com/%s", strings.TrimLeft(rawURL, "/"))
 	}
@@ -198,8 +165,8 @@ type cometapiHTTPResponse struct {
 	Body       []byte
 }
 
-func (m *CometAPIModel) doCometAPIRequest(req *http.Request) (*cometapiHTTPResponse, error) {
-	resp, err := m.httpClient.Do(req)
+func (c *CometAPIModel) doCometAPIRequest(req *http.Request) (*cometapiHTTPResponse, error) {
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -277,27 +244,29 @@ type cometapiModelCatalogItem struct {
 	ID string `json:"id"`
 }
 
-func parseCometAPIModelCatalog(body []byte) ([]string, error) {
+func parseCometAPIModelCatalog(body []byte) ([]ListModelResponse, error) {
 	var parsed cometapiModelCatalogResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(parsed.Data))
+	models := make([]ListModelResponse, 0, len(parsed.Data))
 	for _, model := range parsed.Data {
 		if model.ID != "" {
-			models = append(models, model.ID)
+			models = append(models, ListModelResponse{
+				Name: model.ID,
+			})
 		}
 	}
 	return models, nil
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (m *CometAPIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := validateCometAPIAPIKey(apiConfig)
-	if err != nil {
+func (c *CometAPIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := *apiConfig.ApiKey
 	if err := validateCometAPIModelName(modelName); err != nil {
 		return nil, err
 	}
@@ -306,14 +275,11 @@ func (m *CometAPIModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	url, err := m.endpointURL(cometapiRegion(apiConfig), m.URLSuffix.Chat)
+	url, err := c.endpointURL(cometapiRegion(apiConfig), c.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
 
-	// Note: do NOT propagate chatModelConfig.Stream into the request body
-	// here. ChatWithMessages parses a single JSON response, so stream must
-	// always be off for this code path.
 	reqBody := buildCometAPIChatRequest(modelName, messages, false, chatModelConfig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
@@ -323,7 +289,7 @@ func (m *CometAPIModel) ChatWithMessages(modelName string, messages []Message, a
 	if err != nil {
 		return nil, err
 	}
-	resp, err := m.doCometAPIRequest(req)
+	resp, err := c.doCometAPIRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -334,10 +300,12 @@ func (m *CometAPIModel) ChatWithMessages(modelName string, messages []Message, a
 	return parseCometAPIChatResponse(resp.Body)
 }
 
-// ChatStreamlyWithSender sends messages and streams the response via the
-// sender function. The CometAPI SSE stream uses the same shape as OpenAI:
-// "data:" lines carrying JSON events, with a final "[DONE]" line.
-func (m *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+// ChatStreamlyWithSender sends messages and streams the response
+func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -350,12 +318,9 @@ func (m *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("messages is empty")
 	}
 
-	apiKey, err := validateCometAPIAPIKey(apiConfig)
-	if err != nil {
-		return err
-	}
+	apiKey := *apiConfig.ApiKey
 
-	url, err := m.endpointURL(cometapiRegion(apiConfig), m.URLSuffix.Chat)
+	url, err := c.endpointURL(cometapiRegion(apiConfig), c.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
@@ -371,14 +336,11 @@ func (m *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 	reqBody := buildCometAPIChatRequest(modelName, messages, true, chatModelConfig)
 
-	// Use an explicit background context. SSE streams are long-lived
-	// so we do not attach a hard deadline here; the transport's
-	// ResponseHeaderTimeout caps the connection-establishment phase.
 	req, err := newCometAPIJSONRequest(context.Background(), "POST", url, reqBody, apiKey)
 	if err != nil {
 		return err
 	}
-	resp, err := m.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -389,8 +351,6 @@ func (m *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: bump the scanner buffer from the 64KB default to 1MB
-	// so we never silently truncate a long data: line.
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
@@ -464,24 +424,23 @@ type cometapiEmbeddingRequest struct {
 	Dimensions int      `json:"dimensions,omitempty"`
 }
 
-// Embed turns a list of texts into embedding vectors using the
-// CometAPI /v1/embeddings endpoint. The output has one vector per input,
-// in the same order the inputs were given.
-func (m *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+// Embed turns a list of texts into embedding vectors
+func (c *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
-	apiKey, err := validateCometAPIAPIKey(apiConfig)
-	if err != nil {
-		return nil, err
-	}
+	apiKey := *apiConfig.ApiKey
 
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	url, err := m.endpointURL(cometapiRegion(apiConfig), m.URLSuffix.Embedding)
+	url, err := c.endpointURL(cometapiRegion(apiConfig), c.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
@@ -502,7 +461,7 @@ func (m *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 		return nil, err
 	}
 
-	resp, err := m.doCometAPIRequest(req)
+	resp, err := c.doCometAPIRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -516,10 +475,6 @@ func (m *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Reorder the returned vectors by their reported index so the output
-	// always lines up with the input texts, even if the upstream API ever
-	// returns items out of order. A nil slot at the end indicates the
-	// upstream did not return an embedding for that input.
 	embeddings := make([]EmbeddingData, len(texts))
 	filled := make([]bool, len(texts))
 	for _, item := range parsed.Data {
@@ -527,9 +482,6 @@ func (m *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 			return nil, fmt.Errorf("cometapi: response index %d out of range for %d inputs", item.Index, len(texts))
 		}
 		if filled[item.Index] {
-			// A malformed response that repeats the same index would
-			// silently overwrite the earlier vector. Fail loudly so
-			// the caller never uses ambiguous output.
 			return nil, fmt.Errorf("cometapi: duplicate embedding index %d in response", item.Index)
 		}
 		embeddings[item.Index] = EmbeddingData{
@@ -548,8 +500,8 @@ func (m *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 }
 
 // ListModels returns the public CometAPI model catalog.
-func (m *CometAPIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	url, err := m.endpointURL(cometapiRegion(apiConfig), m.URLSuffix.Models)
+func (c *CometAPIModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+	url, err := c.endpointURL(cometapiRegion(apiConfig), c.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
@@ -562,7 +514,7 @@ func (m *CometAPIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := m.doCometAPIRequest(req)
+	resp, err := c.doCometAPIRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -573,25 +525,24 @@ func (m *CometAPIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return parseCometAPIModelCatalog(resp.Body)
 }
 
-// Balance queries CometAPI's quota service. Unlike model requests, this
-// endpoint authenticates with the key query parameter on query.cometapi.com.
-func (m *CometAPIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+// Balance queries CometAPI's quota service.
+func (c *CometAPIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(m.URLSuffix.Balance) == "" {
+	if strings.TrimSpace(c.baseModel.URLSuffix.Balance) == "" {
 		return nil, fmt.Errorf("balance URL is required")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", m.balanceURL(*apiConfig.ApiKey), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", c.balanceURL(*apiConfig.ApiKey), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := m.doCometAPIRequest(req)
+	resp, err := c.doCometAPIRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -609,32 +560,34 @@ func (m *CometAPIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 }
 
 // CheckConnection runs a quota query to verify the API key.
-func (m *CometAPIModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := m.Balance(apiConfig)
+func (c *CometAPIModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := c.Balance(apiConfig)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-// Rerank calculates similarity scores between query and documents. CometAPI
-// does not expose a public rerank API, so this returns "no such method".
-func (m *CometAPIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+// Rerank calculates similarity scores between query and documents.
+func (c *CometAPIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
 // TranscribeAudio transcribe audio
-func (m *CometAPIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (c *CometAPIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.ASR)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -707,7 +660,7 @@ func (m *CometAPIModel) TranscribeAudio(modelName *string, file *string, apiConf
 	req.Header.Set("Accept", "application/json")
 
 	// send request
-	resp, err := m.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -734,22 +687,25 @@ func (m *CometAPIModel) TranscribeAudio(modelName *string, file *string, apiConf
 	return &ASRResponse{Text: result.Text}, nil
 }
 
-func (m *CometAPIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", m.Name())
+func (c *CometAPIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", c.Name())
 }
 
 // AudioSpeech synthesizes speech audio from text.
-func (m *CometAPIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (c *CometAPIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("audio content is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.TTS)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -778,7 +734,7 @@ func (m *CometAPIModel) AudioSpeech(modelName *string, audioContent *string, api
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -796,23 +752,23 @@ func (m *CometAPIModel) AudioSpeech(modelName *string, audioContent *string, api
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (m *CometAPIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", m.Name())
+func (c *CometAPIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", c.Name())
 }
 
 // OCRFile OCR file
-func (m *CometAPIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (c *CometAPIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (m *CometAPIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (c *CometAPIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (m *CometAPIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (c *CometAPIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (m *CometAPIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (c *CometAPIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
 }

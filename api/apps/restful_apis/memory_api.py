@@ -18,12 +18,12 @@ import os
 import time
 
 from quart import request, g
-from common.constants import LLMType, RetCode
+from common.constants import RetCode
 from common.exceptions import ArgumentException, NotFoundException
 from api.apps import login_required, current_user
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from api.apps.services import memory_api_service
-from api.utils.tenant_utils import ensure_tenant_model_id_for_params
+from api.utils.pagination_utils import validate_rest_api_page_size
 
 
 @manager.route("/memories", methods=["POST"])  # noqa: F821
@@ -35,18 +35,11 @@ async def create_memory():
     req = await get_request_json()
     t_parsed = time.perf_counter() if timing_enabled else None
     try:
-        req = ensure_tenant_model_id_for_params(current_user.id, req)
-        if not req.get("tenant_llm_id"):
-            raise ArgumentException(
-                f"Tenant Model with name {req['llm_id']} and type {LLMType.CHAT.value} not found"
-            )
         memory_info = {
             "name": req["name"],
             "memory_type": req["memory_type"],
             "embd_id": req["embd_id"],
-            "llm_id": req["llm_id"],
-            "tenant_embd_id": req["tenant_embd_id"],
-            "tenant_llm_id": req["tenant_llm_id"],
+            "llm_id": req["llm_id"]
         }
         success, res = await memory_api_service.create_memory(memory_info)
         if timing_enabled:
@@ -134,7 +127,7 @@ async def list_memory():
     }
     keywords = request.args.get("keywords")
     page = int(request.args.get("page", 1))
-    page_size = int(request.args.get("page_size", 50))
+    page_size = validate_rest_api_page_size(int(request.args.get("page_size", 50)))
     try:
         res = await memory_api_service.list_memory(filter_params, keywords, page, page_size)
         return get_json_result(message=True, data=res)
@@ -167,7 +160,7 @@ async def get_memory_messages(memory_id):
     keywords = args.get("keywords", "")
     keywords = keywords.strip()
     page = int(args.get("page", 1))
-    page_size = int(args.get("page_size", 50))
+    page_size = validate_rest_api_page_size(int(args.get("page_size", 50)))
     try:
         res = await memory_api_service.get_memory_messages(
             memory_id, agent_ids, keywords, page, page_size

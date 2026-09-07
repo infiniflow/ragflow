@@ -102,7 +102,7 @@ func (dao *FileDAO) GetRootFolder(tenantID string) (*entity.File, error) {
 	}
 	file.SourceType = ""
 
-	if err := DB.Create(&file).Error; err != nil {
+	if err = DB.Create(&file).Error; err != nil {
 		return nil, err
 	}
 	return &file, nil
@@ -427,7 +427,7 @@ func (dao *FileDAO) newAFileFromDataset(tenantID, name, parentID string) (*entit
 		SourceType: "knowledgebase",
 	}
 
-	if err := DB.Create(file).Error; err != nil {
+	if err = DB.Create(file).Error; err != nil {
 		return nil, err
 	}
 	return file, nil
@@ -470,7 +470,7 @@ func (dao *FileDAO) addFileFromKB(doc *entity.Document, datasetFolderID, tenantI
 		SourceType: "knowledgebase",
 	}
 
-	if err := DB.Create(file).Error; err != nil {
+	if err = DB.Create(file).Error; err != nil {
 		return err
 	}
 
@@ -481,7 +481,7 @@ func (dao *FileDAO) addFileFromKB(doc *entity.Document, datasetFolderID, tenantI
 		DocumentID: &doc.ID,
 	}
 
-	if err := DB.Create(f2d).Error; err != nil {
+	if err = DB.Create(f2d).Error; err != nil {
 		return err
 	}
 

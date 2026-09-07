@@ -243,6 +243,17 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 			}
 			continue
 		}
+		if strListVal, ok := v.([]string); ok {
+			var inVals []string
+			for _, item := range strListVal {
+				item = strings.ReplaceAll(item, "'", "''")
+				inVals = append(inVals, fmt.Sprintf("'%s'", item))
+			}
+			if len(inVals) > 0 {
+				conditions = append(conditions, fmt.Sprintf("%s IN (%s)", k, strings.Join(inVals, ", ")))
+			}
+			continue
+		}
 
 		// Handle exists condition
 		if k == "exists" {

@@ -42,12 +42,15 @@ const (
 	TokenAlter
 	TokenActive
 	TokenAdmin
+	TokenServer
+	TokenAPI
 	TokenAdd
+	TokenHost
 	TokenDelete
 	TokenPassword
 	TokenDataset
 	TokenDatasets
-	TokenDatasetTable
+	TokenChunkStore
 	TokenOf
 	TokenAgents
 	TokenRole
@@ -68,6 +71,7 @@ const (
 	TokenVar
 	TokenVars
 	TokenConfigs
+	TokenConfig
 	TokenEnvs
 	TokenKey
 	TokenKeys
@@ -91,10 +95,12 @@ const (
 	TokenParse
 	TokenImport
 	TokenInto
+	TokenIn
 	TokenWith
 	TokenParser
 	TokenPipeline
 	TokenSearch
+	TokenRetrieve
 	TokenCurrent
 	TokenVision
 	TokenEmbedding
@@ -122,6 +128,7 @@ const (
 	TokenIndex
 	TokenVector
 	TokenSize
+	TokenStore
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
 	TokenBalance
 	TokenInstance
@@ -157,6 +164,11 @@ const (
 	TokenURL
 	TokenTask
 	TokenTasks
+	TokenIngestor
+	TokenIngestors
+	TokenStart
+	TokenStop
+	TokenIngestion
 	TokenLog
 	TokenLevel
 	TokenDebug
@@ -180,6 +192,8 @@ const (
 	TokenEOF
 	TokenDash
 	TokenIllegal
+	TokenLBracket // '['
+	TokenRBracket // ']'
 )
 
 // Token represents a lexical token

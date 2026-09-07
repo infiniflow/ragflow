@@ -1,0 +1,62 @@
+# RAGFlow .dockerignore
+# Reduces Docker build context sent to the daemon.
+# All excluded items are either rebuilt inside Docker, mounted from
+# infiniflow/ragflow_deps, or are local-only artifacts.
+
+# ── Python virtual environments ─────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# ── Frontend dependencies and build outputs ─────────────────────────────────
+web/node_modules/
+web/dist/
+
+# ── Runtime logs ────────────────────────────────────────────────────────────
+logs/
+*.log
+docker/ragflow-logs/
+
+# ── Docker runtime data ─────────────────────────────────────────────────────
+docker/data/
+docker/oceanbase/
+docker/seekdb/
+
+# ── Go and C++ build outputs ────────────────────────────────────────────────
+internal/cpp/build/
+internal/cpp/cmake-build-release/
+internal/cpp/cmake-build-debug/
+target/
+
+# ── Downloaded dependency artifacts (mounted from infiniflow/ragflow_deps) ──
+chrome-linux64-*
+chromedriver-linux64-*
+tika-server-standard-*.jar
+tika-server-standard-*.jar.md5
+cl100k_base.tiktoken
+libssl*.deb
+uv-*.tar.gz
+huggingface.co/
+nltk_data/
+9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+
+# ── IDE and editor config ──────────────────────────────────────────────────
+.idea/
+.vscode/
+.cursor/
+.trae/
+.DS_Store
+
+# ── Test and coverage artifacts ─────────────────────────────────────────────
+coverage/
+htmlcov/
+.coverage
+.hypothesis/
+.nox/
+
+# ── Docker env (contains secrets) ───────────────────────────────────────────
+docker/.env

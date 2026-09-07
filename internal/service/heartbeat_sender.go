@@ -126,7 +126,11 @@ func (h *HeartbeatSender) SendHeartbeat() error {
 		if err != nil {
 			return err
 		}
-		responseCode := common.ErrorCode(responseBody["code"].(float64))
+		code, ok := responseBody["code"].(float64)
+		if !ok {
+			return fmt.Errorf("unexpected heartbeat response (status %d): missing or non-numeric \"code\" field", resp.StatusCode)
+		}
+		responseCode := common.ErrorCode(code)
 		if responseCode != common.CodeLicenseValid {
 			return errors.New(responseCode.Message())
 		}

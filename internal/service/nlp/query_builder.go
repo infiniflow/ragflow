@@ -229,7 +229,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 	// Replace punctuation and special characters with space
 	// Reference: rag/nlp/query.py L44-48
 	// re is the regex pattern for matching punctuation and special characters.
-	re := regexp.MustCompile(`[ :|\r\n\t,，.。?？/\` + "`" + `!！&^%()\[\]{}<>]+`)
+	re := regexp.MustCompile(`[ :|\r\n\t,，.。?？/\` + "`" + `!！&^%()\[\]{}<>*~'"\\]+`)
 	// txtCleaned is the text after removing punctuation and special characters.
 	txtCleaned := re.ReplaceAllString(txtSimplified, " ")
 
@@ -312,10 +312,12 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 				for _, syn := range tkSyns {
 					syn = strings.TrimSpace(syn)
 					if syn != "" {
-						synParts = append(synParts, fmt.Sprintf(`"%s"^%.1f`, syn, tw.w/4.0))
+						synParts = append(synParts, fmt.Sprintf(`"%s"^%.4f`, syn, tw.w/4.0))
 					}
 				}
 				syns[i] = strings.Join(synParts, " ")
+				// Extend keywords with synonyms
+				keywords = append(keywords, tkSyns...)
 			} else {
 				syns[i] = ""
 			}
@@ -333,7 +335,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 				continue
 			}
 			// Format: (token^weight synonym)
-			q = append(q, fmt.Sprintf("(%s^%.1f %s)", tk, w, syns[i]))
+			q = append(q, fmt.Sprintf("(%s^%.4f %s)", tk, w, syns[i]))
 		}
 
 		// Add phrase queries for adjacent tokens
@@ -349,7 +351,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 			if tksW[i].w > maxW {
 				maxW = tksW[i].w
 			}
-			q = append(q, fmt.Sprintf(`"%s %s"^%.1f`, left, right, maxW*2))
+			q = append(q, fmt.Sprintf(`"%s %s"^%.4f`, left, right, maxW*2))
 		}
 
 		if len(q) == 0 {
@@ -440,7 +442,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 			for _, m := range sm {
 				m = specialCharRe.ReplaceAllString(m, "")
 				m = qb.SubSpecialChar(m)
-				if len(m) > 1 {
+				if len([]rune(m)) > 1 {
 					cleanSm = append(cleanSm, m)
 				}
 			}
@@ -620,28 +622,6 @@ func (qb *QueryBuilder) Paragraph(contentTks string, keywords []string, keywords
 		MatchingText: query,
 		TopN:         100,
 	}
-}
-
-// Similarity calculates similarity between two term weight dictionaries.
-// Algorithm: s = sum(qtwt[k] for k in qtwt if k in dtwt) / sum(qtwt[k])
-func (qb *QueryBuilder) Similarity(qtwt map[string]float64, dtwt map[string]float64) float64 {
-	if len(qtwt) == 0 {
-		return 0.0
-	}
-	var sum float64
-	for k, v := range qtwt {
-		if _, ok := dtwt[k]; ok {
-			sum += v
-		}
-	}
-	var total float64
-	for _, v := range qtwt {
-		total += v
-	}
-	if total == 0 {
-		return 0.0
-	}
-	return sum / total
 }
 
 // TokenSimilarity calculates similarity between query terms and multiple document term sets.

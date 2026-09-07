@@ -43,7 +43,10 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { ActionCell } from './action-cell';
-import { useHandleConnectToKnowledge, useRenameCurrentFile } from './hooks';
+import {
+  UseHandleConnectToKnowledgeReturnType,
+  useRenameCurrentFile,
+} from './hooks';
 import { KnowledgeCell } from './knowledge-cell';
 import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
@@ -57,7 +60,9 @@ type FilesTableProps = Pick<
   'files' | 'loading' | 'pagination' | 'setPagination' | 'total'
 > &
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> &
-  UseMoveDocumentShowType;
+  UseMoveDocumentShowType & {
+    connectKnowledgeModal: UseHandleConnectToKnowledgeReturnType;
+  };
 
 export function FilesTable({
   files,
@@ -68,6 +73,7 @@ export function FilesTable({
   rowSelection,
   setRowSelection,
   showMoveFileModal,
+  connectKnowledgeModal,
 }: FilesTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -87,7 +93,7 @@ export function FilesTable({
     initialConnectedIds,
     onConnectToKnowledgeOk,
     connectToKnowledgeLoading,
-  } = useHandleConnectToKnowledge();
+  } = connectKnowledgeModal;
   const {
     fileRenameVisible,
     showFileRenameModal,

@@ -6,7 +6,9 @@
   "url_suffix": {
     "chat": "chat/completions",
     "models": "models",
-    "embedding": "embeddings"
+    "embedding": "embeddings",
+    "asr": "audio/transcriptions",
+    "tts": "audio/speech"
   },
   "class": "gpt",
   "models": [

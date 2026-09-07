@@ -19,6 +19,7 @@ package tokenizer
 import (
 	"context"
 	"fmt"
+	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"runtime"
@@ -80,7 +81,11 @@ func Init(cfg *PoolConfig) error {
 
 		// Set default values
 		if cfg.DictPath == "" {
-			cfg.DictPath = "/usr/share/infinity/resource"
+			if env := os.Getenv("RAGFLOW_DICT_PATH"); env != "" {
+				cfg.DictPath = env
+			} else {
+				cfg.DictPath = "/usr/share/infinity/resource"
+			}
 		}
 		if cfg.MinSize <= 0 {
 			cfg.MinSize = runtime.NumCPU() * 2

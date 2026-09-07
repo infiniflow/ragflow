@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
+	"ragflow/internal/utility"
 	"syscall"
 	"time"
 
@@ -36,7 +37,6 @@ import (
 	"ragflow/internal/admin"
 	"ragflow/internal/dao"
 	"ragflow/internal/server"
-	"ragflow/internal/utility"
 )
 
 func main() {
@@ -45,7 +45,7 @@ func main() {
 	flag.Parse()
 
 	// Initialize logger
-	if err := common.Init("info"); err != nil {
+	if err := common.Init("info", "admin_server.log"); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -59,7 +59,7 @@ func main() {
 
 	// Reinitialize logger with configured level if different
 	if cfg.Log.Level != "" && cfg.Log.Level != "info" {
-		if err := common.Init(cfg.Log.Level); err != nil {
+		if err := common.Init(cfg.Log.Level, "admin_server.log"); err != nil {
 			common.Error("Failed to reinitialize logger with configured level", err)
 		}
 	}
@@ -135,9 +135,6 @@ func main() {
 		Handler: ginEngine,
 	}
 
-	// Print RAGFlow version
-	common.Info("RAGFlow version", zap.String("version", utility.GetRAGFlowVersion()))
-
 	// Print all configuration settings
 	server.PrintAll()
 
@@ -149,10 +146,22 @@ func main() {
 		"     / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /\n" +
 		"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
 
-	// Start server in a goroutine
+	// Print RAGFlow version
+	common.Info(fmt.Sprintf("RAGFlow admin version: %s", utility.GetRAGFlowVersion()))
+
+	// Start ingestion manager (gRPC) in a goroutine
+	ingestionMgr := admin.NewAdminServer()
 	go func() {
-		common.Info(fmt.Sprintf("Admin Go Version: %s", utility.GetRAGFlowVersion()))
-		common.Info(fmt.Sprintf("Starting RAGFlow admin server on port: %d", cfg.Admin.Port))
+		addr = fmt.Sprintf(":%d", cfg.Admin.IngestionManagerPort)
+		common.Info(fmt.Sprintf("Starting RAGFlow ingestion manager on port: %d", cfg.Admin.IngestionManagerPort))
+		if err := ingestionMgr.Start(addr); err != nil {
+			common.Fatal("Failed to start RAGFlow ingestion manager", zap.Error(err))
+		}
+	}()
+
+	// Start HTTP server in a goroutine
+	go func() {
+		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", cfg.Admin.Port))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			common.Fatal("Failed to start server", zap.Error(err))
 		}
@@ -164,16 +173,19 @@ func main() {
 	sig := <-quit
 
 	common.Info("Received signal", zap.String("signal", sig.String()))
-	common.Info("Shutting down server...")
+	common.Info("Shutting down RAGFlow HTTP server...")
 
 	// Create context with timeout for graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Shutdown server
+	// Shutdown HTTP server
 	if err := srv.Shutdown(ctx); err != nil {
 		common.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 
-	common.Info("Server exited")
+	common.Info("Admin HTTP server exited")
+
+	// Stop ingestion manager
+	ingestionMgr.Stop()
 }

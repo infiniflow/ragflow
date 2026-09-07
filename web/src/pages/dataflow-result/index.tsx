@@ -63,7 +63,7 @@ const DataflowResult = () => {
   const fileType = useMemo(() => {
     if (isAgent) {
       return Images.some((x) => x === documentExtension)
-        ? documentInfo?.name.split('.').pop() || 'visual'
+        ? documentInfo?.name?.split('.').pop() || documentExtension
         : documentExtension;
     }
     switch (documentInfo?.type) {

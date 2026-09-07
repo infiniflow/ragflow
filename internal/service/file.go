@@ -626,7 +626,7 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 				}
 
 				// Delete document record
-				if err := documentDAO.Delete(docID); err != nil {
+				if _, err := documentDAO.Delete(docID); err != nil {
 					common.Logger.Error(fmt.Sprintf("Fail to delete document: %s, error: %v", docID, err))
 				}
 			}

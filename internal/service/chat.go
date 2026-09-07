@@ -19,11 +19,10 @@ package service
 import (
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/google/uuid"
 
 	"ragflow/internal/dao"
 )
@@ -446,11 +445,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 
 	if isCreate {
 		// Generate UUID for new chat
-		newID := uuid.New().String()
-		newID = strings.ReplaceAll(newID, "-", "")
-		if len(newID) > 32 {
-			newID = newID[:32]
-		}
+		newID := common.GenerateUUID()
 
 		// Set default language
 		language := "English"
