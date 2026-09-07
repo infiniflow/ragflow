@@ -714,3 +714,103 @@ def test_iter_in_worker_thread_stops_producer_when_consumer_closes():
 
     assert closed.wait(timeout=5)
     assert len(produced) < 10
+
+
+@pytest.mark.p2
+def test_iter_in_worker_thread_terminal_writes_do_not_block_after_close():
+    """Producer must exit even if the consumer closes while the queue is full."""
+    started = threading.Event()
+
+    def _source():
+        started.set()
+        for i in range(50):
+            yield [i]
+
+    it = _sitemap_mod.iter_in_worker_thread(_source(), maxsize=1)
+    assert started.wait(timeout=5)
+    time.sleep(0.2)  # let the producer fill the queue and block on put()
+    it.close()
+    it.join(timeout=5)
+    assert it.producer_alive is False
+
+    def _failing():
+        yield [1]
+        raise RuntimeError("late failure")
+
+    it = _sitemap_mod.iter_in_worker_thread(_failing(), maxsize=1)
+    time.sleep(0.2)
+    it.close()
+    it.join(timeout=5)
+    assert it.producer_alive is False
+
+
+@pytest.mark.p2
+def test_iter_in_worker_thread_close_cancels_an_in_flight_fetch():
+    """Closing the consumer must interrupt the source at its next cancellation check."""
+    cancel = threading.Event()
+    fetch_started = threading.Event()
+    fetch_aborted = threading.Event()
+
+    def _slow_source():
+        yield ["first"]
+        fetch_started.set()
+        # emulate a long fetch that polls the cancellation flag (as _read_capped does)
+        for _ in range(200):
+            if cancel.is_set():
+                fetch_aborted.set()
+                return
+            time.sleep(0.02)
+        yield ["never"]
+
+    it = _sitemap_mod.iter_in_worker_thread(_slow_source(), maxsize=1, on_close=cancel.set)
+    assert next(it) == ["first"]
+    assert fetch_started.wait(timeout=5)
+    it.close()
+
+    assert fetch_aborted.wait(timeout=5)
+    it.join(timeout=5)
+    assert it.producer_alive is False
+
+
+@pytest.mark.p2
+def test_cancel_stops_traversal_before_next_fetch(monkeypatch):
+    _patch_ssrf(monkeypatch)
+    _patch_trafilatura(monkeypatch)
+    fetched: list[str] = []
+    responses = {
+        "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
+        "https://example.com/page-1": _fake_response(b"<html>1</html>"),
+        "https://example.com/page-2": _fake_response(b"<html>2</html>"),
+    }
+    connector = _connector(batch_size=1)
+
+    def _get(self, url, **kwargs):
+        fetched.append(url)
+        if url.endswith("/page-1"):
+            connector.cancel()  # cancellation arrives while the first page is being fetched
+        return responses[url]
+
+    monkeypatch.setattr(_sitemap_mod.requests.Session, "get", _get)
+    batches = list(connector.load_from_state())
+
+    assert connector.cancelled is True
+    assert "https://example.com/page-2" not in fetched
+    assert len(batches) <= 1
+
+
+@pytest.mark.p2
+def test_read_capped_aborts_when_cancelled(monkeypatch):
+    connector = _connector()
+    chunks = iter([b"aaaa", b"bbbb", b"cccc"])
+
+    def _iter_content(chunk_size=65536):
+        for chunk in chunks:
+            connector.cancel()
+            yield chunk
+
+    resp = _fake_response(b"")
+    resp.iter_content.side_effect = _iter_content
+
+    with pytest.raises(ValueError, match="cancelled"):
+        connector._read_capped(resp, "https://example.com/big")
+    resp.close.assert_called()

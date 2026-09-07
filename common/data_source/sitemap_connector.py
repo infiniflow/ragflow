@@ -3,7 +3,7 @@ import logging
 import queue
 import re
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -44,54 +44,104 @@ _NESTED_QUANTIFIER_RE = re.compile(r"\([^()]*[+*}][^()]*\)\s*[+*{?]")
 logger = logging.getLogger(__name__)
 
 _QUEUE_END = object()
+_QUEUE_POLL_SECONDS = 0.5
 
 
-def iter_in_worker_thread(source: Iterator[Any], maxsize: int = 2) -> Iterator[Any]:
-    """Consume ``source`` in a daemon worker thread and yield its items from a bounded queue.
+class _WorkerThreadIterator:
+    """Iterator over items produced by ``source`` in a daemon worker thread.
 
-    The sync worker iterates connector generators synchronously on the asyncio thread.
-    Running the generator (and therefore all its blocking HTTP calls) in a worker
-    thread keeps that blocking off the event-loop thread and lets the next batch be
-    downloaded while the previous one is being indexed. Exceptions raised by the
-    source are re-raised in the consumer; closing the consumer stops the producer.
+    See :func:`iter_in_worker_thread`. ``offload_next`` tells the sync worker that
+    ``next()`` may block and should be awaited through ``asyncio.to_thread``.
     """
-    q: queue.Queue = queue.Queue(maxsize=maxsize)
-    stop = threading.Event()
 
-    def _produce() -> None:
+    offload_next = True
+
+    def __init__(self, source: Iterator[Any], maxsize: int, on_close: Callable[[], None] | None):
+        self._source = source
+        self._queue: queue.Queue = queue.Queue(maxsize=maxsize)
+        self._stop = threading.Event()
+        self._closed = False
+        self._on_close = on_close
+        self._worker = threading.Thread(target=self._produce, name="sitemap-batch-producer", daemon=True)
+        self._worker.start()
+
+    def _put(self, item: Any) -> bool:
+        """Enqueue ``item`` unless the consumer went away; never blocks forever."""
+        while not self._stop.is_set():
+            try:
+                self._queue.put(item, timeout=_QUEUE_POLL_SECONDS)
+                return True
+            except queue.Full:
+                continue
+        return False
+
+    def _produce(self) -> None:
         try:
-            for item in source:
-                while not stop.is_set():
-                    try:
-                        q.put(item, timeout=0.5)
-                        break
-                    except queue.Full:
-                        continue
-                if stop.is_set():
+            for item in self._source:
+                if not self._put(item):
                     return
-            q.put(_QUEUE_END)
+            self._put(_QUEUE_END)
         except BaseException as exc:  # noqa: BLE001 - forwarded to the consumer
-            q.put(exc)
+            self._put(exc)
         finally:
-            close = getattr(source, "close", None)
+            close = getattr(self._source, "close", None)
             if close is not None:
                 try:
                     close()
                 except Exception:
                     logger.debug("worker-thread generator close() failed", exc_info=True)
 
-    worker = threading.Thread(target=_produce, name="sitemap-batch-producer", daemon=True)
-    worker.start()
-    try:
+    def __iter__(self) -> "_WorkerThreadIterator":
+        return self
+
+    def __next__(self) -> Any:
         while True:
-            item = q.get()
+            if self._closed:
+                raise StopIteration
+            try:
+                item = self._queue.get(timeout=_QUEUE_POLL_SECONDS)
+            except queue.Empty:
+                continue
             if item is _QUEUE_END:
-                return
+                self.close()
+                raise StopIteration
             if isinstance(item, BaseException):
+                self.close()
                 raise item
-            yield item
-    finally:
-        stop.set()
+            return item
+
+    def close(self) -> None:
+        """Stop the producer; also invoked when the consumer abandons iteration."""
+        if self._closed:
+            return
+        self._closed = True
+        self._stop.set()
+        if self._on_close is not None:
+            try:
+                self._on_close()
+            except Exception:
+                logger.debug("worker-thread on_close callback failed", exc_info=True)
+
+    def join(self, timeout: float | None = None) -> None:
+        self._worker.join(timeout)
+
+    @property
+    def producer_alive(self) -> bool:
+        return self._worker.is_alive()
+
+
+def iter_in_worker_thread(source: Iterator[Any], maxsize: int = 2, on_close: Callable[[], None] | None = None) -> _WorkerThreadIterator:
+    """Consume ``source`` in a daemon worker thread and hand its items over through a bounded queue.
+
+    The sync worker iterates connector generators on the asyncio thread. Running the
+    generator (and therefore all its blocking HTTP calls) in a worker thread keeps that
+    blocking off the event-loop thread and lets the next batch be downloaded while the
+    previous one is indexed. Exceptions raised by the source are re-raised in the
+    consumer. Closing the consumer stops the producer: queue writes are abandoned,
+    and ``on_close`` (typically the connector's ``cancel``) is invoked so that an
+    in-progress traversal gives up at its next check instead of finishing its fetches.
+    """
+    return _WorkerThreadIterator(source, maxsize, on_close)
 
 
 class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
@@ -120,6 +170,7 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         # environment, so every request goes straight to the DNS-pinned address.
         self._session = requests.Session()
         self._session.trust_env = False
+        self._cancel = threading.Event()
         self.follow_pdf_links = follow_pdf_links
         self.restrict_pdf_to_domain = restrict_pdf_to_domain
         self.credentials: dict[str, Any] = {}
@@ -141,6 +192,14 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self.credentials = credentials or {}
         return None
+
+    def cancel(self) -> None:
+        """Ask an in-progress traversal to stop at its next check (next URL or next body chunk)."""
+        self._cancel.set()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancel.is_set()
 
     @staticmethod
     def _compile_url_filter(pattern: str) -> regex.Pattern:
@@ -233,6 +292,9 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         # --- Pass 1: sitemap URLs ---
         batch: list[Document] = []
         for url, lastmod in self._iter_sitemap_urls(self.sitemap_url, depth=0):
+            if self._cancel.is_set():
+                logger.info("Sitemap traversal cancelled")
+                return
             if url in seen or not self._url_matches(url):
                 continue
             seen.add(url)
@@ -266,6 +328,9 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
         batch = []
         for pdf_url, parent_url in pending_pdfs:
+            if self._cancel.is_set():
+                logger.info("Sitemap traversal cancelled during PDF pass")
+                return
             doc = self._fetch_and_build_document(pdf_url, None, seen, [], sitemap_domain, parent_url)
             if doc is None:
                 continue
@@ -297,6 +362,8 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             logger.warning("Maximum number of sitemap fetches (%s) reached, stopping at %s", _MAX_SITEMAP_FETCHES, sitemap_url)
             return
         _walk["fetched"] += 1
+        if self._cancel.is_set():
+            return
 
         try:
             self._validate_url(sitemap_url)
@@ -468,9 +535,11 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             current_url = redirect_url
         raise ValueError(f"Exceeded {_MAX_REDIRECTS} redirects fetching {url!r}")
 
-    @staticmethod
-    def _read_capped(response: requests.Response, url: str) -> bytes:
-        """Read a streamed response body, refusing anything larger than _MAX_RESPONSE_BYTES."""
+    def _read_capped(self, response: requests.Response, url: str) -> bytes:
+        """Read a streamed response body, refusing anything larger than _MAX_RESPONSE_BYTES.
+
+        Stops early (raising ``ValueError``) when :meth:`cancel` was called.
+        """
         declared = response.headers.get("Content-Length")
         if declared and declared.isdigit() and int(declared) > _MAX_RESPONSE_BYTES:
             response.close()
@@ -479,6 +548,8 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         total = 0
         try:
             for chunk in response.iter_content(chunk_size=_READ_CHUNK_BYTES):
+                if self._cancel.is_set():
+                    raise ValueError(f"Fetch of {url!r} cancelled")
                 if not chunk:
                     continue
                 total += len(chunk)

@@ -32,7 +32,7 @@ import signal
 import sys
 import threading
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 
 from flask import json
@@ -108,6 +108,34 @@ def _redact_mailbox(value: str) -> str:
         local_mask = local if len(local) <= 2 else local[:2] + "***"
         return f"{local_mask}@***"
     return f"{value[:4]}***" if len(value) > 4 else "***"
+
+
+async def _iterate_document_batches(generator):
+    """Yield connector batches, advancing thread-bridged iterators off the event loop.
+
+    Connectors that return an iterator flagged ``offload_next`` (see
+    ``common.data_source.sitemap_connector.iter_in_worker_thread``) may block in
+    ``next()`` while a batch is being fetched; that call is awaited through
+    ``asyncio.to_thread`` so ``asyncio.wait_for`` keeps enforcing the task timeout and
+    cancellation closes the source. Every other connector keeps its synchronous
+    iteration unchanged.
+    """
+    if not getattr(generator, "offload_next", False):
+        for item in generator:
+            yield item
+        return
+
+    sentinel = object()
+    try:
+        while True:
+            item = await asyncio.to_thread(next, generator, sentinel)
+            if item is sentinel:
+                return
+            yield item
+    finally:
+        close = getattr(generator, "close", None)
+        if close is not None:
+            close()
 
 
 class SyncBase:
@@ -226,7 +254,7 @@ class SyncBase:
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
 
-        for document_batch in document_batch_generator:
+        async for document_batch in _iterate_document_batches(document_batch_generator):
             if not document_batch:
                 continue
 
@@ -544,16 +572,17 @@ class Sitemap(SyncBase):
         # Batches are produced in a worker thread (network I/O off the event-loop thread)
         # and handed over through a bounded queue.
         if task["reindex"] == "1" or not task["poll_range_start"]:
-            return iter_in_worker_thread(self._sanitize_docs(self.connector.load_from_state()))
+            return iter_in_worker_thread(self._sanitize_docs(self.connector.load_from_state()), on_close=self.connector.cancel)
 
-        end_time = datetime.now(timezone.utc).timestamp()
+        end_time = datetime.now(UTC).timestamp()
         return iter_in_worker_thread(
             self._sanitize_docs(
                 self.connector.poll_source(
                     task["poll_range_start"].timestamp(),
                     end_time,
                 )
-            )
+            ),
+            on_close=self.connector.cancel,
         )
 
 
