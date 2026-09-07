@@ -1132,6 +1132,10 @@ class Llmman(OpenAIAPICompatible):
     _FACTORY_NAME = "llmman"
 
 
+class Hubris(OpenAIAPICompatible):
+    _FACTORY_NAME = "Hubris"
+
+
 class NewAPI(OpenAIAPICompatible):
     _FACTORY_NAME = "New API"
 

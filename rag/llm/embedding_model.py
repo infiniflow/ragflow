@@ -914,6 +914,13 @@ class LlmmanEmbed(LocalAIEmbed):
     _FACTORY_NAME = "llmman"
 
 
+class HubrisEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "Hubris"
+
+    def __init__(self, key, model_name, base_url="https://api.hubris.pw/v1"):
+        super().__init__(key, model_name, base_url or "https://api.hubris.pw/v1")
+
+
 class OpenAI_APIEmbed(OpenAIEmbed):
     _FACTORY_NAME = ["VLLM", "OpenAI-API-Compatible"]
 
