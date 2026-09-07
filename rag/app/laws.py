@@ -24,7 +24,7 @@ from docx.text.paragraph import Paragraph
 
 from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
 from deepdoc.parser.utils import get_text
-from rag.nlp import bullets_category, remove_contents_table, make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge
+from rag.nlp import bullets_category, remove_contents_table, make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge, DEFAULT_DELIMITER
 from rag.nlp import rag_tokenizer, Node
 from deepdoc.parser import PdfParser, DocxParser, HtmlParser
 from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
@@ -169,7 +169,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     """
     Supported file formats are docx, pdf, txt.
     """
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC"})
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     pdf_parser = None

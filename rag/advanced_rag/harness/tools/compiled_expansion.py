@@ -22,6 +22,31 @@ from rag.advanced_rag.harness.tools.navigation import _kg_scopes
 
 _LOG = logging.getLogger(__name__)
 
+# HNSW ef_search floor.  Must be >= the requested top_n or the ANN search is
+# bounded by the candidate list instead of by relevance.
+_VECTOR_NUM_CANDIDATES = 256
+_VECTOR_SIMILARITY = 0.1
+
+
+async def _dense_expr(text: str, embd_mdl, top_n: int):
+    """Build the dense match expression for compiled-row search.
+
+    ``get_vector``'s 4th positional argument is ``num_candidates`` (HNSW
+    ef_search), not the similarity threshold — passing the 0.1 threshold
+    positionally collapses the candidate list to a fraction of one entry and
+    silently destroys recall.  Both are passed by name here.
+    """
+    from common import settings
+
+    return await settings.retriever.get_vector(
+        text,
+        embd_mdl,
+        top_k=top_n,
+        num_candidates=max(top_n, _VECTOR_NUM_CANDIDATES),
+        similarity=_VECTOR_SIMILARITY,
+    )
+
+
 # ─── Compiled product expansion (zero-LLM, used by hybrid_search with use_compiled=True) ───
 
 
@@ -156,7 +181,7 @@ async def _search_compiled_rows(
         embd_mdl = getattr(tools, "embed_mdl", None)
         if embd_mdl:
             try:
-                exprs.append(await settings.retriever.get_vector(text, embd_mdl, top_n, 0.1))
+                exprs.append(await _dense_expr(text, embd_mdl, top_n))
             except Exception:
                 _LOG.exception("[Compiled expand] vector build failed; using keyword match")
         if not exprs:
@@ -400,7 +425,7 @@ async def _search_synthesis_pages(
         embd_mdl = getattr(tools, "embed_mdl", None)
         if embd_mdl:
             try:
-                exprs.append(await settings.retriever.get_vector(text, embd_mdl, top_n, 0.1))
+                exprs.append(await _dense_expr(text, embd_mdl, top_n))
             except Exception:
                 _LOG.exception("[Wiki expand] vector build failed; using keyword match")
         if not exprs:

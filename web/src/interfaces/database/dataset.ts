@@ -84,7 +84,6 @@ interface Parserconfig {
 
 interface Raptor {
   clustering_method?: 'gmm' | 'ahc';
-  ext?: { clustering_method: 'gmm' | 'ahc'; tree_builder: 'raptor' | 'psi' };
   max_cluster: number;
   max_token: number;
   prompt: string;
@@ -286,6 +285,9 @@ export interface IArtifactAlteration {
   changed_doc_ids: string[];
   involved_doc_ids: string[];
   eligible_doc_ids: string[];
+  retry_required?: boolean;
+  retry_page_count?: number;
+  retry_page_slugs?: string[];
 }
 
 export interface IArtifactGraphRelation {

@@ -63,7 +63,6 @@ import (
 	"ragflow/internal/engine/redis"
 	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
-	"ragflow/internal/servermode"
 	"ragflow/internal/utility"
 )
 
@@ -283,24 +282,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Register the in-process (Go) DeepDoc backend for the modes that run the
-	// document parsing pipeline. This server is built with -tags cgo and links
-	// ONNX Runtime statically (libonnxruntime.a, resolved via dlopen(NULL)),
-	// so the in-process backend is the production backend with no external
-	// DeepDoc HTTP service. Fail fast if it cannot serve — but only for modes
-	// that actually need it: "api" parses in-process (dataflow debug and other
-	// routes) and "ingestor" runs the ingestion pipeline. "admin"/"syncer"
-	// never instantiate the analyzer, so they must not fail-fast when ORT and
-	// models are absent on their node.
-	if servermode.NeedsDeepDoc(*arguments.mode) {
-		registerNativeDeepDoc()
-	}
-
 	globalConfig := server.GetConfig()
 
 	// override default port if provided
 	switch *arguments.mode {
 	case "api":
+		registerNativeDeepDoc()
 		apiServerConfig := globalConfig.GetAPIServerConfig()
 		port := apiServerConfig.HTTPPort
 		if arguments.port != nil {
@@ -321,6 +308,7 @@ func main() {
 			serverName = fmt.Sprintf("admin_server_%d", port)
 		}
 	case "ingestor":
+		registerNativeDeepDoc()
 		if serverName == "" {
 			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
@@ -839,7 +827,12 @@ func startServer(ctx context.Context) {
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
 	)
-	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService)
+	// WithDocumentService wires the rerun dependency used by
+	// POST /api/v1/agents/rerun (dataflow "re-run" in the pipeline
+	// result viewer). RerunAgent fails closed without it, so this must
+	// stay attached to NewAgentHandler.
+	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService).
+		WithDocumentService(documentService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
@@ -1091,7 +1084,8 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 // registerNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
 // inference backend. The server is built with -tags cgo and links ONNX Runtime
 // statically (libonnxruntime.a, resolved at runtime via dlopen(NULL) from the
-// running binary — see the onnxruntime_go fork), so there is no external
+// running binary — see github.com/infiniflow/onnxruntime_go, the org mirror of
+// yalue/onnxruntime_go), so there is no external
 // DeepDoc HTTP service and no dynamic .so deployment.
 //
 // Fail-fast contract (P0): the in-process backend must be available at startup
