@@ -2478,10 +2478,10 @@ curl --request POST \
 
 - `"question"`: (*Body parameter*), `string`, *Required*
   The user query or query keywords.
-- `"dataset_ids"`: (*Body parameter*) `list[string]`
-  The IDs of the datasets to search. If you do not set this argument, ensure that you set `"document_ids"`.
+- `"dataset_ids"`: (*Body parameter*), `list[string]`, *Required*
+  The IDs of the datasets to search. At least one dataset ID must be provided.
 - `"document_ids"`: (*Body parameter*), `list[string]`
-  The IDs of the documents to search. Ensure that all selected documents use the same embedding model. Otherwise, an error will occur. If you do not set this argument, ensure that you set `"dataset_ids"`.
+  Limits the search to specific documents within the datasets specified by `"dataset_ids"`. Ensure that all selected documents use the same embedding model. Defaults to an empty list.
 - `"page"`: (*Body parameter*), `integer`
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
 - `"page_size"`: (*Body parameter*)
@@ -4426,9 +4426,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `agent_id`: (*Path parameter*), `string`
+- `"agent_id"`: (*Body parameter*), `string`, *Required*
   The ID of the associated agent.
-- `"question"`: (*Body Parameter*), `string`, *Required*
+- `"query"`: (*Body parameter*), `string`
   The question to start an AI-powered conversation.
 - `"stream"`: (*Body Parameter*), `boolean`
   Indicates whether to output responses in a streaming way:
@@ -4436,8 +4436,8 @@ curl --request POST \
   - `false`: Disable streaming.
 - `"session_id"`: (*Body Parameter*)
   The ID of the session. If it is not provided, a new session will be generated.
-- `"inputs"`: (*Body Parameter*)
-  Variables specified in the **Begin** component.
+- `"inputs"`: (*Body parameter*), `object`
+  Values for variables defined in the **Begin** component. Each variable value must be an object containing a `"value"` field and may include a `"type"` field.
 - `"user_id"`: (*Body parameter*), `string`
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
 - `"chat_template_kwargs"`: (*Body parameter*), `object`
