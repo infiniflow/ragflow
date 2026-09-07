@@ -356,7 +356,12 @@ func TestSlotStateTransitions(t *testing.T) {
 	}
 
 	// Drain one slot (simulating dispatcher reserve)
-	slot := <-ingestor.idleSlots
+	var slot *workerSlot
+	select {
+	case slot = <-ingestor.idleSlots:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for worker slot to register idle")
+	}
 	if SlotState(slot.state.Load()) != SlotStateIdle {
 		t.Fatalf("initial slot state = %v, want Idle", SlotState(slot.state.Load()))
 	}

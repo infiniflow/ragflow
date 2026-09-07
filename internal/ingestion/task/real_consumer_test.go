@@ -41,7 +41,10 @@ func TestRealProducerConsumer(t *testing.T) {
 
 	// Purge stale messages
 	for {
-		h, _ := natsEngine.PullMessagesForAdmin(1)
+		h, err := natsEngine.PullMessagesForAdmin(1)
+		if err != nil {
+			t.Fatalf("drain queue: %v", err)
+		}
 		if len(h) == 0 {
 			break
 		}

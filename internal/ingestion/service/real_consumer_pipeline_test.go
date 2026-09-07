@@ -21,7 +21,10 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 	}
 
 	for {
-		handles, _ := natsEngine.PullMessagesForAdmin(1)
+		handles, err := natsEngine.PullMessagesForAdmin(1)
+		if err != nil {
+			t.Fatalf("drain queue: %v", err)
+		}
 		if len(handles) == 0 {
 			break
 		}
