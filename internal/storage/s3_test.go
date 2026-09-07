@@ -16,9 +16,9 @@ type s3RoundTripper func(*http.Request) (*http.Response, error)
 
 func (f s3RoundTripper) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
-func newS3TestStorage(handler s3RoundTripper) *S3Storage {
+func newS3TestStorage(region string, handler s3RoundTripper) *S3Storage {
 	client := s3.NewFromConfig(aws.Config{
-		Region:      "us-east-1",
+		Region:      region,
 		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("access", "secret", "")),
 		HTTPClient:  &http.Client{Transport: handler},
 	}, func(options *s3.Options) {
@@ -33,9 +33,79 @@ func s3Response(status int, body string) *http.Response {
 	return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
 }
 
+func TestS3StoragePutCreatesBucketInResolvedRegion(t *testing.T) {
+	for _, test := range []struct {
+		region         string
+		wantConstraint bool
+	}{
+		{region: "eu-west-1", wantConstraint: true},
+		{region: "us-east-1", wantConstraint: false},
+		{region: "auto", wantConstraint: false},
+	} {
+		t.Run(test.region, func(t *testing.T) {
+			var createBody string
+			storage := newS3TestStorage(test.region, func(req *http.Request) (*http.Response, error) {
+				switch {
+				case req.Method == http.MethodHead && req.URL.Path == "/kb01":
+					return s3Response(http.StatusNotFound, `<Error><Code>NotFound</Code></Error>`), nil
+				case req.Method == http.MethodPut && req.URL.Path == "/kb01":
+					if req.Body != nil {
+						body, err := io.ReadAll(req.Body)
+						if err != nil {
+							t.Fatal(err)
+						}
+						createBody = string(body)
+					}
+					return s3Response(http.StatusOK, ""), nil
+				case req.Method == http.MethodPut && req.URL.Path == "/kb01/document":
+					return s3Response(http.StatusOK, ""), nil
+				}
+				t.Fatalf("unexpected request: %s %s", req.Method, req.URL)
+				return nil, nil
+			})
+
+			if err := storage.Put(t.Context(), "kb01", "document", []byte("content")); err != nil {
+				t.Fatal(err)
+			}
+			hasConstraint := strings.Contains(createBody, "<LocationConstraint>"+test.region+"</LocationConstraint>")
+			if hasConstraint != test.wantConstraint {
+				t.Fatalf("CreateBucket body = %q, want location constraint: %t", createBody, test.wantConstraint)
+			}
+		})
+	}
+}
+
+func TestS3StorageHealthCreatesBucketInResolvedRegion(t *testing.T) {
+	var createBody string
+	storage := newS3TestStorage("ap-southeast-2", func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodHead && req.URL.Path == "/health-check-bucket":
+			return s3Response(http.StatusNotFound, `<Error><Code>NotFound</Code></Error>`), nil
+		case req.Method == http.MethodPut && req.URL.Path == "/health-check-bucket":
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			createBody = string(body)
+			return s3Response(http.StatusOK, ""), nil
+		case req.Method == http.MethodPut && req.URL.Path == "/health-check-bucket/txtxtxtxt1":
+			return s3Response(http.StatusOK, ""), nil
+		}
+		t.Fatalf("unexpected request: %s %s", req.Method, req.URL)
+		return nil, nil
+	})
+
+	if !storage.Health(t.Context()) {
+		t.Fatal("Health() = false, want true")
+	}
+	if !strings.Contains(createBody, "<LocationConstraint>ap-southeast-2</LocationConstraint>") {
+		t.Fatalf("CreateBucket body = %q, want ap-southeast-2 location constraint", createBody)
+	}
+}
+
 func TestS3StorageRemoveBucketDeletesEmptyPhysicalBucket(t *testing.T) {
 	bucketDeleted := false
-	storage := newS3TestStorage(func(req *http.Request) (*http.Response, error) {
+	storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.Method == http.MethodHead:
 			return s3Response(http.StatusOK, ""), nil
@@ -61,7 +131,7 @@ func TestS3StorageRemoveBucketDeletesEmptyPhysicalBucket(t *testing.T) {
 
 func TestS3StorageRemoveBucketSingleBucketMode(t *testing.T) {
 	var deleteBody string
-	storage := newS3TestStorage(func(req *http.Request) (*http.Response, error) {
+	storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.Method == http.MethodHead:
 			if req.URL.Path != "/physical" {
@@ -95,7 +165,7 @@ func TestS3StorageRemoveBucketSingleBucketMode(t *testing.T) {
 
 func TestS3StorageRemoveBucketDeletesVersionsAndMarkers(t *testing.T) {
 	var deleteBody string
-	storage := newS3TestStorage(func(req *http.Request) (*http.Response, error) {
+	storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.Method == http.MethodHead:
 			return s3Response(http.StatusOK, ""), nil
@@ -123,7 +193,7 @@ func TestS3StorageRemoveBucketDeletesVersionsAndMarkers(t *testing.T) {
 
 func TestS3StorageRemoveBucketDeletesNullVersion(t *testing.T) {
 	var deleteBody string
-	storage := newS3TestStorage(func(req *http.Request) (*http.Response, error) {
+	storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.Method == http.MethodHead:
 			return s3Response(http.StatusOK, ""), nil
@@ -149,7 +219,7 @@ func TestS3StorageRemoveBucketDeletesNullVersion(t *testing.T) {
 
 func TestS3StorageRemoveBucketVersionPagination(t *testing.T) {
 	versionCalls := 0
-	storage := newS3TestStorage(func(req *http.Request) (*http.Response, error) {
+	storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.Method == http.MethodHead:
 			return s3Response(http.StatusOK, ""), nil
@@ -181,7 +251,7 @@ func TestS3StorageRemoveBucketVersionPagination(t *testing.T) {
 func TestS3StorageRemoveBucketFailures(t *testing.T) {
 	t.Run("batch limit", func(t *testing.T) {
 		requests := 0
-		storage := newS3TestStorage(func(req *http.Request) (*http.Response, error) {
+		storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {
 			if !req.URL.Query().Has("delete") {
 				t.Fatalf("unexpected request: %s %s", req.Method, req.URL)
 			}
@@ -209,7 +279,7 @@ func TestS3StorageRemoveBucketFailures(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			bucketDeleted := false
-			storage := newS3TestStorage(func(req *http.Request) (*http.Response, error) {
+			storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {
 				switch {
 				case req.Method == http.MethodHead:
 					return s3Response(http.StatusOK, ""), nil
@@ -249,7 +319,7 @@ func TestS3StorageRemoveBucketHeadBucketErrors(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			destructiveRequest := false
-			storage := newS3TestStorage(func(req *http.Request) (*http.Response, error) {
+			storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {
 				if req.Method == http.MethodHead {
 					return s3Response(test.status, `<Error><Code>`+test.code+`</Code></Error>`), nil
 				}

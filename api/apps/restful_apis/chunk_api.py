@@ -38,6 +38,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService, validate
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.db.services.tenant_llm_service import TenantLLMService
+from common.llm_request_context import normalize_llm_user_id, reset_llm_request_context, set_llm_request_context
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     check_duplicate_ids,
@@ -63,6 +64,15 @@ from common.tag_feature_utils import validate_tag_features
 from rag.app.tag import label_question
 from rag.nlp import search
 from rag.prompts.generator import cross_languages, keyword_extraction
+
+
+def _encode_with_request_user(embd_mdl, texts, req):
+    token = set_llm_request_context(user_id=normalize_llm_user_id(req.get("user_id")))
+    try:
+        return embd_mdl.encode(texts)
+    finally:
+        reset_llm_request_context(token)
+
 
 DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
 DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
@@ -206,6 +216,7 @@ async def parse(tenant_id, dataset_id):
     req = await get_request_json()
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
+    llm_user_id = normalize_llm_user_id(req.get("user_id"))
     doc_list = req.get("document_ids")
     unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_list, "document")
     doc_list = unique_doc_ids
@@ -247,7 +258,7 @@ async def parse(tenant_id, dataset_id):
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
         doc = doc.to_dict()
-        DocumentService.run(tenant_id, doc, kb_table_num_map)
+        DocumentService.run(tenant_id, doc, kb_table_num_map, user_id=llm_user_id)
         success_count += 1
     if not_found:
         return get_result(message=f"Documents not found: {not_found}", code=RetCode.DATA_ERROR)
@@ -1084,7 +1095,11 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     embd_id = DocumentService.get_embd_id(document_id)
     model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
-    v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
+    v, c = _encode_with_request_user(
+        embd_mdl,
+        [doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])],
+        req,
+    )
     v = 0.1 * v[0] + 0.9 * v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
     settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
@@ -1238,11 +1253,13 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         q, a = rmPrefix(arr[0]), rmPrefix(arr[1])
         d = beAdoc(d, arr[0], arr[1], not any([rag_tokenizer.is_chinese(t) for t in q + a]))
 
-    v, _ = embd_mdl.encode(
+    v, _ = _encode_with_request_user(
+        embd_mdl,
         [
             doc.name,
             d["content_with_weight"] if not d.get("question_kwd") else "\n".join(d["question_kwd"]),
-        ]
+        ],
+        req,
     )
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
