@@ -534,6 +534,15 @@ func (p *Parser) buildLayout(ctx context.Context,
 	boxes = lyt.TextMerge(boxes, medianHeights)
 	result.Metrics.BoxesTextMerge = len(boxes)
 
+	// Geometric table-of-contents removal runs while the boxes are still
+	// line-shaped: the right-aligned page-number column a TOC page is built
+	// on is destroyed by the vertical merge below, so the filter must see
+	// the lines first. Gated on the filetype-level "remove original table
+	// of contents" toggle (ParserConfig.RemoveTOC).
+	if p.Config.RemoveTOC {
+		boxes = lyt.FilterTOCBoxes(boxes, medianHeights)
+	}
+
 	// Preserve column-major content order while NaiveVerticalMerge promotes a
 	// page-leading title isolated in its own column.
 	boxes = lyt.FinalReadingOrderMerge(boxes)

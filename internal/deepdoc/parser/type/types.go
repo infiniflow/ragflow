@@ -7,6 +7,8 @@ package doctype
 import (
 	"context"
 	"image"
+	"regexp"
+	"strings"
 	"unicode"
 )
 
@@ -237,6 +239,11 @@ type ParserConfig struct {
 	// nil/empty means parse all pages. Ranges beyond the document are clamped
 	// at parse time; fully out-of-range ranges are skipped.
 	Pages [][]int
+	// RemoveTOC enables the box-level geometric table-of-contents removal
+	// (layout.FilterTOCBoxes): page-number columns are detected before
+	// vertical merge collapses the lines, and the TOC pages/entries are
+	// dropped while the layout is still line-shaped.
+	RemoveTOC bool
 }
 
 // DefaultParserConfig returns a ParserConfig with sensible defaults.
@@ -312,7 +319,7 @@ func SetNativeDocAnalyzerFactory(f func() (DocAnalyzer, bool)) {
 	NativeDocAnalyzerFactory = f
 }
 
-// ── Outline ────────────────────────────────────────────────────────────
+// ── Outline / TOC title matching ───────────────────────────────────────
 
 // Outline represents one entry in a PDF's document outline (table of contents).
 // Python: extract_pdf_outlines() in deepdoc/parser/utils.py
@@ -320,6 +327,17 @@ type Outline struct {
 	Title      string
 	Level      int
 	PageNumber int // 1-indexed, matching Python
+}
+
+// tocTitlePattern matches a standalone table-of-contents heading: the whole
+// line is exactly one of the conventional TOC titles. It is the single
+// source of truth shared by the box-level geometric TOC filter (layout
+// package) and the outline-based page-range removal (parser package).
+var tocTitlePattern = regexp.MustCompile(`(?i)^(contents|目录|目次|table of contents|致谢|acknowledge)$`)
+
+// IsTOCTitleHeading reports whether text is a standalone TOC heading line.
+func IsTOCTitleHeading(text string) bool {
+	return tocTitlePattern.MatchString(strings.TrimSpace(text))
 }
 
 // PDFEngine abstracts page extraction capabilities.
