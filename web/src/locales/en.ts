@@ -2376,6 +2376,8 @@ Example: Virtual Hosted Style`,
       selectArtifact: 'Select an item from the contents to view details',
       searchEntity: 'Search entity',
       graphEntityCount: '{{returned}} / {{total}} entities',
+      graphNodeStats: 'Total nodes: {{total}}',
+      graphNodeStatsWithMatch: 'Matched {{matched}} of {{total}} nodes',
       sourceDocuments: 'Source documents',
       clearWikiTitle: 'Clear wiki',
       clearWikiDescription:

@@ -51,6 +51,9 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   const [graphKeywords, setGraphKeywords] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const { data, loading } = useFetchDatasetStructureGraph(kind, graphKeywords);
+  // Unfiltered graph kept mounted so node-count statistics stay meaningful
+  // while a keyword search narrows the rendered subgraph.
+  const { data: fullData } = useFetchDatasetStructureGraph(kind, '');
   const template = data?.templates?.[0];
   const { deleteDatasetStructure, loading: deleting } =
     useDeleteDatasetStructure();
@@ -117,6 +120,23 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
     setSelectedNodeId('');
   }, []);
 
+  // Node statistics come from the unfiltered graph: the total node count, and —
+  // while a keyword search is active — how many nodes match. Matching mirrors
+  // SelectWithSearch's option filter (name + aliases, case-insensitive substring).
+  const totalNodeCount = fullData?.templates?.[0]?.entities?.length ?? 0;
+  const trimmedKeywords = graphKeywords.trim();
+  const matchedNodeCount = useMemo(() => {
+    const keyword = trimmedKeywords.toLowerCase();
+    if (!keyword || !fullData?.templates?.[0]?.entities) {
+      return 0;
+    }
+    return fullData.templates[0].entities.filter((entity) =>
+      `${getEntityDisplayName(entity)} ${(entity.aliases ?? []).join(' ')}`
+        .toLowerCase()
+        .includes(keyword),
+    ).length;
+  }, [fullData, trimmedKeywords]);
+
   const handleDeleteStructure = useCallback(async () => {
     const code = await deleteDatasetStructure(kind);
     if (code === 0) {
@@ -180,16 +200,33 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
           />
         </div>
         {kind === ViewMode.Graph && (
-          <SelectWithSearch
-            options={entityOptions}
-            value={selectedEntityName || graphKeywords}
-            onChange={handleSelectEntity}
-            placeholder={t('knowledgeCompilation.searchEntity')}
-            allowClear
-            triggerClassName="w-96 max-w-full"
-            onNoMatchEnter={handleNoMatchEnter}
-            disableAutoSelectOnEnter
-          />
+          <div className="flex items-center gap-3">
+            {totalNodeCount > 0 && (
+              <span
+                className="text-sm text-text-secondary whitespace-nowrap"
+                data-testid="graph-node-stats"
+              >
+                {trimmedKeywords
+                  ? t('knowledgeCompilation.graphNodeStatsWithMatch', {
+                      matched: matchedNodeCount,
+                      total: totalNodeCount,
+                    })
+                  : t('knowledgeCompilation.graphNodeStats', {
+                      total: totalNodeCount,
+                    })}
+              </span>
+            )}
+            <SelectWithSearch
+              options={entityOptions}
+              value={selectedEntityName || graphKeywords}
+              onChange={handleSelectEntity}
+              placeholder={t('knowledgeCompilation.searchEntity')}
+              allowClear
+              triggerClassName="w-96 max-w-full"
+              onNoMatchEnter={handleNoMatchEnter}
+              disableAutoSelectOnEnter
+            />
+          </div>
         )}
       </div>
       <RepresentationRenderer
