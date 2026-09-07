@@ -136,12 +136,28 @@ func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, 
 	var documents []*entity.DocumentListItem
 	var total int64
 
+	// Historical retries can leave multiple ingestion tasks per document. Keep
+	// only the newest row, with ID as a deterministic tie-breaker for equal
+	// create times. This ordering must match IngestionTaskDAO's task lookups.
 	listQuery := db.WithContext(ctx).Table("document").
-		Select(`document.*, user_canvas.title as pipeline_name, user.nickname`).
+		Select(`document.*, user_canvas.title as pipeline_name, user.nickname, ingestion_task.status as ingestion_status`).
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins("LEFT JOIN user_canvas ON document.pipeline_id = user_canvas.id").
-		Joins("LEFT JOIN user ON document.created_by = user.id")
+		Joins("LEFT JOIN user ON document.created_by = user.id").
+		Joins(`LEFT JOIN ingestion_task ON ingestion_task.document_id = document.id
+			AND NOT EXISTS (
+				SELECT 1
+				FROM ingestion_task newer_ingestion_task
+				WHERE newer_ingestion_task.document_id = ingestion_task.document_id
+				  AND (
+					COALESCE(newer_ingestion_task.create_time, 0) > COALESCE(ingestion_task.create_time, 0)
+					OR (
+						COALESCE(newer_ingestion_task.create_time, 0) = COALESCE(ingestion_task.create_time, 0)
+						AND newer_ingestion_task.id > ingestion_task.id
+					)
+				  )
+			)`)
 
 	listQuery = applyDocumentListFilters(listQuery, opts, true)
 	countQuery := applyDocumentListFilters(db.WithContext(ctx).Model(&entity.Document{}), opts, false)

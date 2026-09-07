@@ -352,6 +352,7 @@ export default {
       runningStatus2: 'ОТМЕНЕНО',
       runningStatus3: 'УСПЕХ',
       runningStatus4: 'НЕУСПЕХ',
+      runningStatusQueued: 'На опашка',
       pageRanges: 'Диапазон на страници',
       pageRangesTip:
         'Диапазон от страници за обработка; страниците извън този диапазон няма да бъдат обработени.',

@@ -855,6 +855,9 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	var state *runtime.CanvasState
 	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
 		state = s
+		if inputs["_ERROR"] == "No dataset is selected." {
+			return map[string]any{"content": "No dataset is selected."}, nil
+		}
 		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
 			p.SystemPrompt = resolved
 			if rerr != nil {

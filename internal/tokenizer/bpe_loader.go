@@ -138,7 +138,7 @@ func bpeCandidatePaths(bpeURL string) []string {
 		}
 	}
 
-	for _, root := range searchRoots() {
+	for _, root := range bpeSearchRoots() {
 		// Same layout the Dockerfile creates: the table sits in the
 		// installation root under its sha1 name.
 		add(filepath.Join(root, cacheName))
@@ -170,6 +170,25 @@ func searchRoots() []string {
 		}
 	}
 	return roots
+}
+
+// bpeSearchRoots is the directory set the loader walks for the table. It
+// defaults to searchRoots (working + executable dirs and their ancestors) so
+// the production image finds the table dropped into the install root. Tests
+// override it with SetBpeSearchRootsForTest to isolate from the host
+// filesystem — without that, a tiktoken cache leaked into /tmp (an ancestor of
+// any temp working dir) would be picked up and make "missing table" tests
+// non-deterministic.
+var bpeSearchRoots = searchRoots
+
+// SetBpeSearchRootsForTest replaces the directory set the loader searches.
+// Pass nil to restore the default. Test-only; it mutates package state.
+func SetBpeSearchRootsForTest(roots []string) {
+	if roots == nil {
+		bpeSearchRoots = searchRoots
+		return
+	}
+	bpeSearchRoots = func() []string { return roots }
 }
 
 func startingDirs() []string {
