@@ -70,8 +70,10 @@ uv run python3 ragflow_deps/download_deps.py
 > # OrtGetApiBase is the only symbol that must be visible process-wide. Export
 > # just it — not via a "local: *" version script, which hides Go's runtime type
 > # symbols and breaks PIE absolute relocations. There is deliberately no
-> # --whole-archive, so unreferenced kernels are dropped.
-> printf '{\n  OrtGetApiBase;\n};\n' > /tmp/ort_dynamic.txt
+> # --whole-archive, so unreferenced kernels are dropped. Write the dynamic
+> # list to .cache/ (gitignored), matching build.sh.
+> mkdir -p .cache
+> printf '{\n  OrtGetApiBase;\n};\n' > .cache/ort_dynamic_list.txt
 >
 > export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
 > export CGO_LDFLAGS="\
@@ -80,7 +82,7 @@ uv run python3 ragflow_deps/download_deps.py
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
 >     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
->     -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=/tmp/ort_dynamic.txt ${ORT_A} -lstdc++ \
+>     -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=.cache/ort_dynamic_list.txt ${ORT_A} -lstdc++ \
 >     -fuse-ld=lld \
 >     -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 > ```
