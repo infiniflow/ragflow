@@ -780,6 +780,8 @@ export default {
       modelsToBeAddedTooltip:
         '若您的模型供應商未列於此處，但宣稱與 OpenAI 相容，可透過選擇「OpenAI-API-compatible」卡片來設定相關模型。',
       dropboxDescription: '連接 Dropbox，同步指定帳號下的文件與文件夾。',
+      sitemapDescription:
+        '連接公開的 sitemap.xml，將其中列出的網頁和 PDF 文件同步到知識庫。',
       azure_devopsDescription: '連接 Azure DevOps 以同步儲存庫檔案和拉取請求。',
       bitbucketDescription: '連接 Bitbucket，同步 PR 內容。',
       zendeskDescription: '連接 Zendesk，同步工單、文章及其他內容。',

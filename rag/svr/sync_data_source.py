@@ -535,15 +535,7 @@ class Sitemap(SyncBase):
             yield sanitized
 
     async def _generate(self, task: dict):
-        self.connector = SitemapConnector(
-            sitemap_url=self.conf["sitemap_url"],
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
-            user_agent=self.conf.get("user_agent", "RAGFlow-SitemapConnector/1.0"),
-            url_filter=self.conf.get("url_filter"),
-            follow_pdf_links=self.conf.get("follow_pdf_links", False),
-            restrict_pdf_to_domain=self.conf.get("restrict_pdf_to_domain", True),
-        )
-        self.connector.load_credentials(self.conf.get("credentials", {}))
+        self.connector = SitemapConnector.build_connector(self.conf)
         self.connector.validate_connector_settings()
         self.log_connection("Sitemap", self.conf["sitemap_url"], task)
 

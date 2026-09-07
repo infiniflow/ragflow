@@ -1,7 +1,8 @@
 """Unit tests for SitemapConnector — no network, no external dependencies."""
+
 import importlib
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -79,6 +80,7 @@ def _make_get(url_map: dict):
         if url in url_map:
             return url_map[url]
         raise AssertionError(f"Unexpected URL requested in test: {url!r}")
+
     return _get
 
 
@@ -149,17 +151,20 @@ def test_iter_sitemap_urls_parses_standard_urlset(monkeypatch):
     results = list(_connector()._iter_sitemap_urls("https://example.com/sitemap.xml", depth=0))
 
     assert len(results) == 2
-    assert results[0] == ("https://example.com/page-1", datetime(2024, 3, 15, tzinfo=timezone.utc))
+    assert results[0] == ("https://example.com/page-1", datetime(2024, 3, 15, tzinfo=UTC))
     assert results[1] == ("https://example.com/page-2", None)
 
 
 @pytest.mark.p2
 def test_iter_sitemap_urls_recurses_into_index(monkeypatch):
     _patch_ssrf(monkeypatch)
-    _patch_requests(monkeypatch, {
-        "https://example.com/sitemap.xml": _fake_response(_SITEMAP_INDEX_XML),
-        "https://example.com/sitemap-en.xml": _fake_response(_CHILD_SITEMAP_XML),
-    })
+    _patch_requests(
+        monkeypatch,
+        {
+            "https://example.com/sitemap.xml": _fake_response(_SITEMAP_INDEX_XML),
+            "https://example.com/sitemap-en.xml": _fake_response(_CHILD_SITEMAP_XML),
+        },
+    )
     results = list(_connector()._iter_sitemap_urls("https://example.com/sitemap.xml", depth=0))
 
     assert len(results) == 1
@@ -176,7 +181,7 @@ def test_fetch_builds_markdown_doc_for_html(monkeypatch):
     _patch_ssrf(monkeypatch)
     _patch_trafilatura(monkeypatch, text="# Title\n\nHello world.")
     _patch_requests(monkeypatch, {"https://example.com/page-1": _fake_response(b"<html>page</html>")})
-    lastmod = datetime(2024, 3, 15, tzinfo=timezone.utc)
+    lastmod = datetime(2024, 3, 15, tzinfo=UTC)
     doc = _connector()._fetch_and_build_document("https://example.com/page-1", lastmod)
 
     assert doc is not None
@@ -191,9 +196,12 @@ def test_fetch_builds_markdown_doc_for_html(monkeypatch):
 @pytest.mark.p2
 def test_fetch_builds_pdf_doc_for_pdf_content_type(monkeypatch):
     _patch_ssrf(monkeypatch)
-    _patch_requests(monkeypatch, {
-        "https://example.com/doc.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
-    })
+    _patch_requests(
+        monkeypatch,
+        {
+            "https://example.com/doc.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
+        },
+    )
     doc = _connector()._fetch_and_build_document("https://example.com/doc.pdf", None)
 
     assert doc is not None
@@ -220,11 +228,14 @@ def test_fetch_skips_empty_html_content(monkeypatch):
 def test_load_from_state_yields_all_documents(monkeypatch):
     _patch_ssrf(monkeypatch)
     _patch_trafilatura(monkeypatch)
-    _patch_requests(monkeypatch, {
-        "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
-        "https://example.com/page-1": _fake_response(b"<html>p1</html>"),
-        "https://example.com/page-2": _fake_response(b"<html>p2</html>"),
-    })
+    _patch_requests(
+        monkeypatch,
+        {
+            "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
+            "https://example.com/page-1": _fake_response(b"<html>p1</html>"),
+            "https://example.com/page-2": _fake_response(b"<html>p2</html>"),
+        },
+    )
     batches = list(_connector(batch_size=10).load_from_state())
     assert sum(len(b) for b in batches) == 2
 
@@ -233,11 +244,14 @@ def test_load_from_state_yields_all_documents(monkeypatch):
 def test_load_from_state_respects_batch_size(monkeypatch):
     _patch_ssrf(monkeypatch)
     _patch_trafilatura(monkeypatch)
-    _patch_requests(monkeypatch, {
-        "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
-        "https://example.com/page-1": _fake_response(b"<html>p1</html>"),
-        "https://example.com/page-2": _fake_response(b"<html>p2</html>"),
-    })
+    _patch_requests(
+        monkeypatch,
+        {
+            "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
+            "https://example.com/page-1": _fake_response(b"<html>p1</html>"),
+            "https://example.com/page-2": _fake_response(b"<html>p2</html>"),
+        },
+    )
     batches = list(_connector(batch_size=1).load_from_state())
     assert len(batches) == 2
     assert all(len(b) == 1 for b in batches)
@@ -252,12 +266,15 @@ def test_load_from_state_respects_batch_size(monkeypatch):
 def test_poll_source_includes_url_within_range(monkeypatch):
     _patch_ssrf(monkeypatch)
     _patch_trafilatura(monkeypatch)
-    _patch_requests(monkeypatch, {
-        "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
-        "https://example.com/page-1": _fake_response(b"<html>p1</html>"),
-    })
-    start = datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp()
-    end = datetime(2024, 12, 31, tzinfo=timezone.utc).timestamp()
+    _patch_requests(
+        monkeypatch,
+        {
+            "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
+            "https://example.com/page-1": _fake_response(b"<html>p1</html>"),
+        },
+    )
+    start = datetime(2024, 1, 1, tzinfo=UTC).timestamp()
+    end = datetime(2024, 12, 31, tzinfo=UTC).timestamp()
     docs = [doc for batch in _connector().poll_source(start, end) for doc in batch]
 
     # page-1 has lastmod 2024-03-15 (in range); page-2 has no lastmod (skipped)
@@ -269,8 +286,8 @@ def test_poll_source_excludes_url_before_start(monkeypatch):
     _patch_ssrf(monkeypatch)
     _patch_requests(monkeypatch, {"https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML)})
     # start after 2024-03-15 → page-1 excluded; page-2 has no lastmod → excluded too
-    start = datetime(2024, 6, 1, tzinfo=timezone.utc).timestamp()
-    end = datetime(2024, 12, 31, tzinfo=timezone.utc).timestamp()
+    start = datetime(2024, 6, 1, tzinfo=UTC).timestamp()
+    end = datetime(2024, 12, 31, tzinfo=UTC).timestamp()
     batches = list(_connector().poll_source(start, end))
     assert batches == []
 
@@ -302,12 +319,15 @@ def test_extract_pdf_links_empty_when_no_pdf_hrefs():
 def test_follow_pdf_links_yields_pdf_documents(monkeypatch):
     _patch_ssrf(monkeypatch)
     _patch_trafilatura(monkeypatch)
-    _patch_requests(monkeypatch, {
-        "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
-        "https://example.com/page-1": _fake_response(_HTML_WITH_PDF),
-        "https://example.com/page-2": _fake_response(b"<html>no pdfs</html>"),
-        "https://example.com/docs/report.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
-    })
+    _patch_requests(
+        monkeypatch,
+        {
+            "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
+            "https://example.com/page-1": _fake_response(_HTML_WITH_PDF),
+            "https://example.com/page-2": _fake_response(b"<html>no pdfs</html>"),
+            "https://example.com/docs/report.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
+        },
+    )
     connector = _connector(follow_pdf_links=True, restrict_pdf_to_domain=True)
     docs = [doc for batch in connector.load_from_state() for doc in batch]
 
@@ -319,12 +339,15 @@ def test_follow_pdf_links_yields_pdf_documents(monkeypatch):
 def test_follow_pdf_links_sets_parent_url_in_metadata(monkeypatch):
     _patch_ssrf(monkeypatch)
     _patch_trafilatura(monkeypatch)
-    _patch_requests(monkeypatch, {
-        "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
-        "https://example.com/page-1": _fake_response(_HTML_WITH_PDF),
-        "https://example.com/page-2": _fake_response(b"<html>no pdfs</html>"),
-        "https://example.com/docs/report.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
-    })
+    _patch_requests(
+        monkeypatch,
+        {
+            "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
+            "https://example.com/page-1": _fake_response(_HTML_WITH_PDF),
+            "https://example.com/page-2": _fake_response(b"<html>no pdfs</html>"),
+            "https://example.com/docs/report.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
+        },
+    )
     connector = _connector(follow_pdf_links=True, restrict_pdf_to_domain=True)
     docs = [doc for batch in connector.load_from_state() for doc in batch]
     pdf_docs = [doc for doc in docs if doc.extension == ".pdf"]
@@ -340,12 +363,15 @@ def test_follow_pdf_links_restricts_to_domain(monkeypatch):
     _patch_trafilatura(monkeypatch)
     # https://other.com/external.pdf is intentionally NOT in the map
     # _make_get raises AssertionError if it is called
-    _patch_requests(monkeypatch, {
-        "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
-        "https://example.com/page-1": _fake_response(_HTML_WITH_PDF),
-        "https://example.com/page-2": _fake_response(b"<html>no pdfs</html>"),
-        "https://example.com/docs/report.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
-    })
+    _patch_requests(
+        monkeypatch,
+        {
+            "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
+            "https://example.com/page-1": _fake_response(_HTML_WITH_PDF),
+            "https://example.com/page-2": _fake_response(b"<html>no pdfs</html>"),
+            "https://example.com/docs/report.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
+        },
+    )
     connector = _connector(follow_pdf_links=True, restrict_pdf_to_domain=True)
     docs = [doc for batch in connector.load_from_state() for doc in batch]
     pdf_identifiers = [doc.semantic_identifier for doc in docs if doc.extension == ".pdf"]
@@ -358,13 +384,16 @@ def test_follow_pdf_links_restricts_to_domain(monkeypatch):
 def test_follow_pdf_links_allows_external_when_unrestricted(monkeypatch):
     _patch_ssrf(monkeypatch)
     _patch_trafilatura(monkeypatch)
-    _patch_requests(monkeypatch, {
-        "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
-        "https://example.com/page-1": _fake_response(_HTML_WITH_PDF),
-        "https://example.com/page-2": _fake_response(b"<html>no pdfs</html>"),
-        "https://example.com/docs/report.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
-        "https://other.com/external.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
-    })
+    _patch_requests(
+        monkeypatch,
+        {
+            "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
+            "https://example.com/page-1": _fake_response(_HTML_WITH_PDF),
+            "https://example.com/page-2": _fake_response(b"<html>no pdfs</html>"),
+            "https://example.com/docs/report.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
+            "https://other.com/external.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
+        },
+    )
     connector = _connector(follow_pdf_links=True, restrict_pdf_to_domain=False)
     docs = [doc for batch in connector.load_from_state() for doc in batch]
     pdf_count = sum(1 for doc in docs if doc.extension == ".pdf")
@@ -375,13 +404,16 @@ def test_follow_pdf_links_allows_external_when_unrestricted(monkeypatch):
 def test_pdf_deduplicated_when_linked_from_multiple_pages(monkeypatch):
     _patch_ssrf(monkeypatch)
     _patch_trafilatura(monkeypatch)
-    _patch_requests(monkeypatch, {
-        "https://example.com/sitemap.xml": _fake_response(_SITEMAP_TWO_PAGES),
-        "https://example.com/page-1": _fake_response(_HTML_SAME_PDF),
-        "https://example.com/page-2": _fake_response(_HTML_SAME_PDF),
-        # shared.pdf must be fetched exactly once
-        "https://example.com/shared.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
-    })
+    _patch_requests(
+        monkeypatch,
+        {
+            "https://example.com/sitemap.xml": _fake_response(_SITEMAP_TWO_PAGES),
+            "https://example.com/page-1": _fake_response(_HTML_SAME_PDF),
+            "https://example.com/page-2": _fake_response(_HTML_SAME_PDF),
+            # shared.pdf must be fetched exactly once
+            "https://example.com/shared.pdf": _fake_response(_PDF_BYTES, content_type="application/pdf"),
+        },
+    )
     connector = _connector(follow_pdf_links=True, restrict_pdf_to_domain=True)
     docs = [doc for batch in connector.load_from_state() for doc in batch]
     pdf_docs = [doc for doc in docs if doc.extension == ".pdf"]
@@ -401,3 +433,63 @@ def test_retrieve_all_slim_docs_yields_one_per_url(monkeypatch):
 
     assert len(slim_docs) == 2
     assert all(doc.id.startswith("sitemap:") for doc in slim_docs)
+
+
+@pytest.mark.p2
+def test_retrieve_all_slim_docs_includes_discovered_pdfs(monkeypatch):
+    """With follow_pdf_links, discovered PDFs must be part of the retained set."""
+    _patch_ssrf(monkeypatch)
+    _patch_requests(
+        monkeypatch,
+        {
+            "https://example.com/sitemap.xml": _fake_response(_SITEMAP_XML),
+            "https://example.com/page-1": _fake_response(_HTML_WITH_PDF),
+            "https://example.com/page-2": _fake_response(b"<html>no pdfs</html>"),
+            # https://other.com/external.pdf is intentionally NOT in the map
+        },
+    )
+    connector = _connector(follow_pdf_links=True, restrict_pdf_to_domain=True)
+    slim_ids = {doc.id for batch in connector.retrieve_all_slim_docs_perm_sync() for doc in batch}
+
+    assert slim_ids == {
+        connector._build_document_id("https://example.com/page-1"),
+        connector._build_document_id("https://example.com/page-2"),
+        connector._build_document_id("https://example.com/docs/report.pdf"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# build_connector (used by the connection-test endpoint and the sync worker)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.p2
+def test_build_connector_maps_ui_config():
+    connector = SitemapConnector.build_connector(
+        {
+            "sitemap_url": " https://example.com/sitemap.xml ",
+            "url_filter": "^https://example\\.com/docs/",
+            "follow_pdf_links": True,
+            "restrict_pdf_to_domain": False,
+            "user_agent": "",
+            "batch_size": "3",
+            "credentials": {},
+        }
+    )
+
+    assert connector.sitemap_url == "https://example.com/sitemap.xml"
+    assert connector._url_filter is not None and connector._url_filter.pattern == "^https://example\\.com/docs/"
+    assert connector.follow_pdf_links is True
+    assert connector.restrict_pdf_to_domain is False
+    assert connector.user_agent == "RAGFlow-SitemapConnector/1.0"
+    assert connector.batch_size == 3
+
+
+@pytest.mark.p2
+def test_build_connector_defaults():
+    connector = SitemapConnector.build_connector({"sitemap_url": "https://example.com/sitemap.xml"})
+
+    assert connector._url_filter is None
+    assert connector.follow_pdf_links is False
+    assert connector.restrict_pdf_to_domain is True
+    assert connector.batch_size >= 1

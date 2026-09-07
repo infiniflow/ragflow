@@ -1,8 +1,8 @@
 import hashlib
 import logging
 import re
-from datetime import datetime, timezone
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urljoin, urlparse
 from xml.etree import ElementTree as ET
@@ -10,10 +10,10 @@ from xml.etree import ElementTree as ET
 import requests
 
 from common.data_source.config import (
+    INDEX_BATCH_SIZE,
     REQUEST_TIMEOUT_SECONDS,
     DocumentSource,
 )
-
 from common.data_source.interfaces import LoadConnector, PollConnector, SlimConnectorWithPermSync
 from common.data_source.models import (
     Document,
@@ -53,14 +53,26 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.batch_size = batch_size
         self.user_agent = user_agent
         try:
-            self._url_filter: re.Pattern | None = (
-                re.compile(url_filter) if url_filter else None
-            )
+            self._url_filter: re.Pattern | None = re.compile(url_filter) if url_filter else None
         except re.error as exc:
             raise ValueError(f"url_filter is not a valid regex: {exc}") from exc
         self.follow_pdf_links = follow_pdf_links
         self.restrict_pdf_to_domain = restrict_pdf_to_domain
         self.credentials: dict[str, Any] = {}
+
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "SitemapConnector":
+        """Build a connector from the connector config stored by the UI/API."""
+        connector = cls(
+            sitemap_url=config["sitemap_url"],
+            batch_size=int(config.get("batch_size") or INDEX_BATCH_SIZE),
+            user_agent=(config.get("user_agent") or "").strip() or "RAGFlow-SitemapConnector/1.0",
+            url_filter=(config.get("url_filter") or "").strip() or None,
+            follow_pdf_links=bool(config.get("follow_pdf_links", False)),
+            restrict_pdf_to_domain=bool(config.get("restrict_pdf_to_domain", True)),
+        )
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self.credentials = credentials or {}
@@ -76,23 +88,48 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def load_from_state(self) -> GenerateDocumentsOutput:
         yield from self._load_urls()
 
-    def poll_source(
-        self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
-    ) -> GenerateDocumentsOutput:
+    def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> GenerateDocumentsOutput:
         yield from self._load_urls(start=start, end=end)
 
-    def retrieve_all_slim_docs_perm_sync(
-        self, callback: Any = None
-    ) -> GenerateSlimDocumentOutput:
+    def retrieve_all_slim_docs_perm_sync(self, callback: Any = None) -> GenerateSlimDocumentOutput:
+        """Yield the complete set of document IDs the connector currently exposes.
+
+        When ``follow_pdf_links`` is enabled the HTML pages are fetched so that
+        the PDFs discovered in them are part of the retained set; otherwise a
+        prune run would delete them right after they were indexed.
+        """
         del callback
+        seen: set[str] = set()
+        sitemap_domain = urlparse(self.sitemap_url).netloc
         batch: list[SlimDocument] = []
         for url, _lastmod in self._iter_sitemap_urls(self.sitemap_url, depth=0):
-            if not self._url_matches(url):
+            if url in seen or not self._url_matches(url):
                 continue
+            seen.add(url)
             batch.append(SlimDocument(id=self._build_document_id(url)))
             if len(batch) >= self.batch_size:
                 yield batch
                 batch = []
+
+            if not self.follow_pdf_links:
+                continue
+            try:
+                raw, content_type = self._fetch_raw(url)
+            except (requests.RequestException, ValueError, OSError) as exc:
+                logger.warning("Failed to fetch page %s for PDF discovery: %s", url, exc)
+                continue
+            if "application/pdf" in content_type:
+                continue
+            for pdf_url in self._extract_pdf_links(raw, url):
+                if pdf_url in seen:
+                    continue
+                if self.restrict_pdf_to_domain and urlparse(pdf_url).netloc != sitemap_domain:
+                    continue
+                seen.add(pdf_url)
+                batch.append(SlimDocument(id=self._build_document_id(pdf_url)))
+                if len(batch) >= self.batch_size:
+                    yield batch
+                    batch = []
         if batch:
             yield batch
 
@@ -127,9 +164,7 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                     if end is not None and ts > end:
                         continue
 
-            doc = self._fetch_and_build_document(
-                url, lastmod, seen, pending_pdfs, sitemap_domain
-            )
+            doc = self._fetch_and_build_document(url, lastmod, seen, pending_pdfs, sitemap_domain)
             if doc is None:
                 continue
 
@@ -158,9 +193,7 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         if batch:
             yield batch
 
-    def _iter_sitemap_urls(
-        self, sitemap_url: str, depth: int
-    ) -> Iterator[tuple[str, datetime | None]]:
+    def _iter_sitemap_urls(self, sitemap_url: str, depth: int) -> Iterator[tuple[str, datetime | None]]:
         """Recursively yield (url, lastmod) pairs from a sitemap or sitemap index."""
         if depth > _MAX_SITEMAP_DEPTH:
             logger.warning("Max sitemap depth reached, stopping at %s", sitemap_url)
@@ -169,7 +202,7 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         try:
             self._validate_url(sitemap_url)
             content, _ = self._fetch_raw(sitemap_url)
-        except Exception as exc:
+        except (requests.RequestException, ValueError, OSError) as exc:
             logger.warning("Failed to fetch sitemap %s: %s", sitemap_url, exc)
             return
 
@@ -216,11 +249,11 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         try:
             self._validate_url(url)
             raw, content_type = self._fetch_raw(url)
-        except Exception as exc:
+        except (requests.RequestException, ValueError, OSError) as exc:
             logger.warning("Failed to fetch page %s: %s", url, exc)
             return None
 
-        updated_at = lastmod or datetime.now(timezone.utc)
+        updated_at = lastmod or datetime.now(UTC)
 
         if "application/pdf" in content_type:
             if not raw:
@@ -231,13 +264,15 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         else:
             if self.follow_pdf_links and seen is not None and pending_pdfs is not None:
                 for pdf_url in self._extract_pdf_links(raw, url):
-                    if pdf_url not in seen:
-                        if not self.restrict_pdf_to_domain or urlparse(pdf_url).netloc == sitemap_domain:
-                            pending_pdfs.append((pdf_url, url))
-                            seen.add(pdf_url)
+                    if pdf_url in seen:
+                        continue
+                    if not self.restrict_pdf_to_domain or urlparse(pdf_url).netloc == sitemap_domain:
+                        pending_pdfs.append((pdf_url, url))
+                        seen.add(pdf_url)
 
             try:
                 import trafilatura
+
                 text = trafilatura.extract(
                     raw.decode("utf-8", errors="replace"),
                     output_format="markdown",
@@ -246,7 +281,7 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                     include_images=False,
                     favor_recall=True,
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - third-party extractor, any failure just skips the page
                 logger.warning("Failed to parse page %s: %s", url, exc)
                 return None
 
@@ -298,7 +333,7 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         Returns (content, content_type).
         """
         current_url = url
-        current_hostname, current_ip = assert_url_is_safe(current_url)
+        assert_url_is_safe(current_url)
 
         response: requests.Response | None = None
         for _ in range(_MAX_REDIRECTS + 1):
@@ -314,7 +349,7 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             if not location:
                 break
             redirect_url = urljoin(current_url, location)
-            current_hostname, current_ip = assert_url_is_safe(redirect_url)
+            assert_url_is_safe(redirect_url)
             current_url = redirect_url
         else:
             raise ValueError(f"Exceeded {_MAX_REDIRECTS} redirects fetching {url!r}")
@@ -355,10 +390,10 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def _parse_lastmod(value: str) -> datetime | None:
         for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"):
             try:
-                dt = datetime.strptime(value, fmt)
+                dt = datetime.strptime(value, fmt)  # noqa: DTZ007 - tz set explicitly below
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                return dt.astimezone(timezone.utc)
+                    dt = dt.replace(tzinfo=UTC)
+                return dt.astimezone(UTC)
             except ValueError:
                 continue
         logger.debug("Unrecognised lastmod format: %r", value)

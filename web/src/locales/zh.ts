@@ -1271,6 +1271,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       azureDevOpsOrganizationScopeTip: '将索引该组织中令牌可见的所有仓库。',
       azureDevOpsContentTypesTip:
         '选择要索引的内容：源文件、拉取请求，或两者。',
+      sitemapDescription:
+        '连接公开的 sitemap.xml，将其中列出的网页和 PDF 文档同步到知识库。',
       azure_devopsDescription: '连接 Azure DevOps 以同步仓库文件和拉取请求。',
       bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
       bitbucketTopWorkspaceTip:

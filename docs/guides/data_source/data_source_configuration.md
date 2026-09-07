@@ -699,3 +699,26 @@ The RSS data source is used to subscribe public websites, blogs, announcements, 
 - **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
 
 ![RSS](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/RSS.jpg)
+
+## Sitemap
+
+The Sitemap data source is used to synchronize the web pages listed in a public `sitemap.xml` to a RAGFlow knowledge base. It is the simplest way to index a documentation site, a corporate website, or a blog without writing a crawler: the site itself declares which pages exist and when they were last modified.
+
+**Permission requirements**: The sitemap and the pages it lists must be reachable over HTTP or HTTPS from the RAGFlow server. No credentials are used. Every request is checked by the SSRF guard, so private or loopback addresses are rejected.
+
+**Account version requirements**: None. Sitemaps are a public XML standard ([sitemaps.org](https://www.sitemaps.org/protocol.html)); both plain `urlset` files and `sitemapindex` files (followed recursively, up to 5 levels) are supported.
+
+**Configuration parameters**:
+
+- **Name**: Customize the name in RAGFlow to identify this Sitemap connection.
+- **Sitemap URL**: The URL of the `sitemap.xml` or sitemap index to crawl, for example `https://example.com/sitemap.xml`.
+- **URL filter (regex)**: Optional regular expression. Only URLs matching it are indexed, for example `^https://example\.com/docs/` to restrict the sync to one section of the site. The connection test fails when no URL matches.
+- **Follow PDF links**: When enabled, PDF files linked from the crawled HTML pages are indexed as well. Each PDF is indexed once even when several pages link to it.
+- **Restrict PDFs to sitemap domain**: When enabled (default), only PDF links hosted on the same domain as the sitemap are followed.
+- **User-Agent**: The `User-Agent` header sent with every request. Leave empty to use `RAGFlow-SitemapConnector/1.0`. Set it when the target site filters unknown crawlers.
+- **Batch size**: The number of pages fetched and sent to RAGFlow per batch.
+- **Sync deleted files**: After this is enabled, pages removed from the sitemap are removed from the knowledge base index.
+
+HTML pages are converted to Markdown (navigation, header, footer, scripts, and forms are dropped) and stored as `.md` documents. URLs served with `Content-Type: application/pdf` are stored as `.pdf` documents and processed by the regular PDF pipeline. Each document keeps the page URL, the sitemap URL, and, for discovered PDFs, the parent page URL in its metadata.
+
+Incremental syncs rely on the `<lastmod>` element: only pages whose `lastmod` falls inside the sync window are fetched again, and pages without `lastmod` are only fetched by a full sync. Every document also carries a content fingerprint, so a page that is fetched again but has not changed is skipped instead of being re-indexed.
