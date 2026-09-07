@@ -36,9 +36,11 @@ var (
 // call multiple times; only the first takes effect. Call it once at process
 // start (the CLI does this from main).
 //
-// The in-process DeepDoc backend links ONNX Runtime statically (libonnxruntime.a
-// is linked into the binary with --whole-archive and exported via
-// -Wl,--export-dynamic; see build.sh: ONNX_RUNTIME_STATIC_DIR). The org
+// The in-process DeepDoc backend links ONNX Runtime statically:
+// libonnxruntime.a is linked in with no --whole-archive, so GNU ld drops the
+// kernels and execution providers that nothing references, and only
+// OrtGetApiBase is exported, via --dynamic-list (see build.sh:
+// ONNXRUNTIME_STATIC_PREFIX). The org
 // onnxruntime_go binding (github.com/infiniflow/onnxruntime_go) resolves
 // OrtGetApiBase from the running binary itself via dlopen(NULL) (the
 // process-global symbol table), so no external libonnxruntime.so is needed and
