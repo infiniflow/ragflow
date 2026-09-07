@@ -16,9 +16,9 @@
 """Unit tests for ExeSQL convert_decimals JSON serialization helpers.
 
 Plain ``datetime.date`` / ``datetime`` / ``time`` values from SQL DATE/TIME
-columns survive pandas object-dtype and must be serialized before canvas SSE
-``json.dumps`` (issue #19250). ``datetime`` truncates to ``YYYY-MM-DD`` to
-match pandas datetime64 / Go; ``date`` / ``time`` use isoformat.
+columns can survive as Python objects and must be serialized before canvas SSE
+``json.dumps`` (issue #19250). ``datetime`` truncates to ``YYYY-MM-DD``;
+``date`` / ``time`` use isoformat.
 """
 
 import importlib.util
@@ -81,8 +81,7 @@ convert_decimals = _exesql_mod.convert_decimals
 
 @pytest.mark.p2
 def test_convert_decimals_date_datetime_time():
-    # datetime must truncate to YYYY-MM-DD (match pandas datetime64 / Go path);
-    # plain date/time keep isoformat.
+    # datetime must truncate to YYYY-MM-DD; plain date/time keep isoformat.
     payload = {
         "start_date": date(2026, 7, 27),
         "ts": datetime(2026, 7, 27, 14, 30, 0),

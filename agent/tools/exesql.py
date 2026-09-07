@@ -35,8 +35,8 @@ from common.ssrf_guard import assert_host_is_safe
 def convert_decimals(obj):
     """Make ExeSQL row values JSON-serializable.
 
-    SQL drivers / pandas often yield Decimal and plain date/datetime/time
-    objects (object-dtype DATE columns skip the datetime64 strftime path).
+    SQL drivers may yield Decimal and plain date/datetime/time objects that
+    are not JSON-safe (object-dtype DATE columns skip the datetime64 path).
     Recurse through dict/list the same way as before.
     """
     if isinstance(obj, float):
@@ -46,8 +46,7 @@ def convert_decimals(obj):
         return obj
     if isinstance(obj, Decimal):
         return float(obj)
-    # datetime subclasses date — check datetime first so object-dtype
-    # timestamps match pandas datetime64 truncation (YYYY-MM-DD).
+    # datetime subclasses date — check datetime first and truncate to YYYY-MM-DD.
     if isinstance(obj, datetime):
         return obj.strftime("%Y-%m-%d")
     if isinstance(obj, date):
