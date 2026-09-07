@@ -27,10 +27,7 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
   }, [parserList, chunkMethod, t]);
 
   const imageList = useMemo(() => {
-    if (chunkMethod in ImageMap) {
-      return ImageMap[chunkMethod as keyof typeof ImageMap];
-    }
-    return [];
+    return ImageMap[chunkMethod] ?? [];
   }, [chunkMethod]);
 
   const hasDescription = item.description.trim().length > 0;
@@ -56,12 +53,7 @@ const CategoryPanel = ({ chunkMethod }: { chunkMethod: string }) => {
               </span>
               <div className="grid grid-cols-2 gap-2.5 mt-4">
                 {imageList.map((x) => (
-                  <SvgIcon
-                    name={x}
-                    width={'100%'}
-                    className="w-full"
-                    key={x}
-                  ></SvgIcon>
+                  <img src={x} alt="" className="w-full" key={x} />
                 ))}
               </div>
               <h5 className="font-semibold text-base mt-4 mb-1">
