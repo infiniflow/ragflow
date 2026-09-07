@@ -23,7 +23,7 @@ import { IconFontFill } from './icon-font';
 import { RAGFlowAvatar } from './ragflow-avatar';
 import { useIsDarkTheme } from './theme-provider';
 
-const svgModules = import.meta.glob('@/assets/svg/**/*.svg', {
+const svgModules = import.meta.glob('@/assets/svg/**/*.{svg,png}', {
   eager: true,
   query: '?url',
 });
