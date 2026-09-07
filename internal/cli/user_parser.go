@@ -2316,7 +2316,12 @@ func (p *Parser) parseAPIRetrieve() (*Command, error) {
 					default:
 						return nil, fmt.Errorf("WITH option %q must be true or false, got %q", paramName, s)
 					}
-				case "rerank_id", "metadata_condition":
+				case "rerank_id", "search_id":
+					if valueToken != TokenQuotedString {
+						return nil, fmt.Errorf("WITH option %q must be a quoted string, got %s", paramName, tokenTypeDescription(valueToken, p.curToken))
+					}
+					cmd.Params[paramName] = paramValue
+				case "metadata_condition":
 					if valueToken != TokenQuotedString {
 						return nil, fmt.Errorf("WITH option %q must be a quoted string, got %s", paramName, tokenTypeDescription(valueToken, p.curToken))
 					}

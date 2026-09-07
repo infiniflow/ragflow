@@ -373,6 +373,7 @@ export const useSendQuestion = (
         question: q,
         page: 1,
         page_size: pageSize,
+        search_id: searchId,
       });
 
       if (related_search) {
@@ -423,6 +424,7 @@ export const useSendQuestion = (
         document_ids: documentIds ?? selectedDocumentIds,
         page,
         page_size: size,
+        search_id: searchId,
       });
 
       testChunkAll({
@@ -433,6 +435,7 @@ export const useSendQuestion = (
         document_ids: [],
         page,
         page_size: size,
+        search_id: searchId,
       });
     },
     [
@@ -442,6 +445,7 @@ export const useSendQuestion = (
       kbIds,
       selectedDocumentIds,
       testChunkAll,
+      searchId,
       searchConfig,
     ],
   );

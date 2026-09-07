@@ -983,6 +983,7 @@ Datasets syntax (full filter set):
     keyword                 true|false  Enable keyword extraction via LLM
     use_kg                  true|false  Enable knowledge-graph augmentation
     rerank_id               'id'      Rerank model to apply
+    search_id               'id'      Apply a saved search configuration
     metadata_condition      '<json>'  Metadata filter (must be valid JSON)
     cross_languages         ['a','b'] Source languages to translate from
     document_ids            ['d1',...] Restrict to specific document ids

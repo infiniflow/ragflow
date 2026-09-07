@@ -636,6 +636,13 @@ func formatEmptyArray(v interface{}) string {
 	return fmt.Sprintf("%v", v)
 }
 
+func retrievalChunkValue(chunk map[string]interface{}, key, fallbackKey string) interface{} {
+	if value, ok := chunk[key]; ok {
+		return value
+	}
+	return chunk[fallbackKey]
+}
+
 // SearchOnDatasets searches for chunks in specified datasets
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
@@ -702,6 +709,9 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 	}
 	if val, ok := cmd.Params["page"]; ok {
 		payload["page"] = val
+	}
+	if val, ok := cmd.Params["search_id"]; ok {
+		payload["search_id"] = val
 	}
 	if val, ok := cmd.Params["cross_languages"]; ok {
 		if list, ok := val.([]string); ok {
@@ -774,12 +784,12 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 	for _, chunk := range chunks {
 		if chunkMap, ok := chunk.(map[string]interface{}); ok {
 			row := map[string]interface{}{
-				"id":                chunkMap["id"],
-				"content":           chunkMap["content"],
-				"document_id":       chunkMap["document_id"],
-				"dataset_id":        chunkMap["dataset_id"],
-				"document_keyword":  chunkMap["document_keyword"],
-				"image_id":          chunkMap["image_id"],
+				"id":                retrievalChunkValue(chunkMap, "id", "chunk_id"),
+				"content":           retrievalChunkValue(chunkMap, "content", "content_with_weight"),
+				"document_id":       retrievalChunkValue(chunkMap, "document_id", "doc_id"),
+				"dataset_id":        retrievalChunkValue(chunkMap, "dataset_id", "kb_id"),
+				"document_keyword":  retrievalChunkValue(chunkMap, "document_keyword", "docnm_kwd"),
+				"image_id":          retrievalChunkValue(chunkMap, "image_id", "img_id"),
 				"similarity":        chunkMap["similarity"],
 				"term_similarity":   chunkMap["term_similarity"],
 				"vector_similarity": chunkMap["vector_similarity"],
@@ -788,7 +798,7 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 			if v, ok := chunkMap["doc_type_kwd"]; ok {
 				row["doc_type_kwd"] = formatEmptyArray(v)
 			}
-			if v, ok := chunkMap["important_keywords"]; ok {
+			if v := retrievalChunkValue(chunkMap, "important_keywords", "important_kwd"); v != nil {
 				row["important_keywords"] = formatEmptyArray(v)
 			}
 			if v, ok := chunkMap["mom_id"]; ok {

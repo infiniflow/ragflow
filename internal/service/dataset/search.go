@@ -35,7 +35,9 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		page = *req.Page
 	}
 	pageSize := 30
-	if req.Size != nil {
+	if req.PageSize != nil {
+		pageSize = *req.PageSize
+	} else if req.Size != nil {
 		pageSize = *req.Size
 	}
 	rerankCandidatesCount := 64
@@ -46,7 +48,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if req.UseKG != nil {
 		useKG = *req.UseKG
 	}
-	similarityThreshold := 0.0
+	similarityThreshold := 0.2
 	if req.SimilarityThreshold != nil {
 		similarityThreshold = *req.SimilarityThreshold
 	}
@@ -85,7 +87,22 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	question := req.Question
 	datasetIDs := req.DatasetIDs
 	metadataFilter := req.MetadataFilter
+	if req.MetadataCondition != nil {
+		manual := make([]interface{}, 0)
+		if conditions, ok := req.MetadataCondition["conditions"].([]interface{}); ok {
+			for _, item := range conditions {
+				if condition, ok := item.(map[string]interface{}); ok {
+					manual = append(manual, map[string]interface{}{"key": condition["name"], "op": condition["comparison_operator"], "value": condition["value"]})
+				}
+			}
+		}
+		metadataFilter = map[string]interface{}{"method": "manual", "logic": req.MetadataCondition["logic"], "manual": manual}
+	}
 	crossLanguages := req.CrossLanguages
+	documentIDs := req.DocumentIDs
+	if documentIDs == nil {
+		documentIDs = req.DocIDs
+	}
 
 	modelProviderSvc := service.NewModelProviderService()
 
@@ -209,8 +226,8 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 
 	// Apply meta_data_filter to get filtered doc_ids
-	docIDs := make([]string, len(req.DocIDs))
-	copy(docIDs, req.DocIDs)
+	docIDs := make([]string, len(documentIDs))
+	copy(docIDs, documentIDs)
 	if len(metadataFilter) > 0 {
 		metadataSvc := service.NewMetadataService()
 		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(ctx, datasetIDs)
@@ -218,7 +235,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Failed to get flatted metadata, using empty metadata for filter", zap.Error(err))
 			flattedMeta = make(common.MetaData)
 		}
-		filteredDocIDs, _ := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, req.DocIDs, datasetIDs)
+		filteredDocIDs, _ := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs)
 		docIDs = filteredDocIDs
 	}
 
@@ -305,8 +322,23 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 
 	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, d.docEngine, ctx)
 
+	keyMapping := map[string]string{
+		"chunk_id":            "id",
+		"content_with_weight": "content",
+		"doc_id":              "document_id",
+		"important_kwd":       "important_keywords",
+		"question_kwd":        "questions",
+		"docnm_kwd":           "document_keyword",
+		"kb_id":               "dataset_id",
+	}
 	for i := range filteredChunks {
 		delete(filteredChunks[i], "vector")
+		for oldKey, newKey := range keyMapping {
+			if value, ok := filteredChunks[i][oldKey]; ok {
+				filteredChunks[i][newKey] = value
+				delete(filteredChunks[i], oldKey)
+			}
+		}
 	}
 
 	common.Info("SearchDatasets completed", zap.String("userID", userID), zap.Any("kbID", datasetIDs), zap.String("question", question), zap.Int64("chunkCount", int64(len(filteredChunks))))
