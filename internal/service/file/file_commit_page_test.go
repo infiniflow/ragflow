@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"sync"
