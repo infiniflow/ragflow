@@ -34,7 +34,9 @@ describe('preprocessLaTeX', () => {
   });
 
   it('handles double-escaped inline LaTeX', () => {
-    expect(preprocessLaTeX('\\\\(\\\\Delta = b^2\\\\)')).toBe('$\\Delta = b^2$');
+    expect(preprocessLaTeX('\\\\(\\\\Delta = b^2\\\\)')).toBe(
+      '$\\Delta = b^2$',
+    );
   });
 
   it('handles double-escaped block LaTeX', () => {
