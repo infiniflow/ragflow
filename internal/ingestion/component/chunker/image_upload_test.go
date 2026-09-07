@@ -288,6 +288,28 @@ func TestImageUploadDecorator_UsesContentWithWeightForChunkID(t *testing.T) {
 	}
 }
 
+func TestImageUploadDecorator_UsesContentWithWeightWhenTextIsNotString(t *testing.T) {
+	decorated := &imageUploadDecorator{inner: &stubChunker{chunks: []map[string]any{{
+		"text":                []any{"invalid"},
+		"content_with_weight": "Question: Q1\tAnswer: A1",
+	}}}}
+
+	out, err := decorated.Invoke(context.Background(), nil, map[string]any{
+		"doc_id": testDocID,
+	})
+	if err != nil {
+		t.Fatalf("decorated Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want one chunk", out["chunks"])
+	}
+	want := common.ChunkID(testDocID, "Question: Q1\tAnswer: A1")
+	if got, _ := chunks[0]["id"].(string); got != want {
+		t.Errorf("id = %q, want %q", got, want)
+	}
+}
+
 // setImageUploadConcurrencyForTest swaps the process-wide upload semaphore to
 // `n` slots for the duration of the test, restoring the original after.
 func setImageUploadConcurrencyForTest(t *testing.T, n int) {
