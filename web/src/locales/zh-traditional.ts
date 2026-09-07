@@ -782,6 +782,20 @@ export default {
       dropboxDescription: '連接 Dropbox，同步指定帳號下的文件與文件夾。',
       sitemapDescription:
         '連接公開的 sitemap.xml，將其中列出的網頁和 PDF 文件同步到知識庫。',
+      dataSourceFieldSitemapUrl: 'Sitemap URL',
+      dataSourceFieldUrlFilter: 'URL 篩選（正規表示式）',
+      dataSourceFieldFollowPdfLinks: '跟隨 PDF 連結',
+      dataSourceFieldRestrictPdfToDomain: '僅限 sitemap 所在網域的 PDF',
+      dataSourceFieldUserAgent: 'User-Agent',
+      sitemapUrlTip:
+        '要擷取的 sitemap.xml 或 sitemap 索引的 URL，例如 https://example.com/sitemap.xml。sitemap 索引會被遞迴跟隨（最多 5 層）。',
+      sitemapUrlFilterTip:
+        '選填的正規表示式。僅索引與之符合的 URL，例如 ^https://example\\.com/docs/ 可將同步限制在網站的某個區塊。',
+      sitemapFollowPdfLinksTip: '同時索引已擷取 HTML 頁面中連結的 PDF 檔案。',
+      sitemapRestrictPdfToDomainTip: '僅跟隨與 sitemap 同網域下的 PDF 連結。',
+      sitemapUserAgentTip:
+        '每次請求送出的 User-Agent 標頭。留空則使用 RAGFlow-SitemapConnector/1.0。',
+      sitemapBatchSizeTip: '每批擷取並送到 RAGFlow 的頁面數量。',
       azure_devopsDescription: '連接 Azure DevOps 以同步儲存庫檔案和拉取請求。',
       bitbucketDescription: '連接 Bitbucket，同步 PR 內容。',
       zendeskDescription: '連接 Zendesk，同步工單、文章及其他內容。',

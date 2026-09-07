@@ -41,6 +41,7 @@ const (
 	defaultSitemapBatchSize = 10
 	defaultSitemapUserAgent = "RAGFlow-SitemapConnector/1.0"
 	maxSitemapDepth         = 5
+	maxSitemapFetches       = 1000
 	maxSitemapRedirects     = 10
 	maxSitemapFileSize      = 64 * 1024 * 1024
 	sitemapFetchTimeout     = 60 * time.Second
@@ -226,16 +227,31 @@ func (c *SitemapConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 
 // listEntries walks the sitemap (and nested sitemap indexes) and returns the
 // deduplicated entries in document order. url_filter is applied by callers.
+//
+// Every sitemap URL is fetched at most once (a sitemapindex that references
+// itself or an ancestor is skipped) and the walk stops after maxSitemapFetches
+// sitemap documents, so one connector configuration cannot trigger unbounded
+// egress.
 func (c *SitemapConnector) listEntries(ctx context.Context) ([]sitemapEntry, error) {
 	var (
 		entries []sitemapEntry
 		seen    = make(map[string]struct{})
+		visited = make(map[string]struct{})
 		fetched int
 	)
 	var walk func(sitemapURL string, depth int) error
 	walk = func(sitemapURL string, depth int) error {
 		if depth > maxSitemapDepth {
 			slog.Warn("sitemap: max depth reached, stopping", "url", sitemapURL)
+			return nil
+		}
+		if _, done := visited[sitemapURL]; done {
+			slog.Warn("sitemap: nested sitemap already visited, skipping", "url", sitemapURL)
+			return nil
+		}
+		visited[sitemapURL] = struct{}{}
+		if fetched >= maxSitemapFetches {
+			slog.Warn("sitemap: maximum number of sitemap fetches reached, stopping", "url", sitemapURL, "max", maxSitemapFetches)
 			return nil
 		}
 		if err := validateSitemapURL(sitemapURL); err != nil {
@@ -716,7 +732,8 @@ func sitemapHTMLToMarkdown(body []byte) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
-// extractPDFLinks returns absolute <a href> links ending in .pdf.
+// extractPDFLinks returns absolute <a href> links whose path ends in .pdf
+// (query strings and fragments are ignored, so "/manual.pdf?download=1" counts).
 func extractPDFLinks(body []byte, pageURL string) []string {
 	base, err := url.Parse(pageURL)
 	if err != nil {
@@ -737,12 +754,8 @@ func extractPDFLinks(body []byte, pageURL string) []string {
 				if attr.Key != "href" {
 					continue
 				}
-				href := strings.TrimSpace(attr.Val)
-				if !strings.HasSuffix(strings.ToLower(href), ".pdf") {
-					continue
-				}
-				resolved, err := base.Parse(href)
-				if err != nil {
+				resolved, err := base.Parse(strings.TrimSpace(attr.Val))
+				if err != nil || !strings.HasSuffix(strings.ToLower(resolved.Path), ".pdf") {
 					continue
 				}
 				links = append(links, resolved.String())

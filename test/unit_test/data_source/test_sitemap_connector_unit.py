@@ -2,6 +2,7 @@
 
 import importlib
 import sys
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
@@ -64,14 +65,16 @@ _PDF_BYTES = b"%PDF-1.4 fake pdf content"
 # ---------------------------------------------------------------------------
 
 
-def _fake_response(content: bytes, content_type: str = "text/html; charset=utf-8"):
+def _fake_response(content: bytes, content_type: str = "text/html; charset=utf-8", headers: dict | None = None, status_code: int = 200):
     resp = MagicMock()
     resp.content = content
-    resp.status_code = 200
-    resp.headers.get.side_effect = lambda key, default="": {
-        "Content-Type": content_type,
-    }.get(key, default)
+    resp.status_code = status_code
+    all_headers = {"Content-Type": content_type, **(headers or {})}
+    resp.headers.get.side_effect = lambda key, default="": all_headers.get(key, default)
+    # The connector streams the body in chunks; emulate requests' iter_content.
+    resp.iter_content.side_effect = lambda chunk_size=65536: [content[i : i + chunk_size] for i in range(0, len(content), chunk_size)]
     resp.raise_for_status = MagicMock()
+    resp.close = MagicMock()
     return resp
 
 
@@ -493,3 +496,146 @@ def test_build_connector_defaults():
     assert connector.follow_pdf_links is False
     assert connector.restrict_pdf_to_domain is True
     assert connector.batch_size >= 1
+
+
+# ---------------------------------------------------------------------------
+# Hardening: regex guard, PDF link detection, DNS pinning, size cap, fetch budget
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("pattern", ["^https://(a+)+$", "(x*y)*z", "(?:ab*)+c"])
+def test_url_filter_rejects_nested_quantifiers(pattern):
+    with pytest.raises(ValueError, match="nested quantifiers"):
+        _connector(url_filter=pattern)
+
+
+@pytest.mark.p2
+def test_url_filter_rejects_too_long_pattern():
+    with pytest.raises(ValueError, match="too long"):
+        _connector(url_filter="a" * (_sitemap_mod._MAX_URL_FILTER_LENGTH + 1))
+
+
+@pytest.mark.p2
+def test_url_filter_accepts_plain_patterns():
+    connector = _connector(url_filter=r"^https://example\.com/(docs|blog)/[a-z0-9-]+$")
+    assert connector._url_matches("https://example.com/docs/intro")
+    assert not connector._url_matches("https://example.com/pricing")
+
+
+@pytest.mark.p2
+def test_extract_pdf_links_accepts_query_strings_and_fragments():
+    html = b"""<html><body>
+      <a href="/manual.pdf?download=1">Manual</a>
+      <a href="/guide.PDF#page=3">Guide</a>
+      <a href="/page.html?file=x.pdf">Not a PDF</a>
+      <a href="report.pdf">Relative</a>
+    </body></html>"""
+    links = SitemapConnector._extract_pdf_links(html, "https://example.com/docs/index.html")
+    assert links == [
+        "https://example.com/manual.pdf?download=1",
+        "https://example.com/guide.PDF#page=3",
+        "https://example.com/docs/report.pdf",
+    ]
+
+
+@pytest.mark.p2
+def test_fetch_raw_pins_dns_on_every_hop(monkeypatch):
+    pins: list[tuple[str, str]] = []
+
+    @contextmanager
+    def _recording_pin(hostname, ip):
+        pins.append((hostname, ip))
+        yield
+
+    monkeypatch.setattr(_sitemap_mod, "_pin_dns", _recording_pin)
+    monkeypatch.setattr(
+        _sitemap_mod,
+        "assert_url_is_safe",
+        lambda url: ("example.com", "1.2.3.4") if "example.com" in url else ("cdn.example.net", "5.6.7.8"),
+    )
+    redirect = _fake_response(b"", headers={"Location": "https://cdn.example.net/final"}, status_code=302)
+    _patch_requests(
+        monkeypatch,
+        {
+            "https://example.com/start": redirect,
+            "https://cdn.example.net/final": _fake_response(b"<html>ok</html>"),
+        },
+    )
+
+    content, _ = _connector()._fetch_raw("https://example.com/start")
+
+    assert content == b"<html>ok</html>"
+    assert pins == [("example.com", "1.2.3.4"), ("cdn.example.net", "5.6.7.8")]
+
+
+@pytest.mark.p2
+def test_fetch_raw_rejects_oversized_content_length(monkeypatch):
+    _patch_ssrf(monkeypatch)
+    big = _fake_response(b"x", headers={"Content-Length": str(_sitemap_mod._MAX_RESPONSE_BYTES + 1)})
+    _patch_requests(monkeypatch, {"https://example.com/big": big})
+
+    with pytest.raises(ValueError, match="maximum allowed size"):
+        _connector()._fetch_raw("https://example.com/big")
+    big.close.assert_called()
+
+
+@pytest.mark.p2
+def test_fetch_raw_rejects_oversized_streamed_body(monkeypatch):
+    _patch_ssrf(monkeypatch)
+    monkeypatch.setattr(_sitemap_mod, "_MAX_RESPONSE_BYTES", 10)
+    monkeypatch.setattr(_sitemap_mod, "_READ_CHUNK_BYTES", 4)
+    _patch_requests(monkeypatch, {"https://example.com/stream": _fake_response(b"0123456789ABCDEF")})
+
+    with pytest.raises(ValueError, match="maximum allowed size"):
+        _connector()._fetch_raw("https://example.com/stream")
+
+
+@pytest.mark.p2
+def test_iter_sitemap_urls_visits_each_sitemap_once(monkeypatch):
+    """A sitemap index referencing itself and its parent must not be re-fetched."""
+    _patch_ssrf(monkeypatch)
+    looping_index = f"""<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="{_NS}">
+  <sitemap><loc>https://example.com/sitemap.xml</loc></sitemap>
+  <sitemap><loc>https://example.com/sitemap-en.xml</loc></sitemap>
+  <sitemap><loc>https://example.com/sitemap-en.xml</loc></sitemap>
+</sitemapindex>""".encode()
+    calls: list[str] = []
+    responses = {
+        "https://example.com/sitemap.xml": _fake_response(looping_index),
+        "https://example.com/sitemap-en.xml": _fake_response(_CHILD_SITEMAP_XML),
+    }
+
+    def _get(url, **kwargs):
+        calls.append(url)
+        return responses[url]
+
+    monkeypatch.setattr(_sitemap_mod.requests, "get", _get)
+    urls = [u for u, _ in _connector()._iter_sitemap_urls("https://example.com/sitemap.xml", depth=0)]
+
+    assert urls == ["https://example.com/en/page-1"]
+    assert sorted(calls) == ["https://example.com/sitemap-en.xml", "https://example.com/sitemap.xml"]
+
+
+@pytest.mark.p2
+def test_iter_sitemap_urls_stops_at_fetch_budget(monkeypatch):
+    _patch_ssrf(monkeypatch)
+    monkeypatch.setattr(_sitemap_mod, "_MAX_SITEMAP_FETCHES", 3)
+    children = "".join(f"<sitemap><loc>https://example.com/child-{i}.xml</loc></sitemap>" for i in range(10))
+    index = f'<?xml version="1.0" encoding="UTF-8"?><sitemapindex xmlns="{_NS}">{children}</sitemapindex>'.encode()
+    responses = {"https://example.com/sitemap.xml": _fake_response(index)}
+    for i in range(10):
+        child = f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="{_NS}"><url><loc>https://example.com/page-{i}</loc></url></urlset>'.encode()
+        responses[f"https://example.com/child-{i}.xml"] = _fake_response(child)
+    calls: list[str] = []
+
+    def _get(url, **kwargs):
+        calls.append(url)
+        return responses[url]
+
+    monkeypatch.setattr(_sitemap_mod.requests, "get", _get)
+    urls = [u for u, _ in _connector()._iter_sitemap_urls("https://example.com/sitemap.xml", depth=0)]
+
+    assert len(calls) == 3  # index + 2 children
+    assert urls == ["https://example.com/page-0", "https://example.com/page-1"]

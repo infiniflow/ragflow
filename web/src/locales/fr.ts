@@ -1512,7 +1512,7 @@ Exemple : Virtual Hosted Style`,
         'Limiter les PDF au domaine du sitemap',
       dataSourceFieldUserAgent: 'User-Agent',
       sitemapDescription:
-        'Connectez un sitemap.xml public pour synchroniser les pages web et documents PDF listés dans votre base de connaissances.',
+        'Connectez un sitemap.xml public pour synchroniser dans votre base de connaissances les pages web et les documents PDF qu’il répertorie.',
       sitemapUrlTip:
         'URL du sitemap.xml ou de l’index de sitemaps à parcourir, ex. : https://example.com/sitemap.xml. Les index de sitemaps sont suivis récursivement (5 niveaux maximum).',
       sitemapUrlFilterTip:

@@ -536,7 +536,8 @@ class Sitemap(SyncBase):
 
     async def _generate(self, task: dict):
         self.connector = SitemapConnector.build_connector(self.conf)
-        self.connector.validate_connector_settings()
+        # validate_connector_settings fetches the sitemap synchronously: keep it off the event loop.
+        await asyncio.to_thread(self.connector.validate_connector_settings)
         self.log_connection("Sitemap", self.conf["sitemap_url"], task)
 
         if task["reindex"] == "1" or not task["poll_range_start"]:

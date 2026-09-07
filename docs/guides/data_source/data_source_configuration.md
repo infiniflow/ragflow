@@ -719,6 +719,6 @@ The Sitemap data source is used to synchronize the web pages listed in a public 
 - **Batch size**: The number of pages fetched and sent to RAGFlow per batch.
 - **Sync deleted files**: After this is enabled, pages removed from the sitemap are removed from the knowledge base index.
 
-HTML pages are converted to Markdown (navigation, header, footer, scripts, and forms are dropped) and stored as `.md` documents. URLs served with `Content-Type: application/pdf` are stored as `.pdf` documents and processed by the regular PDF pipeline. Each document keeps the page URL, the sitemap URL, and, for discovered PDFs, the parent page URL in its metadata.
+Every request goes through the SSRF guard with the resolved address pinned for the duration of the request, response bodies are capped at 64 MB, and at most 1000 sitemap documents are fetched per sync (each sitemap URL once). HTML pages are converted to Markdown (navigation, header, footer, scripts, and forms are dropped) and stored as `.md` documents. URLs served with `Content-Type: application/pdf` are stored as `.pdf` documents and processed by the regular PDF pipeline. Each document keeps the page URL, the sitemap URL, and, for discovered PDFs, the parent page URL in its metadata.
 
 Incremental syncs rely on the `<lastmod>` element: only pages whose `lastmod` falls inside the sync window are fetched again, and pages without `lastmod` are only fetched by a full sync. Every document also carries a content fingerprint, so a page that is fetched again but has not changed is skipped instead of being re-indexed.

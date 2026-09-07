@@ -42,6 +42,8 @@ const sitemapTestIndex = `<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <sitemap><loc>https://example.com/sitemap-pages.xml</loc></sitemap>
   <sitemap><loc>https://example.com/sitemap-missing.xml</loc></sitemap>
+  <sitemap><loc>https://example.com/sitemap.xml</loc></sitemap>
+  <sitemap><loc>https://example.com/sitemap-pages.xml</loc></sitemap>
 </sitemapindex>`
 
 const sitemapTestURLSet = `<?xml version="1.0" encoding="UTF-8"?>
@@ -73,15 +75,16 @@ func newSitemapTestConnector(t *testing.T, config map[string]any, fixture sitema
 
 func defaultSitemapFixture() sitemapFixture {
 	return sitemapFixture{
-		"https://example.com/sitemap.xml":       {"application/xml", sitemapTestIndex},
-		"https://example.com/sitemap-pages.xml": {"application/xml", sitemapTestURLSet},
-		"https://example.com/old":               {"text/html; charset=utf-8", `<html><head><title>Old</title></head><body><nav><a href="/">Home</a></nav><main><h1>Old page</h1><p>Old body</p></main><footer>Footer</footer></body></html>`},
-		"https://example.com/new":               {"text/html", `<html><body><main><h1>New page</h1><p>New body with <a href="/docs/guide.pdf">a guide</a> and <a href="https://cdn.other.org/ext.pdf">an external one</a>.</p></main></body></html>`},
-		"https://example.com/future":            {"text/html", `<html><body><p>Future body</p></body></html>`},
-		"https://example.com/undated":           {"text/html", `<html><body><p>Undated body</p></body></html>`},
-		"https://example.com/brochure.pdf":      {"application/pdf", "%PDF-1.4 brochure"},
-		"https://example.com/docs/guide.pdf":    {"application/octet-stream", "%PDF-1.7 guide"},
-		"https://cdn.other.org/ext.pdf":         {"application/pdf", "%PDF-1.7 external"},
+		"https://example.com/sitemap.xml":                       {"application/xml", sitemapTestIndex},
+		"https://example.com/sitemap-pages.xml":                 {"application/xml", sitemapTestURLSet},
+		"https://example.com/old":                               {"text/html; charset=utf-8", `<html><head><title>Old</title></head><body><nav><a href="/">Home</a></nav><main><h1>Old page</h1><p>Old body</p></main><footer>Footer</footer></body></html>`},
+		"https://example.com/new":                               {"text/html", `<html><body><main><h1>New page</h1><p>New body with <a href="/docs/guide.pdf">a guide</a> and <a href="https://cdn.other.org/ext.pdf">an external one</a> and <a href="/docs/manual.pdf?download=1#page=2">a download link</a>.</p></main></body></html>`},
+		"https://example.com/future":                            {"text/html", `<html><body><p>Future body</p></body></html>`},
+		"https://example.com/undated":                           {"text/html", `<html><body><p>Undated body</p></body></html>`},
+		"https://example.com/brochure.pdf":                      {"application/pdf", "%PDF-1.4 brochure"},
+		"https://example.com/docs/guide.pdf":                    {"application/octet-stream", "%PDF-1.7 guide"},
+		"https://cdn.other.org/ext.pdf":                         {"application/pdf", "%PDF-1.7 external"},
+		"https://example.com/docs/manual.pdf?download=1#page=2": {"application/pdf", "%PDF-1.7 manual"},
 	}
 }
 
@@ -224,7 +227,7 @@ func TestSitemapConnectorFollowPDFLinks(t *testing.T) {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
 	batches, documents := drainSitemapSession(t, session)
-	want := []string{"https://example.com/new", "https://example.com/docs/guide.pdf"}
+	want := []string{"https://example.com/new", "https://example.com/docs/guide.pdf", "https://example.com/docs/manual.pdf?download=1#page=2"}
 	if got := sitemapDocIDs(documents); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("restricted documents = %v, want %v", got, want)
 	}
@@ -243,7 +246,7 @@ func TestSitemapConnectorFollowPDFLinks(t *testing.T) {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
 	_, documents = drainSitemapSession(t, session)
-	want = []string{"https://example.com/new", "https://example.com/docs/guide.pdf", "https://cdn.other.org/ext.pdf"}
+	want = []string{"https://example.com/new", "https://example.com/docs/guide.pdf", "https://cdn.other.org/ext.pdf", "https://example.com/docs/manual.pdf?download=1#page=2"}
 	if got := sitemapDocIDs(documents); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("unrestricted documents = %v, want %v", got, want)
 	}
@@ -276,7 +279,7 @@ func TestSitemapConnectorOpenPrune(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 6 || batch.Documents[5].SourceID != expectedSitemapSourceID("https://example.com/docs/guide.pdf") {
+	if len(batch.Documents) != 7 || batch.Documents[5].SourceID != expectedSitemapSourceID("https://example.com/docs/guide.pdf") {
 		t.Fatalf("prune snapshot with pdf discovery = %+v", batch.Documents)
 	}
 }
@@ -395,5 +398,57 @@ func TestSitemapSemanticIdentifier(t *testing.T) {
 		if got := sitemapSemanticIdentifier(input); got != want {
 			t.Fatalf("sitemapSemanticIdentifier(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+// TestSitemapConnectorListEntriesBoundsFetches verifies that nested sitemap
+// indexes referencing themselves or an ancestor are fetched once, and that the
+// walk stops at maxSitemapFetches.
+func TestSitemapConnectorListEntriesBoundsFetches(t *testing.T) {
+	fetches := map[string]int{}
+	fixture := defaultSitemapFixture()
+	connector := newSitemapTestConnector(t, map[string]any{}, fixture)
+	connector.fetch = func(ctx context.Context, rawURL string) ([]byte, string, error) {
+		fetches[rawURL]++
+		return fixture.fetch(ctx, rawURL)
+	}
+
+	entries, err := connector.listEntries(t.Context())
+	if err != nil {
+		t.Fatalf("listEntries failed: %v", err)
+	}
+	if len(entries) != 5 {
+		t.Fatalf("entries = %d, want 5", len(entries))
+	}
+	for rawURL, count := range fetches {
+		if count != 1 {
+			t.Fatalf("%s fetched %d times, want once", rawURL, count)
+		}
+	}
+
+	// A wide index tree stops at the fetch cap instead of exploding.
+	var children strings.Builder
+	for i := 0; i < maxSitemapFetches+50; i++ {
+		fmt.Fprintf(&children, "<sitemap><loc>https://example.com/child-%d.xml</loc></sitemap>", i)
+	}
+	wide := sitemapFixture{"https://example.com/sitemap.xml": {"application/xml", `<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` + children.String() + `</sitemapindex>`}}
+	for i := 0; i < maxSitemapFetches+50; i++ {
+		wide[fmt.Sprintf("https://example.com/child-%d.xml", i)] = [2]string{"application/xml", fmt.Sprintf(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.com/page-%d</loc></url></urlset>`, i)}
+	}
+	total := 0
+	capped := newSitemapTestConnector(t, map[string]any{}, wide)
+	capped.fetch = func(ctx context.Context, rawURL string) ([]byte, string, error) {
+		total++
+		return wide.fetch(ctx, rawURL)
+	}
+	entries, err = capped.listEntries(t.Context())
+	if err != nil {
+		t.Fatalf("listEntries (wide) failed: %v", err)
+	}
+	if total != maxSitemapFetches {
+		t.Fatalf("fetches = %d, want %d", total, maxSitemapFetches)
+	}
+	if len(entries) != maxSitemapFetches-1 {
+		t.Fatalf("entries = %d, want %d", len(entries), maxSitemapFetches-1)
 	}
 }

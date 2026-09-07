@@ -22,11 +22,19 @@ from common.data_source.models import (
     SecondsSinceUnixEpoch,
     SlimDocument,
 )
-from common.ssrf_guard import assert_url_is_safe
+from common.ssrf_guard import assert_url_is_safe, pin_dns as _pin_dns
 
 _SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
 _MAX_REDIRECTS = 10
 _MAX_SITEMAP_DEPTH = 5
+_MAX_SITEMAP_FETCHES = 1000
+_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+_READ_CHUNK_BYTES = 64 * 1024
+_MAX_URL_FILTER_LENGTH = 512
+_MAX_MATCHED_URL_LENGTH = 4096
+# A quantified group that itself contains a quantifier, e.g. "(a+)+" or "(a*b)*":
+# the classic shape behind catastrophic backtracking in Python's regex engine.
+_NESTED_QUANTIFIER_RE = re.compile(r"\([^()]*[+*}][^()]*\)\s*[+*{?]")
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +60,7 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.sitemap_url = sitemap_url.strip()
         self.batch_size = batch_size
         self.user_agent = user_agent
-        try:
-            self._url_filter: re.Pattern | None = re.compile(url_filter) if url_filter else None
-        except re.error as exc:
-            raise ValueError(f"url_filter is not a valid regex: {exc}") from exc
+        self._url_filter: re.Pattern | None = self._compile_url_filter(url_filter) if url_filter else None
         self.follow_pdf_links = follow_pdf_links
         self.restrict_pdf_to_domain = restrict_pdf_to_domain
         self.credentials: dict[str, Any] = {}
@@ -77,6 +82,23 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self.credentials = credentials or {}
         return None
+
+    @staticmethod
+    def _compile_url_filter(pattern: str) -> re.Pattern:
+        """Compile the user-provided url_filter, rejecting patterns prone to catastrophic backtracking.
+
+        Python's `re` has no evaluation time limit, and the pattern is matched against
+        sitemap-controlled URLs, so nested quantifiers such as ``(a+)+`` are refused
+        up front and the pattern length is bounded.
+        """
+        if len(pattern) > _MAX_URL_FILTER_LENGTH:
+            raise ValueError(f"url_filter is too long (max {_MAX_URL_FILTER_LENGTH} characters)")
+        if _NESTED_QUANTIFIER_RE.search(pattern):
+            raise ValueError("url_filter must not contain nested quantifiers such as '(a+)+', which can cause catastrophic backtracking")
+        try:
+            return re.compile(pattern)
+        except re.error as exc:
+            raise ValueError(f"url_filter is not a valid regex: {exc}") from exc
 
     def validate_connector_settings(self) -> None:
         self._validate_url(self.sitemap_url)
@@ -193,11 +215,26 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         if batch:
             yield batch
 
-    def _iter_sitemap_urls(self, sitemap_url: str, depth: int) -> Iterator[tuple[str, datetime | None]]:
-        """Recursively yield (url, lastmod) pairs from a sitemap or sitemap index."""
+    def _iter_sitemap_urls(self, sitemap_url: str, depth: int, _walk: dict[str, Any] | None = None) -> Iterator[tuple[str, datetime | None]]:
+        """Recursively yield (url, lastmod) pairs from a sitemap or sitemap index.
+
+        Each sitemap URL is fetched at most once (an index referencing itself or an
+        ancestor is skipped) and the walk stops after ``_MAX_SITEMAP_FETCHES`` sitemap
+        documents, so one connector cannot trigger unbounded egress.
+        """
+        if _walk is None:
+            _walk = {"visited": set(), "fetched": 0}
         if depth > _MAX_SITEMAP_DEPTH:
             logger.warning("Max sitemap depth reached, stopping at %s", sitemap_url)
             return
+        if sitemap_url in _walk["visited"]:
+            logger.warning("Sitemap %s already visited, skipping", sitemap_url)
+            return
+        _walk["visited"].add(sitemap_url)
+        if _walk["fetched"] >= _MAX_SITEMAP_FETCHES:
+            logger.warning("Maximum number of sitemap fetches (%s) reached, stopping at %s", _MAX_SITEMAP_FETCHES, sitemap_url)
+            return
+        _walk["fetched"] += 1
 
         try:
             self._validate_url(sitemap_url)
@@ -220,7 +257,7 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 if loc_el is None or not (loc_el.text or "").strip():
                     continue
                 child_url = loc_el.text.strip()
-                yield from self._iter_sitemap_urls(child_url, depth + 1)
+                yield from self._iter_sitemap_urls(child_url, depth + 1, _walk)
             return
 
         # Standard urlset
@@ -319,44 +356,76 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
             def handle_starttag(self, tag, attrs):
                 if tag == "a":
-                    href = dict(attrs).get("href", "") or ""
-                    if href.lower().endswith(".pdf"):
+                    href = (dict(attrs).get("href", "") or "").strip()
+                    if href:
                         self.links.append(href)
 
         ex = _Extractor()
         ex.feed(html_bytes.decode("utf-8", errors="replace"))
-        return [urljoin(base_url, lnk) for lnk in ex.links]
+        pdf_links: list[str] = []
+        for href in ex.links:
+            absolute = urljoin(base_url, href)
+            # Match on the path only, so "/manual.pdf?download=1#page=2" counts.
+            if urlparse(absolute).path.lower().endswith(".pdf"):
+                pdf_links.append(absolute)
+        return pdf_links
 
     def _fetch_raw(self, url: str) -> tuple[bytes, str]:
-        """Fetch a URL with redirect following and SSRF protection.
+        """Fetch a URL with redirect following, SSRF protection and a response size cap.
+
+        Every hop is validated by ``assert_url_is_safe`` and the resolved address is
+        pinned for the duration of the request (DNS rebinding protection). The body
+        is streamed and rejected once it exceeds ``_MAX_RESPONSE_BYTES``.
 
         Returns (content, content_type).
         """
         current_url = url
-        assert_url_is_safe(current_url)
+        current_hostname, current_ip = assert_url_is_safe(current_url)
 
         response: requests.Response | None = None
         for _ in range(_MAX_REDIRECTS + 1):
-            response = requests.get(
-                current_url,
-                timeout=REQUEST_TIMEOUT_SECONDS,
-                allow_redirects=False,
-                headers={"User-Agent": self.user_agent},
-            )
-            if response.status_code not in (301, 302, 303, 307, 308):
-                break
+            with _pin_dns(current_hostname, current_ip):
+                response = requests.get(
+                    current_url,
+                    timeout=REQUEST_TIMEOUT_SECONDS,
+                    allow_redirects=False,
+                    stream=True,
+                    headers={"User-Agent": self.user_agent},
+                )
+                if response.status_code not in (301, 302, 303, 307, 308):
+                    response.raise_for_status()
+                    content_type = response.headers.get("Content-Type", "").lower()
+                    return self._read_capped(response, current_url), content_type
+            response.close()
             location = response.headers.get("Location")
             if not location:
-                break
+                response.raise_for_status()
+                raise ValueError(f"Redirect without Location header fetching {url!r}")
             redirect_url = urljoin(current_url, location)
-            assert_url_is_safe(redirect_url)
+            current_hostname, current_ip = assert_url_is_safe(redirect_url)
             current_url = redirect_url
-        else:
-            raise ValueError(f"Exceeded {_MAX_REDIRECTS} redirects fetching {url!r}")
+        raise ValueError(f"Exceeded {_MAX_REDIRECTS} redirects fetching {url!r}")
 
-        response.raise_for_status()
-        content_type = response.headers.get("Content-Type", "").lower()
-        return response.content, content_type
+    @staticmethod
+    def _read_capped(response: requests.Response, url: str) -> bytes:
+        """Read a streamed response body, refusing anything larger than _MAX_RESPONSE_BYTES."""
+        declared = response.headers.get("Content-Length")
+        if declared and declared.isdigit() and int(declared) > _MAX_RESPONSE_BYTES:
+            response.close()
+            raise ValueError(f"Response for {url!r} exceeds the maximum allowed size of {_MAX_RESPONSE_BYTES} bytes")
+        chunks: list[bytes] = []
+        total = 0
+        try:
+            for chunk in response.iter_content(chunk_size=_READ_CHUNK_BYTES):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > _MAX_RESPONSE_BYTES:
+                    raise ValueError(f"Response for {url!r} exceeds the maximum allowed size of {_MAX_RESPONSE_BYTES} bytes")
+                chunks.append(chunk)
+        finally:
+            response.close()
+        return b"".join(chunks)
 
     @staticmethod
     def _validate_url(url: str) -> tuple[str, str]:
@@ -370,7 +439,7 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def _url_matches(self, url: str) -> bool:
         if self._url_filter is None:
             return True
-        return bool(self._url_filter.search(url))
+        return bool(self._url_filter.search(url[:_MAX_MATCHED_URL_LENGTH]))
 
     @staticmethod
     def _url_to_identifier(url: str) -> str:

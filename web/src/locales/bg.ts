@@ -1002,7 +1002,7 @@ The above is the content you need to summarize.`,
       dropboxDescription:
         'Свържете вашия Dropbox за синхронизиране на файлове и папки от избран акаунт.',
       sitemapDescription:
-        'Свържете публичен sitemap.xml, за да синхронизирате изброените уеб страници и PDF документи с базата знания.',
+        'Свържете публичен sitemap.xml, за да синхронизирате изброените уеб страници и PDF документи с базата от знания.',
       azure_devopsDescription:
         'Свържете Azure DevOps, за да синхронизирате файловете на хранилището и заявките за изтегляне (pull requests).',
       bitbucketDescription:
