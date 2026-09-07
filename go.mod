@@ -262,7 +262,8 @@ replace github.com/AkmalOt/gomsg => github.com/xugangqiang/gomsg v0.0.0-20260407
 // onnxruntime_go is mirrored to github.com/infiniflow/onnxruntime_go (org-owned
 // fork of yalue/onnxruntime_go at v1.23.0) so the in-process DeepDoc backend no
 // longer depends on a personal fork or the upstream repo directly. ONNX Runtime is
-// linked statically (--whole-archive + --export-dynamic); OrtGetApiBase is then
-// resolved at runtime via dlopen(NULL) from the running binary, so no
+// linked statically (no --whole-archive, so kernels nothing references are
+// dropped; only OrtGetApiBase is exported, via --dynamic-list), and OrtGetApiBase
+// is then resolved at runtime via dlopen(NULL) from the running binary, so no
 // libonnxruntime.so is required. The module path matches the import path, so no
 // replace directive is needed.
