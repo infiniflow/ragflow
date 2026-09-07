@@ -124,6 +124,46 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 			wantTexts: []string{"Q1\nA1"},
 		},
 		{
+			// Same flattening path with a list inside the text_box: the
+			// old paragraph-only walk dropped the whole block.
+			name: "text_box wrapping list keeps text",
+			irJSON: `{"sections":[{"elements":[{"type":"text_box","content":[
+				{"type":"list","items":[
+					{"content":[{"type":"paragraph","content":[{"type":"text","text":"li1"}]}]},
+					{"content":[{"type":"paragraph","content":[{"type":"text","text":"li2"}]}]}
+				]}
+			]}]}]}`,
+			wantTexts: []string{"li1\nli2"},
+		},
+		{
+			// Nested text boxes recurse through the same walker.
+			name: "nested text_box keeps text",
+			irJSON: `{"sections":[{"elements":[{"type":"text_box","content":[
+				{"type":"paragraph","content":[{"type":"text","text":"outer"}]},
+				{"type":"text_box","content":[
+					{"type":"paragraph","content":[{"type":"text","text":"inner"}]}
+				]}
+			]}]}]}`,
+			wantTexts: []string{"outer\ninner"},
+		},
+		{
+			// Table cell holding a list: joinCellText must recurse instead
+			// of reading paragraph runs only.
+			name: "table cell wrapping list keeps text",
+			irJSON: `{"sections":[{"elements":[{"type":"table","rows":[
+				{"cells":[
+					{"content":[
+						{"type":"paragraph","content":[{"type":"text","text":"head"}]},
+						{"type":"list","items":[
+							{"content":[{"type":"paragraph","content":[{"type":"text","text":"li1"}]}]},
+							{"content":[{"type":"paragraph","content":[{"type":"text","text":"li2"}]}]}
+						]}
+					]}
+				]}
+			]}]}]}`,
+			wantTexts: []string{"head\nli1\nli2"},
+		},
+		{
 			name:    "invalid JSON",
 			irJSON:  "{not json",
 			wantErr: true,
