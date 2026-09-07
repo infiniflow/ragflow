@@ -261,7 +261,15 @@ def test_large_blank_gap_does_not_drop_rows():
     rows = RAGFlowExcelParser()(binary)
 
     assert len(rows) == 400
-    assert "n201" in rows[199][0]
-    assert "n802" in rows[200][0]
-    assert "n1001" in rows[399][0]
+
+    expected_names = (
+        [f"n{r}" for r in range(2, 202)]
+        + [f"n{r}" for r in range(802, 1002)]
+    )
+    actual_names = [
+        row_text.split(";", 1)[0].split("：", 1)[1]
+        for row_text, _ in rows
+    ]
+
+    assert actual_names == expected_names
     assert RAGFlowExcelParser.row_number("test.xlsx", binary) == 1001
