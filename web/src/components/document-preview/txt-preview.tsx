@@ -17,6 +17,7 @@
 import message from '@/components/ui/message';
 import { Spin } from '@/components/ui/spin';
 import request from '@/utils/request';
+import { decodeBlobText } from '@/utils/file-util';
 import classNames from 'classnames';
 import { useEffect, useState } from 'react';
 
@@ -35,15 +36,10 @@ export const TxtPreviewer = ({ className, url }: TxtPreviewerProps) => {
         console.error('Error loading file:', err);
       },
     });
-    // blob to string
-    const reader = new FileReader();
-    reader.readAsText(res.data);
-    reader.onload = () => {
-      setData(reader.result as string);
-      setLoading(false);
-      console.log('file loaded successfully', reader.result);
-    };
-    console.log('file data:', res);
+    // Handles UTF-8/UTF-16 (BOM) as well as GB2312/GBK files
+    const text = await decodeBlobText(res.data);
+    setData(text);
+    setLoading(false);
   };
   useEffect(() => {
     if (url) {

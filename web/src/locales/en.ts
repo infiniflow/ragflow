@@ -560,6 +560,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       runningStatus2: 'Cancelled',
       runningStatus3: 'Success',
       runningStatus4: 'Fail',
+      runningStatusQueued: 'Queued',
       pageRanges: 'Page ranges',
       pageRangesTip:
         'Range of pages to be parsed; pages outside this range will not be processed.',
@@ -868,11 +869,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     </p><p>
     Applicable when you require the LLM to summarize the entire document, provided it can handle that amount of context length.
     </p>`,
-      knowledgeGraph: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
-
-<p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</p>
-<p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
-<p>Ensure that you set the <b>Entity types</b>.</p>`,
       tag: `<p>A dataset using the 'Tag' chunking method functions as a tag set. Other datasets use it to tag their chunks, and queries to these datasets are also tagged using this tag set.</p>
 <p>A tag set will <b>NOT</b> be directly involved in a Retrieval-Augmented Generation (RAG) process.</p>
 <p>Each chunk in this dataset is an independent description-tag pair.</p>
@@ -3378,9 +3374,13 @@ This process aggregates variables from multiple branches into a single variable 
       retrievalDatasetRequired: 'Please select at least one dataset',
       retrievalDatasetMissing:
         'Cannot save: "{{name}}" has no dataset selected. Please choose one first',
+      retrievalTemplateDatasetHint:
+        'This template has {{count}} dataset retrieval step(s) without a dataset. Select a knowledge base below and it will be applied to all of them; you can still fine-tune each retrieval in the canvas afterwards.',
       retrievalMemoryRequired: 'Please select at least one memory',
       retrievalMemoryMissing:
         'Cannot save: "{{name}}" has no memory selected. Please choose one first',
+      retrievalTemplateMemoryHint:
+        'This template has {{count}} memory retrieval step(s) without a memory. Select one below and it will be applied to all of them; you can still fine-tune each retrieval in the canvas afterwards.',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
       tokenChunker: 'Token Chunker',

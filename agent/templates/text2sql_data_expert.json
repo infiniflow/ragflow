@@ -116,7 +116,7 @@
                         "params": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "kb_ids": [],
+                            "dataset_ids": [],
                             "retrieval_from": "dataset",
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
@@ -146,7 +146,7 @@
                         "params": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "kb_ids": [],
+                            "dataset_ids": [],
                             "retrieval_from": "dataset",
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
@@ -176,7 +176,7 @@
                         "params": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "kb_ids": [],
+                            "dataset_ids": [],
                             "retrieval_from": "dataset",
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
@@ -346,7 +346,7 @@
                             "form": {
                                 "cross_languages": [],
                                 "empty_response": "",
-                                "kb_ids": [],
+                                "dataset_ids": [],
                                 "retrieval_from": "dataset",
                                 "keywords_similarity_weight": 0.7,
                                 "outputs": {
@@ -385,7 +385,7 @@
                             "form": {
                                 "cross_languages": [],
                                 "empty_response": "",
-                                "kb_ids": [],
+                                "dataset_ids": [],
                                 "retrieval_from": "dataset",
                                 "keywords_similarity_weight": 0.7,
                                 "outputs": {
@@ -424,7 +424,7 @@
                             "form": {
                                 "cross_languages": [],
                                 "empty_response": "",
-                                "kb_ids": [],
+                                "dataset_ids": [],
                                 "retrieval_from": "dataset",
                                 "keywords_similarity_weight": 0.7,
                                 "outputs": {
