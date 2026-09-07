@@ -19,8 +19,8 @@
 // Input formats and extraction strategies:
 //   - Text (txt, csv)  → delimiter-based Q&A (comma or tab)
 //   - Markdown (md)    → heading-based Q&A
-//   - HTML (xlsx/xls)  → table-based Q&A (first two columns)
-//   - JSON (pdf, docx) → delimiter-based on structured text sections
+//   - HTML (xls, xlsx) → table-based Q&A (first two columns)
+//   - JSON (pdf, docx, xlsx) → text sections via delimiter; table items via extractQATable
 //
 // Every Q&A pair becomes a single chunk with content_with_weight
 // formatted as "Question: {q}\tAnswer: {a}".
@@ -430,7 +430,16 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 		if txt == "" {
 			continue
 		}
-		tmp := extractQAText(txt)
+		// XLSX (#18800) emits OutputFormat json with HTML tables in item
+		// text and doc_type_kwd=table. Route those through extractQATable
+		// so spreadsheet QA keeps working; plain text items stay on the
+		// delimiter path used by pdf/docx.
+		var tmp []qaPair
+		if itemDocType(item) == "table" {
+			tmp = extractQATable(txt, false)
+		} else {
+			tmp = extractQAText(txt)
+		}
 		// Preserve the source item's image id and coordinates on each
 		// extracted pair
 		for _, p := range tmp {

@@ -44,32 +44,63 @@ function findInvalidNode(
   // A Retrieval node sourcing from datasets must name at least one dataset,
   // and one sourcing from memories must name at least one memory; the backend
   // otherwise rejects the run with a `dataset_ids`/`memory_ids is required`
-  // error that only surfaces at runtime. Only nodes whose form carries the
-  // canonical `dataset_ids`/`memory_ids` field are checked, so legacy DSLs
-  // still keyed on `kb_ids` cannot wedge saving. The warning follows the
-  // field that actually failed, so a memory-mode node never reports a missing
-  // dataset.
-  for (const node of nodes) {
+  // error that only surfaces at runtime. The same applies to Retrieval tools
+  // embedded in an Agent node, which is how template-built agents usually
+  // bind retrieval. Only forms/tools carrying the canonical `dataset_ids`/
+  // `memory_ids` field are checked, so legacy DSLs still keyed on `kb_ids`
+  // cannot wedge saving. The warning follows the field that actually failed,
+  // so a memory-mode retrieval never reports a missing dataset.
+  const toInvalidRetrieval = (
+    params: Record<string, any>,
+  ): { memoryMissing: boolean } | undefined => {
     if (
-      node.data?.label !== Operator.Retrieval ||
-      (!Array.isArray(node.data?.form?.dataset_ids) &&
-        !Array.isArray(node.data?.form?.memory_ids))
+      !Array.isArray(params?.dataset_ids) &&
+      !Array.isArray(params?.memory_ids)
     ) {
-      continue;
+      return undefined;
     }
-    const parsed = RetrievalFormSchema.safeParse(node.data?.form);
+    const parsed = RetrievalFormSchema.safeParse(params);
     if (parsed.success) {
-      continue;
+      return undefined;
     }
-    const memoryMissing = parsed.error.issues.some(
-      (issue) => issue.path[0] === 'memory_ids',
-    );
     return {
-      node,
-      messageKey: memoryMissing
-        ? 'flow.retrievalMemoryMissing'
-        : 'flow.retrievalDatasetMissing',
+      memoryMissing: parsed.error.issues.some(
+        (issue) => issue.path[0] === 'memory_ids',
+      ),
     };
+  };
+
+  for (const node of nodes) {
+    if (node.data?.label === Operator.Retrieval) {
+      const invalid = toInvalidRetrieval(node.data?.form);
+      if (invalid) {
+        return {
+          node,
+          messageKey: invalid.memoryMissing
+            ? 'flow.retrievalMemoryMissing'
+            : 'flow.retrievalDatasetMissing',
+        };
+      }
+    }
+    if (node.data?.label === Operator.Agent) {
+      const tools = node.data?.form?.tools;
+      if (Array.isArray(tools)) {
+        for (const tool of tools) {
+          if (tool?.component_name !== 'Retrieval') {
+            continue;
+          }
+          const invalid = toInvalidRetrieval(tool?.params);
+          if (invalid) {
+            return {
+              node,
+              messageKey: invalid.memoryMissing
+                ? 'flow.retrievalMemoryMissing'
+                : 'flow.retrievalDatasetMissing',
+            };
+          }
+        }
+      }
+    }
   }
   // Unlike the schema re-check above, the missing-model check is not gated on
   // editedNodeIds: a canvas loaded from storage with an empty model must warn

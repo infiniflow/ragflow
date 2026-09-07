@@ -18,7 +18,7 @@ import (
 	"strings"
 	"sync"
 
-	ort "github.com/yalue/onnxruntime_go"
+	ort "github.com/infiniflow/onnxruntime_go"
 )
 
 const (
