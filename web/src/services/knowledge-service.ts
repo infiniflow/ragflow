@@ -136,20 +136,6 @@ const mapRetrievalResponse = (response: any) => {
   return response;
 };
 
-const toMetadataCondition = (filter?: Record<string, any>) => {
-  if (filter?.method !== 'manual' || !filter.manual?.length) {
-    return undefined;
-  }
-  return {
-    logic: filter.logic,
-    conditions: filter.manual.map((condition: Record<string, any>) => ({
-      name: condition.key,
-      comparison_operator: condition.op,
-      value: condition.value,
-    })),
-  };
-};
-
 const toLegacyMetadataFilter = (condition?: Record<string, any>) => {
   if (!condition?.conditions?.length) {
     return undefined;
@@ -224,8 +210,6 @@ const chunkService = {
       keyword: rest.keyword,
       highlight: rest.highlight,
       cross_languages: rest.cross_languages,
-      metadata_condition:
-        rest.metadata_condition ?? toMetadataCondition(rest.meta_data_filter),
       meta_data_filter: rest.meta_data_filter,
       chat_id: rest.chat_id,
       use_kg: rest.use_kg,

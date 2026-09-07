@@ -325,7 +325,6 @@ export const useSendQuestion = (
   tenantId?: string,
   searchId: string = '',
   related_search: boolean = false,
-  searchConfig?: ISearchAppDetailProps['search_config'],
 ) => {
   const { sharedId } = useGetSharedSearchParams();
   const askUrl = sharedId
@@ -367,7 +366,6 @@ export const useSendQuestion = (
         });
       }
       testChunk({
-        ...searchConfig,
         kb_id: kbIds,
         highlight: true,
         question: q,
@@ -391,7 +389,6 @@ export const useSendQuestion = (
       searchId,
       sharedId,
       related_search,
-      searchConfig,
     ],
   );
 
@@ -417,7 +414,6 @@ export const useSendQuestion = (
       if (sendingLoading || isEmpty(q)) return;
 
       testChunk({
-        ...searchConfig,
         kb_id: kbIds,
         highlight: true,
         question: q,
@@ -428,7 +424,6 @@ export const useSendQuestion = (
       });
 
       testChunkAll({
-        ...searchConfig,
         kb_id: kbIds,
         highlight: true,
         question: q,
@@ -446,7 +441,6 @@ export const useSendQuestion = (
       selectedDocumentIds,
       testChunkAll,
       searchId,
-      searchConfig,
     ],
   );
 
@@ -511,7 +505,6 @@ export const useSearching = ({
     tenantId as string,
     searchData.id,
     searchData.search_config.related_search,
-    searchData.search_config,
   );
 
   const handleSearchStrChange = useCallback(
