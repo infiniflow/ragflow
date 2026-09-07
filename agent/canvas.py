@@ -91,6 +91,14 @@ class Graph:
         self.path = []
         self.components = {}
         self.error = ""
+        # Pipeline (Graph) and Canvas both resolve bare template vars via
+        # get_variable_value → self.globals. Canvas.load() may overwrite this.
+        self.globals = {
+            "sys.query": "",
+            "sys.user_id": tenant_id,
+            "sys.conversation_turns": 0,
+            "sys.files": [],
+        }
         # Accept legacy DSL on read, but keep the in-memory canvas in the latest schema.
         self.dsl = normalize_chunker_dsl(json.loads(dsl))
         self._tenant_id = tenant_id

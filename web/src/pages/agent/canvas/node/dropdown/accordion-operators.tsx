@@ -176,11 +176,9 @@ export function PipelineAccordionOperators({
       ...restrictSingleOperatorOnCanvas([Operator.Parser, Operator.Tokenizer]),
     ];
     list.push(Operator.Extractor);
-    if (getOperatorTypeFromId(nodeId) !== Operator.Compiler) {
-      list.push(Operator.Compiler);
-    }
+    list.push(Operator.Compiler);
     return list;
-  }, [getOperatorTypeFromId, nodeId, restrictSingleOperatorOnCanvas]);
+  }, [restrictSingleOperatorOnCanvas]);
 
   const chunkerOperators = useMemo(() => {
     return [

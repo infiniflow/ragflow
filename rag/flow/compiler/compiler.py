@@ -520,9 +520,8 @@ class Compiler(ProcessBase, LLM):
         self.callback(random.randint(1, 5) / 100.0, "Start knowledge compilation.")
 
         # Pipeline components receive the previous component's output as
-        # kwargs. Do not call LLM.get_input_elements() here: it resolves the
-        # inherited prompt variables through Canvas.globals, while Pipeline
-        # is a Graph and has no globals.
+        # kwargs. Do not call LLM.get_input_elements() here: Compiler does not
+        # use prompt template variables and should not depend on Graph.globals.
         output_format = kwargs.get("output_format")
         if output_format == "chunks":
             raw_chunks = kwargs.get("chunks") or []
