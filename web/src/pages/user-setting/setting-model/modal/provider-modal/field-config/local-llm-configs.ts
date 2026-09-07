@@ -92,7 +92,7 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
   [LLMFactory.OpenRouter]: buildLocalConfig(
     LLMFactory.OpenRouter,
     'OpenRouter',
-    ['chat', 'image2text'],
+    ['chat', 'embedding', 'image2text'],
     undefined,
     true,
     [
