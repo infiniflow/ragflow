@@ -919,6 +919,7 @@ Paragraphs:
       pageRank: 'Page rank',
       pageRankTip: `You can assign a higher PageRank score to specific datasets during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these datasets, increasing their ranking. See https://ragflow.io/docs/dataset_configuration#basic-information for details.`,
       tagName: 'Tag',
+      tagMessage: 'Please select a tag',
       frequency: 'Frequency',
       searchTags: 'Search tags',
       tagCloud: 'Cloud',
