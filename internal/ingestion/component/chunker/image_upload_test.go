@@ -256,6 +256,38 @@ func TestImageUploadDecorator_EndToEnd(t *testing.T) {
 	}
 }
 
+func TestImageUploadDecorator_UsesContentWithWeightForChunkID(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatalf("NewQAChunker: %v", err)
+	}
+	decorated := &imageUploadDecorator{inner: comp}
+
+	out, err := decorated.Invoke(context.Background(), nil, map[string]any{
+		"name":          "qa.txt",
+		"doc_id":        testDocID,
+		"output_format": "text",
+		"text":          "Q1\tA1\nQ2\tA2",
+	})
+	if err != nil {
+		t.Fatalf("decorated Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want two Q&A chunks", out["chunks"])
+	}
+
+	want := []string{
+		common.ChunkID(testDocID, "Question: Q1\tAnswer: A1"),
+		common.ChunkID(testDocID, "Question: Q2\tAnswer: A2"),
+	}
+	for i, chunk := range chunks {
+		if got, _ := chunk["id"].(string); got != want[i] {
+			t.Errorf("chunk %d id = %q, want %q", i, got, want[i])
+		}
+	}
+}
+
 // setImageUploadConcurrencyForTest swaps the process-wide upload semaphore to
 // `n` slots for the duration of the test, restoring the original after.
 func setImageUploadConcurrencyForTest(t *testing.T, n int) {

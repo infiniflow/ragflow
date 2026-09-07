@@ -87,6 +87,9 @@ func ProcessChunksForPipeline(
 
 		if _, exists := ck["id"]; !exists {
 			text, _ := ck["text"].(string)
+			if text == "" {
+				text, _ = ck["content_with_weight"].(string)
+			}
 			ck["id"] = common.ChunkID(docID, text)
 		}
 

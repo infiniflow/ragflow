@@ -94,6 +94,9 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	// stage reuses the same formula as a fallback when ck["id"] is absent.
 	for _, ck := range chunks {
 		text, _ := ck["text"].(string)
+		if text == "" {
+			text, _ = ck["content_with_weight"].(string)
+		}
 		ck["id"] = common.ChunkID(docID, text)
 	}
 
