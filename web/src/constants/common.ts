@@ -220,6 +220,7 @@ export const ExceptiveType = [
   'pptx',
   'html',
   'htm',
+  'epub',
   ...Images,
 ];
 

@@ -127,6 +127,77 @@ func TestQAChunker_HTMLTable(t *testing.T) {
 	}
 }
 
+func TestQAChunker_CSVStrictPairRejectsThreeCells(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "test.CSV",
+		"output_format": "html",
+		"html":          "<table><tr><td>question</td><td></td><td>extra</td></tr></table>",
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 0 {
+		t.Fatalf("expected 0 chunks, got %d", len(chunks))
+	}
+}
+
+func TestQAChunker_CSVStrictPairAcceptsTwoCells(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "test.csv",
+		"output_format": "html",
+		"html":          "<table><tr><td>question</td><td>answer</td></tr></table>",
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	cww, _ := chunks[0]["content_with_weight"].(string)
+	if cww != "Question: question\tAnswer: answer" {
+		t.Fatalf("unexpected content: %q", cww)
+	}
+}
+
+// Non-CSV names keep the old "first two non-empty cells" rule on the HTML
+// table path. Since #18800 an .xlsx file reaches the chunker as "json", not
+// "html", so this covers the shared HTML branch and not the XLSX pipeline.
+func TestQAChunker_NonCSVHTMLThreeCellsKeepsFirstTwo(t *testing.T) {
+	comp, err := NewQAChunker(map[string]any{"lang": "english"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{
+		"name":          "test.xls",
+		"output_format": "html",
+		"html":          "<table><tr><td>question</td><td></td><td>extra</td></tr></table>",
+	}
+	out, err := comp.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	cww, _ := chunks[0]["content_with_weight"].(string)
+	if cww != "Question: question\tAnswer: extra" {
+		t.Fatalf("unexpected content: %q", cww)
+	}
+}
+
 func TestQAChunker_RmQAPrefix(t *testing.T) {
 	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {

@@ -364,14 +364,15 @@ func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, child
 
 // sentenceDelimiter is the token-chunker TEXT-path sentence delimiter (the
 // naive_merge port). It mirrors the delimiter Python's naive_merge receives in
-// production: rag/app/naive.py passes "\n!?。；！？", which includes ASCII "!"
-// and "?" plus the CJK punctuation "。；！？" but NOT an English ". " boundary.
+// production: rag/app/naive.py passes DEFAULT_DELIMITER ("\n!?;。；！？", defined
+// once in rag/nlp/delim.py), which includes ASCII "!", "?" and ";" plus the CJK
+// punctuation "。；！？" but NOT an English ". " boundary.
 //
 // The Title chunker and the token chunker's JSON path use the shared
 // sentenceBoundaryRe instead (Python _sentence_boundary.py SENTENCE_BOUNDARY_RE,
 // which adds ". "). The two constants mirror two distinct Python delimiters and
 // differ only in that English boundary, exactly as Python does.
-var sentenceDelimiter = regexp.MustCompile(`(\n|[!?。；！？])`)
+var sentenceDelimiter = regexp.MustCompile(`(\n|[!?;。；！？])`)
 
 // overlapCut returns the visible-text rune offset where the overlap prefix
 // begins, mirroring the cut computed inside computeOverlapPrefix. It is split
