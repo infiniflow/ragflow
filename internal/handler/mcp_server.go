@@ -149,7 +149,8 @@ const mcpRerankCandidatesCount = 512
 
 // validateRetrievalWindow checks that the requested page fits inside the fixed
 // rerank candidate window. page/page_size default to the same values as the
-// Python MCP server (1/30) when unset.
+// Python MCP server (1/30) when unset. The comparison divides instead of
+// multiplying so a hostile page value cannot overflow page * pageSize.
 func validateRetrievalWindow(page, pageSize int) error {
 	if page <= 0 {
 		page = 1
@@ -157,8 +158,8 @@ func validateRetrievalWindow(page, pageSize int) error {
 	if pageSize <= 0 {
 		pageSize = 30
 	}
-	if page*pageSize > mcpRerankCandidatesCount {
-		return fmt.Errorf("page * page_size (%d) exceeds the fixed rerank candidate window (%d); narrow page or page_size", page*pageSize, mcpRerankCandidatesCount)
+	if page > mcpRerankCandidatesCount/pageSize {
+		return fmt.Errorf("page (%d) * page_size (%d) exceeds the fixed rerank candidate window (%d); narrow page or page_size", page, pageSize, mcpRerankCandidatesCount)
 	}
 	return nil
 }
