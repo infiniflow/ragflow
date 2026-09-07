@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/agent/runtime"
 	appcommon "ragflow/internal/common"
 
 	"go.uber.org/zap"
@@ -61,6 +62,7 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 			// Permanent chat errors (auth, unknown model, context-length,
 			// cancelled ctx) cannot succeed on a retry; escape immediately.
 			if !appcommon.IsTransientError(err) {
+				reportLLMFailure(ctx, attempt, maxRetries, 0, err)
 				return nil, err
 			}
 			// Transient chat failure (timeout / transport / provider); retry
@@ -87,8 +89,10 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 			lastErr = fmt.Errorf("knowledge_compiler: LLM response is not parseable JSON (%d bytes)", len(resp.Content))
 		}
 		if attempt == maxRetries {
+			reportLLMFailure(ctx, attempt, maxRetries, 0, lastErr)
 			break
 		}
+		reportLLMFailure(ctx, attempt, maxRetries, delay, lastErr)
 		appcommon.Info("knowledge_compiler: GenJSON attempt failed, retrying",
 			zap.Int("attempt", attempt), zap.Duration("delay", delay),
 			zap.Error(lastErr))
@@ -105,6 +109,26 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 		}
 	}
 	return nil, lastErr
+}
+
+func reportLLMFailure(ctx context.Context, attempt, maxRetries int, delay time.Duration, err error) {
+	message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt+1, maxRetries+1, compactError(err))
+	if delay > 0 {
+		message += fmt.Sprintf("; retrying in %s", delay)
+	}
+	runtime.ReportProgressMessage(ctx, "Compiler", message)
+}
+
+func compactError(err error) string {
+	if err == nil {
+		return "unknown error"
+	}
+	const maxLength = 1000
+	message := strings.Join(strings.Fields(err.Error()), " ")
+	if len(message) > maxLength {
+		return message[:maxLength] + "..."
+	}
+	return message
 }
 
 // jsonCandidates yields progressively "cleaned" versions of an LLM reply that

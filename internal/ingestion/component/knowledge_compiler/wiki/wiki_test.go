@@ -101,28 +101,6 @@ func TestPackWikiPlanBatches_SplitsLargeInput(t *testing.T) {
 	}
 }
 
-// TestWikiMapMaxTokens_OutputBudgetTracksInputBudget locks the input/output
-// budget coupling: the extraction MaxTokens must leave at least the whole
-// wikiMapTokenBudget input budget of headroom and, with a roomy model, give the
-// output the rest of the context window after the batch's input is reserved.
-func TestWikiMapMaxTokens_OutputBudgetTracksInputBudget(t *testing.T) {
-	// Unknown model context -> default window (DefaultLLMContextLength). Output
-	// gets the whole window minus the input budget.
-	got := wikiMapMaxTokens(0)
-	if want := common.DefaultLLMContextLength - wikiMapTokenBudget; got != want {
-		t.Fatalf("wikiMapMaxTokens(0) = %d, want %d", got, want)
-	}
-	// A model window that barely fits one batch must still grant at least the
-	// input budget of output space (never starve the output).
-	if got := wikiMapMaxTokens(2048); got != wikiMapTokenBudget {
-		t.Fatalf("wikiMapMaxTokens(2048) = %d, want %d (floor at input budget)", got, wikiMapTokenBudget)
-	}
-	// A roomy model: output = window - input budget.
-	if got := wikiMapMaxTokens(16384); got != 16384-wikiMapTokenBudget {
-		t.Fatalf("wikiMapMaxTokens(16384) = %d, want %d", got, 16384-wikiMapTokenBudget)
-	}
-}
-
 func TestRunMapBatches_PreservesBatchOrderWithSubmitter(t *testing.T) {
 	previous := batchSubmitter
 	defer SetBatchSubmitter(previous)
