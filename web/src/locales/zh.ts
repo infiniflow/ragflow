@@ -691,6 +691,7 @@ export default {
         '为帮助您更好地理解，我们提供了相关截图供您参考。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
+      imageLoadFailed: '图片加载失败',
       audio: `<p>支持的文件格式为 <b>WAV、MP3、AAC、FLAC、OGG</b> 及其他常见音频格式。</p>
 <p>本方法使用语音转文本模型将音频文件转录为文本。</p>`,
       email: `<p>支持的文件格式为 <b>EML</b> 和 <b>MSG</b>。</p>
@@ -781,13 +782,6 @@ export default {
       </p><p>
       如果你要总结的东西需要一篇文章的全部上下文，并且所选 LLM 的上下文长度覆盖了文档长度，你可以尝试这种方法。
       </p>`,
-      knowledgeGraph: `<p>支持的文件格式为<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>
-
-<p>文件分块后，使用分块提取整个文档的 Graph 和 Mindmap。此方法将简单的方法应用于分块文件：
-连续的文本将被切成大约 512 个 Token 数的块。</p>
-<p>接下来，将分块传输到 LLM 以提取 Graph 和 Mindmap 的节点和边。</p>
-
-注意您需要指定的条目类型。</p>`,
       tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
 <p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
 <p>标签集中的每个文本分块都是相互独立的标签和标签描述的文本对。</p>
@@ -2798,6 +2792,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       contentTip: 'content: 邮件内容(可选)',
       jsonUploadTypeErrorMessage: '请上传 json 文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
+      nameExists: '名称已存在',
       iteration: '迭代',
       iterationDescription: `该组件负责迭代生成新的内容，对列表对象执行多次步骤直至输出所有结果。`,
       delimiterTip: `该分隔符用于将输入文本分割成几个文本片段，每个文本片段的回显将作为每次迭代的输入项。`,

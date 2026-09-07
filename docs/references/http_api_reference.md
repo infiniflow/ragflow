@@ -596,17 +596,9 @@ curl --request POST \
       - For PDFs only.
       - Defaults to `12`
       - Minimum: `1`
-    - `"raptor"`: `object` RAPTOR-specific settings.
-      - Defaults to: `{"use_raptor": false}`
-    - `"graphrag"`: `object` GRAPHRAG-specific settings.
-      - Defaults to: `{"use_graphrag": false}`
     - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
       - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
       - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
-  - If `"chunk_method"` is `"qa"`, `"manual"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
-    - `"raptor"`: `object` RAPTOR-specific settings.
-      - Defaults to: `{"use_raptor": false}`.
-  - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
 
 - `"parse_type"`: (*Body parameter*), `int`
   The ingestion pipeline parse type identifier, i.e., the number of parsers in your **Parser** component.
@@ -653,11 +645,8 @@ Success:
             "chunk_token_num": 128,
             "delimiter": "\\n!?;。；！？",
             "html4excel": false,
-            "layout_recognize": "DeepDOC",
-            "raptor": {
-                "use_raptor": false
-                }
-            },
+            "layout_recognize": "DeepDOC"
+        },
         "permission": "me",
         "similarity_threshold": 0.2,
         "status": "1",
@@ -856,10 +845,7 @@ curl --request PUT \
     - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
       - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
       - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
-  - If `"chunk_method"` is `"qa"`, `"manual"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
-    - `"raptor"`: `object` RAPTOR-specific settings.
-      - Defaults to: `{"use_raptor": false}`.
-  - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
+
 
 #### Response
 
@@ -1003,9 +989,7 @@ Success (with `include_parsing_status=true`):
             "language": "English",
             "name": "Test Dataset",
             "parser_config": {
-                "graphrag": { "use_graphrag": false },
-                "llm_id": "deepseek-chat@DeepSeek",
-                "raptor": { "use_raptor": false }
+                "llm_id": "deepseek-chat@DeepSeek"
             },
             "permission": "me",
             "running_count": 0,
@@ -1128,10 +1112,7 @@ Success:
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
                 "html4excel": false,
-                "layout_recognize": true,
-                "raptor": {
-                    "use_raptor": false
-                }
+                "layout_recognize": true
             },
             "run": "UNSTART",
             "size": 17966,
@@ -1217,10 +1198,6 @@ curl --request PATCH \
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
-    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
-  - If `"chunk_method"` is `"qa"`, `"manual"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
-    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
-  - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
 - `"enabled"`: (*Body parameter*), `integer`
   Whether the document should be **available** in the knowledge base.
   - `1` → （available）
@@ -1275,32 +1252,10 @@ Success:
       "auto_keywords": 0,
       "auto_questions": 0,
       "topn_tags": 3,
-
       "layout_recognize": "DeepDOC",
       "html4excel": false,
       "image_context_size": 0,
-      "table_context_size": 0,
-
-      "graphrag": {
-        "use_graphrag": true,
-        "method": "light",
-        "entity_types": [
-          "organization",
-          "person",
-          "geo",
-          "event",
-          "category"
-        ]
-      },
-
-      "raptor": {
-        "use_raptor": true,
-        "max_cluster": 64,
-        "max_token": 256,
-        "threshold": 0.1,
-        "random_seed": 0,
-        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize."
-      }
+      "table_context_size": 0
     },
 
     "meta_fields": {},
@@ -1607,6 +1562,7 @@ This endpoint only supports datasets that use the built-in chunking pipeline. Fo
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"document_ids"`: `list[string]`
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -1617,7 +1573,8 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
-          "document_ids": ["97a5f1c2759811efaa500242ac120004","97ad64b6759811ef9fc30242ac120004"]
+          "document_ids": ["97a5f1c2759811efaa500242ac120004","97ad64b6759811ef9fc30242ac120004"],
+          "user_id": "end-user-123"
      }'
 ```
 
@@ -1627,6 +1584,8 @@ curl --request POST \
   The dataset ID.
 - `"document_ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the documents to parse.
+- `"user_id"`: (*Body parameter*), `string`, *Optional*
+  End-user identifier forwarded as the OpenAI `user` field on embedding requests for this parse job. Omitted when unset. The value is carried on the worker queue only; it is not stored on Task rows.
 
 #### Response
 
@@ -1666,6 +1625,7 @@ Starts, cancels, or reruns ingestion for documents. Use this endpoint for docume
   - `"doc_ids"`: `list[string]`
   - `"run"`: `string`
   - `"delete"`: `boolean`
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -1678,7 +1638,8 @@ curl --request POST \
      {
           "doc_ids": ["97a5f1c2759811efaa500242ac120004"],
           "run": "1",
-          "delete": true
+          "delete": true,
+          "user_id": "end-user-123"
      }'
 ```
 
@@ -1690,6 +1651,8 @@ curl --request POST \
   The ingestion action. Use `"1"` to start ingestion and `"2"` to cancel ingestion.
 - `"delete"`: (*Body parameter*), `boolean`
   Whether to delete existing tasks and chunks before rerunning. Defaults to `false`.
+- `"user_id"`: (*Body parameter*), `string`, *Optional*
+  End-user identifier forwarded as the OpenAI `user` field on embedding requests when `run` starts ingestion. Omitted when unset.
 
 #### Response
 
@@ -1793,6 +1756,7 @@ Adds a chunk to a specified document in a specified dataset.
   - `"tag_kwd"`: `list[string]`
   - `"questions"`: `list[string]`
   - `"image_base64"`: `string`
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -1824,6 +1788,8 @@ curl --request POST \
   Optional questions to use when embedding the chunk.
 - `"image_base64"`: (*Body parameter*), `string`
   A base64-encoded image to associate with the chunk.
+- `"user_id"`: (*Body parameter*), `string`, *Optional*
+  End-user identifier forwarded as the OpenAI `user` field on the embedding request for this chunk. Omitted when unset.
 
 #### Response
 
@@ -1931,10 +1897,7 @@ Success:
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
                 "html4excel": false,
-                "layout_recognize": true,
-                "raptor": {
-                    "use_raptor": false
-                }
+                "layout_recognize": true
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
             "process_duration": 0.54213,
@@ -2127,6 +2090,7 @@ Updates content or configurations for a specified chunk.
   - `"tag_kwd"`: `list[string]`
   - `"available"`: `boolean`
   - `"image_base64"`: `string`
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -2166,6 +2130,8 @@ curl --request PATCH \
   - `false`: Unavailable
 - `"image_base64"`: (*Body parameter*), `string`
   Base64-encoded image content to associate with the chunk.
+- `"user_id"`: (*Body parameter*), `string`, *Optional*
+  End-user identifier forwarded as the OpenAI `user` field on the embedding request for this update. Omitted when unset.
 
 #### Response
 
@@ -5572,13 +5538,13 @@ Updates configurations for a specified memory.
 - Body:
   - `"name"`: `string`
   - `"avatar"`: `string`
-  - `"permission"`: `string`
+  - `"permissions"`: `string`
   - `"llm_id"`: `string`
   - `"description"`: `string`
   - `"memory_size"`: `int`
   - `"forgetting_policy"`: `string`
   - `"temperature"`: `float`
-  - `"system_promot"`: `string`
+  - `"system_prompt"`: `string`
   - `"user_prompt"`: `string`
 
 ##### Request example
@@ -5611,7 +5577,7 @@ curl --location --request PUT 'http://{address}/api/v1/memories/d6775d4eeada11f0
 
   - Maximum 65535 characters
 
-- `permission`: (*Body parameter*), `enum<string>`, *Optional*
+- `permissions`: (*Body parameter*), `enum<string>`, *Optional*
 
   The updated memory permission. Available options:
 
