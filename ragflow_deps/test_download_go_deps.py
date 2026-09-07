@@ -53,9 +53,7 @@ def test_extracts_on_first_run(tmp_path):
 
     assert extract_onnxruntime(str(static_lib), str(archive), dir_name) is True
 
-    assert not (static_lib / _ort_extracted_dir(ORT_VERSION, _ort_target("linux", "amd64"))).exists(), (
-        "release zip top-level dir must be renamed away"
-    )
+    assert not (static_lib / _ort_extracted_dir(ORT_VERSION, _ort_target("linux", "amd64"))).exists(), "release zip top-level dir must be renamed away"
     version_dir = static_lib / dir_name
     assert version_dir.is_dir()
     assert has_static_archives(str(version_dir))
