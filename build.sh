@@ -673,11 +673,21 @@ run_native_tests() {
 # in Go, which the detector covers. CGO_ENABLED=1 is required for both the build
 # and the race runtime.
 run_native_integration_tests() {
+    # Optional isolation: NATIVE_TEST_RUN forwards a -run filter and
+    # NATIVE_TEST_V adds -v so a single native test can be exercised in
+    # isolation (e.g. `NATIVE_TEST_RUN='TestNativeLoadsOrtModels$' NATIVE_TEST_V=1`).
+    local native_run_filter=()
+    if [ -n "${NATIVE_TEST_RUN:-}" ]; then
+        native_run_filter+=(-run "${NATIVE_TEST_RUN}")
+    fi
+    if [ -n "${NATIVE_TEST_V:-}" ]; then
+        native_run_filter+=(-v)
+    fi
     print_section "Running native integration tests (golden/comparison, no race)"
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo static integration fetch_testdata" -count=1 ./internal/deepdoc/native/... )
+      go test -tags "cgo static integration fetch_testdata" -count=1 "${native_run_filter[@]}" ./internal/deepdoc/native/... )
 
     print_section "Running native integration concurrency tests (race detector on)"
     ( cd "$PROJECT_ROOT" && \
