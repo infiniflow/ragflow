@@ -28,11 +28,9 @@ export interface IFetchKnowledgeListRequestParams {
   id?: string;
   page?: number;
   page_size?: number;
-  ext?: {
-    keywords?: string;
-    owner_ids?: string[];
-    parser_id?: string;
-  };
+  keywords?: string;
+  owner_ids?: string[];
+  parser_id?: string;
 }
 
 export interface IFetchDocumentListRequestBody {
