@@ -345,7 +345,9 @@ func readMailBody(body io.Reader, contentType, cte string, collectAttachments bo
 		partMedia, partParams, _ := mime.ParseMediaType(partCT)
 
 		if strings.HasPrefix(partMedia, "multipart/") {
-			t, h, nestedAttachments := readMailBody(part, partCT, part.Header.Get("Content-Transfer-Encoding"), collectAttachments)
+			// RFC 2045 6.4 forbids base64 and quoted-printable on a multipart
+			// entity, so a nested container is never CTE-decoded.
+			t, h, nestedAttachments := readMailBody(part, partCT, "", collectAttachments)
 			if t != "" {
 				textParts = append(textParts, t)
 			}

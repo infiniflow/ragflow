@@ -1308,38 +1308,54 @@ func TestParseEML_SinglePartTransferEncoding(t *testing.T) {
 	const plain = "Quarterly revenue was 12.5 million.\n"
 	b64 := base64.StdEncoding.EncodeToString([]byte(plain))
 
+	const html = "<p>Quarterly revenue</p>"
+	htmlB64 := base64.StdEncoding.EncodeToString([]byte(html))
+
 	tests := []struct {
 		name     string
 		headers  string
 		body     string
 		wantText string
 		wantHTML string
+		// encoded is the payload as it appears on the wire. The text output
+		// feeds the chunker, so it must never carry these bytes.
+		encoded string
+		// wantInText is the visible text the flattened output must carry.
+		wantInText string
 	}{
 		{
-			name:     "base64 text/plain",
-			headers:  "Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64",
-			body:     b64,
-			wantText: plain,
+			name:       "base64 text/plain",
+			headers:    "Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64",
+			body:       b64,
+			wantText:   plain,
+			encoded:    b64,
+			wantInText: "Quarterly revenue was 12.5 million.",
 		},
 		{
-			name:     "quoted-printable text/plain",
-			headers:  "Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: quoted-printable",
-			body:     "Quarterly revenue was 12=2E5 million=2E",
-			wantText: "Quarterly revenue was 12.5 million.",
+			name:       "quoted-printable text/plain",
+			headers:    "Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: quoted-printable",
+			body:       "Quarterly revenue was 12=2E5 million=2E",
+			wantText:   "Quarterly revenue was 12.5 million.",
+			encoded:    "12=2E5",
+			wantInText: "Quarterly revenue was 12.5 million.",
 		},
 		{
-			name:     "base64 text/html",
-			headers:  "Content-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64",
-			body:     base64.StdEncoding.EncodeToString([]byte("<p>Quarterly revenue</p>")),
-			wantHTML: "<p>Quarterly revenue</p>",
+			name:       "base64 text/html",
+			headers:    "Content-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64",
+			body:       htmlB64,
+			wantHTML:   html,
+			encoded:    htmlB64,
+			wantInText: "Quarterly revenue",
 		},
 		{
 			// Positive control: the multipart path already decodes the same
 			// body, so the two paths must agree.
-			name:     "base64 in multipart/alternative",
-			headers:  "Content-Type: multipart/alternative; boundary=\"BB\"",
-			body:     "--BB\r\nContent-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" + b64 + "\r\n--BB--",
-			wantText: plain,
+			name:       "base64 in multipart/alternative",
+			headers:    "Content-Type: multipart/alternative; boundary=\"BB\"",
+			body:       "--BB\r\nContent-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" + b64 + "\r\n--BB--",
+			wantText:   plain,
+			encoded:    b64,
+			wantInText: "Quarterly revenue was 12.5 million.",
 		},
 	}
 
@@ -1360,9 +1376,25 @@ func TestParseEML_SinglePartTransferEncoding(t *testing.T) {
 			if strings.TrimRight(text, "\r\n") != strings.TrimRight(tt.wantText, "\r\n") {
 				t.Errorf("text = %q, want %q", text, tt.wantText)
 			}
-			html, _ := item["text_html"].(string)
-			if strings.TrimRight(html, "\r\n") != strings.TrimRight(tt.wantHTML, "\r\n") {
-				t.Errorf("text_html = %q, want %q", html, tt.wantHTML)
+			gotHTML, _ := item["text_html"].(string)
+			if strings.TrimRight(gotHTML, "\r\n") != strings.TrimRight(tt.wantHTML, "\r\n") {
+				t.Errorf("text_html = %q, want %q", gotHTML, tt.wantHTML)
+			}
+
+			// The text output is what reaches the chunker, and the JSON
+			// output returns before it is built, so assert it separately.
+			pt := NewEmailParser()
+			pt.ConfigureFromSetup(map[string]any{"output_format": "text"})
+			textResult := pt.ParseWithResult(t.Context(), "test.eml", []byte(raw))
+			if textResult.Err != nil {
+				t.Fatalf("unexpected error on the text path: %v", textResult.Err)
+			}
+			flat := textResult.Text
+			if !strings.Contains(flat, tt.wantInText) {
+				t.Errorf("text output = %q, want it to contain %q", flat, tt.wantInText)
+			}
+			if strings.Contains(flat, tt.encoded) {
+				t.Errorf("text output still carries the encoded payload %q: %q", tt.encoded, flat)
 			}
 		})
 	}
