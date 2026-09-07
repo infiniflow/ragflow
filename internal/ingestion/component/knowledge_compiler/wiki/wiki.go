@@ -280,14 +280,17 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("Wiki EMBEDDING Started: products=%d", len(texts)))
 		vectors, err := deps.Embed.Encode(ctx, texts)
 		if err != nil {
-			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("[ERROR] Wiki EMBEDDING Failed: products=%d error=%s", len(texts), compactError(err)))
+			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("[ERROR] Wiki EMBEDDING Failed: products=%d error=%s", len(texts), common.CompactError(err)))
+			return common.Outputs{}, err
+		}
+		if len(vectors) != len(texts) {
+			err = fmt.Errorf("wiki: embedder returned %d vectors for %d products", len(vectors), len(texts))
+			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("[ERROR] Wiki EMBEDDING Failed: products=%d error=%s", len(texts), common.CompactError(err)))
 			return common.Outputs{}, err
 		}
 		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("Wiki EMBEDDING Done: products=%d vectors=%d", len(texts), len(vectors)))
-		for i := range products {
-			if i < len(vectors) {
-				products[i].Vector = vectors[i]
-			}
+		if err := assignWikiProductVectors(products, vectors); err != nil {
+			return common.Outputs{}, err
 		}
 	}
 	store := common.NewMemStore()
@@ -328,16 +331,14 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	return out, nil
 }
 
-func compactError(err error) string {
-	if err == nil {
-		return "unknown error"
+func assignWikiProductVectors(products []common.Product, vectors [][]float32) error {
+	if len(products) != len(vectors) {
+		return fmt.Errorf("wiki: embedder returned %d vectors for %d products", len(vectors), len(products))
 	}
-	const maxLength = 1000
-	message := strings.Join(strings.Fields(err.Error()), " ")
-	if len(message) > maxLength {
-		return message[:maxLength] + "..."
+	for i := range products {
+		products[i].Vector = vectors[i]
 	}
-	return message
+	return nil
 }
 
 // runKey returns a stable identity for this wiki run's log lines. In a

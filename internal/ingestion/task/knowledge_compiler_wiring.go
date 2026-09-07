@@ -609,7 +609,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		r, err := c.svc.Chat(attemptCtx, c.tenantID, llmID, msgs, config)
 		if err != nil {
 			if !req.DisableRetry {
-				message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt, kcChatRetryMax+1, compactLLMError(err))
+				message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt, kcChatRetryMax+1, kc.CompactError(err))
 				if appcommon.IsTransientError(err) && attempt <= kcChatRetryMax {
 					message += "; retrying with exponential backoff"
 				}
@@ -646,18 +646,6 @@ const kcChatAttemptTimeout = 3 * time.Minute
 
 // kcChatRetryDelay is the initial exponential-backoff delay between retries.
 const kcChatRetryDelay = 2 * time.Second
-
-func compactLLMError(err error) string {
-	if err == nil {
-		return "unknown error"
-	}
-	const maxLength = 1000
-	message := strings.Join(strings.Fields(err.Error()), " ")
-	if len(message) > maxLength {
-		return message[:maxLength] + "..."
-	}
-	return message
-}
 
 // kcEmbedder adapts service.ModelProviderService.GetEmbeddingModel to the
 // knowledge_compiler Embedder seam. Vectors are returned as []float32 to match

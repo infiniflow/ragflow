@@ -52,6 +52,16 @@ func TestGenJSONReportsLLMFailure(t *testing.T) {
 	}
 }
 
+func TestCompactErrorRedactsCredentials(t *testing.T) {
+	got := CompactError(errors.New(`status=401 api_key="sk-secret-value" password=topsecret`))
+	if strings.Contains(got, "sk-secret-value") || strings.Contains(got, "topsecret") {
+		t.Fatalf("CompactError leaked credentials: %q", got)
+	}
+	if !strings.Contains(got, "api_key=[REDACTED]") || !strings.Contains(got, "password=[REDACTED]") {
+		t.Fatalf("CompactError did not redact credential fields: %q", got)
+	}
+}
+
 func vec(a, b, c float32) []float32 { return []float32{a, b, c} }
 
 func TestMemStoreTopK(t *testing.T) {

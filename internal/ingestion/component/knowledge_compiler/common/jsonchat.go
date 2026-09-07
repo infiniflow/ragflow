@@ -112,24 +112,32 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 }
 
 func reportLLMFailure(ctx context.Context, attempt, maxRetries int, delay time.Duration, err error) {
-	message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt+1, maxRetries+1, compactError(err))
+	message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt+1, maxRetries+1, CompactError(err))
 	if delay > 0 {
 		message += fmt.Sprintf("; retrying in %s", delay)
 	}
 	runtime.ReportProgressMessage(ctx, "Compiler", message)
 }
 
-func compactError(err error) string {
+// CompactError produces a bounded, single-line error suitable for progress
+// messages. Provider errors may contain credentials, so redact common secret
+// fields and API-key-shaped values before exposing the result to users.
+func CompactError(err error) string {
 	if err == nil {
 		return "unknown error"
 	}
 	const maxLength = 1000
 	message := strings.Join(strings.Fields(err.Error()), " ")
+	message = errorCredentialRE.ReplaceAllString(message, "$1=[REDACTED]")
+	message = errorAPIKeyRE.ReplaceAllString(message, "[REDACTED]")
 	if len(message) > maxLength {
 		return message[:maxLength] + "..."
 	}
 	return message
 }
+
+var errorCredentialRE = regexp.MustCompile(`(?i)(api[-_ ]?key|access[-_ ]?token|authorization|password|secret)\s*["']?\s*[:=]\s*["']?[^,\s}"']+`)
+var errorAPIKeyRE = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]+`)
 
 // jsonCandidates yields progressively "cleaned" versions of an LLM reply that
 // may contain JSON: the raw text, a fenced ```json ... ``` block, and the

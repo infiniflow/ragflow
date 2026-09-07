@@ -209,6 +209,17 @@ func TestNormalizeWikiPlanPagesDoesNotUseEntityTitleAsTopic(t *testing.T) {
 
 type topicPathEmbedStub struct{}
 
+func TestAssignWikiProductVectorsRejectsMismatch(t *testing.T) {
+	products := []common.Product{{Content: "first"}, {Content: "second"}}
+	err := assignWikiProductVectors(products, [][]float32{{1, 0}})
+	if err == nil {
+		t.Fatal("expected an error when the embedding count does not match products")
+	}
+	if products[0].Vector != nil || products[1].Vector != nil {
+		t.Fatalf("products were partially assigned after mismatch: %#v", products)
+	}
+}
+
 func (topicPathEmbedStub) Encode(_ context.Context, texts []string) ([][]float32, error) {
 	out := make([][]float32, len(texts))
 	for i, text := range texts {
