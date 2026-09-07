@@ -699,7 +699,9 @@ async def get_wiki_graph(tenant_id, dataset_id):
     - ``top_n`` (a.k.a. ``topN``): override the entity budget (default 128).
 
     Only entities referenced by at least one relation are returned.
-    Success: ``{"code": 0, "data": {"entities":[…],"relations":[…]}}``.
+    Success: ``{"code": 0, "data": {"entities":[…],"relations":[…],
+    "total_entities":int,"total_relations":int,
+    "returned_entities":int,"returned_relations":int}}``.
     """
     try:
         node = request.args.get("node", None)
@@ -748,9 +750,17 @@ async def get_dataset_structure(tenant_id, dataset_id):
     dataset (written when a template has ``dataset_merge`` enabled). Response
     mirrors the per-document structure graph so the frontend reuses its view::
 
-        {"code": 0, "data": {"kind": "<kind>", "templates": [
-            {"template_id", "template_name", "kind", "entities", "relations"}
-        ]}}
+        {"code": 0, "data": {
+            "kind": "<kind>",
+            "total_entities": 100,
+            "total_relations": 200,
+            "returned_entities": 80,
+            "returned_relations": 150,
+            "templates": [{
+                "template_id": "<template_id>", "template_name": "<template_name>",
+                "kind": "<kind>", "entities": [], "relations": [],
+            }],
+        }}
     """
     try:
         kind = request.args.get("kind", "")

@@ -18,7 +18,9 @@ import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-f
 import message from '@/components/ui/message';
 import { useIsGoBackend } from '@/utils/backend-variant';
 import { isDatasetId } from '@/utils/dataset-util';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { GenerateType, ParseType } from '@/constants/knowledge';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
   IArtifact,
@@ -86,8 +88,8 @@ import {
   useHandleSearchChange,
 } from './logic-hooks';
 import {
-  extractParserConfigExt,
   isPipelineParserConfig,
+  normalizeParserConfig,
 } from './parser-config-utils';
 import { useSetPaginationParams } from './route-hook';
 import { DatasetGenerateKeys } from './use-dataset-generate';
@@ -193,10 +195,12 @@ export const useTestRetrieval = () => {
 };
 
 export const useFetchNextKnowledgeListByPage = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { searchString, setSearchString, handleInputChange } =
+    useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
 
   const { data, isFetching: loading } = useQuery<IDatasetListResult>({
     queryKey: [
@@ -214,10 +218,8 @@ export const useFetchNextKnowledgeListByPage = () => {
       const { data } = await listDataset({
         page_size: pagination.pageSize,
         page: pagination.current,
-        ext: {
-          keywords: debouncedSearchString,
-          owner_ids: filterValue.owner as string[],
-        },
+        keywords: debouncedSearchString,
+        owner_ids: filterValue.owner as string[],
       });
 
       return { kbs: data?.data, total_datasets: data?.total_datasets };
@@ -235,11 +237,13 @@ export const useFetchNextKnowledgeListByPage = () => {
   return {
     ...data,
     searchString,
+    setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total_datasets },
     setPagination,
     loading,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   };
 };
@@ -277,10 +281,8 @@ export const useCreateKnowledge = () => {
       chunk_method?: string;
       parseType?: ParseType;
       pipeline_id?: string | null;
-      ext?: {
-        language?: string;
-        [key: string]: any;
-      };
+      language?: string;
+      [key: string]: any;
     }) => {
       const { data = {} } = await kbService.createKb(params);
       if (data.code === 0) {
@@ -316,6 +318,7 @@ export const useDeleteKnowledge = () => {
         queryClient.invalidateQueries({
           queryKey: [KnowledgeApiAction.FetchDatasetFilter],
         });
+        markListItemsDeleted(ListDeletionKey.KnowledgeList);
       }
       return data?.data ?? [];
     },
@@ -357,7 +360,7 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
         permission,
         pagerank,
         parser_config,
-        ...ext
+        ...additionalFields
       } = params;
       const requestBody: Record<string, any> = {
         name,
@@ -370,8 +373,8 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
         pagerank,
         parser_config: isPipelineParserConfig(parser_config)
           ? parser_config
-          : extractParserConfigExt(parser_config),
-        ...omit(ext, ['kb_id']),
+          : normalizeParserConfig(parser_config),
+        ...omit(additionalFields, ['kb_id']),
       };
 
       const { data = {} } = await updateKb(kbId, requestBody);
@@ -1066,7 +1069,7 @@ export const useFetchKnowledgeList = (
         const { data } = await listDataset({
           page,
           page_size: pageSize,
-          ...(keywords ? { ext: { keywords } } : {}),
+          ...(keywords ? { keywords } : {}),
         });
         return {
           items: (data?.data ?? []) as IDataset[],
