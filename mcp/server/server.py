@@ -305,10 +305,7 @@ class RAGFlowConnector:
                 [
                     types.TextContent(
                         type="text",
-                        text=(
-                            f"page * page_size ({page * page_size}) exceeds the fixed rerank candidate window "
-                            f"({self._RERANK_CANDIDATES_COUNT}); narrow page or page_size."
-                        ),
+                        text=(f"page * page_size ({page * page_size}) exceeds the fixed rerank candidate window ({self._RERANK_CANDIDATES_COUNT}); narrow page or page_size."),
                     )
                 ]
             )
