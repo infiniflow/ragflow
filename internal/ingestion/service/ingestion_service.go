@@ -643,14 +643,10 @@ func (e *Ingestor) startWorkerPool() {
 func (e *Ingestor) workerLoop(slot *workerSlot) {
 	defer e.workerWg.Done()
 	defer e.activeWorkers.Add(-1)
+	e.activeWorkers.Add(1)
 	common.Info(fmt.Sprintf("Worker %d started", slot.id))
-	first := true
 	for {
 		e.markSlotIdle(slot)
-		if first {
-			first = false
-			e.activeWorkers.Add(1)
-		}
 		select {
 		case e.idleSlots <- slot:
 		case <-e.dispatchCtx.Done():

@@ -73,6 +73,9 @@ func TestStartWorkerPool_StartOnceIdempotent(t *testing.T) {
 
 	ingestor.dispatchCancel()
 	ingestor.workerWg.Wait()
+	if got := ingestor.activeWorkers.Load(); got != 0 {
+		t.Fatalf("activeWorkers after worker shutdown = %d, want 0", got)
+	}
 }
 
 // TestStop_GracefulShutdown verifies that Stop cancels the context and waits
