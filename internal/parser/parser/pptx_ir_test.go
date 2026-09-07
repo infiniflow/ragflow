@@ -109,6 +109,21 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 			wantTexts: []string{""},
 		},
 		{
+			// bwbd.pptx regression: office_oxide wraps grouped slide shapes
+			// (graphicFrame tables) in a text_box, so the slide's text_box
+			// content is a table, not paragraphs. Previously flattened to "".
+			name: "text_box wrapping table keeps text",
+			irJSON: `{"sections":[{"elements":[{"type":"text_box","content":[
+				{"type":"table","rows":[
+					{"cells":[
+						{"content":[{"type":"paragraph","content":[{"type":"text","text":"Q1"}]}]},
+						{"content":[{"type":"paragraph","content":[{"type":"text","text":"A1"}]}]}
+					]}
+				]}
+			]}]}]}`,
+			wantTexts: []string{"Q1\nA1"},
+		},
+		{
 			name:    "invalid JSON",
 			irJSON:  "{not json",
 			wantErr: true,
@@ -144,6 +159,36 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 				if got := items[i]["doc_type_kwd"]; got != "text" {
 					t.Errorf("item %d doc_type_kwd = %v, want text", i, got)
 				}
+			}
+		})
+	}
+}
+
+// TestItemsAllEmpty pins the all-empty fallback gate: empty and whitespace
+// items trigger the PlainText salvage, any non-empty item does not.
+func TestItemsAllEmpty(t *testing.T) {
+	tests := []struct {
+		name  string
+		items []map[string]any
+		want  bool
+	}{
+		{name: "nil", items: nil, want: true},
+		{name: "empty", items: []map[string]any{}, want: true},
+		{
+			name:  "all empty",
+			items: []map[string]any{{"text": ""}, {"text": "  \n "}},
+			want:  true,
+		},
+		{
+			name:  "one non-empty",
+			items: []map[string]any{{"text": ""}, {"text": "hello"}},
+			want:  false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := itemsAllEmpty(tt.items); got != tt.want {
+				t.Errorf("itemsAllEmpty = %v, want %v", got, tt.want)
 			}
 		})
 	}
