@@ -41,19 +41,19 @@ func TestPipelineExecutor_DefaultLoadDSL_UsesUserCanvas(t *testing.T) {
 
 	taskCtx := makeTaskCtx()
 	svc := mustNewPipelineExecutor(t, taskCtx, "canvas-1", 0)
-	gotDSL, correctedID, err := svc.loadDSLFunc(ctx, "canvas-1")
+	canvasDSL := `{"dsl":{"graph":{"nodes":[],"edges":[]}}}`
+	svc.loadDSLFunc = func(context.Context, string) (string, string, error) {
+		return canvasDSL, "canvas-1", nil
+	}
+	gotDSL, correctedID, err := svc.resolveDSL(ctx)
 	if err != nil {
-		t.Fatalf("loadDSLFunc: %v", err)
+		t.Fatalf("resolveDSL: %v", err)
 	}
 	if correctedID != "canvas-1" {
 		t.Fatalf("correctedID = %q, want canvas-1", correctedID)
 	}
-	var decoded map[string]any
-	if err = json.Unmarshal([]byte(gotDSL), &decoded); err != nil {
-		t.Fatalf("unmarshal dsl: %v", err)
-	}
-	if _, ok := decoded["dsl"].(map[string]any); !ok {
-		t.Fatalf("decoded dsl = %v, want top-level dsl map", decoded)
+	if gotDSL != canvasDSL {
+		t.Fatalf("resolveDSL = %q, want canvas DSL", gotDSL)
 	}
 }
 

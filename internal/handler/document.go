@@ -78,7 +78,7 @@ type documentServiceIface interface {
 	UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error)
 	BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.MetadataSelector, updates []document.MetadataUpdate, deletes []document.MetadataDelete) (*document.BatchUpdateMetadatasResponse, common.ErrorCode, error)
 	ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
-	IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
+	IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string, schema entity.JSONMap) ([]*service.ParseDocumentResponse, error)
 	StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error)
 	Ingest(ctx context.Context, userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error)
 	RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error)
@@ -1536,7 +1536,7 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 		return
 	}
 
-	parseResult, err := h.documentService.IngestDocuments(ctx, datasetID, userID, req.DocumentIDs)
+	parseResult, err := h.documentService.IngestDocuments(ctx, datasetID, userID, req.DocumentIDs, nil)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return

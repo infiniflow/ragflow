@@ -53,17 +53,17 @@ func (t *IngestionTask) RerunInfo() (IngestionTaskRerunInfo, bool) {
 		return IngestionTaskRerunInfo{}, false
 	}
 	info := IngestionTaskRerunInfo{
-		LogID:       stringField(m, "log_id"),
-		ComponentID: stringField(m, "component_id"),
+		LogID:       rerunStringField(m, "log_id"),
+		ComponentID: rerunStringField(m, "component_id"),
 	}
-	if dsl := jsonMapField(m, "dsl"); dsl != nil {
+	if dsl := rerunJSONMapField(m, "dsl"); dsl != nil {
 		info.DSL = dsl
 		return info, true
 	}
 	return info, info.LogID != "" || info.ComponentID != ""
 }
 
-func jsonMapField(m map[string]interface{}, key string) JSONMap {
+func rerunJSONMapField(m map[string]interface{}, key string) JSONMap {
 	switch v := m[key].(type) {
 	case JSONMap:
 		return v
@@ -74,7 +74,7 @@ func jsonMapField(m map[string]interface{}, key string) JSONMap {
 	}
 }
 
-func stringField(m map[string]interface{}, key string) string {
+func rerunStringField(m map[string]interface{}, key string) string {
 	if v, ok := m[key].(string); ok {
 		return v
 	}

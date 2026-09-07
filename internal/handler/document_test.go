@@ -249,7 +249,7 @@ func (f *fakeDocumentService) UploadEmptyDocument(ctx context.Context, kb *entit
 func (f *fakeDocumentService) ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	return nil, nil
 }
-func (f *fakeDocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+func (f *fakeDocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string, schema entity.JSONMap) ([]*service.ParseDocumentResponse, error) {
 	return nil, nil
 }
 func (f *fakeDocumentService) StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error) {
