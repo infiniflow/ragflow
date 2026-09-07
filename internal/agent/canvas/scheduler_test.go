@@ -7,6 +7,74 @@ import (
 	"testing"
 )
 
+// TestBuildWorkflow_ParamRefDependencyWired exercises the
+// param-ref wiring added in PR #19331 and extended in PR #19339.
+// A canvas where a downstream node reads another node's output
+// via a `{{cpnID@field}}` selector written into its own params
+// — and has NO drawn edge to that source — must still compile.
+// The helper-level tests in `param_refs_test.go` pin the
+// extraction; this test pins the integration with `BuildWorkflow`.
+//
+// Before the fix, the scheduler only walked drawn edges, so the
+// param-ref carried no dependency and eino's compile-time cycle
+// detection would not even see the implied ordering. The cycle 68
+// / 69 changes add the param-ref as an exec-only `AddDependency`
+// edge, which means the workflow now compiles with the right
+// ordering (begin_0 → aggregator_0) and the aggregator waits
+// for begin_0's output at runtime.
+func TestBuildWorkflow_ParamRefDependencyWired(t *testing.T) {
+	c := &Canvas{
+		Components: map[string]CanvasComponent{
+			"begin_0": {
+				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
+				Downstream: []string{"aggregator_0"},
+				Upstream:   []string{},
+			},
+			"aggregator_0": {
+				Obj: CanvasComponentObj{
+					ComponentName: "VariableAggregator",
+					Params: map[string]any{
+						"groups": []any{
+							map[string]any{
+								"group_name": "out",
+								"variables": []any{
+									// Single param-ref to begin_0;
+									// no drawn edge in the DSL.
+									map[string]any{"value": "begin_0@content"},
+								},
+							},
+						},
+					},
+				},
+				Downstream: []string{},
+				Upstream:   []string{},
+			},
+		},
+		Path: []string{"begin_0", "aggregator_0"},
+	}
+
+	wf, err := BuildWorkflow(t.Context(), c)
+	if err != nil {
+		t.Fatalf("BuildWorkflow: %v", err)
+	}
+	if wf == nil {
+		t.Fatal("nil workflow")
+	}
+
+	// Compile to a Runnable to confirm the topology is internally
+	// consistent. eino's compile-time cycle detection only sees
+	// drawn edges + the param-ref edges the scheduler collected;
+	// if the helper missed the ref, aggregator_0 would have no
+	// incoming edge from begin_0 and the runtime would race.
+	cc, err := Compile(t.Context(), c)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if cc.Workflow == nil {
+		t.Fatal("nil compiled workflow")
+	}
+}
+
 // TestBuildWorkflow_3NodeLinear exercises a trivial Begin → LLM → Message
 // chain. Verifies the workflow compiles and the runtime paths exist.
 func TestBuildWorkflow_3NodeLinear(t *testing.T) {
