@@ -335,8 +335,8 @@ func (s *taskHandleStream) Err() error {
 
 func (s *taskHandleStream) forward(ctx context.Context, batch jetstream.MessageBatch, statusChanges <-chan nats.Status, removeStatusListener func()) {
 	defer removeStatusListener()
-	defer close(s.messages)
 	defer close(s.done)
+	defer close(s.messages)
 	messages := batch.Messages()
 	for {
 		select {

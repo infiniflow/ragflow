@@ -352,7 +352,7 @@ func (e *Ingestor) consumePullBatch(messageQueueEngine engine.MessageQueue, slot
 				zap.Duration("handoff_duration", handoffDuration),
 			)
 		case <-e.dispatchCtx.Done():
-			e.returnIdleSlots(slots[matched+1:])
+			e.returnIdleSlots(slots[matched:])
 			return
 		}
 	}
