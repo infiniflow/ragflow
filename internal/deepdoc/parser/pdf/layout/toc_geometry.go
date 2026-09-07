@@ -107,7 +107,7 @@ func FilterTOCBoxes(boxes []pdf.TextBox, medianHeights map[int]float64) []pdf.Te
 			continue
 		}
 
-		if dedicatedTOCPage(boxes, eligible, entries, mh) {
+		if dedicatedTOCPage(boxes, pageIdx, eligible, entries, mh) {
 			for _, i := range pageIdx {
 				drop[i] = true
 			}
@@ -241,9 +241,28 @@ func qualifyingTOCColumn(boxes []pdf.TextBox, cluster []tocCandidate) bool {
 // non-entry line of a pure TOC page is a short, isolated run — a cover
 // title, watermark, page marker or TOC heading. Any continuous body
 // paragraph fails the short-run check even when each of its lines is
-// shorter than tocShortRunMaxRunes.
-func dedicatedTOCPage(boxes []pdf.TextBox, eligible, entries []int, mh float64) bool {
+// shorter than tocShortRunMaxRunes. A page that carries structured content
+// (a table, figure or equation box) is never whole-page deleted: the
+// structured box is kept and only the TOC entries are removed.
+func dedicatedTOCPage(boxes []pdf.TextBox, pageIdx, eligible, entries []int, mh float64) bool {
+	if pageHasStructuredContent(boxes, pageIdx) {
+		return false
+	}
 	return allNonEntryRunsShort(boxes, eligible, entries, mh)
+}
+
+// pageHasStructuredContent reports whether any box on the page is a table,
+// figure or equation. Structured boxes are excluded from the TOC entry
+// analysis entirely, so their presence must also veto whole-page deletion —
+// otherwise a DLA-detected table on the page would be dropped with the TOC.
+func pageHasStructuredContent(boxes []pdf.TextBox, pageIdx []int) bool {
+	for _, i := range pageIdx {
+		switch boxes[i].LayoutType {
+		case pdf.LayoutTypeTable, pdf.LayoutTypeFigure, pdf.LayoutTypeEquation:
+			return true
+		}
+	}
+	return false
 }
 
 // allNonEntryRunsShort splits the non-entry lines into vertical runs (lines
@@ -273,24 +292,43 @@ func allNonEntryRunsShort(boxes []pdf.TextBox, eligible, entries []int, mh float
 		return boxes[a].Top < boxes[b].Top
 	})
 
-	var runRunes, runLines int
-	lastBottom := 0.0
-	lastCol := -1
-	for k, i := range nonEntry {
-		if k > 0 && boxes[i].ColID == lastCol && boxes[i].Top-lastBottom < tocGapFactor*mh {
-			runRunes += utf8.RuneCountInString(strings.TrimSpace(boxes[i].Text))
-			runLines++
-		} else {
-			runRunes = utf8.RuneCountInString(strings.TrimSpace(boxes[i].Text))
-			runLines = 1
+	// Run state is tracked per column: boxes are visited in global
+	// top-to-bottom order, so the lines of two interleaved columns are
+	// mixed in the iteration. A single global run would reset one column's
+	// accumulation every time the other column's line sorts between two of
+	// its lines, letting a real paragraph slip under the cap.
+	runs := make(map[int]*tocRunState, len(nonEntry))
+	for _, i := range nonEntry {
+		col := boxes[i].ColID
+		st := runs[col]
+		if st == nil {
+			st = &tocRunState{}
+			runs[col] = st
 		}
-		lastBottom = boxes[i].Bottom
-		lastCol = boxes[i].ColID
-		if runLines >= 2 && runRunes > tocShortRunMaxRunes {
+		runes := utf8.RuneCountInString(strings.TrimSpace(boxes[i].Text))
+		if st.seen && boxes[i].Top-st.bottom < tocGapFactor*mh {
+			st.runes += runes
+			st.lines++
+		} else {
+			st.runes = runes
+			st.lines = 1
+		}
+		st.bottom = boxes[i].Bottom
+		st.seen = true
+		if st.lines >= 2 && st.runes > tocShortRunMaxRunes {
 			return false
 		}
 	}
 	return true
+}
+
+// tocRunState tracks the vertical run of one column: consecutive lines
+// whose gap stays below tocGapFactor×median height.
+type tocRunState struct {
+	runes  int
+	lines  int
+	bottom float64
+	seen   bool
 }
 
 // tocWrappedTitlePartners returns the non-entry line sitting directly above

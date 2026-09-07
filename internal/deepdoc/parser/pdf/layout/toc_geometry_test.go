@@ -339,3 +339,68 @@ func TestFilterTOCBoxes_ToleratesOccasionalNonMonotonic(t *testing.T) {
 		t.Errorf("one-dip column: prose must survive, got %v", texts(out))
 	}
 }
+
+// TestFilterTOCBoxes_InterleavedColumnsKeepProse regresses the per-column run
+// tracking: two columns interleave by Top, and a body paragraph in one column
+// is interleaved with a TOC number column in the other. A single global run
+// would reset the paragraph's accumulation every time the other column sorts
+// between its lines, under-counting it below tocShortRunMaxRunes and wrongly
+// whole-page deleting the prose.
+func TestFilterTOCBoxes_InterleavedColumnsKeepProse(t *testing.T) {
+	boxes := []pdf.TextBox{
+		// column 1: a three-line body paragraph (each line short, run > 50 runes)
+		{X0: 60, X1: 500, Top: 100, Bottom: 112, Text: "这是前言的第一行文字内容，用来模拟正文段落。", PageNumber: 0, ColID: 1},
+		{X0: 60, X1: 500, Top: 120, Bottom: 132, Text: "第二行继续，依然是一段连续的正文文字内容。", PageNumber: 0, ColID: 1},
+		{X0: 60, X1: 500, Top: 140, Bottom: 152, Text: "第三行收尾，这一段累计字数一定超过五十字限制。", PageNumber: 0, ColID: 1},
+		// column 2: an aligned TOC page-number column interleaved by Top
+		{X0: 434, X1: 447, Top: 105, Bottom: 117, Text: ".20", PageNumber: 0, ColID: 2},
+		{X0: 434, X1: 447, Top: 125, Bottom: 137, Text: ".22", PageNumber: 0, ColID: 2},
+		{X0: 434, X1: 447, Top: 145, Bottom: 157, Text: ".25", PageNumber: 0, ColID: 2},
+	}
+	out := FilterTOCBoxes(boxes, medianH)
+	for _, keep := range []string{
+		"这是前言的第一行文字内容，用来模拟正文段落。",
+		"第二行继续，依然是一段连续的正文文字内容。",
+		"第三行收尾，这一段累计字数一定超过五十字限制。",
+	} {
+		if !contains(out, keep) {
+			t.Errorf("interleaved columns: expected to keep %q, got %v", keep, texts(out))
+		}
+	}
+	for _, drop := range []string{".20", ".22", ".25"} {
+		if contains(out, drop) {
+			t.Errorf("interleaved columns: expected to drop %q, got %v", drop, texts(out))
+		}
+	}
+}
+
+// TestFilterTOCBoxes_StructuredContentRejectsWholePage regresses the
+// structured-content guard: a page that would otherwise qualify for
+// whole-page deletion carries a DLA-detected table box. Whole-page deletion
+// must be rejected — the table and the short lines survive, only the TOC
+// entries are removed.
+func TestFilterTOCBoxes_StructuredContentRejectsWholePage(t *testing.T) {
+	boxes := []pdf.TextBox{
+		makeBox(0, 61, 199, 40, 52, "木瓜树  更多的书籍免费下载"),
+		makeBox(0, 434, 447, 100, 112, ".20"),
+		makeBox(0, 434, 447, 140, 152, ".22"),
+		makeBox(0, 434, 447, 180, 192, ".25"),
+		{ // a table row that ends in a right-aligned number
+			X0: 100, X1: 447, Top: 220, Bottom: 232,
+			Text: "列A 列B 12", PageNumber: 0, LayoutType: pdf.LayoutTypeTable,
+		},
+		makeBox(0, 441, 449, 260, 272, "II"),
+	}
+	out := FilterTOCBoxes(boxes, medianH)
+	if !contains(out, "列A 列B 12") {
+		t.Errorf("table box must survive, got %v", texts(out))
+	}
+	if !contains(out, "木瓜树  更多的书籍免费下载") {
+		t.Errorf("watermark must survive, got %v", texts(out))
+	}
+	for _, drop := range []string{".20", ".22", ".25"} {
+		if contains(out, drop) {
+			t.Errorf("structured-content page: expected to drop %q, got %v", drop, texts(out))
+		}
+	}
+}
