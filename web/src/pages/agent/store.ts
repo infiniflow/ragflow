@@ -194,7 +194,6 @@ export type RFState = {
   getParentIdById: (id?: string | null) => string | undefined;
   updateNodeName: (id: string, name: string) => void;
   generateNodeName: (name: string) => string;
-  generateAgentToolName: (id: string, name: string) => string;
   generateAgentToolId: (prefix: string) => string;
   getAllAgentTools: () => IAgentTool[];
   getAgentToolById: GetAgentToolByIdFunc;
@@ -640,28 +639,6 @@ const useGraphStore = create<RFState>()(
         const { nodes } = get();
 
         return generateNodeNamesWithIncreasingIndex(name, nodes);
-      },
-      generateAgentToolName: (id: string, name: string) => {
-        const node = get().nodes.find((x) => x.id === id) as RAGFlowNodeType;
-
-        if (!node) {
-          return '';
-        }
-
-        const tools = (node.data.form!.tools as any[]).filter(
-          (x) => x.component_name === name,
-        );
-        const lastIndex = tools.length
-          ? (tools
-              .map((x) => {
-                const idx = x.name.match(/(\d+)$/)?.[1];
-                return idx && isNaN(idx) ? -1 : Number(idx);
-              })
-              .sort((a, b) => a - b)
-              .at(-1) ?? -1)
-          : -1;
-
-        return `${name}_${lastIndex + 1}`;
       },
       generateAgentToolId: (prefix: string) => {
         const allAgentToolIds = get()

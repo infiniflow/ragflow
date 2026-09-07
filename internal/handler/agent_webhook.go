@@ -515,12 +515,25 @@ func (h *AgentHandler) runWebhookDetached(
 	parent = service.WithAgentSessionID(parent, sessionID)
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Minute)
 	defer cancel()
+	h.runWebhookDetachedWithContext(ctx, cv, payload, isTest, startTs, sessionID)
+}
 
+func (h *AgentHandler) runWebhookDetachedWithContext(
+	ctx context.Context, cv *entity.UserCanvas, payload map[string]any,
+	isTest bool, startTs time.Time, sessionID string,
+) {
 	events, err := h.loader.RunAgentWithWebhook(ctx, cv.UserID, cv.ID, payload)
 	if err != nil {
 		common.Warn("webhook detached run start failed",
 			zap.String("canvas", cv.ID),
 			zap.Error(err))
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			if isTest {
+				event := webhookContextTerminalEvent(ctxErr, sessionID)
+				h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+			}
+			return
+		}
 		if isTest {
 			h.appendWebhookRunTrace(ctx, cv.ID, startTs, webhookStartErrorEvent(err, sessionID))
 			h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
@@ -532,15 +545,28 @@ func (h *AgentHandler) runWebhookDetached(
 			ev.SessionID = sessionID
 		}
 		terminal := isWebhookTerminalEvent(ev)
-		if isTest {
-			h.appendWebhookRunTrace(ctx, cv.ID, startTs, sanitizeWebhookTraceEvent(ev))
-		}
 		if terminal {
 			if isTest {
-				h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+				event := sanitizeWebhookTraceEvent(ev)
+				if ctx.Err() != nil {
+					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+				} else {
+					h.appendWebhookRunTrace(ctx, cv.ID, startTs, event)
+					h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+				}
 			}
 			return
 		}
+		if isTest {
+			h.appendWebhookRunTrace(ctx, cv.ID, startTs, sanitizeWebhookTraceEvent(ev))
+		}
+	}
+	if err = ctx.Err(); err != nil {
+		if isTest {
+			event := webhookContextTerminalEvent(err, sessionID)
+			h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+		}
+		return
 	}
 	if isTest {
 		h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, true)
@@ -565,6 +591,14 @@ func (h *AgentHandler) runWebhookSync(
 	ctx = service.WithAgentSessionID(ctx, sessionID)
 	events, err := h.loader.RunAgentWithWebhook(ctx, cv.UserID, cv.ID, payload)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			event := webhookContextTerminalEvent(ctxErr, sessionID)
+			if isTest {
+				h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+			}
+			result, _ := webhookTerminalResult(event, sessionID)
+			return result
+		}
 		errorEvent := webhookStartErrorEvent(err, sessionID)
 		if isTest {
 			h.appendWebhookRunTrace(ctx, cv.ID, startTs, errorEvent)
@@ -581,8 +615,13 @@ func (h *AgentHandler) runWebhookSync(
 		}
 		if result, terminal := webhookTerminalResult(ev, sessionID); terminal {
 			if isTest {
-				h.appendWebhookRunTrace(ctx, cv.ID, startTs, sanitizeWebhookTraceEvent(ev))
-				h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+				event := sanitizeWebhookTraceEvent(ev)
+				if ctx.Err() != nil {
+					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+				} else {
+					h.appendWebhookRunTrace(ctx, cv.ID, startTs, event)
+					h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+				}
 			}
 			return result
 		}
@@ -615,6 +654,14 @@ func (h *AgentHandler) runWebhookSync(
 				status = *end.Status
 			}
 		}
+	}
+	if err = ctx.Err(); err != nil {
+		event := webhookContextTerminalEvent(err, sessionID)
+		if isTest {
+			h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+		}
+		result, _ := webhookTerminalResult(event, sessionID)
+		return result
 	}
 	final := strings.Join(contents, "")
 	if isTest {
@@ -699,6 +746,20 @@ func isWebhookTerminalEvent(ev canvas.RunEvent) bool {
 	}
 }
 
+func webhookContextTerminalEvent(err error, sessionID string) canvas.RunEvent {
+	eventType := "cancelled"
+	message := "Agent run was cancelled."
+	if errors.Is(err, context.DeadlineExceeded) {
+		eventType = "error"
+		message = "Agent run timed out."
+	}
+	return canvas.RunEvent{
+		Type:      eventType,
+		SessionID: sessionID,
+		Data:      mustJSON(canvas.ErrorEvent{Message: message}),
+	}
+}
+
 func sanitizeWebhookTraceEvent(ev canvas.RunEvent) canvas.RunEvent {
 	if ev.Type != "error" {
 		return ev
@@ -733,6 +794,15 @@ func (h *AgentHandler) appendWebhookFinishedTrace(
 			"success":      success,
 		}),
 	})
+}
+
+func (h *AgentHandler) appendWebhookInterruptedTrace(
+	ctx context.Context, agentID string, startTs time.Time, sessionID string, event canvas.RunEvent,
+) {
+	traceCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	h.appendWebhookRunTrace(traceCtx, agentID, startTs, event)
+	h.appendWebhookFinishedTrace(traceCtx, agentID, startTs, sessionID, false)
 }
 
 // mustJSON marshals v to a JSON object string. Used by trace appenders;

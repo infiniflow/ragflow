@@ -23,7 +23,7 @@ export function MoveDialog({ hideModal, onOk, loading }: IModalProps<any>) {
 
   const { fetchList } = useFetchPureFileList();
 
-  const [treeValue, setTreeValue] = useState<number | string>('');
+  const [treeValue, setTreeValue] = useState<number | string>();
 
   const [treeData, setTreeData] = useState([]);
 

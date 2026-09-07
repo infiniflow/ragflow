@@ -10,7 +10,7 @@ import (
 )
 
 func TestTaskDecorator(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Test basic task decorator
 	fn := func(ctx context.Context, input interface{}) (interface{}, error) {
@@ -28,7 +28,7 @@ func TestTaskDecorator(t *testing.T) {
 }
 
 func TestTaskDecoratorWithRetry(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	callCount := 0
 	fn := func(ctx context.Context, input interface{}) (interface{}, error) {
@@ -62,7 +62,7 @@ func TestTaskDecoratorWithRetry(t *testing.T) {
 }
 
 func TestTaskDecoratorWithRetryExhausted(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	callCount := 0
 	fn := func(ctx context.Context, input interface{}) (interface{}, error) {
@@ -90,7 +90,7 @@ func TestTaskDecoratorWithRetryExhausted(t *testing.T) {
 }
 
 func TestTaskDecoratorWithNonRetryableError(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	callCount := 0
 	fn := func(ctx context.Context, input interface{}) (interface{}, error) {
@@ -118,7 +118,7 @@ func TestTaskDecoratorWithNonRetryableError(t *testing.T) {
 }
 
 func TestNamed(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	fn := func(ctx context.Context, input interface{}) (interface{}, error) {
 		return input, nil
@@ -135,7 +135,7 @@ func TestNamed(t *testing.T) {
 }
 
 func TestRetryable(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	callCount := 0
 	fn := func(ctx context.Context, input interface{}) (interface{}, error) {
@@ -157,7 +157,7 @@ func TestRetryable(t *testing.T) {
 }
 
 func TestWithTimeout(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	fn := func(ctx context.Context, input interface{}) (interface{}, error) {
 		select {
@@ -179,7 +179,7 @@ func TestWithTimeout(t *testing.T) {
 }
 
 func TestWithTimeoutSuccess(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	fn := func(ctx context.Context, input interface{}) (interface{}, error) {
 		return "done", nil
@@ -196,7 +196,7 @@ func TestWithTimeoutSuccess(t *testing.T) {
 }
 
 func TestCompose(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	fn := func(ctx context.Context, input interface{}) (interface{}, error) {
 		return input.(int) + 1, nil
@@ -254,7 +254,7 @@ func TestTaskContext(t *testing.T) {
 }
 
 func TestEntrypoint(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	fn := func(ctx context.Context, input interface{}) (interface{}, error) {
 		return "initialized", nil

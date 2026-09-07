@@ -609,12 +609,15 @@ class Canvas(Graph):
 
         def _node_finished(cpn_obj):
             outputs = cpn_obj.output()
+            logged_outputs = dict(outputs)
+            if logged_outputs.get("_ERROR"):
+                logged_outputs["_ERROR"] = "<redacted>"
             _logger.debug(
                 "[Canvas] Component '%s' (%s) finished. Outputs: %s, Error: %s",
                 self.get_component_name(cpn_obj._id),
                 self.get_component_type(cpn_obj._id),
-                json.dumps(outputs, ensure_ascii=False, default=str)[:500],
-                cpn_obj.error(),
+                json.dumps(logged_outputs, ensure_ascii=False, default=str)[:500],
+                bool(cpn_obj.error()),
             )
             return decorate(
                 "node_finished",
@@ -654,7 +657,9 @@ class Canvas(Graph):
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])
                 cpn_obj = self.get_component_obj(self.path[i])
-                if cpn_obj.component_name.lower() == "message":
+                is_message = cpn_obj.component_name.lower() == "message"
+                streamed_message_content = None
+                if is_message:
                     if cpn_obj.get_param("auto_play"):
                         try:
                             tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
@@ -768,7 +773,6 @@ class Canvas(Graph):
                                 await tts_queue.join()
                                 for ev in await _drain_ready_tts():
                                     yield ev
-                                cpn_obj.set_output("content", _m)
                             finally:
                                 for worker in tts_workers:
                                     worker.cancel()
@@ -777,9 +781,28 @@ class Canvas(Graph):
 
                         async for ev in _stream_events():
                             yield ev
+                        streamed_message_content = _m
                     else:
                         yield decorate("message", {"content": cpn_obj.output("content")})
 
+                other_branch = False
+                component_error = cpn_obj.error()
+                if component_error:
+                    if is_message and isinstance(cpn_obj.output("content"), partial):
+                        cpn_obj.set_output("content", None)
+                    ex = cpn_obj.exception_handler()
+                    if ex and ex["goto"]:
+                        self.path.extend(ex["goto"])
+                        other_branch = True
+                    elif ex and ex["default_value"]:
+                        yield decorate("message", {"content": ex["default_value"]})
+                        yield decorate("message_end", {})
+                    else:
+                        self.error = component_error if "Task has been canceled" in component_error else f"Component execution failed: {cpn_obj._id}"
+
+                if is_message and not component_error:
+                    if streamed_message_content is not None:
+                        cpn_obj.set_output("content", streamed_message_content)
                     message_end = self._build_message_end(cpn_obj)
                     yield decorate("message_end", message_end)
 
@@ -789,18 +812,6 @@ class Canvas(Graph):
                             break
                         yield _node_finished(_cpn_obj)
                         partials.pop(0)
-
-                other_branch = False
-                if cpn_obj.error():
-                    ex = cpn_obj.exception_handler()
-                    if ex and ex["goto"]:
-                        self.path.extend(ex["goto"])
-                        other_branch = True
-                    elif ex and ex["default_value"]:
-                        yield decorate("message", {"content": ex["default_value"]})
-                        yield decorate("message_end", {})
-                    else:
-                        self.error = cpn_obj.error()
 
                 if cpn_obj.component_name.lower() not in ("iteration", "loop"):
                     if isinstance(cpn_obj.output("content"), partial):
@@ -843,7 +854,7 @@ class Canvas(Graph):
                     _extend_path(cpn["downstream"])
 
             if self.error:
-                logging.error(f"Runtime Error: {self.error}")
+                logging.error("Runtime Error: %s", self.error)
                 break
             idx = to
 

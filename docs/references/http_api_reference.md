@@ -596,17 +596,9 @@ curl --request POST \
       - For PDFs only.
       - Defaults to `12`
       - Minimum: `1`
-    - `"raptor"`: `object` RAPTOR-specific settings.
-      - Defaults to: `{"use_raptor": false}`
-    - `"graphrag"`: `object` GRAPHRAG-specific settings.
-      - Defaults to: `{"use_graphrag": false}`
     - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
       - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
       - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
-  - If `"chunk_method"` is `"qa"`, `"manual"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
-    - `"raptor"`: `object` RAPTOR-specific settings.
-      - Defaults to: `{"use_raptor": false}`.
-  - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
 
 - `"parse_type"`: (*Body parameter*), `int`
   The ingestion pipeline parse type identifier, i.e., the number of parsers in your **Parser** component.
@@ -653,11 +645,8 @@ Success:
             "chunk_token_num": 128,
             "delimiter": "\\n!?;。；！？",
             "html4excel": false,
-            "layout_recognize": "DeepDOC",
-            "raptor": {
-                "use_raptor": false
-                }
-            },
+            "layout_recognize": "DeepDOC"
+        },
         "permission": "me",
         "similarity_threshold": 0.2,
         "status": "1",
@@ -853,17 +842,10 @@ curl --request PUT \
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
       - Minimum: `1`
-    - `"raptor"`: `object` RAPTOR-specific settings.
-      - Defaults to: `{"use_raptor": false}`
-    - `"graphrag"`: `object` GRAPHRAG-specific settings.
-      - Defaults to: `{"use_graphrag": false}`
     - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
       - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
       - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
-  - If `"chunk_method"` is `"qa"`, `"manual"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
-    - `"raptor"`: `object` RAPTOR-specific settings.
-      - Defaults to: `{"use_raptor": false}`.
-  - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
+
 
 #### Response
 
@@ -1007,9 +989,7 @@ Success (with `include_parsing_status=true`):
             "language": "English",
             "name": "Test Dataset",
             "parser_config": {
-                "graphrag": { "use_graphrag": false },
-                "llm_id": "deepseek-chat@DeepSeek",
-                "raptor": { "use_raptor": false }
+                "llm_id": "deepseek-chat@DeepSeek"
             },
             "permission": "me",
             "running_count": 0,
@@ -1033,365 +1013,6 @@ Failure:
 {
     "code": 102,
     "message": "The dataset doesn't exist"
-}
-```
-
- ---
-
-### Get knowledge graph
-
-**GET** `/api/v1/datasets/{dataset_id}/knowledge_graph`
-
-Retrieves the knowledge graph of a specified dataset.
-
-#### Request
-
-- Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/knowledge_graph`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/knowledge_graph \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-- `dataset_id`: (*Path parameter*)
-  The ID of the target dataset.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code": 0,
-    "data": {
-        "graph": {
-            "directed": false,
-            "edges": [
-                {
-                    "description": "The notice is a document issued to convey risk warnings and operational alerts.<SEP>The notice is a specific instance of a notification document issued under the risk warning framework.",
-                    "keywords": ["9", "8"],
-                    "source": "notice",
-                    "source_id": ["8a46cdfe4b5c11f0a5281a58e595aa1c"],
-                    "src_id": "xxx",
-                    "target": "xxx",
-                    "tgt_id": "xxx",
-                    "weight": 17.0
-                }
-            ],
-            "graph": {
-                "source_id": ["8a46cdfe4b5c11f0a5281a58e595aa1c", "8a7eb6424b5c11f0a5281a58e595aa1c"]
-            },
-            "multigraph": false,
-            "nodes": [
-                {
-                    "description": "xxx",
-                    "entity_name": "xxx",
-                    "entity_type": "ORGANIZATION",
-                    "id": "xxx",
-                    "pagerank": 0.10804906590624092,
-                    "rank": 3,
-                    "source_id": ["8a7eb6424b5c11f0a5281a58e595aa1c"]
-                }
-            ]
-        },
-        "mind_map": {}
-    }
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 102,
-    "message": "The dataset doesn't exist"
-}
-```
-
----
-
-### Delete knowledge graph
-
-**DELETE** `/api/v1/datasets/{dataset_id}/knowledge_graph`
-
-Removes the knowledge graph of a specified dataset.
-
-#### Request
-
-- Method: DELETE
-- URL: `/api/v1/datasets/{dataset_id}/knowledge_graph`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request DELETE \
-     --url http://{address}/api/v1/datasets/{dataset_id}/knowledge_graph \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-- `dataset_id`: (*Path parameter*)
-  The ID of the target dataset.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code": 0,
-    "data": true
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 102,
-    "message": "The dataset doesn't exist"
-}
-```
-
----
-
-### Construct knowledge graph
-
-**POST** `/api/v1/datasets/{dataset_id}/run_graphrag`
-
-Constructs a knowledge graph from a specified dataset.
-
-#### Request
-
-- Method: POST
-- URL: `/api/v1/datasets/{dataset_id}/run_graphrag`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request POST \
-     --url http://{address}/api/v1/datasets/{dataset_id}/run_graphrag \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-- `dataset_id`: (*Path parameter*)
-  The ID of the target dataset.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code":0,
-    "data":{
-      "graphrag_task_id":"e498de54bfbb11f0ba028f704583b57b"
-    }
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 102,
-    "message": "Invalid Dataset ID"
-}
-```
-
----
-
-### Get knowledge graph construction status
-
-**GET** `/api/v1/datasets/{dataset_id}/trace_graphrag`
-
-Retrieves the knowledge graph construction status for a specified dataset.
-
-#### Request
-
-- Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/trace_graphrag`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/trace_graphrag \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-- `dataset_id`: (*Path parameter*)
-  The ID of the target dataset.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code":0,
-    "data":{
-        "begin_at":"Wed, 12 Nov 2025 19:36:56 GMT",
-        "chunk_ids":"",
-        "create_date":"Wed, 12 Nov 2025 19:36:56 GMT",
-        "create_time":1762947416350,
-        "digest":"39e43572e3dcd84f",
-        "doc_id":"44661c10bde211f0bc93c164a47ffc40",
-        "from_page":100000000,
-        "id":"e498de54bfbb11f0ba028f704583b57b",
-        "priority":0,
-        "process_duration":2.45419,
-        "progress":1.0,
-        "progress_msg":"19:36:56 created task graphrag\n19:36:57 Task has been received.\n19:36:58 [GraphRAG] doc:083661febe2411f0bc79456921e5745f has no available chunks, skip generation.\n19:36:58 [GraphRAG] build_subgraph doc:44661c10bde211f0bc93c164a47ffc40 start (chunks=1, timeout=10000000000s)\n19:36:58 Graph already contains 44661c10bde211f0bc93c164a47ffc40\n19:36:58 [GraphRAG] build_subgraph doc:44661c10bde211f0bc93c164a47ffc40 empty\n19:36:58 [GraphRAG] kb:33137ed0bde211f0bc93c164a47ffc40 no subgraphs generated successfully, end.\n19:36:58 Knowledge Graph done (0.72s)","retry_count":1,
-        "task_type":"graphrag",
-        "to_page":100000000,
-        "update_date":"Wed, 12 Nov 2025 19:36:58 GMT",
-        "update_time":1762947418454
-    }
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 102,
-    "message": "Invalid Dataset ID"
-}
-```
-
----
-
-### Construct RAPTOR
-
-**POST** `/api/v1/datasets/{dataset_id}/run_raptor`
-
-Construct a RAPTOR from a specified dataset.
-
-#### Request
-
-- Method: POST
-- URL: `/api/v1/datasets/{dataset_id}/run_raptor`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request POST \
-     --url http://{address}/api/v1/datasets/{dataset_id}/run_raptor \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-- `dataset_id`: (*Path parameter*)
-  The ID of the target dataset.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code":0,
-    "data":{
-        "raptor_task_id":"50d3c31cbfbd11f0ba028f704583b57b"
-    }
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 102,
-    "message": "Invalid Dataset ID"
-}
-```
-
----
-
-### Get RAPTOR construction status
-
-**GET** `/api/v1/datasets/{dataset_id}/trace_raptor`
-
-Retrieves the RAPTOR construction status for a specified dataset.
-
-#### Request
-
-- Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/trace_raptor`
-- Headers:
-  - `'Authorization: Bearer <YOUR_API_KEY>'`
-
-##### Request example
-
-```bash
-curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/trace_raptor \
-     --header 'Authorization: Bearer <YOUR_API_KEY>'
-```
-
-##### Request parameters
-
-- `dataset_id`: (*Path parameter*)
-  The ID of the target dataset.
-
-#### Response
-
-Success:
-
-```json
-{
-    "code":0,
-    "data":{
-        "begin_at":"Wed, 12 Nov 2025 19:47:07 GMT",
-        "chunk_ids":"",
-        "create_date":"Wed, 12 Nov 2025 19:47:07 GMT",
-        "create_time":1762948027427,
-        "digest":"8b279a6248cb8fc6",
-        "doc_id":"44661c10bde211f0bc93c164a47ffc40",
-        "from_page":100000000,
-        "id":"50d3c31cbfbd11f0ba028f704583b57b",
-        "priority":0,
-        "process_duration":0.948244,
-        "progress":1.0,
-        "progress_msg":"19:47:07 created task raptor\n19:47:07 Task has been received.\n19:47:07 Processing...\n19:47:07 Processing...\n19:47:07 Indexing done (0.01s).\n19:47:07 Task done (0.29s)",
-        "retry_count":1,
-        "task_type":"raptor",
-        "to_page":100000000,
-        "update_date":"Wed, 12 Nov 2025 19:47:07 GMT",
-        "update_time":1762948027948
-    }
-}
-```
-
-Failure:
-
-```json
-{
-    "code": 102,
-    "message": "Invalid Dataset ID"
 }
 ```
 
@@ -1491,10 +1112,7 @@ Success:
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
                 "html4excel": false,
-                "layout_recognize": true,
-                "raptor": {
-                    "use_raptor": false
-                }
+                "layout_recognize": true
             },
             "run": "UNSTART",
             "size": 17966,
@@ -1580,10 +1198,6 @@ curl --request PATCH \
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
-    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
-  - If `"chunk_method"` is `"qa"`, `"manual"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
-    - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
-  - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
 - `"enabled"`: (*Body parameter*), `integer`
   Whether the document should be **available** in the knowledge base.
   - `1` → （available）
@@ -1638,32 +1252,10 @@ Success:
       "auto_keywords": 0,
       "auto_questions": 0,
       "topn_tags": 3,
-
       "layout_recognize": "DeepDOC",
       "html4excel": false,
       "image_context_size": 0,
-      "table_context_size": 0,
-
-      "graphrag": {
-        "use_graphrag": true,
-        "method": "light",
-        "entity_types": [
-          "organization",
-          "person",
-          "geo",
-          "event",
-          "category"
-        ]
-      },
-
-      "raptor": {
-        "use_raptor": true,
-        "max_cluster": 64,
-        "max_token": 256,
-        "threshold": 0.1,
-        "random_seed": 0,
-        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize."
-      }
+      "table_context_size": 0
     },
 
     "meta_fields": {},
@@ -2294,10 +1886,7 @@ Success:
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
                 "html4excel": false,
-                "layout_recognize": true,
-                "raptor": {
-                    "use_raptor": false
-                }
+                "layout_recognize": true
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
             "process_duration": 0.54213,
@@ -5935,13 +5524,13 @@ Updates configurations for a specified memory.
 - Body:
   - `"name"`: `string`
   - `"avatar"`: `string`
-  - `"permission"`: `string`
+  - `"permissions"`: `string`
   - `"llm_id"`: `string`
   - `"description"`: `string`
   - `"memory_size"`: `int`
   - `"forgetting_policy"`: `string`
   - `"temperature"`: `float`
-  - `"system_promot"`: `string`
+  - `"system_prompt"`: `string`
   - `"user_prompt"`: `string`
 
 ##### Request example
@@ -5974,7 +5563,7 @@ curl --location --request PUT 'http://{address}/api/v1/memories/d6775d4eeada11f0
 
   - Maximum 65535 characters
 
-- `permission`: (*Body parameter*), `enum<string>`, *Optional*
+- `permissions`: (*Body parameter*), `enum<string>`, *Optional*
 
   The updated memory permission. Available options:
 

@@ -504,6 +504,7 @@ export default {
       runningStatus2: '取消',
       runningStatus3: '成功',
       runningStatus4: '失败',
+      runningStatusQueued: '排队中',
       pageRanges: '页码范围',
       pageRangesTip:
         '页码范围：定义需要解析的页面范围。 不包含在这些范围内的页面将被忽略。',
@@ -780,13 +781,6 @@ export default {
       </p><p>
       如果你要总结的东西需要一篇文章的全部上下文，并且所选 LLM 的上下文长度覆盖了文档长度，你可以尝试这种方法。
       </p>`,
-      knowledgeGraph: `<p>支持的文件格式为<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>
-
-<p>文件分块后，使用分块提取整个文档的 Graph 和 Mindmap。此方法将简单的方法应用于分块文件：
-连续的文本将被切成大约 512 个 Token 数的块。</p>
-<p>接下来，将分块传输到 LLM 以提取 Graph 和 Mindmap 的节点和边。</p>
-
-注意您需要指定的条目类型。</p>`,
       tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
 <p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
 <p>标签集中的每个文本分块都是相互独立的标签和标签描述的文本对。</p>
@@ -1991,7 +1985,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       compilationTitleSuffix: '的数据集',
       llmWiki: 'Wiki',
       skills: 'To Skills',
-      navTree: 'PageIndex',
+      navTree: 'Tree/Page index',
       graph: 'Graph',
       structureMindmap: 'Mindmap',
       structureTimeline: 'Timeline',
@@ -2004,6 +1998,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       topics: 'Topic',
       selectArtifact: '从目录中选择一个条目以查看详情',
       searchEntity: '搜索 Entity',
+      graphEntityCount: '实体 {{returned}} / {{total}}',
       sourceDocuments: '来源文档',
       clearWikiTitle: '清空 Wiki',
       clearWikiDescription:
@@ -2929,10 +2924,18 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       },
       parser: '解析器',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
-      tokenizer: '分词器',
-      tokenizerRequired: '请先添加 Tokenizer 节点',
+      tokenizer: '索引器',
+      tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '无法保存：“{{name}}” 配置有误，请先修正',
       agentModelMissing: '无法保存：“{{name}}” 未选择模型，请先选择',
+      retrievalDatasetRequired: '请选择知识库',
+      retrievalDatasetMissing: '无法保存：“{{name}}” 未选择知识库，请先选择',
+      retrievalTemplateDatasetHint:
+        '该模板包含 {{count}} 处未绑定知识库的数据集检索。请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
+      retrievalMemoryRequired: '请选择记忆库',
+      retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆库，请先选择',
+      retrievalTemplateMemoryHint:
+        '该模板包含 {{count}} 处未绑定记忆库的记忆检索。请在下方选择一个记忆库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       tokenChunker: '按 Token 分块',
