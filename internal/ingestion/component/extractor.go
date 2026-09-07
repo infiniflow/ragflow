@@ -50,7 +50,6 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	"ragflow/internal/component/messagefit"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
@@ -1434,7 +1433,7 @@ func defaultChatModelRef(ctx context.Context, db *gorm.DB, tenantID string) stri
 func extractorContextFitBudget(ctxLen int) int {
 	budget := int(float64(ctxLen) * 0.97)
 	if budget < 1 {
-		// Never hand messagefit a <=0 budget: Fit treats <=0 as the 8192
+		// Never hand Fit a <=0 budget: Fit treats <=0 as the 8192
 		// default, which would stop trimming entirely for a tiny context.
 		return 1
 	}
@@ -1442,7 +1441,7 @@ func extractorContextFitBudget(ctxLen int) int {
 }
 
 // fitExtractorMessages trims msgs to the chat model's context window using
-// the shared messagefit fitter (mirrors Python's message_fit_in), dropping
+// the shared tokenizer fitter (mirrors Python's message_fit_in), dropping
 // entries the fitter removed. It returns a clear error instead of letting a
 // conversation whose final user turn was trimmed to empty reach the provider:
 // the proportional trim can do that when the system prompt alone exceeds the
@@ -1453,11 +1452,11 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 	if ctxLen <= 0 {
 		return msgs, nil
 	}
-	fitMsgs := make([]messagefit.Message, len(msgs))
+	fitMsgs := make([]tokenizer.Message, len(msgs))
 	for i := range msgs {
-		fitMsgs[i] = messagefit.Message{Role: string(msgs[i].Role), Content: msgs[i].Content}
+		fitMsgs[i] = tokenizer.Message{Role: string(msgs[i].Role), Content: msgs[i].Content}
 	}
-	kept, keptIdx, _ := messagefit.Fit(fitMsgs, extractorContextFitBudget(ctxLen))
+	kept, keptIdx, _ := tokenizer.Fit(fitMsgs, extractorContextFitBudget(ctxLen))
 
 	fitted := make([]eschema.Message, 0, len(kept))
 	for j, i := range keptIdx {
