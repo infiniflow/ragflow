@@ -165,7 +165,7 @@ func TestQAChunker_CSVStrictPairAcceptsTwoCells(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
+	cww, _ := chunks[0]["text"].(string)
 	if cww != "Question: question\tAnswer: answer" {
 		t.Fatalf("unexpected content: %q", cww)
 	}
@@ -192,7 +192,7 @@ func TestQAChunker_NonCSVHTMLThreeCellsKeepsFirstTwo(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
+	cww, _ := chunks[0]["text"].(string)
 	if cww != "Question: question\tAnswer: extra" {
 		t.Fatalf("unexpected content: %q", cww)
 	}
