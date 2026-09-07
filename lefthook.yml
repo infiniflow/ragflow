@@ -103,3 +103,14 @@ web-checks:
       exclude: *web_exclude
       root: "web/"
       run: '"$(../tools/hooks/web_tools.sh)/oxlint" {files}'
+    # Convention guard: frontend tests grouped in a directory must use
+    # __tests__/, never tests/ (see web/CLAUDE.md "Test File Placement").
+    # Lefthook skips a job whose glob matches no files, so this job only runs
+    # — and fails — when a changed file sits inside a tests/ directory.
+    - name: web-no-tests-dir
+      glob: "web/**/tests/**"
+      root: "web/"
+      run: |
+        echo "Forbidden test directory: frontend tests belong in __tests__/, not tests/ (web/CLAUDE.md):"
+        printf '  %s\n' {files}
+        exit 1
