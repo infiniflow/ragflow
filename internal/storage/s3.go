@@ -120,6 +120,18 @@ func (s *S3Storage) resolveBucketAndPath(bucket, fnm string) (string, string) {
 	return actualBucket, actualPath
 }
 
+func (s *S3Storage) createBucket(ctx context.Context, bucket string) error {
+	input := &s3.CreateBucketInput{Bucket: aws.String(bucket)}
+	region := s.client.Options().Region
+	if region != "" && region != "us-east-1" && region != "auto" {
+		input.CreateBucketConfiguration = &types.CreateBucketConfiguration{
+			LocationConstraint: types.BucketLocationConstraint(region),
+		}
+	}
+	_, err := s.client.CreateBucket(ctx, input)
+	return err
+}
+
 func (s *S3Storage) Type() string { return "s3" }
 
 // Health checks S3 service availability
@@ -137,9 +149,7 @@ func (s *S3Storage) Health(ctx context.Context) bool {
 
 	// Ensure bucket exists
 	if !s.BucketExists(ctx, bucket) {
-		_, err := s.client.CreateBucket(ctx, &s3.CreateBucketInput{
-			Bucket: aws.String(bucket),
-		})
+		err := s.createBucket(ctx, bucket)
 		if err != nil {
 			common.Error("Failed to create bucket for health check", err, zap.String("bucket", bucket), zap.Error(err))
 			return false
@@ -169,9 +179,7 @@ func (s *S3Storage) Put(ctx context.Context, bucket, fnm string, binary []byte, 
 	for i := 0; i < 2; i++ {
 		// Ensure bucket exists
 		if !s.BucketExists(ctx, bucket) {
-			_, err := s.client.CreateBucket(ctx, &s3.CreateBucketInput{
-				Bucket: aws.String(bucket),
-			})
+			err := s.createBucket(ctx, bucket)
 			if err != nil {
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return ctxErr
