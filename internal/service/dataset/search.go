@@ -87,6 +87,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	question := req.Question
 	datasetIDs := req.DatasetIDs
 	metadataFilter := req.MetadataFilter
+	hasMetadataCondition := req.MetadataCondition != nil
 	if req.MetadataCondition != nil {
 		manual := make([]interface{}, 0)
 		if conditions, ok := req.MetadataCondition["conditions"].([]interface{}); ok {
@@ -149,6 +150,11 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			return nil, fmt.Errorf("invalid search_id")
 		}
 		if searchDetail == nil || len(searchDetail) == 0 {
+			common.Warn("Invalid search_id", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("invalid search_id")
+		}
+		searchTenantID, ok := searchDetail["tenant_id"].(string)
+		if !ok || searchTenantID != userID {
 			common.Warn("Invalid search_id", zap.String("searchID", searchID))
 			return nil, fmt.Errorf("invalid search_id")
 		}
@@ -235,8 +241,15 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Failed to get flatted metadata, using empty metadata for filter", zap.Error(err))
 			flattedMeta = make(common.MetaData)
 		}
-		filteredDocIDs, _ := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs)
-		docIDs = filteredDocIDs
+		if hasMetadataCondition {
+			filteredDocIDs, _ := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs)
+			docIDs = filteredDocIDs
+		} else {
+			filteredDocIDs, filterReturnedEmpty := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, nil, datasetIDs)
+			if !filterReturnedEmpty {
+				docIDs = append(docIDs, filteredDocIDs...)
+			}
+		}
 	}
 
 	// Apply cross_languages and keyword extraction
