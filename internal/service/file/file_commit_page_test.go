@@ -349,3 +349,69 @@ func TestListPageCommits_ReturnsRecordedEdits(t *testing.T) {
 		t.Error("expected create_time to be set")
 	}
 }
+
+func TestListPageCommits_ResolvesNicknamesInSingleBatchedLookup(t *testing.T) {
+	db := newPageCommitTestDB(t)
+	if err := db.AutoMigrate(&entity.User{}); err != nil {
+		t.Fatalf("migrate user: %v", err)
+	}
+	for _, u := range []entity.User{
+		{ID: "u1", Nickname: "Tester", Email: "u1@example.com", IsAuthenticated: "1", IsActive: "1", IsAnonymous: "0"},
+		{ID: "u2", Nickname: "Reviewer", Email: "u2@example.com", IsAuthenticated: "1", IsActive: "1", IsAnonymous: "0"},
+	} {
+		if err := db.Create(&u).Error; err != nil {
+			t.Fatalf("seed user %s: %v", u.ID, err)
+		}
+	}
+
+	var queries []string
+	if err := db.Callback().Query().After("gorm:query").Register("count_user_lookups", func(tx *gorm.DB) {
+		queries = append(queries, tx.Statement.SQL.String())
+	}); err != nil {
+		t.Fatalf("register query callback: %v", err)
+	}
+
+	svc := NewFileCommitService()
+	ctx := context.Background()
+	base := PageEditCommitInput{
+		DatasetID:  "kb1",
+		DocID:      "topic/fireworks display",
+		Slug:       "fireworks display",
+		PageType:   "topic",
+		OldContent: "one",
+	}
+	for i, author := range []string{"u1", "u2", "u3"} {
+		in := base
+		in.AuthorID = author
+		in.NewContent = strconv.Itoa(i + 2)
+		if _, err := svc.RecordPageEdit(ctx, in); err != nil {
+			t.Fatalf("RecordPageEdit by %s: %v", author, err)
+		}
+	}
+
+	queries = nil
+	rows, total, err := svc.ListPageCommits(ctx, "kb1", "topic", "fireworks display", 1, 15)
+	if err != nil {
+		t.Fatalf("ListPageCommits: %v", err)
+	}
+	if total != 3 || len(rows) != 3 {
+		t.Fatalf("expected 3 commits, got total=%d len=%d", total, len(rows))
+	}
+	// Three distinct authors must be resolved by exactly one query against
+	// the user table (u3 has no user row and degrades to an empty nickname).
+	userQueries := 0
+	for _, q := range queries {
+		if strings.Contains(q, "FROM `user`") {
+			userQueries++
+		}
+	}
+	if userQueries != 1 {
+		t.Errorf("expected exactly 1 batched user lookup for 3 distinct authors, got %d (queries: %v)", userQueries, queries)
+	}
+	wantNicknames := map[string]string{"u1": "Tester", "u2": "Reviewer", "u3": ""}
+	for _, row := range rows {
+		if row.UserNickname != wantNicknames[row.UserID] {
+			t.Errorf("author %s: expected nickname %q, got %q", row.UserID, wantNicknames[row.UserID], row.UserNickname)
+		}
+	}
+}

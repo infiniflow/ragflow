@@ -369,23 +369,26 @@ func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, page
 		return nil, 0, err
 	}
 
-	// Resolve author nicknames; a failed lookup degrades to an empty nickname
-	// instead of failing the whole history listing.
-	nicknames := make(map[string]string, len(commits))
-	userDAO := dao.NewUserDAO()
+	// Resolve author nicknames for all distinct authors in one batched
+	// lookup (Python list_page_commits parity: a single IN query); a failed
+	// lookup degrades to empty nicknames instead of failing the listing.
+	authorIDs := make([]string, 0, len(commits))
+	seenAuthors := make(map[string]struct{}, len(commits))
 	for _, c := range commits {
 		if c.AuthorID == "" {
 			continue
 		}
-		if _, ok := nicknames[c.AuthorID]; ok {
+		if _, ok := seenAuthors[c.AuthorID]; ok {
 			continue
 		}
-		nickname, uerr := userDAO.GetNicknameByID(ctx, dao.DB, c.AuthorID)
-		if uerr != nil {
-			nicknames[c.AuthorID] = ""
-			continue
+		seenAuthors[c.AuthorID] = struct{}{}
+		authorIDs = append(authorIDs, c.AuthorID)
+	}
+	nicknames := make(map[string]string, len(authorIDs))
+	if len(authorIDs) > 0 {
+		if resolved, uerr := dao.NewUserDAO().GetNicknamesByIDs(ctx, dao.DB, authorIDs); uerr == nil {
+			nicknames = resolved
 		}
-		nicknames[c.AuthorID] = nickname
 	}
 
 	rows := make([]*entity.WikiPageCommit, 0, len(commits))
