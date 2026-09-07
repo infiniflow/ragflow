@@ -82,6 +82,7 @@ from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.azure_devops.connector import AzureDevOpsConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
+from common.data_source.sitemap_connector import iter_in_worker_thread
 from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
@@ -540,14 +541,20 @@ class Sitemap(SyncBase):
         await asyncio.to_thread(self.connector.validate_connector_settings)
         self.log_connection("Sitemap", self.conf["sitemap_url"], task)
 
+        # Batches are produced in a worker thread (network I/O off the event-loop thread)
+        # and handed over through a bounded queue.
         if task["reindex"] == "1" or not task["poll_range_start"]:
-            return self._sanitize_docs(self.connector.load_from_state())
+            return iter_in_worker_thread(self._sanitize_docs(self.connector.load_from_state()))
 
         end_time = datetime.now(timezone.utc).timestamp()
-        return self._sanitize_docs(self.connector.poll_source(
-            task["poll_range_start"].timestamp(),
-            end_time,
-        ))
+        return iter_in_worker_thread(
+            self._sanitize_docs(
+                self.connector.poll_source(
+                    task["poll_range_start"].timestamp(),
+                    end_time,
+                )
+            )
+        )
 
 
 class Confluence(SyncBase):

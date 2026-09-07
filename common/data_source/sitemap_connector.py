@@ -1,12 +1,15 @@
 import hashlib
 import logging
+import queue
 import re
+import threading
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urljoin, urlparse
 from xml.etree import ElementTree as ET
 
+import regex
 import requests
 
 from common.data_source.config import (
@@ -22,7 +25,8 @@ from common.data_source.models import (
     SecondsSinceUnixEpoch,
     SlimDocument,
 )
-from common.ssrf_guard import assert_url_is_safe, pin_dns as _pin_dns
+from common.ssrf_guard import assert_url_is_safe
+from common.ssrf_guard import pin_dns as _pin_dns
 
 _SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
 _MAX_REDIRECTS = 10
@@ -32,11 +36,62 @@ _MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 _READ_CHUNK_BYTES = 64 * 1024
 _MAX_URL_FILTER_LENGTH = 512
 _MAX_MATCHED_URL_LENGTH = 4096
+_URL_FILTER_TIMEOUT_SECONDS = 1.0
 # A quantified group that itself contains a quantifier, e.g. "(a+)+" or "(a*b)*":
 # the classic shape behind catastrophic backtracking in Python's regex engine.
 _NESTED_QUANTIFIER_RE = re.compile(r"\([^()]*[+*}][^()]*\)\s*[+*{?]")
 
 logger = logging.getLogger(__name__)
+
+_QUEUE_END = object()
+
+
+def iter_in_worker_thread(source: Iterator[Any], maxsize: int = 2) -> Iterator[Any]:
+    """Consume ``source`` in a daemon worker thread and yield its items from a bounded queue.
+
+    The sync worker iterates connector generators synchronously on the asyncio thread.
+    Running the generator (and therefore all its blocking HTTP calls) in a worker
+    thread keeps that blocking off the event-loop thread and lets the next batch be
+    downloaded while the previous one is being indexed. Exceptions raised by the
+    source are re-raised in the consumer; closing the consumer stops the producer.
+    """
+    q: queue.Queue = queue.Queue(maxsize=maxsize)
+    stop = threading.Event()
+
+    def _produce() -> None:
+        try:
+            for item in source:
+                while not stop.is_set():
+                    try:
+                        q.put(item, timeout=0.5)
+                        break
+                    except queue.Full:
+                        continue
+                if stop.is_set():
+                    return
+            q.put(_QUEUE_END)
+        except BaseException as exc:  # noqa: BLE001 - forwarded to the consumer
+            q.put(exc)
+        finally:
+            close = getattr(source, "close", None)
+            if close is not None:
+                try:
+                    close()
+                except Exception:
+                    logger.debug("worker-thread generator close() failed", exc_info=True)
+
+    worker = threading.Thread(target=_produce, name="sitemap-batch-producer", daemon=True)
+    worker.start()
+    try:
+        while True:
+            item = q.get()
+            if item is _QUEUE_END:
+                return
+            if isinstance(item, BaseException):
+                raise item
+            yield item
+    finally:
+        stop.set()
 
 
 class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
@@ -60,7 +115,11 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.sitemap_url = sitemap_url.strip()
         self.batch_size = batch_size
         self.user_agent = user_agent
-        self._url_filter: re.Pattern | None = self._compile_url_filter(url_filter) if url_filter else None
+        self._url_filter: regex.Pattern | None = self._compile_url_filter(url_filter) if url_filter else None
+        # Dedicated session: no ambient proxies / .netrc credentials from the worker
+        # environment, so every request goes straight to the DNS-pinned address.
+        self._session = requests.Session()
+        self._session.trust_env = False
         self.follow_pdf_links = follow_pdf_links
         self.restrict_pdf_to_domain = restrict_pdf_to_domain
         self.credentials: dict[str, Any] = {}
@@ -84,20 +143,23 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         return None
 
     @staticmethod
-    def _compile_url_filter(pattern: str) -> re.Pattern:
-        """Compile the user-provided url_filter, rejecting patterns prone to catastrophic backtracking.
+    def _compile_url_filter(pattern: str) -> regex.Pattern:
+        """Compile the user-provided url_filter with bounded evaluation.
 
-        Python's `re` has no evaluation time limit, and the pattern is matched against
-        sitemap-controlled URLs, so nested quantifiers such as ``(a+)+`` are refused
-        up front and the pattern length is bounded.
+        The pattern is matched against sitemap-controlled URLs. It is compiled with the
+        ``regex`` module (already a transitive dependency through tiktoken / nltk) so
+        that every match runs under a timeout, which is the only robust defence against
+        catastrophic backtracking (``(a|aa)+`` and friends cannot be detected syntactically).
+        The obvious nested-quantifier shapes are still refused up front to give users an
+        immediate error, and the pattern length is bounded.
         """
         if len(pattern) > _MAX_URL_FILTER_LENGTH:
             raise ValueError(f"url_filter is too long (max {_MAX_URL_FILTER_LENGTH} characters)")
         if _NESTED_QUANTIFIER_RE.search(pattern):
             raise ValueError("url_filter must not contain nested quantifiers such as '(a+)+', which can cause catastrophic backtracking")
         try:
-            return re.compile(pattern)
-        except re.error as exc:
+            return regex.compile(pattern)
+        except regex.error as exc:
             raise ValueError(f"url_filter is not a valid regex: {exc}") from exc
 
     def validate_connector_settings(self) -> None:
@@ -385,7 +447,7 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         response: requests.Response | None = None
         for _ in range(_MAX_REDIRECTS + 1):
             with _pin_dns(current_hostname, current_ip):
-                response = requests.get(
+                response = self._session.get(
                     current_url,
                     timeout=REQUEST_TIMEOUT_SECONDS,
                     allow_redirects=False,
@@ -439,7 +501,11 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def _url_matches(self, url: str) -> bool:
         if self._url_filter is None:
             return True
-        return bool(self._url_filter.search(url[:_MAX_MATCHED_URL_LENGTH]))
+        try:
+            return bool(self._url_filter.search(url[:_MAX_MATCHED_URL_LENGTH], timeout=_URL_FILTER_TIMEOUT_SECONDS))
+        except TimeoutError:
+            logger.warning("url_filter evaluation timed out after %ss on %s; URL skipped", _URL_FILTER_TIMEOUT_SECONDS, url[:200])
+            return False
 
     @staticmethod
     def _url_to_identifier(url: str) -> str:

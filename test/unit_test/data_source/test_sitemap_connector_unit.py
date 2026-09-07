@@ -2,6 +2,8 @@
 
 import importlib
 import sys
+import threading
+import time
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
@@ -92,7 +94,9 @@ def _patch_ssrf(monkeypatch):
 
 
 def _patch_requests(monkeypatch, url_map: dict):
-    monkeypatch.setattr(_sitemap_mod.requests, "get", _make_get(url_map))
+    # The connector uses a dedicated requests.Session (trust_env=False); patch its get().
+    _get = _make_get(url_map)
+    monkeypatch.setattr(_sitemap_mod.requests.Session, "get", lambda self, url, **kwargs: _get(url, **kwargs))
 
 
 def _patch_trafilatura(monkeypatch, text="# Title\n\nBody text."):
@@ -611,7 +615,7 @@ def test_iter_sitemap_urls_visits_each_sitemap_once(monkeypatch):
         calls.append(url)
         return responses[url]
 
-    monkeypatch.setattr(_sitemap_mod.requests, "get", _get)
+    monkeypatch.setattr(_sitemap_mod.requests.Session, "get", lambda self, url, **kwargs: _get(url, **kwargs))
     urls = [u for u, _ in _connector()._iter_sitemap_urls("https://example.com/sitemap.xml", depth=0)]
 
     assert urls == ["https://example.com/en/page-1"]
@@ -634,8 +638,79 @@ def test_iter_sitemap_urls_stops_at_fetch_budget(monkeypatch):
         calls.append(url)
         return responses[url]
 
-    monkeypatch.setattr(_sitemap_mod.requests, "get", _get)
+    monkeypatch.setattr(_sitemap_mod.requests.Session, "get", lambda self, url, **kwargs: _get(url, **kwargs))
     urls = [u for u, _ in _connector()._iter_sitemap_urls("https://example.com/sitemap.xml", depth=0)]
 
     assert len(calls) == 3  # index + 2 children
     assert urls == ["https://example.com/page-0", "https://example.com/page-1"]
+
+
+@pytest.mark.p2
+def test_session_ignores_environment_proxies_and_netrc():
+    connector = _connector()
+    assert connector._session.trust_env is False
+
+
+@pytest.mark.p2
+def test_url_filter_evaluation_is_time_bounded(monkeypatch):
+    """`(a|aa)+` cannot be rejected syntactically; the timeout must stop the match."""
+    monkeypatch.setattr(_sitemap_mod, "_URL_FILTER_TIMEOUT_SECONDS", 0.05)
+    connector = _connector(url_filter=r"^https://(a|aa)+$")
+    start = time.monotonic()
+
+    assert connector._url_matches("https://" + "a" * 60 + "b") is False
+    assert time.monotonic() - start < 2.0
+    assert connector._url_matches("https://aaaa") is True
+
+
+# ---------------------------------------------------------------------------
+# iter_in_worker_thread (bridge used by the sync worker)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.p2
+def test_iter_in_worker_thread_yields_all_items_from_another_thread():
+    producer_threads: set[str] = set()
+
+    def _source():
+        for i in range(5):
+            producer_threads.add(threading.current_thread().name)
+            yield [i]
+
+    items = list(_sitemap_mod.iter_in_worker_thread(_source(), maxsize=1))
+
+    assert items == [[0], [1], [2], [3], [4]]
+    assert producer_threads == {"sitemap-batch-producer"}
+
+
+@pytest.mark.p2
+def test_iter_in_worker_thread_propagates_exceptions():
+    def _source():
+        yield [1]
+        raise RuntimeError("boom")
+
+    it = _sitemap_mod.iter_in_worker_thread(_source())
+    assert next(it) == [1]
+    with pytest.raises(RuntimeError, match="boom"):
+        next(it)
+
+
+@pytest.mark.p2
+def test_iter_in_worker_thread_stops_producer_when_consumer_closes():
+    produced: list[int] = []
+    closed = threading.Event()
+
+    def _source():
+        try:
+            for i in range(1000):
+                produced.append(i)
+                yield [i]
+        finally:
+            closed.set()
+
+    it = _sitemap_mod.iter_in_worker_thread(_source(), maxsize=1)
+    assert next(it) == [0]
+    it.close()
+
+    assert closed.wait(timeout=5)
+    assert len(produced) < 10
