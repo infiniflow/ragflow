@@ -289,6 +289,13 @@ class PaddleOCRParser(RAGFlowPdfParser):
         if not self.local and not self.access_token:
             return False, "[PaddleOCR] Access token not configured"
 
+        # The hosted service is only reachable over HTTPS; a plaintext hosted
+        # address is a misconfiguration, not an unauthenticated deployment.
+        if not self.local and not self.base_url.strip().lower().startswith("https://"):
+            reason = "[PaddleOCR] Hosted service requires an HTTPS base URL"
+            self.logger.warning(reason)
+            return False, reason
+
         headers: dict[str, str] = {"Client-Platform": "ragflow"}
         if self.access_token:
             if self.base_url.strip().lower().startswith("https://"):
@@ -298,8 +305,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
         try:
             if self.local:
-                probe_url = f"{self.base_url.rstrip('/')}/{self._LOCAL_ENDPOINT_PATH}"
-                resp = requests.get(probe_url, headers=headers, timeout=10)
+                resp = requests.get(self._local_endpoint(self.base_url), headers=headers, timeout=10)
             else:
                 jobs_url = f"{self.base_url.rstrip('/')}/api/v2/ocr/jobs"
                 resp = requests.post(jobs_url, data={"model": self.algorithm}, headers=headers, timeout=10)

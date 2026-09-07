@@ -90,6 +90,7 @@ def test_missing_access_token_returns_false_without_request(monkeypatch):
     """The hosted service requires a token; the check fails before any HTTP
     call."""
     m = _load_paddleocr_parser(monkeypatch)
+    monkeypatch.delenv("PADDLEOCR_ACCESS_TOKEN", raising=False)
     p = m.PaddleOCRParser(base_url=_HOSTED_BASE, access_token=None)
     with (
         mock.patch.object(m.requests, "post") as post,
@@ -173,11 +174,28 @@ def test_network_error_returns_false(monkeypatch):
     assert "unreachable" in reason.lower()
 
 
+def test_hosted_non_https_base_url_rejected_before_probe(monkeypatch):
+    """A hosted hostname over plain HTTP is a misconfiguration: fail with a
+    configuration reason instead of probing without authentication."""
+    m = _load_paddleocr_parser(monkeypatch)
+    p = m.PaddleOCRParser(base_url="http://paddleocr.aistudio-app.com", access_token="tok")
+    with (
+        mock.patch.object(m.requests, "post") as post,
+        mock.patch.object(m.requests, "get") as get,
+    ):
+        ok, reason = p.check_installation()
+    assert ok is False
+    assert "https" in reason.lower()
+    post.assert_not_called()
+    get.assert_not_called()
+
+
 def test_self_hosted_probe_uses_layout_parsing_get(monkeypatch):
     """A self-hosted PaddleX deployment only serves the synchronous
     layout-parsing endpoint, so the probe is a GET there — no token is
     required and any HTTP response counts as reachable."""
     m = _load_paddleocr_parser(monkeypatch)
+    monkeypatch.delenv("PADDLEOCR_ACCESS_TOKEN", raising=False)
     p = m.PaddleOCRParser(base_url="http://127.0.0.1:8080", access_token=None)
     with (
         mock.patch.object(m.requests, "get", return_value=_Resp(404)) as get,
@@ -197,9 +215,24 @@ def test_self_hosted_token_not_sent_over_http(monkeypatch):
     """Mirroring the parse path, the token is not sent to a non-HTTPS
     endpoint."""
     m = _load_paddleocr_parser(monkeypatch)
+    monkeypatch.delenv("PADDLEOCR_ACCESS_TOKEN", raising=False)
     p = m.PaddleOCRParser(base_url="http://127.0.0.1:8080", access_token="tok")
     with mock.patch.object(m.requests, "get", return_value=_Resp(200)) as get:
         ok, _ = p.check_installation()
     assert ok is True
     _, kwargs = get.call_args
     assert "Authorization" not in kwargs["headers"]
+
+
+def test_self_hosted_base_url_carrying_endpoint_path_not_duplicated(monkeypatch):
+    """Pasting the full pipeline URL as the base URL is the likelier user
+    mistake; the probe must reuse the address as-is instead of appending the
+    endpoint path a second time."""
+    m = _load_paddleocr_parser(monkeypatch)
+    monkeypatch.delenv("PADDLEOCR_ACCESS_TOKEN", raising=False)
+    p = m.PaddleOCRParser(base_url="http://127.0.0.1:8080/layout-parsing", access_token=None)
+    with mock.patch.object(m.requests, "get", return_value=_Resp(200)) as get:
+        ok, _ = p.check_installation()
+    assert ok is True
+    args, _ = get.call_args
+    assert args[0] == "http://127.0.0.1:8080/layout-parsing"
