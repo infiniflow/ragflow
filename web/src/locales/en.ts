@@ -3166,6 +3166,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       contentTip: 'content: Email content (Optional)',
       jsonUploadTypeErrorMessage: 'Please upload json file',
       jsonUploadContentErrorMessage: 'json file error',
+      nameExists: 'Name already exists',
       iteration: 'Iteration',
       iterationDescription: `A looping component that iterates over an input array and executes a defined logic for each item.`,
       delimiterTip: `
