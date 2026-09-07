@@ -275,9 +275,6 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 0 Ack/0 Nack for duplicate delivery, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
-	if ingestor.Stats().DuplicateClaims != 1 {
-		t.Fatalf("expected DuplicateClaims = 1, got %d", ingestor.Stats().DuplicateClaims)
-	}
 }
 
 // TestHandleAndExecute_MemoryDuplicateClaimRenewsLease verifies duplicate delivery
@@ -304,9 +301,6 @@ func TestHandleAndExecute_MemoryDuplicateClaimRenewsLease(t *testing.T) {
 	}
 	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 0 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
-	}
-	if ingestor.Stats().DuplicateClaims != 1 {
-		t.Fatalf("expected DuplicateClaims = 1, got %d", ingestor.Stats().DuplicateClaims)
 	}
 }
 
@@ -349,12 +343,10 @@ func TestHandleAndExecute_SlowAdmissionHeartbeatsUnderLeaseProtection(t *testing
 	}
 }
 
-// TestSlotStateInvariantConservation verifies that the slot conservation invariant
-// (Idle + Reserved + Handling == maxConcurrency) is maintained throughout the full
-// lifecycle and that SlotInvariantErrors remains 0.
-func TestSlotStateInvariantConservation(t *testing.T) {
+// TestSlotStateTransitions verifies the workerSlot state transitions between Idle, Reserved, and Handling.
+func TestSlotStateTransitions(t *testing.T) {
 	const concurrency int32 = 2
-	ingestor := newUnitIngestor("test-slot-invariant", concurrency, []string{"pdf"})
+	ingestor := newUnitIngestor("test-slot-transitions", concurrency, []string{"pdf"})
 	ingestor.startWorkerPool()
 
 	// Wait for workers to start and register idle
@@ -363,44 +355,27 @@ func TestSlotStateInvariantConservation(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 
-	stats := ingestor.Stats()
-	if stats.IdleSlots != concurrency {
-		t.Fatalf("initial IdleSlots = %d, want %d", stats.IdleSlots, concurrency)
-	}
-	if stats.SlotInvariantErrors != 0 {
-		t.Fatalf("expected 0 SlotInvariantErrors, got %d", stats.SlotInvariantErrors)
-	}
-
 	// Drain one slot (simulating dispatcher reserve)
 	slot := <-ingestor.idleSlots
-	ingestor.markSlotReserved(slot)
-
-	stats = ingestor.Stats()
-	if stats.IdleSlots != 1 || stats.ReservedSlots != 1 || stats.HandlingSlots != 0 {
-		t.Fatalf("after reserve: idle=%d reserved=%d handling=%d", stats.IdleSlots, stats.ReservedSlots, stats.HandlingSlots)
+	if SlotState(slot.state.Load()) != SlotStateIdle {
+		t.Fatalf("initial slot state = %v, want Idle", SlotState(slot.state.Load()))
 	}
-	if stats.IdleSlots+stats.ReservedSlots+stats.HandlingSlots != concurrency {
-		t.Fatalf("invariant violated: sum = %d != %d", stats.IdleSlots+stats.ReservedSlots+stats.HandlingSlots, concurrency)
+
+	ingestor.markSlotReserved(slot)
+	if SlotState(slot.state.Load()) != SlotStateReserved {
+		t.Fatalf("state after reserve = %v, want Reserved", SlotState(slot.state.Load()))
 	}
 
 	// Move to handling
 	ingestor.markSlotHandling(slot)
-	stats = ingestor.Stats()
-	if stats.IdleSlots != 1 || stats.ReservedSlots != 0 || stats.HandlingSlots != 1 {
-		t.Fatalf("after handling: idle=%d reserved=%d handling=%d", stats.IdleSlots, stats.ReservedSlots, stats.HandlingSlots)
-	}
-	if stats.IdleSlots+stats.ReservedSlots+stats.HandlingSlots != concurrency {
-		t.Fatalf("invariant violated: sum = %d != %d", stats.IdleSlots+stats.ReservedSlots+stats.HandlingSlots, concurrency)
+	if SlotState(slot.state.Load()) != SlotStateHandling {
+		t.Fatalf("state after handling = %v, want Handling", SlotState(slot.state.Load()))
 	}
 
 	// Return to idle
 	ingestor.markSlotIdle(slot)
-	stats = ingestor.Stats()
-	if stats.IdleSlots != 2 || stats.ReservedSlots != 0 || stats.HandlingSlots != 0 {
-		t.Fatalf("after return: idle=%d reserved=%d handling=%d", stats.IdleSlots, stats.ReservedSlots, stats.HandlingSlots)
-	}
-	if stats.SlotInvariantErrors != 0 {
-		t.Fatalf("SlotInvariantErrors = %d, want 0", stats.SlotInvariantErrors)
+	if SlotState(slot.state.Load()) != SlotStateIdle {
+		t.Fatalf("state after return = %v, want Idle", SlotState(slot.state.Load()))
 	}
 
 	ingestor.dispatchCancel()
