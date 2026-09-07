@@ -18,6 +18,7 @@ import { FileUploadProps } from '@/components/file-upload';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { AgentCategory, AgentGlobals } from '@/constants/agent';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import {
   AgentListItem,
@@ -52,6 +53,7 @@ import agentService, {
   uploadAgentFile,
 } from '@/services/agent-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get, isEmpty, set } from 'lodash';
@@ -170,10 +172,12 @@ const buildAgentListParams = ({
 };
 
 export const useFetchAgentListByPage = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { searchString, setSearchString, handleInputChange } =
+    useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
   const canvasCategoryIds = Array.isArray(filterValue.canvasCategory)
     ? (filterValue.canvasCategory as string[])
     : undefined;
@@ -229,10 +233,12 @@ export const useFetchAgentListByPage = () => {
     data: data?.canvas ?? [],
     loading,
     searchString,
+    setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total ?? 0 },
     setPagination,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   };
 };
@@ -364,6 +370,7 @@ export const useDeleteAgent = () => {
         queryClient.invalidateQueries({
           queryKey: AgentKeys.tags(),
         });
+        markListItemsDeleted(ListDeletionKey.AgentList);
       }
       return data?.data ?? false;
     },

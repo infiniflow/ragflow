@@ -184,7 +184,7 @@
                                                 "cross_languages": [],
                                                 "description": "A knowledge base of research reports on stock analysis by senior experts",
                                                 "empty_response": "",
-                                                "kb_ids": [
+                                                "dataset_ids": [
                                                     "60c53ed89acc11f0bc1e7a2a6d0b2755"
                                                 ],
                                                 "retrieval_from": "dataset",
@@ -1010,7 +1010,7 @@
                                         "cross_languages": [],
                                         "description": "A knowledge base of research reports on stock analysis by senior experts",
                                         "empty_response": "",
-                                        "kb_ids": [
+                                        "dataset_ids": [
                                             "60c53ed89acc11f0bc1e7a2a6d0b2755"
                                         ],
                                         "retrieval_from": "dataset",
