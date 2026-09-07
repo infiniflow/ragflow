@@ -232,6 +232,15 @@ async def list_business_documents():
         return _error(error)
 
 
+@manager.route("/business-documents/catalog", methods=["GET"])  # noqa: F821
+@login_required
+async def list_business_document_catalog():
+    try:
+        return _success(await thread_pool_exec(BusinessDocumentService.list_catalog))
+    except BusinessDocumentError as error:
+        return _error(error)
+
+
 @manager.route("/business-documents/access/users", methods=["GET"])  # noqa: F821
 @login_required
 async def list_business_document_access_users():

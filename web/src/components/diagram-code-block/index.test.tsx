@@ -17,6 +17,10 @@ describe('DiagramCodeBlock', () => {
     jest.clearAllMocks();
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it.each([
     ['mermaid', 'mermaid'],
     ['meraid', 'mermaid'],
@@ -77,7 +81,44 @@ describe('DiagramCodeBlock', () => {
         body: source,
       }),
     );
+  });
 
-    fetchMock.mockRestore();
+  it('shows Mermaid source when rendering fails', async () => {
+    const source = 'not valid Mermaid source';
+    mockedMermaidRender.mockRejectedValue(new Error('Mermaid render failed'));
+
+    render(<DiagramCodeBlock language="mermaid" source={source} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Mermaid render failed',
+    );
+    expect(screen.getByText(source)).toBeInTheDocument();
+  });
+
+  it('shows PlantUML source when rendering fails', async () => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('render failed', { status: 400 }));
+    const source = '@startuml\ninvalid source\n@enduml';
+
+    render(<DiagramCodeBlock language="plantuml" source={source} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'PlantUML renderer returned HTTP 400',
+    );
+    expect(screen.getByText(/invalid source/)).toBeInTheDocument();
+  });
+
+  it('does not add an empty source block when no diagram code is available', async () => {
+    mockedMermaidRender.mockRejectedValue(new Error('Mermaid render failed'));
+
+    const { container } = render(
+      <DiagramCodeBlock language="mermaid" source=" " />,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Mermaid render failed',
+    );
+    expect(container.querySelector('pre')).not.toBeInTheDocument();
   });
 });

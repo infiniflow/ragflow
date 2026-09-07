@@ -41,10 +41,12 @@ newer than every intake answer and no intake question is open.
 into a job snapshot. The model returns a schema-valid AST. Deterministic code
 then verifies the exact template outline, per-section block types, required
 content, and pinned versions before creating immutable revision 1. Section
-4.1 must include a bounded PlantUML diagram. Section 4.3 must include both
-accompanying text and a bounded PlantUML activity diagram with start/end nodes,
-an if/else decision, and an explicitly named unsuccessful alternative path. Questions
-and proposals are stored outside the body, and lifecycle changes to `REVIEW`.
+4.1 must include a non-empty PlantUML source block. Section 4.3 must include
+both accompanying text and a non-empty PlantUML source block. Diagram syntax
+and renderability are not aggregate invariants: the browser renders diagrams
+on a best-effort basis and shows the preserved source when rendering fails.
+Questions and proposals are stored outside the body, and lifecycle changes to
+`REVIEW`.
 
 ### Review
 

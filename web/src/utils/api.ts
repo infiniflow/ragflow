@@ -256,6 +256,7 @@ export default {
 
   // business documents
   businessDocuments: `${restAPIv1}/business-documents`,
+  businessDocumentCatalog: `${restAPIv1}/business-documents/catalog`,
   businessDocument: (id: string) => `${restAPIv1}/business-documents/${id}`,
   businessDocumentOwner: (id: string) =>
     `${restAPIv1}/business-documents/${id}/owner`,

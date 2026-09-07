@@ -3,6 +3,7 @@ import {
   createEvaDocumentChange,
   generateEvaDocumentChangeDraft,
   listBusinessDocumentAccessUsers,
+  listBusinessDocumentCatalog,
   listBusinessDocuments,
   prepareEvaDocumentChange,
   publishEvaDocumentChange,
@@ -52,6 +53,26 @@ test('loads the canonical paginated document list envelope', async () => {
   await expect(listBusinessDocuments(2, 10, 'mine')).resolves.toEqual(list);
   expect(mockedGet).toHaveBeenCalledWith(api.businessDocuments, {
     params: { page: 2, page_size: 10, scope: 'mine' },
+    skipErrorNotification: true,
+  });
+});
+
+test('loads the L5 document catalog from its dedicated endpoint', async () => {
+  const catalog = {
+    items: [
+      {
+        id: 'L2-01.01.04.01.01',
+        title: 'Разрешённый документ',
+        capability_level: 'L5' as const,
+        hierarchy: {},
+      },
+    ],
+    total: 1,
+  };
+  mockedGet.mockResolvedValueOnce({ data: { code: 0, data: catalog } });
+
+  await expect(listBusinessDocumentCatalog()).resolves.toEqual(catalog);
+  expect(mockedGet).toHaveBeenCalledWith(api.businessDocumentCatalog, {
     skipErrorNotification: true,
   });
 });

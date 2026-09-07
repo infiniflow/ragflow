@@ -142,36 +142,21 @@ def test_document_ast_flattens_template_sections_returned_inside_parent_blocks(d
 
 
 @pytest.mark.p0
-def test_document_ast_accepts_a_complete_plantuml_activity_scenario(database):
+def test_document_ast_preserves_plantuml_source_without_parsing_it(database):
     draft = _draft()
+    conceptual = next(section for section in draft["sections"] if section["id"] == "4.1")
+    scenario = next(section for section in draft["sections"] if section["id"] == "4.3")
+    conceptual_source = "conceptual source that the renderer may reject"
+    activity_source = "activity source without PlantUML control-flow syntax"
+    conceptual["blocks"][-1]["source"] = conceptual_source
+    scenario["blocks"][-1]["source"] = activity_source
 
     validated = validate_document_ast(draft)
 
+    conceptual = next(section for section in validated["sections"] if section["id"] == "4.1")
     scenario = next(section for section in validated["sections"] if section["id"] == "4.3")
-    activity = next(block for block in scenario["blocks"] if block["type"] == "plantuml")
-    assert "if (Проверка успешна?) then (Да)" in activity["source"]
-    assert "else (Нет)" in activity["source"]
-
-
-@pytest.mark.p0
-@pytest.mark.parametrize(
-    ("source", "missing"),
-    [
-        ("@startuml\nif (Успех?) then (Да)\nelse (Нет)\nendif\nstop\n@enduml", "start"),
-        ("@startuml\nstart\nif (Успех?) then (Да)\nelse (Нет)\nendif\n@enduml", "end"),
-        ("@startuml\nstart\n:Действие;\nstop\n@enduml", "decision"),
-        ("@startuml\nstart\nif (Успех?) then (Да)\nelse (Да)\nendif\nstop\n@enduml", "negative path"),
-    ],
-)
-def test_document_ast_rejects_incomplete_plantuml_activity_scenarios(database, source, missing):
-    draft = _draft()
-    scenario = next(section for section in draft["sections"] if section["id"] == "4.3")
-    scenario["blocks"][-1]["source"] = source
-
-    with pytest.raises(BusinessDocumentError) as caught:
-        validate_document_ast(draft)
-
-    assert caught.value.code == "INCOMPLETE_ACTIVITY_SCENARIO", missing
+    assert next(block for block in conceptual["blocks"] if block["type"] == "plantuml")["source"] == conceptual_source
+    assert next(block for block in scenario["blocks"] if block["type"] == "plantuml")["source"] == activity_source
 
 
 @pytest.mark.p0
@@ -487,7 +472,7 @@ def test_ai_retry_prompt_contains_previous_validation_error(database):
     requested = BusinessDocumentService.execute_command(TENANT, AUTHOR, document["document_id"], _command(document, "REQUEST_INTAKE_ASSESSMENT"))
     job = BusinessDocumentJob.get_by_id(requested["job_id"])
     job.attempt = 2
-    job.error = {"code": "INCOMPLETE_ACTIVITY_SCENARIO", "message": "Negative alternative path is missing", "details": {}}
+    job.error = {"code": "REQUIRED_SECTION_EMPTY", "message": "A required section is empty", "details": {}}
 
     prompt = BusinessDocumentAI._prompt(job)
 

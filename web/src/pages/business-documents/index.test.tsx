@@ -11,6 +11,7 @@ import {
   fetchEvaDocumentChange,
   generateEvaDocumentChangeDraft,
   listBusinessDocumentAccessUsers,
+  listBusinessDocumentCatalog,
   listBusinessDocumentRevisions,
   listBusinessDocuments,
   listEvaDocumentChanges,
@@ -47,6 +48,10 @@ jest.mock('react-markdown', () => ({
 jest.mock('remark-gfm', () => ({
   __esModule: true,
   default: () => undefined,
+}));
+
+jest.mock('@/components/diagram-code-block', () => ({
+  DiagramCodeBlock: ({ source }: { source: string }) => <pre>{source}</pre>,
 }));
 
 jest.mock('@/components/ui/audio-button', () => ({
@@ -89,6 +94,7 @@ jest.mock('@/services/business-document-service', () => {
     listBusinessDocuments: jest.fn(),
     listBusinessDocumentRevisions: jest.fn(),
     listBusinessDocumentAccessUsers: jest.fn(),
+    listBusinessDocumentCatalog: jest.fn(),
     assignBusinessDocumentOwner: jest.fn(),
     submitBusinessDocumentCommand: jest.fn(),
     searchEvaDocumentSources: jest.fn(),
@@ -119,6 +125,7 @@ const mockedFetch = jest.mocked(fetchBusinessDocument);
 const mockedList = jest.mocked(listBusinessDocuments);
 const mockedListRevisions = jest.mocked(listBusinessDocumentRevisions);
 const mockedListAccessUsers = jest.mocked(listBusinessDocumentAccessUsers);
+const mockedListCatalog = jest.mocked(listBusinessDocumentCatalog);
 const mockedAssignOwner = jest.mocked(assignBusinessDocumentOwner);
 const mockedSubmit = jest.mocked(submitBusinessDocumentCommand);
 const mockedSearchEva = jest.mocked(searchEvaDocumentSources);
@@ -132,6 +139,16 @@ const mockedPublishEva = jest.mocked(publishEvaDocumentChange);
 const mockedPullEvaDocument = jest.mocked(pullBusinessDocumentFromEva);
 const mockedRebindEvaDocument = jest.mocked(rebindBusinessDocumentToEva);
 const mockedListEvaUserCredentials = jest.mocked(listEvaUserCredentials);
+
+const catalogEntry = {
+  id: 'L2-99.99.99.99.99',
+  title: 'Новый продукт',
+  title_en: 'New Product',
+  description: 'Разрешённый L5-документ',
+  capability_level: 'L5' as const,
+  capability_type: 'Core',
+  hierarchy: {},
+};
 
 const firstSectionText =
   'Повторяемая фраза. Сократить время перевода. Результат измеряется в минутах.';
@@ -330,6 +347,15 @@ function renderPage(path = '/business-documents/doc-1') {
   );
 }
 
+async function selectCatalogEntry() {
+  await screen.findByRole('option', { name: catalogEntry.title });
+  const select = await screen.findByRole('combobox', {
+    name: 'Название документа',
+  });
+  fireEvent.change(select, { target: { value: catalogEntry.id } });
+  await waitFor(() => expect(select).toHaveValue(catalogEntry.id));
+}
+
 function mockTextSelection(
   selectedText: string,
   startSection: HTMLElement,
@@ -373,6 +399,7 @@ beforeEach(() => {
   });
   mockedListRevisions.mockResolvedValue([projection.current_revision!]);
   mockedListAccessUsers.mockResolvedValue({ items: [] });
+  mockedListCatalog.mockResolvedValue({ items: [catalogEntry], total: 1 });
   mockedAssignOwner.mockResolvedValue(projection);
   mockedListEva.mockResolvedValue({
     items: [],
@@ -1747,13 +1774,11 @@ test('creates a new business requirements document', async () => {
   expect(
     screen.queryByTestId('business-document-datasets'),
   ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('textbox', { name: 'URL страницы EVA' }),
+  ).not.toBeInTheDocument();
 
-  fireEvent.change(
-    screen.getByRole('textbox', { name: 'Название документа' }),
-    {
-      target: { value: '  Новый продукт  ' },
-    },
-  );
+  await selectCatalogEntry();
   fireEvent.change(screen.getByRole('textbox', { name: 'Описание идеи' }), {
     target: { value: 'Нужен новый клиентский сценарий.' },
   });
@@ -1761,9 +1786,9 @@ test('creates a new business requirements document', async () => {
 
   await waitFor(() => expect(mockedCreate).toHaveBeenCalledTimes(1));
   expect(mockedCreate.mock.calls[0][0]).toEqual({
-    schema_version: '2',
+    schema_version: '3',
     document_type: 'business_requirements',
-    title: '  Новый продукт  ',
+    catalog_entry_id: catalogEntry.id,
     idea: 'Нужен новый клиентский сценарий.',
     dataset_ids: [],
   });
@@ -1792,10 +1817,7 @@ test('opens the created document when automatic analysis cannot be started', asy
   mockedSubmit.mockRejectedValueOnce(new Error('analysis unavailable'));
   renderPage('/business-documents');
 
-  fireEvent.change(
-    screen.getByRole('textbox', { name: 'Название документа' }),
-    { target: { value: 'Новый продукт' } },
-  );
+  await selectCatalogEntry();
   fireEvent.change(screen.getByRole('textbox', { name: 'Описание идеи' }), {
     target: { value: 'Нужен новый клиентский сценарий.' },
   });
@@ -1819,39 +1841,6 @@ test('does not show linked RAGFlow source counts in a document', async () => {
     await screen.findByTestId('business-document-workbench'),
   ).toBeVisible();
   expect(screen.queryByText('Источников: 1')).not.toBeInTheDocument();
-});
-
-test('optionally links a new document to an EVA page URL', async () => {
-  renderPage('/business-documents');
-
-  fireEvent.change(
-    screen.getByRole('textbox', { name: 'Название документа' }),
-    { target: { value: 'Связанный документ' } },
-  );
-  fireEvent.change(screen.getByRole('textbox', { name: 'Описание идеи' }), {
-    target: { value: 'Синхронизировать требования с EVA.' },
-  });
-  fireEvent.change(screen.getByRole('textbox', { name: 'URL страницы EVA' }), {
-    target: {
-      value: 'https://eva.example.com/project/Document/BR-42',
-    },
-  });
-  fireEvent.click(screen.getByRole('button', { name: 'Начать работу' }));
-
-  expect(
-    await screen.findByTestId('eva-replace-confirmation'),
-  ).toHaveTextContent('текущее содержимое страницы');
-  fireEvent.click(screen.getByTestId('confirm-eva-replace'));
-
-  await waitFor(() =>
-    expect(mockedCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eva_page_url: 'https://eva.example.com/project/Document/BR-42',
-        eva_decision: { mode: 'BIND', confirm_replace: true },
-      }),
-      expect.anything(),
-    ),
-  );
 });
 
 test('offers matching EVA pages and confirms replacement before binding', async () => {
@@ -1921,10 +1910,7 @@ test('offers matching EVA pages and confirms replacement before binding', async 
     .mockResolvedValueOnce(projection);
   renderPage('/business-documents');
 
-  fireEvent.change(
-    screen.getByRole('textbox', { name: 'Название документа' }),
-    { target: { value: 'Новый продукт' } },
-  );
+  await selectCatalogEntry();
   fireEvent.change(screen.getByRole('textbox', { name: 'Описание идеи' }), {
     target: { value: 'Нужен новый клиентский сценарий.' },
   });
@@ -1965,7 +1951,8 @@ test('offers matching EVA pages and confirms replacement before binding', async 
   await waitFor(() => expect(mockedCreate).toHaveBeenCalledTimes(2));
   expect(mockedCreate.mock.calls[1][0]).toEqual(
     expect.objectContaining({
-      schema_version: '2',
+      schema_version: '3',
+      catalog_entry_id: catalogEntry.id,
       eva_page_url: 'https://eva.example.com/project/Document/BR-42',
       eva_decision: { mode: 'BIND', confirm_replace: true },
     }),
@@ -2000,10 +1987,7 @@ test('creates without EVA binding after the user explicitly skips matches', asyn
     .mockResolvedValueOnce(projection);
   renderPage('/business-documents');
 
-  fireEvent.change(
-    screen.getByRole('textbox', { name: 'Название документа' }),
-    { target: { value: 'Новый продукт' } },
-  );
+  await selectCatalogEntry();
   fireEvent.change(screen.getByRole('textbox', { name: 'Описание идеи' }), {
     target: { value: 'Нужен новый клиентский сценарий.' },
   });
@@ -2013,25 +1997,29 @@ test('creates without EVA binding after the user explicitly skips matches', asyn
   await waitFor(() => expect(mockedCreate).toHaveBeenCalledTimes(2));
   expect(mockedCreate.mock.calls[1][0]).toEqual(
     expect.objectContaining({
-      schema_version: '2',
+      schema_version: '3',
+      catalog_entry_id: catalogEntry.id,
       eva_decision: { mode: 'SKIP' },
     }),
   );
   expect(mockedCreate.mock.calls[1][0]).not.toHaveProperty('eva_page_url');
 });
 
-test('appends voice transcripts to document input fields', () => {
+test('keeps voice input for the idea while the title comes from the catalog', async () => {
   renderPage('/business-documents');
 
-  const title = screen.getByRole('textbox', { name: 'Название документа' });
   const idea = screen.getByRole('textbox', { name: 'Описание идеи' });
-  fireEvent.change(title, { target: { value: 'Новый' } });
+  await selectCatalogEntry();
   fireEvent.change(idea, { target: { value: 'Исходная идея.' } });
 
-  fireEvent.click(screen.getByTestId('voice-input-document-title'));
   fireEvent.click(screen.getByTestId('voice-input-document-idea'));
 
-  expect(title).toHaveValue('Новый текст из диктовки');
+  expect(
+    screen.getByRole('combobox', { name: 'Название документа' }),
+  ).toHaveTextContent(catalogEntry.title);
+  expect(
+    screen.queryByTestId('voice-input-document-title'),
+  ).not.toBeInTheDocument();
   expect(idea).toHaveValue('Исходная идея. текст из диктовки');
 });
 

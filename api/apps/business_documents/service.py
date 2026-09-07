@@ -44,6 +44,7 @@ from api.apps.business_documents.evidence import ensure_dataset_access, ensure_d
 from api.db.db_models import (
     BusinessDocument,
     BusinessDocumentAnswer,
+    BusinessDocumentCatalog,
     BusinessDocumentCommand,
     BusinessDocumentComment,
     BusinessDocumentEvent,
@@ -63,6 +64,7 @@ from common.time_utils import current_timestamp
 
 
 _MODEL_TABLES = (
+    BusinessDocumentCatalog,
     BusinessDocument,
     BusinessDocumentRevision,
     BusinessDocumentQuestion,
@@ -168,10 +170,10 @@ class BusinessDocumentService:
         if "chat_id" in raw:
             raise ValidationError("CHAT_ID_NOT_ALLOWED", "chat_id is assigned by the business document channel")
         schema_version = raw.get("schema_version")
-        if schema_version != "2" and raw.get("eva_page_url"):
+        if schema_version not in {"2", "3"} and raw.get("eva_page_url"):
             raise ValidationError(
                 "EVA_BINDING_REQUIRES_SCHEMA_V2",
-                "EVA page binding requires create-document schema version 2 and explicit replacement confirmation",
+                "EVA page binding requires create-document schema version 2 or 3 and explicit replacement confirmation",
             )
         if raw.get("eva_page_url"):
             requested_decision = raw.get("eva_decision")
@@ -180,8 +182,25 @@ class BusinessDocumentService:
                     "EVA_REPLACE_CONFIRMATION_REQUIRED",
                     "Confirm that publishing this document will replace the current EVA page content",
                 )
-        validate_contract("create_document_v2" if schema_version == "2" else "create_document", raw)
-        title = raw.get("title")
+        contract_name = {
+            "2": "create_document_v2",
+            "3": "create_document_v3",
+        }.get(schema_version, "create_document")
+        validate_contract(contract_name, raw)
+        catalog_entry = None
+        if schema_version == "3":
+            catalog_entry_id = raw.get("catalog_entry_id")
+            catalog_entry = BusinessDocumentCatalog.get_or_none(
+                (BusinessDocumentCatalog.id == catalog_entry_id) & (BusinessDocumentCatalog.capability_level == "L5") & (BusinessDocumentCatalog.is_active == True)  # noqa: E712
+            )
+            if catalog_entry is None:
+                raise ValidationError(
+                    "DOCUMENT_CATALOG_ENTRY_NOT_ALLOWED",
+                    "catalog_entry_id must identify an active L5 business document",
+                )
+            title = catalog_entry.title
+        else:
+            title = raw.get("title")
         idea = raw.get("idea")
         dataset_ids = raw.get("dataset_ids", [])
         if not isinstance(title, str) or not title.strip():
@@ -222,6 +241,7 @@ class BusinessDocumentService:
                     owner_id=actor_id,
                     chat_id=chat_id.strip(),
                     document_type=document_type,
+                    catalog_entry_id=catalog_entry.id if catalog_entry else None,
                     title=display_title,
                     title_key=normalized_title_key,
                     idea=idea.strip(),
@@ -244,6 +264,7 @@ class BusinessDocumentService:
                     actor_id=actor_id,
                     payload={
                         "submitted_title": title,
+                        "catalog_entry_id": catalog_entry.id if catalog_entry else None,
                         "title": display_title,
                         "chat_id": chat_id.strip(),
                         "document_type": document_type,
@@ -259,6 +280,31 @@ class BusinessDocumentService:
                 raise ConflictError("EVA_PAGE_ALREADY_LINKED", "The selected EVA page is already linked to another document") from error
             raise
         return cls.get_document(tenant_id, document_id, actor_id, is_admin, access_role)
+
+    @staticmethod
+    def list_catalog() -> dict[str, Any]:
+        rows = list(
+            BusinessDocumentCatalog.select()
+            .where(
+                (BusinessDocumentCatalog.capability_level == "L5") & (BusinessDocumentCatalog.is_active == True)  # noqa: E712
+            )
+            .order_by(BusinessDocumentCatalog.sort_order.asc(), BusinessDocumentCatalog.id.asc())
+        )
+        return {
+            "items": [
+                {
+                    "id": row.id,
+                    "title": row.title,
+                    "title_en": row.title_en,
+                    "description": row.description,
+                    "capability_level": row.capability_level,
+                    "capability_type": row.capability_type,
+                    "hierarchy": row.hierarchy,
+                }
+                for row in rows
+            ],
+            "total": len(rows),
+        }
 
     @classmethod
     def get_document(
@@ -302,6 +348,7 @@ class BusinessDocumentService:
                     "document_id": row.id,
                     "owner_id": row.owner_id,
                     "owner_name": owner_names.get(row.owner_id),
+                    "catalog_entry_id": row.catalog_entry_id,
                     "title": row.title,
                     "lifecycle_state": row.lifecycle_state,
                     "operation_state": row.operation_state,
@@ -2020,6 +2067,7 @@ class BusinessDocumentService:
             "document_id": document.id,
             "owner_id": document.owner_id,
             "document_type": document.document_type,
+            "catalog_entry_id": document.catalog_entry_id,
             "title": document.title,
             "idea": document.idea,
             "dataset_ids": document.dataset_ids,
@@ -2061,6 +2109,7 @@ class BusinessDocumentService:
             "permissions": permissions,
             "chat_id": document.chat_id,
             "document_type": document.document_type,
+            "catalog_entry_id": document.catalog_entry_id,
             "title": document.title,
             "idea": document.idea,
             "dataset_ids": document.dataset_ids,
@@ -2532,7 +2581,7 @@ class BusinessDocumentService:
         display_title: str,
     ) -> dict[str, Any] | None:
         page_url = raw.get("eva_page_url")
-        if schema_version != "2":
+        if schema_version not in {"2", "3"}:
             return None
 
         decision = raw.get("eva_decision")

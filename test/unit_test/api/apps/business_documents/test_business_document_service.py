@@ -31,12 +31,14 @@ if "api.apps" not in sys.modules:
     sys.modules["api.apps"] = api_apps
 
 from api.apps.business_documents.assets import published_template, render_document_ast, render_section_text, section_hash, validate_document_ast
+from business_documents.domain.catalog import load_document_catalog
 from api.apps.business_documents.errors import BusinessDocumentError
 from api.apps.business_documents.service import BusinessDocumentService
 from api.apps.business_documents.worker import BusinessDocumentJobQueue
 from api.db.db_models import (
     BusinessDocument,
     BusinessDocumentAnswer,
+    BusinessDocumentCatalog,
     BusinessDocumentCommand,
     BusinessDocumentComment,
     BusinessDocumentEvent,
@@ -76,6 +78,114 @@ def _create(**overrides):
         **overrides,
     }
     return BusinessDocumentService.create_document(TENANT, AUTHOR, request)
+
+
+@pytest.mark.p0
+def test_catalog_sync_exposes_only_active_l5_entries_and_v3_derives_the_title(database, monkeypatch):
+    from api.apps.business_documents.eva_changes import EvaDocumentChangeService
+
+    catalog = load_document_catalog()
+    from api.db.db_models import migrate_business_document_catalog
+
+    monkeypatch.setattr(EvaDocumentChangeService, "find_title_matches", staticmethod(lambda *_args: []))
+    migrate_business_document_catalog()
+    migrate_business_document_catalog()
+    first = catalog["items"][0]
+    assert BusinessDocumentCatalog.select().count() == len(catalog["items"])
+    BusinessDocumentCatalog.create(
+        id="L4-test",
+        title="Не разрешённый уровень",
+        capability_level="L4",
+        hierarchy={},
+        details={},
+        source_id="test",
+        source_version="1",
+        source_sha256="0" * 64,
+        sort_order=99,
+    )
+    BusinessDocumentCatalog.update(is_active=False).where(BusinessDocumentCatalog.id == catalog["items"][-1]["id"]).execute()
+
+    listed = BusinessDocumentService.list_catalog()
+    created = BusinessDocumentService.create_document(
+        TENANT,
+        AUTHOR,
+        {
+            "schema_version": "3",
+            "document_type": "business_requirements",
+            "catalog_entry_id": first["id"],
+            "idea": "Создать документ из разрешённого справочника",
+        },
+    )
+
+    assert len(catalog["items"]) == 8
+    assert listed["total"] == 7
+    assert all(item["capability_level"] == "L5" for item in listed["items"])
+    assert created["catalog_entry_id"] == first["id"]
+    assert created["title"] == first["title"]
+
+
+@pytest.mark.p0
+def test_v3_uses_the_catalog_title_for_eva_match_detection(database, monkeypatch):
+    from api.apps.business_documents.eva_changes import EvaDocumentChangeService
+    from api.db.db_models import migrate_business_document_catalog
+
+    migrate_business_document_catalog()
+    first = load_document_catalog()["items"][0]
+    observed_titles = []
+    monkeypatch.setattr(
+        EvaDocumentChangeService,
+        "find_title_matches",
+        staticmethod(lambda _actor_id, title: observed_titles.append(title) or [{"id": "eva-1", "name": title}]),
+    )
+
+    with pytest.raises(BusinessDocumentError) as caught:
+        BusinessDocumentService.create_document(
+            TENANT,
+            AUTHOR,
+            {
+                "schema_version": "3",
+                "document_type": "business_requirements",
+                "catalog_entry_id": first["id"],
+                "idea": "Проверить поиск совпадений в EVA",
+            },
+        )
+
+    assert caught.value.code == "EVA_BINDING_DECISION_REQUIRED"
+    assert observed_titles == [first["title"]]
+
+
+@pytest.mark.p0
+@pytest.mark.parametrize("catalog_entry_id", ["missing", "L4-test"])
+def test_v3_rejects_catalog_entries_that_are_not_active_l5(database, catalog_entry_id):
+    from api.db.db_models import migrate_business_document_catalog
+
+    migrate_business_document_catalog()
+    BusinessDocumentCatalog.create(
+        id="L4-test",
+        title="Не разрешённый уровень",
+        capability_level="L4",
+        hierarchy={},
+        details={},
+        source_id="test",
+        source_version="1",
+        source_sha256="0" * 64,
+        sort_order=99,
+    )
+
+    with pytest.raises(BusinessDocumentError) as caught:
+        BusinessDocumentService.create_document(
+            TENANT,
+            AUTHOR,
+            {
+                "schema_version": "3",
+                "document_type": "business_requirements",
+                "catalog_entry_id": catalog_entry_id,
+                "idea": "Недопустимый документ",
+            },
+        )
+
+    assert caught.value.code == "DOCUMENT_CATALOG_ENTRY_NOT_ALLOWED"
+    assert BusinessDocument.select().count() == 0
 
 
 @pytest.mark.p0
@@ -1338,18 +1448,17 @@ def test_required_sections_cannot_be_empty_and_child_headings_are_nested(databas
         validate_document_ast(missing_concept)
     assert caught.value.code == "CONCEPTUAL_DIAGRAM_REQUIRED"
 
-    incomplete_activity = _draft()
-    scenario = next(item for item in incomplete_activity["sections"] if item["id"] == "4.3")
+    unrenderable_activity = _draft()
+    scenario = next(item for item in unrenderable_activity["sections"] if item["id"] == "4.3")
     scenario["blocks"] = [
         {"type": "paragraph", "text": "Сопровождающий текст"},
         {
             "type": "plantuml",
-            "source": "@startuml\nstart\n:Основной путь;\nstop\n@enduml",
+            "source": "исходный код, который renderer может отклонить",
         },
     ]
-    with pytest.raises(BusinessDocumentError) as caught:
-        validate_document_ast(incomplete_activity)
-    assert caught.value.code == "INCOMPLETE_ACTIVITY_SCENARIO"
+    rendered = render_document_ast(validate_document_ast(unrenderable_activity))
+    assert "исходный код, который renderer может отклонить" in rendered
 
 
 @pytest.mark.p0

@@ -250,11 +250,8 @@ def test_live_model_intake_draft_rubric_and_grounding(database, monkeypatch):
     conceptual = next(section for section in document_ast["sections"] if section["id"] == "4.1")
     conceptual_diagrams = [block for block in conceptual["blocks"] if block["type"] == "plantuml"]
     assert conceptual_diagrams
-    assert all(block["source"].strip().startswith("@startuml") and block["source"].strip().endswith("@enduml") for block in conceptual_diagrams)
     scenarios = next(section for section in document_ast["sections"] if section["id"] == "4.3")
     assert any(block["type"] in {"paragraph", "list", "table"} for block in scenarios["blocks"])
-    # validate_document_ast above also validates start/end, if/else and the
-    # explicitly negative branch required by the published activity contract.
     assert any(block["type"] == "plantuml" for block in scenarios["blocks"])
     monitoring = next(section for section in document_ast["sections"] if section["id"] == "5.5")
     assert monitoring["blocks"], "Mandatory monitoring section is empty"

@@ -1,6 +1,6 @@
 schema_version: 1
 upstream_base: cb93883f3f8c975eecb2fed81210effeb3bdb06f
-head: 78e0a22b29a8f2f9f176e7ba133f9948231ed795
+head: 51594df6232e44edbe0edc7ae72b4edddeb61383
 changes:
 - id: CORE-eva-integration
   owner: fork-maintainer
@@ -335,7 +335,7 @@ changes:
   - path: api/db/db_models.py
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: common/time_utils.py
     committed: M
     staged: null
@@ -1418,7 +1418,7 @@ changes:
   - path: web/src/utils/api.ts
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: web/src/utils/chat.ts
     committed: M
     staged: null

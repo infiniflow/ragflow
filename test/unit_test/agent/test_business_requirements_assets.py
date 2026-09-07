@@ -104,6 +104,7 @@ def test_contract_schemas_compile_and_question_bounds_are_enforced():
         "command.v1.schema.json",
         "create_document.v1.schema.json",
         "create_document.v2.schema.json",
+        "create_document.v3.schema.json",
         "document_draft.v1.schema.json",
         "eva_change_draft.v1.schema.json",
         "question_batch.v1.schema.json",

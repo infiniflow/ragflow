@@ -212,6 +212,7 @@ export interface BusinessDocumentJobSummary {
 
 export interface BusinessDocumentProjection {
   document_id: string;
+  catalog_entry_id?: string | null;
   owner_id?: string;
   owner_name?: string | null;
   access_role?: BusinessDocumentRole;
@@ -235,6 +236,7 @@ export interface BusinessDocumentProjection {
 
 export interface BusinessDocumentSummary {
   document_id: string;
+  catalog_entry_id?: string | null;
   owner_id?: string;
   owner_name?: string | null;
   access_role?: BusinessDocumentRole;
@@ -296,14 +298,37 @@ export interface BusinessDocumentList {
   capabilities?: BusinessDocumentCapabilities;
 }
 
-export interface CreateBusinessDocumentRequest {
-  schema_version: '1' | '2';
+interface CreateBusinessDocumentRequestBase {
   document_type: 'business_requirements';
-  title: string;
   idea: string;
   dataset_ids?: string[];
   eva_page_url?: string;
   eva_decision?: { mode: 'SKIP' } | { mode: 'BIND'; confirm_replace: true };
+}
+
+export type CreateBusinessDocumentRequest =
+  | (CreateBusinessDocumentRequestBase & {
+      schema_version: '1' | '2';
+      title: string;
+    })
+  | (CreateBusinessDocumentRequestBase & {
+      schema_version: '3';
+      catalog_entry_id: string;
+    });
+
+export interface BusinessDocumentCatalogEntry {
+  id: string;
+  title: string;
+  title_en?: string | null;
+  description?: string | null;
+  capability_level: 'L5';
+  capability_type?: string | null;
+  hierarchy: Record<string, string>;
+}
+
+export interface BusinessDocumentCatalog {
+  items: BusinessDocumentCatalogEntry[];
+  total: number;
 }
 
 export interface EvaPageBreadcrumb {

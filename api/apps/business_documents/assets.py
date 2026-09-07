@@ -16,9 +16,8 @@
 
 from __future__ import annotations
 
-import json
 import hashlib
-import re
+import json
 from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
@@ -33,6 +32,7 @@ _ASSET_ROOT = Path(__file__).resolve().parents[3] / "agent" / "business_requirem
 _CONTRACT_FILES = {
     "create_document": "create_document.v1.schema.json",
     "create_document_v2": "create_document.v2.schema.json",
+    "create_document_v3": "create_document.v3.schema.json",
     "command": "command.v1.schema.json",
     "question_batch": "question_batch.v1.schema.json",
     "document_draft": "document_draft.v1.schema.json",
@@ -228,12 +228,6 @@ def normalize_document_ast(document: object) -> object:
     return normalized
 
 
-_NEGATIVE_PATH_PATTERN = re.compile(
-    r"(?:негатив\w*|ошиб\w*|отказ\w*|исключ\w*|\bнет\b|недоступ\w*|отсутств\w*|невозмож\w*|negative\w*|error\w*|failure\w*|reject\w*|denied\w*|unavailable\w*|\bno\b)",
-    re.IGNORECASE,
-)
-
-
 def _validate_conceptual_diagram(section: dict[str, Any]) -> None:
     diagrams = [block for block in section["blocks"] if block.get("type") == "plantuml"]
     if not diagrams:
@@ -242,14 +236,6 @@ def _validate_conceptual_diagram(section: dict[str, Any]) -> None:
             "Section 4.1 must contain a PlantUML conceptual diagram",
             {"section_id": "4.1"},
         )
-    for diagram in diagrams:
-        source = diagram["source"].strip()
-        if not source.startswith("@startuml") or not source.endswith("@enduml"):
-            raise ValidationError(
-                "INVALID_PLANTUML_DIAGRAM",
-                "Section 4.1 PlantUML must be bounded by @startuml and @enduml",
-                {"section_id": "4.1"},
-            )
 
 
 def _validate_client_scenario(section: dict[str, Any]) -> None:
@@ -261,26 +247,6 @@ def _validate_client_scenario(section: dict[str, Any]) -> None:
             "Section 4.3 must contain a PlantUML activity diagram and accompanying scenario text",
             {"section_id": "4.3"},
         )
-    for diagram in diagrams:
-        source = diagram["source"].strip()
-        bounded = source.startswith("@startuml") and source.endswith("@enduml")
-        has_start = re.search(r"(?im)^\s*start\s*$", source) is not None
-        has_end = re.search(r"(?im)^\s*(?:stop|end)\s*$", source) is not None
-        has_decision = re.search(r"(?im)^\s*if\s*\(.+\)\s*then(?:\s*\(.+\))?\s*$", source) is not None
-        alternative = re.search(
-            r"(?ims)^\s*else(?:\s*\((?P<label>[^)]*)\))?\s*\r?\n(?P<body>.*?)^\s*endif\s*$",
-            source,
-        )
-        has_alternative = alternative is not None
-        has_decision_end = re.search(r"(?im)^\s*endif\s*$", source) is not None
-        negative_branch = "" if alternative is None else f"{alternative.group('label') or ''} {alternative.group('body')}"
-        has_negative_path = _NEGATIVE_PATH_PATTERN.search(negative_branch) is not None
-        if not all((bounded, has_start, has_end, has_decision, has_alternative, has_decision_end, has_negative_path)):
-            raise ValidationError(
-                "INCOMPLETE_ACTIVITY_SCENARIO",
-                "PlantUML activity diagram must contain start/end, an if/else decision, and an explicitly named negative alternative path",
-                {"section_id": "4.3"},
-            )
 
 
 def _block_has_content(block: dict[str, Any]) -> bool:

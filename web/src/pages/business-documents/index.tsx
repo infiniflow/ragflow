@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Routes } from '@/routes';
 import {
@@ -24,6 +23,7 @@ import {
   downloadBusinessDocumentExport,
   fetchBusinessDocument,
   listBusinessDocumentAccessUsers,
+  listBusinessDocumentCatalog,
   listBusinessDocumentRevisions,
   listBusinessDocuments,
   pullBusinessDocumentFromEva,
@@ -139,6 +139,7 @@ const exportLabels = {
 const BusinessDocumentKeys = {
   list: (page: number, scope: 'mine' | 'all') =>
     ['business-documents', scope, page] as const,
+  catalog: () => ['business-document-catalog'] as const,
   detail: (documentId?: string) => ['business-document', documentId] as const,
   accessUsers: () => ['business-document-access-users'] as const,
 };
@@ -147,9 +148,8 @@ function CreateBusinessDocumentPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<'new' | 'eva'>('new');
-  const [title, setTitle] = useState('');
+  const [catalogEntryId, setCatalogEntryId] = useState('');
   const [idea, setIdea] = useState('');
-  const [evaPageUrl, setEvaPageUrl] = useState('');
   const [evaMatches, setEvaMatches] = useState<EvaTitleMatch[]>([]);
   const [pendingEvaBinding, setPendingEvaBinding] =
     useState<EvaTitleMatch | null>(null);
@@ -166,6 +166,14 @@ function CreateBusinessDocumentPage() {
         ? 2000
         : false,
   });
+  const catalogQuery = useQuery({
+    queryKey: BusinessDocumentKeys.catalog(),
+    queryFn: listBusinessDocumentCatalog,
+    retry: false,
+  });
+  const selectedCatalogEntry = catalogQuery.data?.items.find(
+    (item) => item.id === catalogEntryId,
+  );
   const canCreate = documentsQuery.data?.capabilities?.create !== false;
   const createMutation = useMutation({
     mutationFn: createBusinessDocument,
@@ -215,11 +223,11 @@ function CreateBusinessDocumentPage() {
     evaDecision?: CreateBusinessDocumentRequest['eva_decision'],
     selectedEvaPageUrl?: string,
   ) => {
-    if (!title.trim() || !idea.trim() || createMutation.isPending) return;
+    if (!catalogEntryId || !idea.trim() || createMutation.isPending) return;
     createMutation.mutate({
-      schema_version: '2',
+      schema_version: '3',
       document_type: 'business_requirements',
-      title,
+      catalog_entry_id: catalogEntryId,
       idea: idea.trim(),
       dataset_ids: [],
       ...(selectedEvaPageUrl ? { eva_page_url: selectedEvaPageUrl } : {}),
@@ -229,22 +237,6 @@ function CreateBusinessDocumentPage() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (evaPageUrl.trim()) {
-      setPendingEvaBinding({
-        connector_id: '',
-        connector_name: 'EVA Wiki',
-        eva_origin: '',
-        id: '',
-        name: title.trim(),
-        code: '',
-        project_id: '',
-        web_url: evaPageUrl.trim(),
-        breadcrumbs: [],
-        hierarchy: evaPageUrl.trim(),
-        binding_available: true,
-      });
-      return;
-    }
     createDocument();
   };
 
@@ -533,27 +525,41 @@ function CreateBusinessDocumentPage() {
 
               <label className="mt-6 block space-y-2 text-sm font-medium">
                 <span>Название</span>
-                <Input
-                  value={title}
-                  maxLength={200}
-                  aria-label="Название документа"
-                  placeholder="Например, Переводы одной кнопкой"
+                <select
+                  value={catalogEntryId}
                   onChange={(event) => {
-                    setTitle(event.target.value);
+                    setCatalogEntryId(event.target.value);
                     setEvaMatches([]);
                   }}
-                  suffix={
-                    <VoiceInput
-                      label="Название"
-                      onTranscript={(transcript) =>
-                        setTitle((value) =>
-                          appendVoiceTranscript(value, transcript, 200),
-                        )
-                      }
-                      testId="voice-input-document-title"
-                    />
-                  }
-                />
+                  disabled={catalogQuery.isLoading || catalogQuery.isError}
+                  className="h-9 w-full rounded-md border border-border-button bg-bg-input px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Название документа"
+                  data-testid="business-document-catalog-select"
+                >
+                  <option value="" disabled>
+                    Выберите документ из справочника
+                  </option>
+                  {(catalogQuery.data?.items ?? []).map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.title}
+                    </option>
+                  ))}
+                </select>
+                {catalogQuery.isLoading && (
+                  <span className="block text-xs font-normal text-text-secondary">
+                    Загружаем справочник документов…
+                  </span>
+                )}
+                {catalogQuery.isError && (
+                  <span className="block text-xs font-normal text-state-error">
+                    Не удалось загрузить справочник документов.
+                  </span>
+                )}
+                {selectedCatalogEntry?.description && (
+                  <span className="block text-xs font-normal leading-5 text-text-secondary">
+                    {selectedCatalogEntry.description}
+                  </span>
+                )}
               </label>
               <label className="mt-5 block space-y-2 text-sm font-medium">
                 <span>Идея</span>
@@ -580,23 +586,6 @@ function CreateBusinessDocumentPage() {
                     />
                   </div>
                 </div>
-              </label>
-
-              <label className="mt-5 block space-y-2 text-sm font-medium">
-                <span>Страница EVA</span>
-                <Input
-                  type="url"
-                  value={evaPageUrl}
-                  maxLength={2048}
-                  aria-label="URL страницы EVA"
-                  placeholder="https://eva.example.com/project/Document/BR-42"
-                  onChange={(event) => setEvaPageUrl(event.target.value)}
-                />
-                <span className="block text-xs font-normal leading-5 text-text-secondary">
-                  Необязательно. Страница должна быть доступна через настроенное
-                  соединение EVA. Перед привязкой потребуется подтверждение
-                  будущей замены содержимого.
-                </span>
               </label>
 
               {evaMatches.length > 0 && (
@@ -708,8 +697,8 @@ function CreateBusinessDocumentPage() {
                     <AlertDialogDescription>
                       При последующей публикации этого документа текущее
                       содержимое страницы «
-                      {pendingEvaBinding?.name || title.trim()}» будет полностью
-                      заменено содержимым документа. Продолжить?
+                      {pendingEvaBinding?.name || selectedCatalogEntry?.title}»
+                      будет полностью заменено содержимым документа. Продолжить?
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -751,7 +740,7 @@ function CreateBusinessDocumentPage() {
                   variant="accent"
                   size="lg"
                   loading={createMutation.isPending}
-                  disabled={!title.trim() || !idea.trim()}
+                  disabled={!catalogEntryId || !idea.trim()}
                 >
                   <Sparkles className="size-4" />
                   Начать работу

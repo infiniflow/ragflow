@@ -26,6 +26,7 @@ EXPECTED_ROUTES = {
     "publish_eva_business_document_change": ("/business-documents/eva/changes/<change_id>/publish", ("POST",)),
     "create_business_document": ("/business-documents", ("POST",)),
     "list_business_documents": ("/business-documents", ("GET",)),
+    "list_business_document_catalog": ("/business-documents/catalog", ("GET",)),
     "get_business_document": ("/business-documents/<document_id>", ("GET",)),
     "delete_business_document": ("/business-documents/<document_id>", ("DELETE",)),
     "pull_business_document_from_eva": ("/business-documents/<document_id>/eva/pull", ("POST",)),

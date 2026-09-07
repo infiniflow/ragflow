@@ -1,5 +1,6 @@
 import type {
   BusinessDocumentAssignableUser,
+  BusinessDocumentCatalog,
   BusinessDocumentCommand,
   BusinessDocumentCommandResult,
   BusinessDocumentEvaPullResult,
@@ -120,6 +121,18 @@ export async function createBusinessDocument(
       requestConfig(),
     );
     return unwrap<BusinessDocumentProjection>(response.data);
+  } catch (error) {
+    return rethrowBusinessDocumentError(error);
+  }
+}
+
+export async function listBusinessDocumentCatalog() {
+  try {
+    const response = await request.get(
+      api.businessDocumentCatalog,
+      requestConfig(),
+    );
+    return unwrap<BusinessDocumentCatalog>(response.data);
   } catch (error) {
     return rethrowBusinessDocumentError(error);
   }

@@ -1462,6 +1462,28 @@ class EvaluationResult(DataBaseModel):
         db_table = "evaluation_results"
 
 
+class BusinessDocumentCatalog(DataBaseModel):
+    """Allowed business-document names imported from the governed L5 catalog."""
+
+    id = CharField(max_length=64, primary_key=True)
+    title = CharField(max_length=255, null=False)
+    title_en = CharField(max_length=255, null=True)
+    description = TextField(null=True)
+    capability_level = CharField(max_length=8, null=False, index=True)
+    capability_type = CharField(max_length=32, null=True, index=True)
+    hierarchy = JSONField(null=False, default=dict)
+    details = JSONField(null=False, default=dict)
+    source_id = CharField(max_length=64, null=False, index=True)
+    source_version = CharField(max_length=64, null=False)
+    source_sha256 = CharField(max_length=64, null=False)
+    sort_order = IntegerField(null=False, default=0, index=True)
+    is_active = BooleanField(null=False, default=True, index=True)
+
+    class Meta:
+        db_table = "business_document_catalog"
+        indexes = ((("capability_level", "is_active", "sort_order"), False),)
+
+
 class BusinessDocument(DataBaseModel):
     """Current projection for a governed business document workflow."""
 
@@ -1470,6 +1492,7 @@ class BusinessDocument(DataBaseModel):
     owner_id = CharField(max_length=32, null=False, index=True)
     chat_id = CharField(max_length=128, null=False, unique=True)
     document_type = CharField(max_length=64, null=False, default="business_requirements", index=True)
+    catalog_entry_id = CharField(max_length=64, null=True, index=True)
     title = CharField(max_length=255, null=False)
     title_key = CharField(max_length=64, null=False, unique=True)
     idea = TextField(null=False)
@@ -2006,6 +2029,39 @@ def migrate_business_document_title_key(migrator):
         DB.execute_sql("ALTER TABLE business_document MODIFY title_key VARCHAR(64) NOT NULL")
 
 
+def migrate_business_document_catalog():
+    """Synchronize the bundled L5 catalog after the table is available."""
+
+    from business_documents.domain.catalog import load_document_catalog
+
+    catalog = load_document_catalog()
+    source_id = catalog["source_id"]
+    active_ids = [item["id"] for item in catalog["items"]]
+    database = BusinessDocumentCatalog._meta.database
+    with database.atomic():
+        for sort_order, item in enumerate(catalog["items"]):
+            values = {
+                "title": item["title"].strip(),
+                "title_en": item.get("title_en"),
+                "description": item.get("description"),
+                "capability_level": item["capability_level"],
+                "capability_type": item.get("capability_type"),
+                "hierarchy": item.get("hierarchy") or {},
+                "details": item.get("details") or {},
+                "source_id": source_id,
+                "source_version": catalog["source_version"],
+                "source_sha256": catalog["source_sha256"],
+                "sort_order": sort_order,
+                "is_active": True,
+            }
+            existing = BusinessDocumentCatalog.get_or_none(BusinessDocumentCatalog.id == item["id"])
+            if existing is None:
+                BusinessDocumentCatalog.create(id=item["id"], **values)
+            else:
+                BusinessDocumentCatalog.update(**values).where(BusinessDocumentCatalog.id == item["id"]).execute()
+        BusinessDocumentCatalog.update(is_active=False).where((BusinessDocumentCatalog.source_id == source_id) & ~BusinessDocumentCatalog.id.in_(active_ids)).execute()
+
+
 def migrate_business_document_eva_bindings():
     """Project legacy event-backed EVA links into the uniquely constrained table."""
 
@@ -2230,7 +2286,9 @@ def migrate_db():
         "business_document_role",
         CharField(max_length=32, null=False, default="AUTHOR_CREATOR", index=True),
     )
+    alter_db_add_column(migrator, "business_document", "catalog_entry_id", CharField(max_length=64, null=True, index=True))
     migrate_business_document_title_key(migrator)
+    migrate_business_document_catalog()
     migrate_business_document_eva_bindings()
     alter_db_add_column(migrator, "business_document_revision", "author_id", CharField(max_length=32, null=True, index=True))
     alter_db_add_column(migrator, "business_document_job", "progress", FloatField(null=False, default=0.0))

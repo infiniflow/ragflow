@@ -1,3 +1,4 @@
+import { DiagramCodeBlock } from '@/components/diagram-code-block';
 import { AlertTriangle, FileText, MousePointer2 } from 'lucide-react';
 import { isValidElement, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -6,7 +7,6 @@ import type {
   BusinessDocumentRevision,
   BusinessDocumentSelection,
 } from '../types';
-import { PlantUmlDiagram } from './plantuml-diagram';
 
 interface DocumentPaneProps {
   revision: BusinessDocumentRevision | null;
@@ -268,7 +268,8 @@ export function DocumentPane({
                             .includes('language-plantuml')
                         ) {
                           return (
-                            <PlantUmlDiagram
+                            <DiagramCodeBlock
+                              language="plantuml"
                               source={String(code.props.children ?? '').replace(
                                 /\n$/,
                                 '',

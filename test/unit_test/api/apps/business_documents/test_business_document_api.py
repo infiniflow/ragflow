@@ -179,3 +179,25 @@ async def test_access_filter_and_assignment_routes_pass_role_and_scope(route_app
         ("users", ACTOR, False, "EXTENDED_MODERATOR"),
         ("assign", ACTOR, "doc-1", assignment, False, "EXTENDED_MODERATOR"),
     ]
+
+
+@pytest.mark.p0
+@pytest.mark.asyncio
+async def test_catalog_route_returns_the_service_projection(route_app, monkeypatch):
+    app, module = route_app
+    catalog = {
+        "items": [
+            {
+                "id": "L2-01.01.04.01.01",
+                "title": "Разрешённый документ",
+                "capability_level": "L5",
+            }
+        ],
+        "total": 1,
+    }
+    monkeypatch.setattr(module.BusinessDocumentService, "list_catalog", staticmethod(lambda: catalog))
+
+    response = await app.test_client().get("/business-documents/catalog")
+
+    assert response.status_code == 200
+    assert (await response.get_json())["data"] == catalog

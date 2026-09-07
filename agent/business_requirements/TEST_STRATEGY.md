@@ -104,9 +104,9 @@ Deterministic completeness checks verify:
 
 - exact template section IDs, order, titles, and mandatory section 5.5;
 - non-empty required content and deterministic rendering;
-- a bounded PlantUML diagram in 4.1 and an accompanied PlantUML activity diagram
-  in 4.3 with start/end nodes, an if/else decision, and an explicitly named
-  unsuccessful alternative path;
+- a non-empty PlantUML source block in 4.1 and an accompanied non-empty
+  PlantUML source block in 4.3; diagram syntax does not block document
+  processing and a rendering failure falls back to the preserved source;
 - every missing decision becomes a question rather than an invented fact;
 - every body claim based on retrieval uses a source reference from the pinned
   snapshot;

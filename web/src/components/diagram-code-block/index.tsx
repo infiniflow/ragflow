@@ -144,9 +144,11 @@ export function DiagramCodeBlock({
       ) : error ? (
         <div role="alert" className="space-y-2 text-sm text-red-700">
           <p>{error}</p>
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded bg-slate-100 p-2 text-xs text-slate-800">
-            {source}
-          </pre>
+          {source.trim() ? (
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded bg-slate-100 p-2 text-xs text-slate-800">
+              {source}
+            </pre>
+          ) : null}
         </div>
       ) : (
         <div role="status" className="text-sm text-slate-500">

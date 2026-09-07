@@ -54,6 +54,7 @@ modules:
   - agent/business_requirements/contracts/command.v1.schema.json
   - agent/business_requirements/contracts/create_document.v1.schema.json
   - agent/business_requirements/contracts/create_document.v2.schema.json
+  - agent/business_requirements/contracts/create_document.v3.schema.json
   - agent/business_requirements/contracts/document_draft.v1.schema.json
   - agent/business_requirements/contracts/question_batch.v1.schema.json
   - agent/business_requirements/contracts/review_plan.v1.schema.json
@@ -81,6 +82,8 @@ modules:
   - api/db/services/business_document_settings_service.py
   - business_documents/__init__.py
   - business_documents/domain/__init__.py
+  - business_documents/domain/bcm_bank_v15_l5.json
+  - business_documents/domain/catalog.py
   - business_documents/domain/names.py
   - docs/develop/business-documents-eva-title-binding-ru.md
   - test/evals/business_documents/live_quality.py

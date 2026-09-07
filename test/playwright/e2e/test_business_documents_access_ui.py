@@ -10,6 +10,8 @@ from test.playwright.helpers._next_apps_helpers import RESULT_TIMEOUT_MS
 
 DOCUMENT_ID = "doc-access-1"
 ACTOR_ID = "browser-viewer"
+CATALOG_ENTRY_ID = "L2-01.01.04.01.01"
+CATALOG_ENTRY_TITLE = "Новый продукт"
 ALL_SECTIONS = [
     "home",
     "dataset",
@@ -280,6 +282,28 @@ class BusinessDocumentsAccessStub:
             return
         if path == "/api/v1/users/me/eva-credentials":
             _fulfill_json(route, _envelope({"items": []}))
+            return
+
+        if path == "/api/v1/business-documents/catalog":
+            _fulfill_json(
+                route,
+                _envelope(
+                    {
+                        "items": [
+                            {
+                                "id": CATALOG_ENTRY_ID,
+                                "title": CATALOG_ENTRY_TITLE,
+                                "title_en": "New Product",
+                                "description": "Разрешённый L5-документ",
+                                "capability_level": "L5",
+                                "capability_type": "Core",
+                                "hierarchy": {},
+                            }
+                        ],
+                        "total": 1,
+                    }
+                ),
+            )
             return
 
         if path == "/api/v1/business-documents/access/users":
@@ -719,12 +743,12 @@ def test_create_permission_error_preserves_form_and_does_not_navigate(page, base
 
     title = page.get_by_label("Название документа")
     idea = page.get_by_label("Описание идеи")
-    title.fill("Новый регламент")
+    title.select_option(CATALOG_ENTRY_ID)
     idea.fill("Проверить отрицательный сценарий")
     page.get_by_role("button", name="Начать работу").click()
 
     expect(page.get_by_role("alert")).to_contain_text("Эта роль не может создавать документы")
-    expect(title).to_have_value("Новый регламент")
+    expect(title).to_have_value(CATALOG_ENTRY_ID)
     expect(idea).to_have_value("Проверить отрицательный сценарий")
     expect(page).to_have_url(re.compile(r"/business-documents$"))
     assert stub.mutations[0][0] == "POST"
@@ -735,7 +759,7 @@ def test_create_permission_error_preserves_form_and_does_not_navigate(page, base
 def test_eva_title_challenge_requires_page_selection_and_replace_confirmation(page, base_url):
     stub = EvaBindingChallengeStub()
     _open_documents(page, base_url, stub)
-    page.get_by_label("Название документа").fill("Новый продукт")
+    page.get_by_label("Название документа").select_option(CATALOG_ENTRY_ID)
     page.get_by_label("Описание идеи").fill("Создать новый клиентский сценарий")
     page.get_by_role("button", name="Начать работу").click()
 
@@ -759,7 +783,8 @@ def test_eva_title_challenge_requires_page_selection_and_replace_confirmation(pa
     page.get_by_test_id("confirm-eva-replace").click()
     expect(page).to_have_url(re.compile(f"/business-documents/{DOCUMENT_ID}$"), timeout=RESULT_TIMEOUT_MS)
     create_payloads = [payload for method, path, payload in stub.mutations if method == "POST" and path == "/api/v1/business-documents"]
-    assert create_payloads[1]["schema_version"] == "2"
+    assert create_payloads[1]["schema_version"] == "3"
+    assert create_payloads[1]["catalog_entry_id"] == CATALOG_ENTRY_ID
     assert create_payloads[1]["eva_page_url"] == stub.matches[0]["web_url"]
     assert create_payloads[1]["eva_decision"] == {"mode": "BIND", "confirm_replace": True}
 
