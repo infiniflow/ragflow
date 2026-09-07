@@ -171,6 +171,13 @@ class RAGFlowExcelParser:
             return max_row
 
         max_col = min(ws.max_column or 1, 50)
+        logging.debug(
+            "Scanning %d instantiated cells for actual row count "
+            "(max_row=%d, max_col=%d)",
+            len(ws._cells),
+            max_row,
+            max_col,
+        )
 
         # max_row is often inflated by styling far below real data. Scan only
         # materialized cells so we do not call ws.cell() on every empty row.
@@ -189,6 +196,24 @@ class RAGFlowExcelParser:
                 highest,
             )
         return highest
+
+        # Inspect instantiated cells directly to avoid materializing all rows
+        # when max_row is inflated by sparse worksheet metadata.
+        last_data_row = 0
+        # The workbook is loaded with openpyxl's normal worksheet mode, so
+        # instantiated cells are available through the worksheet's internal
+        # cell mapping. Inspecting them avoids materializing the blank gap.
+        for cell in ws._cells.values():
+            if cell.column > max_col:
+                continue
+            if cell.value is not None and str(cell.value).strip():
+                last_data_row = max(last_data_row, cell.row)
+        logging.debug(
+            "Detected actual last data row %d for worksheet '%s'",
+            last_data_row,
+            ws.title,
+        )
+        return last_data_row
 
     @staticmethod
     def _get_rows_limited(ws):
