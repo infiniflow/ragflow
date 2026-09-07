@@ -25,7 +25,6 @@ import {
   IUpdateArtifactPageRequestBody,
 } from '@/interfaces/request/knowledge';
 import api from '@/utils/api';
-import { pickByBackend } from '@/utils/backend-variant';
 import nextRequest from '@/utils/next-request';
 import registerServer, { registerNextServer } from '@/utils/register-server';
 import request from '@/utils/request';
@@ -221,7 +220,7 @@ const chunkService = {
       knn_num_candidates: rest.knn_num_candidates,
       rerank_candidates_count: rest.rerank_candidates_count,
       rerank_id: rest.rerank_id,
-      search_id: pickByBackend({ go: rest.search_id, python: undefined }),
+      search_id: rest.search_id,
       keyword: rest.keyword,
       highlight: rest.highlight,
       cross_languages: rest.cross_languages,

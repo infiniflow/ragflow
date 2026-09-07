@@ -36,6 +36,7 @@ from api.db.services.document_counter_service import release_reparse_counters
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.llm_service import LLMBundle
+from api.db.services.search_service import SearchService
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.api_utils import (
@@ -56,7 +57,7 @@ from api.utils.reference_metadata_utils import (
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
-from common.metadata_utils import convert_conditions, filter_doc_ids_by_metadata
+from common.metadata_utils import apply_meta_data_filter, convert_conditions, filter_doc_ids_by_metadata
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.tag_feature_utils import validate_tag_features
@@ -327,6 +328,20 @@ async def retrieval_test(tenant_id, dataset_id=None):
     req = await get_request_json()
     if dataset_id:
         req["dataset_ids"] = [dataset_id]
+    request_fields = set(req)
+    search_id = req.get("search_id", "")
+    search_config = {}
+    if search_id:
+        search_detail = SearchService.get_detail(search_id)
+        if not search_detail:
+            return get_error_data_result("Invalid search_id")
+        search_config = dict(search_detail.get("search_config") or {})
+        search_config.setdefault("rerank_candidates_count", 100)
+        if "kb_ids" in search_config:
+            search_config["dataset_ids"] = search_config["kb_ids"]
+        if "doc_ids" in search_config:
+            search_config["document_ids"] = search_config["doc_ids"]
+        req = {**search_config, **req}
     if not req.get("dataset_ids"):
         return get_error_data_result("`dataset_ids` is required.")
     kb_ids = req["dataset_ids"]
@@ -359,7 +374,26 @@ async def retrieval_test(tenant_id, dataset_id=None):
                 return get_error_data_result(f"The datasets don't own the document {doc_id}")
     if not doc_ids:
         metadata_condition = req.get("metadata_condition")
-        if metadata_condition:
+        meta_data_filter = None if "metadata_condition" in request_fields else req.get("meta_data_filter")
+        if meta_data_filter:
+            chat_mdl = None
+            if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+                chat_id = req.get("chat_id", "")
+                if chat_id:
+                    chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, chat_id)
+                else:
+                    chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+                chat_mdl = LLMBundle(tenant_id, chat_model_config)
+            doc_ids = await apply_meta_data_filter(
+                meta_data_filter,
+                None,
+                question,
+                chat_mdl,
+                doc_ids,
+                kb_ids=kb_ids,
+                metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+            )
+        elif metadata_condition:
             doc_ids = filter_doc_ids_by_metadata(
                 kb_ids,
                 convert_conditions(metadata_condition),
@@ -374,7 +408,7 @@ async def retrieval_test(tenant_id, dataset_id=None):
             doc_ids = None
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
-    if "top_k" in req:
+    if "top_k" in request_fields:
         logging.warning("`top_k` is deprecated for POST /api/v1/retrieval; use `knn_top_k` instead.")
     knn_top_k_parameter = "knn_top_k" if "knn_top_k" in req else "top_k"
     try:
@@ -444,6 +478,7 @@ async def retrieval_test(tenant_id, dataset_id=None):
             rerank_mdl=rerank_mdl,
             highlight=highlight,
             rank_feature=label_question(question, kbs),
+            trace_id=search_id,
             must_not=None if include_knowledge_compilation else {"exists": "compile_kwd"},
             rerank_candidates_count=rerank_candidates_count,
         )
