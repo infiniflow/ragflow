@@ -88,8 +88,8 @@ import {
   useHandleSearchChange,
 } from './logic-hooks';
 import {
-  extractParserConfigExt,
   isPipelineParserConfig,
+  normalizeParserConfig,
 } from './parser-config-utils';
 import { useSetPaginationParams } from './route-hook';
 import { DatasetGenerateKeys } from './use-dataset-generate';
@@ -218,10 +218,8 @@ export const useFetchNextKnowledgeListByPage = () => {
       const { data } = await listDataset({
         page_size: pagination.pageSize,
         page: pagination.current,
-        ext: {
-          keywords: debouncedSearchString,
-          owner_ids: filterValue.owner as string[],
-        },
+        keywords: debouncedSearchString,
+        owner_ids: filterValue.owner as string[],
       });
 
       return { kbs: data?.data, total_datasets: data?.total_datasets };
@@ -283,10 +281,8 @@ export const useCreateKnowledge = () => {
       chunk_method?: string;
       parseType?: ParseType;
       pipeline_id?: string | null;
-      ext?: {
-        language?: string;
-        [key: string]: any;
-      };
+      language?: string;
+      [key: string]: any;
     }) => {
       const { data = {} } = await kbService.createKb(params);
       if (data.code === 0) {
@@ -364,7 +360,7 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
         permission,
         pagerank,
         parser_config,
-        ...ext
+        ...additionalFields
       } = params;
       const requestBody: Record<string, any> = {
         name,
@@ -377,8 +373,8 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
         pagerank,
         parser_config: isPipelineParserConfig(parser_config)
           ? parser_config
-          : extractParserConfigExt(parser_config),
-        ...omit(ext, ['kb_id']),
+          : normalizeParserConfig(parser_config),
+        ...omit(additionalFields, ['kb_id']),
       };
 
       const { data = {} } = await updateKb(kbId, requestBody);
@@ -1073,7 +1069,7 @@ export const useFetchKnowledgeList = (
         const { data } = await listDataset({
           page,
           page_size: pageSize,
-          ...(keywords ? { ext: { keywords } } : {}),
+          ...(keywords ? { keywords } : {}),
         });
         return {
           items: (data?.data ?? []) as IDataset[],

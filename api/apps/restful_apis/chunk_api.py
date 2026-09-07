@@ -668,8 +668,6 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     if isinstance(parser_config, dict):
         if "compilation_template_group_id" in parser_config:
             group_ids = _group_ids(parser_config.get("compilation_template_group_id"))
-        elif isinstance(parser_config.get("ext"), dict):
-            group_ids = _group_ids(parser_config["ext"].get("compilation_template_group_id"))
 
     configured_ids: list[str] = []
     seen_configured_ids: set[str] = set()
