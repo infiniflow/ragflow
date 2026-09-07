@@ -146,8 +146,18 @@ func RerankByModel(
 		tks = append(tks, questionTks...)
 		insTw = append(insTw, tks)
 
-		// Build document text for model reranking
-		docText := RemoveRedundantSpaces(strings.Join(tks, " "))
+		// Feed the reranker the natural chunk text (markup preserved), not the
+		// tokenized content_ltks. Neural rerankers score stemmed / accent-split
+		// tokens far lower, which collapses relevance scores and forces an
+		// artificially low similarity_threshold. The natural text is passed
+		// as-is: RemoveRedundantSpaces is ASCII-oriented and mangles
+		// multilingual text ("sécurité des données" -> "sécuritédes données"),
+		// so it is only applied to the tokenized fallback used when
+		// content_with_weight is absent. Mirrors rag/nlp/search.py.
+		docText := extractNaturalText(chunk)
+		if docText == "" {
+			docText = RemoveRedundantSpaces(strings.Join(tks, " "))
+		}
 		docs = append(docs, docText)
 	}
 
@@ -547,6 +557,16 @@ func extractContentTokens(fields map[string]interface{}, cfield string) []string
 		}
 	}
 	return result
+}
+
+// extractNaturalText returns the natural chunk text (content_with_weight),
+// or "" when the field is absent or not a string.
+func extractNaturalText(fields map[string]interface{}) string {
+	v, ok := fields["content_with_weight"].(string)
+	if !ok {
+		return ""
+	}
+	return v
 }
 
 // extractTitleTokens extracts title tokens from chunk fields
