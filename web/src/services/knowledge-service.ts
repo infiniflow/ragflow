@@ -226,6 +226,8 @@ const chunkService = {
       cross_languages: rest.cross_languages,
       metadata_condition:
         rest.metadata_condition ?? toMetadataCondition(rest.meta_data_filter),
+      meta_data_filter: rest.meta_data_filter,
+      chat_id: rest.chat_id,
       use_kg: rest.use_kg,
       toc_enhance: rest.toc_enhance,
       include_knowledge_compilation: rest.include_knowledge_compilation,

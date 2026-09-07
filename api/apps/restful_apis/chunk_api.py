@@ -328,12 +328,16 @@ async def retrieval_test(tenant_id, dataset_id=None):
     req = await get_request_json()
     if dataset_id:
         req["dataset_ids"] = [dataset_id]
+    if "document_ids" not in req and "doc_ids" in req:
+        req["document_ids"] = req["doc_ids"]
+    if "page_size" not in req and "size" in req:
+        req["page_size"] = req["size"]
     request_fields = set(req)
     search_id = req.get("search_id", "")
     search_config = {}
     if search_id:
         search_detail = SearchService.get_detail(search_id)
-        if not search_detail:
+        if not search_detail or search_detail.get("tenant_id") != tenant_id:
             return get_error_data_result("Invalid search_id")
         search_config = dict(search_detail.get("search_config") or {})
         search_config.setdefault("rerank_candidates_count", 100)
@@ -372,42 +376,52 @@ async def retrieval_test(tenant_id, dataset_id=None):
         for doc_id in doc_ids:
             if doc_id not in doc_ids_list:
                 return get_error_data_result(f"The datasets don't own the document {doc_id}")
-    if not doc_ids:
-        metadata_condition = req.get("metadata_condition")
-        meta_data_filter = None if "metadata_condition" in request_fields else req.get("meta_data_filter")
-        if meta_data_filter:
-            chat_mdl = None
-            if meta_data_filter.get("method") in ["auto", "semi_auto"]:
-                chat_id = req.get("chat_id", "")
-                if chat_id:
-                    chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, chat_id)
-                else:
-                    chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(tenant_id, chat_model_config)
-            doc_ids = await apply_meta_data_filter(
-                meta_data_filter,
-                None,
-                question,
-                chat_mdl,
-                doc_ids,
-                kb_ids=kb_ids,
-                metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
-            )
-        elif metadata_condition:
-            doc_ids = filter_doc_ids_by_metadata(
-                kb_ids,
-                convert_conditions(metadata_condition),
-                metadata_condition.get("logic", "and"),
-                lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
-            )
-            if not doc_ids and metadata_condition.get("conditions"):
-                return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
-            if metadata_condition and not doc_ids:
-                doc_ids = ["-999"]
+    metadata_condition = req.get("metadata_condition")
+    meta_data_filter = None if "metadata_condition" in request_fields else req.get("meta_data_filter")
+    if meta_data_filter:
+        chat_mdl = None
+        if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+            chat_id = req.get("chat_id", "")
+            if chat_id:
+                chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, chat_id)
+            else:
+                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(tenant_id, chat_model_config)
+        doc_ids = await apply_meta_data_filter(
+            meta_data_filter,
+            None,
+            question,
+            chat_mdl,
+            doc_ids,
+            kb_ids=kb_ids,
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+        )
+    elif metadata_condition:
+        filtered_doc_ids = filter_doc_ids_by_metadata(
+            kb_ids,
+            convert_conditions(metadata_condition),
+            metadata_condition.get("logic", "and"),
+            lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+        )
+        if doc_ids:
+            filtered_doc_id_set = set(filtered_doc_ids)
+            doc_ids = [doc_id for doc_id in doc_ids if doc_id in filtered_doc_id_set]
         else:
-            doc_ids = None
-    similarity_threshold = float(req.get("similarity_threshold", 0.2))
-    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+            doc_ids = filtered_doc_ids
+        if not doc_ids and metadata_condition.get("conditions"):
+            return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
+        if metadata_condition and not doc_ids:
+            doc_ids = ["-999"]
+    elif not doc_ids:
+        doc_ids = None
+    try:
+        similarity_threshold = float(req.get("similarity_threshold", 0.2))
+    except (TypeError, ValueError):
+        return get_error_data_result("`similarity_threshold` should be a number")
+    try:
+        vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+    except (TypeError, ValueError):
+        return get_error_data_result("`vector_similarity_weight` should be a number")
     if "top_k" in request_fields:
         logging.warning("`top_k` is deprecated for POST /api/v1/retrieval; use `knn_top_k` instead.")
     knn_top_k_parameter = "knn_top_k" if "knn_top_k" in req else "top_k"
