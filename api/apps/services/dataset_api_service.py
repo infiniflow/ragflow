@@ -95,9 +95,6 @@ async def create_dataset(tenant_id: str, req: dict):
     :param req: dataset creation request
     :return: (success, result) or (success, error_message)
     """
-    # Extract ext field for additional parameters
-    ext_fields = req.pop("ext", {})
-
     # Map auto_metadata_config (if provided) into parser_config structure
     auto_meta = req.pop("auto_metadata_config", {})
     if auto_meta:
@@ -116,8 +113,6 @@ async def create_dataset(tenant_id: str, req: dict):
         parser_cfg["metadata"] = fields
         parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
         req["parser_config"] = parser_cfg
-    req.update(ext_fields)
-
     e, create_dict = KnowledgebaseService.create_with_name(name=req.pop("name", None), tenant_id=tenant_id, parser_id=req.pop("parser_id", None), **req)
 
     if not e:
@@ -320,9 +315,6 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     if kb is None:
         return False, "Invalid Dataset ID"
 
-    # Extract ext field for additional parameters
-    ext_fields = req.pop("ext", {})
-
     # Map auto_metadata_config into parser_config if present
     auto_meta = req.pop("auto_metadata_config", {})
     if auto_meta:
@@ -342,9 +334,6 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
         req["parser_config"] = parser_cfg
 
-    # Merge ext fields with req
-    req.update(ext_fields)
-
     # Extract connectors from request
     connectors = []
     if "connectors" in req:
@@ -362,10 +351,7 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
             req["parser_config"]["enable_children"] = False
             req["parser_config"]["parent_child"] = {}
 
-        parser_config = req["parser_config"]
-        req_ext_fields = parser_config.pop("ext", {})
-        parser_config.update(req_ext_fields)
-        req["parser_config"] = deep_merge(kb.parser_config, parser_config)
+        req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])
 
     if (chunk_method := req.get("parser_id")) and chunk_method != kb.parser_id:
         if not req.get("parser_config"):
@@ -439,9 +425,8 @@ def list_datasets(tenant_id: str, args: dict):
     name = args.get("name")
     page = int(args.get("page", 1))
     page_size = int(args.get("page_size", 30))
-    ext_fields = args.get("ext", {})
-    parser_id = ext_fields.get("parser_id")
-    keywords = ext_fields.get("keywords", "")
+    parser_id = args.get("parser_id")
+    keywords = args.get("keywords", "")
     orderby = args.get("orderby", "create_time")
     desc_arg = args.get("desc", "true")
     if isinstance(desc_arg, str):
@@ -463,7 +448,7 @@ def list_datasets(tenant_id: str, args: dict):
         kbs = KnowledgebaseService.get_kb_by_name(name, tenant_id)
         if not kbs:
             return False, f"User '{tenant_id}' lacks permission for dataset '{name}'"
-    owner_ids = [owner_id.strip() for owner_id in ext_fields.get("owner_ids", []) if isinstance(owner_id, str) and owner_id.strip()]
+    owner_ids = [owner_id.strip() for owner_id in args.get("owner_ids", []) if isinstance(owner_id, str) and owner_id.strip()]
     if owner_ids:
         tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
         allowed_tenant_ids = {m["tenant_id"] for m in tenants}

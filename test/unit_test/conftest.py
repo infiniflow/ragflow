@@ -49,13 +49,10 @@ if _LOCAL_NLTK_DATA not in nltk.data.path:
     nltk.data.path.insert(0, _LOCAL_NLTK_DATA)
 
 # (download name, resource path used by nltk.data.find)
-# NOTE: NLTK >=3.8.2 gates the `wordnet` corpus behind the `omw-1.4` data
-# package. Downloading `wordnet` alone leaves a stub `wordnet.zip` that raises
-# LookupError at load time; `omw-1.4` must also be present.
 _REQUIRED_NLTK_DATA = (
     ("punkt_tab", "tokenizers/punkt_tab"),
+    ("punkt", "tokenizers/punkt"),
     ("wordnet", "corpora/wordnet"),
-    ("omw-1.4", "corpora/omw-1.4"),
 )
 for _name, _find_path in _REQUIRED_NLTK_DATA:
     try:
