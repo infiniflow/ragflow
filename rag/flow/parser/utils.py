@@ -24,8 +24,26 @@ from api.db.joint_services.tenant_model_service import (
     resolve_model_config,
 )
 from common.constants import LLMType
-from deepdoc.parser.figure_parser import VisionFigureParser
 from rag.nlp import is_english, random_choices, remove_contents_table
+
+# ``VisionFigureParser`` is imported lazily so that
+# ``test/unit_test/rag/conftest.py``'s lightweight
+# ``deepdoc.parser.pdf_parser`` stub (which only exposes
+# ``RAGFlowPdfParser``) does not break the
+# ``import rag.flow.parser.utils`` chain at module load. The eager
+# import previously caused a cascading failure via
+# ``deepdoc/parser/__init__.py`` → ``pdf_parser.PlainParser``
+# (#18184).
+_VisionFigureParser = None
+
+
+def _get_vision_figure_parser():
+    global _VisionFigureParser
+    if _VisionFigureParser is None:
+        from deepdoc.parser.figure_parser import VisionFigureParser
+
+        _VisionFigureParser = VisionFigureParser
+    return _VisionFigureParser
 
 
 def remove_toc(items):
@@ -188,7 +206,7 @@ def enhance_media_sections_with_vision(
 
         text = item.get("text") or ""
         try:
-            parsed = VisionFigureParser(
+            parsed = _get_vision_figure_parser()(
                 vision_model=vision_model,
                 figures_data=[((item["image"], [""]), [(0, 0, 0, 0, 0)])],
                 context_size=0,
