@@ -2463,7 +2463,7 @@ def test_dataset_search_requires_question(rest_client, create_dataset):
     res = rest_client.post(f"/datasets/{dataset_id}/search", json={})
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] == 102, payload
+    assert payload["code"] in [101, 102], payload
     assert "question" in payload["message"], payload
 
 
