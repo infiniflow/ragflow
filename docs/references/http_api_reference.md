@@ -13,18 +13,40 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 
 ## ERROR CODES
 
----
+RAGFlow responses may contain both an HTTP status code and a business code in the JSON response body. These codes should be checked separately.
 
-| Code | Message               | Description                |
-|------|-----------------------|----------------------------|
-| 400  | Bad Request           | Invalid request parameters |
-| 401  | Unauthorized          | Unauthorized access        |
-| 403  | Forbidden             | Access denied              |
-| 404  | Not Found             | Resource not found         |
-| 500  | Internal Server Error | Server internal error      |
-| 1001 | Invalid Chunk ID      | Invalid Chunk ID           |
-| 1002 | Chunk Update Failed   | Chunk update failed        |
+### HTTP status codes
 
+| Code | Meaning |
+|------|---------|
+| 200 | The HTTP request was processed successfully. Check the response body `code` for the business result. |
+| 400 | Bad request |
+| 401 | Unauthorized |
+| 403 | Forbidden |
+| 404 | Not found |
+| 409 | Conflict |
+| 500 | Internal server error |
+
+### Response body codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 10 | Not effective |
+| 100 | Exception error |
+| 101 | Invalid request argument |
+| 102 | Invalid or missing data |
+| 103 | Operation error |
+| 105 | Connection error |
+| 106 | Operation still running |
+| 108 | Permission error |
+| 109 | Authentication error |
+| 400 | Bad request |
+| 401 | Unauthorized |
+| 403 | Forbidden |
+| 404 | Not found |
+| 409 | Conflict |
+| 500 | Server error |
 ---
 
 ## Deprecated API Aliases
@@ -51,6 +73,7 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 | **GET** `/api/v1/file/get/{file_id}`                                              | **GET** `/api/v1/files/{file_id}`                                                   |
 | **POST** `/api/v1/file/mv`                                                        | **POST** `/api/v1/files/move`                                                       |
 | **POST** `/api/v1/file/convert`                                                   | **POST** `/api/v1/files/link-to-datasets`                                           |
+| **POST** `/api/v1/agents_openai/{agent_id}/chat/completions` | **POST** `/api/v1/agents/chat/completions` with `"openai-compatible": true` |
 
 ---
 
@@ -217,6 +240,10 @@ Failure:
 ---
 
 ### Create agent completion
+
+:::caution DEPRECATED
+This endpoint remains available for backward compatibility but may be removed in a future release. New integrations should use `POST /api/v1/agents/chat/completions` with `"openai-compatible": true`.
+:::
 
 **POST** `/api/v1/agents_openai/{agent_id}/chat/completions`
 
@@ -631,7 +658,7 @@ Success:
         "avatar": null,
         "chunk_count": 0,
         "chunk_method": "naive",
-        "create_date": "Mon, 28 Apr 2025 18:40:41 GMT",
+        "create_date": "2025-04-28T18:40:41",
         "create_time": 1745836841611,
         "created_by": "3af81804241d11f0a6a79f24fc270c7f",
         "description": null,
@@ -652,7 +679,7 @@ Success:
         "status": "1",
         "tenant_id": "3af81804241d11f0a6a79f24fc270c7f",
         "token_num": 0,
-        "update_date": "Mon, 28 Apr 2025 18:40:41 GMT",
+        "update_date": "2025-04-28T18:40:41",
         "update_time": 1745836841611,
         "vector_similarity_weight": 0.3,
     },
@@ -1180,7 +1207,7 @@ curl --request PATCH \
 - `"chunk_method"`: (*Body parameter*), `string`
   The parsing method to apply to the document:
   - `"naive"`: General
-  - `"manual`: Manual
+  - `"manual"`: Manual
   - `"qa"`: Q&A
   - `"table"`: Table
   - `"paper"`: Paper
@@ -1338,7 +1365,7 @@ To retrieve a specific document's settings and metadata, pass its document ID in
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}`
+- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}&metadata_condition={json}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -1828,7 +1855,7 @@ Failure:
 
 ### List chunks
 
-**GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&page={page}&page_size={page_size}&id={id}`
+**GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&page={page}&page_size={page_size}&id={chunk_id}`
 
 Lists chunks in a specified document.
 
@@ -2465,10 +2492,10 @@ curl --request POST \
 
 - `"question"`: (*Body parameter*), `string`, *Required*
   The user query or query keywords.
-- `"dataset_ids"`: (*Body parameter*) `list[string]`
-  The IDs of the datasets to search. If you do not set this argument, ensure that you set `"document_ids"`.
+- `"dataset_ids"`: (*Body parameter*), `list[string]`, *Required*
+  The IDs of the datasets to search. At least one dataset ID must be provided.
 - `"document_ids"`: (*Body parameter*), `list[string]`
-  The IDs of the documents to search. Ensure that all selected documents use the same embedding model. Otherwise, an error will occur. If you do not set this argument, ensure that you set `"dataset_ids"`.
+  Limits the search to specific documents within the datasets specified by `"dataset_ids"`. Ensure that all selected documents use the same embedding model. Defaults to an empty list.
 - `"page"`: (*Body parameter*), `integer`
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
 - `"page_size"`: (*Body parameter*)
@@ -4057,11 +4084,11 @@ Creates a session with an agent.
 - Method: POST
 - URL: `/api/v1/agents/{agent_id}/sessions?user_id={user_id}`
 - Headers:
-  - `'content-Type: application/json'
+  - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - the required parameters:`str`
-  - other parameters:
+  - `"user_id"`: `string` (optional)
+  - Other parameters:
     The variables specified in the **Begin** component.
 
 ##### Request example
@@ -4081,8 +4108,8 @@ curl --request POST \
 
 - `agent_id`: (*Path parameter*)
   The ID of the associated agent.
-- `user_id`: (*Filter parameter*)
-  The optional user-defined ID for parsing docs (especially images) when creating a session while uploading files.
+- `user_id`: (*Body or query parameter*), `string`, *Optional*
+  A user-defined ID associated with the created session. It can be provided either in the JSON request body or as a URL query parameter. If both are provided, the value in the request body takes precedence. If omitted, the tenant ID associated with the current API key is used.
 
 #### Response
 
@@ -4325,7 +4352,7 @@ Use this mode for the native agent API.
 - `"files"`: `list[object]` (optional)
 - `"user_id"`: `string` (optional)
 - `"return_trace"`: `boolean` (optional, default `false`)
-- `"chat_template_kwargs": object` (optional)
+- `"chat_template_kwargs"`: `object` (optional)
 
 #### Streaming events to handle
 
@@ -4413,9 +4440,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `agent_id`: (*Path parameter*), `string`
+- `"agent_id"`: (*Body parameter*), `string`, *Required*
   The ID of the associated agent.
-- `"question"`: (*Body Parameter*), `string`, *Required*
+- `"query"`: (*Body parameter*), `string`
   The question to start an AI-powered conversation.
 - `"stream"`: (*Body Parameter*), `boolean`
   Indicates whether to output responses in a streaming way:
@@ -4423,8 +4450,8 @@ curl --request POST \
   - `false`: Disable streaming.
 - `"session_id"`: (*Body Parameter*)
   The ID of the session. If it is not provided, a new session will be generated.
-- `"inputs"`: (*Body Parameter*)
-  Variables specified in the **Begin** component.
+- `"inputs"`: (*Body parameter*), `object`
+  Values for variables defined in the **Begin** component. Each variable value must be an object containing a `"value"` field and may include a `"type"` field.
 - `"user_id"`: (*Body parameter*), `string`
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
 - `"chat_template_kwargs"`: (*Body parameter*), `object`
@@ -4500,7 +4527,7 @@ Use the same endpoint and add `"openai-compatible": true`.
 - `"stream"`: `boolean`
 - `"session_id"`: `string` (optional)
 - `"model"`: `string` (optional, accepted for compatibility)
-- `"chat_template_kwargs": object` (optional)
+- `"chat_template_kwargs"`: `object` (optional)
 
 ##### Request examples
 
@@ -4629,14 +4656,14 @@ Failure:
 
 ### List agent sessions
 
-**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}&dsl={dsl}`
+**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}&keywords={keywords}&from_date={from_date}&to_date={to_date}&dsl={dsl}&exp_user_id={exp_user_id}`
 
 Lists sessions associated with a specified agent.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}`
+- URL: `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}&keywords={keywords}&from_date={from_date}&to_date={to_date}&dsl={dsl}&exp_user_id={exp_user_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -4644,7 +4671,7 @@ Lists sessions associated with a specified agent.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id} \
+     --url 'http://{address}/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}&keywords={keywords}&from_date={from_date}&to_date={to_date}&dsl={dsl}&exp_user_id={exp_user_id}' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -4658,8 +4685,8 @@ curl --request GET \
   The number of sessions on each page. Defaults to `30`.
 - `orderby`: (*Filter parameter*), `string`
   The field by which sessions should be sorted. Available options:
-  - `create_time` (default)
-  - `update_time`
+  - `create_time`
+  - `update_time` (default)
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
 - `id`: (*Filter parameter*), `string`
@@ -4668,6 +4695,14 @@ curl --request GET \
   The optional user-defined ID passed in when creating session.
 - `dsl`: (*Filter parameter*), `boolean`
   Indicates whether to include the dsl field of the sessions in the response. Defaults to `true`.
+- `keywords`: (*Filter parameter*), `string`
+  Fuzzy-searches the session ID, session name, and session messages.
+- `from_date`: (*Filter parameter*), `string`
+  Filters sessions whose applicable date is on or after this date.
+- `to_date`: (*Filter parameter*), `string`
+  Filters sessions whose applicable date is on or before this date.
+- `exp_user_id`: (*Filter parameter*), `string`
+  Returns only the IDs and names of sessions associated with the specified external user ID. When provided, the endpoint uses this special listing mode and does not apply the other pagination and filtering parameters.
 
 #### Response
 
@@ -5131,14 +5166,14 @@ Failure:
 
 ### List agents
 
-**GET** `/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={agent_name}&id={agent_id}`
+**GET** `/api/v1/agents`
 
-Lists agents.
+Lists agents and compilation template groups accessible to the current user.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&title={agent_name}&id={agent_id}`
+- URL: `/api/v1/agents`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -5146,7 +5181,7 @@ Lists agents.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&title={agent_name}&id={agent_id} \
+     --url 'http://{address}/api/v1/agents?page=1&page_size=30&orderby=create_time&desc=true&keywords=example' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -5162,10 +5197,16 @@ curl --request GET \
   - `update_time`
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved agents should be sorted in descending order. Defaults to `true`.
-- `id`: (*Filter parameter*), `string`
-  The ID of the agent to retrieve.
-- `title`: (*Filter parameter*), `string`
-  The name of the agent to retrieve.
+- `keywords`: (*Filter parameter*), `string`
+  Fuzzy-searches agents by title.
+- `canvas_category`: (*Filter parameter*), `string`
+  Filters agents by one or more comma-separated canvas categories.
+- `canvas_type`: (*Filter parameter*), `string`
+  Filters agents by canvas type.
+- `owner_ids`: (*Filter parameter*), `string`
+  Filters agents by comma-separated authorized owner IDs.
+- `tags`: (*Filter parameter*), `string`
+  Filters agents by comma-separated tags.
 
 #### Response
 
@@ -5173,70 +5214,47 @@ Success:
 
 ```json
 {
-    "code": 0,
-    "data": [
-        {
-            "avatar": null,
-            "canvas_type": null,
-            "create_date": "Thu, 05 Dec 2024 19:10:36 GMT",
-            "create_time": 1733397036424,
-            "description": null,
-            "dsl": {
-                "answer": [],
-                "components": {
-                    "begin": {
-                        "downstream": [],
-                        "obj": {
-                            "component_name": "Begin",
-                            "params": {}
-                        },
-                        "upstream": []
-                    }
-                },
-                "graph": {
-                    "edges": [],
-                    "nodes": [
-                        {
-                            "data": {
-                                "label": "Begin",
-                                "name": "begin"
-                            },
-                            "height": 44,
-                            "id": "begin",
-                            "position": {
-                                "x": 50,
-                                "y": 200
-                            },
-                            "sourcePosition": "left",
-                            "targetPosition": "right",
-                            "type": "beginNode",
-                            "width": 200
-                        }
-                    ]
-                },
-                "history": [],
-                "messages": [],
-                "path": [],
-                "reference": []
-            },
-            "id": "8d9ca0e2b2f911ef9ca20242ac120006",
-            "title": "123465",
-            "update_date": "Thu, 05 Dec 2024 19:10:56 GMT",
-            "update_time": 1733397056801,
-            "user_id": "69736c5e723611efb51b0242ac120007"
-        }
-    ]
+  "code": 0,
+  "data": {
+    "canvas": [
+      {
+        "avatar": null,
+        "canvas_category": "agent_canvas",
+        "canvas_type": "",
+        "description": null,
+        "id": "d12e0f02a13c11f19804611a4dfe1a85",
+        "nickname": "test",
+        "permission": "me",
+        "release_time": null,
+        "tags": "",
+        "tenant_avatar": null,
+        "tenant_id": "fc117a7ea10011f1b894bf34cf9cba96",
+        "title": "111",
+        "type": "agent",
+        "update_time": 1787741800476
+      }
+    ],
+    "total": 1
+  },
+  "message": "success"
 }
 ```
 
-Failure:
+##### Response fields
 
-```json
-{
-    "code": 102,
-    "message": "The agent doesn't exist."
-}
-```
+- `data`: `object`
+  The result container.
+- `data.canvas`: `list[object]`
+  A list of agents and, when applicable, compilation template groups.
+- `data.canvas[].type`: `string`
+  The item type:
+  - `agent`: An agent.
+  - `compilation_template_group`: A compilation template group.
+- `data.total`: `integer`
+  The total number of matched items before pagination.
+- `message`: `string`
+  The result message.
+
 
 ---
 
@@ -5877,14 +5895,14 @@ Failure
 
 ### List messages of a memory
 
-**GET** `/api/v1/memories/{memory_id}?agent_id={agent_id}&keywords={session_id}&page={page}&page_size={page_size}`
+**GET** `/api/v1/memories/{memory_id}?agent_id={agent_id}&keywords={keywords}&page={page}&page_size={page_size}`
 
 List the messages of a specified memory.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/memories/{memory_id}?agent_id={agent_id}&keywords={session_id}&page={page}&page_size={page_size}`
+- URL: `/api/v1/memories/{memory_id}?agent_id={agent_id}&keywords={keywords}&page={page}&page_size={page_size}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -5906,9 +5924,9 @@ curl --location 'http://{address}/api/v1/memories/6c8983badede11f083f184ba59bc53
 
   Filters messages by the ID of their source agent. Supports multiple values.
 
-- `session_id`: (*Filter parameter*), `string`, *Optional*
+- `keywords`: (*Filter parameter*), `string`, *Optional*
 
-  Filters messages by their session ID. This field supports fuzzy search.
+  Filters messages by session ID. Despite the parameter name, its value is applied to the `session_id` field.
 
 - `page`: (*Filter parameter*), `int`, *Optional*
 
@@ -6212,14 +6230,14 @@ Failure
 
 ### Search Message
 
-**GET** `/api/v1/messages/search?query={question}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
+**GET** `/api/v1/messages/search?query={query}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
 
 Searches and retrieves messages from memory based on the provided `query` and other configuration parameters.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/messages/search?query={question}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
+- URL: `/api/v1/messages/search?query={query}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -6233,7 +6251,7 @@ curl --location 'http://{address}/api/v1/messages/search?query=%22who%20are%20yo
 
 ##### Request parameters
 
-- `question`: (*Filter parameter*), `string`, *Required*
+- `query`: (*Filter parameter*), `string`, *Required*
 
   The search term or natural language question used to find relevant messages.
 
@@ -6267,7 +6285,7 @@ curl --location 'http://{address}/api/v1/messages/search?query=%22who%20are%20yo
 
 - `top_n`: (*Filter parameter*), `int`, *Optional*
 
-  The maximum number of most relevant messages to return. This limits the result set size for efficiency. Defaults to `10`.
+  The maximum number of most relevant messages to return. This limits the result set size for efficiency. Defaults to `5`.
 
 #### Response
 
@@ -6487,15 +6505,15 @@ Check the health status of RAGFlow's dependencies (database, Redis, document eng
 ##### Request example
 
 ```bash
-curl --request GET
-     --url http://{address}/api/v1/system/healthz
+curl --request GET \
+     --url http://{address}/api/v1/system/healthz \
      --header 'Content-Type: application/json'
 ```
 
 ##### Request parameters
 
 - `address`: (*Path parameter*), string
-  The host and port of the backend service (e.g., `localhost:7897`).
+  The host and port of the backend service (e.g., `localhost:9380`).
 
 ---
 
@@ -7962,7 +7980,7 @@ Lists search apps for the current user.
 #### Request
 
 - Method: GET
-- URL: `/api/v1/searches`
+- URL: `/api/v1/searches?keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&owner_ids={owner_ids}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -7979,9 +7997,9 @@ curl --request GET \
 - `keywords`: (*Filter parameter*), `string`
   Search keyword to filter search apps by name.
 - `page`: (*Filter parameter*), `integer`
-  Specifies the page number. Defaults to `0` (no pagination).
+  Specifies the page number. Defaults to `1`. Values less than `1` fall back to `1`.
 - `page_size`: (*Filter parameter*), `integer`
-  The number of items per page. Defaults to `0` (no pagination).
+  The number of items per page. Defaults to `30`. Values less than `1` fall back to `30`. The maximum value is `100`.
 - `orderby`: (*Filter parameter*), `string`
   The field to sort by. Defaults to `create_time`.
 - `desc`: (*Filter parameter*), `boolean`
