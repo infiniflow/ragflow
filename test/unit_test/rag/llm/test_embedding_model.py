@@ -427,3 +427,24 @@ class TestBaiduYiyanResponseParsing:
         assert vector.shape == (3,)
         np.testing.assert_array_equal(vector, np.array([1.0, 2.0, 3.0]))
         assert tokens == 7
+
+
+@pytest.mark.p2
+class TestOpenAIUserForwarding:
+    """OpenAI-compatible embedding calls forward ``user`` when LLM context is set."""
+
+    def test_forwards_user_when_context_set(self):
+        from common.llm_request_context import reset_llm_request_context, set_llm_request_context
+
+        embed = _make_openai(total_tokens=3)
+        token = set_llm_request_context(user_id="end-user-1")
+        try:
+            embed.encode(["hello"])
+        finally:
+            reset_llm_request_context(token)
+        assert embed.client.embeddings.create.call_args.kwargs["user"] == "end-user-1"
+
+    def test_omits_user_when_no_context(self):
+        embed = _make_openai(total_tokens=3)
+        embed.encode(["hello"])
+        assert "user" not in embed.client.embeddings.create.call_args.kwargs

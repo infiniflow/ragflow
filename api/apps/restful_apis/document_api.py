@@ -72,6 +72,7 @@ from api.utils.validation_utils import (
 
 from common import settings
 from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_BUCKET
+from common.llm_request_context import normalize_llm_user_id
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec, thread_pool_exec_long_time
 from api.utils.file_utils import filename_type, thumbnail
@@ -1532,7 +1533,7 @@ def _run_sync(user_id: str, req):
                 doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
                 DocumentService.update_parser_config(doc.id, doc.parser_config)
             doc_dict = doc.to_dict()
-            DocumentService.run(doc_tenant_id, doc_dict, kb_table_num_map)
+            DocumentService.run(doc_tenant_id, doc_dict, kb_table_num_map, user_id=normalize_llm_user_id(req.get("user_id")))
 
     return None, None
 
@@ -1571,6 +1572,9 @@ async def parse_documents(tenant_id, dataset_id):
               items:
                 type: string
               description: List of document IDs to parse.
+            user_id:
+              type: string
+              description: Optional end-user identifier forwarded as the OpenAI user field on embedding requests.
     responses:
       200:
         description: Successful operation.
@@ -1587,6 +1591,7 @@ async def parse_documents(tenant_id, dataset_id):
         return get_error_data_result(message="`document_ids` is required")
     if len(document_ids) == 0:
         return get_error_data_result(message="`document_ids` is required")
+    llm_user_id = normalize_llm_user_id(req.get("user_id"))
 
     # Check for duplicate document IDs
     unique_doc_ids, duplicate_messages = check_duplicate_ids(document_ids, "document")
@@ -1636,7 +1641,7 @@ async def parse_documents(tenant_id, dataset_id):
                     settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc.kb_id)
 
                 doc_dict = doc.to_dict()
-                DocumentService.run(tenant_id, doc_dict, kb_table_num_map)
+                DocumentService.run(tenant_id, doc_dict, kb_table_num_map, user_id=llm_user_id)
                 success_count += 1
 
             result = {"success_count": success_count}
