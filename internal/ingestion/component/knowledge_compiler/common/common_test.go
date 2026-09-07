@@ -14,7 +14,7 @@ func (c *captureChat) Chat(_ context.Context, req ChatRequest) (*ChatResponse, e
 
 func TestGenJSONDisablesInvokerRetry(t *testing.T) {
 	chat := &captureChat{}
-	if _, err := GenJSON(context.Background(), chat, ChatRequest{UserPrompt: "test"}, 0); err != nil {
+	if _, err := GenJSON(context.Background(), Deps{Chat: chat}, ChatRequest{UserPrompt: "test"}, 0); err != nil {
 		t.Fatalf("GenJSON: %v", err)
 	}
 	if !chat.req.DisableRetry {

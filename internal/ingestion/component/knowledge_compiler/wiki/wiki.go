@@ -65,29 +65,6 @@ const wikiMapTokenBudget = 2048
 
 const wikiRefineProgressStep = 5
 
-// wikiMapMaxTokens derives the extraction output budget from the model's
-// context length and the per-batch input budget: once the batch has consumed
-// wikiMapTokenBudget input tokens, the rest of the window is handed to the
-// output — but never below the input budget itself, so a small-input batch can
-// still get a proportionally large extraction payload. modelContextLen is the
-// model's total context window in tokens (0 means unknown).
-func wikiMapMaxTokens(modelContextLen int) int {
-	if modelContextLen <= 0 {
-		modelContextLen = common.DefaultLLMContextLength
-	}
-	return max(modelContextLen-wikiMapTokenBudget, wikiMapTokenBudget)
-}
-
-// wikiRefineMaxTokens gives the page writer (REFINE step) a generous but
-// bounded output cap so a long page body is not cut off mid-stream by a small
-// default completion limit. It reuses the map/extraction budget derivation:
-// once the input budget is consumed, the rest of the model window is handed to
-// the output. modelContextLen is the model's total context window in tokens (0
-// means unknown).
-func wikiRefineMaxTokens(modelContextLen int) int {
-	return wikiMapMaxTokens(modelContextLen)
-}
-
 type wikiPipeline struct {
 	ctx       context.Context
 	deps      common.Deps
@@ -710,16 +687,15 @@ func (p *wikiPipeline) mapBatch(batch []common.Chunk) (wikiExtract, error) {
 	user, _ := buildWikiMapPrompt(p.docID, batch, parserConfig, p.param.Language)
 	// Give the extraction step a generous output budget so the entity/relation
 	// JSON is not silently truncated by the model's default output cap (that
-	// produced "unexpected end of JSON input" from GenJSON). The output budget is
-	// tied to the per-batch input budget: once the batch consumes
-	// wikiMapTokenBudget tokens of the model's context, the remainder is left
-	// for the extraction payload (and never less than the input budget itself).
-	mt := wikiMapMaxTokens(p.deps.ModelContextLen)
-	raw, err := common.GenJSON(p.ctx, p.deps.Chat, common.ChatRequest{
+	// produced "unexpected end of JSON input" from GenJSON). The generation cap
+	// (max_tokens) is filled automatically by GenJSON from the common deps budget
+	// (deps.EffectiveGenMaxTokens), which honors the model's real max_output cap
+	// (e.g. 4095 for glm-4-flash) instead of the oversized context-derived value
+	// wikiMapMaxTokens would return and that the server rejects.
+	raw, err := common.GenJSON(p.ctx, p.deps, common.ChatRequest{
 		LLMID:        p.llmID,
 		SystemPrompt: wikiMapSystem,
 		UserPrompt:   user,
-		MaxTokens:    &mt,
 	})
 	if err != nil {
 		return wikiExtract{}, err
@@ -934,10 +910,11 @@ func (p *wikiPipeline) runRefinePage(
 		"evidence_count":   fmt.Sprintf("%d", len(evidence)),
 		"evidence_blocks":  formatWikiEvidenceBlocks(evidence),
 	})
-	// wikiRefineMaxTokens gives the page writer a generous but bounded output
-	// cap so a long page is not cut off mid-stream by a small default completion
+	// The page writer gets the common deps generation cap
+	// (deps.EffectiveGenMaxTokens), which honors the model's real max_output cap
+	// so a long page is not cut off mid-stream by a small default completion
 	// limit (which would yield an unusable/cut page body).
-	rmt := wikiRefineMaxTokens(p.deps.ModelContextLen)
+	rmt := p.deps.EffectiveGenMaxTokens()
 	resp, err := p.deps.Chat.Chat(p.ctx, common.ChatRequest{
 		LLMID:        p.llmID,
 		SystemPrompt: buildWikiRefineWriterSystem(""),
@@ -1023,7 +1000,7 @@ func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal, q
 		"topics":              mustJSON(batch.Topics),
 		"planning_mode_rules": planningModeRules,
 	})
-	raw, err := common.GenJSON(p.ctx, p.deps.Chat, common.ChatRequest{
+	raw, err := common.GenJSON(p.ctx, p.deps, common.ChatRequest{
 		LLMID:        p.llmID,
 		SystemPrompt: wikiPlanSystem,
 		UserPrompt:   user,
@@ -1397,7 +1374,7 @@ func (p *wikiPipeline) resolveMaybePlanPage(page wikiPlanPage, candidates []comm
 	if len(candidates) == 0 {
 		return nil, nil
 	}
-	raw, err := common.GenJSON(p.ctx, p.deps.Chat, common.ChatRequest{
+	raw, err := common.GenJSON(p.ctx, p.deps, common.ChatRequest{
 		LLMID:        p.llmID,
 		SystemPrompt: wikiPlanReconcileSystem,
 		UserPrompt: renderWikiTemplate(wikiPlanReconcileUserTemplate, map[string]string{

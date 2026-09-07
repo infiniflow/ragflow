@@ -21,7 +21,7 @@ func (x *llmDeduper) RouteTopic(ctx context.Context, incoming, existing kccommon
 	prompt := fmt.Sprintf("INCOMING PAGE\ntopic: %s\ntitle: %s\nentities: %s\nsummary: %s\n\nCANDIDATE TOPIC PAGE\ntopic: %s\ntitle: %s\nentities: %s\nsummary: %s",
 		productTopic(incoming), productTitle(incoming), strings.Join(productEntities(incoming), ", "), productSummary(incoming),
 		productTopic(existing), productTitle(existing), strings.Join(productEntities(existing), ", "), productSummary(existing))
-	result, err := kccommon.GenJSON(ctx, x.decider.Chat, kccommon.ChatRequest{
+	result, err := kccommon.GenJSON(ctx, kccommon.Deps{Chat: x.decider.Chat}, kccommon.ChatRequest{
 		LLMID: x.decider.LLMID, SystemPrompt: topicRouteSystemPrompt, UserPrompt: prompt,
 	})
 	if err != nil {

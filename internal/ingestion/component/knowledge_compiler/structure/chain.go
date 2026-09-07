@@ -277,7 +277,7 @@ func chainCorrectBatch(ctx context.Context, deps common.Deps, llmID string, kind
 	user = strings.ReplaceAll(user, "{bad_relations_json}", mustJSONList(relations))
 	user = strings.ReplaceAll(user, "{source_chunks_text}", strings.TrimSpace(sourceText.String()))
 
-	res, err := common.GenJSON(ctx, deps.Chat, common.ChatRequest{
+	res, err := common.GenJSON(ctx, deps, common.ChatRequest{
 		LLMID: llmID, SystemPrompt: chainCorrectionSystem, UserPrompt: user, Temperature: &chainJudgeTemperature,
 	})
 	if err != nil {

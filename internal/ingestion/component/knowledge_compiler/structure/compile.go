@@ -36,7 +36,7 @@ var extractionTemperature = 0.1
 // one batch are strictly sequential; batches parallelise at the caller.
 func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, nodePrompt, edgePromptTmpl, packedText string) (nodes, edges []map[string]any, err error) {
 	user := UserPrompt(packedText)
-	nodeRaw, err := common.GenJSON(ctx, deps.Chat, common.ChatRequest{
+	nodeRaw, err := common.GenJSON(ctx, deps, common.ChatRequest{
 		LLMID: cfg.LLMID, SystemPrompt: nodePrompt, UserPrompt: user, Temperature: &extractionTemperature,
 	})
 	if err != nil {
@@ -59,7 +59,7 @@ func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig,
 	if strings.TrimSpace(edgePromptTmpl) == "" {
 		return nodes, nil, nil
 	}
-	edgeRaw, err := common.GenJSON(ctx, deps.Chat, common.ChatRequest{
+	edgeRaw, err := common.GenJSON(ctx, deps, common.ChatRequest{
 		LLMID: cfg.LLMID, SystemPrompt: fillKnownNodes(edgePromptTmpl, known), UserPrompt: user, Temperature: &extractionTemperature,
 	})
 	if err != nil {

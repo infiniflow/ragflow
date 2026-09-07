@@ -13,6 +13,34 @@ import (
 // unknown (e.g. in tests). Mirrors Python's default llm_model.max_length.
 const DefaultLLMContextLength = 8192
 
+// OutputMaxTokens returns the generation cap (max_tokens) for a JSON-mode LLM
+// call. The cap is the smaller of the context-window-derived budget and the
+// model's configured max output. The context-derived budget (context window
+// minus prompt overhead) can exceed the model's real generation limit, so it is
+// always clamped to maxOutput when the latter is known and smaller. Callers
+// pass the returned value as ChatRequest.MaxTokens so the driver does not fall
+// back to its own (often too-small) default and silently truncate large
+// knowledge-compiler replies (e.g. a full hypergraph JSON for a big document).
+//
+// A non-positive maxOutput means "unknown" and is ignored (the context-derived
+// budget is used as-is). A non-positive modelContextLen falls back to
+// DefaultLLMContextLength so the helper always returns a sane cap.
+func OutputMaxTokens(modelContextLen, maxOutput int) int {
+	const contextOverhead = 2048
+	const contextFloor = 2048
+	if modelContextLen <= 0 {
+		modelContextLen = DefaultLLMContextLength
+	}
+	mt := contextFloor
+	if b := modelContextLen - contextOverhead; b > contextFloor {
+		mt = b
+	}
+	if maxOutput > 0 && maxOutput < mt {
+		mt = maxOutput
+	}
+	return mt
+}
+
 // ChatRequest is the minimal surface a variant needs to dispatch one LLM call.
 type ChatRequest struct {
 	LLMID        string
@@ -172,8 +200,7 @@ type Deps struct {
 	TenantID        string
 	DatasetID       string
 	// ModelContextLen is the chat model's context window in tokens
-	// (content_length). The prompt-budget helpers (wikiMapMaxTokens,
-	// deriveWikiPlanBudget, buildClusterContent) use it to size the input/output
+	// (content_length). The prompt-budget helpers use it to size the input/output
 	// quotas (mirrors Python self._llm_model.max_length).
 	ModelContextLen int
 	// ModelMaxOutput is the chat model's generation cap (max_output), the most
@@ -183,6 +210,27 @@ type Deps struct {
 	// candidate set can overflow the model's max_output and it returns a
 	// truncated/non-JSON reply. Mirrors Python's max_tokens generation config.
 	ModelMaxOutput int
+	// GenMaxTokens is the resolved generation cap (max_tokens) for every
+	// JSON-mode LLM call in a compile run. It is the smaller of the
+	// context-window-derived budget and ModelMaxOutput, computed once by the
+	// wiring (see EffectiveGenMaxTokens). Without it the driver falls back to
+	// its own default completion limit (often ~4095) and silently truncates a
+	// large reply, which then fails to parse. Optional: 0 means "not
+	// precomputed" and EffectiveGenMaxTokens derives it on demand.
+	GenMaxTokens int
+}
+
+// EffectiveGenMaxTokens returns the generation cap for JSON-mode LLM calls,
+// the single common value every stage should pass as ChatRequest.MaxTokens.
+// If GenMaxTokens was precomputed by the wiring it is returned as-is;
+// otherwise it is derived on the fly from ModelContextLen/ModelMaxOutput via
+// OutputMaxTokens. Centralising this on Deps means no stage has to thread a
+// maxTokens parameter or recompute the budget itself.
+func (d Deps) EffectiveGenMaxTokens() int {
+	if d.GenMaxTokens > 0 {
+		return d.GenMaxTokens
+	}
+	return OutputMaxTokens(d.ModelContextLen, d.ModelMaxOutput)
 }
 
 // DepsResolver resolves the per-run Deps from a tenant/llm/embedding triple.
