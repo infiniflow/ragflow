@@ -548,6 +548,27 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	}
 	pending := make([]pendingEdge, 0, 4*len(c.Components))
 	nodes := make(map[string]*compose.WorkflowNode, len(c.Components))
+	// collectParamRefDeps appends any param-level upstream dependencies
+	// to `pending`. A param-ref is a `{{cpnID@field}}` selector written
+	// into a component's params instead of into the DSL `upstream` list
+	// (issue #19325; mirrors Python's `ComponentBase.param_refs` +
+	// `get_dependency_ids`, which were added in PR #19282). Pass 2 then
+	// wires them as exec-only `AddDependency` edges so a node that reads
+	// another node's output via a param still waits for that source
+	// to finish even when the DSL draws no edge between them.
+	collectParamRefDeps := func(cpnID, name string, params map[string]any) {
+		for _, ref := range paramRefDependencies(name, params) {
+			depCpn := parseParamRefComponent(ref)
+			if depCpn == "" || depCpn == cpnID {
+				// A bare "field" string (no @) is a local template
+				// variable, not a cross-component dependency; the
+				// self-edge is the same protection the drawn-edge
+				// pass already has.
+				continue
+			}
+			pending = append(pending, pendingEdge{cpn: cpnID, up: depCpn})
+		}
+	}
 	for cpnID := range c.Components {
 		// Macro cpns are already registered in the pre-pass. We
 		// still need to record their upstream edges so Pass 2 can wire
@@ -556,6 +577,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 			for _, up := range c.Components[cpnID].Upstream {
 				pending = append(pending, pendingEdge{cpn: cpnID, up: up})
 			}
+			collectParamRefDeps(cpnID, c.Components[cpnID].Obj.ComponentName, c.Components[cpnID].Obj.Params)
 			continue
 		}
 		if macroMembers[cpnID] {
@@ -609,6 +631,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		for _, up := range c.Components[cpnID].Upstream {
 			pending = append(pending, pendingEdge{cpn: cpnID, up: up})
 		}
+		collectParamRefDeps(cpnID, name, c.Components[cpnID].Obj.Params)
 	}
 
 	// Pass 2: wire edges. Skip self-edges and edges to unknown upstreams —
