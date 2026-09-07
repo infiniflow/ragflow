@@ -2,6 +2,7 @@ package parser
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
@@ -96,6 +97,278 @@ func TestApplyPDFPostProcess_HeaderFooterFilteringIsOptional(t *testing.T) {
 	}
 	if got, want := result.Sections[0].Text, "body"; got != want {
 		t.Fatalf("remaining section = %q, want %q", got, want)
+	}
+}
+
+func TestApplyPDFPostProcess_RemoveTOCRemovesAllDotLeaderEntries(t *testing.T) {
+	result := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{Text: "Contents"},
+			{Text: "Chapter One Introduction .............. 2"},
+			{Text: "Chapter Two Methods ................... 3"},
+			{Text: "Chapter Three Results ................. 4"},
+			{Text: "Chapter One Introduction"},
+			{Text: "Body text that must survive parsing."},
+			{Text: "Chapter Two Methods"},
+			{Text: "More body text."},
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeTOC: true})
+	var kept []string
+	for _, s := range result.Sections {
+		kept = append(kept, s.Text)
+	}
+	want := []string{
+		"Chapter One Introduction",
+		"Body text that must survive parsing.",
+		"Chapter Two Methods",
+		"More body text.",
+	}
+	if len(kept) != len(want) {
+		t.Fatalf("kept = %v, want %v", kept, want)
+	}
+	for i := range want {
+		if kept[i] != want[i] {
+			t.Fatalf("kept = %v, want %v", kept, want)
+		}
+	}
+}
+
+func TestApplyPDFPostProcess_RemoveTOCPrefixScanWithoutEntryPattern(t *testing.T) {
+	// Pattern-less TOC entries take the prefix scan: title and first entry
+	// go, then everything up to the first line sharing the first entry's
+	// prefix (the real body heading).
+	result := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{Text: "Contents"},
+			{Text: "1. Introduction"},
+			{Text: "2. Background"},
+			{Text: "1. Introduction"},
+			{Text: "Body text."},
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeTOC: true})
+	var kept []string
+	for _, s := range result.Sections {
+		kept = append(kept, s.Text)
+	}
+	want := []string{"1. Introduction", "Body text."}
+	if len(kept) != len(want) {
+		t.Fatalf("kept = %v, want %v", kept, want)
+	}
+	for i := range want {
+		if kept[i] != want[i] {
+			t.Fatalf("kept = %v, want %v", kept, want)
+		}
+	}
+}
+
+func TestApplyPDFPostProcess_RemoveTOCSingleFormattedEntryKeepsBody(t *testing.T) {
+	// Only the first entry after the TOC title is formatted. It must count
+	// as a consumed entry so the prefix scan never runs: that scan would
+	// otherwise delete every line up to the next "Cha"-prefixed heading
+	// ("Chapter Two"), dropping the body text between the TOC and it.
+	result := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{
+			{Text: "Contents"},
+			{Text: "Chapter One ..... 2"},
+			{Text: "Body A"},
+			{Text: "Body B"},
+			{Text: "Chapter Two"},
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeTOC: true})
+	var kept []string
+	for _, s := range result.Sections {
+		kept = append(kept, s.Text)
+	}
+	want := []string{"Body A", "Body B", "Chapter Two"}
+	if len(kept) != len(want) {
+		t.Fatalf("kept = %v, want %v", kept, want)
+	}
+	for i := range want {
+		if kept[i] != want[i] {
+			t.Fatalf("kept = %v, want %v", kept, want)
+		}
+	}
+}
+
+func TestApplyPDFPostProcess_RemoveRunningHeaderFooterWithoutDLA(t *testing.T) {
+	const pageHeight = 842.0
+	result := &deepdoctype.ParseResult{
+		PageHeight: map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight, 3: pageHeight},
+		Sections: []deepdoctype.Section{
+			makePDFSection("Contents", "", 0, 72, 158, 40, 60),
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 1, 72, 210, 21, 30),
+			makePDFSection("Chapter One Introduction", "", 1, 72, 206, 88, 100),
+			makePDFSection("Body text one.", "", 1, 72, 363, 124, 136),
+			makePDFSection("- 2 -", "", 1, 289, 305, 807, 817),
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 2, 72, 210, 21, 30),
+			makePDFSection("Chapter Two Methods", "", 2, 72, 190, 88, 100),
+			makePDFSection("Body text two.", "", 2, 72, 374, 124, 136),
+			makePDFSection("- 3 -", "", 2, 289, 305, 807, 817),
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 3, 72, 210, 21, 30),
+			makePDFSection("Chapter Three Results", "", 3, 72, 192, 88, 100),
+			makePDFSection("Body text three.", "", 3, 72, 367, 124, 136),
+			makePDFSection("- 4 -", "", 3, 289, 305, 807, 817),
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeHeaderFooter: true})
+	for _, s := range result.Sections {
+		if strings.Contains(s.Text, "CONFIDENTIAL") {
+			t.Fatalf("running header survived: %q", s.Text)
+		}
+		if strings.HasPrefix(strings.TrimSpace(s.Text), "- ") {
+			t.Fatalf("page-number footer survived: %q", s.Text)
+		}
+	}
+	if len(result.Sections) != 7 {
+		t.Fatalf("len(Sections) = %d, want 7 (body content preserved)", len(result.Sections))
+	}
+}
+
+func TestApplyPDFPostProcess_RunningHeaderFooterKeepsUniqueZoneText(t *testing.T) {
+	const pageHeight = 842.0
+	result := &deepdoctype.ParseResult{
+		PageHeight: map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight},
+		Sections: []deepdoctype.Section{
+			// Different top-of-page text on every page: not a running header.
+			makePDFSection("Unique top line one", "", 0, 72, 210, 21, 30),
+			makePDFSection("Body one.", "", 0, 72, 363, 124, 136),
+			makePDFSection("Unique top line two", "", 1, 72, 210, 21, 30),
+			makePDFSection("Body two.", "", 1, 72, 363, 124, 136),
+			makePDFSection("Unique top line three", "", 2, 72, 210, 21, 30),
+			makePDFSection("Body three.", "", 2, 72, 363, 124, 136),
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeHeaderFooter: true})
+	if len(result.Sections) != 6 {
+		t.Fatalf("len(Sections) = %d, want 6 (unique zone text must survive)", len(result.Sections))
+	}
+}
+
+func TestApplyPDFPostProcess_RunningHeaderFooterSkipsShortDocuments(t *testing.T) {
+	const pageHeight = 842.0
+	result := &deepdoctype.ParseResult{
+		PageHeight: map[int]float64{0: pageHeight, 1: pageHeight},
+		Sections: []deepdoctype.Section{
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 0, 72, 210, 21, 30),
+			makePDFSection("Body one.", "", 0, 72, 363, 124, 136),
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 1, 72, 210, 21, 30),
+			makePDFSection("Body two.", "", 1, 72, 363, 124, 136),
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeHeaderFooter: true})
+	if len(result.Sections) != 4 {
+		t.Fatalf("len(Sections) = %d, want 4 (2-page doc must not be touched)", len(result.Sections))
+	}
+}
+
+func TestApplyPDFPostProcess_RunningHeaderFooterCountsAllRenderedPages(t *testing.T) {
+	const pageHeight = 842.0
+	// Pages 3 and 4 are blank or image-only: they produced no sections but
+	// still count toward the page total. A candidate repeated on 2 of the 5
+	// rendered pages occurs on fewer than half of the document's pages and
+	// must survive.
+	result := &deepdoctype.ParseResult{
+		PageHeight: map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight, 3: pageHeight, 4: pageHeight},
+		Sections: []deepdoctype.Section{
+			makePDFSection("Chapter One Introduction", "", 0, 72, 206, 88, 100),
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 1, 72, 210, 21, 30),
+			makePDFSection("Body text one.", "", 1, 72, 363, 124, 136),
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 2, 72, 210, 21, 30),
+			makePDFSection("Body text two.", "", 2, 72, 374, 124, 136),
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeHeaderFooter: true})
+	if len(result.Sections) != 5 {
+		t.Fatalf("len(Sections) = %d, want 5 (2 of 5 rendered pages is below the repetition threshold)", len(result.Sections))
+	}
+
+	// The same header on 3 of the 5 rendered pages meets the threshold and
+	// is removed even though two pages contributed no sections.
+	result = &deepdoctype.ParseResult{
+		PageHeight: map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight, 3: pageHeight, 4: pageHeight},
+		Sections: []deepdoctype.Section{
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 0, 72, 210, 21, 30),
+			makePDFSection("Body text one.", "", 0, 72, 363, 124, 136),
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 1, 72, 210, 21, 30),
+			makePDFSection("Body text two.", "", 1, 72, 363, 124, 136),
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 2, 72, 210, 21, 30),
+			makePDFSection("Body text three.", "", 2, 72, 367, 124, 136),
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeHeaderFooter: true})
+	if len(result.Sections) != 3 {
+		t.Fatalf("len(Sections) = %d, want 3 (running header removed on 3 of 5 rendered pages)", len(result.Sections))
+	}
+	for _, s := range result.Sections {
+		if strings.Contains(s.Text, "CONFIDENTIAL") {
+			t.Fatalf("running header survived: %q", s.Text)
+		}
+	}
+}
+
+func TestApplyPDFPostProcess_RunningHeaderFooterRequiresFullZone(t *testing.T) {
+	const pageHeight = 842.0
+	// A section that merely starts in the top 10% but extends past it
+	// (bottom 200 > 842*0.10) is body content, not a header candidate —
+	// even when it repeats on every page. Same for a section that ends in
+	// the bottom 10% but starts above it (top 700 < 842*0.90).
+	result := &deepdoctype.ParseResult{
+		PageHeight: map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight},
+		Sections: []deepdoctype.Section{
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 0, 72, 210, 40, 200),
+			makePDFSection("Long legal disclaimer note", "", 0, 72, 363, 700, 800),
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 1, 72, 210, 40, 200),
+			makePDFSection("Long legal disclaimer note", "", 1, 72, 363, 700, 800),
+			makePDFSection("CONFIDENTIAL DRAFT HEADER", "", 2, 72, 210, 40, 200),
+			makePDFSection("Long legal disclaimer note", "", 2, 72, 363, 700, 800),
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeHeaderFooter: true})
+	if len(result.Sections) != 6 {
+		t.Fatalf("len(Sections) = %d, want 6 (sections crossing the zone boundary must survive)", len(result.Sections))
+	}
+}
+
+func TestApplyPDFPostProcess_RunningHeaderFooterNeedsRepetitionNotPosition(t *testing.T) {
+	const pageHeight = 842.0
+	// Body blocks sitting fully inside the top 10% of every page but never
+	// repeating: position alone must not remove them — the guard requires
+	// the same normalized text on >= half of the rendered pages.
+	result := &deepdoctype.ParseResult{
+		PageHeight: map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight, 3: pageHeight},
+		Sections: []deepdoctype.Section{
+			makePDFSection("Quarterly results summary", "", 0, 72, 300, 21, 60),
+			makePDFSection("Ordinary body text on page zero.", "", 0, 72, 363, 124, 136),
+			makePDFSection("Annual meeting minutes", "", 1, 72, 300, 21, 60),
+			makePDFSection("Ordinary body text on page one.", "", 1, 72, 363, 124, 136),
+			makePDFSection("Risk assessment overview", "", 2, 72, 300, 21, 60),
+			makePDFSection("Ordinary body text on page two.", "", 2, 72, 363, 124, 136),
+			makePDFSection("Compliance audit findings", "", 3, 72, 300, 21, 60),
+			makePDFSection("Ordinary body text on page three.", "", 3, 72, 363, 124, 136),
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeHeaderFooter: true})
+	if len(result.Sections) != 8 {
+		t.Fatalf("len(Sections) = %d, want 8 (in-zone but non-repeating text must survive)", len(result.Sections))
+	}
+
+	// Repetition counts distinct pages, not occurrences: the same text
+	// twice on one page still covers a single page of the document.
+	result = &deepdoctype.ParseResult{
+		PageHeight: map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight},
+		Sections: []deepdoctype.Section{
+			makePDFSection("Repeated block", "", 0, 72, 300, 21, 40),
+			makePDFSection("Repeated block", "", 0, 72, 300, 45, 64),
+			makePDFSection("Body text page one.", "", 1, 72, 363, 124, 136),
+			makePDFSection("Body text page two.", "", 2, 72, 363, 124, 136),
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeHeaderFooter: true})
+	if len(result.Sections) != 4 {
+		t.Fatalf("len(Sections) = %d, want 4 (two occurrences on one page count as one page)", len(result.Sections))
 	}
 }
 

@@ -537,7 +537,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 0.2. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
       vectorSimilarityWeight: 'Vector similarity weight',
       vectorSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
@@ -560,6 +560,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       runningStatus2: 'Cancelled',
       runningStatus3: 'Success',
       runningStatus4: 'Fail',
+      runningStatusQueued: 'Queued',
       pageRanges: 'Page ranges',
       pageRangesTip:
         'Range of pages to be parsed; pages outside this range will not be processed.',
@@ -868,11 +869,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     </p><p>
     Applicable when you require the LLM to summarize the entire document, provided it can handle that amount of context length.
     </p>`,
-      knowledgeGraph: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
-
-<p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</p>
-<p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
-<p>Ensure that you set the <b>Entity types</b>.</p>`,
       tag: `<p>A dataset using the 'Tag' chunking method functions as a tag set. Other datasets use it to tag their chunks, and queries to these datasets are also tagged using this tag set.</p>
 <p>A tag set will <b>NOT</b> be directly involved in a Retrieval-Augmented Generation (RAG) process.</p>
 <p>Each chunk in this dataset is an independent description-tag pair.</p>
@@ -2370,7 +2366,7 @@ Example: Virtual Hosted Style`,
       graph: 'Graph',
       structureMindmap: 'Mind map',
       structureTimeline: 'Timeline',
-      noWikiPages: 'No wiki pages yet',
+      noWikiPages: 'No wiki yet',
       noSkills: 'No skills yet',
       noStructureGraph: 'No graph yet',
       noStructureMindmap: 'No mind map yet',
@@ -2379,6 +2375,7 @@ Example: Virtual Hosted Style`,
       topics: 'Topics',
       selectArtifact: 'Select an item from the contents to view details',
       searchEntity: 'Search entity',
+      graphEntityCount: '{{returned}} / {{total}} entities',
       sourceDocuments: 'Source documents',
       clearWikiTitle: 'Clear wiki',
       clearWikiDescription:
@@ -2630,6 +2627,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
       script: 'Script',
       iterationItemDescription:
         'It represents the current element in the iteration, which can be referenced and manipulated in subsequent steps.',
+      maxConcurrency: 'Max concurrency',
+      maxConcurrencyTip:
+        '0 or 1 runs items one by one. Values greater than 1 run that many items at once.',
       guidingQuestion: 'Guidance question',
       onFailure: 'On failure',
       userPromptDefaultValue:
@@ -3369,6 +3369,18 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizerRequired: 'Please add the Indexer node first',
       nodeFormInvalid:
         'Cannot save: "{{name}}" has invalid settings. Please fix them first',
+      agentModelMissing:
+        'Cannot save: "{{name}}" has no model selected. Please choose one first',
+      retrievalDatasetRequired: 'Please select at least one dataset',
+      retrievalDatasetMissing:
+        'Cannot save: "{{name}}" has no dataset selected. Please choose one first',
+      retrievalTemplateDatasetHint:
+        'This template has {{count}} dataset retrieval step(s) without a dataset. Select a knowledge base below and it will be applied to all of them; you can still fine-tune each retrieval in the canvas afterwards.',
+      retrievalMemoryRequired: 'Please select at least one memory',
+      retrievalMemoryMissing:
+        'Cannot save: "{{name}}" has no memory selected. Please choose one first',
+      retrievalTemplateMemoryHint:
+        'This template has {{count}} memory retrieval step(s) without a memory. Select one below and it will be applied to all of them; you can still fine-tune each retrieval in the canvas afterwards.',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
       tokenChunker: 'Token Chunker',
@@ -3384,7 +3396,6 @@ This process aggregates variables from multiple branches into a single variable 
       compilerDescription:
         'Compiles document chunks using knowledge compilation templates into structured artifacts.',
       outputFormat: 'Output format',
-      fileFormats: 'File type',
       fileFormatOptions: {
         pdf: 'PDF',
         spreadsheet: 'Spreadsheet',
@@ -3400,7 +3411,6 @@ This process aggregates variables from multiple branches into a single variable 
         video: 'Video',
       },
       fields: 'Field',
-      addParser: 'Add Parser',
       rule: 'Rule',
       addRule: 'Add rule',
       group: 'Group',

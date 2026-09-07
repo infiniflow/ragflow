@@ -58,6 +58,7 @@ func (n *NatsEngine) InitKnowledgeCompileStream() error {
 		Subjects:  []string{knowledgeCompileSubjectPrefix},
 		Retention: jetstream.WorkQueuePolicy,
 		Storage:   jetstream.FileStorage,
+		Discard:   jetstream.DiscardNew,
 		MaxMsgs:   1024 * 1024,
 		MaxBytes:  1024 * 1024 * 64,
 	})

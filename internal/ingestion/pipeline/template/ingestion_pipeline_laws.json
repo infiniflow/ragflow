@@ -349,7 +349,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
@@ -471,7 +471,7 @@
                             ]
                         },
                         "label": "TitleChunker",
-                        "name": "Title Chunker_0"
+                        "name": "Title Chunker"
                     },
                     "id": "TitleChunker:SpicyKeysKick",
                     "measured": {
@@ -499,7 +499,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_0"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:PublicJobsTake",
                     "measured": {
@@ -524,7 +524,7 @@
                     },
                     "data": {
                         "label": "Extractor",
-                        "name": "Extractor_0"
+                        "name": "Extractor"
                     }
                 }
             ]

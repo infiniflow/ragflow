@@ -1,19 +1,16 @@
-//go:build integration
+//go:build cgo && integration
 
 package pdf
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"image"
-	"os"
 	"strings"
 	"testing"
 
 	_ "image/jpeg"
 
-	"ragflow/internal/deepdoc/parser/pdf/inference"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 )
 
@@ -30,20 +27,11 @@ const layer2CropB64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQND
 // correctly — i.e. the Go path now does score-based selection (matching
 // Python's get_rotate_crop_image) instead of the old constant-1.0 fallback.
 //
-// Requires a live rec service (DEEPDOC_URL, default http://localhost:9390).
-// Run with: build.sh --test-integration ./internal/deepdoc/parser/pdf/
+// Uses the in-process NativeAnalyzer (real ONNX rec inference). Requires
+// MODEL_DIR; the test is skipped when it is unset (ONNX Runtime is statically linked).
+// Run with: build.sh --test-native ./internal/deepdoc/parser/pdf/
 func TestOCRRecognizeWithRotation_Live(t *testing.T) {
-	url := os.Getenv("DEEPDOC_URL")
-	if url == "" {
-		url = "http://localhost:9390"
-	}
-	client, err := inference.NewClient(url)
-	if err != nil {
-		t.Fatalf("client: %v", err)
-	}
-	if !client.Health() {
-		t.Skip("deepdoc rec service not healthy; set DEEPDOC_URL")
-	}
+	client := mustConnectInProcessAnalyzer(t)
 
 	raw, err := base64.StdEncoding.DecodeString(layer2CropB64)
 	if err != nil {

@@ -371,9 +371,9 @@ func TestWorkflowOutputs_WithDownloads(t *testing.T) {
 		},
 	}
 
-	out, ok := workflowOutputs("", downloads).(map[string]any)
+	out, ok := workflowOutputs("", downloads, nil).(map[string]any)
 	if !ok {
-		t.Fatalf("workflowOutputs type = %T, want map", workflowOutputs("", downloads))
+		t.Fatalf("workflowOutputs type = %T, want map", workflowOutputs("", downloads, nil))
 	}
 	if out["content"] != "" {
 		t.Fatalf("content = %v, want empty string", out["content"])
@@ -381,11 +381,29 @@ func TestWorkflowOutputs_WithDownloads(t *testing.T) {
 	if got := out["downloads"]; !reflect.DeepEqual(got, downloads) {
 		t.Fatalf("downloads = %#v, want %#v", got, downloads)
 	}
+	if _, has := out["attachment"]; has {
+		t.Fatalf("attachment unexpectedly present: %#v", out["attachment"])
+	}
 }
 
 func TestWorkflowOutputs_NoDownloadsKeepsString(t *testing.T) {
-	if got := workflowOutputs("answer", nil); got != "answer" {
+	if got := workflowOutputs("answer", nil, nil); got != "answer" {
 		t.Fatalf("workflowOutputs without downloads = %#v, want string answer", got)
+	}
+}
+
+func TestWorkflowOutputs_WithAttachment(t *testing.T) {
+	attachment := map[string]any{"doc_id": "d2", "format": "markdown", "file_name": "d2.markdown"}
+
+	out, ok := workflowOutputs("answer", nil, attachment).(map[string]any)
+	if !ok {
+		t.Fatalf("workflowOutputs type = %T, want map", workflowOutputs("answer", nil, attachment))
+	}
+	if out["content"] != "answer" {
+		t.Fatalf("content = %v, want answer", out["content"])
+	}
+	if got := out["attachment"]; !reflect.DeepEqual(got, attachment) {
+		t.Fatalf("attachment = %#v, want %#v", got, attachment)
 	}
 }
 
