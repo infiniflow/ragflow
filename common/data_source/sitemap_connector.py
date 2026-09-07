@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import queue
@@ -128,6 +129,21 @@ class _WorkerThreadIterator:
     @property
     def producer_alive(self) -> bool:
         return self._worker.is_alive()
+
+
+async def validate_connector_in_thread(connector: "SitemapConnector") -> None:
+    """Run ``validate_connector_settings`` off the event loop and propagate cancellation.
+
+    The sync worker wraps the whole task in ``asyncio.wait_for``. A thread started by
+    ``asyncio.to_thread`` cannot be interrupted, so when the awaiting coroutine is
+    cancelled (task timeout) the connector is told to stop at its next cancellation
+    check instead of finishing its fetches in the background.
+    """
+    try:
+        await asyncio.to_thread(connector.validate_connector_settings)
+    except asyncio.CancelledError:
+        connector.cancel()
+        raise
 
 
 def iter_in_worker_thread(source: Iterator[Any], maxsize: int = 2, on_close: Callable[[], None] | None = None) -> _WorkerThreadIterator:

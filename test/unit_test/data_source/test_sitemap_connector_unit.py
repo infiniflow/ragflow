@@ -1,5 +1,6 @@
 """Unit tests for SitemapConnector — no network, no external dependencies."""
 
+import asyncio
 import importlib
 import sys
 import threading
@@ -814,3 +815,36 @@ def test_read_capped_aborts_when_cancelled(monkeypatch):
     with pytest.raises(ValueError, match="cancelled"):
         connector._read_capped(resp, "https://example.com/big")
     resp.close.assert_called()
+
+
+@pytest.mark.p2
+async def test_validate_connector_in_thread_signals_cancellation_on_timeout():
+    """A task timeout during validation must tell the connector to stop."""
+    connector = _connector()
+    started = threading.Event()
+    finished = threading.Event()
+
+    def _blocking_validate():
+        started.set()
+        while not connector.cancelled:
+            time.sleep(0.01)
+        finished.set()
+
+    connector.validate_connector_settings = _blocking_validate  # type: ignore[method-assign]
+
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(_sitemap_mod.validate_connector_in_thread(connector), timeout=0.2)
+
+    assert started.is_set()
+    assert connector.cancelled is True
+    assert finished.wait(timeout=5)
+
+
+@pytest.mark.p2
+async def test_validate_connector_in_thread_propagates_validation_errors():
+    connector = _connector()
+    connector.validate_connector_settings = lambda: (_ for _ in ()).throw(ValueError("bad sitemap"))  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="bad sitemap"):
+        await _sitemap_mod.validate_connector_in_thread(connector)
+    assert connector.cancelled is False

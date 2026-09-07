@@ -82,7 +82,7 @@ from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.azure_devops.connector import AzureDevOpsConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
-from common.data_source.sitemap_connector import iter_in_worker_thread
+from common.data_source.sitemap_connector import iter_in_worker_thread, validate_connector_in_thread
 from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
@@ -565,8 +565,9 @@ class Sitemap(SyncBase):
 
     async def _generate(self, task: dict):
         self.connector = SitemapConnector.build_connector(self.conf)
-        # validate_connector_settings fetches the sitemap synchronously: keep it off the event loop.
-        await asyncio.to_thread(self.connector.validate_connector_settings)
+        # validate_connector_settings fetches the sitemap synchronously: keep it off the event
+        # loop, and tell the connector to stop if the task is cancelled meanwhile.
+        await validate_connector_in_thread(self.connector)
         self.log_connection("Sitemap", self.conf["sitemap_url"], task)
 
         # Batches are produced in a worker thread (network I/O off the event-loop thread)
