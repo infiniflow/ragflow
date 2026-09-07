@@ -1,13 +1,12 @@
 package store
 
 import (
-	"context"
 	"testing"
 	"time"
 )
 
 func TestInMemoryStore_BasicOperations(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewInMemoryStore()
 	defer store.Close()
 
@@ -47,7 +46,7 @@ func TestInMemoryStore_BasicOperations(t *testing.T) {
 }
 
 func TestInMemoryStore_Search(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewInMemoryStore()
 	defer store.Close()
 
@@ -75,7 +74,7 @@ func TestInMemoryStore_Search(t *testing.T) {
 }
 
 func TestInMemoryStore_BatchPut(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewInMemoryStore()
 	defer store.Close()
 
@@ -103,7 +102,7 @@ func TestInMemoryStore_BatchPut(t *testing.T) {
 }
 
 func TestInMemoryStore_TTL(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewInMemoryStore()
 	defer store.Close()
 
@@ -133,7 +132,7 @@ func TestInMemoryStore_TTL(t *testing.T) {
 }
 
 func TestInMemoryStore_List(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewInMemoryStore()
 	defer store.Close()
 
@@ -160,7 +159,7 @@ func TestInMemoryStore_List(t *testing.T) {
 }
 
 func TestInMemoryStore_Clear(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewInMemoryStore()
 
 	namespace := []string{"clear", "test"}
@@ -180,7 +179,7 @@ func TestInMemoryStore_Clear(t *testing.T) {
 }
 
 func TestInMemoryStore_Closed(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewInMemoryStore()
 	store.Close()
 

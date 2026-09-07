@@ -35,6 +35,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle, resolve_llm_setting
+from api.db.services.user_service import TenantService
 from common.metadata_utils import apply_meta_data_filter
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -582,6 +583,14 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
     return answer, idx
 
 
+def _empty_response_applies(knowledges: list, text_attachments_content: str, image_attachments: list, image_files: list) -> bool:
+    """The configured empty-response fallback applies only when retrieval
+    found nothing AND the message carries no attachment context (text or
+    images) the model could still answer from — an attached image must
+    reach the model instead of being swallowed by the canned response."""
+    return not knowledges and not text_attachments_content and not image_attachments and not image_files
+
+
 async def async_chat(dialog, messages, stream=True, **kwargs):
     logging.debug("Begin async_chat")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
@@ -791,7 +800,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
 
     retrieval_ts = timer()
-    if not knowledges and prompt_config.get("empty_response"):
+    # Attachments (text or images) are context the model can still answer
+    # from, so the configured fallback must not eat the request before the
+    # images reach the model.
+    if _empty_response_applies(knowledges, text_attachments_content, image_attachments, image_files) and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
         logging.debug("async_chat empty_response path: empty_res=%r tts_mdl=%r", empty_res, tts_mdl)
         # HTML-escape for frontend display so DOMPurify does not strip
@@ -827,7 +839,13 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         msg[-1]["content"] += text_attachments_content
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.95))
     if llm_model_config["model_type"] == "chat" and image_attachments:
-        convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
+        if dialog_model_vision_capable(dialog):
+            convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
+        else:
+            # Text-only chat models reject image content blocks at the
+            # provider (e.g. Zhipu GLM error 1210: messages.content.type
+            # only allows 'text'); answer from the text alone instead.
+            logging.info("async_chat: dropping image attachments for text-only chat model")
     assert len(msg) >= 2, f"message_fit_in has bug: {msg}"
     prompt = msg[0]["content"]
 
@@ -1580,12 +1598,8 @@ def tts(tts_mdl, text):
 class _ThinkStreamState:
     def __init__(self) -> None:
         self.full_text = ""
-        self.last_idx = 0
         self.last_model_full = ""
         self.in_think = False
-        self.close_pending = False
-        self.pending_after_close = ""
-        self.think_buffer = ""
         self.answer_buffer = ""
 
 
@@ -1617,13 +1631,6 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
             return out
         return None
 
-    def _flush_think_buffer():
-        if not state.think_buffer:
-            return None
-        out = state.think_buffer
-        state.think_buffer = ""
-        return out
-
     def _flush_answer_buffer():
         if not state.answer_buffer:
             return None
@@ -1644,26 +1651,6 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
             continue
         state.full_text += new_part
         pending = new_part
-
-        if state.close_pending and "</think>" not in pending:
-            state.close_pending = False
-            think_piece = _flush_think_buffer()
-            if think_piece is not None:
-                yield ("text", think_piece, state)
-            state.in_think = False
-            yield ("marker", "</think>", state)
-            if state.pending_after_close:
-                answer_piece = state.pending_after_close
-                state.pending_after_close = ""
-                out = _emit_text("answer", answer_piece)
-                if out is not None:
-                    yield ("text", out, state)
-            answer_piece = re.sub(r"</?think>", "", pending or "")
-            if answer_piece:
-                out = _emit_text("answer", answer_piece)
-                if out is not None:
-                    yield ("text", out, state)
-            continue
 
         while pending:
             open_idx = pending.find("<think>")
@@ -1691,9 +1678,6 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
                     answer_piece = _flush_answer_buffer()
                     if answer_piece is not None:
                         yield ("text", answer_piece, state)
-                    think_piece = _flush_think_buffer()
-                    if think_piece is not None:
-                        yield ("text", think_piece, state)
                     state.in_think = True
                     yield ("marker", "<think>", state)
                 continue
@@ -1707,32 +1691,15 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
                 if out is not None:
                     yield ("text", out, state)
             after_visible = re.sub(r"</?think>", "", after or "")
-            if after_visible.strip():
-                think_piece = _flush_think_buffer()
-                if think_piece is not None:
-                    yield ("text", think_piece, state)
+            if state.in_think:
                 state.in_think = False
                 yield ("marker", "</think>", state)
-                pending = after_visible
-                continue
-            state.close_pending = True
-            if after_visible:
-                state.pending_after_close += after_visible
-            pending = ""
-            break
+            pending = after_visible
+            continue
 
-    if state.think_buffer:
-        yield ("text", state.think_buffer, state)
-        state.think_buffer = ""
-    if state.close_pending:
-        state.in_think = False
-        yield ("marker", "</think>", state)
     if state.answer_buffer:
         yield ("text", state.answer_buffer, state)
         state.answer_buffer = ""
-    if state.pending_after_close:
-        yield ("text", state.pending_after_close, state)
-        state.pending_after_close = ""
 
 
 async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, search_id=None):
@@ -1950,11 +1917,91 @@ def _render_reasoning_system_prompt(dialog, prompt_config: dict, kwargs: dict) -
     return system.format(**fmt_kwargs)
 
 
+def message_has_image_attachments(message: dict) -> bool:
+    """True when the message carries at least one image attachment.
+
+    Covers both shapes the web client sends: file dicts with a ``mime_type``
+    produced by the upload flow, and legacy pre-resolved ``data:`` URI
+    strings. The detection mirrors the fetch path — ``FileService.get_files``
+    classifies images by a substring ``image`` match on ``mime_type`` and
+    ``split_file_attachments`` treats every ``data:`` URI as an image — so
+    the routing decision never disagrees with what the pipeline fetches.
+    """
+    files = message.get("files") or []
+    if isinstance(files, dict):
+        files = [files]
+    if not isinstance(files, list):
+        return False
+    for f in files:
+        if isinstance(f, dict):
+            if "image" in str(f.get("mime_type") or ""):
+                return True
+        elif isinstance(f, str) and f.strip().startswith("data:"):
+            return True
+    return False
+
+
+def _resolve_dialog_chat_model_types(dialog) -> list[str]:
+    """Enrolled model types of the chat model the dialog will actually use.
+
+    Mirrors the chat-model resolution in ``get_models``/``async_chat``: a
+    tenant-level override that can serve as a chat model wins over the
+    dialog's ``llm_id``, and an empty ``llm_id`` falls back to the tenant's
+    default chat model. Unresolvable references yield an empty list.
+    """
+    tenant_id = getattr(dialog, "tenant_id", "")
+    llm_id = getattr(dialog, "llm_id", "") or ""
+    tenant_llm_id = getattr(dialog, "tenant_llm_id", "") or ""
+    if llm_id:
+        try:
+            llm_types = resolve_model_type(tenant_id, llm_id)
+        except LookupError:
+            llm_types = []
+        if tenant_llm_id:
+            try:
+                override_types = resolve_model_type(tenant_id, tenant_llm_id)
+            except LookupError:
+                override_types = []
+            # The override replaces the chat model only when it is enrolled
+            # as one (the same check get_model_config_by_id applies).
+            if "chat" in override_types:
+                return override_types
+        return llm_types
+    exist, tenant = TenantService.get_by_id(tenant_id)
+    if not exist:
+        return []
+    default_ref = (getattr(tenant, "tenant_llm_id", "") or "") or getattr(tenant, "llm_id", "")
+    if not default_ref:
+        return []
+    try:
+        return resolve_model_type(tenant_id, default_ref)
+    except LookupError:
+        return []
+
+
+def dialog_model_vision_capable(dialog) -> bool:
+    """True when the chat model the dialog will use is enrolled as
+    vision-capable (``ModelTypeBinary.VISION`` bit). Unresolvable models are
+    conservatively treated as text-only."""
+    return "vision" in _resolve_dialog_chat_model_types(dialog)
+
+
 async def rag_agent(dialog, messages, stream=True, **kwargs):
     prompt_config = dialog.prompt_config or {}
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     reasoning = kwargs["reasoning"] if "reasoning" in kwargs else prompt_config.get("reasoning", 0)
     if not reasoning or str(reasoning).strip() == "0":
+        async for ans in async_chat(dialog, messages, stream, **kwargs):
+            yield ans
+        return
+    # The agentic loop below composes the final answer from retrieval results
+    # only: the terminal `rag` tool streams the inner graph's cited answer, so
+    # an image attached to the question can never influence it. When the chat
+    # model is vision-capable and the user attached images, answer through
+    # async_chat instead — it embeds the images into the model messages and
+    # still retrieves from the KBs and adds citations.
+    if message_has_image_attachments(messages[-1]) and dialog_model_vision_capable(dialog):
+        logging.info("rag_agent: vision-capable model with image attachments; routing to async_chat so the model sees the images")
         async for ans in async_chat(dialog, messages, stream, **kwargs):
             yield ans
         return
@@ -1981,7 +2028,13 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     if text_attachments_content and agent_messages:
         agent_messages[-1]["content"] += text_attachments_content
     if model_type == "chat" and image_attachments:
-        convert_last_user_msg_to_multimodal(agent_messages, image_attachments, factory)
+        if dialog_model_vision_capable(dialog):
+            convert_last_user_msg_to_multimodal(agent_messages, image_attachments, factory)
+        else:
+            # Text-only chat models reject image content blocks at the
+            # provider (e.g. Zhipu GLM error 1210: messages.content.type
+            # only allows 'text'); answer from the text alone instead.
+            logging.info("rag_agent: dropping image attachments for text-only chat model")
     use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s configured=%s internet=%r enabled=%s", bool(dialog.kb_ids), has_web_search_provider(prompt_config), kwargs.get("internet"), use_web_search)
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
@@ -2029,6 +2082,11 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         thinking_mode=thinking_mode,
         text_attachments_content=text_attachments_content,
         system_prompt=_render_reasoning_system_prompt(dialog, prompt_config, kwargs),
+        similarity_threshold=dialog.similarity_threshold,
+        vector_similarity_weight=dialog.vector_similarity_weight,
+        top_n=dialog.top_n,
+        rerank_candidates_count=dialog.rerank_candidates_count,
+        top_k=dialog.top_k,
     )
 
     async def decorate_answer(answer):

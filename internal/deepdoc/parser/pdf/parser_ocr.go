@@ -105,24 +105,37 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 	allTexts := make([][]pdf.OCRText, len(cropAcc))
 	if p.docSupportsBatchOCR(doc) {
 		batch, berr := p.inferOCRRecognizeBatch(ctx, doc, cropAcc)
-		if berr != nil {
-			slog.Warn(logLabel+" OCR batch recognize failed", "page", pageNum, "err", berr)
+		switch {
+		case berr != nil:
+			// A batch error must not abort the whole page: the canonical
+			// per-crop path below still produces correct results.
+			slog.Warn(logLabel+" OCR batch recognize failed; falling back to per-crop", "page", pageNum, "err", berr)
+		case len(batch) != len(cropAcc):
+			// Defensive: a count mismatch (or a nil result) would corrupt the
+			// per-box indexing further down. Fall back to per-crop instead of
+			// indexing out of range.
+			slog.Warn(logLabel+" OCR batch recognize returned unexpected count; falling back to per-crop", "page", pageNum, "got", len(batch), "want", len(cropAcc))
+		default:
+			allTexts = batch
+		}
+	}
+	// Fill any crop the batch path did not cover (unsupported doc, batch error,
+	// or count mismatch) with the per-crop canonical path. Stamping the
+	// detect-box index lets a replay DocAnalyzer route the recognition back to
+	// the Python-dumped text for the same box; the production analyzer ignores
+	// the key.
+	for ci := range cropAcc {
+		if allTexts[ci] != nil {
+			continue
+		}
+		c := cropAcc[ci]
+		recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, cropBoxIdx[ci])
+		texts, rerr := p.ocrRecognizeWithRotation(recCtx, doc, c)
+		if rerr != nil {
+			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", rerr)
 			return nil
 		}
-		allTexts = batch
-	} else {
-		for ci, c := range cropAcc {
-			// Stamp the detect-box index so a replay DocAnalyzer routes this
-			// recognition back to the Python-dumped text for the same box. The
-			// production analyzer ignores the key.
-			recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, cropBoxIdx[ci])
-			texts, rerr := p.ocrRecognizeWithRotation(recCtx, doc, c)
-			if rerr != nil {
-				slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", rerr)
-				return nil
-			}
-			allTexts[ci] = texts
-		}
+		allTexts[ci] = texts
 	}
 
 	// Per box: pick the highest-confidence candidate (layer-2 winner) and

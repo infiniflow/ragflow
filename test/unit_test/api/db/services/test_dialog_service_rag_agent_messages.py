@@ -79,6 +79,11 @@ _DIALOG = SimpleNamespace(
     llm_setting={"temperature": 0.1},
     prompt_config={"reasoning": 1},
     meta_data_filter=None,
+    similarity_threshold=0.2,
+    vector_similarity_weight=0.3,
+    top_n=6,
+    rerank_candidates_count=64,
+    top_k=1024,
 )
 
 _KB = SimpleNamespace(id="kb-1", tenant_id="tenant-1")
