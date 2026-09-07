@@ -115,6 +115,56 @@ const mapChunkToLegacy = (chunk: Record<string, any>) => ({
   positions: chunk.positions || chunk.position_int || [],
 });
 
+const mapChunkToRetrieval = (chunk: Record<string, any>) => ({
+  ...chunk,
+  id: chunk.id || chunk.chunk_id,
+  content: chunk.content ?? chunk.content_with_weight,
+  document_id: chunk.document_id || chunk.doc_id,
+  document_keyword: chunk.document_keyword || chunk.docnm_kwd || chunk.doc_name,
+  dataset_id: chunk.dataset_id || chunk.kb_id,
+  important_keywords: chunk.important_keywords || chunk.important_kwd || [],
+  questions: chunk.questions || chunk.question_kwd || [],
+});
+
+const mapRetrievalResponse = (response: any) => {
+  if (response.data?.code === 0) {
+    response.data.data = {
+      ...response.data.data,
+      chunks: (response.data.data?.chunks || []).map(mapChunkToRetrieval),
+    };
+  }
+  return response;
+};
+
+const toMetadataCondition = (filter?: Record<string, any>) => {
+  if (filter?.method !== 'manual' || !filter.manual?.length) {
+    return undefined;
+  }
+  return {
+    logic: filter.logic,
+    conditions: filter.manual.map((condition: Record<string, any>) => ({
+      name: condition.key,
+      comparison_operator: condition.op,
+      value: condition.value,
+    })),
+  };
+};
+
+const toLegacyMetadataFilter = (condition?: Record<string, any>) => {
+  if (!condition?.conditions?.length) {
+    return undefined;
+  }
+  return {
+    method: 'manual',
+    logic: condition.logic,
+    manual: condition.conditions.map((item: Record<string, any>) => ({
+      key: item.name,
+      op: item.comparison_operator,
+      value: item.value,
+    })),
+  };
+};
+
 const mapDocumentToLegacy = (doc: Record<string, any>) => ({
   ...doc,
   chunk_num: doc.chunk_num ?? doc.chunk_count,
@@ -157,9 +207,44 @@ const chunkService = {
     delete rest.dataset_id;
     delete rest.kb_id;
     delete rest.knowledge_id;
-    return request.post(api.retrievalTest, {
-      data: { ...rest, dataset_ids: datasetIds },
+    const data = {
+      dataset_ids: datasetIds,
+      document_ids: rest.document_ids ?? rest.doc_ids,
+      question: rest.question,
+      page: rest.page,
+      page_size: rest.page_size ?? rest.size,
+      similarity_threshold: rest.similarity_threshold,
+      vector_similarity_weight: rest.vector_similarity_weight,
+      top_k: rest.top_k,
+      knn_top_k: rest.knn_top_k,
+      knn_num_candidates: rest.knn_num_candidates,
+      rerank_candidates_count: rest.rerank_candidates_count,
+      rerank_id: rest.rerank_id,
+      keyword: rest.keyword,
+      highlight: rest.highlight,
+      cross_languages: rest.cross_languages,
+      metadata_condition:
+        rest.metadata_condition ?? toMetadataCondition(rest.meta_data_filter),
+      use_kg: rest.use_kg,
+      toc_enhance: rest.toc_enhance,
+      include_knowledge_compilation: rest.include_knowledge_compilation,
+      reference_metadata: rest.reference_metadata,
+    };
+    const response = await request.post(api.retrievalTest, {
+      data,
     });
+    return mapRetrievalResponse(response);
+  },
+  retrievalTestShare: async (params: Record<string, any>) => {
+    const response = await baseKbService.retrievalTestShare({
+      ...params,
+      doc_ids: params.doc_ids ?? params.document_ids,
+      size: params.size ?? params.page_size,
+      meta_data_filter:
+        params.meta_data_filter ??
+        toLegacyMetadataFilter(params.metadata_condition),
+    });
+    return mapRetrievalResponse(response);
   },
   chunkList: async (params: Record<string, any>) => {
     const datasetId = getDatasetId(params);

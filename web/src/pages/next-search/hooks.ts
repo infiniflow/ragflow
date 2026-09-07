@@ -168,7 +168,7 @@ export const useTestChunkRetrieval = (
     mutationFn: async (values: any) => {
       const { data } = await retrievalTestFunc({
         page,
-        size: pageSize,
+        page_size: pageSize,
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
         tenant_id: tenantId,
@@ -218,7 +218,7 @@ export const useTestChunkAllRetrieval = (
     mutationFn: async (values: any) => {
       const { data } = await retrievalTestFunc({
         page,
-        size: pageSize,
+        page_size: pageSize,
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
         tenant_id: tenantId,
@@ -265,9 +265,11 @@ export const useTestRetrieval = (
       kb_id: kbIds,
       highlight: true,
       question: q,
-      doc_ids: Array.isArray(selectedDocumentIds) ? selectedDocumentIds : [],
+      document_ids: Array.isArray(selectedDocumentIds)
+        ? selectedDocumentIds
+        : [],
       page: pagination.current,
-      size: pagination.pageSize,
+      page_size: pagination.pageSize,
     });
   }, [
     sendingLoading,
@@ -323,6 +325,7 @@ export const useSendQuestion = (
   tenantId?: string,
   searchId: string = '',
   related_search: boolean = false,
+  searchConfig?: ISearchAppDetailProps['search_config'],
 ) => {
   const { sharedId } = useGetSharedSearchParams();
   const askUrl = sharedId
@@ -364,12 +367,12 @@ export const useSendQuestion = (
         });
       }
       testChunk({
+        ...searchConfig,
         kb_id: kbIds,
         highlight: true,
         question: q,
         page: 1,
-        size: pageSize,
-        search_id: searchId,
+        page_size: pageSize,
       });
 
       if (related_search) {
@@ -387,6 +390,7 @@ export const useSendQuestion = (
       searchId,
       sharedId,
       related_search,
+      searchConfig,
     ],
   );
 
@@ -412,23 +416,23 @@ export const useSendQuestion = (
       if (sendingLoading || isEmpty(q)) return;
 
       testChunk({
+        ...searchConfig,
         kb_id: kbIds,
         highlight: true,
         question: q,
-        doc_ids: documentIds ?? selectedDocumentIds,
+        document_ids: documentIds ?? selectedDocumentIds,
         page,
-        size,
-        search_id: searchId,
+        page_size: size,
       });
 
       testChunkAll({
+        ...searchConfig,
         kb_id: kbIds,
         highlight: true,
         question: q,
-        doc_ids: [],
+        document_ids: [],
         page,
-        size,
-        search_id: searchId,
+        page_size: size,
       });
     },
     [
@@ -438,7 +442,7 @@ export const useSendQuestion = (
       kbIds,
       selectedDocumentIds,
       testChunkAll,
-      searchId,
+      searchConfig,
     ],
   );
 
@@ -503,6 +507,7 @@ export const useSearching = ({
     tenantId as string,
     searchData.id,
     searchData.search_config.related_search,
+    searchData.search_config,
   );
 
   const handleSearchStrChange = useCallback(

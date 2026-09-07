@@ -318,11 +318,15 @@ async def stop_parsing(tenant_id, dataset_id):
     return get_result()
 
 
+@manager.route("/datasets/<dataset_id>/search", methods=["POST"])  # noqa: F821
+@manager.route("/datasets/search", methods=["POST"])  # noqa: F821
 @manager.route("/retrieval", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def retrieval_test(tenant_id):
+async def retrieval_test(tenant_id, dataset_id=None):
     req = await get_request_json()
+    if dataset_id:
+        req["dataset_ids"] = [dataset_id]
     if not req.get("dataset_ids"):
         return get_error_data_result("`dataset_ids` is required.")
     kb_ids = req["dataset_ids"]
