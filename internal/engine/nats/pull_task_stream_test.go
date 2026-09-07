@@ -278,3 +278,39 @@ func TestPullMessagesForAdminFetchesMessages(t *testing.T) {
 		t.Fatalf("task id = %s, want admin-direct-pull", handles[0].GetMessage().TaskID)
 	}
 }
+
+// TestPullTaskStreamClosesMessagesBeforeDone verifies that the Messages channel
+// is closed before the Done channel closes upon stream termination.
+func TestPullTaskStreamClosesMessagesBeforeDone(t *testing.T) {
+	host, port := newEmbeddedNatsServer(t)
+	queue := NewNatsEngine(host, port)
+	if err := queue.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := queue.InitConsumer(common.TaskSubject); err != nil {
+		t.Fatalf("InitConsumer: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	stream, err := queue.PullTaskStream(ctx, 1)
+	if err != nil {
+		cancel()
+		t.Fatalf("PullTaskStream: %v", err)
+	}
+	cancel()
+
+	select {
+	case <-stream.Done():
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("stream did not close Done promptly")
+	}
+
+	select {
+	case _, ok := <-stream.Messages():
+		if ok {
+			t.Fatal("expected Messages channel to be closed, got message")
+		}
+	default:
+		t.Fatal("Messages channel was still open when Done closed")
+	}
+}

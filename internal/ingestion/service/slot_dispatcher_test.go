@@ -223,6 +223,8 @@ func TestPullBatchReturnsOnlyUnmatchedSlots(t *testing.T) {
 	ingestor := newUnitIngestor("test-partial-pull", 2, nil)
 	firstSlot := &workerSlot{id: 1, inbox: make(chan common.TaskHandle)}
 	secondSlot := &workerSlot{id: 2, inbox: make(chan common.TaskHandle)}
+	ingestor.markSlotReserved(firstSlot)
+	ingestor.markSlotReserved(secondSlot)
 
 	ingestor.pullWg.Add(1)
 	go ingestor.consumePullBatch(queue, []*workerSlot{firstSlot, secondSlot})
@@ -280,6 +282,7 @@ func TestPullBatchCancellationLeavesReservedHandleUnsettled(t *testing.T) {
 	}
 	ingestor := newUnitIngestor("test-cancel-reserved-handle", 1, nil)
 	slot := &workerSlot{id: 1, inbox: make(chan common.TaskHandle)}
+	ingestor.markSlotReserved(slot)
 
 	ingestor.pullWg.Add(1)
 	go ingestor.consumePullBatch(queue, []*workerSlot{slot})
@@ -324,5 +327,8 @@ func TestPullBatchCancellationLeavesReservedHandleUnsettled(t *testing.T) {
 	case received := <-slot.inbox:
 		t.Fatalf("reserved handle was handed off after cancellation: %v", received)
 	default:
+	}
+	if SlotState(slot.state.Load()) != SlotStateIdle {
+		t.Fatalf("cancelled slot state = %v, want Idle", SlotState(slot.state.Load()))
 	}
 }
