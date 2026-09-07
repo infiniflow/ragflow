@@ -316,11 +316,11 @@ type mergeRange struct {
 }
 
 // mergeRanges returns the merged-cell rectangles of a sheet.
-func mergeRanges(f *excelize.File, sheet string) []mergeRange {
+func mergeRanges(f *excelize.File, sheet string) ([]mergeRange, error) {
 	var out []mergeRange
-	cells, err := f.GetMergeCells(sheet)
+	cells, err := f.GetMergeCells(sheet, true)
 	if err != nil {
-		return out
+		return nil, err
 	}
 	for _, mc := range cells {
 		sr, sc := axisToRC(mc.GetStartAxis())
@@ -330,7 +330,7 @@ func mergeRanges(f *excelize.File, sheet string) []mergeRange {
 		}
 		out = append(out, mergeRange{sr, sc, er, ec})
 	}
-	return out
+	return out, nil
 }
 
 // mergeMaxCol returns the furthest merged column across all ranges, or 0 if
@@ -454,14 +454,14 @@ func cellIsStyled(f *excelize.File, sheet string, row, col int) bool {
 //     candidate that looks like a data row (majority numeric) is skipped. The
 //     override only applies when the anchor is not already row 1, so the common
 //     header-on-row-1 sheet is left unchanged.
-func detectHeaderRow(f *excelize.File, sheet string, records [][]string) int {
+func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables []excelize.Table) int {
 	n := len(records)
 	if n == 0 {
 		return 1
 	}
 
 	// 1) ListObject first.
-	if tables, err := f.GetTables(sheet); err == nil && len(tables) > 0 {
+	if len(tables) > 0 {
 		minTop := 0
 		for _, t := range tables {
 			tr := rangeTopRow(t.Range)
@@ -637,26 +637,39 @@ func decodeChunkRows(setup map[string]any) int {
 // renderSheetTables renders a single workbook sheet into one or more
 // self-contained <table> chunks using the shared spreadsheet-HTML contract:
 // detect the header row, inherit merged-master text into the header, and split
-// data into chunkRows-sized atomic tables each repeating the header. An empty
-// or unreadable sheet yields an empty string.
-func renderSheetTables(f *excelize.File, sheet string, chunkRows int) string {
-	chunks := renderSheetTableChunks(f, sheet, chunkRows)
+// data into chunkRows-sized atomic tables each repeating the header.
+func renderSheetTables(f *excelize.File, sheet string, chunkRows int) (string, []string, error) {
+	chunks, warnings, err := renderSheetTableChunks(f, sheet, chunkRows)
+	if err != nil {
+		return "", warnings, err
+	}
 	parts := make([]string, len(chunks))
 	for i, ch := range chunks {
 		parts[i] = ch.HTML
 	}
-	return strings.Join(parts, "")
+	return strings.Join(parts, ""), warnings, nil
 }
 
-func renderSheetTableChunks(f *excelize.File, sheet string, chunkRows int) []htmlTableChunk {
+func renderSheetTableChunks(f *excelize.File, sheet string, chunkRows int) ([]htmlTableChunk, []string, error) {
 	rows, err := f.GetRows(sheet)
-	if err != nil || len(rows) == 0 {
-		return nil
+	if err != nil {
+		return nil, nil, fmt.Errorf("read XLSX sheet %q rows: %w", sheet, err)
+	}
+	if len(rows) == 0 {
+		return nil, nil, nil
 	}
 	rows = cleanIllegalControlChars(rows)
 
-	ranges := mergeRanges(f, sheet)
-	headerRow := detectHeaderRow(f, sheet, rows)
+	var warnings []string
+	ranges, err := mergeRanges(f, sheet)
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("read XLSX sheet %q merged cells: %v", sheet, err))
+	}
+	tables, err := f.GetTables(sheet)
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("read XLSX sheet %q table metadata: %v", sheet, err))
+	}
+	headerRow := detectHeaderRow(f, sheet, rows, tables)
 
 	// Inherit merged-master text into the header row. excelize's GetRows
 	// truncates each row at its last valued cell, so a merged slave beyond that
@@ -686,7 +699,7 @@ func renderSheetTableChunks(f *excelize.File, sheet string, chunkRows int) []htm
 
 	chunks := recordsToHTMLTableChunkList(records, chunkRows, sheet, headerRow)
 	if len(chunks) == 0 || len(absDataRows) == 0 {
-		return chunks
+		return chunks, warnings, nil
 	}
 	if chunkRows <= 0 {
 		chunkRows = defaultTableChunkRows
@@ -702,5 +715,5 @@ func renderSheetTableChunks(f *excelize.File, sheet string, chunkRows int) []htm
 			chunks[ci].RowEnd = absDataRows[end-1]
 		}
 	}
-	return chunks
+	return chunks, warnings, nil
 }

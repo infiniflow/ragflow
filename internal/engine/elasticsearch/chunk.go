@@ -36,13 +36,13 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/tokenizer"
 
+	"github.com/bytedance/sonic"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
-	jsoniter "github.com/json-iterator/go"
 
 	"go.uber.org/zap"
 )
 
-var jsonIterator = jsoniter.Config{
+var jsonIterator = sonic.Config{
 	SortMapKeys: false,
 }.Froze()
 

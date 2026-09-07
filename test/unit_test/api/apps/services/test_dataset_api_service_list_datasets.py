@@ -451,6 +451,59 @@ def test_wiki_alteration_treats_wiki_template_as_eligible(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_structure_alteration_chunk_filter_excludes_unparsed_documents(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    captured = {}
+
+    async def _paged(_index, dataset_id, condition, field, from_list, *, raise_on_error):
+        captured.update(dataset_id=dataset_id, condition=condition, field=field, from_list=from_list)
+        assert raise_on_error is True
+        return {"doc-with-chunk"}
+
+    monkeypatch.setattr(module, "_involved_doc_ids_paged", _paged)
+
+    result = await module._current_chunk_doc_ids(
+        "tenant-index",
+        "kb-1",
+        {"doc-with-chunk", "doc-without-chunk"},
+    )
+
+    assert result == {"doc-with-chunk"}
+    assert captured == {
+        "dataset_id": "kb-1",
+        "condition": {
+            "doc_id": ["doc-with-chunk", "doc-without-chunk"],
+            "available_int": [1],
+            "must_not": {"exists": "compile_kwd"},
+        },
+        "field": "doc_id",
+        "from_list": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_current_chunk_doc_ids_propagates_search_errors(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    async def _paged(*_args, **_kwargs):
+        raise RuntimeError("search unavailable")
+
+    monkeypatch.setattr(module, "_involved_doc_ids_paged", _paged)
+
+    with pytest.raises(RuntimeError, match="search unavailable"):
+        await module._current_chunk_doc_ids("tenant-index", "kb-1", {"doc-1"})
+
+
+@pytest.mark.asyncio
 async def test_wiki_involved_ids_use_active_map_state_when_pages_are_missing(monkeypatch):
     """Use MAP provenance even when a participating document has no page row."""
     module, _, _ = _load_list_datasets_module(

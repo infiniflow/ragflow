@@ -332,28 +332,6 @@ func cloneJSONValue(value interface{}) interface{} {
 	}
 }
 
-func normalizeDatasetUpdateExt(ext map[string]interface{}) map[string]interface{} {
-	if ext == nil {
-		return nil
-	}
-	updates := make(map[string]interface{}, len(ext))
-	for key, value := range ext {
-		switch key {
-		case "chunk_method":
-			updates["parser_id"] = value
-		case "token_num", "chunk_num", "parser_config":
-			continue
-		case "pagerank":
-			if v, ok := value.(float64); ok {
-				updates[key] = int64(v)
-			}
-		default:
-			updates[key] = value
-		}
-	}
-	return updates
-}
-
 func normalizeMetadataConfigFields(fields []service.MetadataConfigField, fieldName string) ([]map[string]interface{}, error) {
 	normalizedFields := make([]map[string]interface{}, 0, len(fields))
 	for i, field := range fields {

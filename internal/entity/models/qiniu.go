@@ -18,13 +18,12 @@ package models
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
-
-	"github.com/goccy/go-json"
 )
 
 type QiniuModel struct {

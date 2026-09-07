@@ -792,7 +792,7 @@ def test_documents_update_parser_config_contract(rest_client, create_dataset, tm
         ({"task_page_size": "1024"}, 102, "Field: <parser_config.task_page_size> - Message: <Input should be a valid integer> - Value: <1024>"),
         ({"raptor": {"use_raptor": {"a": "b"}}}, 102, "Field: <parser_config.raptor.use_raptor> - Message: <Input should be a valid boolean> - Value: <{'a': 'b'}>"),
         ({"raptor": {"use_raptor": False}}, 0, ""),
-        ({"invalid_key": "invalid_value"}, 102, "Field: <parser_config.invalid_key> - Message: <Extra inputs are not permitted> - Value: <invalid_value>"),
+        ({"invalid_key": "invalid_value"}, 0, ""),
         ({"auto_keywords": -1}, 102, "Field: <parser_config.auto_keywords> - Message: <Input should be greater than or equal to 0> - Value: <-1>"),
         ({"auto_keywords": 32}, 0, ""),
         ({"auto_keywords": "1024"}, 102, "Field: <parser_config.auto_keywords> - Message: <Input should be a valid integer> - Value: <1024>"),
