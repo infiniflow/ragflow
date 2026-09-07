@@ -85,6 +85,7 @@ def _build_canvas_component(component_id, component_name, invoke_async):
     component.invoke = lambda **_kwargs: None
     component.reset = lambda only_output=False: None
     component.get_input_elements = dict
+    component.get_dependency_ids = list
     component.get_input = dict
     component.get_input_values = dict
     component.output = lambda key=None: outputs.get(key) if key else dict(outputs)
