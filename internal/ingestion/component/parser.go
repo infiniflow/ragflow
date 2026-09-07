@@ -480,7 +480,6 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
 		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, c.Setups)
-		dispatched = hydrateEmptyDispatchPayload(dispatched, binary)
 
 		// Vision figure enhancement: on the JSON output path,
 		// append vision-model descriptions to embedded image and
@@ -489,7 +488,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		// Errors (including context cancellation) are intentionally
 		// discarded — enhancement is best-effort, matching Python's
 		// try/except pass pattern.
-		dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs)
+		dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.Setups)
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.
@@ -508,7 +507,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	var pages [][]byte
 	var dispatchedPages []schema.Page
 	switch {
-	case dispatched.Err == nil && dispatched.OutputFormat == "json" && len(dispatched.JSON) > 0:
+	case dispatched.Err == nil && dispatched.OutputFormat == "json":
 		dispatchedPages = jsonItemsToPages(dispatched.JSON)
 		pages = pagesFromDispatch(dispatchedPages)
 	case dispatched.Err == nil && dispatched.OutputFormat != "":

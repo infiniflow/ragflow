@@ -150,32 +150,20 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 	datasetIDs := req.DatasetIDs
 	if len(datasetIDs) == 0 {
 		const maxPageSize = 100
-		page := 1
-		for {
-			data, _, _, err := ds.ListDatasets(ctx,
-				"", "", page, maxPageSize, "create_time", true,
+		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
+			data, total, _, err := ds.ListDatasets(ctx,
+				"", "", page, pageSize, "create_time", true,
 				"", nil, "", userID, nil,
 			)
-			if err != nil {
-				return "", fmt.Errorf("cannot resolve accessible datasets: %w", err)
-			}
-			if len(data) == 0 {
-				break
-			}
-			for _, d := range data {
-				if id, ok := d["id"].(string); ok && id != "" {
-					datasetIDs = append(datasetIDs, id)
-				}
-			}
-			// A page smaller than maxPageSize is the last page.
-			if len(data) < maxPageSize {
-				break
-			}
-			page++
+			return data, total, err
+		}, maxPageSize)
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve accessible datasets: %w", err)
 		}
-		if len(datasetIDs) == 0 {
+		if len(ids) == 0 {
 			return "", fmt.Errorf("no accessible datasets found")
 		}
+		datasetIDs = ids
 	}
 
 	searchReq := &service.SearchDatasetsRequest{
@@ -224,4 +212,40 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		return "", fmt.Errorf("failed to serialize retrieval result: %w", err)
 	}
 	return string(result), nil
+}
+
+// fetchAllDatasetIDs pages through listPage collecting dataset IDs until the
+// total reported by the service is reached, or a short or empty page arrives.
+// Stopping at the reported total avoids an extra empty-page request when the
+// dataset count is an exact multiple of pageSize.
+func fetchAllDatasetIDs(listPage func(page, pageSize int) ([]map[string]interface{}, int64, error), pageSize int) ([]string, error) {
+	var ids []string
+	page := 1
+	fetched := 0
+	for {
+		data, total, err := listPage(page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) == 0 {
+			break
+		}
+		fetched += len(data)
+		for _, d := range data {
+			if id, ok := d["id"].(string); ok && id != "" {
+				ids = append(ids, id)
+			}
+		}
+		// Stop once the reported total is reached so exact multiples of
+		// pageSize do not pay an extra empty-page request.
+		if total > 0 && int64(fetched) >= total {
+			break
+		}
+		// A page smaller than pageSize is the last page.
+		if len(data) < pageSize {
+			break
+		}
+		page++
+	}
+	return ids, nil
 }

@@ -27,6 +27,8 @@ func TestFilenameTypeBMP(t *testing.T) {
 		{"PHOTO.BMP", FileTypeVISUAL},
 		{"path/to/lt50M_bmp_image_table.bmp", FileTypeVISUAL},
 		{"x.png", FileTypeVISUAL},
+		{"test.wmf", FileTypeVISUAL},
+		{"TEST.WMF", FileTypeVISUAL},
 		{"bad.exe", FileTypeOTHER},
 	}
 	for _, tc := range cases {

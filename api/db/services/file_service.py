@@ -43,6 +43,7 @@ from common.constants import MAXIMUM_PAGE_NUMBER, FileSource, ParserType, TaskSt
 from common.misc_utils import get_uuid
 from common.ssrf_guard import assert_url_is_safe
 from rag.llm.cv_model import GptV4
+from rag.nlp.delim import DEFAULT_DELIMITER
 
 
 class FileService(CommonService):
@@ -51,7 +52,7 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_pf_id(cls, tenant_id, pf_id, page_number, items_per_page, orderby, desc, keywords):
+    def get_by_pf_id(cls, tenant_id, pf_id, page_number, items_per_page, orderby, desc, keywords, exclude_skills):
         # Get files by parent folder ID with pagination and filtering
         # Args:
         #     tenant_id: ID of the tenant
@@ -61,6 +62,7 @@ class FileService(CommonService):
         #     orderby: Field to order by
         #     desc: Boolean indicating descending order
         #     keywords: Search keywords
+        #     exclude_skills: Whether to exclude the skills folder directly under pf_id
         # Returns:
         #     Tuple of (file_list, total_count)
         if keywords:
@@ -72,6 +74,8 @@ class FileService(CommonService):
             )
         else:
             files = cls.model.select().where((cls.model.tenant_id == tenant_id), (cls.model.parent_id == pf_id), ~(cls.model.id == pf_id))
+        if exclude_skills:
+            files = files.where(~((cls.model.parent_id == pf_id) & (cls.model.name == SKILLS_FOLDER_NAME)))
         count = files.count()
         if desc:
             files = files.order_by(cls.model.getter_by(orderby).desc())
@@ -257,10 +261,7 @@ class FileService(CommonService):
         # Returns:
         #     Boolean indicating if folder exists
         parent_files = cls.model.select().where(cls.model.id == parent_id)
-        if parent_files.count():
-            return True
-        cls.delete_folder_by_pf_id(parent_id)
-        return False
+        return bool(parent_files.count())
 
     @classmethod
     @DB.connection_context()
@@ -710,7 +711,7 @@ class FileService(CommonService):
             pass
 
         FACTORY = {ParserType.PRESENTATION.value: presentation, ParserType.PICTURE.value: picture, ParserType.AUDIO.value: audio, ParserType.EMAIL.value: email}
-        parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": layout_recognize or "Plain Text"}
+        parser_config = {"chunk_token_num": 16096, "delimiter": DEFAULT_DELIMITER, "layout_recognize": layout_recognize or "Plain Text"}
         kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": MAXIMUM_PAGE_NUMBER, "tenant_id": current_user.id if current_user else tenant_id}
         file_type = filename_type(filename)
         if img_base64 and file_type == FileType.VISUAL.value:

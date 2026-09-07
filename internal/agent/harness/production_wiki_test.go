@@ -103,7 +103,7 @@ func TestProductionRunner_WikiPreferred_WhenSuggested(t *testing.T) {
 	}}
 	runner := newProductionRunnerWithTools(nil, "t1", []string{"kb1"}, hybrid, nil)
 	runner.wikiSvc = wikiSvc
-	res := runner.Run(t.Context(), "What is Alpha?", "", "low")
+	res := runner.Run(t.Context(), "What is Alpha?", "", "low", "")
 	if res.FinalAnswer != "final wiki answer" {
 		t.Errorf("final answer = %q, want wiki chat output", res.FinalAnswer)
 	}
@@ -123,7 +123,7 @@ func TestProductionRunner_WikiEmpty_FallsBackToHybrid(t *testing.T) {
 	wikiSvc := &fakeWikiSvcHarness{available: true} // no pages
 	runner := newProductionRunnerWithTools(nil, "t1", []string{"kb1"}, hybrid, nil)
 	runner.wikiSvc = wikiSvc
-	res := runner.Run(t.Context(), "What is Alpha?", "", "low")
+	res := runner.Run(t.Context(), "What is Alpha?", "", "low", "")
 	if len(wikiSvc.seenQueries()) == 0 {
 		t.Errorf("wiki service should have been attempted")
 	}
@@ -148,7 +148,7 @@ func TestProductionRunner_NoWikiWithoutSuggestion(t *testing.T) {
 	}}
 	runner := newProductionRunnerWithTools(nil, "t1", []string{"kb1"}, hybrid, nil)
 	runner.wikiSvc = wikiSvc
-	runner.Run(t.Context(), "What is Alpha?", "", "low")
+	runner.Run(t.Context(), "What is Alpha?", "", "low", "")
 	if len(wikiSvc.seenQueries()) != 0 {
 		t.Errorf("wiki service must not be queried without a wiki suggestion; calls=%v", wikiSvc.seenQueries())
 	}

@@ -47,7 +47,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 
-	parserID := ""
+	parserID := string(entity.ParserTypeGeneral)
 	permission := "me"
 	embeddingModel := ""
 	pipelineID := req.PipelineID
@@ -59,10 +59,11 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 	if req.ParserID != nil {
-		parserID = strings.TrimSpace(*req.ParserID)
-		if err := validateParserID(parserID); err != nil {
+		canonicalID, err := canonicalDatasetParserID(strings.TrimSpace(*req.ParserID))
+		if err != nil {
 			return nil, common.CodeDataError, err
 		}
+		parserID = canonicalID
 		pipelineID = nil
 	}
 	if req.PipelineID != nil {
@@ -71,6 +72,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 			return nil, common.CodeDataError, err
 		}
 		pipelineID = normalizedPipelineID
+		if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
+			parserID = ""
+		}
 	}
 	if req.EmbeddingModel != nil {
 		embeddingModel = strings.TrimSpace(*req.EmbeddingModel)

@@ -76,7 +76,7 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	d := NewFileDAO()
 	ctx := t.Context()
 
-	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "report")
+	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "report", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	}
 
 	// Nested file two levels down must be found from the root folder.
-	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "notes")
+	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "notes", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	}
 
 	// Folders themselves are searchable by name.
-	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "sub")
+	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "sub", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestFileDAO_GetByPfID_KeywordsScopedToSubtree(t *testing.T) {
 	ctx := t.Context()
 
 	// Searching inside dirA must not match files outside that subtree.
-	files, total, err := d.GetByPfID(ctx, db, "t1", "dirA", 1, 15, "create_time", true, "report")
+	files, total, err := d.GetByPfID(ctx, db, "t1", "dirA", 1, 15, "create_time", true, "report", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestFileDAO_GetByPfID_KeywordsScopedToSubtree(t *testing.T) {
 	}
 
 	// Tenant isolation still applies.
-	files, total, err = d.GetByPfID(ctx, db, "t2", "root", 1, 15, "create_time", true, "report")
+	files, total, err = d.GetByPfID(ctx, db, "t2", "root", 1, 15, "create_time", true, "report", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestFileDAO_GetByPfID_NoKeywordsListsDirectChildren(t *testing.T) {
 	d := NewFileDAO()
 	ctx := t.Context()
 
-	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "")
+	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, "create_time", true, "", false)
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}

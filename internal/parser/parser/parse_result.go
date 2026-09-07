@@ -55,6 +55,15 @@ type ParseResult struct {
 	// descriptor, augmented with format-specific keys (e.g.
 	// `outline` on the PDF path, `page_count` for paginated
 	// formats). Nil when the parser did not enrich.
+	//
+	// For the office family (docx/doc, pptx/ppt), File["format"]
+	// reflects the real container format detected via magic-byte
+	// sniffing (officeContainer), not just the file extension.
+	// E.g. a legacy OLE .doc uploaded as .docx yields
+	// File["format"] == "doc" so downstream consumers see the
+	// effective format. This is an intentional contract change
+	// from the pre-fallback behaviour where File["format"] always
+	// echoed the requested extension.
 	File map[string]any
 
 	// JSON is the structured payload when OutputFormat == "json".

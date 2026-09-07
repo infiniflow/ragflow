@@ -488,7 +488,7 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 		"process_duration": doc.ProcessDuration,
 		"content_hash":     doc.ContentHash,
 		"suffix":           doc.Suffix,
-		"run":              chunkDocRunText(doc.Run),
+		"run":              ChunkDocRunText(doc.Run),
 		"status":           doc.Status,
 		"create_time":      doc.CreateTime,
 		"create_date":      utility.FormatTimeToString(doc.CreateDate, timeFormat),
@@ -785,7 +785,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *RemoveChunksReques
 	}
 
 	if deletedCount > 0 {
-		if err := s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
+		if err = s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
 			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
 		}
 	}
@@ -938,7 +938,7 @@ func isInternalField(k string) bool {
 // ListChunks. Returns true if the field was handled.
 // chunkDocRunText maps the document run code to its text form, mirroring
 // Python's _map_doc run_mapping.
-func chunkDocRunText(run *string) interface{} {
+func ChunkDocRunText(run *string) interface{} {
 	if run == nil {
 		return nil
 	}
@@ -953,6 +953,8 @@ func chunkDocRunText(run *string) interface{} {
 		return "DONE"
 	case "4":
 		return "FAIL"
+	case "5":
+		return "SCHEDULE"
 	}
 	return *run
 }

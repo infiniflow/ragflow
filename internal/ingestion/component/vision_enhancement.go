@@ -23,16 +23,21 @@ package component
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -46,14 +51,43 @@ var (
 const (
 	figureVisionPromptFile           = "vision_llm_figure_describe_prompt.md"
 	visionEnhancementConcurrency int = 10
+	// visionChatTimeout bounds a single VLM call so a hung endpoint cannot
+	// occupy one of the concurrency slots indefinitely. Python wraps the
+	// per-image call in @timeout(30, 3) (deepdoc/parser/figure_parser.py).
+	visionChatTimeout = 30 * time.Second
 )
 
 var (
-	figureVisionPromptsBase string
-	figureVisionPromptsOnce sync.Once
+	figureVisionPrompts     promptDirState
 	figureVisionPromptCache = make(map[string]string)
 	figureVisionPromptMu    sync.RWMutex
 )
+
+// promptDirState caches the project root that contains rag/prompts. The once
+// guard makes initialization sticky; unlike a function-local initErr, an
+// initialization failure is preserved for every subsequent call.
+type promptDirState struct {
+	once    sync.Once
+	root    string
+	initErr error
+}
+
+func (s *promptDirState) resolve(requestedRoot string) (string, error) {
+	s.once.Do(func() {
+		if info, statErr := os.Stat(filepath.Join(requestedRoot, "rag", "prompts")); statErr == nil && info.IsDir() {
+			s.root = requestedRoot
+			return
+		}
+		s.initErr = fmt.Errorf("rag/prompts not found under project root %q", requestedRoot)
+	})
+	if s.initErr != nil {
+		return "", s.initErr
+	}
+	if s.root == "" {
+		return "", errors.New("prompts base dir not initialized")
+	}
+	return s.root, nil
+}
 
 // cleanMarkdownBlock mirrors Python common/string_utils.py:clean_markdown_block
 //
@@ -70,6 +104,43 @@ func cleanMarkdownBlock(s string) string {
 	s = reMarkdownOpen.ReplaceAllString(s, "")
 	s = reMarkdownClose.ReplaceAllString(s, "")
 	return strings.TrimSpace(s)
+}
+
+// isUsableVisionImage reports whether raw carries a valid image data URI or a
+// base64 payload that can be sent to a vision model.
+func isUsableVisionImage(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false
+	}
+	if strings.HasPrefix(raw, "data:image/") {
+		idx := strings.Index(raw, "base64,")
+		if idx < 0 {
+			return false
+		}
+		return isValidBase64(raw[idx+len("base64,"):])
+	}
+	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+		return true
+	}
+	cleaned := strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' || r == ' ' || r == '\t' {
+			return -1
+		}
+		return r
+	}, raw)
+	return isValidBase64(cleaned)
+}
+
+func isValidBase64(s string) bool {
+	if s == "" {
+		return false
+	}
+	if _, err := base64.StdEncoding.DecodeString(s); err == nil {
+		return true
+	}
+	_, err := base64.RawStdEncoding.DecodeString(s)
+	return err == nil
 }
 
 // isVisionEnhancementAllowed mirrors Python's 3 call sites in
@@ -93,6 +164,7 @@ func maybeDispatchVisionEnhancement(
 	fileType utility.FileType,
 	dispatched parserDispatchResult,
 	inputs map[string]any,
+	setups map[string]schema.ParserSetup,
 ) (parserDispatchResult, bool, error) {
 	// 0. FileType allowlist guard.
 	if !isVisionEnhancementAllowed(fileType) {
@@ -129,8 +201,25 @@ func maybeDispatchVisionEnhancement(
 		return dispatched, false, nil
 	}
 
-	// 2. Resolve tenant's IMAGE2TEXT model.
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+	// 2. Resolve the per-call IMAGE2TEXT model, then fall back to the tenant
+	// default. Mirror Python's vlm_conf["llm_id"] preference.
+	family := resolveParserFamily(fileType)
+	setup := setups[family]
+	modelRef := configuredMediaModelID(setup, family)
+	var driver modelModule.ModelDriver
+	var modelName string
+	var apiConfig *modelModule.APIConfig
+	var err error
+	if modelRef != "" {
+		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+		if err != nil {
+			slog.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
+				"family", family, "modelRef", modelRef, "tenant", tenantID, "err", err)
+			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+		}
+	} else {
+		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+	}
 	if err != nil {
 		// Model not available — skip vision enhancement silently, matching Python's try/except pass.
 		return dispatched, false, nil
@@ -168,10 +257,15 @@ dispatch:
 			defer func() { <-sem }()
 
 			img, _ := dispatched.JSON[itemIdx]["image"].(string)
-			if img == "" {
+			if !isUsableVisionImage(img) {
+				slog.Warn("vision enhancement: invalid image data skipped",
+					"item", itemIdx)
 				return
 			}
 			messages := buildVisionMessages(prompt, img)
+			if len(messages) == 0 {
+				return
+			}
 			resp, ierr := visionChatInvoker(ctx, driver, modelName, messages, apiConfig)
 			if ierr != nil {
 				return
@@ -236,25 +330,13 @@ func loadFigureVisionPromptFile(filename string) (string, error) {
 }
 
 func figureVisionPromptsBaseDir() (string, error) {
-	var initErr error
-	figureVisionPromptsOnce.Do(func() {
-		root := utility.GetProjectRoot()
-		if _, statErr := os.Stat(filepath.Join(root, "rag", "prompts")); statErr == nil {
-			figureVisionPromptsBase = root
-			return
-		}
-		initErr = fmt.Errorf("rag/prompts not found under project root %q", root)
-	})
-	if initErr != nil {
-		return "", initErr
-	}
-	return figureVisionPromptsBase, nil
+	return figureVisionPrompts.resolve(utility.GetProjectRoot())
 }
 
 func buildVisionMessages(prompt, imageBase64 string) []modelModule.Message {
 	dataURI := pdflayout.InlinePNGDataURL(imageBase64)
 	if dataURI == "" {
-		dataURI = strings.TrimSpace(imageBase64)
+		return nil
 	}
 	return []modelModule.Message{{
 		Role: "user",
@@ -283,6 +365,8 @@ func defaultVisionChatInvoker(
 	messages []modelModule.Message,
 	apiConfig *modelModule.APIConfig,
 ) (*modelModule.ChatResponse, error) {
+	chatCtx, cancel := context.WithTimeout(ctx, visionChatTimeout)
+	defer cancel()
 	vision := true
-	return driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	return driver.ChatWithMessages(chatCtx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
 }

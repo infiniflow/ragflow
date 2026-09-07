@@ -259,7 +259,7 @@ export default function SearchingView({
                             <div
                               dangerouslySetInnerHTML={{
                                 __html: sanitizeHtmlWithImagesAsText(
-                                  chunk.content_with_weight,
+                                  chunk.highlight || chunk.content_with_weight,
                                 ).trim(),
                               }}
                               className={classNames(

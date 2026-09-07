@@ -52,6 +52,7 @@ type SearchDatasetsRequest struct {
 	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
 	RerankID               *string                `json:"rerank_id,omitempty"`
 	Keyword                *bool                  `json:"keyword,omitempty"`
+	Highlight              *bool                  `json:"highlight,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
 	IncludeCompiledChunks  *bool                  `json:"include_knowledge_compilation,omitempty"`

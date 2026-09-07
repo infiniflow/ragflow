@@ -364,14 +364,15 @@ func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, child
 
 // sentenceDelimiter is the token-chunker TEXT-path sentence delimiter (the
 // naive_merge port). It mirrors the delimiter Python's naive_merge receives in
-// production: rag/app/naive.py passes "\n!?。；！？", which includes ASCII "!"
-// and "?" plus the CJK punctuation "。；！？" but NOT an English ". " boundary.
+// production: rag/app/naive.py passes DEFAULT_DELIMITER ("\n!?;。；！？", defined
+// once in rag/nlp/delim.py), which includes ASCII "!", "?" and ";" plus the CJK
+// punctuation "。；！？" but NOT an English ". " boundary.
 //
 // The Title chunker and the token chunker's JSON path use the shared
 // sentenceBoundaryRe instead (Python _sentence_boundary.py SENTENCE_BOUNDARY_RE,
 // which adds ". "). The two constants mirror two distinct Python delimiters and
 // differ only in that English boundary, exactly as Python does.
-var sentenceDelimiter = regexp.MustCompile(`(\n|[!?。；！？])`)
+var sentenceDelimiter = regexp.MustCompile(`(\n|[!?;。；！？])`)
 
 // overlapCut returns the visible-text rune offset where the overlap prefix
 // begins, mirroring the cut computed inside computeOverlapPrefix. It is split
@@ -625,15 +626,58 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.Chu
 	if !delimPattern.MatchString(txt) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	out := make([]schema.ChunkDoc, 0, len(parts))
+	// Collect non-empty parts first so we can slice positions proportionally.
+	var kept []string
 	for _, p := range parts {
 		if strings.TrimSpace(p) == "" {
 			continue
 		}
-		out = append(out, buildChunkDoc(it, "text", p, "", ""))
+		kept = append(kept, p)
 	}
-	if len(out) == 0 {
+	if len(kept) == 0 {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
+	}
+	// If the item carries PDF positions, slice them proportionally so each
+	// delimiter-split piece's screenshot crops only its own region instead of
+	// the whole item bbox (fix for chunk-screenshot mismatch).
+	if len(it.PDFPositions) == 0 && len(it.Positions) == 0 {
+		out := make([]schema.ChunkDoc, 0, len(kept))
+		for _, p := range kept {
+			out = append(out, buildChunkDoc(it, "text", p, "", ""))
+		}
+		return out
+	}
+	// Visible-text ratio: parser tags (@@...##) carry no visual height
+	// and must not shift crop boundaries. Mirrors the overlap logic
+	// which already counts on removeTag'd text.
+	runCount := 0
+	for _, p := range kept {
+		runCount += utf8.RuneCountInString(removeTag(p))
+	}
+	if runCount == 0 {
+		out := make([]schema.ChunkDoc, 0, len(kept))
+		for _, p := range kept {
+			out = append(out, buildChunkDoc(it, "text", p, "", ""))
+		}
+		return out
+	}
+	out := make([]schema.ChunkDoc, 0, len(kept))
+	cumRunes := 0
+	for _, p := range kept {
+		pcRunes := utf8.RuneCountInString(removeTag(p))
+		startRatio := float64(cumRunes) / float64(runCount)
+		endRatio := float64(cumRunes+pcRunes) / float64(runCount)
+		ck := buildChunkDoc(it, "text", p, "", "")
+		ck.PDFPositions = slicePositionsByTextRatio(it.PDFPositions, startRatio, endRatio)
+		ck.Positions = slicePositionsByTextRatio(it.Positions, startRatio, endRatio)
+		if len(ck.PDFPositions) == 0 && len(it.PDFPositions) > 0 {
+			ck.PDFPositions = it.PDFPositions
+		}
+		if len(ck.Positions) == 0 && len(it.Positions) > 0 {
+			ck.Positions = it.Positions
+		}
+		out = append(out, ck)
+		cumRunes += pcRunes
 	}
 	return out
 }
@@ -857,41 +901,79 @@ type mergeItem struct {
 	Positions    json.RawMessage
 }
 
-// overlapTailPositions returns the coordinate boxes of the previous chunk's
-// source items whose visible span intersects the overlap tail
-// [overlapStart, total). PDF positions are per-item (coarse), so an item is
-// included wholesale once any part of it falls in the overlap tail. This keeps
-// the overlap prefix highlighted without over-inflating the box set with the
-// previous chunk's non-overlap (head) coordinates (#18148). Offsets are in
-// rune units to match computeOverlapPrefix's visible-text indexing.
-func overlapTailPositions(prevItems []mergeItem, overlapStart int, joinSep string) (json.RawMessage, json.RawMessage) {
+// overlapTailItems returns the previous chunk's source items whose visible span
+// intersects the overlap tail [overlapStart, total), each truncated to exactly
+// the portion that lies within the overlap tail. Storing them as SEPARATE
+// merged_items entries (alongside cur) lets the next overlap select only the
+// true tail and converge to a sliding window, instead of carrying the previous
+// chunk's HEAD coordinates forward again -- the chained over-carry defect that
+// the old fused single-item storage (superseded by this function, #18148)
+// suffers from.
+//
+// Offset model: the overlap path stores the previous chunk's merged_items as
+// [tailItems..., cur] and builds cp.Text = overlap + cp.Text. So the source
+// items are concatenated with joinSep BETWEEN consecutive items, but there is
+// NO separator before the final (cur) item. The offsets below reproduce exactly
+// that layout for an overlap-built predecessor, so they line up with
+// overlapCut/overlapFitPrefix, which carve the overlap from removeTag'd text.
+// Inserting a separator before cur (as the raw "concatenate all items with
+// joinSep" model does) would inflate the offsets by one rune on the JSON path
+// (joinSep="\n") and over-truncate the tail -- the chained-overlap convergence
+// defect flagged by CodeRabbit #1 on #19068.
+//
+// Limitation: a chunk may also have been built via the non-overlap merge path
+// (mergeUnits appends cur with "prev.Text + joinSep + ck.Text"), in which case
+// its items DO carry a joinSep before the final cur item. For such a
+// predecessor the last item's reconstructed start is short by one rune
+// (joinSep length), so a final item that is partially inside the overlap tail
+// is truncated one rune too short. This is a 1-rune approximation of the
+// highlight box only; it does not affect the head-exclusion property this
+// function exists to enforce.
+func overlapTailItems(prevItems []mergeItem, overlapStart int, joinSep string) []mergeItem {
 	if len(prevItems) == 0 {
-		return nil, nil
+		return nil
 	}
-	// Items are concatenated with joinSep (a single "\n" for the JSON path),
-	// matching the merge join at mergeUnits. Offsets are measured on the
-	// TAG-FREE visible text so they line up with overlapCut/overlapFitPrefix,
-	// which carve the overlap from removeTag'd text; a coordinate tag in an
-	// earlier item must not shift the boundaries of later items.
+	// Measure the TAG-FREE visible text of each item so a coordinate tag in an
+	// earlier item does not shift the boundaries of later items.
 	visible := make([]string, len(prevItems))
-	total := 0
 	for i, it := range prevItems {
 		visible[i] = removeTag(it.Text)
-		total += utf8.RuneCountInString(visible[i]) + utf8.RuneCountInString(joinSep)
 	}
-	total -= utf8.RuneCountInString(joinSep)
-	var pdfAcc, posAcc json.RawMessage
+	n := len(prevItems)
+	sepLen := utf8.RuneCountInString(joinSep)
+	// Reconstruct prev.Text: items joined by joinSep between consecutive items,
+	// but with NO separator before the final (cur) item.
+	starts := make([]int, n)
+	ends := make([]int, n)
 	offset := 0
-	for i, it := range prevItems {
-		start := offset
-		end := offset + utf8.RuneCountInString(visible[i])
-		if start < total && end > overlapStart {
-			pdfAcc = extendRawJSONArray(pdfAcc, it.PDFPositions)
-			posAcc = extendRawJSONArray(posAcc, it.Positions)
+	for i := 0; i < n; i++ {
+		if i > 0 && i < n-1 {
+			offset += sepLen
 		}
-		offset = end + utf8.RuneCountInString(joinSep)
+		starts[i] = offset
+		ends[i] = offset + utf8.RuneCountInString(visible[i])
+		offset = ends[i]
 	}
-	return pdfAcc, posAcc
+	total := offset
+	var out []mergeItem
+	for i, it := range prevItems {
+		start := starts[i]
+		end := ends[i]
+		if start < total && end > overlapStart {
+			lo := start
+			if lo < overlapStart {
+				lo = overlapStart
+			}
+			hi := end
+			if hi > total {
+				hi = total
+			}
+			runes := []rune(visible[i])
+			slice := string(runes[lo-start : hi-start])
+			out = append(out, mergeItem{Text: slice, PDFPositions: it.PDFPositions, Positions: it.Positions})
+		}
+	}
+	return out
 }
 
 func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep string) []schema.ChunkDoc {
@@ -967,13 +1049,24 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep
 				// trimmed to fit so the hard cap still holds.
 				overlap, _ := computeOverlapPrefix(prev.Text, overlapPct)
 				overlap, trimRunes := overlapFitPrefix(overlap, cp.Text, target)
-				pdfTail, posTail := overlapTailPositions(mergedItems[prevIdx], overlapCut(prev.Text, overlapPct)+trimRunes, joinSep)
+				// Keep the previous chunk's tail as SEPARATE merged_items
+				// entries (truncated to the overlap portion, #18148) so the
+				// next overlap selects only the true tail and the window
+				// converges instead of accumulating head coordinates (chained
+				// over-carry fix). The flattened tail boxes are still carried
+				// into the output chunk so the overlap region stays highlighted.
+				tailItems := overlapTailItems(mergedItems[prevIdx], overlapCut(prev.Text, overlapPct)+trimRunes, joinSep)
+				var pdfTail, posTail json.RawMessage
+				for _, it := range tailItems {
+					pdfTail = extendRawJSONArray(pdfTail, it.PDFPositions)
+					posTail = extendRawJSONArray(posTail, it.Positions)
+				}
 				cp.Text = overlap + cp.Text
 				cp.PDFPositions = extendRawJSONArray(pdfTail, cp.PDFPositions)
 				cp.Positions = extendRawJSONArray(posTail, cp.Positions)
 				cp.TKNums = intPtr(tokenizeStr(cp.Text))
 				merged = append(merged, cp)
-				mergedItems = append(mergedItems, []mergeItem{{Text: cp.Text, PDFPositions: cp.PDFPositions, Positions: cp.Positions}})
+				mergedItems = append(mergedItems, append(append([]mergeItem{}, tailItems...), cur))
 				prevIdx = len(merged) - 1
 				continue
 			}
@@ -1133,13 +1226,67 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 	}
 	// Every sub-piece inherits the source unit's metadata (coarse positions +
 	// item attributes); each is built from a clone so every ChunkDoc field
-	// survives the split and each piece keeps its page-region preview.
-	for i := range pieces {
+	// survives the split. PDF positions are proportionally sliced vertically so
+	// each piece's screenshot crops only its own region instead of the whole
+	// paragraph (fix for chunk-screenshot mismatch).
+	if len(ck.PDFPositions) == 0 && len(ck.Positions) == 0 {
+		for i := range pieces {
+			inherited := cloneChunkDoc(ck)
+			inherited.Text = pieces[i].Text
+			inherited.TKNums = pieces[i].TKNums
+			inherited.CKType = "text"
+			pieces[i] = inherited
+		}
+		return pieces
+	}
+	// Ratio basis: rune counts of the real source content. The synthetic
+	// leading "\n" glue (text-path units are built as "\n"+paragraph) carries
+	// no visual height, so it is excluded from the first piece's count to keep
+	// the slice proportions aligned with the original text. Parser tags
+	// (@@...##) also carry no visual height and are stripped before counting.
+	counts := make([]int, len(pieces))
+	runCount := 0
+	for i, p := range pieces {
+		n := utf8.RuneCountInString(removeTag(p.Text))
+		if i == 0 && lead != "" {
+			n -= utf8.RuneCountInString(lead)
+			if n < 0 {
+				n = 0
+			}
+		}
+		counts[i] = n
+		runCount += n
+	}
+	if runCount == 0 {
+		for i := range pieces {
+			inherited := cloneChunkDoc(ck)
+			inherited.Text = pieces[i].Text
+			inherited.TKNums = pieces[i].TKNums
+			inherited.CKType = "text"
+			pieces[i] = inherited
+		}
+		return pieces
+	}
+	cumRunes := 0
+	for i, p := range pieces {
+		startRatio := float64(cumRunes) / float64(runCount)
+		endRatio := float64(cumRunes+counts[i]) / float64(runCount)
 		inherited := cloneChunkDoc(ck)
-		inherited.Text = pieces[i].Text
-		inherited.TKNums = pieces[i].TKNums
+		inherited.Text = p.Text
+		inherited.TKNums = p.TKNums
 		inherited.CKType = "text"
+		inherited.PDFPositions = slicePositionsByTextRatio(ck.PDFPositions, startRatio, endRatio)
+		inherited.Positions = slicePositionsByTextRatio(ck.Positions, startRatio, endRatio)
+		// Fall back to original positions if slicing produced nothing (e.g.
+		// malformed matrix) so the piece still gets a preview rather than none.
+		if len(inherited.PDFPositions) == 0 && len(ck.PDFPositions) > 0 {
+			inherited.PDFPositions = ck.PDFPositions
+		}
+		if len(inherited.Positions) == 0 && len(ck.Positions) > 0 {
+			inherited.Positions = ck.Positions
+		}
 		pieces[i] = inherited
+		cumRunes += counts[i]
 	}
 	return pieces
 }

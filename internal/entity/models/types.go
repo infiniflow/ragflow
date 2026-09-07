@@ -113,7 +113,7 @@ type OCRFileResponse struct {
 
 type ListModelResponse struct {
 	Name          string         `json:"name"`
-	ContentLength *int           `json:"content_length"`
+	ContextLength *int           `json:"context_length"`
 	MaxOutput     *int           `json:"max_output"`
 	ModelTypes    []string       `json:"model_types"`
 	Thinking      *ModelThinking `json:"thinking"`
@@ -141,9 +141,10 @@ type TaskResponse struct {
 }
 
 type ModelListItem struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	OwnedBy string `json:"owned_by"`
+	ID            string `json:"id"`
+	ContextLength *int   `json:"context_length"`
+	Object        string `json:"object"`
+	OwnedBy       string `json:"owned_by"`
 }
 
 type ModelList struct {

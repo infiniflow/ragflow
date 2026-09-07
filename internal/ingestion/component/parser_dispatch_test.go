@@ -42,6 +42,9 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/pdf/type"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -49,6 +52,20 @@ import (
 
 	"gorm.io/gorm"
 )
+
+// useMockDocAnalyzer installs a test-only MockDocAnalyzer as the in-process
+// DeepDoc backend via the public factory seam. MockDocAnalyzer is test
+// infrastructure and must never sit in the production fallback path; it is
+// injected here so the production parse path can be exercised without a real
+// DeepDoc service or ONNX Runtime models. The factory is reset to nil on
+// cleanup (it is nil in this test binary, which registers no real backend).
+func useMockDocAnalyzer(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() { doctype.SetNativeDocAnalyzerFactory(nil) })
+	doctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {
+		return &pdf.MockDocAnalyzer{Healthy: true}, true
+	})
+}
 
 type captureSetupConfigurer struct {
 	setup map[string]any
@@ -511,8 +528,7 @@ func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {
 }
 
 func TestDispatch_PDFMarkdown_UsesConfiguredOutputFormat(t *testing.T) {
-	t.Setenv("DEEPDOC_URL", "")
-	t.Setenv("OSSDEEPDOC_URL", "")
+	useMockDocAnalyzer(t)
 
 	path := filepath.Join("..", "..", "..", "test", "benchmark", "test_docs", "Doc1.pdf")
 	data, err := os.ReadFile(path)

@@ -52,12 +52,14 @@ from common.parser_config_utils import has_mineru_options, normalize_layout_reco
 from common.text_utils import normalize_arabic_presentation_forms
 from rag.nlp import (
     concat_img,
-    find_codec,
+    DEFAULT_DELIMITER,
+    decode_text,
     naive_merge,
     naive_merge_with_images,
     naive_merge_docx,
     rag_tokenizer,
     tokenize_chunks,
+    tokenize_chunks_with_positions,
     doc_tokenize_chunks_with_images,
     tokenize_table,
     append_context2table_image4pdf,
@@ -112,6 +114,53 @@ def _normalize_section_text_for_rtl_presentation_forms(sections):
         normalized_sections.append(normalize_arabic_presentation_forms(section))
 
     return normalized_sections
+
+
+def _merge_excel_items(items, chunk_token_num=128):
+    """Merge consecutive Excel rows within the same sheet by token budget.
+
+    Each item is (text, (sheet_idx, row_start, row_end, col_start, col_end)).
+    When chunk_token_num <= 0, items are returned unchanged (html4excel).
+    """
+    if not items:
+        return []
+    if chunk_token_num <= 0:
+        return items
+
+    merged = []
+    cur_text = ""
+    cur_pos = None
+    cur_tokens = 0
+
+    for text, pos in items:
+        sheet_idx, r1, r2, c1, c2 = pos
+        tok = num_tokens_from_string(text)
+        same_sheet = cur_pos is not None and cur_pos[0] == sheet_idx
+        if cur_text and (not same_sheet or cur_tokens + tok > chunk_token_num):
+            merged.append((cur_text, cur_pos))
+            cur_text = ""
+            cur_pos = None
+            cur_tokens = 0
+
+        if not cur_text:
+            cur_text = text
+            cur_pos = (sheet_idx, r1, r2, c1, c2)
+            cur_tokens = tok
+            continue
+
+        cur_text = cur_text + "\n" + text
+        cur_pos = (
+            sheet_idx,
+            min(cur_pos[1], r1),
+            max(cur_pos[2], r2),
+            min(cur_pos[3], c1),
+            max(cur_pos[4], c2),
+        )
+        cur_tokens += tok
+
+    if cur_text:
+        merged.append((cur_text, cur_pos))
+    return merged
 
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -470,7 +519,7 @@ def by_mistral_ocr(
 
 def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None, **kwargs):
     layout_recognizer = (kwargs.get("layout_recognizer") or "").strip()
-    if (not layout_recognizer) or (layout_recognizer == "Plain Text"):
+    if (not layout_recognizer) or layout_recognizer.replace(" ", "").lower() == "plaintext":
         pdf_parser = PlainParser()
     else:
         tenant_id = kwargs.get("tenant_id")
@@ -681,6 +730,7 @@ class Docx(DocxParser):
                     else:
                         current_image = self.get_picture(self.doc, p)
                         if current_image is not None:
+                            flush_last_image()
                             last_image = current_image
 
                 for run in p.runs:
@@ -952,8 +1002,7 @@ class Markdown(MarkdownParser):
     def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
         """Parse markdown into text sections and optional standalone table chunks."""
         if binary is not None:
-            encoding = find_codec(binary)
-            txt = binary.decode(encoding, errors="ignore")
+            txt, _ = decode_text(binary, document_type="Markdown document")
         else:
             with open(filename, "r") as f:
                 txt = f.read()
@@ -1018,7 +1067,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     lang = lang or "Chinese"
     is_english = lang.lower() == "english"  # is_english(cks)
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
 
     child_deli = (parser_config.get("children_delimiter") or "").encode("utf-8").decode("unicode_escape").encode("latin1").decode("utf-8")
     cust_child_deli = re.findall(r"`([^`]+)`", child_deli)
@@ -1084,7 +1133,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         # chunks list[dict]
         # images list - index of image chunk in chunks
-        chunks, images = naive_merge_docx(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), table_context_size, image_context_size)
+        chunks, images = naive_merge_docx(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", DEFAULT_DELIMITER), table_context_size, image_context_size)
 
         vision_figure_parser_docx_wrapper_naive(
             chunks=chunks,
@@ -1187,20 +1236,32 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             sections = _normalize_section_text_for_rtl_presentation_forms(sections)
             parser_config["chunk_token_num"] = 0
             res = tokenize_table(tables, doc, is_english, language=lang)
+            sections = []
             callback(0.8, "Finish parsing.")
         else:
             # Default DeepDOC parser
             excel_parser = ExcelParser()
             if parser_config.get("html4excel"):
-                sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
+                excel_items = [item for item in excel_parser.html(binary, 12) if item and item[0]]
                 parser_config["chunk_token_num"] = 0
             else:
-                sections = [(_, "") for _ in excel_parser(binary) if _]
-            sections = _normalize_section_text_for_rtl_presentation_forms(sections)
+                excel_items = [item for item in excel_parser(binary) if item and item[0]]
+            excel_items = [(normalize_arabic_presentation_forms(text), pos) for text, pos in excel_items]
+            res.extend(
+                tokenize_chunks_with_positions(
+                    _merge_excel_items(excel_items, int(parser_config.get("chunk_token_num", 128))),
+                    doc,
+                    is_english,
+                    child_delimiters_pattern=child_deli,
+                    language=lang,
+                )
+            )
+            sections = []
+            callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
+        sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", DEFAULT_DELIMITER))
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         logging.info("TxtParser produced %d sections for %s", len(sections), filename)
         callback(0.8, "Finish parsing.")
@@ -1212,7 +1273,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             filename,
             binary,
             separate_tables=False,
-            delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
+            delimiter=parser_config.get("delimiter", DEFAULT_DELIMITER),
             return_section_images=True,
         )
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
@@ -1367,10 +1428,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 section_images = None
 
         if section_images:
-            chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
+            chunks, images = naive_merge_with_images(sections, section_images, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", DEFAULT_DELIMITER), overlapped_percent)
             res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli, language=lang))
         else:
-            chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", "\n!?。；！？"), overlapped_percent)
+            chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", DEFAULT_DELIMITER), overlapped_percent)
 
             res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang))
 

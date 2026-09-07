@@ -67,6 +67,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     Since a book is long and not all the parts are useful, if it's a PDF,
     please set up the page ranges for every book in order eliminate negative effects and save elapsed computing time.
     """
+    # Deliberate carve-out from DEFAULT_DELIMITER (#18562): "book" targets
+    # Chinese prose, so this kwargs dict and the naive_merge fallback below
+    # keep their own Chinese-only delimiter sets, not the unified constant.
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])

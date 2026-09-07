@@ -35,6 +35,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
 	agentsandbox "ragflow/internal/agent/sandbox"
 	agenttool "ragflow/internal/agent/tool"
@@ -732,9 +733,9 @@ func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, userID, keyword
 }
 
 // mergeAgentsAndGroups combines agents and the caller's compilation template
-// groups into a single list ordered by (canvas_category, name) ascending, then
-// pages in Go. desc is accepted for API signature parity but the ordering is
-// intentionally category/name based, not chronological.
+// groups into a single list ordered by update_time, then pages in Go. This
+// mirrors Python's merged /agents response. A stable sort retains the original
+// agent-before-group order when timestamps are equal.
 func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, agentItems []*AgentItem, keywords, orderBy string, desc bool, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
 	groups, err := s.compilationTemplateGroupDAO.ListOwnedSaved(ctx, dao.DB, userID, keywords, "", orderBy, desc)
 	if err != nil {
@@ -744,9 +745,8 @@ func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, 
 	for _, item := range agentItems {
 		item.Type = AgentItemTypeAgent
 		merged = append(merged, mergeCanvasItem{
-			item:     item,
-			category: item.CanvasCategory,
-			name:     derefString(item.Title),
+			item: item,
+			time: intValuePtr(item.UpdateTime),
 		})
 	}
 	for _, g := range groups {
@@ -755,21 +755,15 @@ func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, 
 			return nil, common.CodeServerError, fmt.Errorf("failed to build group item: %w", err)
 		}
 		merged = append(merged, mergeCanvasItem{
-			raw:      raw,
-			category: CompilationTemplateGroupCategory,
-			name:     g.Name,
+			raw:  raw,
+			time: intValuePtr(g.UpdateTime),
 		})
 	}
-	// Order the merged list by (category, name) ascending (A-Z): agents and
-	// compilation template groups are grouped by flow category, then sorted by
-	// display name within each category. The category sort key uses the raw
-	// canvas_category string so the natural order is agent_canvas <
-	// compilation_template_group < dataflow_canvas.
 	sort.SliceStable(merged, func(i, j int) bool {
-		if merged[i].category != merged[j].category {
-			return merged[i].category < merged[j].category
+		if desc {
+			return merged[i].time > merged[j].time
 		}
-		return strings.ToLower(merged[i].name) < strings.ToLower(merged[j].name)
+		return merged[i].time < merged[j].time
 	})
 	total := int64(len(merged))
 	merged = slicePage(merged, page, pageSize)
@@ -814,15 +808,12 @@ func (s *AgentService) marshalMergeGroupItem(ctx context.Context, userID string,
 	return b, nil
 }
 
-// mergeCanvasItem is a decoded entry in the merged /agents list: exactly one of
-// item (an agent) or raw (a marshalled group) is set. category is the flow
-// classification (canvas_category, or "compilation_template_group" for groups)
-// and name is the display title; the merged list is ordered by (category, name).
+// mergeCanvasItem is an entry in the merged /agents list. Exactly one of item
+// (an agent) or raw (a marshalled group) is set.
 type mergeCanvasItem struct {
-	item     *AgentItem
-	raw      json.RawMessage
-	category string
-	name     string
+	item *AgentItem
+	raw  json.RawMessage
+	time int64
 }
 
 // attachReleaseTimes populates ReleaseTime for each agent item from the latest
@@ -979,6 +970,12 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
 	} else if existing != nil {
 		return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
+	}
+	if err := component.ValidateIntegerParameters(req.DSL); err != nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
+	}
+	if err := component.ValidateDynamicEntries(req.DSL); err != nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
 	}
 	// Normalize legacy v1 / Go-v2 payloads to a React-Flow-shaped graph so
 	// the front-end can render the canvas without a migration. Idempotent;
@@ -1165,6 +1162,12 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 				return fmt.Errorf("update agent %s: dsl must be an object", canvasID)
 			}
 		}
+		if err := component.ValidateIntegerParameters(dslMap); err != nil {
+			return fmt.Errorf("update agent %s: %w", canvasID, err)
+		}
+		if err := component.ValidateDynamicEntries(dslMap); err != nil {
+			return fmt.Errorf("update agent %s: %w", canvasID, err)
+		}
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
 	}
 
@@ -1299,6 +1302,12 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 	description := canvasInstance.Description
 	if req != nil {
 		if req.DSL != nil {
+			if err := component.ValidateIntegerParameters(req.DSL); err != nil {
+				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
+			}
+			if err := component.ValidateDynamicEntries(req.DSL); err != nil {
+				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
+			}
 			dsl = dslpkg.NormalizeForCanvas(req.DSL)
 		}
 		if req.Title != nil {
@@ -2142,6 +2151,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		var thinking string
 		var legacyReference []interface{}
 		var downloads any
+		var attachment map[string]any
 		now := float64(time.Now().UnixNano()) / 1e9
 		for _, bucket := range state.Snapshot() {
 			if v, ok := bucket["answer"].(string); ok && v != "" {
@@ -2164,9 +2174,12 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if v, ok := bucket["downloads"]; ok && !emptyDownloadValue(v) {
 				downloads = v
 			}
+			if v, ok := bucket["attachment"].(map[string]any); ok && len(v) > 0 {
+				attachment = v
+			}
 		}
 		referencePayload := agentRunReferencePayload(state, legacyReference)
-		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads)
+		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads, attachment)
 		// Release any deferred Agent node that was not consumed because the
 		// downstream Message was skipped by an exception/branch path.
 		runtime.CompleteAllDeferredNodes(ctx2)
@@ -2189,7 +2202,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					_ = s.runTracker.MarkWaiting(ctx2, runID)
 				}
 				if answer != "" {
-					appendAssistantHistory(state, partialAssistantOutput(answer, downloads))
+					appendAssistantHistory(state, partialAssistantOutput(answer, downloads, attachment))
 				}
 				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, answer != ""); persistErr != nil {
 					return nil, canvas.NewInternalRunError(
@@ -2202,7 +2215,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					}
 
 					meData, _ := json.Marshal(canvas.MessageEndEvent{
-						Reference: referencePayload,
+						Attachment: attachment,
+						Reference:  referencePayload,
 					})
 					emit("message_end", string(meData))
 				}
@@ -2222,14 +2236,15 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 				if shouldEmitMessage {
 					meData, _ := json.Marshal(canvas.MessageEndEvent{
-						Reference: referencePayload,
+						Attachment: attachment,
+						Reference:  referencePayload,
 					})
 					emit("message_end", string(meData))
 				}
 
 				wfPayload := map[string]interface{}{
 					"inputs":       map[string]any{"query": userInput},
-					"outputs":      workflowOutputs(answer, downloads),
+					"outputs":      workflowOutputs(answer, downloads, attachment),
 					"elapsed_time": now - startedAt,
 					"created_at":   now,
 				}
@@ -2260,7 +2275,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		if shouldEmitMessage {
 			meData, _ := json.Marshal(canvas.MessageEndEvent{
-				Reference: referencePayload,
+				Attachment: attachment,
+				Reference:  referencePayload,
 			})
 			emit("message_end", string(meData))
 		}
@@ -2269,7 +2285,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// per-run token usage across all LLM calls in this turn.
 		wfPayload := map[string]interface{}{
 			"inputs":       map[string]any{"query": userInput},
-			"outputs":      workflowOutputs(answer, downloads),
+			"outputs":      workflowOutputs(answer, downloads, attachment),
 			"elapsed_time": now - startedAt,
 			"created_at":   now,
 		}
@@ -2367,14 +2383,31 @@ func runIDFor(canvasID string, root map[string]any) string {
 	return canvasID
 }
 
-func workflowOutputs(content string, downloads any) any {
-	if emptyDownloadValue(downloads) {
+func workflowOutputs(content string, downloads, attachment any) any {
+	if emptyDownloadValue(downloads) && emptyAttachmentValue(attachment) {
 		return content
 	}
-	return map[string]any{
-		"content":   content,
-		"downloads": downloads,
+	out := map[string]any{"content": content}
+	if !emptyDownloadValue(downloads) {
+		out["downloads"] = downloads
 	}
+	if !emptyAttachmentValue(attachment) {
+		out["attachment"] = attachment
+	}
+	return out
+}
+
+// emptyAttachmentValue reports whether an attachment descriptor is
+// absent or empty (nil or an empty map), matching the omitempty
+// semantics of the message_end frame.
+func emptyAttachmentValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	if m, ok := value.(map[string]any); ok {
+		return len(m) == 0
+	}
+	return false
 }
 
 func emptyDownloadValue(value any) bool {
@@ -2517,10 +2550,13 @@ func appendAssistantHistory(state *canvas.CanvasState, payload map[string]any) {
 	state.AppendSysHistory("assistant: " + pythonHistoryRepr(payload))
 }
 
-func partialAssistantOutput(answer string, downloads any) map[string]any {
+func partialAssistantOutput(answer string, downloads, attachment any) map[string]any {
 	output := map[string]any{"content": answer}
 	if !emptyDownloadValue(downloads) {
 		output["downloads"] = downloads
+	}
+	if !emptyAttachmentValue(attachment) {
+		output["attachment"] = attachment
 	}
 	return output
 }
@@ -2531,6 +2567,7 @@ func terminalCanvasOutput(
 	workflowOutput map[string]any,
 	answer string,
 	downloads any,
+	attachment any,
 ) map[string]any {
 	terminalIDs := make([]string, 0)
 	if c != nil {
@@ -2560,6 +2597,9 @@ func terminalCanvasOutput(
 	fallback := map[string]any{"content": answer}
 	if !emptyDownloadValue(downloads) {
 		fallback["downloads"] = downloads
+	}
+	if !emptyAttachmentValue(attachment) {
+		fallback["attachment"] = attachment
 	}
 	return fallback
 }

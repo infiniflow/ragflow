@@ -48,6 +48,13 @@ def _parser_id_fields(chunk_method):
     return fields
 
 
+def _expected_chunk_method(chunk_method):
+    """Return the API-visible parser ID for the active proxy."""
+    if IS_GO_PROXY and chunk_method == "naive":
+        return "general"
+    return chunk_method
+
+
 def _is_infinity_doc_engine(rest_client: RestClient) -> bool:
     env_engine = (os.getenv("DOC_ENGINE") or "").strip().lower()
     if env_engine:
@@ -227,7 +234,7 @@ def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk
     assert update_res.status_code == 200
     update_payload = update_res.json()
     assert update_payload["code"] == 0, update_payload
-    assert update_payload["data"][PARSER_ID_FIELD] == chunk_method, update_payload
+    assert update_payload["data"][PARSER_ID_FIELD] == _expected_chunk_method(chunk_method), update_payload
 
 
 @pytest.mark.p1
@@ -355,6 +362,9 @@ def test_dataset_update_parser_config_valid_matrix_contract(rest_client, clear_d
     assert list_payload["code"] == 0, list_payload
     actual_parser_config = list_payload["data"][0]["parser_config"]
     for key, expected_value in parser_config.items():
+        if key in {"graphrag", "raptor"}:
+            assert key not in actual_parser_config, list_payload
+            continue
         if isinstance(expected_value, dict):
             for nested_key, nested_expected in expected_value.items():
                 assert actual_parser_config[key][nested_key] == nested_expected, list_payload
@@ -908,7 +918,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
         elif IS_GO_PROXY and chunk_method == "":
             assert payload["message"] == "parser_id is required when parse_type is BuiltIn", payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("input should be 'audio', 'book'") and payload["message"].endswith("or 'table'"), payload
+            assert payload["message"].startswith("input should be 'general', 'qa'") and payload["message"].endswith("or 'email'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
@@ -918,7 +928,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
     _skip_go_ignored_null(none_payload, PARSER_ID_FIELD)
     assert none_payload["code"] == ARGUMENT_ERROR_CODE, none_payload
     if IS_GO_PROXY:
-        assert none_payload["message"].startswith("input should be 'audio', 'book'") and none_payload["message"].endswith("or 'table'"), none_payload
+        assert none_payload["message"].startswith("input should be 'general', 'qa'") and none_payload["message"].endswith("or 'email'"), none_payload
     else:
         assert expected_chunk_message in none_payload["message"], none_payload
 
@@ -1181,7 +1191,7 @@ def test_dataset_create_chunk_method_contract(rest_client, clear_datasets, name,
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 0, payload
-    assert payload["data"][PARSER_ID_FIELD] == chunk_method, payload
+    assert payload["data"][PARSER_ID_FIELD] == _expected_chunk_method(chunk_method), payload
 
 
 @pytest.mark.p2
@@ -1289,10 +1299,8 @@ def test_dataset_create_parser_config_missing_raptor_and_graphrag(rest_client, c
     body = res.json()
     assert body["code"] == 0, body
     parser_config = body["data"]["parser_config"]
-    assert "raptor" in parser_config, body
-    assert "graphrag" in parser_config, body
-    assert parser_config["raptor"]["use_raptor"] is False, body
-    assert parser_config["graphrag"]["use_graphrag"] is False, body
+    assert "raptor" not in parser_config, body
+    assert "graphrag" not in parser_config, body
     assert parser_config["chunk_token_num"] == 1024, body
 
 
@@ -1441,6 +1449,9 @@ def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_d
     assert body["code"] == 0, body
     actual_parser_config = body["data"]["parser_config"]
     for key, expected_value in parser_config.items():
+        if key in {"graphrag", "raptor"}:
+            assert key not in actual_parser_config, body
+            continue
         if isinstance(expected_value, dict):
             for nested_key, nested_expected in expected_value.items():
                 assert actual_parser_config[key][nested_key] == nested_expected, body
@@ -1450,20 +1461,18 @@ def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_d
 
 @pytest.mark.p1
 @pytest.mark.parametrize(
-    "name, parser_config, expected_raptor, expected_graphrag",
+    "name, parser_config",
     [
-        ("test_parser_config_only_raptor", {"chunk_token_num": 1024, "raptor": {"use_raptor": True}}, True, False),
-        ("test_parser_config_only_graphrag", {"chunk_token_num": 1024, "graphrag": {"use_graphrag": True}}, False, True),
+        ("test_parser_config_only_raptor", {"chunk_token_num": 1024, "raptor": {"use_raptor": True}}),
+        ("test_parser_config_only_graphrag", {"chunk_token_num": 1024, "graphrag": {"use_graphrag": True}}),
         (
             "test_parser_config_both_fields",
             {"chunk_token_num": 1024, "raptor": {"use_raptor": True}, "graphrag": {"use_graphrag": True}},
-            True,
-            True,
         ),
     ],
     ids=["only_raptor", "only_graphrag", "both_fields"],
 )
-def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_datasets, name, parser_config, expected_raptor, expected_graphrag):
+def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_datasets, name, parser_config):
     if IS_GO_PROXY:
         pytest.skip("Go CreateDataset does not accept parser_config")
     res = rest_client.post("/datasets", json={"name": name, "parser_config": parser_config})
@@ -1471,10 +1480,8 @@ def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_dataset
     body = res.json()
     assert body["code"] == 0, body
     actual_parser_config = body["data"]["parser_config"]
-    assert "raptor" in actual_parser_config, body
-    assert "graphrag" in actual_parser_config, body
-    assert actual_parser_config["raptor"]["use_raptor"] is expected_raptor, body
-    assert actual_parser_config["graphrag"]["use_graphrag"] is expected_graphrag, body
+    assert "raptor" not in actual_parser_config, body
+    assert "graphrag" not in actual_parser_config, body
     assert actual_parser_config["chunk_token_num"] == 1024, body
 
 
@@ -1498,10 +1505,8 @@ def test_dataset_create_parser_config_different_chunk_methods_contract(rest_clie
     assert body["code"] == 0, body
     parser_config = body["data"]["parser_config"]
     assert parser_config["chunk_token_num"] == 512, body
-    assert "raptor" in parser_config, body
-    assert "graphrag" in parser_config, body
-    assert parser_config["raptor"]["use_raptor"] is False, body
-    assert parser_config["graphrag"]["use_graphrag"] is False, body
+    assert "raptor" not in parser_config, body
+    assert "graphrag" not in parser_config, body
 
 
 def test_dataset_create_name_invalid_and_duplicate_contract(rest_client, clear_datasets):
@@ -1679,7 +1684,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
         elif IS_GO_PROXY and chunk_method == "":
             assert payload["message"] == "parser_id is required when parse_type is BuiltIn", payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("input should be 'audio', 'book'") and payload["message"].endswith("or 'table'"), payload
+            assert payload["message"].startswith("input should be 'general', 'qa'") and payload["message"].endswith("or 'email'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
@@ -1696,7 +1701,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
     assert chunk_method_unset_res.status_code == 200
     chunk_method_unset_payload = chunk_method_unset_res.json()
     assert chunk_method_unset_payload["code"] == 0, chunk_method_unset_payload
-    assert chunk_method_unset_payload["data"][PARSER_ID_FIELD] == "naive", chunk_method_unset_payload
+    assert chunk_method_unset_payload["data"][PARSER_ID_FIELD] == _expected_chunk_method("naive"), chunk_method_unset_payload
 
 
 @pytest.mark.p2
