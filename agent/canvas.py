@@ -476,8 +476,9 @@ class Canvas(Graph):
         output a component produced in an earlier batch. A node waiting on another
         member of the window is moved behind it and runs in the next batch; a node
         waiting on something that was never scheduled is dropped, as before, and so
-        is anything left waiting on what was dropped. Returns the new end of the
-        window.
+        is anything left waiting on what was dropped. A cycle, where every candidate
+        left waits on another candidate, is failed rather than run. Returns the new
+        end of the window.
         """
         if self.path[0].lower().find("userfillup") >= 0:
             return t
@@ -513,8 +514,15 @@ class Canvas(Graph):
 
         if not ready and deferred:
             # Every candidate waits on another candidate, which takes a cycle in the
-            # canvas. Run them anyway so the workflow still terminates.
-            _logger.debug("[Canvas] %s reference each other, dispatching anyway", deferred)
+            # canvas. Dispatching them would have each read the other's output
+            # before it is written, so both would run on an empty value and an LLM
+            # node would spend a real request on an empty prompt. Fail them
+            # instead: the window still advances, so the run terminates, and the
+            # reason reaches whoever reads the node.
+            for cpn_id in deferred:
+                blocked_by = [c for c in waiting_on[cpn_id] if c in window]
+                self.get_component_obj(cpn_id).set_unrunnable(f"'{cpn_id}' and {blocked_by} reference each other, so neither can be given its input.")
+            _logger.debug("[Canvas] %s reference each other, none of them can run", deferred)
             ready, deferred = deferred, []
 
         self.path[f:t] = ready + deferred

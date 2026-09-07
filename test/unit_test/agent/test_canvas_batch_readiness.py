@@ -375,12 +375,42 @@ def test_two_joins_held_back_together_each_run_once(canvas_stack):
 
 
 @pytest.mark.p1
-def test_nodes_that_reference_each_other_still_run(canvas_stack):
+def test_nodes_that_reference_each_other_fail_instead_of_running(canvas_stack):
     canvas_module, trace, _ = canvas_stack
-    _run(canvas_module, _mutually_referencing_graph())
+    graph = _run(canvas_module, _mutually_referencing_graph())
 
-    assert trace.ran("x")
-    assert trace.ran("y")
+    # Running both would have each read the other's output before it was written.
+    assert not trace.ran("x")
+    assert not trace.ran("y")
+    for cpn_id in ("x", "y"):
+        assert "reference each other" in graph.get_component_obj(cpn_id).error()
+
+
+@pytest.mark.p1
+def test_a_cycle_still_terminates_the_run(canvas_stack):
+    canvas_module, _, _ = canvas_stack
+    graph = canvas_module.Canvas(_mutually_referencing_graph(), tenant_id="t", task_id="task")
+    graph.path = ["begin", "x", "y"]
+
+    # The window has to advance past the cycle, or `_run_impl` never leaves it.
+    assert graph._schedulable(1, 3) == 3
+
+
+@pytest.mark.p1
+def test_being_unrunnable_once_does_not_disable_the_node(canvas_stack):
+    canvas_module, trace, _ = canvas_stack
+    graph = canvas_module.Canvas(_echo_join_graph(), tenant_id="t", task_id="task")
+    cpn = graph.get_component_obj("b")
+    cpn.set_unrunnable("blocked in this batch")
+
+    cpn.invoke(**cpn.get_input())
+    assert cpn.error() == "blocked in this batch"
+
+    # A loop back-edge can put the same id in a later batch, where its input is
+    # available; the flag describes one dispatch, not the component.
+    cpn.invoke(**cpn.get_input())
+    assert not cpn.error()
+    assert trace.ran("b")
 
 
 @pytest.mark.p1
