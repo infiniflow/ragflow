@@ -1161,11 +1161,11 @@ The IDs of the documents to search. Defaults to `None`. You must ensure all sele
 
 ##### page: `int`
 
-The starting index for the documents to retrieve. Defaults to `1`.
+The page number of the chunk retrieval results. Defaults to `1`.
 
 ##### page_size: `int`
 
-The maximum number of chunks to retrieve. Defaults to `30`.
+The maximum number of chunks returned on each page. Defaults to `30`.
 
 ##### similarity_threshold: `float`
 

@@ -1207,7 +1207,7 @@ curl --request PATCH \
 - `"chunk_method"`: (*Body parameter*), `string`
   The parsing method to apply to the document:
   - `"naive"`: General
-  - `"manual`: Manual
+  - `"manual"`: Manual
   - `"qa"`: Q&A
   - `"table"`: Table
   - `"paper"`: Paper
@@ -4070,7 +4070,7 @@ Creates a session with an agent.
 - Method: POST
 - URL: `/api/v1/agents/{agent_id}/sessions?user_id={user_id}`
 - Headers:
-  - `'content-Type: application/json'
+  - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"user_id"`: `string` (optional)
@@ -4338,7 +4338,7 @@ Use this mode for the native agent API.
 - `"files"`: `list[object]` (optional)
 - `"user_id"`: `string` (optional)
 - `"return_trace"`: `boolean` (optional, default `false`)
-- `"chat_template_kwargs": object` (optional)
+- `"chat_template_kwargs"`: `object` (optional)
 
 #### Streaming events to handle
 
@@ -4513,7 +4513,7 @@ Use the same endpoint and add `"openai-compatible": true`.
 - `"stream"`: `boolean`
 - `"session_id"`: `string` (optional)
 - `"model"`: `string` (optional, accepted for compatibility)
-- `"chat_template_kwargs": object` (optional)
+- `"chat_template_kwargs"`: `object` (optional)
 
 ##### Request examples
 
@@ -6216,14 +6216,14 @@ Failure
 
 ### Search Message
 
-**GET** `/api/v1/messages/search?query={question}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
+**GET** `/api/v1/messages/search?query={query}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
 
 Searches and retrieves messages from memory based on the provided `query` and other configuration parameters.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/messages/search?query={question}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
+- URL: `/api/v1/messages/search?query={query}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -6237,7 +6237,7 @@ curl --location 'http://{address}/api/v1/messages/search?query=%22who%20are%20yo
 
 ##### Request parameters
 
-- `question`: (*Filter parameter*), `string`, *Required*
+- `query`: (*Filter parameter*), `string`, *Required*
 
   The search term or natural language question used to find relevant messages.
 
