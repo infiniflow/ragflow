@@ -329,8 +329,8 @@ def test_a_failed_final_attempt_does_not_sleep(monkeypatch):
     assert slept == []
 
 
-def test_retries_sleep_between_attempts(monkeypatch):
-    calls = _capture_post(monkeypatch, _FakeResponse({}, status_code=402))
+def test_transient_failures_are_retried_with_a_delay(monkeypatch):
+    calls = _capture_post(monkeypatch, _FakeResponse({}, status_code=503))
     slept = _capture_sleep(monkeypatch)
     tool, _captured, _outputs = _make_tool()
     tool._param.max_retries = 2
@@ -341,6 +341,41 @@ def test_retries_sleep_between_attempts(monkeypatch):
     assert len(calls) == 3
     # Two gaps between three attempts, and nothing after the last one.
     assert slept == [5, 5]
+
+
+def test_non_transient_failures_are_not_retried(monkeypatch):
+    """A bad key or no credits fails the same way every time, so ask once."""
+    calls = _capture_post(monkeypatch, _FakeResponse({}, status_code=402))
+    slept = _capture_sleep(monkeypatch)
+    tool, _captured, _outputs = _make_tool()
+    tool._param.max_retries = 2
+    tool._param.delay_after_error = 5
+
+    result = tool._invoke(query="q")
+
+    assert len(calls) == 1
+    assert slept == []
+    assert "HTTPError" in str(result)
+
+
+def test_network_errors_are_retried(monkeypatch):
+    slept = _capture_sleep(monkeypatch)
+    attempts = []
+
+    def failing_post(url, headers=None, json=None, timeout=None):
+        attempts.append(url)
+        raise sofya_module.requests.ConnectionError("connection reset")
+
+    monkeypatch.setattr(sofya_module.requests, "post", failing_post)
+    tool, _captured, _outputs = _make_tool()
+    tool._param.max_retries = 1
+    tool._param.delay_after_error = 2
+
+    result = tool._invoke(query="q")
+
+    assert len(attempts) == 2
+    assert slept == [2]
+    assert "ConnectionError" in str(result)
 
 
 def test_param_check_requires_an_api_key():

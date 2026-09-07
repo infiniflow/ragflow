@@ -2786,7 +2786,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       youComApiKeyTip: 'Optional. Leave blank to use the keyless free tier.',
       sofyaSearch: 'Sofya',
       sofyaSearchDescription:
-        'A web search component powered by Sofya. Each result carries the content of the result page rather than a single snippet. An API Key is required.',
+        'A web search component powered by Sofya. Results carry the content of each result page, or only its search snippet, depending on the search depth. An API Key is required.',
       sofyaSearchDepth: 'Search depth',
       sofyaSearchDepthTip:
         'Basic returns the content of each result page. Snippets returns the search snippets only, which is faster and costs less.',

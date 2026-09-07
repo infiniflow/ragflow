@@ -36,6 +36,9 @@ SOFYA_DEFAULT_TOPIC = "general"
 # offered here, so the value can be checked against a fixed list.
 SOFYA_FRESHNESS_ANY = "any"
 SOFYA_FRESHNESS_VALUES = [SOFYA_FRESHNESS_ANY, "day", "week", "month", "year"]
+# Statuses worth another attempt. Anything else (bad request, bad key, no
+# credits) will fail the same way again, so it is returned at once.
+SOFYA_RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 
 def _search(api_key: str, payload: dict, timeout_s: int = 30) -> dict:
@@ -50,6 +53,14 @@ def _search(api_key: str, payload: dict, timeout_s: int = 30) -> dict:
     response = requests.post(SOFYA_SEARCH_URL, headers=headers, json=payload, timeout=timeout_s)
     response.raise_for_status()
     return response.json()
+
+
+def _is_transient(error: Exception) -> bool:
+    """Whether a failed request might succeed if repeated."""
+    if isinstance(error, requests.HTTPError):
+        response = getattr(error, "response", None)
+        return getattr(response, "status_code", None) in SOFYA_RETRY_STATUSES
+    return isinstance(error, requests.RequestException)
 
 
 def _search_depth(value) -> str:
@@ -262,6 +273,8 @@ class SofyaSearch(ToolBase, ABC):
                 # stay out of the log whatever the error message holds.
                 last_e = e
                 logging.error(f"Sofya error: {type(e).__name__}")
+                if not _is_transient(e):
+                    break
                 if attempt < attempts - 1:
                     time.sleep(self._param.delay_after_error)
 

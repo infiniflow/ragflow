@@ -2412,7 +2412,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       youComApiKeyTip: '可选。留空则使用免密钥的免费额度。',
       sofyaSearch: 'Sofya',
       sofyaSearchDescription:
-        '基于 Sofya 的网络搜索组件。每条结果附带结果页面的正文内容，而不只是一段摘要。需要配置 API Key。',
+        '基于 Sofya 的网络搜索组件。根据搜索深度，结果附带结果页面的正文内容或仅附带搜索摘要。需要配置 API Key。',
       sofyaSearchDepth: '搜索深度',
       sofyaSearchDepthTip:
         'Basic 返回每条结果页面的正文内容；Snippets 只返回搜索摘要，速度更快、消耗更少。',
