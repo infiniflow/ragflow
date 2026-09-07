@@ -563,12 +563,21 @@ class Sitemap(SyncBase):
                 sanitized.append(doc)
             yield sanitized
 
-    async def _generate(self, task: dict):
+    async def _prepare_connector(self, task: dict):
+        """Build and validate the connector without starting any document traversal."""
         self.connector = SitemapConnector.build_connector(self.conf)
         # validate_connector_settings fetches the sitemap synchronously: keep it off the event
         # loop, and tell the connector to stop if the task is cancelled meanwhile.
         await validate_connector_in_thread(self.connector)
         self.log_connection("Sitemap", self.conf["sitemap_url"], task)
+
+    async def _initialize_for_prune(self, task: dict):
+        # Prune only needs the connector (for retrieve_all_slim_docs_perm_sync); do not start
+        # the batch producer thread that _generate() would create and the base class discard.
+        await self._prepare_connector(task)
+
+    async def _generate(self, task: dict):
+        await self._prepare_connector(task)
 
         # Batches are produced in a worker thread (network I/O off the event-loop thread)
         # and handed over through a bounded queue.

@@ -142,6 +142,7 @@ async def validate_connector_in_thread(connector: "SitemapConnector") -> None:
     try:
         await asyncio.to_thread(connector.validate_connector_settings)
     except asyncio.CancelledError:
+        logger.warning("Sitemap validation cancelled (task timeout) for %s; stopping the connector", connector.sitemap_url)
         connector.cancel()
         raise
 

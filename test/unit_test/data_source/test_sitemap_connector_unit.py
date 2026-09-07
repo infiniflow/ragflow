@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib
+import logging
 import sys
 import threading
 import time
@@ -818,8 +819,9 @@ def test_read_capped_aborts_when_cancelled(monkeypatch):
 
 
 @pytest.mark.p2
-async def test_validate_connector_in_thread_signals_cancellation_on_timeout():
-    """A task timeout during validation must tell the connector to stop."""
+async def test_validate_connector_in_thread_signals_cancellation_on_timeout(caplog):
+    """A task timeout during validation must tell the connector to stop, and log it."""
+    caplog.set_level(logging.WARNING, logger=_sitemap_mod.__name__)
     connector = _connector()
     started = threading.Event()
     finished = threading.Event()
@@ -838,6 +840,7 @@ async def test_validate_connector_in_thread_signals_cancellation_on_timeout():
     assert started.is_set()
     assert connector.cancelled is True
     assert finished.wait(timeout=5)
+    assert any("validation cancelled" in rec.getMessage() and "https://example.com/sitemap.xml" in rec.getMessage() for rec in caplog.records)
 
 
 @pytest.mark.p2
