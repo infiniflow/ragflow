@@ -139,6 +139,7 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 	var req struct {
 		ContentMd string   `json:"content_md"`
 		Title     string   `json:"title"`
+		Comments  string   `json:"comments"`
 		Outlinks  []string `json:"outlinks"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -186,6 +187,7 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 			Slug:       slug,
 			PageType:   pageType,
 			Title:      title,
+			Comments:   req.Comments,
 			AuthorID:   user.ID,
 			OldContent: oldContent,
 			NewContent: req.ContentMd,

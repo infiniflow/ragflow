@@ -278,3 +278,74 @@ func TestUnifiedDiff_TruncatesLongDiff(t *testing.T) {
 		t.Fatalf("expected long diff to be truncated, got %q", d)
 	}
 }
+
+func TestListPageCommits_ReturnsRecordedEdits(t *testing.T) {
+	db := newPageCommitTestDB(t)
+	if err := db.AutoMigrate(&entity.User{}); err != nil {
+		t.Fatalf("migrate user: %v", err)
+	}
+	if err := db.Create(&entity.User{
+		ID:              "u1",
+		Nickname:        "Tester",
+		Email:           "u1@example.com",
+		IsAuthenticated: "1",
+		IsActive:        "1",
+		IsAnonymous:     "0",
+	}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	svc := NewFileCommitService()
+	ctx := context.Background()
+
+	base := PageEditCommitInput{
+		DatasetID:  "kb1",
+		DocID:      "topic/fireworks display",
+		Slug:       "fireworks display",
+		PageType:   "topic",
+		AuthorID:   "u1",
+		OldContent: "one",
+		NewContent: "two",
+	}
+	first := base
+	first.Title = "first edit"
+	first.Comments = "first note"
+	firstCommit, err := svc.RecordPageEdit(ctx, first)
+	if err != nil {
+		t.Fatalf("first RecordPageEdit: %v", err)
+	}
+	second := base
+	second.Title = "second edit"
+	second.Comments = "second note"
+	second.OldContent = "two"
+	second.NewContent = "three"
+	secondCommit, err := svc.RecordPageEdit(ctx, second)
+	if err != nil {
+		t.Fatalf("second RecordPageEdit: %v", err)
+	}
+
+	rows, total, err := svc.ListPageCommits(ctx, "kb1", "topic", "fireworks display", 1, 15)
+	if err != nil {
+		t.Fatalf("ListPageCommits: %v", err)
+	}
+	if total != 2 || len(rows) != 2 {
+		t.Fatalf("expected 2 commits, got total=%d len=%d", total, len(rows))
+	}
+	if rows[0].ID != secondCommit.ID {
+		t.Errorf("expected newest commit %s first, got %s", secondCommit.ID, rows[0].ID)
+	}
+	if rows[1].ID != firstCommit.ID {
+		t.Errorf("expected oldest commit %s second, got %s", firstCommit.ID, rows[1].ID)
+	}
+	if rows[0].Title != "second edit" || rows[1].Title != "first edit" {
+		t.Errorf("unexpected titles: %q / %q", rows[0].Title, rows[1].Title)
+	}
+	if rows[0].Comments != "second note" {
+		t.Errorf("expected commit comments \"second note\", got %q", rows[0].Comments)
+	}
+	if rows[0].UserID != "u1" || rows[0].UserNickname != "Tester" {
+		t.Errorf("expected user u1/Tester, got %q/%q", rows[0].UserID, rows[0].UserNickname)
+	}
+	if rows[0].CreateTime == nil {
+		t.Error("expected create_time to be set")
+	}
+}

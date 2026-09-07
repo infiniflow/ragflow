@@ -244,6 +244,7 @@ type PageEditCommitInput struct {
 	Slug       string
 	PageType   string
 	Title      string
+	Comments   string // version note typed by the user in the commit dialog
 	AuthorID   string
 	OldContent string
 	NewContent string
@@ -315,6 +316,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 		Message:   in.Title,
 		AuthorID:  in.AuthorID,
 		Title:     &in.Title,
+		Comments:  &in.Comments,
 		FileCount: 1,
 	}
 	if parentID != "" {
@@ -346,8 +348,10 @@ func pageCommitLock(fileID string) *sync.Mutex {
 	return v.(*sync.Mutex)
 }
 
-// ListPageCommits lists audit commits for a specific wiki/skill page.
-func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.FileCommit, int64, error) {
+// ListPageCommits lists audit commits for a specific wiki/skill page and
+// returns them in the row shape the wiki version-history UI consumes
+// (Python list_page_commits parity), including author nicknames.
+func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.WikiPageCommit, int64, error) {
 	items, err := s.commitItemDAO.ListByFileID(ctx, dao.DB, wikiFileID(datasetID, pageType, slug))
 	if err != nil {
 		return nil, 0, err
@@ -357,14 +361,51 @@ func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, page
 		commitIDs = append(commitIDs, it.CommitID)
 	}
 	if len(commitIDs) == 0 {
-		return []*entity.FileCommit{}, 0, nil
+		return []*entity.WikiPageCommit{}, 0, nil
 	}
 
 	commits, total, err := s.commitDAO.ListByIDs(ctx, dao.DB, commitIDs, page, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
-	return commits, total, nil
+
+	// Resolve author nicknames; a failed lookup degrades to an empty nickname
+	// instead of failing the whole history listing.
+	nicknames := make(map[string]string, len(commits))
+	userDAO := dao.NewUserDAO()
+	for _, c := range commits {
+		if c.AuthorID == "" {
+			continue
+		}
+		if _, ok := nicknames[c.AuthorID]; ok {
+			continue
+		}
+		nickname, uerr := userDAO.GetNicknameByID(ctx, dao.DB, c.AuthorID)
+		if uerr != nil {
+			nicknames[c.AuthorID] = ""
+			continue
+		}
+		nicknames[c.AuthorID] = nickname
+	}
+
+	rows := make([]*entity.WikiPageCommit, 0, len(commits))
+	for _, c := range commits {
+		row := &entity.WikiPageCommit{
+			ID:           c.ID,
+			UserID:       c.AuthorID,
+			CreateTime:   c.CreateTime,
+			CreateDate:   c.CreateDate,
+			UserNickname: nicknames[c.AuthorID],
+		}
+		if c.Title != nil {
+			row.Title = *c.Title
+		}
+		if c.Comments != nil {
+			row.Comments = *c.Comments
+		}
+		rows = append(rows, row)
+	}
+	return rows, total, nil
 }
 
 // unifiedDiff produces a simple line-based unified diff between two texts.

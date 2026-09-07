@@ -16,6 +16,8 @@
 
 package entity
 
+import "time"
+
 // FileCommit represents a snapshot commit for a workspace folder (like git commit).
 type FileCommit struct {
 	ID        string  `gorm:"column:id;primaryKey;size:32" json:"id"`
@@ -114,4 +116,17 @@ type VersionEntry struct {
 	Hash       string `json:"hash"`
 	CreateTime *int64 `json:"create_time,omitempty"`
 	Message    string `json:"message"`
+}
+
+// WikiPageCommit is one artifact-page history entry served by
+// /datasets/{dataset_id}/commits?slug=<page_type>/<slug>. It mirrors the
+// Python list_page_commits row shape consumed by the wiki version-history UI.
+type WikiPageCommit struct {
+	ID           string     `json:"id"`
+	Title        string     `json:"title"`
+	Comments     string     `json:"comments"`
+	UserID       string     `json:"user_id"`
+	CreateTime   *int64     `json:"create_time,omitempty"`
+	CreateDate   *time.Time `json:"create_date,omitempty"`
+	UserNickname string     `json:"user_nickname"`
 }
