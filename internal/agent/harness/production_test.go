@@ -53,11 +53,11 @@ func (f *fakeInvokableTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{Name: f.name}, nil
 }
 
-func (f *fakeInvokableTool) InvokableRun(_ context.Context, argsJSON string, _ ...einotool.Option) (string, error) {
+func (f *fakeInvokableTool) InvokableRun(ctx context.Context, argsJSON string, _ ...einotool.Option) (string, error) {
 	f.mu.Lock()
 	f.lastArgs = argsJSON
 	f.mu.Unlock()
-	return f.fn(context.Background(), argsJSON), nil
+	return f.fn(ctx, argsJSON), nil
 }
 
 func (f *fakeInvokableTool) args() string {
@@ -91,7 +91,7 @@ func TestProductionRunner_E2E_RouteToScopedSearch(t *testing.T) {
 	// Multi-KB session: routing must cover every bound dataset, not just the
 	// first KB.
 	runner := newProductionRunnerWithTools(nil, "t1", []string{"kb1", "kb2"}, searchTool, navSvc)
-	res := runner.Run(context.Background(), "Compare A and B", "", "medium")
+	res := runner.Run(t.Context(), "Compare A and B", "", "medium", "")
 
 	if res.FinalAnswer != "final scoped answer" {
 		t.Errorf("final answer = %q, want chat output", res.FinalAnswer)
@@ -117,7 +117,7 @@ func TestProductionRunner_E2E_NoRoute_SearchUnscoped(t *testing.T) {
 	// A nav service is provided but must NOT be consulted in low mode.
 	navSvc := &fakeNavSvcHarness{clusters: []nav.NavNode{{Name: "C1"}}}
 	runner := newProductionRunnerWithTools(nil, "t1", []string{"kb1"}, searchTool, navSvc)
-	res := runner.Run(context.Background(), "What is X?", "", "low")
+	res := runner.Run(t.Context(), "What is X?", "", "low", "")
 
 	if res.FinalAnswer == "" {
 		t.Error("expected a final answer in low mode")
@@ -137,7 +137,7 @@ func TestProductionRunner_E2E_EmptyRoute_SearchUnscoped(t *testing.T) {
 	// Nav service with no clusters -> empty route.
 	navSvc := &fakeNavSvcHarness{clusters: nil}
 	runner := newProductionRunnerWithTools(nil, "t1", []string{"kb1"}, searchTool, navSvc)
-	res := runner.Run(context.Background(), "Compare A and B", "", "medium")
+	res := runner.Run(t.Context(), "Compare A and B", "", "medium", "")
 	if res.FinalAnswer == "" {
 		t.Error("expected an answer even when nav routing returns no docs")
 	}

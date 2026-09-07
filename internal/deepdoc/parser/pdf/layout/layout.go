@@ -233,6 +233,110 @@ func dedupNormText(s string) string {
 	return b.String()
 }
 
+// FilterWatermarkBoxes drops single-character ASCII boxes whose text repeats
+// verbatim many times on the SAME page. This targets the "tiled watermark on a
+// rotated glyph string" pattern reported in #18145:
+//
+//   - Resume / template PDFs plant a watermark string (e.g. "ce1a60…ZH1c56f")
+//     repeated diagonally across the page. The string is rotated so each
+//     glyph fails the layout line-overlap check and ends up in its own
+//     single-character box.
+//   - Naive chunker then interleaves those garbage boxes into every chunk.
+//
+// This runs at the POST-PROCESS level (after char→box and OCR→box have both
+// converged into the same `[]pdf.TextBox` slice), so it covers both the
+// direct-text and OCR-merge code paths that the issue reproduces. An earlier
+// attempt to filter at the char-stage in `CharsToBoxes` was a dead branch
+// for the OCR-merge path and operated at the wrong granularity (multi-char
+// tokens), per the review on PR #18308.
+//
+// Scope is intentionally tight so legitimate content is never dropped:
+//
+//   - Only boxes whose Text is exactly one ASCII letter or digit, classified
+//     against raw Text (no normalization). This excludes multi-token
+//     repetition (e.g. repeated SKU "ABC123"), CJK glyphs (always ≥3 UTF-8
+//     bytes → len>1), punctuation, and whitespace.
+//   - Promoted only if the box's text appears ≥ watermarkBoxesMinOccurrences
+//     times on the page. A real "Q" or "1" appears at most once per page
+//     outside a watermark tiling.
+//   - Page-local, so a watermark on page 3 cannot affect page 1. This also
+//     keeps the O(n) cost bounded by page size.
+//
+// CJK is unconstrained: a single box's bytes may be ≥1 even when the rune
+// count is 1, so `len(box.Text) == 1` already excludes CJK fonts (which are
+// typically 3 bytes per glyph). A box that 姓名 — the canonical Chinese name
+// field — survives verbatim even when the rest of the document is contaminated.
+func FilterWatermarkBoxes(boxes []pdf.TextBox) []pdf.TextBox {
+	if len(boxes) == 0 {
+		return boxes
+	}
+	// Pass 1: per-page count of single-char ASCII boxes. Use the raw
+	// box.Text for both classification and the promotion key so no
+	// normalization collapses distinct bytes.
+	type key struct {
+		page int
+		text string
+	}
+	counts := make(map[key]int, len(boxes))
+	for _, b := range boxes {
+		if !isSingleAsciiAlnum(b.Text) {
+			continue
+		}
+		counts[key{b.PageNumber, b.Text}]++
+	}
+	// Promote any (page, text) that meets the watermark threshold.
+	promoted := make(map[key]struct{}, len(counts))
+	for k, n := range counts {
+		if n >= watermarkBoxesMinOccurrences {
+			promoted[k] = struct{}{}
+		}
+	}
+	if len(promoted) == 0 {
+		return boxes
+	}
+	// Pass 2: drop boxes whose (page, text) was promoted.
+	out := make([]pdf.TextBox, 0, len(boxes))
+	for _, b := range boxes {
+		if isSingleAsciiAlnum(b.Text) {
+			if _, drop := promoted[key{b.PageNumber, b.Text}]; drop {
+				continue
+			}
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
+// watermarkBoxesMinOccurrences is the per-page repetition threshold for a
+// single-char ASCII box to be considered a watermark glyph. Legitimate short
+// content ("1.", "Q.", "A.") rarely appears more than once per page outside
+// of dense content (table rows, list items), and even there the same label
+// rarely reaches this threshold. A watermark tile places the same glyph at
+// 10+ x-intercepts across the page, so the threshold is set conservatively
+// above that floor to keep false-positive rate negligible.
+const watermarkBoxesMinOccurrences = 4
+
+// isSingleAsciiAlnum reports whether s is exactly one ASCII letter or digit
+// (no whitespace, no CJK, no punctuation, no multibyte UTF-8). Used by
+// FilterWatermarkBoxes to limit the watermark signal to the rotated-glyph
+// shape rather than the broader "any short token" case, which would
+// collide with repeated SKUs and part numbers.
+func isSingleAsciiAlnum(s string) bool {
+	if len(s) != 1 {
+		return false
+	}
+	c := s[0]
+	switch {
+	case c >= 'A' && c <= 'Z':
+		return true
+	case c >= 'a' && c <= 'z':
+		return true
+	case c >= '0' && c <= '9':
+		return true
+	}
+	return false
+}
+
 // dedupYTolerancePt tolerates a small Y-boundary overshoot of an OCR
 // double-detection fragment's BOTTOM edge (and the height-match slack for the
 // top-overshoot case, see boxInsideTolerant). Such fragments sit on the SAME

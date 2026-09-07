@@ -42,6 +42,8 @@ from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 from rag.utils.url_utils import ensure_v1
 
+logger = logging.getLogger(__name__)
+
 
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
@@ -66,6 +68,7 @@ class ReActMode(StrEnum):
 ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
+
 
 # Generation parameters that are safe to forward to the underlying completion
 # call. `gen_conf` originates from a chat assistant's `llm_setting`, which can
@@ -97,10 +100,9 @@ ALLOWED_GEN_CONF_KEYS = frozenset(
     }
 )
 
-# LiteLLM additionally understands reasoning-control parameters that the
-# model-family policies may inject into `gen_conf` (e.g. `thinking` for
-# Anthropic / Kimi reasoning models, `enable_thinking` for Qwen models,
-# `reasoning_effort` for OpenAI o-series).
+# LiteLLM additionally understands reasoning-control parameters that must
+# survive configuration cleaning until model-family policies are applied at
+# the final request-construction boundary.
 LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
     {
         "thinking",
@@ -119,11 +121,13 @@ def _apply_model_family_policies(
     gen_conf: dict | None = None,
     request_kwargs: dict | None = None,
 ):
+    """Normalize reasoning controls for a model/provider without mutating inputs."""
     model_name_lower = (model_name or "").lower()
     sanitized_gen_conf = deepcopy(gen_conf) if gen_conf else {}
     sanitized_kwargs = dict(request_kwargs) if request_kwargs else {}
 
     def _thinking_type():
+        """Return the normalized explicit thinking mode, if one was supplied."""
         val = sanitized_gen_conf.get("thinking")
         if isinstance(val, dict):
             val = val.get("type")
@@ -137,14 +141,26 @@ def _apply_model_family_policies(
         return None
 
     def _pop_thinking_controls():
+        """Remove generic controls after translating them to provider payloads."""
         sanitized_gen_conf.pop("thinking", None)
         sanitized_gen_conf.pop("enable_thinking", None)
 
     def _merge_extra_body(target: dict, extra: dict) -> None:
+        """Merge top-level request body fields."""
         body = target.get("extra_body")
         if not isinstance(body, dict):
             body = {}
         body.update(extra)
+        target["extra_body"] = body
+
+    def _merge_qwen_chat_template_kwargs(target: dict, enable_thinking: bool) -> None:
+        """Set Qwen thinking without replacing other chat-template options."""
+        body = target.get("extra_body")
+        body = dict(body) if isinstance(body, dict) else {}
+        template_kwargs = body.get("chat_template_kwargs")
+        template_kwargs = dict(template_kwargs) if isinstance(template_kwargs, dict) else {}
+        template_kwargs["enable_thinking"] = enable_thinking
+        body["chat_template_kwargs"] = template_kwargs
         target["extra_body"] = body
 
     thinking_type = _thinking_type()
@@ -165,7 +181,15 @@ def _apply_model_family_policies(
         }:
             sanitized_gen_conf["enable_thinking"] = enable_thinking
         else:
-            _merge_extra_body(sanitized_kwargs, {"enable_thinking": enable_thinking})
+            target = sanitized_gen_conf if backend == "litellm" else sanitized_kwargs
+            _merge_qwen_chat_template_kwargs(target, enable_thinking)
+            logger.debug(
+                "Applied Qwen3 thinking policy: backend=%s provider=%s enable_thinking=%s payload_path=%s",
+                backend,
+                provider,
+                enable_thinking,
+                "extra_body.chat_template_kwargs.enable_thinking",
+            )
 
     if backend == "base":
         return sanitized_gen_conf, sanitized_kwargs
@@ -281,6 +305,8 @@ class Base(ABC):
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
+        answer = ""
+        generated_text = ""
 
         gen_conf, extra_request_kwargs = _apply_model_family_policies(
             self.model_name,
@@ -302,25 +328,46 @@ class Base(ABC):
                 resp.choices[0].delta.content = ""
             _reasoning = getattr(resp.choices[0].delta, "reasoning_content", None) or getattr(resp.choices[0].delta, "reasoning", None)
             if kwargs.get("with_reasoning", True) and _reasoning:
-                ans = ""
                 if not reasoning_start:
                     reasoning_start = True
-                    ans = "<think>"
-                ans += _reasoning + "</think>"
+                    yield "<think>", 0
+                tol = total_token_count_from_response(resp)
+                if not tol:
+                    tol = num_tokens_from_string(resp.choices[0].delta.content)
+                generated_text += _reasoning
+                yield _reasoning, tol
+                if resp.choices[0].delta.content:
+                    reasoning_start = False
+                    yield "</think>", 0
+                    answer += resp.choices[0].delta.content
+                    generated_text += resp.choices[0].delta.content
+                    yield resp.choices[0].delta.content, 0
+                if getattr(resp.choices[0], "finish_reason", "") == "length":
+                    if reasoning_start:
+                        reasoning_start = False
+                        yield "</think>", 0
+                    yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN, 0
+                continue
             else:
-                reasoning_start = False
+                if reasoning_start and resp.choices[0].delta.content:
+                    reasoning_start = False
+                    yield "</think>", 0
                 ans = resp.choices[0].delta.content
+                answer += ans
             tol = total_token_count_from_response(resp)
             if not tol:
                 tol = num_tokens_from_string(resp.choices[0].delta.content)
 
             finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
-            if finish_reason == "length":
-                if is_chinese(ans):
-                    ans += LENGTH_NOTIFICATION_CN
-                else:
-                    ans += LENGTH_NOTIFICATION_EN
             yield ans, tol
+            if finish_reason == "length":
+                if reasoning_start:
+                    reasoning_start = False
+                    yield "</think>", 0
+                yield LENGTH_NOTIFICATION_CN if is_chinese(answer) else LENGTH_NOTIFICATION_EN, 0
+
+        if reasoning_start:
+            yield "</think>", 0
 
     async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
         gen_conf = dict(gen_conf or {})
@@ -484,6 +531,16 @@ class Base(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
+    def _tool_request_kwargs(self, tools: list | None = None) -> dict:
+        """Tool fields for a completion request, omitted when nothing is bound.
+
+        Providers that validate the request body reject `tools: []` outright.
+        """
+        tools = self.tools if tools is None else tools
+        if not tools:
+            return {}
+        return {"tools": tools, "tool_choice": "auto"}
+
     async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
@@ -493,6 +550,8 @@ class Base(ABC):
             gen_conf=gen_conf,
             request_kwargs={},
         )
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
@@ -516,7 +575,7 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf, **extra_request_kwargs)
+                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, **self._tool_request_kwargs(), **gen_conf, **extra_request_kwargs)
                     _add_round_usage(response)
                     if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -549,6 +608,23 @@ class Base(ABC):
 
                     logging.info(f"Response tool_calls={response.choices[0].message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in response.choices[0].message.tool_calls])
+                    # Terminal-tool short-circuit (mirror of the streaming
+                    # variant at the top of this file): a terminal tool already
+                    # produces the final answer, so return its result instead of
+                    # feeding it back for another LLM round. Without this the
+                    # non-streaming react loop keeps re-invoking `rag` every
+                    # round (Q654 spun 17 tree passes → 15 min). `rag` is always
+                    # terminal, so default to {"rag"} even if a probe wrapper
+                    # dropped the configured terminal_tools.
+                    _terminal = getattr(self, "terminal_tools", None) or {"rag"}
+                    for tc, name, args, result, err in results:
+                        if name in _terminal and not err:
+                            logging.info("[Tool loop] The %s tool produced the final answer — done.", name)
+                            out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                            if out:
+                                ans += out
+                            self.last_usage = dict(agg_usage)
+                            return ans, tk_count
                     history = self._append_history_batch(history, results)
                     for tc, name, args, result, err in results:
                         ans += self._verbose_tool_use(name, args, err if err else result)
@@ -581,6 +657,8 @@ class Base(ABC):
             gen_conf=gen_conf,
             request_kwargs={},
         )
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
         tools = self.tools
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -611,11 +689,12 @@ class Base(ABC):
                     logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     response = await self.async_client.chat.completions.create(
-                        model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf, **extra_request_kwargs
+                        model=self.model_name, messages=history, stream=True, **self._tool_request_kwargs(tools), **gen_conf, **extra_request_kwargs
                     )
 
                     final_tool_calls = {}
                     answer = ""
+                    generated_text = ""
                     round_estimate = 0
                     round_usage = None
 
@@ -645,14 +724,20 @@ class Base(ABC):
 
                         _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                         if _reasoning:
-                            ans = ""
+                            generated_text += _reasoning
                             if not reasoning_start:
                                 reasoning_start = True
-                                ans = "<think>"
-                            ans += _reasoning + "</think>"
-                            yield ans
+                                yield "<think>"
+                            yield _reasoning
+                            if delta.content:
+                                reasoning_start = False
+                                yield "</think>"
+                                answer += delta.content
+                                yield delta.content
                         else:
-                            reasoning_start = False
+                            if reasoning_start and delta.content:
+                                reasoning_start = False
+                                yield "</think>"
                             answer += delta.content
                             yield delta.content
 
@@ -661,7 +746,13 @@ class Base(ABC):
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
-                            yield self._length_stop("")
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
+                            yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN
+
+                    if reasoning_start:
+                        yield "</think>"
 
                     # Commit this round's tokens (each round is a separate provider
                     # request — accumulate, never overwrite).
@@ -694,7 +785,9 @@ class Base(ABC):
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield f"<think>Running the {tc.function.name} tool...</think>"
+                        yield "<think>"
+                        yield f"Running the {tc.function.name} tool..."
+                        yield "</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
 
                     # Terminal-tool short-circuit: stream a terminal tool's
@@ -721,8 +814,7 @@ class Base(ABC):
                     model=self.model_name,
                     messages=history,
                     stream=True,
-                    tools=tools,
-                    tool_choice="auto",
+                    **self._tool_request_kwargs(tools),
                     **gen_conf,
                     **extra_request_kwargs,
                 )
@@ -1065,6 +1157,16 @@ class LmStudioChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
         self.client = OpenAI(api_key="lm-studio", base_url=self.base_url)
         self.model_name = model_name
+
+
+class LlmmanChat(Base):
+    _FACTORY_NAME = "llmman"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("Local llm url cannot be None")
+        # Local server ignores auth; a placeholder key keeps Base's sync and async clients identical.
+        super().__init__("llmman", model_name, base_url, **kwargs)
 
 
 class OpenAI_APIChat(Base):
@@ -1778,6 +1880,23 @@ class _StreamSanitizer:
         return out
 
 
+class SynthoraiChat(Base):
+    """Synthorai OpenAI-compatible chat adapter.
+
+    The endpoint is fixed rather than configurable. Synthorai is a hosted
+    gateway on one known host, so a tenant-supplied ``base_url`` would have no
+    legitimate use and would send the Synthorai API key to whatever host was
+    configured.
+    """
+
+    _FACTORY_NAME = "Synthorai"
+
+    _BASE_URL = "https://synthorai.io/v1"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        super().__init__(key, model_name, self._BASE_URL, **kwargs)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1881,12 +2000,8 @@ class LiteLLMBase(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        gen_conf, _ = _apply_model_family_policies(
-            self.model_name,
-            backend="litellm",
-            provider=self.provider,
-            gen_conf=gen_conf,
-        )
+        """Copy and filter generation settings before final request construction."""
+        gen_conf = deepcopy(gen_conf) if gen_conf else {}
 
         deepseek_max_tokens = None
         if self.provider == SupportedLiteLLMProvider.DeepSeek:
@@ -1930,6 +2045,7 @@ class LiteLLMBase(ABC):
         return text
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
+        """Send one non-streaming LiteLLM chat request with normalized settings."""
         hist = list(history) if history else []
         if system:
             if not hist or hist[0].get("role") != "system":
@@ -1937,12 +2053,6 @@ class LiteLLMBase(ABC):
 
         logging.info("[HISTORY]" + json.dumps(hist, ensure_ascii=False, indent=2))
         gen_conf = self._clean_conf(gen_conf)
-        _, kwargs = _apply_model_family_policies(
-            self.model_name,
-            backend="litellm",
-            provider=self.provider,
-            request_kwargs=kwargs,
-        )
 
         completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
 
@@ -1978,6 +2088,8 @@ class LiteLLMBase(ABC):
         gen_conf = self._clean_conf(gen_conf)
         reasoning_start = False
         total_tokens = 0
+        answer = ""
+        generated_text = ""
         # Reset so a stale split from a previous call can't leak into this one.
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
@@ -2015,27 +2127,43 @@ class LiteLLMBase(ABC):
 
                     _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                     if kwargs.get("with_reasoning", True) and _reasoning:
-                        ans = ""
                         if not reasoning_start:
                             reasoning_start = True
-                            ans = "<think>"
-                        ans += _reasoning + "</think>"
+                            yield "<think>"
+                        yield _reasoning
+                        generated_text += _reasoning
+                        if delta.content:
+                            reasoning_start = False
+                            yield "</think>"
+                            yield delta.content
+                            answer += delta.content
+                            generated_text += delta.content
+                        if getattr(resp.choices[0], "finish_reason", "") == "length":
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
+                            yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN
+                        continue
                     else:
-                        reasoning_start = False
+                        if reasoning_start and delta.content:
+                            reasoning_start = False
+                            yield "</think>"
                         ans = delta.content
+                        answer += ans
 
                     if not _usage["total_tokens"]:
                         # No authoritative usage yet: keep a running estimate as fallback.
                         total_tokens += num_tokens_from_string(delta.content)
 
                     finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
-                    if finish_reason == "length":
-                        if is_chinese(ans):
-                            ans += LENGTH_NOTIFICATION_CN
-                        else:
-                            ans += LENGTH_NOTIFICATION_EN
-
                     yield ans
+                    if finish_reason == "length":
+                        if reasoning_start:
+                            reasoning_start = False
+                            yield "</think>"
+                        yield LENGTH_NOTIFICATION_CN if is_chinese(answer) else LENGTH_NOTIFICATION_EN
+                if reasoning_start:
+                    yield "</think>"
                 yield total_tokens
                 return
             except Exception as e:
@@ -2320,6 +2448,7 @@ class LiteLLMBase(ABC):
 
                     final_tool_calls = {}
                     answer = ""
+                    generated_text = ""
                     round_usage = None
                     round_estimate = 0
                     # Per-round filter for providers (MiniMax) whose control tokens
@@ -2353,16 +2482,28 @@ class LiteLLMBase(ABC):
 
                         _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                         if _reasoning:
+                            generated_text += _reasoning
                             if self._need_reasoning_content_back():
                                 reasoning_content += _reasoning
-                            ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
-                                ans = "<think>"
-                            ans += _reasoning + "</think>"
-                            yield ans
+                                yield "<think>"
+                            yield _reasoning
+                            if delta.content:
+                                reasoning_start = False
+                                yield "</think>"
+                                answer += delta.content
+                                generated_text += delta.content
+                                if _sanitizer is not None:
+                                    emitted = _sanitizer.feed(delta.content)
+                                    if emitted:
+                                        yield emitted
+                                else:
+                                    yield delta.content
                         else:
-                            reasoning_start = False
+                            if reasoning_start and delta.content:
+                                reasoning_start = False
+                                yield "</think>"
                             answer += delta.content
                             if _sanitizer is not None:
                                 emitted = _sanitizer.feed(delta.content)
@@ -2376,7 +2517,13 @@ class LiteLLMBase(ABC):
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
-                            yield self._length_stop("")
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
+                            yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN
+
+                    if reasoning_start:
+                        yield "</think>"
 
                     # Flush any held-back (sanitized) answer content for this round.
                     if _sanitizer is not None:
@@ -2414,22 +2561,25 @@ class LiteLLMBase(ABC):
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield f"<think>Running the {tc.function.name} tool...</think>"
+                        yield "<think>"
+                        yield f"Running the {tc.function.name} tool..."
+                        yield "</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
 
                     # Terminal-tool short-circuit: a terminal tool already
                     # produces the final answer, so stream its result and stop
                     # instead of feeding it back for another LLM round.
-                    _terminal = getattr(self, "terminal_tools", None)
-                    if _terminal:
-                        for tc, name, args, result, err in results:
-                            if name in _terminal and not err:
-                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
-                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
-                                if out:
-                                    yield out
-                                yield total_tokens
-                                return
+                    # `rag` is always terminal (dialog_service sets terminal_tools,
+                    # but a probe wrapper may drop it, so default to {"rag"}).
+                    _terminal = getattr(self, "terminal_tools", None) or {"rag"}
+                    for tc, name, args, result, err in results:
+                        if name in _terminal and not err:
+                            logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                            out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                            if out:
+                                yield out
+                            yield total_tokens
+                            return
 
                     history = self._append_history_batch(
                         history,
@@ -2479,11 +2629,19 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     def _construct_completion_args(self, history, stream: bool, tools: bool, **kwargs):
+        """Build the final LiteLLM arguments and apply model policies exactly once."""
+        kwargs, policy_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="litellm",
+            provider=self.provider,
+            gen_conf=kwargs,
+        )
         completion_args = {
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
             **kwargs,
+            **policy_request_kwargs,
         }
         if self.provider == SupportedLiteLLMProvider.Nvidia:
             completion_args["num_retries"] = 0
@@ -2511,10 +2669,13 @@ class LiteLLMBase(ABC):
                     "tool_choice": "auto",
                 }
             )
-        if self.provider in FACTORY_DEFAULT_BASE_URL:
+        # OpenRouter is handled separately below because it may add routing
+        # metadata without replacing model-specific fields in extra_body.
+        if self.provider in FACTORY_DEFAULT_BASE_URL and self.provider != SupportedLiteLLMProvider.OpenRouter:
             completion_args.update({"api_base": self.base_url})
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
             import boto3
+            from botocore.utils import validate_region_name
 
             completion_args.pop("api_key", None)
             completion_args.pop("api_base", None)
@@ -2526,6 +2687,9 @@ class LiteLLMBase(ABC):
                 raise ValueError("Bedrock auth_mode must be provided in the key")
 
             bedrock_region = bedrock_key.get("bedrock_region")
+            if not bedrock_region:
+                raise ValueError("Bedrock region must be provided in the key")
+            validate_region_name(bedrock_region)
 
             if mode == "access_key_secret":
                 completion_args.update({"aws_region_name": bedrock_region})
@@ -2540,10 +2704,23 @@ class LiteLLMBase(ABC):
                 completion_args.update({"aws_access_key_id": creds["AccessKeyId"]})
                 completion_args.update({"aws_secret_access_key": creds["SecretAccessKey"]})
                 completion_args.update({"aws_session_token": creds["SessionToken"]})
-            else:  # assume_role - use default credential chain (IRSA, instance profile, etc.)
+            elif mode == "assume_role":
                 completion_args.update({"aws_region_name": bedrock_region})
+            elif mode == "bedrock_api_key":
+                api_key = bedrock_key.get("bedrock_api_key")
+                if not api_key:
+                    raise ValueError("Bedrock API key must be provided")
+                completion_args.update(
+                    {
+                        "api_key": api_key,
+                        "aws_region_name": bedrock_region,
+                    }
+                )
+            else:
+                raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
 
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
+            completion_args["api_base"] = self.base_url
             if self.provider_order:
 
                 def _to_order_list(x):
@@ -2555,13 +2732,13 @@ class LiteLLMBase(ABC):
                         return [str(s).strip() for s in x if str(s).strip()]
                     return []
 
-                extra_body = {}
-                provider_cfg = {}
-                provider_order = _to_order_list(self.provider_order)
-                provider_cfg["order"] = provider_order
-                provider_cfg["allow_fallbacks"] = False
-                extra_body["provider"] = provider_cfg
-                completion_args.update({"extra_body": extra_body})
+                extra_body = completion_args.get("extra_body")
+                extra_body = dict(extra_body) if isinstance(extra_body, dict) else {}
+                extra_body["provider"] = {
+                    "order": _to_order_list(self.provider_order),
+                    "allow_fallbacks": False,
+                }
+                completion_args["extra_body"] = extra_body
         elif self.provider == SupportedLiteLLMProvider.GPUStack:
             completion_args.update(
                 {

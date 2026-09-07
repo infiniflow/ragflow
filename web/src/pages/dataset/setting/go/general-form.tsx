@@ -10,17 +10,21 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { LanguageTranslationMap } from '@/constants/common';
+import {
+  DESCRIPTION_MAX_LENGTH,
+  LanguageTranslationMap,
+} from '@/constants/common';
 import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
+import { useOwnerTenantId } from '../../contexts/knowledge-base-context';
 import { EmbeddingModelItem } from './embedding-model-form-field';
 import { PermissionFormField } from './permission-form-field';
 
 export function GeneralForm() {
   const form = useFormContext();
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
 
   const languageOptions = useMemo(() => {
     return Object.keys(LanguageTranslationMap).map((x) => ({
@@ -110,6 +114,7 @@ export function GeneralForm() {
                 <FormControl className="w-3/4">
                   <Input
                     {...field}
+                    maxLength={DESCRIPTION_MAX_LENGTH}
                     placeholder={t('knowledgeConfiguration.datasetDescription')}
                     data-testid="ds-settings-basic-description-input"
                   ></Input>
@@ -126,7 +131,7 @@ export function GeneralForm() {
       <PermissionFormField></PermissionFormField>
       <EmbeddingModelItem
         isEdit={true}
-        ownerTenantId={useKnowledgeBaseContext().knowledgeBase?.tenant_id}
+        ownerTenantId={ownerTenantId}
       ></EmbeddingModelItem>
       <PageRankFormField></PageRankFormField>
     </>

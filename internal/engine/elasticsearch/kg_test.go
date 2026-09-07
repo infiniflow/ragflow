@@ -19,7 +19,6 @@
 package elasticsearch
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/common"
@@ -29,10 +28,14 @@ import (
 
 // TestKGSearchSelectFields verifies that SelectFields overrides default output
 // columns when searching for knowledge graph entities.
-// Requires a running Elasticsearch instance and KG data indexed by Python task
-// executor. Gated by the integration build tag.
+// Requires a running Elasticsearch instance and KG data indexed by Python task executor.
+// Set ES_TEST=1 to run.
 func TestKGSearchSelectFields(t *testing.T) {
-	engine, err := NewEngine(context.Background(), getTestConfig())
+	if common.GetEnv(common.EnvESTest) != "1" {
+		t.Skip("Skipping ES integration test; set ES_TEST=1 to run")
+	}
+
+	engine, err := NewEngine(getTestConfig())
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}

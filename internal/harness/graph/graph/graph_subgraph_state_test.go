@@ -67,7 +67,7 @@ func TestSubgraphState_GetState_NoRun(t *testing.T) {
 			constants.ConfigKeyThreadID: "subgraph-norun",
 		},
 	}
-	snap, err := csg.GetState(context.Background(), cfg)
+	snap, err := csg.GetState(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("GetState before run: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestSubgraphState_GetState_AfterExecution(t *testing.T) {
 	csg := NewCompiledStateGraph(outerCompiled)
 	tid := "subgraph-after-exec"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := csg.Invoke(ctx, map[string]any{}, &types.RunnableConfig{
 		Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tid},
 	})
@@ -167,7 +167,7 @@ func TestSubgraphState_GetStateHistory(t *testing.T) {
 	csg := NewCompiledStateGraph(cg)
 	tid := "subgraph-history"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	cfg := &types.RunnableConfig{
 		Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tid},
 	}
@@ -221,7 +221,7 @@ func TestSubgraphState_UpdateState_ParentLevel(t *testing.T) {
 	csg := NewCompiledStateGraph(cg)
 	tid := "subgraph-update-parent"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	cfg := &types.RunnableConfig{
 		Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tid},
 	}
@@ -324,7 +324,7 @@ func TestSubgraphState_CheckpointMigration(t *testing.T) {
 	}
 
 	// Run the outer graph.
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := csg.Invoke(ctx, map[string]any{}, &types.RunnableConfig{
 		Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tid},
 	})
@@ -381,7 +381,7 @@ func TestSubgraphState_MultipleRuns(t *testing.T) {
 	csg := NewCompiledStateGraph(cg)
 	tid := "subgraph-multi-run"
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Run multiple times.
 	for i := 1; i <= 3; i++ {
@@ -431,7 +431,7 @@ func TestSubgraphState_DurabilityExit(t *testing.T) {
 
 	csg := NewCompiledStateGraph(cg)
 	tid := "subgraph-durability-exit"
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// With DurabilityExit, checkpoint should be saved only on exit.
 	// We run via the Pregel engine (CompiledGraph.run) which respects

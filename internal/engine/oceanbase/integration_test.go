@@ -51,7 +51,7 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 	}
 	defer engine.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 	suffix := strconv.FormatInt(time.Now().UnixNano(), 10)
 	tableName := "ragflow_go_compat_" + suffix
@@ -212,7 +212,7 @@ func envOr(name, fallback string) string {
 
 func cleanupChunkStore(t *testing.T, engine *Engine, tableName, datasetID string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	if err := engine.DropChunkStore(ctx, tableName, datasetID); err != nil {
 		t.Errorf("clean up chunk store %s: %v", tableName, err)
@@ -221,7 +221,7 @@ func cleanupChunkStore(t *testing.T, engine *Engine, tableName, datasetID string
 
 func cleanupMetadataStore(t *testing.T, engine *Engine, tenantID string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	if err := engine.DropMetadataStore(ctx, tenantID); err != nil {
 		t.Errorf("clean up metadata store for tenant %s: %v", tenantID, err)

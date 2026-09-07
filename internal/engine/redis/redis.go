@@ -385,7 +385,7 @@ func (r *Client) GetOrCreateKey(ctx context.Context, key string, value string) (
 	// SETNX returns true if the key was set, false if it already existed
 	success, err := r.client.SetNX(ctx, key, value, 0).Result()
 	if err != nil {
-		return "", fmt.Errorf("failed to set key in Redis: %v", err)
+		return "", fmt.Errorf("failed to set key in Redis: %w", err)
 	}
 
 	if success {
@@ -397,7 +397,7 @@ func (r *Client) GetOrCreateKey(ctx context.Context, key string, value string) (
 	// Retrieve and return that key
 	finalKey, err := r.client.Get(ctx, key).Result()
 	if err != nil {
-		return "", fmt.Errorf("failed to get key set by another process: %v", err)
+		return "", fmt.Errorf("failed to get key set by another process: %w", err)
 	}
 
 	return finalKey, nil

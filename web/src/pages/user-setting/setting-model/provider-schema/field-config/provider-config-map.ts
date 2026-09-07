@@ -572,6 +572,55 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
     },
   },
 
+  // ============ PaddleOCR.local ============
+  [LLMFactory.PaddleOCRLocal]: {
+    llmFactory: LLMFactory.PaddleOCRLocal,
+    title: 'PaddleOCR.local',
+    fields: [
+      {
+        name: 'instance_name',
+        label: 'instanceName',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'instanceNameMessage',
+        tooltip: 'instanceNameTip',
+        validation: { message: 'instanceNameMessage' },
+      },
+      {
+        name: 'paddleocr_api_url',
+        label: 'paddleocrApiUrl',
+        type: 'inputSelect',
+        required: true,
+        placeholder: 'paddleocrApiUrlPlaceholder',
+        validation: { message: 'paddleocrApiUrlMessage' },
+      },
+      {
+        name: 'paddleocr_access_token',
+        label: 'paddleocrAccessToken',
+        type: FormFieldType.Password,
+        required: false,
+        placeholder: 'paddleocrAccessTokenPlaceholder',
+        validation: { message: 'paddleocrAccessTokenMessage' },
+      },
+    ],
+    verifyTransform: (values) => ({
+      apiKey: values.paddleocr_access_token ?? '',
+      baseUrl: values.paddleocr_api_url,
+      modelInfo: [],
+    }),
+    submitTransform: (values) => ({
+      instance_name: values.instance_name,
+      llm_factory: LLMFactory.PaddleOCRLocal,
+      api_key: values.paddleocr_access_token ?? '',
+      base_url: values.paddleocr_api_url,
+      model_info: [],
+    }),
+    echoTransform: (instance) => ({
+      paddleocr_api_url: instance.base_url ?? '',
+      paddleocr_access_token: instance.api_key ?? '',
+    }),
+  },
+
   // ============ MinerU ============
   [LLMFactory.MinerU]: {
     llmFactory: LLMFactory.MinerU,

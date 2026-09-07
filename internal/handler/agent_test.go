@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	"ragflow/internal/service/document"
 	"ragflow/internal/tokenizer"
 )
 
@@ -1159,6 +1160,46 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsRunnerError(t *testin
 	}
 }
 
+func TestAgentChatCompletions_OpenAICompat_NonStreamRedactsInternalRunnerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{{
+		Type: "error",
+		Data: `{"message":"dial mysql.internal:3306 password=secret","kind":"internal"}`,
+	}}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Type != "server_error" {
+		t.Errorf("error.type = %q, want server_error", response.Error.Type)
+	}
+	if response.Error.Message != canvas.InternalRunErrorMessage {
+		t.Errorf("error.message = %q, want %q", response.Error.Message, canvas.InternalRunErrorMessage)
+	}
+	if strings.Contains(w.Body.String(), "mysql.internal") || strings.Contains(w.Body.String(), "password=secret") {
+		t.Fatalf("response leaked internal error details: %s", w.Body.String())
+	}
+}
+
 func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsWaitingForUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1193,6 +1234,42 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsWaitingForUser(t *tes
 	if !strings.Contains(response.Error.Message, "waiting for user input") ||
 		!strings.Contains(response.Error.Message, "input-1") {
 		t.Errorf("error.message = %q, want waiting state and cpn id", response.Error.Message)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCancelled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "cancelled", Data: `{"message":"Agent run was cancelled."}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Type != "invalid_request_error" {
+		t.Errorf("error.type = %q, want invalid_request_error", response.Error.Type)
+	}
+	if response.Error.Message != "Agent run was cancelled." {
+		t.Errorf("error.message = %q, want cancellation message", response.Error.Message)
 	}
 }
 
@@ -1381,6 +1458,47 @@ func TestAgentChatCompletions_OpenAICompat_StreamSurfacesRunnerError(t *testing.
 	}
 }
 
+func TestAgentChatCompletions_OpenAICompat_StreamRedactsInternalRunnerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{{
+		Type: "error",
+		Data: `{"message":"dial mysql.internal:3306 password=secret","kind":"internal"}`,
+	}}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	chunks, done := decodeOpenAICompatStream(t, w.Body.String())
+	if done {
+		t.Fatal("failed stream must not end with [DONE]")
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("decoded %d chunks, want one internal error", len(chunks))
+	}
+	choice := chunks[0]["choices"].([]interface{})[0].(map[string]interface{})
+	if choice["finish_reason"] != "error" {
+		t.Errorf("finish_reason = %v, want error", choice["finish_reason"])
+	}
+	delta := choice["delta"].(map[string]interface{})
+	if delta["content"] != "**ERROR**: "+canvas.InternalRunErrorMessage {
+		t.Errorf("error content = %v, want redacted error", delta["content"])
+	}
+	errorPayload := delta["error"].(map[string]interface{})
+	if errorPayload["message"] != canvas.InternalRunErrorMessage {
+		t.Errorf("error payload = %v, want redacted message", errorPayload)
+	}
+	if strings.Contains(w.Body.String(), "mysql.internal") || strings.Contains(w.Body.String(), "password=secret") {
+		t.Fatalf("stream leaked internal error details: %s", w.Body.String())
+	}
+}
+
 func TestAgentChatCompletions_OpenAICompat_StreamSurfacesWaitingForUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1413,6 +1531,41 @@ func TestAgentChatCompletions_OpenAICompat_StreamSurfacesWaitingForUser(t *testi
 	waiting := delta["waiting_for_user"].(map[string]interface{})
 	if waiting["cpn_id"] != "input-1" {
 		t.Errorf("waiting_for_user = %v, want cpn_id input-1", waiting)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_StreamSurfacesCancelled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","openai-compatible":true,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "cancelled", Data: `{"message":"Agent run was cancelled."}`},
+	}}
+	h := &AgentHandler{chatRunner: runner}
+	h.AgentChatCompletions(c)
+
+	chunks, done := decodeOpenAICompatStream(t, w.Body.String())
+	if done {
+		t.Fatal("cancelled stream must not end with [DONE]")
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("decoded %d chunks, want cancellation state", len(chunks))
+	}
+	choices := chunks[0]["choices"].([]interface{})
+	choice := choices[0].(map[string]interface{})
+	if choice["finish_reason"] != "cancelled" {
+		t.Errorf("finish_reason = %v, want cancelled", choice["finish_reason"])
+	}
+	delta := choice["delta"].(map[string]interface{})
+	cancelled := delta["cancelled"].(map[string]interface{})
+	if cancelled["message"] != "Agent run was cancelled." {
+		t.Errorf("cancelled payload = %v, want cancellation message", cancelled)
 	}
 }
 
@@ -1478,23 +1631,20 @@ func TestRerunAgent_RequiresAllFields(t *testing.T) {
 }
 
 // TestRerunAgent_AcceptsCompleteRequest covers the happy path: all
-// three required fields present + documentService wired with an
-// accessible document -> 200 / code 0.
-//
-// Round 6: now that RerunAgent fails closed when documentService is
-// nil, the happy path needs an accessible stub. We use the deny-all
-// stub flipped to accessible=true so the gate passes.
+// three required fields present + documentService wired with a
+// rerun that succeeds -> 200 / code 0, and the stub receives the
+// log id / dsl / component_id from the request verbatim.
 func TestRerunAgent_AcceptsCompleteRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
-		strings.NewReader(`{"id":"x","dsl":{"path":[]},"component_id":"c1"}`))
+		strings.NewReader(`{"id":"log-1","dsl":{"path":[]},"component_id":"c1"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	stub := &stubDocService{accessible: true}
+	stub := &stubDocService{}
 	ctx := t.Context()
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithDocumentService(stub)
@@ -1504,6 +1654,13 @@ func TestRerunAgent_AcceptsCompleteRequest(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	if code, _ := resp["code"].(float64); code != float64(common.CodeSuccess) {
 		t.Errorf("code = %v, want 0 (msg=%v)", code, resp["message"])
+	}
+	if stub.userID != "u1" || stub.logID != "log-1" || stub.componentID != "c1" {
+		t.Errorf("stub args = user %q log %q component %q, want u1/log-1/c1",
+			stub.userID, stub.logID, stub.componentID)
+	}
+	if _, ok := stub.dsl["path"]; !ok {
+		t.Errorf("stub dsl = %v, want the request dsl passed through", stub.dsl)
 	}
 }
 
@@ -1534,56 +1691,11 @@ func TestPromptsReturnsHardcodedFields(t *testing.T) {
 	}
 }
 
-// TestGetAgentWebhookLogsReturnsEmptyPoll covers the contract: the
-// payload must be {events:[], finished:false, next_since_ts:0}. This
-// test exercises the handler's auth + response-shape path against a
-// real (in-memory) user_canvas row.
-func TestGetAgentWebhookLogsReturnsEmptyPoll(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	db := setupHandlerAgentsTestDB(t)
-	orig := dao.DB
-	dao.DB = db
-	t.Cleanup(func() { dao.DB = orig })
-
-	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/api/v1/agents/c1/webhook/logs?since_ts=0", nil)
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-	c.Params = gin.Params{{Key: "canvas_id", Value: "c1"}}
-
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
-	h.GetAgentWebhookLogs(c)
-
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if code, _ := resp["code"].(float64); code != float64(common.CodeSuccess) {
-		t.Fatalf("code = %v, want 0; body=%s", code, w.Body.String())
-	}
-	data, _ := resp["data"].(map[string]interface{})
-	if events, _ := data["events"].([]interface{}); len(events) != 0 {
-		t.Errorf("events = %v, want []", events)
-	}
-	if finished, _ := data["finished"].(bool); finished {
-		t.Errorf("finished = true, want false")
-	}
-	if _, ok := data["next_since_ts"]; !ok {
-		t.Errorf("missing next_since_ts key")
-	}
-}
-
-// TestRerunAgent_RejectsInaccessibleDocument mirrors PR #15145:
-// POST /api/v1/agents/rerun gates on DocumentService.accessible
-// (the python "is the document reachable by this tenant" check)
-// before accepting the request. Without documentService wired,
-// the gate is skipped (existing behaviour, returns success). With
-// it wired, an inaccessible doc must return CodeDataError + "Document
-// not found." so a caller cannot probe whether a doc exists in
-// another tenant.
+// TestRerunAgent_RejectsInaccessibleDocument: POST /api/v1/agents/rerun
+// gates on RerunDocument resolving the log and validating document access
+// before accepting the request. A denial from the service must surface as
+// CodeDataError + "Document not found." so a caller cannot probe whether a
+// document exists in another tenant.
 func TestRerunAgent_RejectsInaccessibleDocument(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1594,11 +1706,9 @@ func TestRerunAgent_RejectsInaccessibleDocument(t *testing.T) {
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	// Wire a stub documentService that denies all access. The setter
-	// now accepts a narrow documentAccessChecker interface (PR review
-	// round 5), so the deny-all stub injects cleanly without standing
-	// up the real DocumentService (DB, storage, ...).
-	stub := &stubDocService{accessible: false}
+	// The stub models the service's deny path: unknown log or an
+	// inaccessible document both collapse to ErrRerunDocumentNotFound.
+	stub := &stubDocService{err: document.ErrRerunDocumentNotFound}
 	ctx := t.Context()
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithDocumentService(stub)
@@ -1615,13 +1725,12 @@ func TestRerunAgent_RejectsInaccessibleDocument(t *testing.T) {
 	}
 }
 
-// TestRerunAgent_NoDocumentServiceFailsClosed pins PR review round 6,
-// Major #2: a nil documentService is now treated as a wiring
-// misconfiguration that would create an auth bypass, NOT a
-// backward-compatible "skip the gate" state. The handler must
-// return 500 / "server misconfiguration" so a missing
-// dependency is loud and gets fixed, instead of silently
-// allowing any caller to rerun an arbitrary doc id.
+// TestRerunAgent_NoDocumentServiceFailsClosed pins the fail-closed
+// rule: a nil documentService is treated as a wiring misconfiguration
+// that would create an auth bypass, NOT a backward-compatible "skip
+// the gate" state. The handler must return 500 / "server
+// misconfiguration" so a missing dependency is loud and gets fixed,
+// instead of silently allowing any caller to rerun an arbitrary doc id.
 func TestRerunAgent_NoDocumentServiceFailsClosed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1635,9 +1744,9 @@ func TestRerunAgent_NoDocumentServiceFailsClosed(t *testing.T) {
 	ctx := t.Context()
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	// Note: no WithDocumentService call → documentService is nil.
-	// Production wiring (cmd/server_main.go) always calls
-	// WithDocumentService; a nil here means the handler was
-	// constructed without its required dependency.
+	// The production wiring (cmd/ragflow_server.go) chains
+	// WithDocumentService onto NewAgentHandler; a nil here means the
+	// handler was constructed without its required dependency.
 	h.RerunAgent(c)
 
 	var resp map[string]interface{}
@@ -1651,12 +1760,84 @@ func TestRerunAgent_NoDocumentServiceFailsClosed(t *testing.T) {
 	}
 }
 
-type stubDocService struct {
-	accessible bool
+// TestRerunAgent_InternalErrorReturns500: a non-domain failure (DB down,
+// queue publish failed, ...) is neither a caller data error nor safe to
+// echo back. The handler must answer CodeServerError with a generic
+// message and keep the raw error text out of the response.
+func TestRerunAgent_InternalErrorReturns500(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
+		strings.NewReader(`{"id":"log-1","dsl":{"path":[]},"component_id":"c1"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	stub := &stubDocService{err: errors.New("update pipeline log dsl: connection refused")}
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
+		WithDocumentService(stub)
+	h.RerunAgent(c)
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if code, _ := resp["code"].(float64); code != float64(common.CodeServerError) {
+		t.Errorf("internal error: want code %d, got %v (msg=%v)",
+			common.CodeServerError, code, resp["message"])
+	}
+	if msg, _ := resp["message"].(string); strings.Contains(msg, "connection refused") {
+		t.Errorf("internal error: raw error leaked into the response message %q", msg)
+	}
 }
 
-func (s *stubDocService) Accessible(_, _ string) bool {
-	return s.accessible
+// TestRerunAgent_DocumentProcessingIsDataError: a mid-run document is a
+// caller-facing conflict, so the typed processing error keeps the 102
+// envelope with the service's message.
+func TestRerunAgent_DocumentProcessingIsDataError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
+		strings.NewReader(`{"id":"log-1","dsl":{"path":[]},"component_id":"c1"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	stub := &stubDocService{err: &document.RerunDocumentProcessingError{DocumentName: "hlm.docx"}}
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
+		WithDocumentService(stub)
+	h.RerunAgent(c)
+
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if code, _ := resp["code"].(float64); code != float64(common.CodeDataError) {
+		t.Errorf("processing error: want code %d, got %v (msg=%v)",
+			common.CodeDataError, code, resp["message"])
+	}
+	if msg, _ := resp["message"].(string); !strings.Contains(msg, "is processing") {
+		t.Errorf("processing error: want message to contain 'is processing', got %q", msg)
+	}
+}
+
+// stubDocService stubs the documentRerunService surface for handler
+// tests: it records the arguments and replays err (nil = success,
+// document.ErrRerunDocumentNotFound = deny).
+type stubDocService struct {
+	err         error
+	userID      string
+	logID       string
+	dsl         map[string]interface{}
+	componentID string
+}
+
+func (s *stubDocService) RerunDocument(_ context.Context, userID, logID string, dsl map[string]interface{}, componentID string) error {
+	s.userID = userID
+	s.logID = logID
+	s.dsl = dsl
+	s.componentID = componentID
+	return s.err
 }
 
 // TestAgentChatCompletions_FilesDeserialized verifies that the

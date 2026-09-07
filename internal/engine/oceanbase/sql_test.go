@@ -17,7 +17,6 @@
 package oceanbase
 
 import (
-	"context"
 	"regexp"
 	"strings"
 	"testing"
@@ -45,10 +44,10 @@ func TestUpdateMetadataReplacesCompleteLegacyJSON(t *testing.T) {
 		WithArgs("doc-1", "kb-1", `{"author":"Alice"}`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	if err := engine.UpdateMetadata(context.Background(), "doc-1", "kb-1", map[string]interface{}{"author": "Alice"}, "tenant-1"); err != nil {
+	if err = engine.UpdateMetadata(t.Context(), "doc-1", "kb-1", map[string]interface{}{"author": "Alice"}, "tenant-1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err = mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -61,12 +60,12 @@ func TestMetadataWritesRejectInvalidTenantIdentifier(t *testing.T) {
 	defer db.Close()
 	engine := newEngineWithDB("oceanbase", "legacy_doc", db)
 
-	err = engine.UpdateMetadata(context.Background(), "doc-1", "kb-1",
+	err = engine.UpdateMetadata(t.Context(), "doc-1", "kb-1",
 		map[string]interface{}{"author": "Alice"}, "tenant`injected")
 	if err == nil || !strings.Contains(err.Error(), "invalid SQL identifier") {
 		t.Fatalf("UpdateMetadata() error = %v, want invalid identifier error", err)
 	}
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err = mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -84,11 +83,11 @@ func TestDeleteMetadataKeysPreservesInvalidJSONRow(t *testing.T) {
 		WithArgs("doc-1", "kb-1").
 		WillReturnRows(sqlmock.NewRows([]string{"meta_fields"}).AddRow("{"))
 
-	err = engine.DeleteMetadataKeys(context.Background(), "doc-1", "kb-1", []string{"author"}, "tenant-1")
+	err = engine.DeleteMetadataKeys(t.Context(), "doc-1", "kb-1", []string{"author"}, "tenant-1")
 	if err == nil || !strings.Contains(err.Error(), "decode metadata") {
 		t.Fatalf("DeleteMetadataKeys() error = %v, want JSON decode error", err)
 	}
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err = mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -105,14 +104,14 @@ func TestSkillFilterSearchCountsPhysicalPrimaryKey(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(`skill_id`) FROM `skill_tenant-1_default` WHERE 1=1")).
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(skill_id)"}).AddRow(0))
 
-	chunks, total, err := engine.searchTableWithSQL(context.Background(), "skill_tenant-1_default", "skill", map[string]interface{}{}, &types.SearchRequest{Limit: 10}, searchPlan{})
+	chunks, total, err := engine.searchTableWithSQL(t.Context(), "skill_tenant-1_default", "skill", map[string]interface{}{}, &types.SearchRequest{Limit: 10}, searchPlan{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if total != 0 || len(chunks) != 0 {
 		t.Fatalf("empty skill search total=%d chunks=%#v", total, chunks)
 	}
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err = mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
 	}
 }

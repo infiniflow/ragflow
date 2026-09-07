@@ -30,6 +30,7 @@ import (
 const (
 	DefaultAskPage                   = 1
 	DefaultAskPageSize               = 12
+	DefaultAskRerankCandidatesCount  = 100
 	DefaultAskTopK                   = 1024
 	DefaultAskSimilarityThreshold    = 0.1
 	DefaultAskVectorSimilarityWeight = 0.3
@@ -65,6 +66,7 @@ type AskStreamOptions struct {
 	DocIDs                 []string
 	UseKG                  *bool
 	TopK                   *int
+	RerankCandidatesCount  *int
 	CrossLanguages         []string
 	Filter                 map[string]interface{}
 	TenantRerankID         *string
@@ -159,6 +161,10 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 	if opts.VectorSimilarityWeight != nil {
 		vectorSimilarityWeight = *opts.VectorSimilarityWeight
 	}
+	rerankCandidatesCount := DefaultAskRerankCandidatesCount
+	if opts.RerankCandidatesCount != nil {
+		rerankCandidatesCount = *opts.RerankCandidatesCount
+	}
 
 	req := &RetrievalTestRequest{
 		Datasets:               common.StringSlice(datasetIDs),
@@ -166,6 +172,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 		DocIDs:                 opts.DocIDs,
 		UseKG:                  opts.UseKG,
 		TopK:                   ptrInt(topK),
+		RerankCandidatesCount:  ptrInt(rerankCandidatesCount),
 		CrossLanguages:         opts.CrossLanguages,
 		Filter:                 opts.Filter,
 		TenantRerankID:         opts.TenantRerankID,

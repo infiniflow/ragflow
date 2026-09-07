@@ -100,6 +100,16 @@ func SetModelConfig(llmID, embedding string) {
 	defaultEmbedding = embedding
 }
 
+// InitializePublisher installs the process-wide publisher used by document
+// lifecycle events. API processes publish events but do not own the dataset
+// consumer, so they need this producer-only initialization without starting a
+// worker.
+func InitializePublisher(db *gorm.DB, mq engine.MessageQueue) {
+	if defaultPublisher == nil {
+		SetScheduler(newScheduler(db, mq, generateHolder(), 2*time.Minute))
+	}
+}
+
 // defaultDeduperFactory resolves the per-tenant LLM deps and builds the
 // KB-scoped deduper. On any failure it returns an error so the caller falls
 // back to the noop deduper (merged products are still written, just without

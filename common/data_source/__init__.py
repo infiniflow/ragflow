@@ -30,6 +30,7 @@ from .airtable_connector import AirtableConnector
 from .asana_connector import AsanaConnector
 from .azure_blob_connector import AzureBlobConnector
 from .bigquery_connector import BigQueryConnector
+from .azure_devops.connector import AzureDevOpsConnector
 from .bitbucket.connector import BitbucketConnector
 from .blob_connector import BlobStorageConnector
 from .box_connector import BoxConnector
@@ -65,6 +66,7 @@ from .sharepoint_connector import SharePointConnector
 from .slack_connector import SlackConnector
 from .teams_connector import TeamsConnector
 from .webdav_connector import WebDAVConnector
+from .xquik_connector import XquikConnector
 from .zendesk_connector import ZendeskConnector
 
 CONNECTOR_BY_SOURCE: dict[str, type] = {
@@ -93,11 +95,13 @@ CONNECTOR_BY_SOURCE: dict[str, type] = {
     FileSource.ZENDESK: ZendeskConnector,
     FileSource.GITLAB: GitlabConnector,
     FileSource.BITBUCKET: BitbucketConnector,
+    FileSource.AZURE_DEVOPS: AzureDevOpsConnector,
     FileSource.SEAFILE: SeaFileConnector,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITableConnector,
     FileSource.MYSQL: RDBMSConnector,
     FileSource.POSTGRESQL: RDBMSConnector,
     FileSource.REST_API: RestAPIConnector,
+    FileSource.XQUIK: XquikConnector,
     FileSource.BIGQUERY: BigQueryConnector,
     FileSource.ONEDRIVE: OneDriveConnector,
     FileSource.OUTLOOK: OutlookConnector,
@@ -111,55 +115,57 @@ def build_connector_for_source(source: str, config: dict[str, Any]) -> Any:
     if connector_cls is None:
         raise ConnectorValidationError(f"Unsupported data source type: {source}")
     if connector_cls is BlobStorageConnector:
-        return connector_cls.build_connector(config, bucket_type=source)
+        return connector_cls.build_connector(config, bucket_type=config.get("bucket_type") or source)
     if connector_cls is RDBMSConnector:
         return connector_cls.build_connector(config, db_type=source)
     return connector_cls.build_connector(config)
 
 
 __all__ = [
-    "BlobStorageConnector",
-    "RSSConnector",
-    "SlackConnector",
-    "GmailConnector",
-    "NotionConnector",
-    "ConfluenceConnector",
-    "DiscordConnector",
-    "DropboxConnector",
-    "GoogleDriveConnector",
-    "JiraConnector",
-    "SharePointConnector",
-    "GithubConnector",
-    "GitlabConnector",
-    "BitbucketConnector",
-    "BoxConnector",
-    "OneDriveConnector",
-    "OutlookConnector",
-    "SalesforceConnector",
+    "CONNECTOR_BY_SOURCE",
+    "AirtableConnector",
+    "AsanaConnector",
     "AzureBlobConnector",
-    "TeamsConnector",
-    "MoodleConnector",
-    "BlobType",
-    "DocumentSource",
-    "Document",
-    "TextSection",
-    "ImageSection",
+    "AzureDevOpsConnector",
     "BasicExpertInfo",
+    "BigQueryConnector",
+    "BitbucketConnector",
+    "BlobStorageConnector",
+    "BlobType",
+    "BoxConnector",
+    "ConfluenceConnector",
     "ConnectorMissingCredentialError",
     "ConnectorValidationError",
     "CredentialExpiredError",
-    "InsufficientPermissionsError",
-    "UnexpectedValidationError",
-    "AirtableConnector",
-    "AsanaConnector",
-    "ImapConnector",
-    "ZendeskConnector",
-    "SeaFileConnector",
-    "RDBMSConnector",
-    "BigQueryConnector",
-    "WebDAVConnector",
     "DingTalkAITableConnector",
+    "DiscordConnector",
+    "Document",
+    "DocumentSource",
+    "DropboxConnector",
+    "GithubConnector",
+    "GitlabConnector",
+    "GmailConnector",
+    "GoogleDriveConnector",
+    "ImageSection",
+    "ImapConnector",
+    "InsufficientPermissionsError",
+    "JiraConnector",
+    "MoodleConnector",
+    "NotionConnector",
+    "OneDriveConnector",
+    "OutlookConnector",
+    "RDBMSConnector",
+    "RSSConnector",
     "RestAPIConnector",
-    "CONNECTOR_BY_SOURCE",
+    "SalesforceConnector",
+    "SeaFileConnector",
+    "SharePointConnector",
+    "SlackConnector",
+    "TeamsConnector",
+    "TextSection",
+    "UnexpectedValidationError",
+    "WebDAVConnector",
+    "XquikConnector",
+    "ZendeskConnector",
     "build_connector_for_source",
 ]

@@ -14,6 +14,8 @@
  *  limitations under the License.
  */
 
+import { FilterValue } from '@/components/list-filter-bar/interface';
+import { hasActiveFilter } from '@/components/list-filter-bar/utils';
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { MessageType } from '@/constants/chat';
@@ -31,6 +33,10 @@ import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { buildMessageUuid } from '@/utils/chat';
+import {
+  consumeListDeletionMarker,
+  discardListDeletionMarker,
+} from '@/utils/list-deletion-util';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { has, isEmpty, omit } from 'lodash';
@@ -127,15 +133,53 @@ export const useGetPaginationWithRouter = () => {
 };
 
 // When the current page becomes empty (e.g. after deleting the last card on
-// the last page), navigate back to the previous page automatically.
+// the last page), navigate back to the previous page automatically. When the
+// empty page was caused by a deletion (recorded via markListItemsDeleted) and
+// a search or filter is active, clear them and jump to the first page of the
+// unfiltered list instead — the filtered result set no longer exists, so the
+// previous page of it would be meaningless.
 export const useGoToPreviousPageOnEmpty = (
   listLength: number | undefined,
   loading: boolean = false,
+  options?: {
+    deletionKey?: string;
+    searchString?: string;
+    setSearchString?: (value: string) => void;
+    filterValue?: FilterValue;
+    setFilterValue?: (value: FilterValue) => void;
+  },
 ) => {
   const { pagination, setPagination } = useGetPaginationWithRouter();
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   useEffect(() => {
-    if (!loading && listLength === 0 && pagination.current > 1) {
+    if (loading || listLength !== 0 || pagination.current <= 1) {
+      return;
+    }
+
+    const {
+      deletionKey,
+      searchString,
+      setSearchString,
+      filterValue,
+      setFilterValue,
+    } = optionsRef.current ?? {};
+    const clearedByDeletion =
+      deletionKey &&
+      (Boolean(searchString) || hasActiveFilter(filterValue)) &&
+      consumeListDeletionMarker(deletionKey);
+
+    if (clearedByDeletion) {
+      setSearchString?.('');
+      setFilterValue?.({});
+      setPagination({ page: 1, pageSize: pagination.pageSize });
+    } else {
+      if (deletionKey) {
+        // The empty page was not caused by a deletion (e.g. a search with no
+        // matches); drop any stale marker so it cannot fire later.
+        discardListDeletionMarker(deletionKey);
+      }
       setPagination({
         page: pagination.current - 1,
         pageSize: pagination.pageSize,
@@ -156,7 +200,13 @@ export const useHandleSearchChange = () => {
     [setPagination],
   );
 
-  return { handleInputChange, searchString, pagination, setPagination };
+  return {
+    handleInputChange,
+    searchString,
+    setSearchString,
+    pagination,
+    setPagination,
+  };
 };
 
 export const useGetPagination = (options?: { pageSize?: number }) => {
@@ -414,6 +464,12 @@ export const useSpeechWithSse = (url: string = api.chatsTts) => {
 
 //#region chat hooks
 
+// Firefox reports a fractional `scrollTop`, while `scrollHeight` / `clientHeight`
+// are rounded. `scrollToBottom` therefore lands a sub-pixel *below* the position
+// a native clamp had produced, which reads as a decreasing `scrollTop`. Require a
+// real gesture's worth of movement so that jitter is not mistaken for one.
+const UserScrollUpThreshold = 2;
+
 export const useScrollToBottom = (
   messages?: unknown,
   containerRef?: React.RefObject<HTMLDivElement>,
@@ -429,6 +485,18 @@ export const useScrollToBottom = (
     isAtBottomRef.current = isAtBottom;
   }, [isAtBottom]);
 
+  // We pin the transcript to the bottom ourselves, so browser scroll anchoring is
+  // pure interference: when a streamed answer re-lays out (markdown turning a
+  // paragraph into a code block, a line re-wrapping), Firefox shifts `scrollTop`
+  // to hold its anchor node still. That shift is indistinguishable from a user
+  // scrolling up in the handler below, so it latched auto-follow off mid-answer.
+  // Chrome suppresses the adjustment while pinned to the bottom, which is why
+  // only Firefox drifted away from the bottom.
+  useEffect(() => {
+    if (!containerRef?.current) return;
+    containerRef.current.style.overflowAnchor = 'none';
+  }, [containerRef]);
+
   const checkIfNearBottom = useCallback(() => {
     if (!containerRef?.current) return true;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
@@ -438,7 +506,7 @@ export const useScrollToBottom = (
     // not fire a `scroll` event, so no later check would ever re-arm the flag
     // and the view would never track the incoming message.
     if (scrollHeight <= clientHeight) return true;
-    return Math.abs(scrollTop + clientHeight - scrollHeight) < 25;
+    return Math.abs(scrollTop + clientHeight - scrollHeight) < 60;
   }, [containerRef]);
 
   useEffect(() => {
@@ -454,9 +522,13 @@ export const useScrollToBottom = (
       let atBottom: boolean;
       if (nearBottom) {
         atBottom = true;
-      } else if (previousScrollTop === null || scrollTop < previousScrollTop) {
-        // Only a user gesture (wheel, drag, keys, touch) can shrink `scrollTop`,
-        // so this is the one reliable signal that they want to leave the bottom.
+      } else if (
+        previousScrollTop === null ||
+        scrollTop < previousScrollTop - UserScrollUpThreshold
+      ) {
+        // With scroll anchoring off, only a user gesture (wheel, drag, keys,
+        // touch) can shrink `scrollTop` by a meaningful amount, so this is the
+        // one reliable signal that they want to leave the bottom.
         atBottom = false;
       } else {
         // We are far from the bottom yet `scrollTop` did not move: the gap comes
@@ -484,8 +556,11 @@ export const useScrollToBottom = (
   const scrollToBottom = useCallback(() => {
     if (containerRef?.current) {
       const container = containerRef.current;
+      // Overshoot and let the browser clamp. `scrollHeight - clientHeight` is a
+      // difference of two rounded values, so in Firefox — where the real maximum
+      // is fractional — it can land just short of the bottom.
       container.scrollTo({
-        top: container.scrollHeight - container.clientHeight,
+        top: container.scrollHeight,
         behavior: 'auto',
       });
     }
@@ -834,28 +909,6 @@ export const useSelectItem = (defaultId?: string) => {
   }, [defaultId]);
 
   return { selectedId, handleItemClick };
-};
-
-const ChunkTokenNumMap = {
-  naive: 128,
-  knowledge_graph: 8192,
-};
-
-export const useHandleChunkMethodSelectChange = (form: FormInstance) => {
-  // const form = Form.useFormInstance();
-  const handleChange = useCallback(
-    (value: string) => {
-      if (value in ChunkTokenNumMap) {
-        form.setFieldValue(
-          ['parser_config', 'chunk_token_num'],
-          ChunkTokenNumMap[value as keyof typeof ChunkTokenNumMap],
-        );
-      }
-    },
-    [form],
-  );
-
-  return handleChange;
 };
 
 // reset form fields when modal is form, closed

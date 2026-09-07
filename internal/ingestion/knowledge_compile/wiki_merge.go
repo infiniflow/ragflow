@@ -42,6 +42,61 @@ func wikiEntityMerge(existing, incoming kccommon.Product) kccommon.Product {
 	return merged
 }
 
+// selectMergedWikiTopicPath chooses the materialized path with the strongest
+// source support when document pages with the same canonical slug disagree.
+// No additional metadata is persisted: the selected path remains the page's
+// single topic value.
+func selectMergedWikiTopicPath(products []kccommon.Product) string {
+	type support struct {
+		topic    string
+		docs     map[string]struct{}
+		chunks   map[string]struct{}
+		products int
+	}
+	byKey := make(map[string]*support)
+	for _, product := range products {
+		topic := productTopic(product)
+		key := topicKey(topic)
+		if key == "" {
+			continue
+		}
+		current := byKey[key]
+		if current == nil {
+			current = &support{topic: topic, docs: make(map[string]struct{}), chunks: make(map[string]struct{})}
+			byKey[key] = current
+		}
+		current.products++
+		docIDs := metaStringSliceAny(product.Meta, "source_doc_ids")
+		if len(docIDs) == 0 && product.DocID != "" {
+			docIDs = []string{product.DocID}
+		}
+		for _, docID := range docIDs {
+			if docID = strings.TrimSpace(docID); docID != "" {
+				current.docs[docID] = struct{}{}
+			}
+		}
+		for _, chunkID := range metaStringSliceAny(product.Meta, "source_chunk_ids") {
+			if chunkID = strings.TrimSpace(chunkID); chunkID != "" {
+				current.chunks[chunkID] = struct{}{}
+			}
+		}
+	}
+
+	var best *support
+	for _, candidate := range byKey {
+		if best == nil || len(candidate.docs) > len(best.docs) ||
+			(len(candidate.docs) == len(best.docs) && len(candidate.chunks) > len(best.chunks)) ||
+			(len(candidate.docs) == len(best.docs) && len(candidate.chunks) == len(best.chunks) && candidate.products > best.products) ||
+			(len(candidate.docs) == len(best.docs) && len(candidate.chunks) == len(best.chunks) && candidate.products == best.products && topicKey(candidate.topic) < topicKey(best.topic)) {
+			best = candidate
+		}
+	}
+	if best == nil {
+		return ""
+	}
+	return best.topic
+}
+
 func unionWikiMarkdown(left, right string) string {
 	left, right = strings.TrimSpace(left), strings.TrimSpace(right)
 	if left == "" {

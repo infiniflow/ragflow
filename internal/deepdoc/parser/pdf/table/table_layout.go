@@ -199,6 +199,17 @@ func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 			if isHeaderLabel(cell.Label) {
 				headers = append(headers, cell)
 			}
+			// Collect spanning cells so the SP annotation is propagated to
+			// overlapping boxes (Python _table_transformer_job appends every
+			// "SP" cell to its `spans` list and matches boxes against it at
+			// pdf_parser.py:518-554). Without this, box.SP stays 0, the
+			// rebuilt grid (GroupBoxesByRC) loses the span, and
+			// ConstructTable/CalSpans drops the colspan/rowspan — Go emits
+			// independent empty <th> where Python emits <th colspan=6>
+			// (e.g. real_pdfs/1.pdf).
+			if strings.Contains(cell.Label, "spanning") {
+				spans = append(spans, cell)
+			}
 		}
 	}
 	if len(grid) > 0 && len(grid[0]) > 0 {
@@ -259,7 +270,22 @@ func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 			}
 		}
 		if idx := findOverlappedWithThreshold(boxes[i], spans, 0.3); idx >= 0 {
-			boxes[i].SP = idx
+			// Offset by 1 so a box matching the FIRST spanning cell
+			// (idx == 0) is distinguishable from "no span overlap" (the
+			// default SP == 0). All readers check SP > 0, matching Python's
+			// boolean SP semantics (pdf_parser.py:518-554).
+			boxes[i].SP = idx + 1
+			// Python _annotate_table_boxes (pdf_parser.py:632-635) copies the
+			// spanning cell's bbox onto the box as H_top/H_bott/H_left/H_right.
+			// GroupBoxesByRC then builds the span cell from these full extents
+			// (cellPosFromBox uses HLeft/HRight when H>0), so CalSpans covers
+			// every column the span crosses. Without this, the span cell falls
+			// back to the box's own narrow bounds and Go emits colspan=5 where
+			// Python emits colspan=6 (real_pdfs/1.pdf).
+			boxes[i].HTop = spans[idx].Y0
+			boxes[i].HBott = spans[idx].Y1
+			boxes[i].HLeft = spans[idx].X0
+			boxes[i].HRight = spans[idx].X1
 		}
 	}
 

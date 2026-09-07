@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
@@ -37,9 +36,13 @@ import (
 
 	"ragflow/internal/dao"
 
-	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 )
+
+// Fields defined by the chat-completions message schema. Stored messages also
+// carry RAGFlow bookkeeping such as id, created_at, doc_ids, and conversationId,
+// which strict providers reject.
+var llmMessageFields = [...]string{"role", "content", "name", "tool_calls", "tool_call_id", "function_call", "refusal", "audio"}
 
 // ChatPipelineService is the shared RAG chat pipeline engine used by both
 // the OpenAI-compatible endpoint (/api/v1/openai/<chat_id>/chat/completions)
@@ -172,12 +175,6 @@ func (s *ChatPipelineService) AsyncChat(
 	lastMsg := messages[len(messages)-1]
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
-	}
-
-	// smart-reasoning mode: route to the eino ADK ReAct agent instead of the
-	// classic retrieval→generation pipeline.
-	if mode, _ := kwargs["agent_mode"].(string); mode == "smart-reasoning" {
-		return s.smartReasoningChat(ctx, userID, chat, messages, stream, kwargs)
 	}
 
 	// No KBs & no web search → fast-path to LLM-only chat.
@@ -324,17 +321,21 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// Parse file attachments from the last message.
 		// Split text-file URLs (joined with "\n\n") and image URLs.
-		// Vision (image2text) model: images → imageFiles for the multimodal
-		// conversion below. Text-only chat model: images are dropped —
-		// sending image content blocks makes such providers reject the
-		// request (e.g. Zhipu GLM error 1210: messages.content.type only
-		// allows 'text').
+		// Only vision-capable (image2text-typed) models receive image
+		// content blocks; text-only chat providers reject them (e.g.
+		// Zhipu GLM error 1210: messages.content.type only allows
+		// 'text'), so their images are dropped here — mirroring
+		// Python's dialog_model_vision_capable gate.
 		var textAttachmentsList []string
 		var imageFiles []string
+		// Whether the message carried image attachments before the
+		// vision gate (read by the empty-response fallback below).
+		var hasImageAttachments bool
 		// Joined text attachments (appended to system prompt).
 		var attachments string
 		// When files are file dicts, splitFileAttachments fetches blobs
-		// from storage. When plain strings, falls back to string splitting.
+		// from storage. When plain strings, falls back to string splitting;
+		// raw only changes that split for pre-separated image payloads.
 		if files, hasFiles := lastMsg["files"]; hasFiles {
 			modelType := "chat"
 			if llmModelConfig != nil {
@@ -342,22 +343,16 @@ func (s *ChatPipelineService) AsyncChat(
 					modelType = mt
 				}
 			}
-			if modelType == "image2text" {
-				textAttachmentsList, imageFiles = splitFileAttachments(ctx, userID, files, true)
-			} else {
-				var droppedImages []string
-				textAttachmentsList, droppedImages = splitFileAttachments(ctx, userID, files, false)
-				if len(droppedImages) > 0 {
-					common.Warn("AsyncChat: dropping image attachments for text-only chat model",
-						zap.String("llm_id", chat.LLMID),
-						zap.Int("dropped_images", len(droppedImages)))
-				}
-			}
+			var images []string
+			textAttachmentsList, images = splitFileAttachments(ctx, userID, files, modelType == "image2text")
+			imageFiles, hasImageAttachments = gateImageAttachments(chat.LLMID, modelType, images)
 			attachments = strings.Join(textAttachmentsList, "\n\n")
+			// Log counts only: attachment payloads are base64 images or
+			// full document contents.
 			common.Debug("Resolved attachments",
-				zap.Strings("text_attachments_list", textAttachmentsList),
-				zap.Strings("image_files", imageFiles),
-				zap.String("attachments", attachments))
+				zap.Int("text_attachments", len(textAttachmentsList)),
+				zap.Int("image_files", len(imageFiles)),
+				zap.Int("attachment_bytes", len(attachments)))
 		}
 
 		// === Phase 6: SQL Retrieval ===
@@ -570,7 +565,7 @@ func (s *ChatPipelineService) AsyncChat(
 					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
 				}
 				if mErr == nil {
-					if filtered, ok := ApplyMetaDataFilter(
+					if filtered, _ := ApplyMetaDataFilter(
 						ctx,
 						*chat.MetaDataFilter,
 						flattedMeta,
@@ -578,7 +573,7 @@ func (s *ChatPipelineService) AsyncChat(
 						chatModel,
 						docIDs,
 						kbIDs,
-					); ok {
+					); filtered != nil {
 						common.Debug("meta_data_filter applied",
 							zap.Int("filtered_count", len(filtered)),
 							zap.Int("pre_filter_count", len(docIDs)))
@@ -621,6 +616,10 @@ func (s *ChatPipelineService) AsyncChat(
 			"doc_aggs": []interface{}{},
 		}
 		var knowledges []string
+		rerankCandidatesCount := int(chat.RerankCandidatesCount)
+		if rerankCandidatesCount <= 0 {
+			rerankCandidatesCount = 64
+		}
 
 		// When hasKnowledgeParam is true, runs (mutually exclusive):
 		//   a) If reasoning is enabled: DeepResearcher replaces vector retrieval.
@@ -644,13 +643,14 @@ func (s *ChatPipelineService) AsyncChat(
 					// KB retrieval callback for the deep researcher
 					kbRetrieve := func(ctx context.Context, q string) (*nlp.RetrievalResult, error) {
 						return retSvc.Retrieval(ctx, &nlp.RetrievalRequest{
-							Question:       q,
-							TenantIDs:      tenantIDs,
-							KbIDs:          kbIDs,
-							DocIDs:         docIDs,
-							Page:           1,
-							PageSize:       int(chat.TopN),
-							EmbeddingModel: embModel,
+							Question:              q,
+							TenantIDs:             tenantIDs,
+							KbIDs:                 kbIDs,
+							DocIDs:                docIDs,
+							Page:                  1,
+							PageSize:              int(chat.TopN),
+							RerankCandidatesCount: &rerankCandidatesCount,
+							EmbeddingModel:        embModel,
 						})
 					}
 
@@ -705,7 +705,8 @@ func (s *ChatPipelineService) AsyncChat(
 							DocIDs:                 docIDs,
 							Page:                   1,
 							PageSize:               topN,
-							Top:                    &top,
+							RerankCandidatesCount:  &rerankCandidatesCount,
+							KNNTopK:                &top,
 							SimilarityThreshold:    &threshold,
 							VectorSimilarityWeight: &vsw,
 							RankFeature:            &rankFeature,
@@ -839,9 +840,11 @@ func (s *ChatPipelineService) AsyncChat(
 		//
 		// EXCEPTION: when the user attached files to their message, the
 		// attachment text provides context that should be sent to the LLM
-		// even if KB retrieval returned nothing. In that case we skip the
-		// early return and fall through to the normal LLM call where
-		// attachments are appended to the system prompt.
+		// even if KB retrieval returned nothing — and image attachments
+		// must reach a vision model instead of being swallowed by the
+		// canned response. In that case we skip the early return and fall
+		// through to the normal LLM call where attachments are appended to
+		// the system prompt.
 		//
 		// Two results are yielded (mirroring Python dialog_service.py):
 		//   1. Final=false — carries the answer text so streaming consumers
@@ -851,7 +854,7 @@ func (s *ChatPipelineService) AsyncChat(
 		//      final event (dialog_service.py:807); consumers that only look at
 		//      the final event (e.g. the OpenAI-compatible endpoint) would
 		//      otherwise see an empty reply.
-		if len(knowledges) == 0 && attachments == "" {
+		if emptyResponseApplies(len(knowledges), attachments, hasImageAttachments) {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
 				out <- AsyncChatResult{
 					Answer:    emptyResp,
@@ -930,14 +933,13 @@ func (s *ChatPipelineService) AsyncChat(
 			if role == "system" {
 				continue
 			}
-			content := m["content"]
+			llmMessage := normalizeLLMMessage(m)
+			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
 			}
-			llmMessages = append(llmMessages, map[string]interface{}{
-				"role":    role,
-				"content": content,
-			})
+			llmMessage["content"] = content
+			llmMessages = append(llmMessages, llmMessage)
 		}
 
 		// Fit messages within token budget.
@@ -947,9 +949,9 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Int("used_token_count", usedTokenCount),
 			zap.Int("msg_count", len(llmMessages)))
 
-		// Multimodal conversion. imageFiles is only populated for
-		// vision-capable (image2text) models; text-only chat models never
-		// reach this with images.
+		// Multimodal conversion. imageFiles only survives the vision gate
+		// above, so only vision-capable (image2text) models reach this
+		// with images.
 		if len(llmMessages) >= 2 && len(imageFiles) > 0 {
 			lastIdx := len(llmMessages) - 1
 			if role, _ := llmMessages[lastIdx]["role"].(string); role == "user" {
@@ -1350,8 +1352,8 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 2. Process file attachments. Only vision-capable (image2text)
-		// models receive image content; text-only chat models reject image
-		// blocks at the provider (e.g. Zhipu GLM error 1210:
+		// models receive image content; text-only chat models reject
+		// image blocks at the provider (e.g. Zhipu GLM error 1210:
 		// messages.content.type only allows 'text'), so their image
 		// attachments are dropped here.
 		attachmentsStr := ""
@@ -1365,13 +1367,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		isImage2Text := modelType == "image2text"
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
-				attachmentsStr = s.processFileAttachments(ctx, userID, files)
-				if isImage2Text {
-					imageFiles = s.extractRawImageURLs(files)
-				} else {
-					common.Debug("AsyncChatSolo: dropping image attachments for text-only chat model",
-						zap.String("llm_id", chat.LLMID))
-				}
+				var images []string
+				attachmentsStr, images = s.splitChatAttachments(ctx, userID, files)
+				imageFiles, _ = gateImageAttachments(chat.LLMID, modelType, images)
+				common.Info("AsyncChatSolo: file attachments resolved",
+					zap.Bool("vision_model", isImage2Text),
+					zap.Int("image_files", len(imageFiles)),
+					zap.Int("text_attachment_bytes", len(attachmentsStr)))
 			}
 		}
 
@@ -1382,14 +1384,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			if role == "system" {
 				continue
 			}
-			content := m["content"]
+			llmMessage := normalizeLLMMessage(m)
+			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
 			}
-			msg = append(msg, map[string]interface{}{
-				"role":    role,
-				"content": content,
-			})
+			llmMessage["content"] = content
+			msg = append(msg, llmMessage)
 		}
 		// Append text attachments to the last user message (no separator).
 		if attachmentsStr != "" && len(msg) > 0 {
@@ -1447,10 +1448,8 @@ func (s *ChatPipelineService) AsyncChatSolo(
 					content = converted["content"]
 				}
 			}
-			chatMessages = append(chatMessages, modelModule.Message{
-				Role:    role,
-				Content: content,
-			})
+			m["content"] = content
+			chatMessages = append(chatMessages, modelMessageFromMap(m))
 		}
 
 		// 7. Drive the LLM: stream (per-delta with think markers) or non-stream (one-shot).
@@ -1624,53 +1623,71 @@ func (s *ChatPipelineService) AsyncChatSolo(
 	return out, nil
 }
 
-// extractRawImageURLs extracts image references as raw URLs/data-URIs from
-// the string-mode files list, WITHOUT fetching blobs and WITHOUT filtering
-// to data: prefixes. Used for image2text models that expect URLs in the
-// multimodal content (matches Python's `image_files` from
-// `split_file_attachments(files, raw=True)` at
-// dialog_service.py:371-392).
+// splitChatAttachments resolves the last message's file attachments into
+// text content (entries joined by "\n\n") and image data URIs, reading
+// each blob from storage at most once.
 //
-// The downstream ConvertLastUserMsgToMultimodal calls parseDataURIOrB64
-// (multimodal.go:63-92) which correctly handles all three forms:
-//   - data: URI → base64 source
-//   - http:// or https:// URL → URL source
-//   - raw base64 → base64 source (default media type)
+//   - File-dict mode (the chat UI's upload_info flow): FileService.
+//     GetFileContents fetches the blobs; non-visual files are parsed to
+//     text, visual files come back as base64 data URIs.
+//   - String mode (pre-resolved content): data:-prefixed entries become
+//     images; the remaining non-empty entries become text.
 //
-// File-dict mode is a known limitation: returns empty for now. A future
-// FileService.GetFileURLsForChat (mirror of GetFileContents with
-// raw=true) would be needed to fully cover the file-dict + image2text
-// combination. The Python equivalent has the same limitation
-// (split_file_attachments calls FileService.get_files which doesn't
-// fetch blobs in raw mode).
-func (s *ChatPipelineService) extractRawImageURLs(files interface{}) []string {
+// Downstream ConvertLastUserMsgToMultimodal → parseDataURIOrB64 accepts the
+// returned data URIs directly.
+func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, userID string, files interface{}) (string, []string) {
+	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
-		_ = fileDicts // see file-dict limitation comment above
-		common.Debug("AsyncChatSolo: file-dict + image2text not yet supported; image refs dropped",
-			zap.Int("file_dict_count", len(fileDicts)))
-		return nil
+		// Only used for GetFileContents (read-only); nil DocRemover means
+		// this FileService MUST NOT be used for DeleteFiles.
+		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
+		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
+		if err != nil {
+			common.Warn("GetFileContents failed in splitChatAttachments",
+				zap.Error(err))
+			return "", nil
+		}
+		if len(texts) == 0 {
+			return "", images
+		}
+		return strings.Join(texts, "\n\n"), images
 	}
 
-	// String-mode: return all entries as-is. The downstream
-	// ConvertLastUserMsgToMultimodal + parseDataURIOrB64 will
-	// dispatch on prefix (data: → base64, http(s): → url, else →
-	// raw base64).
-	var urls []string
+	// ── String mode ──
+	var texts []string
+	var images []string
 	switch v := files.(type) {
 	case []string:
 		for _, f := range v {
-			if f != "" {
-				urls = append(urls, f)
+			if f = strings.TrimSpace(f); f == "" {
+				continue
+			}
+			if strings.HasPrefix(f, "data:") {
+				images = append(images, f)
+			} else {
+				texts = append(texts, f)
 			}
 		}
 	case []interface{}:
 		for _, f := range v {
-			if s, ok := f.(string); ok && s != "" {
-				urls = append(urls, s)
+			str, ok := f.(string)
+			if !ok {
+				continue
+			}
+			if str = strings.TrimSpace(str); str == "" {
+				continue
+			}
+			if strings.HasPrefix(str, "data:") {
+				images = append(images, str)
+			} else {
+				texts = append(texts, str)
 			}
 		}
 	}
-	return urls
+	if len(texts) == 0 {
+		return "", images
+	}
+	return strings.Join(texts, "\n\n"), images
 }
 
 // ---------------------------------------------------------------------------
@@ -2056,168 +2073,6 @@ func factoryFromLLMID(llmID string) string {
 	return provider
 }
 
-// smartReasoningChat drives the smart-reasoning (ReAct) conversation mode via
-// eino ADK's adk.ChatModelAgent. It mirrors AsyncChat's channel contract:
-// yields AsyncChatResult deltas (answer / reasoning / final) over a buffered
-// channel consumed by the same callers (ChatCompletions / OpenAIChatCompletions).
-
-// smartReasoningTimeout is the total wall-clock budget for one smart-reasoning
-// agent run, shared by the model and every tool. The two HTTP entrypoints pass
-// Request.Context(), which carries no deadline (http.Server.WriteTimeout does
-// not become a handler context deadline), so without an explicit budget here a
-// client that keeps the connection open could let the agent (or a runaway tool
-// like run_javascript) burn CPU indefinitely. Tools may additionally enforce
-// their own shorter per-call limits (e.g. run_javascript's internal timeout).
-var smartReasoningTimeout = 5 * time.Minute
-
-func (s *ChatPipelineService) smartReasoningChat(
-	ctx context.Context,
-	userID string,
-	chat *entity.Chat,
-	messages []map[string]interface{},
-	stream bool,
-	kwargs map[string]interface{},
-) (<-chan AsyncChatResult, error) {
-	out := make(chan AsyncChatResult, 16)
-
-	go func() {
-		defer close(out)
-
-		// Resolve the chat model as an eino BaseChatModel.
-		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
-		if err != nil {
-			common.Error("smart_reasoning: resolve chat model", err)
-			out <- AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", err.Error()), Final: true}
-			return
-		}
-		cm := modelModule.NewChatModel(driver, &modelName, apiConfig)
-		// Apply the dialog's LLM setting with per-request overrides (temperature,
-		// top_p, max_tokens, thinking, stop, etc.) exactly like the regular
-		// AsyncChat path does — otherwise those parameters silently no-op when
-		// agent_mode=smart-reasoning.
-		einoModel := modelModule.NewEinoChatModel(cm, BuildChatConfig(chat, kwargs))
-
-		// Convert messages to eino schema messages (system is already stripped
-		// by the caller; the agent injects its own instruction).
-		msgs := convertMessagesToEino(messages)
-
-		// Resolve the dataset scope from the chat's KBs. These are passed into
-		// the agent's Input and injected into its retrieval tools, so
-		// grep_chunks / search_chunks search the right datasets.
-		datasetIDs := make([]string, 0, len(chat.KBIDs))
-		for _, raw := range chat.KBIDs {
-			if id, ok := raw.(string); ok && id != "" {
-				datasetIDs = append(datasetIDs, id)
-			}
-		}
-		// The tenant scope is the chat's OWNING tenant (chat.TenantID), not the
-		// requesting user. In shared-tenant conversations a member user's ID
-		// differs from the KB owner's tenant, and index names are built from the
-		// tenant id — passing userID would make grep/search_chunks query the
-		// wrong index and return stable empty results.
-
-		// Give the whole agent run (model + every tool) a fixed total budget,
-		// because the HTTP entrypoints provide a deadline-less Request.Context().
-		// Tool-level limits (e.g. run_javascript's internal timeout) still apply
-		// on top of this shared budget.
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, smartReasoningTimeout)
-		defer cancel()
-
-		maxIterations := 0
-		if v, ok := kwargs["max_iterations"]; ok {
-			switch n := v.(type) {
-			case int:
-				maxIterations = n
-			case float64:
-				maxIterations = int(n)
-			}
-		}
-
-		// thinking tracks whether we are inside the <think> block so the
-		// StartToThink marker is emitted once (not on every reasoning delta) and
-		// EndToThink fires on the first non-thinking delta after it.
-		thinking := false
-		// final holds the agent's accumulated final answer so the terminating
-		// AsyncChatResult carries the real content instead of an empty string.
-		var final string
-		final, err = agentic_rag.Run(ctx, agentic_rag.Input{
-			Model:         einoModel,
-			Messages:      msgs,
-			TenantID:      chat.TenantID,
-			DatasetIDs:    datasetIDs,
-			MaxIterations: maxIterations,
-			Stream:        stream,
-			OnDelta: func(contentDelta, thinkingDelta string) {
-				startToThink, endToThink := false, false
-				if thinkingDelta != "" {
-					if !thinking {
-						startToThink = true
-						thinking = true
-					}
-				} else if thinking {
-					endToThink = true
-					thinking = false
-				}
-				out <- AsyncChatResult{
-					Answer:       contentDelta,
-					Reasoning:    thinkingDelta,
-					Final:        false,
-					StartToThink: startToThink,
-					EndToThink:   endToThink,
-				}
-			},
-		})
-		if err != nil {
-			common.Error("smart_reasoning: run", err)
-			if final == "" {
-				final = fmt.Sprintf("**ERROR**: %s", err.Error())
-			}
-		}
-		// If the agent ended while still in the <think> block, close it with its
-		// own non-final marker first. The terminating result must stay free of
-		// think markers: the streaming consumer skips any result that carries
-		// EndToThink before it checks Final, which would drop the final
-		// OpenAIEventFinal event and its reference payload.
-		if thinking {
-			out <- AsyncChatResult{
-				Reference:  map[string]interface{}{},
-				Final:      false,
-				EndToThink: true,
-			}
-			thinking = false
-		}
-		out <- AsyncChatResult{
-			Answer:    final,
-			Reference: map[string]interface{}{},
-			Final:     true,
-		}
-	}()
-
-	return out, nil
-}
-
-// convertMessagesToEino converts pre-filtered user/assistant messages into
-// eino schema messages. Only string content is supported; multimodal parts are
-// not carried into the ReAct loop.
-func convertMessagesToEino(messages []map[string]interface{}) []*schema.Message {
-	out := make([]*schema.Message, 0, len(messages))
-	for _, m := range messages {
-		role, _ := m["role"].(string)
-		content, _ := m["content"].(string)
-		switch role {
-		case "user":
-			out = append(out, schema.UserMessage(content))
-		case "assistant":
-			out = append(out, schema.AssistantMessage(content, nil))
-		default:
-			// system messages are stripped upstream; skip anything else.
-			continue
-		}
-	}
-	return out
-}
-
 // The handler in openai_chat.go has already rejected requests
 // whose last message is not from the user, so this should always succeed.
 func lastUserQuestion(messages []map[string]interface{}) string {
@@ -2233,51 +2088,32 @@ func lastUserQuestion(messages []map[string]interface{}) string {
 	return ""
 }
 
-// processFileAttachments extracts text content from file attachments.
-// Mirrors Python's split_file_attachments (dialog_service.py:371-392)
-// in raw=false mode: returns text attachments joined by "\n\n",
-// filtering out data-URI image attachments.
-//
-// When files are file dicts (Python-compatible format), calls
-// FileService.GetFileContents to fetch actual blobs from storage.
-func (s *ChatPipelineService) processFileAttachments(ctx context.Context, userID string, files interface{}) string {
-	// ── File-dict mode ──
-	if fileDicts, ok := parseFileDicts(files); ok {
-		// Only used for GetFileContents (read-only); nil DocRemover means
-		// this FileService MUST NOT be used for DeleteFiles.
-		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
-		texts, _, err := fileSvc.GetFileContents(ctx, userID, fileDicts, false)
-		if err != nil {
-			common.Warn("GetFileContents failed in processFileAttachments",
-				zap.Error(err))
-			return ""
-		}
-		if len(texts) == 0 {
-			return ""
-		}
-		return strings.Join(texts, "\n\n")
+// gateImageAttachments applies the vision-capability policy to split
+// attachments: images survive only for vision-capable (image2text-typed)
+// models — text-only chat providers reject image content blocks (e.g.
+// Zhipu GLM error 1210: messages.content.type only allows 'text'), so
+// their images are dropped with a warning instead of failing the whole
+// request. It returns the surviving images and whether any image was
+// attached before the drop, so callers can still route image-bearing
+// questions past the empty-response fallback. Mirrors Python's
+// dialog_model_vision_capable gate in dialog_service.py.
+func gateImageAttachments(llmID, modelType string, images []string) (kept []string, attached bool) {
+	attached = len(images) > 0
+	if attached && modelType != "image2text" {
+		common.Warn("dropping image attachments for text-only chat model",
+			zap.String("llm_id", llmID),
+			zap.Int("dropped_images", len(images)))
+		return nil, attached
 	}
+	return images, attached
+}
 
-	// ── String fallback ──
-	var texts []string
-	switch v := files.(type) {
-	case []string:
-		for _, f := range v {
-			if s := strings.TrimSpace(f); s != "" && !strings.HasPrefix(s, "data:") {
-				texts = append(texts, s)
-			}
-		}
-	case []interface{}:
-		for _, f := range v {
-			if s, ok := f.(string); ok && strings.TrimSpace(s) != "" && !strings.HasPrefix(s, "data:") {
-				texts = append(texts, s)
-			}
-		}
-	}
-	if len(texts) == 0 {
-		return ""
-	}
-	return strings.Join(texts, "\n\n")
+// emptyResponseApplies reports whether the configured empty-response
+// fallback should short-circuit the LLM call: only when retrieval found
+// nothing AND the message carries no attachment context (text or images)
+// the model could still answer from.
+func emptyResponseApplies(knowledgeCount int, attachments string, imageAttachments bool) bool {
+	return knowledgeCount == 0 && attachments == "" && !imageAttachments
 }
 
 // splitFileAttachments mirrors Python's `split_file_attachments` at
@@ -2288,8 +2124,8 @@ func (s *ChatPipelineService) processFileAttachments(ctx context.Context, userID
 //
 //  1. File-dict mode: When `files` is `[]map[string]interface{}` (each dict
 //     with keys "id", "created_by", "mime_type", "name"), the method calls
-//     FileService.GetFileContents to fetch actual file blobs from
-//     storage, mirroring Python's FileService.get_files().
+//     FileService.GetFileContents to fetch actual file blobs from storage;
+//     images come back as base64 data URIs.
 //
 //  2. String-fallback mode: When `files` is `[]string` or `[]interface{}` of
 //     strings (pre-resolved content), the method does simple string splitting:
@@ -2303,7 +2139,7 @@ func splitFileAttachments(ctx context.Context, userID string, files interface{},
 		// Only used for GetFileContents (read-only); nil DocRemover means
 		// this FileService MUST NOT be used for DeleteFiles.
 		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
-		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts, raw)
+		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
 		if err != nil {
 			common.Warn("GetFileContents failed, falling back to string splitting",
 				zap.Error(err))
@@ -2712,13 +2548,38 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 	}
 	for _, m := range messages {
 		role, _ := m["role"].(string)
-		content := m["content"]
-		if role == "" || content == nil {
+		if role == "" {
 			continue
 		}
-		result = append(result, modelModule.Message{Role: role, Content: content})
+		result = append(result, modelMessageFromMap(m))
 	}
 	return result
+}
+
+func normalizeLLMMessage(message map[string]interface{}) map[string]interface{} {
+	normalized := make(map[string]interface{}, len(llmMessageFields))
+	for _, field := range llmMessageFields {
+		if value, ok := message[field]; ok {
+			normalized[field] = value
+		}
+	}
+	return normalized
+}
+
+func modelMessageFromMap(message map[string]interface{}) modelModule.Message {
+	msg := modelModule.Message{Role: stringFromMap(message, "role"), Content: message["content"], Name: message["name"], FunctionCall: message["function_call"], Refusal: message["refusal"], Audio: message["audio"]}
+	msg.ToolCallID, _ = message["tool_call_id"].(string)
+	switch toolCalls := message["tool_calls"].(type) {
+	case []map[string]interface{}:
+		msg.ToolCalls = toolCalls
+	case []interface{}:
+		for _, toolCall := range toolCalls {
+			if value, ok := toolCall.(map[string]interface{}); ok {
+				msg.ToolCalls = append(msg.ToolCalls, value)
+			}
+		}
+	}
+	return msg
 }
 
 // buildChatDriver creates a ChatModel wrapper from the chat.

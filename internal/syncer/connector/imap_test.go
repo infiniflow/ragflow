@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -285,6 +286,9 @@ func TestIMAPSyncResumeSelectsMailboxBeforeFetch(t *testing.T) {
 	// select call before fetching, matching a real resumed IMAP connection.
 	client := &fakeIMAPClient{
 		mailboxes: []string{"INBOX"},
+		searchByMailbox: map[string][]uint32{
+			"INBOX": {2},
+		},
 		rawBySeq: map[uint32][]byte{
 			2: rawIMAPEmail("msg2", "Hello two", "Mon, 2 Jan 2026 22:00:00 +0000", "body two"),
 		},
@@ -310,6 +314,83 @@ func TestIMAPSyncResumeSelectsMailboxBeforeFetch(t *testing.T) {
 	}
 	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "<msg2@example.com>" {
 		t.Fatalf("resumed documents = %v", batch.Documents)
+	}
+}
+
+func TestIMAPSyncResumeRejectsInvalidCheckpoint(t *testing.T) {
+	client := &fakeIMAPClient{}
+	connector := newTestIMAPConnector(client, 32)
+	cases := map[string]*SyncCheckpoint{
+		"missing":    {},
+		"malformed":  {Cursor: "not-json"},
+		"no-mailbox": {Cursor: `{"todo_mailboxes":[],"has_more":true}`},
+		"no-email":   {Cursor: `{"todo_mailboxes":[],"has_more":true,"current_mailbox":{"mailbox":"INBOX","todo_email_ids":[]}}`},
+		"completed":  {Cursor: `{"todo_mailboxes":["INBOX"],"has_more":false}`},
+	}
+	for name, checkpoint := range cases {
+		t.Run(name, func(t *testing.T) {
+			session, err := connector.OpenSync(context.Background(), SyncRequest{
+				FromBeginning: true,
+				Resume:        checkpoint,
+			})
+			if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+				t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+			}
+		})
+	}
+}
+
+func TestIMAPSyncResumeRejectsStaleMailbox(t *testing.T) {
+	cursorData, err := json.Marshal(imapCursor{
+		TodoMailboxes: []string{"MISSING"},
+		HasMore:       true,
+	})
+	if err != nil {
+		t.Fatalf("marshal cursor: %v", err)
+	}
+	connector := newTestIMAPConnector(&fakeIMAPClient{mailboxes: []string{"INBOX"}}, 32)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        &SyncCheckpoint{Cursor: string(cursorData)},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+	if _, err := session.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
+	}
+}
+
+func TestIMAPSyncResumeRejectsStaleEmailState(t *testing.T) {
+	cursorData, err := json.Marshal(imapCursor{
+		TodoMailboxes: []string{},
+		HasMore:       true,
+		CurrentMailbox: &imapMailboxCursor{
+			Mailbox:      "INBOX",
+			TodoEmailIDs: []string{"3"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal cursor: %v", err)
+	}
+	client := &fakeIMAPClient{
+		mailboxes: []string{"INBOX"},
+		searchByMailbox: map[string][]uint32{
+			"INBOX": {1, 2},
+		},
+	}
+	connector := newTestIMAPConnector(client, 32)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        &SyncCheckpoint{Cursor: string(cursorData)},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+	if _, err := session.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
 	}
 }
 

@@ -25,6 +25,7 @@ import CompilationEmptyState from './empty-state';
 import { useCompilationArtifact } from './hooks/use-compilation-artifact';
 import { useRunEndEffect } from './hooks/use-run-end-effect';
 import { CompilationLoadingCard } from './loading-card';
+import { canGenerateWiki } from './wiki-generation-eligibility';
 import { WikiDetailContent } from './wiki-detail-content';
 import { WikiLeftPanel } from './wiki-left-panel';
 
@@ -63,7 +64,7 @@ export function LlmWikiView() {
     setLeftTab(value as LeftPanelTab);
   }, []);
 
-  const canGenerate = (knowledgeBase?.chunk_count ?? 0) > 0;
+  const canGenerate = canGenerateWiki(knowledgeBase);
   const isLoading = topicListLoading && topics.length === 0;
   const isEmpty = topics.length === 0 && !topicListLoading;
 

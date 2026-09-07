@@ -408,6 +408,7 @@ def column_data_type(arr):
         type_priority = {"text": 0, "datetime": 1, "float": 2, "int": 3, "bool": 4}
         counts = sorted(counts.items(), key=lambda x: (x[1] * -1, type_priority[x[0]]))
         ty = counts[0][0]
+    conversion_failures = 0
     for i in range(len(arr)):
         if arr[i] is None:
             continue
@@ -418,13 +419,21 @@ def column_data_type(arr):
             arr[i] = None
             continue
         try:
-            arr[i] = trans[ty](str(arr[i]))
-        except Exception as e:
-            arr[i] = None
-            logging.warning(f"Column {i}: {e}")
+            converted = trans[ty](str(arr[i]))
+        except ValueError:
+            conversion_failures += 1
             # Keep original value from openpyxl/pandas instead of dropping to None.
             # This preserves cells (e.g. text in numeric columns) that would
             # otherwise be silently discarded by forced column-level conversion.
+            continue
+        if converted is None:
+            continue
+        arr[i] = converted
+    if conversion_failures:
+        # Aggregate rather than log per-cell: individual cell values must not
+        # be written to application logs, and per-cell warnings would flood
+        # logs on large uploads.
+        logging.warning(f"column_data_type: kept {conversion_failures} cell(s) that could not convert to {ty}")
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
@@ -548,7 +557,17 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
         # field_map: only columns stored in chunk_data (metadata or both) — used for retrieval/SQL
         stored_indices = [i for i in range(len(clmns)) if column_roles.get(clmns[i], "both") in ("metadata", "both")]
         if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB:
-            field_map = {py_clmns[i].lower(): str(clmns[i]).replace("_", " ") for i in stored_indices}
+            # Regression for #18287: Infinity/OceanBase/SereneDB store
+            # chunk_data keyed by the original column name, and the SQL
+            # prompt examples reference those exact keys via
+            # `json_extract_string(chunk_data, '$.FieldName')`. Apply
+            # the underscore-to-space formatting only to the displayed
+            # value; the key remains the raw column name verbatim so
+            # that columns like `row_id` continue to map to `$.row_id`
+            # in `chunk_data` instead of the unreachable `$.row id`.
+            # GaussDB's pinyin-keyed contract is preserved by the
+            # override block below.
+            field_map = {str(clmns[i]): str(clmns[i]).replace("_", " ") for i in stored_indices}
         else:
             field_map = {clmns_map[i][0]: clmns_map[i][1] for i in stored_indices}
         if settings.DOC_ENGINE_GAUSSDB:

@@ -28,7 +28,7 @@ func installChat(t *testing.T, content string) {
 // strategy from the mode and the LLM's question_type.
 func TestRouteNode_Classifies(t *testing.T) {
 	installChat(t, `{"question_type":"comparative","requires_decomposition":true,"reasoning":"cmp"}`)
-	r := RouteNode(context.Background(), nil, "Compare A and B", "medium")
+	r := RouteNode(t.Context(), nil, "Compare A and B", "medium")
 	if r.QuestionType != "comparative" {
 		t.Errorf("question_type = %q, want comparative", r.QuestionType)
 	}
@@ -45,7 +45,7 @@ func TestRouteNode_Classifies(t *testing.T) {
 // even if the LLM requests it.
 func TestRouteNode_LowModeDisablesDecomposition(t *testing.T) {
 	installChat(t, `{"question_type":"analytical","requires_decomposition":true}`)
-	r := RouteNode(context.Background(), nil, "Analyze X", "low")
+	r := RouteNode(t.Context(), nil, "Analyze X", "low")
 	if r.RequiresDecomposition {
 		t.Errorf("low mode must disable decomposition, got true")
 	}
@@ -57,7 +57,7 @@ func TestRouteNode_LowModeDisablesDecomposition(t *testing.T) {
 // TestRouteNode_FencedJSON asserts think-tag/fence stripping works.
 func TestRouteNode_FencedJSON(t *testing.T) {
 	installChat(t, "Sure!\n```json\n{\"question_type\":\"factual\",\"requires_decomposition\":false}\n```")
-	r := RouteNode(context.Background(), nil, "What is X?", "medium")
+	r := RouteNode(t.Context(), nil, "What is X?", "medium")
 	if r.QuestionType != "factual" {
 		t.Errorf("question_type = %q, want factual", r.QuestionType)
 	}
@@ -69,7 +69,7 @@ func TestRouteNode_FencedJSON(t *testing.T) {
 // TestRouteNode_EmptyQuestionFallsBack asserts an empty question yields a
 // direct factual decision without calling the LLM.
 func TestRouteNode_EmptyQuestionFallsBack(t *testing.T) {
-	r := RouteNode(context.Background(), nil, "", "medium")
+	r := RouteNode(t.Context(), nil, "", "medium")
 	if r.QuestionType != "factual" || r.RequiresDecomposition {
 		t.Errorf("empty question must fall back to direct factual, got %+v", r)
 	}
@@ -80,7 +80,7 @@ func TestRouteNode_EmptyQuestionFallsBack(t *testing.T) {
 // tool.
 func TestRouteNode_SuggestsCompilation(t *testing.T) {
 	installChat(t, `{"question_type":"analytical","requires_decomposition":true,"suggests_compilation":"wiki"}`)
-	r := RouteNode(context.Background(), nil, "What does the domain say about X?", "medium")
+	r := RouteNode(t.Context(), nil, "What does the domain say about X?", "medium")
 	if r.SuggestsCompilation != "wiki" {
 		t.Errorf("suggests_compilation = %q, want wiki", r.SuggestsCompilation)
 	}
@@ -111,7 +111,7 @@ func TestNormalizeCompilationSuggestion(t *testing.T) {
 // carries the wiki suggestion through decide().
 func TestRouteNode_WikiSuggestionSurvivesFence(t *testing.T) {
 	installChat(t, "```json\n{\"question_type\":\"procedural\",\"requires_decomposition\":false,\"suggests_compilation\":\"graph\"}\n```")
-	r := RouteNode(context.Background(), nil, "How is this structured?", "medium")
+	r := RouteNode(t.Context(), nil, "How is this structured?", "medium")
 	if r.SuggestsCompilation != "graph" {
 		t.Errorf("suggests_compilation = %q, want graph", r.SuggestsCompilation)
 	}
@@ -120,7 +120,7 @@ func TestRouteNode_WikiSuggestionSurvivesFence(t *testing.T) {
 // TestPlannerNode_DirectMode asserts a non-decomposed route yields one coarse
 // claim without calling the LLM.
 func TestPlannerNode_DirectMode(t *testing.T) {
-	plan := PlannerNode(context.Background(), nil, RouteDecision{
+	plan := PlannerNode(t.Context(), nil, RouteDecision{
 		Question: "What is X?", RequiresDecomposition: false,
 	}, nil)
 	if plan.PlanType != "direct" || len(plan.Claims) != 1 {
@@ -135,7 +135,7 @@ func TestPlannerNode_Decomposes(t *testing.T) {
 		{"claim_id":"c0","description":"fact one","priority":0},
 		{"claim_id":"c1","description":"fact two","priority":1}
 	]}`)
-	plan := PlannerNode(context.Background(), nil, RouteDecision{
+	plan := PlannerNode(t.Context(), nil, RouteDecision{
 		Question: "Compare A and B", QuestionType: "comparative", RequiresDecomposition: true, ThinkingMode: "medium",
 	}, nil)
 	if plan.PlanType != "comparative_decomposition" {
@@ -158,7 +158,7 @@ func TestPlannerNode_Decomposes(t *testing.T) {
 // (which would produce a degenerate plan with max_claims=0).
 func TestPlannerNode_UnknownModeFallsBack(t *testing.T) {
 	installChat(t, `{"claims":[{"claim_id":"c0","description":"fact one","priority":0}]}`)
-	plan := PlannerNode(context.Background(), nil, RouteDecision{
+	plan := PlannerNode(t.Context(), nil, RouteDecision{
 		Question: "Q", RequiresDecomposition: true, ThinkingMode: "turbo-unknown",
 	}, nil)
 	// medium maxOrchestratorCycles = 3, and claims must still be built.
@@ -174,7 +174,7 @@ func TestPlannerNode_UnknownModeFallsBack(t *testing.T) {
 // to the direct plan.
 func TestPlannerNode_BadJSONFallsBack(t *testing.T) {
 	installChat(t, "not json at all")
-	plan := PlannerNode(context.Background(), nil, RouteDecision{
+	plan := PlannerNode(t.Context(), nil, RouteDecision{
 		Question: "Q", RequiresDecomposition: true, ThinkingMode: "medium",
 	}, nil)
 	if plan.PlanType != "direct" || len(plan.Claims) != 1 {

@@ -294,7 +294,7 @@ func validateRateLimit(ctx context.Context, canvasID string, cfg map[string]any)
 				zap.String("canvas_id", canvasID), zap.Error(err))
 			return nil
 		}
-		return fmt.Errorf("rate limit error: %s", err.Error())
+		return fmt.Errorf("rate limit error: %w", err)
 	}
 	if !allowed {
 		return fmt.Errorf("too many requests (rate limit exceeded)")
@@ -463,7 +463,7 @@ func validateJWTAuth(c *gin.Context, cfg map[string]any) error {
 
 	token, err := jwt.Parse(tokenStr, keyFunc, parserOpts...)
 	if err != nil {
-		return fmt.Errorf("invalid jwt: %s", err.Error())
+		return fmt.Errorf("invalid jwt: %w", err)
 	}
 	if !token.Valid {
 		return fmt.Errorf("invalid jwt")
@@ -499,13 +499,13 @@ func jwtKeyFunc(alg, secret string) (jwt.Keyfunc, error) {
 	case "RS256", "RS384", "RS512":
 		pub, err := jwt.ParseRSAPublicKeyFromPEM([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("jwt rsa public key: %s", err.Error())
+			return nil, fmt.Errorf("jwt rsa public key: %w", err)
 		}
 		return func(_ *jwt.Token) (any, error) { return pub, nil }, nil
 	case "ES256", "ES384", "ES512":
 		pub, err := jwt.ParseECPublicKeyFromPEM([]byte(secret))
 		if err != nil {
-			return nil, fmt.Errorf("jwt ec public key: %s", err.Error())
+			return nil, fmt.Errorf("jwt ec public key: %w", err)
 		}
 		return func(_ *jwt.Token) (any, error) { return pub, nil }, nil
 	}

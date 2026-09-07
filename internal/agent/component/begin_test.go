@@ -148,7 +148,7 @@ func TestBegin_AbsentWebhookPayload(t *testing.T) {
 func TestBegin_EmptyWebhookPayload(t *testing.T) {
 	c, _ := NewBeginComponent(nil)
 	state := canvas.NewCanvasState("run-5", "task-5")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	if _, err := c.Invoke(ctx, nil, map[string]any{
 		"query":           "",

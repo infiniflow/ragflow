@@ -222,6 +222,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
+		apiBetaAuth.POST("/agents/:canvas_id/upload", r.agentHandler.UploadAgentFile)
+		apiBetaAuth.GET("/agents/attachments/:attachment_id/download", r.agentHandler.DownloadAttachment)
+
 		// MCP server endpoint — exposes RAGFlow capabilities as MCP tools.
 		// Uses BetaAuthMiddleware to resolve the user from the
 		// Authorization header.
@@ -362,8 +365,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/artifacts/topics", r.datasetArtifactHandler.ListArtifactTopics)
 				datasets.GET("/:dataset_id/artifacts/alteration", r.datasetArtifactHandler.GetArtifactAlteration)
 				datasets.GET("/:dataset_id/artifacts/graph", r.datasetArtifactHandler.GetArtifactGraph)
-				datasets.GET("/:dataset_id/artifacts/:page_type/:slug", r.datasetArtifactHandler.GetArtifact)
-				datasets.PUT("/:dataset_id/artifacts/:page_type/:slug", r.datasetArtifactHandler.UpdateArtifact)
+				datasets.GET("/:dataset_id/artifacts/:page_type/*slug", r.datasetArtifactHandler.GetArtifact)
+				datasets.PUT("/:dataset_id/artifacts/:page_type/*slug", r.datasetArtifactHandler.UpdateArtifact)
 				datasets.GET("/:dataset_id/artifacts/structure", r.datasetArtifactHandler.ListStructures)
 				datasets.DELETE("/:dataset_id/artifacts/structure", r.datasetArtifactHandler.DeleteStructures)
 

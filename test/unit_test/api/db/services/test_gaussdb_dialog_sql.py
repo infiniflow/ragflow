@@ -207,7 +207,7 @@ def _install_settings_import_stubs(monkeypatch):
         def atomic():
             return _Context()
 
-    install_module("api.db.services.user_service", UserService=_Dummy)
+    install_module("api.db.services.user_service", UserService=_Dummy, TenantService=_Dummy)
     install_module("api.db.services.file_service", FileService=_Dummy)
     install_module("api.db.services.common_service", CommonService=_Dummy)
     install_module("api.db.services.doc_metadata_service", DocMetadataService=_Dummy)
@@ -239,7 +239,7 @@ def _install_settings_import_stubs(monkeypatch):
         resolve_reference_metadata_preferences=lambda *_args, **_kwargs: {},
     )
     install_module("rag.graphrag.general.mind_map_extractor", MindMapExtractor=_Dummy)
-    advanced_rag = install_module("rag.advanced_rag", DeepResearcher=_Dummy)
+    advanced_rag = install_module("rag.advanced_rag")
     advanced_rag.__path__ = []
     install_module("rag.advanced_rag.agentic_rag", RAGTools=_Dummy)
     install_module("rag.advanced_rag.knowlege_compile")
@@ -666,7 +666,8 @@ def _run_configured_chat(
     kb_id = "abcdefabcdefabcdefabcdefabcdefab"
     if embd_mdl is None:
         embd_mdl = object()
-    get_field_map = Mock(return_value=field_map or {"amount": "number"})
+    resolved_field_map = field_map if field_map is not None else {"amount": "number"}
+    get_field_map = Mock(return_value=resolved_field_map)
     monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
     monkeypatch.setattr(
         dialog_service,
@@ -684,7 +685,13 @@ def _run_configured_chat(
     monkeypatch.setattr(
         dialog_service,
         "get_models",
-        lambda *_args, **_kwargs: ([types.SimpleNamespace(tenant_id=tenant_id)], embd_mdl, None, chat, None),
+        lambda *_args, **_kwargs: (
+            [types.SimpleNamespace(id=kb_id, tenant_id=tenant_id, parser_config={"field_map": resolved_field_map})],
+            embd_mdl,
+            None,
+            chat,
+            None,
+        ),
     )
     monkeypatch.setattr(dialog_service, "kb_prompt", lambda *_args, **_kwargs: ["fallback content"])
     monkeypatch.setattr(dialog_service, "message_fit_in", lambda messages, _limit: (0, messages))
@@ -1692,10 +1699,11 @@ def test_tc_sql_1001_use_sql_none_falls_back_to_retrieval(
         0.2,
         0.3,
         doc_ids=None,
-        top=32,
+        knn_top_k=32,
         aggs=True,
         rerank_mdl=None,
         rank_feature=None,
+        rerank_candidates_count=64,
     )
     assert results[-1]["answer"] == "fallback answer"
     assert results[-1]["reference"] == _expected_fallback_reference(kb_id)
@@ -1740,10 +1748,11 @@ def test_tc_sql_1002_validator_rejection_falls_back_to_retrieval(
         0.2,
         0.3,
         doc_ids=None,
-        top=32,
+        knn_top_k=32,
         aggs=True,
         rerank_mdl=None,
         rank_feature=None,
+        rerank_candidates_count=64,
     )
     assert results[-1]["answer"] == "fallback answer"
     assert results[-1]["reference"] == _expected_fallback_reference(kb_id)
@@ -1790,10 +1799,11 @@ def test_tc_sql_1003_sql_timeout_falls_back_to_retrieval(
         0.2,
         0.3,
         doc_ids=None,
-        top=32,
+        knn_top_k=32,
         aggs=True,
         rerank_mdl=None,
         rank_feature=None,
+        rerank_candidates_count=64,
     )
     assert results[-1]["answer"] == "fallback answer"
     assert results[-1]["reference"] == _expected_fallback_reference(kb_id)

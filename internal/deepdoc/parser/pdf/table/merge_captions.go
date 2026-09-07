@@ -18,6 +18,23 @@ type captionText struct {
 	text string
 }
 
+// captionSep returns the separator inserted before a caption whose text is
+// being appended to an existing caption string. Python's __html_table
+// (deepdoc/vision/table_structure_recognizer.py construct_table) adds a space
+// between captions only for ENGLISH documents; for non-English (e.g. CJK) it
+// concatenates directly. MergeCaptions is not threaded the document language,
+// so we approximate per caption: a caption containing ASCII letters is treated
+// as English and gets a space, matching Python for the dominant cases without
+// changing the function signature.
+func captionSep(text string) string {
+	for _, r := range text {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			return " "
+		}
+	}
+	return ""
+}
+
 func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section {
 	captions := make([]int, 0, 4)
 	// Group caption texts by the target section index they attach to, so
@@ -125,6 +142,16 @@ func findNearestParent(captionIdx int, caption pdf.Section, sections []pdf.Secti
 	}
 
 	const maxCaptionGap = 40000.0 // PDF points (~7cm) — beyond this, don't attach.
+	// maxCaptionVGap is the vertical band within which a caption attaches to a
+	// table regardless of its horizontal offset. A narrow caption (e.g. a short
+	// Chinese label) sitting directly above a much wider table has a large dx to
+	// the table's center; dx² alone can exceed maxCaptionGap and wrongly reject
+	// the match, dropping a legitimate caption. Vertical adjacency (small gapY)
+	// is the primary signal that the caption belongs to that table; dx only
+	// discriminates between candidate tables, which findTables already resolves
+	// via min-distance. Keep this in line with the vertical tolerance implied by
+	// maxCaptionGap when dx≈0 (~200pt).
+	const maxCaptionVGap = 200.0
 	if captionType == pdf.LayoutTypeFigure && len(figures) > 0 {
 		idx, dist := find(figures, -1) // figures don't contain the caption itself
 		if idx >= 0 && dist < maxCaptionGap {
@@ -143,8 +170,12 @@ func findNearestParent(captionIdx int, caption pdf.Section, sections []pdf.Secti
 		}
 	}
 	if captionType == pdf.LayoutTypeTable {
-		idx, dist := findTables(sections, caption)
-		if idx >= 0 && dist < maxCaptionGap {
+		idx, dist, gapY := findTables(sections, caption)
+		// Attach a vertically-adjacent caption even when it is horizontally
+		// offset from the (often much wider) table's center. See
+		// maxCaptionVGap for the rationale (narrow captions above wide
+		// tables, e.g. icbccs '请求参数').
+		if idx >= 0 && (dist < maxCaptionGap || gapY <= maxCaptionVGap) {
 			return idx
 		}
 	}
@@ -165,24 +196,28 @@ func findNearestParent(captionIdx int, caption pdf.Section, sections []pdf.Secti
 // Revenue'). A caption just above the table (gap to its top) or just below
 // (gap to its bottom) has a small edge distance and attaches; one that
 // vertically overlaps the table has gap 0.
-func findTables(sections []pdf.Section, caption pdf.Section) (int, float64) {
+func findTables(sections []pdf.Section, caption pdf.Section) (int, float64, float64) {
 	bestIdx := -1
 	bestDist := 1e9
+	bestGapY := 0.0
 	if len(caption.Positions) == 0 {
-		return bestIdx, bestDist
+		return bestIdx, bestDist, bestGapY
 	}
 	cp := caption.Positions[0]
 	ccx := (cp.Left + cp.Right) / 2
-	// Page-scope guard: a caption on a DIFFERENT page may attach only when it
-	// VERTICALLY OVERLAPS the table's Y band (gapY==0). That is the cross-page
-	// table continuation case — a merged cross-page table's Positions[0] keeps
-	// only the FIRST page's geometry (pages=[0]), so a caption on a later page
-	// of the same table lands inside that band in page-local coordinates (13's
-	// page-2 caption 'Table: Monthly financial summary FY2024' at page-local
-	// Y=154 sits inside the page-0 band 98-777). A caption clearly ABOVE or
-	// BELOW a table on a different page (gapY>0) is a false attachment:
-	// page-local Y ranges repeat on every page, so such a caption only
-	// "happens" to line up with an unrelated single-page table.
+	// Page-scope guard: a caption attaches to a table only on its OWN page (a
+	// table whose page set includes the caption's page — a genuine cross-page
+	// merged table carries multiple Position entries, one per spanned page, so
+	// a caption on any of those pages is on-page). A caption on a DIFFERENT
+	// page may attach ONLY to such a cross-page merged table when it vertically
+	// overlaps the table's Y band (gapY==0) — the cross-page continuation case
+	// (13's later-page caption 'Table: Monthly financial summary FY2024' lands
+	// inside the merged table's Y band in page-local coordinates). A caption on
+	// a different page that merely repeats a single-page table's page-local Y
+	// (page-local Y ranges repeat every page) is a FALSE attachment and must be
+	// rejected: this was the icbccs bug where a page-3 caption wrongly attached
+	// to a page-5 table and was concatenated into the <caption>, duplicating it
+	// ("请求参数 请求参数").
 	capKnown := len(cp.PageNumbers) > 0
 	capPage := 0
 	if capKnown {
@@ -203,17 +238,30 @@ func findTables(sections []pdf.Section, caption pdf.Section) (int, float64) {
 			gapY = cp.Top - tp.Bottom
 		}
 		if capKnown {
-			onPage := len(tp.PageNumbers) == 0 // unknown table page → don't restrict
-			for _, p := range tp.PageNumbers {
-				if p == capPage {
-					onPage = true
+			// Page-scope guard: a caption attaches to a table only on a page
+			// the table actually occupies. A genuine cross-page MERGED table
+			// carries every spanned page in its Position.PageNumbers (set by
+			// tableRegionBox/createTableBoxFromItem from the merged TableItem's
+			// Positions), so a caption on any of those pages is on-page and
+			// attaches. A caption on a DIFFERENT page that merely repeats a
+			// single-page table's page-local Y (page-local Y ranges repeat
+			// every page) is a FALSE attachment and is rejected — this was the
+			// icbccs bug where a page-3 caption wrongly attached to a page-5
+			// table and was concatenated into the <caption>, duplicating it
+			// ("请求参数 请求参数").
+			onPage := false
+			for _, pp := range t.Positions {
+				for _, pn := range pp.PageNumbers {
+					if pn == capPage {
+						onPage = true
+						break
+					}
+				}
+				if onPage {
 					break
 				}
 			}
-			// Different page: reject unless vertically overlapping (cross-page
-			// table continuation). A caption above/below on another page is a
-			// false attachment (see function comment).
-			if !onPage && gapY > 0 {
+			if !onPage {
 				continue
 			}
 		}
@@ -225,10 +273,11 @@ func findTables(sections []pdf.Section, caption pdf.Section) (int, float64) {
 		dist := gapY*gapY + dx*dx
 		if dist < bestDist {
 			bestDist = dist
+			bestGapY = gapY
 			bestIdx = i
 		}
 	}
-	return bestIdx, bestDist
+	return bestIdx, bestDist, bestGapY
 }
 
 // appendRawCaptions concatenates caption texts onto a non-table section
@@ -243,7 +292,7 @@ func appendRawCaptions(target *pdf.Section, captions []string) {
 			continue
 		}
 		if b.Len() > 0 {
-			b.WriteByte(' ')
+			b.WriteString(captionSep(c))
 		}
 		b.WriteString(t)
 	}
@@ -273,7 +322,7 @@ func injectCaption(table *pdf.Section, captions []string) {
 			continue
 		}
 		if b.Len() > 0 {
-			b.WriteByte(' ')
+			b.WriteString(captionSep(c))
 		}
 		b.WriteString(html.EscapeString(t))
 	}

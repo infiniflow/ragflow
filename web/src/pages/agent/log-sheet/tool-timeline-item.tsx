@@ -32,6 +32,7 @@ type IToolIcon =
   | Operator.QueritContents
   | Operator.QueritSearch
   | Operator.KeenableSearch
+  | Operator.YouComSearch
   | Operator.Wikipedia
   | Operator.YahooFinance
   | Operator.WenCai

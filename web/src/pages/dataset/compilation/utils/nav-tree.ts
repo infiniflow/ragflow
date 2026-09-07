@@ -26,12 +26,14 @@ export type NavEntityClickHandler = (
 
 type BuildNavTreeDataOptions = {
   childrenMap: Record<string, DatasetNavNode[]>;
+  childrenErrorParents?: Record<string, boolean>;
   structureMap: Record<string, IStructureGraphTemplate[]>;
   getActions?: NavTreeActionsFactory;
   onNodeClick: (node: DatasetNavNode, parentName: string | null) => void;
   onNodeExpand: (node: DatasetNavNode) => void;
   onEntityClick?: NavEntityClickHandler;
   loadingPlaceholder: string;
+  errorPlaceholder: string;
 };
 
 function getEntityDescription(entity: IStructureGraphEntity): string {
@@ -123,12 +125,14 @@ export function buildNavTreeData(
 ): TreeDataItem[] {
   const {
     childrenMap,
+    childrenErrorParents,
     structureMap,
     getActions,
     onNodeClick,
     onNodeExpand,
     onEntityClick,
     loadingPlaceholder,
+    errorPlaceholder,
   } = options;
 
   return items.map((node) => {
@@ -144,7 +148,9 @@ export function buildNavTreeData(
     if (node.has_children) {
       item.hasChildren = true;
       const children = childrenMap[node.name];
-      if (children?.length) {
+      if (childrenErrorParents?.[node.name]) {
+        item.children = [{ id: `${id}/__error__`, name: errorPlaceholder }];
+      } else if (children?.length) {
         item.children = buildNavTreeData(children, options, node.name, id);
       } else if (!children) {
         // Children not fetched yet: a placeholder keeps the node rendered as

@@ -58,7 +58,7 @@ func TestDatasetNavigation_UsesTopicRouting(t *testing.T) {
 
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	tool := NewDatasetNavigationByTree()
 	out, err := tool.InvokableRun(ctx, `{"topic":"rocket propulsion","keywords":"engine","dataset_ids":["kb1"]}`)
@@ -82,7 +82,7 @@ func TestDatasetNavigation_UsesTopicRouting(t *testing.T) {
 // TestCanvasDatasetIDs_MultiKB asserts all explicit dataset ids are preserved
 // (a multi-KB session must not collapse to the first KB).
 func TestCanvasDatasetIDs_MultiKB(t *testing.T) {
-	ids := canvasDatasetIDs(context.Background(), []string{"kb1", "kb2", "kb3"})
+	ids := canvasDatasetIDs(t.Context(), []string{"kb1", "kb2", "kb3"})
 	if len(ids) != 3 || ids[0] != "kb1" || ids[1] != "kb2" || ids[2] != "kb3" {
 		t.Errorf("canvasDatasetIDs = %v, want all three KBs", ids)
 	}
@@ -98,7 +98,7 @@ func TestDatasetNavigation_MultiKB(t *testing.T) {
 
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	tool := NewDatasetNavigationByTree()
 	_, err := tool.InvokableRun(ctx, `{"topic":"X","dataset_ids":["kb1","kb2","kb3"]}`)
@@ -114,33 +114,9 @@ func TestDatasetNavigation_MultiKB(t *testing.T) {
 
 // TestCanvasDatasetIDs_DedupEmpty asserts empty ids are dropped.
 func TestCanvasDatasetIDs_DedupEmpty(t *testing.T) {
-	ids := canvasDatasetIDs(context.Background(), []string{"kb1", "", "kb2"})
+	ids := canvasDatasetIDs(t.Context(), []string{"kb1", "", "kb2"})
 	if len(ids) != 2 || ids[0] != "kb1" || ids[1] != "kb2" {
 		t.Errorf("canvasDatasetIDs = %v, want [kb1 kb2]", ids)
-	}
-}
-
-// TestCanvasTenantID_FromCanvasState asserts the tenant id resolves from canvas
-// state, falling back to user_id.
-func TestCanvasTenantID_FromCanvasState(t *testing.T) {
-	state := runtime.NewCanvasState("run-1", "task-1")
-	state.Sys["tenant_id"] = "canvas-tenant"
-	ctx := runtime.WithState(context.Background(), state)
-	if got := canvasTenantID(ctx); got != "canvas-tenant" {
-		t.Errorf("canvasTenantID = %q, want canvas tenant canvas-tenant", got)
-	}
-
-	// Fall back to user_id when tenant_id is absent.
-	state2 := runtime.NewCanvasState("run-1", "task-1")
-	state2.Sys["user_id"] = "user-1"
-	ctx2 := runtime.WithState(context.Background(), state2)
-	if got := canvasTenantID(ctx2); got != "user-1" {
-		t.Errorf("canvasTenantID = %q, want fallback user-1", got)
-	}
-
-	// No canvas state at all → empty.
-	if got := canvasTenantID(context.Background()); got != "" {
-		t.Errorf("canvasTenantID = %q, want empty without canvas state", got)
 	}
 }
 

@@ -15,7 +15,6 @@
 package elasticsearch
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -87,7 +86,7 @@ func TestInsertChunks_WritesIngestionShape(t *testing.T) {
 		"position_int":         int(2),
 	}
 
-	if _, err := engine.InsertChunks(context.Background(), []map[string]interface{}{chunk}, "ragflow_chunk_readback_test", "kb-1"); err != nil {
+	if _, err := engine.InsertChunks(t.Context(), []map[string]interface{}{chunk}, "ragflow_chunk_readback_test", "kb-1"); err != nil {
 		t.Fatalf("InsertChunks: %v", err)
 	}
 

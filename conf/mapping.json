@@ -133,11 +133,9 @@
           "match_pattern": "regex",
           "match": "^.*_(with_weight|list)$",
           "mapping": {
-            "type": "keyword",
-            "index": true,
-            "store": true,
-            "ignore_above": 10000,
-            "similarity": "boolean"
+            "type": "text",
+            "index": "false",
+            "store": true
           }
         }
       },

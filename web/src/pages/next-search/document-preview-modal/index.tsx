@@ -57,6 +57,7 @@ const PdfDrawer = ({
   const fileType = documentName ? getFileExtensionRegex(documentName) : '';
   const isWebPage = !fileType && !!chunk.document_url;
   const url = isWebPage ? (chunk.document_url as string) : getDocumentUrl();
+  const positions = Array.isArray(chunk.positions) ? chunk.positions : [];
   return (
     <Modal
       title={
@@ -88,6 +89,7 @@ const PdfDrawer = ({
         highlights={highlights}
         setWidthAndHeight={setWidthAndHeight}
         url={url}
+        positions={positions}
       ></DocumentPreview>
     </Modal>
   );

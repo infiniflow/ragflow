@@ -523,6 +523,14 @@ func (p *Parser) buildLayout(ctx context.Context,
 	boxes = lyt.DedupIdenticalText(boxes)
 	boxes = lyt.DedupSubstringOverlaps(boxes)
 
+	// Drop single-character ASCII boxes that repeat verbatim many times on
+	// the SAME page — these are the rotated watermark glyphs from
+	// templated PDFs (issue #18145). Post-process placement so the same
+	// signal covers both the char-path (passed through CharsToBoxes) and
+	// the OCR-merge path (passed through ocrMergeChars); a layout-stage
+	// filter would have only caught the former.
+	boxes = lyt.FilterWatermarkBoxes(boxes)
+
 	boxes = lyt.TextMerge(boxes, medianHeights)
 	result.Metrics.BoxesTextMerge = len(boxes)
 
@@ -537,7 +545,7 @@ func (p *Parser) buildLayout(ctx context.Context,
 	}
 
 	if len(result.Tables) > 0 {
-		result.Tables = tbl.MergeTablesAcrossPages(result.Tables, nil)
+		result.Tables = tbl.MergeTablesAcrossPages(result.Tables, medianHeights, result.PageHeight)
 	}
 
 	boxes = tbl.ExtractTableAndReplace(boxes, result.Tables)

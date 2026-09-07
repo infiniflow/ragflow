@@ -60,42 +60,6 @@ type SearchResult struct {
 	Total  int64                    // Total number of matches
 }
 
-// RegexpSearchRequest is a regex-match-only search over chunk content. It is
-// intentionally decoupled from SearchRequest (which carries text/dense/fusion
-// match expressions) because regex matching is a distinct retrieval mode with
-// no vector or text relevance scoring.
-type RegexpSearchRequest struct {
-	// TenantID is the single tenant whose chunks are searched. It is
-	// engine-agnostic: callers name the tenant, and each engine maps it to its
-	// own physical index/table (ES: ragflow_<tenant>; Infinity: one table per
-	// tenant). Callers never name storage targets directly.
-	TenantID string
-	// KbIDs are the knowledge base IDs to filter the search to.
-	KbIDs []string // Knowledge base IDs filter
-
-	// Pagination
-	Offset int // Offset for pagination (0-based)
-	Limit  int // Limit for pagination
-
-	// Pattern is the regex to match against chunk content. ES engines use
-	// Lucene regexp syntax; other engines may reject or fall back.
-	Pattern string
-
-	// Filter carries additional scope filters (e.g. available_int, doc_id).
-	Filter map[string]interface{}
-
-	// Sort, when set, orders the results by the given fields (e.g. a document's
-	// reading order: chunk_order_int, page_num_int, top_int) instead of the
-	// default _score. ES engines push the sort down so offset/limit pagination
-	// happens over the deterministically-ordered result set.
-	Sort *OrderByExpr
-
-	// SelectFields limits the _source fields ES returns for each hit. When empty
-	// the full document is returned. Callers that only need doc_id, page_num_int
-	// and chunk_order_int (plus content) can narrow the payload this way.
-	SelectFields []string
-}
-
 // SearchMetadataResult unified search result for metadata indices
 type SearchMetadataResult struct {
 	MetadataRecords []map[string]interface{} // Metadata search results

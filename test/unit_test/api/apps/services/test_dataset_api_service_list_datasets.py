@@ -13,14 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Regression tests for list_datasets() honoring include_parsing_status (#16855).
+"""Regression tests for list_datasets() honoring include_parsing_status (#16855, #17595).
 
 The ``ListDatasetReq`` model declares ``include_parsing_status: bool = False``,
 but ``dataset_api_service.list_datasets`` historically ignored the flag and
 returned no parsing-status counts. These tests lock in the contract that
 ``include_parsing_status`` controls whether
 ``DocumentService.get_parsing_status_by_kb_ids`` is invoked and whether the
-result is attached to each kb record.
+counts are merged into each kb record.
+
+Per the HTTP API and Python SDK references, the counts belong at the *top level*
+of each dataset record (``done_count``, ``fail_count``, ...), not under a nested
+``parsing_status`` object (#17595).
 """
 
 import importlib.util
@@ -62,8 +66,8 @@ def _identity_remap(source_data, key_aliases=None):
     """Identity stand-in for ``remap_dictionary_keys``.
 
     The real helper only renames a few keys (e.g. ``chunk_num`` -> ``chunk_count``)
-    and otherwise copies through. For these tests we only care that
-    ``parsing_status`` is preserved on the output record, so identity is enough.
+    and otherwise copies through. For these tests we only care that the parsing
+    status counts are preserved on the output record, so identity is enough.
     """
     if key_aliases is None:
         return dict(source_data)
@@ -96,6 +100,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         FileSource=SimpleNamespace(KNOWLEDGEBASE="knowledgebase"),
         PipelineTaskType=SimpleNamespace(),
         StatusEnum=SimpleNamespace(),
+        TaskStatus=SimpleNamespace(SCHEDULE="schedule", RUNNING="running", CANCEL="cancel"),
         RetCode=SimpleNamespace(),
         ModelTypeBinary=_StubModelTypeBinary,
     )
@@ -107,7 +112,10 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
     _stub(
         monkeypatch,
         "api.db.db_models",
+        Connector2Kb=SimpleNamespace(kb_id="kb_id"),
+        Document=SimpleNamespace(kb_id="kb_id"),
         File=SimpleNamespace(),
+        SyncLogs=SimpleNamespace(kb_id="kb_id"),
     )
     _stub(
         monkeypatch,
@@ -140,6 +148,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         monkeypatch,
         "api.db.services.connector_service",
         Connector2KbService=SimpleNamespace(),
+        SyncLogsService=SimpleNamespace(),
     )
     _stub(
         monkeypatch,
@@ -193,6 +202,23 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
     return module, parsing_status_mock, get_list_mock
 
 
+#: Fields ``DocumentService.get_parsing_status_by_kb_ids`` reports, as documented
+#: for the List Datasets endpoint.
+_PARSING_STATUS_FIELDS = (
+    "unstart_count",
+    "running_count",
+    "cancel_count",
+    "done_count",
+    "fail_count",
+)
+
+
+def _assert_no_counts(record, context=""):
+    assert "parsing_status" not in record, context
+    for field in _PARSING_STATUS_FIELDS:
+        assert field not in record, f"{field} {context}"
+
+
 def _stub_kbs():
     return [
         {"id": "kb-a", "tenant_id": "tenant-1", "name": "Alpha", "embedding_model": "emb-a"},
@@ -201,7 +227,7 @@ def _stub_kbs():
 
 
 def test_list_datasets_without_include_parsing_status_does_not_call_helper(monkeypatch):
-    """No flag → no helper call, no parsing_status on response."""
+    """No flag → no helper call, no counts on response."""
     module, parsing_status_mock, get_list_mock = _load_list_datasets_module(
         monkeypatch,
         kbs=_stub_kbs(),
@@ -214,13 +240,13 @@ def test_list_datasets_without_include_parsing_status_does_not_call_helper(monke
     assert payload["total"] == 2
     assert len(payload["data"]) == 2
     for record in payload["data"]:
-        assert "parsing_status" not in record
+        _assert_no_counts(record)
     parsing_status_mock.assert_not_called()
     get_list_mock.assert_called_once()
 
 
 def test_list_datasets_with_include_parsing_status_true_attaches_counts(monkeypatch):
-    """Flag True → helper called once with the kb ids, counts attached."""
+    """Flag True → helper called once with the kb ids, counts merged at top level."""
     status_by_kb = {
         "kb-a": {
             "unstart_count": 3,
@@ -250,10 +276,11 @@ def test_list_datasets_with_include_parsing_status_true_attaches_counts(monkeypa
 
     assert ok is True
     parsing_status_mock.assert_called_once_with(["kb-a", "kb-b"])
-    assert "parsing_status" in payload["data"][0]
     by_id = {r["id"]: r for r in payload["data"]}
-    assert by_id["kb-a"]["parsing_status"] == status_by_kb["kb-a"]
-    assert by_id["kb-b"]["parsing_status"] == status_by_kb["kb-b"]
+    for kb_id, counts in status_by_kb.items():
+        assert "parsing_status" not in by_id[kb_id]
+        for field, value in counts.items():
+            assert by_id[kb_id][field] == value
 
 
 def test_list_datasets_with_include_parsing_status_string_true(monkeypatch):
@@ -274,6 +301,7 @@ def test_list_datasets_with_include_parsing_status_string_true(monkeypatch):
 
     assert ok is True
     parsing_status_mock.assert_called_once_with(["kb-a", "kb-b"])
+    assert payload["data"][0]["done_count"] == 1
 
 
 def test_list_datasets_with_ids_filters_query_once(monkeypatch):
@@ -310,7 +338,7 @@ def test_list_datasets_with_include_parsing_status_false_skips_helper(monkeypatc
 
     assert ok is True
     for record in payload["data"]:
-        assert "parsing_status" not in record
+        _assert_no_counts(record)
     parsing_status_mock.assert_not_called()
 
 
@@ -330,7 +358,7 @@ def test_list_datasets_with_include_parsing_status_string_false_skips_helper(mon
         )
         assert ok is True, falsy
         for record in payload["data"]:
-            assert "parsing_status" not in record, falsy
+            _assert_no_counts(record, falsy)
         parsing_status_mock.assert_not_called()
 
 
@@ -352,8 +380,8 @@ def test_list_datasets_with_empty_kb_list_skips_helper_even_when_flag_true(monke
     parsing_status_mock.assert_not_called()
 
 
-def test_list_datasets_with_include_parsing_status_missing_kb_gets_empty_dict(monkeypatch):
-    """If the helper omits a kb_id, the response record gets an empty dict."""
+def test_list_datasets_with_include_parsing_status_missing_kb_gets_no_counts(monkeypatch):
+    """If the helper omits a kb_id, the response record simply carries no counts."""
     module, parsing_status_mock, _ = _load_list_datasets_module(
         monkeypatch,
         kbs=_stub_kbs(),
@@ -369,8 +397,8 @@ def test_list_datasets_with_include_parsing_status_missing_kb_gets_empty_dict(mo
 
     assert ok is True
     by_id = {r["id"]: r for r in payload["data"]}
-    assert by_id["kb-a"]["parsing_status"]["unstart_count"] == 1
-    assert by_id["kb-b"]["parsing_status"] == {}
+    assert by_id["kb-a"]["unstart_count"] == 1
+    _assert_no_counts(by_id["kb-b"])
     parsing_status_mock.assert_called_once()
 
 
@@ -423,7 +451,86 @@ def test_wiki_alteration_treats_wiki_template_as_eligible(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_structure_alteration_chunk_filter_excludes_unparsed_documents(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    captured = {}
+
+    async def _paged(_index, dataset_id, condition, field, from_list, *, raise_on_error):
+        captured.update(dataset_id=dataset_id, condition=condition, field=field, from_list=from_list)
+        assert raise_on_error is True
+        return {"doc-with-chunk"}
+
+    monkeypatch.setattr(module, "_involved_doc_ids_paged", _paged)
+
+    result = await module._current_chunk_doc_ids(
+        "tenant-index",
+        "kb-1",
+        {"doc-with-chunk", "doc-without-chunk"},
+    )
+
+    assert result == {"doc-with-chunk"}
+    assert captured == {
+        "dataset_id": "kb-1",
+        "condition": {
+            "doc_id": ["doc-with-chunk", "doc-without-chunk"],
+            "available_int": [1],
+            "must_not": {"exists": "compile_kwd"},
+        },
+        "field": "doc_id",
+        "from_list": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_current_chunk_doc_ids_propagates_search_errors(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    async def _paged(*_args, **_kwargs):
+        raise RuntimeError("search unavailable")
+
+    monkeypatch.setattr(module, "_involved_doc_ids_paged", _paged)
+
+    with pytest.raises(RuntimeError, match="search unavailable"):
+        await module._current_chunk_doc_ids("tenant-index", "kb-1", {"doc-1"})
+
+
+@pytest.mark.asyncio
+async def test_wiki_involved_ids_use_active_map_state_when_pages_are_missing(monkeypatch):
+    """Use MAP provenance even when a participating document has no page row."""
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    async def _load_active_map_state(tenant_id, dataset_id):
+        assert tenant_id == "tenant-1"
+        assert dataset_id == "kb-1"
+        return {
+            "chunk-a": {"doc_id": "doc-with-page"},
+            "chunk-b": {"doc_id": "doc-without-page"},
+        }
+
+    wiki_stub = sys.modules["rag.advanced_rag.knowlege_compile.wiki"]
+    wiki_stub._wiki_load_active_map_state = _load_active_map_state
+
+    involved = await module._involved_doc_ids_for_kind("index", "kb-1", "wiki", "tenant-1")
+
+    assert involved == {"doc-with-page", "doc-without-page"}
+
+
+@pytest.mark.asyncio
 async def test_wiki_chunk_alteration_uses_full_successful_state(monkeypatch):
+    """Reuse supplied current and previous states without scanning the store again."""
     module, _, _ = _load_list_datasets_module(
         monkeypatch,
         kbs=[],
@@ -473,6 +580,8 @@ async def test_wiki_chunk_alteration_uses_full_successful_state(monkeypatch):
         "kb-1",
         {"doc-existing", "doc-new"},
         {"doc-existing", "doc-template-off", "doc-removed"},
+        current_chunk_state=current,
+        previous_map_state=previous,
     )
 
     assert result == {

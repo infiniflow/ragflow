@@ -185,6 +185,26 @@ func cellPosFromBox(b pdf.TextBox) (x0, y0, x1, y1 float64, label string) {
 		}
 	} else if b.SP > 0 {
 		label = "table spanning cell"
+		// A pure-SP box (H==0) still carries the span's full extent in
+		// HLeft/HRight/HTop/HBott, copied together from the TSR spanning cell
+		// by AnnotateTableBoxes (PR #18707). Rebuild the cell from those bounds
+		// so CalSpans covers every column/row the span crosses — matching
+		// Python's _annotate_table_boxes. Without this, the span cell falls
+		// back to the box's own narrow text bounds, under-covers by one
+		// column, and the header row keeps an extra empty cell (real_pdfs/1.pdf
+		// row0 = 4 vs Python's 3; see known_diffs rule
+		// table-1pdf-colspan-assembly-loss, resolved).
+		//
+		// HLeft/HRight (and HTop/HBott) are set together, so treat an axis as
+		// propagated whenever either edge is set. This preserves a real edge at
+		// coordinate 0 (a nonzero check would mistake it for "unset" and fall
+		// back to the box's own bounds, dropping the span's left/top edge).
+		if b.HLeft != 0 || b.HRight != 0 {
+			x0, x1 = b.HLeft, b.HRight
+		}
+		if b.HTop != 0 || b.HBott != 0 {
+			y0, y1 = b.HTop, b.HBott
+		}
 	}
 	return
 }

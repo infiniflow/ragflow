@@ -103,7 +103,7 @@ func TestProductionRunner_WikiPreferred_WhenSuggested(t *testing.T) {
 	}}
 	runner := newProductionRunnerWithTools(nil, "t1", []string{"kb1"}, hybrid, nil)
 	runner.wikiSvc = wikiSvc
-	res := runner.Run(context.Background(), "What is Alpha?", "", "low")
+	res := runner.Run(t.Context(), "What is Alpha?", "", "low", "")
 	if res.FinalAnswer != "final wiki answer" {
 		t.Errorf("final answer = %q, want wiki chat output", res.FinalAnswer)
 	}
@@ -123,7 +123,7 @@ func TestProductionRunner_WikiEmpty_FallsBackToHybrid(t *testing.T) {
 	wikiSvc := &fakeWikiSvcHarness{available: true} // no pages
 	runner := newProductionRunnerWithTools(nil, "t1", []string{"kb1"}, hybrid, nil)
 	runner.wikiSvc = wikiSvc
-	res := runner.Run(context.Background(), "What is Alpha?", "", "low")
+	res := runner.Run(t.Context(), "What is Alpha?", "", "low", "")
 	if len(wikiSvc.seenQueries()) == 0 {
 		t.Errorf("wiki service should have been attempted")
 	}
@@ -148,7 +148,7 @@ func TestProductionRunner_NoWikiWithoutSuggestion(t *testing.T) {
 	}}
 	runner := newProductionRunnerWithTools(nil, "t1", []string{"kb1"}, hybrid, nil)
 	runner.wikiSvc = wikiSvc
-	runner.Run(context.Background(), "What is Alpha?", "", "low")
+	runner.Run(t.Context(), "What is Alpha?", "", "low", "")
 	if len(wikiSvc.seenQueries()) != 0 {
 		t.Errorf("wiki service must not be queried without a wiki suggestion; calls=%v", wikiSvc.seenQueries())
 	}
@@ -170,7 +170,7 @@ func TestProductionRunner_WebFallback_UnconfiguredIsNoop(t *testing.T) {
 	fn := runner.webFallbackFn(func(ctx context.Context, q, k string) ([]map[string]interface{}, []map[string]interface{}) {
 		return nil, nil
 	})
-	chunks, _ := fn(context.Background(), "q", "k")
+	chunks, _ := fn(t.Context(), "q", "k")
 	if len(chunks) != 0 {
 		t.Errorf("expected no chunks from the no-web fallback path")
 	}
@@ -192,7 +192,7 @@ func TestProductionRunner_WebFallback_TavilyResultsNormalized(t *testing.T) {
 	fn := runner.webFallbackFn(func(ctx context.Context, q, k string) ([]map[string]interface{}, []map[string]interface{}) {
 		return nil, nil
 	})
-	chunks, _ := fn(context.Background(), "q", "k")
+	chunks, _ := fn(t.Context(), "q", "k")
 	if len(chunks) != 1 {
 		t.Fatalf("chunks = %d, want 1 normalized Tavily result", len(chunks))
 	}
@@ -236,7 +236,7 @@ func TestProductionRunner_CompiledEvidenceExpansion(t *testing.T) {
 			"source_chunk_ids": []interface{}{"c1", "c2"},
 		},
 	}
-	merged, aggs := runner.expandCompiledEvidence(context.Background(), chunks, []map[string]interface{}{})
+	merged, aggs := runner.expandCompiledEvidence(t.Context(), chunks, []map[string]interface{}{})
 	if len(merged) != 3 {
 		t.Fatalf("merged = %d, want 3 (page + 2 backfilled evidence chunks)", len(merged))
 	}
@@ -266,7 +266,7 @@ func TestProductionRunner_CompiledEvidence_NoServiceIsNoop(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"chunk_id": "wiki/s", "content_with_weight": "# Page", "dataset_id": "kb1", "source_chunk_ids": []interface{}{"c1", "c2"}},
 	}
-	merged, _ := runner.expandCompiledEvidence(context.Background(), chunks, []map[string]interface{}{})
+	merged, _ := runner.expandCompiledEvidence(t.Context(), chunks, []map[string]interface{}{})
 	if len(merged) != 1 {
 		t.Fatalf("merged = %d, want 1 (no service => no fabricated evidence)", len(merged))
 	}

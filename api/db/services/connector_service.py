@@ -26,6 +26,7 @@ from api.db.db_models import DB, Connector, SyncLogs, Connector2Kb, Knowledgebas
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.document_service import DocMetadataService
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.common import hash128
 from common import settings
 from common.misc_utils import get_uuid
@@ -34,6 +35,14 @@ from common.settings import TIMEZONE
 from common.time_utils import current_timestamp, timestamp_to_date
 
 LOGGER = logging.getLogger(__name__)
+
+
+class ConnectorAuthorizationError(Exception):
+    """Raised when a caller is not authorized to run a connector operation.
+
+    Carries a user-facing message so handlers can map the denial to an
+    authentication/authorization error without inspecting internals.
+    """
 
 
 def _is_gaussdb_compatible_metadata_db() -> bool:
@@ -52,6 +61,47 @@ def _append_text_expr(field, suffix: str):
     if not suffix:
         return None
     return fn.COALESCE(field + suffix, suffix)
+
+
+def connector_doc_id_candidates(kb_id: str, connector_id: str, external_id: str) -> tuple[str, str, str]:
+    """Every document id a connector-sourced document may legitimately carry.
+
+    A synced document's primary key is derived from its external id so that
+    re-running a sync updates the existing row instead of duplicating it. Two
+    historical derivations left ``kb_id`` out, which made the key identical for
+    every knowledge base linked to the same data source:
+
+        <= v0.25.1   hash128(external_id)
+        legacy       hash128(f"{connector_id}:{external_id}")
+        current      hash128(f"{kb_id}:{connector_id}:{external_id}")
+
+    Ordered oldest first, so a knowledge base holding rows from more than one
+    upgrade settles on the earliest id it owns instead of migrating forward
+    again on every sync.
+    """
+    return (
+        hash128(external_id),
+        hash128(f"{connector_id}:{external_id}"),
+        hash128(f"{kb_id}:{connector_id}:{external_id}"),
+    )
+
+
+def resolve_connector_doc_id(kb_id: str, connector_id: str, external_id: str, owned_doc_ids) -> str:
+    """Pick the document id to sync ``external_id`` into ``kb_id`` under.
+
+    ``owned_doc_ids`` must only contain ids this knowledge base already owns
+    (see ``DocumentService.list_doc_headers_by_kb_and_source_type``). A
+    KB-agnostic id is reused only when it resolves to one of those rows; when it
+    does not, the row it would hit belongs to some other knowledge base and
+    ``FileService.upload_document`` would reject the write as a cross-KB
+    collision and drop the document. Everything else gets the KB-scoped id,
+    which cannot collide by construction.
+    """
+    *kb_agnostic_doc_ids, scoped_doc_id = connector_doc_id_candidates(kb_id, connector_id, external_id)
+    for candidate in kb_agnostic_doc_ids:
+        if candidate in owned_doc_ids:
+            return candidate
+    return scoped_doc_id
 
 
 class ConnectorService(CommonService):
@@ -153,7 +203,32 @@ class ConnectorService(CommonService):
 
     @classmethod
     def rebuild(cls, kb_id: str, connector_id: str, tenant_id: str):
+        """Delete the connector's documents in *kb_id* and schedule a re-sync.
+
+        Authorization is owned by the service (not the HTTP layer) because this
+        operation deletes documents and schedules sync tasks against the
+        caller-supplied kb. The caller must be able to access the kb and the
+        connector must actually be bound to it; the binding check mirrors
+        ``cleanup_stale_documents_for_task``.
+        """
         from api.db.services.file_service import FileService
+
+        if not KnowledgebaseService.accessible(kb_id, tenant_id):
+            LOGGER.warning(
+                "rebuild denied: kb not accessible connector_id=%s kb_id=%s user_id=%s",
+                connector_id,
+                kb_id,
+                tenant_id,
+            )
+            raise ConnectorAuthorizationError("no authorization")
+        if not Connector2KbService.query(connector_id=connector_id, kb_id=kb_id):
+            LOGGER.warning(
+                "rebuild denied: connector not bound to kb connector_id=%s kb_id=%s user_id=%s",
+                connector_id,
+                kb_id,
+                tenant_id,
+            )
+            raise ConnectorAuthorizationError("Connector is not bound to this knowledge base.")
 
         e, conn = cls.get_by_id(connector_id)
         if not e:
@@ -186,7 +261,7 @@ class ConnectorService(CommonService):
             return 0, []
 
         source_type = f"{conn.source}/{conn.id}"
-        retain_doc_ids = {doc_id for file in file_list for doc_id in (hash128(f"{connector_id}:{file.id}"), hash128(f"{kb_id}:{connector_id}:{file.id}"))}
+        retain_doc_ids = {doc_id for file in file_list for doc_id in connector_doc_id_candidates(kb_id, connector_id, file.id)}
         existing_docs = DocumentService.list_doc_headers_by_kb_and_source_type(
             kb_id,
             source_type,
@@ -244,11 +319,8 @@ class SyncLogsService(CommonService):
             Connector.prune_freq.alias("prune_freq"),
             Knowledgebase.name.alias("kb_name"),
             cls.model.status,
+            cls.model.update_time,
         ]
-        if _is_gaussdb_compatible_metadata_db():
-            # GaussDB requires a DISTINCT query's ORDER BY expression in the
-            # select list.
-            fields.append(cls.model.update_time)
         if not connector_id:
             fields.append(Connector.config)
 

@@ -102,7 +102,6 @@ export const useSendMessage = () => {
       messages: explicitMessages,
       enableInternet,
       enableThinking,
-      agentMode,
     }: {
       message: IMessage;
       currentConversationId?: string;
@@ -110,7 +109,7 @@ export const useSendMessage = () => {
     } & NextMessageInputOnPressEnterParameter) => {
       const sessionId = currentConversationId ?? conversationId;
 
-      lastSendOptionsRef.current = { enableInternet, enableThinking, agentMode };
+      lastSendOptionsRef.current = { enableInternet, enableThinking };
 
       const { ok, aborted } = await runChatCompletionStream({
         conversationId: sessionId,
@@ -123,7 +122,6 @@ export const useSendMessage = () => {
         ],
         enableThinking,
         enableInternet,
-        agentMode,
         llmSetting: currentDialog?.llm_setting,
       });
 
@@ -191,7 +189,6 @@ export const useSendMessage = () => {
     async ({
       enableThinking,
       enableInternet,
-      agentMode,
     }: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '' || isStreaming) return;
 
@@ -264,7 +261,6 @@ export const useSendMessage = () => {
         },
         enableInternet,
         enableThinking,
-        agentMode,
       });
 
       clearFiles();

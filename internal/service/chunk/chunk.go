@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/service"
 	"strings"
 	"sync"
 	"time"
@@ -43,7 +44,6 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/ingestion/knowledge_compile"
-	"ragflow/internal/service"
 	"ragflow/internal/service/document"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
@@ -177,6 +177,9 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		for _, tenant := range tenants {
 			kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenant.TenantID)
 			if err == nil && kb != nil {
+				if kb.TenantID != userID && kb.Permission != string(entity.TenantPermissionTeam) {
+					continue
+				}
 				common.Debug("Found knowledge base in database",
 					zap.String("datasetID", datasetID),
 					zap.String("tenantID", tenant.TenantID),
@@ -208,6 +211,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	var chatID string
 	var chatModelForFilter *models.ChatModel
 	filter := req.Filter
+	rerankCandidatesCount := 64
+	if req.RerankCandidatesCount != nil {
+		rerankCandidatesCount = *req.RerankCandidatesCount
+	}
 
 	if req.SearchID != nil && *req.SearchID != "" {
 		// If search_id is set, get meta_data_filter and chat_id from search_config
@@ -215,6 +222,12 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		if err != nil {
 			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", *req.SearchID), zap.Error(err))
 		} else if searchConfig, ok := searchConfigMap(searchDetail["search_config"]); ok && searchConfig != nil {
+			if req.RerankCandidatesCount == nil || *req.RerankCandidatesCount == 0 {
+				rerankCandidatesCount = 100
+				if configuredRerankCandidatesCount, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
+					rerankCandidatesCount = configuredRerankCandidatesCount
+				}
+			}
 			if searchMetaFilter, ok := searchConfigMap(searchConfig["meta_data_filter"]); ok {
 				filter = searchMetaFilter
 			}
@@ -407,7 +420,8 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		DocIDs:                 docIDs,
 		Page:                   common.CoalesceInt(req.Page, 1),
 		PageSize:               common.CoalesceInt(req.Size, 30),
-		Top:                    req.TopK,
+		RerankCandidatesCount:  &rerankCandidatesCount,
+		KNNTopK:                req.TopK,
 		SimilarityThreshold:    req.SimilarityThreshold,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
 		RerankModel:            rerankModel,
@@ -990,7 +1004,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		"process_duration": doc.ProcessDuration,
 		"content_hash":     doc.ContentHash,
 		"suffix":           doc.Suffix,
-		"run":              chunkDocRunText(doc.Run),
+		"run":              service.ChunkDocRunText(doc.Run),
 		"status":           doc.Status,
 		"create_time":      doc.CreateTime,
 		"create_date":      utility.FormatTimeToString(doc.CreateDate, timeFormat),
@@ -1735,25 +1749,4 @@ func releaseChunkImageMergeLock(key string) {
 	if lock.refs == 0 {
 		delete(chunkImageMergeLocks.locks, key)
 	}
-}
-
-// chunkDocRunText maps the document run code to its text form, mirroring
-// Python's _map_doc run_mapping.
-func chunkDocRunText(run *string) interface{} {
-	if run == nil {
-		return nil
-	}
-	switch *run {
-	case "0":
-		return "UNSTART"
-	case "1":
-		return "RUNNING"
-	case "2":
-		return "CANCEL"
-	case "3":
-		return "DONE"
-	case "4":
-		return "FAIL"
-	}
-	return *run
 }

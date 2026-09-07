@@ -64,12 +64,8 @@ func TestRetrievalTool_SimpleServiceReturnsChunks(t *testing.T) {
 // TestSimpleRetrievalService_EmptyQuery: empty query → no chunks,
 // no error.
 func TestSimpleRetrievalService_EmptyQuery(t *testing.T) {
-	prev := GetRetrievalService()
-	t.Cleanup(func() { SetRetrievalService(prev) })
-	SetSimpleRetrievalService()
-
 	ctx := t.Context()
-	chunks, err := GetRetrievalService().Search(ctx, nil, RetrievalRequest{Query: ""})
+	chunks, err := simpleRetrievalService{}.Search(ctx, nil, RetrievalRequest{Query: ""})
 	if err != nil {
 		t.Errorf("err: %v", err)
 	}
@@ -81,12 +77,8 @@ func TestSimpleRetrievalService_EmptyQuery(t *testing.T) {
 // TestSimpleRetrievalService_RespectsTopN: top_n=1 → exactly 1
 // chunk.
 func TestSimpleRetrievalService_RespectsTopN(t *testing.T) {
-	prev := GetRetrievalService()
-	t.Cleanup(func() { SetRetrievalService(prev) })
-	SetSimpleRetrievalService()
-
 	ctx := t.Context()
-	chunks, err := GetRetrievalService().Search(ctx, nil, RetrievalRequest{
+	chunks, err := simpleRetrievalService{}.Search(ctx, nil, RetrievalRequest{
 		Query: "x",
 		TopN:  1,
 	})

@@ -361,6 +361,79 @@ async def test_rdbms_generate_keeps_deleted_file_snapshot_without_timestamp_colu
     assert list(document_generator) == [["full-sync"]]
 
 
+class _FakeXquikConnector:
+    def __init__(self):
+        self.poll_args = None
+        self.loaded = False
+
+    def poll_source(self, start, end):
+        self.poll_args = (start, end)
+        return iter((["incremental"],))
+
+    def load_from_state(self):
+        self.loaded = True
+        return iter((["full"],))
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_xquik_generate_applies_incremental_window(monkeypatch):
+    captured = {}
+    fake_connector = _FakeXquikConnector()
+
+    def _from_config(config, **kwargs):
+        captured["config"] = config
+        captured.update(kwargs)
+        return fake_connector
+
+    monkeypatch.setattr(sync_data_source.XquikConnector, "from_config", _from_config)
+    poll_start = datetime(2026, 8, 24, 10, 0, tzinfo=timezone.utc)
+    task = {
+        **_make_task(),
+        "reindex": "0",
+        "poll_range_start": poll_start,
+        "skip_connection_log": True,
+    }
+    config = {
+        "query": "ragflow",
+        "credentials": {"xquik_api_key": "xq_test_key"},
+    }
+
+    generator = await sync_data_source.Xquik(config)._generate(task)
+
+    assert list(generator) == [["incremental"]]
+    assert captured["config"] == config
+    assert captured["since_time"] == poll_start
+    assert captured["until_time"].tzinfo == timezone.utc
+    assert fake_connector.poll_args[0] == poll_start.timestamp()
+    assert fake_connector.poll_args[1] == captured["until_time"].timestamp()
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_xquik_generate_full_sync_omits_lower_bound(monkeypatch):
+    captured = {}
+    fake_connector = _FakeXquikConnector()
+
+    def _from_config(config, **kwargs):
+        captured.update(kwargs)
+        return fake_connector
+
+    monkeypatch.setattr(sync_data_source.XquikConnector, "from_config", _from_config)
+    task = {
+        **_make_task(),
+        "reindex": "1",
+        "skip_connection_log": True,
+    }
+
+    generator = await sync_data_source.Xquik({"query": "ragflow"})._generate(task)
+
+    assert list(generator) == [["full"]]
+    assert captured["since_time"] is None
+    assert captured["until_time"].tzinfo == timezone.utc
+    assert fake_connector.loaded is True
+
+
 @pytest.mark.asyncio
 @pytest.mark.p2
 async def test_rdbms_cursor_persists_only_after_success(monkeypatch):

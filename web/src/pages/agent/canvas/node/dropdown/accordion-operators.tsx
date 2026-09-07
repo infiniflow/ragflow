@@ -126,6 +126,7 @@ export function AccordionOperators({
               Operator.WenCai,
               Operator.SearXNG,
               Operator.KeenableSearch,
+              Operator.YouComSearch,
               Operator.DocGenerator,
               Operator.Browser,
             ]}

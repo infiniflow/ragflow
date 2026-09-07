@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	appcommon "ragflow/internal/common"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 
 	"go.uber.org/zap"
 )
@@ -44,12 +45,22 @@ func (p *wikiPipeline) buildTopicCandidateCommunities() []wikiExtract {
 	if len(items) < 2 || p.deps.Embed == nil {
 		return []wikiExtract{p.reduced}
 	}
-	texts := make([]string, len(items))
+	topics := wikiTopicPaths(p.reduced.Topics)
+	texts := make([]string, 0, len(items)+len(topics))
 	for i := range items {
-		texts[i] = items[i].name
+		texts = append(texts, items[i].name)
+	}
+	for i, topic := range topics {
+		text := topic
+		if i < len(p.reduced.Topics) {
+			if description := strings.TrimSpace(p.reduced.Topics[i].Description); description != "" {
+				text += "\n" + description
+			}
+		}
+		texts = append(texts, text)
 	}
 	vectors, err := p.deps.Embed.Encode(p.ctx, texts)
-	if err != nil || len(vectors) != len(items) {
+	if err != nil || len(vectors) != len(texts) {
 		return []wikiExtract{p.reduced}
 	}
 	for i := range items {
@@ -77,10 +88,10 @@ func (p *wikiPipeline) buildTopicCandidateCommunities() []wikiExtract {
 			communities[placed] = append(communities[placed], item)
 		}
 	}
+	topicCommunityIndexes := p.assignTopicCommunities(communities, topics, vectors[len(items):])
 	residual := wikiExtract{}
 	assignedClaims := make([]bool, len(p.reduced.Claims))
 	assignedRelations := make([]bool, len(p.reduced.Relations))
-	assignedTopics := make([]bool, len(p.reduced.Topics))
 	out := make([]wikiExtract, 0, len(communities))
 	for i, community := range communities {
 		nameSet := make(map[string]struct{}, len(community))
@@ -113,21 +124,72 @@ func (p *wikiPipeline) buildTopicCandidateCommunities() []wikiExtract {
 			}
 		}
 		for topicIndex, topic := range p.reduced.Topics {
-			if _, ok := nameSet[normKey(topic)]; ok {
+			if topicIndex < len(topicCommunityIndexes) && topicCommunityIndexes[topicIndex] == i {
 				extract.Topics = append(extract.Topics, topic)
-				assignedTopics[topicIndex] = true
-			} else if i == len(communities)-1 && !assignedTopics[topicIndex] {
+			} else if i == len(communities)-1 && (topicIndex >= len(topicCommunityIndexes) || topicCommunityIndexes[topicIndex] < 0) {
 				residual.Topics = append(residual.Topics, topic)
 			}
 		}
-		extract.Topics = uniqueStrings(extract.Topics)
+		extract.Topics = normalizeWikiTopics(extract.Topics)
 		out = append(out, extract)
 	}
 	if len(residual.Claims) > 0 || len(residual.Relations) > 0 || len(residual.Topics) > 0 {
-		residual.Topics = uniqueStrings(residual.Topics)
+		residual.Topics = normalizeWikiTopics(residual.Topics)
 		out = append(out, residual)
 	}
 	return out
+}
+
+// assignTopicCommunities attaches every MAP topic path to the most relevant
+// entity/concept community. Embedding is used only for candidate placement;
+// the planner still decides the final page-to-topic assignment.
+func (p *wikiPipeline) assignTopicCommunities(communities [][]topicCommunityItem, topics []string, vectors [][]float32) []int {
+	assignments := make([]int, len(p.reduced.Topics))
+	for i := range assignments {
+		assignments[i] = -1
+	}
+	if len(assignments) == 0 || len(communities) == 0 {
+		return assignments
+	}
+
+	if len(topics) != len(p.reduced.Topics) {
+		return assignments
+	}
+	if len(vectors) == len(topics) {
+		for topicIndex, vector := range vectors {
+			bestCommunity := -1
+			bestScore := -1.0
+			for communityIndex, community := range communities {
+				for _, member := range community {
+					score := cosine32(vector, member.vector)
+					if score > bestScore {
+						bestScore = score
+						bestCommunity = communityIndex
+					}
+				}
+			}
+			assignments[topicIndex] = bestCommunity
+		}
+		return assignments
+	}
+
+	// Missing topic vectors must not block compilation. Retain an exact
+	// leaf/name fallback and leave unmatched paths for the residual planner batch.
+	for topicIndex, topic := range topics {
+		leaf := normKey(kccommon.WikiTopicLeaf(topic))
+		for communityIndex, community := range communities {
+			for _, member := range community {
+				if leaf != "" && leaf == normKey(member.name) {
+					assignments[topicIndex] = communityIndex
+					break
+				}
+			}
+			if assignments[topicIndex] >= 0 {
+				break
+			}
+		}
+	}
+	return assignments
 }
 
 func (p *wikiPipeline) runTopicPlan() (wikiPlan, error) {

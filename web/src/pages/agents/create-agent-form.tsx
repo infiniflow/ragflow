@@ -1,9 +1,12 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { isEmpty } from 'lodash';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
+import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import { MemoriesFormField } from '@/components/memories-form-field';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -19,10 +22,15 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { FlowType, FlowTypeConfig } from './constant';
 import { NameFormField, NameFormSchema } from './name-form-field';
+import { RetrievalBindingCount } from './template-retrieval-binding';
 
 export type CreateAgentFormProps = IModalProps<any> & {
   loading?: boolean;
   showTypeCards?: boolean;
+  // Templates may ship retrieval steps without any dataset/memory bound. When
+  // set, the form asks the user to bind them before creating the agent, so
+  // the canvas never ends up with a retrieval that fails at runtime.
+  retrievalBindings?: RetrievalBindingCount;
 };
 
 type FlowTypeCardProps = {
@@ -41,7 +49,7 @@ function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
 
   return (
     <section className="flex gap-10">
-      {[FlowType.Flow, FlowType.Compiler, FlowType.Agent].map((val) => {
+      {[FlowType.Agent, FlowType.Flow, FlowType.Compiler].map((val) => {
         const isActive = value === val;
         const config = FlowTypeConfig[val];
         const Icon = config.icon;
@@ -80,6 +88,8 @@ export const FormSchema = z.object({
   tag: z.string().trim().optional(),
   description: z.string().trim().optional(),
   type: z.nativeEnum(FlowType).optional(),
+  dataset_ids: z.array(z.string()).optional(),
+  memory_ids: z.array(z.string()).optional(),
 });
 
 export type FormSchemaType = z.infer<typeof FormSchema>;
@@ -89,6 +99,7 @@ export function CreateAgentForm({
   onOk,
   loading,
   showTypeCards = false,
+  retrievalBindings,
 }: CreateAgentFormProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -108,11 +119,39 @@ export function CreateAgentForm({
   }, [navigate]);
 
   async function onSubmit(data: FormSchemaType) {
+    if (
+      (retrievalBindings?.datasetCount ?? 0) > 0 &&
+      isEmpty(data.dataset_ids)
+    ) {
+      form.setError('dataset_ids', {
+        type: 'manual',
+        message: t('flow.retrievalDatasetRequired'),
+      });
+      return;
+    }
+    if ((retrievalBindings?.memoryCount ?? 0) > 0 && isEmpty(data.memory_ids)) {
+      form.setError('memory_ids', {
+        type: 'manual',
+        message: t('flow.retrievalMemoryRequired'),
+      });
+      return;
+    }
     const ret = await onOk?.(data);
     if (ret) {
       hideModal?.();
     }
   }
+
+  const datasetHint = retrievalBindings?.datasetCount
+    ? t('flow.retrievalTemplateDatasetHint', {
+        count: retrievalBindings.datasetCount,
+      })
+    : undefined;
+  const memoryHint = retrievalBindings?.memoryCount
+    ? t('flow.retrievalTemplateMemoryHint', {
+        count: retrievalBindings.memoryCount,
+      })
+    : undefined;
 
   return (
     <Form {...form}>
@@ -131,6 +170,18 @@ export function CreateAgentForm({
           </RAGFlowFormItem>
         )}
         {!isCompiler && <NameFormField></NameFormField>}
+        {!isCompiler && datasetHint && (
+          <section className="space-y-4">
+            <p className="text-sm text-text-secondary">{datasetHint}</p>
+            <KnowledgeBaseFormField required showVariable={false} />
+          </section>
+        )}
+        {!isCompiler && memoryHint && (
+          <section className="space-y-4">
+            <p className="text-sm text-text-secondary">{memoryHint}</p>
+            <MemoriesFormField label={t('header.memories')} required />
+          </section>
+        )}
       </form>
       <DialogFooter>
         <Button type="button" variant="outline" onClick={hideModal}>

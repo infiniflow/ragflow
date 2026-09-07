@@ -18,6 +18,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,13 +30,22 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
+type startupTaskPublisher struct {
+	messages []common.TaskMessage
+}
+
+func (p *startupTaskPublisher) PublishTaskMessage(_ string, msg common.TaskMessage) error {
+	p.messages = append(p.messages, msg)
+	return nil
+}
+
 // TestStartWorkerPool_StartOnceIdempotent verifies that calling startWorkerPool
 // twice only starts maxConcurrency workers (sync.Once gate). It observes the
 // active worker count directly: a broken sync.Once would double the worker
 // pool and activeWorkers would exceed concurrency after the second call.
 func TestStartWorkerPool_StartOnceIdempotent(t *testing.T) {
 	const concurrency int32 = 3
-	ingestor := NewIngestor("test-idempotent", concurrency, nil)
+	ingestor := newUnitIngestor("test-idempotent", concurrency, nil)
 
 	ingestor.startWorkerPool()
 	// Wait for all workers to enter their loop (they block on the select
@@ -66,7 +77,7 @@ func TestStartWorkerPool_StartOnceIdempotent(t *testing.T) {
 // for all worker goroutines to exit without hanging.
 func TestStop_GracefulShutdown(t *testing.T) {
 	const concurrency int32 = 2
-	ingestor := NewIngestor("test-shutdown", concurrency, nil)
+	ingestor := newUnitIngestor("test-shutdown", concurrency, nil)
 
 	// Start workers; they will block on the task channel since nothing is pushed.
 	ingestor.startWorkerPool()
@@ -91,7 +102,7 @@ func TestStop_GracefulShutdown(t *testing.T) {
 // Stop. Without this, the admin graceful-shutdown path is dead (cmd blocks
 // forever on the receive).
 func TestStop_ClosesShutdownCh(t *testing.T) {
-	ingestor := NewIngestor("test-shutdown-ch", 1, nil)
+	ingestor := newUnitIngestor("test-shutdown-ch", 1, nil)
 	ingestor.Stop(context.Background())
 	select {
 	case <-ingestor.ShutdownCh:
@@ -112,7 +123,7 @@ func TestStop_TimesOutWhenWorkerStuck(t *testing.T) {
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
 	const concurrency int32 = 1
-	ingestor := NewIngestor("test-stuck", concurrency, []string{"pdf"})
+	ingestor := newUnitIngestor("test-stuck", concurrency, []string{"pdf"})
 	ingestor.startWorkerPool()
 
 	// runDocumentTask blocks on release and ignores ctx, simulating a
@@ -168,7 +179,7 @@ func TestStop_TimesOutWhenWorkerStuck(t *testing.T) {
 // long DB query). Without BP3, the initial cancelCheck call runs
 // synchronously and pollCancel cannot observe done until it returns.
 func TestPollCancel_ExitsWhenDoneClosed(t *testing.T) {
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 
 	// Block cancelCheck until released — simulate a stuck DB call.
 	blocking := make(chan struct{})
@@ -202,6 +213,61 @@ func TestPollCancel_ExitsWhenDoneClosed(t *testing.T) {
 	close(released) // cleanup
 }
 
+// TestStartNilEngine verifies that Start returns an error instead of panicking
+// when the message queue engine has not been initialized.
+func TestStartNilEngine(t *testing.T) {
+	previousEngine := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(nil)
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
+
+	ingestor := newUnitIngestor("test-nil-engine", 1, []string{"pdf"})
+	defer ingestor.Stop(context.Background())
+
+	err := ingestor.Start()
+	if err == nil || !strings.Contains(err.Error(), "not initialized") {
+		t.Fatalf("Start() with nil engine: err = %v, want 'not initialized'", err)
+	}
+	if got := ingestor.activeWorkers.Load(); got != 0 {
+		t.Fatalf("activeWorkers after failed Start = %d, want 0", got)
+	}
+}
+
+// TestExecuteTask_MarkFailedAfterCtxCancelAcks verifies that a generic task
+// failure is persisted and acknowledged even after the task context is
+// cancelled by the pipeline.
+func TestExecuteTask_MarkFailedAfterCtxCancelAcks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	defer parentCancel()
+	handle := &fakeTaskHandle{}
+	taskCtx := taskpkg.NewTaskContextForScheduling(parentCtx, &entity.IngestionTask{
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+	})
+	taskCtx.Handle = handle
+	ingestor.runDocumentTask = func(_ context.Context, _ *entity.IngestionTask) error {
+		parentCancel()
+		return errors.New("boom")
+	}
+
+	ingestor.executeTask(context.Background(), taskCtx)
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.FAILED {
+		t.Fatalf("task status = %q, want %q", task.Status, common.FAILED)
+	}
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
 // TestStart_FullPathReturnsAndStartsWorkers is a regression test for the
 // sync.Once re-entrancy deadlock. Before the fix, Start() wrapped the whole
 // startup (start()) in e.startOnce.Do, but start() also called startWorkerPool()
@@ -220,7 +286,7 @@ func TestStart_FullPathReturnsAndStartsWorkers(t *testing.T) {
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
 	const concurrency int32 = 2
-	ing := NewIngestor("test-start-fullpath", concurrency, nil)
+	ing := newUnitIngestor("test-start-fullpath", concurrency, nil)
 	t.Cleanup(func() { ing.Stop(context.Background()) })
 
 	done := make(chan error, 1)
@@ -245,5 +311,44 @@ func TestStart_FullPathReturnsAndStartsWorkers(t *testing.T) {
 	}
 	if got := ing.activeWorkers.Load(); got <= 0 {
 		t.Fatalf("expected activeWorkers > 0 after Start(), got %d", got)
+	}
+}
+
+func TestStartSchedulesCreatedTasks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.CREATED).Error; err != nil {
+		t.Fatalf("set task CREATED: %v", err)
+	}
+
+	previousEngine := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(testutil.SetupNatsEngine(t))
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
+
+	ingestor := newUnitIngestor("test-schedule-created", 1, nil)
+	publisher := &startupTaskPublisher{}
+	ingestor.ingestionTaskSvc.SetTaskPublisher(publisher)
+	t.Cleanup(func() { ingestor.Stop(context.Background()) })
+
+	if err := ingestor.Start(); err != nil {
+		t.Fatalf("Start() returned error: %v", err)
+	}
+	if len(publisher.messages) != 1 {
+		t.Fatalf("published messages = %d, want 1", len(publisher.messages))
+	}
+	if publisher.messages[0].TaskID != taskID {
+		t.Fatalf("published task ID = %q, want %q", publisher.messages[0].TaskID, taskID)
+	}
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("load scheduled task: %v", err)
+	}
+	if task.Status != common.SCHEDULED {
+		t.Fatalf("task status = %q, want %q", task.Status, common.SCHEDULED)
 	}
 }

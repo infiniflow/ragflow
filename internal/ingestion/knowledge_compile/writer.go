@@ -699,7 +699,7 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 	if pageType != "" {
 		m["page_type_kwd"] = pageType
 	}
-	if v := metaString(p.Meta, "topic"); v != "" {
+	if v := kccommon.NormalizeWikiTopicPath(metaString(p.Meta, "topic")); v != "" {
 		m["topic_kwd"] = v
 	}
 	if v := metaString(p.Meta, "plan_group"); v != "" {

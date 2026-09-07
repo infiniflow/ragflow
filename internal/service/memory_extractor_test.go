@@ -20,8 +20,13 @@
 package service
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/testutil"
 )
 
 // pinMemoryNow fixes the memory wall clock at the given instant for the
@@ -91,5 +96,100 @@ func TestBuildExtractedMessageValidAtSemantics(t *testing.T) {
 	}, now)
 	if got := fallbackOnly["valid_at"]; got != now.Format(memoryTimeLayout) {
 		t.Fatalf("valid_at = %v, want fallback %q", got, now.Format(memoryTimeLayout))
+	}
+}
+
+// TestBuildExtractedMessageUsesStableDocumentIDAcrossRetries ensures fallback
+// timestamps do not become part of the chunk-store identity. A retry may run
+// at a different time and allocate a new logical message id, but it must still
+// overwrite the same extracted document.
+func TestBuildExtractedMessageUsesStableDocumentIDAcrossRetries(t *testing.T) {
+	msg := MemoryMessage{UserID: "u1", AgentID: "a1", SessionID: "s1"}
+	firstAttempt := time.Date(2026, 8, 20, 10, 5, 0, 0, time.Local)
+	retryAttempt := firstAttempt.Add(10 * time.Second)
+
+	for _, test := range []struct {
+		name string
+		item extractedMemory
+	}{
+		{
+			name: "omitted valid at",
+			item: extractedMemory{MessageType: "fact", Content: "likes coffee"},
+		},
+		{
+			name: "invalid timestamps",
+			item: extractedMemory{
+				MessageType: "fact",
+				Content:     "likes coffee",
+				ValidAt:     "not a timestamp",
+				InvalidAt:   "also not a timestamp",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			first := buildExtractedMessage(8, 42, "mem-1", msg, test.item, firstAttempt)
+			retry := buildExtractedMessage(9, 42, "mem-1", msg, test.item, retryAttempt)
+
+			firstID, ok := first["id"].(string)
+			if !ok || firstID == "" {
+				t.Fatalf("first extracted message id = %#v, want a stable non-empty string", first["id"])
+			}
+			if got, ok := retry["id"].(string); !ok || got != firstID {
+				t.Fatalf("retry extracted message id = %#v, want %q", retry["id"], firstID)
+			}
+		})
+	}
+}
+
+// TestUpdateTaskProgressReturnsPersistenceError ensures callers can keep the
+// broker message retryable when they cannot persist the terminal task state.
+func TestUpdateTaskProgressReturnsPersistenceError(t *testing.T) {
+	db := testutil.SetupTestDB(t, &entity.IngestionTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	svc := &MemoryMessageService{taskDAO: dao.NewTaskDAO()}
+	if err := svc.updateTaskProgress(t.Context(), "mem-task-1", 1.0, "completed"); err == nil {
+		t.Fatal("updateTaskProgress() error = nil, want persistence error")
+	}
+}
+
+// TestTypeInstructionsStayInLockstepWithPython pins the rules that
+// memory/utils/prompt_util.py carries and the Go map historically dropped:
+// per-type Examples lines, the full "Timestamp Rules for <Type> Knowledge:"
+// titles, and the semantic Default line. If a substring fails here, the two
+// implementations are handing the extracting LLM different contracts (the
+// drift this map was merged with — see #18415).
+func TestTypeInstructionsStayInLockstepWithPython(t *testing.T) {
+	want := map[string][]string{
+		"semantic": {
+			"- Examples: \"The capital of France is Paris\", \"Water boils at 100°C\"",
+			"**Timestamp Rules for Semantic Knowledge:**",
+			"- valid_at: When the fact became true (e.g., law enactment, discovery)",
+			"- invalid_at: When it becomes false (e.g., repeal, disproven) or empty if still true",
+			"- Default: valid_at = conversation time, invalid_at = \"\" for timeless facts",
+		},
+		"episodic": {
+			"- Examples: \"Yesterday I fixed the bug\", \"User reported issue last week\"",
+			"**Timestamp Rules for Episodic Knowledge:**",
+			"- Extract explicit times: \"at 3 PM\", \"last Monday\", \"from X to Y\"",
+		},
+		"procedural": {
+			"- Examples: \"To reset password, click...\", \"Debugging steps: 1)...\"",
+			"**Timestamp Rules for Procedural Knowledge:**",
+			"- For version-specific: use release dates",
+			"- For best practices: invalid_at = \"\"",
+		},
+	}
+	for memoryType, lines := range want {
+		got, ok := TYPE_INSTRUCTIONS[memoryType]
+		if !ok {
+			t.Fatalf("TYPE_INSTRUCTIONS has no entry for %q", memoryType)
+		}
+		for _, line := range lines {
+			if !strings.Contains(got, line) {
+				t.Errorf("TYPE_INSTRUCTIONS[%q] is missing the Python-side rule: %s", memoryType, line)
+			}
+		}
 	}
 }

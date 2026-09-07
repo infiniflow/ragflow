@@ -81,7 +81,7 @@ func TestAsyncChat_RejectsNonUserLastMessage(t *testing.T) {
 		{"role": "user", "content": "first"},
 		{"role": "assistant", "content": "last message must not be assistant"},
 	}
-	_, err := s.AsyncChat(context.Background(), "user-1", dialForTest(""), messages, false, nil)
+	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), messages, false, nil)
 	if err == nil {
 		t.Fatal("expected error for non-user last message, got nil")
 	}
@@ -94,44 +94,9 @@ func TestAsyncChat_RejectsNonUserLastMessage(t *testing.T) {
 // service should return an error before spawning the goroutine.
 func TestAsyncChat_EmptyMessages(t *testing.T) {
 	s := &ChatPipelineService{}
-	_, err := s.AsyncChat(context.Background(), "user-1", dialForTest(""), nil, false, nil)
+	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
-	}
-}
-
-// TestSmartReasoning_GenerationConfigReachesEinoModel guards the smart-reasoning
-// config wiring: the dispatch path (smartReasoningChat) now builds the eino
-// model with BuildChatConfig(chat, kwargs) instead of a nil config, so the
-// dialog LLM setting and per-request overrides (temperature, top_p, max_tokens,
-// thinking, stop) actually reach the model driver. A nil config — the pre-fix
-// behaviour — would silently drop all of these when agent_mode=smart-reasoning.
-func TestSmartReasoning_GenerationConfigReachesEinoModel(t *testing.T) {
-	chat := dialForTest("llm-1")
-	chat.LLMSetting = entity.JSONMap{
-		"temperature": 0.7,
-		"top_p":       0.9,
-		"max_tokens":  512,
-		"thinking":    true,
-		"stop":        []interface{}{"\n", "END"},
-	}
-	// Request-level overrides win over dialog values.
-	cfg := BuildChatConfig(chat, map[string]interface{}{"temperature": 0.3})
-
-	if cfg.Temperature == nil || *cfg.Temperature != 0.3 {
-		t.Fatalf("Temperature: want request override 0.3, got %v", cfg.Temperature)
-	}
-	if cfg.TopP == nil || *cfg.TopP != 0.9 {
-		t.Fatalf("TopP: want dialog 0.9, got %v", cfg.TopP)
-	}
-	if cfg.MaxTokens == nil || *cfg.MaxTokens != 512 {
-		t.Fatalf("MaxTokens: want 512, got %v", cfg.MaxTokens)
-	}
-	if cfg.Thinking == nil || !*cfg.Thinking {
-		t.Fatalf("Thinking: want true, got %v", cfg.Thinking)
-	}
-	if cfg.Stop == nil || len(*cfg.Stop) != 2 {
-		t.Fatalf("Stop: want [\"\\n\", \"END\"], got %v", cfg.Stop)
 	}
 }
 
@@ -143,7 +108,7 @@ func TestDecorateAnswer_TimerFormatAlwaysEmitted(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"hello world",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -181,7 +146,7 @@ func TestDecorateAnswer_ThinkMarkersPreserved(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"<think>reasoning</think>visible answer",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -211,7 +176,7 @@ func TestDecorateAnswer_InvalidKeySuffix(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"oops: invalid api key",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -238,7 +203,7 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"see [ID:12] for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -265,7 +230,7 @@ func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"see (ID: 12) for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -305,7 +270,7 @@ func TestDecorateAnswer_RepairRunsWhenQuote(t *testing.T) {
 		"doc_aggs": []interface{}{},
 	}
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"see (ID: 12) for details",
 		kb,
 		"system prompt",
@@ -334,7 +299,7 @@ func TestDecorateAnswer_PreCheckSkipsInsertCitations(t *testing.T) {
 	timer, _ := newTimerAndPrompt()
 	in := "answer has [ID:3] already in it"
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		in,
 		map[string]interface{}{
 			// No chunks → insertCitations path is gated off anyway,
@@ -482,7 +447,7 @@ func TestFallbackToLatestUser(t *testing.T) {
 // TestHydrateChunkVectors_NoChunksNoop pins the no-op behavior of
 // the hydration helper on empty input.
 func TestHydrateChunkVectors_NoChunksNoop(t *testing.T) {
-	hits, err := HydrateChunkVectors(context.Background(),
+	hits, err := HydrateChunkVectors(t.Context(),
 		map[string]interface{}{"chunks": []interface{}{}},
 		nil, nil, nil,
 	)
@@ -497,7 +462,7 @@ func TestHydrateChunkVectors_NoChunksNoop(t *testing.T) {
 // TestHydrateChunkVectors_NilKbinfosNoop pins the no-op behavior of
 // the hydration helper on nil kbinfos.
 func TestHydrateChunkVectors_NilKbinfosNoop(t *testing.T) {
-	hits, err := HydrateChunkVectors(context.Background(), nil, nil, nil, nil)
+	hits, err := HydrateChunkVectors(t.Context(), nil, nil, nil, nil)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -560,7 +525,7 @@ func TestNormalizeSQL_StripsThinkBlocks(t *testing.T) {
 func TestBuildSQLReference_Scalar(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "", "",
+		t.Context(), nil, "", "",
 		[]map[string]interface{}{{"count": 42.0}},
 		"", "", nil, nil,
 	)
@@ -587,7 +552,7 @@ func TestBuildSQLReference_MultiRowTable(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "", "select id, name from t",
+		t.Context(), nil, "", "select id, name from t",
 		rows,
 		"sys", "elasticsearch", nil, nil,
 	)
@@ -680,7 +645,7 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 		"doc_aggs": []interface{}{},
 	}
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"x",
 		kb,
 		"system prompt",
@@ -1228,7 +1193,7 @@ func TestFetchAggregateChunks_SkipsInfinityMultiKB(t *testing.T) {
 	sqlEngine := &sqlFakeEngine{engineType: "infinity"}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm", []string{"kb_a", "kb_b"},
 	)
@@ -1253,7 +1218,7 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1285,7 +1250,7 @@ func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
 	sqlEngine := &sqlFakeEngine{engineType: "elasticsearch"}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1304,7 +1269,7 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1317,7 +1282,7 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 func TestBuildSQLReference_EmptyRows(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "", "", nil,
+		t.Context(), nil, "", "", nil,
 		"", "", nil, nil,
 	)
 	if ans != "No results." {
@@ -1339,7 +1304,7 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "t", "select doc_id, docnm_kwd, title from t",
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
 		rows, "", "elasticsearch", kbs, nil,
 	)
 	if !strings.Contains(ans, "Source|") {
@@ -1386,7 +1351,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), sqlEngine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		rows, "", "elasticsearch", kbs, nil,
 	)
@@ -1410,7 +1375,7 @@ func TestBuildSQLReference_NonAggregateMissingSourceEmptyRefs(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "t", "select title from t",
+		t.Context(), nil, "t", "select title from t",
 		rows, "", "elasticsearch", nil, nil,
 	)
 	if !strings.Contains(ans, "T1") || !strings.Contains(ans, "T2") {
@@ -1438,7 +1403,7 @@ func TestBuildSQLReference_DisplayNameTranslation(t *testing.T) {
 	fieldMap := map[string]interface{}{"title": "My Title"}
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
-		context.Background(), nil, "t", "select doc_id, docnm_kwd, title from t",
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
 		rows, "", "elasticsearch", nil, fieldMap,
 	)
 	if !strings.Contains(ans, "|My Title|") {
@@ -1457,7 +1422,7 @@ func TestBuildSQLReference_ISOTimestampStripped(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
-		context.Background(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
 		rows, "", "elasticsearch", nil, nil,
 	)
 	if strings.Contains(ans, "T13:24:55") {
