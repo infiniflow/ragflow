@@ -140,6 +140,7 @@ export default {
       runningStatus2: '取消',
       runningStatus3: '成功',
       runningStatus4: '失敗',
+      runningStatusQueued: '排隊中',
       pageRanges: '頁碼範圍',
       pageRangesTip:
         '頁碼範圍：定義需要解析的頁面範圍。不包含在這些範圍內的頁面將被忽略。',

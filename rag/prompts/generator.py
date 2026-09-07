@@ -27,7 +27,7 @@ from common.misc_utils import hash_str2int
 from rag.nlp import rag_tokenizer
 from rag.prompts.template import load_prompt
 from common.constants import TAG_FLD
-from common.token_utils import encoder, num_tokens_from_string
+from common.token_utils import get_encoder, num_tokens_from_string
 
 STOP_TOKEN = "<|STOP|>"
 COMPLETE_TASK = "complete_task"
@@ -83,7 +83,8 @@ def message_fit_in(msg, max_length=4000):
 
     def trim_content(content, limit):
         limit = max(0, limit)
-        return encoder.decode(encoder.encode(content)[:limit])
+        enc = get_encoder()
+        return enc.decode(enc.encode(content)[:limit])
 
     c = count()
     if c < max_length:

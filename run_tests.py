@@ -181,7 +181,10 @@ EXAMPLES:
 
     def build_pytest_command(self) -> List[str]:
         """Build the pytest command arguments"""
-        cmd = ["pytest"]
+        # Use the current interpreter (the venv python) to run pytest as a
+        # module so the run works even when the `pytest` console script is not
+        # on PATH (e.g. the venv was not explicitly activated).
+        cmd = [self.python, "-m", "pytest"]
         if self.test_path:
             test_target = Path(self.test_path)
             if not test_target.is_absolute():

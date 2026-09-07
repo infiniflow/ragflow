@@ -47,9 +47,10 @@ import (
 // in-flight message's ack deadline renewed while a worker parses. It MUST stay
 // comfortably below the consumer's ack deadline, which the server normalizes
 // to BackOff[0] = 5s (see NatsEngine.InitConsumer): a pulse slower than the
-// deadline lets the broker redeliver mid-run, and the redelivered copy is
-// ack-skipped by the claim guard. If the worker or process stops, the broker
-// can redeliver the unsettled message after the ack deadline.
+// deadline lets the broker redeliver mid-run. A duplicate delivery renews its
+// lease but remains unsettled until the owning worker reaches a durable
+// outcome. If the worker or process stops, the broker can redeliver the
+// unsettled message after the ack deadline.
 const defaultHeartbeatInterval = 2 * time.Second
 
 type Ingestor struct {
@@ -111,8 +112,8 @@ type Ingestor struct {
 	// runMemoryTask dispatches one async memory-extraction task. Tests may
 	// override this to inject a panicking/failing runner without a live DB or
 	// real MemoryMessageService. Defaults to defaultRunMemoryTask, which calls
-	// memorySvc.HandleSaveToMemoryTask.
-	runMemoryTask func(ctx context.Context, payload map[string]any) error
+	// memorySvc.HandleSaveToMemoryTask with the envelope task id.
+	runMemoryTask func(ctx context.Context, taskID string, payload map[string]any) error
 
 	// cancelCheck is polled periodically (every 3s) during task execution.
 	// When it returns true the task's context is cancelled, which causes the
@@ -368,6 +369,16 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			}
 			return
 		}
+		// A memory task without an envelope id has no valid identity: claiming
+		// an empty key would strand a no-op claim in currentTasks and block
+		// nothing useful, so Ack-skip it instead.
+		if taskMessage.TaskID == "" {
+			common.Warn("memory task with empty task id received, ack")
+			if err := handle.Ack(); err != nil {
+				common.Error("error ack memory task with empty task id", err)
+			}
+			return
+		}
 		var payload map[string]any
 		if len(taskMessage.Payload) == 0 || json.Unmarshal(taskMessage.Payload, &payload) != nil {
 			common.Warn(fmt.Sprintf("memory task %s has no parseable payload, ack", taskMessage.TaskID))
@@ -376,13 +387,39 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			}
 			return
 		}
-		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, payload, handle)
+		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, taskMessage.TaskID, payload, handle)
+		// Claim the task before enqueueing so a redelivered copy of the same
+		// memory task (NATS AckWait/BackOff redelivery, or a restart replay) is
+		// not executed again while its owner is still running. Memory tasks have no
+		// ingestion_task row / status CAS to dedupe against, so this claim
+		// guards duplicate execution within this ingestor. The claim is released
+		// by executeMemoryTask when the worker finishes.
+		if !e.claimTask(taskMessage.TaskID) {
+			common.Warn(fmt.Sprintf("memory task %s redelivered while worker still processing, renew lease", taskMessage.TaskID))
+			if err := handle.InProgress(); err != nil {
+				common.Error(fmt.Sprintf("renew redelivered memory task %s", taskMessage.TaskID), err)
+			}
+			return
+		}
+		claimedTaskID = taskMessage.TaskID
+		// Begin renewing the broker lease before the task can wait in taskChan.
+		// Starting only in executeMemoryTask would leave queued work unprotected
+		// until a worker becomes available: a task waiting past AckWait would be
+		// redelivered before its owner can begin running it.
+		// The stop function rides on the task context so the worker can stop it
+		// before settlement (the lease is owned by the task, not by the map).
+		hb := NewHeartbeat(taskMessage.TaskID, handle, e.heartbeatInterval).WithContext(e.ctx)
+		hb.Start()
+		taskCtx.SetStopLease(hb.Stop)
 		select {
 		case e.taskChan <- taskCtx:
+			claimedTaskID = "" // executeMemoryTask owns the release now
 			common.Info(fmt.Sprintf("Memory task %s queued (channel: %d/%d)", taskMessage.TaskID, len(e.taskChan), cap(e.taskChan)))
 		case <-e.ctx.Done():
-			// Shutdown won the race: return without settling so the broker
-			// redelivers the memory task after restart.
+			// Shutdown won the race: stop the lease, release the claim, and
+			// return without settling so the broker redelivers the memory task
+			// after restart.
+			taskCtx.StopLease()
 			common.Info(fmt.Sprintf("Ingestor shutting down; memory task %s not enqueued", taskMessage.TaskID))
 			return
 		}
@@ -432,13 +469,14 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		return
 	case common.RUNNING:
 		// Guard against MQ redelivery: if another worker in this
-		// process is already processing this task, ack the redelivered
-		// message and skip instead of scheduling it again.
+		// process is already processing this task, renew the redelivered
+		// message's lease and skip instead of scheduling it again. The
+		// owning worker remains the only code path that may Ack/Nack.
 		if !e.claimTask(task.ID) {
-			common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, ack skip (task_id=%s doc_id=%s kb_id=%s)",
+			common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, renew lease (task_id=%s doc_id=%s kb_id=%s)",
 				taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
-			if ackErr := handle.Ack(); ackErr != nil {
-				common.Error(fmt.Sprintf("error ack redelivered task %s", taskMessage.TaskID), ackErr)
+			if err := handle.InProgress(); err != nil {
+				common.Error(fmt.Sprintf("renew redelivered task %s", taskMessage.TaskID), err)
 			}
 			return
 		}
@@ -470,8 +508,8 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 	// first few parse" defect.
 	//
 	// The in-flight claim (set just above) guards against a redelivery racing
-	// the blocked send: a duplicate delivery sees claimTask fail and is
-	// ack-skipped, so a blocking send cannot double-execute a task.
+	// the blocked send: a duplicate delivery sees claimTask fail, renews its
+	// lease, and cannot double-execute a task.
 	select {
 	case e.taskChan <- taskCtx:
 		claimedTaskID = "" // executeTask owns the release now
@@ -530,10 +568,26 @@ func (e *Ingestor) workerLoop(id int32) {
 // ingestion_task row / state machine: the runner persists the extracted
 // messages and settles task progress on the way out.
 //
+// The task id comes exclusively from taskCtx.ID() (the envelope TaskID set by
+// the scheduler). It is never re-derived from MemoryPayload — the payload no
+// longer carries identity.
+//
+// Settlement runs in one deferred closed loop on every exit path (success,
+// terminal/transient failure, panic) in a fixed order: stop the admission
+// heartbeat and wait for it to exit, then Ack/Nack exactly once, then release
+// the in-process claim. Stopping the heartbeat before the Ack/Nack is required
+// by Heartbeat's contract — no InProgress may be in flight on the same message
+// while it is being settled. The claim is released after settlement so a
+// redelivery that races the settlement stays owned by this worker; a redelivery
+// after the function returns (e.g. a lost Ack) re-claims and re-runs the task
+// as normal at-least-once delivery.
+//
 // Settlement is error-category aware:
 //   - Terminal failure (task row absent, already-failed, or progress=-1 already
 //     persisted) is Acked so an already-consumed message is never redelivered
 //     into an infinite nack loop.
+//   - A task row already at progress>=1.0 is treated as success (the completed
+//     short-circuit in HandleSaveToMemoryTask) and Acked.
 //   - Transient failure (a task-load DB error before any durable marker, or an
 //     LLM/network failure that did not reach progress=-1) is Nacked so the
 //     message is redelivered and retried instead of being silently dropped.
@@ -545,22 +599,41 @@ func (e *Ingestor) workerLoop(id int32) {
 // stall every subsequent document parse. The recovered panic is treated as a
 // transient failure and Nacked for redelivery.
 func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
-	taskID, _ := taskCtx.MemoryPayload["id"].(string)
-	if taskID == "" {
-		taskID, _ = taskCtx.MemoryPayload["task_id"].(string)
+	taskID := taskCtx.ID()
+
+	// The admission path (processMessage) starts the heartbeat before queueing
+	// and attaches its stop function via SetStopLease. Direct-execution callers
+	// (unit tests, non-queued paths) carry no lease, so start a local heartbeat
+	// as a fallback. The two are mutually exclusive — never both running.
+	if taskCtx.StopLeaseFn() == nil && taskCtx.Handle != nil && e.heartbeatInterval > 0 {
+		hb := NewHeartbeat(taskID, taskCtx.Handle, e.heartbeatInterval).WithContext(e.ctx)
+		hb.Start()
+		taskCtx.SetStopLease(hb.Stop)
 	}
 
-	// Recover a panic so a single poison memory task never crashes the worker
-	// (and, at max_concurrent_workers=1, the whole ingestor's only slot).
+	var (
+		settleAck  bool
+		settleNack bool
+	)
 	defer func() {
+		// Stop the lease (and wait for any in-flight InProgress) before settling.
+		taskCtx.StopLease()
 		if r := recover(); r != nil {
+			// A panic is treated as a transient failure: Nack so the broker
+			// redelivers and retries the message.
 			common.Error(fmt.Sprintf("memory task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
-			if taskCtx != nil && taskCtx.Handle != nil {
-				if nackErr := taskCtx.Handle.Nack(); nackErr != nil {
-					common.Error(fmt.Sprintf("nack memory task %s after panic", taskID), nackErr)
-				}
+			settleNack = true
+		}
+		if settleAck {
+			if err := taskCtx.Handle.Ack(); err != nil {
+				common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
+			}
+		} else if settleNack {
+			if err := taskCtx.Handle.Nack(); err != nil {
+				common.Error(fmt.Sprintf("nack memory task %s", taskID), err)
 			}
 		}
+		e.releaseTask(taskID)
 	}()
 
 	common.Info(fmt.Sprintf("Starting memory task %s", taskID))
@@ -570,39 +643,32 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 	}
 	if e.memorySvc == nil {
 		common.Warn(fmt.Sprintf("memory task %s: memory extractor disabled, ack", taskID))
-		if err := taskCtx.Handle.Ack(); err != nil {
-			common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
-		}
+		settleAck = true
 		return
 	}
-	if err := e.runMemoryTask(ctx, taskCtx.MemoryPayload); err != nil {
+	if err := e.runMemoryTask(ctx, taskID, taskCtx.MemoryPayload); err != nil {
 		// defaultRunMemoryTask wraps terminal outcomes in ErrMemoryTaskTerminal
-		// (durable progress=-1 written, or no row to retry). Everything else is
-		// transient and must be redelivered rather than dropped.
+		// (durable progress=-1 written, completed progress>=1.0, or no row to
+		// retry). Everything else is transient and must be redelivered rather
+		// than dropped.
 		if errors.Is(err, servicepkg.ErrMemoryTaskTerminal) {
 			common.Error(fmt.Sprintf("memory task %s failed terminally, ack", taskID), err)
-			if ackErr := taskCtx.Handle.Ack(); ackErr != nil {
-				common.Error(fmt.Sprintf("ack failed memory task %s", taskID), ackErr)
-			}
+			settleAck = true
 			return
 		}
 		common.Error(fmt.Sprintf("memory task %s failed transiently, nack for redelivery", taskID), err)
-		if nackErr := taskCtx.Handle.Nack(); nackErr != nil {
-			common.Error(fmt.Sprintf("nack memory task %s", taskID), nackErr)
-		}
+		settleNack = true
 		return
 	}
 	common.Info(fmt.Sprintf("Memory task %s completed", taskID))
-	if err := taskCtx.Handle.Ack(); err != nil {
-		common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
-	}
+	settleAck = true
 }
 
 // defaultRunMemoryTask is the production memory-task runner. It is held behind
 // the runMemoryTask field so tests can substitute a panicking/failing runner
 // without a live DB or real MemoryMessageService.
-func (e *Ingestor) defaultRunMemoryTask(ctx context.Context, payload map[string]any) error {
-	return e.memorySvc.HandleSaveToMemoryTask(ctx, payload)
+func (e *Ingestor) defaultRunMemoryTask(ctx context.Context, taskID string, payload map[string]any) error {
+	return e.memorySvc.HandleSaveToMemoryTask(ctx, taskID, payload)
 }
 
 func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
@@ -853,16 +919,17 @@ func (e *Ingestor) settleToTerminal(ctx context.Context, taskID string) error {
 }
 
 // settleMessage runs body under a heartbeat, then settles the MQ message. The
-// heartbeat is stopped (and waited on) before ack/nack — see startHeartbeat.
+// heartbeat is stopped (and waited on) before ack/nack — see Heartbeat.Stop.
 // A panic in body is recovered: the task is marked FAILED and the message is
 // Nacked for redelivery, so a single task's panic never crashes the worker.
 // Settlement queries the DB for the task's actual status: a terminal state
 // (COMPLETED/STOPPED/FAILED) means Ack; anything else means Nack. The body's
 // return value is advisory only — DB truth is authoritative (BP1).
 func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskContext, body func(context.Context) bool) (terminal bool) {
-	stop := e.startHeartbeat(taskCtx)
+	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, e.heartbeatInterval).WithContext(taskCtx.Ctx)
+	hb.Start()
 	defer func() {
-		stop() // stop heartbeat (and wait) before ack/nack
+		hb.Stop() // stop heartbeat (and wait) before ack/nack
 		if r := recover(); r != nil {
 			// Recover the panic so the worker process survives. Mark the
 			// task FAILED so a redelivery does not re-run a poison message
@@ -1024,42 +1091,10 @@ func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
 
 // claimTask registers a worker claim on a task ID. Returns false if another
 // worker has already claimed it (e.g. MQ redelivery), true on first claim.
-// startHeartbeat launches a goroutine that calls Handle.InProgress every
-// heartbeatInterval to keep the broker AckWait timer fresh during long tasks.
-// It returns a stop function that signals the goroutine to exit and BLOCKS
-// until it has, so the caller can ack/nack with no in-flight InProgress on the
-// same message. Returns a no-op stop when there is no handle or no interval
-// (standalone/test path).
-func (e *Ingestor) startHeartbeat(taskCtx *taskpkg.TaskContext) func() {
-	if taskCtx.Handle == nil || e.heartbeatInterval <= 0 {
-		return func() {}
-	}
-	var wg sync.WaitGroup
-	wg.Add(1)
-	done := make(chan struct{})
-	go func() {
-		defer wg.Done()
-		ticker := time.NewTicker(e.heartbeatInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if err := taskCtx.Handle.InProgress(); err != nil {
-					common.Error(fmt.Sprintf("heartbeat task %s", taskCtx.IngestionTask.ID), err)
-				}
-			case <-done:
-				return
-			case <-taskCtx.Ctx.Done():
-				return
-			}
-		}
-	}()
-	return func() {
-		close(done)
-		wg.Wait()
-	}
-}
-
+// The claim is released by releaseTask when the worker finishes, so a future
+// redelivery (after restart) can re-claim the task. Broker lease renewal is a
+// separate concern handled by Heartbeat (doc: settleMessage; memory: admission
+// in processMessage + stop via TaskContext.StopLease).
 func (e *Ingestor) claimTask(taskID string) bool {
 	e.tasksMu.Lock()
 	defer e.tasksMu.Unlock()
