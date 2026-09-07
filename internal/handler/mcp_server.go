@@ -141,10 +141,35 @@ func MCPListChats(ctx context.Context, chatService *service.ChatService, userID 
 	return chatList, resp.Total, nil
 }
 
+// mcpRerankCandidatesCount is the fixed rerank candidate window sent with every
+// retrieval request, so the ranking cannot shift between pages of one
+// pagination sequence. Requests whose page * page_size exceeds it are rejected
+// up front. Keep in sync with _RERANK_CANDIDATES_COUNT in mcp/server/server.py.
+const mcpRerankCandidatesCount = 512
+
+// validateRetrievalWindow checks that the requested page fits inside the fixed
+// rerank candidate window. page/page_size default to the same values as the
+// Python MCP server (1/30) when unset.
+func validateRetrievalWindow(page, pageSize int) error {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+	if page*pageSize > mcpRerankCandidatesCount {
+		return fmt.Errorf("page * page_size (%d) exceeds the fixed rerank candidate window (%d); narrow page or page_size", page*pageSize, mcpRerankCandidatesCount)
+	}
+	return nil
+}
+
 // MCPRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
 func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+	if err := validateRetrievalWindow(req.Page, req.PageSize); err != nil {
+		return "", err
+	}
 	// Resolve dataset IDs: if none provided, fetch ALL accessible datasets
 	// across all pages (matching Python _fetch_all_datasets behaviour).
 	datasetIDs := req.DatasetIDs
@@ -208,6 +233,10 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 	if req.RerankID != "" {
 		v := req.RerankID
 		searchReq.RerankID = &v
+	}
+	{
+		v := mcpRerankCandidatesCount
+		searchReq.RerankCandidatesCount = &v
 	}
 	{
 		v := req.Keyword

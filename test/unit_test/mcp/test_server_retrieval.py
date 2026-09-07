@@ -51,26 +51,30 @@ def _stub_retrieval(monkeypatch, connector):
         captured["payload"] = dict(json)
         return _FakeResponse({"code": 0, "data": {"chunks": [], "total": 0, "doc_aggs": []}})
 
+    async def _get_document_metadata_cache(*args, **kwargs):
+        return {}, {}
+
     monkeypatch.setattr(connector, "_post", _post)
+    monkeypatch.setattr(connector, "_get_document_metadata_cache", _get_document_metadata_cache)
     return captured
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "page,page_size,expected_candidates",
+    "page,page_size",
     [
-        (1, 10, 64),  # default window stays at the backend default
-        (1, 50, 64),  # recommended page_size, still within the default candidate pool
-        (2, 50, 100),  # advertised paging past 64 results
-        (7, 10, 70),  # default page_size paged past 64 results
-        (1, 100, 100),  # schema maximum
+        (1, 10),  # default page_size
+        (1, 50),  # recommended page_size
+        (2, 50),  # paging keeps the same candidate window
+        (7, 10),  # default page_size paged past the backend's default 64
+        (1, 100),  # schema maximum
     ],
 )
-async def test_retrieval_grows_rerank_candidates_with_requested_window(monkeypatch, mcp_server, page, page_size, expected_candidates):
-    """The backend defaults rerank_candidates_count to 64 and rejects any request
-    where it is smaller than page * page_size, so the MCP tool must send a candidate
-    count that covers the requested window — otherwise every page past the first 64
-    results fails with an error about a parameter the tool never exposes."""
+async def test_retrieval_sends_fixed_rerank_candidates_window(monkeypatch, mcp_server, page, page_size):
+    """The candidate window is a fixed constant rather than page * page_size, so
+    the rerank pool — and therefore the ranking — stays identical on every page
+    of a pagination sequence; a growing window could reorder results between
+    pages, duplicating or skipping chunks."""
     connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
     captured = _stub_retrieval(monkeypatch, connector)
 
@@ -84,5 +88,26 @@ async def test_retrieval_grows_rerank_candidates_with_requested_window(monkeypat
 
     assert captured["path"] == "/retrieval"
     payload = captured["payload"]
-    assert payload["rerank_candidates_count"] == expected_candidates
+    assert payload["rerank_candidates_count"] == mcp_server.RAGFlowConnector._RERANK_CANDIDATES_COUNT
     assert payload["rerank_candidates_count"] >= page * page_size
+
+
+@pytest.mark.asyncio
+async def test_retrieval_rejects_window_beyond_fixed_candidates(monkeypatch, mcp_server):
+    """Requests that cannot fit inside the fixed candidate window fail up front
+    with an actionable message instead of surfacing the backend's rejection (or
+    worse, silently serving drifting pages)."""
+    connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
+    captured = _stub_retrieval(monkeypatch, connector)
+
+    window = mcp_server.RAGFlowConnector._RERANK_CANDIDATES_COUNT
+    with pytest.raises(Exception, match="exceeds the fixed rerank candidate window"):
+        await connector.retrieval(
+            api_key="unit-key",
+            dataset_ids=["dataset-1"],
+            question="unit question",
+            page=window // 100 + 1,
+            page_size=100,
+        )
+
+    assert "payload" not in captured  # rejected before any request was sent
