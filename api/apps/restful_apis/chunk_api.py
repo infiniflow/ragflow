@@ -370,7 +370,7 @@ async def retrieval_test(tenant_id, dataset_id=None):
     toc_enhance = req.get("toc_enhance", False)
     langs = req.get("cross_languages", [])
     if not isinstance(doc_ids, list):
-        return get_error_data_result("`documents` should be a list")
+        return get_error_data_result("`document_ids` should be a list")
     if doc_ids:
         doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
         for doc_id in doc_ids:
