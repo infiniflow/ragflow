@@ -20,7 +20,7 @@ import math
 import os
 import re
 from abc import ABC
-from datetime import date, time
+from datetime import date, datetime, time
 from decimal import Decimal
 
 import pandas as pd
@@ -46,8 +46,13 @@ def convert_decimals(obj):
         return obj
     if isinstance(obj, Decimal):
         return float(obj)
-    # datetime subclasses date; both (and time) expose isoformat()
-    if isinstance(obj, (date, time)):
+    # datetime subclasses date — check datetime first so object-dtype
+    # timestamps match pandas datetime64 truncation (YYYY-MM-DD).
+    if isinstance(obj, datetime):
+        return obj.strftime("%Y-%m-%d")
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, time):
         return obj.isoformat()
     if isinstance(obj, dict):
         return {k: convert_decimals(v) for k, v in obj.items()}
