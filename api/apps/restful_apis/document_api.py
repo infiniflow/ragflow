@@ -91,12 +91,6 @@ def _normalize_legacy_raptor_config(req: dict) -> None:
         return
 
     normalized_fields = []
-    legacy_ext = raptor.pop("ext", None)
-    if legacy_ext is not None:
-        normalized_fields.append("ext")
-        if isinstance(legacy_ext, dict) and "clustering_threshold" in legacy_ext and "clustering_threshold" not in raptor:
-            raptor["clustering_threshold"] = legacy_ext["clustering_threshold"]
-            normalized_fields.append("ext.clustering_threshold")
     for field in ("threshold", "clustering_method", "tree_builder"):
         if field in raptor:
             raptor.pop(field)
@@ -116,13 +110,10 @@ def _normalize_parser_config_compilation_template_group_ids(parser_config) -> bo
 
     if not isinstance(parser_config, dict):
         return False
-    if "compilation_template_group_id" not in parser_config and not (isinstance(parser_config.get("ext"), dict) and "compilation_template_group_id" in parser_config["ext"]):
+    if "compilation_template_group_id" not in parser_config:
         return False
     group_ids = _parser_config_compilation_template_group_ids(parser_config)
     parser_config["compilation_template_group_id"] = group_ids
-    ext = parser_config.get("ext")
-    if isinstance(ext, dict) and "compilation_template_group_id" in ext:
-        ext["compilation_template_group_id"] = group_ids
     return True
 
 
@@ -291,7 +282,6 @@ async def update_document(tenant_id, dataset_id, document_id):
     # Changing the document-scoped knowledge compilation template group must
     # not remove the existing chunks.
     if update_doc_req.parser_config:
-        req["parser_config"].update(update_doc_req.parser_config.ext)
         _normalize_parser_config_compilation_template_group_ids(req["parser_config"])
         DocumentService.update_parser_config(doc.id, req["parser_config"])
 
