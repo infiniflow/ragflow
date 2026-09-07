@@ -6,7 +6,7 @@ import (
 	"ragflow/internal/harness/core/schema"
 )
 
-// ---- NewEventSenderModelWrapper creates a handler that sends model output events.
+// NewEventSenderModelWrapper creates a handler that sends model output events.
 // Place this in the Handlers chain to control WHERE events are emitted:
 // - Innermost position (last in Handlers list): events contain original (unmodified) model output
 // - Outermost position (first in Handlers list): events contain fully processed output

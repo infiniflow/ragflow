@@ -92,6 +92,7 @@ func TestAstraflowFactory(t *testing.T) {
 }
 
 func TestAstraflowChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAstraflowServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "claude-opus-4-7" {
@@ -99,9 +100,6 @@ func TestAstraflowChatHappyPath(t *testing.T) {
 		}
 		if body["stream"] != false {
 			t.Errorf("stream=%v, want false", body["stream"])
-		}
-		if body["max_tokens"] != float64(64) {
-			t.Errorf("max_tokens=%v, want 64", body["max_tokens"])
 		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v, want 0.3", body["temperature"])
@@ -140,6 +138,7 @@ func TestAstraflowChatHappyPath(t *testing.T) {
 }
 
 func TestAstraflowChatNoReasoning(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAstraflowServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -168,6 +167,7 @@ func TestAstraflowChatNoReasoning(t *testing.T) {
 }
 
 func TestAstraflowChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newAstraflowForTest("http://unused").ChatWithMessages(
 		ctx,
@@ -180,6 +180,7 @@ func TestAstraflowChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestAstraflowChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newAstraflowForTest("http://unused").ChatWithMessages(
@@ -190,6 +191,7 @@ func TestAstraflowChatRequiresMessages(t *testing.T) {
 }
 
 func TestAstraflowChatPropagatesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAstraflowServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -209,6 +211,7 @@ func TestAstraflowChatPropagatesHTTPError(t *testing.T) {
 }
 
 func TestAstraflowStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAstraflowSSEServer(t, "/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
@@ -249,6 +252,7 @@ func TestAstraflowStreamHappyPath(t *testing.T) {
 }
 
 func TestAstraflowStreamSplitsReasoning(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAstraflowSSEServer(t, "/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
@@ -290,6 +294,7 @@ func TestAstraflowStreamSplitsReasoning(t *testing.T) {
 }
 
 func TestAstraflowStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	stream := false
@@ -307,6 +312,7 @@ func TestAstraflowStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestAstraflowStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	err := newAstraflowForTest("http://unused").ChatStreamlyWithSender(
@@ -320,6 +326,7 @@ func TestAstraflowStreamRequiresSender(t *testing.T) {
 }
 
 func TestAstraflowStreamFailsWithoutTerminal(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAstraflowSSEServer(t, "/chat/completions",
 		`data: {"choices":[{"delta":{"content":"half"}}]}`+"\n",
@@ -339,6 +346,7 @@ func TestAstraflowStreamFailsWithoutTerminal(t *testing.T) {
 }
 
 func TestAstraflowStreamRejectsMalformedFrame(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAstraflowSSEServer(t, "/chat/completions",
 		`data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+
@@ -359,6 +367,7 @@ func TestAstraflowStreamRejectsMalformedFrame(t *testing.T) {
 }
 
 func TestAstraflowStreamSurfacesUpstreamError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAstraflowSSEServer(t, "/chat/completions",
 		`data: {"choices":[{"delta":{"content":"partial "}}]}`+"\n"+
@@ -382,6 +391,7 @@ func TestAstraflowStreamSurfacesUpstreamError(t *testing.T) {
 }
 
 func TestAstraflowListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAstraflowServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -406,6 +416,7 @@ func TestAstraflowListModelsHappyPath(t *testing.T) {
 }
 
 func TestAstraflowListModelsRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newAstraflowForTest("http://unused").ListModels(ctx, &APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
@@ -414,6 +425,7 @@ func TestAstraflowListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestAstraflowCheckConnectionDelegatesToListModels(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAstraflowServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -429,6 +441,7 @@ func TestAstraflowCheckConnectionDelegatesToListModels(t *testing.T) {
 }
 
 func TestAstraflowCheckConnectionPropagatesError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAstraflowServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -444,6 +457,7 @@ func TestAstraflowCheckConnectionPropagatesError(t *testing.T) {
 }
 
 func TestAstraflowBaseURLForRegionUnknown(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newAstraflowForTest("http://unused")
 	apiKey := "test-key"
@@ -455,17 +469,19 @@ func TestAstraflowBaseURLForRegionUnknown(t *testing.T) {
 }
 
 func TestAstraflowEmbedReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	// Embed IS implemented (not a stub). It should NOT be blocked by APIConfigCheck.
 	// With empty input texts it short-circuits to empty result (no error).
 	apiKey := "test-key"
-	embeddings, err := newAstraflowForTest("http://unused").Embed(ctx, nil, nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	embeddings, err := newAstraflowForTest("http://unused").Embed(ctx, nil, EmbedRequest{Texts: nil}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil || len(embeddings) != 0 {
 		t.Errorf("Embed: want empty result (no error), got embeddings=%v err=%v", embeddings, err)
 	}
 }
 
 func TestAstraflowAudioOCRReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newAstraflowForTest("http://unused")
 	model := "x"

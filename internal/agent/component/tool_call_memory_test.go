@@ -31,8 +31,9 @@ import (
 func TestAddToolCallMemory_NoToolCalls(t *testing.T) {
 	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo"}}
 	withStubInvoker(t, stub)
+	ctx := t.Context()
 
-	got, err := addToolCallMemory(context.Background(), nil, AgentParam{ModelID: "echo"}, &schema.Message{Content: "no tools"})
+	got, err := addToolCallMemory(ctx, nil, AgentParam{ModelID: "echo"}, &schema.Message{Content: "no tools"})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -70,7 +71,7 @@ func TestAddToolCallMemory_SummarizesAndAppendsToState(t *testing.T) {
 
 	state := runtime.NewCanvasState("rid", "tid")
 	c := NewAgentComponent(AgentParam{ModelID: "echo", MaxRounds: 1})
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	_, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "do it"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -112,7 +113,7 @@ func TestAddToolCallMemory_LLMFailure(t *testing.T) {
 
 	state := runtime.NewCanvasState("rid", "tid")
 	c := NewAgentComponent(AgentParam{ModelID: "echo", MaxRounds: 1})
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	_, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "do it"})
 	if err != nil {
 		t.Fatalf("Invoke should not error when memory summary fails: %v", err)

@@ -25,7 +25,7 @@ import (
 // the body text still carries coordinate markers.
 func TestTokenChunker_TextPath_StripsParserTags(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": 1000,
 		"delimiters":       []string{"\n"},
 	})

@@ -1,9 +1,10 @@
 ---
 sidebar_position: 9
-sidebar_label: "Share memories"
+sidebar_label: Share Memories
+title: Share Memories
 ---
 
-## Share memories
+# Share Memories
 
 To share a memory:
 

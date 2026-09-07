@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -66,7 +65,7 @@ func TestDataOperations_SelectKeys(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"items": []any{
 		map[string]any{"a": 1, "b": 2, "c": 3},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -98,7 +97,7 @@ func TestDataOperations_Combine(t *testing.T) {
 	state := canvas.NewCanvasState("run-2", "task-2")
 	state.Outputs["cpn_0"] = map[string]any{"d1": map[string]any{"k": []any{1}}}
 	state.Outputs["cpn_1"] = map[string]any{"d2": map[string]any{"k": []any{2, 3}}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -128,7 +127,7 @@ func TestDataOperations_RemoveKeys(t *testing.T) {
 			"value":  42,
 		},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -169,7 +168,7 @@ func TestDataOperations_LiteralEval(t *testing.T) {
 			"bool":   "true",
 		},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -210,7 +209,7 @@ func TestDataOperations_FilterValues(t *testing.T) {
 		map[string]any{"k": "2-abc"},
 		map[string]any{"k": "3-1abc"},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -235,7 +234,7 @@ func TestDataOperations_AppendOrUpdate(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"items": []any{
 		map[string]any{"name": "x"},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
@@ -262,7 +261,7 @@ func TestDataOperations_RenameKeys(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"items": []any{
 		map[string]any{"k": 1, "other": "x"},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {

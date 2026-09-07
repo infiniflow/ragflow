@@ -40,13 +40,18 @@ func main() {
 		return
 	}
 
+	if arguments.ShowVersion {
+		fmt.Println("RAGFlow CLI version 1.0.0") // Replace with actual version if needed
+		return
+	}
+
 	//arguments.Print()
 	logLevel := "warn" // Default to warn (quiet mode)
 	if arguments.Verbose {
 		logLevel = "info"
 	}
 
-	if err = common.Init(logLevel, common.FileOutput{}, "ragflow-cli"); err != nil {
+	if err = common.InitLogger(logLevel, common.FileOutput{}, "ragflow-cli"); err != nil {
 		fmt.Printf("Warning: Failed to initialize logger: %v\n", err)
 	}
 

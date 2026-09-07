@@ -45,8 +45,8 @@ var ResolveDocumentStorageOverride func(docID string) (*DocumentStorageRef, erro
 // the source PDF to crop section images on demand) can reuse the same
 // storage resolution the Parser uses.
 func FetchBinary(ctx context.Context, bucket, path string) ([]byte, error) {
-	stg := resolveStorage()
-	if stg == nil {
+	storageImpl := resolveStorage()
+	if storageImpl == nil {
 		return nil, fmt.Errorf("no storage backend registered")
 	}
 
@@ -56,7 +56,7 @@ func FetchBinary(ctx context.Context, bucket, path string) ([]byte, error) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		data, err := stg.Get(bucket, path)
+		data, err := storageImpl.Get(ctx, bucket, path)
 		done <- result{data: data, err: err}
 	}()
 	select {

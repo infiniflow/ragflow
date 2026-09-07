@@ -6,8 +6,8 @@
 // and shaped into the {"id","children"} mind-map tree. The tree emits as one
 // product per node with parent links.
 //
-// Per PORT_PLAN.md the markdown source is the LLM's reply, NOT the source
-// document markdown, so the Parser component is not reused.
+// Per PORT_PLAN.md the Markdown source is the LLM's reply, NOT the source
+// document Markdown, so the Parser component is not reused.
 package mindmap
 
 import (
@@ -18,6 +18,36 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/utility"
 )
+
+// batchSubmitter fans out the batch extraction jobs on the process-wide
+// knowledge-compilation pool. It is injected by the knowledge_compiler wiring
+// (component.go) so every stage shares one vCPU-sized concurrency bound; when
+// nil the batches run sequentially (the historic default).
+var batchSubmitter func(ctx context.Context, jobs []func() error) error
+
+// SetBatchSubmitter installs the shared-pool fan-out used by Run's extraction
+// stage. Pass nil to revert to serial execution.
+func SetBatchSubmitter(submit func(ctx context.Context, jobs []func() error) error) {
+	batchSubmitter = submit
+}
+
+// runBatches mirrors structure.runBatches: concurrent under the wired global
+// compiler pool, or serial when no submitter is set. The first error is
+// returned after all jobs settle; the global pool is never StopWait'd.
+func runBatches(ctx context.Context, jobs []func() error) error {
+	if len(jobs) == 0 {
+		return nil
+	}
+	if batchSubmitter != nil {
+		return batchSubmitter(ctx, jobs)
+	}
+	for _, j := range jobs {
+		if err := j(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // Run executes the mindmap variant.
 func Run(ctx context.Context, deps common.Deps, param common.Param, inputs common.Inputs) (common.Outputs, error) {
@@ -33,24 +63,14 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 
 	sections := chunkTexts(inputs.Chunks)
-	if len(sections) == 0 {
-		return common.Outputs{}, nil
-	}
 
 	// One LLM task per token-budget batch (mirrors __call__'s task fan-out).
 	batches := packSections(sections, deps.Tokenizer)
-	results := make([]omap, len(batches))
-	// One LLM task per token-budget batch (mirrors __call__'s task fan-out).
-	n := param.MaxWorkers
-	if n <= 0 {
-		n = 1
-	}
-	wp := utility.NewWorkerPool[func() error, struct{}](n, n,
-		func(_ context.Context, fn func() error) (struct{}, error) { return struct{}{}, fn() })
-	var futs []utility.WorkerPoolFuture[func() error, struct{}]
+	results := make([]utility.OMap, len(batches))
+	jobs := make([]func() error, 0, len(batches))
 	for i, text := range batches {
 		i, text := i, text
-		f, err := wp.Submit(ctx, func() error {
+		jobs = append(jobs, func() error {
 			resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
 				LLMID:        llmID,
 				SystemPrompt: renderPrompt(text),
@@ -59,32 +79,28 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			if err != nil {
 				return err
 			}
-			results[i] = todict(dictify(StripFences(resp.Content)))
+			// Distinct slice index per batch → no cross-goroutine contention.
+			results[i] = utility.Todict(utility.Dictify(utility.StripFences(resp.Content)))
 			return nil
 		})
-		if err != nil {
-			wp.StopWait()
-			return common.Outputs{}, err
-		}
-		futs = append(futs, f)
 	}
-	wp.StopWait()
-	for _, f := range futs {
-		if res, _ := f.Wait(ctx); res.Err != nil {
-			return common.Outputs{}, res.Err
-		}
+	// The extraction batches are LLM-bounded, not CPU-bounded: run them on the
+	// shared global compiler pool (vCPU-sized) when a submitter is wired in,
+	// otherwise fall back to serial execution (historic default).
+	if err := runBatches(ctx, jobs); err != nil {
+		return common.Outputs{}, err
 	}
 
 	// Merge batch dicts in batch order (mirrors reduce(self._merge, res)) and
 	// shape the final tree. Python returns a bare root when nothing parsed.
-	var merged omap
+	var merged utility.OMap
 	if len(results) > 0 {
 		merged = results[0]
 		for _, r := range results[1:] {
-			merged = mergeDicts(merged, r)
+			merged = utility.MergeDicts(merged, r)
 		}
 	}
-	root := shapeTree(merged)
+	root := utility.ShapeTree(merged)
 
 	products := treeToProducts(tenantID, docID, root)
 
@@ -105,53 +121,57 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		}
 	}
 
-	// Stream the tree nodes through a ProductSink so the flush policy caps peak
-	// memory instead of holding the full node set.
-	sink := common.NewProductSink(ctx, param.Guardrails, inputs.Sink)
-	for _, p := range products {
-		if err := sink.Add(p); err != nil {
-			return common.Outputs{}, err
-		}
-	}
+	// Buffer every tree node in one slice; the component merges them into the
+	// upstream chunk stream (matching Python, which appends compiled units onto
+	// the chunk list).
 	out := common.Outputs{
-		Products:    sink.Products(),
-		VectorBytes: sink.Bytes(),
-		Items:       sink.TotalItems(),
-		Flushed:     sink.Flushed(),
+		Products: products,
 	}
 
-	if err := out.EnforceGuardrails(param.Guardrails, inputs.Sink, ctx); err != nil {
-		return common.Outputs{}, err
-	}
 	return out, nil
 }
 
-// treeToProducts flattens the shaped mind-map tree into Products. The root
-// becomes a "root" product whose content is the serialized {"id","children"}
-// tree (Python's MindMapResult.output shape); each inner node becomes a
-// "node" product linked via parent_id.
-func treeToProducts(tenantID, docID string, root *Node) []common.Product {
+// treeToProducts flattens the shaped mind-map tree into entity/relation Products
+// so mindmap participates in dataset-level merge exactly like graph (plan §1.2,
+// aligning with Python's dataset_structure_merger which merges
+// knowledge_graph_kwd IN {entity,relation} rows for structure_mindmap too).
+//
+// Mapping:
+//   - each node (including the root) → an entity product (kind="entity",
+//     name = node id, type = "mindmap").
+//   - each parent→child edge → a relation product (kind="relation",
+//     from = parent id, to = child id, type = "related" — Python's default).
+//
+// The entity/relation discriminator is carried in Meta["kind"] so the consumer's
+// mergeStructureDataset buckets entities by (name,type) and relations by
+// (from,type,to), matching graph/timeline.
+func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product {
 	var out []common.Product
-	rootID := common.StableRowID(tenantID, docID, string(common.VariantMindmap), "root")
+	if root == nil || root.ID == "" {
+		return out
+	}
+	seen := map[string]bool{}
+	// Entity: root node.
 	out = append(out, common.Product{
-		ID:       rootID,
+		ID:       common.StableRowID(tenantID, docID, string(common.VariantMindmap), "entity", root.ID),
 		DocID:    docID,
 		TenantID: tenantID,
 		Variant:  common.VariantMindmap,
-		Content:  serializeNode(root),
+		Content:  root.ID,
 		Meta: map[string]any{
-			"kind":  "root",
-			"level": 0,
-			"name":  root.ID,
+			"kind":        "entity",
+			"name":        root.ID,
+			"entity_type": "mindmap",
+			"compile_kwd": "mindmap",
 		},
 	})
+	seen[root.ID] = true
 
 	type pending struct {
-		node     *Node
-		parentID string
-		level    int
+		node   *utility.Node
+		parent string
 	}
-	queue := []pending{{root, rootID, 0}}
+	queue := []pending{{root, root.ID}}
 	for len(queue) > 0 {
 		p := queue[0]
 		queue = queue[1:]
@@ -159,73 +179,43 @@ func treeToProducts(tenantID, docID string, root *Node) []common.Product {
 			if child.ID == "" {
 				continue
 			}
-			level := p.level + 1
-			id := common.StableRowID(tenantID, docID, string(common.VariantMindmap), "node", child.ID)
-			childTitles := make([]string, 0, len(child.Children))
-			for _, gc := range child.Children {
-				if gc.ID != "" {
-					childTitles = append(childTitles, gc.ID)
-				}
+			// Entity: child node (dedup by id so a DAG-shaped tree does not emit
+			// the same node twice).
+			if !seen[child.ID] {
+				seen[child.ID] = true
+				out = append(out, common.Product{
+					ID:       common.StableRowID(tenantID, docID, string(common.VariantMindmap), "entity", child.ID),
+					DocID:    docID,
+					TenantID: tenantID,
+					Variant:  common.VariantMindmap,
+					Content:  child.ID,
+					Meta: map[string]any{
+						"kind":        "entity",
+						"name":        child.ID,
+						"entity_type": "mindmap",
+						"compile_kwd": "mindmap",
+					},
+				})
 			}
-			meta := map[string]any{
-				"kind":  "node",
-				"level": level,
-				"name":  child.ID,
-			}
-			if len(childTitles) > 0 {
-				meta["children"] = childTitles
-			}
+			// Relation: parent → child edge (type = "related", Python default).
 			out = append(out, common.Product{
-				ID:       id,
+				ID:       common.StableRowID(tenantID, docID, string(common.VariantMindmap), "relation", p.parent, child.ID),
 				DocID:    docID,
 				TenantID: tenantID,
 				Variant:  common.VariantMindmap,
-				Content:  child.ID,
-				ParentID: p.parentID,
-				Meta:     meta,
+				Content:  p.parent + " related " + child.ID,
+				Meta: map[string]any{
+					"kind":          "relation",
+					"from":          p.parent,
+					"to":            child.ID,
+					"relation_type": "related",
+					"compile_kwd":   "mindmap",
+				},
 			})
-			queue = append(queue, pending{child, id, level})
+			queue = append(queue, pending{child, child.ID})
 		}
 	}
 	return out
-}
-
-// serializeNode renders the tree in Python's MindMapResult.output shape:
-// {"id": ..., "children": [...]}.
-func serializeNode(node *Node) string {
-	var b strings.Builder
-	b.WriteString(`{"id":`)
-	b.WriteString(quoteJSON(node.ID))
-	b.WriteString(`,"children":[`)
-	for i, c := range node.Children {
-		if i > 0 {
-			b.WriteString(",")
-		}
-		b.WriteString(serializeNode(c))
-	}
-	b.WriteString("]}")
-	return b.String()
-}
-
-func quoteJSON(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '"':
-			b.WriteString("\\\"")
-		case '\\':
-			b.WriteString("\\\\")
-		case '\n':
-			b.WriteString("\\n")
-		case '\t':
-			b.WriteString("\\t")
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
 }
 
 func chunkTexts(chunks []common.Chunk) []string {

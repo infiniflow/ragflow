@@ -73,7 +73,7 @@ func newTenkiProviderFromEnv() *TenkiProvider {
 // mirroring the admin-panel settings JSON shape.
 func tenkiConfigFromEnv() map[string]any {
 	return map[string]any{
-		"API_KEY":        common.GetEnv(common.EnvTenkiApiKey),
+		"API_KEY":        common.GetEnv(common.EnvTenkiAPIKey),
 		"API_URL":        common.GetEnv(common.EnvTenkiAPIURL),
 		"IMAGE":          common.GetEnv(common.EnvTenkiImage),
 		"TIMEOUT":        common.GetEnv(common.EnvTenkiTimeout),
@@ -112,7 +112,7 @@ func (p *TenkiProvider) ProviderType() ProviderType { return ProviderTenki }
 func (p *TenkiProvider) Initialize(ctx context.Context) error {
 	apiKey := p.apiKey
 	if apiKey == "" {
-		apiKey = common.GetEnv(common.EnvTenkiApiKey)
+		apiKey = common.GetEnv(common.EnvTenkiAPIKey)
 	}
 	if apiKey == "" {
 		return errors.New("tenki: API key is required (set it in Admin > Sandbox Settings or TENKI_API_KEY)")

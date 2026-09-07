@@ -96,6 +96,19 @@ func chunkIDsFromPrompt(prompt string) []string {
 func (m *graphChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
 	ids := chunkIDsFromPrompt(req.UserPrompt)
 	switch {
+	case strings.HasPrefix(req.UserPrompt, "Pair "):
+		// Batched merge judge: one call covers every (Item A, Item B) pair.
+		m.mergeCalls++
+		pairs := parseBatchPairs(req.UserPrompt)
+		var results []string
+		for _, p := range pairs {
+			if sameLogicalItem(p.a, p.b) {
+				results = append(results, fmt.Sprintf(`{"index":%d,"duplicated":true,"merged":%s}`, p.index, payloadJSON(p.a)))
+			} else {
+				results = append(results, fmt.Sprintf(`{"index":%d,"duplicated":false,"merged":null}`, p.index))
+			}
+		}
+		return &common.ChatResponse{Content: fmt.Sprintf(`{"pairs":[%s]}`, strings.Join(results, ","))}, nil
 	case strings.HasPrefix(req.UserPrompt, "Item A (existing):"):
 		m.mergeCalls++
 		a, b := parseMergeItems(req.UserPrompt)
@@ -153,6 +166,40 @@ func parseMergeItems(prompt string) (map[string]any, map[string]any) {
 // sameLogicalItem mirrors what a reasonable judge would decide on the
 // fixtures: entities are duplicates when their names match (or the known
 // Al≡Alpha alias pair); relations when source+target+type all match.
+func parseBatchPairs(prompt string) []struct {
+	index int
+	a, b  map[string]any
+} {
+	sections := strings.Split(prompt, "\nPair ")
+	var pairs []struct {
+		index int
+		a, b  map[string]any
+	}
+	for i, s := range sections {
+		if i == 0 {
+			// First section may start with "Pair 0:" without a leading "\n".
+			if !strings.HasPrefix(s, "Pair ") {
+				continue
+			}
+		}
+		// Drop the leading "N:\n".
+		rest := s
+		if idx := strings.Index(rest, ":\n"); idx >= 0 {
+			rest = rest[idx+2:]
+		}
+		aBody, bBody, ok := strings.Cut(rest, "\n\nItem B (incoming):\n")
+		if !ok {
+			continue
+		}
+		aBody = strings.TrimPrefix(aBody, "Item A (existing):\n")
+		pairs = append(pairs, struct {
+			index int
+			a, b  map[string]any
+		}{index: i, a: parsePayload(aBody), b: parsePayload(bBody)})
+	}
+	return pairs
+}
+
 func sameLogicalItem(a, b map[string]any) bool {
 	if a == nil || b == nil {
 		return false
@@ -558,6 +605,138 @@ func TestLLMMergeDeciderContracts(t *testing.T) {
 	}
 	if aliases := d.Aliases(); aliases["Al"] != "Alpha" {
 		t.Errorf("alias map = %v, want Al→Alpha", aliases)
+	}
+}
+
+// TestLLMMergeDeciderDecideBatch locks the batched judge: every pair is
+// judged in a single LLM call (one mergeCalls increment), and the verdict
+// array is returned in input order with duplicated/merged fields set.
+func TestLLMMergeDeciderDecideBatch(t *testing.T) {
+	chat := &graphChat{}
+	d := NewLLMMergeDecider(chat, "llm1", hashEmbedder{dim: 8}, 0.99)
+
+	alpha := common.Product{
+		ID:      "row-alpha",
+		DocID:   "kb1",
+		Content: payloadJSON(map[string]any{"type": "letter", "name": "Alpha", "description": "the letter Alpha"}),
+		Meta:    map[string]any{"kind": "entity", "name": "Alpha", "source_chunk_ids": []string{"c1"}},
+	}
+	al := common.Product{
+		Content: payloadJSON(map[string]any{"type": "letter", "name": "Al", "description": "short for Alpha"}),
+		Meta:    map[string]any{"kind": "entity", "name": "Al", "source_chunk_ids": []string{"c2"}},
+	}
+	beta := common.Product{
+		Content: payloadJSON(map[string]any{"type": "letter", "name": "Beta", "description": "the letter Beta"}),
+		Meta:    map[string]any{"kind": "entity", "name": "Beta", "source_chunk_ids": []string{"c3"}},
+	}
+
+	pairs := []MergePairInput{
+		{Index: 0, Existing: alpha.Content, Incoming: al.Content},   // duplicated (Al≡Alpha)
+		{Index: 1, Existing: alpha.Content, Incoming: beta.Content}, // distinct
+	}
+	before := chat.mergeCalls
+	results, err := d.DecideBatch(context.Background(), pairs)
+	if err != nil {
+		t.Fatalf("DecideBatch: %v", err)
+	}
+	if chat.mergeCalls != before+1 {
+		t.Errorf("batched judge made %d LLM calls, want 1", chat.mergeCalls-before)
+	}
+	if len(results) != 2 {
+		t.Fatalf("want 2 results, got %d", len(results))
+	}
+	if !results[0].Duplicated || results[0].Merged == nil {
+		t.Errorf("pair 0 (Al→Alpha) should be duplicated")
+	}
+	if results[1].Duplicated || results[1].Merged != nil {
+		t.Errorf("pair 1 (Beta) should be distinct")
+	}
+	if results[0].Index != 0 || results[1].Index != 1 {
+		t.Errorf("results must preserve input index order")
+	}
+}
+
+// TestLLMMergeDeciderDecideBatchEmpty locks that an empty pair slice is a
+// no-op and never invokes the LLM.
+func TestLLMMergeDeciderDecideBatchEmpty(t *testing.T) {
+	chat := &graphChat{}
+	d := NewLLMMergeDecider(chat, "llm1", hashEmbedder{dim: 8}, 0.99)
+	before := chat.mergeCalls
+	out, err := d.DecideBatch(context.Background(), nil)
+	if err != nil || out != nil {
+		t.Fatalf("empty DecideBatch: err=%v out=%v", err, out)
+	}
+	if chat.mergeCalls != before {
+		t.Errorf("empty DecideBatch must not call the LLM")
+	}
+}
+
+// TestLLMMergeDeciderDecideBatchSplitsByTokenBudget locks that a tight token
+// budget forces DecideBatch to issue several LLM calls (sub-batches) while
+// still returning every verdict keyed by its original global index. This is
+// the guard against overflowing the model's max_token on large candidate sets.
+func TestLLMMergeDeciderDecideBatchSplitsByTokenBudget(t *testing.T) {
+	chat := &graphChat{}
+	d := NewLLMMergeDecider(chat, "llm1", hashEmbedder{dim: 8}, 0.99)
+	submittedBatches := 0
+	submittedChunks := 0
+	d.SetSubmitter(func(ctx context.Context, jobs []func() error) error {
+		submittedBatches++
+		submittedChunks = len(jobs)
+		for _, job := range jobs {
+			if err := job(); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	// Tiny model budget → one pair per sub-batch (exercises the split path).
+	// Combined budget = 20 * 0.6 = 12 tokens, well under each ~40-token pair's
+	// (input+output) estimate. Output budget disabled (0) → combined-budget-only
+	// batching.
+	d.SetMaxBatchTokens(20, 0)
+
+	alpha := common.Product{
+		ID:      "row-alpha",
+		DocID:   "kb1",
+		Content: payloadJSON(map[string]any{"type": "letter", "name": "Alpha", "description": "the letter Alpha"}),
+		Meta:    map[string]any{"kind": "entity", "name": "Alpha", "source_chunk_ids": []string{"c1"}},
+	}
+	al := common.Product{
+		Content: payloadJSON(map[string]any{"type": "letter", "name": "Al", "description": "short for Alpha"}),
+		Meta:    map[string]any{"kind": "entity", "name": "Al", "source_chunk_ids": []string{"c2"}},
+	}
+	beta := common.Product{
+		Content: payloadJSON(map[string]any{"type": "letter", "name": "Beta", "description": "the letter Beta"}),
+		Meta:    map[string]any{"kind": "entity", "name": "Beta", "source_chunk_ids": []string{"c3"}},
+	}
+
+	pairs := []MergePairInput{
+		{Index: 0, Existing: alpha.Content, Incoming: al.Content},   // duplicated (Al≡Alpha)
+		{Index: 1, Existing: alpha.Content, Incoming: beta.Content}, // distinct
+		{Index: 2, Existing: beta.Content, Incoming: alpha.Content}, // distinct
+	}
+	before := chat.mergeCalls
+	results, err := d.DecideBatch(context.Background(), pairs)
+	if err != nil {
+		t.Fatalf("DecideBatch: %v", err)
+	}
+	// Budget=1 → one LLM call per pair.
+	if chat.mergeCalls != before+3 {
+		t.Errorf("token-split DecideBatch made %d LLM calls, want 3", chat.mergeCalls-before)
+	}
+	if submittedBatches != 1 || submittedChunks != 3 {
+		t.Fatalf("token-split DecideBatch submitted %d batches/%d chunks, want one batch containing all chunks", submittedBatches, submittedChunks)
+	}
+	if len(results) != 3 {
+		t.Fatalf("want 3 results, got %d", len(results))
+	}
+	// Verdicts must stay keyed by the original global index, not re-indexed.
+	wantDup := map[int]bool{0: true, 1: false, 2: false}
+	for _, r := range results {
+		if r.Duplicated != wantDup[r.Index] {
+			t.Errorf("pair %d: duplicated=%v, want %v", r.Index, r.Duplicated, wantDup[r.Index])
+		}
 	}
 }
 

@@ -61,6 +61,7 @@ func TestAnthropicName(t *testing.T) {
 }
 
 func TestAnthropicChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "claude-sonnet-4-5-20250929" {
 			t.Errorf("model=%v", body["model"])
@@ -109,6 +110,7 @@ func TestAnthropicChatHappyPath(t *testing.T) {
 }
 
 func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["system"] != "be concise" {
 			t.Errorf("system=%v, want be concise", body["system"])
@@ -186,6 +188,7 @@ func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
 }
 
 func TestAnthropicChatMapsDataImageURL(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		msgs, ok := body["messages"].([]interface{})
 		if !ok || len(msgs) == 0 {
@@ -239,6 +242,7 @@ func TestAnthropicChatMapsDataImageURL(t *testing.T) {
 }
 
 func TestAnthropicChatValidationErrors(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newAnthropicForTest("http://unused")
 	apiKey := "test-key"
@@ -263,6 +267,7 @@ func TestAnthropicChatValidationErrors(t *testing.T) {
 }
 
 func TestAnthropicChatRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -278,6 +283,7 @@ func TestAnthropicChatRejectsHTTPError(t *testing.T) {
 }
 
 func TestAnthropicChatRejectsMalformedResponse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"content": []map[string]interface{}{{"type": "tool_use"}}})
@@ -292,6 +298,7 @@ func TestAnthropicChatRejectsMalformedResponse(t *testing.T) {
 }
 
 func TestAnthropicChatStreamlyWithSenderHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["stream"] != true {
 			t.Errorf("stream=%v, want true", body["stream"])
@@ -364,6 +371,7 @@ func TestAnthropicChatStreamlyWithSenderHappyPath(t *testing.T) {
 }
 
 func TestAnthropicChatStreamlyWithSenderRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":{"message":"bad key"}}`))
@@ -387,6 +395,7 @@ func TestAnthropicChatStreamlyWithSenderRejectsHTTPError(t *testing.T) {
 }
 
 func TestAnthropicChatStreamlyWithSenderRejectsStreamError(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(`data: {"type":"error","error":{"message":"overloaded"}}` + "\n\n"))
@@ -410,6 +419,7 @@ func TestAnthropicChatStreamlyWithSenderRejectsStreamError(t *testing.T) {
 }
 
 func TestAnthropicListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	var calls int
 	srv := newAnthropicServer(t, "/v1/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
@@ -441,6 +451,7 @@ func TestAnthropicListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestAnthropicListModelsRejectsProviderError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newAnthropicServer(t, "/v1/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusForbidden)
@@ -466,14 +477,15 @@ func TestAnthropicFactoryRegistration(t *testing.T) {
 }
 
 func TestAnthropicUnsupportedMethods(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newAnthropicForTest("http://unused")
 	apiKey := "test-key"
 	modelName := "claude"
-	if _, err := m.Embed(ctx, &modelName, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(ctx, &modelName, EmbedRequest{Texts: []string{"x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: got %v", err)
 	}
-	if _, err := m.Rerank(ctx, &modelName, "q", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, &modelName, RerankRequest{Query: "q", Documents: []string{"d"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: got %v", err)
 	}
 	if _, err := m.Balance(ctx, &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {

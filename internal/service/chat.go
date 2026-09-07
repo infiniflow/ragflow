@@ -200,6 +200,7 @@ type CreateChatRequest struct {
 	PromptConfig           map[string]interface{} `json:"prompt_config"`
 	Description            *string
 	TopN                   *int
+	RerankCandidatesCount  *int
 	TopK                   *int
 	SimilarityThreshold    *float64
 	VectorSimilarityWeight *float64
@@ -256,8 +257,12 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	}
 
 	if promptConfigValue, ok := req["prompt_config"]; ok {
-		if _, ok := mapFromValue(promptConfigValue); !ok {
+		promptConfig, ok := mapFromValue(promptConfigValue)
+		if !ok {
 			return nil, common.CodeDataError, errors.New("`prompt_config` should be an object")
+		}
+		if err := validatePromptConfigParameters(promptConfig); err != nil {
+			return nil, common.CodeDataError, err
 		}
 	}
 
@@ -295,6 +300,9 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	if _, ok := req["top_n"]; !ok {
 		req["top_n"] = 6
 	}
+	if _, ok := req["rerank_candidates_count"]; !ok {
+		req["rerank_candidates_count"] = 64
+	}
 	if _, ok := req["top_k"]; !ok {
 		req["top_k"] = 1024
 	}
@@ -331,12 +339,12 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 
 	chat := buildCreateChatEntity(req, userID)
 	if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {
-		return nil, common.CodeDataError, errors.New("failed to create chat")
+		return nil, common.CodeDataError, fmt.Errorf("failed to create chat: %w", err)
 	}
 
 	chat, err = s.chatDAO.GetByID(ctx, dao.DB, chat.ID)
 	if err != nil {
-		return nil, common.CodeDataError, errors.New("failed to retrieve created chat")
+		return nil, common.CodeDataError, fmt.Errorf("failed to retrieve created chat: %w", err)
 	}
 
 	response, err := s.buildCreateChatResponse(ctx, chat)
@@ -397,7 +405,7 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 		kbs = append(kbs, kb)
 	}
 
-	if err := ValidateDatasetEmbeddingModels(kbs); err != nil {
+	if err := ValidateDatasetEmbeddingModels(ctx, dao.DB, kbs); err != nil {
 		return nil, err
 	}
 	return normalizedIDs, nil
@@ -463,8 +471,16 @@ func applyCreatePromptDefaults(req map[string]interface{}) {
 	if promptConfig == nil {
 		promptConfig = map[string]interface{}{}
 	}
+	kbIDs, _ := listFromValue(req["kb_ids"])
 	if system, ok := promptConfig["system"]; !ok || !isTruthy(system) {
-		promptConfig["system"] = pyDefaultSystemPrompt
+		if len(kbIDs) > 0 {
+			promptConfig["system"] = pyDefaultSystemPrompt
+		} else {
+			// No dataset bound: do not seed the dataset-oriented default system prompt. Its
+			// hard-coded "not found in the dataset" sentence would otherwise be sent verbatim
+			// to the model on the no-dataset chat path.
+			promptConfig["system"] = ""
+		}
 	}
 	if _, ok := promptConfig["prologue"]; !ok {
 		promptConfig["prologue"] = pyDefaultPrologue
@@ -485,7 +501,6 @@ func applyCreatePromptDefaults(req map[string]interface{}) {
 		promptConfig["refine_multiturn"] = true
 	}
 
-	kbIDs, _ := listFromValue(req["kb_ids"])
 	system, _ := promptConfig["system"].(string)
 	if len(kbIDs) > 0 && !isTruthy(promptConfig["parameters"]) && strings.Contains(system, "{knowledge}") {
 		promptConfig["parameters"] = []interface{}{map[string]interface{}{"key": "knowledge", "optional": false}}
@@ -497,7 +512,7 @@ func filterCreateChatPersistedFields(req map[string]interface{}) {
 	persisted := map[string]struct{}{
 		"name": {}, "description": {}, "icon": {}, "language": {}, "llm_id": {}, "tenant_llm_id": {},
 		"llm_setting": {}, "prompt_type": {}, "prompt_config": {}, "meta_data_filter": {},
-		"similarity_threshold": {}, "vector_similarity_weight": {}, "top_n": {}, "top_k": {},
+		"similarity_threshold": {}, "vector_similarity_weight": {}, "top_n": {}, "rerank_candidates_count": {}, "top_k": {},
 		"do_refer": {}, "rerank_id": {}, "tenant_rerank_id": {}, "kb_ids": {}, "status": {},
 	}
 	for key := range req {
@@ -545,6 +560,7 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 		SimilarityThreshold:    floatFromValue(req["similarity_threshold"]),
 		VectorSimilarityWeight: floatFromValue(req["vector_similarity_weight"]),
 		TopN:                   int64FromValue(req["top_n"]),
+		RerankCandidatesCount:  int64FromValue(req["rerank_candidates_count"]),
 		TopK:                   int64FromValue(req["top_k"]),
 		DoRefer:                stringFromValue(req["do_refer"]),
 		RerankID:               rerankID,
@@ -770,21 +786,6 @@ const (
 	pyDefaultEmptyResponse = "Sorry! No relevant content was found in the knowledge base!"
 )
 
-// splitModelNameAndFactory extracts the base model name by stripping
-// provider and instance suffixes, matching Python's rsplit("@", 2)[0].
-func (s *ChatService) splitModelNameAndFactory(embeddingModelID string) string {
-	if idx := strings.LastIndex(embeddingModelID, "@"); idx > 0 {
-		// Strip the provider segment.
-		base := embeddingModelID[:idx]
-		// Strip the instance segment (second-to-last @).
-		if idx2 := strings.LastIndex(base, "@"); idx2 > 0 {
-			return base[:idx2]
-		}
-		return base
-	}
-	return embeddingModelID
-}
-
 func (s *ChatService) getOwnedValidChat(ctx context.Context, userID, chatID string) (*entity.Chat, error) {
 	chat, err := s.chatDAO.GetByIDAndStatus(ctx, dao.DB, chatID, string(entity.StatusValid))
 	if err != nil {
@@ -810,6 +811,7 @@ var chatPersistedFields = map[string]struct{}{
 	"similarity_threshold":     {},
 	"vector_similarity_weight": {},
 	"top_n":                    {},
+	"rerank_candidates_count":  {},
 	"top_k":                    {},
 	"do_refer":                 {},
 	"rerank_id":                {},
@@ -915,6 +917,9 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		if !ok {
 			return nil, errors.New("`prompt_config` should be an object")
 		}
+		if err := validatePromptConfigParameters(promptConfig); err != nil {
+			return nil, err
+		}
 		if patch {
 			req["prompt_config"] = mergeJSONMap(currentChat.PromptConfig, promptConfig)
 		} else {
@@ -980,6 +985,30 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 	return s.buildRESTChatResponse(ctx, updatedChat), nil
 }
 
+func validatePromptConfigParameters(promptConfig map[string]interface{}) error {
+	parameters, ok := promptConfig["parameters"].([]interface{})
+	if !ok {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(parameters))
+	for _, value := range parameters {
+		parameter, ok := mapFromValue(value)
+		if !ok {
+			continue
+		}
+		key, ok := parameter["key"].(string)
+		if !ok {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("`parameters` contains duplicate key: %s", key)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+
 func validateRESTChatName(value interface{}, required bool) (string, bool, error) {
 	if value == nil {
 		if required {
@@ -1036,9 +1065,10 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 
 	embeddingModelIDs := make([]string, 0, len(kbs))
 	seenEmbedIDs := make(map[string]struct{})
+	embdNameCache := make(map[string]string)
 	for _, kb := range kbs {
 		embeddingModelIDs = append(embeddingModelIDs, kb.EmbdID)
-		seenEmbedIDs[s.splitModelNameAndFactory(kb.EmbdID)] = struct{}{}
+		seenEmbedIDs[s.kbDAO.EmbeddingBaseName(ctx, dao.DB, kb, embdNameCache)] = struct{}{}
 	}
 	if len(seenEmbedIDs) > 1 {
 		return nil, fmt.Errorf("datasets use different embedding models: %v", embeddingModelIDs)
@@ -1081,7 +1111,7 @@ func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantI
 	if rerankID == "" {
 		return "", nil
 	}
-	baseName := s.splitModelNameAndFactory(rerankID)
+	baseName := common.BaseModelName(rerankID)
 	if _, ok := defaultRerankModels[baseName]; ok {
 		return "", nil
 	}
@@ -1139,6 +1169,7 @@ func (s *ChatService) buildRESTChatResponse(ctx context.Context, chat *entity.Ch
 		"similarity_threshold":     chat.SimilarityThreshold,
 		"vector_similarity_weight": chat.VectorSimilarityWeight,
 		"top_n":                    chat.TopN,
+		"rerank_candidates_count":  chat.RerankCandidatesCount,
 		"top_k":                    chat.TopK,
 		"do_refer":                 chat.DoRefer,
 		"rerank_id":                chat.RerankID,

@@ -42,7 +42,7 @@ func NewReplicateModel(baseURL map[string]string, urlSuffix URLSuffix) *Replicat
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -164,9 +164,6 @@ func replicateInputFromMessages(messages []Message, chatModelConfig *ChatConfig)
 		input["system_prompt"] = systemPrompt
 	}
 	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			input["max_new_tokens"] = *chatModelConfig.MaxTokens
-		}
 		if chatModelConfig.Temperature != nil {
 			input["temperature"] = *chatModelConfig.Temperature
 		}
@@ -208,7 +205,7 @@ func replicateOutputToString(output interface{}) (string, error) {
 	}
 }
 
-func (r *ReplicateModel) createPrediction(ctx context.Context, url string, version string, input map[string]interface{}, stream bool, apiKey string, preferWait bool) (*replicatePrediction, error) {
+func (r *ReplicateModel) createPrediction(ctx context.Context, baseURL string, version string, input map[string]interface{}, stream bool, apiKey string, preferWait bool) (*replicatePrediction, error) {
 	body := map[string]interface{}{
 		"input":  input,
 		"stream": stream,
@@ -222,7 +219,7 @@ func (r *ReplicateModel) createPrediction(ctx context.Context, url string, versi
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -264,8 +261,8 @@ func replicatePredictionSucceeded(status string) bool {
 	return status == "successful"
 }
 
-func (r *ReplicateModel) getPrediction(ctx context.Context, url string, apiKey string) (*replicatePrediction, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (r *ReplicateModel) getPrediction(ctx context.Context, baseURL string, apiKey string) (*replicatePrediction, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -336,7 +333,7 @@ func (r *ReplicateModel) ChatWithMessages(ctx context.Context, modelName string,
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	url, version, err := r.predictionEndpoint(apiConfig, modelName)
+	baseURL, version, err := r.predictionEndpoint(apiConfig, modelName)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +341,7 @@ func (r *ReplicateModel) ChatWithMessages(ctx context.Context, modelName string,
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	prediction, err := r.createPrediction(ctx, url, version, replicateInputFromMessages(messages, chatModelConfig), false, *apiConfig.ApiKey, true)
+	prediction, err := r.createPrediction(ctx, baseURL, version, replicateInputFromMessages(messages, chatModelConfig), false, *apiConfig.ApiKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -382,12 +379,12 @@ func (r *ReplicateModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
 
-	url, version, err := r.predictionEndpoint(apiConfig, modelName)
+	baseURL, version, err := r.predictionEndpoint(apiConfig, modelName)
 	if err != nil {
 		return err
 	}
 
-	prediction, err := r.createPrediction(ctx, url, version, replicateInputFromMessages(messages, chatModelConfig), true, *apiConfig.ApiKey, false)
+	prediction, err := r.createPrediction(ctx, baseURL, version, replicateInputFromMessages(messages, chatModelConfig), true, *apiConfig.ApiKey, false)
 	if err != nil {
 		return err
 	}
@@ -414,8 +411,8 @@ func (r *ReplicateModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	return r.readPredictionStream(ctx, prediction.URLs.Stream, *apiConfig.ApiKey, sender)
 }
 
-func (r *ReplicateModel) readPredictionStream(ctx context.Context, url string, apiKey string, sender func(*string, *string) error) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (r *ReplicateModel) readPredictionStream(ctx context.Context, baseURL string, apiKey string, sender func(*string, *string) error) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -504,7 +501,7 @@ func (r *ReplicateModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 		return nil, err
 	}
 
-	url, err := r.endpoint(apiConfig, r.baseModel.URLSuffix.Models)
+	baseURL, err := r.endpoint(apiConfig, r.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
@@ -512,7 +509,7 @@ func (r *ReplicateModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -674,24 +671,24 @@ func replicateKeys(m map[string]interface{}) []string {
 }
 
 // Embed turns a list of texts into embedding vectors via Replicate's
-func (r *ReplicateModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (r *ReplicateModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	url, version, err := r.predictionEndpoint(apiConfig, *modelName)
+	baseURL, version, err := r.predictionEndpoint(apiConfig, *modelName)
 	if err != nil {
 		return nil, err
 	}
 
-	input, err := replicateEmbedInput(texts)
+	input, err := replicateEmbedInput(request.Texts)
 	if err != nil {
 		return nil, err
 	}
@@ -699,7 +696,7 @@ func (r *ReplicateModel) Embed(ctx context.Context, modelName *string, texts []s
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	prediction, err := r.createPrediction(ctx, url, version, input, false, *apiConfig.ApiKey, true)
+	prediction, err := r.createPrediction(ctx, baseURL, version, input, false, *apiConfig.ApiKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -711,7 +708,7 @@ func (r *ReplicateModel) Embed(ctx context.Context, modelName *string, texts []s
 		return nil, fmt.Errorf("replicate: prediction ended with status %q", prediction.Status)
 	}
 
-	return replicateEmbedOutputToVectors(prediction.Output, len(texts))
+	return replicateEmbedOutputToVectors(prediction.Output, len(request.Texts))
 }
 
 // replicateRerankInput shapes the request body
@@ -765,11 +762,12 @@ func replicateScoresFromInterface(arr []interface{}, n int) ([]float64, error) {
 }
 
 // Rerank scores a query against a list of documents
-func (r *ReplicateModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (r *ReplicateModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -777,7 +775,7 @@ func (r *ReplicateModel) Rerank(ctx context.Context, modelName *string, query st
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	url, version, err := r.predictionEndpoint(apiConfig, *modelName)
+	baseURL, version, err := r.predictionEndpoint(apiConfig, *modelName)
 	if err != nil {
 		return nil, err
 	}
@@ -790,7 +788,7 @@ func (r *ReplicateModel) Rerank(ctx context.Context, modelName *string, query st
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	prediction, err := r.createPrediction(ctx, url, version, input, false, *apiConfig.ApiKey, true)
+	prediction, err := r.createPrediction(ctx, baseURL, version, input, false, *apiConfig.ApiKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -849,11 +847,11 @@ func (r *ReplicateModel) AudioSpeechWithSender(ctx context.Context, modelName *s
 	return fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (r *ReplicateModel) OCRFile(ctx context.Context, modelName *string, content []byte, baseURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (r *ReplicateModel) ParseFile(ctx context.Context, modelName *string, content []byte, baseURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 

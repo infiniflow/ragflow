@@ -40,12 +40,12 @@ func TestParserComponent_Check(t *testing.T) {
 		{
 			name:    "pdf: parse_method empty → error",
 			setups:  map[string]schema.ParserSetup{"pdf": {"parse_method": ""}},
-			wantErr: "Parse method abnormal",
+			wantErr: "parse method abnormal",
 		},
 		{
 			name:    "pdf: parse_method missing → error",
 			setups:  map[string]schema.ParserSetup{"pdf": {}},
-			wantErr: "Parse method abnormal",
+			wantErr: "parse method abnormal",
 		},
 		{
 			name:   "pdf: deepdoc (whitelist) without lang → pass",
@@ -85,7 +85,7 @@ func TestParserComponent_Check(t *testing.T) {
 		{
 			name:    "image: non-ocr without lang → error",
 			setups:  map[string]schema.ParserSetup{"image": {"parse_method": "vlm_xyz", "lang": ""}},
-			wantErr: "Image VLM language",
+			wantErr: "image VLM language",
 		},
 		{
 			name:   "image: non-ocr with lang → pass",
@@ -165,8 +165,8 @@ func TestParserComponent_New_RunsCheck(t *testing.T) {
 	if err == nil {
 		t.Fatal("NewParserComponent with empty pdf.parse_method: want error, got nil")
 	}
-	if !strings.Contains(err.Error(), "Parse method abnormal") {
-		t.Errorf("error = %q, want substring %q", err.Error(), "Parse method abnormal")
+	if !strings.Contains(err.Error(), "parse method abnormal") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "parse method abnormal")
 	}
 	if c != nil {
 		t.Errorf("want nil component on error, got %T", c)

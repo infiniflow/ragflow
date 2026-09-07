@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Authorization } from '@/constants/authorization';
 import { restAPIv1 } from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
@@ -197,11 +213,15 @@ export const AuthenticatedImg = ({
   );
 };
 
-const Image = ({ id, t, label, className, ...props }: IImage) => {
+const Image = React.forwardRef<HTMLImageElement, IImage>(function Image(
+  { id, t, label, className, ...props },
+  ref,
+) {
   const src = useDocumentImageUrl(id, t);
   const imageElement = (
     <img
       {...props}
+      ref={ref}
       src={src || undefined}
       className={classNames('max-w-[45vw] max-h-[40wh] block', className)}
     />
@@ -219,7 +239,7 @@ const Image = ({ id, t, label, className, ...props }: IImage) => {
       </div>
     </div>
   );
-};
+});
 
 export default Image;
 

@@ -4,165 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/utility"
 )
-
-func TestDictify_HeadingsNest(t *testing.T) {
-	md := "# Top\n\n## Mid A\n\n## Mid B\n\n### Deep\n"
-	got := dictify(md)
-	if len(got) != 1 || got[0].k != "Top" {
-		t.Fatalf("top-level = %+v, want single key Top", got)
-	}
-	mid, ok := got[0].v.(omap)
-	if !ok || len(mid) != 2 {
-		t.Fatalf("Top value = %+v, want {Mid A, Mid B}", got[0].v)
-	}
-	if mid[0].k != "Mid A" || mid[0].v != "" {
-		t.Errorf("Mid A = %+v, want empty string value (no children)", mid[0])
-	}
-	deep, ok := mid[1].v.(omap)
-	if !ok || len(deep) != 1 || deep[0].k != "Deep" {
-		t.Errorf("Mid B value = %+v, want {Deep}", mid[1].v)
-	}
-}
-
-func TestDictify_BulletPairsViaTodict(t *testing.T) {
-	// "- term\n  - def" pairs become {term: def}; the unpaired bullet
-	// ("term2") is dropped — faithful to _list_to_kv.
-	md := "# T\n\n## S\n- term1\n  - def1\n- term2\n"
-	got := todict(dictify(md))
-	if len(got) != 1 || got[0].k != "T" {
-		t.Fatalf("dictify = %+v", got)
-	}
-	s, ok := got[0].v.(omap)
-	if !ok || len(s) != 1 || s[0].k != "S" {
-		t.Fatalf("T value = %+v", got[0].v)
-	}
-	pairs, ok := s[0].v.(omap)
-	if !ok || len(pairs) != 1 || pairs[0].k != "term1" || pairs[0].v != "def1" {
-		t.Fatalf("S value = %+v, want {term1: def1} (term2 dropped)", s[0].v)
-	}
-}
-
-func TestDictify_PlainListVanishes(t *testing.T) {
-	// Bullets without definition sub-lists collapse to an empty dict
-	// (Python _list_to_kv parity).
-	md := "# T\n\n- a\n- b\n"
-	got := todict(dictify(md))
-	if len(got) != 1 {
-		t.Fatalf("dictify = %+v", got)
-	}
-	if v, ok := got[0].v.(omap); !ok || len(v) != 0 {
-		t.Fatalf("plain bullets must collapse to empty dict, got %+v", got[0].v)
-	}
-}
-
-func TestDictify_PlainProse(t *testing.T) {
-	got := todict(dictify("hello world, no headings here"))
-	if len(got) != 1 || got[0].k != "root" {
-		t.Fatalf("prose dictify = %+v, want single root key", got)
-	}
-	// The root list has no definition pairs → collapses to empty dict.
-	if v, ok := got[0].v.(omap); !ok || len(v) != 0 {
-		t.Fatalf("root value = %+v, want empty dict", got[0].v)
-	}
-}
-
-func TestDictify_JumpedHeadingBecomesText(t *testing.T) {
-	// H1 → H3 (no H2): the jumped heading is not treated as a key.
-	md := "# H1\n\n### H3\n\ntext\n"
-	got := dictify(md)
-	if len(got) != 1 || got[0].k != "H1" {
-		t.Fatalf("dictify = %+v", got)
-	}
-	if got[0].v != "H3\n\ntext" {
-		t.Fatalf("H1 value = %q, want jumped heading rendered as text", got[0].v)
-	}
-}
-
-func TestDictify_LeadingContentDropped(t *testing.T) {
-	// Content before the first heading at the minimum level is discarded
-	// (dictify_list_by parity).
-	md := "preamble\n\n# H\n\nbody\n"
-	got := dictify(md)
-	if len(got) != 1 || got[0].k != "H" || got[0].v != "body" {
-		t.Fatalf("leading content must be dropped: %+v", got)
-	}
-}
-
-func TestMergeDicts_Order(t *testing.T) {
-	d1 := omap{{"A", []any{"x"}}}
-	d2 := omap{{"A", []any{"y"}}, {"B", "b"}}
-	got := mergeDicts(d1, d2)
-	if len(got) != 2 || got[0].k != "A" || got[1].k != "B" {
-		t.Fatalf("merge = %+v", got)
-	}
-	list, _ := got[0].v.([]any)
-	if len(list) != 2 || list[0] != "y" || list[1] != "x" {
-		t.Fatalf("list merge = %v, want [y x] (d2 items before d1)", list)
-	}
-}
-
-func TestShapeTree_MultiTopKeys(t *testing.T) {
-	merged := omap{
-		{"A", omap{{"shared", "x"}}},
-		{"B", omap{{"shared", "y"}}},
-	}
-	root := shapeTree(merged)
-	if root.ID != "root" || len(root.Children) != 2 {
-		t.Fatalf("shape = %+v, want root with A,B", root)
-	}
-	// The second "shared" key must survive (keyset dedups within a subtree
-	// walk, and A's subtree consumes "shared" first — Python parity: B's
-	// "shared" is dropped because the keyset is shared across children).
-	seen := map[string]int{}
-	var walk func(n *Node)
-	walk = func(n *Node) {
-		seen[n.ID]++
-		for _, c := range n.Children {
-			walk(c)
-		}
-	}
-	walk(root)
-	if seen["shared"] != 1 {
-		t.Fatalf("shared key count = %d, want 1 (global keyset dedup)", seen["shared"])
-	}
-}
-
-func TestShapeTree_SingleKey(t *testing.T) {
-	merged := omap{{"Only", omap{{"child", "text"}}}}
-	root := shapeTree(merged)
-	if root.ID != "Only" {
-		t.Fatalf("single-key root id = %q, want Only", root.ID)
-	}
-	if len(root.Children) != 1 || root.Children[0].ID != "child" {
-		t.Fatalf("root children = %+v", root.Children)
-	}
-}
-
-func TestBeChildren_StringLeaf(t *testing.T) {
-	keyset := map[string]bool{}
-	out := beChildren("plain string", keyset)
-	if len(out) != 1 || out[0].ID != "plain string" {
-		t.Fatalf("string leaf = %+v", out)
-	}
-	if !keyset["plain string"] {
-		t.Fatalf("raw string must enter the keyset")
-	}
-}
-
-func TestStripStars(t *testing.T) {
-	if got := stripStars("**Bold** title"); got != "Bold title" {
-		t.Fatalf("stripStars = %q", got)
-	}
-}
-
-func TestStripFences(t *testing.T) {
-	in := "```json\n{\"a\": 1}\n```\n"
-	if got := StripFences(in); strings.Contains(got, "```") {
-		t.Fatalf("fences not stripped: %q", got)
-	}
-}
 
 func TestRenderPrompt(t *testing.T) {
 	got := renderPrompt("THE TEXT")
@@ -199,41 +42,55 @@ type fakeTok struct{}
 func (fakeTok) NumTokens(s string) int { return len(s) / 4 }
 
 func TestTreeToProducts_ParentLinks(t *testing.T) {
-	root := &Node{ID: "root", Children: []*Node{
-		{ID: "A", Children: []*Node{{ID: "A1"}, {ID: "A2"}}},
+	root := &utility.Node{ID: "root", Children: []*utility.Node{
+		{ID: "A", Children: []*utility.Node{{ID: "A1"}, {ID: "A2"}}},
 		{ID: "B"},
 	}}
 	products := treeToProducts("t1", "d1", root)
-	if len(products) != 5 {
-		t.Fatalf("products = %d, want 5 (root+A+A1+A2+B)", len(products))
+	// 5 entities (root, A, A1, A2, B) + 4 relations (root→A, A→A1, A→A2, root→B).
+	if len(products) != 9 {
+		t.Fatalf("products = %d, want 9 (5 entities + 4 relations)", len(products))
 	}
-	if products[0].Meta["kind"] != "root" || products[0].ParentID != "" {
-		t.Errorf("root product malformed: %+v", products[0].Meta)
-	}
-	if products[1].ParentID != products[0].ID {
-		t.Errorf("A parent link = %q, want root id", products[1].ParentID)
-	}
-	var aID string
+	entCount, relCount := 0, 0
+	fromTo := map[string]bool{}
 	for _, p := range products {
-		if p.Meta["name"] == "A" {
-			aID = p.ID
-		}
-	}
-	for _, p := range products {
-		if n, _ := p.Meta["name"].(string); n == "A1" || n == "A2" {
-			if p.ParentID != aID {
-				t.Errorf("%s parent = %q, want A id", n, p.ParentID)
+		kind, _ := p.Meta["kind"].(string)
+		switch kind {
+		case "entity":
+			entCount++
+			if p.Meta["entity_type"] != "mindmap" {
+				t.Errorf("entity %v type = %v, want mindmap", p.Meta["name"], p.Meta["entity_type"])
 			}
+			if p.Meta["compile_kwd"] != "mindmap" {
+				t.Errorf("entity %v compile_kwd = %v, want mindmap", p.Meta["name"], p.Meta["compile_kwd"])
+			}
+		case "relation":
+			relCount++
+			from, _ := p.Meta["from"].(string)
+			to, _ := p.Meta["to"].(string)
+			fromTo[from+"->"+to] = true
+			if p.Meta["relation_type"] != "related" {
+				t.Errorf("relation %v->%v type = %v, want related", from, to, p.Meta["relation_type"])
+			}
+		default:
+			t.Errorf("unexpected kind %q", kind)
+		}
+	}
+	if entCount != 5 || relCount != 4 {
+		t.Errorf("entities=%d relations=%d, want 5/4", entCount, relCount)
+	}
+	for _, edge := range []string{"root->A", "A->A1", "A->A2", "root->B"} {
+		if !fromTo[edge] {
+			t.Errorf("missing relation %s", edge)
 		}
 	}
 }
 
-func TestSerializeNode_Shape(t *testing.T) {
-	root := &Node{ID: "Top \"quoted\"", Children: []*Node{{ID: "child"}}}
-	js := serializeNode(root)
-	if !strings.HasPrefix(js, `{"id":"Top \"quoted\""`) {
-		t.Errorf("serializeNode = %q", js)
+func TestTreeToProducts_EmptyAndNil(t *testing.T) {
+	if got := treeToProducts("t1", "d1", nil); len(got) != 0 {
+		t.Errorf("nil root produced %d products", len(got))
+	}
+	if got := treeToProducts("t1", "d1", &utility.Node{ID: ""}); len(got) != 0 {
+		t.Errorf("empty root id produced %d products", len(got))
 	}
 }
-
-var _ = common.EstimateTokens // keep common import when unused helpers shift

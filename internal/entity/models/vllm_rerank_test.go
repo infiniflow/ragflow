@@ -50,6 +50,7 @@ func newVllmModelForTest(baseURL string) *VllmModel {
 }
 
 func TestVllmRerankHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVllmRerankServer(t, "Bearer test-key", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "BAAI/bge-reranker-v2-m3" {
@@ -88,8 +89,7 @@ func TestVllmRerankHappyPath(t *testing.T) {
 	resp, err := model.Rerank(
 		ctx,
 		&modelName,
-		"What is RAPTOR?",
-		[]string{"doc-zero", "doc-one", "doc-two"},
+		RerankRequest{Query: "What is RAPTOR?", Documents: []string{"doc-zero", "doc-one", "doc-two"}},
 		&APIConfig{ApiKey: &apiKey},
 		&RerankConfig{},
 		nil,
@@ -109,6 +109,7 @@ func TestVllmRerankHappyPath(t *testing.T) {
 }
 
 func TestVllmRerankTopNClamp(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVllmRerankServer(t, "Bearer test-key", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["top_n"] != float64(2) {
@@ -123,8 +124,8 @@ func TestVllmRerankTopNClamp(t *testing.T) {
 	modelName := "BAAI/bge-reranker-v2-m3"
 	if _, err := model.Rerank(
 		ctx,
-		&modelName, "q",
-		[]string{"a", "b", "c", "d"},
+		&modelName,
+		RerankRequest{Query: "q", Documents: []string{"a", "b", "c", "d"}},
 		&APIConfig{ApiKey: &apiKey},
 		&RerankConfig{TopN: 2},
 		nil,
@@ -134,11 +135,12 @@ func TestVllmRerankTopNClamp(t *testing.T) {
 }
 
 func TestVllmRerankEmptyDocuments(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := newVllmModelForTest("http://unused")
 	apiKey := "test-key"
 	modelName := "BAAI/bge-reranker-v2-m3"
-	resp, err := model.Rerank(ctx, &modelName, "q", nil, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
+	resp, err := model.Rerank(ctx, &modelName, RerankRequest{Query: "q", Documents: nil}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err != nil {
 		t.Fatalf("expected nil error for empty documents, got %v", err)
 	}
@@ -151,6 +153,7 @@ func TestVllmRerankEmptyDocuments(t *testing.T) {
 // no APIConfig.ApiKey is configured. This diverges from the NVIDIA driver
 // which requires an API key.
 func TestVllmRerankWithoutAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVllmRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -163,7 +166,7 @@ func TestVllmRerankWithoutAPIKey(t *testing.T) {
 
 	model := newVllmModelForTest(srv.URL)
 	modelName := "BAAI/bge-reranker-v2-m3"
-	resp, err := model.Rerank(ctx, &modelName, "q", []string{"a"}, &APIConfig{}, &RerankConfig{}, nil)
+	resp, err := model.Rerank(ctx, &modelName, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{}, &RerankConfig{}, nil)
 	if err != nil {
 		t.Fatalf("Rerank failed without api key: %v", err)
 	}
@@ -173,16 +176,18 @@ func TestVllmRerankWithoutAPIKey(t *testing.T) {
 }
 
 func TestVllmRerankRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := newVllmModelForTest("http://unused")
 	apiKey := "test-key"
-	_, err := model.Rerank(ctx, nil, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
+	_, err := model.Rerank(ctx, nil, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
 }
 
 func TestVllmRerankRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVllmRerankServer(t, "Bearer test-key", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -193,13 +198,14 @@ func TestVllmRerankRejectsHTTPError(t *testing.T) {
 	model := newVllmModelForTest(srv.URL)
 	apiKey := "test-key"
 	modelName := "BAAI/bge-reranker-v2-m3"
-	_, err := model.Rerank(ctx, &modelName, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
+	_, err := model.Rerank(ctx, &modelName, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "vLLM rerank API error") {
 		t.Errorf("expected API error, got %v", err)
 	}
 }
 
 func TestVllmRerankRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVllmRerankServer(t, "Bearer test-key", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -213,7 +219,7 @@ func TestVllmRerankRejectsOutOfRangeIndex(t *testing.T) {
 	model := newVllmModelForTest(srv.URL)
 	apiKey := "test-key"
 	modelName := "BAAI/bge-reranker-v2-m3"
-	_, err := model.Rerank(ctx, &modelName, "q", []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
+	_, err := model.Rerank(ctx, &modelName, RerankRequest{Query: "q", Documents: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "unexpected rerank index") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}

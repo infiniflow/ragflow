@@ -56,7 +56,7 @@ func getTagsCacheKey(kbIDs []string) string {
 
 // GetTagsFromCache retrieves cached tags for given kb_ids
 // Returns nil if not found (cache miss)
-func GetTagsFromCache(kbIDs []string) (map[string]float64, error) {
+func GetTagsFromCache(ctx context.Context, kbIDs []string) (map[string]float64, error) {
 	if len(kbIDs) == 0 {
 		return nil, nil
 	}
@@ -68,7 +68,7 @@ func GetTagsFromCache(kbIDs []string) (map[string]float64, error) {
 	}
 
 	key := getTagsCacheKey(kbIDs)
-	data, err := redisClient.Get(key)
+	data, err := redisClient.Get(ctx, key)
 	if err != nil || data == "" {
 		// Cache miss or error
 		return nil, nil
@@ -84,7 +84,7 @@ func GetTagsFromCache(kbIDs []string) (map[string]float64, error) {
 }
 
 // SetTagsToCache stores tags in cache for given kb_ids with 10 minute expiry
-func SetTagsToCache(kbIDs []string, tags map[string]float64) error {
+func SetTagsToCache(ctx context.Context, kbIDs []string, tags map[string]float64) error {
 	if len(kbIDs) == 0 || tags == nil {
 		return nil
 	}
@@ -102,7 +102,7 @@ func SetTagsToCache(kbIDs []string, tags map[string]float64) error {
 	}
 
 	// Cache for 10 minutes (600 seconds)
-	ok := redisClient.Set(key, string(data), 10*time.Minute)
+	ok := redisClient.Set(ctx, key, string(data), 10*time.Minute)
 	if !ok {
 		common.Warn("Failed to set tags cache")
 		return fmt.Errorf("failed to set tags cache")
@@ -290,7 +290,7 @@ func (s *MetadataService) LabelQuestion(ctx context.Context, question string, kb
 	common.Debug("tag_kb_ids found in parser_config", zap.Strings("tag_kb_ids", tagKBIDs))
 
 	// Get all tags from cache or compute and cache
-	allTags, err := GetTagsFromCache(tagKBIDs)
+	allTags, err := GetTagsFromCache(ctx, tagKBIDs)
 	if err != nil {
 		common.Warn("Failed to get tags from cache", zap.Error(err))
 	}
@@ -302,7 +302,7 @@ func (s *MetadataService) LabelQuestion(ctx context.Context, question string, kb
 			return nil
 		}
 		// Store in cache for future lookups
-		if err = SetTagsToCache(tagKBIDs, allTags); err != nil {
+		if err = SetTagsToCache(ctx, tagKBIDs, allTags); err != nil {
 			common.Warn("Failed to set tags cache", zap.Error(err))
 		}
 	}

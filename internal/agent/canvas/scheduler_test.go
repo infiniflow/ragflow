@@ -2,7 +2,7 @@
 package canvas
 
 import (
-	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -31,7 +31,7 @@ func TestBuildWorkflow_3NodeLinear(t *testing.T) {
 		Path: []string{"begin_0", "llm_0", "message_0"},
 	}
 
-	wf, err := BuildWorkflow(context.Background(), c)
+	wf, err := BuildWorkflow(t.Context(), c)
 	if err != nil {
 		t.Fatalf("BuildWorkflow: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestBuildWorkflow_3NodeLinear(t *testing.T) {
 	}
 
 	// Compile to a Runnable to confirm the topology is internally consistent.
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestBuildWorkflow_5NodeDiamond(t *testing.T) {
 		Path: []string{"begin_0", "a_0", "b_0", "c_0", "d_0"},
 	}
 
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
 		t.Fatalf("Compile diamond: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestBuildWorkflow_MultiTerminalSucceeds(t *testing.T) {
 		Path: []string{"begin_0", "a_0", "b_0", "c_0"},
 	}
 
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
 		t.Fatalf("Compile multi-terminal canvas: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestBuildWorkflow_ParallelGroupWithOuterFollowerSucceeds(t *testing.T) {
 		},
 	}
 
-	cc, err := Compile(context.Background(), c)
+	cc, err := Compile(t.Context(), c)
 	if err != nil {
 		t.Fatalf("Compile parallel canvas: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestBuildWorkflow_ErrorsOnUnknownUpstream(t *testing.T) {
 			},
 		},
 	}
-	_, err := BuildWorkflow(context.Background(), c)
+	_, err := BuildWorkflow(t.Context(), c)
 	if err == nil {
 		t.Fatal("expected error for unknown upstream")
 	}
@@ -237,11 +237,97 @@ func TestBuildWorkflow_ErrorsOnSelfEdge(t *testing.T) {
 			},
 		},
 	}
-	_, err := BuildWorkflow(context.Background(), c)
+	_, err := BuildWorkflow(t.Context(), c)
 	if err == nil {
 		t.Fatal("expected error for self-edge")
 	}
 	if !strings.Contains(err.Error(), "self-edge") {
 		t.Fatalf("expected 'self-edge' in error, got: %v", err)
+	}
+}
+
+func TestNodeLifecycleEventsSafeMarshalNonSerializableInputs(t *testing.T) {
+	events := make(chan RunEvent, 2)
+	ctx := WithRunMeta(t.Context(), &RunMeta{
+		Events:    events,
+		MessageID: "msg-1",
+		SessionID: "session-1",
+	})
+	state := NewCanvasState("run-1", "session-1")
+	inputs := map[string]any{
+		"query":    "hi",
+		"callback": func() {},
+	}
+
+	nodeStartedAt(ctx, state, "agent_0", "Agent", "Agent", inputs)
+	nodeFinishedNow(ctx, state, "agent_0", "Agent", "Agent", nil)
+
+	for i, wantType := range []string{"node_started", "node_finished"} {
+		select {
+		case ev := <-events:
+			if ev.Type != wantType {
+				t.Fatalf("event[%d].Type = %q, want %q", i, ev.Type, wantType)
+			}
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(ev.Data), &payload); err != nil {
+				t.Fatalf("%s Data should be valid JSON, got %q: %v", wantType, ev.Data, err)
+			}
+			if payload["component_type"] != "Agent" {
+				t.Fatalf("%s component_type = %v, want Agent; payload=%v", wantType, payload["component_type"], payload)
+			}
+			in, ok := payload["inputs"].(map[string]any)
+			if !ok {
+				t.Fatalf("%s inputs = %T %v, want object", wantType, payload["inputs"], payload["inputs"])
+			}
+			if _, ok = in["callback"]; !ok {
+				t.Fatalf("%s inputs missing sanitized callback key: %v", wantType, in)
+			}
+			if in["callback"] != nil {
+				t.Fatalf("%s callback = %T %v, want nil after safe JSON cleanup", wantType, in["callback"], in["callback"])
+			}
+		default:
+			t.Fatalf("missing %s event", wantType)
+		}
+	}
+}
+
+func TestNodeLifecycleEventsFallbackMarshalErrorPreservesIdentity(t *testing.T) {
+	events := make(chan RunEvent, 2)
+	ctx := WithRunMeta(t.Context(), &RunMeta{
+		Events:    events,
+		MessageID: "msg-2",
+		SessionID: "session-2",
+	})
+	state := NewCanvasState("run-2", "session-2")
+	inputs := map[string]any{
+		"query":  "hi",
+		"broken": complex(1, 2),
+	}
+
+	nodeStartedAt(ctx, state, "agent_1", "Agent", "Agent", inputs)
+	nodeFinishedNow(ctx, state, "agent_1", "Agent", "Agent", nil)
+
+	for i, wantType := range []string{"node_started", "node_finished"} {
+		select {
+		case ev := <-events:
+			if ev.Type != wantType {
+				t.Fatalf("event[%d].Type = %q, want %q", i, ev.Type, wantType)
+			}
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(ev.Data), &payload); err != nil {
+				t.Fatalf("%s Data should be valid JSON, got %q: %v", wantType, ev.Data, err)
+			}
+			if payload["component_id"] != "agent_1" {
+				t.Fatalf("%s component_id = %v, want agent_1; payload=%v", wantType, payload["component_id"], payload)
+			}
+			if payload["component_name"] != "Agent" {
+				t.Fatalf("%s component_name = %v, want Agent; payload=%v", wantType, payload["component_name"], payload)
+			}
+			if payload["component_type"] != "Agent" {
+				t.Fatalf("%s component_type = %v, want Agent; payload=%v", wantType, payload["component_type"], payload)
+			}
+		default:
+			t.Fatalf("missing %s event", wantType)
+		}
 	}
 }

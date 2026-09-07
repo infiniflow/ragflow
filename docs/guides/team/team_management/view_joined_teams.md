@@ -1,9 +1,10 @@
 ---
 sidebar_position: 5
-sidebar_label: "View joined teams"
+sidebar_label: View Joined Teams
+title: View Joined Teams
 ---
 
-## View joined teams
+# View Joined Teams
 
 The **Joined teams** list displays other workspaces that the current user has joined or has been invited to join.
 

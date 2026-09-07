@@ -139,19 +139,25 @@
                 "obj": {
                     "component_name": "Extractor",
                     "params": {
-                        "field_name": "",
-                        "outputs": {
-                            "chunks": {
-                                "type": "Array<Object>",
-                                "value": []
-                            }
-                        },
-                        "auto_keywords": 0,
-                        "auto_questions": 0,
                         "llm_id": "",
-                        "auto_tags": 0,
-                        "enable_metadata": 0,
-                        "metadata": []
+                        "keywords": {
+                            "top_n": 0
+                        },
+                        "questions": {
+                            "top_n": 0
+                        },
+                        "tags": {
+                            "top_n": 0,
+                            "tag_file_id": ""
+                        },
+                        "summary": {
+                            "enabled": false
+                        },
+                        "metadata": {
+                            "enabled": false,
+                            "metadata": [],
+                            "built_in_metadata": []
+                        }
                     }
                 }
             }
@@ -249,7 +255,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_picture_0"
+                        "name": "Parser_picture"
                     },
                     "dragging": false,
                     "id": "Parser:ViewsCaptureLight",
@@ -277,7 +283,7 @@
                             }
                         },
                         "label": "OneChunker",
-                        "name": "OneChunker_picture_0"
+                        "name": "OneChunker_picture"
                     },
                     "id": "TokenChunker:BrightColorsGlow",
                     "measured": {
@@ -305,7 +311,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_picture_0"
+                        "name": "Indexer_picture"
                     },
                     "id": "Tokenizer:SharpLensFocus",
                     "measured": {
@@ -329,7 +335,7 @@
                     },
                     "data": {
                         "label": "Extractor",
-                        "name": "Extractor_0"
+                        "name": "Extractor"
                     }
                 }
             ]

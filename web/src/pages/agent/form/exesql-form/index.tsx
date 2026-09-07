@@ -26,7 +26,14 @@ import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
-import { FormSchema, useSubmitForm } from './use-submit-form';
+import {
+  FormSchema,
+  MaxMaxRecords,
+  MaxPort,
+  MinMaxRecords,
+  MinPort,
+  useSubmitForm,
+} from './use-submit-form';
 
 const outputList = buildOutputList(initialExeSqlValues.outputs);
 
@@ -98,7 +105,13 @@ export function ExeSQLFormWidgets({ loading }: { loading: boolean }) {
           <FormItem>
             <FormLabel>{t('port')}</FormLabel>
             <FormControl>
-              <NumberInput {...field} className="w-full"></NumberInput>
+              <NumberInput
+                {...field}
+                min={MinPort}
+                max={MaxPort}
+                integer
+                className="w-full"
+              ></NumberInput>
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -125,7 +138,13 @@ export function ExeSQLFormWidgets({ loading }: { loading: boolean }) {
           <FormItem>
             <FormLabel>{t('maxRecords')}</FormLabel>
             <FormControl>
-              <NumberInput {...field} className="w-full"></NumberInput>
+              <NumberInput
+                {...field}
+                min={MinMaxRecords}
+                max={MaxMaxRecords}
+                integer
+                className="w-full"
+              ></NumberInput>
             </FormControl>
             <FormMessage />
           </FormItem>

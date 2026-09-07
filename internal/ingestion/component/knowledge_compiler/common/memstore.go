@@ -4,6 +4,8 @@ import (
 	"math"
 	"sort"
 	"sync"
+
+	"gonum.org/v1/gonum/mat"
 )
 
 // Hit is one TopK match returned by MemStore.
@@ -15,14 +17,24 @@ type Hit struct {
 
 // MemStore is an in-memory product store with exact-cosine TopK retrieval.
 // It is the single source of truth for in-run dedup (replacing Python's ES
-// KNN over the current run's products). Vectors are kept alongside precomputed
-// L2 norms so TopK is a single matVec pass.
+// KNN over the current run's products).
+//
+// Vectors are stored as one contiguous float64 row-major matrix (matDense) so
+// the per-query dot-product pass — the hot path for document-level structure
+// dedup and dataset-level cross-document dedup — is a single level-2 BLAS
+// matrix-vector product (mat.VecDense.MulVec) instead of N separate scalar
+// loops. gonum only supports float64, so each incoming float32 vector is
+// widened when written. All vectors in one store are assumed to share the same
+// dimension (embeddings from one model); addLocked pads/truncates a stray
+// vector to cols defensively. Precomputed L2 norms complete the cosine.
 type MemStore struct {
-	mu      sync.RWMutex
-	items   []Product
-	vectors [][]float32
-	norms   []float64
-	byID    map[string]int
+	mu       sync.RWMutex
+	items    []Product
+	cols     int        // uniform embedding dimension; 0 while empty
+	matData  []float64  // row-major vectors, len == cols*len(items)
+	matDense *mat.Dense // view over matData, rebuilt when the row count changes
+	norms    []float64
+	byID     map[string]int
 }
 
 // NewMemStore constructs an empty MemStore.
@@ -66,23 +78,7 @@ func (m *MemStore) Add(p Product) {
 // applied under a write lock using the previously resolved index.
 func (m *MemStore) DedupeAdd(row Product, threshold float64, cb DedupCallback) (KeepAction, error) {
 	m.mu.RLock()
-	qn := l2Norm(row.Vector)
-	if qn == 0 {
-		qn = 1
-	}
-	bestIdx, bestScore := -1, 0.0
-	for i, v := range m.vectors {
-		vn := m.norms[i]
-		if vn == 0 {
-			vn = 1
-		}
-		score := dotProduct(row.Vector, v) / (qn * vn)
-		if threshold <= 0 || score >= threshold {
-			if bestIdx == -1 || score > bestScore {
-				bestIdx, bestScore = i, score
-			}
-		}
-	}
+	bestIdx, bestScore := m.bestMatchLocked(row.Vector, threshold)
 	var best Product
 	if bestIdx >= 0 && bestIdx < len(m.items) {
 		best = m.items[bestIdx]
@@ -118,7 +114,7 @@ func (m *MemStore) DedupeAdd(row Product, threshold float64, cb DedupCallback) (
 		// Merges preserve the existing entry's identity (Python preserve_id).
 		replacement.ID = m.items[resolvedIdx].ID
 		m.items[resolvedIdx] = replacement
-		m.vectors[resolvedIdx] = replacement.Vector
+		m.replaceMatLocked(resolvedIdx, replacement.Vector)
 		m.norms[resolvedIdx] = l2Norm(replacement.Vector)
 		return KeepMerge, nil
 	default:
@@ -129,7 +125,7 @@ func (m *MemStore) DedupeAdd(row Product, threshold float64, cb DedupCallback) (
 
 func (m *MemStore) addLocked(p Product) {
 	m.items = append(m.items, p)
-	m.vectors = append(m.vectors, p.Vector)
+	m.appendMatLocked(p.Vector)
 	m.norms = append(m.norms, l2Norm(p.Vector))
 	if p.ID != "" {
 		m.byID[p.ID] = len(m.items) - 1
@@ -142,14 +138,11 @@ func (m *MemStore) Upsert(p Product) {
 	defer m.mu.Unlock()
 	if idx, ok := m.byID[p.ID]; ok {
 		m.items[idx] = p
-		m.vectors[idx] = p.Vector
+		m.replaceMatLocked(idx, p.Vector)
 		m.norms[idx] = l2Norm(p.Vector)
 		return
 	}
-	m.items = append(m.items, p)
-	m.vectors = append(m.vectors, p.Vector)
-	m.norms = append(m.norms, l2Norm(p.Vector))
-	m.byID[p.ID] = len(m.items) - 1
+	m.addLocked(p)
 }
 
 // Delete removes a product by ID.
@@ -161,7 +154,7 @@ func (m *MemStore) Delete(id string) {
 		return
 	}
 	m.items = append(m.items[:idx], m.items[idx+1:]...)
-	m.vectors = append(m.vectors[:idx], m.vectors[idx+1:]...)
+	m.removeMatLocked(idx)
 	m.norms = append(m.norms[:idx], m.norms[idx+1:]...)
 	delete(m.byID, id)
 	m.reindexLocked()
@@ -189,6 +182,10 @@ func (m *MemStore) Len() int {
 func (m *MemStore) TopK(vec []float32, k int, threshold float64) []Hit {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if m.matDense == nil {
+		return nil
+	}
+	dots := m.matDotLocked(vec)
 	qn := l2Norm(vec)
 	if qn == 0 {
 		qn = 1
@@ -198,12 +195,12 @@ func (m *MemStore) TopK(vec []float32, k int, threshold float64) []Hit {
 		score float64
 	}
 	var cands []cand
-	for i, v := range m.vectors {
+	for i := range m.items {
 		vn := m.norms[i]
 		if vn == 0 {
 			vn = 1
 		}
-		score := dotProduct(vec, v) / (qn * vn)
+		score := dots[i] / (qn * vn)
 		if threshold <= 0 || score >= threshold {
 			cands = append(cands, cand{i, score})
 		}
@@ -261,16 +258,110 @@ func (m *MemStore) MergeSourceChunkIDs(id string, chunkIDs []string) {
 	m.items[idx] = p
 }
 
-func dotProduct(a, b []float32) float64 {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
+// bestMatchLocked returns the index and cosine similarity of the stored vector
+// most similar to q among those meeting threshold (threshold<=0 keeps every
+// candidate). The dot-product pass is a single BLAS gemv over the row-major
+// matrix. Caller must hold at least a read lock.
+func (m *MemStore) bestMatchLocked(q []float32, threshold float64) (int, float64) {
+	if m.matDense == nil {
+		return -1, 0
 	}
-	var s float64
-	for i := 0; i < n; i++ {
-		s += float64(a[i]) * float64(b[i])
+	dots := m.matDotLocked(q)
+	qn := l2Norm(q)
+	if qn == 0 {
+		qn = 1
 	}
-	return s
+	bestIdx, bestScore := -1, 0.0
+	for i := range m.items {
+		vn := m.norms[i]
+		if vn == 0 {
+			vn = 1
+		}
+		score := dots[i] / (qn * vn)
+		if threshold <= 0 || score >= threshold {
+			if bestIdx == -1 || score > bestScore {
+				bestIdx, bestScore = i, score
+			}
+		}
+	}
+	return bestIdx, bestScore
+}
+
+// matDotLocked returns matDense * q — the raw dot products of q against every
+// stored vector — computed in one level-2 BLAS operation. Caller must hold at
+// least a read lock.
+func (m *MemStore) matDotLocked(q []float32) []float64 {
+	qv := make([]float64, m.cols)
+	for i := 0; i < m.cols && i < len(q); i++ {
+		qv[i] = float64(q[i])
+	}
+	var out mat.VecDense
+	out.MulVec(m.matDense, mat.NewVecDense(m.cols, qv))
+	return out.RawVector().Data
+}
+
+// appendMatLocked widens vec to cols and appends it as a new matrix row. Caller
+// must hold a write lock.
+func (m *MemStore) appendMatLocked(v []float32) {
+	if m.cols == 0 {
+		m.cols = len(v)
+	}
+	m.matData = append(m.matData, float32ToF64(v, m.cols)...)
+	// gonum panics on non-positive dimensions, so skip the view until a real
+	// dimension is known (e.g. a product arrived with an empty vector). The
+	// TopK/bestMatch paths treat a nil matDense as "no usable vectors".
+	if m.cols > 0 {
+		m.matDense = mat.NewDense(len(m.items), m.cols, m.matData)
+	} else {
+		m.matDense = nil
+	}
+}
+
+// replaceMatLocked overwrites matrix row idx with vec (widened to cols, missing
+// trailing dims zero-filled, extra dims truncated). Caller must hold a write
+// lock.
+func (m *MemStore) replaceMatLocked(idx int, v []float32) {
+	if m.cols == 0 {
+		m.cols = len(v)
+		if m.cols > 0 {
+			m.matDense = mat.NewDense(len(m.items), m.cols, m.matData)
+		}
+	}
+	base := idx * m.cols
+	for j := 0; j < m.cols; j++ {
+		if j < len(v) {
+			m.matData[base+j] = float64(v[j])
+		} else {
+			m.matData[base+j] = 0
+		}
+	}
+}
+
+// removeMatLocked removes matrix row idx and rebuilds the view. Caller must
+// hold a write lock.
+func (m *MemStore) removeMatLocked(idx int) {
+	copy(m.matData[idx*m.cols:], m.matData[(idx+1)*m.cols:])
+	m.matData = m.matData[:len(m.matData)-m.cols]
+	if len(m.matData) == 0 {
+		m.cols = 0
+		m.matDense = nil
+		return
+	}
+	if m.cols > 0 {
+		m.matDense = mat.NewDense(len(m.items), m.cols, m.matData)
+	} else {
+		m.matDense = nil
+	}
+}
+
+// float32ToF64 widens v to a row of cols float64 values, zero-filling missing
+// trailing dims and truncating excess ones.
+func float32ToF64(v []float32, cols int) []float64 {
+	out := make([]float64, cols)
+	for i := 0; i < cols && i < len(v); i++ {
+		out[i] = float64(v[i])
+	}
+	return out
 }
 
 func l2Norm(v []float32) float64 {

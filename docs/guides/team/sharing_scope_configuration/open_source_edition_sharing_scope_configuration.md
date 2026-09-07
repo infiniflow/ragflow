@@ -1,9 +1,10 @@
 ---
 sidebar_position: 1
-sidebar_label: "Open-source edition sharing scope configuration"
+sidebar_label: Open-Source Edition Sharing Scope Configuration
+title: Open-Source Edition Sharing Scope Configuration
 ---
 
-## Open-source edition sharing scope configuration
+# Open-Source Edition Sharing Scope Configuration
 
 In the open-source edition, the sharing scope is configured through the **Permissions** field on the resource configuration page. Select one of the following options based on your business needs:
 

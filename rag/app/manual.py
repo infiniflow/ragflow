@@ -21,7 +21,7 @@ import re
 from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
 from io import BytesIO
 from deepdoc.parser.utils import extract_pdf_outlines
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context, concat_img
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context, concat_img, DEFAULT_DELIMITER
 from common.token_utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, DocxParser
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper, vision_figure_parser_docx_wrapper
@@ -139,7 +139,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     """
     Only pdf is supported.
     """
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC"})
     pdf_parser = None
     doc = {"docnm_kwd": filename}
     doc["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", doc["docnm_kwd"]))
@@ -240,14 +240,19 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             sec_ids.append(sid)
 
         sections = [(txt, sec_ids[i], poss) for i, (txt, _, poss) in enumerate(sections)]
-        for (img, rows), poss in tbls:
-            if not rows:
-                continue
-            sections.append((rows if isinstance(rows, str) else rows[0], -1, [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
+        if name != "mineru":
+            for (img, rows), poss in tbls:
+                if not rows:
+                    continue
+                sections.append((rows if isinstance(rows, str) else rows[0], -1, [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
 
         def tag(pn, left, right, top, bottom):
             if pn + left + right + top + bottom == 0:
                 return ""
+            if name == "mineru":
+                # MinerU tags stay local and one-based for crop(); crop() adds
+                # the task's page offset when it emits final positions.
+                pn += 1
             return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(pn, left, right, top, bottom)
 
         chunks = []
@@ -264,12 +269,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             tk_cnt = num_tokens_from_string(txt)
             if sec_id > -1:
                 last_sid = sec_id
-        tbls = vision_figure_parser_pdf_wrapper(
-            tbls=tbls,
-            sections=sections,
-            callback=callback,
-            **kwargs,
-        )
+        if name != "mineru":
+            tbls = vision_figure_parser_pdf_wrapper(
+                tbls=tbls,
+                sections=sections,
+                callback=callback,
+                lang=lang,
+                **kwargs,
+            )
         res = tokenize_table(tbls, doc, eng, language=lang)
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser, language=lang))
         table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
@@ -280,10 +287,19 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             res[0]["__outline__"] = [{"title": title, "depth": depth} for title, depth, *_ in pdf_parser.outlines]
         return res
 
-    elif re.search(r"\.docx?$", filename, re.IGNORECASE):
+    elif re.search(r"\.doc$", filename, re.IGNORECASE):
+        raise NotImplementedError("Legacy .doc files are not supported by the Manual parser. Please convert the file to .docx or PDF and try again.")
+
+    elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
-        tbls = vision_figure_parser_docx_wrapper(sections=ti_list, tbls=tbls, callback=callback, **kwargs)
+        tbls = vision_figure_parser_docx_wrapper(
+            sections=ti_list,
+            tbls=tbls,
+            callback=callback,
+            lang=lang,
+            **kwargs,
+        )
         res = tokenize_table(tbls, doc, eng, language=lang)
         for text, image in ti_list:
             d = copy.deepcopy(doc)

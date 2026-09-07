@@ -13,6 +13,7 @@ import (
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Accessible reports whether docID belongs to a knowledge base
@@ -67,11 +68,11 @@ func (s *DocumentService) GetDocumentStorageAddress(ctx context.Context, doc *en
 
 func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID string) (*DownloadDocumentResp, error) {
 	if docID == "" {
-		return nil, fmt.Errorf("Specify document_id please.")
+		return nil, fmt.Errorf("specify document_id please")
 	}
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil || doc.KbID != datasetID {
-		return nil, fmt.Errorf("Document not found!")
+		return nil, fmt.Errorf("document not found")
 	}
 	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
@@ -83,12 +84,12 @@ func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	data, err := storageImpl.Get(bucket, name)
+	data, err := storageImpl.Get(ctx, bucket, name)
 	if err != nil {
 		return nil, err
 	}
 	if len(data) == 0 {
-		return nil, fmt.Errorf("This file is empty.")
+		return nil, fmt.Errorf("this document is empty")
 	}
 
 	fileName := ""
@@ -142,31 +143,49 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *Up
 	return s.documentDAO.Update(ctx, dao.DB, document)
 }
 
-// IncrementChunkNum atomically increments chunk/token counters on the document and its knowledge base in a transaction
-func (s *DocumentService) IncrementChunkNum(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {
+// ApplyDocCounts records a pipeline run's chunk/token/duration counts on the
+// document and rolls the change into its knowledge base aggregate. It is
+// idempotent per document: the document row holds this document's own counts, so
+// re-applying the same run - e.g. an at-least-once task redelivery that re-runs
+// the pipeline - sets the same document values and adjusts the knowledge base by
+// a zero delta. It also carries a changed count (a re-parse producing a
+// different result) correctly, since only the delta reaches the aggregate. The
+// document row is locked so the read-modify-write of its current counts is
+// atomic against a concurrent apply, and the aggregate is clamped at zero.
+func (s *DocumentService) ApplyDocCounts(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {
 	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Update document
+		var doc entity.Document
+		if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND kb_id = ?", docID, kbID).
+			First(&doc).Error; err != nil {
+			return err
+		}
+
+		chunkDelta := int64(chunkNum) - doc.ChunkNum
+		tokenDelta := int64(tokenNum) - doc.TokenNum
+
+		// Set the document to this run's absolute counts.
 		if err := tx.WithContext(ctx).Model(&entity.Document{}).
 			Where("id = ? AND kb_id = ?", docID, kbID).
 			Updates(map[string]interface{}{
-				"chunk_num":        gorm.Expr("chunk_num + ?", int64(chunkNum)),
-				"token_num":        gorm.Expr("token_num + ?", int64(tokenNum)),
-				"process_duration": gorm.Expr("process_duration + ?", duration),
+				"chunk_num":        int64(chunkNum),
+				"token_num":        int64(tokenNum),
+				"process_duration": duration,
 			}).Error; err != nil {
 			return err
 		}
 
-		// Update knowledgebase
-		if err := tx.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		// Roll only the delta into the knowledge base aggregate; a re-applied run
+		// contributes zero. Clamp at zero so a stale aggregate cannot go negative.
+		if chunkDelta == 0 && tokenDelta == 0 {
+			return nil
+		}
+		return tx.WithContext(ctx).Model(&entity.Knowledgebase{}).
 			Where("id = ?", kbID).
 			Updates(map[string]interface{}{
-				"chunk_num": gorm.Expr("chunk_num + ?", int64(chunkNum)),
-				"token_num": gorm.Expr("token_num + ?", int64(tokenNum)),
-			}).Error; err != nil {
-			return err
-		}
-
-		return nil
+				"chunk_num": gorm.Expr("CASE WHEN chunk_num + ? >= 0 THEN chunk_num + ? ELSE 0 END", chunkDelta, chunkDelta),
+				"token_num": gorm.Expr("CASE WHEN token_num + ? >= 0 THEN token_num + ? ELSE 0 END", tokenDelta, tokenDelta),
+			}).Error
 	})
 }
 
@@ -175,11 +194,41 @@ func (s *DocumentService) IncrementChunkNum(ctx context.Context, docID, kbID str
 // progress_msg) reflects in-flight Go pipeline progress. Best-effort by
 // design; callers log and continue on error.
 func (s *DocumentService) UpdateRunProgress(ctx context.Context, docID string, progress float64, run, progressMsg string) error {
-	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{
+	updates := map[string]interface{}{
 		"progress":     progress,
 		"run":          run,
 		"progress_msg": progressMsg,
-	})
+	}
+	if doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID); err != nil {
+		return err
+	} else if doc != nil && doc.ProcessBeginAt != nil {
+		duration := time.Since(*doc.ProcessBeginAt).Seconds()
+		if duration < 0 {
+			duration = 0
+		}
+		updates["process_duration"] = duration
+	}
+	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, updates)
+}
+
+// UpdateRunState mirrors live progress and status into the document row when
+// the existing progress log cannot be read. It intentionally leaves the log
+// untouched so a later event can retry seeding and append it safely.
+func (s *DocumentService) UpdateRunState(ctx context.Context, docID string, progress float64, run string) error {
+	updates := map[string]interface{}{
+		"progress": progress,
+		"run":      run,
+	}
+	if doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID); err != nil {
+		return err
+	} else if doc != nil && doc.ProcessBeginAt != nil {
+		duration := time.Since(*doc.ProcessBeginAt).Seconds()
+		if duration < 0 {
+			duration = 0
+		}
+		updates["process_duration"] = duration
+	}
+	return s.documentDAO.UpdateByID(ctx, dao.DB, docID, updates)
 }
 
 // DeleteDocument delete document — delegates to full cleanup logic.
@@ -194,7 +243,7 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
 	// 1. Check dataset is accessible by the user
 	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return 0, fmt.Errorf("you don't own the dataset %s", datasetID)
+		return 0, fmt.Errorf("You don't own the dataset %s.", datasetID)
 	}
 
 	// 2. Resolve document IDs
@@ -256,7 +305,7 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 		common.Warn(fmt.Sprintf("need to delete files from taskInfo: %v", taskInfo))
 	}
 
-	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
+	s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID)
 	if err = s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
 		return err
 	}
@@ -280,15 +329,23 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		return err
 	}
 	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
-		common.Logger.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
-	}
-	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
 		if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
 			return fmt.Errorf("RemoveDocumentKeepFile: failed to delete tasks for %s: %w", docID, delErr)
 		}
-		common.Logger.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
+		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
-	return s.deleteDocRecordWithCounters(ctx, doc, kb.ID)
+	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
+		return err
+	}
+	// File replacement/deletion uses this path instead of deleteDocumentFull.
+	// Publish the same deletion event so the dataset-level Wiki consumer removes
+	// the deleted document's contribution in both paths.
+	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID); err != nil {
+		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: publish doc_deleted for %s failed: %v", docID, err))
+	}
+	return nil
 }
 
 // InsertDocument creates a document row and increments the owning KB's doc_num
@@ -350,14 +407,13 @@ func (s *DocumentService) resolveDocAndKB(ctx context.Context, docID string) (*e
 
 // deleteDocEngineData removes chunks and metadata from the document engine.
 // No-op when the engine is nil.
-func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
+func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenantID, kbID string) {
 	if s.docEngine == nil {
 		return
 	}
-	ctx := context.Background()
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
-		common.Logger.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
+		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
 	}
 	// Notify the dataset-level post-processing consumer (§11) that this document's
 	// source + per-doc compiled chunks are gone. The consumer removes the
@@ -366,10 +422,10 @@ func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
 	// source/per-doc chunks, so the consumer only owns merged-product cleanup.
 	// Bound the publish with a timeout so a stalled scheduler (MySQL/NATS) can
 	// never block the document delete, which already succeeded above.
-	pubCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	pubCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID, 0); err != nil {
-		common.Logger.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
+	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID); err != nil {
+		common.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {
 		_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
@@ -422,7 +478,7 @@ func (s *DocumentService) rollbackAddFileFromKBError(ctx context.Context, doc *e
 func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID string) error {
 	mappings, mapErr := s.file2DocumentDAO.GetByDocumentID(ctx, dao.DB, docID)
 	if mapErr != nil {
-		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to get f2d mappings for %s: %v", docID, mapErr))
+		common.Warn(fmt.Sprintf("cleanupFileReferences: failed to get f2d mappings for %s: %v", docID, mapErr))
 		return mapErr
 	}
 	if len(mappings) == 0 {
@@ -442,7 +498,7 @@ func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID strin
 
 	// Delete all file2document rows for this document
 	if delErr := s.file2DocumentDAO.DeleteByDocumentID(ctx, dao.DB, docID); delErr != nil {
-		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete f2d for %s: %v", docID, delErr))
+		common.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete f2d for %s: %v", docID, delErr))
 		return delErr
 	}
 
@@ -451,7 +507,7 @@ func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID strin
 	for _, fileID := range fileIDs {
 		remaining, remErr := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
 		if remErr != nil {
-			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to check remaining f2d for %s: %v", fileID, remErr))
+			common.Warn(fmt.Sprintf("cleanupFileReferences: failed to check remaining f2d for %s: %v", fileID, remErr))
 			continue
 		}
 		if len(remaining) > 0 {
@@ -461,21 +517,22 @@ func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID strin
 		fileDAO := dao.NewFileDAO()
 		file, fErr := fileDAO.GetByID(ctx, dao.DB, fileID)
 		if fErr != nil || file == nil {
-			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: file not found %s: %v", fileID, fErr))
+			common.Warn(fmt.Sprintf("cleanupFileReferences: file not found %s: %v", fileID, fErr))
 			continue
 		}
 		if entity.FileSource(file.SourceType) != entity.FileSourceKnowledgebase {
 			continue // linked from file management — unlink only, keep the file
 		}
 		if _, delErr := fileDAO.DeleteByIDs(ctx, dao.DB, []string{fileID}); delErr != nil {
-			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete file %s: %v", fileID, delErr))
+			common.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete file %s: %v", fileID, delErr))
 			continue // keep the blob so the live file row still has its object
 		}
 		if file.Location != nil && *file.Location != "" {
 			storageImpl := storage.GetStorageFactory().GetStorage()
 			if storageImpl != nil {
-				if rmErr := storageImpl.Remove(file.ParentID, *file.Location); rmErr != nil {
-					common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
+				rmErr := removeObjectBestEffort(ctx, storageImpl, file.ParentID, *file.Location)
+				if rmErr != nil {
+					common.Warn(fmt.Sprintf("cleanupFileReferences: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
 				}
 			}
 		}

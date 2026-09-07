@@ -65,6 +65,7 @@ func sqlmockDialer(t *testing.T) (exesqlDialer, sqlmock.Sqlmock, func()) {
 }
 
 func TestExeSQL_NoCredentials(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	e := NewExeSQLTool(exesqlConnParams{}).
@@ -72,7 +73,7 @@ func TestExeSQL_NoCredentials(t *testing.T) {
 			t.Fatal("dialer should not be called when credentials are missing")
 			return nil, nil
 		})
-	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
+	_, err := e.InvokableRun(ctx, `{"sql":"SELECT 1"}`)
 	if !errors.Is(err, ErrExeSQLNoCredentials) {
 		t.Fatalf("err = %v, want ErrExeSQLNoCredentials", err)
 	}
@@ -108,6 +109,7 @@ func TestExeSQL_RejectsNonSelect(t *testing.T) {
 		{"merge cte", `WITH changed AS (MERGE INTO users USING incoming ON users.id = incoming.id WHEN MATCHED THEN UPDATE SET name = incoming.name RETURNING *) SELECT * FROM changed`},
 	}
 
+	ctx := t.Context()
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -116,7 +118,7 @@ func TestExeSQL_RejectsNonSelect(t *testing.T) {
 					t.Fatal("dialer called for rejected SQL")
 					return nil, nil
 				})
-			_, err := e.InvokableRun(context.Background(),
+			_, err := e.InvokableRun(ctx,
 				`{"sql":`+jsonString(c.sql)+`}`)
 			if !errors.Is(err, ErrExeSQLNotSelect) {
 				t.Fatalf("err = %v, want ErrExeSQLNotSelect", err)
@@ -131,8 +133,9 @@ func TestExeSQL_RejectsMixedBatchBeforeDatabaseAccess(t *testing.T) {
 			t.Fatal("dialer called before every SQL statement was validated")
 			return nil, nil
 		})
+	ctx := t.Context()
 
-	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1; DROP TABLE users"}`)
+	_, err := e.InvokableRun(ctx, `{"sql":"SELECT 1; DROP TABLE users"}`)
 	if !errors.Is(err, ErrExeSQLNotSelect) {
 		t.Fatalf("err = %v, want ErrExeSQLNotSelect", err)
 	}
@@ -158,6 +161,7 @@ func TestExeSQL_AllowsSelect(t *testing.T) {
 		// Block comment.
 		`/* DROP TABLE foo */ SELECT 1`,
 	}
+	ctx := t.Context()
 	for _, sql := range cases {
 		t.Run(sql, func(t *testing.T) {
 			t.Parallel()
@@ -172,7 +176,7 @@ func TestExeSQL_AllowsSelect(t *testing.T) {
 				sqlmock.NewRows([]string{"1"}),
 			)
 			e := NewExeSQLTool(testConn()).WithExeSQLDialer(dialer)
-			_, err := e.InvokableRun(context.Background(),
+			_, err := e.InvokableRun(ctx,
 				`{"sql":`+jsonString(sql)+`}`)
 			// Two acceptable outcomes:
 			//   1. SQL is the literal `SELECT 1` and matches the
@@ -196,20 +200,22 @@ func TestExeSQL_AllowsSelect(t *testing.T) {
 }
 
 func TestExeSQL_RejectsEmptySQL(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	e := NewExeSQLTool(testConn())
-	_, err := e.InvokableRun(context.Background(), `{"sql":""}`)
+	_, err := e.InvokableRun(ctx, `{"sql":""}`)
 	if err == nil || !strings.Contains(err.Error(), "sql") {
 		t.Fatalf("err = %v, want to mention empty sql", err)
 	}
 }
 
 func TestExeSQL_RejectsEmptyArgs(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	e := NewExeSQLTool(testConn())
-	_, err := e.InvokableRun(context.Background(), "")
+	_, err := e.InvokableRun(ctx, "")
 	if err == nil {
 		t.Fatal("expected error for empty args")
 	}
@@ -272,6 +278,7 @@ func TestExeSQL_ReadOnlyValidationIgnoresQuotedAndCommentedKeywords(t *testing.T
 }
 
 func TestExeSQL_ExecutesStatementsWithQuotedSemicolonsIntact(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	dialer, mock, cleanup := sqlmockDialer(t)
@@ -283,7 +290,7 @@ func TestExeSQL_ExecutesStatementsWithQuotedSemicolonsIntact(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(2))
 
 	e := NewExeSQLTool(testConn()).WithExeSQLDialer(dialer)
-	if _, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 'hello; world'; SELECT 2"}`); err != nil {
+	if _, err := e.InvokableRun(ctx, `{"sql":"SELECT 'hello; world'; SELECT 2"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -292,6 +299,7 @@ func TestExeSQL_ExecutesStatementsWithQuotedSemicolonsIntact(t *testing.T) {
 }
 
 func TestExeSQL_RejectsMySQLExecutableComment(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	e := NewExeSQLTool(testConn()).
@@ -299,17 +307,18 @@ func TestExeSQL_RejectsMySQLExecutableComment(t *testing.T) {
 			t.Fatal("dialer called for an executable comment")
 			return nil, nil
 		})
-	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1 /*!; DROP TABLE users */"}`)
+	_, err := e.InvokableRun(ctx, `{"sql":"SELECT 1 /*!; DROP TABLE users */"}`)
 	if !errors.Is(err, ErrExeSQLNotSelect) {
 		t.Fatalf("err = %v, want ErrExeSQLNotSelect", err)
 	}
 }
 
 func TestExeSQL_Info(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	e := NewExeSQLTool(testConn())
-	info, err := e.Info(context.Background())
+	info, err := e.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -337,6 +346,7 @@ func TestExeSQL_Info(t *testing.T) {
 }
 
 func TestExeSQL_UsesConfiguredSQLDefault(t *testing.T) {
+	ctx := t.Context()
 	dialer, mock, cleanup := sqlmockDialer(t)
 	defer cleanup()
 	mock.ExpectPing()
@@ -347,7 +357,7 @@ func TestExeSQL_UsesConfiguredSQLDefault(t *testing.T) {
 	conn.SQL = "SELECT 1"
 	e := NewExeSQLTool(conn).WithExeSQLDialer(dialer)
 
-	out, err := e.InvokableRun(context.Background(), `{}`)
+	out, err := e.InvokableRun(ctx, `{}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -360,6 +370,7 @@ func TestExeSQL_UsesConfiguredSQLDefault(t *testing.T) {
 }
 
 func TestExeSQL_ComponentContractAndTemplateResolution(t *testing.T) {
+	ctx := t.Context()
 	dialer, mock, cleanup := sqlmockDialer(t)
 	defer cleanup()
 	mock.ExpectPing()
@@ -370,12 +381,12 @@ func TestExeSQL_ComponentContractAndTemplateResolution(t *testing.T) {
 	exesql := NewExeSQLTool(conn).WithExeSQLDialer(dialer)
 	state := runtime.NewCanvasState("run", "task")
 	state.SetVar("Agent:Result", "content", "SELECT id FROM orders WHERE status = 'Completed'")
-	out, err := exesql.InvokableRun(runtime.WithState(context.Background(), state), `{}`)
+	out, err := exesql.InvokableRun(runtime.WithState(ctx, state), `{}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	var envelope map[string]any
-	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+	if err = json.Unmarshal([]byte(out), &envelope); err != nil {
 		t.Fatalf("decode output: %v", err)
 	}
 	outputs := exesql.BuildComponentOutputs(envelope)
@@ -390,7 +401,7 @@ func TestExeSQL_ComponentContractAndTemplateResolution(t *testing.T) {
 	if sqlInput, ok := spec.InputForm["sql"].(map[string]any); !ok || sqlInput["type"] != "line" {
 		t.Fatalf("sql input form = %#v", spec.InputForm["sql"])
 	}
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err = mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
 	}
 }
@@ -410,6 +421,7 @@ func TestExeSQL_BuildByNameAcceptsCanvasShape(t *testing.T) {
 }
 
 func TestExeSQL_ExecuteSelect_ReturnsRows(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	dialer, mock, cleanup := sqlmockDialer(t)
@@ -423,7 +435,7 @@ func TestExeSQL_ExecuteSelect_ReturnsRows(t *testing.T) {
 			AddRow(8, "bob"))
 
 	e := NewExeSQLTool(testConn()).WithExeSQLDialer(dialer)
-	out, err := e.InvokableRun(context.Background(),
+	out, err := e.InvokableRun(ctx,
 		`{"sql":"SELECT id, name FROM t WHERE id = 7"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -444,6 +456,7 @@ func TestExeSQL_ExecuteSelect_ReturnsRows(t *testing.T) {
 }
 
 func TestExeSQL_ExecuteSelect_NoRowsReturnsSentinel(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	dialer, mock, cleanup := sqlmockDialer(t)
@@ -453,12 +466,12 @@ func TestExeSQL_ExecuteSelect_NoRowsReturnsSentinel(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"x"}))
 
 	e := NewExeSQLTool(testConn()).WithExeSQLDialer(dialer)
-	out, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
+	out, err := e.InvokableRun(ctx, `{"sql":"SELECT 1"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	var got exesqlResult
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
+	if err = json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("unmarshal: %v\nout=%s", err, out)
 	}
 	// The Python tool's "No record in the database!" sentinel must
@@ -470,6 +483,7 @@ func TestExeSQL_ExecuteSelect_NoRowsReturnsSentinel(t *testing.T) {
 }
 
 func TestExeSQL_ExecuteSelect_PerStatementErrorIsolated(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	dialer, mock, cleanup := sqlmockDialer(t)
@@ -484,13 +498,13 @@ func TestExeSQL_ExecuteSelect_PerStatementErrorIsolated(t *testing.T) {
 		WillReturnError(errors.New("syntax error at or near BOGUS"))
 
 	e := NewExeSQLTool(testConn()).WithExeSQLDialer(dialer)
-	out, err := e.InvokableRun(context.Background(),
+	out, err := e.InvokableRun(ctx,
 		`{"sql":"SELECT 1; SELECT * FROM bogus"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun should not abort on a per-statement error: %v", err)
 	}
 	var got exesqlResult
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
+	if err = json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("unmarshal: %v\nout=%s", err, out)
 	}
 	if len(got.Rows) != 2 {
@@ -507,6 +521,7 @@ func TestExeSQL_ExecuteSelect_PerStatementErrorIsolated(t *testing.T) {
 }
 
 func TestExeSQL_ExecuteSelect_NormalizesTimeAndBytes(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	dialer, mock, cleanup := sqlmockDialer(t)
@@ -517,13 +532,13 @@ func TestExeSQL_ExecuteSelect_NormalizesTimeAndBytes(t *testing.T) {
 			AddRow("2024-06-12T03:04:05Z", []byte("hello")))
 
 	e := NewExeSQLTool(testConn()).WithExeSQLDialer(dialer)
-	out, err := e.InvokableRun(context.Background(),
+	out, err := e.InvokableRun(ctx,
 		`{"sql":"SELECT ts, blob_col FROM t"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	var got exesqlResult
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
+	if err = json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("unmarshal: %v\nout=%s", err, out)
 	}
 	if len(got.Rows) != 1 {
@@ -540,6 +555,7 @@ func TestExeSQL_ExecuteSelect_NormalizesTimeAndBytes(t *testing.T) {
 }
 
 func TestExeSQL_UnsupportedDB(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	e := NewExeSQLTool(exesqlConnParams{
@@ -547,7 +563,7 @@ func TestExeSQL_UnsupportedDB(t *testing.T) {
 		Host:   "1.1.1.1", Port: 8080, Database: "catalog",
 		Username: "u", Password: "p",
 	})
-	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
+	_, err := e.InvokableRun(ctx, `{"sql":"SELECT 1"}`)
 	if err == nil {
 		t.Fatal("expected non-nil error for trino without registered driver")
 	}
@@ -747,6 +763,7 @@ func (m *reactScriptedModel) Stream(_ context.Context, _ []*schema.Message, _ ..
 // and the resulting JSON is passed back as a ToolMessage. Replacing
 // the model with a hand-rolled stub would skip all of that.
 func TestExeSQL_RealReactAgent_ExecutesTool(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	dialer, mock, cleanup := sqlmockDialer(t)
@@ -763,7 +780,7 @@ func TestExeSQL_RealReactAgent_ExecutesTool(t *testing.T) {
 		"the answer is 42",
 	)
 
-	agent, err := react.NewAgent(context.Background(), &react.AgentConfig{
+	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: mdl,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: []einotool.BaseTool{realTool},
@@ -774,7 +791,7 @@ func TestExeSQL_RealReactAgent_ExecutesTool(t *testing.T) {
 		t.Fatalf("react.NewAgent: %v", err)
 	}
 
-	out, err := agent.Generate(context.Background(), []*schema.Message{
+	out, err := agent.Generate(ctx, []*schema.Message{
 		schema.UserMessage("What is 42?"),
 	})
 	if err != nil {
@@ -806,7 +823,7 @@ func TestExeSQL_RealReactAgent_ExecutesTool(t *testing.T) {
 	if !sawToolResult {
 		t.Errorf("round 2 input did not contain a ToolMessage carrying the tool result; got %d messages", len(mdl.rounds[1]))
 	}
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err = mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("sqlmock expectations not met: %v", err)
 	}
 }
@@ -818,6 +835,7 @@ func TestExeSQL_RealReactAgent_ExecutesTool(t *testing.T) {
 // the model on round 2 without crashing the ReAct loop, so the model
 // can ground its final answer in the surfaced error.
 func TestExeSQL_RealReactAgent_ToolErrorIsolated(t *testing.T) {
+	ctx := t.Context()
 	t.Parallel()
 
 	dialer, mock, cleanup := sqlmockDialer(t)
@@ -834,7 +852,7 @@ func TestExeSQL_RealReactAgent_ToolErrorIsolated(t *testing.T) {
 		"the query had a syntax error",
 	)
 
-	agent, err := react.NewAgent(context.Background(), &react.AgentConfig{
+	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: mdl,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: []einotool.BaseTool{realTool},
@@ -845,7 +863,7 @@ func TestExeSQL_RealReactAgent_ToolErrorIsolated(t *testing.T) {
 		t.Fatalf("react.NewAgent: %v", err)
 	}
 
-	out, err := agent.Generate(context.Background(), []*schema.Message{
+	out, err := agent.Generate(ctx, []*schema.Message{
 		schema.UserMessage("Find bogus rows"),
 	})
 	if err != nil {
@@ -869,7 +887,7 @@ func TestExeSQL_RealReactAgent_ToolErrorIsolated(t *testing.T) {
 	if !sawErrorResult {
 		t.Errorf("round 2 input did not contain a ToolMessage with the DB error; got %d messages", len(mdl.rounds[1]))
 	}
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err = mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("sqlmock expectations: %v", err)
 	}
 }

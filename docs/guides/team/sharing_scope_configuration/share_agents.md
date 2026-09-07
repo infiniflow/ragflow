@@ -1,9 +1,10 @@
 ---
 sidebar_position: 7
-sidebar_label: "Share Agents"
+sidebar_label: Share Agents
+title: Share Agents
 ---
 
-## Share Agents
+# Share Agents
 
 To share an Agent:
 

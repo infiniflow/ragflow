@@ -2,6 +2,7 @@
 sidebar_position: 4
 slug: /file_management/batch_move_and_delete
 sidebar_label: Batch Move and Delete
+title: Batch Move and Delete
 sidebar_custom_props: {
   categoryIcon: LucideFolderDot
 }

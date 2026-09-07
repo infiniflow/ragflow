@@ -34,6 +34,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -74,7 +75,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	// (103) with the python permission message so existing clients can
 	// still pattern-match the text.
 	if _, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID); err != nil {
-		if err == dao.ErrUserCanvasNotFound {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
 			return
 		}

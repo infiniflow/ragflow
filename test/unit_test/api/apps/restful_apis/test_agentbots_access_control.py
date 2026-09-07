@@ -49,7 +49,7 @@ async def _passthrough_thread_pool_exec(fn, *args, **kwargs):
     return fn(*args, **kwargs)
 
 
-def _load_bot_api(monkeypatch, *, accessible, calls):
+def _load_bot_api(monkeypatch, *, accessible, calls, kb_accessible=True, search_config=None):
     """Load bot_api.py with the minimum stubs required.
 
     `accessible` is what the stubbed `UserCanvasService.accessible` returns.
@@ -71,19 +71,39 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
         return _gen()
 
     _stub(monkeypatch, "quart", Response=lambda *a, **k: SimpleNamespace(headers=SimpleNamespace(add_header=lambda *aa, **kk: None)), request=SimpleNamespace())
-    _stub(monkeypatch, "api.apps", AUTH_BETA="beta", login_required=lambda *_a, **_k: lambda func: func)
+    _stub(monkeypatch, "api.apps", AUTH_BETA="beta", login_required=lambda *_a, **_k: lambda func: func, __path__=[])
+    _stub(monkeypatch, "api.apps.restful_apis", __path__=[])
     _stub(monkeypatch, "agent.canvas", Canvas=lambda *a, **k: SimpleNamespace(get_component_input_form=lambda _n: {}, get_prologue=lambda: "", get_mode=lambda: "agent"))
     _stub(monkeypatch, "api.db.db_models", APIToken=SimpleNamespace(query=lambda **_k: [SimpleNamespace(tenant_id="attacker-tenant")]))
     _stub(monkeypatch, "api.db.services.api_service", API4ConversationService=SimpleNamespace())
     _stub(monkeypatch, "api.db.services.canvas_service", UserCanvasService=user_canvas_service, completion=_completion)
     _stub(monkeypatch, "api.db.services.user_canvas_version", UserCanvasVersionService=SimpleNamespace())
     _stub(monkeypatch, "api.db.services.conversation_service", async_iframe_completion=lambda *_a, **_k: None)
-    _stub(monkeypatch, "api.db.services.dialog_service", DialogService=SimpleNamespace(), async_ask=lambda *_a, **_k: None, gen_mindmap=lambda *_a, **_k: None)
+
+    async def _ask(*_a, **_k):
+        calls["async_ask"] = _k
+        if False:
+            yield None
+
+    async def _mindmap(*_a, **_k):
+        calls["gen_mindmap"] = True
+        return {}
+
+    _stub(monkeypatch, "api.db.services.dialog_service", DialogService=SimpleNamespace(), async_ask=_ask, gen_mindmap=_mindmap)
     _stub(monkeypatch, "api.db.services.doc_metadata_service", DocMetadataService=SimpleNamespace())
-    _stub(monkeypatch, "api.db.services.knowledgebase_service", KnowledgebaseService=SimpleNamespace())
-    _stub(monkeypatch, "api.db.services.llm_service", LLMBundle=SimpleNamespace())
+    _stub(
+        monkeypatch,
+        "api.db.services.knowledgebase_service",
+        KnowledgebaseService=SimpleNamespace(accessible=lambda kb_id, user_id: kb_accessible),
+    )
+    _stub(
+        monkeypatch,
+        "api.db.services.llm_service",
+        LLMBundle=SimpleNamespace(),
+        resolve_llm_setting=lambda s: s or {"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7, "presence_penalty": 0.4},
+    )
     _stub(monkeypatch, "common.metadata_utils", apply_meta_data_filter=lambda *_a, **_k: None)
-    _stub(monkeypatch, "api.db.services.search_service", SearchService=SimpleNamespace())
+    _stub(monkeypatch, "api.db.services.search_service", SearchService=SimpleNamespace(get_detail=lambda _id: {"search_config": search_config or {}}))
     _stub(
         monkeypatch,
         "api.db.services.user_service",
@@ -114,6 +134,7 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
     _stub(monkeypatch, "rag.app.tag", label_question=lambda *_a, **_k: None)
     _stub(monkeypatch, "rag.prompts.template", load_prompt=lambda *_a, **_k: "")
     _stub(monkeypatch, "rag.prompts.generator", cross_languages=lambda *_a, **_k: None, keyword_extraction=lambda *_a, **_k: None)
+    _stub(monkeypatch, "rag.utils.web_search_conn", has_web_search_provider=lambda *_a, **_k: False)
     _stub(monkeypatch, "common.constants", RetCode=SimpleNamespace(), LLMType=SimpleNamespace(), StatusEnum=SimpleNamespace())
     _stub(monkeypatch, "common", settings=SimpleNamespace())
     _stub(monkeypatch, "common.settings", retriever=SimpleNamespace(), kg_retriever=SimpleNamespace())
@@ -178,3 +199,37 @@ class TestAgentBotAccessControl:
 
         assert calls.get("completion") is True
         assert result["code"] == 0
+
+    @pytest.mark.p1
+    def test_searchbots_reject_inaccessible_kbs_before_retrieval(self, monkeypatch):
+        calls = {}
+        module = _load_bot_api(monkeypatch, accessible=True, calls=calls, kb_accessible=False)
+        module.get_request_json = lambda: None
+
+        async def request_json():
+            return {"question": "q", "kb_ids": ["victim"]}
+
+        module.get_request_json = request_json
+        assert asyncio.run(module.ask_about_embedded(tenant_id="attacker"))["code"] == 102
+        assert "async_ask" not in calls
+
+        assert asyncio.run(module.mindmap(tenant_id="attacker"))["code"] == 102
+        assert "gen_mindmap" not in calls
+
+    @pytest.mark.p1
+    def test_searchbots_ask_authorizes_search_config_kbs(self, monkeypatch):
+        calls = {}
+        module = _load_bot_api(
+            monkeypatch,
+            accessible=True,
+            calls=calls,
+            kb_accessible=False,
+            search_config={"kb_ids": ["victim"]},
+        )
+
+        async def request_json():
+            return {"question": "q", "kb_ids": ["attacker"], "search_id": "saved"}
+
+        module.get_request_json = request_json
+        assert asyncio.run(module.ask_about_embedded(tenant_id="attacker"))["code"] == 102
+        assert "async_ask" not in calls

@@ -33,7 +33,7 @@ func TestBegin_InjectsSys(t *testing.T) {
 		t.Fatalf("NewBeginComponent: %v", err)
 	}
 	state := canvas.NewCanvasState("run-1", "task-1")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{"query": "hello"})
 	if err != nil {
@@ -59,7 +59,7 @@ func TestBegin_InjectsSys(t *testing.T) {
 func TestBegin_PassesThroughInputs(t *testing.T) {
 	c, _ := NewBeginComponent(nil)
 	state := canvas.NewCanvasState("run-2", "task-2")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	inputs := map[string]any{
 		"query":   "what is ragflow",
@@ -99,7 +99,7 @@ func withStateForTest(ctx context.Context, s *canvas.CanvasState) context.Contex
 func TestBegin_InjectsWebhookPayload(t *testing.T) {
 	c, _ := NewBeginComponent(nil)
 	state := canvas.NewCanvasState("run-3", "task-3")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	payload := map[string]any{
 		"query":   map[string]any{"q": "hello"},
@@ -133,7 +133,7 @@ func TestBegin_InjectsWebhookPayload(t *testing.T) {
 func TestBegin_AbsentWebhookPayload(t *testing.T) {
 	c, _ := NewBeginComponent(nil)
 	state := canvas.NewCanvasState("run-4", "task-4")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	if _, err := c.Invoke(ctx, nil, map[string]any{"query": "plain chat"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -148,7 +148,7 @@ func TestBegin_AbsentWebhookPayload(t *testing.T) {
 func TestBegin_EmptyWebhookPayload(t *testing.T) {
 	c, _ := NewBeginComponent(nil)
 	state := canvas.NewCanvasState("run-5", "task-5")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	if _, err := c.Invoke(ctx, nil, map[string]any{
 		"query":           "",

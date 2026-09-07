@@ -11,8 +11,39 @@ import (
 	"fmt"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
-	"ragflow/internal/utility"
 )
+
+// batchSubmitter fans out the MAP-stage extraction jobs on the process-wide
+// knowledge-compilation pool. It is injected by the knowledge_compiler wiring
+// (component.go) so every stage shares one vCPU-sized concurrency bound; when
+// nil the batches run sequentially (the historic default).
+var batchSubmitter func(ctx context.Context, jobs []func() error) error
+
+// SetBatchSubmitter installs the shared-pool fan-out used by Run's MAP stage.
+// Pass nil to revert to serial execution.
+func SetBatchSubmitter(submit func(ctx context.Context, jobs []func() error) error) {
+	batchSubmitter = submit
+}
+
+// runBatches executes the MAP-stage jobs. When a shared-pool submitter is
+// wired in, the jobs run concurrently under the single process-wide, vCPU-sized
+// compiler-pool concurrency bound; otherwise they run sequentially. On any
+// error the first non-nil error is returned after all jobs settle — the global
+// pool is never StopWait'd, so an error here does not disrupt other stages.
+func runBatches(ctx context.Context, jobs []func() error) error {
+	if len(jobs) == 0 {
+		return nil
+	}
+	if batchSubmitter != nil {
+		return batchSubmitter(ctx, jobs)
+	}
+	for _, j := range jobs {
+		if err := j(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // structureBatchTokenBudget caps one extraction batch's packed chunk tokens.
 // Python derives the budget from chat_mdl.max_length minus the prompt
@@ -46,7 +77,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		Variant:      common.VariantStructure,
 		Lang:         param.Language,
 		ParserConfig: parserConfig,
-		TemplateID:   common.FirstNonEmpty(param.TemplateIDs...),
+		TemplateID:   param.TemplateID,
 	}
 
 	nodePrompt, edgePromptTmpl := HypergraphPrompts(parserConfig, param.Language)
@@ -54,16 +85,9 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// ---- MAP ----
 	batches := common.PackBatches(inputs.Chunks, structureBatchTokenBudget, deps.Tokenizer)
 	perBatch := make([][]common.Product, len(batches))
-	n := param.MaxWorkers
-	if n <= 0 {
-		n = 1
-	}
-	wp := utility.NewWorkerPool[func() error, struct{}](n, n,
-		func(_ context.Context, fn func() error) (struct{}, error) { return struct{}{}, fn() })
-	var futs []utility.WorkerPoolFuture[func() error, struct{}]
+	jobs := make([]func() error, 0, len(batches))
 	for i, batch := range batches {
-		i, batch := i, batch
-		f, err := wp.Submit(ctx, func() error {
+		jobs = append(jobs, func() error {
 			packed, batchIDs := PackBatch(batch)
 			if len(batchIDs) == 0 {
 				return nil
@@ -76,20 +100,16 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			if err != nil {
 				return err
 			}
+			// Distinct slice index per batch → no cross-goroutine contention.
 			perBatch[i] = rows
 			return nil
 		})
-		if err != nil {
-			wp.StopWait()
-			return common.Outputs{}, err
-		}
-		futs = append(futs, f)
 	}
-	wp.StopWait()
-	for _, f := range futs {
-		if res, _ := f.Wait(ctx); res.Err != nil {
-			return common.Outputs{}, res.Err
-		}
+	// The extraction batches are LLM-bounded, not CPU-bounded: run them on the
+	// shared global compiler pool (vCPU-sized) when a submitter is wired in,
+	// otherwise fall back to serial execution (historic default).
+	if err := runBatches(ctx, jobs); err != nil {
+		return common.Outputs{}, err
 	}
 
 	// ---- DEDUP ----
@@ -141,29 +161,15 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		return common.Outputs{}, err
 	}
 
-	// Stream the merged products (plus the graph) through a ProductSink so the
-	// flush policy caps peak memory instead of holding the full result set.
-	sink := common.NewProductSink(ctx, param.Guardrails, inputs.Sink)
-	for _, p := range prods {
-		if err := sink.Add(p); err != nil {
-			return common.Outputs{}, err
-		}
-	}
-	if err := sink.Add(graphProduct); err != nil {
-		return common.Outputs{}, err
-	}
+	// Buffer every product (plus the graph) in one slice; the component merges
+	// them into the upstream chunk stream (matching Python, which appends
+	// compiled units onto the chunk list).
+	products := append([]common.Product{}, prods...)
+	products = append(products, graphProduct)
 
 	out := common.Outputs{
-		Products:          sink.Products(),
-		VectorBytes:       sink.Bytes(),
-		Items:             sink.TotalItems(),
-		Flushed:           sink.Flushed(),
+		Products:          products,
 		DuplicatesDropped: stats.DuplicatesDropped,
-	}
-	// Capacity guardrails (centralised in common.EnforceGuardrails so every
-	// variant honours the same policy — error/flush/none — without drift).
-	if err := out.EnforceGuardrails(param.Guardrails, inputs.Sink, ctx); err != nil {
-		return common.Outputs{}, err
 	}
 	return out, nil
 }

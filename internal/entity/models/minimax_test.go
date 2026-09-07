@@ -85,6 +85,7 @@ func TestMinimaxNewInstancePreservesConfig(t *testing.T) {
 }
 
 func TestMinimaxChatForcesNonStreaming(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
@@ -133,6 +134,7 @@ func TestMinimaxChatForcesNonStreaming(t *testing.T) {
 }
 
 func TestMinimaxChatRejectsEmptyChoices(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
@@ -154,6 +156,7 @@ func TestMinimaxChatRejectsEmptyChoices(t *testing.T) {
 }
 
 func TestMinimaxChatSurfacesBaseRespError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		// MiniMax rate-limit: HTTP 200 with base_resp, no choices.
@@ -184,6 +187,7 @@ func TestMinimaxChatSurfacesBaseRespError(t *testing.T) {
 }
 
 func TestMinimaxChatSurfacesOpenAIError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -217,6 +221,7 @@ func TestMinimaxChatSurfacesOpenAIError(t *testing.T) {
 }
 
 func TestMinimaxStreamSurfacesBaseRespError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -244,6 +249,7 @@ func TestMinimaxStreamSurfacesBaseRespError(t *testing.T) {
 }
 
 func TestMinimaxStreamForcesStreaming(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
@@ -300,6 +306,7 @@ func TestMinimaxStreamForcesStreaming(t *testing.T) {
 }
 
 func TestMinimaxStreamAcceptsNilConfig(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["stream"] != true {
@@ -326,6 +333,7 @@ func TestMinimaxStreamAcceptsNilConfig(t *testing.T) {
 }
 
 func TestMinimaxListModelsUsesBodylessGet(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -354,6 +362,7 @@ func TestMinimaxListModelsUsesBodylessGet(t *testing.T) {
 }
 
 func TestMinimaxListModelsRejectsMalformedResponse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	for name, response := range map[string]interface{}{
@@ -374,6 +383,7 @@ func TestMinimaxListModelsRejectsMalformedResponse(t *testing.T) {
 }
 
 func TestMinimaxCheckConnectionUsesListModels(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -395,6 +405,7 @@ func TestMinimaxCheckConnectionUsesListModels(t *testing.T) {
 }
 
 func TestMinimaxValidatesInputs(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	emptyKey := " "

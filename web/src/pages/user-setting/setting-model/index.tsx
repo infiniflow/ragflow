@@ -15,6 +15,7 @@
  */
 
 import Spotlight from '@/components/spotlight';
+import message from '@/components/ui/message';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
   LlmKeys,
@@ -49,12 +50,13 @@ import SystemSetting from './layout/system-setting';
  * Save flow: the top Save button validates every visible card through
  * the imperative ref API; if all are valid it collects each card's
  * payload (skipping non-dirty saved cards) and dispatches one API call
- * per dirty card - `addProviderInstance` for drafts and Bedrock/SoMark
- * saved cards, `updateProviderInstance` for generic saved cards.
+ * per dirty card - `addProviderInstance` for drafts and
+ * `updateProviderInstance` for saved cards.
  *
  * Special-case providers (handled inside `ProviderInstanceCard`):
  *  - `Bedrock`: rendered inline via `BedrockInstanceCard`.
- *  - `SoMark`: rendered inline via `SoMarkInstanceCard`.
+ *  - All other providers (including SoMark) use the generic
+ *    `GenericProviderInstanceCard` path.
  */
 const SettingModelV2: FC = () => {
   const { t: tSetting } = useTranslate('setting');
@@ -162,10 +164,8 @@ const SettingModelV2: FC = () => {
   //      when not dirty so we skip the redundant API call.
   //   3. If any card is invalid (or a draft has no name), abort the
   //      whole batch - errors are surfaced in the form UI by `trigger()`.
-  //   4. Dispatch one API call per dirty card, in order. Drafts and
-  //      Bedrock/SoMark saved cards go through `addProviderInstance`
-  //      (Bedrock/SoMark saved cards carry an `id` so the backend
-  //      updates instead of creating); generic saved cards go through
+  //   4. Dispatch one API call per dirty card, in order. Drafts go through
+  //      `addProviderInstance`; saved cards go through
   //      `updateProviderInstance`.
   //   5. On success: clear drafts (they're persisted now), mark each
   //      saved card's baseline so the next save short-circuits, and
@@ -180,6 +180,21 @@ const SettingModelV2: FC = () => {
       .map((r) => ({ ref: r, payload: r.getSavePayload() }))
       .filter((e) => e.payload !== null);
     if (dirty.length === 0) return;
+
+    // Reject duplicate instance names before any API call: a draft may
+    // not reuse the name of a persisted instance, nor of another draft
+    // in the same batch. Without this the backend would either error or
+    // silently create a second instance sharing the name.
+    const takenNames = new Set(instances.map((i) => i.instance_name));
+    for (const { payload } of dirty) {
+      if (!payload) continue;
+      const name = payload.instanceName.trim();
+      if (payload.isDraft && takenNames.has(name)) {
+        message.error(tSetting('instanceNameExists'));
+        return;
+      }
+      takenNames.add(name);
+    }
 
     const validations = await Promise.all(
       dirty.map(async (e) => ({ ...e, valid: await e.ref.validate() })),
@@ -238,6 +253,8 @@ const SettingModelV2: FC = () => {
     updateProviderInstance,
     queryClient,
     providerQueryName,
+    instances,
+    tSetting,
   ]);
 
   // Whether the Save button should be enabled. We avoid an O(n) ref

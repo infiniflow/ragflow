@@ -17,7 +17,7 @@ import (
 
 // FixedCorpus is the canonical sample document. It describes a small, coherent
 // ecosystem of named entities (Alpha/Beta/Gamma/Delta/Epsilon) with dense
-// cross-references so structure extraction, wiki synthesis, and raptor
+// cross-references so structure extraction, wiki synthesis, and tree
 // clustering all have meaningful signal.
 func FixedCorpus() []common.Chunk {
 	texts := []string{

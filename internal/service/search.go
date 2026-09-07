@@ -395,7 +395,8 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 	for _, datasetID := range datasetIDs {
 		accessible = s.datasetDAO.Accessible(ctx, dao.DB, datasetID, userID)
 		if !accessible {
-			return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization for dataset %s", datasetID)
+			// Mirror Python's search completion endpoint message.
+			return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
 		}
 	}
 
@@ -434,6 +435,9 @@ func askOptionsFromSearchConfig(searchID string, searchConfig map[string]interfa
 	if value, ok := intFromSearchConfig(searchConfig["top_k"]); ok {
 		opts.TopK = &value
 	}
+	if value, ok := intFromSearchConfig(searchConfig["rerank_candidates_count"]); ok {
+		opts.RerankCandidatesCount = &value
+	}
 	if value, ok := searchConfigMapValue(searchConfig["meta_data_filter"]); ok {
 		opts.Filter = value
 	}
@@ -452,7 +456,26 @@ func askOptionsFromSearchConfig(searchID string, searchConfig map[string]interfa
 	if value, ok := floatFromSearchConfig(searchConfig["vector_similarity_weight"]); ok {
 		opts.VectorSimilarityWeight = &value
 	}
+	if llmSetting, ok := searchConfigMapValue(searchConfig["llm_setting"]); ok {
+		opts.Temperature = generationFloat(llmSetting, "temperature", DefaultAskTemperature)
+		opts.TopP = generationFloat(llmSetting, "top_p", DefaultAskTopP)
+	}
 	return opts
+}
+
+// generationFloat resolves a chat-generation parameter from the llm_setting
+// saved in search_config, matching Python's resolve_llm_setting: the
+// user-configured value is kept only when the {key}_enabled flag is enabled
+// (absent flags count as enabled) and the value is present; otherwise the
+// parameter's LLM_SETTING_DEFAULTS fallback is substituted.
+func generationFloat(llmSetting map[string]interface{}, key string, fallback float64) *float64 {
+	if enabled, ok := llmSetting[key+"_enabled"].(bool); ok && !enabled {
+		return &fallback
+	}
+	if v, ok := floatFromSearchConfig(llmSetting[key]); ok {
+		return &v
+	}
+	return &fallback
 }
 
 func searchConfigMapFromValue(value interface{}) map[string]interface{} {

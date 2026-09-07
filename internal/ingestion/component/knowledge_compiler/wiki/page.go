@@ -1,13 +1,15 @@
 package wiki
 
 import (
-	"context"
 	"fmt"
 	"hash/fnv"
 	"strings"
 	"unicode"
 
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"go.uber.org/zap"
 )
 
 type wikiPageResult struct {
@@ -24,61 +26,10 @@ type wikiPageResult struct {
 	Outlinks       []string
 	SourceChunkIDs []string
 	SourceDocIDs   []string
+	PlanGroup      string
 }
 
-// mapFromChunks runs the MAP stage: extract raw facts/notes from the source.
-func mapFromChunks(ctx context.Context, deps common.Deps, llmID, sections string) (string, error) {
-	resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-		LLMID:        llmID,
-		SystemPrompt: wikiMapSystem,
-		UserPrompt:   sections,
-	})
-	if err != nil {
-		return "", err
-	}
-	return resp.Content, nil
-}
-
-// reduceFromExtracts consolidates the MAP output into topic clusters.
-func reduceFromExtracts(ctx context.Context, deps common.Deps, llmID, raw string) (string, error) {
-	resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-		LLMID:        llmID,
-		SystemPrompt: wikiReduceSystem,
-		UserPrompt:   raw,
-	})
-	if err != nil {
-		return "", err
-	}
-	return resp.Content, nil
-}
-
-// planFromReduction arranges topics into a page outline.
-func planFromReduction(ctx context.Context, deps common.Deps, llmID, reduced string) (string, error) {
-	resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-		LLMID:        llmID,
-		SystemPrompt: wikiPlanSystem,
-		UserPrompt:   reduced,
-	})
-	if err != nil {
-		return "", err
-	}
-	return resp.Content, nil
-}
-
-// refineFromPlan writes the final wiki page from the outline.
-func refineFromPlan(ctx context.Context, deps common.Deps, llmID, plan string) (string, error) {
-	resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-		LLMID:        llmID,
-		SystemPrompt: wikiRefineSystem,
-		UserPrompt:   plan,
-	})
-	if err != nil {
-		return "", err
-	}
-	return resp.Content, nil
-}
-
-// Section is one heading block parsed out of a wiki page's markdown body. The
+// Section is one heading block parsed out of a wiki page's Markdown body. The
 // page itself is a separate product; sections live as children linked via
 // parent_id so the retrieval-side can scope queries to a section (e.g. user
 // asks "what does the page say about X?" and the SIDE picks the page + the X
@@ -89,7 +40,7 @@ type Section struct {
 	Content string // section body until the next heading of equal-or-lower depth
 }
 
-// ParseOutline splits a wiki page's markdown body into a flat section list.
+// ParseOutline splits a wiki page's Markdown body into a flat section list.
 // Headings are ATX style ("#", "##", ...). The page is treated as a single
 // implicit "preamble" section when it starts with non-heading text. The page
 // itself is *not* in the result; buildPageProducts emits it separately so
@@ -106,7 +57,7 @@ func ParseOutline(md string) []Section {
 			current = nil
 		}
 	}
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		trimmed := strings.TrimRight(line, "\r")
 		if lvl := headingLevel(trimmed); lvl > 0 {
 			flush()
@@ -166,13 +117,31 @@ func buildPageProducts(tenantID, docID, page string, sourceChunkIDs []string) []
 	}})
 }
 
+// entityPageSlug returns the stable page identity for an extracted entity.
+// Type and name use separate path segments so the identity is unambiguous.
+func entityPageSlug(name, entityType string) string {
+	nameSlug := slugify(strings.Join(strings.Fields(name), " "))
+	entityType = strings.Join(strings.Fields(entityType), " ")
+	if entityType == "" {
+		return "entity/" + nameSlug
+	}
+	return "entity/" + slugify(entityType) + "/" + nameSlug
+}
+
 // buildWikiPageProducts turns multiple wiki page drafts into page + section
 // products. Each page result becomes one page product and one section product
-// per heading in its markdown body.
+// per heading in its Markdown body.
 func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []common.Product {
 	if len(pages) == 0 {
+		appcommon.Info("wiki: buildWikiPageProducts skipped (no refined pages)",
+			zap.String("tenant_id", tenantID),
+			zap.String("doc_id", docID))
 		return nil
 	}
+	appcommon.Info("wiki: buildWikiPageProducts start",
+		zap.String("tenant_id", tenantID),
+		zap.String("doc_id", docID),
+		zap.Int("pages", len(pages)))
 	out := make([]common.Product, 0, len(pages)*2)
 	for _, page := range pages {
 		slug := strings.TrimSpace(page.Slug)
@@ -180,6 +149,10 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 			slug = slugify(page.Title)
 		}
 		if slug == "" {
+			appcommon.Warn("wiki: page dropped (empty slug)",
+				zap.String("tenant_id", tenantID),
+				zap.String("doc_id", docID),
+				zap.String("title", page.Title))
 			continue
 		}
 		title := strings.TrimSpace(page.Title)
@@ -216,7 +189,7 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 				"slug":             slug,
 				"title":            title,
 				"page_type":        pageType,
-				"topic":            strings.TrimSpace(page.Topic),
+				"topic":            common.NormalizeWikiTopicPath(page.Topic),
 				"summary":          summary,
 				"entity_names":     uniqueStrings(page.EntityNames),
 				"related_kb_pages": uniqueStrings(page.RelatedKBPages),
@@ -224,6 +197,7 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 				"source_chunk_ids": sourceChunkIDs,
 				"source_doc_ids":   sourceDocIDs,
 				"content_md_raw":   page.ContentRaw,
+				"plan_group":       strings.TrimSpace(page.PlanGroup),
 			},
 		})
 		for i, sec := range ParseOutline(content) {
@@ -252,6 +226,7 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 					"section_index":    i,
 					"source_chunk_ids": sourceChunkIDs,
 					"source_doc_ids":   sourceDocIDs,
+					"plan_group":       strings.TrimSpace(page.PlanGroup),
 				},
 			})
 		}
@@ -259,9 +234,9 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 	return out
 }
 
-// firstHeading returns the first markdown "# "-prefixed line, trimmed.
+// firstHeading returns the first Markdown "# "-prefixed line, trimmed.
 func firstHeading(md string) string {
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		s := strings.TrimSpace(line)
 		if strings.HasPrefix(s, "# ") {
 			return strings.TrimSpace(strings.TrimPrefix(s, "# "))
@@ -272,7 +247,7 @@ func firstHeading(md string) string {
 
 // firstParagraph returns the first non-empty, non-heading line, capped.
 func firstParagraph(md string) string {
-	for _, line := range strings.Split(md, "\n") {
+	for line := range strings.SplitSeq(md, "\n") {
 		s := strings.TrimSpace(line)
 		if s == "" || strings.HasPrefix(s, "#") {
 			continue
@@ -309,4 +284,25 @@ func slugify(s string) string {
 		return "page-" + fmt.Sprintf("%08x", h.Sum32())
 	}
 	return b.String()
+}
+
+// normalizeWikiSlugHyphens canonicalizes a wiki slug to the hyphen style used
+// everywhere downstream (slug_kwd, outlinks, artifact links): the last path
+// segment's underscores become hyphens, while any "<page_type>/" prefix is
+// preserved. The LLM freely emits both "dong_zhuo" and "dong-zhuo", so this is
+// the single choke point that makes them equivalent without ad-hoc conversions
+// scattered through transformWikiLinks / the graph writer.
+func normalizeWikiSlugHyphens(slug string) string {
+	s := strings.TrimSpace(slug)
+	if s == "" {
+		return ""
+	}
+	prefix := ""
+	body := s
+	if idx := strings.LastIndex(s, "/"); idx >= 0 {
+		prefix = s[:idx+1]
+		body = s[idx+1:]
+	}
+	body = strings.ReplaceAll(body, "_", "-")
+	return prefix + body
 }

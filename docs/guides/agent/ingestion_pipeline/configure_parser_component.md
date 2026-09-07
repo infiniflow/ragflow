@@ -1,5 +1,7 @@
 ---
 sidebar_position: 3
+title: Configure the Parser Component
+sidebar_label: Configure the Parser Component
 slug: /configure_parser_component
 sidebar_custom_props: {
   categoryIcon: RagAiAgent
@@ -12,6 +14,8 @@ The **Parser** component converts your files into structured text while preservi
 
 It supports 8 file categories and more than 23 formats, including PDF, images, audio, video, email, spreadsheets (Excel), Word, PPT, HTML and Markdown.
 
+![Select parser file format](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_2.jpg)
+
 Key configurations:
 
 For PDF files, select one of the following:
@@ -19,6 +23,8 @@ For PDF files, select one of the following:
 - **DeepDoc** (default): RAGFlow's built-in model. Best suited for scanned documents or complex layouts with tables.
 - **MinerU**: Industry-leading for complex elements such as mathematical formulas and complex layouts.
 - **Naive**: Simple text extraction. Use it for clean, text-based PDFs without complex elements.
+
+![Configure PDF parser method](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_1.jpg)
 
 For image files:
 
@@ -40,7 +46,3 @@ For Word/PPT:
 For text and markup (HTML/MD):
 
 - Formatting tags are automatically removed and clean text is output.
-
-![Configure The Parser Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_1.jpg)
-
-![Configure The Parser Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_2.jpg)

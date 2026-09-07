@@ -28,9 +28,9 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { t } from 'i18next';
 import { RAGFlowSelectOptionType } from '../ui/select';
 import { Separator } from '../ui/separator';
+import { useTranslation } from 'react-i18next';
 
 export type SelectWithSearchOptionType = RAGFlowSelectOptionType & {
   description?: ReactNode;
@@ -55,7 +55,8 @@ export type SelectWithSearchFlagProps = {
   placeholder?: string;
   emptyData?: string;
   allowCustomValue?: boolean;
-  onNoMatchEnter?(searchValue: string): void;
+  // Return false to veto selecting the custom value on Enter
+  onNoMatchEnter?(searchValue: string): boolean | void;
   disableAutoSelectOnEnter?: boolean;
   testId?: string;
   optionTestIdPrefix?: string;
@@ -126,8 +127,8 @@ export const SelectWithSearch = forwardRef<
       triggerClassName,
       allowClear = false,
       disabled = false,
-      placeholder = t('common.selectPlaceholder'),
-      emptyData = t('common.noDataFound'),
+      placeholder,
+      emptyData,
       allowCustomValue = false,
       onNoMatchEnter,
       disableAutoSelectOnEnter = false,
@@ -136,6 +137,9 @@ export const SelectWithSearch = forwardRef<
     },
     ref,
   ) => {
+    const { t } = useTranslation();
+    const resolvedPlaceholder = placeholder ?? t('common.selectPlaceholder');
+    const resolvedEmptyData = emptyData ?? t('common.noDataFound');
     const id = useId();
     const [open, setOpen] = useState<boolean>(false);
     const [value, setValue] = useState<string>('');
@@ -221,7 +225,10 @@ export const SelectWithSearch = forwardRef<
             setSearchValue('');
             setOpen(false);
           } else if (!hasMatchingOptions(options, keywords)) {
-            onNoMatchEnter?.(keywords);
+            if (onNoMatchEnter?.(keywords) === false) {
+              // Vetoed: prevent cmdk from selecting the custom value item
+              e.preventDefault();
+            }
           }
         }
       },
@@ -253,7 +260,7 @@ export const SelectWithSearch = forwardRef<
                 {selectLabel || value}
               </span>
             ) : (
-              <span className="text-text-disabled">{placeholder}</span>
+              <span className="text-text-disabled">{resolvedPlaceholder}</span>
             )}
             <div className="flex items-center justify-between">
               {value && allowClear && (
@@ -283,7 +290,11 @@ export const SelectWithSearch = forwardRef<
           <Command className="p-5" filter={filterFn}>
             {showSearch && (
               <CommandInput
-                placeholder={t('common.search') + '...'}
+                placeholder={
+                  allowCustomValue
+                    ? t('common.searchOrEnterToAdd') + '...'
+                    : t('common.search') + '...'
+                }
                 className=" placeholder:text-text-disabled"
                 value={searchValue}
                 onValueChange={setSearchValue}
@@ -292,13 +303,15 @@ export const SelectWithSearch = forwardRef<
             )}
             <CommandList className="mt-2 outline-none">
               <CommandEmpty>
-                <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
+                <div
+                  dangerouslySetInnerHTML={{ __html: resolvedEmptyData }}
+                ></div>
               </CommandEmpty>
               {hasCustomSearchValue && (
                 <CommandItem
                   value={searchValue.trim()}
                   onSelect={handleSelect}
-                  className="mb-1 min-h-10"
+                  className="mb-1 min-h-10 data-[selected='true']:bg-card-soft"
                 >
                   <span className="leading-none">{searchValue.trim()}</span>
                 </CommandItem>
@@ -331,7 +344,7 @@ export const SelectWithSearch = forwardRef<
                               : 'combobox-option'
                           }
                           className={cn(
-                            'relative flex flex-col min-h-10',
+                            "relative flex flex-col min-h-10 data-[selected='true']:bg-card-soft",
                             option.description
                               ? 'items-start gap-1'
                               : 'justify-center items-start',
@@ -371,7 +384,7 @@ export const SelectWithSearch = forwardRef<
                           : 'combobox-option'
                       }
                       className={cn(
-                        'relative flex flex-col min-h-10 mb-1',
+                        "relative flex flex-col min-h-10 mb-1 data-[selected='true']:bg-card-soft",
                         group.description
                           ? 'items-start gap-1'
                           : 'justify-center items-start',

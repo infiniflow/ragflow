@@ -1,9 +1,10 @@
 ---
 sidebar_position: 6
-sidebar_label: "Accept or decline an invitation"
+sidebar_label: Accept or Decline an Invitation
+title: Accept or Decline an Invitation
 ---
 
-## Accept or decline an invitation
+# Accept or Decline an Invitation
 
 When another team owner invites you to join a team, you can process the invitation on the **Team** page.
 

@@ -29,7 +29,7 @@ class TestChatAssistantsList:
     @pytest.mark.parametrize(
         "params, expected_page_size, expected_message",
         [
-            ({"page": 0, "page_size": 2}, 5, ""),
+            ({"page": 0, "page_size": 2}, 2, ""),
             ({"page": 2, "page_size": 2}, 2, ""),
             ({"page": 3, "page_size": 2}, 1, ""),
             ({"page": "3", "page_size": 2}, 0, "not instance of"),

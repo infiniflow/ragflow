@@ -67,10 +67,10 @@ func (b *BeginComponent) Name() string { return b.name }
 func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Begin: %w", err)
+		return nil, fmt.Errorf("begin: %w", err)
 	}
 	if state == nil {
-		return nil, fmt.Errorf("Begin: nil canvas state")
+		return nil, fmt.Errorf("begin: nil canvas state")
 	}
 
 	// Query: required to drive downstream components.

@@ -23,6 +23,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
+import { LLMFactory } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
 import { ListChevronsDownUp, ListChevronsUpDown, Trash2 } from 'lucide-react';
 import {
@@ -36,6 +37,7 @@ import { useTranslation } from 'react-i18next';
 import { DRAFT_INSTANCE_SENTINEL, SavedModeCardProps } from '../interface';
 import { ModelsSection } from '../models-section';
 import VerifyButton from '../verify-button';
+import { cn } from '@/lib/utils';
 
 /**
  * The saved (non-draft) variant of the provider instance card.
@@ -62,6 +64,7 @@ export function SavedModeCard({
   instance,
   instanceDetailsLoaded,
   modelInfoRef,
+  onInstanceModelsStatusChange,
   draftName,
   open,
   setOpen,
@@ -127,11 +130,17 @@ export function SavedModeCard({
   const displayName = editedInstanceName || instanceName;
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="bg-bg-card px-5 py-3 rounded-xl"
+    >
       <CollapsibleTrigger asChild>
-        <div className="flex items-center gap-1 w-full mb-5">
+        <div
+          className={cn('flex items-center gap-1 w-full ', open ? 'mb-5' : '')}
+        >
           <div
-            className="group w-[calc(100%-40px)] flex items-center flex-1 gap-2 px-2 py-1 cursor-pointer bg-bg-card rounded-md"
+            className="group w-[calc(100%-40px)] flex items-center flex-1 gap-2 cursor-pointer rounded-md"
             data-testid="instance-name-row"
           >
             <Button
@@ -162,10 +171,13 @@ export function SavedModeCard({
               />
             ) : (
               <div
-                className="text-sm font-medium truncate overflow-hidden flex-1 cursor-text"
+                className={cn(
+                  'text-sm font-medium truncate overflow-hidden flex-1 cursor-text hover:text-text-primary',
+                  open ? 'text-text-primary' : 'text-text-secondary',
+                )}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  startRename();
+                  // startRename();
                 }}
                 title={tSetting('editInstanceName')}
                 data-testid="instance-name-static"
@@ -190,21 +202,24 @@ export function SavedModeCard({
       <CollapsibleContent forceMount className="data-[state=closed]:hidden">
         <div className="pb-4 flex flex-col gap-4">
           <DynamicForm.Root
-            key={`${providerName}-${instanceName}-false-${instanceDetailsLoaded ? 'loaded' : 'pending'}`}
+            key={`${providerName}-${instanceName}-false`}
             ref={formRef as RefObject<DynamicFormRef>}
             fields={formFields}
             onSubmit={() => undefined}
             defaultValues={formDefaultValues}
             labelClassName="font-normal"
+            resetOptions={{ keepDirtyValues: true }}
           />
 
-          <div className="pt-3">
-            <VerifyButton
-              onVerify={handleVerify}
-              isAbsolute={false}
-              formRef={formRef}
-            />
-          </div>
+          {providerName !== LLMFactory.OpenAiAPICompatible && (
+            <div className="pt-3">
+              <VerifyButton
+                onVerify={handleVerify}
+                isAbsolute={false}
+                formRef={formRef}
+              />
+            </div>
+          )}
 
           {open && (
             <div className="pt-3">
@@ -221,6 +236,7 @@ export function SavedModeCard({
                   modelInfoRef.current = info;
                 }}
                 onInstanceModelsEdited={handleInstanceModelsEdited}
+                onInstanceModelsStatusChange={onInstanceModelsStatusChange}
               />
             </div>
           )}

@@ -9,6 +9,7 @@ import (
 )
 
 func TestZhipuAIOCRFileSendsLayoutParsingRequest(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "glm-ocr"
@@ -63,6 +64,7 @@ func TestZhipuAIOCRFileSendsLayoutParsingRequest(t *testing.T) {
 }
 
 func TestZhipuAIOCRFileEncodesContent(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "glm-ocr"
@@ -89,6 +91,7 @@ func TestZhipuAIOCRFileEncodesContent(t *testing.T) {
 }
 
 func TestZhipuAIOCRFileDetectsPDFContent(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "glm-ocr"
@@ -115,6 +118,7 @@ func TestZhipuAIOCRFileDetectsPDFContent(t *testing.T) {
 }
 
 func TestZhipuAIOCRFileValidation(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "glm-ocr"

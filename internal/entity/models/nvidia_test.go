@@ -1,7 +1,6 @@
 package models
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +11,7 @@ import (
 )
 
 func TestNvidiaListModelsUsesExactEndpointIDs(t *testing.T) {
+	withSSRFBypass(t)
 	const apiKey = "nvapi-test"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -40,7 +40,7 @@ func TestNvidiaListModelsUsesExactEndpointIDs(t *testing.T) {
 		URLSuffix{Models: "models"},
 	)
 	region := "default"
-	models, err := driver.ListModels(context.Background(), &APIConfig{ApiKey: ptr(apiKey), Region: &region})
+	models, err := driver.ListModels(t.Context(), &APIConfig{ApiKey: ptr(apiKey), Region: &region})
 	if err != nil {
 		t.Fatalf("ListModels() error = %v", err)
 	}
@@ -61,7 +61,7 @@ func TestParseNvidiaModelListPrefersPresetMetadata(t *testing.T) {
 	provider := &Provider{Models: []*Model{
 		{
 			Name:       "nvidia/nemotron-3-super-120b-a12b",
-			MaxTokens:  &maxTokens,
+			MaxOutput:  &maxTokens,
 			ModelTypes: []string{"chat"},
 			Thinking:   &ModelThinking{DefaultValue: true, ClearThinking: true},
 		},
@@ -73,8 +73,8 @@ func TestParseNvidiaModelListPrefersPresetMetadata(t *testing.T) {
 	if len(models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(models))
 	}
-	if models[0].MaxTokens == nil || *models[0].MaxTokens != maxTokens {
-		t.Fatalf("MaxTokens = %v, want %d", models[0].MaxTokens, maxTokens)
+	if models[0].MaxOutput == nil || *models[0].MaxOutput != maxTokens {
+		t.Fatalf("MaxOutput = %v, want %d", models[0].MaxOutput, maxTokens)
 	}
 	if models[0].Thinking == nil || !models[0].Thinking.DefaultValue {
 		t.Fatalf("Thinking = %#v, want preset metadata", models[0].Thinking)
@@ -99,6 +99,7 @@ func TestParseNvidiaModelListInfersTypesForPresetWithoutTypes(t *testing.T) {
 }
 
 func TestNvidiaListModelsFiltersHostedCatalog(t *testing.T) {
+	withSSRFBypass(t)
 	const apiKey = "nvapi-test"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -131,7 +132,7 @@ func TestNvidiaListModelsFiltersHostedCatalog(t *testing.T) {
 	serverURL, _ := url.Parse(server.URL)
 	driver.hostedAPIHost = serverURL.Hostname()
 	region := "default"
-	models, err := driver.ListModels(context.Background(), &APIConfig{ApiKey: ptr(apiKey), Region: &region})
+	models, err := driver.ListModels(t.Context(), &APIConfig{ApiKey: ptr(apiKey), Region: &region})
 	if err != nil {
 		t.Fatalf("ListModels() error = %v", err)
 	}
@@ -142,6 +143,7 @@ func TestNvidiaListModelsFiltersHostedCatalog(t *testing.T) {
 }
 
 func TestNvidiaFetchHostedCatalogPaginates(t *testing.T) {
+	withSSRFBypass(t)
 	resources := make([]nvidiaCatalogResource, nvidiaCatalogPageSize+1)
 	for i := range resources {
 		resources[i] = nvidiaCatalogResource{DisplayName: fmt.Sprintf("model-%d", i)}
@@ -165,7 +167,7 @@ func TestNvidiaFetchHostedCatalogPaginates(t *testing.T) {
 
 		start := query.Page * query.PageSize
 		end := min(start+query.PageSize, len(resources))
-		pageResources := []nvidiaCatalogResource{}
+		var pageResources []nvidiaCatalogResource
 		if start < len(resources) {
 			pageResources = resources[start:end]
 		}
@@ -192,6 +194,7 @@ func TestNvidiaFetchHostedCatalogPaginates(t *testing.T) {
 }
 
 func TestNvidiaListModelsRejectsPartialHostedCatalog(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
 			_ = json.NewEncoder(w).Encode(ModelList{Models: []ModelListItem{{ID: "meta/llama-3.1-8b-instruct"}}})
@@ -209,7 +212,7 @@ func TestNvidiaListModelsRejectsPartialHostedCatalog(t *testing.T) {
 	serverURL, _ := url.Parse(server.URL)
 	driver.hostedAPIHost = serverURL.Hostname()
 	region := "default"
-	if _, err := driver.ListModels(context.Background(), &APIConfig{ApiKey: ptr("nvapi-test"), Region: &region}); err == nil {
+	if _, err := driver.ListModels(t.Context(), &APIConfig{ApiKey: ptr("nvapi-test"), Region: &region}); err == nil {
 		t.Fatal("ListModels() error = nil, want partial catalog rejection")
 	}
 }
@@ -222,6 +225,162 @@ func TestNvidiaCatalogResourceRejectsMalformedDeprecation(t *testing.T) {
 
 	if nvidiaCatalogResourceIsActive(resource, time.Now()) {
 		t.Fatal("nvidiaCatalogResourceIsActive() = true, want false")
+	}
+}
+
+func withNvidiaProviderManager(t *testing.T, models []*Model) {
+	t.Helper()
+	saved := providerManager
+	providerManager = &ProviderManager{
+		Providers: []Provider{{
+			Name:   "NVIDIA",
+			URL:    map[string]string{"default": "https://integrate.api.nvidia.com/v1"},
+			Models: models,
+		}},
+	}
+	t.Cleanup(func() { providerManager = saved })
+}
+
+func TestNvidiaResolveEndpointUsesModelURL(t *testing.T) {
+	const modelURL = "https://integrate.api.nvidia.com/v1/meta/llama-3.2-11b-vision-instruct"
+	withNvidiaProviderManager(t, []*Model{{
+		Name: "meta/llama-3.2-11b-vision-instruct",
+		URL:  modelURL,
+	}})
+
+	driver := NewNvidiaModel(
+		map[string]string{"default": "https://integrate.api.nvidia.com/v1"},
+		URLSuffix{Chat: "chat/completions"},
+	)
+	got, err := driver.resolveEndpoint("meta/llama-3.2-11b-vision-instruct", &APIConfig{}, "chat/completions")
+	if err != nil {
+		t.Fatalf("resolveEndpoint() error = %v", err)
+	}
+	if got != modelURL {
+		t.Fatalf("resolveEndpoint() = %q, want %q", got, modelURL)
+	}
+}
+
+func TestNvidiaResolveEndpointFallsBackToAssembly(t *testing.T) {
+	withNvidiaProviderManager(t, []*Model{{Name: "meta/llama-3.1-8b-instruct"}})
+
+	driver := NewNvidiaModel(
+		map[string]string{"default": "https://integrate.api.nvidia.com/v1/"},
+		URLSuffix{Chat: "chat/completions", Embedding: "embeddings"},
+	)
+	got, err := driver.resolveEndpoint("meta/llama-3.1-8b-instruct", &APIConfig{}, "chat/completions")
+	if err != nil {
+		t.Fatalf("resolveEndpoint() error = %v", err)
+	}
+	if want := "https://integrate.api.nvidia.com/v1/chat/completions"; got != want {
+		t.Fatalf("resolveEndpoint() = %q, want %q", got, want)
+	}
+
+	got, err = driver.resolveEndpoint("meta/llama-3.1-8b-instruct", &APIConfig{}, "embeddings")
+	if err != nil {
+		t.Fatalf("resolveEndpoint() error = %v", err)
+	}
+	if want := "https://integrate.api.nvidia.com/v1/embeddings"; got != want {
+		t.Fatalf("resolveEndpoint() = %q, want %q", got, want)
+	}
+}
+
+func TestNvidiaResolveEndpointIgnoresManagerWhenNil(t *testing.T) {
+	saved := providerManager
+	providerManager = nil
+	defer func() { providerManager = saved }()
+
+	driver := NewNvidiaModel(
+		map[string]string{"default": "https://integrate.api.nvidia.com/v1"},
+		URLSuffix{},
+	)
+	got, err := driver.resolveEndpoint("meta/llama-3.2-11b-vision-instruct", &APIConfig{}, "chat/completions")
+	if err != nil {
+		t.Fatalf("resolveEndpoint() error = %v", err)
+	}
+	if want := "https://integrate.api.nvidia.com/v1/chat/completions"; got != want {
+		t.Fatalf("resolveEndpoint() = %q, want %q", got, want)
+	}
+}
+
+func TestNvidiaChatUsesModelSpecificURL(t *testing.T) {
+	withSSRFBypass(t)
+	const apiKey = "nvapi-test"
+	const modelName = "meta/llama-3.2-11b-vision-instruct"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/meta/llama-3.2-11b-vision-instruct" {
+			t.Fatalf("path = %s, want model-specific chat endpoint", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message":       map[string]interface{}{"role": "assistant", "content": "pong"},
+				"finish_reason": "stop",
+			}},
+			"usage": map[string]interface{}{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+		})
+	}))
+	defer server.Close()
+
+	withNvidiaProviderManager(t, []*Model{{
+		Name: modelName,
+		URL:  server.URL + "/v1/meta/llama-3.2-11b-vision-instruct",
+	}})
+	driver := NewNvidiaModel(
+		map[string]string{"default": server.URL + "/v1"},
+		URLSuffix{Chat: "chat/completions"},
+	)
+	resp, err := driver.ChatWithMessages(
+		t.Context(),
+		modelName,
+		[]Message{{Role: "user", Content: "hi"}},
+		&APIConfig{ApiKey: ptr(apiKey)},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages() error = %v", err)
+	}
+	if resp.Answer == nil || *resp.Answer != "pong" {
+		t.Fatalf("answer = %v, want pong", resp.Answer)
+	}
+}
+
+func TestNvidiaEmbedUsesModelSpecificURL(t *testing.T) {
+	withSSRFBypass(t)
+	const apiKey = "nvapi-test"
+	const modelName = "nvidia/nv-embed-v1"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/embeddings/nvidia/nv-embed-v1" {
+			t.Fatalf("path = %s, want model-specific embed endpoint", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{{"index": 0, "embedding": []float64{0.1, 0.2}}},
+		})
+	}))
+	defer server.Close()
+
+	withNvidiaProviderManager(t, []*Model{{
+		Name: modelName,
+		URL:  server.URL + "/v1/embeddings/nvidia/nv-embed-v1",
+	}})
+	driver := NewNvidiaModel(
+		map[string]string{"default": server.URL + "/v1"},
+		URLSuffix{Embedding: "embeddings"},
+	)
+	namePtr := modelName
+	got, err := driver.Embed(
+		t.Context(),
+		&namePtr,
+		EmbedRequest{Texts: []string{"hello"}},
+		&APIConfig{ApiKey: ptr(apiKey)},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Embed() error = %v", err)
+	}
+	if len(got) != 1 || len(got[0].Embedding) != 2 {
+		t.Fatalf("embedding = %#v, want 1 vector of length 2", got)
 	}
 }
 

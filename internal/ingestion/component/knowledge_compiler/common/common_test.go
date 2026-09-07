@@ -5,6 +5,23 @@ import (
 	"testing"
 )
 
+type captureChat struct{ req ChatRequest }
+
+func (c *captureChat) Chat(_ context.Context, req ChatRequest) (*ChatResponse, error) {
+	c.req = req
+	return &ChatResponse{Content: `{"ok":true}`}, nil
+}
+
+func TestGenJSONDisablesInvokerRetry(t *testing.T) {
+	chat := &captureChat{}
+	if _, err := GenJSON(context.Background(), chat, ChatRequest{UserPrompt: "test"}, 0); err != nil {
+		t.Fatalf("GenJSON: %v", err)
+	}
+	if !chat.req.DisableRetry {
+		t.Fatal("GenJSON must disable retries in the underlying ChatInvoker")
+	}
+}
+
 func vec(a, b, c float32) []float32 { return []float32{a, b, c} }
 
 func TestMemStoreTopK(t *testing.T) {
@@ -97,93 +114,6 @@ func TestLocalize(t *testing.T) {
 	}
 }
 
-func TestGuardrails(t *testing.T) {
-	g := CapacityGuardrails{MaxItems: 2, OnExceed: ExceedError}
-	o := Outputs{Products: make([]Product, 3)}
-	if !g.Exceeded(o) {
-		t.Fatalf("expected breach on MaxItems=2 with 3 products")
-	}
-	if err := checkGuardrails(g, o); err != ErrCapacityExceeded {
-		t.Fatalf("expected ErrCapacityExceeded, got %v", err)
-	}
-
-	// flush path: a sink receives the buffer and it is reset
-	flushed := false
-	sink := sinkFunc(func(_ context.Context, items []Product) error {
-		flushed = true
-		if len(items) != 3 {
-			t.Fatalf("sink got %d items", len(items))
-		}
-		return nil
-	})
-	err := o.EnforceGuardrails(CapacityGuardrails{MaxItems: 2, OnExceed: ExceedFlush}, sink, context.Background())
-	if err != nil || !o.Flushed || !flushed {
-		t.Fatalf("flush path failed: flushed=%v err=%v", flushed, err)
-	}
-	if len(o.Products) != 0 {
-		t.Fatalf("buffer should be reset after flush, got %d", len(o.Products))
-	}
-}
-
-func TestEnforceGuardrails(t *testing.T) {
-	// Error policy: returns ErrCapacityExceeded, leaves products untouched.
-	o := Outputs{Products: make([]Product, 5)}
-	err := o.EnforceGuardrails(CapacityGuardrails{MaxItems: 2, OnExceed: ExceedError}, nil, context.Background())
-	if err != ErrCapacityExceeded {
-		t.Fatalf("EnforceGuardrails(error) = %v, want ErrCapacityExceeded", err)
-	}
-	if len(o.Products) != 5 {
-		t.Errorf("error policy must not drop products, got len=%d", len(o.Products))
-	}
-
-	// Flush policy with sink: emits and resets.
-	var captured []Product
-	sink := sinkFunc(func(_ context.Context, items []Product) error {
-		captured = append(captured, items...)
-		return nil
-	})
-	o = Outputs{Products: make([]Product, 5)}
-	err = o.EnforceGuardrails(CapacityGuardrails{MaxItems: 2, OnExceed: ExceedFlush}, sink, context.Background())
-	if err != nil {
-		t.Fatalf("EnforceGuardrails(flush+sink) err = %v", err)
-	}
-	if !o.Flushed {
-		t.Error("Flushed flag not set after flush")
-	}
-	if len(o.Products) != 0 {
-		t.Errorf("products not reset after flush, len=%d", len(o.Products))
-	}
-	if len(captured) != 5 {
-		t.Errorf("sink got %d items, want 5", len(captured))
-	}
-
-	// Flush policy WITHOUT sink: degrades to no-op (preserves the buffer
-	// for downstream merging; the caller decides whether to continue).
-	o = Outputs{Products: make([]Product, 5)}
-	err = o.EnforceGuardrails(CapacityGuardrails{MaxItems: 2, OnExceed: ExceedFlush}, nil, context.Background())
-	if err != nil {
-		t.Fatalf("EnforceGuardrails(flush+nil sink) err = %v", err)
-	}
-	if o.Flushed {
-		t.Error("Flushed should stay false when no sink is available")
-	}
-	if len(o.Products) != 5 {
-		t.Errorf("nil-sink flush should preserve products, got len=%d", len(o.Products))
-	}
-
-	// Under-limit: both error and flush policies must be no-ops.
-	for _, on := range []ExceedAction{ExceedError, ExceedFlush} {
-		o := Outputs{Products: make([]Product, 2)}
-		err := o.EnforceGuardrails(CapacityGuardrails{MaxItems: 5, OnExceed: on}, sink, context.Background())
-		if err != nil {
-			t.Errorf("under-limit EnforceGuardrails(%s) err = %v", on, err)
-		}
-		if o.Flushed {
-			t.Errorf("under-limit Flushed should be false (on=%s)", on)
-		}
-	}
-}
-
 func TestPackBatches(t *testing.T) {
 	chunks := []Chunk{
 		{ID: "1", Text: "aaaa"},
@@ -205,15 +135,3 @@ func TestPackBatches(t *testing.T) {
 		t.Fatalf("zero budget should be one batch of all: %v", got)
 	}
 }
-
-// checkGuardrails mirrors the error-path the variant Run applies before return.
-func checkGuardrails(g CapacityGuardrails, o Outputs) error {
-	if g.OnExceed == ExceedError && g.Exceeded(o) {
-		return ErrCapacityExceeded
-	}
-	return nil
-}
-
-type sinkFunc func(ctx context.Context, items []Product) error
-
-func (f sinkFunc) Emit(ctx context.Context, items []Product) error { return f(ctx, items) }

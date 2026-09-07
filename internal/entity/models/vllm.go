@@ -39,7 +39,7 @@ func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(),
+			httpClient:       NewDriverHTTPClient(true),
 		},
 	}
 }
@@ -50,6 +50,40 @@ func (v *VllmModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (v *VllmModel) Name() string {
 	return "VLLM"
+}
+
+// applyVllmCompatibleThinking maps Qwen3 controls to the chat-template payload
+// expected by vLLM while preserving the generic thinking payload for other models.
+func applyVllmCompatibleThinking(reqBody map[string]interface{}, modelName string, config *ChatConfig) {
+	modelNameLower := strings.ToLower(modelName)
+	if strings.Contains(modelNameLower, "qwen3") {
+		enableThinking := false
+		if config != nil && config.Thinking != nil {
+			enableThinking = *config.Thinking
+		}
+		if strings.Contains(modelNameLower, "-preview") || strings.Contains(modelNameLower, "2.4t-a95b") {
+			enableThinking = true
+		}
+
+		chatTemplateKwargs, ok := reqBody["chat_template_kwargs"].(map[string]interface{})
+		if !ok {
+			chatTemplateKwargs = map[string]interface{}{}
+		}
+		chatTemplateKwargs["enable_thinking"] = enableThinking
+		reqBody["chat_template_kwargs"] = chatTemplateKwargs
+		delete(reqBody, "thinking")
+		delete(reqBody, "enable_thinking")
+		return
+	}
+
+	if config == nil || config.Thinking == nil {
+		return
+	}
+	thinkingType := "disabled"
+	if *config.Thinking {
+		thinkingType = "enabled"
+	}
+	reqBody["thinking"] = map[string]interface{}{"type": thinkingType}
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
@@ -76,99 +110,14 @@ func (v *VllmModel) ChatWithMessages(ctx context.Context, modelName string, mess
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	applyVllmCompatibleThinking(reqBody, modelName, chatModelConfig)
 
-	if chatModelConfig != nil {
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "enabled",
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
-		}
-	}
-
-	jsonData, err := json.Marshal(reqBody)
+	body, err := v.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
-	}
-
-	resp, err := v.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	toolCalls := extractToolCalls(messageMap)
-	if !ok && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
-		}
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-
-	return chatResponse, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -193,97 +142,13 @@ func (v *VllmModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	applyVllmCompatibleThinking(reqBody, modelName, modelConfig)
 
-	if modelConfig.Thinking != nil {
-		if *modelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
-		}
-	}
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
-	}
-
-	resp, err := v.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// SSE parsing: read line by line
-	accumulatedToolCalls := make(map[int]map[string]any)
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		common.Info(fmt.Sprintf("%v", event))
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
-
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
+	return v.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 // Encode encodes a list of texts into embeddings
@@ -295,12 +160,12 @@ type vllmEmbeddingResponse struct {
 }
 
 // Embed embeds a list of texts into embeddings
-func (v *VllmModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (v *VllmModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -324,7 +189,7 @@ func (v *VllmModel) Embed(ctx context.Context, modelName *string, texts []string
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -485,10 +350,12 @@ type vllmRerankResponse struct {
 // Authorization header is sent only when APIConfig.ApiKey is non-empty,
 // matching the existing Embed/ListModels behaviour for this local
 // driver.
-func (v *VllmModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (v *VllmModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	documents := request.Documents
+	query := request.Query
 
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil

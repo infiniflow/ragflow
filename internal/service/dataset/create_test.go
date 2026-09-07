@@ -1,7 +1,6 @@
 package dataset
 
 import (
-	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -57,8 +56,8 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	if result["parser_id"] != strings.TrimSpace(chunkMethod) {
-		t.Fatalf("expected parser_id %q, got %#v", chunkMethod, result["parser_id"])
+	if result["parser_id"] != string(entity.ParserTypeGeneral) {
+		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
 }
 
@@ -85,6 +84,13 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	if !ok || len(parserConfig) == 0 {
 		t.Fatal("expected non-empty parser_config for general pipeline")
 	}
+	extractor, ok := parserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected extractor component params, got %#v", parserConfig["Extractor:AutoExtractDefault"])
+	}
+	if extractor["llm_id"] != "llm-default" {
+		t.Fatalf("extractor llm_id = %#v, want llm-default", extractor["llm_id"])
+	}
 }
 
 func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
@@ -108,8 +114,8 @@ func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	if result["parser_id"] != chunkMethod {
-		t.Fatalf("expected parser_id %q, got %#v", chunkMethod, result["parser_id"])
+	if result["parser_id"] != string(entity.ParserTypeGeneral) {
+		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
 	if v, ok := result["pipeline_id"]; ok && v != nil {
 		t.Fatalf("expected pipeline_id to be nil for BuiltIn mode, got %#v", v)
@@ -162,7 +168,7 @@ func TestCreateDataset_ValidatesName(t *testing.T) {
 	}
 }
 
-func TestCreateDataset_RejectsDuplicateName(t *testing.T) {
+func TestCreateDataset_DedupesDuplicateName(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
@@ -179,15 +185,16 @@ func TestCreateDataset_RejectsDuplicateName(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	_, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{Name: "Existing"}, "tenant-1")
-	if err == nil {
-		t.Fatal("expected duplicate name error")
+	// Mirror Python's duplicate_name: the create appends (1) instead of failing.
+	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{Name: "Existing"}, "tenant-1")
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
 	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("unexpected error: %v", err)
+	if result["name"] != "Existing(1)" {
+		t.Fatalf("unexpected name: %v", result["name"])
 	}
 }
 

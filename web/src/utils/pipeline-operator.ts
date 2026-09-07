@@ -1,7 +1,24 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Operator } from '@/constants/agent';
 import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
-  initialExtractorValues,
+  getInitialExtractorValues,
+  initialGoExtractorValues,
   initialParserValues,
   initialTitleChunkerValues,
   initialTokenChunkerValues,
@@ -13,12 +30,26 @@ import {
   transformTitleChunkerParams,
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
+import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep, isEmpty } from 'lodash';
 
 export const FileNodeId = 'File';
 
 export function getOperatorType(operatorId: string): Operator {
   return (operatorId.split(':')[0] || operatorId) as Operator;
+}
+
+// The dataset-level metadata group stored at parser_config.metadata. The group
+// is shaped {enabled, metadata, built_in_metadata}; the boolean enabled flag
+// and the built_in_metadata array identify it among other values.
+function isDatasetMetadataGroup(value: any): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof value.enabled === 'boolean' &&
+    Array.isArray(value.built_in_metadata)
+  );
 }
 
 export function transformParserConfigSetups(
@@ -65,12 +96,9 @@ function transformLevelsToRules(
     .filter((rule) => rule !== null);
 }
 
-/**
- * Converts Extractor config from API/DSL format to form format.
- * DSL:  { prompts: [{ content: "text", role: "user" }] }
- * Form: { prompts: "text" }
- */
-function transformExtractorConfigToForm(
+// Python form: flatten the DSL prompts array into the form's single field;
+// the Python extractor form consumes the legacy flat fields as-is.
+function transformExtractorConfigToFormPython(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
   if (!config) return {};
@@ -79,7 +107,95 @@ function transformExtractorConfigToForm(
   if (Array.isArray(config.prompts) && config.prompts.length > 0) {
     result.prompts = config.prompts[0]?.content ?? '';
   }
+
   return result;
+}
+
+// Go form: additionally normalize the nested per-feature groups the Go
+// extractor schema reads (schema.ExtractorParam).
+function transformExtractorConfigToFormGo(
+  config: Record<string, any> | undefined,
+): Record<string, any> {
+  const result = transformExtractorConfigToFormPython(config);
+  if (!config) return result;
+
+  const isSummaryEnabled =
+    config.summary?.enabled !== undefined
+      ? Boolean(config.summary?.enabled)
+      : config.enable_summary === 1 || config.enable_summary === true;
+
+  // The metadata group is stored under "metadata" — the shape the Go
+  // Extractor reads (schema.ExtractorParam). Accept two historical shapes:
+  // the transitional "metadata_config" key, and legacy flat nodes carrying
+  // enable_metadata + metadata[] + built_in_metadata[] (flat "metadata" is
+  // an array there, which distinguishes it from the group object).
+  const metadataGroup =
+    config.metadata !== undefined && !Array.isArray(config.metadata)
+      ? config.metadata
+      : config.metadata_config;
+
+  const isMetadataEnabled =
+    metadataGroup?.enabled !== undefined
+      ? Boolean(metadataGroup.enabled)
+      : config.enable_metadata === 1 || config.enable_metadata === true;
+
+  result.keywords = {
+    top_n:
+      config.keywords?.top_n ??
+      config.auto_keywords ??
+      initialGoExtractorValues.keywords.top_n,
+    system_prompt:
+      config.keywords?.system_prompt ?? config.keywords_sys_prompt ?? '',
+  };
+  result.questions = {
+    top_n:
+      config.questions?.top_n ??
+      config.auto_questions ??
+      initialGoExtractorValues.questions.top_n,
+    system_prompt:
+      config.questions?.system_prompt ?? config.questions_sys_prompt ?? '',
+  };
+  result.tags = {
+    top_n:
+      config.tags?.top_n ??
+      config.auto_tags ??
+      initialGoExtractorValues.tags.top_n,
+    tag_file_id: config.tags?.tag_file_id ?? config.tag_file_id ?? '',
+  };
+  result.summary = {
+    enabled: isSummaryEnabled,
+    system_prompt: config.summary?.system_prompt ?? config.sys_prompt ?? '',
+  };
+
+  result.metadata = {
+    enabled: isMetadataEnabled,
+    metadata:
+      metadataGroup?.metadata ??
+      (Array.isArray(config.metadata) ? config.metadata : []),
+    built_in_metadata:
+      metadataGroup?.built_in_metadata ?? config.built_in_metadata ?? [],
+  };
+  // Drop the historical keys so they don't linger in form state and get
+  // re-emitted into the DSL on save — the Go extractor only reads the group.
+  delete result.metadata_config;
+  delete result.enable_metadata;
+  delete result.built_in_metadata;
+
+  return result;
+}
+
+/**
+ * Converts Extractor config from API/DSL format to form format.
+ * DSL:  { prompts: [{ content: "text", role: "user" }] }
+ * Form: { prompts: "text" }
+ */
+export function transformExtractorConfigToForm(
+  config: Record<string, any> | undefined,
+): Record<string, any> {
+  return pickByBackend({
+    go: transformExtractorConfigToFormGo,
+    python: transformExtractorConfigToFormPython,
+  })(config);
 }
 
 /**
@@ -94,9 +210,13 @@ function transformTokenChunkerConfigToForm(
 
   const result = { ...config };
 
-  // Convert string array delimiters to object array
+  // Convert string array delimiters to object array; seed the default '\n'
+  // row when the saved list is empty (legacy token_size nodes saved []).
   if (Array.isArray(config.delimiters)) {
     result.delimiters = config.delimiters.map((d: string) => ({ value: d }));
+    if (result.delimiters.length === 0) {
+      result.delimiters = [{ value: '\n' }];
+    }
   }
   if (Array.isArray(config.children_delimiters)) {
     result.children_delimiters = config.children_delimiters.map(
@@ -114,12 +234,9 @@ function transformTokenChunkerConfigToForm(
   const imageSize = Number(config.image_context_size ?? 0);
   result.image_table_context_window = Math.max(tableSize, imageSize);
 
-  // Derive delimiter_mode from data
-  if (config.delimiter_mode === undefined) {
-    const hasDelimiters =
-      Array.isArray(config.delimiters) && config.delimiters.length > 0;
-    result.delimiter_mode = hasDelimiters ? 'delimiter' : 'token_size';
-  }
+  // Normalize delimiter_mode: the 'token_size' tab was removed from the form,
+  // so legacy configs (explicit 'token_size' or absent) load as 'delimiter'.
+  result.delimiter_mode = config.delimiter_mode === 'one' ? 'one' : 'delimiter';
 
   // Derive enable_children from presence of children_delimiters
   if (config.enable_children === undefined) {
@@ -212,6 +329,43 @@ export function transformApiConfigToForm(
 }
 
 /**
+ * Converts a saved parser_config (API format, keyed by operator id) to the
+ * form format used by the operator tabs. Configs without pipeline keys
+ * (built-in parse type) are returned as-is.
+ *
+ * The dataset-level metadata group is authoritative for Extractor nodes,
+ * mirroring buildOperatorNode, so the values seeded into the outer form match
+ * what the operator tabs initialize from.
+ */
+export function transformSavedParserConfigToForm(
+  parserConfig?: Record<string, any>,
+): Record<string, any> | undefined {
+  if (
+    !parserConfig ||
+    typeof parserConfig !== 'object' ||
+    Array.isArray(parserConfig) ||
+    !Object.keys(parserConfig).some((key) => key.includes(':'))
+  ) {
+    return parserConfig;
+  }
+
+  const formParserConfig: Record<string, any> = {};
+  for (const [operatorId, config] of Object.entries(parserConfig)) {
+    const operatorType = getOperatorType(operatorId);
+    const apiConfig =
+      operatorType === Operator.Extractor &&
+      isDatasetMetadataGroup(parserConfig.metadata)
+        ? { ...config, metadata: parserConfig.metadata }
+        : (config as Record<string, any>);
+    formParserConfig[operatorId] = transformApiConfigToForm(
+      operatorType,
+      apiConfig,
+    );
+  }
+  return formParserConfig;
+}
+
+/**
  * Dispatches forward transform by operator type.
  * Converts form-format config to DSL format for saving.
  */
@@ -237,7 +391,7 @@ export function transformFormConfigToApi(
   }
 }
 
-function normalizeOperatorForm(
+export function normalizeOperatorForm(
   operatorId: string,
   rawForm: Record<string, any> | undefined,
 ): Record<string, any> {
@@ -265,7 +419,7 @@ function normalizeOperatorForm(
       };
     case Operator.Extractor:
       return {
-        ...cloneDeep(initialExtractorValues),
+        ...cloneDeep(getInitialExtractorValues()),
         ...rawForm,
       };
     case Operator.Tokenizer:
@@ -293,10 +447,24 @@ export function buildOperatorNode(
   };
 
   if (!isEmpty(pipelineParserConfig)) {
+    let apiConfig = pipelineParserConfig[operatorId];
+    // Dataset-level auto-metadata lives at parser_config.metadata; the
+    // backend preserves that object and re-scopes it into every Extractor
+    // node on write, so it is the authoritative source for the metadata
+    // toggle's initial state — prefer it over a possibly stale per-node copy.
+    if (
+      operatorType === Operator.Extractor &&
+      isDatasetMetadataGroup(pipelineParserConfig.metadata)
+    ) {
+      apiConfig = {
+        ...apiConfig,
+        metadata: pipelineParserConfig.metadata,
+      };
+    }
     // user overrides from API (now also form format)
     Object.assign(
       rawForm,
-      transformApiConfigToForm(operatorType, pipelineParserConfig[operatorId]), // Convert API config to form format, then merge (DSL template is baseline, API overrides)
+      transformApiConfigToForm(operatorType, apiConfig), // Convert API config to form format, then merge (DSL template is baseline, API overrides)
     );
   }
 

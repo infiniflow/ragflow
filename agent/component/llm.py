@@ -18,17 +18,23 @@ import json
 import logging
 import os
 import re
+from collections.abc import AsyncGenerator
 from copy import deepcopy
-from typing import Any, AsyncGenerator
-import json_repair
 from functools import partial
-from common.constants import LLMType
+from typing import Any
+
+import json_repair
+
+from agent.component.base import ComponentBase, ComponentParamBase
+from api.db.joint_services.tenant_model_service import (
+    resolve_model_config,
+    resolve_model_type,
+)
 from api.db.services.dialog_service import _stream_with_think_delta
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_type
-from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
-from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt, structured_output_prompt
+from common.constants import LLMType
+from rag.prompts.generator import citation_prompt, message_fit_in, structured_output_prompt, tool_call_summary
 
 
 class LLMParam(ComponentParamBase):
@@ -58,6 +64,10 @@ class LLMParam(ComponentParamBase):
         self.check_decimal_float(float(self.top_p), "[Agent] Top P")
         self.check_empty(self.llm_id, "[Agent] LLM")
         self.check_empty(self.prompts, "[Agent] User prompt")
+        self.check_nonnegative_integer(self.max_retries, "[Agent] Max retries")
+        if hasattr(self, "max_rounds"):
+            self.check_defined_type(self.max_rounds, "[Agent] Max rounds", ["int"])
+            self.check_nonnegative_number(self.max_rounds, "[Agent] Max rounds")
 
     def gen_conf(self):
         conf = {}
@@ -88,15 +98,10 @@ class LLM(ComponentBase):
 
     def __init__(self, canvas, component_id, param: ComponentParamBase):
         super().__init__(canvas, component_id, param)
-        try:
-            model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
-            model_type = "chat" if "chat" in model_types else model_types[0]
-            chat_model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
-            self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config, max_retries=self._param.max_retries, retry_interval=self._param.delay_after_error)
-        except Exception as e:
-            logging.warning(f"Fail to load LLM configuration for component. {e}")
-            self.chat_mdl = None
-
+        model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
+        model_type = "chat" if "chat" in model_types else model_types[0]
+        chat_model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
+        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config, max_retries=self._param.max_retries, retry_interval=self._param.delay_after_error)
         self.imgs = []
 
     def get_input_form(self) -> dict[str, dict]:
@@ -376,7 +381,7 @@ class LLM(ComponentBase):
             return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
         return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
 
-    async def _generate_streamly(self, msg: list[dict], **kwargs) -> AsyncGenerator[str, None]:
+    async def _generate_streamly(self, msg: list[dict], **kwargs) -> AsyncGenerator[str]:
         stream_kwargs = {"images": self.imgs} if self.imgs else {}
         stream_kwargs.update(kwargs)
         stream = self.chat_mdl.async_chat_streamly_delta(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs)

@@ -37,6 +37,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
+import os
 import string
 from typing import Any, Awaitable, Callable, Iterable, Optional
 
@@ -48,6 +50,48 @@ from rag.nlp import rag_tokenizer
 from rag.prompts.generator import INPUT_UTILIZATION, gen_json, split_chunks
 
 
+def env_int(name: str, default: int, *, minimum: int | None = None) -> int:
+    """Read a non-empty integer environment override, or return ``default``."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        value = default
+    else:
+        try:
+            value = int(raw)
+        except ValueError:
+            logging.warning("Invalid integer environment variable %s=%r; using %d", name, raw, default)
+            value = default
+    if minimum is not None and value < minimum:
+        logging.warning("Environment variable %s=%d is below minimum %d; using %d", name, value, minimum, minimum)
+        value = minimum
+    logging.debug("Resolved environment variable %s=%d", name, value)
+    return value
+
+
+def env_float(name: str, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
+    """Read a non-empty float environment override, or return ``default``."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        value = default
+    else:
+        try:
+            value = float(raw)
+        except ValueError:
+            logging.warning("Invalid float environment variable %s=%r; using %s", name, raw, default)
+            value = default
+    if not math.isfinite(value):
+        logging.warning("Environment variable %s=%r is not finite; using %s", name, value, default)
+        value = default
+    if minimum is not None and value < minimum:
+        logging.warning("Environment variable %s=%s is below minimum %s; using %s", name, value, minimum, minimum)
+        value = minimum
+    if maximum is not None and value > maximum:
+        logging.warning("Environment variable %s=%s is above maximum %s; using %s", name, value, maximum, maximum)
+        value = maximum
+    logging.debug("Resolved environment variable %s=%s", name, value)
+    return value
+
+
 def knowledge_compile_gen_conf(chat_mdl, gen_conf: Optional[dict] = None) -> dict:
     """Add model-specific reasoning controls for knowledge compilation only."""
     conf = dict(gen_conf or {})
@@ -57,13 +101,16 @@ def knowledge_compile_gen_conf(chat_mdl, gen_conf: Optional[dict] = None) -> dic
     model_name = str(model_config.get("llm_name") or getattr(chat_mdl, "llm_name", "")).lower()
 
     if "deepseek-v4" in model_name:
+        conf["max_completion_tokens"] = 32768
         extra_body = conf.get("extra_body")
         extra_body = dict(extra_body) if isinstance(extra_body, dict) else {}
         extra_body["thinking"] = {"type": "disabled"}
         conf["extra_body"] = extra_body
     elif "qwen3" in model_name:
         # chat_model.py maps this flag to the provider-specific request body.
-        conf["enable_thinking"] = False
+        # -preview variants (e.g. qwen3.8-max-preview) only accept
+        # enable_thinking=True on their API endpoint.
+        conf["enable_thinking"] = True if "-preview" in model_name else False
     else:
         # LiteLLM maps this common control for providers that support it and
         # drops it for providers that do not. Keep model-specific overrides

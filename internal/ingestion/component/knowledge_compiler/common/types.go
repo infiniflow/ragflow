@@ -1,7 +1,7 @@
 // Package common holds the shared, dependency-light foundation for the
-// KnowledgeCompiler component: parameter/IO types, capacity guardrails,
-// the in-memory product store, tokenization/batching helpers, the LLM
-// chat seam, and the concurrency pool.
+// KnowledgeCompiler component: parameter/IO types, the in-memory product
+// store, tokenization/batching helpers, the LLM chat seam, and the
+// concurrency pool.
 //
 // It deliberately imports only the standard library plus a stable-hash
 // dependency, so it (and the M1 unit tests) build without the CGO native
@@ -9,10 +9,8 @@
 package common
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 )
 
@@ -20,34 +18,59 @@ import (
 type Variant string
 
 const (
-	VariantStructure  Variant = "structure"
-	VariantWiki       Variant = "wiki"
-	VariantRaptor     Variant = "raptor"
-	VariantMindmap    Variant = "mindmap"
-	VariantDatasetnav Variant = "datasetnav"
+	VariantStructure Variant = "structure"
+	VariantWiki      Variant = "wiki"
+	VariantTree      Variant = "tree"
+	VariantMindmap   Variant = "mindmap"
 )
 
 // Sentinel errors.
 var (
-	ErrCapacityExceeded = errors.New("knowledge_compiler: capacity exceeded")
-	ErrUnknownVariant   = errors.New("knowledge_compiler: unknown variant")
-	ErrNotImplemented   = errors.New("knowledge_compiler: variant not yet implemented")
+	ErrUnknownVariant = errors.New("knowledge_compiler: unknown variant")
+	ErrNotImplemented = errors.New("knowledge_compiler: variant not yet implemented")
 )
 
-// Param is built from the DSL params map. Missing keys fall back to
-// Defaults(); variant-name aliases are normalised (see ParseParam).
+// Param is built from the DSL params map. The component is driven by a
+// compilation template (or template group); the variant is NOT taken from the
+// DSL — it is derived from the resolved template's kind at Invoke time (see
+// KindToVariant).
 type Param struct {
-	Variant               Variant
-	LLMID                 string
-	EmbeddingModel        string
-	Language              string
-	TemplateIDs           []string
-	GroupIDs              []string
+	// CompilationTemplateID selects a single compilation template directly.
+	// CompilationTemplateGroupID selects a compilation-template group, which
+	// resolves to one or more templates. When both are non-empty,
+	// CompilationTemplateID wins (priority: id > group_id).
+	CompilationTemplateID      string
+	CompilationTemplateGroupID string
+
+	LLMID          string
+	EmbeddingModel string
+	Language       string
+	// SimilarityThreshold defaults to 0.99 when not provided (see Defaults).
 	SimilarityThreshold   float64
 	MaxWorkers            int
 	EnableHistoricalDedup bool
-	Extra                 map[string]any
-	Guardrails            CapacityGuardrails
+	// Plan selects the wiki compilation mode. nil means the DSL did not specify a
+	// mode, so template config may decide; the effective default is false
+	// (entity mode). true selects topic mode, which allows related identities to
+	// be merged during PLAN; both modes assign pages to MAP topics.
+	Plan *bool
+	// Extra carries arbitrary caller-provided overrides merged into the
+	// resolved template config.
+	Extra map[string]any
+
+	// The following fields are resolved at runtime (not part of the DSL
+	// surface) and are set by the component before dispatching to a variant:
+	//
+	// Variant is derived from the resolved template's kind (see KindToVariant),
+	// not from the DSL.
+	Variant Variant
+	// TemplateID is the resolved compilation template id for the current spec
+	// (the id path uses it directly; the group path resolves each child). It is
+	// plumbed to the variant for stamping compilation_template_ids.
+	TemplateID string
+	// TemplateConfig is the resolved template's config blob (the template
+	// "content"), plumbed to the variant for prompt/structure extraction.
+	TemplateConfig map[string]any
 }
 
 // Defaults returns a Param populated with safe production fallbacks.
@@ -55,12 +78,6 @@ func (p Param) Defaults() Param {
 	p.SimilarityThreshold = 0.99
 	p.MaxWorkers = 4
 	p.Extra = map[string]any{}
-	p.Guardrails = CapacityGuardrails{
-		MaxItems:       50000,
-		MaxVectorBytes: 200 << 20, // 200 MiB
-		MaxOutputBytes: 400 << 20, // 400 MiB
-		OnExceed:       ExceedError,
-	}
 	return p
 }
 
@@ -75,7 +92,11 @@ type Chunk struct {
 	ID      string
 	Text    string // "text" field from upstream
 	Content string // "content_with_weight" field from upstream
-	Meta    map[string]any
+	// Vector is the pre-computed embedding of the chunk, when the caller has
+	// already embedded it. Variants reuse it instead of re-embedding; a nil
+	// Vector means "not embedded yet" and the variant computes one on demand.
+	Vector []float32
+	Meta   map[string]any
 }
 
 // Inputs is the resolved input set passed to a variant Run.
@@ -86,18 +107,6 @@ type Inputs struct {
 	EmbeddingModel       string
 	VariantSpecific      map[string]any
 	HistoricalCandidates []Candidate // optional override path (test/offline)
-	Sink                 ChunkedSink // optional; used when guardrails flush
-}
-
-// LogDeprecated emits a one-line deprecation notice for legacy param names.
-func LogDeprecated(old, replacement string) {
-	log.Printf("[knowledge_compiler] deprecated variant name %q; use %q", old, replacement)
-}
-
-// ChunkedSink receives products incrementally when capacity guardrails
-// demand flushing instead of a single-shot Outputs().
-type ChunkedSink interface {
-	Emit(ctx context.Context, items []Product) error
 }
 
 // Product is one compiled output row (schema_version=1).
@@ -106,173 +115,51 @@ type Product struct {
 	DocID    string
 	TenantID string
 	Variant  Variant
-	Content  string
-	Vector   []float32
-	ParentID string
-	Meta     map[string]any
+	// Kind is the original compilation_template.kind (e.g. "page_index"),
+	// distinct from Variant (the collapsed Go strategy, e.g. "structure"). It
+	// is stamped onto compilation_template_kind_kwd so the document-structure
+	// endpoint can group rows by the true template kind.
+	Kind string
+	// TemplateID is the compilation template that produced this row.
+	TemplateID string
+	Content    string
+	Vector     []float32
+	ParentID   string
+	Meta       map[string]any
+	// Merged marks rows that already went through dataset-level dedup
+	// (available_int=1, doc_id=kb). The consumer distinguishes these from the
+	// per-document compiled rows (doc_id=<source doc>, available_int=0) so it can
+	// KNN against only the merged set instead of re-deduping the whole KB.
+	Merged bool
 }
 
-// Outputs is the result of a variant Run.
+// Outputs is the result of a variant Run. All compiled products are buffered
+// here; the component merges them into the upstream chunk stream.
 type Outputs struct {
 	Products          []Product
 	DuplicatesDropped int
-	Items             int
-	VectorBytes       int64
-	Flushed           bool
+	AffectedPageSlugs []string
+	RemovedPageSlugs  []string
+	WikiActiveStates  []WikiMapActiveState
 }
 
-// SerializedBytes estimates the serialized footprint of the products.
-func (o Outputs) SerializedBytes() int64 {
-	var n int64
-	for _, p := range o.Products {
-		n += int64(len(p.Content)) + int64(len(p.Vector)*4) + 64
-	}
-	return n
-}
-
-// CapacityGuardrails bounds a single Invoke's product volume.
-type CapacityGuardrails struct {
-	MaxItems       int
-	MaxVectorBytes int64
-	MaxOutputBytes int64
-	OnExceed       ExceedAction
-}
-
-// ExceedAction controls behaviour when a guardrail is breached.
-type ExceedAction string
-
-const (
-	ExceedError ExceedAction = "error"
-	ExceedFlush ExceedAction = "flush"
-)
-
-// Exceeded reports whether any guardrail is breached by o.
-func (g CapacityGuardrails) Exceeded(o Outputs) bool {
-	if g.MaxItems > 0 && len(o.Products) > g.MaxItems {
-		return true
-	}
-	if g.MaxVectorBytes > 0 && o.VectorBytes > g.MaxVectorBytes {
-		return true
-	}
-	if g.MaxOutputBytes > 0 && o.SerializedBytes() > g.MaxOutputBytes {
-		return true
-	}
-	return false
-}
-
-// EnforceGuardrails applies the variant's capacity policy uniformly:
-//   - OnExceed == ExceedError: returns ErrCapacityExceeded when any guardrail
-//     is breached (caller must propagate the error and drop the outputs).
-//   - OnExceed == ExceedFlush: emits the current products via sink and resets
-//     the buffer; subsequent variant Run iterations can keep producing
-//     without holding the full result set in memory. When sink is nil the
-//     policy degrades to "no-op" (the buffer is preserved; downstream
-//     callers may still see all products in the final merged chunks).
-//
-// Centralising the policy here keeps the five variants (structure/wiki/
-// raptor/mindmap/datasetnav) consistent and prevents the gap where only
-// structure used to honour the flush path.
-func (o *Outputs) EnforceGuardrails(g CapacityGuardrails, sink ChunkedSink, ctx context.Context) error {
-	if !g.Exceeded(*o) {
-		return nil
-	}
-	switch g.OnExceed {
-	case ExceedError:
-		return ErrCapacityExceeded
-	case ExceedFlush:
-		if sink == nil {
-			return nil
-		}
-		if err := sink.Emit(ctx, o.Products); err != nil {
-			return err
-		}
-		o.Flushed = true
-		// Hand off ownership to the sink (see FlushIfNeeded, M9) and reset all
-		// per-buffer accounting so a reused Outputs starts empty and does not
-		// re-trigger flushes on stale thresholds (M9 follow-up).
-		o.Products = nil
-		o.Items = 0
-		o.VectorBytes = 0
-		return nil
-	default:
-		return nil
-	}
-}
-
-// ProductSink accumulates compiled products and flushes them to a ChunkedSink
-// as the capacity guardrails are exceeded, bounding peak memory. A variant that
-// may produce a large result set should accumulate through a ProductSink
-// instead of appending to a plain slice and calling EnforceGuardrails only at
-// the end: the end-of-run flush in EnforceGuardrails can only release memory
-// AFTER the full result set has already been materialized, which defeats the
-// anti-OOM goal (缺口 A).
-//
-// When OnExceed != ExceedFlush, or no sink is supplied, the sink behaves like a
-// plain slice — every product stays in Products() until the caller decides what
-// to do with it. This keeps the default (no-sink) pipeline behaviour unchanged:
-// the full result set is returned in Outputs.Products for the component to merge
-// into the upstream chunk stream.
-type ProductSink struct {
-	products []Product
-	bytes    int64
-	total    int
-	flushed  bool
-	g        CapacityGuardrails
-	sink     ChunkedSink
-	ctx      context.Context
-}
-
-// NewProductSink constructs a sink bound to the given guardrails and (optional)
-// flush target.
-func NewProductSink(ctx context.Context, g CapacityGuardrails, sink ChunkedSink) *ProductSink {
-	return &ProductSink{g: g, sink: sink, ctx: ctx}
-}
-
-// Add appends p to the buffer and, when the flush policy is active and the
-// guardrails are breached, emits the current buffer to the sink and resets it.
-// This is what keeps peak memory near the guardrail threshold rather than the
-// full result-set size.
-func (s *ProductSink) Add(p Product) error {
-	s.products = append(s.products, p)
-	s.bytes += int64(len(p.Vector) * 4)
-	s.total++
-	if s.g.OnExceed == ExceedFlush && s.sink != nil {
-		o := Outputs{Products: s.products, VectorBytes: s.bytes, Items: len(s.products)}
-		if s.g.Exceeded(o) {
-			if err := s.sink.Emit(s.ctx, s.products); err != nil {
-				return err
-			}
-			s.flushed = true
-			// Hand off ownership of the backing array to the sink (M9).
-			s.products = nil
-			s.bytes = 0
-		}
-	}
-	return nil
-}
-
-// Products returns the not-yet-flushed buffer.
-func (s *ProductSink) Products() []Product { return s.products }
-
-// Bytes returns the serialized-vector footprint of the not-yet-flushed buffer.
-func (s *ProductSink) Bytes() int64 { return s.bytes }
-
-// TotalItems returns the cumulative number of products added (flushed + buffered),
-// suitable for Outputs.Items.
-func (s *ProductSink) TotalItems() int { return s.total }
-
-// Flushed reports whether at least one incremental flush has happened.
-func (s *ProductSink) Flushed() bool { return s.flushed }
-
-// ParseParam builds a Param from the DSL params map, applying variant-name
-// aliases (mind_map=>mindmap, dataset_nav=>datasetnav) and deprecation logs.
+// ParseParam builds a Param from the DSL params map. The variant is NOT taken
+// from the DSL — it is derived from the resolved template's kind at Invoke time
+// via KindToVariant. At least one of compilation_template_id /
+// compilation_template_group_id is required.
 func ParseParam(m map[string]any) (Param, error) {
 	p := Param{}.Defaults()
 	if m == nil {
-		return p, fmt.Errorf("knowledge_compiler: params required (variant missing)")
+		return p, fmt.Errorf("knowledge_compiler: params required (compilation_template_id missing)")
 	}
-	if v, ok := m["variant"].(string); ok && v != "" {
-		p.Variant = normalizeVariant(v)
+	if v, ok := m["compilation_template_id"].(string); ok && strings.TrimSpace(v) != "" {
+		p.CompilationTemplateID = strings.TrimSpace(v)
+	}
+	if v, ok := m["compilation_template_group_id"].(string); ok && strings.TrimSpace(v) != "" {
+		p.CompilationTemplateGroupID = strings.TrimSpace(v)
+	}
+	if p.CompilationTemplateID == "" && p.CompilationTemplateGroupID == "" {
+		return p, fmt.Errorf("knowledge_compiler: one of 'compilation_template_id' or 'compilation_template_group_id' is required")
 	}
 	if v, ok := m["llm_id"].(string); ok {
 		p.LLMID = v
@@ -289,46 +176,57 @@ func ParseParam(m map[string]any) (Param, error) {
 	if v, ok := m["enable_historical_dedup"].(bool); ok {
 		p.EnableHistoricalDedup = v
 	}
-	// compilation_template_ids / compilation_template_group_ids mirror the
-	// Python parser_config keys (see api/utils/validation_utils.py). Template
-	// ids are stamped onto every compiled row so the document-structure
-	// endpoint can group rows by template and the UI renders one tab per
-	// template. Group ids are resolved to concrete template ids by the caller
-	// (production wiring resolves them via the compilation-template-group
-	// service); when passed through raw they are carried as-is on GroupIDs.
-	p.TemplateIDs = parseStringList(m, "compilation_template_ids", "template_ids")
-	p.GroupIDs = parseStringList(m, "compilation_template_group_ids", "template_group_ids", "group_ids")
+	// Keep presence separate from the boolean value: nil means template config may
+	// supply the mode, while an explicit false still overrides template plan:true.
+	if v, ok := m["plan"].(bool); ok {
+		p.Plan = &v
+	}
 	if raw, ok := m["extra"].(map[string]any); ok {
 		p.Extra = raw
-	}
-	if p.Variant == "" {
-		return p, fmt.Errorf("knowledge_compiler: 'variant' is required")
 	}
 	return p, nil
 }
 
-// normalizeVariant maps a DSL variant name to the canonical Variant,
-// logging a deprecation note for the legacy underscore forms.
-func normalizeVariant(s string) Variant {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "structure":
-		return VariantStructure
+// PlanEnabled reports whether wiki topic mode is selected. An unset value
+// defaults to entity mode.
+func (p Param) PlanEnabled() bool {
+	return p.Plan != nil && *p.Plan
+}
+
+// KindToVariant maps a compilation_template.kind to the Go compiler Variant.
+//
+// The Python model uses richer kind values (mind_map, page_index,
+// session_essence, session_graph, timeline, knowledge_graph, tree, wiki); the
+// Go port collapses them onto its variants. Per the agreed mapping:
+//
+//	tree                            -> tree
+//	mind_map                        -> mindmap
+//	wiki                            -> wiki
+//	page_index / session_essence /  -> structure (the graph/knowledge-graph path)
+//	session_graph / timeline /      ->
+//	knowledge_graph                 ->
+//
+// The canonical variant names are also accepted as identity (so a template kind
+// may equal the variant). Unknown kinds return ErrUnknownVariant; the caller
+// turns that into a hard failure rather than silently emitting uncompiled rows.
+//
+// Note: "datasetnav"/"dataset_nav" intentionally has NO mapping here — dataset
+// navigation is not an independent compile kind in Python; it is a by-product
+// written after tree/page_index compilation via internal/service datasetnav
+// (see tasks/agentic_search_port_plan.md).
+func KindToVariant(kind string) (Variant, error) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "tree":
+		return VariantTree, nil
+	case "mind_map", "mindmap":
+		return VariantMindmap, nil
 	case "wiki":
-		return VariantWiki
-	case "raptor":
-		return VariantRaptor
-	case "mindmap", "mind_map":
-		if strings.Contains(s, "_") {
-			LogDeprecated("mind_map", "mindmap")
-		}
-		return VariantMindmap
-	case "datasetnav", "dataset_nav":
-		if strings.Contains(s, "_") {
-			LogDeprecated("dataset_nav", "datasetnav")
-		}
-		return VariantDatasetnav
+		return VariantWiki, nil
+	case "page_index", "session_essence", "session_graph", "timeline",
+		"knowledge_graph", "structure", "knowledgegraph", "graph":
+		return VariantStructure, nil
 	default:
-		return Variant(s)
+		return "", fmt.Errorf("%w: %q", ErrUnknownVariant, kind)
 	}
 }
 
@@ -342,51 +240,61 @@ func FirstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// parseStringList reads a []string from the params map under any of the given
-// keys (first hit wins). Accepts []string, []any (of strings), or a single
-// whitespace/comma-separated string. Returns nil when no key is present.
-func parseStringList(m map[string]any, keys ...string) []string {
-	for _, k := range keys {
-		raw, ok := m[k]
-		if !ok {
-			continue
+// VectorFromChunkMap extracts a pre-computed embedding from a chunk map. The
+// upstream pipeline (and the knowledge-compile store) carry the vector under a
+// dimension-specific column key "q_<dim>_vec" — set by the tokenizer via
+// SetExtraValue and flattened into the map by ChunkDoc.ToMap. The value may
+// arrive as []float32 (store read) or []float64 (pipeline map); both are
+// normalised to []float32. A nil result means the chunk has no embedding yet.
+//
+// dim selects the exact "q_<dim>_vec" key when the embedding dimension is known
+// (dim > 0); otherwise every "q_*_vec" key is considered. A chunk must carry at
+// most one embedding vector: multiple q_*_vec fields signal mixed embedding
+// models, and because Go map iteration order is nondeterministic, picking among
+// them would be unstable across runs — such chunks are rejected with an error.
+func VectorFromChunkMap(m map[string]any, dim int) ([]float32, error) {
+	if dim > 0 {
+		if v, ok := m[fmt.Sprintf("q_%d_vec", dim)]; ok {
+			return toFloat32Slice(v), nil
 		}
-		switch v := raw.(type) {
-		case []string:
-			if len(v) > 0 {
-				return v
-			}
-		case []any:
-			out := make([]string, 0, len(v))
-			for _, e := range v {
-				if s, ok := e.(string); ok {
-					s = strings.TrimSpace(s)
-					if s != "" {
-						out = append(out, s)
-					}
-				}
-			}
-			if len(out) > 0 {
-				return out
-			}
-		case string:
-			s := strings.TrimSpace(v)
-			if s == "" {
-				continue
-			}
-			// Tolerate comma- or whitespace-separated lists.
-			parts := strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' })
-			var out []string
-			for _, p := range parts {
-				p = strings.TrimSpace(p)
-				if p != "" {
-					out = append(out, p)
-				}
-			}
-			if len(out) > 0 {
-				return out
+	}
+	var keys []string
+	for k := range m {
+		if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
+			keys = append(keys, k)
+		}
+	}
+	switch len(keys) {
+	case 0:
+		return nil, nil
+	case 1:
+		return toFloat32Slice(m[keys[0]]), nil
+	default:
+		return nil, fmt.Errorf("knowledge_compiler: chunk carries %d embedding vectors %v; expected exactly one", len(keys), keys)
+	}
+}
+
+// toFloat32Slice normalises a numeric slice (any of []float32, []float64, or
+// []any of float64) to []float32, returning nil when the value is not a usable
+// vector.
+func toFloat32Slice(v any) []float32 {
+	switch arr := v.(type) {
+	case []float32:
+		return arr
+	case []float64:
+		out := make([]float32, len(arr))
+		for i, x := range arr {
+			out[i] = float32(x)
+		}
+		return out
+	case []any:
+		out := make([]float32, 0, len(arr))
+		for _, e := range arr {
+			if f, ok := e.(float64); ok {
+				out = append(out, float32(f))
 			}
 		}
+		return out
 	}
 	return nil
 }

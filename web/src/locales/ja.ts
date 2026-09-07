@@ -184,7 +184,7 @@ export default {
       similarityThreshold: '類似度しきい値',
 
       similarityThresholdTip:
-        'RAGFlowは、ユーザークエリとチャンク間の類似度スコアがこのしきい値を下回る場合、そのチャンクを結果から除外します。デフォルトでは、閾値は0.2に設定されています。これは、ハイブリッド類似度スコアが20以上のチャンクのみが取得されることを意味します。',
+        'RAGFlowは、ユーザークエリとチャンク間の類似度スコアがこのしきい値を下回る場合、そのチャンクを結果から除外します。デフォルトでは、閾値は20に設定されています。これは、ハイブリッド類似度スコアが20以上のチャンクのみが取得されることを意味します。',
 
       vectorSimilarityWeight: 'ベクトル類似度の重み',
 
@@ -207,6 +207,7 @@ export default {
       runningStatus2: 'キャンセル',
       runningStatus3: '成功',
       runningStatus4: '失敗',
+      runningStatusQueued: '待機中',
       pageRanges: 'ページ範囲',
 
       pageRangesTip:
@@ -219,7 +220,7 @@ export default {
       layoutRecognize: 'レイアウト認識',
 
       layoutRecognizeTip:
-        'レイアウト分析のためにビジュアルモデルを使用し、文書の構造を理解しやすくします。詳細については、https://ragflow.io/docs/dev/select_pdf_parser をご覧ください。',
+        'レイアウト分析のためにビジュアルモデルを使用し、文書の構造を理解しやすくします。詳細については、https://ragflow.io/docs/dataset_configuration#document-parsing-configuration をご覧ください。',
 
       taskPageSize: 'タスクページサイズ',
       taskPageSizeMessage: 'タスクページサイズを入力してください',
@@ -251,7 +252,7 @@ export default {
         'デリミタやセパレータは、一つまたは複数の特殊文字で構成できます。複数の文字の場合、バッククォート(``)で囲むようにしてください。たとえば、デリミタを次のように設定した場合: \\n ## ;、テキストは行末、ダブルハッシュ記号(##)、およびセミコロンで分割されます。デリミタを設定する前に、テキストのセグメンテーションとチャンキングのメカニズムを理解していることを確認してください。',
 
       html4excel: 'ExcelをHTMLに変換',
-      html4excelTip: `General切片方法と併用してください。無効の場合、表計算ファイル（XLSX、XLS（Excel 97-2003））は行ごとにキーと値のペアとして解析されます。有効の場合、表計算ファイルはHTML表として解析されます。元の表が12行を超える場合、システムは自動的に12行ごとに複数のHTML表に分割します。詳細については、https://ragflow.io/docs/dev/enable_excel2html をご覧ください。`,
+      html4excelTip: `General切片方法と併用してください。無効の場合、表計算ファイル（XLSX、XLS（Excel 97-2003））は行ごとにキーと値のペアとして解析されます。有効の場合、表計算ファイルはHTML表として解析されます。元の表が12行を超える場合、システムは自動的に12行ごとに複数のHTML表に分割します。詳細については、https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration をご覧ください。`,
       autoKeywords: '自動キーワード',
       autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
       autoQuestions: '自動質問',
@@ -330,12 +331,6 @@ export default {
         'ナレッジコンパイルテンプレートが設定されたすべてのドキュメントから、アーティファクトページ（エンティティ/コンセプト/トピックのwiki）を作成します。実行のたびに、新規追加されたチャンクのみが処理されます。',
       generateToSkills:
         'このデータセットから階層的なスキルツリーを構築し、生成されたスキルページを検索・再利用のために保存します。',
-      noWikiPages: 'wikiページはまだありません',
-      clearWikiTitle: 'wikiをクリア',
-      clearWikiDescription:
-        'このデータセット内のすべてのwikiページをクリアしてもよろしいですか？この操作は元に戻せません。',
-      noSkills: 'スキルはまだありません',
-      generate: '生成',
       raptor: 'RAPTOR',
       artifact: 'アーティファクト',
       toSkills: 'スキルへ',
@@ -370,34 +365,6 @@ export default {
       Parse: 'パース',
       knowledgeGraph: 'ナレッジグラフ',
       compilation: 'コンパイル',
-      export: 'エクスポート',
-      version: 'バージョン',
-      versionHistory: 'バージョン履歴',
-      currentVersion: '現在のバージョン',
-      versionDiff: 'このバージョンでの変更点',
-      noDiffAvailable: '表示する変更はありません',
-      viewingVersion: '表示中のバージョン',
-      commit: 'コミット',
-      confirmCommit: 'コミットを確定',
-      versionContent: 'バージョン内容',
-      versionContentPlaceholder: 'バージョン内容を入力してください',
-      versionContentRequired: 'バージョン内容を入力してください',
-      graph: 'グラフ',
-      graphPlaceholder: 'グラフビューのプレースホルダー',
-      llmWiki: 'LLM Wiki',
-      skills: 'スキル',
-      contents: 'ナビゲーション',
-      topics: 'トピック',
-      concept: 'コンセプト',
-      entity: 'エンティティ',
-      createDirectoryFolder: 'ディレクトリを作成',
-      directoryName: '名前',
-      directoryNamePlaceholder: 'インスタンス名',
-      directoryRule: 'ルール',
-      directoryRulePlaceholder: '入力してください',
-      selectArtifact: 'ナビゲーションから項目を選択すると詳細が表示されます',
-      sourceDocuments: 'ソースドキュメント',
-      compilationTitleSuffix: 'のデータセット',
       noTestResultsForRuned:
         '関連する結果が見つかりませんでした。クエリまたはパラメータを調整してください。',
       noTestResultsForNotRuned:
@@ -472,6 +439,12 @@ export default {
       dialogueExamplesTitle: '会話の例',
       methodEmpty: 'ナレッジベースカテゴリの視覚的説明がここに表示されます',
 
+      audio: `<p>対応ファイル形式は <b>WAV、MP3、AAC、FLAC、OGG</b> およびその他の一般的な音声形式です。</p>
+<p>この方法は、音声認識モデルを使用して音声ファイルをテキストに文字起こしします。</p>`,
+      email: `<p>対応ファイル形式は <b>EML</b> と <b>MSG</b> です。</p>
+<p>この方法はメールファイルを解析し、ヘッダーフィールド（差出人、宛先、CC、件名、日付など）、本文、添付ファイルを抽出します。</p>`,
+      knowledgeCompiler: `<p>このパイプラインはファイルを解析・チャンク化した後、Knowledge Compiler コンポーネントを通じてチャンクを構造化ナレッジユニット（ナレッジグラフ、Wiki、RAPTOR、マインドマップ、データセットナビゲーション）にコンパイルします。</p>
+<p>コンパイルされたナレッジユニットはチャンクとしてチャンクストリームにマージされて出力されるため、チャンク化されたドキュメントの上に検索可能なナレッジレイヤーを構築するのに最適です。</p>`,
       book: `<p>対応ファイル形式は<b>DOCX</b>, <b>PDF</b>, <b>TXT</b>です。</p><p>
       PDF形式の書籍では、解析時間を短縮するため、<i>ページ範囲</i>を設定してください。</p>`,
 
@@ -595,7 +568,7 @@ export default {
       randomSeedMessage: 'ランダムシードは必須です',
       entityTypes: 'エンティティタイプ',
       pageRank: 'ページランク',
-      pageRankTip: `検索時に特定の知識ベースにより高いPageRankスコアを割り当てることができます。対応するスコアは、これらの知識ベースから取得されたチャンクのハイブリッド類似度スコアに加算され、ランキングが向上します。詳細については、https://ragflow.io/docs/dev/set_page_rank を参照してください。`,
+      pageRankTip: `検索時に特定の知識ベースにより高いPageRankスコアを割り当てることができます。対応するスコアは、これらの知識ベースから取得されたチャンクのハイブリッド類似度スコアに加算され、ランキングが向上します。詳細については、https://ragflow.io/docs/dataset_configuration#basic-information を参照してください。`,
       paddleocrOptions: 'PaddleOCRオプション',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'PaddleOCRサービスのAPIエンドポイントURL',
@@ -612,7 +585,7 @@ export default {
       datasetDescription: 'データセットの説明を入力してください',
       overlappedPercentTip: '隣接する2つのチャンク間の重複率です。',
       globalIndexModelTip:
-        'ナレッジグラフ、RAPTOR、自動メタデータ、自動キーワード、自動質問の生成に使用されます。モデルの性能が生成品質に影響します。',
+        '自動メタデータ、自動キーワード、自動質問の生成に使用されます。モデルの性能が生成品質に影響します。',
       globalIndexModel: 'インデックスモデル',
       settings: '設定',
       autoMetadataTip:
@@ -641,9 +614,6 @@ export default {
       dataSource: 'データソース',
       linkSourceSetTip: 'このデータセットとのデータソース連携を管理します',
       linkDataSource: 'データソースを連携',
-      tocExtraction: 'PageIndex',
-      tocExtractionTip:
-        ' 既存のチャンクに対して、階層的な目次（ファイルごとに1つのディレクトリ）を生成します。クエリ時にディレクトリ拡張が有効になっている場合、システムは大規模モデルを使用してユーザーの質問に関連するディレクトリ項目を判定し、関連するチャンクを特定します。',
       deleteGenerateModalContent:
         "\n        <p>生成された<strong class='text-text-primary'>{{type}}</strong>の結果を削除すると、\n        このデータセットから派生したすべてのエンティティと関係性が削除されます。\n        元のファイルはそのまま残ります。<p>\n        <br/>\n        続行しますか？\n      ",
       extractRaptor: 'RAPTORを抽出',
@@ -718,7 +688,7 @@ export default {
       tagTable: 'テーブル',
       tagSet: 'タグセット',
       tagSetTip:
-        '\n     <p> 1つまたは複数のタグデータセットを選択すると、データセット内のチャンクに自動的にタグが付与されます。詳細は https://ragflow.io/docs/dev/use_tag_sets をご覧ください。</p>\n<p>ユーザーのクエリにも自動的にタグが付与されます。</p>\nこの自動タグ付け機能は、既存のデータセットにドメイン固有の知識をもう一層追加することで、検索精度を向上させます。\n<p>自動タグ付けと自動キーワードの違い:</p>\n<ul>\n  <li>タグデータセットはユーザーが定義したクローズドセットであるのに対し、LLMが抽出するキーワードはオープンセットとみなせます。</li>\n  <li>自動タグ付け機能を実行する前に、指定された形式でタグセットをアップロードする必要があります。</li>\n  <li>自動キーワード機能はLLMに依存しており、多くのトークンを消費します。</li>\n</ul>\n      ',
+        '\n     <p> 1つまたは複数のタグデータセットを選択すると、データセット内のチャンクに自動的にタグが付与されます。詳細は https://ragflow.io/docs/dataset_configuration#basic-information をご覧ください。</p>\n<p>ユーザーのクエリにも自動的にタグが付与されます。</p>\nこの自動タグ付け機能は、既存のデータセットにドメイン固有の知識をもう一層追加することで、検索精度を向上させます。\n<p>自動タグ付けと自動キーワードの違い:</p>\n<ul>\n  <li>タグデータセットはユーザーが定義したクローズドセットであるのに対し、LLMが抽出するキーワードはオープンセットとみなせます。</li>\n  <li>自動タグ付け機能を実行する前に、指定された形式でタグセットをアップロードする必要があります。</li>\n  <li>自動キーワード機能はLLMに依存しており、多くのトークンを消費します。</li>\n</ul>\n      ',
       topnTags: '上位N件のタグ',
       tags: 'タグ',
       addTag: 'タグを追加',
@@ -752,7 +722,6 @@ export default {
       enabledSelected: '選択を有効化',
       disabledSelected: '選択を無効化',
       deleteSelected: '選択を削除',
-      search: '検索',
       all: 'すべて',
       enabled: '有効',
       disabled: '無効',
@@ -792,8 +761,6 @@ export default {
         raptor: 'RAPTOR',
       },
 
-      representationUnsupported: 'この表現形式にはまだ対応していません。',
-      representationEmpty: '利用可能な表現テンプレートがありません。',
       enable: '有効化',
       disable: '無効化',
       delete: '削除',
@@ -855,7 +822,7 @@ export default {
       topN: 'トップN',
       topNTip: `類似度スコアがしきい値を超えるチャンクのうち、上位N件のみがLLMに供給されます。`,
       variable: '変数',
-      variableTip: `RAGFlowのチャットアシスタント管理APIと組み合わせて使用することで、変数はより柔軟なシステムプロンプト戦略を開発するのに役立ちます。定義された変数は、LLMのプロンプトの一部として「システムプロンプト」で使用されます。{knowledge}は、指定された知識ベースから取得された部分を表す特別な予約変数であり、「システムプロンプト」ではすべての変数を波括弧{}で囲む必要があります。詳細はhttps://ragflow.io/docs/dev/set_chat_variablesを参照してください。`,
+      variableTip: `RAGFlowのチャットアシスタント管理APIと組み合わせて使用することで、変数はより柔軟なシステムプロンプト戦略を開発するのに役立ちます。定義された変数は、LLMのプロンプトの一部として「システムプロンプト」で使用されます。{knowledge}は、指定された知識ベースから取得された部分を表す特別な予約変数であり、「システムプロンプト」ではすべての変数を波括弧{}で囲む必要があります。詳細はhttps://ragflow.io/docs/chat_configuration#system-promptを参照してください。`,
       add: '追加',
       key: 'キー',
       optional: 'オプション',
@@ -928,6 +895,9 @@ export default {
       created: '作成日',
       action: 'アクション',
       embedModalTitle: 'ウェブサイトに埋め込む',
+      embedUserIdPlaceholder: '例: user-001',
+      embedUserIdTooltip:
+        '埋め込みページのエンドユーザーを識別する文字列（最大255文字）です。埋め込みURLに userId パラメータとして付加されます。',
       comingSoon: '近日公開',
       fullScreenTitle: '全画面埋め込み',
 
@@ -1369,6 +1339,8 @@ export default {
         'Microsoft Graph経由でSharePointサイトに接続し、ドキュメントライブラリを同期します。',
       sharepointSiteUrlTip:
         'インデックス対象のSharePointサイトの完全なURLです（例: https://contoso.sharepoint.com/sites/MySite）。Sites.Read.AllおよびFiles.Read.Allのアプリケーション権限（管理者の同意）を持つAzure ADアプリが必要です。',
+      azure_devopsDescription:
+        'Azure DevOps に接続し、リポジトリのファイルとプルリクエストを同期します。',
       bitbucketDescription: 'Bitbucketに接続し、PRの内容を同期します。',
       bitbucketTopWorkspaceTip:
         'インデックス対象のBitbucketワークスペースです（例: https://bitbucket.org/atlassian/workspace の「atlassian」）。',
@@ -1597,79 +1569,6 @@ export default {
       datasourceDescription: 'データソースと接続を管理します',
       chatChannels: 'チャットチャネル',
       chatChannelsDescription: 'チャットチャネルのボットと認証情報を管理します',
-      compilationTemplates: 'コンパイルテンプレート',
-      compilationTemplatesDescription: 'コンパイルテンプレートを管理します',
-      addTemplateGroup: 'テンプレートグループを追加',
-      editTemplateGroup: 'テンプレートグループを編集',
-      groupName: 'グループ名',
-      groupNameRequired: 'グループ名を入力してください',
-      groupDescription: 'グループの説明',
-      templateCount: '{{count}}件のテンプレート',
-      atLeastOneTemplateRequired: '少なくとも1つのテンプレートが必要です',
-      template: 'テンプレート',
-      deleteTemplateGroupModalTitle: 'テンプレートグループを削除',
-      deleteTemplateGroupModalContent:
-        'このテンプレートグループを削除してもよろしいですか？この操作は元に戻せません。',
-      addTemplate: 'テンプレートを追加',
-      noTemplates: 'コンパイルテンプレートはまだありません。',
-      deleteTemplateModalTitle: 'テンプレートを削除',
-      deleteTemplateModalContent:
-        'このテンプレートを削除してもよろしいですか？この操作は元に戻せません。',
-      editTemplate: 'テンプレートを編集',
-      templateName: '名前',
-      templateNameRequired: 'テンプレート名を入力してください',
-      templateDescription: '説明',
-      llmForExtraction: '抽出用LLM',
-      llmForExtractionRequired: 'LLMモデルを選択してください',
-      templateKind: '種類',
-      templateKindRequired: '種類を選択してください',
-      entitySpecification: 'エンティティ仕様',
-      relationSpecification: 'リレーション仕様',
-      conceptSpecification: 'コンセプト仕様',
-      claimSpecification: 'クレーム仕様',
-      field: 'フィールド',
-      fieldType: 'タイプ',
-      fieldTypeRequired: 'タイプを選択してください',
-      fieldDescription: '説明',
-      fieldDescriptionRequired: '説明を入力してください',
-      fieldRule: 'ルール',
-      rulePlaceholder: '抽出ルールを入力',
-      description: '説明',
-      descriptionPlaceholder: '説明を入力してください',
-      addField: 'フィールドを追加',
-      example: 'ページ構成の例',
-      examplePlaceholder: '入力例',
-      instruction: '指示',
-      globalRules: 'グローバルルール',
-      globalRulesPlaceholder: 'グローバルなコンパイルルールを入力してください',
-      raptorTreeSettings: 'RAPTORツリー設定',
-      summarizationPrompt: '要約プロンプト',
-      maxToken: '最大トークン数',
-      maxTokenRequired: '最大トークン数を入力してください',
-      threshold: '閾値',
-      rechunkByTreeLeaves: 'ツリーの葉ノードで再チャンク化',
-      rechunkByTreeLeavesTip:
-        '各葉クラスターの元チャンクを1つの置換用チャンクに統合します。元のチャンクは保持されますが、検索には使用できないマークが付けられます。この設定を有効にできるツリーテンプレートは、グループごとに1つのみです。',
-      jsonPreview: 'JSONプレビュー',
-      processFlow: '処理フロー',
-      processFlowComingSoon: '処理フローのプレビューは近日公開予定です',
-      basicInfo: '基本情報',
-      basicInfoDescription: 'テンプレートグループの基本情報',
-      templateWizardConfiguration: '設定',
-      templateWizardConfigurationDescription: 'テンプレートを設定します',
-      blueprints: 'ブループリント',
-      blueprintsDescription: '必要なブループリントを選択してください',
-      custom: 'カスタム',
-      templates: 'テンプレート',
-      addFieldModalTitle: 'フィールドを追加',
-      editFieldModalTitle: 'フィールドを編集',
-      selectFieldType: 'フィールドタイプを選択',
-      blueprintsPlaceholder: 'ブループリントのプレースホルダー',
-      blueprintsPlaceholderDescription:
-        '左側のブループリントライブラリから特定の構造を選択またはカスタマイズして、Wikiのコンテンツ構成と表示形式を定義します。',
-      blueprintsPlaceholderSkip:
-        '特に要件がない場合は、このステップをスキップしても構いません。その場合、システムがデフォルトの構造を自動的に適用します。',
-      useBlueprint: 'このブループリントを使用',
       channelEmptyTip:
         'チャットチャンネルはまだ追加されていません。以下から選択して接続してください。',
       availableChannels: '利用可能なチャンネル',
@@ -1862,15 +1761,13 @@ export default {
         enableTextCrossPage: 'ページをまたぐテキストの結合を有効化',
         enableTableCrossPage: 'ページをまたぐテーブルの結合を有効化',
         keepHeaderFooter: 'ヘッダー・フッターを保持',
-        purchaseUrl:
-          'API購入: 中国本土 — https://somark.cn/workbench/purchase / 海外(台湾、香港、マカオを含む) — https://somark.ai/studio/purchase',
       },
 
       modelTypes: {
         chat: 'チャット',
         embedding: '埋め込み',
         rerank: '再ランク',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'VLM',
         ocr: 'OCR',
@@ -1886,6 +1783,8 @@ export default {
       listModelsLoading: 'モデルを読み込み中…',
       selectModelBeforeVerify:
         '検証する前に、少なくとも1つのモデルを選択してください。',
+      selectModelBeforeSave:
+        '保存する前に、少なくとも1つのモデルを検出して選択してください。',
       addCustomModel: 'カスタムモデルを追加',
       addCustomModelTitle: 'カスタムモデルを追加',
       batchAddModels: '表示中のモデルをすべて追加',
@@ -3658,12 +3557,73 @@ export default {
       delMemory: 'メモリーを削除',
     },
 
-    datasetSkill: {
-      folders: 'スキル',
-      empty: '利用可能なスキルがありません',
-      selectFolder: '詳細を表示するスキルを選択してください',
-      currentFolder: 'スキル',
-      noContent: 'コンテンツがありません',
+    knowledgeCompilation: {
+      addTemplateGroup: 'テンプレートグループを追加',
+      editTemplateGroup: 'テンプレートグループを編集',
+      deleteTemplateGroupTitle: 'テンプレートグループを削除',
+      deleteTemplateGroupDescription:
+        'このテンプレートグループを削除してもよろしいですか？この操作は元に戻せません。',
+      templateNameRequired: 'テンプレート名を入力してください',
+      templateKindRequired: '種類を選択してください',
+      builtinTemplates: '組み込みテンプレート',
+      entitySpecification: 'エンティティ仕様',
+      relationSpecification: 'リレーション仕様',
+      conceptSpecification: 'コンセプト仕様',
+      claimSpecification: 'クレーム仕様',
+      fieldType: 'タイプ',
+      fieldTypeRequired: 'タイプを選択してください',
+      description: '説明',
+      fieldDescriptionRequired: '説明を入力してください',
+      fieldRule: 'ルール',
+      addField: 'フィールドを追加',
+      editField: 'フィールドを編集',
+      selectFieldType: 'フィールドタイプを選択',
+      example: '例',
+      instruction: '指示',
+      custom: 'カスタム',
+      blueprints: 'ブループリント',
+      globalRules: 'グローバルルール',
+      globalRulesPlaceholder: 'グローバルなコンパイルルールを入力してください',
+      raptorTreeSettings: 'RAPTORツリー設定',
+      summarizationPrompt: '要約プロンプト',
+      maxToken: '最大トークン数',
+      maxTokenRequired: '最大トークン数を入力してください',
+      rechunkByTreeLeaves: 'ツリーの葉ノードで再チャンク化',
+      rechunkByTreeLeavesTip:
+        '各葉クラスターの元チャンクを1つの置換用チャンクに統合します。元のチャンクは保持されますが、検索には使用できないマークが付けられます。この設定を有効にできるツリーテンプレートは、グループごとに1つのみです。',
+      jsonPreview: 'JSONプレビュー',
+      processFlow: '処理フロー',
+      processFlowComingSoon: '処理フローのプレビューは近日公開予定です',
+      compilationTitleSuffix: 'のデータセット',
+      llmWiki: 'LLM Wiki',
+      skills: 'スキル',
+      graph: 'グラフ',
+      noWikiPages: 'wikiページはまだありません',
+      noSkills: 'スキルはまだありません',
+      contents: 'ナビゲーション',
+      topics: 'トピック',
+      selectArtifact: 'ナビゲーションから項目を選択すると詳細が表示されます',
+      sourceDocuments: 'ソースドキュメント',
+      clearWikiTitle: 'wikiをクリア',
+      clearWikiDescription:
+        'このデータセット内のすべてのwikiページをクリアしてもよろしいですか？この操作は元に戻せません。',
+      generate: '生成',
+      export: 'エクスポート',
+      version: 'バージョン',
+      versionHistory: 'バージョン履歴',
+      versionDiff: 'このバージョンでの変更点',
+      noDiffAvailable: '表示する変更はありません',
+      commit: 'コミット',
+      confirmCommit: 'コミットを確定',
+      versionContent: 'バージョン内容',
+      versionContentPlaceholder: 'バージョン内容を入力してください',
+      versionContentRequired: 'バージョン内容を入力してください',
+      createDirectoryFolder: 'ディレクトリを作成',
+      directoryRule: 'ルール',
+      skillFolders: 'スキル',
+      skillEmpty: '利用可能なスキルがありません',
+      representationEmpty: '利用可能な表現テンプレートがありません。',
+      representationUnsupported: 'この表現形式にはまだ対応していません。',
     },
 
     llmTools: {
@@ -3687,10 +3647,6 @@ export default {
     pagination: {
       total: '合計 {{total}} 件',
       page: '{{page}} 件 / ページ',
-    },
-
-    knowledgeCompilation: {
-      builtinTemplates: '組み込みテンプレート',
     },
   },
 };

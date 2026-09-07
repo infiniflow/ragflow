@@ -40,7 +40,12 @@ func NewXiaomiModel(baseURL map[string]string, urlSuffix URLSuffix) *XiaomiModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
+			// Xiaomi authenticates with the non-standard "api-key" header
+			// instead of "Authorization: Bearer".
+			authHeader: func(cfg *APIConfig) (string, string) {
+				return "api-key", *cfg.ApiKey
+			},
 		},
 	}
 }
@@ -72,10 +77,8 @@ func (x *XiaomiModel) ChatWithMessages(ctx context.Context, modelName string, me
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-	delete(reqBody, "max_tokens")
 
 	if chatModelConfig != nil {
-
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_completion_tokens"] = *chatModelConfig.MaxTokens
 		}
@@ -93,94 +96,12 @@ func (x *XiaomiModel) ChatWithMessages(ctx context.Context, modelName string, me
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := x.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", *apiConfig.ApiKey)
-
-	resp, err := x.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
-	reasonContent, _ = messageMap["reasoning_content"].(string)
-	if reasonContent == "" && chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		// If reasoning_content not in response, try parsing from content tags
-		reasoning, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
-		if reasoning != nil {
-			reasonContent = *reasoning
-			content = *answer
-		}
-	}
-	// if first char of reasonContent is \n remove the '\n'
-	if reasonContent != "" && reasonContent[0] == '\n' {
-		reasonContent = reasonContent[1:]
-	}
-
-	var toolCalls []map[string]interface{}
-	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
-		for _, tc := range tcs {
-			if tcMap, ok := tc.(map[string]interface{}); ok {
-				toolCalls = append(toolCalls, tcMap)
-			}
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-
-	return chatResponse, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (x *XiaomiModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -203,7 +124,9 @@ func (x *XiaomiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
-	delete(reqBody, "max_tokens")
+	reqBody["stream_options"] = map[string]interface{}{
+		"include_usage": true,
+	}
 
 	if modelConfig != nil {
 		if modelConfig.MaxTokens != nil {
@@ -224,91 +147,16 @@ func (x *XiaomiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", *apiConfig.ApiKey)
-
-	resp, err := x.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// SSE parsing: read line by line
-	if modelConfig != nil {
-		modelConfig.ToolCallsResult = nil
-	}
-	accumulatedToolCalls := make(map[int]map[string]interface{})
-	if _, err = ParseSSEStreamTolerant[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err = sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err = sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-
-	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
-
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
+	return x.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
+	})
 }
 
-func (x *XiaomiModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (x *XiaomiModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("no such method %s", x.Name())
 }
 
-func (x *XiaomiModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (x *XiaomiModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method %s", x.Name())
 }
 
@@ -485,7 +333,7 @@ func (x *XiaomiModel) newXiaomiASRRequest(ctx context.Context, modelName *string
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", *apiConfig.ApiKey)
+	x.baseModel.applyAuth(req, apiConfig)
 
 	return req, nil
 }
@@ -679,7 +527,7 @@ func (x *XiaomiModel) newXiaomiTTSRequest(ctx context.Context, modelName *string
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", *apiConfig.ApiKey)
+	x.baseModel.applyAuth(req, apiConfig)
 
 	return req, nil
 }

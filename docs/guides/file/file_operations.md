@@ -2,6 +2,7 @@
 sidebar_position: 2
 slug: /file_management/file_operations
 sidebar_label: File Operations
+title: File Operations
 sidebar_custom_props: {
   categoryIcon: LucideFolderDot
 }
@@ -10,6 +11,8 @@ sidebar_custom_props: {
 # File Operations
 
 After you hover over a file row, the **Operations** column displays the available operation buttons. The available operations for folders and regular files are slightly different. For files from external data sources, some operations, such as moving, renaming, or deleting, may be restricted by the data source permissions.
+
+![File operations](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/file_operations.jpg)
 
 **Add to Knowledge Base**: Applies to files. Associates the file with one or more knowledge bases, allowing the knowledge base to use the file as a data source.
 

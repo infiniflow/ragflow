@@ -1,11 +1,12 @@
 ---
 sidebar_position: 11
-sidebar_label: "FAQ"
+sidebar_label: FAQ
+title: FAQ
 ---
 
-## FAQ
+# FAQ
 
-### Why does inviting a member fail?
+### Why Does Inviting a Member Fail?
 
 Common causes include:
 
@@ -14,18 +15,18 @@ Common causes include:
 - The user has already been invited.
 - The current user is not the team owner.
 
-### Why can't an invited user see team resources?
+### Why Can't an Invited User See Team Resources?
 
 The invited user must first click **Agree** to join the team. The target resource must also be set to **Team** or otherwise authorized to the user.
 
-### Why can a team member only see some knowledge bases after joining a team?
+### Why Can a Team Member Only See Some Knowledge Bases After Joining a Team?
 
 Only knowledge bases whose permissions allow team access are visible to joined team members.
 
-### Why can't a team member delete a shared knowledge base?
+### Why Can't a Team Member Delete a Shared Knowledge Base?
 
 Deleting a shared knowledge base generally requires the current user to be the creator of the knowledge base. Team sharing grants access and use permissions, but it does not automatically grant delete permission.
 
-### Are Team roles the same as Enterprise roles?
+### Are Team Roles the Same as Enterprise Roles?
 
 No. Team roles describe membership in a workspace. Enterprise roles describe administrative resource action permissions.

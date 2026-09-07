@@ -59,7 +59,7 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 
 	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
-		if err == dao.ErrUserCanvasNotFound {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
 			return
 		}
@@ -97,7 +97,7 @@ func (h *AgentHandler) componentInputForm(ctx context.Context, dslMap map[string
 	params, _ := dsl.ExtractComponentParams(dslMap, componentID)
 	comp, err := runtime.DefaultFactory()(name, params)
 	if err != nil {
-		return nil, fmt.Errorf("%w: component factory: %v", dsl.ErrMalformedDSL, err)
+		return nil, fmt.Errorf("%w: component factory: %w", dsl.ErrMalformedDSL, err)
 	}
 	getter, ok := comp.(interface{ GetInputForm() map[string]any })
 	if !ok {
@@ -144,7 +144,7 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 
 	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
 	if err != nil {
-		if err == dao.ErrUserCanvasNotFound {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
 			return
 		}

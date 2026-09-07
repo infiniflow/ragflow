@@ -102,7 +102,7 @@ function NoteNode({
               control={form.control}
               name="text"
               render={({ field }) => (
-                <FormItem className="h-full">
+                <FormItem className="h-full pb-2">
                   <FormControl>
                     <Textarea
                       placeholder={t('flow.notePlaceholder')}

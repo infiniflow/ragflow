@@ -33,7 +33,7 @@ export function DynamicVariableForm({
 
   const add = useCallback(() => {
     append({
-      key: undefined,
+      key: '',
       optional: false,
     });
   }, [append]);

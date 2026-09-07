@@ -86,7 +86,7 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 
 	// Clean up response - remove thinking tags if present
 	result := strings.TrimSpace(*response.Answer)
-	result = thinkBlockRE.ReplaceAllString(result, "")
+	result = common.StripThinkTrailing(result)
 	result = strings.TrimSpace(result)
 
 	if strings.Contains(result, "**ERROR**") {
@@ -188,7 +188,7 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	result := *response.Answer
 
 	// Clean up response - remove think tags and trim
-	result = thinkBlockRE.ReplaceAllString(result, "")
+	result = common.StripThinkTrailing(result)
 
 	if strings.Contains(result, "**ERROR**") {
 		return query, nil
@@ -350,7 +350,7 @@ func FullQuestion(
 		return fallbackToLatestUser(messages), fmt.Errorf("FullQuestion: empty response")
 	}
 	cleaned := strings.TrimSpace(*resp.Answer)
-	cleaned = thinkBlockRE.ReplaceAllString(cleaned, "")
+	cleaned = common.StripThinkTrailing(cleaned)
 	cleaned = strings.TrimSpace(cleaned)
 	if errorMarkerRE.MatchString(cleaned) {
 		return fallbackToLatestUser(messages), nil

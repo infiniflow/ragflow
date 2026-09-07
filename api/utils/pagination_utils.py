@@ -14,11 +14,38 @@
 #  limitations under the License.
 #
 
+DEFAULT_PAGE = 1
+DEFAULT_PAGE_SIZE = 30
 REST_API_MAX_PAGE_SIZE = 100
+REST_API_MAX_IDS = 100
 
 
-def validate_rest_api_page_size(page_size: int) -> int:
-    """Validate REST API page_size values against the public maximum."""
-    if page_size > REST_API_MAX_PAGE_SIZE:
+def validate_rest_api_page(page) -> int:
+    """Validate page, if invalid, silent fallback to default page"""
+    try:
+        int_page = int(page)
+    except (TypeError, ValueError):
+        return DEFAULT_PAGE
+    if int_page < 1:
+        return DEFAULT_PAGE
+    return int_page
+
+
+def validate_rest_api_page_size(page_size) -> int:
+    """Validate page_size, if invalid, silent fallback to default page_size, and validate it against the public maximum."""
+    try:
+        int_page_size = int(page_size)
+    except (TypeError, ValueError):
+        return DEFAULT_PAGE_SIZE
+    if int_page_size < 1:
+        return DEFAULT_PAGE_SIZE
+    if int_page_size > REST_API_MAX_PAGE_SIZE:
         raise ValueError(f"page_size must be less than or equal to {REST_API_MAX_PAGE_SIZE}")
-    return page_size
+    return int_page_size
+
+
+def validate_rest_api_ids(ids: list | None, field_name: str = "ids") -> list | None:
+    """Validate REST API ID lists against the public maximum."""
+    if ids is not None and len(ids) > REST_API_MAX_IDS:
+        raise ValueError(f"{field_name} must contain at most {REST_API_MAX_IDS} IDs")
+    return ids
