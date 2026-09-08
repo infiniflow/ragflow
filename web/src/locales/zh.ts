@@ -2405,6 +2405,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       youComFreshnessMonth: '一个月内',
       youComFreshnessYear: '一年内',
       youComApiKeyTip: '可选。留空则使用免密钥的免费额度。',
+      sofyaSearch: 'Sofya',
+      sofyaSearchDescription:
+        '基于 Sofya 的网络搜索组件。根据搜索深度，结果附带结果页面的正文内容或仅附带搜索摘要。需要配置 API Key。',
+      sofyaSearchDepth: '搜索深度',
+      sofyaSearchDepthTip:
+        'Basic 返回每条结果页面的正文内容；Snippets 只返回搜索摘要，速度更快、消耗更少。',
+      sofyaSearchDepthBasic: '页面正文',
+      sofyaSearchDepthSnippets: '仅摘要',
+      sofyaApiKeyTip: '必填。请在 sofya.co 申请 API Key。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       browser: 'Browser',
