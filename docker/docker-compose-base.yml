@@ -310,7 +310,7 @@ services:
       - ragflow-go
     volumes:
       - kvrocks_data:/var/lib/kvrocks
-      - ./docker/kvrocks-entrypoint.sh:/etc/kvrocks/entrypoint.sh:ro
+      - ./kvrocks-entrypoint.sh:/etc/kvrocks/entrypoint.sh:ro
     networks:
       - ragflow
     restart: unless-stopped
