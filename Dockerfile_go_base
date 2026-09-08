@@ -1,0 +1,106 @@
+# base stage
+FROM ubuntu:24.04 AS base
+USER root
+SHELL ["/bin/bash", "-c"]
+
+ARG NEED_MIRROR=1
+
+#Optional parameter
+#If set NEED_MIRROR=1, and set GITEE_TOKEN="xxxxx" , donwload source from gitee.
+#If don't set GITEE_TOKEN , download from github
+ARG GITEE_TOKEN
+
+WORKDIR /ragflow
+
+# copy models downloaded via download_deps.py
+# layout.laws/manual/paper.onnx are byte-identical to layout.onnx, so we
+# exclude them from the tar extract and symlink them to layout.onnx instead,
+# saving ~219MB in the image.
+RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
+    tar --exclude='.*' \
+        --exclude='layout.laws.onnx' \
+        --exclude='layout.manual.onnx' \
+        --exclude='layout.paper.onnx' \
+        --exclude='layout.laws.ort' \
+        --exclude='layout.manual.ort' \
+        --exclude='layout.paper.ort' \
+        -cf - \
+        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
+        /huggingface.co/InfiniFlow/deepdoc \
+        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc && \
+    ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.laws.onnx && \
+    ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.manual.onnx && \
+    ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.paper.onnx && \
+    ln -s layout.ort /ragflow/rag/res/deepdoc/layout.laws.ort && \
+    ln -s layout.ort /ragflow/rag/res/deepdoc/layout.manual.ort && \
+    ln -s layout.ort /ragflow/rag/res/deepdoc/layout.paper.ort
+
+# Copy the cl100k_base BPE table used by the Go tokenizer (tiktoken-go
+# cl100k_base). The deps image ships it at its root; the Go image previously
+# mounted only /huggingface.co and omitted this file, so NumTokensFromString
+# silently returned 0. localBpeLoader resolves it from <workdir>/ragflow_deps/,
+# so dropping it here makes the table load offline at startup (see
+# InitCL100KEncoder fail-fast guard).
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/cl100k_base.tiktoken,target=/tmp/cl100k_base.tiktoken \
+    mkdir -p /ragflow/ragflow_deps && \
+    cp /tmp/cl100k_base.tiktoken /ragflow/ragflow_deps/cl100k_base.tiktoken
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Setup apt
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        # CI runners may inject a proxy whose TLS certificate is not trusted inside
+        # the fresh Ubuntu base image yet. Keep the Ubuntu mirror on HTTP here so
+        # the mirror switch remains usable before the full CA store is available.
+        sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
+        sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
+    fi; \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    chmod 1777 /tmp && \
+    apt update && \
+    apt --no-install-recommends install -y ca-certificates curl vim unzip iproute2 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Download resource from GitHub to /usr/share/infinity
+# Ship only the directories required by the runtime tokenizer:
+#   rag     - base analyzer dictionaries (mandatory)
+#   opencc  - Traditional/Simplified Chinese conversion
+#   wordnet - WordNet resources
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    mkdir -p /usr/share/infinity/resource && \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        if [ -n "$GITEE_TOKEN" ]; then \
+            git clone --depth 1 --single-branch "https://oauth2:${GITEE_TOKEN}@gitee.com/infiniflow/resource" /tmp/resource; \
+        else \
+            git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource; \
+        fi; \
+    else \
+        git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource; \
+    fi && \
+    for d in rag opencc wordnet; do \
+        cp -r "/tmp/resource/$d" /usr/share/infinity/resource/; \
+    done && \
+    rm -rf /tmp/resource && \
+    apt-get purge -y git && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+ARG NGINX_VERSION=1.31.3-1~noble
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt -o Acquire::Retries=5 update && \
+    apt -o Acquire::Retries=5 install -y --no-install-recommends gnupg && \
+    mkdir -p /etc/apt/keyrings && \
+    curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/keyrings/nginx-archive-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/nginx-archive-keyring.gpg] https://nginx.org/packages/mainline/ubuntu/ noble nginx" > /etc/apt/sources.list.d/nginx.list && \
+    apt -o Acquire::Retries=5 update && \
+    apt -o Acquire::Retries=5 install -y --no-install-recommends nginx=${NGINX_VERSION} && \
+    apt-mark hold nginx && \
+    apt-get purge -y gnupg && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+

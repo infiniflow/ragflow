@@ -519,7 +519,7 @@ jobs:
           #   - go  -> Dockerfile_go  (Go-native image)
           #   - *   -> Dockerfile_ci  (Python/legacy image)
           if [ "${API_PROXY_SCHEME}" = "go" ]; then
-            DOCKERFILE=Dockerfile_go
+            DOCKERFILE=Dockerfile_go_ci
           else
             DOCKERFILE=Dockerfile_ci
           fi
@@ -1197,7 +1197,7 @@ jobs:
           #   - go  -> Dockerfile_go  (Go-native image)
           #   - *   -> Dockerfile_ci  (Python/legacy image)
           if [ "${API_PROXY_SCHEME}" = "go" ]; then
-            DOCKERFILE=Dockerfile_go
+            DOCKERFILE=Dockerfile_go_ci
           else
             DOCKERFILE=Dockerfile_ci
           fi

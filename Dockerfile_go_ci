@@ -1,0 +1,124 @@
+# ── go-builder stage ──
+
+FROM infiniflow/github_action_runner:latest AS go-builder
+USER root
+SHELL ["/bin/bash", "-c"]
+ARG NEED_MIRROR=1
+
+WORKDIR /ragflow
+
+# Build-time mirror switches for source downloads.
+#   NEED_MIRROR=1 -> use a mirror instead of the default github source
+
+
+# Cache Go modules BEFORE copying source: copy only the manifests, download the
+# full module graph into a persistent BuildKit cache mount, then bring in source.
+# As long as go.mod/go.sum are unchanged, this layer (and its cache) is reused, so
+# `./build.sh --go` below never re-fetches dependencies. GOMODCACHE/GOCACHE are
+# pinned to the mounted paths so `go mod download` and `build.sh --go` share a cache.
+COPY go.mod go.sum ./
+RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod \
+    --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
+    GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild \
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
+    go mod download
+
+COPY internal internal
+COPY cmd cmd
+COPY build.sh ./
+
+# ONNX Runtime static archives: build.sh's _seed_from_system looks for the ORT
+# static libs under ONNXRUNTIME_STATIC_PREFIX (default ~/ragflow-native-libs/onnxruntime).
+# The github_action_runner base image pre-bakes them at /opt/ragflow-native-libs,
+# so we copy them into the expected user-cache path before building. These .a files
+# are consumed at link time only; they do NOT enter the final image (only the
+# compiled /ragflow/bin is COPY --from=go-builder). Without this, ORT linking is
+# silently skipped and the binary fails at startup with
+# "no in-process DeepDoc backend serving" (dlopen(NULL)/dlsym can't find OrtGetApiBase).
+# ${HOME} (not hard-coded /root) keeps the path consistent with build.sh regardless of HOME.
+ARG ORT_VERSION=1.23.2
+RUN set -eux; \
+    mkdir -p "${HOME}/ragflow-native-libs/onnxruntime"; \
+    cp -rn /opt/ragflow-native-libs/onnxruntime/* "${HOME}/ragflow-native-libs/onnxruntime/"; \
+    find "${HOME}/ragflow-native-libs/onnxruntime/static_lib" -name '*.a' | head -5
+
+RUN git config --global safe.directory "*" && \
+    cd /ragflow && ./build.sh --cpp
+
+RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod \
+    --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
+    GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild \
+    git config --global safe.directory "*" && \
+    ./build.sh --go
+
+
+# ── web-builder stage ──
+
+FROM infiniflow/github_action_runner:latest AS web-builder
+USER root
+
+WORKDIR /ragflow
+
+
+# Install frontend dependencies — depends only on package manifests so
+# web source / docs changes don't invalidate this layer.
+COPY web/package.json web/package-lock.json web/.npmrc ./web/
+RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
+    cd web && NODE_OPTIONS="--max-old-space-size=8192" npm install
+
+# Copy full web source and docs for the frontend build.
+COPY web web
+COPY docs docs
+RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
+    cd web && NODE_OPTIONS="--max-old-space-size=8192" VITE_BUILD_SOURCEMAP=false VITE_MINIFY=esbuild npm run build
+
+# Stamp the build version into /ragflow/VERSION. Requires git, which must be
+# preinstalled in the github_action_runner base image (the former apt-get install
+# git step was removed), and the host .git tree bound in at build time.
+RUN --mount=type=bind,source=.git,target=/ragflow/.git \
+    version_info=$(git describe --tags --match=v* --first-parent --always) && \
+    echo "$version_info" > /ragflow/VERSION
+
+# production stage
+FROM infiniflow/ragflow-base:go-v0.1 AS production
+USER root
+
+WORKDIR /ragflow
+
+# Copy the compiled Go backend binaries (set exec bits at copy time to avoid a redundant chmod layer)
+COPY --from=go-builder --chmod=755 /ragflow/bin/ragflow_server /ragflow/bin/ragflow_server
+
+ENV PYTHONPATH=/ragflow/
+
+COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
+COPY --chmod=755 docker/entrypoint*.sh ./
+
+# Copy nginx configuration for frontend serving
+RUN mkdir -p /etc/nginx/conf.d /var/log/nginx
+
+COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
+COPY docker/nginx/ragflow.conf.golang \
+     /etc/nginx/conf.d/
+
+RUN rm -f /etc/nginx/sites-enabled/default
+
+
+COPY conf conf
+COPY agent/templates agent/templates
+COPY rag/prompts rag/prompts
+
+# Wiki page-structure presets read at runtime by the Go backend
+# (CompilationTemplateService.LoadWikiPresets).
+COPY api/db/init_data/compilation_templates ./api/db/init_data/compilation_templates
+
+
+# Copy compiled web pages
+COPY --from=web-builder /ragflow/web/dist /ragflow/web/dist
+
+# Copy version info
+COPY --from=web-builder /ragflow/VERSION /ragflow/VERSION
+
+# Set environment variables
+ENV HF_ENDPOINT=https://hf-mirror.com
+
+ENTRYPOINT ["./entrypoint-go.sh"]
