@@ -165,7 +165,7 @@ class GaussDBConnection(GaussDBConnectionBase):
     def db_type(self) -> str:
         return "gaussdb"
 
-    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None):
+    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None, language: str = None):
         # Keep the functional table even when the optional gsdiskann build
         # fails, while still propagating the index error to the caller.
         statements = [

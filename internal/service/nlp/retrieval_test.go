@@ -136,7 +136,7 @@ func (e *retrievalCountEngine) Close() error               { return nil }
 func (e *retrievalCountEngine) Ping(context.Context) error { return nil }
 func (e *retrievalCountEngine) GetType() string            { return "elasticsearch" }
 func (e *retrievalCountEngine) SupportsPageRank() bool     { return false }
-func (e *retrievalCountEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+func (e *retrievalCountEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
 func (e *retrievalCountEngine) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {

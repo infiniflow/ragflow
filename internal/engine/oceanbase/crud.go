@@ -48,7 +48,7 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		if vectorSize == 0 {
 			return nil, fmt.Errorf("cannot infer vector size from documents")
 		}
-		if err := e.CreateChunkStore(ctx, baseName, datasetID, vectorSize, ""); err != nil {
+		if err := e.CreateChunkStore(ctx, baseName, datasetID, vectorSize, "", ""); err != nil {
 			return nil, err
 		}
 	} else if vectorSize > 0 {

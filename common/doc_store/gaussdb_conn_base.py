@@ -1695,7 +1695,7 @@ class GaussDBConnectionBase(DocStoreConnection):
                 "error": mask_gaussdb_text(exc),
             }
 
-    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None):
+    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None, language: str = None):
         raise NotImplementedError("GaussDB create_idx is implemented in the DDL task")
 
     def delete_idx(self, index_name: str, dataset_id: str):

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
+	"regexp"
 	"strings"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
@@ -327,4 +328,53 @@ func buildChunkTableName(baseName, datasetID string) string {
 // buildMetadataTableName returns the metadata table name for a tenant
 func buildMetadataTableName(tenantID string) string {
 	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
+}
+
+// analyzerLanguages are the dataset languages that need their own RAG
+// analyzer. Infinity's analyzer folds their diacritics to ASCII and skips
+// stemming, so a dataset in one of them has to be indexed and queried through
+// "rag-<language>" instead of the default "rag-coarse"/"rag-fine" pair. Every
+// other language merely selects a Snowball stemmer, and switching one on here
+// would change tokenization for datasets already indexed under the default
+// analyzer.
+//
+// Mirrors _ANALYZER_LANGUAGES in common/doc_store/infinity_conn_base.py.
+var analyzerLanguages = map[string]struct{}{
+	"czech":  {},
+	"slovak": {},
+}
+
+// ragAnalyzer is the analyzer family whose behaviour the dataset language
+// changes. Fields indexed with "whitespace-#" or "rankfeatures" carry
+// keywords, not prose.
+const ragAnalyzer = "rag"
+
+// analyzerForLanguage returns the analyzer to index and query a dataset in
+// language with. Infinity analyzes the query with the analyzer of the fulltext
+// index it matches against, so the language has to be baked into the index
+// when it is created -- there is no per-query analyzer to pass. Chunk tables
+// are per-dataset, which is what makes a per-dataset analyzer possible.
+//
+// Languages outside analyzerLanguages, and analyzers outside the rag family,
+// are returned unchanged.
+func analyzerForLanguage(analyzer, language string) string {
+	key := strings.ToLower(strings.TrimSpace(language))
+	if _, ok := analyzerLanguages[key]; !ok {
+		return analyzer
+	}
+	if base, _, _ := strings.Cut(analyzer, "-"); base != ragAnalyzer {
+		return analyzer
+	}
+	return analyzer + "-" + key
+}
+
+// indexNamePartRe matches everything that cannot appear in an index name.
+var indexNamePartRe = regexp.MustCompile(`[^a-zA-Z0-9]`)
+
+// fulltextIndexName is the name of the fulltext index on fieldName under
+// analyzer. Infinity analyzes a query with the first index it finds for a
+// field, ordered by name, so these names decide which of a field's analyzers a
+// query is analyzed with.
+func fulltextIndexName(fieldName, analyzer string) string {
+	return fmt.Sprintf("ft_%s_%s", indexNamePartRe.ReplaceAllString(fieldName, "_"), indexNamePartRe.ReplaceAllString(analyzer, "_"))
 }

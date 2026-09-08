@@ -290,7 +290,7 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 		return fmt.Errorf("check message index: %w", err)
 	}
 	if !exists {
-		if err := s.memories.docEngine.CreateChunkStore(ctx, indexName, mem.ID, vectorDim, ""); err != nil {
+		if err := s.memories.docEngine.CreateChunkStore(ctx, indexName, mem.ID, vectorDim, "", ""); err != nil {
 			return fmt.Errorf("create message index: %w", err)
 		}
 	}

@@ -165,6 +165,66 @@ def _retry_on_meta_contention(
     raise last_exc
 
 
+# Dataset languages that need their own RAG analyzer. Infinity's analyzer folds
+# their diacritics to ASCII and skips stemming, so a dataset in one of them has
+# to be indexed and queried through "rag-<language>" instead of the default
+# "rag-coarse"/"rag-fine" pair. Every other language merely selects a Snowball
+# stemmer, and switching one on here would change tokenization for datasets
+# already indexed under the default analyzer.
+_ANALYZER_LANGUAGES = frozenset({"czech", "slovak"})
+
+# The analyzer family whose behaviour the dataset language changes. Fields
+# indexed with "whitespace-#" or "rankfeatures" carry keywords, not prose.
+_RAG_ANALYZER = "rag"
+
+
+def _analyzer_for_language(analyzer: str, language: str | None) -> str:
+    """The analyzer to index and query a dataset in ``language`` with.
+
+    Infinity analyzes the query with the analyzer of the fulltext index it
+    matches against, so the language has to be baked into the index when it is
+    created -- there is no per-query analyzer to pass. Chunk tables are
+    per-dataset (``{index_name}_{dataset_id}``), which is what makes a
+    per-dataset analyzer possible in the first place.
+
+    Languages outside :data:`_ANALYZER_LANGUAGES`, and analyzers outside the
+    ``rag`` family, are returned unchanged.
+    """
+    key = (language or "").strip().lower()
+    if key not in _ANALYZER_LANGUAGES:
+        return analyzer
+    if analyzer.split("-", 1)[0] != _RAG_ANALYZER:
+        return analyzer
+    return f"{analyzer}-{key}"
+
+
+def _fulltext_index_name(field_name: str, analyzer: str) -> str:
+    return f"ft_{_index_name_part(field_name)}_{_index_name_part(analyzer)}"
+
+
+def _index_name_part(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9]", "_", value)
+
+
+def _field_analyzers(field_info: dict) -> list[str]:
+    analyzers = field_info["analyzer"]
+    if isinstance(analyzers, str):
+        return [analyzers]
+    return analyzers
+
+
+def _has_rag_fulltext_index(index_names: list[str], field_name: str, analyzer: str) -> bool:
+    """Whether ``field_name`` already has a rag fulltext index on this table.
+
+    Only meaningful for the ``rag`` family: keyword analyzers are language
+    independent, so nothing is preserved by leaving them alone.
+    """
+    if analyzer.split("-", 1)[0] != _RAG_ANALYZER:
+        return False
+    prefix = f"ft_{_index_name_part(field_name)}_{_RAG_ANALYZER}"
+    return any(name.startswith(prefix) for name in index_names)
+
+
 class InfinityConnectionBase(DocStoreConnection):
     def __init__(self, mapping_file_name: str = "infinity_mapping.json", logger_name: str = "ragflow.infinity_conn", table_name_prefix: str = "ragflow_"):
         from common.doc_store.infinity_conn_pool import INFINITY_CONN
@@ -247,12 +307,18 @@ class InfinityConnectionBase(DocStoreConnection):
                     self.logger.info(f"INFINITY added following column to table {table_name}: {field_name} {field_info}")
 
                 if field_info["type"] == "varchar" and "analyzer" in field_info:
-                    analyzers = field_info["analyzer"]
-                    if isinstance(analyzers, str):
-                        analyzers = [analyzers]
-                    for analyzer in analyzers:
+                    for analyzer in _field_analyzers(field_info):
+                        if _has_rag_fulltext_index(index_names, field_name, analyzer):
+                            # The table already carries a rag index on this
+                            # field, under whichever language create_idx chose
+                            # for its dataset. Adding the unsuffixed default
+                            # next to it would not just be redundant: Infinity
+                            # analyzes a query with the first index it finds for
+                            # the field, so the plain "rag-coarse" index would
+                            # win on name order and undo the dataset's language.
+                            continue
                         inf_table.create_index(
-                            f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}",
+                            _fulltext_index_name(field_name, analyzer),
                             IndexInfo(field_name, IndexType.FullText, {"ANALYZER": analyzer}),
                             ConflictType.Ignore,
                         )
@@ -488,9 +554,9 @@ class InfinityConnectionBase(DocStoreConnection):
     Table operations
     """
 
-    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None):
+    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None, language: str = None):
         table_name = f"{index_name}_{dataset_id}"
-        self.logger.debug(f"CREATE_IDX: Creating table {table_name}, parser_id: {parser_id}")
+        self.logger.debug(f"CREATE_IDX: Creating table {table_name}, parser_id: {parser_id}, language: {language}")
 
         inf_conn = self.connPool.get_conn()
         try:
@@ -547,11 +613,9 @@ class InfinityConnectionBase(DocStoreConnection):
             for field_name, field_info in schema.items():
                 if field_info["type"] != "varchar" or "analyzer" not in field_info:
                     continue
-                analyzers = field_info["analyzer"]
-                if isinstance(analyzers, str):
-                    analyzers = [analyzers]
-                for analyzer in analyzers:
-                    idx_name = f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}"
+                for configured in _field_analyzers(field_info):
+                    analyzer = _analyzer_for_language(configured, language)
+                    idx_name = _fulltext_index_name(field_name, analyzer)
                     _retry_on_meta_contention(
                         f"create_index({idx_name}, {table_name})",
                         lambda fn=field_name, an=analyzer, name=idx_name: inf_table.create_index(

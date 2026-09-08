@@ -65,7 +65,7 @@ func chunkTableDDL(tableName string, vectorSize int) []string {
 // CreateChunkStore ensures the tenant chunk table and its indexes exist. All
 // datasets in the tenant share this table, so it is created once and is a
 // no-op for later datasets.
-func (e *serenedbEngine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+func (e *serenedbEngine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	tableName := chunkTableName(baseName)
 	for _, stmt := range chunkTableDDL(tableName, vectorSize) {
 		if err := e.exec(ctx, stmt); err != nil {
@@ -243,7 +243,7 @@ func (e *serenedbEngine) InsertChunks(ctx context.Context, chunks []map[string]i
 				size, _ = strconv.Atoi(m[1])
 			}
 		}
-		if err := e.CreateChunkStore(ctx, baseName, datasetID, size, ""); err != nil {
+		if err := e.CreateChunkStore(ctx, baseName, datasetID, size, "", ""); err != nil {
 			return nil, err
 		}
 	}

@@ -116,7 +116,7 @@ func (m *memNavEngine) Close() error               { return nil }
 func (m *memNavEngine) Ping(context.Context) error { return nil }
 func (m *memNavEngine) GetType() string            { return "mem" }
 func (m *memNavEngine) SupportsPageRank() bool     { return false }
-func (m *memNavEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+func (m *memNavEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
 func (m *memNavEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
