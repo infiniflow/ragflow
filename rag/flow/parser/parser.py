@@ -1259,6 +1259,20 @@ class Parser(ProcessBase):
         self.set_output("output_format", conf["output_format"])
         target_fields = conf["fields"]
 
+        def _decode_payload(payload, charset):
+            """Decode a MIME payload, falling back through the encodings mislabelled
+            mail actually uses. Empty or absent payloads decode to an empty string."""
+            if not payload:
+                return ""
+            for enc in [charset, "utf-8", "gb2312", "gbk", "gb18030", "latin1"]:
+                if not enc:
+                    continue
+                try:
+                    return payload.decode(enc)
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            return payload.decode("utf-8", errors="ignore")
+
         _, ext = os.path.splitext(name)
         if ext == ".eml":
             # handle eml file
@@ -1280,31 +1294,16 @@ class Parser(ProcessBase):
                 body_text, body_html = [], []
 
                 def _add_content(m, content_type):
-                    def _decode_payload(payload, charset, target_list):
-                        try:
-                            target_list.append(payload.decode(charset))
-                        except (UnicodeDecodeError, LookupError):
-                            for enc in ["utf-8", "gb2312", "gbk", "gb18030", "latin1"]:
-                                try:
-                                    target_list.append(payload.decode(enc))
-                                    break
-                                except UnicodeDecodeError:
-                                    continue
-                            else:
-                                target_list.append(payload.decode("utf-8", errors="ignore"))
-
+                    # Read the part that was handed in, not the top-level message:
+                    # get_payload(decode=True) on a multipart container returns None,
+                    # so any message with an attachment used to fail here.
                     if content_type == "text/plain":
-                        payload = msg.get_payload(decode=True)
-                        charset = msg.get_content_charset() or "utf-8"
-                        _decode_payload(payload, charset, body_text)
+                        body_text.append(_decode_payload(m.get_payload(decode=True), m.get_content_charset()))
                     elif content_type == "text/html":
-                        payload = msg.get_payload(decode=True)
-                        charset = msg.get_content_charset() or "utf-8"
-                        _decode_payload(payload, charset, body_html)
-                    elif "multipart" in content_type:
-                        if m.is_multipart():
-                            for part in m.iter_parts():
-                                _add_content(part, part.get_content_type())
+                        body_html.append(_decode_payload(m.get_payload(decode=True), m.get_content_charset()))
+                    elif "multipart" in content_type and m.is_multipart():
+                        for part in m.iter_parts():
+                            _add_content(part, part.get_content_type())
 
                 _add_content(msg, msg.get_content_type())
 
@@ -1319,7 +1318,12 @@ class Parser(ProcessBase):
                         dispositions = content_disposition.strip().split(";")
                         if dispositions[0].lower() == "attachment":
                             filename = part.get_filename()
-                            payload = part.get_payload(decode=True).decode(part.get_content_charset())
+                            # A binary attachment carries no charset, so decoding its
+                            # bytes as text would only push mojibake into the indexed
+                            # content. Keep the name and leave the payload empty.
+                            payload = ""
+                            if part.get_content_maintype() == "text":
+                                payload = _decode_payload(part.get_payload(decode=True), part.get_content_charset())
                             attachments.append(
                                 {
                                     "filename": filename,
@@ -1356,10 +1360,18 @@ class Parser(ProcessBase):
             if "attachments" in target_fields:
                 attachments = []
                 for t in msg.attachments:
+                    # extract_msg exposes no charset for an attachment, so treat only
+                    # payloads that are valid UTF-8 as text and skip the rest.
+                    payload = ""
+                    if isinstance(t.data, bytes):
+                        try:
+                            payload = t.data.decode("utf-8")
+                        except UnicodeDecodeError:
+                            pass
                     attachments.append(
                         {
                             "filename": t.name,
-                            "payload": t.data.decode("utf-8"),
+                            "payload": payload,
                         }
                     )
                 email_content["attachments"] = attachments
