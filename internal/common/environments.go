@@ -160,6 +160,8 @@ const (
 	EnvMineruAPIServer                   = "MINERU_APISERVER"
 	EnvMineruAPIKey                      = "MINERU_API_KEY"
 	EnvMineruBackend                     = "MINERU_BACKEND"
+	EnvMonkeyOCRv2ServerURL              = "MONKEYOCRV2_SERVER_URL"
+	EnvMonkeyOCRv2Timeout                = "MONKEYOCRV2_TIMEOUT"
 	EnvOpenDataLoaderAPIServer           = "OPENDATALOADER_APISERVER"
 	EnvOpenDataLoaderAPIKey              = "OPENDATALOADER_API_KEY"
 	EnvPaddleOCRBaseUrl                  = "PADDLEOCR_BASE_URL"

@@ -691,6 +691,7 @@ export default {
         '为帮助您更好地理解，我们提供了相关截图供您参考。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
+      imageLoadFailed: '图片加载失败',
       audio: `<p>支持的文件格式为 <b>WAV、MP3、AAC、FLAC、OGG</b> 及其他常见音频格式。</p>
 <p>本方法使用语音转文本模型将音频文件转录为文本。</p>`,
       email: `<p>支持的文件格式为 <b>EML</b> 和 <b>MSG</b>。</p>
@@ -831,6 +832,7 @@ export default {
       pageRank: '页面排名',
       pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '标签',
+      tagMessage: '请选择标签',
       frequency: '频次',
       searchTags: '搜索标签',
       tagCloud: '云',
@@ -2782,6 +2784,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       contentTip: 'content: 邮件内容(可选)',
       jsonUploadTypeErrorMessage: '请上传 json 文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
+      nameExists: '名称已存在',
       iteration: '迭代',
       iterationDescription: `该组件负责迭代生成新的内容，对列表对象执行多次步骤直至输出所有结果。`,
       delimiterTip: `该分隔符用于将输入文本分割成几个文本片段，每个文本片段的回显将作为每次迭代的输入项。`,

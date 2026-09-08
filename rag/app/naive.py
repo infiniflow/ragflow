@@ -46,6 +46,7 @@ from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, Json
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
+from deepdoc.parser.monkeyocrv2_parser import MonkeyOCRv2Parser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
 from common.parser_config_utils import has_mineru_options, normalize_layout_recognizer
@@ -291,6 +292,15 @@ def by_mineru(
                 raise
 
     raise RuntimeError("MinerU model not found or not configured.")
+
+
+def by_monkeyocrv2(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
+    server_url = kwargs.get("monkeyocrv2_server_url") or os.environ.get("MONKEYOCRV2_SERVER_URL", "")
+    if not server_url:
+        raise RuntimeError("MONKEYOCRV2_SERVER_URL is not configured")
+    parser = MonkeyOCRv2Parser(server_url)
+    sections, tables = parser.parse_pdf(filename, binary=binary, callback=callback, page_from=from_page, page_to=min(to_page, MAXIMUM_PAGE_NUMBER))
+    return sections, tables, parser
 
 
 def by_docling(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -540,6 +550,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER
 PARSERS = {
     "deepdoc": by_deepdoc,
     "mineru": by_mineru,
+    "monkeyocrv2": by_monkeyocrv2,
     "docling": by_docling,
     "opendataloader": by_opendataloader,
     "tcadp parser": by_tcadp,
@@ -1206,7 +1217,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 sections,
                 tables,
                 image_context_size,
-                section_page_offset=from_page if name == "mineru" else 0,
+                section_page_offset=from_page if name in {"mineru", "monkeyocrv2"} else 0,
             )
 
         if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark", "mistral ocr"]:
