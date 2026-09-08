@@ -244,6 +244,83 @@ func TestExtractTextFromListItem_NestedNull(t *testing.T) {
 	}
 }
 
+// TestExtractTextFromListItem_NestedTable verifies that a table nested
+// inside a list item's content is flattened, not silently dropped. The old
+// path only recognized paragraph/heading blocks in item.Content.
+func TestExtractTextFromListItem_NestedTable(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"list","items":[
+			{"content":[
+				{"type":"paragraph","content":[{"type":"text","text":"before"}]},
+				{"type":"table","rows":[
+					{"cells":[
+						{"content":[{"type":"paragraph","content":[{"type":"text","text":"c1"}]}]},
+						{"content":[{"type":"paragraph","content":[{"type":"text","text":"c2"}]}]}
+					]}
+				]}
+			]}
+		]}
+	]}]}`
+	sections := buildDOCXJSONSections(irJSON)
+	if len(sections) != 1 {
+		t.Fatalf("expected 1 section, got %d: %+v", len(sections), sections)
+	}
+	if got := sections[0]["text"]; got != "before\nc1\nc2" {
+		t.Errorf("list item with nested table text = %q, want %q", got, "before\nc1\nc2")
+	}
+}
+
+// TestJoinCellText_NestedList verifies that a list nested inside a table
+// cell is flattened, not silently dropped. The old path only recognized
+// paragraph runs in cell.Content.
+func TestJoinCellText_NestedList(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"table","rows":[
+			{"cells":[
+				{"content":[
+					{"type":"paragraph","content":[{"type":"text","text":"head"}]},
+					{"type":"list","items":[
+						{"content":[{"type":"paragraph","content":[{"type":"text","text":"li1"}]}]},
+						{"content":[{"type":"paragraph","content":[{"type":"text","text":"li2"}]}]}
+					]}
+				]}
+			]}
+		]}
+	]}]}`
+	var ir docxIRDocument
+	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
+		t.Fatalf("unmarshal IR: %v", err)
+	}
+	cell := ir.Sections[0].Elements[0].Rows[0].Cells[0]
+	if got := joinCellText(cell); got != "head\nli1\nli2" {
+		t.Errorf("joinCellText(nested list) = %q, want %q", got, "head\nli1\nli2")
+	}
+}
+
+// TestBuildDOCXJSONSections_TextBoxTable verifies end-to-end that a table
+// wrapped in a text_box (the shape office_oxide emits for grouped slide
+// shapes, and a legal DOCX text-box shape) survives into the section
+// output. Mirrors the PPTX bwbd.pptx regression at the DOCX layer.
+func TestBuildDOCXJSONSections_TextBoxTable(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"text_box","content":[
+			{"type":"table","rows":[
+				{"cells":[
+					{"content":[{"type":"paragraph","content":[{"type":"text","text":"Q1"}]}]},
+					{"content":[{"type":"paragraph","content":[{"type":"text","text":"A1"}]}]}
+				]}
+			]}
+		]}
+	]}]}`
+	sections := buildDOCXJSONSections(irJSON)
+	if len(sections) != 1 {
+		t.Fatalf("expected 1 section, got %d: %+v", len(sections), sections)
+	}
+	if got := sections[0]["text"]; got != "Q1\nA1" {
+		t.Errorf("text_box table text = %q, want %q", got, "Q1\nA1")
+	}
+}
+
 // TestBuildDOCXJSONSections_NestedList verifies end-to-end that a
 // multi-level list survives into the section output with all levels.
 func TestBuildDOCXJSONSections_NestedList(t *testing.T) {
