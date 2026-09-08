@@ -14,13 +14,12 @@
 //  limitations under the License.
 //
 
-// Internal chunk execution entrypoint used by production callers.
 package chunk
 
 import "fmt"
 
 // Run executes the internal chunk steps against `text` using typed
-// options. The sequence is preprocess -> split -> postprocess.
+// options. The sequence is pre-process -> split -> postprocess.
 func Run(text string, opts ChunkOptions) (*ChunkContext, error) {
 	if err := opts.validate(); err != nil {
 		return nil, err

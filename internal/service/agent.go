@@ -35,6 +35,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
 	agentsandbox "ragflow/internal/agent/sandbox"
 	agenttool "ragflow/internal/agent/tool"
@@ -93,6 +94,8 @@ func (s *AgentService) RunAgentWithWebhook(
 
 type agentSessionIDContextKey struct{}
 
+type openAICompatMessagesContextKey struct{}
+
 // WithAgentSessionID lets an HTTP boundary allocate the session identity while
 // keeping session-record persistence inside AgentService.RunAgent.
 func WithAgentSessionID(ctx context.Context, sessionID string) context.Context {
@@ -106,6 +109,33 @@ func AgentSessionIDFromContext(ctx context.Context) string {
 	}
 	sessionID, _ := ctx.Value(agentSessionIDContextKey{}).(string)
 	return sessionID
+}
+
+// WithOpenAICompatMessages attaches the complete OpenAI messages list to an
+// agent run without changing RunAgent's public argument list. The latest user
+// message remains the run input; the service uses the earlier messages to seed
+// the workflow history.
+func WithOpenAICompatMessages(ctx context.Context, messages []map[string]interface{}) context.Context {
+	if len(messages) == 0 {
+		return ctx
+	}
+
+	copied := make([]map[string]interface{}, len(messages))
+	for i, message := range messages {
+		copied[i] = make(map[string]interface{}, len(message))
+		for key, value := range message {
+			copied[i][key] = value
+		}
+	}
+	return context.WithValue(ctx, openAICompatMessagesContextKey{}, copied)
+}
+
+func openAICompatMessagesFromContext(ctx context.Context) []map[string]interface{} {
+	if ctx == nil {
+		return nil
+	}
+	messages, _ := ctx.Value(openAICompatMessagesContextKey{}).([]map[string]interface{})
+	return messages
 }
 
 func emitAgentMessageEvents(emit func(string, string), answer, thinking string, reference any) {
@@ -253,6 +283,19 @@ func splitInlineThink(answer, thinking string) (string, string) {
 	return answer, thinking
 }
 
+// agentSessionMessageContent mirrors how Python's canvas_service.completion
+// accumulates the persisted assistant message: reasoning streams first,
+// bracketed by start_to_think/end_to_think markers, so the stored content
+// keeps the thinking segment wrapped in <think> tags. The chat UI refetches
+// the session message list after streaming and needs those tags for
+// MarkdownContent to render the "thought" section (chat.thought).
+func agentSessionMessageContent(answer, thinking string) string {
+	if thinking == "" {
+		return answer
+	}
+	return "<think>" + thinking + "</think>" + answer
+}
+
 func splitMessageContent(content string) []string {
 	if content == "" {
 		return nil
@@ -286,29 +329,23 @@ var ErrAgentNotOwner = errors.New("agent not owned by user")
 // same Agent session before the current run reaches a terminal state.
 var ErrAgentSessionBusy = errors.New("agent session is already running")
 
-// ErrAgentStorageError is returned by RunAgent when the underlying
-// version / canvas / tenant DAO surfaces a non-sentinel error (DB
-// connectivity, schema drift, deadlock, etc.). The handler's
-// mapAgentError recognises this sentinel and maps it to
-// common.CodeServerError (500) with a SANITIZED message — the raw
-// DAO error string is never echoed to the client, so internal
-// connection-string / table-name leaks are avoided.
-//
-// v3.5.2 follow-up: the prior af2ac2eda commit claimed "DB error ->
-// 500" in the branch table, but the handler's mapAgentError did not
-// actually classify those errors as CodeServerError — every DAO
-// failure fell through to CodeDataError with the raw err.Error()
-// string. This sentinel closes that gap.
+// ErrAgentStorageError identifies internal Agent service failures such as
+// database connectivity, schema drift, or persistence errors. Synchronous
+// callers map this sentinel to a sanitized 500 response; failures raised after
+// streaming starts are wrapped with canvas.NewInternalRunError so Runner emits
+// the same safe message in its terminal event.
 var ErrAgentStorageError = errors.New("agent storage error")
 
 // AgentService agent service
 type AgentService struct {
-	canvasDAO           *dao.UserCanvasDAO
-	canvasTemplateDAO   *dao.CanvasTemplateDAO
-	userDAO             *dao.UserDAO
-	userTenantDAO       *dao.UserTenantDAO
-	versionDAO          *dao.UserCanvasVersionDAO
-	api4ConversationDAO *dao.API4ConversationDAO
+	canvasDAO                   *dao.UserCanvasDAO
+	canvasTemplateDAO           *dao.CanvasTemplateDAO
+	userDAO                     *dao.UserDAO
+	userTenantDAO               *dao.UserTenantDAO
+	versionDAO                  *dao.UserCanvasVersionDAO
+	api4ConversationDAO         *dao.API4ConversationDAO
+	compilationTemplateGroupDAO *dao.CompilationTemplateGroupDAO
+	compilationTemplateDAO      *dao.CompilationTemplateDAO
 
 	// driver is the per-process runner that drives canvas
 	// invocations and produces SSE events. V1 persistence is
@@ -375,17 +412,19 @@ func NewAgentServiceWithOptions(
 		agenttool.SetSandboxClient(agentsandbox.NewManagerClient())
 	}
 	return &AgentService{
-		canvasDAO:           dao.NewUserCanvasDAO(),
-		canvasTemplateDAO:   dao.NewCanvasTemplateDAO(),
-		userDAO:             dao.NewUserDAO(),
-		userTenantDAO:       dao.NewUserTenantDAO(),
-		versionDAO:          dao.NewUserCanvasVersionDAO(),
-		api4ConversationDAO: dao.NewAPI4ConversationDAO(),
-		runner:              canvas.NewRunner(),
-		activeSessions:      make(map[string]*activeAgentRun),
-		checkpointStore:     cp,
-		stateSerializer:     ser,
-		runTracker:          rt,
+		canvasDAO:                   dao.NewUserCanvasDAO(),
+		canvasTemplateDAO:           dao.NewCanvasTemplateDAO(),
+		userDAO:                     dao.NewUserDAO(),
+		userTenantDAO:               dao.NewUserTenantDAO(),
+		versionDAO:                  dao.NewUserCanvasVersionDAO(),
+		api4ConversationDAO:         dao.NewAPI4ConversationDAO(),
+		compilationTemplateGroupDAO: dao.NewCompilationTemplateGroupDAO(),
+		compilationTemplateDAO:      dao.NewCompilationTemplateDAO(),
+		runner:                      canvas.NewRunner(),
+		activeSessions:              make(map[string]*activeAgentRun),
+		checkpointStore:             cp,
+		stateSerializer:             ser,
+		runTracker:                  rt,
 	}
 }
 
@@ -413,12 +452,134 @@ type AgentItem struct {
 	CreateTime     *int64  `json:"create_time,omitempty"`
 	UpdateTime     *int64  `json:"update_time,omitempty"`
 	ReleaseTime    *int64  `json:"release_time,omitempty"`
+	// Type discriminates agent vs compilation-template-group items in the merged
+	// /agents response. It is set only for merged items (agent => "agent").
+	Type string `json:"type,omitempty"`
 }
 
-// ListAgentsResponse is the response body for GET /api/v1/agents.
+// ListAgentsResponse is the response body for GET /api/v1/agents. Canvas holds
+// pre-marshalled JSON items because a canvas entry is either an agent (AgentItem
+// shape) or a compilation template group (group shape with a "type" of
+// "compilation_template_group"); a single typed slice cannot express both.
 type ListAgentsResponse struct {
-	Canvas []*AgentItem `json:"canvas"`
-	Total  int64        `json:"total"`
+	Canvas []json.RawMessage `json:"canvas"`
+	Total  int64             `json:"total"`
+}
+
+// AgentItemType discriminates the two kinds of canvas items in the merged
+// /agents response, mirroring Python _COMPILATION_TEMPLATE_GROUP_CATEGORY and
+// the frontend AgentListItem union.
+const (
+	AgentItemTypeAgent = "agent"
+	AgentItemTypeGroup = CompilationTemplateGroupCategory // "compilation_template_group"
+)
+
+// CompilationTemplateGroupCategory is the synthetic canvas_category the
+// frontend uses to filter compilation template groups through the merged
+// /agents endpoint. Mirrors Python _COMPILATION_TEMPLATE_GROUP_CATEGORY.
+const CompilationTemplateGroupCategory = "compilation_template_group"
+
+// AgentOwnerFilter is one owner option in the agents filter response.
+type AgentOwnerFilter struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Count int64  `json:"count"`
+}
+
+// AgentCategoryFilter is one canvas_category option in the agents filter
+// response.
+type AgentCategoryFilter struct {
+	ID    string `json:"id"`
+	Count int64  `json:"count"`
+}
+
+// AgentFiltersResponse is the response body for
+// GET /api/v1/agents?type=filter.
+type AgentFiltersResponse struct {
+	Filter struct {
+		Owner          []AgentOwnerFilter    `json:"owner"`
+		CanvasCategory []AgentCategoryFilter `json:"canvas_category"`
+	} `json:"filter"`
+	Total int64 `json:"total"`
+}
+
+// ListAgentFilters returns the owner/category aggregations backing the
+// agents page filter bar. Mirrors the ?type=filter branch of Python
+// agent_api.list_agents.
+func (s *AgentService) ListAgentFilters(ctx context.Context, userID string) (*AgentFiltersResponse, common.ErrorCode, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to get tenant IDs: %w", err)
+	}
+	ownerIDs := make([]string, 0, len(tenantIDs)+1)
+	seen := make(map[string]struct{}, len(tenantIDs)+1)
+	seen[userID] = struct{}{}
+	ownerIDs = append(ownerIDs, userID)
+	for _, id := range tenantIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ownerIDs = append(ownerIDs, id)
+	}
+
+	owners, err := s.canvasDAO.GetOwnerFilter(ctx, dao.DB, ownerIDs, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to aggregate agent owners: %w", err)
+	}
+	categories, err := s.canvasDAO.GetCategoryFilter(ctx, dao.DB, ownerIDs, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to aggregate agent categories: %w", err)
+	}
+	groupCount, err := s.compilationTemplateGroupDAO.CountSavedByTenant(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to count compilation template groups: %w", err)
+	}
+
+	ownerFilters := make([]AgentOwnerFilter, 0, len(owners)+1)
+	for _, o := range owners {
+		label := o.ID
+		if o.Label != nil && *o.Label != "" {
+			label = *o.Label
+		}
+		ownerFilters = append(ownerFilters, AgentOwnerFilter{ID: o.ID, Label: label, Count: o.Count})
+	}
+	if groupCount > 0 {
+		idx := -1
+		for i := range ownerFilters {
+			if ownerFilters[i].ID == userID {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
+			ownerFilters[idx].Count += groupCount
+		} else {
+			nickname, nerr := s.userDAO.GetNicknameByID(ctx, dao.DB, userID)
+			if nerr != nil {
+				nickname = ""
+			}
+			ownerFilters = append(ownerFilters, AgentOwnerFilter{ID: userID, Label: nickname, Count: groupCount})
+		}
+	}
+
+	categoryFilters := make([]AgentCategoryFilter, 0, len(categories)+1)
+	for _, c := range categories {
+		categoryFilters = append(categoryFilters, AgentCategoryFilter{ID: c.ID, Count: c.Count})
+	}
+	if groupCount > 0 {
+		categoryFilters = append(categoryFilters, AgentCategoryFilter{ID: CompilationTemplateGroupCategory, Count: groupCount})
+	}
+
+	var total int64
+	for _, o := range ownerFilters {
+		total += o.Count
+	}
+
+	resp := &AgentFiltersResponse{Total: total}
+	resp.Filter.Owner = ownerFilters
+	resp.Filter.CanvasCategory = categoryFilters
+	return resp, common.CodeSuccess, nil
 }
 
 type AgentTagCount struct {
@@ -482,17 +643,46 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 		}
 	}
 
+	// A canvas entry is either an agent (user_canvas) or a compilation template
+	// group. Python splits canvas_category on commas and, when the tenant is the
+	// sole effective owner, merges the caller's template groups into the list.
+	categories := splitCategoryList(canvasCategory)
+	wantsGroups := sliceContains(categories, CompilationTemplateGroupCategory)
+	agentCategories := filterCategory(categories, CompilationTemplateGroupCategory)
+	// Merge mode mirrors Python: no category, no canvas_type, no tags -> the
+	// caller's template groups are interleaved with agents by update_time.
+	mergeMode := len(categories) == 0 && canvasType == "" && len(tags) == 0
+
+	// Groups-only mode: canvas_category is exactly ["compilation_template_group"].
+	// Template groups are always the caller's own, so they are only visible when
+	// the caller is an effective owner; otherwise (e.g. owner_ids names another
+	// user) return an empty list (review Major).
+	if len(categories) == 1 && wantsGroups {
+		if !sliceContains(effectiveOwnerIDs, userID) {
+			return &ListAgentsResponse{Canvas: []json.RawMessage{}, Total: 0}, common.CodeSuccess, nil
+		}
+		return s.listAgentsGroupsOnly(ctx, userID, keywords, orderBy, desc, page, pageSize)
+	}
+
+	// Fetch agents. In merge/mixed modes we disable SQL pagination (page=0) and
+	// paginate in Go after interleaving with groups, matching Python.
+	listPage, listSize := page, pageSize
+	agentCategoryFilter := canvasCategory
+	if mergeMode || (wantsGroups && len(agentCategories) > 0) {
+		listPage, listSize = 0, 0
+		agentCategoryFilter = strings.Join(agentCategories, ",")
+	}
 	canvases, total, err := s.canvasDAO.ListByTenantIDs(
 		ctx,
 		dao.DB,
 		effectiveOwnerIDs,
 		userID,
-		page,
-		pageSize,
+		listPage,
+		listSize,
 		orderBy,
 		desc,
 		keywords,
-		canvasCategory,
+		agentCategoryFilter,
 		canvasType,
 		tags,
 	)
@@ -500,30 +690,242 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 		return nil, common.CodeServerError, fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	items := make([]*AgentItem, len(canvases))
+	agentItems := make([]*AgentItem, len(canvases))
 	for i, c := range canvases {
-		items[i] = toAgentItem(c)
+		agentItems[i] = toAgentItem(c)
+	}
+	s.attachReleaseTimes(ctx, agentItems)
+
+	// Groups are owner-only (no team sharing) and scoped to the caller, so they
+	// are merged only when the caller's own tenant is an effective owner
+	// (Python include_template_groups).
+	includeGroups := sliceContains(effectiveOwnerIDs, userID)
+	if includeGroups && (mergeMode || wantsGroups) {
+		return s.mergeAgentsAndGroups(ctx, userID, agentItems, keywords, orderBy, desc, page, pageSize)
 	}
 
-	// Attach the latest release time per canvas so agent cards can render
-	// the "published at" line (Python UserCanvasService.get_list parity).
-	if len(items) > 0 {
-		canvasIDs := make([]string, 0, len(items))
-		for _, item := range items {
-			canvasIDs = append(canvasIDs, item.ID)
-		}
-		releaseTimes, err := s.versionDAO.GetLatestReleaseTimes(canvasIDs)
+	raw := make([]json.RawMessage, len(agentItems))
+	for i, item := range agentItems {
+		item.Type = AgentItemTypeAgent
+		raw[i] = marshalAgentItem(item)
+	}
+	return &ListAgentsResponse{Canvas: raw, Total: total}, common.CodeSuccess, nil
+}
+
+// listAgentsGroupsOnly returns only the caller's compilation template groups
+// (Python canvas_category == ["compilation_template_group"] branch).
+func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, userID, keywords, orderBy string, desc bool, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
+	groups, err := s.compilationTemplateGroupDAO.ListOwnedSaved(ctx, dao.DB, userID, keywords, "", orderBy, desc)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
+	}
+	total := int64(len(groups))
+	groups = slicePage(groups, page, pageSize)
+	raw := make([]json.RawMessage, 0, len(groups))
+	for _, g := range groups {
+		item, err := s.marshalMergeGroupItem(ctx, userID, g)
 		if err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("failed to get release times: %w", err)
+			return nil, common.CodeServerError, fmt.Errorf("failed to build group item: %w", err)
 		}
-		for _, item := range items {
-			if t, ok := releaseTimes[item.ID]; ok {
-				item.ReleaseTime = &t
-			}
+		raw = append(raw, item)
+	}
+	return &ListAgentsResponse{Canvas: raw, Total: total}, common.CodeSuccess, nil
+}
+
+// mergeAgentsAndGroups combines agents and the caller's compilation template
+// groups into a single list ordered by update_time, then pages in Go. This
+// mirrors Python's merged /agents response. A stable sort retains the original
+// agent-before-group order when timestamps are equal.
+func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, agentItems []*AgentItem, keywords, orderBy string, desc bool, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
+	groups, err := s.compilationTemplateGroupDAO.ListOwnedSaved(ctx, dao.DB, userID, keywords, "", orderBy, desc)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
+	}
+	merged := make([]mergeCanvasItem, 0, len(agentItems)+len(groups))
+	for _, item := range agentItems {
+		item.Type = AgentItemTypeAgent
+		merged = append(merged, mergeCanvasItem{
+			item: item,
+			time: intValuePtr(item.UpdateTime),
+		})
+	}
+	for _, g := range groups {
+		raw, err := s.marshalMergeGroupItem(ctx, userID, g)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to build group item: %w", err)
+		}
+		merged = append(merged, mergeCanvasItem{
+			raw:  raw,
+			time: intValuePtr(g.UpdateTime),
+		})
+	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		if desc {
+			return merged[i].time > merged[j].time
+		}
+		return merged[i].time < merged[j].time
+	})
+	total := int64(len(merged))
+	merged = slicePage(merged, page, pageSize)
+	raw := make([]json.RawMessage, 0, len(merged))
+	for _, m := range merged {
+		if m.raw != nil {
+			raw = append(raw, m.raw)
+		} else if m.item != nil {
+			raw = append(raw, marshalAgentItem(m.item))
 		}
 	}
+	return &ListAgentsResponse{Canvas: raw, Total: total}, common.CodeSuccess, nil
+}
 
-	return &ListAgentsResponse{Canvas: items, Total: total}, common.CodeSuccess, nil
+// marshalMergeGroupItem renders a compilation template group as a merged /agents
+// canvas item: the group shape (ICompilationTemplateGroup) plus the "type" and
+// "title" discriminators the frontend union expects (Python _group_to_dict).
+func (s *AgentService) marshalMergeGroupItem(ctx context.Context, userID string, g *entity.CompilationTemplateGroup) (json.RawMessage, error) {
+	children, err := s.compilationTemplateDAO.ListByGroup(ctx, dao.DB, g.ID)
+	if err != nil {
+		return nil, err
+	}
+	templates := make([]json.RawMessage, 0, len(children))
+	for _, c := range children {
+		templates = append(templates, marshalGroupTemplate(c))
+	}
+	item := map[string]interface{}{
+		"id":          g.ID,
+		"name":        g.Name,
+		"title":       g.Name,
+		"description": derefString(g.Description),
+		"scope":       g.Scope,
+		"create_time": intValuePtr(g.CreateTime),
+		"update_time": intValuePtr(g.UpdateTime),
+		"templates":   templates,
+		"type":        AgentItemTypeGroup,
+	}
+	b, err := json.Marshal(item)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+// mergeCanvasItem is an entry in the merged /agents list. Exactly one of item
+// (an agent) or raw (a marshalled group) is set.
+type mergeCanvasItem struct {
+	item *AgentItem
+	raw  json.RawMessage
+	time int64
+}
+
+// attachReleaseTimes populates ReleaseTime for each agent item from the latest
+// published version (Python UserCanvasService.get_list parity).
+func (s *AgentService) attachReleaseTimes(ctx context.Context, items []*AgentItem) {
+	if len(items) == 0 {
+		return
+	}
+	canvasIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		canvasIDs = append(canvasIDs, item.ID)
+	}
+	releaseTimes, err := s.versionDAO.GetLatestReleaseTimes(ctx, dao.DB, canvasIDs)
+	if err != nil {
+		return
+	}
+	for _, item := range items {
+		if t, ok := releaseTimes[item.ID]; ok {
+			item.ReleaseTime = &t
+		}
+	}
+}
+
+// marshalAgentItem renders an agent item to its JSON representation.
+func marshalAgentItem(item *AgentItem) json.RawMessage {
+	b, err := json.Marshal(item)
+	if err != nil {
+		return json.RawMessage("null")
+	}
+	return b
+}
+
+// marshalGroupTemplate renders a compilation template child to the read-side
+// shape the frontend group card expects (mirrors Python _to_saved_dict).
+func marshalGroupTemplate(c *entity.CompilationTemplate) json.RawMessage {
+	item := map[string]interface{}{
+		"id":          c.ID,
+		"name":        c.Name,
+		"description": derefString(c.Description),
+		"kind":        c.Kind,
+		"config":      c.Config,
+		"create_time": intValuePtr(c.CreateTime),
+		"update_time": intValuePtr(c.UpdateTime),
+	}
+	b, err := json.Marshal(item)
+	if err != nil {
+		return json.RawMessage("null")
+	}
+	return b
+}
+
+// splitCategoryList splits a comma-separated canvas_category query into the
+// non-empty categories, mirroring Python
+// request.args.get("canvas_category", "").strip().split(",").
+func splitCategoryList(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// filterCategory returns the categories in src that are not equal to drop.
+func filterCategory(src []string, drop string) []string {
+	var out []string
+	for _, c := range src {
+		if c != drop {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// sliceContains reports whether v is present in s.
+func sliceContains[T comparable](s []T, v T) bool {
+	for _, e := range s {
+		if e == v {
+			return true
+		}
+	}
+	return false
+}
+
+// slicePage returns a shallow copy of s bounded to the requested page window.
+// A page <= 0 or pageSize <= 0 returns s unchanged (caller did not ask to page).
+// The page bound is checked arithmetically before computing the offset so an
+// unbounded positive page/page_size can never overflow to a negative start and
+// panic (review Critical).
+func slicePage[T any](s []T, page, pageSize int) []T {
+	if page <= 0 || pageSize <= 0 || len(s) == 0 {
+		return s
+	}
+	// page-1 must be <= (len(s)-1)/pageSize, i.e. start must be < len(s).
+	if page-1 > (len(s)-1)/pageSize {
+		return nil
+	}
+	start := (page - 1) * pageSize
+	if pageSize >= len(s)-start {
+		return s[start:]
+	}
+	return s[start : start+pageSize]
+}
+
+// intValuePtr dereferences a *int64 to a plain int64 (0 when nil), used for the
+// group/template create_time & update_time epoch fields in merged items.
+func intValuePtr(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 // CreateAgentRequest is the input shape for CreateAgent.
@@ -568,6 +970,12 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
 	} else if existing != nil {
 		return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
+	}
+	if err := component.ValidateIntegerParameters(req.DSL); err != nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
+	}
+	if err := component.ValidateDynamicEntries(req.DSL); err != nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
 	}
 	// Normalize legacy v1 / Go-v2 payloads to a React-Flow-shaped graph so
 	// the front-end can render the canvas without a migration. Idempotent;
@@ -675,7 +1083,7 @@ func (s *AgentService) GetAgent(ctx context.Context, userID, canvasID string) (*
 // released version, or nil when the canvas has never been published.
 // Mirrors the last_publish_time computation in Python's get_agent handler.
 func (s *AgentService) GetLastPublishTime(ctx context.Context, canvasID string) (*int64, error) {
-	version, err := s.versionDAO.GetLatestReleased(canvasID)
+	version, err := s.versionDAO.GetLatestReleased(ctx, dao.DB, canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
 			return nil, nil
@@ -753,6 +1161,12 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 			} else {
 				return fmt.Errorf("update agent %s: dsl must be an object", canvasID)
 			}
+		}
+		if err := component.ValidateIntegerParameters(dslMap); err != nil {
+			return fmt.Errorf("update agent %s: %w", canvasID, err)
+		}
+		if err := component.ValidateDynamicEntries(dslMap); err != nil {
+			return fmt.Errorf("update agent %s: %w", canvasID, err)
 		}
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
 	}
@@ -888,6 +1302,12 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 	description := canvasInstance.Description
 	if req != nil {
 		if req.DSL != nil {
+			if err := component.ValidateIntegerParameters(req.DSL); err != nil {
+				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
+			}
+			if err := component.ValidateDynamicEntries(req.DSL); err != nil {
+				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
+			}
 			dsl = dslpkg.NormalizeForCanvas(req.DSL)
 		}
 		if req.Title != nil {
@@ -1045,6 +1465,10 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	runID := runIDFor(canvasID, map[string]any{"session_id": sessionID})
 	lockToken := utility.GenerateToken()
 	runCtx, cancelRun := context.WithCancel(ctx)
+	// Keep workflow cancellation separate from event-consumer cancellation.
+	// An explicit session cancellation should still reach an attached client,
+	// while a disconnected HTTP request must stop event delivery promptly.
+	runCtx = canvas.WithEventContext(runCtx, ctx)
 	active := &activeAgentRun{
 		userID:     userID,
 		canvasID:   canvasID,
@@ -1256,6 +1680,10 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	// absent conversation row as a first touch regardless of who generated the
 	// id; there is still only one business identity (session_id).
 	if !sessionFound || newSession {
+		// The editable/released canvas can be a runtime replica from another
+		// conversation. A new session may reuse its graph, memory, and env state,
+		// but must never inherit conversation history or an execution path.
+		dsl = dslpkg.ResetForNewSession(dsl)
 		if err = s.createAgentRunSession(ctx, sessionID, userID, canvasID, dsl, versionRow, userInput); err != nil {
 			return nil, fmt.Errorf("RunAgent: create session %q: %w: %w", sessionID, err, ErrAgentStorageError)
 		}
@@ -1268,6 +1696,12 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		"version_id": version,
 		"session_id": sessionID,
 		"user_id":    userID,
+	}
+	// The session row above was created by this request (first touch);
+	// if the run then fails, the run closure drops the row again so a
+	// failed exploration never shows up in the session list.
+	if !sessionFound || newSession {
+		root["__drop_session_on_failure__"] = true
 	}
 	// The stable run id is derived from the canvas and session. It is only a
 	// checkpoint/status storage key; session_id remains the public run and
@@ -1282,6 +1716,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	}
 	if userInput != nil {
 		root["user_input"] = userInput
+	}
+	if messages := openAICompatMessagesFromContext(ctx); len(messages) > 0 {
+		root["openai_messages"] = messages
 	}
 	if len(files) > 0 {
 		root["files"] = files
@@ -1329,9 +1766,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 
 	// Cancellation of the HTTP request must reach the workflow, but it must
 	// not stop the Redis watchers while the real Runner goroutine is still
-	// unwinding. Otherwise a non-cooperative external call can outlive the
+	// unwinding. Otherwise, a non-cooperative external call can outlive the
 	// lease, allowing a second process to acquire the same session. The
-	// detached watcher context is cancelled only after inner has closed and
+	// detached watcher context is canceled only after inner has closed and
 	// cleanup has taken ownership of the lease release.
 	lifecycleDone := make(chan struct{})
 	go func() {
@@ -1412,7 +1849,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 // compose.WithInterruptBeforeNodes) resumes and reads the user's
 // follow-up via compose.GetResumeContext.
 func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanvasVersion, dsl map[string]any) canvas.RunFunc {
-	return func(ctx context.Context, root map[string]any) (*canvas.CanvasState, error) {
+	return func(ctx context.Context, root map[string]any) (runState *canvas.CanvasState, runErr error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -1429,6 +1866,31 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		sessionID, _ := root["__session_id__"].(string)
 		userID, _ := root["user_id"].(string)
 
+		// A failed first-touch run must not leave the freshly-created
+		// empty session row behind — otherwise every failed exploration
+		// inflates the session list with a title-less conversation.
+		// Interrupts (UserFillUp waits) and user-initiated cancels keep
+		// the row: both are resumable, visible states, not failures.
+		if dropOnFailure, _ := root["__drop_session_on_failure__"].(bool); dropOnFailure {
+			delete(root, "__drop_session_on_failure__")
+			defer func() {
+				if runErr == nil || canvas.IsInterruptError(runErr) || errors.Is(runErr, context.Canceled) {
+					return
+				}
+				if s.api4ConversationDAO == nil || dao.DB == nil {
+					return
+				}
+				cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				defer cancel()
+				if _, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(cleanupCtx, dao.DB, sessionID, canvasID); err != nil {
+					common.Warn("agent run: drop failed-run session failed",
+						zap.String("canvas_id", canvasID),
+						zap.String("session_id", sessionID),
+						zap.Error(err))
+				}
+			}()
+		}
+
 		// Install per-run Langfuse correlation attrs so LLM calls inside
 		// this turn are grouped by session/user. Mirrors Python's
 		// Canvas.run() setting langfuse_run_attrs.
@@ -1442,7 +1904,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if events == nil {
 				return
 			}
-			canvas.PushEvent(events, canvas.RunEvent{
+			canvas.PushEvent(ctx, events, canvas.RunEvent{
 				Type: typ, Data: data,
 				MessageID: messageID,
 				CreatedAt: time.Now().Unix(),
@@ -1554,6 +2016,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 		}
 		state.SetHistory(c.History)
+		if messages, ok := root["openai_messages"].([]map[string]interface{}); ok && len(messages) > 1 {
+			state.SetHistory(openAICompatPriorHistory(messages))
+		}
 		state.SetMemory(c.Memory)
 		state.EnsureSysDate()
 		state.Sys["query"] = userInput
@@ -1635,7 +2100,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				zap.String("type", fmt.Sprintf("%T", err)),
 				zap.Error(err))
 			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
-			return nil, fmt.Errorf("canvas compile: %w: %w", ErrAgentStorageError, err)
+			return nil, canvas.NewInternalRunError(
+				fmt.Errorf("canvas compile: %w: %w", ErrAgentStorageError, err),
+			)
 		}
 
 		cpID := ""
@@ -1684,6 +2151,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		var thinking string
 		var legacyReference []interface{}
 		var downloads any
+		var attachment map[string]any
 		now := float64(time.Now().UnixNano()) / 1e9
 		for _, bucket := range state.Snapshot() {
 			if v, ok := bucket["answer"].(string); ok && v != "" {
@@ -1706,9 +2174,12 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if v, ok := bucket["downloads"]; ok && !emptyDownloadValue(v) {
 				downloads = v
 			}
+			if v, ok := bucket["attachment"].(map[string]any); ok && len(v) > 0 {
+				attachment = v
+			}
 		}
 		referencePayload := agentRunReferencePayload(state, legacyReference)
-		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads)
+		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads, attachment)
 		// Release any deferred Agent node that was not consumed because the
 		// downstream Message was skipped by an exception/branch path.
 		runtime.CompleteAllDeferredNodes(ctx2)
@@ -1731,10 +2202,12 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					_ = s.runTracker.MarkWaiting(ctx2, runID)
 				}
 				if answer != "" {
-					appendAssistantHistory(state, partialAssistantOutput(answer, downloads))
+					appendAssistantHistory(state, partialAssistantOutput(answer, downloads, attachment))
 				}
-				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, answer != ""); persistErr != nil {
-					return nil, fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError)
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, answer != ""); persistErr != nil {
+					return nil, canvas.NewInternalRunError(
+						fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError),
+					)
 				}
 				if answer != "" && shouldEmitMessage {
 					if !messageEventsEmitted {
@@ -1742,7 +2215,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					}
 
 					meData, _ := json.Marshal(canvas.MessageEndEvent{
-						Reference: referencePayload,
+						Attachment: attachment,
+						Reference:  referencePayload,
 					})
 					emit("message_end", string(meData))
 				}
@@ -1750,9 +2224,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
 				appendAssistantHistory(state, assistantOutput)
-				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
 					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
-					return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
+					return nil, canvas.NewInternalRunError(
+						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
+					)
 				}
 				if !messageEventsEmitted && shouldEmitMessage {
 					emitAgentMessageEvents(emit, answer, thinking, referencePayload)
@@ -1760,14 +2236,15 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 				if shouldEmitMessage {
 					meData, _ := json.Marshal(canvas.MessageEndEvent{
-						Reference: referencePayload,
+						Attachment: attachment,
+						Reference:  referencePayload,
 					})
 					emit("message_end", string(meData))
 				}
 
 				wfPayload := map[string]interface{}{
 					"inputs":       map[string]any{"query": userInput},
-					"outputs":      workflowOutputs(answer, downloads),
+					"outputs":      workflowOutputs(answer, downloads, attachment),
 					"elapsed_time": now - startedAt,
 					"created_at":   now,
 				}
@@ -1786,9 +2263,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// Emit message + message_end (mirrors Python's ans dict).
 		appendAssistantHistory(state, assistantOutput)
-		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, referencePayload, dsl, state, true); persistErr != nil {
+		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
 			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
-			return nil, fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError)
+			return nil, canvas.NewInternalRunError(
+				fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
+			)
 		}
 		if !messageEventsEmitted && shouldEmitMessage {
 			emitAgentMessageEvents(emit, answer, thinking, referencePayload)
@@ -1796,7 +2275,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		if shouldEmitMessage {
 			meData, _ := json.Marshal(canvas.MessageEndEvent{
-				Reference: referencePayload,
+				Attachment: attachment,
+				Reference:  referencePayload,
 			})
 			emit("message_end", string(meData))
 		}
@@ -1805,7 +2285,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// per-run token usage across all LLM calls in this turn.
 		wfPayload := map[string]interface{}{
 			"inputs":       map[string]any{"query": userInput},
-			"outputs":      workflowOutputs(answer, downloads),
+			"outputs":      workflowOutputs(answer, downloads, attachment),
 			"elapsed_time": now - startedAt,
 			"created_at":   now,
 		}
@@ -1868,7 +2348,24 @@ func (s *AgentService) createAgentRunSession(
 // session name defaults to the first 250 runes of the user's input
 // so the exploration sidebar shows a meaningful title.
 func deriveAgentSessionName(userInput any) string {
-	text := stringifyAgentUserInput(userInput)
+	var text string
+	if m, ok := userInput.(map[string]any); ok {
+		// A dict-shaped input carries the user's message under
+		// query/question; serialising the whole dict would leak
+		// `{"query":...}` — or `{}` for an empty dict — into the
+		// session list as the title.
+		for _, key := range []string{"query", "question"} {
+			if s, ok := m[key].(string); ok && s != "" {
+				text = s
+				break
+			}
+		}
+		if text == "" && len(m) > 0 {
+			text = stringifyAgentUserInput(m)
+		}
+	} else {
+		text = stringifyAgentUserInput(userInput)
+	}
 	runes := []rune(text)
 	if len(runes) > 250 {
 		runes = runes[:250]
@@ -1886,14 +2383,31 @@ func runIDFor(canvasID string, root map[string]any) string {
 	return canvasID
 }
 
-func workflowOutputs(content string, downloads any) any {
-	if emptyDownloadValue(downloads) {
+func workflowOutputs(content string, downloads, attachment any) any {
+	if emptyDownloadValue(downloads) && emptyAttachmentValue(attachment) {
 		return content
 	}
-	return map[string]any{
-		"content":   content,
-		"downloads": downloads,
+	out := map[string]any{"content": content}
+	if !emptyDownloadValue(downloads) {
+		out["downloads"] = downloads
 	}
+	if !emptyAttachmentValue(attachment) {
+		out["attachment"] = attachment
+	}
+	return out
+}
+
+// emptyAttachmentValue reports whether an attachment descriptor is
+// absent or empty (nil or an empty map), matching the omitempty
+// semantics of the message_end frame.
+func emptyAttachmentValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	if m, ok := value.(map[string]any); ok {
+		return len(m) == 0
+	}
+	return false
 }
 
 func emptyDownloadValue(value any) bool {
@@ -1914,6 +2428,7 @@ func (s *AgentService) persistAgentRunSession(
 	agentID, userID, sessionID, messageID string,
 	userInput any,
 	answer string,
+	thinking string,
 	reference map[string]interface{},
 	runDSL map[string]any,
 	state *canvas.CanvasState,
@@ -1936,7 +2451,7 @@ func (s *AgentService) persistAgentRunSession(
 		messages = append(messages, map[string]interface{}{"role": "user", "content": text, "id": utility.GenerateToken(), "created_at": now})
 	}
 	if appendAssistantMessage {
-		messages = append(messages, map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": now})
+		messages = append(messages, map[string]interface{}{"role": "assistant", "content": agentSessionMessageContent(answer, thinking), "id": messageID, "created_at": now})
 	}
 	if raw, err := json.Marshal(messages); err == nil {
 		session.Message = raw
@@ -2035,10 +2550,13 @@ func appendAssistantHistory(state *canvas.CanvasState, payload map[string]any) {
 	state.AppendSysHistory("assistant: " + pythonHistoryRepr(payload))
 }
 
-func partialAssistantOutput(answer string, downloads any) map[string]any {
+func partialAssistantOutput(answer string, downloads, attachment any) map[string]any {
 	output := map[string]any{"content": answer}
 	if !emptyDownloadValue(downloads) {
 		output["downloads"] = downloads
+	}
+	if !emptyAttachmentValue(attachment) {
+		output["attachment"] = attachment
 	}
 	return output
 }
@@ -2049,6 +2567,7 @@ func terminalCanvasOutput(
 	workflowOutput map[string]any,
 	answer string,
 	downloads any,
+	attachment any,
 ) map[string]any {
 	terminalIDs := make([]string, 0)
 	if c != nil {
@@ -2078,6 +2597,9 @@ func terminalCanvasOutput(
 	fallback := map[string]any{"content": answer}
 	if !emptyDownloadValue(downloads) {
 		fallback["downloads"] = downloads
+	}
+	if !emptyAttachmentValue(attachment) {
+		fallback["attachment"] = attachment
 	}
 	return fallback
 }
@@ -2111,6 +2633,31 @@ func renderUserHistoryValue(value any) string {
 	}
 }
 
+func openAICompatPriorHistory(messages []map[string]interface{}) []map[string]any {
+	lastUser := -1
+	for i, message := range messages {
+		if role, _ := message["role"].(string); role == "user" {
+			lastUser = i
+		}
+	}
+	if lastUser <= 0 {
+		return nil
+	}
+
+	history := make([]map[string]any, 0, lastUser)
+	for _, message := range messages[:lastUser] {
+		role, _ := message["role"].(string)
+		content, err := NormalizeOpenAIMessageContent(message["content"])
+		if err != nil || role == "" || content == "" {
+			continue
+		}
+		history = append(history, map[string]any{
+			"role":    role,
+			"content": content,
+		})
+	}
+	return history
+}
 func pythonHistoryRepr(value any) string {
 	switch item := value.(type) {
 	case nil:
@@ -2280,7 +2827,7 @@ func (s *AgentService) CancelSessionRun(ctx context.Context, userID, sessionID s
 		if err != nil {
 			return fmt.Errorf("agent cancel: read active session: %w: %w", err, ErrAgentStorageError)
 		}
-		if err == nil && remote != nil {
+		if remote != nil {
 			if remote.UserID != "" && remote.UserID != userID {
 				return ErrAgentNotOwner
 			}

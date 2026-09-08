@@ -1,7 +1,6 @@
 package mindmap
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -48,57 +47,50 @@ func TestTreeToProducts_ParentLinks(t *testing.T) {
 		{ID: "B"},
 	}}
 	products := treeToProducts("t1", "d1", root)
-	if len(products) != 5 {
-		t.Fatalf("products = %d, want 5 (root+A+A1+A2+B)", len(products))
+	// 5 entities (root, A, A1, A2, B) + 4 relations (root→A, A→A1, A→A2, root→B).
+	if len(products) != 9 {
+		t.Fatalf("products = %d, want 9 (5 entities + 4 relations)", len(products))
 	}
-	if products[0].Meta["kind"] != "root" || products[0].ParentID != "" {
-		t.Errorf("root product malformed: %+v", products[0].Meta)
-	}
-	if products[1].ParentID != products[0].ID {
-		t.Errorf("A parent link = %q, want root id", products[1].ParentID)
-	}
-	var aID string
+	entCount, relCount := 0, 0
+	fromTo := map[string]bool{}
 	for _, p := range products {
-		if p.Meta["name"] == "A" {
-			aID = p.ID
-		}
-	}
-	for _, p := range products {
-		if n, _ := p.Meta["name"].(string); n == "A1" || n == "A2" {
-			if p.ParentID != aID {
-				t.Errorf("%s parent = %q, want A id", n, p.ParentID)
+		kind, _ := p.Meta["kind"].(string)
+		switch kind {
+		case "entity":
+			entCount++
+			if p.Meta["entity_type"] != "mindmap" {
+				t.Errorf("entity %v type = %v, want mindmap", p.Meta["name"], p.Meta["entity_type"])
 			}
+			if p.Meta["compile_kwd"] != "mindmap" {
+				t.Errorf("entity %v compile_kwd = %v, want mindmap", p.Meta["name"], p.Meta["compile_kwd"])
+			}
+		case "relation":
+			relCount++
+			from, _ := p.Meta["from"].(string)
+			to, _ := p.Meta["to"].(string)
+			fromTo[from+"->"+to] = true
+			if p.Meta["relation_type"] != "related" {
+				t.Errorf("relation %v->%v type = %v, want related", from, to, p.Meta["relation_type"])
+			}
+		default:
+			t.Errorf("unexpected kind %q", kind)
+		}
+	}
+	if entCount != 5 || relCount != 4 {
+		t.Errorf("entities=%d relations=%d, want 5/4", entCount, relCount)
+	}
+	for _, edge := range []string{"root->A", "A->A1", "A->A2", "root->B"} {
+		if !fromTo[edge] {
+			t.Errorf("missing relation %s", edge)
 		}
 	}
 }
 
-func TestSerializeNode_Shape(t *testing.T) {
-	root := &utility.Node{ID: "Top \"quoted\"", Children: []*utility.Node{{ID: "child"}}}
-	js := serializeNode(root)
-	if !strings.HasPrefix(js, `{"id":"Top \"quoted\""`) {
-		t.Errorf("serializeNode = %q", js)
+func TestTreeToProducts_EmptyAndNil(t *testing.T) {
+	if got := treeToProducts("t1", "d1", nil); len(got) != 0 {
+		t.Errorf("nil root produced %d products", len(got))
 	}
-}
-
-// TestSerializeNode_EscapesControlChars locks that serializeNode uses
-// encoding/json: control characters such as CR/LF/TAB/FF are escaped (not
-// embedded raw), so the output is always valid JSON.
-func TestSerializeNode_EscapesControlChars(t *testing.T) {
-	root := &utility.Node{ID: "a\rb\tc\fd", Children: []*utility.Node{{ID: "x\ny"}}}
-	js := serializeNode(root)
-	var dec struct {
-		ID       string `json:"id"`
-		Children []struct {
-			ID string `json:"id"`
-		} `json:"children"`
-	}
-	if err := json.Unmarshal([]byte(js), &dec); err != nil {
-		t.Fatalf("serializeNode produced invalid JSON: %v (%q)", err, js)
-	}
-	if dec.ID != "a\rb\tc\fd" {
-		t.Errorf("root id round-trip = %q, want %q", dec.ID, "a\rb\tc\fd")
-	}
-	if len(dec.Children) != 1 || dec.Children[0].ID != "x\ny" {
-		t.Errorf("child id round-trip = %+v", dec.Children)
+	if got := treeToProducts("t1", "d1", &utility.Node{ID: ""}); len(got) != 0 {
+		t.Errorf("empty root id produced %d products", len(got))
 	}
 }

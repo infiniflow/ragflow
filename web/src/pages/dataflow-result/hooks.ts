@@ -289,7 +289,6 @@ export const useGetPipelineResultSearchParams = () => {
   const is_read_only = currentQueryParameters.get(
     PipelineResultSearchParams.IsReadOnly,
   ) as 'true' | 'false';
-  console.log('is_read_only', is_read_only);
   return {
     type: currentQueryParameters.get(PipelineResultSearchParams.Type) || '',
     documentId:
@@ -307,6 +306,14 @@ export const useGetPipelineResultSearchParams = () => {
       ) || '',
     createdBy:
       currentQueryParameters.get(PipelineResultSearchParams.CreatedBy) || '',
+    documentName:
+      currentQueryParameters.get(PipelineResultSearchParams.DocumentName) || '',
+    documentSize:
+      currentQueryParameters.get(PipelineResultSearchParams.DocumentSize) || '',
+    documentCreatedAt:
+      currentQueryParameters.get(
+        PipelineResultSearchParams.DocumentCreatedAt,
+      ) || '',
   };
 };
 

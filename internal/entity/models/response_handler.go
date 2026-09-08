@@ -27,15 +27,15 @@ import (
 
 // HandleNonStreamingResponse processes a complete non-streaming chat
 // response using the ParserConfig's ResponseParser to extract usage.
-func HandleNonStreamingResponse(
-	body []byte,
-	modelUsage *common.ModelUsage,
-	chatConfig *ChatConfig,
-	cfg *ParserConfig,
-) (*ChatResponse, error) {
+func HandleNonStreamingResponse(body []byte, modelUsage *common.ModelUsage, chatConfig *ChatConfig, cfg *ParserConfig) (*ChatResponse, error) {
 	var result map[string]any
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Check for upstream error.
+	if apiErr, ok := result["error"]; ok && apiErr != nil {
+		return nil, fmt.Errorf("upstream error: %v", apiErr)
 	}
 
 	// Extract usage via the protocol-specific parser.
@@ -56,7 +56,7 @@ func HandleNonStreamingResponse(
 		if chatConfig != nil {
 			chatConfig.UsageResult = usage
 			model, _ := result["model"].(string)
-			common.Info("StreamUsage", zap.String("model", model), zap.Int("prompt", usage.PromptTokens), zap.Int("completion", usage.CompletionTokens), zap.Int("total", usage.TotalTokens))
+			common.Info("NonStreamUsage", zap.String("model", model), zap.Int("prompt", usage.PromptTokens), zap.Int("completion", usage.CompletionTokens), zap.Int("total", usage.TotalTokens))
 		}
 	}
 
@@ -70,13 +70,7 @@ func HandleNonStreamingResponse(
 
 // HandleStreamingResponse processes a streaming chat response using the
 // ParserConfig's StreamParser to extract usage from each event.
-func HandleStreamingResponse(
-	body io.Reader,
-	modelUsage *common.ModelUsage,
-	chatConfig *ChatConfig,
-	cfg *ParserConfig,
-	sender func(*string, *string) error,
-) error {
+func HandleStreamingResponse(body io.Reader, modelUsage *common.ModelUsage, chatConfig *ChatConfig, cfg *ParserConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -98,6 +92,14 @@ func HandleStreamingResponse(
 			return fmt.Errorf("upstream stream error: %v", apiErr)
 		}
 
+		// Some providers emit a terminal event that carries only a root-level
+		// finish_reason with no choices. Check it before the choices guard so
+		// the stream terminates cleanly instead of being rejected as "ended
+		// before [DONE] or finish_reason".
+		if finishReason, ok := event["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
+
 		choices, ok := event["choices"].([]any)
 		if !ok || len(choices) == 0 {
 			return nil
@@ -115,8 +117,15 @@ func HandleStreamingResponse(
 
 		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
-		if reasoningContent, ok := delta["reasoning_content"].(string); ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+		// Extract reasoning via the protocol hook so each provider can
+		// name its reasoning field differently (reasoning_content,
+		// reasoning, ...) without the shared handler knowing which.
+		extractReasoning := cfg.ExtractStreamReasoning
+		if extractReasoning == nil {
+			extractReasoning = extractDefaultStreamReasoning
+		}
+		if reasoning := extractReasoning(delta); reasoning != "" {
+			if err := sender(nil, &reasoning); err != nil {
 				return err
 			}
 		}
@@ -191,11 +200,16 @@ func extractContentAndChoices(result map[string]any) (*string, *string, []map[st
 	}
 
 	var reasonContent *string
-	if rc, ok := messageMap["reasoning_content"].(string); ok {
+	if rc, ok := messageMap["reasoning_content"].(string); ok && rc != "" {
 		reason := rc
-		if reason != "" && reason[0] == '\n' {
+		if reason[0] == '\n' {
 			reason = reason[1:]
 		}
+		reasonContent = &reason
+	} else if rc, ok := messageMap["reasoning"].(string); ok && rc != "" {
+		// Some providers (e.g. Avian) report reasoning under a top-level
+		// "reasoning" field instead of "reasoning_content".
+		reason := rc
 		reasonContent = &reason
 	} else {
 		// Always return a non-nil pointer so callers can rely on it.

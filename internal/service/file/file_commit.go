@@ -122,7 +122,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 				objKey := ".objects/" + hashHex
 
 				if storageImpl != nil {
-					if err := storageImpl.Put(folderID, objKey, contentBytes); err != nil {
+					if err := storageImpl.Put(ctx, folderID, objKey, contentBytes); err != nil {
 						return fmt.Errorf("failed to store object: %w", err)
 					}
 				}
@@ -588,7 +588,7 @@ func (s *FileCommitService) GetUncommittedChanges(ctx context.Context, folderID 
 		}
 
 		if liveFile, ok := liveMap[fid]; ok {
-			liveHash := computeLiveFileHash(folderID, fid, liveFile)
+			liveHash := computeLiveFileHash(ctx, folderID, fid, liveFile)
 			committedHash := ""
 			if h, ok := committedEntry["hash"].(string); ok {
 				committedHash = h
@@ -779,7 +779,7 @@ func (s *FileCommitService) GetCommitFileContent(ctx context.Context, folderID, 
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	blob, err := storageImpl.Get(folderID, objKey)
+	blob, err := storageImpl.Get(ctx, folderID, objKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file content from storage: %w", err)
 	}
@@ -822,7 +822,7 @@ func (s *FileCommitService) GetFileVersionHistory(ctx context.Context, fileID st
 }
 
 // computeLiveFileHash computes the SHA256 hash of current file content from storage
-func computeLiveFileHash(folderID, fileID string, file *entity.File) string {
+func computeLiveFileHash(ctx context.Context, folderID, fileID string, file *entity.File) string {
 	if file.Location == nil || *file.Location == "" {
 		return ""
 	}
@@ -832,7 +832,7 @@ func computeLiveFileHash(folderID, fileID string, file *entity.File) string {
 		return ""
 	}
 
-	data, err := storageImpl.Get(folderID, *file.Location)
+	data, err := storageImpl.Get(ctx, folderID, *file.Location)
 	if err != nil {
 		return ""
 	}

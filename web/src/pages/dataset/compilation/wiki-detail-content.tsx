@@ -38,7 +38,7 @@ export function WikiDetailContent({
     isDirty,
     isOpen,
     open,
-    close,
+    setIsOpen,
     form,
     handleConfirm,
     isUpdating,
@@ -95,7 +95,7 @@ export function WikiDetailContent({
 
           <WikiCommitModal
             open={isOpen}
-            onOpenChange={close}
+            onOpenChange={setIsOpen}
             form={form}
             onConfirm={handleConfirm}
             loading={isUpdating}
@@ -105,7 +105,7 @@ export function WikiDetailContent({
         <div className="flex-1 overflow-y-auto p-8">
           <Empty
             className="h-full"
-            text={t('knowledgeDetails.selectArtifact')}
+            text={t('knowledgeCompilation.selectArtifact')}
           />
         </div>
       )}

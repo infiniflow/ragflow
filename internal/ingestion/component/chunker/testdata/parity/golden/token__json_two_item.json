@@ -1,0 +1,9 @@
+{
+ "case_id": "token__json_two_item",
+ "chunks": [
+  {
+   "doc_type_kwd": "text",
+   "text": "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega\nanother long item with many words that should be merged when the token budget allows merging across items on the python side but stays separate on the go side"
+  }
+ ]
+}

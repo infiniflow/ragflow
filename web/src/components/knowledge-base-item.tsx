@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { DocumentParserType } from '@/constants/knowledge';
 import {
   useFetchDatasetsByIds,
@@ -5,9 +21,10 @@ import {
 } from '@/hooks/use-knowledge-request';
 import { IDataset } from '@/interfaces/database/dataset';
 import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
+import { getEmbeddingBaseName } from '@/utils/llm-util';
 import { useDebounce } from 'ahooks';
 import { toLower } from 'lodash';
-import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { RAGFlowAvatar } from './ragflow-avatar';
@@ -37,54 +54,40 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
     handleScroll,
     hasNextPage,
   } = useFetchKnowledgeList(false, debouncedSearchString);
-  const datasetCacheRef = useRef(new Map<string, IDataset>());
-
   const selectedDatasetIds = useMemo(
     () => (Array.isArray(datasetId) ? datasetId : []),
     [datasetId],
   );
 
-  // Selected dataset IDs that are neither in the currently loaded page nor
-  // already cached. These need to be fetched by ID so their names can be
-  // echoed back in the form field (the paginated list may not contain them).
-  const missingIds = useMemo(() => {
-    const loadedIds = new Set(datasetListOrigin.map((d) => d.id));
-    return selectedDatasetIds.filter(
-      (id) => !loadedIds.has(id) && !datasetCacheRef.current.has(id),
-    );
-  }, [datasetListOrigin, selectedDatasetIds]);
-
-  const { data: missingDatasets } = useFetchDatasetsByIds(missingIds);
+  // The paginated list may not contain the selected datasets (unloaded
+  // pages, filtered out by the search box), so resolve them by ID to echo
+  // their names back in the form field. A dataset that has been deleted
+  // comes back missing and its badge falls back to the raw id.
+  const { data: selectedDatasets } = useFetchDatasetsByIds(selectedDatasetIds);
 
   const datasetList = useMemo(() => {
-    datasetListOrigin.forEach((dataset) => {
-      datasetCacheRef.current.set(dataset.id, dataset);
-    });
-    missingDatasets?.forEach((dataset) => {
-      datasetCacheRef.current.set(dataset.id, dataset);
-    });
-
-    const selectedDatasets = selectedDatasetIds
-      .map((id) => datasetCacheRef.current.get(id))
-      .filter(Boolean) as IDataset[];
-
     return Array.from(
       new Map(
-        [...datasetListOrigin, ...selectedDatasets].map((dataset) => [
+        [...datasetListOrigin, ...(selectedDatasets ?? [])].map((dataset) => [
           dataset.id,
           dataset,
         ]),
       ).values(),
     );
-  }, [datasetListOrigin, selectedDatasetIds, missingDatasets]);
+  }, [datasetListOrigin, selectedDatasets]);
 
-  const selectedEmbedId = useMemo(() => {
+  // Datasets are mutually selectable when their embedding models resolve to
+  // the same base model name, even if they use different provider instances
+  // (e.g. "BAAI/bge-m3@renew@SILICONFLOW" vs "BAAI/bge-m3@COPY@SILICONFLOW").
+  const selectedEmbedBaseName = useMemo(() => {
     const data = datasetList?.find((item) => item.id === datasetId?.[0]);
-    return data?.embedding_model ?? '';
+    return getEmbeddingBaseName(
+      data?.embedding_model_name || data?.embedding_model,
+    );
   }, [datasetId, datasetList]);
 
   const nextOptions = useMemo(() => {
-    const datasetListMap = datasetList.map((item: IDataset) => {
+    return datasetList.map((item: IDataset) => {
       return {
         label: item.name,
         icon: () => (
@@ -97,19 +100,26 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
         suffix: (
           <section className="flex gap-2">
             <DatasetLabel text={item.nickname} />
-            <DatasetLabel text={item.embedding_model} />
+            <DatasetLabel
+              text={
+                item.embedding_model_name
+                  ? item.embedding_model_name
+                  : item.embedding_model
+              }
+            />
           </section>
         ),
         value: item.id,
         disabled:
-          item.chunk_count <= 0 ||
+          item.chunk_count === 0 ||
           item.chunk_method === DocumentParserType.Tag ||
-          (item.embedding_model !== selectedEmbedId && selectedEmbedId !== ''),
+          (selectedEmbedBaseName !== '' &&
+            getEmbeddingBaseName(
+              item.embedding_model_name || item.embedding_model,
+            ) !== selectedEmbedBaseName),
       };
     });
-
-    return datasetListMap;
-  }, [datasetList, selectedEmbedId]);
+  }, [datasetList, selectedEmbedBaseName]);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearchString(value);

@@ -92,7 +92,7 @@ type GroupListItem struct {
 // ListSaved returns the tenant's groups with nested templates. Mirrors Python
 // list_saved(). total is derived from the full (unpaginated) result set.
 func (s *CompilationTemplateGroupService) ListSaved(ctx context.Context, tenantID, keywords, scope, orderby string, desc bool) ([]*GroupListItem, error) {
-	groups, err := s.groupDAO.ListSaved(ctx, tenantID, keywords, scope, orderby, desc)
+	groups, err := s.groupDAO.ListSaved(ctx, dao.DB, tenantID, keywords, scope, orderby, desc)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (s *CompilationTemplateGroupService) ListSaved(ctx context.Context, tenantI
 // GetSaved returns a single group with its nested templates, or nil. Mirrors
 // Python get_saved().
 func (s *CompilationTemplateGroupService) GetSaved(ctx context.Context, tenantID, groupID string) (*GroupListItem, error) {
-	group, err := s.groupDAO.GetSaved(ctx, tenantID, groupID)
+	group, err := s.groupDAO.GetSaved(ctx, dao.DB, tenantID, groupID)
 	if err != nil || group == nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenan
 // templates. Mirrors Python update_group(). The field update and child
 // reconciliation are committed atomically.
 func (s *CompilationTemplateGroupService) UpdateGroup(ctx context.Context, tenantID, groupID string, req *GroupRequest) (*GroupListItem, error) {
-	existing, err := s.groupDAO.GetSaved(ctx, tenantID, groupID)
+	existing, err := s.groupDAO.GetSaved(ctx, dao.DB, tenantID, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,11 +154,11 @@ func (s *CompilationTemplateGroupService) UpdateGroup(ctx context.Context, tenan
 		return nil, nil
 	}
 
-	if err := validateGroupPayload(req, false); err != nil {
+	if err = validateGroupPayload(req, false); err != nil {
 		return nil, err
 	}
 
-	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{}
 		if strings.TrimSpace(req.Name) != "" {
 			updates["name"] = strings.TrimSpace(req.Name)
@@ -191,17 +191,17 @@ func (s *CompilationTemplateGroupService) UpdateGroup(ctx context.Context, tenan
 // DeleteGroup soft-deletes a group and its valid child templates. Mirrors
 // Python delete_group(). Returns (false, nil) when the group is missing.
 func (s *CompilationTemplateGroupService) DeleteGroup(ctx context.Context, tenantID, groupID string) (bool, error) {
-	existing, err := s.groupDAO.GetSaved(ctx, tenantID, groupID)
+	existing, err := s.groupDAO.GetSaved(ctx, dao.DB, tenantID, groupID)
 	if err != nil {
 		return false, err
 	}
 	if existing == nil {
 		return false, nil
 	}
-	if err := s.templateDAO.UpdateStatusByGroup(ctx, dao.DB, groupID, string(entity.StatusInvalid)); err != nil {
+	if err = s.templateDAO.UpdateStatusByGroup(ctx, dao.DB, groupID, string(entity.StatusInvalid)); err != nil {
 		return false, err
 	}
-	if err := s.groupDAO.Delete(ctx, dao.DB, tenantID, groupID); err != nil {
+	if err = s.groupDAO.Delete(ctx, dao.DB, tenantID, groupID); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -224,7 +224,7 @@ func (s *CompilationTemplateGroupService) NameExists(ctx context.Context, tenant
 	if len(excludeIDs) > 0 {
 		excludeID = excludeIDs[0]
 	}
-	return s.groupDAO.NameExists(ctx, tenantID, name, excludeID)
+	return s.groupDAO.NameExists(ctx, dao.DB, tenantID, name, excludeID)
 }
 
 // ValidateGroupRequest validates the fields present in a group create/update
@@ -368,7 +368,7 @@ func validateGroupPayload(req *GroupRequest, requireAll bool) error {
 func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db *gorm.DB, tenantID, groupID string, templates []*GroupTemplate, seen map[string]struct{}) error {
 	for _, child := range templates {
 		name := strings.TrimSpace(child.Name)
-		if exists, err := s.templateDAO.NameExistsInGroup(ctx, tenantID, groupID, name, ""); err != nil {
+		if exists, err := s.templateDAO.NameExistsInGroup(ctx, dao.DB, tenantID, groupID, name, ""); err != nil {
 			return err
 		} else if exists {
 			return groupValidationErrorf("template name '%s' already exists in this group.", name)

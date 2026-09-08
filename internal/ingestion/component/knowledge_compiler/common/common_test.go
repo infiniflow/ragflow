@@ -1,8 +1,66 @@
 package common
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
+
+	"ragflow/internal/agent/runtime"
 )
+
+type captureChat struct{ req ChatRequest }
+
+func (c *captureChat) Chat(_ context.Context, req ChatRequest) (*ChatResponse, error) {
+	c.req = req
+	return &ChatResponse{Content: `{"ok":true}`}, nil
+}
+
+func TestGenJSONDisablesInvokerRetry(t *testing.T) {
+	chat := &captureChat{}
+	if _, err := GenJSON(context.Background(), chat, ChatRequest{UserPrompt: "test"}, 0); err != nil {
+		t.Fatalf("GenJSON: %v", err)
+	}
+	if !chat.req.DisableRetry {
+		t.Fatal("GenJSON must disable retries in the underlying ChatInvoker")
+	}
+}
+
+type failingChat struct{ err error }
+
+func (c failingChat) Chat(context.Context, ChatRequest) (*ChatResponse, error) {
+	return nil, c.err
+}
+
+func TestGenJSONReportsLLMFailure(t *testing.T) {
+	var messages []string
+	ctx := runtime.WithProgressMessageCallback(t.Context(), func(component, message string) {
+		if component != "Compiler" {
+			t.Fatalf("component = %q, want Compiler", component)
+		}
+		messages = append(messages, message)
+	})
+	err := errors.New("API request failed with status 401:\ninvalid key")
+	if _, gotErr := GenJSON(ctx, failingChat{err: err}, ChatRequest{}, 0); !errors.Is(gotErr, err) {
+		t.Fatalf("GenJSON error = %v, want %v", gotErr, err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("messages = %v, want one error message", messages)
+	}
+	if !strings.Contains(messages[0], "[ERROR] LLM call failed (attempt 1/1)") || strings.Contains(messages[0], "\n") {
+		t.Fatalf("unexpected progress message: %q", messages[0])
+	}
+}
+
+func TestCompactErrorRedactsCredentials(t *testing.T) {
+	got := CompactError(errors.New(`status=401 api_key="sk-secret-value" password=topsecret`))
+	if strings.Contains(got, "sk-secret-value") || strings.Contains(got, "topsecret") {
+		t.Fatalf("CompactError leaked credentials: %q", got)
+	}
+	if !strings.Contains(got, "api_key=[REDACTED]") || !strings.Contains(got, "password=[REDACTED]") {
+		t.Fatalf("CompactError did not redact credential fields: %q", got)
+	}
+}
 
 func vec(a, b, c float32) []float32 { return []float32{a, b, c} }
 

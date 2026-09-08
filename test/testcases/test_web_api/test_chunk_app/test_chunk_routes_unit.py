@@ -15,6 +15,7 @@
 #
 
 import asyncio
+import contextlib
 import inspect
 import importlib.util
 import sys
@@ -223,6 +224,14 @@ def _load_chunk_module(monkeypatch):
     constants_mod.LLMType = _DummyLLMType
     constants_mod.ParserType = _DummyParserType
     constants_mod.PAGERANK_FLD = "pagerank_flt"
+    constants_mod.TaskStatus = SimpleNamespace(
+        UNSTART=SimpleNamespace(value="0"),
+        RUNNING=SimpleNamespace(value="1"),
+        CANCEL=SimpleNamespace(value="2"),
+        DONE=SimpleNamespace(value="3"),
+        FAIL=SimpleNamespace(value="4"),
+        SCHEDULE=SimpleNamespace(value="5"),
+    )
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
     string_utils_mod = ModuleType("common.string_utils")
@@ -232,7 +241,27 @@ def _load_chunk_module(monkeypatch):
 
     metadata_utils_mod = ModuleType("common.metadata_utils")
     metadata_utils_mod.apply_meta_data_filter = lambda *_args, **_kwargs: {}
+    metadata_utils_mod.convert_conditions = lambda *_args, **_kwargs: {}
+    metadata_utils_mod.meta_filter = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "common.metadata_utils", metadata_utils_mod)
+
+    doc_store_base_mod = ModuleType("common.doc_store.doc_store_base")
+    doc_store_base_mod.OrderByExpr = type("OrderByExpr", (), {})
+    monkeypatch.setitem(sys.modules, "common.doc_store", ModuleType("common.doc_store"))
+    monkeypatch.setitem(sys.modules, "common.doc_store.doc_store_base", doc_store_base_mod)
+
+    tag_feature_utils_mod = ModuleType("common.tag_feature_utils")
+    tag_feature_utils_mod.validate_tag_features = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "common.tag_feature_utils", tag_feature_utils_mod)
+
+    pagination_utils_mod = ModuleType("api.utils.pagination_utils")
+    pagination_utils_mod.validate_rest_api_page_size = lambda *_args, **_kwargs: (1, 30)
+    monkeypatch.setitem(sys.modules, "api.utils.pagination_utils", pagination_utils_mod)
+
+    reference_metadata_utils_mod = ModuleType("api.utils.reference_metadata_utils")
+    reference_metadata_utils_mod.enrich_chunks_with_document_metadata = lambda chunks, *_args, **_kwargs: chunks
+    reference_metadata_utils_mod.resolve_reference_metadata_preferences = lambda *_args, **_kwargs: {}
+    monkeypatch.setitem(sys.modules, "api.utils.reference_metadata_utils", reference_metadata_utils_mod)
 
     misc_utils_mod = ModuleType("common.misc_utils")
 
@@ -293,6 +322,7 @@ def _load_chunk_module(monkeypatch):
     api_utils_mod.add_tenant_id_to_kwargs = lambda func: func
     api_utils_mod.check_duplicate_ids = lambda ids, _kind: (list(dict.fromkeys(ids)), [] if len(ids) == len(set(ids)) else [f"Duplicate {_kind} ids"])
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
+    api_utils_mod.construct_json_result = lambda code=0, message="success", data=None: {"code": code, "message": message, "data": data}
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     image_utils_mod = ModuleType("api.utils.image_utils")
@@ -312,7 +342,93 @@ def _load_chunk_module(monkeypatch):
     tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {"llm_name": "embed", "model_type": "embedding"}
     tenant_model_service_mod.resolve_model_config = lambda *_args, **_kwargs: {"llm_name": "embed", "model_type": "embedding"}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {"llm_name": "chat", "model_type": "chat"}
+    tenant_model_service_mod.split_model_name = lambda model_name: (model_name.rsplit("@", 2) + ["", ""])[:3]
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
+
+    # chunk_api imports structure_graph_common from api.apps.services; stub it in
+    # sys.modules so the real module and its transitive imports are not loaded.
+    stub_apps_services = ModuleType("api.apps.services")
+    monkeypatch.setitem(sys.modules, "api.apps.services", stub_apps_services)
+
+    sgc_mod = ModuleType("api.apps.services.structure_graph_common")
+
+    async def _sgc_keyword_subgraph(*_args, **_kwargs):
+        return {}, [], []
+
+    async def _sgc_build_bucket(*_args, **_kwargs):
+        return [], []
+
+    sgc_mod.keyword_subgraph = _sgc_keyword_subgraph
+    sgc_mod.build_bucket = _sgc_build_bucket
+    monkeypatch.setitem(sys.modules, "api.apps.services.structure_graph_common", sgc_mod)
+
+    # chunk_api imports DB, Document, Task from db_models; stub them so the real
+    # module (which pulls in quart_auth) is never loaded.
+    class _FakeExpr:
+        def __or__(self, other):
+            return self
+
+        def __and__(self, other):
+            return self
+
+    class _FakeField:
+        def __eq__(self, other):
+            return _FakeExpr()
+
+        def __ne__(self, other):
+            return _FakeExpr()
+
+        def is_null(self, value=True):
+            return _FakeExpr()
+
+    class _StubFreshDoc:
+        id = "doc-1"
+        kb_id = "kb-1"
+        token_num = 2
+        chunk_num = 1
+        process_duration = 0.0
+
+    class _StubDocQuery:
+        def where(self, *_args, **_kwargs):
+            return self
+
+        def for_update(self):
+            return self
+
+        def first(self):
+            return _StubDocumentModel.fresh_doc
+
+    class _StubDocumentModel:
+        id = _FakeField()
+        run = _FakeField()
+        fresh_doc = _StubFreshDoc()
+
+        @classmethod
+        def select(cls, *_args, **_kwargs):
+            return _StubDocQuery()
+
+    class _StubTaskModel:
+        doc_id = _FakeField()
+
+    db_models_mod = ModuleType("api.db.db_models")
+    db_models_mod.Document = _StubDocumentModel
+    db_models_mod.Task = _StubTaskModel
+    db_models_mod.DB = SimpleNamespace(atomic=lambda: contextlib.nullcontext())
+    monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
+
+    file2document_service_mod = ModuleType("api.db.services.file2document_service")
+    file2document_service_mod.File2DocumentService = SimpleNamespace(get_storage_address=lambda **_kwargs: ("", ""))
+    monkeypatch.setitem(sys.modules, "api.db.services.file2document_service", file2document_service_mod)
+
+    task_service_mod = ModuleType("api.db.services.task_service")
+    task_service_mod.TaskService = SimpleNamespace(filter_delete=lambda *_args, **_kwargs: None)
+    task_service_mod.cancel_all_task_of = lambda *_args, **_kwargs: None
+    task_service_mod.queue_tasks = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.db.services.task_service", task_service_mod)
+
+    document_counter_service_mod = ModuleType("api.db.services.document_counter_service")
+    document_counter_service_mod.release_reparse_counters = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.db.services.document_counter_service", document_counter_service_mod)
 
     document_service_mod = ModuleType("api.db.services.document_service")
 
@@ -392,6 +508,7 @@ def _load_chunk_module(monkeypatch):
     llm_service_mod = ModuleType("api.db.services.llm_service")
     llm_service_mod.LLMService = _DummyLLMService
     llm_service_mod.LLMBundle = _DummyLLMBundle
+    llm_service_mod.resolve_llm_setting = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.services.llm_service", llm_service_mod)
     services_pkg.llm_service = llm_service_mod
 
@@ -499,6 +616,14 @@ def _load_chunk_api_module(monkeypatch):
     module.manager = _DummyManager()
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
+    # chunk_api imports these inside the chunk-write helpers; re-expose the shared
+    # stubs so tests can reach them via module.<name> (setattr / method patching).
+    module.rag_tokenizer = sys.modules["rag.nlp"].rag_tokenizer
+    module.beAdoc = sys.modules["rag.app.qa"].beAdoc
+    module.rmPrefix = sys.modules["rag.app.qa"].rmPrefix
+    module.label_question = sys.modules["rag.app.tag"].label_question
+    module.cross_languages = sys.modules["rag.prompts.generator"].cross_languages
+    module.keyword_extraction = sys.modules["rag.prompts.generator"].keyword_extraction
     return module
 
 
@@ -521,6 +646,13 @@ def test_restful_chunk_list_get_and_delete_unit(monkeypatch):
     assert res["data"]["total"] == 1, res
     assert res["data"]["chunks"][0]["id"] == "chunk-1", res
     assert res["data"]["chunks"][0]["available"] is True, res
+    assert res["data"]["chunks"][0]["doc_type_kwd"] == "text", res
+
+    module.request = SimpleNamespace(args={"id": "chunk-1"}, headers={})
+    module.settings.docStoreConn.chunk["doc_type_kwd"] = "image"
+    res = _run(_route_core(module.list_chunks)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert res["data"]["chunks"][0]["doc_type_kwd"] == "image", res
 
     res = _run(_route_core(module.get_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
     assert res["code"] == 0, res
@@ -715,3 +847,4 @@ def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
     inserted = module.settings.docStoreConn.inserted[-1]
     assert inserted.get("img_id"), inserted
     assert inserted.get("doc_type_kwd") == "image", inserted
+    assert res["data"]["chunk"]["doc_type_kwd"] == "image", res

@@ -1,6 +1,6 @@
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
+import NumberInput from '@/components/originui/number-input';
 import { SingleFormSlider } from '@/components/ui/dual-range-slider';
-import { NumberInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
@@ -122,13 +122,13 @@ export const AdvancedSettingsForm = () => {
                     disabled={false}
                   ></SingleFormSlider>
                   <NumberInput
-                    className={cn(
-                      'h-6 w-10 p-1 border border-border-button rounded-sm',
-                    )}
+                    className={cn('h-6 w-16')}
                     max={1}
                     step={0.01}
                     min={0}
+                    precision={2}
                     {...field}
+                    hideIcons
                   ></NumberInput>
                 </div>
               ),
@@ -143,6 +143,13 @@ export const AdvancedSettingsForm = () => {
               horizontal: true,
               placeholder: t('memory.config.systemPromptPlaceholder'),
               required: false,
+              fieldConfig: {
+                resize: 'vertical',
+                autoSize: {
+                  minRows: 8,
+                  maxRows: 16,
+                },
+              },
             }}
           />
           <RenderField
@@ -154,6 +161,13 @@ export const AdvancedSettingsForm = () => {
               horizontal: true,
               placeholder: t('memory.config.userPromptPlaceholder'),
               required: false,
+              fieldConfig: {
+                resize: 'vertical',
+                autoSize: {
+                  minRows: 6,
+                  maxRows: 12,
+                },
+              },
             }}
           />
         </>

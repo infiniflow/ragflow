@@ -46,9 +46,9 @@ export const MODEL_FIELD_SCHEMA: AddCustomModelDialogFields[] = [
       { value: 'embedding', label: 'modelTypes.embedding' },
       { value: 'rerank', label: 'modelTypes.rerank' },
       { value: 'tts', label: 'modelTypes.tts' },
-      { value: 'image2text', label: 'modelTypes.image2text' },
+      { value: 'vision', label: 'modelTypes.image2text' },
       { value: 'ocr', label: 'modelTypes.ocr' },
-      { value: 'speech2text', label: 'modelTypes.speech2text' },
+      { value: 'asr', label: 'modelTypes.speech2text' },
     ],
   },
   {
@@ -133,8 +133,14 @@ export const SOMARK_EXTRA_FIELDS: AddCustomModelDialogFields[] = [
  * `SoMarkInstanceCard` payload.
  */
 export const SOMARK_FEATURE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'somark_enable_text_cross_page', label: 'somark.enableTextCrossPage' },
-  { value: 'somark_enable_table_cross_page', label: 'somark.enableTableCrossPage' },
+  {
+    value: 'somark_enable_text_cross_page',
+    label: 'somark.enableTextCrossPage',
+  },
+  {
+    value: 'somark_enable_table_cross_page',
+    label: 'somark.enableTableCrossPage',
+  },
   {
     value: 'somark_enable_title_level_recognition',
     label: 'somark.enableTitleLevelRecognition',
@@ -172,34 +178,31 @@ export const useCustomModelFields = (
 ): AddCustomModelDialogFields[] => {
   const { t } = useTranslate('setting');
 
-  return useMemo<AddCustomModelDialogFields[]>(
-    () => {
-      const isSoMark = providerName === LLMFactory.SoMark;
-      const schema = isSoMark
-        ? [...MODEL_FIELD_SCHEMA, ...SOMARK_EXTRA_FIELDS]
-        : MODEL_FIELD_SCHEMA;
-      return schema.map((field) => {
-        const mapped = {
-          ...field,
-          label: t(field.label),
-          options: field.options?.map((opt) => ({
-            value: opt.value,
-            label: t(opt.label),
-          })),
-        };
-        // For SoMark, replace the features switch-group options with
-        // SoMark-only feature toggles (no "Tool Call") and pre-select
-        // the default features.
-        if (isSoMark && field.name === 'features') {
-          mapped.options = SOMARK_FEATURE_OPTIONS.map((opt) => ({
-            value: opt.value,
-            label: t(opt.label),
-          }));
-          mapped.defaultValue = [...SOMARK_DEFAULT_FEATURES];
-        }
-        return mapped;
-      });
-    },
-    [t, providerName],
-  );
+  return useMemo<AddCustomModelDialogFields[]>(() => {
+    const isSoMark = providerName === LLMFactory.SoMark;
+    const schema = isSoMark
+      ? [...MODEL_FIELD_SCHEMA, ...SOMARK_EXTRA_FIELDS]
+      : MODEL_FIELD_SCHEMA;
+    return schema.map((field) => {
+      const mapped = {
+        ...field,
+        label: t(field.label),
+        options: field.options?.map((opt) => ({
+          value: opt.value,
+          label: t(opt.label),
+        })),
+      };
+      // For SoMark, replace the features switch-group options with
+      // SoMark-only feature toggles (no "Tool Call") and pre-select
+      // the default features.
+      if (isSoMark && field.name === 'features') {
+        mapped.options = SOMARK_FEATURE_OPTIONS.map((opt) => ({
+          value: opt.value,
+          label: t(opt.label),
+        }));
+        mapped.defaultValue = [...SOMARK_DEFAULT_FEATURES];
+      }
+      return mapped;
+    });
+  }, [t, providerName]);
 };

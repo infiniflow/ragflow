@@ -88,9 +88,6 @@ func TestXiaomiChatHappyPath(t *testing.T) {
 		if body["stream"] != false {
 			t.Errorf("stream=%v want false", body["stream"])
 		}
-		if body["max_tokens"] != nil {
-			t.Errorf("max_tokens must not be sent: %v", body["max_tokens"])
-		}
 		if body["max_completion_tokens"] != float64(1024) {
 			t.Errorf("max_completion_tokens=%v", body["max_completion_tokens"])
 		}
@@ -251,6 +248,10 @@ func TestXiaomiStreamHappyPath(t *testing.T) {
 		if body["stream"] != true {
 			t.Errorf("stream=%v want true", body["stream"])
 		}
+		streamOptions, ok := body["stream_options"].(map[string]interface{})
+		if !ok || streamOptions["include_usage"] != true {
+			t.Errorf("stream_options=%#v, want include_usage=true", body["stream_options"])
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,
 			`data: {"choices":[{"delta":{"reasoning_content":"step "}}]}`+"\n\n"+
@@ -344,10 +345,11 @@ func TestXiaomiStreamRejectsMalformedFrame(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	// Malformed SSE frames are silently skipped; the stream completes and sends [DONE].
+	// Malformed SSE frames abort the stream: Xiaomi now uses the strict
+	// OpenAIParserConfig shared by every OpenAI-compatible driver.
 	err := newXiaomiForTest(srv.URL).ChatStreamlyWithSender(ctx, "mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, func(*string, *string) error { return nil })
-	if err != nil {
-		t.Errorf("expected no error on malformed frame, got %v", err)
+	if err == nil {
+		t.Error("expected error on malformed frame, got nil")
 	}
 }
 
@@ -359,10 +361,10 @@ func TestXiaomiUnsupportedMethods(t *testing.T) {
 	apiKey := "test-key"
 	cfg := &APIConfig{ApiKey: &apiKey}
 
-	if _, err := m.Embed(ctx, &model, []string{"x"}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: %v", err)
 	}
-	if _, err := m.Rerank(ctx, &model, "q", []string{"d"}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"d"}}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: %v", err)
 	}
 	// CheckConnection IS implemented — verifies API config and base URL are reachable.

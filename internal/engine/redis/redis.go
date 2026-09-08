@@ -19,6 +19,7 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -294,7 +295,7 @@ func (r *Client) Get(ctx context.Context, key string) (string, error) {
 		return "", nil
 	}
 	val, err := r.client.Get(ctx, key).Result()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return "", nil
 	}
 	if err != nil {
@@ -327,7 +328,7 @@ func (r *Client) GetObj(ctx context.Context, key string, dest interface{}) bool 
 		return false
 	}
 	data, err := r.client.Get(ctx, key).Result()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return false
 	}
 	if err != nil {
@@ -384,7 +385,7 @@ func (r *Client) GetOrCreateKey(ctx context.Context, key string, value string) (
 	// SETNX returns true if the key was set, false if it already existed
 	success, err := r.client.SetNX(ctx, key, value, 0).Result()
 	if err != nil {
-		return "", fmt.Errorf("failed to set key in Redis: %v", err)
+		return "", fmt.Errorf("failed to set key in Redis: %w", err)
 	}
 
 	if success {
@@ -396,7 +397,7 @@ func (r *Client) GetOrCreateKey(ctx context.Context, key string, value string) (
 	// Retrieve and return that key
 	finalKey, err := r.client.Get(ctx, key).Result()
 	if err != nil {
-		return "", fmt.Errorf("failed to get key set by another process: %v", err)
+		return "", fmt.Errorf("failed to get key set by another process: %w", err)
 	}
 
 	return finalKey, nil
@@ -675,7 +676,7 @@ func (r *Client) QueueConsumer(ctx context.Context, queueName, groupName, consum
 			Block:    5 * time.Second,
 		}).Result()
 
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			return nil, nil
 		}
 		if err != nil {

@@ -21,11 +21,12 @@ from operator import or_
 from uuid import uuid4
 from agent.canvas import Canvas
 from api.db import CanvasCategory, TenantPermission
-from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation, UserCanvasVersion
+from api.db.db_models import DB, CanvasTemplate, CompilationTemplateGroup, User, UserCanvas, API4Conversation, UserCanvasVersion
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.misc_utils import get_uuid, thread_pool_exec
+from common.constants import StatusEnum
 from api.utils.api_utils import get_data_openai
 import tiktoken
 from peewee import fn
@@ -73,7 +74,7 @@ class UserCanvasService(CommonService):
         # find team agents and owned agents
         agents = cls.model.select(*fields).where((cls.model.user_id.in_(tenant_ids) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.user_id == user_id))
         # sort by create_time, asc
-        agents.order_by(cls.model.create_time.asc())
+        agents = agents.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later
         offset, limit = 0, 50
         res = []
@@ -130,7 +131,7 @@ class UserCanvasService(CommonService):
         orderby,
         desc,
         keywords,
-        canvas_category=None,
+        canvas_category_list=None,
         tags=None,
         canvas_type=None,
     ):
@@ -155,13 +156,13 @@ class UserCanvasService(CommonService):
                 .join(User, on=(cls.model.user_id == User.id))
                 .where(
                     owner_filter,
-                    (fn.LOWER(cls.model.title).contains(keywords.lower())),
+                    (fn.LOWER(cls.model.title).contains(keywords.lower()) | fn.LOWER(cls.model.tags).contains(keywords.lower())),
                 )
             )
         else:
             agents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(owner_filter)
-        if canvas_category:
-            agents = agents.where(cls.model.canvas_category == canvas_category)
+        if canvas_category_list:
+            agents = agents.where(cls.model.canvas_category.in_(canvas_category_list))
         if canvas_type:
             agents = agents.where(cls.model.canvas_type == canvas_type)
         if tags:
@@ -196,6 +197,63 @@ class UserCanvasService(CommonService):
                 agent["release_time"] = release_time_map.get(agent["id"])
 
         return agents_list, count
+
+    @classmethod
+    @DB.connection_context()
+    def get_owner_filter(cls, joined_tenant_ids, user_id):
+        owner_filter = cls.model.user_id.in_(joined_tenant_ids) & ((cls.model.permission == TenantPermission.TEAM.value) | (cls.model.user_id == user_id))
+        owners = (
+            cls.model.select(
+                cls.model.user_id.alias("id"),
+                User.nickname.alias("label"),
+                fn.COUNT(cls.model.id).alias("count"),
+            )
+            .join(User, on=(cls.model.user_id == User.id))
+            .where(owner_filter)
+            .group_by(cls.model.user_id, User.nickname)
+        )
+        owner_list = list(owners.dicts())
+        group_count = (
+            CompilationTemplateGroup.select()
+            .where(
+                CompilationTemplateGroup.tenant_id == user_id,
+                CompilationTemplateGroup.status == StatusEnum.VALID.value,
+            )
+            .count()
+        )
+        if group_count:
+            current_owner = next((owner for owner in owner_list if owner["id"] == user_id), None)
+            if current_owner:
+                current_owner["count"] += group_count
+            else:
+                nickname = User.select(User.nickname).where(User.id == user_id).scalar()
+                owner_list.append({"id": user_id, "label": nickname or "", "count": group_count})
+        return owner_list
+
+    @classmethod
+    @DB.connection_context()
+    def get_category_filter(cls, joined_tenant_ids, user_id):
+        category_filter = cls.model.user_id.in_(joined_tenant_ids) & ((cls.model.permission == TenantPermission.TEAM.value) | (cls.model.user_id == user_id))
+        categories = (
+            cls.model.select(
+                cls.model.canvas_category.alias("id"),
+                fn.COUNT(cls.model.id).alias("count"),
+            )
+            .where(category_filter)
+            .group_by(cls.model.canvas_category)
+        )
+        category_list = list(categories.dicts())
+        group_count = (
+            CompilationTemplateGroup.select()
+            .where(
+                CompilationTemplateGroup.tenant_id == user_id,
+                CompilationTemplateGroup.status == StatusEnum.VALID.value,
+            )
+            .count()
+        )
+        if group_count:
+            category_list.append({"id": "compilation_template_group", "count": group_count})
+        return category_list
 
     @classmethod
     @DB.connection_context()

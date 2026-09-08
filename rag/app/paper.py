@@ -20,7 +20,8 @@ import re
 
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
 from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, attach_media_context
+from common.token_utils import num_tokens_from_string
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, attach_media_context, DEFAULT_DELIMITER
 from deepdoc.parser import PdfParser
 import numpy as np
 from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
@@ -38,7 +39,7 @@ class Pdf(PdfParser):
 
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
         start = timer()
@@ -132,12 +133,32 @@ class Pdf(PdfParser):
         }
 
 
+def _merge_sections_by_pivot(sorted_sections, sec_ids, chunk_token_num):
+    """Concatenate consecutive sections sharing a title pivot, bounded by
+    ``chunk_token_num`` so a long section is not emitted as one oversized chunk.
+    A non-positive budget disables the cap.
+    """
+    chunks = []
+    last_sid = -2
+    for (txt, _), sec_id in zip(sorted_sections, sec_ids, strict=True):
+        # Count body tokens only: the @@page\tx0\t...## position tags are metadata
+        # for pdf_parser.crop(), not content, so strip them before measuring the
+        # budget (the tags stay in chunks[-1] for cropping).
+        merged_body = PdfParser.remove_tag(chunks[-1] + "\n" + txt) if chunks else ""
+        if sec_id == last_sid and chunks and (chunk_token_num <= 0 or num_tokens_from_string(merged_body) <= chunk_token_num):
+            chunks[-1] += "\n" + txt
+            continue
+        chunks.append(txt)
+        last_sid = sec_id
+    return chunks
+
+
 def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Only pdf is supported.
     The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
     """
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
         tenant_id = kwargs.get("tenant_id")
@@ -157,7 +178,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         if name == "deepdoc":
             pdf_parser = Pdf()
-            paper = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+            paper = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
             sections = paper.get("sections", [])
         else:
             kwargs.pop("parse_method", None)
@@ -180,12 +201,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             paper = {"title": filename, "authors": " ", "abstract": "", "sections": sections, "tables": tables}
 
         tbls = paper["tables"]
-        tbls = vision_figure_parser_pdf_wrapper(
-            tbls=tbls,
-            sections=sections,
-            callback=callback,
-            **kwargs,
-        )
+        if name != "mineru":
+            tbls = vision_figure_parser_pdf_wrapper(
+                tbls=tbls,
+                sections=sections,
+                callback=callback,
+                lang=lang,
+                **kwargs,
+            )
         paper["tables"] = tbls
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")
@@ -223,15 +246,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         sec_ids.append(sid)
         logging.debug("{} {} {} {}".format(lvl, sorted_sections[i][0], most_level, sid))
 
-    chunks = []
-    last_sid = -2
-    for (txt, _), sec_id in zip(sorted_sections, sec_ids):
-        if sec_id == last_sid:
-            if chunks:
-                chunks[-1] += "\n" + txt
-                continue
-        chunks.append(txt)
-        last_sid = sec_id
+    # Concatenate sections sharing a title pivot, bounded by chunk_token_num so a
+    # long section is not emitted as one oversized chunk (closes #12109).
+    chunk_token_num = int(parser_config.get("chunk_token_num", 512) or 0)
+    chunks = _merge_sections_by_pivot(sorted_sections, sec_ids, chunk_token_num)
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser, language=lang))
     table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
     image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))

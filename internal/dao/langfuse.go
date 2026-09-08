@@ -36,7 +36,7 @@ func NewLangfuse() *LangfuseDAO {
 
 // GetByTenantID returns the Langfuse credentials row for a tenant.
 // It returns (nil, nil) when no row exists, mirroring the Python
-// TenantLangfuseService.filter_by_tenant behaviour (DoesNotExist -> None).
+// TenantLangfuseService.filter_by_tenant behavior (DoesNotExist -> None).
 func (dao *LangfuseDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (*entity.TenantLangfuse, error) {
 	var row entity.TenantLangfuse
 	err := db.WithContext(ctx).Where("tenant_id = ?", tenantID).First(&row).Error

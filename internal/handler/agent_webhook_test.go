@@ -19,10 +19,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -30,6 +32,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/service"
 )
 
 // fakeCanvasLoader is a stand-in canvasLoader for webhook tests. It
@@ -37,9 +40,11 @@ import (
 // without touching the database. Mirrors the pattern used by
 // waitFakeAgentService at internal/handler/agent_wait_for_user_test.go.
 type fakeCanvasLoader struct {
-	canvas *entity.UserCanvas
-	err    error
-	events []canvas.RunEvent
+	canvas              *entity.UserCanvas
+	err                 error
+	runErr              error
+	events              []canvas.RunEvent
+	waitForCancellation bool
 }
 
 func (f *fakeCanvasLoader) LoadCanvasByID(_ context.Context, _, _ string) (*entity.UserCanvas, error) {
@@ -49,7 +54,18 @@ func (f *fakeCanvasLoader) LoadCanvasByID(_ context.Context, _, _ string) (*enti
 	return f.canvas, nil
 }
 
-func (f *fakeCanvasLoader) RunAgentWithWebhook(_ context.Context, _, _ string, _ map[string]any) (<-chan canvas.RunEvent, error) {
+func (f *fakeCanvasLoader) RunAgentWithWebhook(ctx context.Context, _, _ string, _ map[string]any) (<-chan canvas.RunEvent, error) {
+	if f.runErr != nil {
+		return nil, f.runErr
+	}
+	if f.waitForCancellation {
+		out := make(chan canvas.RunEvent)
+		go func() {
+			<-ctx.Done()
+			close(out)
+		}()
+		return out, nil
+	}
 	out := make(chan canvas.RunEvent, len(f.events))
 	for _, e := range f.events {
 		out <- e
@@ -266,8 +282,8 @@ func TestWebhook_TokenAuthFails(t *testing.T) {
 	if code != int(common.CodeDataError) {
 		t.Errorf("code = %d, want %d", code, common.CodeDataError)
 	}
-	if msg != "Invalid token authentication" {
-		t.Errorf("message = %q, want %q", msg, "Invalid token authentication")
+	if msg != "invalid token authentication" {
+		t.Errorf("message = %q, want %q", msg, "invalid token authentication")
 	}
 }
 
@@ -484,6 +500,311 @@ func TestWebhook_DefaultModeAggregatesContent(t *testing.T) {
 	}
 	if body.Code != 200 {
 		t.Errorf("code = %d, want 200", body.Code)
+	}
+}
+
+func TestWebhook_DefaultModePropagatesTerminalEvents(t *testing.T) {
+	tests := []struct {
+		name        string
+		event       canvas.RunEvent
+		wantStatus  int
+		wantMessage string
+		forbidden   string
+	}{
+		{
+			name:        "public error",
+			event:       canvas.RunEvent{Type: "error", Data: `{"message":"retrieval backend failed"}`},
+			wantStatus:  http.StatusInternalServerError,
+			wantMessage: "retrieval backend failed",
+		},
+		{
+			name:        "internal error",
+			event:       canvas.RunEvent{Type: "error", Data: `{"message":"postgres password=secret","kind":"internal"}`},
+			wantStatus:  http.StatusInternalServerError,
+			wantMessage: canvas.InternalRunErrorMessage,
+			forbidden:   "password=secret",
+		},
+		{
+			name:        "cancelled",
+			event:       canvas.RunEvent{Type: "cancelled", Data: `{"message":"Agent run was cancelled."}`},
+			wantStatus:  http.StatusConflict,
+			wantMessage: "Agent run was cancelled.",
+		},
+		{
+			name:        "waiting for user",
+			event:       canvas.RunEvent{Type: "waiting_for_user", Data: `{"cpn_id":"input-1","tips":"Please choose an option."}`},
+			wantStatus:  http.StatusConflict,
+			wantMessage: "Please choose an option.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cv := makeWebhookCanvas("c1", "u-1", "Webhook", map[string]any{
+				"execution_mode": "Streaming",
+			})
+			h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv, events: []canvas.RunEvent{tt.event}}}
+			var trace []canvas.RunEvent
+			h.webhookTraceAppender = func(_ context.Context, _ string, _ time.Time, ev canvas.RunEvent) {
+				trace = append(trace, ev)
+			}
+			c, w := webhookCtx("POST", "/api/v1/agents/c1/webhook/test", `{}`, "application/json")
+
+			h.Webhook(c)
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", w.Code, tt.wantStatus, w.Body.String())
+			}
+			var body struct {
+				Message string `json:"message"`
+				Success bool   `json:"success"`
+				Code    int    `json:"code"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if body.Success {
+				t.Fatal("terminal event must not be reported as success")
+			}
+			if body.Code != tt.wantStatus {
+				t.Errorf("code = %d, want %d", body.Code, tt.wantStatus)
+			}
+			if !strings.Contains(body.Message, tt.wantMessage) {
+				t.Errorf("message = %q, want contains %q", body.Message, tt.wantMessage)
+			}
+			if tt.forbidden != "" && strings.Contains(w.Body.String(), tt.forbidden) {
+				t.Fatalf("response leaked internal error details: %s", w.Body.String())
+			}
+			if tt.forbidden != "" {
+				for _, ev := range trace {
+					if strings.Contains(ev.Data, tt.forbidden) {
+						t.Fatalf("trace leaked internal error details: %+v", trace)
+					}
+				}
+			}
+			assertWebhookFinishedTrace(t, trace, false)
+		})
+	}
+}
+
+func TestWebhook_DefaultModeRedactsStartError(t *testing.T) {
+	cv := makeWebhookCanvas("c1", "u-1", "Webhook", map[string]any{
+		"execution_mode": "Streaming",
+	})
+	startErr := errors.Join(errors.New("dial mysql password=secret"), service.ErrAgentStorageError)
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv, runErr: startErr}}
+	var trace []canvas.RunEvent
+	h.webhookTraceAppender = func(_ context.Context, _ string, _ time.Time, ev canvas.RunEvent) {
+		trace = append(trace, ev)
+	}
+	c, w := webhookCtx("POST", "/api/v1/agents/c1/webhook/test", `{}`, "application/json")
+
+	h.Webhook(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), canvas.InternalRunErrorMessage) {
+		t.Errorf("body missing safe internal error message: %s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "password=secret") {
+		t.Fatalf("response leaked internal error details: %s", w.Body.String())
+	}
+	if len(trace) == 0 || strings.Contains(trace[0].Data, "password=secret") {
+		t.Fatalf("trace leaked internal error details: %+v", trace)
+	}
+	assertWebhookFinishedTrace(t, trace, false)
+}
+
+func TestRunWebhookDetachedAppendsFinishedTrace(t *testing.T) {
+	tests := []struct {
+		name        string
+		events      []canvas.RunEvent
+		runErr      error
+		wantSuccess bool
+		forbidden   string
+	}{
+		{
+			name: "success",
+			events: []canvas.RunEvent{
+				{Type: "message", Data: `{"content":"done"}`},
+				{Type: "done"},
+			},
+			wantSuccess: true,
+		},
+		{
+			name:        "runner error",
+			events:      []canvas.RunEvent{{Type: "error", Data: `{"message":"LLM failed"}`}},
+			wantSuccess: false,
+		},
+		{
+			name:        "start error",
+			runErr:      errors.Join(errors.New("redis password=secret"), service.ErrAgentStorageError),
+			wantSuccess: false,
+			forbidden:   "password=secret",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cv := makeWebhookCanvas("c1", "u-1", "Webhook", nil)
+			h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv, events: tt.events, runErr: tt.runErr}}
+			var trace []canvas.RunEvent
+			h.webhookTraceAppender = func(_ context.Context, _ string, _ time.Time, ev canvas.RunEvent) {
+				trace = append(trace, ev)
+			}
+
+			h.runWebhookDetached(t.Context(), cv, map[string]any{}, true, time.Now())
+
+			assertWebhookFinishedTrace(t, trace, tt.wantSuccess)
+			if tt.forbidden != "" {
+				for _, ev := range trace {
+					if strings.Contains(ev.Data, tt.forbidden) {
+						t.Fatalf("trace leaked internal error details: %+v", trace)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestRunWebhookDetachedRecordsTimeoutTrace(t *testing.T) {
+	tests := []struct {
+		name   string
+		loader *fakeCanvasLoader
+	}{
+		{name: "during start", loader: &fakeCanvasLoader{runErr: context.DeadlineExceeded}},
+		{name: "during run", loader: &fakeCanvasLoader{waitForCancellation: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cv := makeWebhookCanvas("c1", "u-1", "Webhook", nil)
+			tt.loader.canvas = cv
+			h := &AgentHandler{loader: tt.loader}
+			var trace []canvas.RunEvent
+			h.webhookTraceAppender = func(ctx context.Context, _ string, _ time.Time, ev canvas.RunEvent) {
+				if err := ctx.Err(); err != nil {
+					t.Errorf("trace context error = %v, want nil", err)
+				}
+				trace = append(trace, ev)
+			}
+
+			ctx, cancel := context.WithTimeout(
+				service.WithAgentSessionID(t.Context(), "session-1"),
+				time.Nanosecond,
+			)
+			defer cancel()
+			<-ctx.Done()
+			h.runWebhookDetachedWithContext(ctx, cv, map[string]any{}, true, time.Now(), "session-1")
+
+			if len(trace) < 2 || trace[0].Type != "error" || !strings.Contains(trace[0].Data, "timed out") {
+				t.Fatalf("timeout trace = %+v, want error followed by failed finished event", trace)
+			}
+			assertWebhookFinishedTrace(t, trace, false)
+		})
+	}
+}
+
+func TestRunWebhookSyncRecordsCancelledTrace(t *testing.T) {
+	cv := makeWebhookCanvas("c1", "u-1", "Webhook", nil)
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv, waitForCancellation: true}}
+	var trace []canvas.RunEvent
+	h.webhookTraceAppender = func(ctx context.Context, _ string, _ time.Time, ev canvas.RunEvent) {
+		if err := ctx.Err(); err != nil {
+			t.Errorf("trace context error = %v, want nil", err)
+		}
+		trace = append(trace, ev)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	result := h.runWebhookSync(ctx, cv, map[string]any{}, true, time.Now())
+
+	if result.status != http.StatusConflict {
+		t.Errorf("status = %d, want %d", result.status, http.StatusConflict)
+	}
+	if len(trace) < 2 || trace[0].Type != "cancelled" || !strings.Contains(trace[0].Data, "cancelled") {
+		t.Fatalf("cancelled trace = %+v, want cancelled followed by failed finished event", trace)
+	}
+	assertWebhookFinishedTrace(t, trace, false)
+}
+
+func TestWebhookBufferedTerminalEventAfterCancellationUsesCleanupContext(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*testing.T, *AgentHandler, context.Context, *entity.UserCanvas)
+	}{
+		{
+			name: "detached",
+			run: func(_ *testing.T, h *AgentHandler, ctx context.Context, cv *entity.UserCanvas) {
+				h.runWebhookDetachedWithContext(ctx, cv, map[string]any{}, true, time.Now(), "session-1")
+			},
+		},
+		{
+			name: "sync",
+			run: func(t *testing.T, h *AgentHandler, ctx context.Context, cv *entity.UserCanvas) {
+				result := h.runWebhookSync(ctx, cv, map[string]any{}, true, time.Now())
+				if result.status != http.StatusConflict {
+					t.Errorf("status = %d, want %d", result.status, http.StatusConflict)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cv := makeWebhookCanvas("c1", "u-1", "Webhook", nil)
+			loader := &fakeCanvasLoader{
+				canvas: cv,
+				events: []canvas.RunEvent{{
+					Type: "cancelled",
+					Data: `{"message":"Agent run was cancelled."}`,
+				}},
+			}
+			h := &AgentHandler{loader: loader}
+			var trace []canvas.RunEvent
+			h.webhookTraceAppender = func(ctx context.Context, _ string, _ time.Time, ev canvas.RunEvent) {
+				if err := ctx.Err(); err != nil {
+					t.Errorf("trace context error = %v, want nil", err)
+				}
+				trace = append(trace, ev)
+			}
+
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			tt.run(t, h, ctx, cv)
+
+			if len(trace) < 2 || trace[0].Type != "cancelled" {
+				t.Fatalf("cancelled trace = %+v, want cancelled followed by failed finished event", trace)
+			}
+			assertWebhookFinishedTrace(t, trace, false)
+		})
+	}
+}
+
+func assertWebhookFinishedTrace(t *testing.T, events []canvas.RunEvent, wantSuccess bool) {
+	t.Helper()
+	if len(events) == 0 || events[len(events)-1].Type != "finished" {
+		t.Fatalf("trace must end with finished; trace=%+v", events)
+	}
+	finishedCount := 0
+	for _, ev := range events {
+		if ev.Type != "finished" {
+			continue
+		}
+		finishedCount++
+		var data struct {
+			Success bool `json:"success"`
+		}
+		if err := json.Unmarshal([]byte(ev.Data), &data); err != nil {
+			t.Fatalf("decode finished trace: %v; data=%q", err, ev.Data)
+		}
+		if data.Success != wantSuccess {
+			t.Errorf("finished success = %v, want %v", data.Success, wantSuccess)
+		}
+	}
+	if finishedCount != 1 {
+		t.Fatalf("finished event count = %d, want 1; trace=%+v", finishedCount, events)
 	}
 }
 

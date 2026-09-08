@@ -28,7 +28,7 @@ func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseRe
 	}
 	apiKey := parser.SoMarkAPIKey
 	if strings.TrimSpace(apiKey) == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvSOMarkApiKey))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvSOMarkAPIKey))
 	}
 	taskID, err := soMarkSubmit(strings.TrimRight(baseURL, "/"), filename, data, parser, apiKey)
 	if err != nil {

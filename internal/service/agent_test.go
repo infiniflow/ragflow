@@ -371,9 +371,9 @@ func TestWorkflowOutputs_WithDownloads(t *testing.T) {
 		},
 	}
 
-	out, ok := workflowOutputs("", downloads).(map[string]any)
+	out, ok := workflowOutputs("", downloads, nil).(map[string]any)
 	if !ok {
-		t.Fatalf("workflowOutputs type = %T, want map", workflowOutputs("", downloads))
+		t.Fatalf("workflowOutputs type = %T, want map", workflowOutputs("", downloads, nil))
 	}
 	if out["content"] != "" {
 		t.Fatalf("content = %v, want empty string", out["content"])
@@ -381,11 +381,29 @@ func TestWorkflowOutputs_WithDownloads(t *testing.T) {
 	if got := out["downloads"]; !reflect.DeepEqual(got, downloads) {
 		t.Fatalf("downloads = %#v, want %#v", got, downloads)
 	}
+	if _, has := out["attachment"]; has {
+		t.Fatalf("attachment unexpectedly present: %#v", out["attachment"])
+	}
 }
 
 func TestWorkflowOutputs_NoDownloadsKeepsString(t *testing.T) {
-	if got := workflowOutputs("answer", nil); got != "answer" {
+	if got := workflowOutputs("answer", nil, nil); got != "answer" {
 		t.Fatalf("workflowOutputs without downloads = %#v, want string answer", got)
+	}
+}
+
+func TestWorkflowOutputs_WithAttachment(t *testing.T) {
+	attachment := map[string]any{"doc_id": "d2", "format": "markdown", "file_name": "d2.markdown"}
+
+	out, ok := workflowOutputs("answer", nil, attachment).(map[string]any)
+	if !ok {
+		t.Fatalf("workflowOutputs type = %T, want map", workflowOutputs("answer", nil, attachment))
+	}
+	if out["content"] != "answer" {
+		t.Fatalf("content = %v, want answer", out["content"])
+	}
+	if got := out["attachment"]; !reflect.DeepEqual(got, attachment) {
+		t.Fatalf("attachment = %#v, want %#v", got, attachment)
 	}
 }
 
@@ -834,6 +852,10 @@ func setupAgentSessionServiceTest(t *testing.T) {
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
 		&entity.API4Conversation{},
+		// The merged /agents list reads compilation template groups (and their
+		// children) alongside canvases, so those tables must exist too.
+		&entity.CompilationTemplateGroup{},
+		&entity.CompilationTemplate{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -881,6 +903,7 @@ func TestListAgentSessionsServiceSuccess(t *testing.T) {
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 	createAgentSessionTestConversation(t, "session-old", "canvas-1", "user-1", 1000)
 	createAgentSessionTestConversation(t, "session-new", "canvas-1", "user-1", 3000)
+	createAgentSessionTestConversation(t, "session-team", "canvas-1", "team-user", 2000)
 	createAgentSessionTestConversation(t, "session-other-agent", "canvas-other", "user-1", 9999)
 
 	ctx := t.Context()
@@ -897,11 +920,11 @@ func TestListAgentSessionsServiceSuccess(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
 	}
-	if resp.Total != 2 {
-		t.Fatalf("expected total 2, got %d", resp.Total)
+	if resp.Total != 3 {
+		t.Fatalf("expected total 3, got %d", resp.Total)
 	}
-	if len(resp.Data) != 2 {
-		t.Fatalf("expected 2 sessions, got %d", len(resp.Data))
+	if len(resp.Data) != 3 {
+		t.Fatalf("expected 3 sessions, got %d", len(resp.Data))
 	}
 	if resp.Data[0]["id"] != "session-new" {
 		t.Fatalf("expected newest session first, got %v", resp.Data[0]["id"])
@@ -1180,12 +1203,12 @@ func TestUpdateAgentTagsServiceSuccess(t *testing.T) {
 		t.Fatal("expected update to succeed")
 	}
 
-	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
+	canvasInstance, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
-	if canvas.Tags != "alpha,beta,with comma" {
-		t.Fatalf("expected normalized tags, got %q", canvas.Tags)
+	if canvasInstance.Tags != "alpha,beta,with comma" {
+		t.Fatalf("expected normalized tags, got %q", canvasInstance.Tags)
 	}
 }
 
@@ -1206,12 +1229,12 @@ func TestUpdateAgentTagsServiceInvalidPayload(t *testing.T) {
 		t.Fatal("expected update to fail")
 	}
 
-	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
+	canvasInstance, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
-	if canvas.Tags != "" {
-		t.Fatalf("expected tags to remain unchanged, got %q", canvas.Tags)
+	if canvasInstance.Tags != "" {
+		t.Fatalf("expected tags to remain unchanged, got %q", canvasInstance.Tags)
 	}
 }
 
@@ -1232,12 +1255,12 @@ func TestUpdateAgentTagsServiceNoPermission(t *testing.T) {
 		t.Fatal("expected update to fail")
 	}
 
-	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
+	canvasInstance, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
-	if canvas.Tags != "" {
-		t.Fatalf("expected tags to remain unchanged, got %q", canvas.Tags)
+	if canvasInstance.Tags != "" {
+		t.Fatalf("expected tags to remain unchanged, got %q", canvasInstance.Tags)
 	}
 }
 
@@ -1277,7 +1300,8 @@ func TestAssertHostIsSafeRejectsLocalhost(t *testing.T) {
 }
 
 func TestTestDBConnectionMissingFields(t *testing.T) {
-	code, err := NewAgentService().TestDBConnection("user-1", &TestDBConnectionRequest{DBType: "mysql"})
+	ctx := t.Context()
+	code, err := NewAgentService().TestDBConnection(ctx, "user-1", &TestDBConnectionRequest{DBType: "mysql"})
 	if err == nil {
 		t.Fatal("expected missing field error")
 	}
@@ -1291,7 +1315,8 @@ func TestTestDBConnectionMissingFields(t *testing.T) {
 }
 
 func TestTestDBConnectionUnsupportedDatabaseType(t *testing.T) {
-	code, err := NewAgentService().TestDBConnection("user-1", &TestDBConnectionRequest{
+	ctx := t.Context()
+	code, err := NewAgentService().TestDBConnection(ctx, "user-1", &TestDBConnectionRequest{
 		DBType:   "postgres",
 		Database: "rag_flow",
 		Username: "root",
@@ -1305,7 +1330,7 @@ func TestTestDBConnectionUnsupportedDatabaseType(t *testing.T) {
 	if code != common.CodeExceptionError {
 		t.Fatalf("expected code %d, got %d", common.CodeExceptionError, code)
 	}
-	if err.Error() != "Unsupported database type." {
+	if err.Error() != "unsupported database type" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -1883,22 +1908,171 @@ func TestListAgentsIncludesReleaseTime(t *testing.T) {
 	}
 
 	var released, draft *AgentItem
-	for _, item := range resp.Canvas {
+	for _, raw := range resp.Canvas {
+		var item AgentItem
+		if err := json.Unmarshal(raw, &item); err != nil {
+			t.Fatalf("unmarshal canvas item: %v", err)
+		}
 		switch item.ID {
 		case "canvas-listed-released":
-			released = item
+			released = &item
 		case "canvas-listed-draft":
-			draft = item
+			draft = &item
 		}
 	}
 	if released == nil || draft == nil {
-		t.Fatalf("expected both canvases in list, got %#v", resp.Canvas)
+		t.Fatalf("expected both canvases in list, got %s", resp.Canvas)
 	}
 	if released.ReleaseTime == nil || *released.ReleaseTime != releaseTime {
 		t.Fatalf("ReleaseTime = %v, want %d", released.ReleaseTime, releaseTime)
 	}
 	if draft.ReleaseTime != nil {
 		t.Fatalf("draft canvas ReleaseTime = %v, want nil", draft.ReleaseTime)
+	}
+}
+
+// TestListAgents_MergesCompilationTemplateGroups verifies that a compilation
+// template group owned by the caller appears in the merged /agents list
+// (no canvas_category filter), carrying the "compilation_template_group" type
+// discriminator and its title = name. Built-in catalogue groups (empty tenant)
+// must NOT leak in.
+func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	base := time.Now().UnixMilli()
+	groupUpdate := base + 1000  // group updated most recently
+	canvasUpdate := base + 5000 // agent updated most recently
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	// Agent updated most recently (canvasUpdate > groupUpdate).
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID: "canvas-1", UserID: "user-1", Title: sptr("Agent canvas"),
+		CanvasCategory: "agent_canvas",
+		BaseModel:      entity.BaseModel{UpdateTime: &canvasUpdate},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed canvas: %v", err)
+	}
+	// The caller's own group (must appear), updated before the canvas.
+	createAgentSessionTestCompilationGroup(t, "group-own", "user-1", groupUpdate)
+	// A built-in catalogue group with empty tenant_id (must NOT appear).
+	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
+		ID: "group-builtin", TenantID: "", Name: "Built-in templates",
+		Scope: "file", BaseModel: entity.BaseModel{CreateTime: &base},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed builtin group: %v", err)
+	}
+
+	resp, code, err := NewAgentService().ListAgents(t.Context(), "user-1", "", 1, 30, "create_time", true, nil, "", "", nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
+	}
+
+	var sawAgent, sawOwnGroup, sawBuiltin bool
+	var prevCat, prevName string
+	orderOK := true
+	for i, raw := range resp.Canvas {
+		var item map[string]interface{}
+		if err := json.Unmarshal(raw, &item); err != nil {
+			t.Fatalf("unmarshal canvas item: %v", err)
+		}
+		// Sort category: agents carry canvas_category; groups are classified by
+		// the "compilation_template_group" type discriminator (mirroring the
+		// frontend AgentListItem union).
+		cat := "agent"
+		if item["type"] == AgentItemTypeGroup {
+			cat = CompilationTemplateGroupCategory
+		} else if cc, ok := item["canvas_category"].(string); ok {
+			cat = cc
+		}
+		name, _ := item["title"].(string)
+		if i > 0 {
+			if cat < prevCat || (cat == prevCat && strings.ToLower(name) < strings.ToLower(prevName)) {
+				orderOK = false
+			}
+		}
+		prevCat, prevName = cat, name
+		switch item["type"] {
+		case AgentItemTypeAgent:
+			if item["id"] == "canvas-1" {
+				sawAgent = true
+			}
+		case AgentItemTypeGroup:
+			if item["id"] == "group-own" {
+				sawOwnGroup = true
+				if item["title"] != "own-group" || item["name"] != "own-group" {
+					t.Errorf("group title/name = %v/%v, want own-group", item["title"], item["name"])
+				}
+				if item["templates"] == nil {
+					t.Errorf("group item missing templates")
+				}
+			}
+			if item["id"] == "group-builtin" {
+				sawBuiltin = true
+			}
+		}
+	}
+	if !sawAgent {
+		t.Fatal("agent canvas-1 not in merged list")
+	}
+	if !sawOwnGroup {
+		t.Fatal("caller's compilation template group not in merged list")
+	}
+	if sawBuiltin {
+		t.Fatal("built-in catalogue group leaked into merged list")
+	}
+	if !orderOK {
+		t.Fatal("merged list is not ordered by (canvas_category, name) ascending")
+	}
+	// agent_canvas < compilation_template_group, so the canvas must be first.
+	var first map[string]interface{}
+	if err := json.Unmarshal(resp.Canvas[0], &first); err != nil {
+		t.Fatalf("unmarshal first item: %v", err)
+	}
+	if first["id"] != "canvas-1" {
+		t.Fatalf("first merged item = %v, want canvas-1 (agent_canvas category)", first["id"])
+	}
+}
+
+// TestSlicePage_NoOverflowPanic guards the review-Critical integer overflow:
+// an unbounded positive page/page_size must never overflow (page-1)*pageSize to
+// a negative start and panic; out-of-range pages return nil.
+func TestSlicePage_NoOverflowPanic(t *testing.T) {
+	s := []int{1, 2, 3, 4, 5}
+	// A huge page must return nil, not panic on an overflowing offset.
+	if got := slicePage(s, 1<<40, 1<<40); got != nil {
+		t.Fatalf("huge page/pageSize = %v, want nil", got)
+	}
+	if got := slicePage(s, 2, 3); len(got) != 2 || got[0] != 4 || got[1] != 5 {
+		t.Fatalf("page2/size3 = %v, want [4 5]", got)
+	}
+	if got := slicePage(s, 3, 2); len(got) != 1 || got[0] != 5 {
+		t.Fatalf("page3/size2 (start 4) = %v, want [5]", got)
+	}
+	if got := slicePage(s, 4, 2); got != nil {
+		t.Fatalf("page4/size2 (start 6 >= len 5) = %v, want nil", got)
+	}
+	// Empty/no-paging semantics preserved (empty input returns the empty slice,
+	// never a panic).
+	if got := slicePage([]int{}, 1, 10); len(got) != 0 {
+		t.Fatalf("empty slice = %v, want empty", got)
+	}
+}
+
+func createAgentSessionTestCompilationGroup(t *testing.T, id, tenantID string, now int64) {
+	t.Helper()
+	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
+		ID: id, TenantID: tenantID, Name: "own-group", Scope: "file",
+		BaseModel: entity.BaseModel{CreateTime: &now, UpdateTime: &now},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed group %s: %v", id, err)
+	}
+	if err := dao.DB.Create(&entity.CompilationTemplate{
+		ID: id + "-tpl", GroupID: &id, Name: "tree tpl", Kind: "tree",
+		Config:    entity.JSONMap{},
+		BaseModel: entity.BaseModel{CreateTime: &now},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed template for %s: %v", id, err)
 	}
 }
 
@@ -2185,5 +2359,24 @@ func TestAgentHistoryRenderingMatchesPythonShapes(t *testing.T) {
 	want := `{'content': 'it\'s ready\nnext', 'ok': True}`
 	if assistant != want {
 		t.Fatalf("rendered assistant history = %q, want %q", assistant, want)
+	}
+}
+
+func TestOpenAICompatPriorHistoryPreservesConversation(t *testing.T) {
+	messages := []map[string]interface{}{
+		{"role": "system", "content": "Be concise."},
+		{"role": "user", "content": "What is 1+1?"},
+		{"role": "assistant", "content": "2"},
+		{"role": "user", "content": "What is 2+2?"},
+	}
+
+	history := openAICompatPriorHistory(messages)
+	want := []map[string]any{
+		{"role": "system", "content": "Be concise."},
+		{"role": "user", "content": "What is 1+1?"},
+		{"role": "assistant", "content": "2"},
+	}
+	if !reflect.DeepEqual(history, want) {
+		t.Fatalf("prior history = %#v, want %#v", history, want)
 	}
 }

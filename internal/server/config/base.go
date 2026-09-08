@@ -30,8 +30,8 @@ type Config struct {
 
 	admin     AdminConfig
 	apiServer APIServerConfig
-	ingestor  IngestorConfig
 	syncer    SyncerConfig
+	ingestor  IngestorConfig
 
 	log  LogConfig
 	smtp common.SMTPConfig

@@ -214,7 +214,7 @@ func newTavilyExtractTool(h *HTTPHelper, envKey func() string, defaults tavilyEx
 // defaultTavilyEnvKey is the production env-key resolver. Pulled out
 // as a named function (not a var) so tests cannot accidentally
 // mutate it via package-var assignment.
-func defaultTavilyEnvKey() string { return common.GetEnv(common.EnvTavilyApiKey) }
+func defaultTavilyEnvKey() string { return common.GetEnv(common.EnvTavilyAPIKey) }
 
 // Info returns the tool's metadata for the chat model.
 func (t *TavilyTool) Info(_ context.Context) (*schema.ToolInfo, error) {

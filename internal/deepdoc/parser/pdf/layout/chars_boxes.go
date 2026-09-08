@@ -122,7 +122,7 @@ func splitLineByXGap(chars []pdf.TextChar, threshold float64) [][]pdf.TextChar {
 
 // ---- internal helpers ----
 
-// groupCharsToLines groups characters into horizontal lines based on vertical overlap.
+// GroupCharsToLines groups characters into horizontal lines based on vertical overlap.
 func GroupCharsToLines(chars []pdf.TextChar, sortByTop bool) [][]pdf.TextChar {
 	if len(chars) == 0 {
 		return nil

@@ -370,7 +370,8 @@ func (h *MCPHandler) TestMCPServer(c *gin.Context) {
 		return
 	}
 
-	tools, err := h.mcpService.TestServer(mcpID, &req)
+	ctx := c.Request.Context()
+	tools, err := h.mcpService.TestServer(ctx, mcpID, &req)
 	if mcpErrorResponse(c, err) {
 		return
 	}

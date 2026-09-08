@@ -34,9 +34,7 @@ describe('parseDelimitersForDisplay', () => {
   });
 
   it('normalizes CRLF before parsing', () => {
-    expect(parseDelimitersForDisplay('\r\n').map((d) => d.raw)).toEqual([
-      '\n',
-    ]);
+    expect(parseDelimitersForDisplay('\r\n').map((d) => d.raw)).toEqual(['\n']);
     expect(parseDelimitersForDisplay('`\r\n`').map((d) => d.raw)).toEqual([
       '\n',
     ]);

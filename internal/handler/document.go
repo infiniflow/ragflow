@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
@@ -75,13 +76,14 @@ type documentServiceIface interface {
 	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
 	DownloadDocument(ctx context.Context, datasetID, docID string) (*document.DownloadDocumentResp, error)
 	UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error)
-	BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.DocumentMetadataSelector, updates []document.DocumentMetadataUpdate, deletes []document.DocumentMetadataDelete) (*document.BatchUpdateDocumentMetadatasResponse, common.ErrorCode, error)
+	BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.MetadataSelector, updates []document.MetadataUpdate, deletes []document.MetadataDelete) (*document.BatchUpdateMetadatasResponse, common.ErrorCode, error)
 	ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
 	IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error)
 	Ingest(ctx context.Context, userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error)
 	RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error)
 	BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, DocumentIDs []string) (map[string]interface{}, common.ErrorCode, error)
+	HasActiveIngestionTasks(ctx context.Context, datasetID string) (bool, error)
 }
 
 // fileUploadIface defines the FileService upload methods used by DocumentHandler.
@@ -263,7 +265,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 	ctx := c.Request.Context()
 	preview, err := h.documentService.GetDocumentPreview(ctx, docID)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, "Document not found!")
+		common.ErrorWithCode(c, common.CodeDataError, "document not found")
 		return
 	}
 
@@ -614,7 +616,14 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		docs = append(docs, mapDocumentListItem(doc, metaFields))
 	}
 
-	common.SuccessWithData(c, gin.H{"total": total, "docs": docs}, "success")
+	hasActiveTasks, err := h.documentService.HasActiveIngestionTasks(ctx, datasetID)
+	if err != nil {
+		common.Warn("failed to check active ingestion tasks", zap.Error(err))
+		// Keep polling when the authoritative dataset-wide check is unavailable;
+		// otherwise an active task on another page could be missed.
+		hasActiveTasks = true
+	}
+	common.SuccessWithData(c, gin.H{"total": total, "docs": docs, "has_active_tasks": hasActiveTasks}, "success")
 }
 
 func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentListOptions, string) {
@@ -636,7 +645,7 @@ func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentLis
 	docID := c.Query("id")
 	docIDs := queryValues(c, "ids")
 	if docID != "" && len(docIDs) > 0 {
-		return opts, fmt.Sprintf("Should not provide both 'id':%s and 'ids'%v", docID, docIDs)
+		return opts, fmt.Sprintf("should not provide both 'id':%s and 'ids'%v", docID, docIDs)
 	}
 	if docID != "" {
 		opts.DocIDs = []string{docID}
@@ -1107,6 +1116,13 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 }
 
 func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}) map[string]interface{} {
+	processDuration := doc.ProcessDuration
+	if doc.Run != nil && strings.TrimSpace(*doc.Run) == "1" && doc.ProcessBeginAt != nil {
+		processDuration = time.Since(*doc.ProcessBeginAt).Seconds()
+		if processDuration < 0 {
+			processDuration = 0
+		}
+	}
 	item := map[string]interface{}{
 		"id":               doc.ID,
 		"dataset_id":       doc.KbID,
@@ -1121,7 +1137,7 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"progress":         doc.Progress,
 		"progress_msg":     stringValue(doc.ProgressMsg),
 		"process_begin_at": formatTimePtr(doc.ProcessBeginAt),
-		"process_duration": doc.ProcessDuration,
+		"process_duration": processDuration,
 		"suffix":           doc.Suffix,
 		"run":              mapRunStatus(doc.Run),
 		"status":           stringValue(doc.Status),
@@ -1136,6 +1152,9 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"create_date":      "",
 		"update_time":      int64(0),
 		"update_date":      "",
+	}
+	if doc.IngestionStatus != nil {
+		item["ingestion_status"] = *doc.IngestionStatus
 	}
 
 	if doc.CreateTime != nil {
@@ -1803,9 +1822,9 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 }
 
 type documentMetadataBatchRequest struct {
-	Selector *document.DocumentMetadataSelector `json:"selector"`
-	Updates  []document.DocumentMetadataUpdate  `json:"updates"`
-	Deletes  []document.DocumentMetadataDelete  `json:"deletes"`
+	Selector *document.MetadataSelector `json:"selector"`
+	Updates  []document.MetadataUpdate  `json:"updates"`
+	Deletes  []document.MetadataDelete  `json:"deletes"`
 }
 
 func (h *DocumentHandler) MetadataBatchUpdate(c *gin.Context) {
@@ -1887,15 +1906,15 @@ func inferJSONType(err error) string {
 	return "unknown"
 }
 
-func parseMetadataSelector(raw interface{}) (*document.DocumentMetadataSelector, string) {
+func parseMetadataSelector(raw interface{}) (*document.MetadataSelector, string) {
 	if raw == nil {
-		return &document.DocumentMetadataSelector{}, ""
+		return &document.MetadataSelector{}, ""
 	}
 	m, ok := raw.(map[string]interface{})
 	if !ok {
 		return nil, "selector must be an object."
 	}
-	selector := &document.DocumentMetadataSelector{}
+	selector := &document.MetadataSelector{}
 	if v, ok := m["document_ids"]; ok && v != nil {
 		ids, ok := v.([]interface{})
 		if !ok {
@@ -1915,15 +1934,15 @@ func parseMetadataSelector(raw interface{}) (*document.DocumentMetadataSelector,
 	return selector, ""
 }
 
-func parseMetadataUpdates(raw interface{}) ([]document.DocumentMetadataUpdate, string) {
+func parseMetadataUpdates(raw interface{}) ([]document.MetadataUpdate, string) {
 	if raw == nil {
-		return []document.DocumentMetadataUpdate{}, ""
+		return []document.MetadataUpdate{}, ""
 	}
 	arr, ok := raw.([]interface{})
 	if !ok {
 		return nil, "updates and deletes must be lists."
 	}
-	updates := make([]document.DocumentMetadataUpdate, 0, len(arr))
+	updates := make([]document.MetadataUpdate, 0, len(arr))
 	for _, item := range arr {
 		m, ok := item.(map[string]interface{})
 		if !ok {
@@ -1934,20 +1953,20 @@ func parseMetadataUpdates(raw interface{}) ([]document.DocumentMetadataUpdate, s
 			return nil, "Each update requires key and value."
 		}
 		value := m["value"]
-		updates = append(updates, document.DocumentMetadataUpdate{Key: key, Value: value})
+		updates = append(updates, document.MetadataUpdate{Key: key, Value: value})
 	}
 	return updates, ""
 }
 
-func parseMetadataDeletes(raw interface{}) ([]document.DocumentMetadataDelete, string) {
+func parseMetadataDeletes(raw interface{}) ([]document.MetadataDelete, string) {
 	if raw == nil {
-		return []document.DocumentMetadataDelete{}, ""
+		return []document.MetadataDelete{}, ""
 	}
 	arr, ok := raw.([]interface{})
 	if !ok {
 		return nil, "updates and deletes must be lists."
 	}
-	deletes := make([]document.DocumentMetadataDelete, 0, len(arr))
+	deletes := make([]document.MetadataDelete, 0, len(arr))
 	for _, item := range arr {
 		m, ok := item.(map[string]interface{})
 		if !ok {
@@ -1957,7 +1976,7 @@ func parseMetadataDeletes(raw interface{}) ([]document.DocumentMetadataDelete, s
 		if key == "" {
 			return nil, "Each delete requires key."
 		}
-		deletes = append(deletes, document.DocumentMetadataDelete{Key: key})
+		deletes = append(deletes, document.MetadataDelete{Key: key})
 	}
 	return deletes, ""
 }

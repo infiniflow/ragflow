@@ -155,7 +155,7 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
@@ -192,38 +192,17 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
+	// Request token usage in streaming response. DeepSeek only includes
+	// usage when stream_options.include_usage is set.
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := d.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return HandleStreamingResponse(resp.Body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	return d.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 // Embed embeds a list of texts into embeddings
-func (d *DeepSeekModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (d *DeepSeekModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
@@ -367,7 +346,7 @@ func (d *DeepSeekModel) CheckConnection(ctx context.Context, apiConfig *APIConfi
 }
 
 // Rerank calculates similarity scores between query and documents
-func (d *DeepSeekModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (d *DeepSeekModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", d.Name())
 }
 

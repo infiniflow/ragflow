@@ -23,9 +23,14 @@ scripts that have no whitespace word boundaries (e.g. Chinese).
 """
 
 import importlib.util
+import json
 import os
 import sys
+from pathlib import Path
 from unittest import mock
+
+import pytest
+from bs4 import BeautifulSoup
 
 # Load html_parser by file path so we don't trigger deepdoc/parser/__init__.py
 # (which pulls in heavy parsers) or the real rag.nlp tokenizer. The heavy
@@ -170,3 +175,59 @@ def test_parser_txt_keeps_loose_text_between_and_after_blocks():
     assert "loose" in between
     trailing = "\n".join(RAGFlowHtmlParser.parser_txt("<p>Only.</p>tail", chunk_token_num=512))
     assert "tail" in trailing
+
+
+# Unified HTML semantics: the browser-faithful rules that BOTH the Python and
+# Go parsers must converge on. The cases are the single source of truth shared
+# with the Go engine, loaded from the JSON fixture below (so the two engines
+# can no longer drift). They must all currently PASS on both engines.
+#
+# The fixture lives in the Go package's testdata because //go:embed requires
+# the file to sit inside the package directory tree; the Python mirror reads
+# the same file by absolute repo-root path.
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_UNIFIED_HTML_FIXTURE = _REPO_ROOT / "internal/parser/parser/testdata/unified_html_cases.json"
+_UNIFIED_HTML_CASES = [(c["name"], c["html"], c["want"]) for c in json.loads(_UNIFIED_HTML_FIXTURE.read_text())]
+
+
+def _merge_one_block(html):
+    # Use read_text_recursively + merge_block_text (not parser_txt) so block
+    # boundaries survive as separate list entries and no "#" heading prefix or
+    # chunk-merge join is applied — enabling a 1:1 comparison with the Go
+    # per-block output.
+    soup = BeautifulSoup(html, "html.parser")
+    temp = []
+    RAGFlowHtmlParser.read_text_recursively(soup, temp)
+    blocks, _ = RAGFlowHtmlParser.merge_block_text(temp)
+    return blocks
+
+
+@pytest.mark.parametrize("name,html,want", _UNIFIED_HTML_CASES)
+def test_unified_html_semantics_parity(name, html, want):
+    assert _merge_one_block(html) == [want]
+
+
+def test_merge_block_text_loose_text_newline_join():
+    # The block_id is None branch (loose text, e.g. text directly under
+    # <body>) must join fragments with hard breaks, not silently
+    # concatenate. Regression guard for the inline-verbatim / <br> rewrite in
+    # merge_block_text (this branch is not exercised by the block_id cases
+    # above, which all carry a block_id).
+    # Single hard break between two loose fragments.
+    blocks, _ = RAGFlowHtmlParser.merge_block_text(
+        [
+            {"content": "Loose one", "tag_name": "inner_text", "metadata": {}},
+            {"content": "Loose two", "tag_name": "inner_text", "metadata": {"newline_before": 1}},
+        ]
+    )
+    assert blocks == ["Loose one\nLoose two"]
+
+    # Consecutive breaks between loose fragments are preserved (1:1 with the
+    # <br><br> rule for blocks).
+    blocks2, _ = RAGFlowHtmlParser.merge_block_text(
+        [
+            {"content": "A", "tag_name": "inner_text", "metadata": {}},
+            {"content": "B", "tag_name": "inner_text", "metadata": {"newline_before": 2}},
+        ]
+    )
+    assert blocks2 == ["A\n\nB"]

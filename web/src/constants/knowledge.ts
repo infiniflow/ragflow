@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 export enum KnowledgeRouteKey {
   Dataset = 'dataset',
   Testing = 'testing',
@@ -14,6 +30,9 @@ export enum RunningStatus {
   DONE = 'DONE', // need to refresh
   FAIL = 'FAIL', // need to refresh
   SCHEDULE = 'SCHEDULE',
+  // Go ingestion only: the task is enqueued but not started yet
+  // (ingestion_status CREATED / SCHEDULED).
+  QUEUED = 'QUEUED',
 }
 
 export enum RunningStatusOld {
@@ -25,6 +44,16 @@ export enum RunningStatusOld {
   SCHEDULE = '5',
 }
 
+export enum IngestionTaskStatus {
+  CREATED = 'CREATED',
+  SCHEDULED = 'SCHEDULED',
+  RUNNING = 'RUNNING',
+  STOPPING = 'STOPPING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  STOPPED = 'STOPPED',
+}
+
 export const RunningStatusMap = {
   [RunningStatus.UNSTART]: 'Pending',
   [RunningStatus.RUNNING]: 'Running',
@@ -32,6 +61,7 @@ export const RunningStatusMap = {
   [RunningStatus.DONE]: 'Success',
   [RunningStatus.FAIL]: 'Failed',
   [RunningStatus.SCHEDULE]: 'Schedule',
+  [RunningStatus.QUEUED]: 'Queued',
 
   [RunningStatusOld.UNSTART]: 'Pending',
   [RunningStatusOld.RUNNING]: 'Running',
@@ -120,7 +150,7 @@ export enum ParseType {
 export enum ProcessingType {
   knowledgeGraph = 'Graph',
   raptor = 'RAPTOR',
-  artifact = 'Artifact',
+  artifact = 'wiki',
   skill = 'Skill',
   mindmap = 'Mindmap',
   timeline = 'Timeline',

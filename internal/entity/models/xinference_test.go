@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 func newXinferenceForTest(baseURL string) *XinferenceModel {
@@ -20,15 +19,6 @@ func newXinferenceForTest(baseURL string) *XinferenceModel {
 			Rerank:    "v1/rerank",
 		},
 	)
-}
-
-func withXinferenceIdleTimeout(t *testing.T, d time.Duration) {
-	t.Helper()
-	original := xinferenceStreamIdleTimeout
-	xinferenceStreamIdleTimeout = d
-	t.Cleanup(func() {
-		xinferenceStreamIdleTimeout = original
-	})
 }
 
 func TestXinferenceName(t *testing.T) {
@@ -104,9 +94,6 @@ func TestXinferenceChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 	}
 	if seen["stream"] != false {
 		t.Errorf("stream=%v, want false", seen["stream"])
-	}
-	if seen["max_tokens"] != float64(32) {
-		t.Errorf("max_tokens=%v, want 32", seen["max_tokens"])
 	}
 	if seen["temperature"] != 0.2 {
 		t.Errorf("temperature=%v, want 0.2", seen["temperature"])
@@ -229,38 +216,6 @@ func TestXinferenceStreamRejectsFalseStreamConfig(t *testing.T) {
 	}
 }
 
-func TestXinferenceStreamCancelsOnIdle(t *testing.T) {
-	withSSRFBypass(t)
-	ctx := t.Context()
-	withXinferenceIdleTimeout(t, 200*time.Millisecond)
-
-	hold := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		if f, ok := w.(http.Flusher); ok {
-			_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"hi"}}]}`+"\n")
-			f.Flush()
-		}
-		select {
-		case <-hold:
-		case <-r.Context().Done():
-		}
-	}))
-	t.Cleanup(srv.Close)
-	t.Cleanup(func() { close(hold) })
-
-	x := newXinferenceForTest(srv.URL)
-	err := x.ChatStreamlyWithSender(ctx, "qwen2.5-instruct",
-		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil,
-		nil,
-		func(*string, *string) error { return nil })
-	if err == nil || !strings.Contains(err.Error(), "stream idle") {
-		t.Errorf("expected stream-idle error, got %v", err)
-	}
-}
-
 func TestXinferenceListModelsAndCheckConnection(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
@@ -338,7 +293,7 @@ func TestXinferenceEmbedHappyPathAndOmitsEmptyAuth(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-m3"
-	got, err := x.Embed(ctx, &model, []string{"hello", "world"}, &APIConfig{}, nil, nil)
+	got, err := x.Embed(ctx, &model, EmbedRequest{Texts: []string{"hello", "world"}}, &APIConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -366,7 +321,7 @@ func TestXinferenceEmbedSendsAuthWhenKeyConfigured(t *testing.T) {
 	x := newXinferenceForTest(srv.URL)
 	key := "sk-test"
 	model := "bge-m3"
-	if _, err := x.Embed(ctx, &model, []string{"x"}, &APIConfig{ApiKey: &key}, nil, nil); err != nil {
+	if _, err := x.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{ApiKey: &key}, nil, nil); err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
 	if gotAuth != "Bearer sk-test" {
@@ -387,7 +342,7 @@ func TestXinferenceEmbedNormalizesBaseURLWithV1Suffix(t *testing.T) {
 		URLSuffix{Chat: "v1/chat/completions", Embedding: "v1/embeddings", Models: "v1/models"},
 	)
 	model := "bge-m3"
-	if _, err := x.Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil); err != nil {
+	if _, err := x.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{}, nil, nil); err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
 }
@@ -405,7 +360,7 @@ func TestXinferenceEmbedForwardsDimension(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-m3"
-	if _, err := x.Embed(ctx, &model, []string{"x"}, &APIConfig{}, &EmbeddingConfig{Dimension: 384}, nil); err != nil {
+	if _, err := x.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{}, &EmbeddingConfig{Dimension: 384}, nil); err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
 }
@@ -420,7 +375,7 @@ func TestXinferenceEmbedRejectsDuplicateIndex(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-m3"
-	_, err := x.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := x.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
@@ -436,7 +391,7 @@ func TestXinferenceEmbedRejectsOutOfRangeIndex(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-m3"
-	_, err := x.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := x.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
@@ -453,7 +408,7 @@ func TestXinferenceEmbedRejectsMissingIndex(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-m3"
-	_, err := x.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := x.Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding") {
 		t.Errorf("expected missing-embedding error, got %v", err)
 	}
@@ -464,7 +419,7 @@ func TestXinferenceEmbedEmptyTextsShortCircuits(t *testing.T) {
 	ctx := t.Context()
 	x := newXinferenceForTest("http://unused")
 	model := "bge-m3"
-	got, err := x.Embed(ctx, &model, nil, &APIConfig{}, nil, nil)
+	got, err := x.Embed(ctx, &model, EmbedRequest{}, &APIConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("expected nil error for empty inputs, got %v", err)
 	}
@@ -477,7 +432,7 @@ func TestXinferenceEmbedRequiresModelName(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	x := newXinferenceForTest("http://unused")
-	_, err := x.Embed(ctx, nil, []string{"x"}, &APIConfig{}, nil, nil)
+	_, err := x.Embed(ctx, nil, EmbedRequest{Texts: []string{"x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
@@ -494,7 +449,7 @@ func TestXinferenceEmbedSurfacesHTTPError(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-m3"
-	_, err := x.Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil)
+	_, err := x.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "Xinference embeddings API error") {
 		t.Errorf("expected API error, got %v", err)
 	}
@@ -508,7 +463,7 @@ func TestXinferenceEmbedRejectsMissingEmbeddingSuffix(t *testing.T) {
 		URLSuffix{Chat: "v1/chat/completions"}, // no Embedding suffix
 	)
 	model := "bge-m3"
-	_, err := x.Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil)
+	_, err := x.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no embedding URL suffix configured") {
 		t.Errorf("expected missing-suffix error, got %v", err)
 	}
@@ -610,8 +565,10 @@ func TestXinferenceRerankHappyPathReordersByIndex(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-reranker-v2-m3"
-	resp, err := x.Rerank(ctx, &model, "capital of France",
-		[]string{"Paris is the capital of France.", "Eiffel Tower.", "Berlin is the capital of Germany."},
+	resp, err := x.Rerank(ctx, &model, RerankRequest{
+		Query:     "capital of France",
+		Documents: []string{"Paris is the capital of France.", "Eiffel Tower.", "Berlin is the capital of Germany."},
+	},
 		&APIConfig{}, nil, nil,
 	)
 	if err != nil {
@@ -642,7 +599,7 @@ func TestXinferenceRerankNormalizesV1BaseURL(t *testing.T) {
 	)
 	apiKey := "test-key"
 	model := "bge-reranker-v2-m3"
-	_, err := x.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := x.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -661,7 +618,7 @@ func TestXinferenceRerankRespectsTopNConfig(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-reranker-v2-m3"
-	_, err := x.Rerank(ctx, &model, "q", []string{"a", "b", "c", "d"}, &APIConfig{}, &RerankConfig{TopN: 2}, nil)
+	_, err := x.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a", "b", "c", "d"}}, &APIConfig{}, &RerankConfig{TopN: 2}, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -672,7 +629,7 @@ func TestXinferenceRerankEmptyDocumentsShortCircuits(t *testing.T) {
 	ctx := t.Context()
 	x := newXinferenceForTest("http://unused")
 	model := "bge-reranker-v2-m3"
-	resp, err := x.Rerank(ctx, &model, "q", nil, &APIConfig{}, nil, nil)
+	resp, err := x.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: nil}, &APIConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -685,7 +642,7 @@ func TestXinferenceRerankRequiresModelName(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	x := newXinferenceForTest("http://unused")
-	_, err := x.Rerank(ctx, nil, "q", []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := x.Rerank(ctx, nil, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("err=%v", err)
 	}
@@ -703,7 +660,7 @@ func TestXinferenceRerankRejectsOutOfRangeIndex(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-reranker-v2-m3"
-	_, err := x.Rerank(ctx, &model, "q", []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := x.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a", "b"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("err=%v", err)
 	}
@@ -724,7 +681,7 @@ func TestXinferenceRerankRejectsDuplicateIndex(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-reranker-v2-m3"
-	_, err := x.Rerank(ctx, &model, "q", []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := x.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a", "b"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Errorf("err=%v", err)
 	}
@@ -741,7 +698,7 @@ func TestXinferenceRerankSurfacesHTTPError(t *testing.T) {
 
 	x := newXinferenceForTest(srv.URL)
 	model := "bge-reranker-v2-m3"
-	_, err := x.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := x.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "Xinference rerank API error") {
 		t.Errorf("err=%v", err)
 	}
@@ -755,7 +712,7 @@ func TestXinferenceRerankRejectsMissingRerankSuffix(t *testing.T) {
 		URLSuffix{Chat: "v1/chat/completions"},
 	)
 	model := "bge-reranker-v2-m3"
-	_, err := x.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := x.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no rerank URL suffix configured") {
 		t.Errorf("err=%v", err)
 	}

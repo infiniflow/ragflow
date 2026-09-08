@@ -53,30 +53,31 @@ from rag.advanced_rag.knowlege_compile.structure import (
     rebuild_dataset_structure_graph_json,
     rebuild_structure_graph_json,
 )
+from rag.advanced_rag.knowlege_compile._common import env_float, env_int
 
 
 # ----- tunables ------------------------------------------------------
 # Bound how many source chunks are handed to a single
 # ``compile_structure_from_text`` invocation for regular templates.
-DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = 4
+DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = env_int("DOC_STRUCTURE_COMPILE_BATCH_CHUNKS", 4, minimum=1)
 
 # Structure compilation packs chunks up to half of the model context.
 # ``compile_structure_from_text`` applies the exact prompt-aware packing again
 # before the LLM call.
-STRUCTURE_CONTEXT_FRACTION = 0.5
-STRUCTURE_DEFAULT_CONTEXT = 100_000
-KNOWLEDGE_GRAPH_CONTEXT_FRACTION = 0.1
-KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS = 2048
-KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS = 4096
+STRUCTURE_CONTEXT_FRACTION = env_float("STRUCTURE_CONTEXT_FRACTION", 0.5, minimum=0.01, maximum=1.0)
+STRUCTURE_DEFAULT_CONTEXT = env_int("STRUCTURE_DEFAULT_CONTEXT", 100_000, minimum=1)
+KNOWLEDGE_GRAPH_CONTEXT_FRACTION = env_float("KNOWLEDGE_GRAPH_CONTEXT_FRACTION", 0.1, minimum=0.01, maximum=1.0)
+KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS = env_int("KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS", 2048, minimum=1)
+KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS = env_int("KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS", 4096, minimum=KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS)
 
 # Bound the number of batch/template extraction calls in flight. Results are
 # committed in submission order so accumulator updates and merge flushes stay
 # deterministic while the LLM calls run concurrently.
-DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT = 15
+DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT = env_int("DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT", 15, minimum=1)
 
 # Total task-scoped Chat LLM capacity shared by compile, chain validation and
 # merge decisions. A request waits in the priority queue when all slots are busy.
-DOC_STRUCTURE_LLM_POOL_SIZE = 20
+DOC_STRUCTURE_LLM_POOL_SIZE = env_int("DOC_STRUCTURE_LLM_POOL_SIZE", 20, minimum=1)
 
 # Bound how many compiled ES-ready docs may accumulate before we flush
 # them through ``merge_compiled_structures``. The merger does pairwise
@@ -85,7 +86,7 @@ DOC_STRUCTURE_LLM_POOL_SIZE = 20
 DOC_STRUCTURE_MERGE_MAX_DOCS = 512
 
 # Hard wall on the chain-validator LLM correction step.
-STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S = 120.0
+STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S = env_float("STRUCTURE_CHAIN_CORRECTION_TIMEOUT_S", 120.0, minimum=0.1)
 
 
 # ----- template resolution -------------------------------------------
@@ -194,8 +195,10 @@ async def _upsert_dataset_nav_from_page_index(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     progress_cb: Callable[..., None],
     cancel_check: Callable[[], bool],
+    llm_pool: LLMCallPool,
 ) -> None:
     page_index_templates = [(template_id, parser_cfg) for template_id, parser_cfg in active_templates if _is_page_index_template(parser_cfg)]
     if not page_index_templates:
@@ -215,6 +218,7 @@ async def _upsert_dataset_nav_from_page_index(
                 tenant_id,
                 kb_id,
                 doc_id,
+                doc_name,
                 "page_index",
                 compilation_template_id=template_id,
             )
@@ -224,6 +228,7 @@ async def _upsert_dataset_nav_from_page_index(
                     tenant_id,
                     kb_id,
                     doc_id,
+                    doc_name,
                     "timeline",
                     compilation_template_id=template_id,
                 )
@@ -252,13 +257,19 @@ async def _upsert_dataset_nav_from_page_index(
         )
 
         progress_cb(msg=f"page_index: updating dataset navigation for doc {doc_id} ...")
+        pooled_chat_mdl = llm_pool.wrap(
+            chat_mdl,
+            priority=20,
+            label="dataset-nav:page-index",
+            context=f"{doc_id}:dataset-nav",
+        )
         await upsert_dataset_nav_doc(
             tenant_id,
             kb_id,
             doc_id,
             "\n\n".join(summaries),
             embd_mdl=embedding_model,
-            chat_mdl=chat_mdl,
+            chat_mdl=pooled_chat_mdl,
         )
     except TaskCanceledException:
         raise
@@ -277,11 +288,13 @@ async def run_structure_compile_over_batches(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     language: str,
     chunk_batches: AsyncIterator[list[dict]],
     progress_cb: Callable[..., None],
     cancel_check: Callable[[], bool] = lambda: False,
     record: Callable[[str, dict], None] | None = None,
+    llm_pool: LLMCallPool | None = None,
 ) -> dict[str, dict]:
     """Extract + merge structures for every non-``tree`` template over an
     async stream of chunk batches, then run the optional synthesis phase.
@@ -290,7 +303,8 @@ async def run_structure_compile_over_batches(
     chat model in ``chat_mdl_by_tid``. Chunks arrive as an async iterator of
     batches so callers can stream them from the doc store or hand over an
     in-memory list; each ``dict`` must expose ``id`` and text
-    (``content_with_weight`` / ``text``).
+    (``content_with_weight`` / ``text``). ``llm_pool`` may be supplied by the
+    task orchestrator so tree and non-tree phases share adaptive concurrency.
 
     Returns ``{template_id: {"inserted", "updated", "duplicates_dropped"}}``.
     Raises :class:`TaskCanceledException` when ``cancel_check`` trips.
@@ -301,7 +315,7 @@ async def run_structure_compile_over_batches(
         return {}
 
     total = len(active_templates)
-    llm_pool = LLMCallPool(DOC_STRUCTURE_LLM_POOL_SIZE)
+    llm_pool = llm_pool or LLMCallPool(DOC_STRUCTURE_LLM_POOL_SIZE)
 
     accumulators: dict[str, list[dict]] = {tid: [] for tid, _ in active_templates}
     template_kinds: dict[str, str] = {tid: _compilation_template_kind((cfg or {}).get("kind")) for tid, cfg in active_templates}
@@ -375,6 +389,7 @@ async def run_structure_compile_over_batches(
                     doc_storage_waiter=_wait_for_doc_storage,
                     doc_storage_releaser=_release_doc_storage,
                     merge_scope=merge_scope_by_tid[template_id],
+                    doc_name=doc_name,
                 )
             finally:
                 if not doc_storage_released:
@@ -408,6 +423,7 @@ async def run_structure_compile_over_batches(
             compile_chat_mdl,
             embedding_model,
             doc_id,
+            doc_name=doc_name,
             language=language,
             callback=progress_cb,
             max_workers=3,
@@ -604,8 +620,10 @@ async def run_structure_compile_over_batches(
         tenant_id=tenant_id,
         kb_id=kb_id,
         doc_id=doc_id,
+        doc_name=doc_name,
         progress_cb=progress_cb,
         cancel_check=cancel_check,
+        llm_pool=llm_pool,
     )
     # Timeline entity cleanup must happen after every flush has completed;
     # otherwise an entity can look isolated in one flush and be referenced by
@@ -618,6 +636,7 @@ async def run_structure_compile_over_batches(
                 tenant_id,
                 kb_id,
                 doc_id,
+                doc_name,
                 compilation_template_id=template_id,
             )
         except Exception:

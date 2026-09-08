@@ -79,7 +79,7 @@ func runVariantChunksWithInputs(t *testing.T, variant string, extra, inputsExtra
 	for k, v := range extra {
 		params[k] = v
 	}
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", params)
+	c, err := NewKnowledgeCompilerComponent("Compiler", params)
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent(%s): %v", variant, err)
 	}

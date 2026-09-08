@@ -121,40 +121,51 @@ You are an expert at analyzing conversations to extract structured memory.
 6. Maximum {max_items} items per type
 `
 
-// TYPE_INSTRUCTIONS contains specific instructions for each memory type extraction
+// TYPE_INSTRUCTIONS contains specific instructions for each memory type extraction.
+// Kept in lockstep with Python's memory/utils/prompt_util.py TYPE_INSTRUCTIONS —
+// both implementations drive the same extraction contract, and a rule present on
+// only one side (e.g. the semantic Default line) drifts extraction behavior across
+// languages (see #18415).
 var TYPE_INSTRUCTIONS = map[string]string{
 	"semantic": `
 **EXTRACT SEMANTIC KNOWLEDGE:**
 - Universal facts, definitions, concepts, relationships
 - Time-invariant, generally true information
+- Examples: "The capital of France is Paris", "Water boils at 100°C"
 
-**Timestamp Rules:**
-- valid_at: When the fact became true
-- invalid_at: When it becomes false or empty if still true
+**Timestamp Rules for Semantic Knowledge:**
+- valid_at: When the fact became true (e.g., law enactment, discovery)
+- invalid_at: When it becomes false (e.g., repeal, disproven) or empty if still true
+- Default: valid_at = conversation time, invalid_at = "" for timeless facts
 `,
 	"episodic": `
 **EXTRACT EPISODIC KNOWLEDGE:**
 - Specific experiences, events, personal stories
 - Time-bound, person-specific, contextual
+- Examples: "Yesterday I fixed the bug", "User reported issue last week"
 
-**Timestamp Rules:**
+**Timestamp Rules for Episodic Knowledge:**
 - valid_at: Event start/occurrence time
 - invalid_at: Event end time or empty if instantaneous
+- Extract explicit times: "at 3 PM", "last Monday", "from X to Y"
 `,
 	"procedural": `
 **EXTRACT PROCEDURAL KNOWLEDGE:**
 - Processes, methods, step-by-step instructions
 - Goal-oriented, actionable, often includes conditions
+- Examples: "To reset password, click...", "Debugging steps: 1)..."
 
-**Timestamp Rules:**
+**Timestamp Rules for Procedural Knowledge:**
 - valid_at: When procedure becomes valid/effective
 - invalid_at: When it expires/becomes obsolete or empty if current
+- For version-specific: use release dates
+- For best practices: invalid_at = ""
 `,
 }
 
 // OUTPUT_TEMPLATES defines the output format for each memory type
 var OUTPUT_TEMPLATES = map[string]string{
-	"semantic":   `"semantic": [{"content": "Clear factual statement", "valid_at": "timestamp or empty", "invalid_at": "timestamp or empty"}]`,
+	"semantic":   `"semantic": [{"content": "Clear factual statement", "valid_at": "timestamp — use the conversation time when the fact has no date of its own", "invalid_at": "timestamp or empty"}]`,
 	"episodic":   `"episodic": [{"content": "Narrative event description", "valid_at": "event start timestamp", "invalid_at": "event end timestamp or empty"}]`,
 	"procedural": `"procedural": [{"content": "Actionable instructions", "valid_at": "procedure effective timestamp", "invalid_at": "procedure expiration timestamp or empty"}]`,
 }
@@ -814,16 +825,17 @@ func sameStringSet(a, b []string) bool {
 //	err := service.DeleteMemory(ctx, "user123", "memory456")
 func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID string) error {
 	// Verify the caller has access to this memory
-	if _, err := s.requireMemoryAccess(ctx, userID, memoryID); err != nil {
+	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	if err != nil {
 		return err
 	}
 
 	// TODO: Delete associated message index - Implementation pending MessageService
-	// messageService := NewMessageService()
-	// hasIndex, _ := messageService.HasIndex(memory.TenantID, memoryID)
-	// if hasIndex {
-	//     messageService.DeleteMessage(nil, memory.TenantID, memoryID)
-	// }
+	if s.docEngine != nil && engine.IsOceanBaseFamily(s.docEngine.GetType()) {
+		if err := s.docEngine.DropChunkStore(ctx, memoryIndexName(memory.TenantID), memoryID); err != nil {
+			return fmt.Errorf("delete memory messages: %w", err)
+		}
+	}
 
 	// Delete memory record
 	if err := s.memoryDAO.DeleteByID(ctx, dao.DB, memoryID); err != nil {
@@ -846,12 +858,18 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 		return errors.New("message store is not initialized")
 	}
 
-	now := time.Now().UTC()
+	// forget_at is stamped as server-local wall clock, not UTC. forget_at_flt
+	// below is a Unix millisecond value and therefore zone-independent.
+	now := memoryNow()
 	forgetTime := now.Format("2006-01-02 15:04:05")
 	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
 	updates := map[string]interface{}{
-		"forget_at":     forgetTime,
-		"forget_at_flt": now.UnixMilli(),
+		"forget_at": forgetTime,
+	}
+	// OceanBase/SeekDB memory tables contain forget_at but no forget_at_flt.
+	// Keep the existing companion-field update for other engines.
+	if !engine.IsOceanBaseFamily(s.docEngine.GetType()) {
+		updates["forget_at_flt"] = now.UnixMilli()
 	}
 	condition := map[string]interface{}{
 		"id": messageDocID,
@@ -1042,8 +1060,40 @@ func (s *MemoryService) SearchMessage(ctx context.Context, userID string, filter
 	if len(memories) == 0 {
 		return []map[string]interface{}{}, common.CodeSuccess, nil
 	}
+	if err := validateMemorySearchModels(memories); err != nil {
+		return nil, common.CodeArgumentError, err
+	}
 
 	return s.queryMessage(ctx, memories, filterDict, params)
+}
+
+func validateMemorySearchModels(memories []*entity.Memory) error {
+	if len(memories) == 0 {
+		return nil
+	}
+	firstKey := memorySearchEmbeddingKey(memories[0])
+	for _, memory := range memories[1:] {
+		if memorySearchEmbeddingKey(memory) != firstKey {
+			return fmt.Errorf("memories use different embedding models")
+		}
+	}
+	return nil
+}
+
+func memorySearchEmbeddingKey(memory *entity.Memory) string {
+	return "embedding:" + strings.TrimSpace(memory.EmbdID)
+}
+
+// memoryMessageNotForgottenCondition returns the filter that hides forgotten
+// messages, i.e. records whose forget_at is set. Python's message store
+// connectors apply the same default (hide_forgotten=True), for example
+// memory/utils/es_conn.py and memory/utils/ob_conn.py, so memory retrievals
+// must skip these records regardless of the backing engine. OceanBase's memory
+// handling adds the same must_not when the caller leaves it absent.
+func memoryMessageNotForgottenCondition() map[string]interface{} {
+	return map[string]interface{}{
+		"must_not": map[string]interface{}{"exists": "forget_at"},
+	}
 }
 
 func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Memory, filterDict, params map[string]interface{}) ([]map[string]interface{}, common.ErrorCode, error) {
@@ -1079,6 +1129,15 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 	if _, ok := conditionDict["status"]; !ok {
 		conditionDict["status"] = 1
 	}
+	// SearchMessage hides forgotten messages by default, matching Python's
+	// MessageService.search_message which relies on hide_forgotten=True in the
+	// store connectors. Without this, non-OceanBase engines return records
+	// whose forget_at is set.
+	for key, value := range memoryMessageNotForgottenCondition() {
+		if _, present := conditionDict[key]; !present {
+			conditionDict[key] = value
+		}
+	}
 
 	matchExprs := make([]interface{}, 0, 3)
 	if question != "" {
@@ -1091,7 +1150,7 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 			Method: "weighted_sum",
 			TopN:   topN,
 			FusionParams: map[string]interface{}{
-				"weights": fmt.Sprintf("%g,%g", 1-keywordsSimilarityWeight, keywordsSimilarityWeight),
+				"weights": memoryFusionWeights(keywordsSimilarityWeight),
 			},
 		}
 		matchExprs = append(matchExprs, matchText, matchDense, fusionExpr)
@@ -1327,13 +1386,28 @@ func memoryMessageTextExpr(question string, similarityThreshold float64) *engine
 	return matchText
 }
 
+// memoryFusionWeights formats FusionExpr weights, whose slot order is [text, vector]:
+// the Elasticsearch, OceanBase and SereneDB adapters all read slot 1 as the vector
+// weight, and Elasticsearch then boosts the text query by 1 - that value. The keyword
+// weight is the text weight, so it belongs in slot 0. Sending it to slot 1 gave every
+// memory search the inverse of the requested hybrid balance.
+//
+// Six significant digits rather than %g for the same reason serenedb's formatWeight
+// rounds: 1 - 0.7 would otherwise render as 0.30000000000000004, which is also what the
+// Python side deliberately formats away.
+func memoryFusionWeights(keywordsSimilarityWeight float64) string {
+	textWeight := keywordsSimilarityWeight
+	vectorWeight := 1 - keywordsSimilarityWeight
+	return fmt.Sprintf("%.6g,%.6g", textWeight, vectorWeight)
+}
+
 func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
 	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(ctx, memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
 	if err != nil {
 		return nil, err
 	}
 	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, []string{question}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{question}}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1387,6 +1461,15 @@ func (s *MemoryService) getRecentMessage(ctx context.Context, memories []*entity
 	}
 	if sessionID = strings.TrimSpace(sessionID); sessionID != "" {
 		conditionDict["session_id"] = sessionID
+	}
+	// Hide forgotten messages by default, matching Python's
+	// MessageService.get_recent_messages which relies on hide_forgotten=True in
+	// the store connectors. Without this, non-OceanBase engines return records
+	// whose forget_at is set.
+	for key, value := range memoryMessageNotForgottenCondition() {
+		if _, present := conditionDict[key]; !present {
+			conditionDict[key] = value
+		}
 	}
 	req := &enginetypes.SearchRequest{
 		IndexNames:   indexNames,

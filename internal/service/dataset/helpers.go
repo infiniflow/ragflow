@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -46,19 +47,37 @@ const (
 	graphPhaseCommunityDone  = "community_done"
 )
 
-// validateParserID validates parser_id against the built-in pipeline registry.
-func validateParserID(chunkMethod string) error {
-	if chunkMethod == "knowledge_graph" {
-		return nil
+// canonicalDatasetParserID resolves a parser ID to its canonical builtin ID.
+// The registry retains legacy aliases such as naive -> general for old clients.
+func canonicalDatasetParserID(parserID string) (string, error) {
+	if parserID == "knowledge_graph" {
+		return parserID, nil
 	}
 	registry, err := pipelinepkg.DefaultRegistry()
 	if err != nil || registry == nil {
-		return errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
+		return "", errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
 	}
-	if registry.IsValid(chunkMethod) {
-		return nil
+	template, ok := registry.Get(parserID)
+	if ok {
+		return template.ParserID, nil
 	}
-	return parserIDError()
+	return "", parserIDError()
+}
+
+// validateParserID validates parser_id against the built-in pipeline registry.
+func validateParserID(parserID string) error {
+	_, err := canonicalDatasetParserID(parserID)
+	return err
+}
+
+// datasetParserIDForResponse returns the canonical parser ID when a legacy
+// persisted value remains resolvable. Unknown stored values are preserved.
+func datasetParserIDForResponse(parserID string) string {
+	canonicalID, err := canonicalDatasetParserID(parserID)
+	if err != nil {
+		return parserID
+	}
+	return canonicalID
 }
 
 func parserIDError() error {
@@ -180,6 +199,37 @@ func normalizeDatasetID(id string) (string, error) {
 	return strings.ReplaceAll(parsedUUID.String(), "-", ""), nil
 }
 
+// datasetLanguageLimit mirrors the max_length of CreateDatasetReq.language in
+// the Python request model.
+const datasetLanguageLimit = 32
+
+// normalizeDatasetLanguage trims a dataset language and applies the same
+// constraints as CreateDatasetReq.language in Python
+// (strip_whitespace=True, min_length=1, max_length=32), so both backends accept
+// and reject the same values. The length is counted in characters, not bytes,
+// because pydantic counts characters — a byte count would reject valid
+// non-ASCII language names well below the documented limit.
+func normalizeDatasetLanguage(language string) (string, error) {
+	normalized := strings.TrimSpace(language)
+	if normalized == "" {
+		return "", errors.New("String should have at least 1 character")
+	}
+	if utf8.RuneCountInString(normalized) > datasetLanguageLimit {
+		return "", fmt.Errorf("String should have at most %d characters", datasetLanguageLimit)
+	}
+	return normalized, nil
+}
+
+// pythonStringListRepr renders a string slice the way Python prints a list of
+// strings, e.g. ['a', 'b'], for error messages that mirror the Python API.
+func pythonStringListRepr(items []string) string {
+	quoted := make([]string, 0, len(items))
+	for _, item := range items {
+		quoted = append(quoted, "'"+item+"'")
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
 func canvasAccessibleForUser(ctx context.Context, userID, canvasID string) (bool, error) {
 	tenantIDs, _ := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
 	return dao.NewUserCanvasDAO().Accessible(ctx, dao.DB, canvasID, userID, tenantIDs), nil
@@ -213,10 +263,11 @@ func datasetUpdateParserID(req service.UpdateDatasetRequest) (string, bool, erro
 	if !provided {
 		return "", false, nil
 	}
-	if err := validateParserID(parserID); err != nil {
+	canonicalID, err := canonicalDatasetParserID(parserID)
+	if err != nil {
 		return "", true, err
 	}
-	return parserID, true, nil
+	return canonicalID, true, nil
 }
 
 func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, error) {
@@ -243,42 +294,64 @@ func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming
 	if next == nil {
 		next = entity.JSONMap{}
 	}
-	for _, key := range []string{"metadata", "built_in_metadata", "enable_metadata"} {
-		if incoming != nil {
-			if value, ok := incoming[key]; ok {
-				next[key] = value
-				continue
-			}
+	var mm map[string]any
+	if incoming != nil {
+		if v, ok := incoming["metadata"].(map[string]any); ok {
+			mm = v
 		}
-		if existing != nil {
-			if value, ok := existing[key]; ok {
-				next[key] = value
-			}
+	}
+	if mm == nil && existing != nil {
+		if v, ok := existing["metadata"].(map[string]any); ok {
+			mm = v
 		}
+	}
+	if mm != nil {
+		next["metadata"] = mm
 	}
 	return next
 }
 
-func normalizeDatasetUpdateExt(ext map[string]interface{}) map[string]interface{} {
-	if ext == nil {
+func parserConfigJSONMap(value interface{}) entity.JSONMap {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case entity.JSONMap:
+		return typed
+	case map[string]interface{}:
+		return entity.JSONMap(typed)
+	default:
 		return nil
 	}
-	updates := make(map[string]interface{}, len(ext))
-	for key, value := range ext {
-		switch key {
-		case "chunk_method":
-			updates["parser_id"] = value
-		case "token_num", "chunk_num", "parser_config":
-			continue
-		case "pagerank":
-			if v, ok := value.(float64); ok {
-				updates[key] = int64(v)
-			}
-		default:
-			updates[key] = value
-		}
+}
+
+func cloneJSONMap(source entity.JSONMap) entity.JSONMap {
+	if source == nil {
+		return nil
 	}
-	return updates
+	cloned := make(entity.JSONMap, len(source))
+	for key, value := range source {
+		cloned[key] = cloneJSONValue(value)
+	}
+	return cloned
+}
+
+func cloneJSONValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		nested := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			nested[key] = cloneJSONValue(item)
+		}
+		return nested
+	case []interface{}:
+		nested := make([]interface{}, len(typed))
+		for idx, item := range typed {
+			nested[idx] = cloneJSONValue(item)
+		}
+		return nested
+	default:
+		return typed
+	}
 }
 
 func normalizeMetadataConfigFields(fields []service.MetadataConfigField, fieldName string) ([]map[string]interface{}, error) {

@@ -19,7 +19,9 @@ import heapq
 import json
 import logging
 import re
+import time
 import uuid
+from dataclasses import dataclass
 from typing import Awaitable, Callable, Tuple
 
 import xxhash
@@ -28,7 +30,6 @@ from common.exceptions import TaskCanceledException
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import gen_json
-
 from ._common import (
     build_chunk_batches as _build_chunk_batches,
     encode as _encode,
@@ -38,6 +39,8 @@ from ._common import (
     union_ordered as _union_ordered,
     run_chunked_pipeline as _run_chunked_pipeline,
     knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
+    env_float as _env_float,
+    env_int as _env_int,
 )
 
 
@@ -69,6 +72,10 @@ MERGE_SCOPE_DATASET = "dataset"
 _STRUCT_MERGE_LOCK_TIMEOUT_S = 60
 _STRUCT_MERGE_LOCK_BLOCKING_TIMEOUT_S = 5
 
+LLM_POOL_RATE_LIMIT_RETRIES = _env_int("LLM_POOL_RATE_LIMIT_RETRIES", 3, minimum=0)
+LLM_POOL_RATE_LIMIT_RETRY_BASE_DELAY = _env_float("LLM_POOL_RATE_LIMIT_RETRY_BASE_DELAY", 1.0, minimum=0.0)
+LLM_POOL_RATE_LIMIT_RETRY_MAX_DELAY = _env_float("LLM_POOL_RATE_LIMIT_RETRY_MAX_DELAY", 30.0, minimum=0.0)
+
 
 class _RechunkedDocs(list):
     """Compiled structure rows plus the formal chunks created by rechunking."""
@@ -83,15 +90,69 @@ def _struct_merge_lock_key(kb_id: str, compilation_template_id: str | None) -> s
     return f"struct_merge:{kb_id}:{compilation_template_id or ''}"
 
 
-class LLMCallPool:
-    """Task-scoped priority scheduler for actual chat-model calls."""
+@dataclass
+class _LLMModelPoolState:
+    concurrency: int
+    active: int = 0
+    successes: int = 0
+    last_decrease_at: float = float("-inf")
+    last_increase_at: float = float("-inf")
 
-    def __init__(self, max_concurrency: int = 10, max_pending: int | None = None):
+
+class LLMCallPool:
+    """Task-scoped adaptive priority scheduler for chat-model calls.
+
+    ``max_concurrency`` remains the task-wide hard ceiling. Each model starts
+    at that ceiling, halves its own admission limit after an explicit rate
+    limit response, retries through the reduced limit, and recovers one slot
+    at a time after sustained success.
+    """
+
+    _RATE_LIMIT_MARKERS = (
+        "429",
+        "rate limit",
+        "rate_limit",
+        "too many requests",
+        "requests per minute",
+        "concurrency limit",
+        "concurrent request",
+        "maximum number of concurrent",
+    )
+
+    def __init__(
+        self,
+        max_concurrency: int = 10,
+        max_pending: int | None = None,
+        *,
+        min_concurrency: int = 1,
+        decrease_factor: float = 0.5,
+        decrease_cooldown: float = 5.0,
+        recovery_successes: int = 20,
+        recovery_cooldown: float = 30.0,
+        rate_limit_retries: int = LLM_POOL_RATE_LIMIT_RETRIES,
+        rate_limit_retry_base_delay: float = LLM_POOL_RATE_LIMIT_RETRY_BASE_DELAY,
+        rate_limit_retry_max_delay: float = LLM_POOL_RATE_LIMIT_RETRY_MAX_DELAY,
+        clock: Callable[[], float] = time.monotonic,
+        on_concurrency_change: Callable[[int, int, str], None] | None = None,
+        on_error: Callable[[str, str | None, str], None] | None = None,
+    ):
         self.max_concurrency = max(1, int(max_concurrency))
         self.max_pending = max(self.max_concurrency, int(max_pending or self.max_concurrency))
+        self.min_concurrency = min(self.max_concurrency, max(1, int(min_concurrency)))
+        self.decrease_factor = min(1.0, max(0.01, float(decrease_factor)))
+        self.decrease_cooldown = max(0.0, float(decrease_cooldown))
+        self.recovery_successes = max(1, int(recovery_successes))
+        self.recovery_cooldown = max(0.0, float(recovery_cooldown))
+        self.rate_limit_retries = max(0, int(rate_limit_retries))
+        self.rate_limit_retry_base_delay = max(0.0, float(rate_limit_retry_base_delay))
+        self.rate_limit_retry_max_delay = max(self.rate_limit_retry_base_delay, float(rate_limit_retry_max_delay))
+        self._clock = clock
+        self._on_concurrency_change = on_concurrency_change
+        self._on_error = on_error
         self._active = 0
         self._ticket = 0
-        self._waiting: list[tuple[int, int]] = []
+        self._waiting: list[tuple[int, int, str]] = []
+        self._model_states: dict[str, _LLMModelPoolState] = {}
         self._condition = asyncio.Condition()
 
     @property
@@ -103,17 +164,140 @@ class LLMCallPool:
         return self._active + len(self._waiting)
 
     def wrap(self, chat_mdl, *, priority: int, label: str, context: str | None = None):
-        return PooledChatModel(self, chat_mdl, priority=priority, label=label, context=context)
+        return PooledChatModel(
+            self,
+            chat_mdl,
+            model_key=self._model_key(chat_mdl),
+            priority=priority,
+            label=label,
+            context=context,
+        )
 
-    async def call(self, fn, *, priority: int, label: str, context: str | None = None):
+    def concurrency_for(self, chat_mdl) -> int:
+        """Return the current adaptive concurrency limit for ``chat_mdl``."""
+        return self._state_for(self._model_key(chat_mdl)).concurrency
+
+    @staticmethod
+    def _model_key(chat_mdl) -> str:
+        config = getattr(chat_mdl, "model_config", None)
+        if isinstance(config, dict):
+            model_id = str(config.get("id") or config.get("llm_id") or config.get("model_id") or "").strip()
+            factory = str(config.get("llm_factory") or "").strip()
+            name = str(config.get("llm_name") or "").strip()
+            endpoint = str(config.get("api_base") or config.get("base_url") or "").strip()
+            if model_id or factory or name or endpoint:
+                return ":".join((model_id, factory, name, endpoint))
+        name = str(getattr(chat_mdl, "llm_name", "") or "").strip()
+        if name:
+            return name
+        return f"{type(chat_mdl).__module__}.{type(chat_mdl).__qualname__}:{id(chat_mdl)}"
+
+    def _state_for(self, model_key: str) -> _LLMModelPoolState:
+        state = self._model_states.get(model_key)
+        if state is None:
+            state = _LLMModelPoolState(concurrency=self.max_concurrency)
+            self._model_states[model_key] = state
+        return state
+
+    def _next_admissible_ticket(self) -> tuple[int, int, str] | None:
+        if self._active >= self.max_concurrency:
+            return None
+        # The bounded queue is scanned to avoid one throttled model blocking
+        # admissible work for another model at the heap head.
+        candidates = [ticket for ticket in self._waiting if self._state_for(ticket[2]).active < self._state_for(ticket[2]).concurrency]
+        return min(candidates) if candidates else None
+
+    @classmethod
+    def _is_rate_limited(cls, value) -> bool:
+        text = str(value).lower()
+        return any(marker in text for marker in cls._RATE_LIMIT_MARKERS)
+
+    @staticmethod
+    def _is_error_result(result) -> bool:
+        return isinstance(result, str) and result.lstrip().lower().startswith("**error**")
+
+    def _record_feedback(self, model_key: str, outcome: str, *, label: str, context: str | None) -> tuple[int, int, str] | None:
+        state = self._state_for(model_key)
+        now = self._clock()
+        if outcome == "rate_limited":
+            state.successes = 0
+            if now - state.last_decrease_at < self.decrease_cooldown:
+                return None
+            old_concurrency = state.concurrency
+            state.concurrency = max(self.min_concurrency, int(state.concurrency * self.decrease_factor))
+            state.last_decrease_at = now
+            if state.concurrency != old_concurrency:
+                logging.warning(
+                    "LLM pool concurrency decreased model=%s label=%s context=%s old=%d new=%d active=%d pending=%d",
+                    model_key,
+                    label,
+                    context,
+                    old_concurrency,
+                    state.concurrency,
+                    state.active,
+                    len(self._waiting),
+                )
+                return old_concurrency, state.concurrency, "rate limited"
+            return None
+        if outcome != "success":
+            state.successes = 0
+            return None
+        if state.concurrency >= self.max_concurrency:
+            state.successes = 0
+            return None
+        state.successes += 1
+        if state.successes < self.recovery_successes:
+            return None
+        if now - state.last_decrease_at < self.recovery_cooldown or now - state.last_increase_at < self.recovery_cooldown:
+            return None
+        old_concurrency = state.concurrency
+        state.concurrency = min(self.max_concurrency, state.concurrency + 1)
+        state.successes = 0
+        state.last_increase_at = now
+        logging.info(
+            "LLM pool concurrency increased model=%s label=%s context=%s old=%d new=%d active=%d pending=%d",
+            model_key,
+            label,
+            context,
+            old_concurrency,
+            state.concurrency,
+            state.active,
+            len(self._waiting),
+        )
+        return old_concurrency, state.concurrency, "recovered"
+
+    def _notify_concurrency_change(self, old_concurrency: int, new_concurrency: int, reason: str) -> None:
+        if self._on_concurrency_change is None:
+            return
+        try:
+            self._on_concurrency_change(old_concurrency, new_concurrency, reason)
+        except Exception:
+            logging.exception("LLM pool concurrency change callback failed")
+
+    def _notify_error(self, label: str, context: str | None, error: BaseException | str) -> None:
+        error_type = type(error).__name__ if isinstance(error, BaseException) else "ProviderErrorResult"
+        logging.error(
+            "LLM pool terminal call failure label=%s context=%s error_type=%s",
+            label,
+            context,
+            error_type,
+        )
+        if self._on_error is None:
+            return
+        try:
+            self._on_error(label, context, error_type)
+        except Exception:
+            logging.exception("LLM pool error callback failed")
+
+    async def _acquire(self, model_key: str, priority: int) -> None:
         async with self._condition:
             while self.pending_count >= self.max_pending:
                 await self._condition.wait()
-            ticket = (int(priority), self._ticket)
+            ticket = (int(priority), self._ticket, model_key)
             self._ticket += 1
             heapq.heappush(self._waiting, ticket)
             try:
-                while self._active >= self.max_concurrency or self._waiting[0] != ticket:
+                while self._next_admissible_ticket() != ticket:
                     await self._condition.wait()
             except BaseException:
                 if ticket in self._waiting:
@@ -121,23 +305,72 @@ class LLMCallPool:
                     heapq.heapify(self._waiting)
                     self._condition.notify_all()
                 raise
-            heapq.heappop(self._waiting)
+            self._waiting.remove(ticket)
+            heapq.heapify(self._waiting)
             self._active += 1
-        try:
-            result = await fn()
-            return result
-        except BaseException:
-            raise
-        finally:
-            async with self._condition:
-                self._active -= 1
-                self._condition.notify_all()
+            self._state_for(model_key).active += 1
+
+    async def _release(self, model_key: str, outcome: str, *, label: str, context: str | None) -> None:
+        async with self._condition:
+            self._active -= 1
+            self._state_for(model_key).active -= 1
+            change = self._record_feedback(model_key, outcome, label=label, context=context)
+            self._condition.notify_all()
+        if change is not None:
+            self._notify_concurrency_change(*change)
+
+    def _rate_limit_retry_delay(self, retry: int) -> float:
+        return min(self.rate_limit_retry_max_delay, self.rate_limit_retry_base_delay * (2 ** (retry - 1)))
+
+    async def call(self, fn, *, model_key: str, priority: int, label: str, context: str | None = None):
+        for retry in range(self.rate_limit_retries + 1):
+            await self._acquire(model_key, priority)
+            try:
+                result = await fn()
+            except asyncio.CancelledError:
+                await self._release(model_key, "cancelled", label=label, context=context)
+                raise
+            except BaseException as exc:
+                rate_limited = self._is_rate_limited(exc)
+                await self._release(model_key, "rate_limited" if rate_limited else "failed", label=label, context=context)
+                if not rate_limited or retry >= self.rate_limit_retries:
+                    self._notify_error(label, context, exc)
+                    raise
+            else:
+                error_result = self._is_error_result(result)
+                rate_limited = error_result and self._is_rate_limited(result)
+                await self._release(
+                    model_key,
+                    "rate_limited" if rate_limited else "failed" if error_result else "success",
+                    label=label,
+                    context=context,
+                )
+                if not rate_limited or retry >= self.rate_limit_retries:
+                    if error_result:
+                        self._notify_error(label, context, result)
+                    return result
+
+            delay = self._rate_limit_retry_delay(retry + 1)
+            logging.warning(
+                "LLM pool retrying rate-limited call model=%s label=%s context=%s retry=%d/%d delay=%.2fs concurrency=%d",
+                model_key,
+                label,
+                context,
+                retry + 1,
+                self.rate_limit_retries,
+                delay,
+                self._state_for(model_key).concurrency,
+            )
+            await asyncio.sleep(delay)
+
+        raise AssertionError("LLM pool retry loop exhausted unexpectedly")
 
 
 class PooledChatModel:
-    def __init__(self, pool: LLMCallPool, chat_mdl, *, priority: int, label: str, context: str | None):
+    def __init__(self, pool: LLMCallPool, chat_mdl, *, model_key: str, priority: int, label: str, context: str | None):
         self._pool = pool
         self._chat_mdl = chat_mdl
+        self._model_key = model_key
         self._priority = priority
         self._label = label
         self._context = context
@@ -149,6 +382,7 @@ class PooledChatModel:
         gen_conf = _knowledge_compile_gen_conf(self._chat_mdl, gen_conf)
         return await self._pool.call(
             lambda: self._chat_mdl.async_chat(system, history, gen_conf=gen_conf, **kwargs),
+            model_key=self._model_key,
             priority=self._priority,
             label=self._label,
             context=self._context,
@@ -648,6 +882,38 @@ def _struct_merge_graph_entities(entities: list[dict]) -> list[dict]:
             target.get("source_chunk_ids"),
             entity.get("source_chunk_ids"),
         )
+        doc_ids = _union_ordered(
+            target.get("doc_ids_kwd"),
+            entity.get("doc_ids_kwd"),
+        )
+        if doc_ids:
+            target["doc_ids_kwd"] = doc_ids
+    return [merged[key] for key in order]
+
+
+def _struct_merge_graph_relations(relations: list[dict]) -> list[dict]:
+    """Deduplicate relation payloads while preserving source provenance."""
+    merged: dict[tuple[str, str, str], dict] = {}
+    order: list[tuple[str, str, str]] = []
+    for relation in relations:
+        key = (
+            str(relation.get("from") or "").strip().casefold(),
+            str(relation.get("to") or "").strip().casefold(),
+            str(relation.get("type") or "related").strip().casefold(),
+        )
+        if not key[0] or not key[1]:
+            continue
+        if key not in merged:
+            merged[key] = relation
+            order.append(key)
+            continue
+        target = merged[key]
+        doc_ids = _union_ordered(
+            target.get("doc_ids_kwd"),
+            relation.get("doc_ids_kwd"),
+        )
+        if doc_ids:
+            target["doc_ids_kwd"] = doc_ids
     return [merged[key] for key in order]
 
 
@@ -688,6 +954,7 @@ def _struct_to_doc_storage_doc(
     payload: dict,
     compile_kwd: str,
     doc_id: str,
+    doc_name: str,
     chunk_ids: list[str],
     vec,
     kind: str,
@@ -740,6 +1007,7 @@ def _struct_to_doc_storage_doc(
         "knowledge_graph_kwd": kind,
         "scope_kwd": scope,
         "doc_id": doc_id_str,
+        "docnm_kwd": doc_name,
         "source_chunk_ids": list(chunk_ids or []),
         "content_ltks": content_ltks,
         "content_sm_ltks": content_sm_ltks,
@@ -795,6 +1063,7 @@ async def _struct_process_batch(
     chat_mdl,
     embd_mdl,
     doc_id: str,
+    doc_name: str,
     language: str,
     callback,
     semaphore,
@@ -863,6 +1132,7 @@ async def _struct_process_batch(
                 payload,
                 autotype,
                 doc_id,
+                doc_name,
                 _struct_payload_chunk_ids(payload, payload_chunk_ids),
                 vec,
                 kind,
@@ -891,6 +1161,7 @@ async def compile_structure_from_text(
     chat_mdl,
     embd_mdl,
     doc_id: str,
+    doc_name: str = "",
     language: str = "en",
     callback=None,
     max_workers: int = 10,
@@ -971,6 +1242,7 @@ async def compile_structure_from_text(
             chat_mdl=chat_mdl,
             embd_mdl=embd_mdl,
             doc_id=doc_id,
+            doc_name=doc_name,
             language=language,
             callback=callback,
             semaphore=None,
@@ -1165,6 +1437,71 @@ async def _struct_merge_pair(existing: dict, incoming: dict, chat_mdl) -> dict |
     return merged
 
 
+def _struct_merge_exact_entity_payload(existing: dict, incoming: dict) -> dict | None:
+    """Merge same-name entity payloads without relying on vector similarity."""
+    try:
+        left = json.loads(existing.get("content_with_weight") or "{}")
+        right = json.loads(incoming.get("content_with_weight") or "{}")
+    except Exception:
+        return None
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return None
+
+    merged = dict(left)
+    for key, value in right.items():
+        if key not in merged or merged[key] in (None, "", []):
+            merged[key] = value
+
+    types = {str(left.get("type") or "").strip().casefold(), str(right.get("type") or "").strip().casefold()}
+    for preferred in ("title", "fact", "conclusion"):
+        if preferred in types:
+            merged["type"] = preferred
+            break
+
+    descriptions = [left.get("description") or "", right.get("description") or ""]
+    merged["description"] = max(descriptions, key=lambda value: len(str(value)))
+    merged["source_chunk_ids"] = _struct_union_chunk_ids(left.get("source_chunk_ids"), right.get("source_chunk_ids"))
+    return merged
+
+
+async def _struct_merge_exact_named_entities(docs: list[dict], embd_mdl) -> tuple[list[dict], int]:
+    """Collapse same-name entities before similarity-based dedup."""
+    kept: dict[str, dict] = {}
+    order: list[str] = []
+    unchanged: list[dict] = []
+    dropped = 0
+
+    for doc in docs:
+        name = _struct_entity_name(doc).strip().casefold()
+        if not name:
+            unchanged.append(doc)
+            continue
+        if name not in kept:
+            kept[name] = doc
+            order.append(name)
+            continue
+
+        existing = kept[name]
+        payload = _struct_merge_exact_entity_payload(existing, doc)
+        if payload is None:
+            unchanged.append(doc)
+            continue
+        vector = await _struct_reembed_payload(payload, embd_mdl)
+        if vector is None:
+            unchanged.append(doc)
+            continue
+        kept[name] = _struct_rebuild_doc_storage_doc(
+            payload,
+            existing,
+            vector,
+            _struct_union_chunk_ids(existing.get("source_chunk_ids"), doc.get("source_chunk_ids")),
+            preserve_id=True,
+        )
+        dropped += 1
+
+    return [kept[name] for name in order] + unchanged, dropped
+
+
 def _struct_apply_merge_invariants(existing: dict, merged_payload: dict) -> dict:
     """For relations, force the source/target fields back to the existing payload's
     values — from_entity_kwd / to_entity_kwd must not change across a merge.
@@ -1212,6 +1549,7 @@ def _struct_rebuild_doc_storage_doc(
         payload=payload,
         compile_kwd=base_doc.get("compile_kwd"),
         doc_id=base_doc.get("doc_id"),
+        doc_name=base_doc.get("docnm_kwd") or "",
         chunk_ids=chunk_ids,
         vec=vec,
         kind=kind,
@@ -1232,7 +1570,11 @@ def _struct_rebuild_doc_storage_doc(
 async def _struct_reembed_payload(payload: dict, embd_mdl):
     """Re-encode a merged payload's description with embd_mdl and return the vector."""
     text = _struct_payload_description(payload)
-    vecs = await _struct_embed(embd_mdl, [text])
+    try:
+        vecs = await _struct_embed(embd_mdl, [text])
+    except Exception:
+        logging.exception("structure merge: failed to re-embed merged payload")
+        return None
     return vecs[0] if vecs else None
 
 
@@ -1272,6 +1614,36 @@ async def _struct_doc_storage_knn_candidate(
     """Run one KNN lookup; the caller controls concurrency."""
     from common import settings
     from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr
+
+    # Names are the entity identity used by the structure graph. Check the
+    # exact name before KNN so a new compile joins an existing canonical row
+    # even when title/fact/conclusion descriptions have low vector similarity.
+    if doc.get("knowledge_graph_kwd") == "entity":
+        name = str(doc.get("name_kwd") or _struct_entity_name(doc) or "").strip().casefold()
+        if name:
+            exact_condition = _struct_doc_storage_dedup_condition(doc, merge_scope)
+            exact_condition["name_kwd"] = [name]
+            try:
+                res = await thread_pool_exec(
+                    settings.docStoreConn.search,
+                    select_fields,
+                    [],
+                    exact_condition,
+                    [],
+                    OrderByExpr(),
+                    0,
+                    1,
+                    index,
+                    [kb_id],
+                )
+                field_map = settings.docStoreConn.get_fields(res, select_fields)
+                if field_map:
+                    old_id, old_doc = next(iter(field_map.items()))
+                    old_doc = dict(old_doc)
+                    old_doc.setdefault("id", old_id)
+                    return old_doc
+            except Exception:
+                logging.exception("merge_compiled_structures: exact entity-name search failed")
 
     vec_field, vec = _struct_doc_vec(doc)
     if not vec_field or vec is None:
@@ -1555,6 +1927,7 @@ async def _struct_doc_storage_dedup_batch(
         "knowledge_graph_kwd",
         "compile_kwd",
         "doc_id",
+        "docnm_kwd",
         "from_entity_kwd",
         "to_entity_kwd",
         "compilation_template_ids",
@@ -1776,6 +2149,7 @@ async def _struct_doc_storage_dedup_batch(
             "knowledge_graph_kwd",
             "compile_kwd",
             "doc_id",
+            "docnm_kwd",
             "from_entity_kwd",
             "to_entity_kwd",
             "compilation_template_ids",
@@ -1922,8 +2296,8 @@ async def _struct_local_dedup(
             )
             new_vec = await _struct_reembed_payload(merged_payload, embd_mdl)
             if new_vec is None:
-                # Re-embed failed: keep existing, drop incoming silently.
-                dropped += 1
+                # Keep both candidates when the merged row cannot be embedded.
+                kept.append(incoming)
                 continue
             rebuilt = _struct_rebuild_doc_storage_doc(
                 merged_payload,
@@ -2027,6 +2401,7 @@ async def _struct_local_dedup_parallel(
 
     entity_docs = [doc for doc in docs if doc.get("knowledge_graph_kwd") != "relation"]
     relation_docs = [doc for doc in docs if doc.get("knowledge_graph_kwd") == "relation"]
+    entity_docs, exact_dropped = await _struct_merge_exact_named_entities(entity_docs, embd_mdl)
     entity_groups = _struct_entity_candidate_groups(entity_docs, similarity_threshold)
     group_semaphore = asyncio.Semaphore(_LOCAL_DEDUP_GROUP_CONCURRENCY)
 
@@ -2045,7 +2420,7 @@ async def _struct_local_dedup_parallel(
     entity_results = await asyncio.gather(*(dedup_group(group) for group in entity_groups))
     deduped_entities: list[dict] = []
     entity_aliases: dict[str, str] = {}
-    dropped = 0
+    dropped = exact_dropped
     for entity_result, group in zip(entity_results, entity_groups):
         group_docs, group_dropped, group_aliases = entity_result
         deduped_entities.extend(group_docs)
@@ -2100,7 +2475,7 @@ async def _struct_rebuild_graph_json(
     from common.doc_store.doc_store_base import OrderByExpr
 
     index = _rag_search.index_name(tenant_id)
-    fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids"]
+    fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids", "doc_id"]
     # ``doc_id is None`` collects every document's entities/relations in the KB
     # for the dataset-level graph; a concrete id keeps it document-scoped.
     condition: dict = {
@@ -2125,22 +2500,35 @@ async def _struct_rebuild_graph_json(
     )
     rows = settings.docStoreConn.get_fields(res, fields)
 
+    disabled_doc_ids: set[str] = set()
+    if doc_id is None:
+        from api.db.services.document_service import DocumentService
+
+        disabled_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
+
     entities: list[dict] = []
     relations: list[dict] = []
     for row in rows.values():
+        if str(row.get("doc_id") or "") in disabled_doc_ids:
+            continue
+        source_doc_id = str(row.get("doc_id") or "").strip()
         payload = _struct_load_payload(row)
         if row.get("knowledge_graph_kwd") == "relation":
             relation = _struct_graph_relation(payload)
             if relation:
+                if doc_id is None and source_doc_id:
+                    relation["doc_ids_kwd"] = [source_doc_id]
                 relations.append(relation)
         else:
             entity = _struct_graph_entity(payload, row.get("source_chunk_ids"))
             if entity:
+                if doc_id is None and source_doc_id:
+                    entity["doc_ids_kwd"] = [source_doc_id]
                 entities.append(entity)
 
     return {
         "entities": _struct_merge_graph_entities(entities),
-        "relations": relations,
+        "relations": _struct_merge_graph_relations(relations) if doc_id is None else relations,
     }
 
 
@@ -2148,6 +2536,7 @@ async def cleanup_timeline_isolated_entities(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     compilation_template_id: str | None = None,
 ) -> int:
     """Remove timeline entity rows that are not used by any relation.
@@ -2218,6 +2607,7 @@ async def cleanup_timeline_isolated_entities(
         tenant_id,
         kb_id,
         doc_id,
+        doc_name,
         "timeline",
         compilation_template_id,
     )
@@ -2229,6 +2619,7 @@ async def _struct_upsert_graph_json(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     compile_kwd: str,
     compilation_template_id: str | None = None,
 ) -> None:
@@ -2243,6 +2634,7 @@ async def _struct_upsert_graph_json(
         "compile_kwd": compile_kwd,
         "knowledge_graph_kwd": "graph",
         "doc_id": doc_id,
+        "docnm_kwd": doc_name,
         "kb_id": kb_id,
         "available_int": 0,
     }
@@ -2266,6 +2658,7 @@ async def _struct_upsert_tree_graph_rows(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     embedding_model,
     compilation_template_id: str | None = None,
 ) -> None:
@@ -2296,6 +2689,7 @@ async def _struct_upsert_tree_graph_rows(
                     payload=payload,
                     compile_kwd="tree",
                     doc_id=doc_id,
+                    doc_name=doc_name,
                     chunk_ids=source_chunk_ids,
                     vec=vector,
                     kind=kind,
@@ -2322,6 +2716,7 @@ async def rebuild_structure_graph_json(
     tenant_id: str,
     kb_id: str,
     doc_id: str,
+    doc_name: str,
     compile_kwd: str,
     compilation_template_id: str | None = None,
 ) -> dict:
@@ -2339,6 +2734,7 @@ async def rebuild_structure_graph_json(
         tenant_id,
         kb_id,
         doc_id,
+        doc_name,
         compile_kwd,
         compilation_template_id,
     )
@@ -2854,6 +3250,7 @@ async def merge_compiled_structures(
     doc_storage_waiter: Callable[[], Awaitable[None]] | None = None,
     doc_storage_releaser: Callable[[], Awaitable[None]] | None = None,
     merge_scope: str = MERGE_SCOPE_DOC,
+    doc_name: str = "",
 ) -> dict:
     """Merge ``docs`` (the output of ``compile_structure_from_text``) before
     inserting them into ES.
@@ -2999,6 +3396,7 @@ async def merge_compiled_structures(
                 tenant_id,
                 kb_id,
                 doc_id,
+                doc_name,
                 compile_kwd,
                 compilation_template_id=template_id or None,
             )

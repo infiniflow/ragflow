@@ -55,8 +55,8 @@ func (dao *TaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entit
 }
 
 // UpdateProgress sets the progress and progress message of a task
-func (dao *TaskDAO) UpdateProgress(id string, progress float64, progressMsg string) error {
-	return DB.Model(&entity.Task{}).Where("id = ?", id).Updates(map[string]any{
+func (dao *TaskDAO) UpdateProgress(ctx context.Context, db *gorm.DB, id string, progress float64, progressMsg string) error {
+	return db.WithContext(ctx).Model(&entity.Task{}).Where("id = ?", id).Updates(map[string]any{
 		"progress":     progress,
 		"progress_msg": progressMsg,
 	}).Error

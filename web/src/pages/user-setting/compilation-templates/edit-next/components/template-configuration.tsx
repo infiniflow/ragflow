@@ -1,4 +1,19 @@
-import { ModelTreeSelectFormField } from '@/components/model-tree-select';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SwitchFormField } from '@/components/switch-fom-field';
@@ -90,7 +105,7 @@ export function TemplateConfiguration({
     builtins,
   });
 
-  const { activeFieldsPath, builtinSection, editingField } =
+  const { activeFieldsPath, builtinSection, existingFields, editingField } =
     useTemplateSectionData(
       form,
       selectedTemplateIndex,
@@ -143,7 +158,7 @@ export function TemplateConfiguration({
         <div className="max-w-4xl mx-auto space-y-6">
           <RAGFlowFormItem
             name={`templates.${selectedTemplateIndex}.name`}
-            label={t('setting.templateName')}
+            label={t('common.name')}
             required
           >
             <Input placeholder={t('common.namePlaceholder')} />
@@ -151,7 +166,7 @@ export function TemplateConfiguration({
 
           <RAGFlowFormItem
             name={`templates.${selectedTemplateIndex}.description`}
-            label={t('setting.templateDescription')}
+            label={t('knowledgeCompilation.description')}
           >
             <Textarea
               placeholder={t('common.descriptionPlaceholder')}
@@ -159,12 +174,6 @@ export function TemplateConfiguration({
               resize="vertical"
             />
           </RAGFlowFormItem>
-
-          <ModelTreeSelectFormField
-            name={`templates.${selectedTemplateIndex}.llm_id`}
-            label={t('setting.llmForExtraction')}
-            required
-          />
 
           <RAGFlowFormItem
             name={`templates.${selectedTemplateIndex}.kind`}
@@ -184,14 +193,34 @@ export function TemplateConfiguration({
 
           <RAGFlowFormItem
             name={`templates.${selectedTemplateIndex}.config.global_rules`}
-            label={t('setting.globalRules')}
+            label={t('knowledgeCompilation.globalRules')}
           >
             <Textarea
-              placeholder={t('setting.globalRulesPlaceholder')}
+              placeholder={t('knowledgeCompilation.globalRulesPlaceholder')}
               rows={8}
               resize="vertical"
             />
           </RAGFlowFormItem>
+
+          {kind === CompilationTemplateKind.Artifacts && (
+            <RAGFlowFormItem
+              name={`templates.${selectedTemplateIndex}.config.mode`}
+              label={t('knowledgeCompilation.wikiMode')}
+              tooltip={t('knowledgeCompilation.wikiModeTip')}
+            >
+              {(field) => (
+                <SelectWithSearch
+                  value={typeof field.value === 'string' ? field.value : ''}
+                  onChange={field.onChange}
+                  disabled={field.disabled}
+                  options={[
+                    { label: t('knowledgeCompilation.entityMode'), value: 'entity' },
+                    { label: t('knowledgeCompilation.topicMode'), value: 'topic' },
+                  ]}
+                />
+              )}
+            </RAGFlowFormItem>
+          )}
 
           {kind === CompilationTemplateKind.Tree ? (
             <TreeTemplateFields index={selectedTemplateIndex} />
@@ -201,17 +230,17 @@ export function TemplateConfiguration({
                 <>
                   <SwitchFormField
                     name={`templates.${selectedTemplateIndex}.config.rechunk`}
-                    label={t('setting.rechunkInput')}
-                    tooltip={t('setting.rechunkInputTip')}
+                    label={t('knowledgeCompilation.rechunkInput')}
+                    tooltip={t('knowledgeCompilation.rechunkInputTip')}
                     vertical={false}
                   />
                   {rechunk && (
                     <RAGFlowFormItem
                       name={`templates.${selectedTemplateIndex}.config.rechunk_rules`}
-                      label={t('setting.rechunkRules')}
+                      label={t('knowledgeCompilation.rechunkRules')}
                     >
                       <Textarea
-                        placeholder={t('setting.rechunkRulesPlaceholder')}
+                        placeholder={t('knowledgeCompilation.rechunkRulesPlaceholder')}
                         rows={6}
                         resize="vertical"
                       />
@@ -263,6 +292,7 @@ export function TemplateConfiguration({
         onOpenChange={handleModalOpenChange}
         sectionName={activeSectionTab}
         builtinSection={builtinSection}
+        existingFields={existingFields}
         initialField={editingField}
         onAdd={handleAddField}
       />

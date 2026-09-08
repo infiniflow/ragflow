@@ -36,7 +36,7 @@ Design notes:
   ``parser_config.compilation_template_group_id`` to a template list
   via the shared parser-config helper and
   ``CompilationTemplateGroupService.resolve_template_ids``.
-* The persistence helpers (``persist_wiki_pages_to_es`` etc.) are
+* The persistence helpers (``persist_wiki_pages`` etc.) are
   exposed at module level for testing but are only called from
   :func:`run_wiki` in production.
 """
@@ -56,7 +56,15 @@ from common.constants import LLMType
 from common.misc_utils import thread_pool_exec
 from rag.nlp import search
 from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
+from rag.advanced_rag.knowlege_compile._common import env_int
 from rag.advanced_rag.knowlege_compile.wiki import (
+    WIKI_MAP_STATE_COMPILE_KWD,
+    WIKI_MAP_STATE_META_COMPILE_KWD,
+    _wiki_commit_active_map_state,
+    _wiki_compare_chunk_states,
+    _wiki_load_active_map_state,
+    _wiki_load_map_extracts_for_state,
+    _wiki_scan_current_chunk_state,
     wiki_map_from_chunks,
     wiki_plan_from_reduction,
     wiki_reduce_from_extracts,
@@ -73,21 +81,40 @@ from rag.svr.task_executor_refactor.task_context import TaskContext
 # room for the function's internal split_chunks packing to do real work.
 WIKI_MAP_BATCH_CHUNKS = 64
 
-# The pool limits actual MAP LLM calls rather than the surrounding batch
-# tasks. This lets the next waiting batch start as soon as a model call
-# finishes, without waiting for the previous batch's ES persistence work.
-WIKI_MAP_LLM_POOL_SIZE = 20
+# The pool limits actual LLM calls rather than the surrounding batch tasks and
+# adapts each model's admission limit when it reports rate limiting. This lets
+# high-capacity and low-concurrency models share one Wiki task safely.
+WIKI_MAP_LLM_POOL_SIZE = env_int("WIKI_MAP_LLM_POOL_SIZE", 20, minimum=1)
 
 # Global MAP admission limit: active calls plus calls waiting in the pool.
-WIKI_MAP_MAX_PENDING = 25
+WIKI_MAP_MAX_PENDING = env_int("WIKI_MAP_MAX_PENDING", 25, minimum=WIKI_MAP_LLM_POOL_SIZE)
 
-# Keep only a small number of outer batches buffered. With 20 workers this
-# bounds the in-memory MAP work to roughly 25 batches (20 active + 5 waiting).
+# Keep only a small number of outer batches buffered. Together with the
+# configured worker and pending limits, this bounds in-memory MAP work.
 WIKI_MAP_QUEUE_SIZE = 5
 
 # REFINE pages are independent. Keep enough page workers to feed the shared
-# pool; the pool itself still caps actual LLM requests at 20.
-WIKI_REFINE_WORKERS = WIKI_MAP_LLM_POOL_SIZE
+# pool; the pool itself still caps actual LLM requests at the configured size.
+WIKI_REFINE_WORKERS = env_int("WIKI_REFINE_WORKERS", 4, minimum=1)
+
+
+def _create_wiki_llm_pool(progress: Callable) -> LLMCallPool:
+    def _on_concurrency_change(old: int, new: int, reason: str) -> None:
+        progress(msg=f"LLM pool concurrency {old} -> {new} ({reason}).")
+
+    def _on_error(label: str, context: str | None, error_type: str) -> None:
+        progress(msg=f"LLM call failed ({label}, {context or 'no context'}): {error_type}")
+
+    pool = LLMCallPool(
+        WIKI_MAP_LLM_POOL_SIZE,
+        max_pending=WIKI_MAP_MAX_PENDING,
+        on_concurrency_change=_on_concurrency_change,
+        on_error=_on_error,
+    )
+    logging.info("Wiki LLM pool initialized max_concurrency=%d max_pending=%d", pool.max_concurrency, pool.max_pending)
+    progress(0.0, f"LLM pool max {pool.max_concurrency}.")
+    return pool
+
 
 # Per-node cap on ``source_chunk_ids`` carried by the canvas graph blob.
 # Pages can accumulate hundreds of source chunks; the graph response is
@@ -116,6 +143,10 @@ WIKI_DERIVED_COMPILE_KWDS = (
     "wiki_entity",
     "wiki_relation",
     "wiki_page_graph",
+    # Canonical entity rows carry a source_doc_ids array; on doc deletion they
+    # must be shrunk (or dropped) too, otherwise the canonical index keeps
+    # referencing removed docs and later incremental merges re-import them.
+    "wiki_canonical_entity",
 )
 
 
@@ -219,45 +250,172 @@ def _pipeline_compilation_template_ids(pipeline_id: str, tenant_id: str) -> list
     return template_ids
 
 
+def _pipeline_compiler_llm_id(pipeline_id: str) -> str | None:
+    """Return the chat model configured on a pipeline's Compiler component."""
+    pipeline_id = (pipeline_id or "").strip()
+    if not pipeline_id:
+        return None
+    from api.db.services.canvas_service import UserCanvasService
+
+    ok, canvas = UserCanvasService.get_by_id(pipeline_id)
+    if not ok or not canvas:
+        return None
+    dsl = getattr(canvas, "dsl", None)
+    if isinstance(dsl, str):
+        try:
+            dsl = json.loads(dsl)
+        except Exception:
+            return None
+    if not isinstance(dsl, dict) or not isinstance(dsl.get("components"), dict):
+        return None
+    for component in dsl["components"].values():
+        if not isinstance(component, dict):
+            continue
+        obj = component.get("obj") if isinstance(component.get("obj"), dict) else {}
+        component_name = obj.get("component_name") or component.get("component_name") or component.get("name")
+        if not isinstance(component_name, str) or component_name.lower() != "compiler":
+            continue
+        candidates = [
+            obj.get("params") if isinstance(obj.get("params"), dict) else {},
+            obj,
+            component.get("params") if isinstance(component.get("params"), dict) else {},
+            component,
+        ]
+        for candidate in candidates:
+            llm_id = candidate.get("llm_id")
+            if isinstance(llm_id, str) and llm_id.strip():
+                return llm_id.strip()
+        return None
+    return None
+
+
+def _validate_wiki_eligible_docs(eligible: list[tuple[dict, str]]) -> dict[str, str]:
+    """Validate one Wiki template and return each doc's pipeline chat model."""
+    template_ids = {template_id for _, template_id in eligible}
+    if len(template_ids) > 1:
+        raise ValueError("Eligible Wiki documents must use the same template")
+    pipeline_chat_llm_ids: dict[str, str] = {}
+    for doc, _ in eligible:
+        doc_id = str(doc.get("id") or "")
+        pipeline_id = (doc.get("pipeline_id") or "").strip()
+        if not pipeline_id:
+            raise ValueError(f"Wiki document {doc_id} must use a pipeline")
+        llm_id = _pipeline_compiler_llm_id(pipeline_id)
+        if not llm_id:
+            raise ValueError(f"Wiki document {doc_id} pipeline Compiler must configure an LLM")
+        pipeline_chat_llm_ids[doc_id] = llm_id
+    return pipeline_chat_llm_ids
+
+
+def _wiki_empty_eligible_message(all_docs) -> str:
+    """Return the user-facing progress message when ``_wiki_eligible_docs``
+    returned an empty list. Distinguishes two failure modes (#18683):
+
+    * No enabled documents in the dataset — user needs to upload / enable
+      documents first.
+    * Enabled documents exist but none of them has a Wiki compilation
+      template attached — user needs to configure a Wiki template on
+      the dataset or on each document's parser_config.
+    """
+    enabled_docs = [d for d in (all_docs or []) if str(d.get("status", "1")) == "1"]
+    if not enabled_docs:
+        return "No enabled documents are configured for wiki compilation."
+    return (
+        f"{len(enabled_docs)} enabled document(s) found, but none of them has a Wiki "
+        f"compilation template attached. Set a Wiki template on the dataset or on each "
+        f"document's parser_config to enable Wiki generation."
+    )
+
+
+def _wiki_eligible_docs(all_docs, tenant_id: str, skip_doc_ids=None) -> list[tuple[dict, str]]:
+    """Docs eligible for wiki compilation, each paired with its wiki template id.
+
+    A doc is eligible when its ``parser_config`` OR its ingestion pipeline
+    resolves to at least one artifacts-kind ("wiki") compilation template — the
+    pipeline path is essential for docs uploaded/parsed through a pipeline, which
+    carry their compilation templates on the pipeline's compiler rather than in
+    ``parser_config``. Returns ``(doc, template_id)`` for the first wiki template
+    matched per doc. Shared by :func:`run_wiki` and :func:`run_wiki_incremental`
+    so their eligibility can't drift.
+    """
+    from api.db.services.compilation_template_service import CompilationTemplateService
+    from api.apps.restful_apis.chunk_api import _compilation_template_kind
+
+    skip_doc_ids = skip_doc_ids or set()
+    eligible: list[tuple[dict, str]] = []
+    pipeline_template_ids_cache: dict[str, list[str]] = {}
+    for d in all_docs or []:
+        if str(d.get("id")) in skip_doc_ids:
+            continue
+        # Disabled documents remain in the document table and still retain
+        # their compilation-template configuration, but their source chunks
+        # have ``available_int=0``. They must not make the KB look buildable:
+        # after a Wiki clear there is intentionally no MAP input for them.
+        if str(d.get("status", "1")) != "1":
+            continue
+        pc = d.get("parser_config") or {}
+        template_ids: list[str] = []
+        seen_template_ids: set[str] = set()
+        for template_id in _parser_config_compilation_template_ids(pc, tenant_id):
+            if template_id in seen_template_ids:
+                continue
+            seen_template_ids.add(template_id)
+            template_ids.append(template_id)
+        pipeline_id = (d.get("pipeline_id") or "").strip()
+        if pipeline_id:
+            if pipeline_id not in pipeline_template_ids_cache:
+                pipeline_template_ids_cache[pipeline_id] = _pipeline_compilation_template_ids(pipeline_id, tenant_id)
+            for template_id in pipeline_template_ids_cache[pipeline_id]:
+                if template_id in seen_template_ids:
+                    continue
+                seen_template_ids.add(template_id)
+                template_ids.append(template_id)
+
+        for template_id in template_ids:
+            template = CompilationTemplateService.get_saved(template_id, tenant_id)
+            config = template.get("config") if template else {}
+            kind = _compilation_template_kind(config.get("kind") if isinstance(config, dict) else "")
+            if kind == "wiki":
+                eligible.append((d, template_id))
+                break
+    return eligible
+
+
 async def _wiki_existing_map_doc_ids(tenant_id: str, kb_id: str) -> set[str]:
+    state = await _wiki_load_active_map_state(tenant_id, kb_id)
+    return {str(item.get("doc_id") or "") for item in state.values() if item.get("doc_id")}
+
+
+async def _wiki_has_compiled_pages(tenant_id: str, kb_id: str) -> bool | None:
+    """True when at least one compiled wiki page already exists for the KB.
+
+    Used to tell "nothing changed and pages already exist" (a genuine no-op)
+    apart from "MAP rows exist but no pages were ever produced" (a prior run
+    persisted MAP then never finished REDUCE) — only the latter should trigger a
+    full rebuild from the stored extracts.
+    """
     from common.doc_store.doc_store_base import OrderByExpr
 
     index = search.index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
-        return set()
-
-    doc_ids: set[str] = set()
-    select_fields = ["id", "doc_id"]
-    offset = 0
-    page_size = 1000
-    while True:
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                select_fields,
-                [],
-                {"compile_kwd": [WIKI_MAP_COMPILE_KWD]},
-                [],
-                OrderByExpr(),
-                offset,
-                page_size,
-                index,
-                [kb_id],
-            )
-            field_map = settings.docStoreConn.get_fields(res, select_fields) or {}
-        except Exception:
-            logging.exception("wiki: failed to scan MAP doc ids for kb=%s", kb_id)
-            return doc_ids
-        if not field_map:
-            break
-        for row in field_map.values():
-            doc_id = row.get("doc_id")
-            if isinstance(doc_id, str) and doc_id:
-                doc_ids.add(doc_id)
-        if len(field_map) < page_size:
-            break
-        offset += page_size
-    return doc_ids
+        return False
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id"],
+            [],
+            {"compile_kwd": [WIKI_PAGE_COMPILE_KWD]},
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
+        )
+        return bool(settings.docStoreConn.get_total(res))
+    except Exception:
+        logging.exception("wiki: page existence probe failed for kb=%s", kb_id)
+        return None
 
 
 async def _wiki_delete_deleted_doc_state(
@@ -272,12 +430,16 @@ async def _wiki_delete_deleted_doc_state(
     if not settings.docStoreConn.index_exist(index, kb_id):
         return
 
-    # 1. MAP resume rows are keyed by the real doc_id — delete outright.
+    # MAP extraction versions are historical cache entries and deliberately
+    # survive document deletion.  The committed active-state snapshot decides
+    # which versions are allowed to participate in the current Wiki.
+
+    # doc_page_source rows are current derived state and are deleted outright.
     try:
         await thread_pool_exec(
             settings.docStoreConn.delete,
             {
-                "compile_kwd": [WIKI_MAP_COMPILE_KWD],
+                "compile_kwd": ["wiki_doc_page_source"],
                 "doc_id": sorted(deleted_doc_ids),
             },
             index,
@@ -285,11 +447,9 @@ async def _wiki_delete_deleted_doc_state(
         )
     except Exception:
         logging.exception(
-            "wiki: failed to delete MAP rows for removed docs in kb=%s docs=%s",
+            "wiki: failed to delete doc_page_source rows for removed docs in kb=%s",
             kb_id,
-            sorted(deleted_doc_ids),
         )
-        return
 
     # 2. Derived KB-scoped rows: reference-counted self-healing backstop for
     # the eager delete-time cleanup (DocumentService.remove_wiki_products).
@@ -301,9 +461,11 @@ async def _wiki_delete_deleted_doc_state(
 
     deleted = set(deleted_doc_ids)
     derived_kwds = list(WIKI_DERIVED_COMPILE_KWDS)
-    select_fields = ["id", "source_doc_ids"]
+    select_fields = ["id", "source_doc_ids", "compile_kwd", "slug_kwd", "page_type_kwd"]
     to_delete: list[str] = []
     to_shrink: list[tuple[str, list[str]]] = []
+    page_history_to_delete: list[tuple[str, str, str]] = []
+    failed_delete_row_ids: set[str] = set()
     offset = 0
     page_size = 1000
     while True:
@@ -339,21 +501,44 @@ async def _wiki_delete_deleted_doc_state(
                 to_shrink.append((row_id, remaining))
             else:
                 to_delete.append(row_id)
+                if row.get("compile_kwd") == WIKI_PAGE_COMPILE_KWD:
+                    slug = row.get("slug_kwd")
+                    if isinstance(slug, str) and slug:
+                        page_history_to_delete.append((row_id, slug, row.get("page_type_kwd") or "concept"))
         if len(field_map) < page_size:
             break
         offset += page_size
 
     # Drop rows with no surviving owner (delete by id in batches).
     for i in range(0, len(to_delete), page_size):
+        batch_ids = to_delete[i : i + page_size]
         try:
-            await thread_pool_exec(
+            deleted_count = await thread_pool_exec(
                 settings.docStoreConn.delete,
-                {"id": to_delete[i : i + page_size]},
+                {"id": batch_ids},
                 index,
                 kb_id,
             )
+            if not isinstance(deleted_count, int) or deleted_count != len(batch_ids):
+                failed_delete_row_ids.update(batch_ids)
         except Exception:
             logging.exception("wiki: failed to drop orphaned derived rows in kb=%s", kb_id)
+            failed_delete_row_ids.update(batch_ids)
+
+    if page_history_to_delete:
+        from api.db.services.file_commit_service import FileCommitService
+
+        for row_id, slug, page_type in page_history_to_delete:
+            if row_id in failed_delete_row_ids:
+                continue
+            try:
+                FileCommitService.delete_page_history(kb_id, page_type, slug)
+            except Exception:
+                logging.exception(
+                    "wiki: failed to delete version history for removed page=%s kb=%s",
+                    slug,
+                    kb_id,
+                )
 
     # Shrink rows still owned by surviving docs to just those docs.
     for row_id, remaining in to_shrink:
@@ -375,6 +560,148 @@ async def _wiki_delete_deleted_doc_state(
         len(to_delete),
         len(to_shrink),
     )
+
+
+# ----- mode persistence & full reset ----------------------------------------
+
+
+def _wiki_mode_meta_id(kb_id: str) -> str:
+    """Stable row id for the KB-level mode meta record."""
+    return f"wiki_mode_meta_{kb_id}"
+
+
+async def _wiki_load_mode(tenant_id: str, kb_id: str) -> str | None:
+    """Return the mode value recorded by the previous build, or None
+    if this KB has never recorded a mode (e.g. first ever build)."""
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return None
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["mode_kwd"],
+            [],
+            {"compile_kwd": ["wiki_mode_meta"], "id": [_wiki_mode_meta_id(kb_id)]},
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
+        )
+        fm = settings.docStoreConn.get_fields(res, ["mode_kwd"]) or {}
+        for row in fm.values():
+            val = row.get("mode_kwd")
+            if isinstance(val, list):
+                val = val[0] if val else ""
+            val = str(val or "").strip()
+            if val in ("entity", "topic"):
+                return val
+    except Exception:
+        logging.exception("wiki: failed to load mode meta for kb=%s", kb_id)
+    return None
+
+
+async def _wiki_load_embedding_fingerprint(tenant_id: str, kb_id: str) -> str | None:
+    """Return the embedding-space identity recorded by the previous build."""
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return None
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["embedding_model_kwd"],
+            [],
+            {"compile_kwd": ["wiki_mode_meta"], "id": [_wiki_mode_meta_id(kb_id)]},
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
+        )
+        fm = settings.docStoreConn.get_fields(res, ["embedding_model_kwd"]) or {}
+        for row in fm.values():
+            value = row.get("embedding_model_kwd")
+            if isinstance(value, list):
+                value = value[0] if value else ""
+            return str(value).strip() or None
+    except Exception:
+        logging.exception("wiki: failed to load embedding model meta for kb=%s", kb_id)
+    return None
+
+
+def _wiki_embedding_fingerprint(embedding_model) -> str:
+    config = getattr(embedding_model, "model_config", {}) or {}
+    factory = str(config.get("llm_factory") or "").strip()
+    model_id = str(config.get("id") or config.get("llm_id") or "").strip()
+    name = str(config.get("llm_name") or getattr(embedding_model, "llm_name", "")).strip()
+    return ":".join(part for part in (factory, model_id, name) if part)
+
+
+async def _wiki_save_mode(tenant_id: str, kb_id: str, mode: str, embedding_fingerprint: str = "") -> None:
+    if mode not in ("entity", "topic"):
+        raise ValueError(f"Unsupported wiki mode: {mode}")
+    index = search.index_name(tenant_id)
+    row = {
+        "id": _wiki_mode_meta_id(kb_id),
+        "compile_kwd": "wiki_mode_meta",
+        "mode_kwd": mode,
+        "embedding_model_kwd": embedding_fingerprint,
+        "kb_id": kb_id,
+        "create_timestamp_flt": float(__import__("time").time()),
+    }
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.insert,
+            [row],
+            index,
+            kb_id,
+        )
+    except Exception:
+        logging.exception("wiki: failed to save mode meta for kb=%s", kb_id)
+
+
+async def _wiki_reset_all_wiki_state(tenant_id: str, kb_id: str) -> None:
+    """Drop every wiki-derived row for the KB (canonical, pages, relations,
+    entities, plan/draft/reduce, topics, doc_page_source, mode meta). Used when
+    the plan (mode) setting toggles: Mode A and Mode B pages are structurally
+    different and cannot be merged incrementally, so a mode switch must rebuild
+    from a clean slate."""
+
+    index = search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return
+    all_kwds = [
+        "wiki_canonical_entity",
+        "wiki_page",
+        "wiki_entity",
+        "wiki_relation",
+        "wiki_page_graph",
+        "wiki_page_topic",
+        "wiki_compilation_plan",
+        "wiki_plan_group",
+        "wiki_reduce_result",
+        "wiki_page_draft",
+        "wiki_doc_page_source",
+        WIKI_MAP_STATE_COMPILE_KWD,
+        WIKI_MAP_STATE_META_COMPILE_KWD,
+        "wiki_mode_meta",
+    ]
+    # Delete in one bulk call using compile_kwd IN filter.
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"compile_kwd": all_kwds},
+            index,
+            kb_id,
+        )
+    except Exception:
+        logging.exception("wiki: failed to reset all wiki state for kb=%s", kb_id)
 
 
 def _wiki_topic_from_page(page: Dict, fallback: str = "") -> str:
@@ -490,12 +817,12 @@ async def _ensure_wiki_topic_rows(
 # ----- persistence ---------------------------------------------------
 
 
-async def persist_wiki_pages_to_es(
+async def persist_wiki_pages(
     ctx: TaskContext,
     pages: List[Dict],
     embd_mdl,
 ) -> None:
-    """Insert one ES row per generated artifact page using the
+    """Insert one doc-store row per generated artifact page using the
     knowledge-compilation schema:
 
       id                  xxh64(kb_id + ":" + slug)
@@ -532,15 +859,17 @@ async def persist_wiki_pages_to_es(
 
     # Capture the prior rendered content for every slug we're about to
     # overwrite, so the per-page commit row downstream has a real diff
-    # baseline. Single batch read by slug_kwd IN [...] — one round-trip
-    # regardless of page count. Failures here degrade gracefully.
+    # baseline. Prefer md_with_weight because that is the canonical field
+    # consumed by the Wiki page API, with content_with_weight as fallback.
+    # Single batch read by slug_kwd IN [...] — one round-trip regardless of
+    # page count. Failures here degrade gracefully.
     target_slugs: list[str] = [(p.get("slug") or "").strip() for p in pages if isinstance(p.get("slug"), str) and p.get("slug")]
     prior_by_slug: dict[str, str] = {}
     if target_slugs:
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                ["id", "slug_kwd", "content_with_weight"],
+                ["id", "slug_kwd", "md_with_weight", "content_with_weight"],
                 [],
                 {"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "slug_kwd": list(target_slugs)},
                 [],
@@ -552,11 +881,11 @@ async def persist_wiki_pages_to_es(
             )
             field_map = settings.docStoreConn.get_fields(
                 res,
-                ["id", "slug_kwd", "content_with_weight"],
+                ["id", "slug_kwd", "md_with_weight", "content_with_weight"],
             )
             for row in (field_map or {}).values():
                 s = row.get("slug_kwd")
-                c = row.get("content_with_weight")
+                c = row.get("md_with_weight") or row.get("content_with_weight")
                 if isinstance(s, str) and isinstance(c, str):
                     prior_by_slug[s] = c
         except Exception:
@@ -637,6 +966,7 @@ async def persist_wiki_pages_to_es(
                 "related_kb_pages_kwd": list(page.get("related_kb_pages") or []),
                 "source_chunk_ids": list(page.get("source_chunk_ids") or []),
                 "source_doc_ids": list(page.get("source_doc_ids") or []),
+                "md_with_weight": content_md,
                 "content_with_weight": content_md,
                 # Summary kept verbatim alongside the rendered body so the
                 # viewer can render it as a distinct (smaller) block above
@@ -661,12 +991,45 @@ async def persist_wiki_pages_to_es(
         return
 
     try:
-        await thread_pool_exec(settings.docStoreConn.insert, rows, index, ctx.kb_id)
+        insert_errors = await thread_pool_exec(settings.docStoreConn.insert, rows, index, ctx.kb_id)
     except Exception:
         logging.exception(
             "wiki_persist: bulk insert failed for kb=%s (rows=%d)",
             kb_id_str,
             len(rows),
+        )
+        return
+
+    if insert_errors:
+        logging.warning(
+            "wiki_persist: page insert returned %d error(s) for kb=%s",
+            len(insert_errors),
+            kb_id_str,
+        )
+
+    # Verify the rows that are actually visible after the bulk operation. Some
+    # backends can report partial bulk failures without raising, so recording a
+    # version for every input page would create history for pages that were not
+    # persisted.
+    try:
+        persisted_res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id", "slug_kwd"],
+            [],
+            {"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "id": [row["id"] for row in rows]},
+            [],
+            OrderByExpr(),
+            0,
+            len(rows),
+            index,
+            [ctx.kb_id],
+        )
+        persisted_fields = settings.docStoreConn.get_fields(persisted_res, ["id", "slug_kwd"])
+        persisted_page_slugs = {row.get("slug_kwd") for row in (persisted_fields or {}).values() if isinstance(row.get("slug_kwd"), str)}
+    except Exception:
+        logging.exception(
+            "wiki_persist: failed to verify persisted pages for kb=%s; skipping history records",
+            kb_id_str,
         )
         return
 
@@ -685,9 +1048,7 @@ async def persist_wiki_pages_to_es(
     # compile.
     for page in pages:
         slug = (page.get("slug") or "").strip()
-        if not slug:
-            continue
-        if not prior_by_slug.get(slug, ""):
+        if not slug or slug not in persisted_page_slugs:
             continue
         content_md = page.get("content_md_rendered") or page.get("content_md") or page.get("content_md_raw") or ""
         action = (page.get("action") or "CREATE").upper()
@@ -853,11 +1214,11 @@ def build_wiki_page_graph(
     return entity_rows, relation_rows
 
 
-async def persist_wiki_page_graph_to_es(
+async def persist_wiki_page_graph(
     ctx: TaskContext,
     pages: List[Dict],
 ) -> None:
-    """Materialize and store the per-entity / per-relation ES rows
+    """Materialize and store the per-entity / per-relation doc-store rows
     derived from artifact pages.
 
     Writes two row types — both delete-then-insert for idempotent
@@ -956,13 +1317,10 @@ async def run_wiki(
     from api.db.services.knowledgebase_service import KnowledgebaseService
     from api.db.services.compilation_template_service import CompilationTemplateService
     from api.db.services.llm_service import LLMBundle
-    from api.db.joint_services.tenant_model_service import (
-        get_tenant_default_model_by_type,
-        resolve_model_config,
-    )
-    from api.apps.restful_apis.chunk_api import _compilation_template_kind
+    from api.db.joint_services.tenant_model_service import resolve_model_config
 
     progress = ctx.progress_cb
+    map_llm_pool = _create_wiki_llm_pool(progress)
     progress(0.0, "Loading documents for wiki compilation...")
 
     # 1. Resolve KB metadata for PLAN.
@@ -1003,69 +1361,28 @@ async def run_wiki(
             deleted_doc_ids,
         )
 
-    eligible = []
-    pipeline_template_ids_cache: dict[str, list[str]] = {}
-    for d in all_docs or []:
-        pc = d.get("parser_config") or {}
-        template_ids: list[str] = []
-        seen_template_ids: set[str] = set()
-        for template_id in _parser_config_compilation_template_ids(pc, ctx.tenant_id):
-            if template_id in seen_template_ids:
-                continue
-            seen_template_ids.add(template_id)
-            template_ids.append(template_id)
-        pipeline_id = (d.get("pipeline_id") or "").strip()
-        if pipeline_id:
-            if pipeline_id not in pipeline_template_ids_cache:
-                pipeline_template_ids_cache[pipeline_id] = _pipeline_compilation_template_ids(pipeline_id, ctx.tenant_id)
-            for template_id in pipeline_template_ids_cache[pipeline_id]:
-                if template_id in seen_template_ids:
-                    continue
-                seen_template_ids.add(template_id)
-                template_ids.append(template_id)
-
-        for template_id in template_ids:
-            template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
-            config = template.get("config") if template else {}
-            kind = _compilation_template_kind(config.get("kind") if isinstance(config, dict) else "")
-            if kind == "wiki":
-                eligible.append((d, template_id))
-                break
+    eligible = _wiki_eligible_docs(all_docs, ctx.tenant_id)
     if not eligible:
-        progress(1.0, "No documents are configured for wiki compilation.")
+        progress(1.0, _wiki_empty_eligible_message(all_docs))
         return
+    pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible)
 
-    # 3. Resolve chat models. MAP is per-(doc, template) so each pair
-    # uses its template's own ``llm_id``. REDUCE / PLAN / REFINE are
+    # 3. Resolve chat models. MAP is per document, so each document uses
+    # its pipeline Compiler's ``llm_id``. REDUCE / PLAN / REFINE are
     # KB-wide and need exactly one model — we pick the first eligible
-    # template's ``llm_id`` as the canonical KB chat model.
+    # pipeline Compiler's ``llm_id`` as the canonical KB chat model.
     llm_bundle_cache: dict[str, LLMBundle] = {}
 
-    def _bundle_for(llm_id: str | None) -> LLMBundle:
-        key = (llm_id or "").strip() or "__tenant_default__"
+    def _bundle_for(llm_id: str) -> LLMBundle:
+        key = llm_id.strip()
         cached = llm_bundle_cache.get(key)
         if cached is not None:
             return cached
-        try:
-            if key == "__tenant_default__":
-                cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
-            else:
-                cfg = resolve_model_config(
-                    ctx.tenant_id,
-                    LLMType.CHAT,
-                    key,
-                )
-        except Exception:
-            logging.exception(
-                "wiki: chat model resolution failed for llm_id=%s (kb=%s); falling back to tenant default",
-                key,
-                ctx.kb_id,
-            )
-            cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
-            key = "__tenant_default__"
-            cached = llm_bundle_cache.get(key)
-            if cached is not None:
-                return cached
+        cfg = resolve_model_config(
+            ctx.tenant_id,
+            LLMType.CHAT,
+            key,
+        )
         bundle = LLMBundle(ctx.tenant_id, cfg, lang=ctx.language)
         llm_bundle_cache[key] = bundle
         return bundle
@@ -1084,10 +1401,9 @@ async def run_wiki(
 
         return _cb
 
-    # 4. MAP per eligible doc. Each MAP call's own resume mechanism
-    # (wiki_map_extract rows keyed by chunk_id) skips chunks that
-    # were already processed in a prior run — this is the incremental
-    # behavior the user asked for.
+    # 4. MAP per eligible doc. Historical extraction versions are keyed by
+    # doc_id + chunk_id + input hash, so unchanged or reverted content can
+    # reuse prior LLM output.
     #
     # Resolve templates before starting workers so the first eligible
     # template remains the deterministic source for KB-wide REDUCE/PLAN/
@@ -1108,15 +1424,18 @@ async def run_wiki(
         progress(1.0, "No valid templates resolved for wiki compilation.")
         return
 
-    # ``kb_chat_llm_id`` is captured from the first eligible template and
+    # ``kb_chat_llm_id`` is captured from the first eligible pipeline and
     # used as the canonical chat model for KB-wide REDUCE/PLAN/REFINE.
-    # ``kb_writer_example`` follows the same first-template-wins rule.
+    # Writer instructions and page examples follow the same first-template-
+    # wins rule.
+    first_doc = resolved_eligible[0][0]
     first_parser_cfg = resolved_eligible[0][2]
     first_parser_cfg = first_parser_cfg if isinstance(first_parser_cfg, dict) else {}
-    kb_chat_llm_id: Optional[str] = (first_parser_cfg.get("llm_id") or "").strip() or None
+    kb_chat_llm_id = pipeline_chat_llm_ids[str(first_doc.get("id") or "")]
+    first_instruction = first_parser_cfg.get("instruction")
     first_example = first_parser_cfg.get("example")
+    kb_writer_instruction: Optional[str] = first_instruction if isinstance(first_instruction, str) and first_instruction.strip() else None
     kb_writer_example: Optional[str] = first_example if isinstance(first_example, str) and first_example.strip() else None
-    map_llm_pool = LLMCallPool(WIKI_MAP_LLM_POOL_SIZE, max_pending=WIKI_MAP_MAX_PENDING)
     n_docs = len(resolved_eligible)
     map_queue: asyncio.Queue = asyncio.Queue(maxsize=WIKI_MAP_QUEUE_SIZE)
     doc_stats = {
@@ -1126,8 +1445,7 @@ async def run_wiki(
             "saw_any": False,
             "status": "ok",
             "agg": {"entities": 0, "concepts": 0, "claims": 0, "relations": 0},
-            "delta": {"new": 0, "changed": 0, "unchanged": 0, "deleted": 0},
-            "had_delta": False,
+            "map": {"requested": 0, "cache_hits": 0, "extracted": 0},
         }
         for i, (doc, _, _) in enumerate(resolved_eligible)
     }
@@ -1160,7 +1478,7 @@ async def run_wiki(
                 i, doc, template_id, parser_cfg, batch, batch_no = item
                 doc_id = doc["id"]
                 stats = doc_stats[i]
-                map_llm_id = (parser_cfg.get("llm_id") or "").strip() if isinstance(parser_cfg, dict) else ""
+                map_llm_id = pipeline_chat_llm_ids[str(doc_id)]
                 phase1 = await wiki_map_from_chunks(
                     chunks=batch,
                     chat_mdl=map_llm_pool.wrap(
@@ -1178,19 +1496,16 @@ async def run_wiki(
                     parser_config=parser_cfg,
                     batch_size_cap=8,
                     window_fraction=0.5,
-                    # Keep a bounded internal worker queue. The shared pool
-                    # globally limits active + admitted waiting calls to
-                    # WIKI_MAP_MAX_PENDING, while this prevents every outer
-                    # batch from creating all of its sub-batch tasks at once.
-                    max_workers=6,
+                    # Match the shared pool width. The pool is the single
+                    # admission/concurrency control for actual MAP LLM calls.
+                    max_workers=WIKI_MAP_LLM_POOL_SIZE,
                 )
                 for key in stats["agg"]:
                     stats["agg"][key] += len(phase1.get(key) or [])
                 meta = phase1.get("_meta") or {}
                 if isinstance(meta, dict):
-                    for key in stats["delta"]:
-                        stats["delta"][key] += int(meta.get(key, 0) or 0)
-                    stats["had_delta"] |= bool(meta.get("had_delta"))
+                    for key in stats["map"]:
+                        stats["map"][key] += int(meta.get(key, 0) or 0)
             except Exception:
                 logging.exception(
                     "wiki: MAP failed for doc %s batch %d",
@@ -1219,20 +1534,18 @@ async def run_wiki(
             stats["status"] = "empty"
             logging.info("wiki: no chunks for doc %s; skipping", doc_id)
         agg = stats["agg"]
-        delta = stats["delta"]
+        map_stats = stats["map"]
         logging.info(
-            "wiki: MAP doc=%s entities=%d concepts=%d claims=%d relations=%d (batches=%d, new=%d changed=%d unchanged=%d deleted=%d, delta=%s)",
+            "wiki: MAP doc=%s entities=%d concepts=%d claims=%d relations=%d (batches=%d, requested=%d cache_hits=%d extracted=%d)",
             doc_id,
             agg["entities"],
             agg["concepts"],
             agg["claims"],
             agg["relations"],
             stats["batch_count"],
-            delta["new"],
-            delta["changed"],
-            delta["unchanged"],
-            delta["deleted"],
-            stats["had_delta"],
+            map_stats["requested"],
+            map_stats["cache_hits"],
+            map_stats["extracted"],
         )
 
     # 5. REDUCE / PLAN / REFINE KB-wide. Each phase has its own
@@ -1258,7 +1571,12 @@ async def run_wiki(
 
         progress(0.75, "Planning wiki pages...")
         await wiki_plan_from_reduction(
-            chat_mdl=kb_chat_mdl,
+            chat_mdl=map_llm_pool.wrap(
+                kb_chat_mdl,
+                priority=20,
+                label="wiki-plan",
+                context=f"{ctx.kb_id}:plan",
+            ),
             embd_mdl=embedding_model,
             tenant_id=ctx.tenant_id,
             kb_id=ctx.kb_id,
@@ -1280,6 +1598,7 @@ async def run_wiki(
             kb_id=ctx.kb_id,
             max_workers=WIKI_REFINE_WORKERS,
             callback=_stage_cb("[wiki REFINE]"),
+            instruction=kb_writer_instruction,
             example=kb_writer_example,
         )
     except Exception:
@@ -1289,14 +1608,383 @@ async def run_wiki(
 
     # 6. Persist searchable wiki_page rows.
     try:
-        await persist_wiki_pages_to_es(ctx=ctx, pages=pages or [], embd_mdl=embedding_model)
+        await persist_wiki_pages(ctx=ctx, pages=pages or [], embd_mdl=embedding_model)
     except Exception:
-        logging.exception("wiki: ES persist failed for kb %s", ctx.kb_id)
+        logging.exception("wiki: persist failed for kb %s", ctx.kb_id)
 
     # 7. Materialize the canvas graph from the refined pages.
     try:
-        await persist_wiki_page_graph_to_es(ctx=ctx, pages=pages or [])
+        await persist_wiki_page_graph(ctx=ctx, pages=pages or [])
     except Exception:
         logging.exception("wiki: page-graph persist failed for kb %s", ctx.kb_id)
 
     progress(1.0, f"Wiki compiled {len(pages or [])} page(s).")
+
+
+# ----- dual-mode incremental entry point ---------------------------------
+
+
+async def run_wiki_incremental(
+    ctx: TaskContext,
+    embedding_model,
+    load_chunks_for_doc: Callable[..., AsyncIterator[list[dict]]],
+    mode: str | None = None,
+) -> None:
+    """Dual-mode wiki compilation with incremental support.
+
+    Entity mode:
+        1 concept = 1 page (WeKnora style).
+        MAP → REDUCE → per-concept REFINE → FINALIZE.
+        Incremental: per-concept modify based on doc_change tracking.
+
+    Topic mode:
+        PLAN groups entities → per-page REFINE.
+        Incremental: embeddings retrieve page candidates; the LLM makes final routes.
+
+    Args:
+        ctx: Task context
+        embedding_model: Embedding model
+        load_chunks_for_doc: Chunk loader
+        mode: ``entity`` or ``topic``
+    """
+    from api.db.services.document_service import DocumentService
+    from api.db.services.compilation_template_service import CompilationTemplateService
+    from api.db.services.llm_service import LLMBundle
+    from api.db.joint_services.tenant_model_service import resolve_model_config
+    from rag.advanced_rag.knowlege_compile.wiki_incremental import (
+        wiki_compile_incremental,
+    )
+
+    progress = ctx.progress_cb
+    map_llm_pool = _create_wiki_llm_pool(progress)
+    progress(0.0, "Loading documents for wiki compilation...")
+
+    # 1. Check if this is incremental (existing MAP rows present)
+    existing_map_doc_ids = await _wiki_existing_map_doc_ids(ctx.tenant_id, ctx.kb_id)
+    is_incremental = bool(existing_map_doc_ids)
+    deleted_doc_ids = set()
+
+    if is_incremental:
+        # Find deleted docs
+        all_docs, _ = await thread_pool_exec(
+            DocumentService.get_by_kb_id,
+            kb_id=ctx.kb_id,
+            page_number=0,
+            items_per_page=0,
+            orderby="create_time",
+            desc=False,
+            keywords="",
+            run_status=[],
+            types=[],
+            suffix=[],
+        )
+        current_doc_ids = {str(d.get("id")) for d in all_docs or [] if d.get("id")}
+        deleted_doc_ids = existing_map_doc_ids - current_doc_ids
+        if deleted_doc_ids:
+            progress(0.02, f"Cleaning {len(deleted_doc_ids)} deleted doc(s) ...")
+            await _wiki_delete_deleted_doc_state(ctx.tenant_id, ctx.kb_id, deleted_doc_ids)
+
+    # 2. Pick eligible docs
+    all_docs, _ = await thread_pool_exec(
+        DocumentService.get_by_kb_id,
+        kb_id=ctx.kb_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    eligible = _wiki_eligible_docs(all_docs, ctx.tenant_id, skip_doc_ids=deleted_doc_ids)
+
+    if not eligible and not is_incremental:
+        progress(1.0, _wiki_empty_eligible_message(all_docs))
+        return
+    pipeline_chat_llm_ids = _validate_wiki_eligible_docs(eligible) if eligible else {}
+
+    eligible_doc_ids = {str(doc.get("id")) for doc, _ in eligible if doc.get("id")}
+    previous_chunk_state = await _wiki_load_active_map_state(ctx.tenant_id, ctx.kb_id)
+    current_chunk_state = await _wiki_scan_current_chunk_state(
+        ctx.tenant_id,
+        ctx.kb_id,
+        eligible_doc_ids,
+    )
+    chunk_delta = _wiki_compare_chunk_states(previous_chunk_state, current_chunk_state)
+    target_chunk_ids = chunk_delta["new_chunk_ids"] | chunk_delta["changed_chunk_ids"]
+    has_chunk_delta = bool(target_chunk_ids or chunk_delta["deleted_chunk_ids"])
+    logging.info(
+        "wiki chunk delta: kb=%s new=%d changed=%d deleted=%d unchanged=%d",
+        ctx.kb_id,
+        len(chunk_delta["new_chunk_ids"]),
+        len(chunk_delta["changed_chunk_ids"]),
+        len(chunk_delta["deleted_chunk_ids"]),
+        len(chunk_delta["unchanged_chunk_ids"]),
+    )
+
+    # Resolve mode from the eligible documents' templates. Each eligible
+    # doc resolves to a wiki template either via its own parser_config or via
+    # its ingestion pipeline (doc.pipeline_id → pipeline dsl → compiler →
+    # template). This also covers pipeline-bound templates.
+    resolved_modes = set()
+    for _doc, tid in eligible:
+        tpl = CompilationTemplateService.get_saved(tid, ctx.tenant_id)
+        cfg = (tpl.get("config") or {}) if tpl else {}
+        candidate_mode = cfg.get("mode") if isinstance(cfg, dict) else None
+        if candidate_mode not in ("entity", "topic"):
+            raise ValueError(f"Wiki template {tid} must define mode as 'entity' or 'topic'")
+        resolved_modes.add(candidate_mode)
+
+    if len(resolved_modes) > 1:
+        raise ValueError("Eligible Wiki templates must use the same mode")
+    if resolved_modes:
+        mode = resolved_modes.pop()
+
+    if mode is None:
+        mode = await _wiki_load_mode(ctx.tenant_id, ctx.kb_id)
+    if mode not in ("entity", "topic"):
+        raise ValueError("Wiki template mode must be either 'entity' or 'topic'")
+
+    # Mode-change detection. Switching entity/topic is a config change: the page
+    # structures differ fundamentally (single-entity pages vs PLAN-grouped
+    # pages), so switching modes must reset all wiki-derived state and rebuild
+    # from scratch instead of incrementally mixing old-mode and new-mode pages.
+    previous_mode = await _wiki_load_mode(ctx.tenant_id, ctx.kb_id)
+    previous_embedding = await _wiki_load_embedding_fingerprint(ctx.tenant_id, ctx.kb_id)
+    current_embedding = _wiki_embedding_fingerprint(embedding_model)
+    mode_changed = is_incremental and previous_mode is not None and previous_mode != mode
+    embedding_changed = bool(previous_embedding and current_embedding and previous_embedding != current_embedding)
+    if is_incremental and (mode_changed or embedding_changed):
+        if mode_changed:
+            reason = f"Mode switched ({previous_mode} -> {mode})"
+        else:
+            reason = "Embedding model changed"
+        progress(0.05, f"{reason}; rebuilding wiki from scratch...")
+        await _wiki_reset_all_wiki_state(ctx.tenant_id, ctx.kb_id)
+        # Everything is gone; this is now a first build.
+        is_incremental = False
+        existing_map_doc_ids = set()
+        deleted_doc_ids = set()
+        previous_chunk_state = {}
+        chunk_delta = _wiki_compare_chunk_states(previous_chunk_state, current_chunk_state)
+        target_chunk_ids = set(chunk_delta["new_chunk_ids"])
+        has_chunk_delta = bool(target_chunk_ids)
+    await _wiki_save_mode(ctx.tenant_id, ctx.kb_id, mode, current_embedding)
+
+    # 3. Resolve chat model
+    llm_bundle_cache: dict[str, LLMBundle] = {}
+
+    def _bundle_for(llm_id: str) -> LLMBundle:
+        key = llm_id.strip()
+        cached = llm_bundle_cache.get(key)
+        if cached is not None:
+            return cached
+        cfg = resolve_model_config(ctx.tenant_id, LLMType.CHAT, key)
+        bundle = LLMBundle(ctx.tenant_id, cfg, lang=ctx.language)
+        llm_bundle_cache[key] = bundle
+        return bundle
+
+    kb_chat_llm_id = None
+    first_template_found = False
+
+    # 4. MAP per doc (same as run_wiki's MAP phase)
+    map_queue: asyncio.Queue = asyncio.Queue(maxsize=WIKI_MAP_QUEUE_SIZE)
+    n_docs = len(eligible)
+
+    # Pre-resolve parser_cfg for each eligible doc (avoids sync DB call in worker)
+    doc_configs: dict[str, dict] = {}
+    for d, template_id in eligible:
+        try:
+            template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
+            cfg = (template.get("config") or {}) if template else {}
+            doc_configs[d["id"]] = cfg
+            if not first_template_found and isinstance(cfg, dict):
+                first_template_found = True
+                kb_chat_llm_id = pipeline_chat_llm_ids[str(d.get("id") or "")]
+        except Exception:
+            logging.exception("wiki: config resolve failed for doc %s", d["id"])
+            doc_configs[d["id"]] = {}
+
+    async def _produce_doc(i: int, job: tuple[dict, str]) -> None:
+        doc, template_id = job
+        doc_id = doc["id"]
+        progress(0.05 + 0.6 * (i / max(n_docs, 1)), f"MAP {i + 1}/{n_docs}: {doc.get('name', doc_id)}")
+        try:
+            async for batch in load_chunks_for_doc(
+                ctx.tenant_id,
+                ctx.kb_id,
+                doc_id,
+                batch_size=WIKI_MAP_BATCH_CHUNKS,
+            ):
+                await map_queue.put((i, doc, template_id, doc_configs.get(doc_id, {}), batch))
+        except Exception:
+            logging.exception("wiki: MAP chunk loading failed for doc %s", doc_id)
+
+    async def _map_worker() -> None:
+        while True:
+            item = await map_queue.get()
+            try:
+                if item is None:
+                    return
+                _, doc, template_id, parser_cfg, batch = item
+                doc_id = doc["id"]
+                map_llm_id = pipeline_chat_llm_ids[str(doc_id)]
+
+                await wiki_map_from_chunks(
+                    chunks=batch,
+                    chat_mdl=map_llm_pool.wrap(
+                        _bundle_for(map_llm_id),
+                        priority=30,
+                        label=f"wiki-map:{doc_id}",
+                        context=f"{ctx.kb_id}:{doc_id}:map",
+                    ),
+                    embd_mdl=embedding_model,
+                    doc_id=doc_id,
+                    tenant_id=ctx.tenant_id,
+                    kb_id=ctx.kb_id,
+                    language=ctx.language,
+                    parser_config=parser_cfg,
+                    batch_size_cap=8,
+                    window_fraction=0.5,
+                    max_workers=WIKI_MAP_LLM_POOL_SIZE,
+                    target_chunk_ids=target_chunk_ids,
+                )
+            except Exception:
+                logging.exception("wiki: MAP failed for doc %s", doc_id)
+            finally:
+                map_queue.task_done()
+
+    producers = [asyncio.create_task(_produce_doc(i, job)) for i, job in enumerate(eligible)]
+    workers = [asyncio.create_task(_map_worker()) for _ in range(WIKI_MAP_LLM_POOL_SIZE)]
+    try:
+        await asyncio.gather(*producers)
+        await map_queue.join()
+    finally:
+        for task in producers + workers:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*producers, *workers, return_exceptions=True)
+
+    if target_chunk_ids:
+        resolved_versions = await _wiki_load_map_extracts_for_state(
+            ctx.tenant_id,
+            ctx.kb_id,
+            current_chunk_state,
+            target_chunk_ids,
+        )
+        resolved_chunk_ids = {str((extract.get("_map_version") or {}).get("chunk_id") or "") for extract in resolved_versions}
+        missing_chunk_ids = target_chunk_ids - resolved_chunk_ids
+        if missing_chunk_ids:
+            logging.error(
+                "wiki: MAP extraction/cache resolution incomplete kb=%s missing_chunks=%s",
+                ctx.kb_id,
+                sorted(missing_chunk_ids),
+            )
+            progress(-1, f"Wiki MAP failed for {len(missing_chunk_ids)} chunk(s).")
+            return
+
+    if not has_chunk_delta and not deleted_doc_ids:
+        # Nothing fresh, changed, or deleted this run. Skip only when there is
+        # genuinely nothing to build: an existing MAP baseline already has
+        # compiled pages. When the Wiki was explicitly cleared, both
+        # ``existing_map_doc_ids`` and the pages are gone; eligible documents
+        # must go through the first full MAP/REDUCE/REFINE run again. Likewise,
+        # when MAP rows exist but no pages were ever produced (for example a
+        # prior run stopped after MAP), fall through so the compiler can rebuild
+        # pages from the stored extracts.
+        has_compiled_pages = await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id) if existing_map_doc_ids else None
+        from rag.advanced_rag.knowlege_compile.wiki_incremental import _wiki_load_refine_failures
+
+        has_refine_failures = bool(await _wiki_load_refine_failures(ctx.tenant_id, ctx.kb_id))
+        if existing_map_doc_ids and has_compiled_pages is True and not has_refine_failures:
+            from rag.advanced_rag.knowlege_compile.wiki_incremental import (
+                _wiki_finalize,
+                _wiki_load_pages_for_graph,
+            )
+
+            progress(0.9, "Wiki is up to date; recomputing cross-references ...")
+            # FINALIZE recomputes outlinks / auto-links / dead-link cleanup from
+            # the persisted pages (zero LLM cost) so a re-run backfills graph
+            # edges for pages written before auto-linking existed.
+            try:
+                await _wiki_finalize(
+                    ctx.tenant_id,
+                    ctx.kb_id,
+                    embedding_model,
+                    chunk_state=current_chunk_state,
+                )
+            except Exception:
+                logging.exception("wiki: up-to-date FINALIZE failed for kb=%s", ctx.kb_id)
+
+            # (Re)materialize the canvas graph so pages built before graph
+            # persistence existed (or a graph lost to an interrupted run) still
+            # render. Reload pages → project → persist wiki_entity/relation.
+            try:
+                graph_pages = await _wiki_load_pages_for_graph(
+                    ctx.tenant_id,
+                    ctx.kb_id,
+                    chunk_state=current_chunk_state,
+                )
+                if graph_pages:
+                    await persist_wiki_page_graph(ctx=ctx, pages=graph_pages)
+            except Exception:
+                logging.exception("wiki: up-to-date page-graph persist failed for kb=%s", ctx.kb_id)
+
+            await _wiki_commit_active_map_state(ctx.tenant_id, ctx.kb_id, current_chunk_state)
+            progress(1.0, "Wiki is up to date.")
+            return
+        logging.info("wiki: MAP rows exist but no pages found for kb=%s; rebuilding from stored extracts.", ctx.kb_id)
+
+    # 5. Run incremental wiki compilation (Mode A or Mode B)
+    if not kb_chat_llm_id:
+        raise ValueError("Wiki compilation requires an ingestion pipeline Compiler with an LLM configured")
+    kb_chat_mdl = _bundle_for(kb_chat_llm_id)
+
+    progress(0.65, f"Wiki {mode} incremental compilation ...")
+    summary = await wiki_compile_incremental(
+        chat_mdl=map_llm_pool.wrap(
+            kb_chat_mdl,
+            priority=20,
+            label=f"wiki-{mode}-refine",
+            context=f"{ctx.kb_id}:refine",
+        ),
+        embd_mdl=embedding_model,
+        tenant_id=ctx.tenant_id,
+        kb_id=ctx.kb_id,
+        mode=mode,
+        incremental=is_incremental,
+        deleted_doc_ids=deleted_doc_ids or None,
+        chunk_delta=chunk_delta,
+        previous_chunk_state=previous_chunk_state,
+        current_chunk_state=current_chunk_state,
+        callback=lambda p, msg: progress(p, msg),
+    )
+
+    # 6. Materialize the canvas graph from the compiled pages. The incremental
+    # entry point persists wiki_page rows internally (without returning the page
+    # list), so reload them and project onto the graph shape that
+    # build_wiki_page_graph expects.
+    try:
+        from rag.advanced_rag.knowlege_compile.wiki_incremental import (
+            _wiki_load_pages_for_graph,
+        )
+
+        graph_pages = await _wiki_load_pages_for_graph(
+            ctx.tenant_id,
+            ctx.kb_id,
+            chunk_state=current_chunk_state,
+        )
+        if graph_pages:
+            await persist_wiki_page_graph(ctx=ctx, pages=graph_pages)
+    except Exception:
+        logging.exception("wiki: page-graph persist failed for kb=%s", ctx.kb_id)
+
+    if not summary.get("errors"):
+        await _wiki_commit_active_map_state(ctx.tenant_id, ctx.kb_id, current_chunk_state)
+
+    if summary.get("errors"):
+        logging.warning("wiki: incomplete compilation errors: %s", summary["errors"])
+        progress(-1, f"Wiki incomplete: {len(summary['errors'])} page(s) failed; retry required.")
+    else:
+        progress(1.0, f"Wiki done: +{summary.get('pages_created', 0)} ~{summary.get('pages_modified', 0)} -{summary.get('pages_deleted', 0)}")

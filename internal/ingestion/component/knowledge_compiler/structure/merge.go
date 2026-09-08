@@ -6,14 +6,23 @@ import (
 	"strings"
 	"sync"
 
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/tokenizer"
+
+	"go.uber.org/zap"
 )
 
-// maxBatchTokenReserve is the share of the model's token budget kept in reserve
-// for the system prompt, the batch instruction, and the model's JSON reply, so
-// a single DecideBatch sub-call never overflows max_token.
-const maxBatchTokenReserve = 0.15
+// maxWindowUsage is the fraction of the model's limits a single
+// DecideBatch sub-call may consume — applied both to the combined
+// (input+output) budget (fraction of content_length) and to the output budget
+// (fraction of max_output). The reply is an array of per-pair
+// {"duplicated","merged"} objects, and each merged object is roughly the size of
+// the longer of the two inputs, so the batch is split so the summed estimate
+// stays under this cap. 0.2 is deliberately conservative (smaller than the
+// default 0.6) so each sub-call stays well inside the window and generation cap
+// even for models with tight limits, at the cost of more, smaller sub-calls.
+const maxWindowUsage = 0.2
 
 // Merge prompts, verbatim from Python structure.py. The merge is driven by
 // the user-supplied prompts; the decision instruction lets us branch on the
@@ -99,18 +108,25 @@ type LLMMergeDecider struct {
 	Embed     common.Embedder
 	Threshold float64
 
-	// maxBatchTokens caps the estimated prompt size of a single DecideBatch
-	// sub-call. When 0 (the default) the whole batch is sent in one call,
-	// preserving the historic behavior. When positive the batch is split into
-	// token-bounded sub-calls so a large candidate set can never overflow the
-	// model's max_token window.
-	maxBatchTokens int
+	// maxBatchTotal caps the estimated combined size (prompt input + JSON reply)
+	// of a single DecideBatch sub-call. It guards the model's context window
+	// (content_length): a chunk starts a fresh one when adding a pair would push
+	// (input+output) past modelContentLength*maxWindowUsage. When 0 the
+	// whole batch is sent in one call (historic behavior).
+	maxBatchTotal int
+	// maxBatchOutput caps the estimated reply (output) size of a single
+	// DecideBatch sub-call. It guards the model's generation cap (max_output):
+	// each merged reply is roughly the size of the longer of the two inputs in a
+	// pair, so the batch is also split so the sum of per-pair output estimates
+	// stays within modelMaxOutput*maxWindowUsage. A sub-call must satisfy
+	// BOTH this cap and maxBatchTotal.
+	maxBatchOutput int
 
-	// submit runs one LLM sub-batch off the shared knowledge-compilation pool.
+	// submit runs LLM sub-batches off the shared knowledge-compilation pool.
 	// When nil each sub-batch runs inline (sequentially). It is injected by the
 	// knowledge_compile package so every stage shares one process-wide,
 	// vCPU-sized concurrency bound.
-	submit func(ctx context.Context, fn func() error) error
+	submit func(ctx context.Context, jobs []func() error) error
 
 	mu      sync.Mutex
 	aliases map[string]string
@@ -121,28 +137,44 @@ func NewLLMMergeDecider(chat common.ChatInvoker, llmID string, embed common.Embe
 	return &LLMMergeDecider{Chat: chat, LLMID: llmID, Embed: embed, Threshold: threshold, aliases: map[string]string{}}
 }
 
-// SetMaxBatchTokens caps the estimated prompt size of a single DecideBatch
-// sub-call. Non-positive values disable per-call batching. The effective budget
-// is modelMaxTokens*(1-maxBatchTokenReserve), keeping headroom for the system
-// prompt and the JSON reply.
-func (d *LLMMergeDecider) SetMaxBatchTokens(modelMaxTokens int) {
-	if modelMaxTokens <= 0 {
-		d.maxBatchTokens = 0
+// SetMaxBatchTokens sets the two token budgets that bound a single DecideBatch
+// sub-call, derived from the model's two limits:
+//   - modelContentLength: the model's context window (content_length); the
+//     effective combined budget is modelContentLength*maxWindowUsage, i.e.
+//     a sub-call may not exceed that many tokens of (prompt input + JSON reply).
+//   - modelMaxOutput: the model's generation cap (max_output); the effective
+//     reply budget is modelMaxOutput*maxWindowUsage.
+//
+// modelContentLength <= 0 disables both budgets (historic whole-batch behavior);
+// modelMaxOutput <= 0 falls back to combined-budget-only batching. splitByTokens
+// then keeps every sub-call inside BOTH the combined budget and the output
+// budget, so a large candidate set can never overflow the window nor the
+// generation cap.
+func (d *LLMMergeDecider) SetMaxBatchTokens(modelContentLength, modelMaxOutput int) {
+	d.maxBatchOutput = 0
+	if modelContentLength <= 0 {
+		d.maxBatchTotal = 0
 		return
 	}
-	budget := int(float64(modelMaxTokens) * (1 - maxBatchTokenReserve))
-	if budget <= 0 {
-		d.maxBatchTokens = 0
+	totalBudget := int(float64(modelContentLength) * maxWindowUsage)
+	if totalBudget <= 0 {
+		d.maxBatchTotal = 0
 		return
 	}
-	d.maxBatchTokens = budget
+	d.maxBatchTotal = totalBudget
+	if modelMaxOutput > 0 {
+		outputBudget := int(float64(modelMaxOutput) * maxWindowUsage)
+		if outputBudget > 0 {
+			d.maxBatchOutput = outputBudget
+		}
+	}
 }
 
 // SetSubmitter injects the shared knowledge-compilation pool so DecideBatch can
 // run its token-bounded sub-batches concurrently. A nil submitter (the default)
-// falls back to running sub-batches sequentially. The submitter must run fn on
-// a bounded pool and return its error.
-func (d *LLMMergeDecider) SetSubmitter(submit func(ctx context.Context, fn func() error) error) {
+// falls back to running sub-batches sequentially. The submitter must enqueue
+// all jobs on a bounded pool, wait for them, and return the first error.
+func (d *LLMMergeDecider) SetSubmitter(submit func(ctx context.Context, jobs []func() error) error) {
 	d.submit = submit
 }
 
@@ -229,18 +261,23 @@ type BatchMergeResult struct {
 }
 
 // DecideBatch judges every pair and returns the verdicts in input order. It is
-// the batched counterpart of Decide's single-pair judge. When a token budget is
-// configured it splits the pairs into token-bounded sub-batches (each sub-batch
-// still judged in a single LLM call, preserving pair order) so a large candidate
-// set can never overflow the model's max_token window.
+// the batched counterpart of Decide's single-pair judge. Besides deciding each
+// duplicate pair it also performs the actual merge: for a pair the LLM judges as
+// duplicated, mergePairsBatch has the model emit the combined payload (merged),
+// which the caller re-embeds and persists in place of the existing row. When a
+// token budget is configured it splits the pairs into sub-batches bounded by
+// BOTH the model's combined (input+output) budget and its output cap, each
+// sub-batch still judged in a single LLM call (preserving pair order), so a
+// large candidate set can never overflow the context window nor the generation
+// cap.
 func (d *LLMMergeDecider) DecideBatch(ctx context.Context, pairs []MergePairInput) ([]BatchMergeResult, error) {
 	if len(pairs) == 0 {
 		return nil, nil
 	}
-	if d.maxBatchTokens <= 0 {
+	if d.maxBatchTotal <= 0 && d.maxBatchOutput <= 0 {
 		return mergePairsBatch(ctx, d.Chat, d.LLMID, pairs)
 	}
-	chunks := splitByTokens(pairs, d.maxBatchTokens)
+	chunks := splitByTokens(pairs, d.maxBatchTotal, d.maxBatchOutput)
 	// The merge decisions are LLM-bounded, not CPU-bounded: run the token-bounded
 	// sub-batches concurrently on the injected shared pool (vCPU-sized) when more
 	// than one chunk exists. Order is preserved by writing each chunk's verdicts
@@ -258,35 +295,22 @@ func (d *LLMMergeDecider) DecideBatch(ctx context.Context, pairs []MergePairInpu
 		return out, nil
 	}
 	results := make([][]BatchMergeResult, len(chunks))
-	var (
-		wg       sync.WaitGroup
-		errOnce  sync.Once
-		firstErr error
-	)
+	jobs := make([]func() error, 0, len(chunks))
 	for i, chunk := range chunks {
 		i, chunk := i, chunk
-		wg.Add(1)
-		err := d.submit(ctx, func() error {
-			defer wg.Done()
+		jobs = append(jobs, func() error {
 			sub, err := mergePairsBatch(ctx, d.Chat, d.LLMID, chunk)
 			if err != nil {
-				errOnce.Do(func() { firstErr = err })
 				return err
 			}
 			results[i] = sub
 			return nil
 		})
-		if err != nil {
-			// The job was never enqueued, so the closure's wg.Done() will never
-			// run — decrement here and record the failure so we don't deadlock
-			// on wg.Wait() and don't silently drop the submit error.
-			wg.Done()
-			errOnce.Do(func() { firstErr = err })
-		}
 	}
-	wg.Wait()
-	if firstErr != nil {
-		return nil, firstErr
+	// Submit the complete batch in one call. The shared pool owns fan-out and
+	// bounded concurrency; the caller only waits for the pool's futures.
+	if err := d.submit(ctx, jobs); err != nil {
+		return nil, err
 	}
 	out := make([]BatchMergeResult, 0, len(pairs))
 	for _, sub := range results {
@@ -295,30 +319,70 @@ func (d *LLMMergeDecider) DecideBatch(ctx context.Context, pairs []MergePairInpu
 	return out, nil
 }
 
-// splitByTokens groups pairs into contiguous chunks whose estimated prompt
-// size stays within budget. The original (global) Index of every pair is
-// preserved — the model echoes it back — so callers can still key verdicts by
-// the input index. A single pair that alone exceeds budget is sent on its own
-// (the model may still truncate, but we never silently drop it).
-func splitByTokens(pairs []MergePairInput, budget int) [][]MergePairInput {
+// splitByTokens groups pairs into contiguous chunks bounded by BOTH the model's
+// combined budget (prompt input + JSON reply, guarding content_length) and its
+// output budget (guarding max_output). The prompt size of a pair is roughly
+// existing+incoming; the merged reply for a pair is roughly the longer of the
+// two inputs (the merge emits the union of both objects). So a chunk starts a
+// fresh one when adding a pair would push either the combined (input+output)
+// estimate past totalBudget or the output estimate past outputBudget — keeping
+// every sub-call inside the context window AND the generation cap. The original
+// (global) Index of every pair is preserved — the model echoes it back — so
+// callers can still key verdicts by the input index. A single pair that alone
+// exceeds either budget is sent on its own (the model may still truncate, but we
+// never silently drop it).
+func splitByTokens(pairs []MergePairInput, totalBudget, outputBudget int) [][]MergePairInput {
 	var chunks [][]MergePairInput
 	cur := make([]MergePairInput, 0, len(pairs))
-	used := 0
+	usedTotal := 0
+	usedOutput := 0
+	flush := func(usedTotal, usedOutput int) {
+		// Diagnostic: expose each chunk's realized budget utilization so the
+		// split can be tuned. usedTotal = Σ(input+output) and usedOutput = Σ
+		// (longer input) of the chunk's pairs; both must stay ≤ their budget for
+		// the sub-call to fit the model. "final" marks the last chunk flushed.
+		appcommon.Info("knowledge_compiler: merge batch split flush",
+			zap.Int("pairs", len(cur)),
+			zap.Int("total_budget", totalBudget),
+			zap.Int("output_budget", outputBudget),
+			zap.Int("used_total", usedTotal),
+			zap.Int("used_output", usedOutput))
+	}
+	appcommon.Info("knowledge_compiler: merge batch split start",
+		zap.Int("pairs", len(pairs)),
+		zap.Int("total_budget", totalBudget),
+		zap.Int("output_budget", outputBudget))
 	for _, p := range pairs {
 		// The pair contents dominate the prompt size; the "Pair N:" wrappers
-		// are a negligible constant overhead per pair, ignored here.
-		est := tokenizer.NumTokensFromString(p.Existing) + tokenizer.NumTokensFromString(p.Incoming)
-		if len(cur) > 0 && used+est > budget {
+		// are a negligible constant overhead per pair, ignored here. Each input
+		// is tokenized once and reused for both the prompt and the output
+		// estimate.
+		estExisting := tokenizer.NumTokensFromString(p.Existing)
+		estIncoming := tokenizer.NumTokensFromString(p.Incoming)
+		estPrompt := estExisting + estIncoming
+		// The merged reply for a pair is at most the size of its longer input
+		// (we keep all existing fields and union in the incoming ones).
+		estOutput := estExisting
+		if estIncoming > estOutput {
+			estOutput = estIncoming
+		}
+		overOutput := outputBudget > 0 && usedOutput+estOutput > outputBudget
+		overTotal := totalBudget > 0 && usedTotal+estPrompt+estOutput > totalBudget
+		if len(cur) > 0 && (overOutput || overTotal) {
+			flush(usedTotal, usedOutput)
 			chunks = append(chunks, cur)
 			// Fresh backing array: cur[:0] shares the buffer with the chunk we
 			// just appended, so the next iteration would overwrite it.
 			cur = make([]MergePairInput, 0, len(pairs))
-			used = 0
+			usedTotal = 0
+			usedOutput = 0
 		}
 		cur = append(cur, p)
-		used += est
+		usedTotal += estPrompt + estOutput
+		usedOutput += estOutput
 	}
 	if len(cur) > 0 {
+		flush(usedTotal, usedOutput)
 		chunks = append(chunks, cur)
 	}
 	return chunks

@@ -40,7 +40,7 @@ type Engine struct {
 }
 
 // NewEngine creates an Elasticsearch engine
-func NewEngine(esConfig config.ElasticsearchConfig) (*Engine, error) {
+func NewEngine(ctx context.Context, esConfig config.ElasticsearchConfig) (*Engine, error) {
 	// Create ES client
 	client, err := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{esConfig.Hosts},
@@ -57,18 +57,18 @@ func NewEngine(esConfig config.ElasticsearchConfig) (*Engine, error) {
 	}
 
 	// Check connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	newCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	req := esapi.InfoRequest{}
-	res, err := req.Do(ctx, client)
+	res, err := req.Do(newCtx, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ping Elasticsearch: %w", err)
 	}
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return nil, fmt.Errorf("Elasticsearch returned error: %s", res.Status())
+		return nil, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 	}
 
 	engine := &Engine{
@@ -78,11 +78,11 @@ func NewEngine(esConfig config.ElasticsearchConfig) (*Engine, error) {
 
 	// Create two index templates for different index types
 	// Template for chunk indices (ragflow_*) - priority 1
-	if err = engine.CreateIndexTemplate(context.Background(), "ragflow_mapping", "ragflow_*", "mapping.json", 1); err != nil {
+	if err = engine.CreateIndexTemplate(newCtx, "ragflow_mapping", "ragflow_*", "mapping.json", 1); err != nil {
 		return nil, fmt.Errorf("failed to create chunk index template: %w", err)
 	}
 	// Template for doc_meta indices (ragflow_doc_meta_*) - priority 2 (higher than ragflow_*)
-	if err = engine.CreateIndexTemplate(context.Background(), "ragflow_doc_meta_mapping", "ragflow_doc_meta_*", "doc_meta_es_mapping.json", 2); err != nil {
+	if err = engine.CreateIndexTemplate(newCtx, "ragflow_doc_meta_mapping", "ragflow_doc_meta_*", "doc_meta_es_mapping.json", 2); err != nil {
 		return nil, fmt.Errorf("failed to create doc_meta index template: %w", err)
 	}
 
@@ -201,9 +201,9 @@ func (e *Engine) CreateIndexTemplate(ctx context.Context, templateName, indexPat
 
 // GetClusterStats gets Elasticsearch cluster statistics
 // Reference: curl -XGET "http://{es_host}/_cluster/stats" -H "kbn-xsrf: reporting"
-func (e *Engine) GetClusterStats() (map[string]interface{}, error) {
+func (e *Engine) GetClusterStats(ctx context.Context) (map[string]interface{}, error) {
 	req := esapi.ClusterStatsRequest{}
-	res, err := req.Do(context.Background(), e.client)
+	res, err := req.Do(ctx, e.client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cluster stats: %w", err)
 	}
@@ -378,7 +378,7 @@ func extractErrorReason(bodyBytes []byte) string {
 
 // GetIndexStats gets statistics for specified indices using the _cat/indices API
 // Returns index, health, status, docs.count, store.size, dataset.size for each index
-func (e *Engine) GetIndexStats(indices []string) ([]map[string]interface{}, error) {
+func (e *Engine) GetIndexStats(ctx context.Context, indices []string) ([]map[string]interface{}, error) {
 	if len(indices) == 0 {
 		return []map[string]interface{}{}, nil
 	}
@@ -389,7 +389,7 @@ func (e *Engine) GetIndexStats(indices []string) ([]map[string]interface{}, erro
 		H:      []string{"index", "health", "status", "docs.count", "store.size", "dataset.size"},
 	}
 
-	res, err := req.Do(context.Background(), e.client)
+	res, err := req.Do(ctx, e.client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get index stats: %w", err)
 	}

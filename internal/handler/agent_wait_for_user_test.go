@@ -215,7 +215,7 @@ func TestWaitForUser_SSECycleRoundTrip(t *testing.T) {
 			// (since a raw signal has no wrapped InterruptCtx
 			// list — this is acceptable for V1 and matches
 			// the test's relaxed cpn_id assertion below).
-			return nil, compose.Interrupt(context.Background(), map[string]any{
+			return nil, compose.Interrupt(t.Context(), map[string]any{
 				"kind":    "user_fill_up",
 				"cpn_id":  "answer-1",
 				"tips":    "Do you want to continue?",

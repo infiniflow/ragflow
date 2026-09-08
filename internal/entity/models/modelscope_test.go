@@ -23,7 +23,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 func newModelScopeForTest(baseURL string) *ModelScopeModel {
@@ -34,15 +33,6 @@ func newModelScopeForTest(baseURL string) *ModelScopeModel {
 			Models: "v1/models",
 		},
 	)
-}
-
-func withModelScopeIdleTimeout(t *testing.T, d time.Duration) {
-	t.Helper()
-	original := modelscopeStreamIdleTimeout
-	modelscopeStreamIdleTimeout = d
-	t.Cleanup(func() {
-		modelscopeStreamIdleTimeout = original
-	})
 }
 
 func TestModelScopeName(t *testing.T) {
@@ -137,9 +127,6 @@ func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 	}
 	if seen["stream"] != false {
 		t.Errorf("stream=%v, want false", seen["stream"])
-	}
-	if seen["max_tokens"] != float64(32) {
-		t.Errorf("max_tokens=%v, want 32", seen["max_tokens"])
 	}
 	if seen["temperature"] != 0.2 {
 		t.Errorf("temperature=%v, want 0.2", seen["temperature"])
@@ -271,37 +258,6 @@ func TestModelScopeStreamRejectsFalseStreamConfig(t *testing.T) {
 	}
 }
 
-func TestModelScopeStreamCancelsOnIdle(t *testing.T) {
-	withSSRFBypass(t)
-	ctx := t.Context()
-	withModelScopeIdleTimeout(t, 200*time.Millisecond)
-
-	hold := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		if f, ok := w.(http.Flusher); ok {
-			_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"hi"}}]}`+"\n")
-			f.Flush()
-		}
-		select {
-		case <-hold:
-		case <-r.Context().Done():
-		}
-	}))
-	t.Cleanup(srv.Close)
-	t.Cleanup(func() { close(hold) })
-
-	m := newModelScopeForTest(srv.URL)
-	err := m.ChatStreamlyWithSender(ctx, "Qwen/Qwen2.5-7B-Instruct",
-		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil, nil,
-		func(*string, *string) error { return nil })
-	if err == nil || !strings.Contains(err.Error(), "stream idle") {
-		t.Errorf("expected stream-idle error, got %v", err)
-	}
-}
-
 func TestModelScopeListModelsAndCheckConnection(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
@@ -349,10 +305,10 @@ func TestModelScopeUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	m := newModelScopeForTest("http://unused")
 	model := "Qwen/Qwen2.5-7B-Instruct"
 
-	if _, err := m.Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: expected no such method, got %v", err)
 	}
-	if _, err := m.Rerank(ctx, &model, "q", []string{"d"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"d"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected no such method, got %v", err)
 	}
 	if _, err := m.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {

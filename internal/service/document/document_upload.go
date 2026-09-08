@@ -7,13 +7,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
-	"ragflow/internal/dao"
-	"strings"
-
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
+	"strings"
 )
 
 // UploadLocalDocuments stores each uploaded file in object storage and inserts a
@@ -86,10 +85,10 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 		if safeParent != "" {
 			location = safeParent + "/" + filename
 		}
-		for storageImpl.ObjExist(kb.ID, location) {
+		for storageImpl.ObjExist(ctx, kb.ID, location) {
 			location += "_"
 		}
-		if err = storageImpl.Put(kb.ID, location, blob); err != nil {
+		if err = storageImpl.Put(ctx, kb.ID, location, blob); err != nil {
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
 		}
@@ -97,7 +96,10 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), merged, "local", int64(len(blob)), blob)
 		if err = s.InsertDocument(doc); err != nil {
 			// Roll back the orphaned blob so a failed insert doesn't leak storage.
-			_ = storageImpl.Remove(kb.ID, location)
+			rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
+			if rmErr != nil {
+				common.Warn(fmt.Sprintf("upload rollback: failed to remove orphaned blob %s/%s: %v", kb.ID, location, rmErr))
+			}
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
 		}
@@ -105,11 +107,14 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			// Linkage failed: roll back the document row and blob so the partial
 			// state doesn't leave an invisible (unlisted) document behind.
 			err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
-			_ = storageImpl.Remove(kb.ID, location)
+			rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
+			if rmErr != nil {
+				common.Warn(fmt.Sprintf("UploadLocalDocuments: failed to remove blob %s/%s: %v", kb.ID, location, rmErr))
+			}
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
 		}
-		// Only reserve the name once the write fully succeeds.
+		// Only reserve the name once write fully succeeds.
 		taken[filename] = true
 		results = append(results, docToRawMap(doc))
 	}
@@ -271,21 +276,27 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 	}
 
 	location := filename
-	for storageImpl.ObjExist(kb.ID, location) {
+	for storageImpl.ObjExist(ctx, kb.ID, location) {
 		location += "_"
 	}
-	if err = storageImpl.Put(kb.ID, location, blob); err != nil {
+	if err = storageImpl.Put(ctx, kb.ID, location, blob); err != nil {
 		return nil, common.CodeServerError, err
 	}
 
 	doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), kb.ParserConfig, "web", int64(len(blob)), blob)
 	if err = s.InsertDocument(doc); err != nil {
-		_ = storageImpl.Remove(kb.ID, location)
+		rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
+		if rmErr != nil {
+			common.Warn(fmt.Sprintf("UploadWebDocument: failed to insert document, remove blob %s/%s: %v", kb.ID, location, rmErr))
+		}
 		return nil, common.CodeServerError, err
 	}
 	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
 		err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
-		_ = storageImpl.Remove(kb.ID, location)
+		rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
+		if rmErr != nil {
+			common.Warn(fmt.Sprintf("UploadWebDocument: failed to add file from knowledge base, remove blob %s/%s: %v", kb.ID, location, rmErr))
+		}
 		return nil, common.CodeServerError, err
 	}
 	return docToRawMap(doc), common.CodeSuccess, nil

@@ -22,23 +22,6 @@ import (
 	"testing"
 )
 
-func TestNormalizeTextNewlines(t *testing.T) {
-	tests := []struct {
-		in, want string
-	}{
-		{"", ""},
-		{"a\nb", "a\nb"},
-		{"a\r\nb", "a\nb"},
-		{"a\rb", "a\nb"},
-		{"a\r\nb\rc", "a\nb\nc"},
-	}
-	for _, tc := range tests {
-		if got := NormalizeTextNewlines(tc.in); got != tc.want {
-			t.Errorf("NormalizeTextNewlines(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestHasWrappedDelimiter(t *testing.T) {
 	if HasWrappedDelimiter("") {
 		t.Fatal("empty should be false")
@@ -54,42 +37,6 @@ func TestHasWrappedDelimiter(t *testing.T) {
 	}
 	if !HasWrappedDelimiter("`;`") {
 		t.Fatal("wrapped single char should be true")
-	}
-}
-
-func TestParseDelimiterField(t *testing.T) {
-	tests := []struct {
-		name  string
-		field string
-		want  []string
-	}{
-		{"empty", "", nil},
-		{"single bare", "!", []string{"!"}},
-		{"bare pair", "!?", []string{"!", "?"}},
-		{"space", " ", []string{" "}},
-		{"newline", "\n", []string{"\n"}},
-		{"crlf field", "\r\n", []string{"\n"}},
-		{"bare cr", "\r", []string{"\n"}},
-		{"wrapped end", "`end`", []string{"end"}},
-		{"wrapped hierarchy", "`###``##``#`", []string{"###", "##", "#"}},
-		{"tooltip example", "\n`##`;", []string{"##", "\n", ";"}},
-		{"dedupe", "`a`a`a`", []string{"a"}},
-		{"wrapped double newline", "`\n\n`", []string{"\n\n"}},
-		{"crlf wrapped", "`\r\n`", []string{"\n"}},
-		{"shipped default", "\n!?;。；！？", []string{"\n", "!", "?", ";", "。", "；", "！", "？"}},
-		{"chinese", "。；", []string{"。", "；"}},
-		{"mixed order equal length", "`##`#\n", []string{"##", "#", "\n"}},
-		{"empty backticks bare", "``", []string{"`"}},
-		{"double space bare dedupe", "  ", []string{" "}},
-		{"wrapped double space", "`  `", []string{"  "}},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ParseDelimiterField(tc.field)
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("ParseDelimiterField(%q) = %#v, want %#v", tc.field, got, tc.want)
-			}
-		})
 	}
 }
 
@@ -122,7 +69,7 @@ func TestCompileDelimiterPattern(t *testing.T) {
 }
 
 func TestCompileDelimiterPatternShippedDefault(t *testing.T) {
-	pat := CompileDelimiterPattern(ParseDelimiterField("\n!?;。；！？"))
+	pat := CompileDelimiterPattern([]string{"\n", "!", "?", ";", "。", "；", "！", "？"})
 	if pat == nil {
 		t.Fatal("expected pattern")
 	}
@@ -137,7 +84,7 @@ func TestCompileDelimiterPatternShippedDefault(t *testing.T) {
 }
 
 func TestCompileDelimiterPatternCaseSensitive(t *testing.T) {
-	pat := CompileDelimiterPattern(ParseDelimiterField("a"))
+	pat := CompileDelimiterPattern([]string{"a"})
 	parts := regexp.MustCompile("("+pat.String()+")").Split("AaBb", -1)
 	// Split removes matches; "A" + "Bb" with "a" consumed.
 	if len(parts) < 2 {
@@ -172,6 +119,130 @@ func TestCompileDelimiterListPattern(t *testing.T) {
 	patMeta := CompileDelimiterListPattern([]string{"`a`", "`a.b`"})
 	if patMeta.String() != `a\.b|a` {
 		t.Errorf("got pattern %q, want %q", patMeta.String(), `a\.b|a`)
+	}
+}
+
+func TestCompileDelimiterPatternListKeepBare(t *testing.T) {
+	// keepBare=true (children_delimiters): bare entries stay active and
+	// backtick entries contribute their inner content, all QuoteMeta'd and
+	// sorted longest-first by rune count.
+	pat := CompileDelimiterPatternList([]string{". ", "`###`", "#"}, true)
+	if pat == nil {
+		t.Fatal("expected a pattern from mixed bare + wrapped entries")
+	}
+	want := `###|\. |#`
+	if got := pat.String(); got != want {
+		t.Errorf("pattern = %q, want %q", got, want)
+	}
+	// Backtick is stripped: splitting on "###" matches the inner content, not
+	// the literal wrapped token.
+	if got := pat.FindString("a###b"); got != "###" {
+		t.Errorf("FindString(a###b) = %q, want %q", got, "###")
+	}
+	// Bare ". " stays active and is matched as the meta-escaped ". ".
+	if got := pat.FindString("alpha. beta"); got != ". " {
+		t.Errorf("FindString(alpha. beta) = %q, want %q", got, ". ")
+	}
+}
+
+func TestCompileDelimiterPatternListKeepBareFalse(t *testing.T) {
+	// keepBare=false must equal CompileDelimiterListPattern: bare entries
+	// ignored, only wrapped inner content participates.
+	if CompileDelimiterPatternList([]string{"\n", "!"}, false) != nil {
+		t.Fatal("bare entries should be ignored when keepBare=false")
+	}
+	pat := CompileDelimiterPatternList([]string{"`##`", "`#`"}, false)
+	if pat == nil {
+		t.Fatal("expected pattern from wrapped entries")
+	}
+	if got := pat.FindString("###"); got != "##" {
+		t.Errorf("got %q want ##", got)
+	}
+}
+
+func TestCompileDelimiterPatternListDedup(t *testing.T) {
+	// Equivalent quoted + bare delimiters must not produce a redundant
+	// alternation. ["`#`", "#"] with keepBare=true resolves to the single
+	// active value `#`.
+	pat := CompileDelimiterPatternList([]string{"`#`", "#"}, true)
+	if pat == nil {
+		t.Fatal("expected a pattern from equivalent quoted + bare entries")
+	}
+	if got := pat.String(); got != "#" {
+		t.Errorf("dedup pattern = %q, want %q", got, "#")
+	}
+	// Repeated wrapped entries are also deduplicated.
+	pat = CompileDelimiterPatternList([]string{"`##`", "`##`", "`#`"}, false)
+	if pat == nil {
+		t.Fatal("expected a pattern from wrapped entries")
+	}
+	if got := pat.String(); got != `##|#` {
+		t.Errorf("dedup pattern = %q, want %q", got, `##|#`)
+	}
+}
+
+func TestCompileDelimiterPatternListDedupOrderIndependent(t *testing.T) {
+	// Dedup must hold regardless of input order: wrapped entries key on their
+	// inner content while bare entries key on themselves, so a wrapped/bare
+	// collision collapses no matter which appears first.
+	pat := CompileDelimiterPatternList([]string{"#", "`#`"}, true)
+	if pat == nil {
+		t.Fatal("expected a pattern from equivalent bare + quoted entries")
+	}
+	if got := pat.String(); got != "#" {
+		t.Errorf("dedup pattern = %q, want %q", got, "#")
+	}
+	// Multiple collisions across mixed order collapse to one alternation.
+	pat = CompileDelimiterPatternList([]string{"`#`", "#", "`#`", "#"}, true)
+	if got := pat.String(); got != "#" {
+		t.Errorf("dedup pattern = %q, want %q", got, "#")
+	}
+	// Wrapped duplicates deduplicate no matter where they appear.
+	pat = CompileDelimiterPatternList([]string{"`##`", "`#`", "`##`"}, false)
+	if got := pat.String(); got != `##|#` {
+		t.Errorf("dedup pattern = %q, want %q", got, `##|#`)
+	}
+}
+
+func TestCompileDelimiterListPatternDedup(t *testing.T) {
+	// CompileDelimiterListPattern is the main-delimiter live path
+	// (keepBare=false); it must propagate the same dedup so the main
+	// delimiters list cannot accumulate redundant alternations either.
+	pat := CompileDelimiterListPattern([]string{"`##`", "`##`", "`#`"})
+	if pat == nil {
+		t.Fatal("expected a pattern from wrapped entries")
+	}
+	if got := pat.String(); got != `##|#` {
+		t.Errorf("dedup pattern = %q, want %q", got, `##|#`)
+	}
+	// Bare entries are ignored on this path, so only the wrapped inner content
+	// participates and is deduplicated.
+	pat = CompileDelimiterListPattern([]string{"`#`", "#"})
+	if got := pat.String(); got != "#" {
+		t.Errorf("dedup pattern = %q, want %q", got, "#")
+	}
+}
+
+func TestCompileDelimiterPatternListChildrenPrefixOrder(t *testing.T) {
+	// keepBare=true (children_delimiters): a longer delimiter must win over a
+	// shorter prefix inside it because entries are sorted longest-first by
+	// rune count.
+	pat := CompileDelimiterPatternList([]string{"##", "#"}, true)
+	if pat == nil {
+		t.Fatal("expected a pattern from bare prefix entries")
+	}
+	if got := pat.String(); got != `##|#` {
+		t.Errorf("pattern = %q, want %q", got, `##|#`)
+	}
+	// Longest-first ordering ensures "###" splits on "##", not "#".
+	if got := pat.FindString("a###b"); got != "##" {
+		t.Errorf("FindString(a###b) = %q, want %q", got, "##")
+	}
+	// Multi-byte delimiter ordering is by rune count, not byte length:
+	// "###" (3 runes) must be tried before "。" (1 rune).
+	pat = CompileDelimiterPatternList([]string{"。", "###"}, true)
+	if got := pat.String(); got != `###|。` {
+		t.Errorf("pattern = %q, want %q", got, `###|。`)
 	}
 }
 

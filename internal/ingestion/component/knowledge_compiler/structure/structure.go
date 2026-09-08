@@ -87,7 +87,6 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	perBatch := make([][]common.Product, len(batches))
 	jobs := make([]func() error, 0, len(batches))
 	for i, batch := range batches {
-		i, batch := i, batch
 		jobs = append(jobs, func() error {
 			packed, batchIDs := PackBatch(batch)
 			if len(batchIDs) == 0 {

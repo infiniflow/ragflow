@@ -39,19 +39,31 @@ var (
 // timeouts, and a hard size cap that rejects (rather than truncates) oversized
 // bodies.
 func FetchRemoteFileSafely(ctx context.Context, rawURL string, maxSize int64) ([]byte, http.Header, string, error) {
+	return FetchRemoteFileSafelyWithTimeout(ctx, rawURL, maxSize, 10*time.Second)
+}
+
+// FetchRemoteFileSafelyWithTimeout downloads rawURL with a caller-selected timeout.
+func FetchRemoteFileSafelyWithTimeout(ctx context.Context, rawURL string, maxSize int64, timeout time.Duration) ([]byte, http.Header, string, error) {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
 	currentURL := rawURL
 	for redirects := 0; redirects < 10; redirects++ {
 		hostname, resolvedIP, err := AssertURLSafe(currentURL)
 		if err != nil {
 			return nil, nil, "", err
 		}
-		client := PinnedHTTPClient(hostname, resolvedIP, 10*time.Second)
+		client := PinnedHTTPClient(hostname, resolvedIP, timeout)
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		}
 
 		// codeql[go/request-forgery] False positive: the loop above
-		resp, err := client.Get(currentURL) // #nosec G107
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, currentURL, nil)
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("failed to create request: %w", err)
+		}
+		resp, err := client.Do(req) // `#nosec` G107
 		if err != nil {
 			return nil, nil, "", fmt.Errorf("failed to fetch URL: %w", err)
 		}
@@ -98,7 +110,7 @@ func FetchRemoteFileSafely(ctx context.Context, rawURL string, maxSize int64) ([
 
 // NormalizeUploadInfoContent normalizes an uploaded file's filename, content
 // type, and content bytes: detects PDF by magic bytes, converts HTML to
-// readable markdown, and fixes the filename extension.
+// readable Markdown, and fixes the filename extension.
 func NormalizeUploadInfoContent(filename, contentType string, data []byte) (string, string, []byte) {
 	lowerCT := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
 	if lowerCT == "" {

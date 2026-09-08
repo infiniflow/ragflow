@@ -175,7 +175,7 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 	// Database
 	databaseType := globalConfig.DatabaseType()
 	switch databaseType {
-	case "mysql":
+	case "mysql", "oceanbase":
 		mysqlConfig := globalConfig.GetMySQLConfig()
 		exportedMySQLConfigs := mysqlConfig.ExportConfigs()
 		allConfigs = append(allConfigs, exportedMySQLConfigs)
@@ -194,6 +194,12 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 		infinityConfig := globalConfig.GetInfinityConfig()
 		exportedInfinityConfigs := infinityConfig.ExportConfigs()
 		allConfigs = append(allConfigs, exportedInfinityConfigs)
+	case "oceanbase":
+		oceanBaseConfig := globalConfig.GetOceanBaseConfig()
+		allConfigs = append(allConfigs, oceanBaseConfig.ExportConfigs())
+	case "seekdb":
+		seekDBConfig := globalConfig.GetSeekDBConfig()
+		allConfigs = append(allConfigs, seekDBConfig.ExportConfigs())
 	default:
 		return nil, fmt.Errorf("not supported doc engine: %s", docEngineType)
 	}

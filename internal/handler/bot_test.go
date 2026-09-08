@@ -184,13 +184,16 @@ func TestChatbotInfo_HasTavilyKey(t *testing.T) {
 	if resp.Data["has_tavily_key"] != true {
 		t.Errorf("has_tavily_key = %v, want true", resp.Data["has_tavily_key"])
 	}
+	if resp.Data["has_web_search_provider"] != true {
+		t.Errorf("has_web_search_provider = %v, want true", resp.Data["has_web_search_provider"])
+	}
 }
 
 // TestChatbotInfo_ForeignTenant covers criterion 15.
 func TestChatbotInfo_ForeignTenant(t *testing.T) {
 	stub := &stubBotService{
 		chatbotInfoFn: func(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
-			return "", "", "", "", false, common.CodeDataError, errors.New("Authentication error: no access to this chatbot!")
+			return "", "", "", "", false, common.CodeDataError, errors.New("authentication error: no access to this chatbot")
 		},
 	}
 	r := botTestEngine(stub)
@@ -484,7 +487,7 @@ func TestAgentbotCompletion_URLBoundAgentID(t *testing.T) {
 func TestAgentbotCompletion_NoAccess(t *testing.T) {
 	stub := &stubBotService{
 		agentbotCompleteFn: func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
-			return nil, common.CodeDataError, errors.New("Can't find agent by ID: a1")
+			return nil, common.CodeDataError, errors.New("can't find agent by ID: a1")
 		},
 	}
 	r := botTestEngine(stub)
@@ -497,8 +500,8 @@ func TestAgentbotCompletion_NoAccess(t *testing.T) {
 	if resp.Code != 102 {
 		t.Errorf("code = %d, want 102", resp.Code)
 	}
-	if !strings.Contains(resp.Message, "Can't find agent") {
-		t.Errorf("message = %q, want contains 'Can't find agent'", resp.Message)
+	if !strings.Contains(resp.Message, "can't find agent") {
+		t.Errorf("message = %q, want contains 'can't find agent'", resp.Message)
 	}
 }
 
@@ -610,7 +613,7 @@ func TestAgentbotInputs_MissingBeginComponent(t *testing.T) {
 func TestAgentbotInputs_NotFound(t *testing.T) {
 	stub := &stubBotService{
 		agentbotInputsFn: func(ctx context.Context, tenantID, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error) {
-			return "", "", "", "", nil, common.CodeDataError, errors.New("Can't find agent by ID: a1")
+			return "", "", "", "", nil, common.CodeDataError, errors.New("can't find agent by ID: a1")
 		},
 	}
 	r := botTestEngine(stub)
@@ -623,8 +626,8 @@ func TestAgentbotInputs_NotFound(t *testing.T) {
 	if resp.Code != 102 {
 		t.Errorf("code = %d, want 102", resp.Code)
 	}
-	if !strings.Contains(resp.Message, "Can't find agent") {
-		t.Errorf("message = %q, want contains 'Can't find agent'", resp.Message)
+	if !strings.Contains(resp.Message, "can't find agent") {
+		t.Errorf("message = %q, want contains 'can't find agent'", resp.Message)
 	}
 }
 
@@ -658,10 +661,9 @@ func TestDownloadAttachment_OK(t *testing.T) {
 	}
 	cd := w.Header().Get("Content-Disposition")
 	// Mirrors Python apply_download_file_response_headers: with no
-	// explicit ?filename= the disposition is a plain attachment (Go
-	// backfills the empty name with "file" via SanitizeContentDispositionFilename).
-	if !strings.Contains(cd, "attachment") || !strings.Contains(cd, `filename="file"`) {
-		t.Errorf("Content-Disposition = %q, want attachment; filename=\"file\"", cd)
+	// explicit ?filename= the disposition is a plain attachment.
+	if cd != "attachment" {
+		t.Errorf("Content-Disposition = %q, want attachment", cd)
 	}
 }
 
@@ -1049,14 +1051,15 @@ func TestDownloadAttachment_Unauth(t *testing.T) {
 			c.Abort()
 			return
 		}
-		if u, code, err := stub.GetUserByToken(c.Request.Context(), auth); err != nil || code != common.CodeSuccess {
+		u, code, err := stub.GetUserByToken(c.Request.Context(), auth)
+		if err != nil || code != common.CodeSuccess {
 			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "Invalid auth credentials")
 			c.Abort()
 			return
-		} else {
-			c.Set("user", u)
-			c.Next()
 		}
+
+		c.Set("user", u)
+		c.Next()
 	})
 	g.GET("/attachments/:attachment_id/download", h.DownloadAttachment)
 
@@ -1321,7 +1324,7 @@ func TestGetAgentbotLogs_DeniesInaccessibleAgent(t *testing.T) {
 
 	h := NewBotHandler(nil)
 	h.botService = &stubBotService{agentbotLogsFn: func(context.Context, string, string, string) (map[string]any, common.ErrorCode, error) {
-		return nil, common.CodeDataError, errors.New("Can't find agent by ID: agent-b")
+		return nil, common.CodeDataError, errors.New("can't find agent by ID: agent-b")
 	}}
 	h.GetAgentbotLogs(c)
 
@@ -1333,7 +1336,7 @@ func TestGetAgentbotLogs_DeniesInaccessibleAgent(t *testing.T) {
 	if resp.Code != int(common.CodeDataError) {
 		t.Errorf("code = %d, want %d", resp.Code, common.CodeDataError)
 	}
-	if !strings.Contains(resp.Message, "Can't find agent") {
+	if !strings.Contains(resp.Message, "can't find agent") {
 		t.Errorf("message = %q, want an access denial", resp.Message)
 	}
 }

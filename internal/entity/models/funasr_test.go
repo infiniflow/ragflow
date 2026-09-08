@@ -1,7 +1,6 @@
 package models
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -57,7 +56,7 @@ func TestFunASRTranscribeAudioWithoutAPIKey(t *testing.T) {
 	modelName := " fun-asr-nano "
 	file := writeFunASRTestAudio(t)
 	resp, err := newFunASRForTest(srv.URL).TranscribeAudio(
-		context.Background(), &modelName, &file, &APIConfig{}, nil, nil,
+		t.Context(), &modelName, &file, &APIConfig{}, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("TranscribeAudio: %v", err)
@@ -81,7 +80,7 @@ func TestFunASRTranscribeAudioRequiresModelName(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := newFunASRForTest("http://unused").TranscribeAudio(
-				context.Background(), tc.modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil,
+				t.Context(), tc.modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil,
 			)
 			if err == nil || !strings.Contains(err.Error(), "model name is missing") {
 				t.Fatalf("expected missing-model-name error, got %v", err)
@@ -106,12 +105,12 @@ func TestFunASRListModelsWithoutAPIKey(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	models, err := newFunASRForTest(srv.URL).ListModels(context.Background(), &APIConfig{})
+	models, err := newFunASRForTest(srv.URL).ListModels(t.Context(), &APIConfig{})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if len(models) != 1 || models[0].Name != "fun-asr-nano@funasr" {
-		t.Fatalf("models=%v, want fun-asr-nano@funasr", models)
+	if len(models) != 1 || models[0].Name != "fun-asr-nano" {
+		t.Fatalf("models=%v, want fun-asr-nano", models)
 	}
 }
 
@@ -127,7 +126,7 @@ func TestFunASRListModelsSendsAuthWhenProvided(t *testing.T) {
 
 	apiKey := " secret "
 	if _, err := newFunASRForTest(srv.URL).ListModels(
-		context.Background(), &APIConfig{ApiKey: &apiKey},
+		t.Context(), &APIConfig{ApiKey: &apiKey},
 	); err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}

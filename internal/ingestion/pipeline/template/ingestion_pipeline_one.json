@@ -179,19 +179,25 @@
                 "obj": {
                     "component_name": "Extractor",
                     "params": {
-                        "field_name": "",
-                        "outputs": {
-                            "chunks": {
-                                "type": "Array<Object>",
-                                "value": []
-                            }
-                        },
-                        "auto_keywords": 0,
-                        "auto_questions": 0,
                         "llm_id": "",
-                        "auto_tags": 0,
-                        "enable_metadata": 0,
-                        "metadata": []
+                        "keywords": {
+                            "top_n": 0
+                        },
+                        "questions": {
+                            "top_n": 0
+                        },
+                        "tags": {
+                            "top_n": 0,
+                            "tag_file_id": ""
+                        },
+                        "summary": {
+                            "enabled": false
+                        },
+                        "metadata": {
+                            "enabled": false,
+                            "metadata": [],
+                            "built_in_metadata": []
+                        }
                     }
                 }
             }
@@ -329,7 +335,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
@@ -357,7 +363,7 @@
                             }
                         },
                         "label": "OneChunker",
-                        "name": "One Chunker_0"
+                        "name": "One Chunker"
                     },
                     "id": "OneChunker:DryDrinksVisit",
                     "measured": {
@@ -385,7 +391,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_0"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:FrankWeeksListen",
                     "measured": {
@@ -409,7 +415,7 @@
                     },
                     "data": {
                         "label": "Extractor",
-                        "name": "Extractor_0"
+                        "name": "Extractor"
                     }
                 }
             ]

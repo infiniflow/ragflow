@@ -48,6 +48,7 @@ var (
 // applied by callers (see resolveCompress) so that "not set" can be distinguished
 // from "explicitly false" via the *bool LogConfig.Compress field.
 type FileOutput struct {
+	Filename   string
 	Path       string
 	MaxSize    int
 	MaxBackups int
@@ -139,17 +140,15 @@ func InitLogger(level string, file FileOutput, serviceName string) error {
 	}
 
 	syncers := []zapcore.WriteSyncer{zapcore.AddSync(os.Stdout)}
-	if file.Path != "" {
-		ljLogger := &lumberjack.Logger{
-			Filename:   filepath.Join("logs", file.Path),
-			MaxSize:    maxSize,
-			MaxBackups: maxBackups,
-			MaxAge:     maxAge,
-			Compress:   file.Compress,
-			LocalTime:  true,
-		}
-		syncers = append(syncers, zapcore.AddSync(ljLogger))
+	ljLogger := &lumberjack.Logger{
+		Filename:   filepath.Join(file.Path, file.Filename),
+		MaxSize:    maxSize,
+		MaxBackups: maxBackups,
+		MaxAge:     maxAge,
+		Compress:   file.Compress,
+		LocalTime:  true,
 	}
+	syncers = append(syncers, zapcore.AddSync(ljLogger))
 
 	core := zapcore.NewCore(
 		zapcore.NewConsoleEncoder(encoderConfig),
@@ -158,9 +157,15 @@ func InitLogger(level string, file FileOutput, serviceName string) error {
 	)
 
 	if serviceName != "" {
-		Logger = zap.New(core, zap.AddCallerSkip(1)).Named(serviceName)
+		Logger = zap.New(core,
+			zap.Fields(zap.Int("pid", os.Getpid())),
+			zap.AddCallerSkip(1),
+		).Named(serviceName)
 	} else {
-		Logger = zap.New(core, zap.AddCallerSkip(1))
+		Logger = zap.New(core,
+			zap.Fields(zap.Int("pid", os.Getpid())),
+			zap.AddCallerSkip(1),
+		)
 	}
 	Sugar = Logger.Sugar()
 

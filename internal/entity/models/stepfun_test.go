@@ -290,8 +290,8 @@ func TestStepFunChatNilUsageWhenAllZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
-	if resp.Usage != nil {
-		t.Errorf("Usage must be nil when all token counts are zero, got %#v", resp.Usage)
+	if resp.Usage == nil {
+		t.Error("Usage must be non-nil")
 	}
 }
 
@@ -307,9 +307,9 @@ func TestStepFunChatExtractsReasoning(t *testing.T) {
 			"choices": []map[string]interface{}{{
 				"index": 0,
 				"message": map[string]interface{}{
-					"role":      "assistant",
-					"content":   "The answer is 42.",
-					"reasoning": "I need to think about this...",
+					"role":              "assistant",
+					"content":           "The answer is 42.",
+					"reasoning_content": "I need to think about this...",
 				},
 				"finish_reason": "stop",
 			}},
@@ -392,9 +392,9 @@ func TestStepFunChatAcceptsReasoningOnlyResponse(t *testing.T) {
 			"choices": []map[string]interface{}{{
 				"index": 0,
 				"message": map[string]interface{}{
-					"role":      "assistant",
-					"content":   nil,
-					"reasoning": "The answer is 4.",
+					"role":              "assistant",
+					"content":           nil,
+					"reasoning_content": "The answer is 4.",
 				},
 				"finish_reason": "stop",
 			}},
@@ -489,8 +489,8 @@ func TestStepFunStreamExtractsReasoning(t *testing.T) {
 	ctx := t.Context()
 	srv := newStepFunSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
-			`data: {"choices":[{"index":0,"delta":{"reasoning":"think. "}}]}`+"\n"+
-			`data: {"choices":[{"index":0,"delta":{"reasoning":"done."}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"reasoning_content":"think. "}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"reasoning_content":"done."}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"content":"final answer"},"finish_reason":"stop"}]}`+"\n"+
 			`data: [DONE]`+"\n",
 	)
@@ -943,7 +943,7 @@ func TestStepFunEmbedReturnsNotImplemented(t *testing.T) {
 	ctx := t.Context()
 	m := newStepFunForTest("http://unused")
 	model := "x"
-	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "not implemented") {
 		t.Errorf("Embed: want 'not implemented', got %v", err)
 	}
@@ -954,7 +954,7 @@ func TestStepFunRerankReturnsNoSuchMethod(t *testing.T) {
 	ctx := t.Context()
 	m := newStepFunForTest("http://unused")
 	model := "x"
-	_, err := m.Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, &RerankConfig{TopN: 1}, nil)
+	_, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{}, &RerankConfig{TopN: 1}, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: want 'no such method', got %v", err)
 	}

@@ -30,7 +30,7 @@ import pytest
 
 from common import settings
 from common.metadata_utils import meta_filter
-from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.doc_metadata_service import DocMetadataService, METADATA_ID_BATCH_SIZE
 from api.db.db_models import DB
 
 pytestmark = pytest.mark.p2
@@ -49,6 +49,7 @@ class _FakeDocStoreConn:
     """
 
     def __init__(self, total: int, canon_zero_count: int):
+        self.conditions = []
         self._docs = []
         for i in range(total):
             canon = "0" if i < canon_zero_count else "1"
@@ -58,8 +59,13 @@ class _FakeDocStoreConn:
         return True
 
     def search(self, select_fields, highlight_fields, condition, match_expressions, order_by, offset, limit, index_names, knowledgebase_ids, agg_fields=None, rank_feature=None):
-        page = self._docs[offset : offset + limit]
-        return {"hits": {"hits": page}}
+        self.conditions.append(condition.copy())
+        docs = self._docs
+        if condition.get("id"):
+            doc_ids = set(condition["id"])
+            docs = [doc for doc in docs if doc["_id"] in doc_ids]
+        page = docs[offset : offset + limit]
+        return {"hits": {"hits": page, "total": {"value": len(docs)}}}
 
 
 def test_get_flatted_meta_by_kbs_returns_every_document_beyond_pushdown_cap(monkeypatch):
@@ -91,3 +97,23 @@ def test_manual_not_in_filter_matches_every_document_beyond_pushdown_cap(monkeyp
     doc_ids = meta_filter(metas, [{"key": "canon", "op": "not in", "value": ["0"]}])
 
     assert len(doc_ids) == TOTAL_DOCS - CANON_ZERO_COUNT
+
+
+def test_get_metadata_for_documents_batches_large_id_filters(monkeypatch):
+    total = METADATA_ID_BATCH_SIZE * 2 + 1
+    store = _FakeDocStoreConn(total, 0)
+    monkeypatch.setattr(DB, "connect", lambda *args, **kwargs: None)
+    monkeypatch.setattr(DB, "close", lambda *args, **kwargs: None)
+    monkeypatch.setattr(settings, "docStoreConn", store)
+    monkeypatch.setattr(settings, "DOC_ENGINE_INFINITY", False)
+    fake_kb = SimpleNamespace(tenant_id="tenant-1")
+    monkeypatch.setattr("api.db.services.doc_metadata_service.Knowledgebase.get_by_id", lambda kb_id: fake_kb)
+
+    doc_ids = [f"doc-{index}" for index in range(total)]
+    metadata = DocMetadataService.get_metadata_for_documents(doc_ids, "kb-1")
+
+    filtered_conditions = [condition for condition in store.conditions if "id" in condition]
+    requested_batches = {tuple(condition["id"]) for condition in filtered_conditions}
+    assert len(metadata) == total
+    assert len(requested_batches) == 3
+    assert all(len(condition["id"]) <= METADATA_ID_BATCH_SIZE for condition in filtered_conditions)

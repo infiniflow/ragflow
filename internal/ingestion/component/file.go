@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// File ingestion component (Phase 2.1) — port of python `rag/flow/file.py`.
+// Package component implements File ingestion component (Phase 2.1) — port of python `rag/flow/file.py`.
 //
 // SCOPE (honest):
 //

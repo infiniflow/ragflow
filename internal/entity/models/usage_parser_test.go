@@ -131,7 +131,7 @@ func TestExtractOpenAIStreamUsage(t *testing.T) {
 func TestExtractToken(t *testing.T) {
 	m := map[string]any{
 		"a": float64(1),
-		"b": int(2),
+		"b": 2,
 		"c": int64(3),
 	}
 

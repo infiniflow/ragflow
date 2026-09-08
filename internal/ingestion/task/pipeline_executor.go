@@ -19,18 +19,24 @@ package task
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/utility"
+	"sort"
 	"strings"
 	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/component/globals"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
 	"gorm.io/gorm"
 )
@@ -46,6 +52,12 @@ type PipelineResult struct {
 	ChunkCount       int
 	TokenConsumption int
 	Duration         float64 // pipeline wall-clock seconds
+	// DocName, BuiltInMetadataConfig and AutoMetadataEnabled carry what the
+	// document-state finalizer needs to apply built-in metadata
+	// (update_time / file_name), mirroring Python apply_built_in_metadata.
+	DocName               string
+	BuiltInMetadataConfig []any
+	AutoMetadataEnabled   bool
 	// MessageID is the polling key for the debug-run log. The front-end reads
 	// it from the run response and polls GET /agents/:id/logs/:message_id to
 	// render progress; it is empty for non-debug (persist) runs.
@@ -187,7 +199,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if pipelineDSL != "" {
-		s.recordPipelineLog(ctx, dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "done")
+		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "")
 	}
 
 	return result, nil
@@ -198,13 +210,13 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 // performs no DB/index writes — the embedding vectors already computed by the
 // pipeline run are left on the chunks. This keeps debug runs side-effect free.
 func (s *PipelineExecutor) collectDebugOutput(ctx context.Context, pipelineOutput map[string]any, start time.Time) (*PipelineResult, error) {
-	chunks := NormalizeChunks(pipelineOutput)
+	chunks := indexdoc.NormalizeChunks(pipelineOutput)
 	return &PipelineResult{
 		DocID:            s.taskCtx.Doc.ID,
 		KbID:             s.taskCtx.Doc.KbID,
 		Chunks:           chunks,
-		ChunkCount:       countDistinctChunkIDs(chunks),
-		TokenConsumption: GetEmbeddingTokenConsumption(pipelineOutput),
+		ChunkCount:       countOriginalChunkIDs(chunks),
+		TokenConsumption: indexdoc.GetEmbeddingTokenConsumption(pipelineOutput),
 		Duration:         time.Since(start).Seconds(),
 	}, nil
 }
@@ -217,16 +229,15 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 
-	chunks := NormalizeChunks(pipelineOutput)
+	chunks := indexdoc.NormalizeChunks(pipelineOutput)
 	if len(chunks) == 0 {
 		return nil, nil
 	}
 
-	embeddingTokenConsumption := GetEmbeddingTokenConsumption(pipelineOutput)
-	metadata, err := ProcessChunksForPipeline(
+	embeddingTokenConsumption := indexdoc.GetEmbeddingTokenConsumption(pipelineOutput)
+	metadata, err := indexdoc.ProcessChunksForPipeline(
 		chunks,
 		s.taskCtx.Doc.ID,
-		s.taskCtx.Doc.KbID,
 		*s.taskCtx.Doc.Name,
 		time.Now(),
 	)
@@ -234,7 +245,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 
-	tableMeta := AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
+	tableMeta := indexdoc.AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
 	if tableMeta != nil {
 		if metadata == nil {
 			metadata = make(map[string]any)
@@ -250,11 +261,38 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// KnowledgeCompiler component and stamped with `compile_kwd`) are persisted
 	// as available_int=0: invisible to the normal retriever until the dataset-level
 	// post-processing consumer (§11) merges them into available_int=1 products.
-	// Ordinary source chunks stay available_int=1 (the index default).
+	// Ordinary source chunks stay available_int=1 (the index default) unless the
+	// document itself is disabled (status=0).
 	markCompiledProductsHidden(chunks)
+	// Reload status immediately before write: LoadFromIngestionTask copied a
+	// snapshot that may be stale if BatchUpdateDocumentStatus ran mid-pipeline.
+	docStatus := s.taskCtx.Doc.Status
+	if dao.DB != nil {
+		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, s.taskCtx.Doc.ID); err == nil && persisted != nil {
+			docStatus = persisted.Status
+			s.taskCtx.Doc.Status = persisted.Status
+		} else if err != nil {
+			common.Warn(fmt.Sprintf("failed to reload document %s status before availability stamp: %v", s.taskCtx.Doc.ID, err))
+		}
+	}
+	applyDocumentAvailability(chunks, docStatus)
 
+	oldCompiledProductIDs, oldCompiledVariants, err := s.loadDocumentCompiledState(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.indexWriter.Write(ctx, chunks); err != nil {
 		return nil, err
+	}
+	if err := s.reconcileDocumentCompiledProducts(ctx, oldCompiledProductIDs, chunks); err != nil {
+		return nil, err
+	}
+	activeStates, err := wikiActiveStates(pipelineOutput)
+	if err != nil {
+		return nil, err
+	}
+	if err := putWikiActiveStates(ctx, engine.Get(), activeStates); err != nil {
+		return nil, fmt.Errorf("persist Wiki active MAP state: %w", err)
 	}
 
 	// All chunks are now persisted. Notify the dataset-level post-processing consumer
@@ -263,31 +301,120 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// (available_int=1). The notification is sent only after a successful persist
 	// and is best-effort / non-fatal — a delivery failure is logged but does not
 	// fail the pipeline task.
-	if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, 0); err != nil {
-		common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
+	//
+	// The variants passed to PublishCompleted are the union of the compile types
+	// in the previous and current document generations. They are derived from the
+	// authoritative `compilation_template_kind_kwd` the KnowledgeCompiler
+	// component stamps on each compiled product (the resolved template's kind →
+	// KindToVariant, O2a whitelist). Keeping the previous types lets the dataset
+	// consumer retract stale merged products when a template is removed.
+	eventVariants := mergeCompiledVariants(oldCompiledVariants, compiledVariants(chunks))
+	if len(eventVariants) > 0 {
+		if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, eventVariants); err != nil {
+			common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
+		}
 	}
 
-	chunkCount := countDistinctChunkIDs(chunks)
+	// Compilation products are derived artifacts and must not inflate the
+	// document's source chunk counter shown by the document list API.
+	chunkCount := countOriginalChunkIDs(chunks)
+
+	builtInMetadata, autoMetaEnabled := builtInMetadataFromParserConfig(
+		s.taskCtx.Doc.ParserConfig,
+	)
 
 	return &PipelineResult{
-		DocID:            s.taskCtx.Doc.ID,
-		KbID:             s.taskCtx.Doc.KbID,
-		Metadata:         metadata,
-		ChunkCount:       chunkCount,
-		TokenConsumption: embeddingTokenConsumption,
-		Duration:         time.Since(start).Seconds(),
+		DocID:                 s.taskCtx.Doc.ID,
+		KbID:                  s.taskCtx.Doc.KbID,
+		Metadata:              metadata,
+		ChunkCount:            chunkCount,
+		TokenConsumption:      embeddingTokenConsumption,
+		Duration:              time.Since(start).Seconds(),
+		DocName:               docNameValue(s.taskCtx.Doc.Name),
+		BuiltInMetadataConfig: builtInMetadata,
+		AutoMetadataEnabled:   autoMetaEnabled,
 	}, nil
 }
 
-// countDistinctChunkIDs returns the number of distinct chunk IDs in the slice.
+// builtInMetadataFromParserConfig extracts the built-in metadata config
+// (update_time / file_name) and whether auto-metadata is enabled from the
+// component-scoped Extractor node's modular metadata config. Legacy flat
+// fields (enable_metadata / metadata_config / built_in_metadata at either the
+// top level or on the node) are intentionally not supported.
+func builtInMetadataFromParserConfig(parserConfig entity.JSONMap) ([]any, bool) {
+	var extractorKeys []string
+	for k := range parserConfig {
+		lower := strings.ToLower(k)
+		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
+			extractorKeys = append(extractorKeys, k)
+		}
+	}
+	sort.Strings(extractorKeys)
+
+	for _, k := range extractorKeys {
+		nodeRaw := parserConfig[k]
+		if node, ok := nodeRaw.(map[string]any); ok {
+			if metaObj, ok := node["metadata"].(map[string]any); ok {
+				arr := metadataFieldSlice(metaObj["built_in_metadata"])
+				return arr, parserConfigBool(metaObj["enabled"])
+			}
+		}
+	}
+	return nil, false
+}
+
+// metadataFieldSlice normalizes a built_in_metadata / metadata value that may
+// arrive as []interface{} (DB round-trip) or []map[string]interface{} (in-memory
+// construction) into a []any.
+func metadataFieldSlice(value any) []any {
+	if list, ok := value.([]any); ok {
+		return list
+	}
+	if list, ok := value.([]map[string]any); ok {
+		out := make([]any, 0, len(list))
+		for _, item := range list {
+			out = append(out, item)
+		}
+		return out
+	}
+	return nil
+}
+
+// parserConfigBool coerces a parser_config boolean-like value (bool / number)
+// to bool, mirroring the frontend's enable_metadata handling.
+func parserConfigBool(v any) bool {
+	switch typed := v.(type) {
+	case bool:
+		return typed
+	case float64:
+		return typed > 0
+	case int:
+		return typed > 0
+	}
+	return false
+}
+
+func docNameValue(name *string) string {
+	if name == nil {
+		return ""
+	}
+	return *name
+}
+
+// countOriginalChunkIDs returns the number of distinct source chunk IDs in the
+// slice. Knowledge-compiler products are also emitted as index chunks, but
+// carry compile_kwd and must not be included in the document's chunk_count.
 // After ProcessChunksForPipeline, every chunk carries an "id" field computed
 // from xxhash(text+docID). Chunks with identical text share the same id and
 // the search engine treats them as upserts, so the effective stored chunk count
 // is the number of unique ids — not len(chunks). Mirrors the index-side
 // deduplication that happens at write time.
-func countDistinctChunkIDs(chunks []map[string]any) int {
+func countOriginalChunkIDs(chunks []map[string]any) int {
 	seen := make(map[string]struct{}, len(chunks))
 	for _, ck := range chunks {
+		if _, compiled := ck["compile_kwd"]; compiled {
+			continue
+		}
 		id, _ := ck["id"].(string)
 		if id == "" {
 			continue
@@ -314,27 +441,397 @@ func markCompiledProductsHidden(chunks []map[string]any) {
 	}
 }
 
-func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
+// loadDocumentCompiledState snapshots the previous successful document
+// compiler generation before the new pipeline output is written. Reading first
+// avoids relying on immediate search visibility after a bulk index write.
+func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]string, []string, error) {
+	docEngine := engine.Get()
+	if docEngine == nil || s == nil || s.taskCtx == nil {
+		return nil, nil, nil
+	}
+	const pageSize = 1000
+	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
+	oldIDs := make([]string, 0)
+	oldProducts := make([]map[string]any, 0)
+	for offset := 0; ; offset += pageSize {
+		result, err := docEngine.Search(ctx, &enginetypes.SearchRequest{
+			IndexNames:   []string{indexName},
+			KbIDs:        []string{s.taskCtx.Doc.KbID},
+			Offset:       offset,
+			Limit:        pageSize,
+			SelectFields: []string{"id", "compile_kwd", "compilation_template_kind_kwd"},
+			Filter:       map[string]any{"doc_id": []string{s.taskCtx.Doc.ID}},
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("load document compiler products: %w", err)
+		}
+		if result == nil || len(result.Chunks) == 0 {
+			break
+		}
+		for _, row := range result.Chunks {
+			if strings.TrimSpace(asCompiledKwd(row)) == "" {
+				continue
+			}
+			oldProducts = append(oldProducts, row)
+			if id := strings.TrimSpace(anyString(row["id"])); id != "" {
+				oldIDs = append(oldIDs, id)
+			}
+		}
+		if int64(offset+len(result.Chunks)) >= result.Total {
+			break
+		}
+	}
+	return oldIDs, compiledVariants(oldProducts), nil
+}
+
+// reconcileDocumentCompiledProducts advances the document-level compiler
+// generation only after the new pipeline output has been persisted. Reparse
+// preparation keeps the previous compiled rows so a failed run does not erase
+// the last usable document Wiki; this method removes rows absent from the new
+// successful generation immediately before the dataset completion event.
+func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context, oldIDs []string, chunks []map[string]any) error {
+	docEngine := engine.Get()
+	if docEngine == nil || s == nil || s.taskCtx == nil {
+		return nil
+	}
+	newIDs := make(map[string]struct{})
+	for _, chunk := range chunks {
+		if strings.TrimSpace(asCompiledKwd(chunk)) == "" {
+			continue
+		}
+		if id := strings.TrimSpace(anyString(chunk["id"])); id != "" {
+			newIDs[id] = struct{}{}
+		}
+	}
+	staleIDs := make([]string, 0, len(oldIDs))
+	for _, id := range oldIDs {
+		if _, keep := newIDs[id]; !keep {
+			staleIDs = append(staleIDs, id)
+		}
+	}
+	const pageSize = 1000
+	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
+	for start := 0; start < len(staleIDs); start += pageSize {
+		end := min(start+pageSize, len(staleIDs))
+		if _, err := docEngine.DeleteChunks(ctx, map[string]any{
+			"id":    staleIDs[start:end],
+			"kb_id": s.taskCtx.Doc.KbID,
+		}, indexName, s.taskCtx.Doc.KbID); err != nil {
+			return fmt.Errorf("delete stale document compiler products: %w", err)
+		}
+	}
+	return nil
+}
+
+// applyDocumentAvailability stamps ordinary source chunks with available_int=0
+// when Document.status is "0" (disabled). Disabling before any chunks exist only
+// updates MySQL; without this, later parsing would still write searchable
+// available_int=1 rows. Compiled products (compile_kwd) stay at 0 regardless.
+func applyDocumentAvailability(chunks []map[string]any, status *string) {
+	if status == nil || *status != "0" {
+		return
+	}
+	for _, ck := range chunks {
+		if _, ok := ck["compile_kwd"]; ok {
+			continue
+		}
+		ck["available_int"] = 0
+	}
+}
+
+// compiledVariants returns the sorted, de-duplicated set of compile types a
+// document's compiled products carry. It reads the authoritative
+// `compilation_template_kind_kwd` the KnowledgeCompiler component stamps on each
+// compiled product (the resolved template's kind) and maps it through
+// common.KindToVariant (O2a whitelist: unknown kinds are skipped). Products
+// without an authoritative kind fall back to their `compile_kwd`-derived variant.
+// This surfaces the compiler's runtime variant inference to PublishCompleted so
+// the consumer can route the dataset-level re-compile per compile type.
+func compiledVariants(chunks []map[string]any) []string {
+	seen := map[string]struct{}{}
+	for _, ck := range chunks {
+		if _, ok := ck["compile_kwd"]; !ok {
+			continue
+		}
+		var v kccommon.Variant
+		if kind, ok := ck["compilation_template_kind_kwd"].(string); ok && kind != "" {
+			mapped, err := kccommon.KindToVariant(kind)
+			if err != nil {
+				continue // unknown template kind (O2a): skip, do not mis-route
+			}
+			v = mapped
+		} else {
+			// Fallback on compile_kwd via the shared knowledge_compile mapping
+			// (which folds the inferred structure kinds list/set/hypergraph into
+			// VariantStructure before the KindToVariant whitelist lookup).
+			mapped, err := knowledge_compile.KwdToVariant(asCompiledKwd(ck))
+			if err != nil {
+				continue
+			}
+			v = mapped
+		}
+		if _, dup := seen[string(v)]; dup {
+			continue
+		}
+		seen[string(v)] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// mergeCompiledVariants returns the union of the previous and current
+// document-level compiler variants. A reparse that removes a compiler template
+// still needs to notify the dataset consumer so it can retract stale merged
+// products; a document that never had compiler products produces an empty set
+// and does not wake the dataset consumer at all.
+func mergeCompiledVariants(previous, current []string) []string {
+	seen := make(map[string]struct{}, len(previous)+len(current))
+	for _, variants := range [][]string{previous, current} {
+		for _, variant := range variants {
+			variant = strings.TrimSpace(variant)
+			if variant != "" {
+				seen[variant] = struct{}{}
+			}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	merged := make([]string, 0, len(seen))
+	for variant := range seen {
+		merged = append(merged, variant)
+	}
+	sort.Strings(merged)
+	return merged
+}
+
+// asCompiledKwd extracts the compile_kwd keyword value from a chunk map,
+// tolerating both a bare string and a list-wrapped keyword column from the
+// engine. It returns "" when absent.
+func asCompiledKwd(c map[string]any) string {
+	switch v := c["compile_kwd"].(type) {
+	case string:
+		return v
+	case []string:
+		if len(v) > 0 {
+			return v[0]
+		}
+	case []any:
+		if len(v) > 0 {
+			if s, ok := v[0].(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+func wikiActiveStates(output map[string]any) ([]kccommon.WikiMapActiveState, error) {
+	if output == nil || output["wiki_active_map_states"] == nil {
+		return nil, nil
+	}
+	appendState := func(states []kccommon.WikiMapActiveState, value map[string]any) ([]kccommon.WikiMapActiveState, error) {
+		state := kccommon.WikiMapActiveState{
+			Key:        strings.TrimSpace(anyString(value["key"])),
+			TenantID:   strings.TrimSpace(anyString(value["tenant_id"])),
+			DatasetID:  strings.TrimSpace(anyString(value["dataset_id"])),
+			DocumentID: strings.TrimSpace(anyString(value["document_id"])),
+		}
+		switch payload := value["payload"].(type) {
+		case string:
+			state.Payload = []byte(payload)
+		case []byte:
+			state.Payload = append([]byte(nil), payload...)
+		default:
+			return nil, fmt.Errorf("decode Wiki active MAP state: unsupported payload type %T", value["payload"])
+		}
+		if state.Key == "" || state.TenantID == "" || state.DatasetID == "" || state.DocumentID == "" {
+			return nil, fmt.Errorf("decode Wiki active MAP state: incomplete scope")
+		}
+		return append(states, state), nil
+	}
+
+	switch values := output["wiki_active_map_states"].(type) {
+	case []kccommon.WikiMapActiveState:
+		return append([]kccommon.WikiMapActiveState(nil), values...), nil
+	case []map[string]any:
+		states := make([]kccommon.WikiMapActiveState, 0, len(values))
+		for _, value := range values {
+			var err error
+			states, err = appendState(states, value)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return states, nil
+	case []any:
+		states := make([]kccommon.WikiMapActiveState, 0, len(values))
+		for _, raw := range values {
+			value, ok := raw.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("decode Wiki active MAP state: unsupported item type %T", raw)
+			}
+			var err error
+			states, err = appendState(states, value)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return states, nil
+	default:
+		return nil, fmt.Errorf("decode Wiki active MAP states: unsupported type %T", output["wiki_active_map_states"])
+	}
+}
+
+// PipelineLogInput contains the identifiers and optional snapshots needed to
+// persist a pipeline operation log without constructing a PipelineExecutor.
+type PipelineLogInput struct {
+	TenantID   string
+	KbID       string
+	DocumentID string
+	PipelineID string
+	DSL        string
+	Status     string
+	Document   entity.Document
+}
+
+// RecordPipelineLog persists a pipeline operation log without requiring
+// executor setup. Callers that already know a terminal state should pass it in
+// Status; otherwise the writer falls back to the latest document.run value.
+func RecordPipelineLog(ctx context.Context, db *gorm.DB, input PipelineLogInput) error {
+	return recordPipelineLog(ctx, db, input, dao.NewPipelineOperationLogDAO().Create)
+}
+
+func recordPipelineLog(
+	ctx context.Context,
+	db *gorm.DB,
+	input PipelineLogInput,
+	createFunc func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error,
+) error {
 	var dslMap entity.JSONMap
-	if err := json.Unmarshal([]byte(dsl), &dslMap); err != nil {
-		dslMap = entity.JSONMap{"raw": dsl}
+	if strings.TrimSpace(input.DSL) == "" {
+		dslMap = entity.JSONMap{}
+	} else if err := json.Unmarshal([]byte(input.DSL), &dslMap); err != nil {
+		dslMap = entity.JSONMap{"raw": input.DSL}
+	}
+
+	// The task context contains the document snapshot loaded when the task
+	// started. Reload it here so the operation log reflects the final progress
+	// state written by the progress sink, matching the Python operation-log
+	// creation path.
+	doc := input.Document
+	if doc.ID == "" {
+		doc.ID = input.DocumentID
+		doc.KbID = input.KbID
+	}
+	if db != nil {
+		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, db, input.DocumentID); err == nil && persisted != nil {
+			doc = *persisted
+		} else if err != nil {
+			common.Warn(fmt.Sprintf("failed to reload document %s for pipeline log: %v", input.DocumentID, err))
+		}
+	}
+	if input.KbID == "" {
+		input.KbID = doc.KbID
+	}
+	if input.PipelineID == "" && doc.PipelineID != nil {
+		input.PipelineID = strings.TrimSpace(*doc.PipelineID)
+	}
+	if input.TenantID == "" && db != nil && input.KbID != "" {
+		if kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, input.KbID); err == nil && kb != nil {
+			input.TenantID = kb.TenantID
+		} else if err != nil {
+			return fmt.Errorf("load knowledgebase %s for pipeline log: %w", input.KbID, err)
+		}
+	}
+
+	// Pipeline identity for the log row. A document without a user pipeline
+	// selection runs on a builtin registry pipeline: its canvasID is the
+	// parser_id, not a canvas row, so the log is titled with the document's
+	// parser_id, reuses the document thumbnail as avatar, and leaves
+	// pipeline_id empty. The canvas lookup must not depend on the DSL: terminal
+	// failure/cancel logs are recorded without a DSL, and their pipeline title
+	// and avatar must still resolve from the canvas row (mirrors the Python
+	// operation-log creation path).
+	pipelineTitle := doc.ParserID
+	pipelineAvatar := doc.Thumbnail
+	var pipelineID *string
+	if input.PipelineID != "" {
+		pipelineID = &input.PipelineID
+		if db != nil {
+			if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, input.PipelineID); err == nil && canvas != nil {
+				if canvas.Title != nil {
+					pipelineTitle = *canvas.Title
+				}
+				pipelineAvatar = canvas.Avatar
+			} else if err != nil && !errors.Is(err, dao.ErrUserCanvasNotFound) {
+				common.Warn(fmt.Sprintf("failed to reload pipeline %s for operation log: %v", input.PipelineID, err))
+			}
+		}
+	}
+
+	operationStatus := input.Status
+	if operationStatus == "" && doc.Run != nil && *doc.Run != "" {
+		operationStatus = *doc.Run
+	}
+	statusValue := "1"
+	if doc.Status != nil && *doc.Status != "" {
+		statusValue = *doc.Status
+	}
+	sourceFrom := doc.SourceType
+	if parts := strings.SplitN(sourceFrom, "/", 2); len(parts) > 0 {
+		sourceFrom = parts[0]
+	}
+	documentName := ""
+	if doc.Name != nil {
+		documentName = *doc.Name
 	}
 	log := &entity.PipelineOperationLog{
 		ID:              utility.GenerateUUID(),
-		TenantID:        s.Tenant().ID,
-		KbID:            s.KB().ID,
-		DocumentID:      docID,
-		PipelineID:      &s.canvasID,
+		TenantID:        input.TenantID,
+		KbID:            input.KbID,
+		DocumentID:      input.DocumentID,
+		PipelineID:      pipelineID,
+		PipelineTitle:   &pipelineTitle,
 		TaskType:        string(entity.PipelineTaskTypeParse),
 		DSL:             dslMap,
-		ParserID:        s.taskCtx.Doc.ParserID,
-		DocumentName:    *s.Doc().Name,
-		DocumentSuffix:  s.taskCtx.Doc.Suffix,
-		DocumentType:    s.taskCtx.Doc.Type,
-		SourceFrom:      s.taskCtx.Doc.SourceType,
-		OperationStatus: status,
+		ParserID:        doc.ParserID,
+		DocumentName:    documentName,
+		DocumentSuffix:  doc.Suffix,
+		DocumentType:    doc.Type,
+		SourceFrom:      sourceFrom,
+		Progress:        doc.Progress,
+		ProgressMsg:     doc.ProgressMsg,
+		ProcessBeginAt:  doc.ProcessBeginAt,
+		ProcessDuration: doc.ProcessDuration,
+		OperationStatus: operationStatus,
+		Avatar:          pipelineAvatar,
+		Status:          &statusValue,
 	}
-	if err := s.logCreateFunc(ctx, db, log); err != nil {
+	return createFunc(ctx, db, log)
+}
+
+func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
+	pipelineID := ""
+	if s.taskCtx.PipelineID != "" {
+		pipelineID = s.canvasID
+	}
+	if err := recordPipelineLog(ctx, db, PipelineLogInput{
+		TenantID:   s.Tenant().ID,
+		KbID:       s.KB().ID,
+		DocumentID: docID,
+		PipelineID: pipelineID,
+		DSL:        dsl,
+		Status:     status,
+		Document:   s.taskCtx.Doc,
+	}, s.logCreateFunc); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}
 }
@@ -374,7 +871,22 @@ func warnUnknownComponentParams(dsl string, parserConfig map[string]any) {
 	if len(parserConfig) == 0 {
 		return
 	}
-	schemas, err := pipelinepkg.ExtractAllComponentParams([]byte(dsl))
+	// dsl arrives as the canvas ENVELOPE ({ "dsl": { "components": ... } }) in
+	// production, so it must be unwrapped before ExtractAllComponentParams
+	// runs (that helper expects the inner DSL). The previous direct call
+	// passed the enveloped DSL, whose "components" key is nested under "dsl",
+	// so it silently returned an error and made this guard a no-op.
+	inner, err := pipelinepkg.UnwrapCanvasDSL([]byte(dsl))
+	if err != nil {
+		common.Warn(fmt.Sprintf("warnUnknownComponentParams: cannot parse DSL to validate component params: %v", err))
+		return
+	}
+	innerJSON, err := json.Marshal(inner)
+	if err != nil {
+		common.Warn(fmt.Sprintf("warnUnknownComponentParams: cannot re-encode DSL: %v", err))
+		return
+	}
+	schemas, err := pipelinepkg.ExtractAllComponentParams(innerJSON)
 	if err != nil {
 		common.Warn(fmt.Sprintf("warnUnknownComponentParams: cannot parse DSL to validate component params: %v", err))
 		return
@@ -403,14 +915,6 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		// injected in place below without a nil-map assignment panic.
 		parserConfig = map[string]interface{}{}
 	}
-	common.InjectExtractorLLMID(parserConfig, s.taskCtx.Tenant.LLMID)
-	// When the dataset enables auto-metadata, ensure the Extractor node(s)
-	// carry the enable_metadata mode + field schema so the LLM extraction fires
-	// (mirrors Python task_executor.py:519 enabling gen_metadata_task). The
-	// dataset flag is authoritative: a node that already has enable_metadata
-	// turned on keeps its own config, but a shipped DSL defaulting it to 0 is
-	// still overridden so auto-metadata can activate.
-	common.InjectExtractorEnableMetadata(parserConfig)
 
 	// Surface component params whose cpnID is absent from the DSL. The
 	// runtime merge (override_params) silently drops such entries;
@@ -459,6 +963,14 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		if s.taskCtx.Doc.Type != "" {
 			inputs["file_type"] = s.taskCtx.Doc.Type
 		}
+		// A debug (dry-run) run with a chunker node keeps only the leading
+		// N chunks for preview. The cap is delivered through pipeline inputs
+		// (seeded into CanvasState.Globals by the pipeline run, read by the
+		// chunker decorator via globals.DebugChunkCap) — the same run-level
+		// channel as the other shared metadata, not override_params (the
+		// decorator is built at compile time and cannot read run-time
+		// override_params). An explicit caller-supplied cap is respected.
+		inputs = injectDebugChunkCap(inputs)
 	} else {
 		if s.taskCtx.File != nil {
 			inputs["file"] = s.taskCtx.File
@@ -472,9 +984,12 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	// and the document's filetype family. It is NOT passed through pipeline
 	// inputs: the parser selects pages from ParserConfig[cpnID][family]
 	// ["pages"] (a list of 1-indexed inclusive ranges), exactly mirroring
-	// NormalizeParserConfigPages / pdf_pages_test.go. See injectDebugPageCap.
+	// NormalizeParserConfigPages / pdf_pages_test.go. The DSL/parser-family
+	// knowledge now lives in pipeline.BuildParserPageCapOverride.
 	if debug {
-		injectDebugPageCap(dsl, parserConfig, s.taskCtx.Doc.Type)
+		parserConfig = pipelinepkg.BuildParserPageCapOverride(
+			parserConfig, []byte(dsl), s.taskCtx.Doc.Type,
+			debugPageCapPages, component.ComponentNameParser, component.ParserFileFamily)
 	}
 
 	// Component params from Doc.ParserConfig — including the tenant LLM id
@@ -486,23 +1001,48 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		return nil, dsl, err
 	}
 
-	// Surface the debug-run result DSL to any sink that implements ResultSink
-	// (the DebugLogSink used by canvas-debug runs). This mirrors Python's
-	// END-marker `dsl` attachment (rag/flow/pipeline.py:98) so the front-end
-	// "View result" page can render parsed chunks. The probe is an optional
-	// capability: non-debug (DB-backed) sinks ignore it and the ProgressSink
-	// contract is unchanged, keeping the coupling one-directional.
-	if rs, ok := s.progressSink.(ResultSink); ok {
-		if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
-			rs.SetResult(resultDSL)
-		}
-	}
+	logDSL := s.buildLogDSL(dsl, output)
 
 	payload, err := pipelinepkg.ExtractPayload(dsl, output)
 	if err != nil {
 		return nil, dsl, err
 	}
-	return payload, dsl, nil
+	return payload, logDSL, nil
+}
+
+// buildLogDSL returns the DSL string recorded for a pipeline run: the
+// run-result DSL (static canvas structure + each component's runtime outputs
+// merged into obj.params.outputs) when it can be built and marshaled,
+// otherwise the static dsl unchanged — log recording must never fail a run.
+//
+// BuildDebugResultDSL needs the full run output, which is in scope only inside
+// runPipelineWithDSL: the extracted payload returned there no longer carries
+// output["state"]. Two consumers:
+//   - canvas-debug runs hand the map to the DebugLogSink END marker via the
+//     ResultSink capability (END-marker `dsl` attachment,
+//     rag/flow/pipeline.py:98);
+//   - persist (dataset parse) runs return its JSON as the log DSL so the
+//     pipeline operation log carries every component's output
+//     (dsl=str(pipeline), rag/svr/task_executor_refactor/dataflow_service.py)
+//     — without it the dataset log "View result" page renders blank panels.
+//
+// The sink probe stays an optional capability: non-debug (DB-backed) sinks
+// ignore it and the ProgressSink contract is unchanged.
+func (s *PipelineExecutor) buildLogDSL(dsl string, output map[string]any) string {
+	logDSL := dsl
+	if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
+		if rs, ok := s.progressSink.(ResultSink); ok {
+			rs.SetResult(resultDSL, output)
+		}
+		if raw, e := json.Marshal(resultDSL); e == nil {
+			logDSL = string(raw)
+		} else {
+			common.Warn(fmt.Sprintf("marshal run-result dsl for pipeline log: %v", e))
+		}
+	} else {
+		common.Warn(fmt.Sprintf("build run-result dsl for pipeline log: %v", e))
+	}
+	return logDSL
 }
 
 // debugPageCapPages is the number of leading pages a canvas-debug
@@ -512,78 +1052,19 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 // ParserConfig[cpnID][filetype]["pages"] shape (see NormalizeParserConfigPages).
 const debugPageCapPages = 2
 
-// injectDebugPageCap wires the canvas-debug page cap into parserConfig using
-// the SAME channel the production ParserConfig travels through: Run's
-// override_params (the 3rd argument), keyed by the Parser component's cpnID
-// and the document's filetype family. It must NOT be passed as a pipeline
-// input — the parser selects pages from ParserConfig[cpnID][family]["pages"],
-// which the deepdoc/pdf parser consumes as a list of page ranges.
-//
-// dsl is the raw pipeline DSL (used only to discover the Parser component's
-// cpnID); docType is the uploaded file's extension (e.g. "pdf"). When no
-// Parser component can be found, or the docType yields no known family, the
-// call is a no-op (the run parses everything, which is safe).
-//
-// dsl arrives as the canvas ENVELOPE ({ "dsl": { "components": ... } }) in
-// production (loadDSLFromCanvas marshals canvas.DSL), so it is unwrapped the
-// same way NewPipelineFromDSL does before ExtractAllComponentParams runs.
-// An explicit page cap already present in parserConfig (keyed by cpnID +
-// family) is respected and left untouched — the debug default is only a
-// fallback, so a debug run can honour a narrower or wider caller-supplied cap.
-func injectDebugPageCap(dsl string, parserConfig map[string]any, docType string) {
-	// Unwrap the canvas envelope to the inner components map.
-	var raw map[string]any
-	if err := json.Unmarshal([]byte(dsl), &raw); err != nil {
-		return
+// injectDebugChunkCap sets the canvas-debug chunk cap on the run inputs when
+// not already present. The cap is read by the chunker decorator (via
+// CanvasState.Globals / globals.DebugChunkCap) and limits a debug (dry-run)
+// preview to the leading N chunks. An existing value (a future caller-supplied
+// override) is respected, mirroring BuildParserPageCapOverride's respect for an
+// explicit page cap. A nil inputs map is initialized, so callers may pass a
+// concrete or nil map.
+func injectDebugChunkCap(inputs map[string]any) map[string]any {
+	if inputs == nil {
+		inputs = map[string]any{}
 	}
-	if env, ok := raw["dsl"].(map[string]any); ok && len(env) > 0 {
-		raw = env
+	if _, ok := inputs[globals.DebugChunkCapKey]; !ok {
+		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
 	}
-	inner, err := json.Marshal(raw)
-	if err != nil {
-		return
-	}
-	schemas, err := pipelinepkg.ExtractAllComponentParams(inner)
-	if err != nil {
-		return
-	}
-	var parserCpnID string
-	for _, s := range schemas {
-		if s.ComponentName == component.ComponentNameParser {
-			parserCpnID = s.CpnID
-			break
-		}
-	}
-	if parserCpnID == "" {
-		return
-	}
-	family := component.ParserFileFamily(docType)
-	if family == "" {
-		return
-	}
-	// Respect an explicit page cap already present under cpnID + family.
-	if cpnEntry, ok := parserConfig[parserCpnID].(map[string]any); ok {
-		if famEntry, ok := cpnEntry[family].(map[string]any); ok {
-			if _, has := famEntry["pages"]; has {
-				return
-			}
-		}
-	}
-	cpnEntry, ok := parserConfig[parserCpnID].(map[string]any)
-	if !ok {
-		cpnEntry = map[string]any{}
-		parserConfig[parserCpnID] = cpnEntry
-	}
-	famEntry, ok := cpnEntry[family].(map[string]any)
-	if !ok {
-		famEntry = map[string]any{}
-		cpnEntry[family] = famEntry
-	}
-	// pages is delivered as a JSON-decoded map — the very shape a ParserConfig
-	// arrives in from the API/storage JSON round-trip: a []any of [from,to]
-	// pairs. The deepdoc/pdf parser's NormalizePDFPages requires this
-	// []any-of-[]any form (not a Go [][]int), so it is built explicitly here.
-	// The shallow override_params merge in applyOverrideParams preserves this
-	// shape all the way to ConfigureFromSetup, so the cap is honoured.
-	famEntry["pages"] = []any{[]any{1, debugPageCapPages}}
+	return inputs
 }

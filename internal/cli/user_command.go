@@ -636,6 +636,13 @@ func formatEmptyArray(v interface{}) string {
 	return fmt.Sprintf("%v", v)
 }
 
+func retrievalChunkValue(chunk map[string]interface{}, key, fallbackKey string) interface{} {
+	if value, ok := chunk[key]; ok {
+		return value
+	}
+	return chunk[fallbackKey]
+}
+
 // SearchOnDatasets searches for chunks in specified datasets
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
@@ -697,9 +704,6 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 	if val, ok := cmd.Params["rerank_id"]; ok {
 		payload["rerank_id"] = val
 	}
-	if val, ok := cmd.Params["tenant_rerank_id"]; ok {
-		payload["tenant_rerank_id"] = val
-	}
 	if val, ok := cmd.Params["page_size"]; ok {
 		payload["page_size"] = val
 	}
@@ -707,21 +711,19 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 		payload["page"] = val
 	}
 	if val, ok := cmd.Params["search_id"]; ok {
-		if s, ok := val.(string); ok {
-			payload["search_id"] = s
-		}
+		payload["search_id"] = val
 	}
 	if val, ok := cmd.Params["cross_languages"]; ok {
 		if list, ok := val.([]string); ok {
 			payload["cross_languages"] = list
 		}
 	}
-	if val, ok := cmd.Params["doc_ids"]; ok {
+	if val, ok := cmd.Params["document_ids"]; ok {
 		if list, ok := val.([]string); ok {
-			payload["doc_ids"] = list
+			payload["document_ids"] = list
 		}
 	}
-	if val, ok := cmd.Params["meta_data_filter"]; ok {
+	if val, ok := cmd.Params["metadata_condition"]; ok {
 		// Accept either a raw JSON string from the CLI or a pre-decoded
 		// map[string]interface{} (future-proofing for callers that
 		// construct the command programmatically). The string form is
@@ -730,13 +732,13 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 		case string:
 			var decoded map[string]interface{}
 			if err := json.Unmarshal([]byte(v), &decoded); err != nil {
-				return nil, fmt.Errorf("invalid meta_data_filter JSON: %w", err)
+				return nil, fmt.Errorf("invalid metadata_condition JSON: %w", err)
 			}
-			payload["meta_data_filter"] = decoded
+			payload["metadata_condition"] = decoded
 		case map[string]interface{}:
-			payload["meta_data_filter"] = v
+			payload["metadata_condition"] = v
 		default:
-			return nil, fmt.Errorf("meta_data_filter must be JSON string or object")
+			return nil, fmt.Errorf("metadata_condition must be JSON string or object")
 		}
 	}
 
@@ -782,12 +784,12 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 	for _, chunk := range chunks {
 		if chunkMap, ok := chunk.(map[string]interface{}); ok {
 			row := map[string]interface{}{
-				"id":                chunkMap["chunk_id"],
-				"content":           chunkMap["content_with_weight"],
-				"document_id":       chunkMap["doc_id"],
-				"dataset_id":        chunkMap["kb_id"],
-				"docnm_kwd":         chunkMap["docnm_kwd"],
-				"image_id":          chunkMap["image_id"],
+				"id":                retrievalChunkValue(chunkMap, "id", "chunk_id"),
+				"content":           retrievalChunkValue(chunkMap, "content", "content_with_weight"),
+				"document_id":       retrievalChunkValue(chunkMap, "document_id", "doc_id"),
+				"dataset_id":        retrievalChunkValue(chunkMap, "dataset_id", "kb_id"),
+				"document_keyword":  retrievalChunkValue(chunkMap, "document_keyword", "docnm_kwd"),
+				"image_id":          retrievalChunkValue(chunkMap, "image_id", "img_id"),
 				"similarity":        chunkMap["similarity"],
 				"term_similarity":   chunkMap["term_similarity"],
 				"vector_similarity": chunkMap["vector_similarity"],
@@ -796,8 +798,8 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 			if v, ok := chunkMap["doc_type_kwd"]; ok {
 				row["doc_type_kwd"] = formatEmptyArray(v)
 			}
-			if v, ok := chunkMap["important_kwd"]; ok {
-				row["important_kwd"] = formatEmptyArray(v)
+			if v := retrievalChunkValue(chunkMap, "important_keywords", "important_kwd"); v != nil {
+				row["important_keywords"] = formatEmptyArray(v)
 			}
 			if v, ok := chunkMap["mom_id"]; ok {
 				row["mom_id"] = formatEmptyArray(v)
@@ -3465,6 +3467,76 @@ func (c *CLI) APIListIngestionTasks(cmd *Command) (ResponseIf, error) {
 	}
 
 	return HandleCommonResponse(resp, "list ingestion tasks")
+}
+
+// APIListSyncLogsCommand lists sync logs (user mode).
+// LIST SYNC_LOGS; lists the sync logs of all datasets.
+// LIST SYNC_LOGS FROM 'dataset_id'; and LIST DATASET 'dataset_name' SYNC_LOGS;
+// restrict the listing to one dataset.
+func (c *CLI) APIListSyncLogsCommand(cmd *Command) (ResponseIf, error) {
+	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIKey == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		return nil, fmt.Errorf("API key not set. Please login first")
+	}
+
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	datasetID := ""
+	if rawID, ok := cmd.Params["dataset_id"].(string); ok {
+		datasetID = strings.TrimSpace(rawID)
+	}
+	if datasetName, ok := cmd.Params["dataset_name"].(string); ok && datasetName != "" {
+		id, err := c.getDatasetID(datasetName)
+		if err != nil {
+			return nil, err
+		}
+		datasetID = id
+	}
+
+	url := "/connectors/sync_logs"
+	query := netUrl.Values{}
+	if datasetID != "" {
+		query.Set("dataset_id", datasetID)
+	}
+	page, hasPage := cmd.Params["page"].(int)
+	pageSize, hasPageSize := cmd.Params["page_size"].(int)
+	switch {
+	case hasPage && hasPageSize:
+		query.Set("page", fmt.Sprintf("%d", page))
+		query.Set("page_size", fmt.Sprintf("%d", pageSize))
+	case hasPage:
+		query.Set("page", fmt.Sprintf("%d", page))
+	case hasPageSize:
+		query.Set("page_size", fmt.Sprintf("%d", pageSize))
+	default:
+		// No pagination requested: ask the API for every matching row.
+		query.Set("page_size", "0")
+	}
+	if encoded := query.Encode(); encoded != "" {
+		url += "?" + encoded
+	}
+
+	resp, err := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sync logs: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list sync logs: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListSyncLogsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list sync logs failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
 }
 
 // APIShowLogLevelCommand sets the log level for the system.

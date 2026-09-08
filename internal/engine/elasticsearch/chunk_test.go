@@ -17,10 +17,14 @@
 package elasticsearch
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/types"
 )
 
 // makeResponse builds a SearchResponse with `n` synthetic hits whose id
@@ -159,7 +163,8 @@ func TestSearchAfterPaginateSimpleFirstPage(t *testing.T) {
 		scripted:      []SearchResponse{makeResponse(5, 0, 5)},
 		scriptedTotal: 5,
 	}
-	got, total, err := searchAfterPaginate(context.Background(), map[string]interface{}{}, 0, 5, m.fetch)
+	ctx := t.Context()
+	got, total, err := searchAfterPaginate(ctx, map[string]interface{}{}, 0, 5, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -202,8 +207,9 @@ func TestSearchAfterPaginateSkipsDeepOffset(t *testing.T) {
 	// Defensive: if the loop miscounts and asks for another take
 	// batch, this would surface as a 12th fetch.
 	m.scripted = append(m.scripted, makeResponse(10, 10500, 0))
+	ctx := t.Context()
 
-	got, totalHits, err := searchAfterPaginate(context.Background(), map[string]interface{}{}, offset, limit, m.fetch)
+	got, totalHits, err := searchAfterPaginate(ctx, map[string]interface{}{}, offset, limit, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -248,7 +254,8 @@ func TestSearchAfterPaginateExhaustsIndex(t *testing.T) {
 		},
 		scriptedTotal: 500,
 	}
-	got, total, err := searchAfterPaginate(context.Background(), map[string]interface{}{}, 400, 10, m.fetch)
+	ctx := t.Context()
+	got, total, err := searchAfterPaginate(ctx, map[string]interface{}{}, 400, 10, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -275,7 +282,8 @@ func TestSearchAfterPaginateEmptyResult(t *testing.T) {
 		scripted:      []SearchResponse{makeResponse(0, 0, 0)},
 		scriptedTotal: 0,
 	}
-	got, total, err := searchAfterPaginate(context.Background(), map[string]interface{}{}, 50, 10, m.fetch)
+	ctx := t.Context()
+	got, total, err := searchAfterPaginate(ctx, map[string]interface{}{}, 50, 10, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -306,7 +314,8 @@ func TestSearchAfterPaginateStopOnUnchangedCursor(t *testing.T) {
 		scriptedTotal: 5000,
 	}
 	// offset=500, limit=10.
-	_, _, err := searchAfterPaginate(context.Background(), map[string]interface{}{}, 500, 10, m.fetch)
+	ctx := t.Context()
+	_, _, err := searchAfterPaginate(ctx, map[string]interface{}{}, 500, 10, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -330,7 +339,8 @@ func TestSearchAfterPaginateLimitLargerThanBatchSize(t *testing.T) {
 		},
 		scriptedTotal: 10000,
 	}
-	got, total, err := searchAfterPaginate(context.Background(), map[string]interface{}{}, 0, limit, m.fetch)
+	ctx := t.Context()
+	got, total, err := searchAfterPaginate(ctx, map[string]interface{}{}, 0, limit, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -439,86 +449,75 @@ var paginationGRID = func() []struct{ size, topK int } {
 	return out
 }()
 
-// paginate replays the (block-fetch + in-block slice) math that
-// calculatePagination's window is consumed by: for every page whose start is
-// inside the candidate pool, return the in-block page slice. The block is
-// window-aligned, so on the aligned invariant every page is full and the
-// concatenation reconstructs [0, cap).
-func paginate(total, size, topK int) (window, capN int, surfaced []int) {
-	window = rerankWindow(size, topK)
-	capN = total
-	if topK > 0 && capN > topK {
-		capN = topK
+func TestFormatOrderedTagFeas(t *testing.T) {
+	tagFeas := map[string]any{
+		"价格咨询": 4,
+		"活动咨询": 9,
+		"正面评价": 3,
+		"服务投诉": 6,
+		"质量投诉": 3,
 	}
-	for page := 1; (page-1)*size < capN; page++ {
-		globalOffset := (page - 1) * size
-		blockIndex := globalOffset / window
-		blockStart := blockIndex * window
-		block := make([]int, 0, window)
-		for i := blockStart; i < blockStart+window && i < capN; i++ {
-			block = append(block, i)
-		}
-		begin := globalOffset % window
-		end := min(begin+size, len(block))
-		surfaced = append(surfaced, block[begin:end]...)
-	}
-	return window, capN, surfaced
-}
 
-func TestRerankWindowIsPageAligned(t *testing.T) {
-	for _, g := range paginationGRID {
-		window := rerankWindow(g.size, g.topK)
-		if window < 1 {
-			t.Errorf("rerankWindow(%d, %d) = %d, want >= 1", g.size, g.topK, window)
-		}
-		if g.size > 1 && window%g.size != 0 {
-			t.Errorf("rerankWindow(%d, %d) = %d, want multiple of %d", g.size, g.topK, window, g.size)
-		}
+	raw, ok := formatOrderedTagFeas(tagFeas)
+	if !ok {
+		t.Fatal("expected formatOrderedTagFeas to succeed")
 	}
-}
 
-func TestRerankWindowPaginationReconstructsPool(t *testing.T) {
-	// Walking every page reconstructs the candidate pool exactly: in order,
-	// no gaps, no duplicates, and no short interior pages.
-	const total = 250
-	for _, g := range paginationGRID {
-		window, capN, surfaced := paginate(total, g.size, g.topK)
-		if len(surfaced) != capN {
-			t.Errorf("size=%d topK=%d: surfaced %d, want %d (window=%d)",
-				g.size, g.topK, len(surfaced), capN, window)
-			continue
-		}
-		for i, v := range surfaced {
-			if v != i {
-				t.Errorf("size=%d topK=%d: surfaced[%d] = %d, want %d (window=%d)",
-					g.size, g.topK, i, v, i, window)
-				break
-			}
-		}
+	expectedJSON := `{"活动咨询":9,"服务投诉":6,"价格咨询":4,"正面评价":3,"质量投诉":3}`
+	if string(raw) != expectedJSON {
+		t.Fatalf("formatOrderedTagFeas output mismatch:\ngot:  %s\nwant: %s", string(raw), expectedJSON)
+	}
+
+	// Test json.Number and float rounding support
+	tagFeasWithJSONNumber := map[string]any{
+		"LowTag":  json.Number("3.2"),
+		"HighTag": json.Number("8.7"),
+		"MidTag":  float64(5.6),
+	}
+	rawNum, okNum := formatOrderedTagFeas(tagFeasWithJSONNumber)
+	if !okNum {
+		t.Fatal("expected formatOrderedTagFeas with json.Number to succeed")
+	}
+	expectedNumJSON := `{"HighTag":9,"MidTag":6,"LowTag":3}`
+	if string(rawNum) != expectedNumJSON {
+		t.Fatalf("formatOrderedTagFeas with json.Number mismatch:\ngot:  %s\nwant: %s", string(rawNum), expectedNumJSON)
+	}
+
+	// Verify that jsonIterator preserves the raw byte order inside docCopy
+	docCopy := map[string]any{
+		"doc_id":   "doc-1",
+		"tag_feas": raw,
+	}
+	var buf bytes.Buffer
+	if err := jsonIterator.NewEncoder(&buf).Encode(docCopy); err != nil {
+		t.Fatalf("jsonIterator Encode failed: %v", err)
+	}
+
+	encodedStr := buf.String()
+	if !strings.Contains(encodedStr, `"tag_feas":{"活动咨询":9,"服务投诉":6,"价格咨询":4,"正面评价":3,"质量投诉":3}`) {
+		t.Fatalf("encoded JSON does not preserve score-descending order:\n%s", encodedStr)
 	}
 }
 
-func TestCalculatePaginationReportedRegression(t *testing.T) {
-	// The reported case: size=10, topK=1024. Legacy min(..., 64) clamped the
-	// window to 64 (not a multiple of 10), so page 7 (global offset 60) used
-	// to return only 4 of 10 results. With the fix, the window is 70 and
-	// page 7 is full and contiguous.
-	_, limit := calculatePagination(7, 10, 1024)
-	if limit != 70 {
-		t.Fatalf("calculatePagination(7, 10, 1024) limit = %d, want 70", limit)
+func TestBuildQueryStringQueryMinimumShouldMatchHalfUp(t *testing.T) {
+	tests := []struct {
+		fraction float64
+		want     string
+	}{
+		{0.29, "29%"},
+		{0.125, "13%"},
+		{0.135, "14%"},
+		{0.0, "0%"},
+		{1.0, "100%"},
 	}
-	if limit%10 != 0 {
-		t.Fatalf("calculatePagination(7, 10, 1024) limit = %d, want multiple of 10", limit)
-	}
-
-	// And the simulated end-to-end page walk covers positions 60..69 fully.
-	_, capN, surfaced := paginate(250, 10, 1024)
-	if capN < 70 || len(surfaced) < 70 {
-		t.Fatalf("paginate(250, 10, 1024) returned cap=%d surfaced=%d, want >= 70", capN, len(surfaced))
-	}
-	for i := 60; i < 70; i++ {
-		if surfaced[i] != i {
-			t.Errorf("page 7: surfaced[%d] = %d, want %d", i, surfaced[i], i)
+	for _, tc := range tests {
+		query := buildQueryStringQuery(&types.MatchTextExpr{
+			MatchingText: "hello",
+			ExtraOptions: map[string]interface{}{"minimum_should_match": tc.fraction},
+		}, 0.5, false, false)
+		got := query["query_string"].(map[string]interface{})["minimum_should_match"].(string)
+		if got != tc.want {
+			t.Errorf("buildQueryStringQuery minimum_should_match for %g = %q, want %q", tc.fraction, got, tc.want)
 		}
 	}
 }

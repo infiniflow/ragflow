@@ -17,6 +17,16 @@ package entity
 
 import "time"
 
+// Dataset-level compile lifecycle states. Shared source of truth for the
+// scheduler (which writes State on the knowledge_compile_docs row) and the
+// dataset compilation-status API (which reads it back).
+const (
+	DatasetStateIdle      = "idle"      // no scheduling row / nothing to do
+	DatasetStatePending   = "pending"   // backlog non-empty, awaiting claim
+	DatasetStateRunning   = "running"   // a worker holds the lease and is merging
+	DatasetStateCompleted = "completed" // backlog drained to empty
+)
+
 // KnowledgeCompileDataset is the MySQL scheduling row for the dataset-level
 // post-processing consumer (knowledge_compile_design.md §11.4, Option E). It is
 // the scheduling system of record: backlog_doc_ids holds the not-yet-processed
@@ -42,8 +52,23 @@ type KnowledgeCompileDataset struct {
 	ClaimToken     string     `gorm:"column:claim_token;size:64;not null;default:''" json:"claim_token"`
 	ClaimExpiresAt *time.Time `gorm:"column:claim_expires_at;default:null" json:"claim_expires_at"`
 	Priority       int        `gorm:"column:priority;not null;default:0" json:"priority"`
-	CreatedAt      time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt      time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	// State is the dataset-level compile lifecycle state surfaced to the API:
+	// idle | pending | running | completed. It is written by the scheduler and
+	// consumer; the API never derives it from the backlog alone. Default is a
+	// scalar string literal on a varchar column, which MySQL allows (Error 1101
+	// only affects TEXT/BLOB, not varchar).
+	State string `gorm:"column:state;size:16;not null;default:'idle'" json:"state"`
+	// ErrorMsg is the most recent failure/retry diagnostic. It is TEXT with no
+	// DDL default (MySQL 8.0.13+ rejects a literal default on TEXT, Error 1101);
+	// the application always writes it explicitly when set.
+	ErrorMsg     string  `gorm:"column:error_msg;type:text;not null" json:"error_msg"`
+	Progress     float64 `gorm:"column:progress;not null;default:0" json:"progress"`
+	CurrentPhase string  `gorm:"column:current_phase;size:64;not null;default:''" json:"current_phase"`
+	ProgressMsg  string  `gorm:"column:progress_msg;type:text;not null" json:"progress_msg"`
+	// LastCompletedAt records the last time the backlog drained to empty.
+	LastCompletedAt *time.Time `gorm:"column:last_completed_at;default:null" json:"last_completed_at"`
+	CreatedAt       time.Time  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt       time.Time  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
 // TableName pins the scheduling table name.

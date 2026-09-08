@@ -27,7 +27,12 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/deepdoc/parser/pdf"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/pipeline"
@@ -42,9 +47,9 @@ import (
 // real pdfium parser, in-memory sqlite + storage):
 //
 //   - Uncapped baseline: an explicit cpnID+family page cap of [[1, 1000000]]
-//     is supplied in ParserConfig. injectDebugPageCap must RESPECT it, so the
+//     is supplied in ParserConfig. pipeline.BuildParserPageCapOverride must RESPECT it, so the
 //     parser reads every page.
-//   - Capped: no page cap is supplied, so injectDebugPageCap injects the
+//   - Capped: no page cap is supplied, so pipeline.BuildParserPageCapOverride injects the
 //     debug default [[1, debugPageCapPages]], and the parser reads only the
 //     leading pages.
 //
@@ -59,6 +64,18 @@ import (
 func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	requireTokenizerPool(t)
 	mustLoadTaskTestConfig(t)
+
+	// The production parse path must never degrade to a mock; install a
+	// test-only MockDocAnalyzer as the in-process DeepDoc backend via the
+	// public factory seam so the PDF pipeline runs without a real DeepDoc
+	// service or ONNX Runtime models. Reset to nil on cleanup (this test
+	// binary registers no real backend). The page-cap assertion below relies
+	// on pdfium reading the capped/uncapped number of pages — not on layout
+	// inference — so a mock analyzer preserves the behaviour under test.
+	t.Cleanup(func() { doctype.SetNativeDocAnalyzerFactory(nil) })
+	doctype.SetNativeDocAnalyzerFactory(func() (doctype.DocAnalyzer, bool) {
+		return &pdf.MockDocAnalyzer{Healthy: true}, true
+	})
 
 	origDB := dao.DB
 	realDB := mustOpenTaskTestDB(t)
@@ -79,7 +96,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 
 	// envelopeDSL is stored verbatim on the canvas (this is what production
 	// persists), so loadDSLFromCanvas marshals the envelope and Run receives
-	// it. injectDebugPageCap must unwrap it to find the Parser cpnID.
+	// it. pipeline.BuildParserPageCapOverride must unwrap it to find the Parser cpnID.
 	var envelope struct {
 		DSL json.RawMessage `json:"dsl"`
 	}
@@ -129,7 +146,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	t.Cleanup(func() { _ = realDB.Where("id = ?", canvasID).Delete(&entity.UserCanvas{}).Error })
 
 	// Explicit "parse all pages" cap (JSON-decoded []any form, the shape the
-	// parser actually consumes). injectDebugPageCap must respect it and leave
+	// parser actually consumes). pipeline.BuildParserPageCapOverride must respect it and leave
 	// it untouched, so the parser reads every page of the PDF.
 	allPages := map[string]any{
 		parserCpnID: map[string]any{
@@ -142,7 +159,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	newDebugCtx := func(parserConfig map[string]any) *TaskContext {
 		// A canvas-debug (dry-run) context carries no KB: KB.ID == "" is the
 		// single debug signal. The executor then skips the persist stage and
-		// injects the debug page cap (see injectDebugPageCap, gated on
+		// injects the debug page cap (see pipeline.BuildParserPageCapOverride, gated on
 		// KB.ID == "").
 		return &TaskContext{
 			Doc: entity.Document{
@@ -163,6 +180,15 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 		}
 	}
 
+	// Capture warnings during the runs so we assert the envelope-unwrap fix
+	// did not regress into noisy warnings: with a well-formed template the
+	// parserConfig cpnID matches the DSL, so warnUnknownComponentParams must
+	// NOT emit its "not present in the pipeline DSL" warning.
+	core, recorded := observer.New(zap.NewAtomicLevelAt(zap.DebugLevel))
+	oldLogger := common.Logger
+	common.Logger = zap.New(core)
+	defer func() { common.Logger = oldLogger }()
+
 	// Uncapped baseline: explicit pages=all → executor respects override.
 	uncappedExec, err := NewPipelineExecutor(newDebugCtx(allPages), canvasID, 0)
 	if err != nil {
@@ -181,6 +207,15 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	capped, err := cappedExec.Execute(context.Background())
 	if err != nil {
 		t.Fatalf("Execute (capped): %v", err)
+	}
+
+	// A well-formed template's parserConfig cpnID matches the DSL, so the
+	// unknown-cpnID guard must stay silent. If it warned here, the envelope
+	// was not unwrapped (the pre-fix no-op regression).
+	for _, e := range recorded.All() {
+		if strings.Contains(e.Message, "not present in the pipeline DSL") {
+			t.Errorf("warnUnknownComponentParams emitted an unknown-cpnID warning during a well-formed debug run (envelope-unwrap regression?): %s", e.Message)
+		}
 	}
 
 	uncappedLen := len(joinedChunks(uncapped.Chunks))

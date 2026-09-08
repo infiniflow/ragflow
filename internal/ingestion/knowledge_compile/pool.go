@@ -24,10 +24,11 @@ import (
 	"ragflow/internal/utility"
 )
 
-// compilerJob is one unit of knowledge-compilation work (an I/O- or
-// LLM-bounded task) executed on the shared global pool. It is a type alias for
-// func() error so callers can pass plain []func() error slices without a cast.
-type compilerJob = func() error
+// CompilerJob is one unit of knowledge-compilation work (an I/O- or
+// LLM-bounded task) executed on the shared global pool. It is an exported type
+// alias for func() error so callers (including lower-level packages such as the
+// knowledge_compiler wiring) can pass plain []func() error slices without a cast.
+type CompilerJob = func() error
 
 // compilerPool is the process-wide bounded worker pool that drives cross-doc
 // concurrency for every knowledge-compilation stage: the DocEngine KNN pass in
@@ -43,10 +44,10 @@ type compilerJob = func() error
 // (KNN / write / delete) or LLM-bounded (merge decisions) rather than
 // CPU-bounded, so the degree of useful parallelism is capped by the number of
 // available cores rather than by a hand-tuned constant.
-var compilerPool = utility.NewWorkerPool[compilerJob, struct{}](
+var compilerPool = utility.NewWorkerPool[CompilerJob, struct{}](
 	compilerConcurrency(),
 	compilerConcurrency()*4,
-	func(_ context.Context, j compilerJob) (struct{}, error) { return struct{}{}, j() },
+	func(_ context.Context, j CompilerJob) (struct{}, error) { return struct{}{}, j() },
 )
 
 // compilerConcurrency resolves the global pool size. It defaults to the host
@@ -82,11 +83,11 @@ func SetCompilerConcurrency(n int) {
 // then Wait on each in a second pass on the calling goroutine. This keeps the
 // fan-out bounded by the shared pool's worker count while avoiding len(jobs)
 // short-lived goroutines.
-func runCompilerJobs(ctx context.Context, jobs []compilerJob) error {
+func runCompilerJobs(ctx context.Context, jobs []CompilerJob) error {
 	if len(jobs) == 0 {
 		return nil
 	}
-	futures := make([]utility.WorkerPoolFuture[compilerJob, struct{}], 0, len(jobs))
+	futures := make([]utility.WorkerPoolFuture[CompilerJob, struct{}], 0, len(jobs))
 	var firstErr error
 	for _, j := range jobs {
 		f, err := compilerPool.Submit(ctx, j)
@@ -121,7 +122,7 @@ func runCompilerJobs(ctx context.Context, jobs []compilerJob) error {
 // SubmitCompilerJob runs a single job on the global pool and waits for it,
 // returning its error. Used to inject bounded parallelism into lower-level
 // packages (e.g. structure.LLMMergeDecider) without creating an import cycle.
-func SubmitCompilerJob(ctx context.Context, fn compilerJob) error {
+func SubmitCompilerJob(ctx context.Context, fn CompilerJob) error {
 	f, err := compilerPool.Submit(ctx, fn)
 	if err != nil {
 		return err
@@ -138,10 +139,10 @@ func SubmitCompilerJob(ctx context.Context, fn compilerJob) error {
 // the one process-wide compiler pool. Implementations must submit every job to
 // the shared pool, wait for all to finish, and return the first non-nil error
 // (without StopWait-ing the global pool).
-type CompilerBatchSubmitter func(ctx context.Context, jobs []compilerJob) error
+type CompilerBatchSubmitter func(ctx context.Context, jobs []CompilerJob) error
 
 // SubmitCompilerJobs fans out a batch of jobs on the global pool and returns the
 // first error. This is the CompilerBatchSubmitter handed to variant packages.
-func SubmitCompilerJobs(ctx context.Context, jobs []compilerJob) error {
+func SubmitCompilerJobs(ctx context.Context, jobs []CompilerJob) error {
 	return runCompilerJobs(ctx, jobs)
 }

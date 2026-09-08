@@ -189,7 +189,7 @@ func RectOverlap(a, b Rect) float64 {
 	return OverlapRatioMax(a, b)
 }
 
-// fastCrop copies a rectangular region from src to a new *image.RGBA.
+// FastCrop copies a rectangular region from src to a new *image.RGBA.
 // Uses direct Pix slice copy for *image.RGBA sources (zero allocation per row);
 // falls back to pixel-by-pixel for other image types.
 func FastCrop(src image.Image, x0, y0, x1, y1 int) *image.RGBA {

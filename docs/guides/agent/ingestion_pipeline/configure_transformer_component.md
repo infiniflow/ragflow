@@ -19,6 +19,8 @@ It has four generation types:
 - **Questions**: Generates questions that each text chunk can answer.
 - **Metadata**: Custom metadata extraction.
 
+![Select Transformer generation type](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/transformer2.png)
+
 If you have multiple **Transformer** components, make sure to separate the **Transformer** component for each function, for example, one for summaries and another for keywords.
 
 Key configurations:
@@ -28,6 +30,8 @@ Model mode (select one):
 - **Improvise**: More creative, suitable for question generation.
 - **Precise**: Strictly faithful to the text, suitable for summary and keyword extraction.
 - **Balanced**: A middle ground suitable for most scenarios.
+
+![Configure Transformer model mode](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/transformer1.png)
 
 Prompt engineering:
 
@@ -45,8 +49,4 @@ Chained connection:
 
 - When chaining **Transformer** components, if variables are referenced correctly, the second **Transformer** component processes the output of the first one, for example, generating keywords from a summary.
 
-![Configure The Transformer Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_transformer_component_1.jpg)
-
-![Configure The Transformer Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_transformer_component_2.jpg)
-
-![Configure The Transformer Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_transformer_component_3.jpg)
+![Chain Transformer components](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/transformer3.png)

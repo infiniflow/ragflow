@@ -85,7 +85,7 @@ type discordChatWorker struct {
 type discordGatewayPayload struct {
 	Op int             `json:"op"` // Gateway opcode, which indicates the payload type
 	D  json.RawMessage `json:"d"`  // Event data
-	S  *int64          `json:"s"`  // Sequence number of event used for resuming sessions and heartbeating
+	S  *int64          `json:"s"`  // Sequence number of event used for resuming sessions and heartbeat
 	T  string          `json:"t"`  // Event name
 }
 

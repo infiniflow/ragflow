@@ -4,9 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"regexp"
 	"strings"
+	"time"
+
+	"ragflow/internal/agent/runtime"
+	appcommon "ragflow/internal/common"
+
+	"go.uber.org/zap"
 )
+
+// jsonRetryMax is how many times a non-JSON (or otherwise transiently failed)
+// LLM reply is retried before GenJSON gives up. The highest-frequency LLM
+// integration must not drop a knowledge unit on a single formatting hiccup, so
+// a one-off malformed reply triggers a fresh LLM call instead of an immediate
+// failure.
+const jsonRetryMax = 5
+
+// jsonRetryDelay is the initial exponential-backoff delay between retries.
+const jsonRetryDelay = 2 * time.Second
 
 // fencedJSONRE matches a ```json ... ``` or ``` ... ``` fenced block. Models
 // frequently wrap JSON in such fences even when JSONMode is requested, which
@@ -23,19 +40,104 @@ var fencedJSONRE = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?)\\s*```")
 // or retries rather than silently dropping the extraction — the
 // highest-frequency LLM integration must not lose knowledge units on a
 // formatting hiccup.
-func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest) (map[string]any, error) {
-	req.JSONMode = true
-	resp, err := chat.Chat(ctx, req)
-	if err != nil {
-		return nil, err
+// GenJSON asks the model for a JSON reply and parses it. retryMax is an
+// optional override for jsonRetryMax: pass 0 to disable retries entirely
+// (used where the caller already budgets external calls itself, e.g. the
+// entity-merge disambiguator — retrying there would blow through the budget).
+func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ...int) (map[string]any, error) {
+	maxRetries := jsonRetryMax
+	if len(retryMax) > 0 {
+		maxRetries = retryMax[0]
 	}
-	for _, candidate := range jsonCandidates(resp.Content) {
-		if m, ok := tryUnmarshalJSON(candidate); ok {
-			return m, nil
+	req.JSONMode = true
+	// GenJSON owns retries for both transport failures and malformed JSON. Tell
+	// the production ChatInvoker to make exactly one provider request per outer
+	// GenJSON attempt, avoiding multiplicative nested retries.
+	req.DisableRetry = true
+	var lastErr error
+	delay := jsonRetryDelay
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		resp, err := chat.Chat(ctx, req)
+		if err != nil {
+			// Permanent chat errors (auth, unknown model, context-length,
+			// cancelled ctx) cannot succeed on a retry; escape immediately.
+			if !appcommon.IsTransientError(err) {
+				reportLLMFailure(ctx, attempt, maxRetries, 0, err)
+				return nil, err
+			}
+			// Transient chat failure (timeout / transport / provider); retry
+			// with a fresh LLM call.
+			lastErr = err
+		} else {
+			candidates := jsonCandidates(resp.Content)
+			for _, candidate := range candidates {
+				if m, ok := tryUnmarshalJSON(candidate); ok {
+					return m, nil
+				}
+			}
+			// A non-JSON reply must NOT be persisted/reused; discard it and
+			// immediately re-issue the call so a formatting hiccup does not
+			// abort the whole compile. Log candidate length and the unmarshal
+			// error only — the raw body may carry customer-derived content
+			// (PII), so it is deliberately excluded from the log.
+			for i, candidate := range candidates {
+				_, perr := tryUnmarshalJSONErr(candidate)
+				appcommon.Info("knowledge_compiler: GenJSON unparseable candidate",
+					zap.Int("attempt", attempt), zap.Int("candidate", i),
+					zap.Int("len", len(candidate)), zap.Error(perr))
+			}
+			lastErr = fmt.Errorf("knowledge_compiler: LLM response is not parseable JSON (%d bytes)", len(resp.Content))
+		}
+		if attempt == maxRetries {
+			reportLLMFailure(ctx, attempt, maxRetries, 0, lastErr)
+			break
+		}
+		reportLLMFailure(ctx, attempt, maxRetries, delay, lastErr)
+		appcommon.Info("knowledge_compiler: GenJSON attempt failed, retrying",
+			zap.Int("attempt", attempt), zap.Duration("delay", delay),
+			zap.Error(lastErr))
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay + time.Duration(rand.Int63n(int64(delay/2)+1))):
+			// Jittered backoff so concurrent GenJSON jobs (parallel wiki/plan
+			// batches) do not back off in lockstep and pile up on the provider.
+		}
+		delay *= 2
+		if delay > time.Minute {
+			delay = time.Minute
 		}
 	}
-	return nil, fmt.Errorf("knowledge_compiler: LLM response is not parseable JSON: %q", truncate(resp.Content, 200))
+	return nil, lastErr
 }
+
+func reportLLMFailure(ctx context.Context, attempt, maxRetries int, delay time.Duration, err error) {
+	message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt+1, maxRetries+1, CompactError(err))
+	if delay > 0 {
+		message += fmt.Sprintf("; retrying in %s", delay)
+	}
+	runtime.ReportProgressMessage(ctx, "Compiler", message)
+}
+
+// CompactError produces a bounded, single-line error suitable for progress
+// messages. Provider errors may contain credentials, so redact common secret
+// fields and API-key-shaped values before exposing the result to users.
+func CompactError(err error) string {
+	if err == nil {
+		return "unknown error"
+	}
+	const maxLength = 1000
+	message := strings.Join(strings.Fields(err.Error()), " ")
+	message = errorCredentialRE.ReplaceAllString(message, "$1=[REDACTED]")
+	message = errorAPIKeyRE.ReplaceAllString(message, "[REDACTED]")
+	if len(message) > maxLength {
+		return message[:maxLength] + "..."
+	}
+	return message
+}
+
+var errorCredentialRE = regexp.MustCompile(`(?i)(api[-_ ]?key|access[-_ ]?token|authorization|password|secret)\s*["']?\s*[:=]\s*["']?[^,\s}"']+`)
+var errorAPIKeyRE = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]+`)
 
 // jsonCandidates yields progressively "cleaned" versions of an LLM reply that
 // may contain JSON: the raw text, a fenced ```json ... ``` block, and the
@@ -54,15 +156,20 @@ func jsonCandidates(s string) []string {
 }
 
 func tryUnmarshalJSON(s string) (map[string]any, bool) {
+	m, err := tryUnmarshalJSONErr(s)
+	return m, err == nil
+}
+
+func tryUnmarshalJSONErr(s string) (map[string]any, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return nil, false
+		return nil, fmt.Errorf("empty candidate")
 	}
 	var m map[string]any
 	if err := json.Unmarshal([]byte(s), &m); err != nil {
-		return nil, false
+		return nil, err
 	}
-	return m, true
+	return m, nil
 }
 
 func truncate(s string, n int) string {

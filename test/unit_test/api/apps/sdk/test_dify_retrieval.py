@@ -65,24 +65,55 @@ def _stub(monkeypatch, name, **attrs):
 
 
 class _FakeRetriever:
-    def __init__(self, chunks=None):
+    def __init__(self, chunks=None, raise_exc=None):
         self._chunks = chunks if chunks is not None else []
+        self._raise_exc = raise_exc
         self.retrieval_calls = []
+        self.last_kwargs = None
+        self.by_children_tenant_ids = None
 
     async def retrieval(self, question, embd_mdl, tenant_id, kb_ids, **kwargs):
+        if self._raise_exc is not None:
+            raise self._raise_exc
         self.retrieval_calls.append({"question": question, "tenant_id": tenant_id, "kb_ids": list(kb_ids)})
+        self.last_kwargs = kwargs
         return {"chunks": list(self._chunks)}
 
-    def retrieval_by_children(self, chunks, _tenant_ids):
+    def retrieval_by_children(self, chunks, tenant_ids):
+        self.by_children_tenant_ids = list(tenant_ids)
         return chunks
 
 
 class _FakeKGRetriever:
-    async def retrieval(self, *_a, **_k):
-        return {"content_with_weight": ""}
+    def __init__(self, content=""):
+        self._content = content
+        self.tenant_ids = None
+
+    async def retrieval(self, _question, tenant_ids, *_a, **_k):
+        self.tenant_ids = list(tenant_ids)
+        if not self._content:
+            return {"content_with_weight": ""}
+        return {
+            "content_with_weight": self._content,
+            "doc_id": "d1",
+            "similarity": 0.95,
+            "docnm_kwd": "graph.txt",
+        }
 
 
-def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, tenant_id, chunks=None):
+def _load_dify_retrieval(
+    monkeypatch,
+    *,
+    kb,
+    accessible,
+    request_body,
+    tenant_id,
+    chunks=None,
+    method="POST",
+    request_args=None,
+    kg_content="",
+    meta_filter_ids=None,
+):
     """Load dify_retrieval_api.py with minimum stubs to exercise the retrieval handler."""
 
     def _add_tenant_id_to_kwargs(func):
@@ -128,7 +159,12 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, tenant_id
         KnowledgebaseService=SimpleNamespace(get_by_id=lambda _id: kb, accessible=acc_fn),
     )
 
-    _stub(monkeypatch, "api.db.services.llm_service", LLMBundle=lambda *_a, **_k: SimpleNamespace())
+    _stub(
+        monkeypatch,
+        "api.db.services.llm_service",
+        LLMBundle=lambda *_a, **_k: SimpleNamespace(),
+        resolve_llm_setting=lambda *_a, **_k: {},
+    )
 
     _stub(
         monkeypatch,
@@ -141,22 +177,24 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, tenant_id
     _stub(
         monkeypatch,
         "common.metadata_utils",
-        meta_filter=lambda *_a, **_k: [],
+        meta_filter=lambda *_a, **_k: list(meta_filter_ids) if meta_filter_ids is not None else [],
         convert_conditions=lambda c: c,
     )
 
     _stub(monkeypatch, "rag.app.tag", label_question=lambda *_a, **_k: {})
 
     fake_retriever = _FakeRetriever(chunks=chunks)
+
+    fake_kg = _FakeKGRetriever(kg_content)
     _stub(
         monkeypatch,
         "common.settings",
         retriever=fake_retriever,
-        kg_retriever=_FakeKGRetriever(),
+        kg_retriever=fake_kg,
     )
 
     quart_stub = ModuleType("quart")
-    quart_stub.request = SimpleNamespace(method="POST", args={})
+    quart_stub.request = SimpleNamespace(method=method, args=request_args or {})
     quart_stub.jsonify = lambda payload: payload
     monkeypatch.setitem(sys.modules, "quart", quart_stub)
 
@@ -168,6 +206,7 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, tenant_id
     monkeypatch.setitem(sys.modules, "test_dify_retrieval_module", module)
     spec.loader.exec_module(module)
     module._fake_retriever = fake_retriever
+    module._fake_kg = fake_kg
     return module
 
 
@@ -246,6 +285,37 @@ class TestDifyRetrievalTenantCheck:
         assert module._fake_retriever.retrieval_calls, "retriever was not called on legitimate request"
 
     @pytest.mark.p1
+    def test_team_member_searches_the_owner_index_not_their_own(self, monkeypatch):
+        """A permitted cross-tenant caller must search the KB owner's index.
+
+        ``KnowledgebaseService.accessible`` admits the owning tenant and, for a
+        ``TEAM`` KB, a member of that tenant. In the second case the caller's tenant
+        is not the KB's, so an index named after the caller holds none of its chunks.
+        """
+        team_kb = SimpleNamespace(id="kb-shared", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, team_kb),
+            accessible=lambda _id, _u: True,
+            request_body={
+                "knowledge_id": "kb-shared",
+                "query": "shared question",
+                "use_kg": True,
+                "retrieval_setting": {"top_k": 5, "score_threshold": 0.0},
+            },
+            tenant_id="tenant-member",
+            chunks=[{"doc_id": "d1", "content_with_weight": "chunk", "similarity": 0.9, "docnm_kwd": "doc.txt"}],
+            kg_content="graph answer",
+        )
+
+        asyncio.run(module.retrieval())
+
+        assert module._fake_retriever.retrieval_calls, "retriever was not called"
+        assert module._fake_retriever.retrieval_calls[0]["tenant_id"] == "tenant-owner"
+        assert module._fake_retriever.by_children_tenant_ids == ["tenant-owner"], "retrieval_by_children searched the caller's tenant instead of the KB owner's"
+        assert module._fake_kg.tenant_ids == ["tenant-owner"], "kg_retriever searched the caller's tenant instead of the KB owner's"
+
+    @pytest.mark.p1
     def test_missing_knowledge_base_returns_not_found(self, monkeypatch):
         """KB id that does not exist returns 404 before the access check fires."""
         request_body = {"knowledge_id": "kb-does-not-exist", "query": "hello"}
@@ -265,3 +335,362 @@ class TestDifyRetrievalTenantCheck:
 
         assert result["code"] == 404
         assert "not found" in result["message"].lower()
+
+
+@pytest.mark.p1
+class TestDifyRetrievalArgumentValidation:
+    """Argument validation paths of /dify/retrieval (POST and GET)."""
+
+    @pytest.mark.p1
+    def test_empty_knowledge_id_returns_argument_error(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "", "query": "hello"},
+            tenant_id="tenant-owner",
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        assert result["code"] == 101
+        assert "knowledge_id" in result["message"]
+        assert module._fake_retriever.retrieval_calls == [], "retriever must not run on validation failure"
+
+    @pytest.mark.p1
+    def test_missing_query_returns_argument_error(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner"},
+            tenant_id="tenant-owner",
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        assert result["code"] == 101
+        assert "query" in result["message"]
+
+    @pytest.mark.p1
+    def test_missing_knowledge_id_field_returns_argument_error(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"query": "hello"},
+            tenant_id="tenant-owner",
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        assert result["code"] == 101
+        assert "knowledge_id" in result["message"]
+        assert module._fake_retriever.retrieval_calls == []
+
+    @pytest.mark.p1
+    def test_empty_query_returns_argument_error(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner", "query": ""},
+            tenant_id="tenant-owner",
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        assert result["code"] == 101
+        assert "query" in result["message"]
+
+    @pytest.mark.p1
+    def test_invalid_top_k_returns_argument_error(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={
+                "knowledge_id": "kb-owner",
+                "query": "hello",
+                "retrieval_setting": {"top_k": "not-an-int"},
+            },
+            tenant_id="tenant-owner",
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        assert result["code"] == 101
+        assert module._fake_retriever.retrieval_calls == []
+
+    @pytest.mark.p1
+    def test_invalid_score_threshold_returns_argument_error(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={
+                "knowledge_id": "kb-owner",
+                "query": "hello",
+                "retrieval_setting": {"score_threshold": "oops"},
+            },
+            tenant_id="tenant-owner",
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        assert result["code"] == 101
+
+    @pytest.mark.p1
+    def test_retrieval_setting_values_are_forwarded(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={
+                "knowledge_id": "kb-owner",
+                "query": "hello",
+                "retrieval_setting": {"top_k": 7, "score_threshold": 0.3},
+            },
+            tenant_id="tenant-owner",
+        )
+
+        asyncio.run(module.retrieval())
+
+        kwargs = module._fake_retriever.last_kwargs
+        assert kwargs["page_size"] == 7
+        assert kwargs["knn_top_k"] == 7
+        assert kwargs["similarity_threshold"] == 0.3
+
+    @pytest.mark.p1
+    def test_get_request_with_query_args(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={},
+            request_args={"knowledge_id": "kb-owner", "query": "hello", "top_k": "5", "score_threshold": "0.2"},
+            method="GET",
+            tenant_id="tenant-owner",
+            chunks=[{"doc_id": "d1", "content_with_weight": "hello world", "similarity": 0.8, "docnm_kwd": "doc.txt"}],
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        assert len(result["records"]) == 1
+        kwargs = module._fake_retriever.last_kwargs
+        assert kwargs["page_size"] == 5
+        assert kwargs["similarity_threshold"] == 0.2
+
+    @pytest.mark.p1
+    def test_get_request_invalid_top_k_returns_argument_error(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={},
+            request_args={"knowledge_id": "kb-owner", "query": "hello", "top_k": "abc"},
+            method="GET",
+            tenant_id="tenant-owner",
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        assert result["code"] == 101
+
+    @pytest.mark.p1
+    def test_get_request_invalid_score_threshold_returns_argument_error(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={},
+            request_args={"knowledge_id": "kb-owner", "query": "hello", "score_threshold": "abc"},
+            method="GET",
+            tenant_id="tenant-owner",
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        assert result["code"] == 101
+
+
+@pytest.mark.p1
+class TestDifyRetrievalRetrievalBehavior:
+    """Retrieval behavior branches: metadata filters, knowledge graph, records mapping, errors."""
+
+    @pytest.mark.p1
+    def test_metadata_condition_empty_result_uses_sentinel(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={
+                "knowledge_id": "kb-owner",
+                "query": "hello",
+                "metadata_condition": {"conditions": [{"name": "k", "comparison_operator": "eq", "value": "v"}]},
+            },
+            meta_filter_ids=[],
+            tenant_id="tenant-owner",
+        )
+
+        asyncio.run(module.retrieval())
+
+        assert module._fake_retriever.last_kwargs["doc_ids"] == ["-999"]
+
+    @pytest.mark.p1
+    def test_metadata_condition_matching_docs_are_forwarded(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={
+                "knowledge_id": "kb-owner",
+                "query": "hello",
+                "metadata_condition": {"conditions": [{"name": "k", "comparison_operator": "eq", "value": "v"}]},
+            },
+            meta_filter_ids=["d1", "d2"],
+            tenant_id="tenant-owner",
+        )
+
+        asyncio.run(module.retrieval())
+
+        assert module._fake_retriever.last_kwargs["doc_ids"] == ["d1", "d2"]
+
+    @pytest.mark.p1
+    def test_use_kg_inserts_graph_chunk_at_front(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner", "query": "hello", "use_kg": True},
+            kg_content="graph result text",
+            tenant_id="tenant-owner",
+            chunks=[{"doc_id": "d1", "content_with_weight": "base chunk", "similarity": 0.5, "docnm_kwd": "doc.txt"}],
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        assert len(result["records"]) == 2
+        assert result["records"][0]["content"] == "graph result text"
+        assert result["records"][0]["title"] == "graph.txt"
+
+    @pytest.mark.p1
+    def test_use_kg_empty_result_is_not_inserted(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner", "query": "hello", "use_kg": True},
+            kg_content="",
+            tenant_id="tenant-owner",
+            chunks=[{"doc_id": "d1", "content_with_weight": "base chunk", "similarity": 0.5, "docnm_kwd": "doc.txt"}],
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        assert len(result["records"]) == 1
+        assert result["records"][0]["content"] == "base chunk"
+
+    @pytest.mark.p1
+    def test_records_carry_full_metadata(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner", "query": "hello"},
+            tenant_id="tenant-owner",
+            chunks=[{"doc_id": "d1", "content_with_weight": "hello world", "similarity": 0.8, "docnm_kwd": "doc.txt"}],
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        record = result["records"][0]
+        assert record["content"] == "hello world"
+        assert record["score"] == 0.8
+        assert record["title"] == "doc.txt"
+        assert record["metadata"]["doc_id"] == "d1"
+        assert record["metadata"]["document_id"] == "d1"
+
+    @pytest.mark.p1
+    def test_no_chunks_returns_empty_records(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner", "query": "hello"},
+            tenant_id="tenant-owner",
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        assert result == {"records": []}
+
+    @pytest.mark.p1
+    def test_not_found_exception_returns_404(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner", "query": "hello"},
+            tenant_id="tenant-owner",
+            chunks=None,
+        )
+        module._fake_retriever._raise_exc = Exception("index_not_found_exception")
+
+        result = asyncio.run(module.retrieval())
+
+        assert result["code"] == 404
+        assert "no chunk found" in result["message"].lower()
+
+    @pytest.mark.p1
+    def test_other_exception_returns_server_error(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner", "query": "hello"},
+            tenant_id="tenant-owner",
+        )
+        module._fake_retriever._raise_exc = RuntimeError("boom")
+
+        result = asyncio.run(module.retrieval())
+
+        assert result["code"] == 500
+
+
+@pytest.mark.p1
+class TestDifyRetrievalHealth:
+    """Health endpoint for Dify external knowledge base connectivity checks."""
+
+    @pytest.mark.p1
+    def test_health_endpoint(self, monkeypatch):
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, SimpleNamespace()),
+            accessible=lambda _id, _u: True,
+            request_body={},
+            tenant_id="tenant-owner",
+        )
+
+        result = asyncio.run(module.retrieval_health_check())
+
+        assert result["code"] == 0
+        assert result["data"] is True

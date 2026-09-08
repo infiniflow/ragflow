@@ -5,7 +5,9 @@
       "obj": {
         "component_name": "Compiler",
         "params": {
-          "compilation_template_group_id": "c3aa748c8b2111f191f3047c16ec874f",
+          "compilation_template_group_id": "",
+          "llm_id": "",
+          "plan": false,
           "outputs": {
             "chunks": {
               "type": "Array<Object>",
@@ -103,7 +105,7 @@
             },
             "image": {
               "order_index": 2,
-              "output_format": "text",
+              "output_format": "json",
               "parse_method": "ocr",
               "suffix": [
                 "jpg",
@@ -191,7 +193,7 @@
         "params": {
           "children_delimiters": [],
           "chunk_token_size": 512,
-          "delimiter_mode": "token_size",
+          "delimiter_mode": "delimiter",
           "delimiters": [],
           "image_context_size": 0,
           "outputs": {
@@ -297,7 +299,7 @@
               },
               {
                 "fileFormat": "image",
-                "output_format": "text",
+                "output_format": "json",
                 "parse_method": "ocr"
               },
               {
@@ -373,7 +375,7 @@
           "form": {
             "children_delimiters": [],
             "chunk_token_size": 512,
-            "delimiter_mode": "token_size",
+            "delimiter_mode": "delimiter",
             "delimiters": [
               {
                 "value": "\n"
@@ -408,7 +410,9 @@
       {
         "data": {
           "form": {
-            "compilation_template_group_id": "c3aa748c8b2111f191f3047c16ec874f",
+            "compilation_template_group_id": "",
+            "llm_id": "",
+            "plan": false,
             "outputs": {
               "chunks": {
                 "type": "Array<Object>",

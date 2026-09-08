@@ -19,6 +19,7 @@ package common
 import (
 	"encoding/base64"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
@@ -37,7 +38,7 @@ func PtrString[T any](p *T) string {
 	return fmt.Sprintf("%v", *p)
 }
 
-// composite model name format: model_name@instance_name@provider_name
+// IsCompositeModelName checks if a model name is a valid composite model name format model_name@instance_name@provider_name.
 func IsCompositeModelName(modelName string) bool {
 	parts := strings.Split(modelName, "@")
 	if len(parts) != 3 {
@@ -56,6 +57,22 @@ func IsUUID(uuid string) bool {
 		return true
 	}
 	return false
+}
+
+// BaseModelName returns the bare model name of a (possibly composite) model
+// reference by stripping the trailing "@instance@provider" (or "@provider")
+// segments. The split is right-anchored so model names that legitimately
+// contain '@' (e.g. LM Studio quant suffixes) are preserved. Mirrors Python's
+// api/db/services/knowledgebase_service.py _base_model_name (rsplit("@", 2)[0]).
+func BaseModelName(modelName string) string {
+	if idx := strings.LastIndex(modelName, "@"); idx > 0 {
+		base := modelName[:idx]
+		if idx2 := strings.LastIndex(base, "@"); idx2 > 0 {
+			return base[:idx2]
+		}
+		return base
+	}
+	return modelName
 }
 
 // ExtractCompositeName splits a composite model name into three parts.
@@ -103,6 +120,16 @@ func FormatBytes(bytes int64) string {
 	default:
 		return fmt.Sprintf("%d B", bytes)
 	}
+}
+
+// FormatMinimumShouldMatchPercent converts a fractional minimum_should_match
+// value to a percentage string using half-up rounding, mirroring Python's
+// common.float_utils.format_minimum_should_match_percent.
+func FormatMinimumShouldMatchPercent(fraction float64) string {
+	// Add a tiny epsilon so values whose true product ends in .5 but are
+	// represented slightly below it (e.g. 0.285*100 == 28.499...) still
+	// round half-up instead of being truncated.
+	return fmt.Sprintf("%d%%", int(math.Floor(fraction*100+0.5+1e-9)))
 }
 
 func FormatNumber(n int64) string {

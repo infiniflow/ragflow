@@ -32,6 +32,9 @@ type EngineType string
 const (
 	EngineElasticsearch EngineType = "elasticsearch"
 	EngineInfinity      EngineType = "infinity"
+	EngineOceanBase     EngineType = "oceanbase"
+	EngineSeekDB        EngineType = "seekdb"
+	EngineSereneDB      EngineType = "serenedb"
 )
 
 // DocEngine document storage engine interface
@@ -93,10 +96,16 @@ type DocEngine interface {
 // Type returns the engine type (helper method for runtime type checking)
 // This is a workaround since we can't import elasticsearch or infinity packages directly
 func Type(docEngine DocEngine) EngineType {
-	// Type checking through interface methods is not straightforward
-	// This is a placeholder that should be implemented differently
-	// or rely on configuration to know the type
-	return EngineType("unknown")
+	if docEngine == nil {
+		return EngineType("unknown")
+	}
+	return EngineType(docEngine.GetType())
+}
+
+// IsOceanBaseFamily reports whether a configured engine uses the shared
+// OceanBase/SeekDB SQL implementation.
+func IsOceanBaseFamily(engineName string) bool {
+	return engineName == string(EngineOceanBase) || engineName == string(EngineSeekDB)
 }
 
 type MessageQueue interface {

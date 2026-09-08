@@ -29,8 +29,11 @@ type IToolIcon =
   | Operator.BGPT
   | Operator.TavilyExtract
   | Operator.TavilySearch
+  | Operator.QueritContents
   | Operator.QueritSearch
   | Operator.KeenableSearch
+  | Operator.YouComSearch
+  | Operator.SofyaSearch
   | Operator.Wikipedia
   | Operator.YahooFinance
   | Operator.WenCai

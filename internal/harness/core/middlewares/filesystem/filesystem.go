@@ -253,7 +253,7 @@ func formatGrepResult(result, outputMode string) (string, error) {
 		return fmt.Sprintf("%d matches", lines), nil
 	case "files":
 		unique := make(map[string]bool)
-		for _, line := range strings.Split(result, "\n") {
+		for line := range strings.SplitSeq(result, "\n") {
 			if line == "" {
 				continue
 			}

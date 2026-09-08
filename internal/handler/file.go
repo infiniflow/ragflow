@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -39,6 +38,14 @@ type FileHandler struct {
 	fileService          *file.FileService
 	userService          *service.UserService
 	file2DocumentService *document.File2DocumentService
+}
+
+func respondFileServiceError(c *gin.Context, err error) {
+	if errors.Is(err, file.ErrNoAuthorization) {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "no authorization")
+		return
+	}
+	jsonInternalError(c, err)
 }
 
 // NewFileHandler create file handler
@@ -173,7 +180,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	// Get parent folder with permission check
 	parentFolder, err := h.fileService.GetParentFolder(ctx, userID, fileID)
 	if err != nil {
-		jsonInternalError(c, err)
+		respondFileServiceError(c, err)
 		return
 	}
 
@@ -208,7 +215,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	// Get all parent folders with permission check
 	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
 	if err != nil {
-		jsonInternalError(c, err)
+		respondFileServiceError(c, err)
 		return
 	}
 
@@ -242,7 +249,7 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 	// Get all parent folders with permission check
 	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
 	if err != nil {
-		jsonInternalError(c, err)
+		respondFileServiceError(c, err)
 		return
 	}
 
@@ -279,6 +286,12 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	if strings.Contains(contentType, "multipart/form-data") {
+		uploadLimit := file.DeploymentUploadMaxBytes()
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, uploadLimit)
+		if cl := c.Request.ContentLength; cl > uploadLimit {
+			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "request body exceeds deployment upload limit")
+			return
+		}
 		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
 			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Failed to parse multipart form: "+err.Error())
 			return
@@ -313,7 +326,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		}
 
 		ctx := c.Request.Context()
-		result, err := h.fileService.UploadFile(ctx, userID, parentID, files)
+		result, err := h.fileService.UploadFile(ctx, userID, parentID, files, uploadLimit)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
@@ -486,7 +499,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 	var blob []byte
 	var getErr error
 	if file.Location != nil && *file.Location != "" {
-		blob, getErr = storageImpl.Get(file.ParentID, *file.Location)
+		blob, getErr = storageImpl.Get(ctx, file.ParentID, *file.Location)
 	}
 
 	// If blob is empty, try fallback via file2document
@@ -497,7 +510,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to get file storage address: "+err.Error())
 			return
 		}
-		blob, getErr = storageImpl.Get(storageAddr.Bucket, storageAddr.Name)
+		blob, getErr = storageImpl.Get(ctx, storageAddr.Bucket, storageAddr.Name)
 	}
 
 	// Check if we got valid data
@@ -516,15 +529,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 	// Determine content type based on extension and file type
 	contentType := utility.GetContentType(ext, file.Type)
 
-	// Set response headers
-	if contentType != "" {
-		c.Header("Content-Type", contentType)
-	}
-	if utility.ShouldForceAttachment(ext, contentType) {
-		c.Header("X-Content-Type-Options", "nosniff")
-		encodedName := url.QueryEscape(file.Name)
-		c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+encodedName)
-	}
+	utility.SetDownloadFileResponseHeaders(c.Writer.Header(), contentType, ext, file.Name)
 
 	// Send file data
 	c.Data(http.StatusOK, contentType, blob)
@@ -551,17 +556,19 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 
 	var req document.LinkToDatasetsRequest
 	// Tolerate bind errors: a malformed or empty body simply leaves the fields
-	// empty, which the validate_request-style check below reports as missing
+	// nil, which the validate_request-style check below reports as missing
 	// arguments — matching Python's @validate_request behaviour and code.
 	_ = c.ShouldBindJSON(&req)
 
-	// Mirror Python @validate_request("file_ids", "kb_ids"): missing arguments
-	// return ARGUMENT_ERROR (101) with data=null and the aggregated message.
+	// Mirror Python @validate_request("file_ids", "kb_ids"): a key absent from
+	// the body returns ARGUMENT_ERROR (101) with data=null and the aggregated
+	// message. Python's check is key-presence based, so an explicit empty list
+	// is valid — e.g. kb_ids: [] in replace mode unlinks all datasets.
 	var missing []string
-	if len(req.FileIDs) == 0 {
+	if req.FileIDs == nil {
 		missing = append(missing, "file_ids")
 	}
-	if len(req.KbIDs) == 0 {
+	if req.KbIDs == nil {
 		missing = append(missing, "kb_ids")
 	}
 	if len(missing) > 0 {

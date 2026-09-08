@@ -67,19 +67,19 @@ type llmDeduper struct {
 }
 
 // NewLLMDeduper builds a KB-scoped deduper from the runtime chat/embed deps.
-// llmMaxTokens is the chat model's token budget (0 disables per-batch token
-// splitting in DecideBatch).
-func NewLLMDeduper(chat kccommon.ChatInvoker, embed kccommon.Embedder, llmID string, threshold float64, llmMaxTokens int) Deduper {
+// modelContentLength is the chat model's context window (content_length) and
+// modelMaxOutput its generation cap (max_output); both bound how many pairs a
+// single DecideBatch sub-call may judge (a value <= 0 disables per-batch token
+// splitting). Together they keep every sub-call inside the input window and the
+// output cap, so a large candidate set never overflows either.
+func NewLLMDeduper(chat kccommon.ChatInvoker, embed kccommon.Embedder, llmID string, threshold float64, modelContentLength, modelMaxOutput int) Deduper {
 	decider := structure.NewLLMMergeDecider(chat, llmID, embed, threshold)
-	decider.SetMaxBatchTokens(llmMaxTokens)
+	decider.SetMaxBatchTokens(modelContentLength, modelMaxOutput)
 	// Share the process-wide, vCPU-sized compiler pool so DecideBatch's
 	// token-bounded sub-batches run concurrently with the rest of the pipeline
-	// (LLM-bounded), all under one concurrency limit. SubmitCompilerJobs enqueues
-	// every sub-batch then waits on their futures on the caller goroutine — it
-	// never blocks on a single job, so a stopped pool returns an error instead of
-	// hanging DecideBatch.
-	decider.SetSubmitter(func(ctx context.Context, fn func() error) error {
-		return SubmitCompilerJobs(ctx, []compilerJob{fn})
+	// (LLM-bounded), all under one concurrency limit.
+	decider.SetSubmitter(func(ctx context.Context, jobs []func() error) error {
+		return SubmitCompilerJobs(ctx, jobs)
 	})
 	return &llmDeduper{group: structure.NewGroupedDeduper(decider), decider: decider, embed: embed}
 }
@@ -111,27 +111,60 @@ func (x *llmDeduper) Decide(ctx context.Context, existing, incoming kccommon.Pro
 	return kccommon.Product{}, false, nil
 }
 
-// DecideBatch folds every group with a single LLM call. All candidate pairs
-// across all groups are judged at once (mergePairsBatch); each group then folds
-// its candidates into its existing row in order so a chain of merges within a
-// group accumulates correctly.
-func (x *llmDeduper) DecideBatch(ctx context.Context, groups []MergeGroup) ([]MergeGroup, error) {
-	// Assign a flat pair index to every (group, candidate).
-	var inputs []structure.MergePairInput
-	pairIndexOf := make([][]int, len(groups))
+// DecideBatch folds every group into its dataset-level merged row. Wiki groups
+// use the page-specific Markdown evidence merge, while structure groups are
+// judged by the generic LLM merge decider.
+// splitWikiGroups partitions the batch into wiki groups (page merge)
+// and structure groups (LLM-merged). structIdx[i] is the ORIGINAL position in
+// `groups` of structGroups[i]; it is what the fold uses to write results back to
+// the right slice element. Recording the position inside structGroups (i.e.
+// len(structGroups)) instead would always equal i and misroute structure results
+// to the wrong groups whenever a wiki group appears earlier in the batch.
+func splitWikiGroups(groups []MergeGroup) (wikiIdx, structIdx []int, structGroups []MergeGroup) {
 	for gi := range groups {
-		pairIndexOf[gi] = make([]int, len(groups[gi].Candidates))
-		for ci := range groups[gi].Candidates {
+		if isWikiGroup(groups[gi]) {
+			wikiIdx = append(wikiIdx, gi)
+		} else {
+			structIdx = append(structIdx, gi)
+			structGroups = append(structGroups, groups[gi])
+		}
+	}
+	return wikiIdx, structIdx, structGroups
+}
+
+func (x *llmDeduper) DecideBatch(ctx context.Context, groups []MergeGroup) ([]MergeGroup, error) {
+	// Split wiki and structure groups because Markdown needs a page-specific
+	// merge and must not be parsed as generic JSON.
+	wikiIdx, structIdx, structGroups := splitWikiGroups(groups)
+	// Wiki groups: evidence-preserving page merge, in place.
+	wikiGroups := make([]MergeGroup, len(wikiIdx))
+	for i, gi := range wikiIdx {
+		wikiGroups[i] = groups[gi]
+	}
+	for i, group := range wikiMergeBatch(ctx, wikiGroups) {
+		groups[wikiIdx[i]] = group
+	}
+	if len(structGroups) == 0 {
+		return groups, nil
+	}
+
+	// Assign a flat pair index to every (group, candidate) of the structure groups.
+	var inputs []structure.MergePairInput
+	pairIndexOf := make([][]int, len(structGroups))
+	for gi := range structGroups {
+		pairIndexOf[gi] = make([]int, len(structGroups[gi].Candidates))
+		for ci := range structGroups[gi].Candidates {
 			idx := len(inputs)
 			pairIndexOf[gi][ci] = idx
 			inputs = append(inputs, structure.MergePairInput{
 				Index:    idx,
-				Existing: groups[gi].Existing.Content,
-				Incoming: groups[gi].Candidates[ci].Content,
+				Existing: structGroups[gi].Existing.Content,
+				Incoming: structGroups[gi].Candidates[ci].Content,
 			})
 		}
 	}
 	if len(inputs) == 0 {
+		// Only wiki groups had candidates; copy them back (already folded above).
 		return groups, nil
 	}
 	results, err := x.decider.DecideBatch(ctx, inputs)
@@ -143,12 +176,12 @@ func (x *llmDeduper) DecideBatch(ctx context.Context, groups []MergeGroup) ([]Me
 		byIndex[r.Index] = r
 	}
 
-	for gi := range groups {
-		existing := groups[gi].Existing
+	for si, gi := range structIdx {
+		existing := structGroups[si].Existing
 		var distinct []kccommon.Product
 		duplicated := false
-		for ci, cand := range groups[gi].Candidates {
-			r := byIndex[pairIndexOf[gi][ci]]
+		for ci, cand := range structGroups[si].Candidates {
+			r := byIndex[pairIndexOf[si][ci]]
 			if !r.Duplicated || r.Merged == nil {
 				// Judged distinct: keep it as its own new merged row.
 				c := cand

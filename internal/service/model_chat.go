@@ -42,18 +42,21 @@ func (m *ModelProviderService) Chat(ctx context.Context, tenantID, modelID strin
 	return chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, config, nil)
 }
 
-func (m *ModelProviderService) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
+func (m *ModelProviderService) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
 	chatModel, err := m.GetChatModel(ctx, tenantID, modelID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return chatStreamWithContext(ctx, chatModel, messages, config), nil
+	ch, errCh := chatStreamWithContext(ctx, chatModel, messages, config)
+	return ch, errCh, nil
 }
 
-func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel, messages []modelModule.Message, config *modelModule.ChatConfig) <-chan string {
+func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error) {
 	ch := make(chan string, 256)
+	errCh := make(chan error, 1)
 	go func() {
 		defer close(ch)
+		defer close(errCh)
 		if err := chatModel.ModelDriver.ChatStreamlyWithSender(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, config, nil,
 			func(delta *string, _ *string) error {
 				if delta == nil {
@@ -69,13 +72,14 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 					return ctx.Err()
 				}
 			}); err != nil {
-			if errors.Is(err, errStreamDone) || err == context.Canceled || err == context.DeadlineExceeded {
+			if errors.Is(err, errStreamDone) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
 			}
 			common.Warn("ChatStreamlyWithSender returned error", zap.Error(err))
+			errCh <- err
 		}
 	}()
-	return ch
+	return ch, errCh
 }
 
 // TenantStreamAdapter adapts tenant/model-aware chat streaming to AskService.
@@ -85,9 +89,9 @@ type TenantStreamAdapter struct {
 	ModelID  string
 }
 
-func (a *TenantStreamAdapter) ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
+func (a *TenantStreamAdapter) ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
 	if a.LLM == nil {
-		return nil, fmt.Errorf("streaming LLM not configured")
+		return nil, nil, fmt.Errorf("streaming LLM not configured")
 	}
 	return a.LLM.ChatStream(ctx, a.TenantID, a.ModelID, messages, config)
 }

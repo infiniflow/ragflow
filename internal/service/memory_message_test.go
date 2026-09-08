@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -27,6 +30,89 @@ func TestIsMessageDocumentNotFound(t *testing.T) {
 	}
 }
 
+func TestMemoryIndexNameMatchesPythonPrefix(t *testing.T) {
+	t.Setenv(common.EnvESIndexPrefix, "")
+	if got := memoryIndexName("tenant-1"); got != "memory_tenant-1" {
+		t.Fatalf("memoryIndexName() = %q", got)
+	}
+	t.Setenv(common.EnvESIndexPrefix, "legacy")
+	if got := memoryIndexName("tenant-1"); got != "memory_legacy_tenant-1" {
+		t.Fatalf("memoryIndexName() with prefix = %q", got)
+	}
+}
+
+// The FusionExpr weight slots are [text, vector], and keywords_similarity_weight is the
+// text weight, so it belongs in slot 0. Both this and Python's
+// api/db/joint_services/memory_message_service.py emitted the pair reversed, which handed
+// every memory search the inverse of the requested hybrid balance. The weights below are
+// asymmetric on purpose: an even split cannot tell the two orders apart.
+func TestMemoryFusionWeightsPutTheKeywordWeightInTheTextSlot(t *testing.T) {
+	for _, keywordsSimilarityWeight := range []float64{0.7, 0.9, 0.2} {
+		weights := memoryFusionWeights(keywordsSimilarityWeight)
+		parts := strings.Split(weights, ",")
+		if len(parts) != 2 {
+			t.Fatalf("memoryFusionWeights(%v) = %q, want two comma-separated weights", keywordsSimilarityWeight, weights)
+		}
+
+		textWeight, err := strconv.ParseFloat(parts[0], 64)
+		if err != nil {
+			t.Fatalf("text weight %q: %v", parts[0], err)
+		}
+		vectorWeight, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			t.Fatalf("vector weight %q: %v", parts[1], err)
+		}
+
+		// Compared with a tolerance, not for equality: the slot each weight lands in is
+		// the invariant, and %.2f is as valid a rendering here as %.6g.
+		if math.Abs(textWeight-keywordsSimilarityWeight) > 1e-9 {
+			t.Fatalf("text weight = %v, want %v (from %q)", textWeight, keywordsSimilarityWeight, weights)
+		}
+		if math.Abs(vectorWeight-(1-keywordsSimilarityWeight)) > 1e-9 {
+			t.Fatalf("vector weight = %v, want %v (from %q)", vectorWeight, 1-keywordsSimilarityWeight, weights)
+		}
+	}
+}
+
+// The slot test above deliberately accepts any numeric rendering, so nothing there
+// would notice a quiet return to %g. This pins the other half: the strings below are
+// what Python's :g emits for the same inputs in
+// api/db/joint_services/memory_message_service.py, so a regression that reintroduces
+// 0.30000000000000004 on the Go side turns this red. 0.1234567 is here because it is
+// the case that actually exercises the six-digit rounding.
+func TestMemoryFusionWeightsMatchesPythonFormatting(t *testing.T) {
+	for _, testCase := range []struct {
+		keywordsSimilarityWeight float64
+		want                     string
+	}{
+		{keywordsSimilarityWeight: 0.7, want: "0.7,0.3"},
+		{keywordsSimilarityWeight: 0.9, want: "0.9,0.1"},
+		{keywordsSimilarityWeight: 0.1234567, want: "0.123457,0.876543"},
+	} {
+		if got := memoryFusionWeights(testCase.keywordsSimilarityWeight); got != testCase.want {
+			t.Fatalf("memoryFusionWeights(%v) = %q, want %q", testCase.keywordsSimilarityWeight, got, testCase.want)
+		}
+	}
+}
+
+func TestValidateMemorySearchModels(t *testing.T) {
+	firstTenantEmbeddingID := "tenant-embedding-1"
+	secondTenantEmbeddingID := "tenant-embedding-2"
+	if err := validateMemorySearchModels([]*entity.Memory{
+		{ID: "memory-1", EmbdID: "embedding@provider", TenantEmbdID: &firstTenantEmbeddingID},
+		{ID: "memory-2", EmbdID: "embedding@provider", TenantEmbdID: &secondTenantEmbeddingID},
+	}); err != nil {
+		t.Fatalf("same memory embedding model rejected: %v", err)
+	}
+
+	if err := validateMemorySearchModels([]*entity.Memory{
+		{ID: "memory-1", EmbdID: "embedding-a@provider"},
+		{ID: "memory-2", EmbdID: "embedding-b@provider"},
+	}); err == nil {
+		t.Fatal("different memory embedding models were accepted")
+	}
+}
+
 func TestRequireMemoryAccessReturnsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -39,6 +125,7 @@ func TestRequireMemoryAccessReturnsCanceledContext(t *testing.T) {
 
 type memoryMessageDocEngine struct {
 	fakeChatDocEngine
+	engineType  string
 	searchReq   *enginetypes.SearchRequest
 	searchResp  *enginetypes.SearchResult
 	updateCond  map[string]interface{}
@@ -67,7 +154,12 @@ func (e *memoryMessageDocEngine) FilterDocIdsByMetaPushdown(_ context.Context, _
 	return nil
 }
 
-func (e *memoryMessageDocEngine) GetType() string { return "memory" }
+func (e *memoryMessageDocEngine) GetType() string {
+	if e.engineType != "" {
+		return e.engineType
+	}
+	return "memory"
+}
 
 func setupMemoryMessageTestDB(t *testing.T) {
 	t.Helper()
@@ -92,6 +184,70 @@ func setupMemoryMessageTestDB(t *testing.T) {
 	t.Cleanup(func() {
 		dao.DB = orig
 	})
+}
+
+func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+
+	// Pin the clock to a fixed instant in a fixed non-UTC location so the
+	// server-local assertions below hold on any host, including UTC CI
+	// runners.
+	pinned := time.Date(2026, 8, 20, 10, 5, 0, 0, time.FixedZone("UTC+8", 8*3600))
+	pinMemoryNow(t, pinned)
+
+	if err := dao.DB.Create(&entity.Memory{
+		ID:          "memory-1",
+		Name:        "Test memory",
+		TenantID:    "user-1",
+		MemoryType:  dao.MemoryTypeRaw,
+		StorageType: "table",
+		EmbdID:      "embd",
+		LLMID:       "llm",
+		Permissions: string(entity.TenantPermissionMe),
+		MemorySize:  MemorySizeLimit,
+	}).Error; err != nil {
+		t.Fatalf("seed memory: %v", err)
+	}
+
+	for _, test := range []struct {
+		engineType            string
+		wantForgetAtCompanion bool
+	}{
+		{engineType: "elasticsearch", wantForgetAtCompanion: true},
+		{engineType: "infinity", wantForgetAtCompanion: true},
+		{engineType: "oceanbase", wantForgetAtCompanion: false},
+		{engineType: "seekdb", wantForgetAtCompanion: false},
+	} {
+		t.Run(test.engineType, func(t *testing.T) {
+			docEngine := &memoryMessageDocEngine{engineType: test.engineType}
+			service := NewMemoryService()
+			service.docEngine = docEngine
+
+			if err := service.ForgetMessage(t.Context(), "user-1", "memory-1", 42); err != nil {
+				t.Fatalf("ForgetMessage() error = %v", err)
+			}
+			if docEngine.updateCond["id"] != "memory-1_42" {
+				t.Fatalf("update condition = %#v", docEngine.updateCond)
+			}
+			if docEngine.updateBase != "memory_user-1" || docEngine.updateID != "memory-1" {
+				t.Fatalf("update target = (%q, %q)", docEngine.updateBase, docEngine.updateID)
+			}
+			if forgetAt, ok := docEngine.updateValue["forget_at"].(string); !ok || forgetAt == "" {
+				t.Fatalf("forget_at = %#v, want non-empty string", docEngine.updateValue["forget_at"])
+			} else if want := "2026-08-20 10:05:00"; forgetAt != want {
+				// forget_at must be the server-local wall clock, not a
+				// UTC-shifted one (which would be "2026-08-20 02:05:00").
+				t.Fatalf("forget_at = %q, want server-local wall clock %q", forgetAt, want)
+			}
+			companion, hasCompanion := docEngine.updateValue["forget_at_flt"]
+			if hasCompanion != test.wantForgetAtCompanion {
+				t.Fatalf("forget_at_flt present = %t, want %t", hasCompanion, test.wantForgetAtCompanion)
+			}
+			if hasCompanion && companion != pinned.UnixMilli() {
+				t.Fatalf("forget_at_flt = %v, want Unix milliseconds of the stamped instant %d", companion, pinned.UnixMilli())
+			}
+		})
+	}
 }
 
 func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
@@ -124,7 +280,7 @@ func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
 
 	svc := NewMemoryService()
 	samePermission := " TEAM "
-	if _, err := svc.UpdateMemory(context.Background(), "member-1", "mem-team", &UpdateMemoryRequest{
+	if _, err := svc.UpdateMemory(t.Context(), "member-1", "mem-team", &UpdateMemoryRequest{
 		Description: sptr("member edit"),
 		Permissions: &samePermission,
 	}); err != nil {
@@ -132,7 +288,7 @@ func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
 	}
 
 	nextPermission := "me"
-	if _, err := svc.UpdateMemory(context.Background(), "member-1", "mem-team", &UpdateMemoryRequest{
+	if _, err := svc.UpdateMemory(t.Context(), "member-1", "mem-team", &UpdateMemoryRequest{
 		Permissions: &nextPermission,
 	}); err == nil {
 		t.Fatal("UpdateMemory permission change error = nil, want error")
@@ -205,13 +361,13 @@ func TestUpdateMemoryTeamMemberResolvesModelsAgainstOwnerTenant(t *testing.T) {
 	}
 
 	llmID := "gpt-4o@default@OpenAI"
-	if _, err := NewMemoryService().UpdateMemory(context.Background(), "member-1", "mem-model", &UpdateMemoryRequest{
+	if _, err := NewMemoryService().UpdateMemory(t.Context(), "member-1", "mem-model", &UpdateMemoryRequest{
 		LLMID: &llmID,
 	}); err != nil {
 		t.Fatalf("UpdateMemory model error = %v", err)
 	}
 
-	updated, err := dao.NewMemoryDAO().GetByID(context.Background(), dao.DB, "mem-model")
+	updated, err := dao.NewMemoryDAO().GetByID(t.Context(), dao.DB, "mem-model")
 	if err != nil {
 		t.Fatalf("get updated memory: %v", err)
 	}
@@ -393,7 +549,7 @@ func TestSaveAgentMessageBypassesRequestAccessFilter(t *testing.T) {
 		AgentResponse: "hello",
 	}
 
-	ok, detail, err := svc.AddMessage(context.Background(), "", []string{"mem-owned"}, msg)
+	ok, detail, err := svc.AddMessage(t.Context(), "", []string{"mem-owned"}, msg)
 	if err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
@@ -401,7 +557,7 @@ func TestSaveAgentMessageBypassesRequestAccessFilter(t *testing.T) {
 		t.Fatalf("AddMessage with empty current user = (%v, %q), want permission-filtered not found", ok, detail)
 	}
 
-	ok, detail, err = svc.saveAgentMessage(context.Background(), []string{"mem-owned"}, msg)
+	ok, detail, err = svc.saveAgentMessage(t.Context(), []string{"mem-owned"}, msg)
 	if err != nil {
 		t.Fatalf("saveAgentMessage: %v", err)
 	}
@@ -441,7 +597,7 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 	}
 	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), docEngine: docEngine}
 
-	got, code, err := svc.GetMessages(context.Background(), []string{"mem-owned", "mem-other"}, "user-1", "agent-1", "session-1", 3)
+	got, code, err := svc.GetMessages(t.Context(), []string{"mem-owned", "mem-other"}, "user-1", "agent-1", "session-1", 3)
 	if err != nil {
 		t.Fatalf("GetMessages error: %v", err)
 	}
@@ -515,7 +671,7 @@ func TestSearchMessageFiltersAccessibleMemoryAndDefaultsStatus(t *testing.T) {
 		"top_n":                      5,
 	}
 
-	got, code, err := svc.SearchMessage(context.Background(), "user-1", filter, params)
+	got, code, err := svc.SearchMessage(t.Context(), "user-1", filter, params)
 	if err != nil {
 		t.Fatalf("SearchMessage error: %v", err)
 	}
@@ -554,7 +710,7 @@ func TestUpdateMessageUpdatesStatusByMessageDocID(t *testing.T) {
 	docEngine := &memoryMessageDocEngine{}
 	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), docEngine: docEngine}
 
-	ok, err := svc.UpdateMessage(context.Background(), "user-1", "mem-owned", 42, true)
+	ok, err := svc.UpdateMessage(t.Context(), "user-1", "mem-owned", 42, true)
 	if err != nil {
 		t.Fatalf("UpdateMessage error: %v", err)
 	}

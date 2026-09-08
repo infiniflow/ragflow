@@ -20,86 +20,18 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"ragflow/internal/ingestion/component/schema"
 )
 
-// wordCount is a deterministic tokenizer stand-in used only via
-// splitOversizedUnitWith in unit-level helper tests.
-func wordCount(s string) int {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0
-	}
-	return len(strings.Fields(s))
-}
+// Hard-cap contract tests: no text chunk may exceed the token target. The
+// merge decision uses the RUNNING SUM of per-unit counts (#17948), so the
+// assertions below pin that sum; the end-to-end tests additionally assert the
+// re-tokenized emitted text stays within the budget for their fixtures.
 
-func charCount(s string) int { return utf8.RuneCountInString(s) }
-
-func TestSplitOversizedUnit_WhitespacePacksToBudget(t *testing.T) {
-	// 100 words, budget 30 → must yield multiple pieces, each ≤ 30 words.
-	text := strings.TrimSpace(strings.Repeat("word ", 100))
-	pieces := splitOversizedUnitWith(text, 30, wordCount)
-	if len(pieces) < 2 {
-		t.Fatalf("want multiple pieces, got %d: %#v", len(pieces), pieces)
-	}
-	total := 0
-	for _, p := range pieces {
-		n := wordCount(p)
-		if n > 30 {
-			t.Errorf("piece exceeds budget: tokens=%d text=%q", n, p)
-		}
-		total += n
-	}
-	if total != 100 {
-		t.Errorf("word count not preserved: got %d want 100", total)
-	}
-}
-
-func TestSplitOversizedUnit_UnbrokenAtomFallsBackToCharWindows(t *testing.T) {
-	// Unbroken run with char-as-token counting — must sub-split on runes.
-	atom := strings.Repeat("a", 80)
-	pieces := splitOversizedUnitWith(atom, 50, charCount)
-	if len(pieces) < 2 {
-		t.Fatalf("want >=2 pieces for unbroken atom, got %d", len(pieces))
-	}
-	joined := strings.Join(pieces, "")
-	if joined != atom {
-		t.Errorf("content not preserved: got %q", joined)
-	}
-	for _, p := range pieces {
-		if charCount(p) > 50 {
-			t.Errorf("piece exceeds budget: %d runes in %q", charCount(p), p)
-		}
-	}
-}
-
-func TestSplitOversizedUnit_WithinBudgetUnchanged(t *testing.T) {
-	text := "hello world"
-	pieces := splitOversizedUnitWith(text, 100, wordCount)
-	if len(pieces) != 1 || pieces[0] != text {
-		t.Fatalf("within-budget text must be returned as-is, got %#v", pieces)
-	}
-}
-
-func TestComputeOverlapPrefix_StripsTagsAndCounts(t *testing.T) {
-	prev := strings.Repeat("word ", 20) + "@@1\t2.3## tail"
-	overlap, n := computeOverlapPrefix(prev, 30)
-	if strings.Contains(overlap, "@@") || strings.Contains(overlap, "##") {
-		t.Errorf("overlap must strip parser tags, got %q", overlap)
-	}
-	if n <= 0 {
-		t.Errorf("overlap token count must be >0, got %d", n)
-	}
-	if tokenizeStr(overlap) != n {
-		t.Errorf("reported tokens %d != tokenizeStr(overlap) %d", n, tokenizeStr(overlap))
-	}
-}
-
-func TestMergeByTokenSizeFromJSON_StrictCapNoOvershoot(t *testing.T) {
+func TestMergeByTokenSizeFromJSON_HardCapNoOvershoot(t *testing.T) {
 	// Eight 25-token-ish sections under a 50-token budget must pack without
-	// any chunk exceeding the budget (Python test_strict_cap_no_overlap).
+	// any chunk's running sum exceeding the budget (no one-unit overflow).
 	const budget = 50
 	sections := make([]schema.ChunkDoc, 0, 8)
 	for i := 0; i < 8; i++ {
@@ -114,15 +46,15 @@ func TestMergeByTokenSizeFromJSON_StrictCapNoOvershoot(t *testing.T) {
 		t.Fatalf("want >=3 chunks, got %d", len(merged))
 	}
 	for i, ck := range merged {
-		n := tokenizeStr(ck.Text)
-		if n > budget {
-			t.Errorf("chunk %d exceeds budget: tokens=%d text_len=%d", i, n, len(ck.Text))
+		if n := intValue(ck.TKNums); n > budget {
+			t.Errorf("chunk %d running sum %d exceeds budget %d", i, n, budget)
 		}
 	}
 }
 
-func TestMergeByTokenSizeFromJSON_OverlapDroppedAtOverflow(t *testing.T) {
-	// With a tight budget, overlap must never push a chunk over the cap.
+func TestMergeByTokenSizeFromJSON_OverlapStrictCap(t *testing.T) {
+	// With overlap the overlap prefix is trimmed so it never pushes a chunk
+	// over the budget.
 	const budget = 25
 	sections := make([]schema.ChunkDoc, 0, 20)
 	for i := 0; i < 20; i++ {
@@ -133,27 +65,35 @@ func TestMergeByTokenSizeFromJSON_OverlapDroppedAtOverflow(t *testing.T) {
 	}
 	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 20)
 	for i, ck := range got[0] {
-		if n := tokenizeStr(ck.Text); n > budget {
-			t.Errorf("chunk %d exceeds budget with overlap: tokens=%d", i, n)
+		if n := intValue(ck.TKNums); n > budget {
+			t.Errorf("chunk %d exceeds budget with overlap: tokens=%d (cap=%d)", i, n, budget)
 		}
 	}
 }
 
-func TestMergeByTokenSizeFromJSON_OversizedUnitIsSubSplit(t *testing.T) {
-	// A single unit larger than the budget must be atom-split before merge.
+func TestMergeByTokenSizeFromJSON_OversizedUnitSplit(t *testing.T) {
+	// A single over-budget unit is no longer kept whole (#17799 replaced by the
+	// hard cap): it is re-split into <= budget pieces and the concatenated
+	// pieces reproduce the original text exactly (lossless).
 	const budget = 30
 	long := strings.TrimSpace(strings.Repeat("word ", 100))
 	items := [][]schema.ChunkDoc{{
 		{Text: long, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(long))},
 	}}
 	got := mergeByTokenSizeFromJSON(items, budget, 0)
-	if len(got[0]) < 2 {
-		t.Fatalf("oversized unit must yield multiple chunks, got %d", len(got[0]))
+	merged := got[0]
+	if len(merged) < 2 {
+		t.Fatalf("oversized unit must be split, got %d chunk(s)", len(merged))
 	}
-	for i, ck := range got[0] {
+	var joined string
+	for i, ck := range merged {
 		if n := tokenizeStr(ck.Text); n > budget {
-			t.Errorf("chunk %d exceeds budget: tokens=%d", i, n)
+			t.Errorf("chunk %d exceeds budget: tokens=%d (cap=%d)", i, n, budget)
 		}
+		joined += ck.Text
+	}
+	if joined != long {
+		t.Errorf("split not lossless:\n got %q\nwant %q", joined, long)
 	}
 }
 
@@ -166,14 +106,14 @@ func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 		b.WriteString("\n\n")
 	}
 	comp, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": budget,
 	})
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
 	tc := comp.(*TokenChunkerComponent)
-	out := tc.mergeByTokenSize(b.String(), nil)
+	out := tc.mergeByTokenSize(b.String(), nil, nil)
 	chunks, _ := out["chunks"].([]map[string]any)
 	if len(chunks) < 2 {
 		t.Fatalf("want multiple chunks, got %d", len(chunks))
@@ -181,54 +121,37 @@ func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 	for i, ck := range chunks {
 		text, _ := ck["text"].(string)
 		if n := tokenizeStr(text); n > budget {
-			t.Errorf("chunk %d exceeds budget: tokens=%d", i, n)
+			t.Errorf("chunk %d exceeds budget: tokens=%d (cap=%d)", i, n, budget)
 		}
 	}
 }
 
-func TestMergeByTokenSize_UnbrokenAtomStrictCap(t *testing.T) {
-	// Unbroken dense string (no whitespace / sentence delim) must still
-	// hard-cap via the character-window fallback inside splitOversizedUnit.
-	const budget = 20
-	// Use many distinct ASCII letters so cl100k does not collapse the whole
-	// run into a handful of tokens.
-	var b strings.Builder
-	for i := 0; i < 400; i++ {
-		b.WriteByte(byte('a' + i%26))
-	}
-	text := b.String()
-	if tokenizeStr(text) <= budget {
-		t.Skipf("tokenizer collapsed unbroken atom to %d tokens (<= budget)", tokenizeStr(text))
-	}
+func TestMergeByTokenSize_OversizedBoundarylessRunSplit(t *testing.T) {
+	// A single boundary-less run longer than chunk_token_size must be hard
+	// token-split into <= budget pieces (never kept whole).
+	const budget = 30
+	long := strings.TrimSpace(strings.Repeat("word ", 100))
 	comp, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": budget,
 	})
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	tc := comp.(*TokenChunkerComponent)
-	out := tc.mergeByTokenSize(text, nil)
+	out := comp.(*TokenChunkerComponent).mergeByTokenSize(long, nil, nil)
 	chunks, _ := out["chunks"].([]map[string]any)
 	if len(chunks) < 2 {
-		t.Fatalf("want multiple chunks for unbroken atom, got %d (total_tokens=%d)", len(chunks), tokenizeStr(text))
+		t.Fatalf("oversized run must be split, got %d chunk(s)", len(chunks))
 	}
-	var joined strings.Builder
 	for i, ck := range chunks {
-		s, _ := ck["text"].(string)
-		joined.WriteString(s)
-		if n := tokenizeStr(s); n > budget {
-			t.Errorf("chunk %d exceeds budget: tokens=%d text=%q", i, n, s)
+		text, _ := ck["text"].(string)
+		if n := tokenizeStr(text); n > budget {
+			t.Errorf("chunk %d exceeds budget: tokens=%d (cap=%d)", i, n, budget)
 		}
-	}
-	// mergeByTokenSize prefixes "\n" on sections; stripping newlines recovers
-	// the original unbroken atom.
-	if strings.ReplaceAll(joined.String(), "\n", "") != text {
-		t.Errorf("content not preserved after stripping newlines: got %q", joined.String())
 	}
 }
 
-func TestInvokeTextPayload_StrictCapEndToEnd(t *testing.T) {
+func TestInvokeTextPayload_HardCapEndToEnd(t *testing.T) {
 	const budget = 32
 	var b strings.Builder
 	for i := 0; i < 20; i++ {
@@ -236,7 +159,7 @@ func TestInvokeTextPayload_StrictCapEndToEnd(t *testing.T) {
 		b.WriteByte('\n')
 	}
 	comp, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
+		"delimiter_mode":   "delimiter",
 		"chunk_token_size": budget,
 	})
 	if err != nil {
@@ -260,7 +183,88 @@ func TestInvokeTextPayload_StrictCapEndToEnd(t *testing.T) {
 	for i, ck := range chunks {
 		text, _ := ck["text"].(string)
 		if n := tokenizeStr(text); n > budget {
-			t.Errorf("chunk %d exceeds budget: tokens=%d", i, n)
+			t.Errorf("chunk %d exceeds budget: tokens=%d (cap=%d)", i, n, budget)
+		}
+	}
+}
+
+func TestInvokeJSONPayload_HardCapEndToEnd(t *testing.T) {
+	const budget = 32
+	var items []map[string]any
+	for i := 0; i < 24; i++ {
+		items = append(items, map[string]any{
+			"text":         strings.TrimSpace(strings.Repeat("alpha ", 12)),
+			"doc_type_kwd": "text",
+		})
+	}
+	comp, err := NewTokenChunker(map[string]any{
+		"delimiter_mode":   "delimiter",
+		"delimiters":       []string{"\n"},
+		"chunk_token_size": budget,
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out, err := comp.Invoke(context.Background(), nil, map[string]any{
+		"name":          "doc.json",
+		"output_format": "json",
+		"json":          items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if errMsg, _ := out["_ERROR"].(string); errMsg != "" {
+		t.Fatalf("Invoke error payload: %s", errMsg)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) < 2 {
+		t.Fatalf("want multiple chunks, got %d", len(chunks))
+	}
+	for i, ck := range chunks {
+		text, _ := ck["text"].(string)
+		if n := tokenizeStr(text); n > budget {
+			t.Errorf("chunk %d exceeds budget: tokens=%d (cap=%d)", i, n, budget)
+		}
+	}
+}
+
+// TestMergeUnits_UnderCapBoundaryDecision pins the boundary semantics of the
+// hard-cap merge independent of BPE text-token-count fluctuations: an exact-fit
+// join (prev+incoming == target) merges; an overflowing join starts a fresh
+// chunk; an oversized incoming unit is expanded into <= target pieces instead of
+// standing alone.
+func TestMergeUnits_UnderCapBoundaryDecision(t *testing.T) {
+	units := []schema.ChunkDoc{
+		{Text: "prev text", TKNums: intPtr(10), CKType: "text"},
+		{Text: "incoming text", TKNums: intPtr(10), CKType: "text"},
+	}
+	// prev+incoming == target: merge into one chunk.
+	got := mergeUnits(units, 20, 0, "\n")
+	if len(got) != 1 {
+		t.Fatalf("exact-fit join: want 1 merged chunk, got %d", len(got))
+	}
+	if sum := intValue(got[0].TKNums); sum != 20 {
+		t.Errorf("merged chunk running sum: want 20, got %d", sum)
+	}
+
+	// prev+incoming > target: fresh chunk, no overflow.
+	over := mergeUnits(units, 19, 0, "\n")
+	if len(over) != 2 {
+		t.Fatalf("overflowing join: want 2 chunks, got %d", len(over))
+	}
+
+	// An oversized incoming unit is expanded (split) instead of standing whole.
+	big := []schema.ChunkDoc{
+		{Text: "prev text", TKNums: intPtr(10), CKType: "text"},
+		{Text: strings.Repeat("word ", 100), TKNums: intPtr(100), CKType: "text"},
+	}
+	bigMerged := mergeUnits(big, 30, 0, "\n")
+	if len(bigMerged) < 2 {
+		t.Fatalf("oversized incoming unit must be split, got %d chunk(s)", len(bigMerged))
+	}
+	for i, ck := range bigMerged {
+		if n := intValue(ck.TKNums); n > 30 {
+			t.Errorf("chunk %d exceeds target: tokens=%d", i, n)
 		}
 	}
 }

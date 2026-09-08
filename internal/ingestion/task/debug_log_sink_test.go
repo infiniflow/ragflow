@@ -264,7 +264,7 @@ type traceChunkComponent struct{}
 func (traceChunkComponent) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	// Use the real component output shape ([]map[string]any as produced by
 	// ChunkDocsToMaps) so the end-to-end strip/recurse path for []map[string]any
-	// is actually exercised — a []any stub hides the deepCopyStrip type gap.
+	// is actually exercised — a []any stub hides the deepCopy type gap.
 	return map[string]any{
 		"chunks": []map[string]any{
 			{"text": "real chunk", "vector": []float64{0.5}},
@@ -408,7 +408,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildDebugResultDSL: %v", err)
 	}
-	sink.SetResult(resultDSL)
+	sink.SetResult(resultDSL, output)
 	sink.Flush(ctx, nil)
 
 	raw := store.Get(ctx, "c-dsl-m-dsl-logs")
@@ -467,8 +467,9 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 // so it would not catch this. This test closes that end-to-end gap.
 //
 // It also pins the inverse: component "d" (stub returning {"ok":true}) has NO
-// recognized output key, so its params.outputs must be absent — the safe-empty
-// contract the front-end renders as a blank step.
+// recognized output key, so its params.outputs carries no format keys — the
+// safe-empty contract the front-end renders as a blank step (the TrackElapsed
+// bookkeeping pair is still present).
 func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 	const (
 		compC = "trace.RealStubChunks"
@@ -505,7 +506,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildDebugResultDSL: %v", err)
 	}
-	sink.SetResult(resultDSL)
+	sink.SetResult(resultDSL, output)
 	sink.Flush(ctx, nil)
 
 	raw := store.Get(ctx, "c-chunk-m-chunk-logs")
@@ -557,10 +558,71 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 		t.Errorf("c params.setups must be carried from DSL: %#v", cParams)
 	}
 
-	// Component "d" emits {"ok":true} -> no recognized format -> outputs absent.
+	// Component "d" emits {"ok":true} -> no recognized format -> NO format keys
+	// are invented; the TrackElapsed bookkeeping pair the real pipeline run
+	// stamped is still carried so the timeline can show its elapsed time.
 	dParams := components["d"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
-	if _, exists := dParams["outputs"]; exists {
-		t.Errorf("d has no recognized output, outputs must be absent: %#v", dParams)
+	dOutputs, ok := dParams["outputs"].(map[string]any)
+	if !ok {
+		t.Fatalf("d (no payload format) must still carry bookkeeping outputs: %#v", dParams)
+	}
+	if _, exists := dOutputs["output_format"]; exists {
+		t.Errorf("d has no recognized output, output_format must be absent: %#v", dOutputs)
+	}
+	if _, exists := dOutputs["_elapsed_time"]; !exists {
+		t.Errorf("d outputs._elapsed_time must be carried: %#v", dOutputs)
+	}
+
+	// The END marker MESSAGE must be the JSON dump of the LAST component's
+	// ("d") raw output — the contract the front-end "Export JSON" button
+	// relies on (use-download-output.ts findEndOutput JSON.parses it). A
+	// plain-text sentinel leaves the button permanently disabled.
+	endMsg, _ := endFirst["message"].(string)
+	var endOutput map[string]any
+	if err := json.Unmarshal([]byte(endMsg), &endOutput); err != nil {
+		t.Fatalf("END message must be the last component's output JSON, got %q", endMsg)
+	}
+	if endOutput["ok"] != true {
+		t.Errorf("END message output=%#v want d's raw output {ok:true}", endOutput)
+	}
+}
+
+// TestDebugLogSink_EndMessageFallsBackWithoutRunOutput pins the two cases
+// where the END marker message must NOT be a JSON dump: no run output was
+// handed to the sink (SetResult never called, e.g. the run failed before
+// producing output) and the run ended with an error. In both cases the
+// front-end export button stays disabled — matching Python, whose END message
+// is only the output JSON on success.
+func TestDebugLogSink_EndMessageFallsBackWithoutRunOutput(t *testing.T) {
+	ctx := t.Context()
+
+	// Case 1: successful run but SetResult was never called -> plain text.
+	store := &capturedStore{}
+	sink := NewDebugLogSink("c-nores", "m-nores", store)
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
+		Component: "A", Message: "A Done", Phase: phaseExit,
+	})
+	sink.Flush(ctx, nil)
+	arr := loadArray(t, store.Get(ctx, "c-nores-m-nores-logs"))
+	endFirst, _ := arr[len(arr)-1]["trace"].([]any)[0].(map[string]any)
+	if msg, _ := endFirst["message"].(string); msg != "Debug run completed" {
+		t.Errorf("END message without run output=%q want %q", msg, "Debug run completed")
+	}
+
+	// Case 2: run output IS available but the run failed -> error wins.
+	store2 := &capturedStore{}
+	sink2 := NewDebugLogSink("c-fail", "m-fail", store2)
+	sink2.OnComponentProgress(ctx, pipeline.ProgressEvent{
+		Component: "A", Message: "A Done", Phase: phaseExit,
+	})
+	sink2.SetResult(map[string]any{"components": map[string]any{}},
+		map[string]any{"state": map[string]any{"A": map[string]any{"ok": true}}})
+	sink2.Flush(ctx, errors.New("boom"))
+	arr2 := loadArray(t, store2.Get(ctx, "c-fail-m-fail-logs"))
+	endFirst2, _ := arr2[len(arr2)-1]["trace"].([]any)[0].(map[string]any)
+	msg2, _ := endFirst2["message"].(string)
+	if !strings.HasPrefix(msg2, "[ERROR] ") {
+		t.Errorf("END message on failure must stay [ERROR]-prefixed, got %q", msg2)
 	}
 }
 
