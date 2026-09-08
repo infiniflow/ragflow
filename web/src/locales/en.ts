@@ -788,6 +788,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dialogueExamplesTitle: 'view',
       methodEmpty:
         'This will display a visual explanation of the dataset categories',
+      imageLoadFailed: 'Failed to load image',
       audio: `<p>Supported file formats are <b>WAV, MP3, AAC, FLAC, OGG</b> and other common audio formats.</p>
 <p>This method transcribes audio files into text using a speech-to-text model.</p>`,
       email: `<p>Supported file formats are <b>EML</b> and <b>MSG</b>.</p>
@@ -919,6 +920,7 @@ Paragraphs:
       pageRank: 'Page rank',
       pageRankTip: `You can assign a higher PageRank score to specific datasets during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these datasets, increasing their ranking. See https://ragflow.io/docs/dataset_configuration#basic-information for details.`,
       tagName: 'Tag',
+      tagMessage: 'Please select a tag',
       frequency: 'Frequency',
       searchTags: 'Search tags',
       tagCloud: 'Cloud',
@@ -2362,7 +2364,7 @@ Example: Virtual Hosted Style`,
       compilationTitleSuffix: "' dataset",
       llmWiki: 'Wiki',
       skills: 'To Skills',
-      navTree: 'Tree/Page index',
+      navTree: 'Tree/PageIndex',
       graph: 'Graph',
       structureMindmap: 'Mind map',
       structureTimeline: 'Timeline',
@@ -2779,6 +2781,15 @@ Best for: Documents with flowing, contextually connected content — such as boo
       youComFreshnessMonth: 'Past month',
       youComFreshnessYear: 'Past year',
       youComApiKeyTip: 'Optional. Leave blank to use the keyless free tier.',
+      sofyaSearch: 'Sofya',
+      sofyaSearchDescription:
+        'A web search component powered by Sofya. Results carry the content of each result page, or only its search snippet, depending on the search depth. An API Key is required.',
+      sofyaSearchDepth: 'Search depth',
+      sofyaSearchDepthTip:
+        'Basic returns the content of each result page. Snippets returns the search snippets only, which is faster and costs less.',
+      sofyaSearchDepthBasic: 'Page content',
+      sofyaSearchDepthSnippets: 'Snippets only',
+      sofyaApiKeyTip: 'Required. Create an API Key at sofya.co.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
       browser: 'Browser',
@@ -3166,6 +3177,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       contentTip: 'content: Email content (Optional)',
       jsonUploadTypeErrorMessage: 'Please upload json file',
       jsonUploadContentErrorMessage: 'json file error',
+      nameExists: 'Name already exists',
       iteration: 'Iteration',
       iterationDescription: `A looping component that iterates over an input array and executes a defined logic for each item.`,
       delimiterTip: `
