@@ -71,10 +71,11 @@ type Ingestor struct {
 	// holding its worker slot forever while startHeartbeat keeps renewing
 	// the broker ack deadline — the "document stays RUNNING at 0%
 	// indefinitely" defect (a stuck task also blocks every queued document
-	// when maxConcurrency is 1). Python bounds its heaviest task stages the
-	// same way (task_executor.py wraps run_raptor_for_kb in
-	// @timeout(3600) and build_chunks in @timeout(60*80, 1)); this is the
-	// whole-task equivalent. 0 disables the watchdog.
+	// when maxConcurrency is 1). Python bounds whole tasks the same way
+	// (task_executor.py wraps do_handle_task in @timeout(60*60*3, 1), i.e.
+	// 10800s — the default here) on top of per-stage caps
+	// (run_raptor_for_kb @timeout(3600), build_chunks @timeout(60*80, 1));
+	// this is the whole-task equivalent. 0 disables the watchdog.
 	taskTimeout time.Duration
 
 	// Runtime state
@@ -783,10 +784,16 @@ func (e *Ingestor) markFailed(ctx context.Context, taskID string) bool {
 }
 
 // failWithTimeout settles a watchdog-deadline abort: the document gets the
-// timeout marker (run=FAIL, progress=-1, "Task timed out.") and the task is
-// durably marked FAILED so the message is Acked and the worker slot freed.
+// timeout marker (run=FAIL, progress=-1, a "Task timed out" message), the
+// task is durably marked FAILED, and the terminal pipeline log entry is
+// recorded, so the message is Acked and the worker slot freed. The document
+// row is settled first: if that write fails the task is left untouched and
+// false is returned so the broker redelivers, instead of Acking a task whose
+// document is still RUNNING.
 func (e *Ingestor) failWithTimeout(ctx context.Context, task *entity.IngestionTask) bool {
-	e.markTimeoutProgress(task)
+	if !e.markTimeoutProgress(task) {
+		return false
+	}
 	ok := e.markFailed(ctx, task.ID)
 	if ok {
 		e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail))
@@ -808,7 +815,9 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			return e.failWithTimeout(ctx, task)
 		}
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
-		e.markCancelProgress(task)
+		if !e.markCancelProgress(task) {
+			return false
+		}
 		stopped := e.markStopped(context.Background(), task.ID)
 		if stopped {
 			e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel))
@@ -882,7 +891,9 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		}
 		if errors.Is(err, context.Canceled) {
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
-			e.markCancelProgress(task)
+			if !e.markCancelProgress(task) {
+				return false
+			}
 			stopped := e.markStopped(ctx, task.ID)
 			if stopped {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel))
@@ -1104,38 +1115,51 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 
 // markCancelProgress writes the cancelled-progress markers to the document
 // row. Mirrors Python's cancel_all_task_of: progress=-1, run=CANCEL, and an
-// appended timestamped cancel message (progress_msg += cancelMsg).
-func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
+// appended timestamped cancel message (progress_msg += cancelMsg). It reports
+// whether the document row was durably updated so callers avoid Acking a
+// task whose document could not be settled.
+func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) bool {
 	svc := documentpkg.NewDocumentService()
 	doc, err := svc.GetDocumentByID(e.ctx, task.DocumentID)
 	if err != nil {
 		common.Error(fmt.Sprintf("markCancelProgress: load document %s: %v", task.DocumentID, err), err)
-		return
+		return false
 	}
 	cancelMsg := fmt.Sprintf("\n%s Task stopped by user.", time.Now().Format("15:04:05"))
 	existingMsg := ""
 	if doc.ProgressMsg != nil {
 		existingMsg = *doc.ProgressMsg
 	}
-	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusCancel), existingMsg+cancelMsg)
+	if err := svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusCancel), existingMsg+cancelMsg); err != nil {
+		common.Error(fmt.Sprintf("markCancelProgress: update document %s: %v", task.DocumentID, err), err)
+		return false
+	}
+	return true
 }
 
 // markTimeoutProgress writes the timeout-progress markers to the document
 // row. Unlike cancellation (markCancelProgress), this records a TIMEOUT
-// failure rather than a user-initiated stop.
-func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
+// failure rather than a user-initiated stop; the message names the limit so
+// the failure is actionable (raise the limit or split the document). It
+// reports whether the document row was durably updated so callers avoid
+// Acking a task whose document could not be settled.
+func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) bool {
 	svc := documentpkg.NewDocumentService()
 	doc, err := svc.GetDocumentByID(e.ctx, task.DocumentID)
 	if err != nil {
 		common.Error(fmt.Sprintf("markTimeoutProgress: load document %s: %v", task.DocumentID, err), err)
-		return
+		return false
 	}
-	timeoutMsg := fmt.Sprintf("\n%s Task timed out.", time.Now().Format("15:04:05"))
+	timeoutMsg := fmt.Sprintf("\n%s Task timed out after %s (whole-task limit 'task_timeout_seconds'); very large documents may need a higher limit or splitting.", time.Now().Format("15:04:05"), e.taskTimeout)
 	existingMsg := ""
 	if doc.ProgressMsg != nil {
 		existingMsg = *doc.ProgressMsg
 	}
-	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
+	if err := svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg); err != nil {
+		common.Error(fmt.Sprintf("markTimeoutProgress: update document %s: %v", task.DocumentID, err), err)
+		return false
+	}
+	return true
 }
 
 // claimTask registers a worker claim on a task ID. Returns false if another

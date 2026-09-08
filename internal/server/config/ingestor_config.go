@@ -15,7 +15,18 @@
 
 package config
 
-import "github.com/spf13/viper"
+import (
+	"math"
+	"time"
+
+	"github.com/spf13/viper"
+)
+
+// maxTaskTimeoutSeconds is the largest task_timeout_seconds that survives the
+// time.Duration(seconds) * time.Second conversion at the ingestor wiring call
+// site without overflowing int64 nanoseconds; larger configured values are
+// clamped to it instead of silently wrapping to a negative duration.
+const maxTaskTimeoutSeconds = int(math.MaxInt64 / int64(time.Second))
 
 type IngestorConfig struct {
 	// MaxConcurrentWorkers bounds how many ingestion tasks the ingestor runs in
@@ -30,8 +41,11 @@ type IngestorConfig struct {
 	// before the worker watchdog deadline fires; the task is then marked
 	// FAILED with a timeout marker on its document instead of lingering in
 	// RUNNING at 0% forever (and, with a single worker, blocking every
-	// queued document). Mirrors Python task_executor's @timeout stage caps.
-	// 0/negative disables the watchdog.
+	// queued document). It is a whole-task budget matching Python
+	// task_executor's do_handle_task @timeout(60*60*3, 1) cap (10800s), on
+	// top of which Python bounds individual stages (run_raptor_for_kb
+	// @timeout(3600), build_chunks @timeout(60*80, 1)). 0/negative disables
+	// the watchdog; values above maxTaskTimeoutSeconds are clamped.
 	TaskTimeoutSeconds int `mapstructure:"task_timeout_seconds"`
 }
 
@@ -39,7 +53,7 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 	// Default Ingestor config
 	c.ingestor.MaxConcurrentWorkers = 2
 	c.ingestor.CompilerPoolSize = 0
-	c.ingestor.TaskTimeoutSeconds = 3600
+	c.ingestor.TaskTimeoutSeconds = 10800 // Python do_handle_task whole-task cap: @timeout(60*60*3, 1)
 
 	if !v.IsSet("ingestor") {
 		return nil
@@ -59,6 +73,9 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 
 	if sub.IsSet("task_timeout_seconds") {
 		c.ingestor.TaskTimeoutSeconds = sub.GetInt("task_timeout_seconds")
+		if c.ingestor.TaskTimeoutSeconds > maxTaskTimeoutSeconds {
+			c.ingestor.TaskTimeoutSeconds = maxTaskTimeoutSeconds
+		}
 	}
 
 	return nil

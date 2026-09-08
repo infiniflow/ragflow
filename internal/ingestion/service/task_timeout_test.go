@@ -73,6 +73,9 @@ func TestExecuteTask_WatchdogDeadlineFailsStuckTask(t *testing.T) {
 	if !strings.Contains(msg, "timed out") {
 		t.Fatalf("progress_msg should carry the timeout marker, got %q", msg)
 	}
+	if !strings.Contains(msg, "task_timeout_seconds") {
+		t.Fatalf("progress_msg should name the timeout limit so the failure is actionable, got %q", msg)
+	}
 }
 
 // TestRunTask_WatchdogDeadlineBeforePipelineStart covers the deadline firing
@@ -145,5 +148,73 @@ func TestRunTask_WatchdogDisabledKeepsCancelSemantics(t *testing.T) {
 	}
 	if task.Status != common.STOPPED {
 		t.Fatalf("task status = %s, want STOPPED for a user cancel with the watchdog disabled", task.Status)
+	}
+}
+
+// TestFailWithTimeout_DocSettleFailureKeepsTaskRunning pins the data-integrity
+// rule: when the document timeout write fails, the task must NOT be treated
+// as settled (no Ack) — the broker redelivers so the settle is retried,
+// instead of leaving the document RUNNING forever behind an Acked task.
+func TestFailWithTimeout_DocSettleFailureKeepsTaskRunning(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.SetTaskTimeout(50 * time.Millisecond)
+
+	// The document row disappears between the deadline and the settle.
+	if err := db.Where("id = ?", docID).Delete(&entity.Document{}).Error; err != nil {
+		t.Fatalf("delete document: %v", err)
+	}
+
+	terminal := ingestor.failWithTimeout(t.Context(), &entity.IngestionTask{
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+	})
+	if terminal {
+		t.Fatal("expected false (document settle failed; message must not be Acked)")
+	}
+
+	task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, taskID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("task status = %s, want RUNNING (settle must not half-commit)", task.Status)
+	}
+}
+
+// TestRunTask_CancelDocSettleFailureKeepsTaskRunning applies the same
+// data-integrity rule to the cancel path: a failed document cancel-write
+// must not Ack the task either.
+func TestRunTask_CancelDocSettleFailureKeepsTaskRunning(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+
+	if err := db.Where("id = ?", docID).Delete(&entity.Document{}).Error; err != nil {
+		t.Fatalf("delete document: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	terminal := ingestor.runTask(ctx, &entity.IngestionTask{
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+	})
+	if terminal {
+		t.Fatal("expected false (document settle failed; message must not be Acked)")
+	}
+
+	task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, taskID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("task status = %s, want RUNNING (settle must not half-commit)", task.Status)
 	}
 }
