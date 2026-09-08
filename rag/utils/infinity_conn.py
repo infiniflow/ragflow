@@ -58,6 +58,22 @@ def _vector_similarity_weight(match_expressions: list[MatchExpr]) -> float:
     return vector_similarity_weight
 
 
+def _dataset_language(dataset_id: str) -> str | None:
+    """The language of the dataset chunks are being written to, or None.
+
+    ``KnowledgebaseService`` is imported here rather than at module scope
+    because ``api.db`` loads the ORM layer, which reaches back into the
+    doc-store connectors; ``rag/utils/table_es_metadata.py`` resolves dataset
+    state the same way.
+    """
+    from api.db.services.knowledgebase_service import KnowledgebaseService
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return None
+    return kb.language or None
+
+
 def _build_dense_filter(filter_cond: str | None, filter_fulltext: str | None, vector_similarity_weight: float) -> str:
     if vector_similarity_weight > DENSE_FILTER_FULLTEXT_WEIGHT_THRESHOLD:
         return filter_cond or ""
@@ -498,9 +514,12 @@ class InfinityConnection(InfinityConnectionBase):
                     parser_id = ParserType.TABLE.value
                     self.logger.debug("Detected TABLE parser from document structure")
 
-                # Fallback: Create table with base schema (shouldn't normally happen as init_kb() creates it)
-                self.logger.debug(f"Fallback: Creating table {table_name} with base schema, parser_id: {parser_id}")
-                self.create_idx(index_name, knowledgebase_id, vector_size, parser_id)
+                # Fallback: Create table with base schema (shouldn't normally happen as init_kb() creates it).
+                # A table keeps the analyzer it was created with, so this path
+                # has to carry the dataset language as init_kb() does.
+                language = _dataset_language(knowledgebase_id)
+                self.logger.debug(f"Fallback: Creating table {table_name} with base schema, parser_id: {parser_id}, language: {language}")
+                self.create_idx(index_name, knowledgebase_id, vector_size, parser_id, language)
                 table_instance = db_instance.get_table(table_name)
 
             # embedding fields can't have a default value....

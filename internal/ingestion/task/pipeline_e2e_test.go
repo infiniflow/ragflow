@@ -256,7 +256,7 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 			svc.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
 				insertChunksCalled = true
 				t.Logf("DocEngine InsertChunks called! baseName=%s datasetID=%s len(chunks)=%d", baseName, datasetID, len(chunks))
-				ids, err := docEngine.InsertChunks(ctx, chunks, baseName, datasetID)
+				ids, err := docEngine.InsertChunks(ctx, chunks, baseName, datasetID, "")
 				if err != nil {
 					t.Logf("WARNING: InsertChunks err=%v", err)
 				}

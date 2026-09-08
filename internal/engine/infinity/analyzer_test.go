@@ -67,3 +67,76 @@ func TestLanguageSuffixKeepsCoarseBeforeFine(t *testing.T) {
 		t.Errorf("expected %q to sort before %q", coarse, fine)
 	}
 }
+
+// A table's rag analyzer is settled by its first fulltext index, so a second
+// creation call under a different language must leave it alone rather than add
+// an index that wins (or loses) on name order.
+func TestHasForeignRagIndex(t *testing.T) {
+	wanted := func(language string) map[string]string {
+		return wantedFulltextIndexes("content", []string{"rag-coarse", "rag-fine"}, language)
+	}
+
+	tests := []struct {
+		name     string
+		existing []string
+		language string
+		want     bool
+	}{
+		{
+			// The case that silently costs a Slovak dataset its folding: the
+			// table was created with no language, so the slovak indexes would
+			// sit behind the defaults and never be used.
+			name:     "a default index is foreign to a slovak dataset",
+			existing: []string{"q_vec_idx", "ft_content_rag_coarse", "ft_content_rag_fine"},
+			language: "Slovak",
+			want:     true,
+		},
+		{
+			name:     "a slovak index is foreign to a default dataset",
+			existing: []string{"ft_content_rag_coarse_slovak", "ft_content_rag_fine_slovak"},
+			language: "",
+			want:     true,
+		},
+		{
+			name:     "matching indexes are not foreign",
+			existing: []string{"ft_content_rag_coarse_slovak", "ft_content_rag_fine_slovak"},
+			language: "slovak",
+			want:     false,
+		},
+		{
+			// Half-built tables must stay repairable; only other languages freeze.
+			name:     "a missing variant is still repairable",
+			existing: []string{"ft_content_rag_coarse_slovak"},
+			language: "slovak",
+			want:     false,
+		},
+		{
+			name:     "another field is not consulted",
+			existing: []string{"ft_docnm_rag_coarse"},
+			language: "slovak",
+			want:     false,
+		},
+		{
+			name:     "keyword indexes are not rag indexes",
+			existing: []string{"ft_content_whitespace__"},
+			language: "slovak",
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasForeignRagIndex(tt.existing, "content", wanted(tt.language)); got != tt.want {
+				t.Errorf("hasForeignRagIndex(%v, \"content\", wanted(%q)) = %v, want %v", tt.existing, tt.language, got, tt.want)
+			}
+		})
+	}
+}
+
+// A shorter field name must not be satisfied by a longer one's index.
+func TestForeignRagIndexIsNotAPrefixMatch(t *testing.T) {
+	wanted := wantedFulltextIndexes("name", []string{"rag-coarse"}, "slovak")
+	if hasForeignRagIndex([]string{"ft_name_kwd_rag_coarse"}, "name", wanted) {
+		t.Error("ft_name_kwd_rag_coarse must not count as an index on the name field")
+	}
+}

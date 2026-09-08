@@ -24,6 +24,8 @@ makes that possible.
 Run with: python -m pytest test/unit_test/common/test_infinity_analyzer_language.py -v
 """
 
+import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -36,6 +38,10 @@ pytestmark = pytest.mark.p2
 import common.settings  # noqa: F401,E402
 from common.doc_store import infinity_conn_base  # noqa: E402
 from common.doc_store.infinity_conn_base import _analyzer_for_language as analyzer_for_language  # noqa: E402
+from infinity.common import InfinityException  # noqa: E402
+from infinity.errors import ErrorCode  # noqa: E402
+
+from rag.utils import infinity_conn  # noqa: E402
 
 
 class TestAnalyzerForLanguage:
@@ -82,38 +88,62 @@ class TestFulltextIndexName:
         assert coarse < fine
 
 
-class TestHasRagFulltextIndex:
-    def test_detects_a_language_suffixed_index(self):
-        names = ["q_vec_idx", "ft_content_rag_coarse_slovak", "ft_content_rag_fine_slovak"]
-        assert infinity_conn_base._has_rag_fulltext_index(names, "content", "rag-coarse") is True
+class TestHasForeignRagIndex:
+    """A table's rag analyzer is settled by its first fulltext index."""
 
-    def test_detects_a_default_index(self):
-        assert infinity_conn_base._has_rag_fulltext_index(["ft_content_rag_coarse"], "content", "rag-coarse") is True
+    def _wanted(self, language):
+        return infinity_conn_base._wanted_fulltext_indexes("content", {"analyzer": ["rag-coarse", "rag-fine"]}, language)
 
-    def test_false_when_the_field_has_no_rag_index(self):
-        assert infinity_conn_base._has_rag_fulltext_index(["ft_docnm_rag_coarse"], "content", "rag-coarse") is False
+    def test_a_default_index_is_foreign_to_a_slovak_dataset(self):
+        """The case that silently costs a Slovak dataset its folding.
+
+        The table was created without a language, so adding the slovak indexes
+        beside the defaults would achieve nothing: the unsuffixed name sorts
+        first and keeps winning.
+        """
+        existing = ["q_vec_idx", "ft_content_rag_coarse", "ft_content_rag_fine"]
+        assert infinity_conn_base._has_foreign_rag_index(existing, "content", self._wanted("Slovak")) is True
+
+    def test_a_slovak_index_is_foreign_to_a_default_dataset(self):
+        existing = ["ft_content_rag_coarse_slovak", "ft_content_rag_fine_slovak"]
+        assert infinity_conn_base._has_foreign_rag_index(existing, "content", self._wanted(None)) is True
+
+    def test_matching_indexes_are_not_foreign(self):
+        existing = ["ft_content_rag_coarse_slovak", "ft_content_rag_fine_slovak"]
+        assert infinity_conn_base._has_foreign_rag_index(existing, "content", self._wanted("slovak")) is False
+
+    def test_a_missing_variant_is_still_repairable(self):
+        """Half-built tables must not be frozen: only other languages are."""
+        existing = ["ft_content_rag_coarse_slovak"]
+        wanted = self._wanted("slovak")
+        assert infinity_conn_base._has_foreign_rag_index(existing, "content", wanted) is False
+        assert "ft_content_rag_fine_slovak" in wanted
+
+    def test_another_field_is_not_consulted(self):
+        assert infinity_conn_base._has_foreign_rag_index(["ft_docnm_rag_coarse"], "content", self._wanted("slovak")) is False
 
     def test_a_shorter_field_name_is_not_a_prefix_match(self):
         """``name`` must not be satisfied by ``name_kwd``'s index."""
-        assert infinity_conn_base._has_rag_fulltext_index(["ft_name_kwd_rag_coarse"], "name", "rag-coarse") is False
-
-    def test_keyword_analyzers_are_never_preserved(self):
-        names = ["ft_tag_kwd_rag_coarse"]
-        assert infinity_conn_base._has_rag_fulltext_index(names, "tag_kwd", "whitespace-#") is False
+        wanted = infinity_conn_base._wanted_fulltext_indexes("name", {"analyzer": ["rag-coarse"]}, "slovak")
+        assert infinity_conn_base._has_foreign_rag_index(["ft_name_kwd_rag_coarse"], "name", wanted) is False
 
 
 class _FakeTable:
-    def __init__(self):
+    def __init__(self, existing=()):
         self.indexes = []
+        self.existing = list(existing)
 
     def create_index(self, name, index_info, conflict_type=None):
         self.indexes.append((name, index_info))
         return MagicMock(error_code=0)
 
+    def list_indexes(self):
+        return MagicMock(index_names=self.existing)
 
-def _created_fulltext_analyzers(language):
+
+def _created_fulltext_analyzers(language, existing=()):
     """Run ``create_idx`` against a fake Infinity and collect its analyzers."""
-    table = _FakeTable()
+    table = _FakeTable(existing)
     db = MagicMock()
     db.create_table.return_value = table
     conn = MagicMock()
@@ -153,6 +183,16 @@ class TestCreateIdxAnalyzers:
         assert analyzers["ft_tag_kwd_whitespace__"] == "whitespace-#"
         assert analyzers["ft_tag_feas_rankfeatures"] == "rankfeatures"
 
+    def test_an_existing_default_table_is_left_as_it_is(self):
+        """No suffixed index is added beside a default one.
+
+        Infinity would keep analyzing queries with the unsuffixed index, so the
+        extra indexes would cost storage and build time and change nothing.
+        """
+        existing = ["q_vec_idx"] + [f"ft_{f}_rag_{g}" for f in ("content", "docnm", "questions", "important_keywords", "authors") for g in ("coarse", "fine")]
+        analyzers = _created_fulltext_analyzers("Slovak", existing=existing)
+        assert not [name for name in analyzers if name.endswith("_slovak")]
+
     def test_default_language_keeps_todays_analyzers(self):
         analyzers = _created_fulltext_analyzers(None)
         assert analyzers["ft_content_rag_coarse"] == "rag-coarse"
@@ -169,8 +209,7 @@ class TestMigrateDbPreservesTheDatasetAnalyzer:
     """
 
     def _run_migrate(self, existing_indexes):
-        table = _FakeTable()
-        table.list_indexes = MagicMock(return_value=MagicMock(index_names=existing_indexes))
+        table = _FakeTable(existing_indexes)
         table.show_columns = MagicMock(return_value={"name": ["content", "tag_kwd", "tag_feas"]})
         table.add_columns = MagicMock(return_value=MagicMock(error_code=0))
 
@@ -199,3 +238,62 @@ class TestMigrateDbPreservesTheDatasetAnalyzer:
         created = self._run_migrate(["q_vec_idx"])
         assert "ft_content_rag_coarse" in created
         assert "ft_content_rag_fine" in created
+
+
+class _CreateIdxReached(Exception):
+    """Ends ``insert()`` at the call under test instead of faking the write."""
+
+
+# ``@singleton`` wraps the class in a closure that returns a cached instance;
+# unwrap it to reach the unbound methods.
+_InfinityConnection = next(cell.cell_contents for cell in infinity_conn.InfinityConnection.__closure__ if isinstance(cell.cell_contents, type))
+
+
+class TestInsertCreatesTheTableWithTheDatasetLanguage:
+    """The insert fallback creates the table, so it settles the analyzer too.
+
+    ``init_kb()`` normally creates the chunk table, with the dataset language,
+    before the first chunk is written. When a write reaches a missing table
+    first the table is born here instead -- and a table keeps the analyzer it
+    was created with, so a Slovak dataset would be left with the default one.
+    """
+
+    def _create_idx_args(self, monkeypatch, *, dataset_id, kb):
+        monkeypatch.setitem(
+            sys.modules,
+            "api.db.services.knowledgebase_service",
+            SimpleNamespace(KnowledgebaseService=SimpleNamespace(get_by_id=lambda pid: (kb is not None, kb))),
+        )
+
+        db = MagicMock()
+        db.get_table.side_effect = InfinityException(ErrorCode.TABLE_NOT_EXIST, "no such table")
+        conn = MagicMock()
+        conn.get_database.return_value = db
+
+        connection = MagicMock()
+        connection.connPool.get_conn.return_value = conn
+        connection.dbName = "default_db"
+        connection.logger = MagicMock()
+        connection.create_idx.side_effect = _CreateIdxReached
+
+        with pytest.raises(_CreateIdxReached):
+            _InfinityConnection.insert(
+                connection,
+                [{"id": "c1", "q_1024_vec": [0.0]}],
+                "ragflow_tenant",
+                dataset_id,
+            )
+        return connection.create_idx.call_args.args
+
+    def test_the_dataset_language_reaches_create_idx(self, monkeypatch):
+        args = self._create_idx_args(monkeypatch, dataset_id="kb1", kb=SimpleNamespace(language="Slovak"))
+        assert args == ("ragflow_tenant", "kb1", 1024, None, "Slovak")
+
+    def test_an_unset_language_stays_unset(self, monkeypatch):
+        args = self._create_idx_args(monkeypatch, dataset_id="kb1", kb=SimpleNamespace(language=""))
+        assert args == ("ragflow_tenant", "kb1", 1024, None, None)
+
+    def test_a_missing_dataset_does_not_block_the_write(self, monkeypatch):
+        """A chunk write must not fail over a dataset row it cannot read."""
+        args = self._create_idx_args(monkeypatch, dataset_id="kb-gone", kb=None)
+        assert args == ("ragflow_tenant", "kb-gone", 1024, None, None)
