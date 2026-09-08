@@ -570,7 +570,7 @@ class CreateDatasetReq(Base):
     parse_type: Annotated[int | None, Field(default=None, ge=0, le=64)]
     pipeline_id: Annotated[str | None, Field(default=None, min_length=32, max_length=32, serialization_alias="pipeline_id")]
     chunk_method: Annotated[str | None, Field(default=None, serialization_alias="parser_id")]
-    language: Annotated[str | None, Field(default=None, max_length=32)]
+    language: Annotated[str | None, StringConstraints(strip_whitespace=True, min_length=1, max_length=32), Field(default=None)]
     parser_config: Annotated[ParserConfig | None, Field(default=None)]
     auto_metadata_config: Annotated[AutoMetadataConfig | None, Field(default=None)]
 
