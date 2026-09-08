@@ -32,7 +32,7 @@ all: setup start
 # 🌱 Initialize environment + install dependencies
 setup: ensure_env ensure_uv
 	@echo "📦 Installing dependencies with uv..."
-	@$(UV) sync --python 3.12
+	@$(UV) sync --python 3.13
 	source $(ACTIVATE_SCRIPT) && \
 	export PYTHONPATH=$(PYTHONPATH)
 	@$(UV) pip install -r executor_manager/requirements.txt
@@ -102,14 +102,23 @@ logs:
 clean:
 	@echo "🧹 Cleaning all containers and volumes..."
 	@docker compose down -v || true
-	@if [ -f .env ]; then \
-		source .env && \
-		for i in $$(seq 0 $$((SANDBOX_EXECUTOR_MANAGER_POOL_SIZE - 1))); do \
-			echo "🧹 Deleting sandbox_python_$$i..." && \
-			docker rm -f sandbox_python_$$i 2>/dev/null || true && \
-			echo "🧹 Deleting sandbox_nodejs_$$i..." && \
-			docker rm -f sandbox_nodejs_$$i 2>/dev/null || true; \
-		done; \
+	@# Same discovery as scripts/stop.sh: the containers that exist, not a range derived from
+	@# SANDBOX_EXECUTOR_MANAGER_POOL_SIZE, which misses a pool created at a different size, skips
+	@# cleanup entirely when .env is gone, and never covers a container that failed to join the
+	@# executor-manager queue.
+	@# A failed `docker ps` and an empty result both collapse to an empty string, and only the
+	@# first means the containers are still running. Tolerate grep's no-match exit, not docker's.
+	@if ! all_containers="$$(docker ps -a --format '{{.Names}}')"; then \
+		echo "❌ Could not list Docker containers; sandbox containers were NOT removed" >&2; \
+		exit 1; \
+	fi; \
+	sandbox_containers="$$(printf '%s\n' "$$all_containers" | \
+		grep -E '^sandbox_(python|nodejs)_[0-9]+$$' || true)"; \
+	if [ -n "$$sandbox_containers" ]; then \
+		while IFS= read -r container; do \
+			echo "🧹 Deleting $$container..."; \
+			docker rm -f "$$container" >/dev/null 2>&1 || true; \
+		done <<<"$$sandbox_containers"; \
 	else \
-		echo "⚠️ .env not found, skipping container cleanup"; \
+		echo "✅ No sandbox containers found"; \
 	fi

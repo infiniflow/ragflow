@@ -150,6 +150,7 @@ func normalize(dsl map[string]any, foldLegacy bool) map[string]any {
 		// LoopItem/IterationItem names stay in components but
 		// downstream compile/expand paths must tolerate them).
 		foldLegacyLoopVariants(out)
+
 		rewriteLegacyIterationAliases(out)
 	}
 
@@ -602,6 +603,10 @@ var componentNameToNodeTypeMap = map[string]string{
 	"Tokenizer":          "tokenizerNode",
 	"TokenChunker":       "chunkerNode",
 	"TitleChunker":       "chunkerNode",
+	"OneChunker":         "chunkerNode",
+	"QAChunker":          "chunkerNode",
+	"TableChunker":       "chunkerNode",
+	"PageChunker":        "chunkerNode",
 	"Extractor":          "contextNode",
 	"Loop":               "loopNode",
 	"LoopStart":          "loopStartNode",

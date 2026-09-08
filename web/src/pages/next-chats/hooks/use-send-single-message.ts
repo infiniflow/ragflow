@@ -8,6 +8,7 @@ import {
 import { useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { IMessage } from '@/interfaces/database/chat';
 import api from '@/utils/api';
+import { trim } from 'lodash';
 import { useCallback, useEffect } from 'react';
 import { useParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
@@ -59,6 +60,8 @@ export function useSendSingleMessage({
       messages,
       enableInternet,
       enableThinking,
+      storeHistoryMessages,
+      omitSessionId,
       ...params
     }: {
       message: IMessage;
@@ -70,16 +73,19 @@ export function useSendSingleMessage({
         api.completionUrl,
         {
           chat_id: chatId,
-          session_id: sessionId,
+          ...(omitSessionId ? {} : { session_id: sessionId }),
           messages: [
             ...(Array.isArray(messages) && messages?.length > 0
               ? messages
               : (derivedMessages ?? [])),
             message,
           ],
-          reasoning: enableThinking,
+          reasoning: Number(enableThinking),
           internet: enableInternet,
           ...params,
+          ...(storeHistoryMessages === undefined
+            ? {}
+            : { store_history_messages: storeHistoryMessages }),
           pass_all_history_messages: true,
         },
         controller,
@@ -111,7 +117,8 @@ export function useSendSingleMessage({
       targetConversationId,
       ...params
     }: NextMessageInputOnPressEnterParameter &
-      CreateConversationBeforeSendMessageReturnType) => {
+      Partial<NonNullable<CreateConversationBeforeSendMessageReturnType>>) => {
+      if (trim(value) === '' || !done) return;
       const id = uuid();
 
       addNewestQuestion({
@@ -155,6 +162,7 @@ export function useSendSingleMessage({
     removeMessageById,
     removeMessagesAfterCurrentMessage,
     handlePressEnter,
+    sendMessage,
     sendLoading: !done,
   };
 }

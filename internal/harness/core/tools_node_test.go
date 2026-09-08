@@ -27,7 +27,7 @@ func TestToolsNode_Execute_NoToolCalls(t *testing.T) {
 	resp := &schema.Message{Role: schema.RoleAssistant, Content: "no tools here"}
 	state := &TypedReActAgentState[*schema.Message]{}
 
-	results, action, err := tn.Execute(context.Background(), resp, state, nil)
+	results, action, err := tn.Execute(t.Context(), resp, state, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestToolsNode_Execute_ToolNotFound(t *testing.T) {
 	}
 	state := &TypedReActAgentState[*schema.Message]{}
 
-	results, _, err := tn.Execute(context.Background(), resp, state, nil)
+	results, _, err := tn.Execute(t.Context(), resp, state, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestToolsNode_Execute_ReturnDirectly(t *testing.T) {
 	exitTool := &mockTool{name: "exit_tool", desc: ""}
 
 	tn := NewToolsNode[*schema.Message](&ToolsNodeConfig{
-		Tools:         []Tool{exitTool},
+		Tools:          []Tool{exitTool},
 		ReturnDirectly: map[string]bool{"exit_tool": true},
 	})
 	resp := &schema.Message{
@@ -75,7 +75,7 @@ func TestToolsNode_Execute_ReturnDirectly(t *testing.T) {
 	}
 	state := &TypedReActAgentState[*schema.Message]{}
 
-	results, action, err := tn.Execute(context.Background(), resp, state, nil)
+	results, action, err := tn.Execute(t.Context(), resp, state, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -91,7 +91,9 @@ func TestToolsNode_Execute_ReturnDirectly(t *testing.T) {
 }
 
 func TestParseToolArgs_ValidJSON(t *testing.T) {
-	var in struct{ Name string `json:"name"` }
+	var in struct {
+		Name string `json:"name"`
+	}
 	err := parseToolArgs(`{"name":"test"}`, &in)
 	if err != nil {
 		t.Fatalf("parseToolArgs: %v", err)
@@ -107,8 +109,8 @@ type failingTool struct {
 	desc string
 }
 
-func (t *failingTool) Name() string                                                  { return t.name }
-func (t *failingTool) Description() string                                            { return t.desc }
+func (t *failingTool) Name() string        { return t.name }
+func (t *failingTool) Description() string { return t.desc }
 func (t *failingTool) Invoke(ctx context.Context, s string, opts ...toolOption) (string, error) {
 	return "", errors.New(t.name + " failed")
 }
@@ -144,7 +146,7 @@ func TestToolsNode_WithToolInvokeMiddleware_Retry(t *testing.T) {
 		},
 	}
 
-	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	results, _, err := tn.Execute(t.Context(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -169,7 +171,7 @@ func TestToolsNode_WithToolInvokeMiddleware_Timeout(t *testing.T) {
 		},
 	}
 
-	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	results, _, err := tn.Execute(t.Context(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -193,7 +195,7 @@ func TestToolsNode_WithToolInvokeMiddleware_Fallback(t *testing.T) {
 		},
 	}
 
-	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	results, _, err := tn.Execute(t.Context(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -221,7 +223,7 @@ func TestToolsNode_WithToolInvokeMiddleware_MultipleConcurrentTools(t *testing.T
 		},
 	}
 
-	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	results, _, err := tn.Execute(t.Context(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -249,7 +251,7 @@ func TestToolRegistry_WithReActAgentIntegration(t *testing.T) {
 		Tools: r.ToSlice(),
 	}).WithName("registry_agent")
 
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("Greet London")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("Greet London")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Error("expected events")
@@ -277,7 +279,7 @@ func TestReflectTool_WithReActAgent(t *testing.T) {
 		Tools: []Tool{weatherTool},
 	}).WithName("reflect_agent")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("What is the weather in Tokyo?")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
@@ -314,7 +316,7 @@ func TestApprovalMiddleware_WithToolsNode(t *testing.T) {
 		},
 	}
 
-	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	results, _, err := tn.Execute(t.Context(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -419,7 +421,7 @@ func TestLoopGuard_WithToolsNode(t *testing.T) {
 			{ID: "c1", Function: schema.ToolCallFunction{Name: "echo", Arguments: `"hello"`}},
 		},
 	}
-	results1, _, err1 := tn.Execute(context.Background(), resp1, &TypedReActAgentState[*schema.Message]{}, nil)
+	results1, _, err1 := tn.Execute(t.Context(), resp1, &TypedReActAgentState[*schema.Message]{}, nil)
 	if err1 != nil {
 		t.Fatalf("1st call: %v", err1)
 	}
@@ -434,7 +436,7 @@ func TestLoopGuard_WithToolsNode(t *testing.T) {
 			{ID: "c2", Function: schema.ToolCallFunction{Name: "echo", Arguments: `"hello"`}},
 		},
 	}
-	results2, _, err2 := tn.Execute(context.Background(), resp2, &TypedReActAgentState[*schema.Message]{}, nil)
+	results2, _, err2 := tn.Execute(t.Context(), resp2, &TypedReActAgentState[*schema.Message]{}, nil)
 	if err2 != nil {
 		t.Fatalf("2nd call: %v", err2)
 	}
@@ -550,7 +552,7 @@ func TestPlanBatches_ConcurrentExecuteWithCapability(t *testing.T) {
 			{ID: "c2", Function: schema.ToolCallFunction{Name: "t2", Arguments: `{}`}},
 		},
 	}
-	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	results, _, err := tn.Execute(t.Context(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -583,7 +585,7 @@ func TestApprovalMiddleware_Rejected(t *testing.T) {
 		},
 	}
 
-	results, _, err := tn.Execute(context.Background(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
+	results, _, err := tn.Execute(t.Context(), resp, &TypedReActAgentState[*schema.Message]{}, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

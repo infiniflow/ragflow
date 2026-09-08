@@ -60,16 +60,16 @@ func checkScryptPassword(password, hashStr string) bool {
 		return false
 	}
 
-	n, err := strconv.ParseUint(params[1], 10, 0)
-	if err != nil {
+	n, err := strconv.ParseInt(params[1], 10, 0)
+	if err != nil || n <= 0 {
 		return false
 	}
-	r, err := strconv.ParseUint(params[2], 10, 0)
-	if err != nil {
+	r, err := strconv.ParseInt(params[2], 10, 0)
+	if err != nil || r <= 0 {
 		return false
 	}
-	p, err := strconv.ParseUint(params[3], 10, 0)
-	if err != nil {
+	p, err := strconv.ParseInt(params[3], 10, 0)
+	if err != nil || p <= 0 {
 		return false
 	}
 

@@ -29,6 +29,8 @@ import (
 	"fmt"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 const componentNameFillup = "Fillup"
@@ -80,7 +82,7 @@ func (f *FillupComponent) Name() string { return f.name }
 // Invoke emits one output per form field, with file-typed fields
 // stubbed as "<file:key>". No "tips" key is added — that is the
 // defining difference from UserFillUp.
-func (f *FillupComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (f *FillupComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// State is required by the engine contract; we don't read from it
 	// here, but we still extract it to fail loudly if the engine forgot
 	// to wire it (consistent with UserFillUp's behavior).
@@ -98,8 +100,8 @@ func (f *FillupComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 
 // Stream is the synchronous facade over Invoke: a single payload, then
 // close. Mirrors the pattern used by UserFillUp and the P0 components.
-func (f *FillupComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := f.Invoke(ctx, inputs)
+func (f *FillupComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := f.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

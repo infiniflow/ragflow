@@ -136,9 +136,7 @@ class DingTalkChannel(Channel):
                             if msg.type == aiohttp.WSMsgType.TEXT:
                                 await self._handle_ws_payload(msg.data)
                             elif msg.type == aiohttp.WSMsgType.BINARY:
-                                await self._handle_ws_payload(
-                                    msg.data.decode("utf-8", "ignore")
-                                )
+                                await self._handle_ws_payload(msg.data.decode("utf-8", "ignore"))
                             elif msg.type in (
                                 aiohttp.WSMsgType.CLOSE,
                                 aiohttp.WSMsgType.CLOSED,
@@ -274,27 +272,9 @@ class DingTalkChannel(Channel):
             return
 
         session_webhook = str(data.get("sessionWebhook") or obj.get("sessionWebhook") or "").strip()
-        callback_message_id = str(
-            headers.get("messageId")
-            or obj.get("messageId")
-            or data.get("messageId")
-            or data.get("msgId")
-            or obj.get("msgId")
-            or ""
-        ).strip()
-        chat_id = str(
-            data.get("conversationId")
-            or data.get("chatId")
-            or data.get("openConversationId")
-            or data.get("msgId")
-            or ""
-        ).strip()
-        sender_id = str(
-            data.get("senderId")
-            or data.get("senderStaffId")
-            or data.get("userId")
-            or ""
-        ).strip()
+        callback_message_id = str(headers.get("messageId") or obj.get("messageId") or data.get("messageId") or data.get("msgId") or obj.get("msgId") or "").strip()
+        chat_id = str(data.get("conversationId") or data.get("chatId") or data.get("openConversationId") or data.get("msgId") or "").strip()
+        sender_id = str(data.get("senderId") or data.get("senderStaffId") or data.get("userId") or "").strip()
         message_id = str(data.get("msgId") or obj.get("msgId") or "").strip()
         chat_type = str(data.get("conversationType") or "").strip()
         text = self._extract_text(data)
@@ -389,44 +369,21 @@ class DingTalkChannel(Channel):
         parts = urlsplit(endpoint)
         query = dict(parse_qsl(parts.query, keep_blank_values=True))
         query.setdefault("ticket", ticket)
-        return urlunsplit(
-            (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
-        )
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
     def _build_dedup_key(self, data: Dict[str, Any], obj: Dict[str, Any]) -> str:
         message_id = str(data.get("msgId") or obj.get("msgId") or "").strip()
         if message_id:
             return f"msg:{message_id}"
 
-        callback_message_id = str(
-            obj.get("headers", {}).get("messageId")
-            or obj.get("messageId")
-            or data.get("messageId")
-            or ""
-        ).strip()
+        callback_message_id = str(obj.get("headers", {}).get("messageId") or obj.get("messageId") or data.get("messageId") or "").strip()
         if callback_message_id:
             return f"callback:{callback_message_id}"
 
-        conversation_id = str(
-            data.get("conversationId")
-            or data.get("chatId")
-            or data.get("openConversationId")
-            or ""
-        ).strip()
-        sender_id = str(
-            data.get("senderId")
-            or data.get("senderStaffId")
-            or data.get("userId")
-            or ""
-        ).strip()
+        conversation_id = str(data.get("conversationId") or data.get("chatId") or data.get("openConversationId") or "").strip()
+        sender_id = str(data.get("senderId") or data.get("senderStaffId") or data.get("userId") or "").strip()
         text = self._extract_text(data).strip()
-        event_ts = str(
-            data.get("eventTime")
-            or obj.get("eventTime")
-            or data.get("timestamp")
-            or obj.get("timestamp")
-            or ""
-        ).strip()
+        event_ts = str(data.get("eventTime") or obj.get("eventTime") or data.get("timestamp") or obj.get("timestamp") or "").strip()
         if conversation_id and sender_id and text:
             digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
             suffix = f":{event_ts}" if event_ts else ""

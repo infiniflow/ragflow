@@ -40,14 +40,15 @@ const useAwaitComponentData = (props: IAwaitCompentData) => {
 
   const isWaiting = useMemo(() => {
     const temp = derivedMessages?.some((message, i) => {
+      const hasInputs = Object.keys(getInputs(message)).length > 0;
       const flag =
         message.role === MessageType.Assistant &&
         derivedMessages.length - 1 === i &&
-        message.data;
+        hasInputs;
       return flag;
     });
     return temp;
-  }, [derivedMessages]);
+  }, [derivedMessages, getInputs]);
   return { getInputs, buildInputList, handleOk, isWaiting };
 };
 

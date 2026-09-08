@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useSetDocumentStatus } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
@@ -24,7 +25,8 @@ import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { UseRenameDocumentShowType } from './use-rename-document';
 
 type UseDatasetTableColumnsType = UseChangeDocumentParserShowType &
-  UseRenameDocumentShowType & {
+  UseRenameDocumentShowType &
+  Pick<UseRowSelectionType, 'setRowSelection'> & {
     showLog: (record: IDocumentInfo) => void;
     showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
   };
@@ -34,6 +36,7 @@ export function useDatasetTableColumns({
   showRenameModal,
   showManageMetadataModal,
   showLog,
+  setRowSelection,
 }: UseDatasetTableColumnsType) {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
@@ -138,30 +141,6 @@ export function useDatasetTableColumns({
         </time>
       ),
     },
-    /*
-    {
-      accessorKey: 'source_from',
-      header: t('source'),
-      cell: ({ row }) => (
-        <div className="text-text-primary">
-          {row.original.source_type === 'local' ||
-          row.original.source_type === '' ? (
-            <div className="bg-accent-primary-5 w-6 h-6 rounded-full flex items-center justify-center">
-              <MonitorUp className="text-accent-primary" size={16} />
-            </div>
-          ) : (
-            <div className="w-6 h-6 flex items-center justify-center">
-              {
-                dataSourceInfo[
-                  row.original.source_type as keyof typeof dataSourceInfo
-                ]?.icon
-              }
-            </div>
-          )}
-        </div>
-      ),
-    },
-    */
     {
       accessorKey: 'status',
       header: t('enabled'),
@@ -199,9 +178,6 @@ export function useDatasetTableColumns({
             size="auto"
             onClick={() => {
               showManageMetadataModal({
-                // metadata: util.JSONToMetaDataTableData(
-                //   row.original.meta_fields || {},
-                // ),
                 isEditField: false,
                 isCanAdd: true,
                 isAddValue: true,
@@ -212,10 +188,6 @@ export function useDatasetTableColumns({
                     <div className="text-base font-normal">
                       {t('metadata.editMetadata')}
                     </div>
-                    {/* <div className="text-sm text-text-secondary w-full truncate">
-                      {t('metadata.editMetadataForDataset')}
-                      {row.original.name}
-                    </div> */}
                   </div>
                 ),
                 secondTitle: (
@@ -237,7 +209,6 @@ export function useDatasetTableColumns({
     {
       accessorKey: 'run',
       header: t('Parse'),
-      // meta: { cellClassName: 'min-w-[20vw]' },
       cell: ({ row }) => {
         return (
           <ParseDropdownButton
@@ -271,6 +242,7 @@ export function useDatasetTableColumns({
           <DatasetActionCell
             record={record}
             showRenameModal={showRenameModal}
+            setRowSelection={setRowSelection}
           />
         );
       },

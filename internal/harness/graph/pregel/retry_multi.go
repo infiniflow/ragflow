@@ -28,14 +28,14 @@ func NewMultiPolicyRetryExecutor(policies ...types.RetryPolicy) *MultiPolicyRetr
 func (e *MultiPolicyRetryExecutor) Execute(
 	ctx context.Context,
 	name string,
-	fn func(context.Context) (interface{}, error),
-) (interface{}, error) {
+	fn func(context.Context) (any, error),
+) (any, error) {
 	if len(e.policies) == 0 {
 		return fn(ctx)
 	}
 
 	var lastErr error
-	var lastOutput interface{}
+	var lastOutput any
 	attempt := 0
 
 	for {
@@ -96,9 +96,9 @@ func (e *MultiPolicyRetryExecutor) findMatchingPolicy(err error) *types.RetryPol
 
 // MultiRetryConfig provides configuration for multi-policy retry behavior.
 type MultiRetryConfig struct {
-	Policies  []types.RetryPolicy
-	OnRetry   func(attempt int, policyIndex int, err error)
-	OnSuccess func(attempt int)
+	Policies      []types.RetryPolicy
+	OnRetry       func(attempt int, policyIndex int, err error)
+	OnSuccess     func(attempt int)
 	OnPolicyMatch func(attempt int, policyIndex int)
 }
 
@@ -167,10 +167,14 @@ var RetryPolicyPresets = struct {
 		BackoffFactor:   1.5,
 		Jitter:          true,
 		RetryOn: func(err error) bool {
-			if err == nil { return false }
+			if err == nil {
+				return false
+			}
 			errMsg := err.Error()
 			for _, kw := range []string{"resource exhausted", "too many requests", "rate limit", "quota exceeded", "429", "503"} {
-				if contains(errMsg, kw) { return true }
+				if contains(errMsg, kw) {
+					return true
+				}
 			}
 			return false
 		},
@@ -182,10 +186,14 @@ var RetryPolicyPresets = struct {
 		BackoffFactor:   2.0,
 		Jitter:          false,
 		RetryOn: func(err error) bool {
-			if err == nil { return false }
+			if err == nil {
+				return false
+			}
 			errMsg := err.Error()
 			for _, kw := range []string{"timeout", "deadline exceeded", "context deadline", "408", "504"} {
-				if contains(errMsg, kw) { return true }
+				if contains(errMsg, kw) {
+					return true
+				}
 			}
 			return false
 		},

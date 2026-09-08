@@ -10,21 +10,22 @@ pytestmark = pytest.mark.skipif(
 V2_DSL = {
     "graph": {
         "nodes": [
-            {"id": "begin", "type": "beginNode", "position": {"x": 50, "y": 200},
-             "data": {"label": "Begin", "name": "begin"}},
-            {"id": "answer:0", "type": "messageNode", "position": {"x": 400, "y": 200},
-             "data": {"label": "Answer", "name": "answer"}},
+            {"id": "begin", "type": "beginNode", "position": {"x": 50, "y": 200}, "data": {"label": "Begin", "name": "begin"}},
+            {"id": "answer:0", "type": "messageNode", "position": {"x": 400, "y": 200}, "data": {"label": "Answer", "name": "answer"}},
         ],
         "edges": [
-            {"id": "xy-edge__begin-answer:0", "source": "begin", "target": "answer:0",
-             "sourceHandle": "end", "targetHandle": "start"},
+            {"id": "xy-edge__begin-answer:0", "source": "begin", "target": "answer:0", "sourceHandle": "end", "targetHandle": "start"},
         ],
     },
     "components": {
-        "begin":    {"obj": {"component_name": "Begin",  "params": {}}, "downstream": ["answer:0"], "upstream": []},
-        "answer:0": {"obj": {"component_name": "Answer", "params": {}}, "downstream": [],          "upstream": ["begin"]},
+        "begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["answer:0"], "upstream": []},
+        "answer:0": {"obj": {"component_name": "Answer", "params": {}}, "downstream": [], "upstream": ["begin"]},
     },
-    "retrieval": [], "history": [], "path": [], "variables": [], "globals": {"sys.query": ""},
+    "retrieval": [],
+    "history": [],
+    "path": [],
+    "variables": [],
+    "globals": {"sys.query": ""},
 }
 
 
@@ -48,15 +49,10 @@ def test_v2_dsl_round_trip_position_preserved(rest_client):
 
     # 3. PUT — move begin node to (777, 888)
     new_dsl = {**V2_DSL, "graph": {**V2_DSL["graph"]}}
-    new_dsl["graph"]["nodes"] = [
-        {**n, "position": {"x": 777, "y": 888}} if n["id"] == "begin" else n
-        for n in V2_DSL["graph"]["nodes"]
-    ]
+    new_dsl["graph"]["nodes"] = [{**n, "position": {"x": 777, "y": 888}} if n["id"] == "begin" else n for n in V2_DSL["graph"]["nodes"]]
     r = rest_client.put(f"/agents/{agent_id}", json={"title": title, "dsl": new_dsl})
     assert r.status_code == 200 and r.json()["code"] == 0, r.text
 
     # 4. Re-GET — position preserved
-    pos = next(n["position"] for n in
-               rest_client.get(f"/agents/{agent_id}").json()["data"]["dsl"]["graph"]["nodes"]
-               if n["id"] == "begin")
+    pos = next(n["position"] for n in rest_client.get(f"/agents/{agent_id}").json()["data"]["dsl"]["graph"]["nodes"] if n["id"] == "begin")
     assert pos == {"x": 777, "y": 888}, f"position lost: {pos}"

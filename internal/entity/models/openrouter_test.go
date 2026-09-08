@@ -77,6 +77,8 @@ func TestOpenRouterAudioFormatUsesConfiguredValue(t *testing.T) {
 }
 
 func TestOpenRouterTranscribeAudioHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	audio := []byte("RIFF test audio")
 	srv := newOpenRouterServer(t, "/audio/transcriptions", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
@@ -120,6 +122,7 @@ func TestOpenRouterTranscribeAudioHappyPath(t *testing.T) {
 	modelName := "openai/whisper-large-v3"
 	file := writeOpenRouterAudioFile(t, "sample.wav", audio)
 	resp, err := newOpenRouterForTest(srv.URL).TranscribeAudio(
+		ctx,
 		&modelName,
 		&file,
 		&APIConfig{ApiKey: &apiKey},
@@ -130,6 +133,7 @@ func TestOpenRouterTranscribeAudioHappyPath(t *testing.T) {
 			"model":       "wrong-model",
 			"input_audio": map[string]interface{}{"data": "bad-data", "format": "bad"},
 		}},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("TranscribeAudio: %v", err)
@@ -140,6 +144,8 @@ func TestOpenRouterTranscribeAudioHappyPath(t *testing.T) {
 }
 
 func TestOpenRouterTranscribeAudioInfersFormat(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newOpenRouterServer(t, "/audio/transcriptions", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		inputAudio, ok := body["input_audio"].(map[string]interface{})
 		if !ok {
@@ -156,13 +162,15 @@ func TestOpenRouterTranscribeAudioInfersFormat(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "openai/whisper-large-v3"
 	file := writeOpenRouterAudioFile(t, "sample.mp3", []byte("audio"))
-	_, err := newOpenRouterForTest(srv.URL).TranscribeAudio(&modelName, &file, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newOpenRouterForTest(srv.URL).TranscribeAudio(ctx, &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("TranscribeAudio: %v", err)
 	}
 }
 
 func TestOpenRouterTranscribeAudioValidatesInputs(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	modelName := "openai/whisper-large-v3"
 	apiKey := "test-key"
 	file := "sample.wav"
@@ -181,7 +189,7 @@ func TestOpenRouterTranscribeAudioValidatesInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := newOpenRouterForTest("http://unused").TranscribeAudio(tt.modelName, tt.file, tt.apiConfig, nil)
+			_, err := newOpenRouterForTest("http://unused").TranscribeAudio(ctx, tt.modelName, tt.file, tt.apiConfig, nil, nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("err=%v, want %q", err, tt.want)
 			}
@@ -190,18 +198,22 @@ func TestOpenRouterTranscribeAudioValidatesInputs(t *testing.T) {
 }
 
 func TestOpenRouterTranscribeAudioValidatesASRSuffix(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "openai/whisper-large-v3"
 	file := "sample.wav"
 	model := NewOpenRouterModel(map[string]string{"default": "http://unused"}, URLSuffix{})
 
-	_, err := model.TranscribeAudio(&modelName, &file, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := model.TranscribeAudio(ctx, &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "OpenRouter ASR url suffix is missing") {
 		t.Fatalf("err=%v", err)
 	}
 }
 
 func TestOpenRouterTranscribeAudioHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newOpenRouterServer(t, "/audio/transcriptions", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 	})
@@ -210,7 +222,7 @@ func TestOpenRouterTranscribeAudioHTTPError(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "openai/whisper-large-v3"
 	file := writeOpenRouterAudioFile(t, "sample.wav", []byte("audio"))
-	_, err := newOpenRouterForTest(srv.URL).TranscribeAudio(&modelName, &file, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newOpenRouterForTest(srv.URL).TranscribeAudio(ctx, &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil ||
 		!strings.Contains(err.Error(), "OpenRouter ASR API error") ||
 		!strings.Contains(err.Error(), "401 Unauthorized") ||
@@ -224,6 +236,8 @@ func TestOpenRouterTranscribeAudioHTTPError(t *testing.T) {
 // and reasoning is requested via OpenRouter's standard `reasoning` object rather
 // than the non-standard `thinking` key that the API silently ignores.
 func TestOpenRouterChatStreamlyRequest(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	var gotPath string
 	var gotBody map[string]interface{}
 	srv := newOpenRouterServer(t, "/chat/completions", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
@@ -241,10 +255,12 @@ func TestOpenRouterChatStreamlyRequest(t *testing.T) {
 	var reasoning strings.Builder
 	// "qwen_max" would have triggered the removed async-routing branch (empty suffix).
 	err := newOpenRouterForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"qwen_max",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Thinking: &thinking},
+		nil,
 		func(content, reason *string) error {
 			if reason != nil {
 				reasoning.WriteString(*reason)

@@ -265,7 +265,7 @@ export function buildValidationTree(
       children: {},
       cumulativeChildrenErrors: validation.success
         ? 0
-        : validation.errors?.length ?? 0,
+        : (validation.errors?.length ?? 0),
     };
 
     return node;
@@ -362,7 +362,7 @@ export function buildValidationTree(
   }
 
   // Compute cumulative error counts (own + all descendants)
-  const ownErrors = validation.success ? 0 : validation.errors?.length ?? 0;
+  const ownErrors = validation.success ? 0 : (validation.errors?.length ?? 0);
   const childrenErrors = Object.values(children).reduce(
     (sum, child) => sum + child.cumulativeChildrenErrors,
     0,

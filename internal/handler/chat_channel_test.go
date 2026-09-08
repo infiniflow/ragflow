@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -15,42 +16,50 @@ import (
 )
 
 type fakeChatChannelService struct {
-	createFn func(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
-	listFn   func(tenantID string) ([]*entity.ChatChannelListResponse, error)
-	getFn    func(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
-	updateFn func(userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
-	deleteFn func(userID, channelID string) (bool, common.ErrorCode, error)
+	createFn  func(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
+	listFn    func(tenantID string) ([]*entity.ChatChannelListResponse, error)
+	getFn     func(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
+	updateFn  func(userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
+	runtimeFn func(userID, channelID string) (map[string]any, common.ErrorCode, error)
+	deleteFn  func(userID, channelID string) (bool, common.ErrorCode, error)
 }
 
-func (f fakeChatChannelService) CreateChatChannel(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+func (f fakeChatChannelService) CreateChatChannel(ctx context.Context, tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
 	if f.createFn == nil {
 		return nil, errors.New("unexpected CreateChatChannel call")
 	}
 	return f.createFn(tenantID, name, channelType, config, chatID)
 }
 
-func (f fakeChatChannelService) List(tenantID string) ([]*entity.ChatChannelListResponse, error) {
+func (f fakeChatChannelService) List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error) {
 	if f.listFn == nil {
 		return nil, errors.New("unexpected List call")
 	}
 	return f.listFn(tenantID)
 }
 
-func (f fakeChatChannelService) GetChatChannel(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
+func (f fakeChatChannelService) GetChatChannel(ctx context.Context, userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
 	if f.getFn == nil {
 		return nil, common.CodeServerError, errors.New("unexpected GetChatChannel call")
 	}
 	return f.getFn(userID, channelID)
 }
 
-func (f fakeChatChannelService) UpdateChatChannel(userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
+func (f fakeChatChannelService) UpdateChatChannel(ctx context.Context, userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
 	if f.updateFn == nil {
 		return nil, common.CodeServerError, errors.New("unexpected UpdateChatChannel call")
 	}
 	return f.updateFn(userID, channelID, req)
 }
 
-func (f fakeChatChannelService) DeleteChatChannel(userID, channelID string) (bool, common.ErrorCode, error) {
+func (f fakeChatChannelService) GetChatChannelRuntime(ctx context.Context, userID, channelID string) (map[string]any, common.ErrorCode, error) {
+	if f.runtimeFn == nil {
+		return nil, common.CodeServerError, errors.New("unexpected GetChatChannelRuntime call")
+	}
+	return f.runtimeFn(userID, channelID)
+}
+
+func (f fakeChatChannelService) DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error) {
 	if f.deleteFn == nil {
 		return false, common.CodeServerError, errors.New("unexpected DeleteChatChannel call")
 	}
@@ -231,7 +240,7 @@ func TestChatChannelHandlerGetChatChannelUnauthorized(t *testing.T) {
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
 			getFn: func(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
-				return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+				return nil, common.CodeAuthenticationError, errors.New("no authorization")
 			},
 		},
 	}
@@ -323,6 +332,47 @@ func TestChatChannelHandlerDeleteChatChannelSuccess(t *testing.T) {
 		t.Fatalf("payload=%v", payload)
 	}
 	if payload["data"] != true {
+		t.Fatalf("payload=%v", payload)
+	}
+}
+
+func TestChatChannelHandlerGetRuntimeSuccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var gotUserID, gotChannelID string
+	h := &ChatChannelHandler{
+		chatChannelService: fakeChatChannelService{
+			runtimeFn: func(userID, channelID string) (map[string]any, common.ErrorCode, error) {
+				gotUserID = userID
+				gotChannelID = channelID
+				return map[string]any{"status": "waiting"}, common.CodeSuccess, nil
+			},
+		},
+	}
+
+	router := gin.New()
+	router.GET("/api/v1/chat-channels/:channel_id/runtime", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "tenant-1"})
+		h.GetChatChannelRuntime(c)
+	})
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/chat-channels/cc-1/runtime", nil)
+	router.ServeHTTP(resp, req)
+
+	if gotUserID != "tenant-1" || gotChannelID != "cc-1" {
+		t.Fatalf("userID=%q channelID=%q", gotUserID, gotChannelID)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("payload=%v", payload)
+	}
+	data, _ := payload["data"].(map[string]interface{})
+	if data["status"] != "waiting" {
 		t.Fatalf("payload=%v", payload)
 	}
 }

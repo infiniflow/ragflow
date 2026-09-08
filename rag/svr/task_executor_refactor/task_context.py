@@ -113,8 +113,14 @@ class TaskDict(TypedDict, total=False):
     llm_id: str
     """LLM model identifier."""
 
+    tenant_llm_id: str | None
+    """Tenant model ID for LLM (id in tenant_model table)."""
+
     embd_id: str
     """Embedding model identifier."""
+
+    tenant_embd_id: str | None
+    """Tenant model ID for embedding (id in tenant_model table)."""
 
     from_page: int
     """Starting page number for processing (0-based)."""
@@ -142,6 +148,7 @@ class TaskDict(TypedDict, total=False):
 
     message_dict: Dict[str, Any]
     """Message dictionary for memory tasks."""
+
 
 # ============================================================================
 # Data Classes
@@ -226,7 +233,9 @@ class TaskContext:
         "kb_parser_config": {},
         "language": "Chinese",
         "llm_id": "",
+        "tenant_llm_id": "",
         "embd_id": "",
+        "tenant_embd_id": "",
         "from_page": 0,
         "to_page": -1,
         "task_type": "",
@@ -269,7 +278,6 @@ class TaskContext:
         self.callbacks = callbacks
         self._write_interceptor = write_interceptor
         self._recording_context = recording_context
-
 
         # Prepare progress callback and set it on the context
         progress_cb = partial(
@@ -362,9 +370,19 @@ class TaskContext:
         return self._task.get("llm_id", self._DEFAULTS["llm_id"])
 
     @property
+    def tenant_llm_id(self) -> str | None:
+        """Tenant model ID for LLM (id in tenant_model table)."""
+        return self._task.get("tenant_llm_id", self._DEFAULTS["tenant_llm_id"]) or None
+
+    @property
     def embd_id(self) -> str:
         """Embedding model identifier."""
         return self._task.get("embd_id", self._DEFAULTS["embd_id"])
+
+    @property
+    def tenant_embd_id(self) -> str | None:
+        """Tenant model ID for embedding (id in tenant_model table)."""
+        return self._task.get("tenant_embd_id", self._DEFAULTS["tenant_embd_id"]) or None
 
     # =========================================================================
     # Page range properties

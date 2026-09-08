@@ -18,46 +18,53 @@ package tool
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/tokenizer"
 )
 
-const githubToolName = "github"
+const githubToolName = "github_search"
 
-const githubToolDescription = "Search GitHub repositories. Returns items[].{full_name, html_url, description, stargazers_count}."
+const githubToolDescription = "GitHub repository search finds repositories, projects, and codebases hosted on GitHub."
 
-// githubParams is the JSON shape the model sends into InvokableRun. token
-// is optional — anonymous requests succeed but are heavily rate-limited
-// (60/hr vs 5000/hr with a PAT).
+const (
+	defaultGitHubTopN     = 10
+	maxGitHubTopN         = 100
+	githubPromptMaxTokens = 200000
+)
+
+const githubQueryDescription = "The search keywords to execute with GitHub. Use the most important terms and synonyms from the original request."
+
+// githubParams mirrors Python GitHubParam. Info() exposes only Query to the
+// model, while TopN is a canvas-side configuration value merged with defaults.
 type githubParams struct {
-	Query      string `json:"query"`
-	MaxResults int    `json:"max_results"`
-	Token      string `json:"token"`
+	Query string `json:"query"`
+	TopN  int    `json:"top_n"`
 }
 
-// githubResult mirrors one element of the upstream `items` array.
-type githubResult struct {
-	FullName        string `json:"full_name"`
-	HTMLURL         string `json:"html_url"`
-	Description     string `json:"description"`
-	StargazersCount int    `json:"stargazers_count"`
-}
-
-// githubResponse is the upstream GitHub Search envelope.
+// githubResponse keeps GitHub's raw repository objects intact. The Python
+// component stores response["items"] in its json output, so narrowing this to
+// selected fields would change downstream DSL behaviour.
 type githubResponse struct {
-	Items []githubResult `json:"items"`
+	Items []map[string]any `json:"items"`
 }
 
-// githubEnvelope is what the model sees.
+// githubEnvelope is the shared tool-to-component transport shape.
 type githubEnvelope struct {
-	Results []githubResult `json:"results"`
-	Error   string         `json:"_ERROR,omitempty"`
+	Results []map[string]any `json:"results"`
+	Error   string           `json:"_ERROR,omitempty"`
 }
 
 // GitHubTool is the GitHub
@@ -65,21 +72,39 @@ type githubEnvelope struct {
 // GETs the GitHub Search API via the shared HTTPHelper and returns the
 // top N repository matches.
 type GitHubTool struct {
-	helper *HTTPHelper
+	helper   *HTTPHelper
+	defaults githubParams
 }
+
+var _ ToolInvoker = (*GitHubTool)(nil)
+var _ ToolComponent = (*GitHubTool)(nil)
+var _ ReferenceBuilder = (*GitHubTool)(nil)
 
 // NewGitHubTool returns a GitHubTool using the default HTTPHelper.
 func NewGitHubTool() *GitHubTool {
-	return NewGitHubToolWith(NewHTTPHelper())
+	return NewGitHubToolWithDefaults(nil, githubParams{})
 }
 
 // NewGitHubToolWith returns a GitHubTool that uses the provided
 // HTTPHelper. Useful for tests.
 func NewGitHubToolWith(h *HTTPHelper) *GitHubTool {
+	return NewGitHubToolWithDefaults(h, githubParams{})
+}
+
+// NewGitHubToolWithDefaults returns a GitHubTool with component-level
+// defaults. It follows NewPubMedToolWithDefaults: the constructor owns
+// defaults while Info() exposes only the model-call input schema.
+func NewGitHubToolWithDefaults(h *HTTPHelper, defaults githubParams) *GitHubTool {
 	if h == nil {
-		h = NewHTTPHelper()
+		// Python uses DEFAULT_TIMEOUT (15 seconds) and ToolParamBase starts
+		// with max_retries=0, so a default GitHub component makes one request.
+		h = NewHTTPHelperWithRetry(RetryConfig{MaxAttempts: 1})
+		h.client.Timeout = 15 * time.Second
 	}
-	return &GitHubTool{helper: h}
+	if defaults.TopN == 0 {
+		defaults.TopN = defaultGitHubTopN
+	}
+	return &GitHubTool{helper: h, defaults: defaults}
 }
 
 // Info returns the tool's metadata for the chat model.
@@ -90,35 +115,24 @@ func (g *GitHubTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"query": {
 				Type:     schema.String,
-				Desc:     "Search query (GitHub search syntax).",
+				Desc:     githubQueryDescription,
 				Required: true,
-			},
-			"max_results": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of results to return. Defaults to 5 (max 30 per page).",
-				Required: false,
-			},
-			"token": {
-				Type:     schema.String,
-				Desc:     "Optional GitHub personal access token. Increases rate limit from 60 to 5000 req/hr.",
-				Required: false,
 			},
 		}),
 	}, nil
 }
 
-// buildGitHubURL constructs the GitHub repository search URL. Centralized
-// so the test suite can verify URL encoding without spinning up a server.
-func buildGitHubURL(query string, maxResults int) string {
-	if maxResults <= 0 {
-		maxResults = 5
-	}
-	if maxResults > 30 {
-		maxResults = 30
+// buildGitHubURL constructs the repository search URL used by the Python
+// GitHub component: most-starred repositories first, with per_page=top_n.
+func buildGitHubURL(query string, topN int) string {
+	if topN <= 0 {
+		topN = defaultGitHubTopN
 	}
 	q := url.Values{}
 	q.Set("q", query)
-	q.Set("per_page", fmt.Sprintf("%d", maxResults))
+	q.Set("sort", "stars")
+	q.Set("order", "desc")
+	q.Set("per_page", fmt.Sprintf("%d", topN))
 	return "https://api.github.com/search/repositories?" + q.Encode()
 }
 
@@ -129,17 +143,15 @@ func (g *GitHubTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 		return githubErrJSON(fmt.Errorf("github: parse arguments: %w", err)),
 			fmt.Errorf("github: parse arguments: %w", err)
 	}
-	if strings.TrimSpace(p.Query) == "" {
-		return githubErrJSON(fmt.Errorf("query is required")),
-			fmt.Errorf("github: query is required")
+	if p.Query == "" {
+		return githubJSON(githubEnvelope{Results: []map[string]any{}}), nil
 	}
+	p = mergeGitHubDefaults(g.defaults, p)
 
-	endpoint := buildGitHubURL(p.Query, p.MaxResults)
+	endpoint := buildGitHubURL(p.Query, p.TopN)
 	headers := map[string]string{
-		"Accept": "application/vnd.github+json",
-	}
-	if p.Token != "" {
-		headers["Authorization"] = "Bearer " + p.Token
+		"Content-Type":         "application/vnd.github+json",
+		"X-GitHub-Api-Version": "2022-11-28",
 	}
 
 	resp, err := g.helper.Do(ctx, http.MethodGet, endpoint, "", "", headers)
@@ -161,6 +173,13 @@ func (g *GitHubTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 	return githubJSON(githubEnvelope{Results: raw.Items}), nil
 }
 
+func mergeGitHubDefaults(defaults, params githubParams) githubParams {
+	if params.TopN == 0 {
+		params.TopN = defaults.TopN
+	}
+	return params
+}
+
 func githubJSON(env githubEnvelope) string {
 	b, err := json.Marshal(env)
 	if err != nil {
@@ -171,4 +190,136 @@ func githubJSON(env githubEnvelope) string {
 
 func githubErrJSON(err error) string {
 	return githubJSON(githubEnvelope{Error: err.Error()})
+}
+
+// ComponentSpec returns the Python-compatible GitHub Canvas surface.
+func (g *GitHubTool) ComponentSpec() ComponentSpec {
+	return ComponentSpec{
+		Inputs: map[string]string{
+			"query": githubQueryDescription,
+		},
+		Outputs: map[string]string{
+			"formalized_content": "GitHub repositories formatted for downstream prompts.",
+			"json":               "Raw GitHub repository items.",
+		},
+		InputForm: map[string]any{
+			"query": map[string]any{
+				"type": "line",
+				"name": "Query",
+			},
+		},
+	}
+}
+
+// BuildReferences creates the chunks and document aggregates Python's
+// ToolBase._retrieve_chunks records for GitHub results.
+func (g *GitHubTool) BuildReferences(_ context.Context, envelope map[string]any) ([]map[string]any, []map[string]any) {
+	return buildGitHubReferences(envelope)
+}
+
+func buildGitHubReferences(envelope map[string]any) ([]map[string]any, []map[string]any) {
+	results := envelopeSlice(envelope, "results")
+	chunks := make([]map[string]any, 0, len(results))
+	docAggs := make([]map[string]any, 0, len(results))
+	for _, result := range results {
+		repository, ok := result.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := truncateGitHubRunes(githubValueString(repository["description"])+"\n stars:"+githubValueString(repository["watchers"]), 10000)
+		if content == "" {
+			continue
+		}
+		documentID := strconv.FormatInt(githubHashInt(content, 100000000), 10)
+		title := githubValueString(repository["name"])
+		resultURL := githubValueString(repository["html_url"])
+		displayID := strconv.FormatInt(githubHashInt(documentID, 500), 10)
+		chunks = append(chunks, map[string]any{
+			"id":            displayID,
+			"chunk_id":      documentID,
+			"content":       content,
+			"doc_id":        documentID,
+			"document_id":   documentID,
+			"docnm_kwd":     title,
+			"document_name": title,
+			"similarity":    1,
+			"score":         1,
+			"url":           resultURL,
+		})
+		docAggs = append(docAggs, map[string]any{
+			"doc_name": title,
+			"doc_id":   documentID,
+			"count":    1,
+			"url":      resultURL,
+		})
+	}
+	return chunks, docAggs
+}
+
+// BuildComponentOutputs constructs GitHub's complete Canvas output map.
+func (g *GitHubTool) BuildComponentOutputs(envelope map[string]any) map[string]any {
+	results := envelopeSlice(envelope, "results")
+	chunks, _ := buildGitHubReferences(envelope)
+	return map[string]any{
+		"json":               results,
+		"formalized_content": renderGitHubReferences(chunks),
+	}
+}
+
+func renderGitHubReferences(chunks []map[string]any) string {
+	chunks = limitGitHubReferences(chunks, githubPromptMaxTokens)
+	blocks := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		blocks = append(blocks, strings.Join([]string{
+			"\nID: " + githubValueString(chunk["id"]),
+			"├── Title: " + githubValueString(chunk["docnm_kwd"]),
+			"├── URL: " + githubValueString(chunk["url"]),
+			"└── Content:\n" + githubValueString(chunk["content"]),
+		}, "\n"))
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func limitGitHubReferences(chunks []map[string]any, maxTokens int) []map[string]any {
+	if maxTokens <= 0 {
+		return nil
+	}
+	usedTokens := 0
+	for index, chunk := range chunks {
+		content := githubValueString(chunk["content"])
+		if content == "" {
+			continue
+		}
+		usedTokens += tokenizer.NumTokensFromString(content)
+		if float64(maxTokens)*0.97 < float64(usedTokens) {
+			return chunks[:index+1]
+		}
+	}
+	return chunks
+}
+
+func githubValueString(value any) string {
+	if value == nil {
+		return "None"
+	}
+	if boolean, ok := value.(bool); ok {
+		if boolean {
+			return "True"
+		}
+		return "False"
+	}
+	return fmt.Sprint(value)
+}
+
+func githubHashInt(value string, modulus int64) int64 {
+	sum := sha1.Sum([]byte(value))
+	number := new(big.Int).SetBytes(sum[:])
+	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
+}
+
+func truncateGitHubRunes(value string, limit int) string {
+	if utf8.RuneCountInString(value) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
 }

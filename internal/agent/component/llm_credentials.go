@@ -3,56 +3,85 @@ package component
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"errors"
+	"fmt"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // resolveTenantLLMConfig fills tenant-scoped API credentials for the supplied
 // driver/model pair when the canvas DSL omitted them. It first checks the old
 // tenant_llm table, then falls back to tenant_model_provider +
 // tenant_model_instance when the composite llm_id carries an instance name.
-func resolveTenantLLMConfig(ctx context.Context, driver, modelID, apiKey, baseURL, originalModelID string) (string, string) {
+func resolveTenantLLMConfig(ctx context.Context, db *gorm.DB, driver, modelID, apiKey, baseURL, originalModelID string) (string, string) {
 	if apiKey != "" || driver == "" || modelID == "" {
 		return apiKey, baseURL
 	}
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil || state == nil {
-		log.Printf("DEBUG llm credentials: no canvas state in ctx")
+		common.Debug("llm credentials: no canvas state in ctx")
 		return apiKey, baseURL
 	}
 	tid, _ := state.Sys["tenant_id"].(string)
 	if tid == "" {
-		log.Printf("DEBUG llm credentials: state.Sys has no tenant_id")
+		common.Debug("llm credentials: state.Sys has no tenant_id")
 		return apiKey, baseURL
 	}
 
-	if resolvedKey, resolvedBaseURL, ok := resolveTenantLLMCredentials(tid, driver, modelID, baseURL); ok {
+	if resolvedKey, resolvedBaseURL, ok := resolveTenantLLMCredentials(ctx, db, tid, driver, modelID, baseURL); ok {
 		return resolvedKey, resolvedBaseURL
 	}
 	if originalModelID == "" {
 		return apiKey, baseURL
 	}
-	if resolvedKey, resolvedBaseURL, ok := resolveTenantModelInstanceCredentials(tid, originalModelID, baseURL); ok {
+	if resolvedKey, resolvedBaseURL, ok := resolveTenantModelInstanceCredentials(ctx, db, tid, originalModelID, baseURL); ok {
 		return resolvedKey, resolvedBaseURL
 	}
 	return apiKey, baseURL
 }
 
+func resolveChatModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiKey, baseURL string) (string, string, string, string, error) {
+	originalModelID := modelID
+	if driver == "" && modelID != "" {
+		if m, prov, ok := agentProviderLastSegmentSplit(modelID); ok {
+			driver = prov
+			modelID = m
+		}
+	}
+	if driver == "" && modelID != "" {
+		resolvedModelID, resolvedDriver, resolvedAPIKey, resolvedBaseURL, ok, err := resolveTenantChatModelByID(ctx, db, modelID, apiKey, baseURL)
+		if err != nil {
+			return "", "", "", "", err
+		}
+		if ok {
+			modelID = resolvedModelID
+			driver = resolvedDriver
+			apiKey = resolvedAPIKey
+			baseURL = resolvedBaseURL
+		}
+	}
+	apiKey, baseURL = resolveTenantLLMConfig(ctx, db, driver, modelID, apiKey, baseURL, originalModelID)
+	return modelID, driver, apiKey, baseURL, nil
+}
+
 // resolveTenantLLMCredentials looks up the old tenant_llm table for the given
 // tenant / factory / model. Returns true when credentials were found.
-func resolveTenantLLMCredentials(tid, driver, modelID, baseURL string) (string, string, bool) {
-	log.Printf("DEBUG llm credentials: tenant_llm lookup tid=%q factory=%q model=%q", tid, driver, modelID)
-	row, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(tid, driver, modelID)
+func resolveTenantLLMCredentials(ctx context.Context, db *gorm.DB, tid, driver, modelID, baseURL string) (string, string, bool) {
+	common.Debug("llm credentials: tenant_llm lookup", zap.String("tid", tid), zap.String("factory", driver), zap.String("model", modelID))
+	row, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(ctx, db, tid, driver, modelID)
 	if err != nil {
-		log.Printf("DEBUG llm credentials: tenant_llm lookup err=%v", err)
+		common.Debug("llm credentials: tenant_llm lookup", zap.Error(err))
 		return "", baseURL, false
 	}
 	if row == nil {
-		log.Printf("DEBUG llm credentials: tenant_llm lookup: no row")
+		common.Debug("llm credentials: tenant_llm lookup: no row")
 		return "", baseURL, false
 	}
 
@@ -63,43 +92,51 @@ func resolveTenantLLMCredentials(tid, driver, modelID, baseURL string) (string, 
 	if baseURL == "" && row.APIBase != nil {
 		baseURL = *row.APIBase
 	}
-	log.Printf("DEBUG llm credentials: tenant_llm OK api_key=%q base_url=%q", apiKey, baseURL)
+	common.Debug("llm credentials: tenant_llm OK",
+		zap.Bool("api_key_present", apiKey != ""),
+		zap.Bool("base_url_present", baseURL != ""))
 	return apiKey, baseURL, apiKey != ""
 }
 
 // resolveTenantModelInstanceCredentials attempts to resolve llm credentials
 // through tenant_model_provider + tenant_model_instance using the original
 // composite llm_id (which still carries the instance name).
-func resolveTenantModelInstanceCredentials(tid, compositeLLMID, baseURL string) (string, string, bool) {
+func resolveTenantModelInstanceCredentials(ctx context.Context, db *gorm.DB, tid, compositeLLMID, baseURL string) (string, string, bool) {
 	modelName, instanceName, providerName := parseLLMIDParts(compositeLLMID)
 	if instanceName == "" {
-		log.Printf("DEBUG llm credentials: new-table fallback skipped: no instance name in %q", compositeLLMID)
+		common.Debug("llm credentials: new-table fallback skipped: no instance name", zap.String("composite_llm_id", compositeLLMID))
 		return "", baseURL, false
 	}
 
-	log.Printf("DEBUG llm credentials: new-table fallback tid=%q provider=%q model=%q instance=%q",
-		tid, providerName, modelName, instanceName)
+	common.Debug("llm credentials: new-table fallback",
+		zap.String("tid", tid),
+		zap.String("provider", providerName),
+		zap.String("model", modelName),
+		zap.String("instance", instanceName))
 
-	provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndProviderName(tid, providerName)
+	provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndProviderName(ctx, db, tid, providerName)
 	if err != nil || provider == nil {
-		log.Printf("DEBUG llm credentials: new-table fallback: provider %q not found (err=%v)", providerName, err)
+		common.Debug("llm credentials: new-table fallback: provider not found", zap.String("provider", providerName), zap.Error(err))
 		return "", baseURL, false
 	}
 
-	instance, err := dao.NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := dao.NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 	if err != nil || instance == nil {
 		if instanceName == "default" {
-			if fallback := findSoleActiveProviderInstance(provider.ID); fallback != nil {
-				log.Printf("DEBUG llm credentials: new-table fallback: remapped default instance to sole active instance %q for provider %q",
-					fallback.InstanceName, providerName)
+			if fallback := findSoleActiveProviderInstance(ctx, db, provider.ID); fallback != nil {
+				common.Debug("llm credentials: new-table fallback: remapped default instance to sole active instance",
+					zap.String("instance", fallback.InstanceName),
+					zap.String("provider", providerName))
 				instance = fallback
 				err = nil
 			}
 		}
 	}
 	if err != nil || instance == nil {
-		log.Printf("DEBUG llm credentials: new-table fallback: instance %q not found for provider %q (err=%v)",
-			instanceName, providerName, err)
+		common.Debug("llm credentials: new-table fallback: instance not found",
+			zap.String("instance", instanceName),
+			zap.String("provider", providerName),
+			zap.Error(err))
 		return "", baseURL, false
 	}
 
@@ -113,15 +150,18 @@ func resolveTenantModelInstanceCredentials(tid, compositeLLMID, baseURL string) 
 		}
 	}
 
-	log.Printf("DEBUG llm credentials: new-table OK provider=%q instance=%q api_key=%q base_url=%q",
-		providerName, instance.InstanceName, apiKey, baseURL)
+	common.Debug("llm credentials: new-table OK",
+		zap.String("provider", providerName),
+		zap.String("instance", instance.InstanceName),
+		zap.Bool("api_key_present", apiKey != ""),
+		zap.Bool("base_url_present", baseURL != ""))
 	return apiKey, baseURL, apiKey != ""
 }
 
-func findSoleActiveProviderInstance(providerID string) *entity.TenantModelInstance {
-	instances, err := dao.NewTenantModelInstanceDAO().GetAllInstancesByProviderID(providerID)
+func findSoleActiveProviderInstance(ctx context.Context, db *gorm.DB, providerID string) *entity.TenantModelInstance {
+	instances, err := dao.NewTenantModelInstanceDAO().GetAllInstancesByProviderID(ctx, db, providerID)
 	if err != nil {
-		log.Printf("DEBUG llm credentials: list provider instances err=%v", err)
+		common.Debug("llm credentials: list provider instances", zap.Error(err))
 		return nil
 	}
 	active := make([]*entity.TenantModelInstance, 0, len(instances))
@@ -138,6 +178,144 @@ func findSoleActiveProviderInstance(providerID string) *entity.TenantModelInstan
 		return nil
 	}
 	return active[0]
+}
+
+func resolveTenantChatModelByID(ctx context.Context, db *gorm.DB, modelRef, apiKey, baseURL string) (string, string, string, string, bool, error) {
+	if !isBareTenantModelID(modelRef) {
+		return "", "", apiKey, baseURL, false, nil
+	}
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return "", "", apiKey, baseURL, false, nil
+	}
+	tid, _ := state.Sys["tenant_id"].(string)
+	if tid == "" {
+		return "", "", apiKey, baseURL, false, nil
+	}
+
+	modelName, provider, modelKey, modelBaseURL, ok, err := resolveTenantChatModelByTenantModelID(ctx, db, tid, modelRef, apiKey, baseURL)
+	if err != nil {
+		return "", "", apiKey, baseURL, false, err
+	}
+	if ok {
+		return modelName, provider, modelKey, modelBaseURL, true, nil
+	}
+
+	modelName, provider, instanceKey, instanceBaseURL, ok, err := resolveTenantChatModelByInstanceID(ctx, db, tid, modelRef, apiKey, baseURL)
+	if err != nil {
+		return "", "", apiKey, baseURL, false, err
+	}
+	if ok {
+		return modelName, provider, instanceKey, instanceBaseURL, true, nil
+	}
+	return "", "", apiKey, baseURL, false, fmt.Errorf("tenant chat model id %q not found", modelRef)
+}
+
+func resolveTenantChatModelByTenantModelID(ctx context.Context, db *gorm.DB, tid, modelID, apiKey, baseURL string) (string, string, string, string, bool, error) {
+	model, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", apiKey, baseURL, false, nil
+		}
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve tenant model id %q: %w", modelID, err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(model.Status), "active") {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model id %s is disabled", modelID)
+	}
+	if !entity.ModelType(model.ModelType).Has(entity.ModelTypeChat) {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model id %s cannot be used as chat model", modelID)
+	}
+
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, model.ProviderID)
+	if err != nil {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve provider for tenant model id %q: %w", modelID, err)
+	}
+	if provider.TenantID != tid {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant %s has no access to model id %s", tid, modelID)
+	}
+
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(ctx, db, model.InstanceID)
+	if err != nil {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve instance for tenant model id %q: %w", modelID, err)
+	}
+	apiKey, baseURL = fillInstanceCredentials(instance, apiKey, baseURL)
+	return model.ModelName, provider.ProviderName, apiKey, baseURL, true, nil
+}
+
+func resolveTenantChatModelByInstanceID(ctx context.Context, db *gorm.DB, tid, instanceID, apiKey, baseURL string) (string, string, string, string, bool, error) {
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(ctx, db, instanceID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", "", apiKey, baseURL, false, nil
+		}
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve tenant model instance id %q: %w", instanceID, err)
+	}
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, instance.ProviderID)
+	if err != nil {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve provider for tenant model instance id %q: %w", instanceID, err)
+	}
+	if provider.TenantID != tid {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant %s has no access to model instance id %s", tid, instanceID)
+	}
+
+	models, err := dao.NewTenantModelDAO().GetModelsByInstanceID(ctx, db, instance.ID)
+	if err != nil {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve models for tenant model instance id %q: %w", instanceID, err)
+	}
+	candidates := make([]*entity.TenantModel, 0, len(models))
+	for _, model := range models {
+		if model == nil || model.ProviderID != provider.ID {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(model.Status), "active") {
+			continue
+		}
+		if !entity.ModelType(model.ModelType).Has(entity.ModelTypeChat) {
+			continue
+		}
+		candidates = append(candidates, model)
+	}
+	if len(candidates) == 0 {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model instance id %s has no active chat model", instanceID)
+	}
+	if len(candidates) > 1 {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model instance id %s has %d active chat models; use tenant_model.id or model@instance@provider", instanceID, len(candidates))
+	}
+	apiKey, baseURL = fillInstanceCredentials(instance, apiKey, baseURL)
+	return candidates[0].ModelName, provider.ProviderName, apiKey, baseURL, true, nil
+}
+
+func fillInstanceCredentials(instance *entity.TenantModelInstance, apiKey, baseURL string) (string, string) {
+	if instance == nil {
+		return apiKey, baseURL
+	}
+	if apiKey == "" {
+		apiKey = instance.APIKey
+	}
+	if baseURL == "" && instance.Extra != "" {
+		var extra map[string]string
+		if err := json.Unmarshal([]byte(instance.Extra), &extra); err == nil {
+			baseURL = extra["base_url"]
+		}
+	}
+	return apiKey, baseURL
+}
+
+func isBareTenantModelID(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) != 32 || strings.Contains(s, "@") {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		case r >= 'A' && r <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // parseLLMIDParts splits a composite llm_id into model, instance, and

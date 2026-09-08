@@ -145,11 +145,11 @@ type GenInputResult[T any] struct {
 
 // GenResumeResult contains the result of GenResume processing.
 type GenResumeResult[T any] struct {
-	RunCtx        context.Context
-	RunOpts       []RunOption
-	ResumeParams  *ResumeParams
-	Consumed      []T
-	Remaining     []T
+	RunCtx       context.Context
+	RunOpts      []RunOption
+	ResumeParams *ResumeParams
+	Consumed     []T
+	Remaining    []T
 }
 
 type turnRunSpec[T any] struct {
