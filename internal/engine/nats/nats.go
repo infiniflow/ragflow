@@ -363,18 +363,22 @@ func (s *taskHandleStream) forward(ctx context.Context, batch jetstream.MessageB
 				s.setError(batch.Error())
 				return
 			}
-			select {
-			case s.messages <- NewNatsMessageHandle(message):
-			case <-ctx.Done():
-				s.setError(ctx.Err())
-				return
-			case status, ok := <-statusChanges:
-				if !ok {
-					statusChanges = nil
-					continue
+		deliverMessage:
+			for {
+				select {
+				case s.messages <- NewNatsMessageHandle(message):
+					break deliverMessage
+				case <-ctx.Done():
+					s.setError(ctx.Err())
+					return
+				case status, ok := <-statusChanges:
+					if !ok {
+						statusChanges = nil
+						continue
+					}
+					s.setError(fmt.Errorf("%w: %s", errTaskStreamConnectionLost, status))
+					return
 				}
-				s.setError(fmt.Errorf("%w: %s", errTaskStreamConnectionLost, status))
-				return
 			}
 		}
 	}

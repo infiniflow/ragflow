@@ -26,8 +26,18 @@ import (
 
 	"ragflow/internal/common"
 
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
+
+type forwardTestMessageBatch struct {
+	messages <-chan jetstream.Msg
+	err      error
+}
+
+func (b forwardTestMessageBatch) Messages() <-chan jetstream.Msg { return b.messages }
+
+func (b forwardTestMessageBatch) Error() error { return b.err }
 
 // TestPullTaskStreamDeliversAvailableMessage proves the dispatcher can hand a
 // task to an idle worker as soon as its single-message pull is fulfilled.
@@ -225,6 +235,47 @@ func TestPullTaskStreamReportsConnectionClose(t *testing.T) {
 	}
 	if err := stream.Err(); !errors.Is(err, errTaskStreamConnectionLost) {
 		t.Fatalf("connection-close error = %v, want connection-lost failure", err)
+	}
+}
+
+func TestTaskHandleStreamDeliversMessageWhenStatusListenerCloses(t *testing.T) {
+	messages := make(chan jetstream.Msg)
+	statusChanges := make(chan nats.Status)
+	stream := &taskHandleStream{
+		messages: make(chan common.TaskHandle),
+		done:     make(chan struct{}),
+	}
+	forwardDone := make(chan struct{})
+	go func() {
+		defer close(forwardDone)
+		stream.forward(context.Background(), forwardTestMessageBatch{messages: messages}, statusChanges, func() {})
+	}()
+
+	// The send completes only after forward has received the message and is
+	// waiting to deliver it. Closing statusChanges now exercises the handoff
+	// branch without allowing the outer message loop to consume the close first.
+	messages <- nil
+	close(messages)
+	close(statusChanges)
+
+	select {
+	case handle, ok := <-stream.Messages():
+		if !ok || handle == nil {
+			t.Fatal("stream closed without delivering the received message")
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("received message was not delivered after status listener closed")
+	}
+
+	select {
+	case <-stream.Done():
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("stream did not finish after delivering its message")
+	}
+	select {
+	case <-forwardDone:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("forward goroutine did not exit")
 	}
 }
 
