@@ -226,6 +226,12 @@ func (dr *DeepResearcher) _research(
 		return "", nil
 	}
 
+	// Stop the recursion quickly once the request is canceled so a
+	// cancellation drains the tree instead of doing more retrieval work.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	if callback != nil {
 		callback(fmt.Sprintf("Searching by `%s`...", query))
 	}
@@ -319,21 +325,20 @@ func (dr *DeepResearcher) _research(
 		}(i, qp)
 	}
 
-	// Wait with context cancellation support.
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-ctx.Done():
-		return retContent, ctx.Err()
+	if err := waitForDeepResearchWorkers(ctx, &wg); err != nil {
+		return retContent, err
 	}
 
 	// 7. Join results
 	return strings.Join(results, "\n"), nil
+}
+
+func waitForDeepResearchWorkers(ctx context.Context, workers *sync.WaitGroup) error {
+	// Sub-research goroutines invoke the progress callback, which
+	// writes to the caller's channel; do not orphan them. Draining
+	// here guarantees no callback fires after Research returns.
+	workers.Wait()
+	return ctx.Err()
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -580,11 +585,12 @@ func (dr *DeepResearcher) genJSON(
 	result interface{},
 ) error {
 	maxRetry := 2
-	var lastAns, lastErr string
+	var lastAns string
+	var lastErr error
 
 	for attempt := 0; attempt < maxRetry; attempt++ {
 		userPrompt := "Output:\n"
-		if attempt > 0 && lastAns != "" && lastErr != "" {
+		if attempt > 0 && lastAns != "" && lastErr != nil {
 			// Append correction to user message on retry
 			userPrompt += fmt.Sprintf(
 				"\nGenerated JSON is as following:\n%s\nBut exception while loading:\n%s\nPlease reconsider and correct it.",
@@ -605,14 +611,14 @@ func (dr *DeepResearcher) genJSON(
 			repaired = resp
 		}
 		if err := json.Unmarshal([]byte(repaired), result); err != nil {
-			lastErr = err.Error()
+			lastErr = err
 			common.Warn("genJSON: JSON parse failed, retrying",
 				zap.Error(err), zap.Int("attempt", attempt))
 			continue
 		}
 		return nil
 	}
-	return fmt.Errorf("genJSON: failed after %d attempts: %s", maxRetry, lastErr)
+	return fmt.Errorf("genJSON: failed after %d attempts: %w", maxRetry, lastErr)
 }
 
 // sufficiencyCheck asks the LLM whether retrieved content is sufficient.

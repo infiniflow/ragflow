@@ -48,7 +48,7 @@ func newFixturePostgresConnector(t *testing.T, config map[string]any, expect fun
 	if err != nil {
 		t.Fatalf("NewPostgreSQLConnector failed: %v", err)
 	}
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
 	if err != nil {
 		t.Fatalf("sqlmock.New failed: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestPostgreSQLConnectorOpenSyncCustomQuery(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestPostgreSQLConnectorOpenSyncIncrementalWindow(t *testing.T) {
 
 	start := mustTime(t, "2026-01-01T00:00:00Z")
 	end := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestPostgreSQLConnectorOpenSyncAllTables(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestPostgreSQLConnectorOpenPrune(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestPostgreSQLConnectorOpenSyncMixedCaseTable(t *testing.T) {
 		)
 	})
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
@@ -319,9 +319,7 @@ func TestPostgreSQLConnectorOpenSyncMixedCaseTable(t *testing.T) {
 // TestPostgreSQLConnectorValidate verifies the probe and dialect-specific error message.
 func TestPostgreSQLConnectorValidate(t *testing.T) {
 	connector := newFixturePostgresConnector(t, nil, func(mock sqlmock.Sqlmock) {
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT 1")).WillReturnRows(
-			sqlmock.NewRows([]string{"1"}).AddRow(1),
-		)
+		mock.ExpectPing()
 	})
 	if err := connector.Validate(context.Background()); err != nil {
 		t.Fatalf("Validate failed: %v", err)

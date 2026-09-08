@@ -16,8 +16,11 @@
 
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
-import { isGoDatasetBackend } from '@/utils/api-proxy-scheme';
+import { useIsGoBackend } from '@/utils/backend-variant';
+import { isDatasetId } from '@/utils/dataset-util';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { GenerateType, ParseType } from '@/constants/knowledge';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
   IArtifact,
@@ -78,15 +81,15 @@ import {
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { omit } from 'lodash';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
 import {
-  extractParserConfigExt,
   isPipelineParserConfig,
+  normalizeParserConfig,
 } from './parser-config-utils';
 import { useSetPaginationParams } from './route-hook';
 import { DatasetGenerateKeys } from './use-dataset-generate';
@@ -136,6 +139,7 @@ export const useTestRetrieval = () => {
       page: 1,
       doc_ids: filterValue.doc_ids,
       highlight: true,
+      include_knowledge_compilation: false,
     };
   }, [filterValue, knowledgeBaseId, values]);
 
@@ -191,10 +195,12 @@ export const useTestRetrieval = () => {
 };
 
 export const useFetchNextKnowledgeListByPage = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { searchString, setSearchString, handleInputChange } =
+    useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
 
   const { data, isFetching: loading } = useQuery<IDatasetListResult>({
     queryKey: [
@@ -212,10 +218,8 @@ export const useFetchNextKnowledgeListByPage = () => {
       const { data } = await listDataset({
         page_size: pagination.pageSize,
         page: pagination.current,
-        ext: {
-          keywords: debouncedSearchString,
-          owner_ids: filterValue.owner as string[],
-        },
+        keywords: debouncedSearchString,
+        owner_ids: filterValue.owner as string[],
       });
 
       return { kbs: data?.data, total_datasets: data?.total_datasets };
@@ -233,11 +237,13 @@ export const useFetchNextKnowledgeListByPage = () => {
   return {
     ...data,
     searchString,
+    setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total_datasets },
     setPagination,
     loading,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   };
 };
@@ -275,10 +281,8 @@ export const useCreateKnowledge = () => {
       chunk_method?: string;
       parseType?: ParseType;
       pipeline_id?: string | null;
-      ext?: {
-        language?: string;
-        [key: string]: any;
-      };
+      language?: string;
+      [key: string]: any;
     }) => {
       const { data = {} } = await kbService.createKb(params);
       if (data.code === 0) {
@@ -311,6 +315,10 @@ export const useDeleteKnowledge = () => {
         queryClient.invalidateQueries({
           queryKey: [KnowledgeApiAction.FetchKnowledgeListByPage],
         });
+        queryClient.invalidateQueries({
+          queryKey: [KnowledgeApiAction.FetchDatasetFilter],
+        });
+        markListItemsDeleted(ListDeletionKey.KnowledgeList);
       }
       return data?.data ?? [];
     },
@@ -352,7 +360,7 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
         permission,
         pagerank,
         parser_config,
-        ...ext
+        ...additionalFields
       } = params;
       const requestBody: Record<string, any> = {
         name,
@@ -365,8 +373,8 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
         pagerank,
         parser_config: isPipelineParserConfig(parser_config)
           ? parser_config
-          : extractParserConfigExt(parser_config),
-        ...omit(ext, ['kb_id']),
+          : normalizeParserConfig(parser_config),
+        ...omit(additionalFields, ['kb_id']),
       };
 
       const { data = {} } = await updateKb(kbId, requestBody);
@@ -975,6 +983,7 @@ export const useClearWiki = () => {
 export const useRunArtifactIndex = (kind: string) => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const queryClient = useQueryClient();
+  const isGo = useIsGoBackend();
 
   const {
     data,
@@ -983,11 +992,11 @@ export const useRunArtifactIndex = (kind: string) => {
   } = useMutation({
     mutationKey: [KnowledgeApiAction.RunArtifactIndex],
     mutationFn: async () => {
-      // Go/hybrid: wiki compilation is auto-driven by the scheduler; there is no
+      // Go: wiki compilation is auto-driven by the scheduler; there is no
       // legacy RunIndex endpoint. Reject instead of reporting success so a wiki
       // update can't be mistaken for a real re-merge (the UI hides/disables the
       // update control — plan v4.1 §4.2).
-      if (isGoDatasetBackend()) {
+      if (isGo) {
         throw new Error(i18n.t('message.compileNotSupported'));
       }
       const { data } = await runIndex(knowledgeBaseId, 'wiki');
@@ -1060,7 +1069,7 @@ export const useFetchKnowledgeList = (
         const { data } = await listDataset({
           page,
           page_size: pageSize,
-          ...(keywords ? { ext: { keywords } } : {}),
+          ...(keywords ? { keywords } : {}),
         });
         return {
           items: (data?.data ?? []) as IDataset[],
@@ -1109,51 +1118,24 @@ export const useFetchKnowledgeList = (
 };
 
 /**
- * For consumers that need the COMPLETE list (no scroll UI).
- * Uses a large page size to minimize round-trips, and auto-loads
- * until exhausted.
- */
-export const useFetchAllKnowledgeList = (
-  shouldFilterListWithoutDocument: boolean = false,
-  keywords = '',
-): { list: IDataset[]; loading: boolean } => {
-  const { list, loading, hasNextPage, fetchNextPage } = useFetchKnowledgeList(
-    shouldFilterListWithoutDocument,
-    keywords,
-    100,
-  );
-
-  useEffect(() => {
-    if (hasNextPage && !loading) {
-      fetchNextPage();
-    }
-  }, [hasNextPage, loading, fetchNextPage]);
-
-  return { list, loading };
-};
-
-export const useSelectKnowledgeOptions = () => {
-  const { list } = useFetchAllKnowledgeList();
-
-  const options = list?.map((item) => ({
-    label: item.name,
-    value: item.id,
-  }));
-
-  return options;
-};
-
-/**
- * Fetch datasets by a set of IDs. Used to resolve the names of
- * already-selected datasets that are not present in the first page of
- * the paginated list so they can be echoed back in the form field.
+ * Fetch datasets by a set of IDs. Used to resolve already-selected datasets
+ * that are not present in the first page of the paginated list, e.g. to echo
+ * their names in a form field. For staleness checks see `useStaleDatasetIds`.
+ *
+ * Callers may pass values mixed with variable references (agent forms let
+ * users pick variables alongside datasets); those are not resolvable ids and
+ * are dropped before the request is built.
  */
 export const useFetchDatasetsByIds = (ids: string[]) => {
-  const sortedIds = useMemo(() => [...ids].sort(), [ids]);
+  const sortedIds = useMemo(() => ids.filter(isDatasetId).sort(), [ids]);
   const { data, isFetching: loading } = useQuery<IDataset[]>({
     queryKey: KnowledgeListKeys.byIds(sortedIds),
     enabled: sortedIds.length > 0,
     gcTime: 0,
+    // Hold the previous result across id-list changes so consumers rendering
+    // from `data` don't flash an empty state while the next lookup is in
+    // flight.
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const { data } = await listDatasetByIds(sortedIds);
       return (data?.data ?? []) as IDataset[];
@@ -1161,6 +1143,35 @@ export const useFetchDatasetsByIds = (ids: string[]) => {
   });
 
   return { data, loading };
+};
+
+/**
+ * Resolve which of the given persisted dataset ids have gone stale — the
+ * dataset no longer exists or has been emptied of chunks. The set stays
+ * empty while the lookup is in flight so consumers can hold off validation
+ * until it settles; `settled` flips true once the lookup has finished.
+ */
+export const useStaleDatasetIds = (datasetIds?: string[]) => {
+  // Variable references (e.g. `sys.query`) never resolve to datasets, so
+  // exclude them up front instead of letting them fall out of the lookup
+  // below and get misreported as stale.
+  const persistedIds = useMemo(
+    () => (datasetIds ?? []).filter(isDatasetId),
+    [datasetIds],
+  );
+  const { data: datasets, loading } = useFetchDatasetsByIds(persistedIds);
+
+  const staleDatasetIds = useMemo(() => {
+    if (loading) {
+      return new Set<string>();
+    }
+    const usableIds = new Set(
+      (datasets ?? []).filter((x) => x.chunk_count > 0).map((x) => x.id),
+    );
+    return new Set(persistedIds.filter((id) => !usableIds.has(id)));
+  }, [datasets, loading, persistedIds]);
+
+  return { staleDatasetIds, settled: !loading };
 };
 
 //#region tags

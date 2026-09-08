@@ -270,14 +270,10 @@ func (h *Handler) CreateUser(c *gin.Context) {
 }
 
 func getUserName(c *gin.Context) (string, error) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return "", err
-	}
+	username := c.Param("username")
 	if username == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Username is required")
+		err := errors.New("username is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return "", err
 	}
 	return username, nil
@@ -466,14 +462,12 @@ func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 
 // DeleteUserAPIToken handle delete user API key
 func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
-	encodedUsername := c.Param("username")
-	username, err := common.DecodeFromBase64(encodedUsername)
+	username, err := getUserName(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	key := c.Param("token")
-	if username == "" || key == "" {
+	if key == "" {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Username and key are required")
 		return
 	}
@@ -957,6 +951,10 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 		return
 	}
 	messages, err := msgQueueEngine.GetMessages(req.MessageCount)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
 	var result []map[string]string
 	if req.AckPolicy == "ACK" {
 		for _, message := range messages {

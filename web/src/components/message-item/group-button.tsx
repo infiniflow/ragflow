@@ -24,6 +24,7 @@ import {
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
+import { removeThinkSection } from '@/utils/chat';
 import {
   LucidePauseCircle,
   LucideRefreshCw,
@@ -32,7 +33,7 @@ import {
   LucideTrash2,
   LucideVolume2,
 } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import FeedbackDialog from '../feedback-dialog';
 import { PromptDialog } from '../prompt-dialog';
@@ -66,6 +67,8 @@ export const AssistantGroupButton = ({
   const { t } = useTranslation();
   const { handleRead, ref, isPlaying } = useSpeech(content, audioBinary);
 
+  const copyText = useMemo(() => removeThinkSection(content), [content]);
+
   const handleLike = useCallback(() => {
     onFeedbackOk({ thumbup: true });
   }, [onFeedbackOk]);
@@ -77,7 +80,7 @@ export const AssistantGroupButton = ({
         role="toolbar"
       >
         <CopyToClipboard
-          text={content}
+          text={copyText}
           className="border-0"
           size="icon-xs"
           avoidButtonWrapper

@@ -14,7 +14,6 @@
  *  limitations under the License.
  */
 
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useCreateCompilationTemplateGroup,
   useFetchCompilationTemplateGroup,
@@ -32,14 +31,13 @@ import { useCompilationTemplateGroupForm } from './use-compilation-template-grou
 import { useCompilationTemplateGroupSubmit } from './use-compilation-template-group-submit';
 
 type UseEditNextCompilationTemplateGroupOptions = {
-  onSuccess?: () => void;
+  onSuccess: () => void;
 };
 
 export const useEditNextCompilationTemplateGroup = ({
   onSuccess,
-}: UseEditNextCompilationTemplateGroupOptions = {}) => {
+}: UseEditNextCompilationTemplateGroupOptions) => {
   const { id } = useParams<{ id: string }>();
-  const { navigateToCompilationTemplates } = useNavigatePage();
   const { t } = useTranslation();
 
   const isCreate = isCreateCompilationTemplateGroup(id);
@@ -69,7 +67,7 @@ export const useEditNextCompilationTemplateGroup = ({
     id,
     createGroup,
     updateGroup,
-    onSuccess: onSuccess ?? navigateToCompilationTemplates,
+    onSuccess,
   });
 
   return {
@@ -80,6 +78,5 @@ export const useEditNextCompilationTemplateGroup = ({
     onSubmit,
     isCreate,
     isLoading: isCreate ? createLoading : updateLoading,
-    navigateToCompilationTemplates,
   };
 };

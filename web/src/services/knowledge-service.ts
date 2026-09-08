@@ -282,7 +282,11 @@ export function deleteKnowledgeGraph(knowledgeId: string) {
 }
 
 export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
-  request.get(api.kbList, { params });
+  request.get(api.kbList, {
+    params: params
+      ? { ...params, owner_ids: params.owner_ids?.join(',') }
+      : params,
+  });
 
 // Fetch datasets by a set of IDs via the `ids` query param (comma-joined).
 // Used to echo back already-selected datasets whose names are not present
@@ -304,7 +308,7 @@ export const traceIndex = (datasetId: string, indexType: string) =>
   request.get(api.traceIndex(datasetId, indexType));
 
 // getDatasetCompilationStatus reads the Go scheduler compile-status contract
-// (GET /datasets/:id/compilation/status), used by API_PROXY_SCHEME=go/hybrid to
+// (GET /datasets/:id/compilation/status), used on the Go backend to
 // replace the legacy traceIndex task-progress endpoint. Route it through the
 // service-layer proxy (registerNextServer -> next-request) like the rest of the
 // *-service.ts HTTP proxies.
@@ -325,13 +329,11 @@ export const listDocument = (
   if (!params || !params.id) {
     throw new Error('params and params.id are required');
   }
-  // Extract page, page_size, and ext.keywords from params
-  const { page, page_size, ext } = params;
-  // Merge: page, page_size, keywords (from ext), body, and remaining params
+  const { page, page_size, keywords } = params;
   const mergedParams = {
     page,
     page_size,
-    keywords: ext?.keywords,
+    keywords,
     ...body,
   };
   return request.get(api.getDocumentList(params.id), { params: mergedParams });

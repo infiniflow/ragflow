@@ -6,10 +6,16 @@ const apiKeyOperators = [
   Operator.TavilyExtract,
   Operator.Google,
   Operator.KeenableSearch,
+  Operator.YouComSearch,
   Operator.BGPT,
   Operator.QueritContents,
   Operator.QueritSearch,
 ];
+
+// Canvas nodes carry the operator under `data.label` and the key under
+// `data.form.api_key`, so a graph export has to be sanitized separately from the
+// agent-tool records above.
+const nodeLabelApiKeyOperators: string[] = [Operator.YouComSearch];
 
 function isQueritOperator(value: unknown) {
   if (typeof value !== 'string') {
@@ -19,6 +25,14 @@ function isQueritOperator(value: unknown) {
   return ['querit', 'queritcontents', 'queritsearch'].includes(
     value.replace(/_/g, '').toLowerCase(),
   );
+}
+
+function isNodeLabelApiKeyOperator(value: unknown) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return isQueritOperator(value) || nodeLabelApiKeyOperators.includes(value);
 }
 
 export function clearSensitiveFields<T>(obj: T): T {
@@ -36,7 +50,7 @@ export function clearSensitiveFields<T>(obj: T): T {
     }
 
     if (
-      isQueritOperator(get(value, 'data.label')) &&
+      isNodeLabelApiKeyOperator(get(value, 'data.label')) &&
       get(value, 'data.form.api_key')
     ) {
       return {

@@ -85,6 +85,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -111,6 +113,34 @@ var htmlTableRE = regexp.MustCompile(`</?(table|td|caption|tr|th)( [^<>]{0,12})?
 
 // EmbeddingResult carries a vector plus the model-reported token usage
 // for that input batch entry.
+// esKeywordMaxTermBytes is the upper bound for a single term stored in an
+// Elasticsearch keyword field.
+const esKeywordMaxTermBytes = 32766
+
+// sanitizeKeywordTerm returns a keyword that fits into an Elasticsearch keyword
+// field. Small terms are returned unchanged; oversized terms are truncated at a
+// UTF-8 character boundary and trailing whitespace is stripped.
+func sanitizeKeywordTerm(term string) string {
+	term = strings.TrimSpace(term)
+	if term == "" {
+		return ""
+	}
+	if len(term) <= esKeywordMaxTermBytes {
+		return term
+	}
+	length := 0
+	end := 0
+	for _, r := range term {
+		size := utf8.RuneLen(r)
+		if length+size > esKeywordMaxTermBytes {
+			break
+		}
+		length += size
+		end += size
+	}
+	return strings.TrimRightFunc(term[:end], unicode.IsSpace)
+}
+
 type EmbeddingResult struct {
 	Vector     []float64
 	TokenCount int
@@ -344,6 +374,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		"output_format": "chunks",
 		"chunks":        schema.ChunkDocsToMaps(chunks),
 	}
+	copyPipelineControlValues(out, inputs)
 
 	// Embedding requires a KB: the embedder (and its embd_id) is configured
 	// on the knowledgebase, so without kb_id there is nothing to resolve
@@ -367,6 +398,14 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		zap.Int("output_chunks", len(chunks)),
 	)
 	return out, nil
+}
+
+func copyPipelineControlValues(output, input map[string]any) {
+	for _, key := range []string{"wiki_active_map_states"} {
+		if value, exists := input[key]; exists {
+			output[key] = value
+		}
+	}
 }
 
 func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, embeddingModel, name string, chunks []schema.ChunkDoc) ([]schema.ChunkDoc, int, error) {
@@ -692,7 +731,16 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			// semicolons and newlines stay part of the keyword rather than
 			// acting as separators. strings.Split also preserves empty
 			// elements, matching Python's "a,,b".split(",") == ["a","","b"].
-			if err = ck.SetExtraValue("important_kwd", strings.Split(kw, ",")); err != nil {
+			// Each piece is then bounded to the ES keyword field byte limit and
+			// truncated at a UTF-8 character boundary.
+			rawParts := strings.Split(kw, ",")
+			kwdParts := make([]string, len(rawParts))
+			for i, part := range rawParts {
+				// Empty parts are intentionally preserved to match the contract
+				// tested by TestTokenizerComponent_ImportantKwd_PreservesEmptyElements.
+				kwdParts[i] = sanitizeKeywordTerm(part)
+			}
+			if err = ck.SetExtraValue("important_kwd", kwdParts); err != nil {
 				return fmt.Errorf("tokenizer: keyword list marshal: %w", err)
 			}
 			it, err := tok.Tokenize(kw)

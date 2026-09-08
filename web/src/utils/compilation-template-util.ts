@@ -23,7 +23,13 @@ export function formatKindLabel(t: TFunction, kind: string): string {
     return 'Wiki';
   }
   if (kind === CompilationTemplateKind.KnowledgeGraph) {
-    return t('knowledgeDetails.structureGraph');
+    return t('knowledgeCompilation.graph');
+  }
+  if (kind === CompilationTemplateKind.PageIndex) {
+    return 'PageIndex';
+  }
+  if (kind === CompilationTemplateKind.MindMap) {
+    return 'Mindmap';
   }
   return capitalize(lowerCase(kind));
 }

@@ -101,6 +101,7 @@ export function SingleChatBox({ conversation }: IProps) {
               reference={messageReferences.get(message) ?? EmptyReference}
               clickDocumentButton={clickDocumentButton}
               index={i}
+              isLast={i === messages.length - 1}
               removeMessageById={removeMessageById}
               regenerateMessage={regenerateMessage}
               sendLoading={sendLoading}

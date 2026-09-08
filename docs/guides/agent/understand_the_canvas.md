@@ -16,6 +16,8 @@ Click the plus sign next to any component on the canvas to select the next compo
 
 After adding a component, click the component itself to open the configuration panel on the right. Fields in the configuration panel define input data, processing logic, output variables, and references for subsequent steps.
 
+![Add component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_component.jpg)
+
 ## Use Variables
 Components on the Agent canvas support variable references to implement data transmission between components. Variable sources include system variables, global variables defined in the Begin component, and outputs from upstream components.
 
@@ -43,13 +45,11 @@ Operation Steps:
 6. After selection, the variable will be automatically inserted into the input box.
 7. Save component configuration and run the Agent to verify data transmission.
 
-![Use Variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/use_variables.jpg)
-
+![Use variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/use_variables.jpg)
 ## Save & Run
 After configuration, click **Save** to save the Agent. During debugging, click **Run** at the top of the canvas, enter test questions and observe the execution result of each component. If a component returns no output, check input variables, model configuration, knowledge base permissions, external interface addresses or tool configuration.
 
-![Save And Run](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/save_and_run.jpg)
-
+![Save and run](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/save_and_run.jpg)
 ## Component Connection Rules
 Connections define component execution order. Sequential components run along a single path. Branch components such as `Switch` and `Categorize` route workflows to different exits according to conditions. `Iteration` executes sub-processes in loops. Components not connected to the execution path will not run. Before deleting a component, check upstream/downstream connections and variable references to avoid missing inputs for subsequent nodes.
 

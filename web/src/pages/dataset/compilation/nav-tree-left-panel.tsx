@@ -43,8 +43,8 @@ function NavNodeDeleteAction({
 
   return (
     <ConfirmDeleteDialog
-      title={t('datasetNav.deleteNodeTitle')}
-      content={{ title: t('datasetNav.deleteNodeDescription') }}
+      title={t('knowledgeCompilation.navDeleteNodeTitle')}
+      content={{ title: t('knowledgeCompilation.navDeleteNodeDescription') }}
       onOk={handleConfirmDelete}
     >
       <Button
@@ -66,8 +66,10 @@ function NavNodeDeleteAction({
 type NavTreeLeftPanelProps = {
   navList: DatasetNavList | null;
   navLoading: boolean;
+  navError?: boolean;
   keywords: string;
   childrenMap: Record<string, DatasetNavNode[]>;
+  childrenErrorParents?: Record<string, boolean>;
   structureMap: Record<string, IStructureGraphTemplate[]>;
   deleteNavLoading: boolean;
   deleteNodeLoading: boolean;
@@ -82,8 +84,10 @@ type NavTreeLeftPanelProps = {
 export function NavTreeLeftPanel({
   navList,
   navLoading,
+  navError = false,
   keywords,
   childrenMap,
+  childrenErrorParents = {},
   structureMap,
   deleteNavLoading,
   deleteNodeLoading,
@@ -112,16 +116,19 @@ export function NavTreeLeftPanel({
     () =>
       buildNavTreeData(navList?.items, {
         childrenMap,
+        childrenErrorParents,
         structureMap,
         getActions: renderNavActions,
         onNodeClick,
         onNodeExpand,
         onEntityClick,
-        loadingPlaceholder: t('datasetNav.loading'),
+        loadingPlaceholder: t('knowledgeCompilation.navLoading'),
+        errorPlaceholder: t('knowledgeCompilation.navChildLoadFailed'),
       }),
     [
       navList?.items,
       childrenMap,
+      childrenErrorParents,
       structureMap,
       renderNavActions,
       onNodeClick,
@@ -135,12 +142,14 @@ export function NavTreeLeftPanel({
     <aside className="size-full flex flex-col">
       <section className="flex items-center justify-between px-3 pt-3">
         <span className="text-sm font-medium text-text-primary">
-          {t('datasetNav.title')} ({navList?.total ?? 0})
+          {t('knowledgeCompilation.navTitle')} ({navList?.total ?? 0})
         </span>
         {treeData.length > 0 && (
           <ConfirmDeleteDialog
-            title={t('datasetNav.deleteAllTitle')}
-            content={{ title: t('datasetNav.deleteAllDescription') }}
+            title={t('knowledgeCompilation.navDeleteAllTitle')}
+            content={{
+              title: t('knowledgeCompilation.navDeleteAllDescription'),
+            }}
             onOk={onDeleteAll}
           >
             <Button
@@ -166,15 +175,26 @@ export function NavTreeLeftPanel({
           </div>
         ) : treeData.length === 0 ? (
           <div className="py-8 text-center text-sm text-text-secondary">
-            {t('datasetNav.empty')}
+            {t(
+              navError
+                ? 'knowledgeCompilation.navLoadFailed'
+                : 'knowledgeCompilation.navEmpty',
+            )}
           </div>
         ) : (
-          <TreeView
-            data={treeData}
-            expandOnRowClick={false}
-            defaultNodeIcon={Folder}
-            defaultLeafIcon={FileText}
-          />
+          <>
+            {navError ? (
+              <div className="px-2 pb-2 text-center text-sm text-text-secondary">
+                {t('knowledgeCompilation.navLoadFailed')}
+              </div>
+            ) : null}
+            <TreeView
+              data={treeData}
+              expandOnRowClick={false}
+              defaultNodeIcon={Folder}
+              defaultLeafIcon={FileText}
+            />
+          </>
         )}
       </div>
     </aside>

@@ -168,6 +168,12 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
 	input := buildAgentInputMessages(ctx, p)
+	// Eino's MaxStep counts graph nodes, not model calls. One ReAct round
+	// consists of a model decision, a tool node, and the following model
+	// decision that consumes the tool result. Reserve one additional step for
+	// the final model response, so max_rounds=1 can complete a tool call and
+	// produce its answer instead of failing with "exceeds max steps".
+	maxSteps := p.MaxRounds*2 + 1
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: chatModel,
@@ -185,7 +191,7 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 			}
 			return msgs
 		},
-		MaxStep: p.MaxRounds,
+		MaxStep: maxSteps,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create react agent: %w", err)
@@ -276,18 +282,48 @@ func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*sc
 // buildAgentInputMessages assembles the Python-compatible Agent prompt: the
 // configured history window followed by the current user prompt. The current
 // in-flight user entry is excluded through SnapshotPriorHistory, because the
-// canvas service appends it to state before invoking the workflow.
+// canvas service appends it to state before invoking the workflow. Uploaded
+// files from sys.files are folded into that user prompt (file texts merged,
+// images attached as multi-modal content parts).
 func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Message {
-	current := schema.Message{Role: schema.User, Content: p.UserPrompt}
-	messages := []schema.Message{}
-	if p.MessageHistoryWindowSize > 0 {
-		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
-			// Python takes the last 2*N entries from history, which already
-			// contains the current user input, and then removes that final
-			// entry before formatting the configured prompt.
-			priorLimit := p.MessageHistoryWindowSize*2 - 1
-			messages = prependHistory(messages, state.SnapshotPriorHistory(), priorLimit)
+	var state *runtime.CanvasState
+	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
+		state = s
+	}
+	// Inject sys.files uploads into the current user message, mirroring
+	// the LLM component (llm.go) and Python's Agent._prepare_prompt_variables
+	// delegation to LLMBundle. Uploaded files land in state.Sys["files"]
+	// (service/agent.go) as data:image URIs / parsed text; without this
+	// step a vision agent never sees the attached image. File texts merge
+	// into the user prompt; images become multi-modal content parts.
+	// The {sys.files} placeholder, when present, has already been resolved
+	// by ResolveTemplate upstream in invokeNow, so injection here is
+	// unconditional — same effective behavior as the LLM component.
+	userText := p.UserPrompt
+	var images []string
+	if state != nil {
+		var texts []string
+		texts, images = collectSysFiles(state)
+		if len(texts) > 0 {
+			joined := strings.Join(texts, "\n\n")
+			if userText != "" {
+				userText += "\n\n" + joined
+			} else {
+				userText = joined
+			}
 		}
+	}
+	current := schema.Message{Role: schema.User, Content: userText}
+	if len(images) > 0 {
+		current = userMessageWithImages(userText, images)
+	}
+	messages := []schema.Message{}
+	if p.MessageHistoryWindowSize > 0 && state != nil {
+		// Python takes the last 2*N entries from history, which already
+		// contains the current user input, and then removes that final
+		// entry before formatting the configured prompt.
+		priorLimit := p.MessageHistoryWindowSize*2 - 1
+		messages = prependHistory(messages, state.SnapshotPriorHistory(), priorLimit)
 	}
 	if len(messages) > 0 && messages[len(messages)-1].Role == current.Role {
 		messages[len(messages)-1] = current
@@ -819,6 +855,9 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	var state *runtime.CanvasState
 	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
 		state = s
+		if inputs["_ERROR"] == "No dataset is selected." {
+			return map[string]any{"content": "No dataset is selected."}, nil
+		}
 		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
 			p.SystemPrompt = resolved
 			if rerr != nil {

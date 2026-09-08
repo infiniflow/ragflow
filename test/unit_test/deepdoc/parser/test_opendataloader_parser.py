@@ -460,3 +460,52 @@ class TestElementHtml:
     def test_returns_existing_html_content(self):
         el = {"html": "<table><tr><td>X</td></tr></table>"}
         assert _mod._element_html(el) == "<table><tr><td>X</td></tr></table>"
+
+    def test_cell_with_null_or_nonstring_text_does_not_crash(self):
+        # cells come from external json; a null or int text must not raise
+        # AttributeError inside html.escape and abort the whole document parse.
+        el = {
+            "table_cells": [
+                {"start_row_offset_idx": 0, "start_col_offset_idx": 0, "text": None},
+                {"start_row_offset_idx": 0, "start_col_offset_idx": 1, "text": 42},
+            ],
+            "num_rows": 1,
+            "num_cols": 2,
+        }
+        html = _mod._element_html(el)
+        assert html == "<table><tr><td></td><td>42</td></tr></table>"
+
+    def test_cell_with_null_offset_does_not_crash(self):
+        # a null start_row/col_offset_idx used to raise TypeError in the
+        # `0 <= r < num_rows` comparison; it must be coerced rather than aborting
+        # the whole document parse.
+        el = {
+            "table_cells": [{"start_row_offset_idx": None, "start_col_offset_idx": 0, "text": "x"}],
+            "num_rows": 1,
+            "num_cols": 1,
+        }
+        assert _mod._element_html(el) == "<table><tr><td>x</td></tr></table>"
+
+    def test_string_num_rows_cols_do_not_crash(self):
+        # num_rows/num_cols arriving as strings must not raise on `num_rows > 0`.
+        el = {
+            "table_cells": [{"start_row_offset_idx": 0, "start_col_offset_idx": 0, "text": "A"}],
+            "num_rows": "1",
+            "num_cols": "1",
+        }
+        assert _mod._element_html(el) == "<table><tr><td>A</td></tr></table>"
+
+
+class TestElementText:
+    """Unit tests for _element_text's cell row-joining."""
+
+    def test_non_numeric_row_label_does_not_crash(self):
+        # int(row) on a non-numeric label used to raise ValueError and abort the parse.
+        out = _mod._element_text({"cells": [{"row": "header", "content": "a"}, {"row": 1, "content": "b"}]})
+        assert "a" in out and "b" in out
+
+    def test_row_zero_is_not_treated_as_missing(self):
+        # the `row or row_index or 0` chain treated a real row 0 as missing and fell
+        # through to row_index (here 3), mis-ordering rows; row 0 must keep its slot.
+        out = _mod._element_text({"cells": [{"row": 0, "row_index": 3, "content": "first"}, {"row": 1, "content": "second"}]})
+        assert out == "first\nsecond"

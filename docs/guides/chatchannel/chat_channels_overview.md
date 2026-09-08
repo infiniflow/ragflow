@@ -34,6 +34,8 @@ After logging in to RAGFlow, go to **User Settings** and click **Chat channels**
 
 When using this feature for the first time, the page indicates that no chat channel has been added. You can select the platform you need from the **Available channels** area.
 
+![Enter the Chat Channels page](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/chat-channel-overview-enter-chat-channel-page.jpg)
+
 **General configuration and operation workflow**
 
 Before completing chat channel configuration, select the appropriate platform based on your actual use case, then create the channel and complete the connection configuration. After configuration, users can connect the chat channel to a Chat and interact with the bot through a third-party platform.
@@ -47,6 +49,8 @@ Operation steps:
 5. Save the channel configuration.
 6. Connect the chat channel to a Chat.
 7. Send a test message to the bot in the corresponding third-party platform.
+
+![General configuration and operation workflow](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/chat-channel-overview-general-configuration-and-workflow.jpg)
 
 For some platforms, after saving, it may take a few seconds before the page displays the connection status, QR code, or follow-up operation prompts. Follow the page prompts and do not repeatedly create channels before the QR code or status has been generated.
 

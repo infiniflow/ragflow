@@ -467,8 +467,9 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 // so it would not catch this. This test closes that end-to-end gap.
 //
 // It also pins the inverse: component "d" (stub returning {"ok":true}) has NO
-// recognized output key, so its params.outputs must be absent — the safe-empty
-// contract the front-end renders as a blank step.
+// recognized output key, so its params.outputs carries no format keys — the
+// safe-empty contract the front-end renders as a blank step (the TrackElapsed
+// bookkeeping pair is still present).
 func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 	const (
 		compC = "trace.RealStubChunks"
@@ -557,10 +558,19 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 		t.Errorf("c params.setups must be carried from DSL: %#v", cParams)
 	}
 
-	// Component "d" emits {"ok":true} -> no recognized format -> outputs absent.
+	// Component "d" emits {"ok":true} -> no recognized format -> NO format keys
+	// are invented; the TrackElapsed bookkeeping pair the real pipeline run
+	// stamped is still carried so the timeline can show its elapsed time.
 	dParams := components["d"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
-	if _, exists := dParams["outputs"]; exists {
-		t.Errorf("d has no recognized output, outputs must be absent: %#v", dParams)
+	dOutputs, ok := dParams["outputs"].(map[string]any)
+	if !ok {
+		t.Fatalf("d (no payload format) must still carry bookkeeping outputs: %#v", dParams)
+	}
+	if _, exists := dOutputs["output_format"]; exists {
+		t.Errorf("d has no recognized output, output_format must be absent: %#v", dOutputs)
+	}
+	if _, exists := dOutputs["_elapsed_time"]; !exists {
+		t.Errorf("d outputs._elapsed_time must be carried: %#v", dOutputs)
 	}
 
 	// The END marker MESSAGE must be the JSON dump of the LAST component's

@@ -36,6 +36,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,9 +52,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// memoryTimeLayout is the storage format for valid_at / invalid_at,
-// matching timestamp_to_date on the Python side.
+// memoryTimeLayout is the storage format for valid_at / invalid_at: a
+// server-local wall-clock string ("YYYY-MM-DD HH:MM:SS"), never UTC-shifted.
 const memoryTimeLayout = "2006-01-02 15:04:05"
+
+// memoryNow is the wall clock behind every memory timestamp. Tests pin it
+// to a fixed instant in a fixed location so the server-local assertions are
+// deterministic on any host, including UTC CI runners.
+var memoryNow = time.Now
 
 // ErrMemoryTaskTerminal marks a memory-task failure that already has a durable
 // terminal outcome (task row absent, or progress already persisted as failed),
@@ -61,6 +67,12 @@ const memoryTimeLayout = "2006-01-02 15:04:05"
 // read hiccup, LLM/network errors before any durable marker) return plain
 // errors so executeMemoryTask can Nack and let the message be redelivered.
 var ErrMemoryTaskTerminal = errors.New("memory: terminal task failure, do not redeliver")
+
+// errMemoryTaskRetryable marks a failure that must leave the broker message
+// unsettled. It is used when extracted messages may already be stored but the
+// durable task state could not be recorded; stable chunk ids make that retry
+// safe.
+var errMemoryTaskRetryable = errors.New("memory: retryable task failure")
 
 // extractedMemory is one LLM-extracted memory item ready for persistence.
 type extractedMemory struct {
@@ -74,18 +86,18 @@ type extractedMemory struct {
 // Python handle_save_to_memory_task: validate the task row, then
 // extract + persist, settling task progress on the way out.
 //
+// taskID is the authoritative identity passed explicitly by the Ingestor (the
+// envelope TaskID); it is never re-derived from the payload. The payload
+// carries only business parameters (memory_id / source_id / message_dict).
+//
 // The returned error is wrapped in ErrMemoryTaskTerminal when the failure has
 // already produced a durable terminal outcome (dependency/config error, task
 // row absent, task already failed, or extraction failed after progress=-1 was
 // persisted). Transient failures (a task-load DB error before any marker was
 // written) return an unwrapped error so the caller can Nack and redeliver.
-func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, payload map[string]any) error {
+func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, taskID string, payload map[string]any) error {
 	if s == nil || s.taskDAO == nil || s.memories == nil {
 		return fmt.Errorf("%w: memory: nil MemoryMessageService or memory dependency", ErrMemoryTaskTerminal)
-	}
-	taskID, _ := payload["id"].(string)
-	if taskID == "" {
-		taskID, _ = payload["task_id"].(string)
 	}
 	memoryID, _ := payload["memory_id"].(string)
 	sourceID := payloadInt64(payload["source_id"])
@@ -111,10 +123,23 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, paylo
 	if task.Progress == -1 {
 		return fmt.Errorf("%w: memory: task %s is already failed", ErrMemoryTaskTerminal, taskID)
 	}
+	// A task already extracted to completion (progress>=1.0) is a durable
+	// terminal outcome: a redelivery after restart (or a duplicate copy from
+	// another consumer) must not re-run the LLM extraction, which would insert
+	// duplicate memory entries. Short-circuit to success so the Ingestor Acks
+	// the message instead of re-executing the task.
+	if task.Progress >= 1.0 {
+		return nil
+	}
 
 	if err = s.saveExtractedToMemory(ctx, memoryID, msg, sourceID, taskID); err != nil {
-		s.updateTaskProgress(ctx, taskID, -1, err.Error())
-		return fmt.Errorf("%w: %v", ErrMemoryTaskTerminal, err)
+		if errors.Is(err, errMemoryTaskRetryable) {
+			return err
+		}
+		if progressErr := s.updateTaskProgress(ctx, taskID, -1, err.Error()); progressErr != nil {
+			return fmt.Errorf("%w: memory: mark task %s failed: %v", errMemoryTaskRetryable, taskID, progressErr)
+		}
+		return fmt.Errorf("%w: %w", ErrMemoryTaskTerminal, err)
 	}
 	return nil
 }
@@ -133,7 +158,9 @@ func (s *MemoryMessageService) saveExtractedToMemory(ctx context.Context, memory
 	}
 	extractTypes := getTypesToExtract(memoryTypes)
 	if len(extractTypes) == 0 {
-		s.updateTaskProgress(ctx, taskID, 1.0, fmt.Sprintf("Memory '%s' don't need to extract.", memoryID))
+		if err := s.updateTaskProgress(ctx, taskID, 1.0, fmt.Sprintf("Memory '%s' don't need to extract.", memoryID)); err != nil {
+			return fmt.Errorf("%w: memory: mark task %s complete: %w", errMemoryTaskRetryable, taskID, err)
+		}
 		return nil
 	}
 
@@ -142,12 +169,15 @@ func (s *MemoryMessageService) saveExtractedToMemory(ctx context.Context, memory
 		return err
 	}
 	if len(extracted) == 0 {
-		s.updateTaskProgress(ctx, taskID, 1.0, "No memory extracted from raw message.")
+		if err := s.updateTaskProgress(ctx, taskID, 1.0, "No memory extracted from raw message."); err != nil {
+			return fmt.Errorf("%w: memory: mark task %s complete: %w", errMemoryTaskRetryable, taskID, err)
+		}
 		return nil
 	}
-	s.updateTaskProgress(ctx, taskID, 0.5, fmt.Sprintf("Extracted %d messages from raw dialogue.", len(extracted)))
+	_ = s.updateTaskProgress(ctx, taskID, 0.5, fmt.Sprintf("Extracted %d messages from raw dialogue.", len(extracted)))
 
-	now := time.Now().UTC()
+	// conversation_time is stamped as server-local wall clock, not UTC.
+	now := memoryNow()
 	messages := make([]map[string]any, 0, len(extracted))
 	for _, item := range extracted {
 		messages = append(messages, buildExtractedMessage(generateRawMessageID(ctx), sourceID, memoryID, msg, item, now))
@@ -155,7 +185,9 @@ func (s *MemoryMessageService) saveExtractedToMemory(ctx context.Context, memory
 	if err = s.embedAndSaveMessages(ctx, mem, messages); err != nil {
 		return err
 	}
-	s.updateTaskProgress(ctx, taskID, 1.0, "Message saved successfully.")
+	if err := s.updateTaskProgress(ctx, taskID, 1.0, "Message saved successfully."); err != nil {
+		return fmt.Errorf("%w: memory: mark task %s complete: %w", errMemoryTaskRetryable, taskID, err)
+	}
 	return nil
 }
 
@@ -172,7 +204,7 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	}
 
 	conversation := fmt.Sprintf("User Input: %s\nAgent Response: %s", msg.UserInput, msg.AgentResponse)
-	now := time.Now().UTC().Format(memoryTimeLayout)
+	now := memoryNow().Format(memoryTimeLayout)
 	messages := []models.Message{{Role: "system", Content: systemPrompt}}
 	if mem.UserPrompt != nil && strings.TrimSpace(*mem.UserPrompt) != "" {
 		messages = append(messages,
@@ -195,7 +227,7 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	}
 	chatModel := models.NewChatModel(driver, &modelName, apiConfig)
 
-	s.updateTaskProgress(ctx, taskID, 0.15, "Prepared prompts and LLM.")
+	_ = s.updateTaskProgress(ctx, taskID, 0.15, "Prepared prompts and LLM.")
 	temperature := mem.Temperature
 	resp, err := chatModel.ModelDriver.ChatWithMessages(ctx, modelName, messages, apiConfig, &models.ChatConfig{Temperature: &temperature}, nil)
 	if err != nil {
@@ -204,7 +236,7 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	if resp == nil || resp.Answer == nil {
 		return nil, errors.New("empty response from chat model")
 	}
-	s.updateTaskProgress(ctx, taskID, 0.35, "Get extracted result from LLM.")
+	_ = s.updateTaskProgress(ctx, taskID, 0.35, "Get extracted result from LLM.")
 
 	return parseMemoryExtraction(*resp.Answer, extractTypes), nil
 }
@@ -215,11 +247,30 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 // logical message fields are set here; the doc engine maps them to
 // storage fields (including tokenization) at insert time.
 func buildExtractedMessage(messageID, sourceID int64, memoryID string, msg MemoryMessage, item extractedMemory, now time.Time) map[string]any {
-	var invalidAt any
+	validAt, hasExplicitValidAt := normalizeMemoryTime(item.ValidAt)
+	if !hasExplicitValidAt {
+		validAt = now.Format(memoryTimeLayout)
+	}
+	invalidAt, hasExplicitInvalidAt := normalizeMemoryTime(item.InvalidAt)
 	if strings.TrimSpace(item.InvalidAt) != "" {
-		invalidAt = formatMemoryTime(item.InvalidAt, now)
+		if !hasExplicitInvalidAt {
+			invalidAt = now.Format(memoryTimeLayout)
+		}
+	}
+	var storedInvalidAt any
+	if invalidAt != "" {
+		storedInvalidAt = invalidAt
+	}
+	fingerprintValidAt := ""
+	if hasExplicitValidAt {
+		fingerprintValidAt = validAt
+	}
+	fingerprintInvalidAt := ""
+	if hasExplicitInvalidAt {
+		fingerprintInvalidAt = invalidAt
 	}
 	return map[string]any{
+		"id":           extractedMessageDocumentID(memoryID, sourceID, item.MessageType, item.Content, fingerprintValidAt, fingerprintInvalidAt),
 		"message_id":   messageID,
 		"message_type": item.MessageType,
 		"source_id":    sourceID,
@@ -228,11 +279,22 @@ func buildExtractedMessage(messageID, sourceID int64, memoryID string, msg Memor
 		"agent_id":     msg.AgentID,
 		"session_id":   msg.SessionID,
 		"content":      item.Content,
-		"valid_at":     formatMemoryTime(item.ValidAt, now),
-		"invalid_at":   invalidAt,
+		"valid_at":     validAt,
+		"invalid_at":   storedInvalidAt,
 		"forget_at":    nil,
 		"status":       true,
 	}
+}
+
+// extractedMessageDocumentID returns the chunk-store id for an extracted item.
+// sourceID identifies the immutable raw message, while the normalized content
+// fingerprint distinguishes multiple extracts from that source. Only explicit,
+// parseable timestamps participate, so a runtime fallback cannot change the
+// identity on retry. Repeated task executions therefore upsert the same chunk
+// instead of creating duplicates.
+func extractedMessageDocumentID(memoryID string, sourceID int64, messageType, content, validAt, invalidAt string) string {
+	fingerprint := sha256.Sum256([]byte(strings.Join([]string{messageType, content, validAt, invalidAt}, "\x00")))
+	return fmt.Sprintf("%s_%d_%x", memoryID, sourceID, fingerprint[:8])
 }
 
 // parseMemoryExtraction ports memory.utils.msg_util.get_json_result_from_llm_response
@@ -277,31 +339,48 @@ func parseMemoryExtraction(answer string, extractTypes []string) []extractedMemo
 }
 
 // formatMemoryTime normalizes an LLM-supplied timestamp (ISO 8601 or
-// already-formatted) into memoryTimeLayout. Unparseable or empty input
-// falls back to the supplied time.
+// already-formatted) into memoryTimeLayout. The parsed timestamp keeps its
+// own wall clock (no zone conversion). Unparseable or empty input falls
+// back to the supplied time formatted in its own location (server-local
+// when callers pass time.Now()).
 func formatMemoryTime(value string, fallback time.Time) string {
+	if normalized, ok := normalizeMemoryTime(value); ok {
+		return normalized
+	}
+	return fallback.Format(memoryTimeLayout)
+}
+
+// normalizeMemoryTime parses an explicit LLM-supplied timestamp without a
+// runtime fallback. Its result is suitable for a stable document fingerprint.
+func normalizeMemoryTime(value string) (string, bool) {
 	v := strings.TrimSpace(value)
-	if v != "" {
-		for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02"} {
-			if t, err := time.Parse(layout, v); err == nil {
-				return t.UTC().Format(memoryTimeLayout)
-			}
+	if v == "" {
+		return "", false
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02"} {
+		if t, err := time.Parse(layout, v); err == nil {
+			return t.Format(memoryTimeLayout), true
 		}
 	}
-	return fallback.UTC().Format(memoryTimeLayout)
+	return "", false
 }
 
 // updateTaskProgress stamps and persists task progress, mirroring
-// Python TaskService.update_progress call sites. Failures are logged
-// and swallowed so progress reporting never breaks extraction.
-func (s *MemoryMessageService) updateTaskProgress(ctx context.Context, taskID string, progress float64, msg string) {
-	if s == nil || s.taskDAO == nil || taskID == "" {
-		return
+// Python TaskService.update_progress call sites. Callers that establish a
+// terminal task state must handle an error so the message can be retried.
+func (s *MemoryMessageService) updateTaskProgress(ctx context.Context, taskID string, progress float64, msg string) error {
+	if s == nil || s.taskDAO == nil {
+		return errors.New("memory: nil task DAO")
+	}
+	if taskID == "" {
+		return errors.New("memory: empty task id")
 	}
 	stamped := time.Now().Format(memoryTimeLayout) + " " + msg
 	if err := s.taskDAO.UpdateProgress(ctx, dao.DB, taskID, progress, stamped); err != nil {
 		common.Warn("memory: update task progress failed", zap.Error(err))
+		return err
 	}
+	return nil
 }
 
 func payloadInt64(v any) int64 {

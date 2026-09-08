@@ -52,18 +52,18 @@ export function WorkflowPreviewSheet({
             </Button>
           </SheetTrigger>
         </TooltipTrigger>
-        <TooltipContent>{t('setting.processFlow')}</TooltipContent>
+        <TooltipContent>{t('knowledgeCompilation.processFlow')}</TooltipContent>
       </Tooltip>
       <SheetContent
         className="w-1/2 max-w-[700px] flex flex-col"
         onInteractOutside={(e) => e.preventDefault()}
       >
         <SheetHeader>
-          <SheetTitle>{t('setting.processFlow')}</SheetTitle>
+          <SheetTitle>{t('knowledgeCompilation.processFlow')}</SheetTitle>
         </SheetHeader>
         <div className="flex-1 min-h-0 mt-4 flex items-center justify-center">
           <span className="text-text-disabled">
-            {t('setting.processFlowComingSoon')}
+            {t('knowledgeCompilation.processFlowComingSoon')}
           </span>
         </div>
       </SheetContent>

@@ -20,14 +20,14 @@ export const buildSectionSchema = (t: (key: string) => string) =>
   z.object({
     description: z.string().optional(),
     fields: z
-      .array(z.record(z.string().min(1, t('setting.fieldDescriptionRequired'))))
+      .array(z.record(z.string().min(1, t('knowledgeCompilation.fieldDescriptionRequired'))))
       .min(1),
   });
 
 export const buildRaptorConfigSchema = (t: (key: string) => string) =>
   z.object({
     prompt: z.string().optional(),
-    max_token: z.number().min(512, t('setting.maxTokenRequired')).max(2048),
+    max_token: z.number().min(512, t('knowledgeCompilation.maxTokenRequired')).max(2048),
     clustering_threshold: z.number().min(0).max(1),
     clustering_ratio: z.number().min(0).max(1),
     rechunk: z.boolean().optional(),
@@ -46,9 +46,9 @@ export const buildTemplateSchema = (t: (key: string) => string) =>
   z
     .object({
       id: z.string().optional(),
-      name: z.string().min(1, t('setting.templateNameRequired')),
+      name: z.string().min(1, t('knowledgeCompilation.templateNameRequired')),
       description: z.string().optional(),
-      kind: z.string().min(1, t('setting.templateKindRequired')),
+      kind: z.string().min(1, t('knowledgeCompilation.templateKindRequired')),
       config: z.record(
         z.union([
           buildRaptorConfigSchema(t),
@@ -67,7 +67,7 @@ export const buildTemplateSchema = (t: (key: string) => string) =>
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['config', 'mode'],
-          message: t('setting.wikiModeRequired'),
+          message: t('knowledgeCompilation.wikiModeRequired'),
         });
       }
     });

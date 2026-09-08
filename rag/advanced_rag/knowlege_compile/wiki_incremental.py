@@ -33,9 +33,29 @@ from ._common import (
 )
 
 
-# ----- REFINE concurrency control -----
+# ----- REFINE progress -----
 
-WIKI_REFINE_MAX_CONCURRENT = 20  # shared LLM pool size used by the Wiki runner
+WIKI_REFINE_PROGRESS_UPDATES = 20
+
+
+async def _wiki_run_refine_tasks(tasks: list, progress: Callable[[str], None]) -> None:
+    """Run REFINE page tasks and emit at most roughly 20 progress updates."""
+    total = len(tasks)
+    if not total:
+        return
+    report_every = max(1, (total + WIKI_REFINE_PROGRESS_UPDATES - 1) // WIKI_REFINE_PROGRESS_UPDATES)
+    scheduled = [asyncio.create_task(task) for task in tasks]
+    try:
+        for done, task in enumerate(asyncio.as_completed(scheduled), start=1):
+            await task
+            if done % report_every == 0 or done == total:
+                progress(f"{done}/{total} pages completed.")
+    except BaseException:
+        for task in scheduled:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*scheduled, return_exceptions=True)
+        raise
 
 
 # ----- constants ----
@@ -45,6 +65,7 @@ WIKI_PAGE_COMPILE_KWD = "wiki_page"
 WIKI_PLAN_GROUP_COMPILE_KWD = "wiki_plan_group"
 WIKI_DOC_PAGE_SOURCE_COMPILE_KWD = "wiki_doc_page_source"
 WIKI_CANONICAL_ENTITY_COMPILE_KWD = "wiki_canonical_entity"
+WIKI_REFINE_FAILURE_COMPILE_KWD = "wiki_refine_failure"
 
 # Entity matching thresholds (not exposed in YAML)
 ENTITY_MERGE_THRESHOLD = 0.90  # auto-merge
@@ -161,7 +182,10 @@ async def _chat_mdl_ask(chat_mdl, system_prompt: str, user_prompt: str, temperat
         raise
     if isinstance(raw, tuple):
         raw = raw[0]
-    return _strip_think(raw or "")
+    response = _strip_think(raw or "")
+    if any(line.lstrip().startswith("**ERROR**") for line in response.splitlines()):
+        raise RuntimeError(f"Wiki LLM call failed: {response}")
+    return response
 
 
 def _wiki_should_re_synthesize(
@@ -172,7 +196,7 @@ def _wiki_should_re_synthesize(
     existing_sources = set(page.get("source_doc_ids", []))
     total_sources = existing_sources | new_source_doc_ids
     claim_count = len(page.get("claims", []))
-    last_synth_ver = page.get("synthesis_version_int", 1)
+    last_synth_ver = _as_int(page.get("synthesis_version_int"), 1)
     versions_since = next_version - last_synth_ver
 
     return (
@@ -298,6 +322,103 @@ async def _wiki_has_any_pages(tenant_id: str, kb_id: str) -> bool:
     except Exception:
         logging.exception("wiki: _wiki_has_any_pages failed for kb=%s", kb_id)
         return False
+
+
+async def _wiki_load_refine_failures(tenant_id: str, kb_id: str) -> dict[str, dict]:
+    """Load persisted REFINE failures keyed by page id."""
+    index = search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return {}
+    fields = ["slug_kwd", "content_with_weight"]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            {"compile_kwd": [WIKI_REFINE_FAILURE_COMPILE_KWD]},
+            [],
+            OrderByExpr(),
+            0,
+            1000,
+            index,
+            [kb_id],
+        )
+        rows = settings.docStoreConn.get_fields(res, fields) or {}
+    except Exception:
+        logging.exception("wiki: failed to load REFINE failures for kb=%s", kb_id)
+        return {}
+
+    failures: dict[str, dict] = {}
+    for row in rows.values():
+        page_id = row.get("slug_kwd")
+        payload = row.get("content_with_weight")
+        if isinstance(page_id, list):
+            page_id = page_id[0] if page_id else ""
+        if not isinstance(page_id, str) or not page_id.strip():
+            continue
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload) if payload else {}
+            except (json.JSONDecodeError, TypeError):
+                payload = {}
+        failures[page_id.strip()] = payload if isinstance(payload, dict) else {}
+    return failures
+
+
+async def _wiki_record_refine_failure(
+    tenant_id: str,
+    kb_id: str,
+    page_id: str,
+    entity_names: list[str] | None = None,
+    error: str = "",
+) -> None:
+    """Persist one failed page so a later Update can retry it."""
+    page_id = str(page_id or "").strip()
+    if not page_id:
+        return
+    index = search.index_name(tenant_id)
+    payload = json.dumps(
+        {
+            "page_id": page_id,
+            "entity_names": [str(name).strip() for name in entity_names or [] if str(name).strip()],
+            "error": str(error or "")[:1000],
+        },
+        ensure_ascii=False,
+    )
+    row = {
+        "id": _stable_row_id(WIKI_REFINE_FAILURE_COMPILE_KWD, kb_id, page_id),
+        "doc_id": str(kb_id),
+        "compile_kwd": WIKI_REFINE_FAILURE_COMPILE_KWD,
+        "slug_kwd": page_id,
+        "content_with_weight": payload,
+        "available_int": 0,
+    }
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"compile_kwd": [WIKI_REFINE_FAILURE_COMPILE_KWD], "slug_kwd": [page_id]},
+            index,
+            kb_id,
+        )
+        await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
+    except Exception:
+        logging.exception("wiki: failed to persist REFINE failure page=%s", page_id)
+
+
+async def _wiki_clear_refine_failure(tenant_id: str, kb_id: str, page_id: str) -> None:
+    """Remove the retry marker after a page succeeds or is deleted."""
+    page_id = str(page_id or "").strip()
+    if not page_id:
+        return
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"compile_kwd": [WIKI_REFINE_FAILURE_COMPILE_KWD], "slug_kwd": [page_id]},
+            search.index_name(tenant_id),
+            kb_id,
+        )
+    except Exception:
+        logging.exception("wiki: failed to clear REFINE failure page=%s", page_id)
 
 
 async def _load_canonical_entities(
@@ -998,7 +1119,12 @@ async def _search_existing_pages(
     return results
 
 
-async def _load_map_relations(tenant_id: str, kb_id: str, excluded_doc_ids: set[str] | None = None) -> list[dict]:
+async def _load_map_relations(
+    tenant_id: str,
+    kb_id: str,
+    excluded_doc_ids: set[str] | None = None,
+    chunk_state: dict[str, dict] | None = None,
+) -> list[dict]:
     """Load all extracted (from, to, type) relations from wiki_map_extract rows.
 
     These are the semantic edges the LLM extracted during MAP. When both
@@ -1006,52 +1132,24 @@ async def _load_map_relations(tenant_id: str, kb_id: str, excluded_doc_ids: set[
     connections (outlinks), which is far more reliable than hoping REFINE
     sprinkled [[wikilinks]] into prose.
     """
-    from common.doc_store.doc_store_base import OrderByExpr
+    if chunk_state is None:
+        from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_active_map_state
 
-    index = search.index_name(tenant_id)
-    if not settings.docStoreConn.index_exist(index, kb_id):
-        return []
+        chunk_state = await _wiki_load_active_map_state(tenant_id, kb_id)
+    from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_map_extracts_for_state
+
+    extracts = await _wiki_load_map_extracts_for_state(tenant_id, kb_id, chunk_state)
     relations: list[dict] = []
-    offset, page_size = 0, 1000
-    while True:
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                ["content_with_weight", "doc_id"],
-                [],
-                {"compile_kwd": ["wiki_map_extract"]},
-                [],
-                OrderByExpr(),
-                offset,
-                page_size,
-                index,
-                [kb_id],
-            )
-            field_map = settings.docStoreConn.get_fields(res, ["content_with_weight", "doc_id"]) or {}
-        except Exception:
-            logging.exception("wiki: failed to load map relations for kb=%s", kb_id)
-            return relations
-        for row in field_map.values():
-            row_doc_ids = _as_str_list(row.get("doc_id"))
-            if excluded_doc_ids and any(doc_id in excluded_doc_ids for doc_id in row_doc_ids):
+    for extract in extracts:
+        if excluded_doc_ids and str(extract.get("doc_id") or "") in excluded_doc_ids:
+            continue
+        for relation in extract.get("relations") or []:
+            if not isinstance(relation, dict):
                 continue
-            raw = row.get("content_with_weight")
-            if isinstance(raw, str):
-                try:
-                    raw = json.loads(raw)
-                except (json.JSONDecodeError, TypeError):
-                    raw = None
-            if not isinstance(raw, dict):
-                continue
-            for r in raw.get("relations") or []:
-                if isinstance(r, dict):
-                    frm = r.get("from")
-                    to = r.get("to")
-                    if isinstance(frm, str) and isinstance(to, str):
-                        relations.append({"from": frm, "to": to, "type": r.get("type", "related")})
-        if len(field_map) < page_size:
-            break
-        offset += page_size
+            source = relation.get("from")
+            target = relation.get("to")
+            if isinstance(source, str) and isinstance(target, str):
+                relations.append({"from": source, "to": target, "type": relation.get("type", "related")})
     return relations
 
 
@@ -1059,6 +1157,7 @@ async def _wiki_load_pages_for_graph(
     tenant_id: str,
     kb_id: str,
     excluded_doc_ids: set[str] | None = None,
+    chunk_state: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Reload compiled wiki_page rows and project them onto the canvas-graph
     shape expected by ``dataset_wiki_generator.build_wiki_page_graph``.
@@ -1157,7 +1256,12 @@ async def _wiki_load_pages_for_graph(
                 from api.db.services.document_service import DocumentService
 
                 excluded_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
-            map_relations = await _load_map_relations(tenant_id, kb_id, excluded_doc_ids=excluded_doc_ids)
+            map_relations = await _load_map_relations(
+                tenant_id,
+                kb_id,
+                excluded_doc_ids=excluded_doc_ids,
+                chunk_state=chunk_state,
+            )
         except Exception:
             logging.exception("wiki: failed to load MAP relations for graph fallback kb=%s", kb_id)
             map_relations = []
@@ -1205,16 +1309,26 @@ def _wiki_extract_outlinks_from_content(content: str, kb_id: str = "") -> list[s
     return outlinks
 
 
-def _inside_wikilink(content: str, pos: int) -> bool:
-    """Return True iff position ``pos`` falls inside an existing [[...]] span."""
-    open_pos = content.rfind("[[", 0, pos)
-    if open_pos < 0:
-        return False
-    # Find the FIRST "]]" that closes the "[[...]]" starting at open_pos
-    close_pos = content.find("]]", open_pos + 2)
-    if close_pos < 0:
-        close_pos = len(content)
-    return open_pos + 2 <= pos < close_pos
+_WIKI_PROTECTED_LINK_RE = re.compile(r"\[\[[^\]\n]+\]\]|\[[^\]\n]*\]\([^)\n]+\)")
+
+
+def _wiki_find_unlinked_mention(content: str, name: str) -> int:
+    """Find the first occurrence of ``name`` outside existing link markup."""
+    if not content or not name:
+        return -1
+    protected_spans = [(match.start(), match.end()) for match in _WIKI_PROTECTED_LINK_RE.finditer(content)]
+    raw_open = content.rfind("[[")
+    if raw_open >= 0 and content.find("]]", raw_open + 2) < 0:
+        protected_spans.append((raw_open, len(content)))
+    start = 0
+    while True:
+        idx = content.find(name, start)
+        if idx < 0:
+            return -1
+        end = idx + len(name)
+        if not any(idx < protected_end and end > protected_start for protected_start, protected_end in protected_spans):
+            return idx
+        start = idx + 1
 
 
 _WIKI_PIPE_LINK_RE = re.compile(r"\[\[([^\[\]\|]+?)\|([^\[\]]+?)\]\]")
@@ -1326,6 +1440,14 @@ def _as_str_list(raw) -> list[str]:
     if isinstance(raw, (list, tuple)):
         return [str(v) for v in raw if v is not None]
     return []
+
+
+def _as_int(raw, default: int = 0) -> int:
+    """Coerce numeric doc-store fields, which some backends return as strings."""
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
 
 
 def _wiki_claim_chunk_ids(claim: dict) -> list[str]:
@@ -1524,6 +1646,7 @@ async def _wiki_reduce_entity(
     new_claims: list[dict],
     existing_page: dict | None,
     deleted_doc_ids: set[str],
+    invalidated_chunk_ids: set[str] | None = None,
     entity_type: str = "entity",
     aliases: list[str] | None = None,
     source_doc_ids: list[str] | None = None,
@@ -1576,10 +1699,15 @@ async def _wiki_reduce_entity(
     else:
         existing_claims = []
     deleted_set = deleted_doc_ids or set()
+    invalidated_set = invalidated_chunk_ids or set()
+    existing_chunk_ids = set(_as_str_list(existing_page.get("source_chunk_ids")))
+    all_page_evidence_invalidated = bool(existing_chunk_ids) and existing_chunk_ids <= invalidated_set
 
-    retractions = [c for c in existing_claims if c.get("source_doc_id") in deleted_set]
+    retractions = [
+        c for c in existing_claims if c.get("source_doc_id") in deleted_set or bool(set(_wiki_claim_chunk_ids(c)) & invalidated_set) or (all_page_evidence_invalidated and not _wiki_claim_chunk_ids(c))
+    ]
 
-    retained_claims = [c for c in existing_claims if c.get("source_doc_id") not in deleted_set]
+    retained_claims = [c for c in existing_claims if c not in retractions]
 
     retained_texts = {c.get("statement", c.get("text", "")) for c in retained_claims}
     additions = [c for c in new_claims if c.get("statement", c.get("text", "")) not in retained_texts]
@@ -1587,8 +1715,8 @@ async def _wiki_reduce_entity(
     all_doc_ids = (
         {c.get("source_doc_id") for c in retained_claims if c.get("source_doc_id")} | {c.get("source_doc_id") for c in additions if c.get("source_doc_id")} | (set(source_doc_ids or []) - deleted_set)
     )
-    current_chunk_ids = sorted(set(source_chunk_ids or []))
-    evidence_changed = bool(set(current_chunk_ids) - set(_as_str_list(existing_page.get("source_chunk_ids"))))
+    current_chunk_ids = sorted(set(source_chunk_ids or []) if source_chunk_ids else existing_chunk_ids - invalidated_set)
+    evidence_changed = set(current_chunk_ids) != existing_chunk_ids
 
     if not all_doc_ids:
         return {
@@ -1627,6 +1755,7 @@ async def _wiki_reduce_batch(
     affected_names: set[str],
     existing_pages: dict[str, dict],
     deleted_doc_ids: set[str],
+    invalidated_chunk_ids: set[str] | None = None,
     canonical_claims: dict[str, list[dict]] | None = None,
     canonical_map: dict[str, dict] | None = None,
     name_resolution: dict[str, str] | None = None,
@@ -1685,6 +1814,7 @@ async def _wiki_reduce_batch(
                 new_claims=claims,
                 existing_page=name_to_page.get(name, existing_pages.get(name)),
                 deleted_doc_ids=deleted_doc_ids,
+                invalidated_chunk_ids=invalidated_chunk_ids,
             )
         )
     if not tasks:
@@ -1864,6 +1994,7 @@ async def _wiki_refine_page(
     # Blank page_id would produce `slug_kwd: [""]` queries → Infinity 3052.
     if not page_id or not str(page_id).strip():
         return existing_page
+    page_version = _as_int(page_version)
 
     topic_candidates = await _wiki_rank_topic_candidates(
         page_title,
@@ -2462,7 +2593,11 @@ def _wiki_build_contextual_hints(
         rp = existing_page.get("related_kb_pages_kwd")
         if rp:
             if isinstance(rp, str):
-                related = json.loads(rp)
+                try:
+                    parsed = json.loads(rp)
+                    related = parsed if isinstance(parsed, list) else [rp]
+                except (json.JSONDecodeError, TypeError):
+                    related = [rp]
             elif isinstance(rp, list):
                 related = rp
     if not related:
@@ -2473,8 +2608,14 @@ def _wiki_build_contextual_hints(
 
     lines = ["## Context: Related Entities & Concepts", "Reference them in the opening paragraph and relevant sections:"]
     for r in related[:10]:
-        entity_name = r.get("entity_name") or r.get("name", "")
-        relation = r.get("relation") or r.get("type", "related")
+        if isinstance(r, dict):
+            entity_name = r.get("entity_name") or r.get("name") or r.get("slug", "")
+            relation = r.get("relation") or r.get("type", "related")
+        else:
+            entity_name = str(r or "").strip()
+            relation = "related"
+        if not entity_name:
+            continue
         lines.append(f"- [[{entity_name}]] — {relation}")
     return "\n".join(lines)
 
@@ -3071,6 +3212,7 @@ async def _wiki_finalize(
     kb_id: str,
     embd_mdl,
     page_ids: list[str] | None = None,
+    chunk_state: dict[str, dict] | None = None,
 ) -> None:
     """Post-REFINE cleanup: dead wikilinks + cross-reference update.
 
@@ -3142,7 +3284,12 @@ async def _wiki_finalize(
     from api.db.services.document_service import DocumentService
 
     disabled_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
-    map_relations = await _load_map_relations(tenant_id, kb_id, excluded_doc_ids=disabled_doc_ids)
+    map_relations = await _load_map_relations(
+        tenant_id,
+        kb_id,
+        excluded_doc_ids=disabled_doc_ids,
+        chunk_state=chunk_state,
+    )
     relation_edges: dict[str, set[str]] = {}  # pid → {target slug}
     if map_relations:
         for rel in map_relations:
@@ -3206,11 +3353,8 @@ async def _wiki_finalize(
                 continue
             if target in existing_links:
                 continue
-            idx = content.find(name)
+            idx = _wiki_find_unlinked_mention(content, name)
             if idx < 0:
-                continue
-            # Skip if the occurrence is already inside a [[...]] link span
-            if _inside_wikilink(content, idx):
                 continue
             # Preserve the matched prose as the link label.  This matters when
             # several entities share one page: e.g. the page slug may be
@@ -3322,8 +3466,10 @@ async def wiki_compile_incremental(
     tenant_id: str,
     kb_id: str,
     mode: str,
+    chunk_delta: dict[str, set[str]],
+    previous_chunk_state: dict[str, dict],
+    current_chunk_state: dict[str, dict],
     incremental: bool = False,  # True = incremental run
-    map_results: list[dict] | None = None,  # from MAP phase
     deleted_doc_ids: set[str] | None = None,
     callback: Callable | None = None,
 ) -> dict:
@@ -3332,7 +3478,6 @@ async def wiki_compile_incremental(
     Args:
         mode: ``entity`` for Mode A, or ``topic`` for Mode B.
         incremental: True=incremental update, False=full build
-        map_results: MAP outputs. If None, loads from ES.
         deleted_doc_ids: Documents that were removed.
         callback: Progress callback.
 
@@ -3340,7 +3485,6 @@ async def wiki_compile_incremental(
     """
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
-    from common.doc_store.doc_store_base import OrderByExpr
 
     summary = {"pages_created": 0, "pages_modified": 0, "pages_deleted": 0, "errors": []}
 
@@ -3351,57 +3495,33 @@ async def wiki_compile_incremental(
             except Exception:
                 pass
 
-    # ----- Phase 1: Load MAP results if not provided -----
-    if not map_results:
-        _progress("Loading MAP results from doc store ...")
-        map_results = []
-        index = search.index_name(tenant_id)
-        # Each wiki_map_extract row stores its per-chunk extract as a JSON blob in
-        # ``content_with_weight`` (see _wiki_build_resume_doc) — the entity /
-        # concept / claim / relation / topic lists are NOT separate columns, so
-        # they must be parsed out of that blob to rebuild the map_result shape
-        # that _extract_raw_entities and REDUCE expect.
-        select_fields = ["content_with_weight", "doc_id"]
-        offset = 0
-        page_size = 1000
-        while True:
-            try:
-                res = await thread_pool_exec(
-                    settings.docStoreConn.search,
-                    select_fields,
-                    [],
-                    {"compile_kwd": ["wiki_map_extract"]},
-                    [],
-                    OrderByExpr(),
-                    offset,
-                    page_size,
-                    index,
-                    [kb_id],
-                )
-                field_map = settings.docStoreConn.get_fields(res, select_fields) or {}
-            except Exception:
-                logging.exception("wiki: failed to load MAP results for kb=%s", kb_id)
-                break
-            for row in field_map.values():
-                raw = row.get("content_with_weight")
-                if isinstance(raw, str) and raw:
-                    try:
-                        extract = json.loads(raw)
-                    except Exception:
-                        extract = None
-                elif isinstance(raw, dict):
-                    extract = raw
-                else:
-                    extract = None
-                if not isinstance(extract, dict):
-                    continue
-                extract["doc_id"] = row.get("doc_id", "")
-                map_results.append(extract)
-            if len(field_map) < page_size:
-                break
-            offset += page_size
+    invalidated_chunk_ids = set(chunk_delta.get("changed_chunk_ids") or set()) | set(chunk_delta.get("deleted_chunk_ids") or set())
+    delta_current_chunk_ids = set(chunk_delta.get("new_chunk_ids") or set()) | set(chunk_delta.get("changed_chunk_ids") or set())
+    delta_before_results: list[dict] = []
+    delta_after_results: list[dict] = []
 
-    if not map_results:
+    # Versioned MAP storage contains historical rows.  Incremental compilation
+    # must select exactly the versions referenced by the candidate current
+    # state, never every historical row in the index.
+    from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_map_extracts_for_state
+
+    map_results = await _wiki_load_map_extracts_for_state(tenant_id, kb_id, current_chunk_state)
+    if delta_current_chunk_ids:
+        delta_after_results = await _wiki_load_map_extracts_for_state(
+            tenant_id,
+            kb_id,
+            current_chunk_state,
+            delta_current_chunk_ids,
+        )
+    if invalidated_chunk_ids:
+        delta_before_results = await _wiki_load_map_extracts_for_state(
+            tenant_id,
+            kb_id,
+            previous_chunk_state,
+            invalidated_chunk_ids,
+        )
+
+    if not map_results and not delta_before_results:
         _progress("No MAP results found. Skipping wiki compilation.")
         return summary
 
@@ -3429,7 +3549,12 @@ async def wiki_compile_incremental(
     # claim loading.  Keeps Entity Matching operating on small metadata only
     # (mirrors old-mode dedup); full claim text is loaded per-affected-name
     # after matching, so peak memory stays bounded.
+    map_results = map_results or []
     raw_entities, claim_index = _extract_raw_entities(map_results)
+    before_raw_entities, _before_claim_index = _extract_raw_entities(delta_before_results)
+    before_raw_names = {entry.get("name") for entry in before_raw_entities if entry.get("name")}
+    after_raw_entities, _after_claim_index = _extract_raw_entities(delta_after_results)
+    after_raw_names = {entry.get("name") for entry in after_raw_entities if entry.get("name")}
 
     # Preserve MAP topic provenance so each page's writer chooses among topics
     # extracted from that page's own source documents, rather than from an
@@ -3489,16 +3614,6 @@ async def wiki_compile_incremental(
         kb_id=kb_id,
         incremental=incremental,
     )
-    if mode == "topic" and incremental:
-        try:
-            from api.db.services.document_service import DocumentService
-
-            disabled_doc_ids = await thread_pool_exec(DocumentService.get_disabled_doc_ids_by_kb_id, kb_id)
-            historical_relations = await _load_map_relations(tenant_id, kb_id, excluded_doc_ids=disabled_doc_ids)
-            raw_relations.extend(historical_relations)
-        except Exception:
-            logging.exception("wiki: failed to load historical relations for incremental routing")
-
     canonical_resolution = dict(name_resolution)
     for canonical_name, canonical_entry in canonical_entities.items():
         canonical_resolution.setdefault(canonical_name, canonical_name)
@@ -3522,10 +3637,28 @@ async def wiki_compile_incremental(
     del raw_relations
     del canonical_resolution
 
+    # ``map_results`` is the complete current snapshot when chunk deltas are
+    # supplied.  Replace provenance accumulated in the canonical cache with
+    # that snapshot so changed/deleted chunk ids do not survive indefinitely.
+    current_evidence: dict[str, dict[str, set[str] | int]] = {}
+    for entry in raw_entities:
+        cname = name_resolution.get(entry["name"], entry["name"])
+        evidence = current_evidence.setdefault(cname, {"docs": set(), "chunks": set(), "claims": 0})
+        evidence["docs"].update(entry.get("source_doc_ids") or [])
+        evidence["chunks"].update(entry.get("source_chunk_ids") or [])
+        evidence["claims"] += int(entry.get("claim_count") or 0)
+    for cname, centry in canonical_map.items():
+        evidence = current_evidence.get(cname)
+        if evidence is None:
+            continue
+        centry["source_doc_ids"] = sorted(evidence["docs"])
+        centry["source_chunk_ids"] = sorted(evidence["chunks"])
+        centry["claim_count"] = evidence["claims"]
+
     # raw_entities (lightweight) no longer needed after matching.
     del raw_entities
 
-    if not canonical_map:
+    if not canonical_map and not before_raw_names:
         _progress("Entity Matching: no canonical entities found. Skipping.")
         return summary
 
@@ -3615,6 +3748,28 @@ async def wiki_compile_incremental(
             kb_id,
         )
 
+    if invalidated_chunk_ids:
+        for cname, existing in canonical_entities.items():
+            if cname in canonical_map:
+                continue
+            old_chunks = set(existing.get("source_chunk_ids") or [])
+            if not old_chunks & invalidated_chunk_ids:
+                continue
+            remaining_chunks = old_chunks - invalidated_chunk_ids
+            if not remaining_chunks:
+                await _delete_canonical_entity(tenant_id, kb_id, cname)
+            else:
+                await _update_canonical_entity(
+                    tenant_id,
+                    kb_id,
+                    cname,
+                    existing.get("entity_type_kwd", "entity"),
+                    existing.get("aliases", []),
+                    existing.get("source_doc_ids", []),
+                    existing.get("mention_count_int", 0),
+                    source_chunk_ids=sorted(remaining_chunks),
+                )
+
     # Clean up deleted canonical entities (from doc deletion)
     if deleted_doc_ids:
         for cname, centry in list(canonical_map.items()):
@@ -3630,27 +3785,17 @@ async def wiki_compile_incremental(
     canonical_names: set[str] = set(canonical_map.keys())
 
     if incremental:
-        # Affected doc ids are the docs contributing to this batch's canonical
-        # entities, plus any deleted docs.  Derived from canonical_map (which
-        # carries source_doc_ids) — no need to re-read the released map_results.
-        affected_doc_ids = set()
-        for centry in canonical_map.values():
-            affected_doc_ids.update(centry.get("source_doc_ids", []))
-        affected_doc_ids = affected_doc_ids | (deleted_doc_ids or set())
-
-        # Map doc_page_source entity_names (raw) through name_resolution -> canonical
-        affected_names: set[str] = set()
-        if affected_doc_ids:
-            dps_tasks = [_wiki_load_doc_page_source(tenant_id, kb_id, did) for did in affected_doc_ids]
-            dps_results = await asyncio.gather(*dps_tasks)
-            for dps in dps_results:
-                if dps:
-                    for raw_name in dps.get("entity_names", []):
-                        cname = name_resolution.get(raw_name, raw_name)
-                        if cname in canonical_names:
-                            affected_names.add(cname)
-        if not affected_names:
-            affected_names = canonical_names
+        # Resolve names from both sides of the chunk delta.  Deleted names may
+        # no longer exist in the current canonical map, but their old pages
+        # still need retraction/deletion.
+        existing_aliases: dict[str, str] = {}
+        for cname, centry in canonical_entities.items():
+            existing_aliases[_normalize_key(cname)] = cname
+            for alias in centry.get("aliases") or []:
+                if isinstance(alias, str) and alias:
+                    existing_aliases[_normalize_key(alias)] = cname
+        affected_names = {name_resolution.get(raw_name) or existing_aliases.get(_normalize_key(raw_name)) or raw_name for raw_name in before_raw_names | after_raw_names}
+        affected_names.discard("")
     else:
         affected_names = canonical_names
 
@@ -3683,6 +3828,15 @@ async def wiki_compile_incremental(
             if page_id in existing_pages and names:
                 existing_pages[page_id]["entity_names_kwd"] = names
 
+    # A failed REFINE page must be reconsidered together with the current
+    # document delta.  The current REDUCE snapshot remains authoritative, so
+    # deleted entities can still produce a deletion rather than being blindly
+    # retried from stale failure metadata.
+    refine_failures = await _wiki_load_refine_failures(tenant_id, kb_id)
+    retry_names = {str(name).strip() for failure in refine_failures.values() for name in failure.get("entity_names", []) if str(name).strip()}
+    if incremental:
+        affected_names.update(retry_names)
+
     # Build canonical claims ON-DEMAND only for affected names, then release
     # the full claim_index.  claim_index is keyed by RAW entity name (from MAP),
     # so claims must be aggregated through name_resolution onto the canonical
@@ -3703,6 +3857,7 @@ async def wiki_compile_incremental(
         affected_names=affected_names,
         existing_pages=existing_pages,
         deleted_doc_ids=deleted_doc_ids or set(),
+        invalidated_chunk_ids=invalidated_chunk_ids,
         canonical_claims=canonical_claims,
         canonical_map=canonical_map,
         name_resolution=name_resolution,
@@ -3773,7 +3928,7 @@ async def wiki_compile_incremental(
     # (doc_page_source page_ids is already handled in mode_run)
     _progress("FINALIZE: updating cross-references ...")
     try:
-        await _wiki_finalize(tenant_id, kb_id, embd_mdl)
+        await _wiki_finalize(tenant_id, kb_id, embd_mdl, chunk_state=current_chunk_state)
     except Exception:
         logging.exception("wiki: FINALIZE failed for kb=%s", kb_id)
         summary["errors"].append("FAILED_FINALIZE")
@@ -3952,9 +4107,10 @@ async def _wiki_mode_a_run(
                         page_version=existing.get("page_version_int", 0) if existing else 0,
                     )
                     summary["pages_deleted"] += 1
+                    await _wiki_clear_refine_failure(tenant_id, kb_id, pid)
                     return
 
-                next_version = (existing.get("page_version_int", 0) if existing else 0) + 1
+                next_version = _as_int(existing.get("page_version_int")) + 1 if existing else 1
                 new_doc_ids = {c.get("source_doc_id") for c in entry["additions"] if c.get("source_doc_id")}
                 if existing and _wiki_should_re_synthesize(existing, new_doc_ids, next_version):
                     refine_mode = "re-synthesize"
@@ -3987,6 +4143,9 @@ async def _wiki_mode_a_run(
                     topic_pool=topic_pool,
                     topic_pool_lock=topic_pool_lock,
                 )
+                if result is None:
+                    raise RuntimeError(f"REFINE returned no page content for {pid}")
+                await _wiki_clear_refine_failure(tenant_id, kb_id, pid)
                 if refine_mode == "generate":
                     summary["pages_created"] += 1
                 else:
@@ -3996,14 +4155,21 @@ async def _wiki_mode_a_run(
                     for did in entry["source_doc_ids"]:
                         doc_updates.setdefault(did, []).append(pid)
 
-            except Exception:
+            except Exception as exc:
                 logging.exception("wiki A: REFINE failed for %s", pid)
+                await _wiki_record_refine_failure(
+                    tenant_id,
+                    kb_id,
+                    pid,
+                    entry.get("existing_page", {}).get("entity_names_kwd") or [entry.get("page_title", pid)],
+                    error=str(exc),
+                )
                 summary["errors"].append(f"REFINE_FAILED:{pid}")
 
     tasks = [_refine_one(pid, entry) for pid, entry in page_deltas.items()]
     if tasks:
-        _progress(f"REFINE A: {len(tasks)} pages (LLM pool max {WIKI_REFINE_MAX_CONCURRENT}) ...")
-        await asyncio.gather(*tasks)
+        _progress(f"{len(tasks)} pages ...")
+        await _wiki_run_refine_tasks(tasks, _progress)
     _wiki_log_stats("TOPIC", "selection_summary", mode="A", **topic_selection_stats)
 
     for did, pids in doc_updates.items():
@@ -4279,6 +4445,7 @@ async def _wiki_mode_b_run(
                         page_version=existing.get("page_version_int", 0) if existing else 0,
                     )
                     if deleted_page is None:
+                        await _wiki_clear_refine_failure(tenant_id, kb_id, page_key)
                         await _wiki_delete_plan_group(tenant_id, kb_id, page_key)
                         for did in _as_str_list(existing.get("source_doc_ids")) if existing else []:
                             doc_removals.setdefault(did, []).append(page_key)
@@ -4289,7 +4456,7 @@ async def _wiki_mode_b_run(
                 if existing and _wiki_should_re_synthesize(
                     existing,
                     {c.get("source_doc_id") for c in additions if c.get("source_doc_id")},
-                    existing.get("page_version_int", 0) + 1,
+                    _as_int(existing.get("page_version_int")) + 1,
                 ):
                     refine_mode = "re-synthesize"
 
@@ -4320,7 +4487,10 @@ async def _wiki_mode_b_run(
                     topic_pool_lock=topic_pool_lock,
                     member_evidence=member_evidence,
                 )
+                if result is None:
+                    raise RuntimeError(f"REFINE returned no page content for {page_key}")
                 if result:
+                    await _wiki_clear_refine_failure(tenant_id, kb_id, page_key)
                     if is_new:
                         summary["pages_created"] += 1
                     else:
@@ -4346,14 +4516,22 @@ async def _wiki_mode_b_run(
                     for did in old_doc_ids - new_doc_ids:
                         doc_removals.setdefault(did, []).append(page_key)
 
-            except Exception:
+            except Exception as exc:
                 logging.exception("wiki B: REFINE failed for %s", page_id)
+                failed_page_id = page_id[5:] if page_id.startswith("_new_") else page_id
+                await _wiki_record_refine_failure(
+                    tenant_id,
+                    kb_id,
+                    failed_page_id,
+                    [ent.get("entity_name", "") for ent in entities if isinstance(ent, dict)],
+                    error=str(exc),
+                )
                 summary["errors"].append(f"REFINE_FAILED:{page_id}")
 
     tasks = [_refine_one(pid, ents) for pid, ents in assignments.items()]
     if tasks:
-        _progress(f"REFINE B: {len(tasks)} pages (LLM pool max {WIKI_REFINE_MAX_CONCURRENT}) ...")
-        await asyncio.gather(*tasks)
+        _progress(f"{len(tasks)} pages ...")
+        await _wiki_run_refine_tasks(tasks, _progress)
     _wiki_log_stats("TOPIC", "selection_summary", mode="B", **topic_selection_stats)
 
     # Apply doc_page_source updates serially (no race), preserving metadata

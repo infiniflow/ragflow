@@ -395,9 +395,39 @@ func (a *AliyunModel) TranscribeAudioWithSender(ctx context.Context, modelName *
 // DashScope's Qwen TTS models require one.
 const aliyunTTSDefaultVoice = "Cherry"
 
-// newAliyunTTSRequest builds the OpenAI-compatible audio/speech request
-// against DashScope's compatible mode.
-func (a *AliyunModel) newAliyunTTSRequest(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*http.Request, error) {
+// aliyunTTSRequest is the DashScope multimodal-generation request for Qwen
+// TTS models (qwen-tts / qwen3-tts-flash family).
+type aliyunTTSRequest struct {
+	Model string         `json:"model"`
+	Input aliyunTTSInput `json:"input"`
+}
+
+type aliyunTTSInput struct {
+	Text string `json:"text"`
+	// Voice is required by Qwen TTS models (e.g. "Cherry").
+	Voice string `json:"voice"`
+	// LanguageType hints the text language (e.g. "Chinese", "English");
+	// omitted to let the model auto-detect.
+	LanguageType string `json:"language_type,omitempty"`
+}
+
+// aliyunTTSResponse is the non-streaming DashScope multimodal-generation
+// response. The synthesized audio is not inlined; output.audio.url points
+// to a downloadable file (valid for 24h).
+type aliyunTTSResponse struct {
+	Output struct {
+		Audio struct {
+			URL string `json:"url"`
+		} `json:"audio"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"output"`
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	RequestID string `json:"request_id"`
+}
+
+// AudioSpeech convert text to audio
+func (a *AliyunModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -417,24 +447,23 @@ func (a *AliyunModel) newAliyunTTSRequest(ctx context.Context, modelName *string
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), strings.TrimPrefix(a.baseModel.URLSuffix.TTS, "/"))
 
-	reqBody := map[string]interface{}{
-		"model": *modelName,
-		"input": *audioContent,
-		"voice": aliyunTTSDefaultVoice,
-	}
+	input := aliyunTTSInput{Text: *audioContent, Voice: aliyunTTSDefaultVoice}
 	if ttsConfig != nil {
-		for key, value := range ttsConfig.Params {
-			reqBody[key] = value
+		if voice, ok := ttsConfig.Params["voice"].(string); ok && strings.TrimSpace(voice) != "" {
+			input.Voice = voice
 		}
-		if ttsConfig.Format != "" {
-			reqBody["response_format"] = ttsConfig.Format
+		if lang, ok := ttsConfig.Params["language_type"].(string); ok && strings.TrimSpace(lang) != "" {
+			input.LanguageType = lang
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	jsonData, err := json.Marshal(aliyunTTSRequest{Model: *modelName, Input: input})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
+
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
+	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -442,18 +471,6 @@ func (a *AliyunModel) newAliyunTTSRequest(ctx context.Context, modelName *string
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	return req, nil
-}
-
-// AudioSpeech convert text to audio
-func (a *AliyunModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := a.newAliyunTTSRequest(ctx, modelName, audioContent, apiConfig, ttsConfig)
-	if err != nil {
-		return nil, err
-	}
 
 	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -465,15 +482,60 @@ func (a *AliyunModel) AudioSpeech(ctx context.Context, modelName *string, audioC
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
-
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("aliyun TTS API error: %s, body: %s", resp.Status, string(body))
 	}
-	if len(body) == 0 {
-		return nil, fmt.Errorf("aliyun TTS API returned empty audio")
+
+	var parsed aliyunTTSResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse aliyun TTS response: %w, body: %s", err, string(body))
+	}
+	if parsed.Code != "" {
+		return nil, fmt.Errorf("aliyun TTS API error: %s: %s", parsed.Code, parsed.Message)
+	}
+	if parsed.Output.Audio.URL == "" {
+		return nil, fmt.Errorf("aliyun TTS response has no audio url, body: %s", string(body))
 	}
 
-	return &TTSResponse{Audio: body}, nil
+	audio, err := a.downloadAliyunTTSAudio(ctx, parsed.Output.Audio.URL)
+	if err != nil {
+		return nil, err
+	}
+	// Qwen TTS audio files are WAV.
+	return &TTSResponse{Audio: audio, MediaType: "audio/wav"}, nil
+}
+
+// aliyunTTSAudioMaxBytes caps a synthesized audio download. DashScope TTS
+// audio is far smaller; this only guards against runaway responses.
+const aliyunTTSAudioMaxBytes int64 = 64 << 20 // 64 MiB
+
+// downloadAliyunTTSAudio fetches the synthesized audio file referenced by a
+// DashScope TTS response.
+func (a *AliyunModel) downloadAliyunTTSAudio(ctx context.Context, audioURL string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", audioURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create audio download request: %w", err)
+	}
+	resp, err := a.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download aliyun TTS audio: %w", err)
+	}
+	defer resp.Body.Close()
+
+	audio, err := io.ReadAll(io.LimitReader(resp.Body, aliyunTTSAudioMaxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read aliyun TTS audio: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to download aliyun TTS audio: %s", resp.Status)
+	}
+	if int64(len(audio)) > aliyunTTSAudioMaxBytes {
+		return nil, fmt.Errorf("aliyun TTS audio download exceeds %d bytes", aliyunTTSAudioMaxBytes)
+	}
+	if len(audio) == 0 {
+		return nil, fmt.Errorf("aliyun TTS audio download is empty")
+	}
+	return audio, nil
 }
 
 func (a *AliyunModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -481,8 +543,8 @@ func (a *AliyunModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 		return fmt.Errorf("sender is required")
 	}
 
-	// DashScope's compatible-mode audio/speech endpoint returns the whole
-	// audio in one response; forward it as a single chunk.
+	// The non-streaming DashScope TTS endpoint returns the whole audio via
+	// a downloadable URL; forward it as a single chunk.
 	resp, err := a.AudioSpeech(ctx, modelName, audioContent, apiConfig, ttsConfig, modelUsage)
 	if err != nil {
 		return err

@@ -53,6 +53,22 @@ type Reader interface {
 	SearchSimilar(ctx context.Context, tenant, kb string, variant kccommon.Variant, vector []float64, topN int, minScore float64) (kccommon.Product, float64, error)
 }
 
+// mergedProductReader is an optional extension used by entity-mode Wiki. It
+// loads one stable dataset-level page by id; keeping it separate from Reader
+// avoids forcing test/offline readers and non-Wiki variants to implement a
+// dataset-row lookup they do not need.
+type mergedProductReader interface {
+	LoadMergedProduct(ctx context.Context, tenant, kb, id string) (kccommon.Product, error)
+}
+
+type mergedWikiPageReader interface {
+	LoadMergedWikiPages(ctx context.Context, tenant, kb string) ([]kccommon.Product, error)
+}
+
+type documentWikiPageReader interface {
+	LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, kb string, slugs []string) ([]kccommon.Product, error)
+}
+
 // engineReader loads the per-document compiled products through the global
 // DocEngine (§11.6 step 1, §11.7 incremental re-dedup). It depends on the
 // process-wide DocEngine obtained via engine.Get(); the engine abstraction owns
@@ -103,7 +119,7 @@ var compiledSelectFields = []string{
 // graph keeps accumulating cross-run duplicates. ES accepts the wildcard in
 // both _source includes and the fields parameter.
 var wikiSelectFields = []string{
-	"page_type_kwd", "topic_kwd", "title_kwd",
+	"page_type_kwd", "topic_kwd", "plan_group_kwd", "generation_kwd", "title_kwd",
 	"entity_names_kwd", "summary_with_weight",
 	"related_kb_pages_kwd", "outlinks_kwd", "section_level_int",
 	"q_*_vec",
@@ -179,6 +195,109 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 		zap.Int("with_vector", vecCount),
 		zap.Any("vector_dims", dims))
 	return out, nil
+}
+
+func (r engineReader) LoadMergedProduct(ctx context.Context, tenant, kb, id string) (kccommon.Product, error) {
+	eng := r.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
+	if eng == nil || id == "" {
+		return kccommon.Product{}, nil
+	}
+	filter := map[string]interface{}{"id": id, "available_int": 1, "scope_kwd": "dataset"}
+	res, err := eng.Search(ctx, &types.SearchRequest{
+		IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb}, Limit: 1,
+		SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
+		Filter:       filter,
+	})
+	if err != nil {
+		return kccommon.Product{}, err
+	}
+	if res == nil || len(res.Chunks) == 0 {
+		return kccommon.Product{}, nil
+	}
+	product, ok := productFromChunkMap(res.Chunks[0], tenant, kccommon.VariantWiki)
+	if !ok {
+		return kccommon.Product{}, nil
+	}
+	return product, nil
+}
+
+func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string) ([]kccommon.Product, error) {
+	eng := r.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
+	if eng == nil {
+		return nil, nil
+	}
+	filter := map[string]interface{}{"available_int": 1, "scope_kwd": "dataset", "compile_kwd": compileKwdWikiPage}
+	var pages []kccommon.Product
+	for offset := 0; ; offset += loadDocProductsLimit {
+		res, err := eng.Search(ctx, &types.SearchRequest{
+			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
+			Limit: loadDocProductsLimit, Offset: offset,
+			OrderBy:      (&types.OrderByExpr{}).Asc("id"),
+			SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
+			Filter:       filter,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if res == nil || len(res.Chunks) == 0 {
+			break
+		}
+		for _, row := range res.Chunks {
+			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && metaString(product.Meta, "kind") == "page" {
+				pages = append(pages, product)
+			}
+		}
+		if len(res.Chunks) < loadDocProductsLimit {
+			break
+		}
+	}
+	return pages, nil
+}
+
+func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, kb string, slugs []string) ([]kccommon.Product, error) {
+	eng := r.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
+	if eng == nil || len(slugs) == 0 {
+		return nil, nil
+	}
+	filter := map[string]interface{}{
+		"available_int": 0,
+		"compile_kwd":   compileKwdWikiPage,
+		"slug_kwd":      slugs,
+	}
+	var pages []kccommon.Product
+	for offset := 0; ; offset += loadDocProductsLimit {
+		res, err := eng.Search(ctx, &types.SearchRequest{
+			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
+			Limit: loadDocProductsLimit, Offset: offset,
+			OrderBy:      (&types.OrderByExpr{}).Asc("id"),
+			SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
+			Filter:       filter,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if res == nil || len(res.Chunks) == 0 {
+			break
+		}
+		for _, row := range res.Chunks {
+			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && metaString(product.Meta, "kind") == "page" {
+				pages = append(pages, product)
+			}
+		}
+		if len(res.Chunks) < loadDocProductsLimit {
+			break
+		}
+	}
+	return pages, nil
 }
 
 // productFromChunkMap reconstructs a kccommon.Product from a stored compiled
@@ -307,8 +426,14 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	} else if variant == compileKwdWikiSection {
 		meta["kind"] = "section"
 	}
+	if v := asString(c["plan_group_kwd"]); v != "" {
+		meta["plan_group"] = v
+	}
+	if v := asString(c["generation_kwd"]); v != "" {
+		meta["generation"] = v
+	}
 	// wiki_incremental port: restore the original creation timestamp so a
-	// replace-only merge (wikiMerge.Replace) preserves it instead of stamping
+	// page merge preserves it instead of stamping
 	// a fresh now(). existing rows carry create_timestamp_flt (and optionally
 	// a human-readable create_time string).
 	if v, ok := metaFloat(c, "create_timestamp_flt"); ok {

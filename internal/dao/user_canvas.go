@@ -42,6 +42,7 @@ var userCanvasOrderableColumns = map[string]struct{}{
 	"permission":      {},
 	"canvas_type":     {},
 	"canvas_category": {},
+	"tags":            {},
 	"create_time":     {},
 	"create_date":     {},
 	"update_time":     {},
@@ -382,7 +383,7 @@ func (dao *UserCanvasDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, owne
 
 	if keywords != "" {
 		like := "%" + keywords + "%"
-		base = base.Where("user_canvas.title LIKE ?", like)
+		base = base.Where("user_canvas.title LIKE ? OR user_canvas.tags LIKE ?", like, like)
 	}
 	base = applyUserCanvasTagFilter(ctx, db, base, tags)
 

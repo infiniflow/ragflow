@@ -84,7 +84,7 @@ export function SectionFieldGrid({
       >
         <CardContent className="flex flex-col items-center justify-center gap-2 p-4">
           <Plus className="size-6" />
-          <span className="text-sm font-medium">{t('setting.addField')}</span>
+          <span className="text-sm font-medium">{t('knowledgeCompilation.addField')}</span>
         </CardContent>
       </Card>
     </section>

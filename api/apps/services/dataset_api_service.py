@@ -15,12 +15,13 @@
 #
 import json
 import logging
+import math
 import os
 import re
 
-from api.db.db_models import File
+from api.db.db_models import Connector2Kb, Document, File, SyncLogs
 from api.db.joint_services.tenant_model_service import get_composite_model_name_by_ids, resolve_model_config, resolve_model_id
-from api.db.services.connector_service import Connector2KbService
+from api.db.services.connector_service import Connector2KbService, SyncLogsService
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -30,7 +31,7 @@ from api.db.services.tenant_model_service import TenantModelService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 from common import settings
-from common.constants import PAGERANK_FLD, FileSource, LLMType, RetCode, StatusEnum
+from common.constants import PAGERANK_FLD, FileSource, LLMType, RetCode, StatusEnum, TaskStatus
 from common.misc_utils import thread_pool_exec, thread_pool_exec_long_time
 from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD
 
@@ -94,9 +95,6 @@ async def create_dataset(tenant_id: str, req: dict):
     :param req: dataset creation request
     :return: (success, result) or (success, error_message)
     """
-    # Extract ext field for additional parameters
-    ext_fields = req.pop("ext", {})
-
     # Map auto_metadata_config (if provided) into parser_config structure
     auto_meta = req.pop("auto_metadata_config", {})
     if auto_meta:
@@ -115,8 +113,6 @@ async def create_dataset(tenant_id: str, req: dict):
         parser_cfg["metadata"] = fields
         parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
         req["parser_config"] = parser_cfg
-    req.update(ext_fields)
-
     e, create_dict = KnowledgebaseService.create_with_name(name=req.pop("name", None), tenant_id=tenant_id, parser_id=req.pop("parser_id", None), **req)
 
     if not e:
@@ -171,6 +167,15 @@ def _delete_datasets_sync(tenant_id: str, ids: list = None, delete_all: bool = F
     errors = []
     success_count = 0
     for kb_id, kb in kb_id_instance_pairs:
+        # Cancel this dataset's queued syncs before touching its documents.
+        # Tasks are only picked up while they are SCHEDULE, so cancelling stops
+        # every run that has not started yet; a sync already in flight is not
+        # interruptible, which is what the stranded-row sweep below covers.
+        SyncLogsService.filter_update(
+            [SyncLogs.kb_id == kb_id, SyncLogs.status.in_([TaskStatus.SCHEDULE, TaskStatus.RUNNING])],
+            {"status": TaskStatus.CANCEL},
+        )
+
         for doc in DocumentService.query(kb_id=kb_id):
             if not DocumentService.remove_document(doc, tenant_id):
                 errors.append(f"Remove document '{doc.id}' error for dataset '{kb_id}'")
@@ -207,6 +212,22 @@ def _delete_datasets_sync(tenant_id: str, ids: list = None, delete_all: bool = F
         if not KnowledgebaseService.delete_by_id(kb_id):
             errors.append(f"Delete dataset error for {kb_id}")
             continue
+
+        # Unwire the data sources only once the dataset is really gone, so a
+        # failed deletion above leaves a dataset that is still linked and still
+        # syncable. Left behind, these rows keep the connector scheduler queueing
+        # syncs against a kb_id that no longer resolves, and any document such a
+        # run writes outlives its dataset -- an invisible row that later reports
+        # a cross-KB id collision against whatever dataset is linked next.
+        Connector2KbService.filter_delete([Connector2Kb.kb_id == kb_id])
+        SyncLogsService.filter_delete([SyncLogs.kb_id == kb_id])
+
+        # Sweep anything the per-document loop could not see, including rows
+        # written by a sync that was already in flight when deletion started.
+        stranded = DocumentService.filter_delete([Document.kb_id == kb_id])
+        if stranded:
+            logging.warning("delete_datasets: removed %s stranded document rows for dataset %s", stranded, kb_id)
+
         success_count += 1
 
     if not errors:
@@ -294,9 +315,6 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     if kb is None:
         return False, "Invalid Dataset ID"
 
-    # Extract ext field for additional parameters
-    ext_fields = req.pop("ext", {})
-
     # Map auto_metadata_config into parser_config if present
     auto_meta = req.pop("auto_metadata_config", {})
     if auto_meta:
@@ -316,9 +334,6 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
         req["parser_config"] = parser_cfg
 
-    # Merge ext fields with req
-    req.update(ext_fields)
-
     # Extract connectors from request
     connectors = []
     if "connectors" in req:
@@ -336,10 +351,7 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
             req["parser_config"]["enable_children"] = False
             req["parser_config"]["parent_child"] = {}
 
-        parser_config = req["parser_config"]
-        req_ext_fields = parser_config.pop("ext", {})
-        parser_config.update(req_ext_fields)
-        req["parser_config"] = deep_merge(kb.parser_config, parser_config)
+        req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])
 
     if (chunk_method := req.get("parser_id")) and chunk_method != kb.parser_id:
         if not req.get("parser_config"):
@@ -413,9 +425,8 @@ def list_datasets(tenant_id: str, args: dict):
     name = args.get("name")
     page = int(args.get("page", 1))
     page_size = int(args.get("page_size", 30))
-    ext_fields = args.get("ext", {})
-    parser_id = ext_fields.get("parser_id")
-    keywords = ext_fields.get("keywords", "")
+    parser_id = args.get("parser_id")
+    keywords = args.get("keywords", "")
     orderby = args.get("orderby", "create_time")
     desc_arg = args.get("desc", "true")
     if isinstance(desc_arg, str):
@@ -437,7 +448,7 @@ def list_datasets(tenant_id: str, args: dict):
         kbs = KnowledgebaseService.get_kb_by_name(name, tenant_id)
         if not kbs:
             return False, f"User '{tenant_id}' lacks permission for dataset '{name}'"
-    owner_ids = [owner_id.strip() for owner_id in ext_fields.get("owner_ids", []) if isinstance(owner_id, str) and owner_id.strip()]
+    owner_ids = [owner_id.strip() for owner_id in args.get("owner_ids", []) if isinstance(owner_id, str) and owner_id.strip()]
     if owner_ids:
         tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
         allowed_tenant_ids = {m["tenant_id"] for m in tenants}
@@ -477,7 +488,10 @@ def list_datasets(tenant_id: str, args: dict):
         user_dict = user_map.get(kb["tenant_id"], {})
         kb.update({"nickname": user_dict.get("nickname", ""), "tenant_avatar": user_dict.get("avatar", "")})
         if status_by_kb:
-            kb["parsing_status"] = status_by_kb.get(kb["id"], {})
+            # The documented contract (HTTP API + Python SDK references) places the
+            # counts at the top level of each dataset record, not under a nested
+            # "parsing_status" object.
+            kb.update(status_by_kb.get(kb["id"], {}))
         response_data_list.append(remap_dictionary_keys(kb))
 
     embed_model_names = get_composite_model_name_by_ids([m["embedding_model"] for m in response_data_list])
@@ -788,7 +802,9 @@ def delete_tags(dataset_id: str, tenant_id: str, tags: list[str]):
     from rag.nlp import search
 
     for t in tags:
-        settings.docStoreConn.update({"tag_kwd": t, "kb_id": [dataset_id]}, {"remove": {"tag_kwd": t}}, search.index_name(kb.tenant_id), dataset_id)
+        updated = settings.docStoreConn.update({"tag_kwd": t, "kb_id": [dataset_id]}, {"remove": {"tag_kwd": t}}, search.index_name(kb.tenant_id), dataset_id)
+        if callable(getattr(settings.docStoreConn, "db_type", None)) and settings.docStoreConn.db_type() == "gaussdb" and not updated:
+            return False, "Failed to update dataset tags in document store"
 
     return True, {}
 
@@ -991,7 +1007,11 @@ def rename_tag(dataset_id: str, tenant_id: str, from_tag: str, to_tag: str):
 
     from rag.nlp import search
 
-    settings.docStoreConn.update({"tag_kwd": from_tag, "kb_id": [dataset_id]}, {"remove": {"tag_kwd": from_tag.strip()}, "add": {"tag_kwd": to_tag}}, search.index_name(kb.tenant_id), dataset_id)
+    updated = settings.docStoreConn.update(
+        {"tag_kwd": from_tag, "kb_id": [dataset_id]}, {"remove": {"tag_kwd": from_tag.strip()}, "add": {"tag_kwd": to_tag}}, search.index_name(kb.tenant_id), dataset_id
+    )
+    if callable(getattr(settings.docStoreConn, "db_type", None)) and settings.docStoreConn.db_type() == "gaussdb" and not updated:
+        return False, "Failed to update dataset tags in document store"
 
     return True, {"from": from_tag, "to": to_tag}
 
@@ -1023,13 +1043,15 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     )
 
     page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    size = int(req.get("page_size") or req.get("size", 30))
+    rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
-    top = max(1, min(int(req.get("top_k", 1024)), 2048))
+    knn_top_k = max(1, min(int(req.get("knn_top_k", 1024)), 2048))
+    knn_num_candidates = int(req.get("knn_num_candidates", 2048))
     langs = req.get("cross_languages", [])
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
@@ -1058,17 +1080,18 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         meta_data_filter = search_config.get("meta_data_filter", {})
         similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
         vector_similarity_weight = float(search_config.get("vector_similarity_weight", vector_similarity_weight))
-        top = max(1, min(int(search_config.get("top_k", top)), 2048))
+        knn_top_k = max(1, min(int(search_config.get("top_k", knn_top_k)), 2048))
+        rerank_candidates_count = int(search_config.get("rerank_candidates_count", 100))
         use_kg = search_config.get("use_kg", use_kg)
         langs = search_config.get("cross_languages", langs)
         logging.debug(
-            "Dataset search loaded Search config: search_id=%s dataset_id=%s vector_similarity_weight=%s full_text_weight=%s similarity_threshold=%s top_k=%s",
+            "Dataset search loaded Search config: search_id=%s dataset_id=%s vector_similarity_weight=%s full_text_weight=%s similarity_threshold=%s knn_top_k=%s",
             search_id,
             dataset_id,
             vector_similarity_weight,
             1 - vector_similarity_weight,
             similarity_threshold,
-            top,
+            knn_top_k,
         )
         if meta_data_filter.get("method") in ["auto", "semi_auto"]:
             chat_id = search_config.get("chat_id", "")
@@ -1134,10 +1157,12 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         similarity_threshold,
         vector_similarity_weight,
         doc_ids=local_doc_ids,
-        top=top,
+        knn_top_k=knn_top_k,
+        knn_num_candidates=knn_num_candidates,
         rerank_mdl=rerank_mdl,
         rank_feature=labels,
         trace_id=search_id,
+        rerank_candidates_count=rerank_candidates_count,
     )
 
     if use_kg:
@@ -1261,7 +1286,11 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
             cid = ids[0]
             full_doc = docStoreConn.get(cid, index_nm, [kb_id]) or {}
             vec_field = _guess_vec_field(full_doc)
-            vec = _as_float_vec(full_doc.get(vec_field))
+            vec_valid = full_doc.get(f"{vec_field}_valid") if vec_field else None
+            if callable(getattr(docStoreConn, "db_type", None)) and docStoreConn.db_type() == "gaussdb" and vec_valid is False:
+                vec = []
+            else:
+                vec = _as_float_vec(full_doc.get(vec_field))
 
             out.append(
                 {
@@ -1399,13 +1428,15 @@ async def search_datasets(tenant_id: str, req: dict):
 
     kb_ids = req.get("dataset_ids", [])
     page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    size = int(req.get("page_size") or req.get("size", 30))
+    rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     question = req.get("question", "")
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
-    top = max(1, min(int(req.get("top_k", 1024)), 2048))
+    knn_top_k = max(1, min(int(req.get("knn_top_k", 1024)), 2048))
+    knn_num_candidates = int(req.get("knn_num_candidates", 2048))
     langs = req.get("cross_languages", [])
 
     logging.debug(
@@ -1446,17 +1477,18 @@ async def search_datasets(tenant_id: str, req: dict):
         meta_data_filter = search_config.get("meta_data_filter", {})
         similarity_threshold = float(search_config.get("similarity_threshold", similarity_threshold))
         vector_similarity_weight = float(search_config.get("vector_similarity_weight", vector_similarity_weight))
-        top = max(1, min(int(search_config.get("top_k", top)), 2048))
+        knn_top_k = max(1, min(int(search_config.get("top_k", knn_top_k)), 2048))
+        rerank_candidates_count = int(search_config.get("rerank_candidates_count", 100))
         use_kg = search_config.get("use_kg", use_kg)
         langs = search_config.get("cross_languages", langs)
         logging.debug(
-            "Dataset search loaded Search config: search_id=%s dataset_ids=%s vector_similarity_weight=%s full_text_weight=%s similarity_threshold=%s top_k=%s",
+            "Dataset search loaded Search config: search_id=%s dataset_ids=%s vector_similarity_weight=%s full_text_weight=%s similarity_threshold=%s knn_top_k=%s",
             search_id,
             kb_ids,
             vector_similarity_weight,
             1 - vector_similarity_weight,
             similarity_threshold,
-            top,
+            knn_top_k,
         )
         if meta_data_filter.get("method") in ["auto", "semi_auto"]:
             chat_id = search_config.get("chat_id", "")
@@ -1526,10 +1558,14 @@ async def search_datasets(tenant_id: str, req: dict):
         similarity_threshold,
         vector_similarity_weight,
         doc_ids=local_doc_ids,
-        top=top,
+        knn_top_k=knn_top_k,
+        knn_num_candidates=knn_num_candidates,
         rerank_mdl=rerank_mdl,
+        highlight=req.get("highlight", False),
         rank_feature=labels,
         trace_id=search_id,
+        must_not=None if req.get("include_knowledge_compilation", True) else {"exists": "compile_kwd"},
+        rerank_candidates_count=rerank_candidates_count,
     )
 
     if use_kg:
@@ -1541,7 +1577,6 @@ async def search_datasets(tenant_id: str, req: dict):
         except Exception:
             logging.warning("search_datasets KG retrieval failed: datasets=%s tenant=%s", kb_ids, tenant_id, exc_info=True)
     ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
-    ranks["total"] = len(ranks["chunks"])
 
     for c in ranks["chunks"]:
         c.pop("vector", None)
@@ -1864,7 +1899,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         return False, f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, session_essence, session_graph."
 
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
-    empty = {"kind": kind, "templates": []}
+    empty = {"kind": kind, "templates": [], "total_entities": 0, "total_relations": 0, "returned_entities": 0, "returned_relations": 0}
 
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
@@ -1993,6 +2028,25 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             template_scope_by_id[tid] = "doc"
             kind_template_ids.append(tid)
 
+    template_scopes: dict[str, dict] = {}
+    total_entities = 0
+    total_relations = 0
+    for tid in kind_template_ids:
+        scope_kwd = template_scope_by_id.get(tid, "dataset")
+        scope = {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]}
+        if scope_kwd == "doc":
+            scope["doc_id"] = sorted(active_doc_ids)
+        template_scopes[tid] = scope
+        try:
+            _, entity_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(scope, knowledge_graph_kwd=["entity"]), OrderByExpr(), 1)
+            _, relation_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(scope, knowledge_graph_kwd=["relation"]), OrderByExpr(), 1)
+            total_entities += entity_total
+            total_relations += relation_total
+        except Exception:
+            logging.exception("get_dataset_structure: bucket count failed for kb=%s template=%s", dataset_id, tid)
+    empty["total_entities"] = total_entities
+    empty["total_relations"] = total_relations
+
     # Detect datasets that have ONLY the legacy dataset_graph blob (no
     # entity/relation rows yet) so the fallback path below handles them.
     if not kind_template_ids and not has_templateless:
@@ -2066,20 +2120,24 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         bucket = dict(bucket_meta)
         bucket["entities"] = kw_entities
         bucket["relations"] = kw_relations
-        return True, {"kind": kind, "templates": [bucket]}
+        return True, {
+            "kind": kind,
+            "templates": [bucket],
+            "total_entities": total_entities,
+            "total_relations": total_relations,
+            "returned_entities": len(kw_entities),
+            "returned_relations": len(kw_relations),
+        }
 
     # ── normal mode: per-template subgraph sampling from raw KB-wide rows. ──
     templates_out: list[dict] = []
     for tid in kind_template_ids:
         scope_kwd = template_scope_by_id.get(tid, "dataset")
         try:
-            scope = {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]}
-            if scope_kwd == "doc":
-                scope["doc_id"] = sorted(active_doc_ids)
             entities, relations = await sgc.build_bucket(
                 index_nm,
                 dataset_id,
-                scope,
+                template_scopes[tid],
                 excluded_doc_ids=dataset_excluded_doc_ids if scope_kwd == "dataset" else disabled_doc_ids,
             )
         except Exception:
@@ -2129,14 +2187,19 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                     continue
                 reconstructed_compile_kwds.add(compile_kwd)
                 try:
+                    legacy_scope = {"compile_kwd": [compile_kwd], "doc_id": sorted(active_doc_ids)}
+                    _, entity_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(legacy_scope, knowledge_graph_kwd=["entity"]), OrderByExpr(), 1)
+                    _, relation_total = await sgc.graph_search(index_nm, dataset_id, ["id"], dict(legacy_scope, knowledge_graph_kwd=["relation"]), OrderByExpr(), 1)
                     entities, relations = await sgc.build_bucket(
                         index_nm,
                         dataset_id,
-                        {"compile_kwd": [compile_kwd], "doc_id": sorted(active_doc_ids)},
+                        legacy_scope,
                         excluded_doc_ids=disabled_doc_ids,
                     )
                 except Exception:
                     continue
+                total_entities += entity_total
+                total_relations += relation_total
                 legacy_bucket["entities"].extend(entities)
                 legacy_bucket["relations"].extend(relations)
                 continue
@@ -2146,15 +2209,26 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                 continue
             if not isinstance(graph, dict):
                 continue
-            legacy_bucket["entities"].extend(item for item in (graph.get("entities") or []) if isinstance(item, dict))
-            legacy_bucket["relations"].extend(item for item in (graph.get("relations") or []) if isinstance(item, dict))
+            legacy_entities = [item for item in (graph.get("entities") or []) if isinstance(item, dict)]
+            legacy_relations = [item for item in (graph.get("relations") or []) if isinstance(item, dict)]
+            total_entities += len(legacy_entities)
+            total_relations += len(legacy_relations)
+            legacy_bucket["entities"].extend(legacy_entities)
+            legacy_bucket["relations"].extend(legacy_relations)
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             legacy_bucket["entities"] = sgc.filter_entities_with_relations(legacy_bucket["entities"], legacy_bucket["relations"])
         if legacy_bucket["entities"] or legacy_bucket["relations"]:
             if resolved_kind not in {"knowledge_graph", "mind_map", "timeline"} or legacy_bucket["entities"]:
                 templates_out.append(legacy_bucket)
 
-    return True, {"kind": kind, "templates": templates_out}
+    return True, {
+        "kind": kind,
+        "templates": templates_out,
+        "total_entities": total_entities,
+        "total_relations": total_relations,
+        "returned_entities": sum(len(template["entities"]) for template in templates_out),
+        "returned_relations": sum(len(template["relations"]) for template in templates_out),
+    }
 
 
 # ── artifacts/alteration: per-``kind`` provenance & eligibility mapping ──
@@ -2227,6 +2301,59 @@ def _alteration_result(current_doc_ids: set, involved_doc_ids: set, eligible_doc
     }
 
 
+async def _wiki_chunk_alteration(
+    tenant_id: str,
+    dataset_id: str,
+    eligible_doc_ids: set[str],
+    involved_doc_ids: set[str],
+    current_chunk_state: dict | None = None,
+    previous_map_state: dict | None = None,
+) -> dict:
+    """Compare active source chunks with the hashes used by Wiki MAP.
+
+    Document-level provenance cannot detect an edited, added, or removed
+    chunk.  The MAP resume rows already contain the exact chunk hash used by
+    compilation, so they are the authoritative compiled-side snapshot.
+    A previously involved document is changed when a chunk is added, removed,
+    or has a different hash. Documents removed or disabled at document level
+    remain represented by the existing ``removed`` fields rather than being
+    duplicated in ``changed``.
+    """
+    empty = {
+        "changed": 0,
+        "changed_doc_ids": [],
+    }
+    if not eligible_doc_ids and not involved_doc_ids:
+        return empty
+
+    from rag.advanced_rag.knowlege_compile.wiki import _wiki_compare_chunk_states, _wiki_load_active_map_state, _wiki_scan_current_chunk_state
+
+    try:
+        current = current_chunk_state
+        if current is None:
+            current = await _wiki_scan_current_chunk_state(tenant_id, dataset_id, eligible_doc_ids)
+        previous = previous_map_state
+        if previous is None:
+            previous = await _wiki_load_active_map_state(tenant_id, dataset_id)
+    except Exception as exc:
+        logging.exception("alteration: failed to compare Wiki chunk state for kb=%s", dataset_id)
+        raise RuntimeError(f"Failed to compare Wiki chunk state for alteration (kb={dataset_id})") from exc
+
+    delta = _wiki_compare_chunk_states(previous, current)
+    changed_doc_ids = {
+        str((current.get(chunk_id) or previous.get(chunk_id) or {}).get("doc_id") or "") for chunk_id in delta["new_chunk_ids"] | delta["changed_chunk_ids"] | delta["deleted_chunk_ids"]
+    }
+    # ``newly_uploaded`` owns eligible documents which have not contributed to
+    # the current Wiki; ``removed`` owns previously involved documents which
+    # are no longer eligible. Keep ``changed`` disjoint from both categories.
+    changed_doc_ids &= eligible_doc_ids & involved_doc_ids
+
+    return {
+        "changed": len(changed_doc_ids),
+        "changed_doc_ids": sorted(changed_doc_ids),
+    }
+
+
 def _flatten_provenance_doc_ids(value) -> set[str]:
     """Normalize source_doc_ids stored as JSON strings, lists, or scalars."""
     if value is None:
@@ -2269,7 +2396,15 @@ def _eligible_doc_ids_for_kind(docs, tenant_id: str, kind: str) -> set:
     return eligible
 
 
-async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, field: str | list[str], from_list: bool) -> set:
+async def _involved_doc_ids_paged(
+    index_nm,
+    dataset_id: str,
+    condition: dict,
+    field: str | list[str],
+    from_list: bool,
+    *,
+    raise_on_error: bool = False,
+) -> set:
     """Page a docStore search, folding provenance fields into a doc-id set.
 
     ``from_list`` reads the selected fields as lists of provenance document IDs;
@@ -2299,6 +2434,8 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
             rows = settings.docStoreConn.get_fields(res, select_fields) or {}
         except Exception:
             logging.exception("alteration: docStore search failed for kb=%s cond=%s", dataset_id, condition)
+            if raise_on_error:
+                raise
             rows = {}
 
         if not rows:
@@ -2317,10 +2454,38 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
     return involved
 
 
-async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str) -> set:
+async def _current_chunk_doc_ids(index_nm, dataset_id: str, doc_ids: set[str]) -> set[str]:
+    """Return eligible documents with available, not-yet-compiled source chunks."""
+    if not doc_ids:
+        return set()
+    return await _involved_doc_ids_paged(
+        index_nm,
+        dataset_id,
+        {
+            "doc_id": sorted(doc_ids),
+            "available_int": [1],
+            "must_not": {"exists": "compile_kwd"},
+        },
+        "doc_id",
+        from_list=False,
+        raise_on_error=True,
+    )
+
+
+async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str, tenant_id: str, wiki_map_state: dict | None = None) -> set:
     """Gather the doc ids baked into the compiled product for ``kind``."""
     if kind == "wiki":
-        return await _involved_doc_ids_paged(index_nm, dataset_id, {"compile_kwd": [WIKI_PAGE_COMPILE_KWD]}, "source_doc_ids", from_list=True)
+        from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_active_map_state
+
+        # Wiki MAP state is committed only after the compilation run has
+        # successfully completed.  Use that active snapshot as the
+        # compilation provenance, rather than wiki_page.source_doc_ids:
+        # a document can participate in MAP/REDUCE without producing a page
+        # (for example when the extractor finds no page-worthy entities).
+        state = wiki_map_state
+        if state is None:
+            state = await _wiki_load_active_map_state(tenant_id, dataset_id)
+        return {str(item.get("doc_id")) for item in state.values() if item.get("doc_id")}
     if kind in _ALTERATION_KIND_TO_MERGED_ROW_KIND:
         condition = {
             "knowledge_graph_kwd": ["entity", "relation"],
@@ -2368,15 +2533,100 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
         return False, "Invalid Dataset ID"
 
     docs, current_doc_ids = await _current_dataset_docs(dataset_id)
+    eligible_doc_ids = _eligible_doc_ids_for_kind(docs, kb.tenant_id, kind)
 
     involved_doc_ids: set[str] = set()
+    chunk_changes = None
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
     if pack is not None:
         index_nm, _ = pack
-        involved_doc_ids = await _involved_doc_ids_for_kind(index_nm, dataset_id, kind)
+        if kind == "wiki":
+            # A document may match the Wiki template while still having no
+            # available source chunks (for example, parsing has not produced
+            # chunks yet or all chunks are disabled). Such a document is not
+            # an actionable Wiki input and must not be reported as newly
+            # uploaded.
+            from rag.advanced_rag.knowlege_compile.wiki import _wiki_scan_current_chunk_state
 
-    eligible_doc_ids = _eligible_doc_ids_for_kind(docs, kb.tenant_id, kind)
-    return True, _alteration_result(current_doc_ids, involved_doc_ids, eligible_doc_ids)
+            eligible_before_chunk_filter = len(eligible_doc_ids)
+            current_chunk_state = await _wiki_scan_current_chunk_state(
+                kb.tenant_id,
+                dataset_id,
+                eligible_doc_ids,
+            )
+            chunk_doc_ids = {str(item.get("doc_id")) for item in current_chunk_state.values() if item.get("doc_id")}
+            eligible_doc_ids &= chunk_doc_ids
+            logging.debug(
+                "alteration: Wiki chunk eligibility kb=%s tenant=%s before=%d after=%d chunks=%d",
+                dataset_id,
+                kb.tenant_id,
+                eligible_before_chunk_filter,
+                len(eligible_doc_ids),
+                len(current_chunk_state),
+            )
+        else:
+            eligible_before_chunk_filter = len(eligible_doc_ids)
+            chunk_doc_ids = await _current_chunk_doc_ids(index_nm, dataset_id, eligible_doc_ids)
+            eligible_doc_ids &= chunk_doc_ids
+            logging.debug(
+                "alteration: structure chunk eligibility kind=%s kb=%s before=%d after=%d",
+                kind,
+                dataset_id,
+                eligible_before_chunk_filter,
+                len(eligible_doc_ids),
+            )
+        wiki_map_state = None
+        if kind == "wiki":
+            from rag.advanced_rag.knowlege_compile.wiki import _wiki_load_active_map_state
+
+            wiki_map_state = await _wiki_load_active_map_state(kb.tenant_id, dataset_id)
+            logging.debug(
+                "alteration: Wiki MAP provenance kb=%s tenant=%s involved=%d eligible=%d",
+                dataset_id,
+                kb.tenant_id,
+                len({str(item.get("doc_id")) for item in wiki_map_state.values() if item.get("doc_id")}),
+                len(eligible_doc_ids),
+            )
+        involved_doc_ids = await _involved_doc_ids_for_kind(index_nm, dataset_id, kind, kb.tenant_id, wiki_map_state)
+        if kind == "wiki":
+            chunk_changes = await _wiki_chunk_alteration(
+                kb.tenant_id,
+                dataset_id,
+                eligible_doc_ids,
+                involved_doc_ids,
+                current_chunk_state,
+                wiki_map_state,
+            )
+    else:
+        # Without the source index there are no current chunks that can be
+        # considered inputs for any structure kind.
+        eligible_doc_ids = set()
+        logging.debug(
+            "alteration: structure source index missing kind=%s kb=%s tenant=%s eligible=0",
+            kind,
+            dataset_id,
+            kb.tenant_id,
+        )
+
+    # Wiki membership follows compilation eligibility. Disabling a document or
+    # removing its Wiki template is therefore a removal; enabling it again or
+    # restoring the template after a rebuild makes it newly uploaded.
+    alteration_current_doc_ids = eligible_doc_ids if kind == "wiki" else current_doc_ids
+    result = _alteration_result(alteration_current_doc_ids, involved_doc_ids, eligible_doc_ids)
+    if chunk_changes is not None:
+        result.update(chunk_changes)
+    if kind == "wiki":
+        from rag.advanced_rag.knowlege_compile.wiki_incremental import _wiki_load_refine_failures
+
+        refine_failures = await _wiki_load_refine_failures(kb.tenant_id, dataset_id)
+        result.update(
+            {
+                "retry_required": bool(refine_failures),
+                "retry_page_count": len(refine_failures),
+                "retry_page_slugs": sorted(refine_failures),
+            }
+        )
+    return True, result
 
 
 async def get_wiki_alteration(dataset_id: str, tenant_id: str):
@@ -2570,46 +2820,13 @@ async def list_wiki_topics(
     if not counts:
         return True, {"total": 0, "items": []}
 
-    # Resolve display metadata (title/slug) from the topic landing pages; fall
-    # back to the raw topic name when a topic has no ``page_type="topic"`` row.
-    meta: dict[str, dict] = {}
-    try:
-        meta_fields = ["topic_kwd", "title_kwd", "slug_kwd"]
-        _BATCH = 1000
-        _offset = 0
-        while True:
-            meta_res = settings.docStoreConn.search(
-                select_fields=meta_fields,
-                highlight_fields=[],
-                condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "page_type_kwd": ["topic"]},
-                match_expressions=[],
-                order_by=OrderByExpr(),
-                offset=_offset,
-                limit=_BATCH,
-                index_names=index_nm,
-                knowledgebase_ids=[dataset_id],
-            )
-            rows = settings.docStoreConn.get_fields(meta_res, meta_fields) or {}
-            if not rows:
-                break
-            for row in rows.values():
-                t = _scalar(row.get("topic_kwd"))
-                if t:
-                    meta[t] = {
-                        "title": _scalar(row.get("title_kwd")) or t,
-                        "slug": _scalar(row.get("slug_kwd")) or t,
-                    }
-            _offset += _BATCH
-    except Exception:
-        logging.exception("list_wiki_topics: topic metadata lookup failed for kb=%s", dataset_id)
-
     # Rank topics by page count (descending), then title for a stable order.
     ranked = sorted(
         (
             {
                 "topic": t,
-                "title": (meta.get(t) or {}).get("title") or t,
-                "slug": (meta.get(t) or {}).get("slug") or t,
+                "title": t.rsplit("/", 1)[-1],
+                "slug": t,
                 "page_count": c,
             }
             for t, c in counts.items()
@@ -3140,6 +3357,32 @@ _NAV_FIELDS = [
 ]
 
 
+def _first_str(val) -> str:
+    """Extract the first string from a value that may be str, list, tuple, or set."""
+    if isinstance(val, (list, tuple, set)):
+        return str(next(iter(val), "") or "")
+    return str(val or "")
+
+
+def _resolve_embd_mdl(kb):
+    """Resolve the embedding model for a knowledge base, or None on failure."""
+    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
+    from api.db.services.llm_service import LLMBundle
+    from common.constants import LLMType
+
+    try:
+        if kb.embd_id:
+            embd_model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        else:
+            embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
+        if embd_model_config is None:
+            return None
+        return LLMBundle(kb.tenant_id, embd_model_config)
+    except Exception:
+        logging.exception("Failed to resolve embedding model for kb=%s", kb.id)
+        return None
+
+
 def _nav_item(row: dict) -> dict:
     """Shape one nav row into a UI node: name, description, doc count, type."""
     try:
@@ -3210,8 +3453,19 @@ async def _nav_search(dataset_id: str, tenant_id: str, condition: dict, page: in
     return True, {"total": int(total or 0), "items": items}
 
 
-async def list_nav_clusters(dataset_id: str, tenant_id: str, page: int = 1, page_size: int = 1000):
-    """First level of the nav tree: the clusters with no parent."""
+async def list_nav_clusters(dataset_id: str, tenant_id: str, page: int = 1, page_size: int = 1000, q: str | None = None, top_k: int | None = None):
+    """First level of the nav tree: the clusters with no parent.
+
+    When ``q`` is provided, runs a tree-structured search (mode="navigation_tree")
+    and returns enriched nav node items in the same ``_nav_item`` shape so the
+    frontend tree search can reuse this endpoint.
+    """
+    if q and q.strip():
+        success, result = await search_dataset_layers(dataset_id, tenant_id, q.strip(), "navigation_tree", top_k=top_k or 1000)
+        if not success:
+            return success, result
+        result["items"] = await _enrich_nav_items(dataset_id, tenant_id, result.get("items", []))
+        return True, {"total": result.get("total", 0), "items": result["items"]}
     condition = {
         "compile_kwd": [_NAV_COMPILE_KWD],
         "type_kwd": ["nav_cluster"],
@@ -3409,13 +3663,12 @@ async def generate_nav(
     )
     from api.db.services.llm_service import LLMBundle
     from common.constants import LLMType
-    from rag.advanced_rag.knowlege_compile.dataset_nav import upsert_dataset_nav_doc
+    from rag.advanced_rag.knowlege_compile.dataset_nav import (
+        build_nav_graph_text,
+        upsert_dataset_nav_doc,
+    )
 
-    if kb.embd_id:
-        embd_model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
-    else:
-        embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
-    embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
+    embd_mdl = _resolve_embd_mdl(kb)
 
     chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
     chat_mdl = LLMBundle(kb.tenant_id, chat_model_config)
@@ -3486,53 +3739,15 @@ async def generate_nav(
                             graph = json.loads(row.get("content_with_weight") or "{}")
                         except Exception:
                             continue
-                        entities = graph.get("entities") or []
-                        relations = graph.get("relations") or []
-                        child_names = {r.get("to") for r in relations if isinstance(r, dict)}
-
                         # Build both:
                         #   - root_summary: first line of root desc (short,
                         #     for the display title / description field)
                         #   - graph_text: structured text from ALL entities
                         #     and relations (for embedding, keyword extraction,
                         #     entity extraction, and stored as graph_content).
-                        # entity name -> description
-                        name_desc: dict[str, str] = {}
-                        for ent in entities:
-                            if not isinstance(ent, dict):
-                                continue
-                            nm = (ent.get("name") or "").strip()
-                            if nm:
-                                name_desc[nm] = (ent.get("description") or "").strip()
-
-                        # root entity = entity whose name never appears as a
-                        # relation target (not a child of anyone).
-                        root_name = ""
-                        root_summary = ""
-                        for ent in entities:
-                            if isinstance(ent, dict) and ent.get("name") not in child_names:
-                                root_name = (ent.get("name") or "").strip()
-                                root_summary = name_desc.get(root_name, "")
-                                root_summary = root_summary.splitlines()[0].strip() if root_summary else root_name
-                                break
-
-                        # Build the full graph text
-                        graph_parts: list[str] = []
-                        if root_name and name_desc.get(root_name):
-                            graph_parts.append(root_name)
-                            graph_parts.append(name_desc[root_name])
-
-                        child_names_set = {n for n in name_desc if n in child_names}
-                        if child_names_set:
-                            graph_parts.append("")
-                            for cname in sorted(child_names_set):
-                                cdesc = name_desc.get(cname, "")
-                                line = f"- {cname}"
-                                if cdesc:
-                                    line += f": {cdesc.splitlines()[0].strip()}"
-                                graph_parts.append(line)
-
-                        graph_text = "\n".join(graph_parts) if graph_parts else ""
+                        # Shared with the parse-time path (run_tree_templates)
+                        # so both produce identical, complete nav_doc content.
+                        root_summary, graph_text = build_nav_graph_text(graph)
 
                         if root_summary:
                             raptor_summaries[gid] = {
@@ -3567,18 +3782,36 @@ async def generate_nav(
         return False, "No documents found in dataset."
 
     # Step 1: delete the entire existing navigation tree so we start clean.
+    # ``deleted`` reports the number of *clusters* removed (not nav_doc leaves),
+    # since that is the meaningful unit for the navigation tree.
     deleted = 0
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
     if pack is not None:
         index_nm, _ = pack
         try:
-            deleted = await thread_pool_exec(
+            from common.doc_store.doc_store_base import OrderByExpr
+
+            # Count existing clusters before wiping the tree.
+            count_res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id"],
+                [],
+                {"compile_kwd": [_NAV_COMPILE_KWD], "type_kwd": ["nav_cluster"]},
+                [],
+                OrderByExpr(),
+                0,
+                10000,
+                index_nm,
+                [dataset_id],
+            )
+            deleted = len(settings.docStoreConn.get_fields(count_res, ["id"]) or {})
+
+            await thread_pool_exec(
                 settings.docStoreConn.delete,
                 {"compile_kwd": [_NAV_COMPILE_KWD]},
                 index_nm,
                 dataset_id,
             )
-            deleted = int(deleted or 0)
         except Exception:
             logging.exception("generate_nav: failed to clear existing nav for kb=%s", dataset_id)
             return False, "Failed to clear existing navigation tree."
@@ -3595,7 +3828,7 @@ async def generate_nav(
             continue
         try:
             await upsert_dataset_nav_doc(
-                tenant_id=tenant_id,
+                tenant_id=kb.tenant_id,
                 kb_id=dataset_id,
                 doc_id=doc_id,
                 summary_or_tree=summary,
@@ -3622,6 +3855,81 @@ _LAYERS_HANDLERS: dict[str, str] = {
     "all": "_search_layers_all",
 }
 
+# Document router behind the "navigation_tree" mode.  Callers always ask for
+# mode="navigation_tree", so swapping strategy needs no change on their side.
+#
+#   "nav_doc" (default) — flat hybrid search over the nav_doc rows.  No cluster
+#       level is consulted, so nothing is pruned, but the comparison still runs
+#       on document-level embeddings.  Those rows embed ``graph_text`` — the
+#       document's full entity/relation listing — not a one-line summary, so
+#       this is not the "compressed representation first" case that SCT measures.
+#   "chunk_agg" — PageIndex ``semantics`` recipe: hybrid search over the raw
+#       chunk index, hits rolled up per document with
+#       DocScore = sum(chunk scores) / sqrt(hits + 1).  Sound in principle, but
+#       chunk-level similarity is easy to clear: a document passes the 0.2 floor
+#       on a single marginally related chunk, so the top-k roster fills with
+#       weakly related documents, and the wider routing fans out every later
+#       stage.  Measured 2026-09-02: 12/12 questions routed a full 12 documents,
+#       evidence pool 42-67 passages, 166s per question against a 180s budget,
+#       with several timeouts yielding no answer at all.
+#   "compiled_agg" — page_index entity rows only; "fusion" — chunk + compiled.
+#   "tree" — BFS beam descent over the nav cluster tree.  This is what main
+#       branch does.  Kept as the A/B baseline; drop it, and
+#       ``search_nav_tree_descent`` with it, once a winner is settled.
+_NAV_TREE_ROUTER = "chunk_agg"
+
+# Cap on how many documents a flat router hands back.  The cluster beam descent
+# that main uses returns ~2 by construction (its per-level pruning keeps only
+# the most relevant branches), while the flat nav_doc sweep returns every row
+# above the 0.2 floor — measured 2026-09-02: beam avg 2.0 vs nav_doc avg 6.2.
+# Routing to 3x the documents made the RAGAgent carry 3x the evidence in every
+# round, so each dynamic LLM call grew 14k -> 18.8k tokens and per-question time
+# grew ~25%.  Beam is not capped at 2 either (it occasionally routes 6 for
+# multi-hop), so allow a little headroom above its median rather than a hard 2.
+_NAV_DOC_FOCUS_LIMIT = 3
+
+# Candidate pool for "chunk_agg".  DocScore only means something when a document
+# can collect several hits, so the pool has to be wide enough for that; across a
+# 2400-document corpus a pool of a few dozen chunks yields almost entirely
+# single-hit documents, which collapses DocScore into plain best-chunk ranking.
+# This is ``rerank_candidates_count`` — the pool the fusion actually draws from.
+# ``page_size`` is deliberately the same value so the whole pool is returned for
+# aggregation, and it must stay <= the pool or ``retrieval`` raises
+# (page * page_size > rerank_candidates_count).
+_NAV_CHUNK_AGG_POOL = 256
+_NAV_CHUNK_AGG_VEC_WEIGHT = 0.3
+
+# Candidate pool of compiled entity rows for the "compiled_agg" / "fusion"
+# routers.  ``get_vector`` builds its own MatchDenseExpr and never routes through
+# ``retrieval``, so ``rerank_candidates_count`` does not apply here — but HNSW
+# needs ``num_candidates`` >= the pool or the search degenerates.
+_NAV_COMPILED_POOL = 256
+_NAV_COMPILED_SIMILARITY = 0.1
+# Entity types aggregated separately.  A document carries far more facts than
+# titles, so pooling them would let fact hits drown out title hits; splitting
+# keeps the coarser title signal usable.  ``entity_type_kwd`` does not exist on
+# compilation rows (it belongs to graphrag), so the type is read from the
+# payload after the fetch.
+_NAV_COMPILED_TITLE_TYPES = ("title",)
+_NAV_COMPILED_FACT_TYPES = ("fact", "conclusion")
+# Weights applied when the fusion router combines the three legs.  Only used
+# when documents are hit by several legs.
+_NAV_FUSION_WEIGHTS = {"chunk": 1.0, "title": 0.8, "fact": 0.9}
+
+# Section bridge (stage 3): resolve each hit fact to its owning title.  The
+# relation type carrying TOC containment in the page_index template, plus caps
+# on how many names are resolved and how many relation rows may be scanned.
+_NAV_INCLUDE_RELATION = "include"
+_NAV_BRIDGE_NAMES_LIMIT = 64
+_NAV_BRIDGE_FANOUT = 4
+# Compiled products (tree/entity/relation rows) are written with
+# available_int=1, so they fall inside the chunk filter and would otherwise
+# inflate a document's hit count.  The project convention is that plain
+# retrieval reads document chunks only and compiled products are served by their
+# own tools, so exclude them here too.  Flip to False to A/B letting compiled
+# rows act as extra per-document entries in the aggregation.
+_NAV_CHUNK_AGG_EXCLUDE_COMPILED = True
+
 
 async def search_dataset_layers(
     dataset_id: str,
@@ -3639,7 +3947,8 @@ async def search_dataset_layers(
             - chunk: raw document chunks (via the main retrieval pipeline)
             - nav_doc: navigation tree document leaves
             - nav_cluster: navigation tree cluster nodes
-            - navigation_tree: tree-structured BFS beam descent
+            - navigation_tree: document routing, strategy chosen by
+              ``_NAV_TREE_ROUTER`` (chunk aggregation by default)
             - all: union of all modes, deduplicated by doc_id with best score
         doc_scope: Optional set of documents to restrict the search to.  None or
             empty means all documents of the dataset.  Forwarded to every mode:
@@ -3687,7 +3996,7 @@ async def search_dataset_layers(
     elif mode == "nav_cluster":
         return await _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope)
     elif mode == "navigation_tree":
-        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, doc_scope=doc_scope)
+        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
     elif mode == "chunk":
         return await _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
     elif mode == "all":
@@ -3724,18 +4033,606 @@ async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_
     return True, {"mode": "nav_cluster", "total": len(items), "items": items}
 
 
-async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, *, doc_scope=None):
-    from rag.advanced_rag.knowlege_compile.dataset_nav import search_nav_tree_descent
+def _nav_focus_items(items: list) -> list:
+    """Truncate a flat routing to the most relevant documents, in place.
 
-    items = await search_nav_tree_descent(
-        tenant_id,
-        dataset_id,
-        query,
-        embd_mdl,
-        top_k=top_k,
-        doc_scope=doc_scope,
-    )
+    The flat sweep returns every row above the floor; the cluster descent main
+    uses stays focused by its per-level pruning.  See ``_NAV_DOC_FOCUS_LIMIT``
+    for the measured reason this matters.
+    """
+    limit = _NAV_DOC_FOCUS_LIMIT
+    if not limit or len(items) <= limit:
+        return items
+    items.sort(key=lambda it: float(it.get("score", 0.0)), reverse=True)
+    del items[limit:]
+    return items
+
+
+def _nav_label_items(items: list) -> list:
+    """Give each routed item the ``_nav`` summary navigation.py reads.
+
+    ``search_dataset_nav`` returns the leaf row flat (``name``/``description`` at
+    the top level), but navigation.py reads the route label from
+    ``item["_nav"]["description"]``, so without this a route comes back
+    unlabelled.  The rows already carry the summary, so this costs no extra
+    query — unlike the chunk router, which has to look one up.
+    """
+    for item in items:
+        if not isinstance(item, dict) or item.get("_nav"):
+            continue
+        item["_nav"] = {
+            "doc_id": str(item.get("doc_id") or "").strip(),
+            "description": str(item.get("description") or item.get("name") or "").strip(),
+        }
+    return items
+
+
+async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, doc_scope=None):
+    """Route to documents, dispatched by ``_NAV_TREE_ROUTER``.
+
+    Every strategy returns the same item shape — ``doc_id``, a 0..1 ``score``,
+    and ``_nav`` carrying the document summary — so callers stay agnostic to
+    which one is active.
+    """
+    if _NAV_TREE_ROUTER == "nav_doc":
+        from rag.advanced_rag.knowlege_compile.dataset_nav import search_dataset_nav
+
+        items = await _nav_search_result(
+            tenant_id,
+            dataset_id,
+            query,
+            top_k,
+            embd_mdl,
+            search_dataset_nav,
+            type_kwd="nav_doc",
+            doc_scope=doc_scope,
+        )
+        _nav_focus_items(items)
+        _nav_label_items(items)
+        return True, {"mode": "navigation_tree", "total": len(items), "items": items}
+
+    if _NAV_TREE_ROUTER == "tree":
+        from rag.advanced_rag.knowlege_compile.dataset_nav import search_nav_tree_descent
+
+        items = await search_nav_tree_descent(
+            tenant_id,
+            dataset_id,
+            query,
+            embd_mdl,
+            top_k=top_k,
+            doc_scope=doc_scope,
+        )
+        return True, {"mode": "navigation_tree", "total": len(items), "items": items}
+
+    if _NAV_TREE_ROUTER in ("compiled_agg", "fusion"):
+        ok, payload = await _search_layers_compiled_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+        if _NAV_TREE_ROUTER == "compiled_agg":
+            return ok, payload
+        # Fusion keeps going: the compiled leg ranks alongside the chunk leg.
+        return await _search_layers_fusion(tenant_id, dataset_id, query, top_k, embd_mdl, kb, compiled=payload, doc_scope=doc_scope)
+
+    return await _search_layers_chunk_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+
+
+async def _search_layers_chunk_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, doc_scope=None):
+    """Route to documents by rolling up raw-chunk hybrid hits (PageIndex style).
+
+    Retrieval runs over the chunk index — uncompressed text — and the hits are
+    aggregated per document with PageIndex's DocScore::
+
+        DocScore = sum(chunk scores) / sqrt(hits + 1)
+
+    The numerator rewards a document that matches several chunks; the
+    square-root denominator damps that reward so a long document cannot win on
+    volume alone.
+
+    Ordering uses DocScore, but the reported ``score`` is the document's best
+    chunk similarity: callers threshold on it (``_NAV_MIN_DOC_SCORE``), and
+    keeping a single chunk's similarity preserves the 0..1 scale those
+    thresholds were set against.
+    """
+    from common import settings
+
+    kwargs = {}
+    if doc_scope:
+        kwargs["doc_ids"] = [str(d) for d in doc_scope if str(d).strip()]
+
+    pool = _NAV_CHUNK_AGG_POOL
+    # Term-only and dense scores live on different scales, so the weight (not the
+    # threshold) carries the "is there an embedding model" decision.
+    vector_weight = _NAV_CHUNK_AGG_VEC_WEIGHT if embd_mdl else 0
+    try:
+        ranks = await settings.retriever.retrieval(
+            query,
+            embd_mdl,
+            [tenant_id],
+            [dataset_id],
+            1,
+            # page_size == the pool, so every fused candidate reaches the
+            # aggregation below.
+            pool,
+            # No similarity floor: ranking is done by DocScore, so the pool must
+            # stay wide enough for a document to collect several hits.  A floor
+            # here would pre-empt the aggregation.
+            0.0,
+            vector_weight,
+            # knn_top_k is left at its default: it caps how many neighbours the
+            # vector leg feeds into fusion, and narrowing it to top_k would
+            # shrink the pool this strategy depends on.
+            rerank_candidates_count=pool,
+            must_not={"exists": "compile_kwd"} if _NAV_CHUNK_AGG_EXCLUDE_COMPILED else None,
+            **kwargs,
+        )
+    except Exception:
+        logging.exception("search_dataset_layers: chunk-agg retrieval failed for kb=%s", dataset_id)
+        return False, {"error": "chunk retrieval failed", "code": RetCode.SERVER_ERROR}
+
+    agg = _nav_aggregate_chunks(ranks.get("chunks", []))
+    if not agg:
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+
+    ranked = sorted(agg.items(), key=lambda kv: _nav_doc_score(kv[1]), reverse=True)
+    # Cap by the caller's top_k and by the focus limit.  Without the focus cap
+    # this router returned every document above the floor (measured 6-12),
+    # routing the RAGAgent into 3x the evidence and inflating every dynamic LLM
+    # call — the same regression the nav_doc router had, fixed here the same way.
+    limit = _NAV_DOC_FOCUS_LIMIT or (top_k or _NAV_CHUNK_AGG_POOL)
+    if limit > 0:
+        ranked = ranked[:limit]
+
+    summaries = await _nav_doc_summaries(kb, [doc_id for doc_id, _ in ranked])
+    items = [
+        {
+            "doc_id": doc_id,
+            "score": round(entry["best"], 4),
+            "_nav": {"doc_id": doc_id, "description": summaries.get(doc_id, "")},
+            # Aggregation detail, surfaced for tuning the fetch multiplier.
+            "_agg": {"doc_score": round(_nav_doc_score(entry), 4), "hits": entry["hits"]},
+        }
+        for doc_id, entry in ranked
+    ]
     return True, {"mode": "navigation_tree", "total": len(items), "items": items}
+
+
+async def _search_layers_compiled_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, doc_scope=None):
+    """Route to documents through compiled ``page_index`` entity rows.
+
+    Complements the chunk leg rather than replacing it: chunks are verbatim text
+    and win on exact matches (numbers, proper nouns), while ``fact`` /
+    ``conclusion`` rows are atomic propositions that win on concept matches the
+    surface form misses.  Each covers the other's failure mode.
+
+    Compiled rows carry no ``available_int``, which is the project's marker for
+    "visible to the generic retriever" (not a deletion flag), so they are absent
+    from the chunk index and have to be read through the store seam directly --
+    the same seam ``dataset_nav`` and wiki use.
+
+    Returns ``ok=False`` only on a store failure; an empty result set is a
+    legitimate outcome (a KB without page_index products) and is reported
+    ``ok=True`` with ``total=0`` so the caller can fall back.
+    """
+    pack = _compiled_index_or_none(kb.tenant_id, kb.id) if kb is not None else None
+    if pack is None:
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp.search import MatchTextExpr
+
+    index_nm, _ = pack
+
+    pool = _NAV_COMPILED_POOL
+    condition = {
+        "compile_kwd": ["page_index"],
+        "knowledge_graph_kwd": ["entity"],
+        # Exclude the KB-wide merged rows written by the Build button.
+        "scope_kwd": ["doc"],
+    }
+    if doc_scope:
+        condition["doc_id"] = [str(d) for d in doc_scope if str(d).strip()]
+
+    fields = ["content_with_weight", "source_chunk_ids", "doc_id", "name_kwd"]
+    try:
+        # Compiled rows tokenize their description into content_ltks, so a
+        # keyword match is a real fallback when no embedding model is configured
+        # or embedding fails -- the leg degrades instead of dropping out.
+        exprs = []
+        if embd_mdl:
+            try:
+                exprs.append(
+                    await settings.retriever.get_vector(
+                        query,
+                        embd_mdl,
+                        top_k=pool,
+                        # HNSW ef_search -- must be >= top_k or the ANN search
+                        # collapses.  Positional passing here would hit
+                        # num_candidates with the similarity threshold.
+                        num_candidates=pool,
+                        similarity=_NAV_COMPILED_SIMILARITY,
+                    )
+                )
+            except Exception:
+                logging.exception("dataset_nav: compiled vector build failed for kb=%s", kb.id)
+        if not exprs:
+            exprs.append(MatchTextExpr(["content_ltks", "content_sm_ltks"], query, pool))
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            select_fields=fields,
+            highlight_fields=[],
+            condition=condition,
+            match_expressions=exprs,
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=pool,
+            index_names=index_nm,
+            knowledgebase_ids=[kb.id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, fields)
+    except Exception:
+        logging.exception("dataset_nav: compiled-agg retrieval failed for kb=%s", kb.id)
+        return False, {"error": "compiled retrieval failed", "code": RetCode.SERVER_ERROR}
+
+    buckets = _nav_bucket_compiled_rows(field_map or {})
+    ranked = _nav_rank_compiled_buckets(buckets, top_k)
+    if not ranked:
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+
+    # Compile rows can outlive a deleted document -- the doc-existence check in
+    # retrieval() is a fallback, not the primary delete mechanism, and this leg
+    # reads the store directly, so it has to apply the check itself.
+    alive = await _nav_existing_doc_ids([doc_id for doc_id, _ in ranked])
+    ranked = [(d, e) for d, e in ranked if d in alive]
+    if not ranked:
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+
+    summaries = await _nav_doc_summaries(kb, [doc_id for doc_id, _ in ranked])
+    # Label each document with the TOC sections that scored for it, so the caller
+    # gets an entry point into the document instead of starting
+    # navigate_structure from scratch.  Purely additive: it never prunes.
+    fact_names_by_doc = buckets.get("fact_names") or {}
+    bridge = await _nav_bridge_sections(kb, [n for names in fact_names_by_doc.values() for n in names], doc_scope=doc_scope)
+    items = [
+        {
+            "doc_id": doc_id,
+            "score": round(entry["best"], 4),
+            "_nav": {
+                "doc_id": doc_id,
+                "description": summaries.get(doc_id, ""),
+                "matched_sections": _nav_matched_sections(bridge, fact_names_by_doc.get(doc_id) or []),
+            },
+            # Report the value ranking actually used.  Recomputing DocScore here
+            # would mix the title and fact hit counts and disagree with ordering.
+            "_agg": {"fused": round(entry["score"], 4), "hits": entry["hits"], "legs": sorted(entry["legs"])},
+        }
+        for doc_id, entry in ranked
+    ]
+    return True, {"mode": "navigation_tree", "total": len(items), "items": items}
+
+
+async def _search_layers_fusion(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, compiled=None, doc_scope=None):
+    """Combine the chunk leg and the compiled leg into one routing decision.
+
+    The two legs measure different things and are not directly comparable: chunk
+    ``_score`` is Infinity's normalized weighted sum, while the compiled leg is a
+    raw cosine.  Each leg is therefore normalized by its own maximum before
+    being combined, so neither leg's scale can dominate the other.
+    """
+    ok, chunk_payload = await _search_layers_chunk_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+    if not ok:
+        return ok, chunk_payload
+
+    compiled_items = (compiled or {}).get("items") or []
+    if not compiled_items:
+        # No page_index products (or a raptor KB): the chunk leg alone decides.
+        # Tag the items so callers see one shape whichever path produced them.
+        for item in chunk_payload.get("items") or []:
+            item.setdefault("_agg", {}).setdefault("legs", ["chunk"])
+        return ok, chunk_payload
+
+    legs = [("chunk", chunk_payload.get("items") or [], _NAV_FUSION_WEIGHTS["chunk"]), ("compiled", compiled_items, 1.0)]
+    fused = _nav_fuse_legs(legs, top_k)
+
+    summaries = await _nav_doc_summaries(kb, [doc_id for doc_id, _ in fused])
+    items = [
+        {
+            "doc_id": doc_id,
+            # Reported score stays on the 0..1 scale callers threshold on, so it
+            # is taken from the highest-scoring leg rather than the fused value.
+            "score": round(info["best"], 4),
+            "_nav": {"doc_id": doc_id, "description": summaries.get(doc_id, "")},
+            "_agg": {"fused": round(info["fused"], 4), "legs": sorted(info["legs"])},
+        }
+        for doc_id, info in fused
+    ]
+    return True, {"mode": "navigation_tree", "total": len(items), "items": items}
+
+
+def _nav_fuse_legs(legs: list[tuple[str, list, float]], top_k) -> list[tuple[str, dict]]:
+    """Fuse per-document leg rankings, each normalized by its own maximum."""
+    normalized = []
+    for name, items, weight in legs:
+        peak = max((float(i.get("score") or 0.0) for i in items), default=0.0)
+        if peak <= 0:
+            continue
+        normalized.append((name, [(i.get("doc_id"), float(i.get("score") or 0.0) / peak * weight) for i in items], weight))
+
+    merged: dict[str, dict] = {}
+    for name, entries, _ in normalized:
+        for doc_id, value in entries:
+            if not doc_id:
+                continue
+            info = merged.get(doc_id)
+            if info is None:
+                merged[doc_id] = {"fused": value, "best": value, "legs": {name}}
+                continue
+            info["fused"] += value
+            info["legs"].add(name)
+            if value > info["best"]:
+                info["best"] = value
+
+    ranked = sorted(merged.items(), key=lambda kv: kv[1]["fused"], reverse=True)
+    if top_k is not None and top_k > 0:
+        ranked = ranked[:top_k]
+    return ranked
+
+
+def _nav_bucket_compiled_rows(field_map: dict) -> dict[str, dict]:
+    """Split fetched compiled rows into a title bucket and a fact bucket.
+
+    The row ``type`` lives inside the ``content_with_weight`` payload —
+    ``entity_type_kwd`` is a graphrag field and is not written by the
+    compilation path — so rows are binned after the fetch.
+
+    Fact names are kept per document, because the section bridge has to label a
+    document with the sections that scored for *it* — a flat list would attach
+    one document's sections to another.
+    """
+    title_bucket: dict[str, dict] = {}
+    fact_bucket: dict[str, dict] = {}
+    fact_names: dict[str, list[str]] = {}
+    for row in field_map.values():
+        doc_id = str(row.get("doc_id") or "").strip()
+        if not doc_id:
+            continue
+        try:
+            payload = json.loads(str(row.get("content_with_weight") or "{}"))
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        rtype = str(payload.get("type") or "").strip().lower()
+        if rtype in _NAV_COMPILED_TITLE_TYPES:
+            bucket = title_bucket
+        elif rtype in _NAV_COMPILED_FACT_TYPES:
+            bucket = fact_bucket
+            # Kept for the section bridge, which labels a hit fact with its
+            # owning title.  The raw fetch order is the store's relevance order,
+            # which is the right priority for choosing which sections to show.
+            name = str(payload.get("name") or "").strip()
+            if name:
+                fact_names.setdefault(doc_id, []).append(name)
+        else:
+            continue
+        score = float(row.get("similarity") or row.get("_score") or 0.0)
+        entry = bucket.get(doc_id)
+        if entry is None:
+            bucket[doc_id] = {"total": score, "best": score, "hits": 1}
+            continue
+        entry["total"] += score
+        entry["hits"] += 1
+        if score > entry["best"]:
+            entry["best"] = score
+    return {"title": title_bucket, "fact": fact_bucket, "fact_names": fact_names}
+
+
+def _nav_rank_compiled_buckets(buckets: dict, top_k) -> list[tuple[str, dict]]:
+    """Fuse the title and fact buckets into one per-document ranking.
+
+    A document hit by both legs is stronger than one hit by either alone, so the
+    scores are summed rather than maxed — but each bucket is ranked by its own
+    DocScore first, which is what keeps facts from swamping titles.
+    """
+    merged: dict[str, dict] = {}
+    for leg, bucket in (("title", buckets.get("title") or {}), ("fact", buckets.get("fact") or {})):
+        weight = _NAV_FUSION_WEIGHTS.get(leg, 1.0)
+        for doc_id, entry in bucket.items():
+            contribution = _nav_doc_score(entry) * weight
+            cur = merged.get(doc_id)
+            if cur is None:
+                merged[doc_id] = {
+                    "score": contribution,
+                    "best": entry["best"],
+                    "total": entry["total"],
+                    "hits": entry["hits"],
+                    "legs": {leg},
+                }
+                continue
+            cur["score"] += contribution
+            cur["total"] += entry["total"]
+            cur["hits"] += entry["hits"]
+            cur["legs"].add(leg)
+            if entry["best"] > cur["best"]:
+                cur["best"] = entry["best"]
+
+    ranked = sorted(merged.items(), key=lambda kv: kv[1]["score"], reverse=True)
+    if top_k is not None and top_k > 0:
+        ranked = ranked[:top_k]
+    return ranked
+
+
+def _nav_matched_sections(bridge: dict[str, str], fact_names: list[str]) -> list[str]:
+    """Titles owning this document's hit facts, in hit order and de-duplicated."""
+    sections: list[str] = []
+    for name in fact_names:
+        title = bridge.get(str(name).strip().lower())
+        if title and title not in sections:
+            sections.append(title)
+    return sections
+
+
+async def _nav_bridge_sections(kb, fact_names: list[str], doc_scope=None) -> dict[str, str]:
+    """Map each hit fact to the title that includes it.
+
+    Routing then answers *which document* and *where in it to look first*:
+    the caller gets a per-document entry point instead of starting
+    ``navigate_structure`` from scratch.
+
+    The TOC is used here purely as a **label**.  It never prunes the candidate
+    set — that is the top-down routing failure mode.  The lookup happens after
+    the documents are already chosen.
+
+    Returns ``{fact_name: title_name}``; facts without an owning title are
+    omitted.
+    """
+    if not fact_names or kb is None:
+        return {}
+    pack = _compiled_index_or_none(kb.tenant_id, kb.id)
+    if pack is None:
+        return {}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    names = [str(n).strip().lower() for n in fact_names if str(n).strip()]
+    # Cap the terms query: a wide IN list is slow and the bridge only needs to
+    # label the top hits, not every candidate.
+    names = list(dict.fromkeys(names))[:_NAV_BRIDGE_NAMES_LIMIT]
+
+    condition = {
+        "compile_kwd": ["page_index"],
+        "knowledge_graph_kwd": ["relation"],
+        "scope_kwd": ["doc"],
+        "to_entity_kwd": names,
+    }
+    if doc_scope:
+        condition["doc_id"] = [str(d) for d in doc_scope if str(d).strip()]
+
+    fields = ["content_with_weight", "from_entity_kwd", "to_entity_kwd", "doc_id"]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            select_fields=fields,
+            highlight_fields=[],
+            condition=condition,
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=len(names) * _NAV_BRIDGE_FANOUT,
+            index_names=index_nm,
+            knowledgebase_ids=[kb.id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, fields)
+    except Exception:
+        logging.exception("dataset_nav: section bridge lookup failed for kb=%s", kb.id)
+        return {}
+
+    bridge: dict[str, str] = {}
+    for row in (field_map or {}).values():
+        to_name = str(row.get("to_entity_kwd") or "").strip().lower()
+        title = str(row.get("from_entity_kwd") or "").strip()
+        if not to_name or not title or to_name in bridge:
+            continue
+        try:
+            payload = json.loads(str(row.get("content_with_weight") or "{}"))
+        except (TypeError, ValueError):
+            continue
+        # Only the structural edge counts; semantic relations would mislabel.
+        if isinstance(payload, dict) and str(payload.get("type") or "").strip().lower() == _NAV_INCLUDE_RELATION:
+            bridge[to_name] = title
+    return bridge
+
+
+async def _nav_existing_doc_ids(doc_ids: list[str]) -> set[str]:
+    """Keep only documents that still exist.
+
+    Compiled rows are not necessarily cleaned up when a document is deleted, so
+    this leg has to repeat the existence check that ``retrieval`` applies to
+    chunk results.
+    """
+    if not doc_ids:
+        return set()
+    try:
+        return await settings.retriever._existing_doc_ids(list(doc_ids))
+    except Exception:
+        logging.exception("dataset_nav: doc existence check failed")
+        return set(doc_ids)
+
+
+def _nav_aggregate_chunks(chunks: list) -> dict[str, dict]:
+    """Roll chunk hits up per document: total, best and hit count per doc."""
+    agg: dict[str, dict] = {}
+    for c in chunks:
+        doc_id = str(c.get("doc_id") or "").strip()
+        if not doc_id:
+            continue
+        score = float(c.get("similarity") or c.get("score") or 0.0)
+        entry = agg.get(doc_id)
+        if entry is None:
+            agg[doc_id] = {"total": score, "best": score, "hits": 1}
+            continue
+        entry["total"] += score
+        entry["hits"] += 1
+        if score > entry["best"]:
+            entry["best"] = score
+    return agg
+
+
+def _nav_doc_score(entry: dict) -> float:
+    """PageIndex DocScore: hit scores summed, damped by hit count.
+
+    The sum rewards a document matching several chunks; the square-root
+    denominator damps it so a long document cannot win on volume alone.
+    """
+    return entry["total"] / math.sqrt(entry["hits"] + 1)
+
+
+async def _nav_doc_summaries(kb, doc_ids):
+    """Batch-load the nav_doc ``description`` of ``doc_ids`` in one store query.
+
+    Chunk-level routing finds a document without reading any nav row, but the
+    caller still needs a label for it.  The nav_doc row already holds the
+    document's overall summary, so read them in a single terms query rather
+    than making the caller load the document for a label.
+    """
+    if not doc_ids or kb is None:
+        return {}
+    pack = _compiled_index_or_none(kb.tenant_id, kb.id)
+    if pack is None:
+        return {}
+    index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    # Single terms query shared by the whole batch; _nav_search would repeat the
+    # access check and KB load the caller already performed.
+    limit = max(1, min(len(doc_ids), 2000))
+    condition = {
+        "compile_kwd": [_NAV_COMPILE_KWD],
+        "type_kwd": ["nav_doc"],
+        "doc_id": [str(d) for d in doc_ids][:limit],
+    }
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            select_fields=_NAV_FIELDS,
+            highlight_fields=[],
+            condition=condition,
+            match_expressions=[],
+            order_by=OrderByExpr(),
+            offset=0,
+            limit=limit,
+            index_names=index_nm,
+            knowledgebase_ids=[kb.id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, _NAV_FIELDS)
+    except Exception:
+        logging.exception("dataset_nav: nav_doc summary lookup failed for kb=%s", kb.id)
+        return {}
+    summaries = {}
+    for row in (field_map or {}).values():
+        item = _nav_item(row)
+        doc_id = str(item.get("doc_id") or "").strip()
+        if doc_id:
+            summaries[doc_id] = str(item.get("description") or "").strip()
+    return summaries
 
 
 async def _nav_search_result(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, **kwargs):
@@ -3765,12 +4662,15 @@ async def _nav_search_result(tenant_id, dataset_id, query, top_k, embd_mdl, sear
                 doc_id = str(doc_ids[0]).strip() if doc_ids else ""
         if not doc_id:
             continue
-        items.append(
-            {
-                "doc_id": doc_id,
-                "score": round(float(r.get("score", 0.0)), 4),
-            }
-        )
+        item = {
+            "doc_id": doc_id,
+            "score": round(float(r.get("score", 0.0)), 4),
+        }
+        # Preserve the full nav node info so callers can enrich without a
+        # second ES round-trip.  Clusters have doc_id="" but carry name.
+        if r.get("name") or r.get("description"):
+            item["_nav"] = r
+        items.append(item)
     return items
 
 
@@ -3780,11 +4680,14 @@ async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, k
     tenant_ids = [tenant_id]
 
     kwargs = {}
-    if top_k is not None:
-        kwargs["top"] = top_k
     if doc_scope:
         kwargs["doc_ids"] = [str(d) for d in doc_scope if str(d).strip()]
 
+    # Here page_size IS the result set: chunks are returned as evidence, not
+    # aggregated into documents.  Keep it at the historical fetch size — raising
+    # it to the chunk_agg pool inflated the evidence pool ~7x (25 -> 191 chunks
+    # per question), which pushed every downstream LLM prompt and blew the
+    # 180s per-question research budget.
     fetch_k = max(top_k, 10) * 3 if top_k is not None else 1024
     try:
         ranks = await settings.retriever.retrieval(
@@ -3795,7 +4698,16 @@ async def _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, k
             1,
             fetch_k,
             0.0,
-            0.3,
+            _NAV_CHUNK_AGG_VEC_WEIGHT,
+            # The candidate pool only has to cover what is returned; it used to
+            # sit at the 64 default while page_size grew with top_k, which
+            # raises once page * page_size exceeds it.
+            rerank_candidates_count=max(_NAV_CHUNK_AGG_POOL, fetch_k),
+            # knn_top_k is left at its default: narrowing it to top_k caps how
+            # many neighbours the vector leg feeds into fusion.
+            # Chunk mode reports raw chunks; compiled rows are served by their
+            # own tools, so they must not be attributed to a document here.
+            must_not={"exists": "compile_kwd"} if _NAV_CHUNK_AGG_EXCLUDE_COMPILED else None,
             **kwargs,
         )
     except Exception:
@@ -3823,15 +4735,19 @@ async def _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, 
     """Run all modes and return the union of doc_ids, with best score per doc."""
     import asyncio as _asyncio
 
+    # With _NAV_TREE_ROUTER="chunk_agg" the navigation_tree leg already reads the
+    # chunk index, so it overlaps the chunk leg below.  The union still dedups by
+    # doc_id and keeps the best score, so the overlap costs one extra retrieval
+    # without affecting the result — mode="all" is for comparison, not production.
     result_lists = await _asyncio.gather(
         _search_layers_nav_docs(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, doc_scope=doc_scope),
         _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_fn, doc_scope=doc_scope),
-        _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, doc_scope=doc_scope),
+        _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope),
         _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope),
         return_exceptions=True,
     )
 
-    doc_scores: dict[str, float] = {}
+    doc_scores: dict[str, dict] = {}
     for result in result_lists:
         if isinstance(result, Exception):
             continue
@@ -3841,11 +4757,13 @@ async def _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, 
         for item in data.get("items", []):
             doc_id = item.get("doc_id", "")
             score = float(item.get("score", 0.0))
-            if doc_id and score > doc_scores.get(doc_id, -1.0):
-                doc_scores[doc_id] = score
+            # Clusters have no doc_id; key by name so they survive dedup.
+            key = doc_id or item.get("_nav", {}).get("name", "")
+            if key and score > doc_scores.get(key, {}).get("score", -1.0):
+                doc_scores[key] = item
 
     items = sorted(
-        ({"doc_id": d, "score": round(s, 4)} for d, s in doc_scores.items()),
+        doc_scores.values(),
         key=lambda x: x["score"],
         reverse=True,
     )
@@ -3853,6 +4771,178 @@ async def _search_layers_all(tenant_id, dataset_id, query, top_k, embd_mdl, kb, 
         items = items[:top_k]
 
     return True, {"mode": "all", "total": len(items), "items": items}
+
+
+async def _enrich_nav_items(dataset_id: str, tenant_id: str, items: list[dict]) -> list[dict]:
+    """Enrich ``{doc_id, score}`` items with full nav node info.
+
+    Items that already carry a ``_nav`` payload (from nav_doc/nav_cluster/
+    navigation_tree search) are shaped in-process.  Items without it (e.g.
+    chunk hits) are batch-fetched from ES by ``doc_id``.
+
+    For every matched doc, its parent cluster is also resolved and prepended
+    to the result set (cluster score = max child score) so the frontend can
+    highlight both the doc and its containing cluster in the tree.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    if not items:
+        return items
+
+    _, kb = KnowledgebaseService.get_by_id(dataset_id)
+    pack = _compiled_index_or_none(kb.tenant_id, dataset_id) if kb else None
+    if pack is None:
+        return items
+    index_nm, _ = pack
+
+    # Phase 1: shape items that already have _nav; collect doc_ids for chunk-only hits.
+    doc_items: list[dict] = []
+    missing_doc_ids: list[str] = []
+    for it in items:
+        nav = it.get("_nav")
+        if nav:
+            is_cluster = nav.get("type") == "nav_cluster"
+            item = {
+                "name": nav.get("name") or "",
+                "description": nav.get("description") or "",
+                "keywords": nav.get("keywords") or [],
+                "entities": nav.get("entities") or [],
+                "graph_content": nav.get("graph_content") or "",
+                "doc_count": nav.get("doc_count") or (0 if is_cluster else 1),
+                "type": "cluster" if is_cluster else "doc",
+                "doc_id": nav.get("doc_id"),
+                "has_children": is_cluster,
+                "score": it.get("score", 0.0),
+            }
+            # Capture parent_kwd for docs so we can fetch the parent cluster.
+            if not is_cluster:
+                pn = nav.get("parent_kwd") or []
+                if isinstance(pn, (list, tuple, set)):
+                    pn = next(iter(pn), "")
+                if pn:
+                    item["_parent_kwd"] = str(pn)
+            doc_items.append(item)
+        else:
+            doc_id = it.get("doc_id", "")
+            if doc_id:
+                missing_doc_ids.append(doc_id)
+            doc_items.append(it)
+
+    # Phase 2: batch-fetch nav_doc rows for chunk-only hits (need parent_kwd).
+    all_doc_ids = missing_doc_ids + [d["doc_id"] for d in doc_items if d.get("type") == "doc" and d.get("doc_id") and not d.get("_parent_kwd")]
+    nav_rows_by_doc_id: dict[str, dict] = {}
+    if all_doc_ids:
+        try:
+            res = settings.docStoreConn.search(
+                select_fields=_NAV_FIELDS,
+                highlight_fields=[],
+                condition={"compile_kwd": [_NAV_COMPILE_KWD], "doc_id": all_doc_ids},
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=0,
+                limit=len(all_doc_ids),
+                index_names=index_nm,
+                knowledgebase_ids=[dataset_id],
+            )
+            field_map = settings.docStoreConn.get_fields(res, _NAV_FIELDS)
+        except Exception:
+            logging.exception("_enrich_nav_items: docStore search failed for kb=%s", dataset_id)
+            field_map = None
+
+        for row in (field_map or {}).values():
+            did = row.get("doc_id") or row.get("name") or ""
+            if isinstance(did, (list, tuple, set)):
+                did = next(iter(did), "")
+            if did:
+                nav_rows_by_doc_id[str(did)] = row
+
+    # Enrich chunk-only items with nav info + parent_kwd.
+    for i, it in enumerate(doc_items):
+        if it.get("type"):
+            continue
+        doc_id = it.get("doc_id", "")
+        row = nav_rows_by_doc_id.get(doc_id)
+        if row:
+            nav_item = _nav_item(row)
+            nav_item["score"] = it.get("score", 0.0)
+            nav_item["_parent_kwd"] = _first_str(row.get("parent_kwd"))
+            doc_items[i] = nav_item
+
+    # Phase 3: get parent_kwd for _nav doc items (search_dataset_nav strips it).
+    nav_doc_names = [d["name"] for d in doc_items if d.get("type") == "doc" and not d.get("_parent_kwd") and d.get("name")]
+    if nav_doc_names:
+        name_field = "name.keyword" if settings.DOC_ENGINE.lower() in {"elasticsearch", "opensearch"} else "name"
+        try:
+            res = settings.docStoreConn.search(
+                select_fields=["name", "parent_kwd"],
+                highlight_fields=[],
+                condition={"compile_kwd": [_NAV_COMPILE_KWD], "type_kwd": ["nav_doc"], name_field: nav_doc_names},
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=0,
+                limit=len(nav_doc_names),
+                index_names=index_nm,
+                knowledgebase_ids=[dataset_id],
+            )
+            field_map = settings.docStoreConn.get_fields(res, ["name", "parent_kwd"])
+        except Exception:
+            field_map = None
+
+        parent_by_name: dict[str, str] = {}
+        for row in (field_map or {}).values():
+            nm = _first_str(row.get("name"))
+            pn = _first_str(row.get("parent_kwd"))
+            if nm and pn:
+                parent_by_name[nm] = pn
+
+        for it in doc_items:
+            if it.get("type") == "doc" and not it.get("_parent_kwd"):
+                it["_parent_kwd"] = parent_by_name.get(it.get("name", ""), "")
+
+    # Phase 4: batch-fetch parent cluster rows.
+    parent_names = {it["_parent_kwd"] for it in doc_items if it.get("_parent_kwd")}
+    cluster_by_name: dict[str, dict] = {}
+    if parent_names:
+        name_field = "name.keyword" if settings.DOC_ENGINE.lower() in {"elasticsearch", "opensearch"} else "name"
+        try:
+            res = settings.docStoreConn.search(
+                select_fields=_NAV_FIELDS,
+                highlight_fields=[],
+                condition={"compile_kwd": [_NAV_COMPILE_KWD], "type_kwd": ["nav_cluster"], name_field: list(parent_names)},
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=0,
+                limit=len(parent_names),
+                index_names=index_nm,
+                knowledgebase_ids=[dataset_id],
+            )
+            field_map = settings.docStoreConn.get_fields(res, _NAV_FIELDS)
+        except Exception:
+            field_map = None
+
+        for row in (field_map or {}).values():
+            nm = _first_str(row.get("name"))
+            if nm:
+                cluster_by_name[nm] = _nav_item(row)
+
+    # Phase 5: build result — clusters (max child score) then docs.
+    cluster_scores: dict[str, float] = {}
+    doc_parent: dict[int, str] = {}
+    for i, it in enumerate(doc_items):
+        pn = it.pop("_parent_kwd", "")
+        doc_parent[i] = pn
+        if pn and pn in cluster_by_name:
+            cluster_scores[pn] = max(cluster_scores.get(pn, 0.0), it.get("score", 0.0))
+
+    clusters = [{**nav_item, "score": round(cluster_scores.get(name, 0.0), 4)} for name, nav_item in cluster_by_name.items()]
+    cluster_names = {c["name"] for c in clusters}
+
+    # A matched doc whose parent cluster is also in the result is already
+    # represented by that cluster's tree — don't surface it as a second,
+    # separate root.  This keeps a search that hits both a cluster and its
+    # child doc down to a single nav_cluster tree instead of two roots.
+    standalone_docs = [it for i, it in enumerate(doc_items) if it.get("type") != "cluster" and doc_parent.get(i) not in cluster_names]
+    return clusters + standalone_docs
 
 
 async def update_wiki_page(
@@ -4031,6 +5121,8 @@ async def update_wiki_page(
 # the dataset Artifact tab's graph view reads exactly this row.
 _WIKI_COMPILE_KWDS = (
     "wiki_map_extract",
+    "wiki_map_state",
+    "wiki_map_state_meta",
     "wiki_reduce_result",
     "wiki_compilation_plan",
     "wiki_page_draft",
@@ -4302,20 +5394,55 @@ async def get_wiki_graph(
       then pull the ``to`` entities. Capped at
       ``_WIKI_GRAPH_MAX_LOADING_ENTITY`` for hub-node safety.
 
-    Returns ``(True, {"entities": [...], "relations": [...]})`` shaped
-    exactly as the frontend ``ForceGraph`` adapter consumes, or
+    Returns ``(True, {"entities": [...], "relations": [...], "total_entities": int,
+    "total_relations": int, "returned_entities": int, "returned_relations": int})``
+    shaped exactly as the frontend ``ForceGraph`` adapter consumes, or
     ``(False, message)`` on authorization failure.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
-    empty = {"entities": [], "relations": []}
+    total_entities = 0
+    total_relations = 0
+
+    def _response(response_entities: list[dict], response_relations: list[dict]) -> dict:
+        return {
+            "entities": response_entities,
+            "relations": response_relations,
+            "total_entities": total_entities,
+            "total_relations": total_relations,
+            "returned_entities": len(response_entities),
+            "returned_relations": len(response_relations),
+        }
 
     pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
     if pack is None:
-        return True, empty
+        return True, _response([], [])
     index_nm, _ = pack
+
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    try:
+        for compile_kwd, count_name in ((_WIKI_GRAPH_ENTITY_KWD, "entities"), (_WIKI_GRAPH_RELATION_KWD, "relations")):
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id"],
+                [],
+                {"compile_kwd": [compile_kwd]},
+                [],
+                OrderByExpr(),
+                0,
+                1,
+                index_nm,
+                [dataset_id],
+            )
+            if count_name == "entities":
+                total_entities = int(settings.docStoreConn.get_total(res) or 0)
+            else:
+                total_relations = int(settings.docStoreConn.get_total(res) or 0)
+    except Exception:
+        logging.exception("get_wiki_graph: graph count failed for kb=%s", dataset_id)
 
     keywords = (keywords or "").strip()
     # Entity budget: caller-overridable, clamped to a sane range so a bad param
@@ -4367,7 +5494,7 @@ async def get_wiki_graph(
                 dataset_id,
                 center_slug,
             )
-            return True, empty
+            return True, _response([], [])
 
         for row in (field_map or {}).values():
             payload = _wiki_entity_payload(row)
@@ -4378,7 +5505,7 @@ async def get_wiki_graph(
         if center_slug not in entities:
             # Caller pointed at a slug that doesn't exist; return empty
             # rather than a confusing partial graph.
-            return True, empty
+            return True, _response([], [])
 
         # Outgoing edges from the centre, capped by MAX_LOADING_ENTITY.
         try:
@@ -4393,7 +5520,7 @@ async def get_wiki_graph(
                 dataset_id,
                 center_slug,
             )
-            return True, {"entities": list(entities.values()), "relations": []}
+            return True, _response(list(entities.values()), [])
 
         to_slugs: list[str] = []
         for row in (rel_map or {}).values():
@@ -4430,10 +5557,7 @@ async def get_wiki_graph(
                 if payload and len(entities) < cap * 2:
                     _add_entity(payload)
 
-        return True, {
-            "entities": list(entities.values()),
-            "relations": relations,
-        }
+        return True, _response(list(entities.values()), relations)
 
     # ---- Flow A — overview, top-weight paged with cumulative budget. ---
     cumulative_weight = 0
@@ -4539,10 +5663,7 @@ async def get_wiki_graph(
             break
         page += 1
 
-    return True, {
-        "entities": list(entities.values()),
-        "relations": relations,
-    }
+    return True, _response(list(entities.values()), relations)
 
 
 async def clear_wiki(dataset_id: str, tenant_id: str):

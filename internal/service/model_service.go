@@ -199,7 +199,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 	}
 	err = m.modelProviderDAO.Create(ctx, dao.DB, tenantModelProvider)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model provider: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model provider: %w", err)
 	}
 	return common.CodeSuccess, nil
 }
@@ -400,7 +400,7 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 			"max_dimension":  model.MaxDimension,
 			"max_batch_size": model.MaxBatchSize,
 			"dimensions":     model.Dimensions,
-			"content_length": model.ContentLength,
+			"context_length": model.ContextLength,
 			"max_output":     model.MaxOutput,
 			"model_types":    model.ModelTypes,
 			"thinking":       model.Thinking,
@@ -535,6 +535,45 @@ type CreateInstanceModelInfo struct {
 	Extra      map[string]interface{} `json:"extra"`
 }
 
+func validateBedrockAPIKeyAuth(providerName, apiKey string) (bool, string, error) {
+	if !strings.EqualFold(providerName, "Bedrock") {
+		return false, apiKey, nil
+	}
+	var rawConfig map[string]json.RawMessage
+	if json.Unmarshal([]byte(apiKey), &rawConfig) != nil {
+		return false, apiKey, nil
+	}
+	var authMode string
+	if json.Unmarshal(rawConfig["auth_mode"], &authMode) != nil || authMode != "bedrock_api_key" {
+		return false, apiKey, nil
+	}
+	var config struct {
+		APIKey string `json:"bedrock_api_key"`
+		Region string `json:"bedrock_region"`
+	}
+	if json.Unmarshal([]byte(apiKey), &config) != nil {
+		return true, apiKey, errors.New("invalid Bedrock API-key configuration")
+	}
+	config.APIKey = strings.TrimSpace(config.APIKey)
+	if config.APIKey == "" {
+		return true, apiKey, errors.New("Bedrock API key must be provided")
+	}
+	config.Region = strings.TrimSpace(config.Region)
+	if config.Region == "" {
+		return true, apiKey, errors.New("AWS region must be provided")
+	}
+	if err := modelModule.ValidateBedrockRegion(config.Region); err != nil {
+		return true, apiKey, err
+	}
+	rawConfig["bedrock_api_key"], _ = json.Marshal(config.APIKey)
+	rawConfig["bedrock_region"], _ = json.Marshal(config.Region)
+	normalizedAPIKey, err := json.Marshal(rawConfig)
+	if err != nil {
+		return true, apiKey, errors.New("invalid Bedrock API-key configuration")
+	}
+	return true, string(normalizedAPIKey), nil
+}
+
 func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenantID, providerIDOrName string) (*entity.TenantModelProvider, error) {
 	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, providerIDOrName)
 	if err == nil && provider.TenantID == tenantID {
@@ -545,6 +584,9 @@ func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenant
 
 func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, providerIDOrName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
+	apiKey = strings.TrimSpace(apiKey)
+	baseURL = strings.TrimSpace(baseURL)
+	region = strings.TrimSpace(region)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -570,10 +612,20 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		apiKey = "x"
 	}
 
-	// Verify the API key against the provider.
-	// Mirrors Python's verify_api_key (provider_api_service.py:596).
-	modelVerifyResult := m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
-
+	bedrockAPIKeyAuth, apiKey, err := validateBedrockAPIKeyAuth(providerName, apiKey)
+	if err != nil {
+		return common.CodeBadRequest, err
+	}
+	if bedrockAPIKeyAuth {
+		if len(modelInfo) == 0 {
+			return common.CodeBadRequest, errors.New("at least one Bedrock model must be selected")
+		}
+		for _, model := range modelInfo {
+			if strings.TrimSpace(model.ModelName) == "" {
+				return common.CodeBadRequest, errors.New("Bedrock model name must be provided")
+			}
+		}
+	}
 	instanceID := utility.GenerateToken()
 
 	extra := make(map[string]string)
@@ -595,25 +647,17 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
-	// Add models with verify result in extra.
+	// Add models to the instance.
 	if len(modelInfo) > 0 {
 		for _, model := range modelInfo {
-			if model.Extra == nil {
-				model.Extra = make(map[string]interface{})
-			}
-			verifyStatus := modelVerifyResult[model.ModelName]
-			if verifyStatus == "" {
-				verifyStatus = entity.ModelVerifyUnknown
-			}
-			model.Extra["verify"] = verifyStatus
 			if err = m.addModelToInstance(ctx, tenantID, providerName, instanceName, model); err != nil {
 				return common.CodeServerError, err
 			}
 		}
-	} else {
+	} else if !bedrockAPIKeyAuth {
 		// model_info not provided — add all factory default models.
 		// Mirrors Python's create_provider_instance
 		// (api/apps/services/provider_api_service.py:506-531).
@@ -624,13 +668,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		factoryProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
 		if factoryProvider != nil {
 			for _, llm := range factoryProvider.Models {
-				verifyStatus := modelVerifyResult[llm.Name]
-				if verifyStatus == "" {
-					verifyStatus = entity.ModelVerifyUnknown
-				}
-				extraMap := map[string]interface{}{
-					"verify": verifyStatus,
-				}
+				extraMap := make(map[string]interface{})
 				if llm.Tools != nil {
 					extraMap["is_tools"] = llm.Tools.Support
 				}
@@ -692,62 +730,10 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
 	return common.CodeSuccess, nil
-}
-
-// verifyProviderAPIKey verifies the API key against the provider by calling
-// the driver's CheckConnection. It returns a map from model name to verify
-// status (success/fail/unknown).
-func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, providerName, apiKey, region, baseURL string, modelInfo []CreateInstanceModelInfo) map[string]string {
-	result := make(map[string]string)
-
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
-	if providerInfo == nil {
-		// Provider not in system pool — mark all models as unknown.
-		for _, model := range modelInfo {
-			result[model.ModelName] = entity.ModelVerifyUnknown
-		}
-		return result
-	}
-
-	apiKey = strings.TrimSpace(apiKey)
-	region = strings.TrimSpace(region)
-	baseURL = strings.TrimSpace(baseURL)
-	if region == "" {
-		region = "default"
-	}
-
-	driver := providerInfo.ModelDriver
-	if strings.EqualFold(providerInfo.Class, "local") {
-		var err error
-		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
-		if err != nil {
-			for _, model := range modelInfo {
-				result[model.ModelName] = entity.ModelVerifyFail
-			}
-			return result
-		}
-	}
-
-	apiConfig := &modelModule.APIConfig{
-		ApiKey:  &apiKey,
-		Region:  &region,
-		BaseURL: &baseURL,
-	}
-
-	verifyErr := driver.CheckConnection(ctx, apiConfig)
-	verifyStatus := entity.ModelVerifySuccess
-	if verifyErr != nil {
-		verifyStatus = entity.ModelVerifyFail
-	}
-
-	for _, model := range modelInfo {
-		result[model.ModelName] = verifyStatus
-	}
-	return result
 }
 
 // addModelToInstance creates a single model under the given provider instance.
@@ -788,7 +774,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 	extraBytes, err := json.Marshal(extraFields)
 	if err != nil {
-		return fmt.Errorf("fail to marshal extra: %s", err.Error())
+		return fmt.Errorf("fail to marshal extra: %w", err)
 	}
 
 	modelID := utility.GenerateToken()
@@ -803,7 +789,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return fmt.Errorf("fail to create model '%s': %s", model.ModelName, err.Error())
+		return fmt.Errorf("fail to create model '%s': %w", model.ModelName, err)
 	}
 
 	return nil
@@ -871,7 +857,6 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 
 func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, providerName, instanceIDOrName, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -1019,6 +1004,20 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		ApiKey:  &apiKey,
 		Region:  &region,
 		BaseURL: &baseURL,
+	}
+
+	// The cloud PaddleOCR provider carries its config inside the api_key JSON
+	// payload (paddleocr_api_url / paddleocr_access_token / paddleocr_algorithm),
+	// mirroring Python's PaddleOCROcrModel. Unwrap the access token and base url
+	// so the OCR driver authenticates with a plain bearer token. Non-JSON
+	// api_keys (e.g. PaddleOCR.local) pass through untouched.
+	if keyBaseURL, keyAccessToken, _ := modelModule.PaddleOCRConfigFromAPIKey(apiKey); keyAccessToken != "" {
+		apiKey = keyAccessToken
+		if baseURL == "" {
+			baseURL = keyBaseURL
+		}
+		apiConfig.ApiKey = &apiKey
+		apiConfig.BaseURL = &baseURL
 	}
 
 	// Mirror Python verify_api_key: verify each model by making a real
@@ -1238,7 +1237,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 	}
 
 	if len(passedTypes) == 0 {
-		return modelVerifyResult, fmt.Errorf("all model verification attempts failed: %w", errors.Join(errs...))
+		return modelVerifyResult, fmt.Errorf("model verification attempts failed: %w", errors.Join(errs...))
 	}
 
 	return modelVerifyResult, nil
@@ -1332,7 +1331,7 @@ func verifyASRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 	if err != nil {
 		return err
 	}
-	if resp == nil || resp.Text == "" {
+	if resp == nil {
 		return fmt.Errorf("ASR model %s returned no transcription", modelName)
 	}
 	return nil
@@ -1594,6 +1593,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 
 	// Mirror Python's ensure_*_from_env calls.
 	_ = m.ensureMineruFromEnv(ctx, tenantID)
+	_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
 	_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
 	_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
 
@@ -1838,8 +1838,13 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
-// env key / default config tables for the three OCR providers.
-// Mirrors common/constants.py MINERU_ENV_KEYS, PADDLEOCR_ENV_KEYS, OPENDATALOADER_ENV_KEYS.
+// ensureMonkeyOCRv2FromEnv mirrors Python's ensure_monkeyocrv2_from_env.
+func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCRv2", "monkeyocrv2-from-env", config)
+}
+
+// Environment-key/default tables mirror the Python OCR provider settings.
 var (
 	mineruEnvKeys = []string{
 		common.EnvMineruAPIServer,
@@ -1872,6 +1877,14 @@ var (
 	}
 	openDataLoaderDefaultConfig = map[string]interface{}{
 		common.EnvOpenDataLoaderAPIServer: "",
+	}
+	monkeyOCRv2EnvKeys = []string{
+		common.EnvMonkeyOCRv2ServerURL,
+		common.EnvMonkeyOCRv2Timeout,
+	}
+	monkeyOCRv2DefaultConfig = map[string]interface{}{
+		common.EnvMonkeyOCRv2ServerURL: "",
+		common.EnvMonkeyOCRv2Timeout:   600,
 	}
 )
 
@@ -1982,7 +1995,10 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 	return nil
 }
 
-func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
+func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
+	apiKey = strings.TrimSpace(apiKey)
+	baseURL = strings.TrimSpace(baseURL)
+	region = strings.TrimSpace(region)
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -2014,12 +2030,10 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		apiKey = "x"
 	}
 
-	// Verify API key if requested.
-	modelVerifyResult := make(map[string]string)
-	if verify {
-		modelVerifyResult = m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
+	_, apiKey, err = validateBedrockAPIKeyAuth(providerName, apiKey)
+	if err != nil {
+		return common.CodeBadRequest, err
 	}
-
 	// Update instance record.
 	instanceUpdates := map[string]interface{}{
 		"api_key": apiKey,
@@ -2051,7 +2065,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	}
 	instanceUpdates["extra"] = string(extraBytes)
 	if err = m.modelInstanceDAO.UpdateByID(ctx, dao.DB, instance.ID, instanceUpdates); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to update instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to update instance: %w", err)
 	}
 
 	// Use the (possibly updated) instance_name for model operations.
@@ -2096,17 +2110,6 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		for _, mdl := range modelInfo {
 			if mdl.ModelName == "" {
 				continue
-			}
-			// Attach verify status.
-			if verify {
-				verifyStatus := modelVerifyResult[mdl.ModelName]
-				if verifyStatus == "" {
-					verifyStatus = entity.ModelVerifyUnknown
-				}
-				if mdl.Extra == nil {
-					mdl.Extra = make(map[string]interface{})
-				}
-				mdl.Extra["verify"] = verifyStatus
 			}
 
 			if existingMdl, exists := existingModelMap[mdl.ModelName]; exists {
@@ -2606,6 +2609,9 @@ func maxTokensFromTenantModelExtra(modelEntity *entity.TenantModel, fallback int
 }
 
 func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Context, providerName, instanceName, modelName *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
+	if providerName == nil || instanceName == nil || modelName == nil {
+		return nil, errors.New("provider name, instance name and model name are required when model id is absent")
+	}
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
@@ -2613,7 +2619,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Con
 	}
 
 	if len(tenants) == 0 {
-		return nil, err
+		return nil, fmt.Errorf("no tenant found for user %s", userID)
 	}
 
 	tenantID := tenants[0].TenantID
@@ -3188,6 +3194,28 @@ func (m *ModelProviderService) AudioSpeech(ctx context.Context, providerName, in
 		if err != nil || info == nil {
 			return nil, common.CodeNotFound, err
 		}
+	} else if providerName == nil && instanceName == nil && modelName == nil {
+		// No explicit model selection: synthesize through the tenant's
+		// default TTS model, mirroring Python's canvas auto_play which
+		// always resolves get_tenant_default_model_by_type(LLMType.TTS).
+		// A missing default surfaces as a typed error ("no default tts
+		// model is set") instead of a nil-pointer panic.
+		driver, name, defaultConfig, _, derr := m.GetTenantDefaultModelByType(ctx, userID, entity.ModelTypeTTS)
+		if derr != nil {
+			return nil, common.CodeNotFound, derr
+		}
+		if modelConfig == nil {
+			modelConfig = &modelModule.TTSConfig{}
+		}
+		var response *modelModule.TTSResponse
+		response, derr = driver.AudioSpeech(ctx, &name, audioContent, defaultConfig, modelConfig, nil)
+		if derr != nil {
+			return nil, common.CodeServerError, derr
+		}
+		if response == nil {
+			return nil, common.CodeServerError, errors.New("empty chat response")
+		}
+		return response, common.CodeSuccess, nil
 	} else {
 		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
 		if err != nil || info == nil {
@@ -3583,9 +3611,9 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 	case entity.ModelTypeImage2Text:
 		return tenant.Img2TxtID, ptrStringValue(tenant.TenantImg2TxtID)
 	case entity.ModelTypeTTS:
-		return *tenant.TTSID, ptrStringValue(tenant.TenantTTSID)
+		return ptrStringValue(tenant.TTSID), ptrStringValue(tenant.TenantTTSID)
 	case entity.ModelTypeOCR:
-		return *tenant.OCRID, ptrStringValue(tenant.TenantOCRID)
+		return ptrStringValue(tenant.OCRID), ptrStringValue(tenant.TenantOCRID)
 	default:
 		return "", ""
 	}
@@ -3604,7 +3632,7 @@ func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID 
 }
 
 // ResolveModelContextLength returns the chat model's effective context window
-// (content_length) in tokens, or 0 when unknown. content_length is the total
+// (context_length) in tokens, or 0 when unknown. context_length is the total
 // context window and max_output is the generation cap; the
 // knowledge_compiler prompt-budget logic needs the context window, not the
 // output cap. modelRef accepts either a tenant model UUID or a
@@ -3612,7 +3640,7 @@ func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID 
 //
 // The resolution is delegated to dao.ResolveModelContentLength so every
 // consumer shares one path: a tenant-configured "max_tokens" override in the
-// tenant_model.extra wins, otherwise the provider catalog's content_length is
+// tenant_model.extra wins, otherwise the provider catalog's context_length is
 // used (D22/D23).
 func (m *ModelProviderService) ResolveModelContextLength(ctx context.Context, tenantID string, modelRef string) (int, error) {
 	if strings.TrimSpace(modelRef) == "" {
@@ -3884,7 +3912,7 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %s", modelName, err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %w", modelName, err)
 	}
 
 	return common.CodeSuccess, nil

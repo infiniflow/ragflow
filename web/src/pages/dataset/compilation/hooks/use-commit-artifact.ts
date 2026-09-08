@@ -28,7 +28,7 @@ export function useCommitArtifact({
     () =>
       z.object({
         comments: z.string().min(1, {
-          message: t('knowledgeDetails.versionContentRequired'),
+          message: t('knowledgeCompilation.versionContentRequired'),
         }),
       }),
     [t],

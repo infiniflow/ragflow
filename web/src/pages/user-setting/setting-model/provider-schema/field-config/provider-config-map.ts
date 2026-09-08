@@ -340,47 +340,25 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { message: 'instanceNameMessage' },
       },
       {
-        name: 'yiyan_ak',
-        label: 'addyiyanAK',
-        type: FormFieldType.Text,
+        name: 'api_key',
+        label: 'apiKey',
+        type: FormFieldType.Password,
         required: true,
-        placeholder: 'yiyanAKMessage',
+        placeholder: 'apiKeyMessage',
         shouldRender: 'hideWhenInstanceExists',
-        validation: { message: 'yiyanAKMessage' },
-      },
-      {
-        name: 'yiyan_sk',
-        label: 'addyiyanSK',
-        type: FormFieldType.Text,
-        required: true,
-        placeholder: 'yiyanSKMessage',
-        shouldRender: 'hideWhenInstanceExists',
-        validation: { message: 'yiyanSKMessage' },
+        validation: { message: 'apiKeyMessage' },
       },
     ],
     verifyTransform: (values) => ({
-      apiKey: {
-        yiyan_ak: values.yiyan_ak,
-        yiyan_sk: values.yiyan_sk,
-      },
+      apiKey: values.api_key,
       modelInfo: [],
     }),
     submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.BaiduYiYan,
-      api_key: {
-        yiyan_ak: values.yiyan_ak,
-        yiyan_sk: values.yiyan_sk,
-      },
+      api_key: values.api_key,
       model_info: [],
     }),
-    echoTransform: (instance) => {
-      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
-      return {
-        yiyan_ak: obj.yiyan_ak ?? '',
-        yiyan_sk: obj.yiyan_sk ?? '',
-      };
-    },
   },
 
   // ============ Fish Audio ============
@@ -592,6 +570,55 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         paddleocr_algorithm: obj.paddleocr_algorithm ?? 'PaddleOCR-VL',
       };
     },
+  },
+
+  // ============ PaddleOCR.local ============
+  [LLMFactory.PaddleOCRLocal]: {
+    llmFactory: LLMFactory.PaddleOCRLocal,
+    title: 'PaddleOCR.local',
+    fields: [
+      {
+        name: 'instance_name',
+        label: 'instanceName',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'instanceNameMessage',
+        tooltip: 'instanceNameTip',
+        validation: { message: 'instanceNameMessage' },
+      },
+      {
+        name: 'paddleocr_api_url',
+        label: 'paddleocrApiUrl',
+        type: 'inputSelect',
+        required: true,
+        placeholder: 'paddleocrApiUrlPlaceholder',
+        validation: { message: 'paddleocrApiUrlMessage' },
+      },
+      {
+        name: 'paddleocr_access_token',
+        label: 'paddleocrAccessToken',
+        type: FormFieldType.Password,
+        required: false,
+        placeholder: 'paddleocrAccessTokenPlaceholder',
+        validation: { message: 'paddleocrAccessTokenMessage' },
+      },
+    ],
+    verifyTransform: (values) => ({
+      apiKey: values.paddleocr_access_token ?? '',
+      baseUrl: values.paddleocr_api_url,
+      modelInfo: [],
+    }),
+    submitTransform: (values) => ({
+      instance_name: values.instance_name,
+      llm_factory: LLMFactory.PaddleOCRLocal,
+      api_key: values.paddleocr_access_token ?? '',
+      base_url: values.paddleocr_api_url,
+      model_info: [],
+    }),
+    echoTransform: (instance) => ({
+      paddleocr_api_url: instance.base_url ?? '',
+      paddleocr_access_token: instance.api_key ?? '',
+    }),
   },
 
   // ============ MinerU ============

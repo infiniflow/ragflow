@@ -14,6 +14,7 @@ import {
   useTraceRunData,
 } from '@/hooks/use-dataset-generate';
 import {
+  ArtifactAlterationKeys,
   DatasetStructureKeys,
   useDeleteDatasetStructure,
   useFetchArtifactAlteration,
@@ -65,13 +66,18 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
 
   const newlyUploaded = alteration?.newly_uploaded ?? 0;
   const removed = alteration?.removed ?? 0;
-  const hasChanges = newlyUploaded > 0 || removed > 0;
+  const retryPageCount = alteration?.retry_page_count ?? 0;
+  const hasChanges = newlyUploaded > 0 || removed > 0 || retryPageCount > 0;
 
   const handleRunEnd = useCallback(() => {
     queryClient.invalidateQueries({
       queryKey: DatasetStructureKeys.kind(knowledgeBaseId, kind),
     });
+    queryClient.invalidateQueries({
+      queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
+    });
   }, [queryClient, knowledgeBaseId, kind]);
+
   useRunEndEffect(structureStatus, handleRunEnd);
 
   const entityOptions = useMemo<SelectWithSearchFlagOptionType[]>(
@@ -148,7 +154,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       <div className="flex justify-between gap-4 px-4 pt-4">
         <div className="flex items-center gap-2">
           <ConfirmDeleteDialog
-            title={t('knowledgeDetails.deleteStructureConfirm', {
+            title={t('knowledgeCompilation.deleteStructureConfirm', {
               name: t(ViewModeLabelKeyMap[kind]),
             })}
             onOk={handleDeleteStructure}
@@ -163,8 +169,9 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
             hasChanges={hasChanges}
             newlyUploaded={newlyUploaded}
             removed={removed}
+            retryPageCount={retryPageCount}
             loading={alterationLoading || runLoading}
-            tooltip={t('knowledgeDetails.updateStructureTooltip', {
+            tooltip={t('knowledgeCompilation.updateStructureTooltip', {
               newlyUploaded,
               removed,
               name: t(ViewModeLabelKeyMap[kind]),
@@ -177,7 +184,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
             options={entityOptions}
             value={selectedEntityName || graphKeywords}
             onChange={handleSelectEntity}
-            placeholder={t('knowledgeDetails.searchEntity')}
+            placeholder={t('knowledgeCompilation.searchEntity')}
             allowClear
             triggerClassName="w-96 max-w-full"
             onNoMatchEnter={handleNoMatchEnter}
@@ -188,12 +195,14 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       <RepresentationRenderer
         template={template}
         highlightNodeId={selectedEntityName || null}
+        totalEntities={data?.total_entities}
+        returnedEntities={data?.returned_entities}
       />
       <UpdateLogSheet
         open={updateSheetOpen}
         onOpenChange={setUpdateSheetOpen}
         data={structureRunData}
-        title={t('knowledgeDetails.updateStructureSheetTitle', {
+        title={t('knowledgeCompilation.updateStructureSheetTitle', {
           name: t(ViewModeLabelKeyMap[kind]),
         })}
       />

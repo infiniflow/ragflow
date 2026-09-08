@@ -24,11 +24,11 @@ from http import HTTPStatus
 
 import numpy as np
 import requests
-from yarl import URL
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.mws_utils import mws_api_url, require_mws_token
+from rag.utils.url_utils import append_api_path, ensure_v1
 
 
 class Base(ABC):
@@ -434,6 +434,7 @@ class BedrockRerank(Base):
 
     def __init__(self, key, model_name, **kwargs):
         import boto3
+        from botocore.utils import validate_region_name
 
         key = json.loads(key)
         mode = key.get("auth_mode")
@@ -442,6 +443,9 @@ class BedrockRerank(Base):
             raise ValueError("Bedrock auth_mode must be provided in the key")
 
         self.bedrock_region = key.get("bedrock_region")
+        if not self.bedrock_region:
+            raise ValueError("Bedrock region must be provided in the key")
+        validate_region_name(self.bedrock_region)
         self.model_name = model_name
         # On-demand foundation-model ARN; works for amazon.rerank-v1:0 / cohere.rerank-*.
         self.model_arn = f"arn:aws:bedrock:{self.bedrock_region}::foundation-model/{self.model_name}"
@@ -470,8 +474,12 @@ class BedrockRerank(Base):
                 aws_secret_access_key=creds["SecretAccessKey"],
                 aws_session_token=creds["SessionToken"],
             )
-        else:  # assume_role: default AWS credential chain
+        elif mode == "assume_role":
             self.client = boto3.client("bedrock-agent-runtime", region_name=self.bedrock_region)
+        elif mode == "bedrock_api_key":
+            raise ValueError("Bedrock API key authentication is not supported for rerank")
+        else:
+            raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         # Truncate to the model token window, then enforce the API's hard 32k-char
@@ -580,10 +588,17 @@ class BaiduYiyanRerank(Base):
     def __init__(self, key, model_name, base_url=None):
         from qianfan.resources import Reranker
 
-        key = json.loads(key)
-        ak = key.get("yiyan_ak", "")
-        sk = key.get("yiyan_sk", "")
-        self.client = Reranker(ak=ak, sk=sk, request_timeout=30)
+        try:
+            key_obj = json.loads(key)
+        except (json.JSONDecodeError, TypeError):
+            key_obj = key
+        if isinstance(key_obj, dict):
+            ak = key_obj.get("yiyan_ak", "")
+            sk = key_obj.get("yiyan_sk", "")
+            self.client = Reranker(ak=ak, sk=sk, request_timeout=30)
+        else:
+            # adapt to one-line api_key
+            self.client = Reranker(access_token=key_obj, request_timeout=30)
         self.model_name = model_name
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
@@ -627,7 +642,6 @@ class QWenRerank(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
     def __init__(self, key, model_name="gte-rerank-v2", **kwargs):
-
         self.api_key = key
         self.model_name = model_name if model_name else "gte-rerank-v2"
         # Remove invalid global timeout, use official SDK per-request timeout parameter
@@ -706,6 +720,8 @@ class HuggingfaceRerank(Base):
 
 
 class GPUStackRerank(Base):
+    """GPUStack reranking adapter."""
+
     _FACTORY_NAME = "GPUStack"
 
     def __init__(self, key, model_name, base_url):
@@ -713,7 +729,7 @@ class GPUStackRerank(Base):
             raise ValueError("url cannot be None")
 
         self.model_name = model_name
-        self.base_url = str(URL(base_url) / "v1" / "rerank")
+        self.base_url = append_api_path(ensure_v1(base_url), "rerank")
         self.headers = {
             "accept": "application/json",
             "content-type": "application/json",

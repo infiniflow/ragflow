@@ -60,6 +60,7 @@ def _load_title_chunker_with_stubs():
 
         common_token_utils = types.ModuleType("common.token_utils")
         common_token_utils.num_tokens_from_string = lambda text: 1
+        common_token_utils.truncate = lambda text, max_len: (text or "")[:max_len]
         _install("common.token_utils", common_token_utils)
 
         rag_nlp = types.ModuleType("rag.nlp")
@@ -247,6 +248,7 @@ def test_title_chunker_preserves_position_int_from_deepdoc_json():
         param.levels = []  # no headings -> all body -> single merged chunk
         param.include_heading_content = False
         param.root_chunk_as_heading = False
+        param.chunk_token_cap = 0  # keep this a pure position regression (no re-split)
 
         process = common_module.ProcessBase(None, "title_chunker", param)
         process._canvas = types.SimpleNamespace(_doc_id="doc", _tenant_id="tenant")

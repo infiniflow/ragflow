@@ -100,12 +100,24 @@ export function replaceThinkToSection(
 ) {
   const pattern = /<think>([\s\S]*?)<\/think>/g;
 
-  const result = text.replace(
-    pattern,
-    `<details class="think"><summary>${summary}</summary>$1</details>`,
+  // An empty think section (the model replied without reasoning) must not
+  // render as a bare "Thinking..." strip above the answer.
+  const result = text.replace(pattern, (_match, thinkContent: string) =>
+    thinkContent.trim().length === 0
+      ? ''
+      : `<details class="think"><summary>${summary}</summary>${thinkContent}</details>`,
   );
 
   return result;
+}
+
+// Strip <think> reasoning blocks so only the answer text remains.
+// The second replace handles a streaming message whose block is still unclosed.
+export function removeThinkSection(text: string = '') {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/<think>[\s\S]*$/, '')
+    .trim();
 }
 
 export function replaceRetrievingToSection(text: string = '') {

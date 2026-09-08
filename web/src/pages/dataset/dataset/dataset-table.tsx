@@ -13,8 +13,6 @@ import {
 } from '@tanstack/react-table';
 import * as React from 'react';
 
-import { ChunkMethodDialog } from '@/components/chunk-method-dialog';
-import { DocumentPipelineDialog } from '@/components/document-pipeline-dialog';
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { RenameDialog } from '@/components/rename-dialog';
@@ -29,13 +27,12 @@ import {
 } from '@/components/ui/table';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { isGoBackend } from '@/utils/backend-runtime';
-import { getExtension } from '@/utils/document-util';
 import { t } from 'i18next';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
 import ProcessLogModal from '../process-log-modal';
+import { ChangeParserDialog } from './change-parser-dialog';
 import { useShowLog } from './hooks';
 import { useChangeDocumentParser } from './use-change-document-parser';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
@@ -191,29 +188,15 @@ export function DatasetTable({
           ></RAGFlowPagination>
         </div>
       </div>
-      {changeParserVisible &&
-        (isGoBackend() ? (
-          <DocumentPipelineDialog
-            parserId={changeParserRecord.chunk_method}
-            pipelineId={changeParserRecord.pipeline_id}
-            parserConfig={changeParserRecord.parser_config}
-            onOk={onChangeParserOk}
-            hideModal={hideChangeParserModal}
-            loading={changeParserLoading}
-          ></DocumentPipelineDialog>
-        ) : (
-          <ChunkMethodDialog
-            documentId={changeParserRecord.id}
-            parserId={changeParserRecord.chunk_method}
-            pipelineId={changeParserRecord.pipeline_id}
-            parserConfig={changeParserRecord.parser_config}
-            documentExtension={getExtension(changeParserRecord.name)}
-            onOk={onChangeParserOk}
-            visible={changeParserVisible}
-            hideModal={hideChangeParserModal}
-            loading={changeParserLoading}
-          ></ChunkMethodDialog>
-        ))}
+      {changeParserVisible && (
+        <ChangeParserDialog
+          record={changeParserRecord}
+          visible={changeParserVisible}
+          onOk={onChangeParserOk}
+          hideModal={hideChangeParserModal}
+          loading={changeParserLoading}
+        />
+      )}
 
       {renameVisible && (
         <RenameDialog

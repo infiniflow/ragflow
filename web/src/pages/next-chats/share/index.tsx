@@ -88,6 +88,7 @@ const ChatContainer = () => {
                       derivedMessages?.length - 1 === i
                     }
                     index={i}
+                    isLast={i === derivedMessages.length - 1}
                     clickDocumentButton={clickDocumentButton}
                     showLikeButton={false}
                     showLoudspeaker={false}

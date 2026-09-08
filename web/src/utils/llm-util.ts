@@ -174,9 +174,11 @@ const modelParamMap: ModelParamMap = {
 };
 
 // API endpoint whitelist - only these endpoints will have tenant parameters added
+// Note: /api/v1/chats is intentionally absent — the chats API normalizes the
+// model name/id pair server-side, so the frontend submits only llm_id /
+// rerank_id and must not have a stale tenant_* id injected back in here.
 const API_WHITELIST = [
   '/api/v1/users/me/models',
-  '/api/v1/chats',
   '/v1/canvas/set',
   '/v1/canvas/setting',
   '/api/v1/searches/',
@@ -199,17 +201,26 @@ export function addTenantParams(data: any, url?: string): any {
     return data;
   }
 
-  const llmList = getCachedLlmList();
-  if (!llmList) return data;
-
   // Handle arrays
   if (Array.isArray(data)) {
     return data.map((item) => addTenantParams(item, url));
   }
 
   const newData = { ...data };
+  const llmList = getCachedLlmList();
 
-  // Iterate through model parameters and add corresponding tenant parameters
+  // Clear the paired tenant ID when a model selection is explicitly cleared.
+  for (const [paramName, tenantParamName] of Object.entries(modelParamMap)) {
+    if (
+      Object.hasOwn(newData, paramName) &&
+      (newData[paramName] === '' || newData[paramName] == null)
+    ) {
+      newData[tenantParamName] = null;
+    }
+  }
+
+  if (!llmList) return newData;
+
   for (const [paramName, tenantParamName] of Object.entries(modelParamMap)) {
     if (newData[paramName]) {
       try {

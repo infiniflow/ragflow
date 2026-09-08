@@ -44,6 +44,28 @@
 
 package dsl
 
+// ResetForNewSession returns a defensive copy of dsl with only
+// conversation-owned state cleared. A fresh session must not inherit the
+// runtime replica's conversation history or execution path, while reusable
+// state such as memory, retrieval results, environment variables, and graph
+// structure is preserved.
+func ResetForNewSession(dsl map[string]any) map[string]any {
+	if dsl == nil {
+		return map[string]any{}
+	}
+	out := deepCopyMap(dsl)
+	out["history"] = []any{}
+	out["path"] = []any{}
+
+	globals, _ := out["globals"].(map[string]any)
+	if globals == nil {
+		globals = map[string]any{}
+		out["globals"] = globals
+	}
+	globals["sys.history"] = []any{}
+	return out
+}
+
 // ResetForCanvas returns a defensive copy of dsl with all per-run
 // state cleared, ready to be persisted back into user_canvas.dsl.
 //

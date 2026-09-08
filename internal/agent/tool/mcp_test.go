@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -44,7 +43,7 @@ func TestMCPToolAdapter_InfoReturnsMCPDescriptor(t *testing.T) {
 	if a.Name() != "search_docs" {
 		t.Errorf("Name=%q, want search_docs", a.Name())
 	}
-	info, err := a.Info(context.Background())
+	info, err := a.Info(t.Context())
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}

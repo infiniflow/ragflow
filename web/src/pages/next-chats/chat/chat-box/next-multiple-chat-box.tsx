@@ -304,6 +304,7 @@ const ChatCard = forwardRef(function ChatCard(
                   reference={messageReferences.get(message) ?? EmptyReference}
                   // clickDocumentButton={clickDocumentButton}
                   index={i}
+                  isLast={i === derivedMessages.length - 1}
                   removeMessageById={removeMessageById}
                   regenerateMessage={regenerateMessage}
                   sendLoading={sendLoading}

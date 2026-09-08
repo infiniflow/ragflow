@@ -52,6 +52,7 @@ const (
 	ParserTypeBook         ParserType = "book"
 	ParserTypeQA           ParserType = "qa"
 	ParserTypeTable        ParserType = "table"
+	ParserTypeGeneral      ParserType = "general"
 	ParserTypeNaive        ParserType = "naive"
 	ParserTypePicture      ParserType = "picture"
 	ParserTypeOne          ParserType = "one"
@@ -72,6 +73,19 @@ const (
 	TaskStatusSchedule TaskStatus = "5"
 )
 
+// DocumentModifiableStatuses are the run statuses in which a document's
+// configuration (parser config, chunk method, pipeline id, name, enabled
+// flag, ...) may be edited via UpdateDatasetDocument. Documents that are
+// running ("1") or scheduled ("5") must not be edited — the in-flight parser
+// would race with the config change and the document can get stuck and become
+// undeletable.
+var DocumentModifiableStatuses = map[TaskStatus]bool{
+	TaskStatusUnstart: true,
+	TaskStatusCancel:  true,
+	TaskStatusDone:    true,
+	TaskStatusFail:    true,
+}
+
 // PipelineTaskType represents the type of pipeline task
 type PipelineTaskType string
 
@@ -82,6 +96,7 @@ const (
 	PipelineTaskTypeGraphRAG PipelineTaskType = "GraphRAG"
 	PipelineTaskTypeMindmap  PipelineTaskType = "Mindmap"
 	PipelineTaskTypeMemory   PipelineTaskType = "Memory"
+	PipelineTaskTypeWiki     PipelineTaskType = "Wiki"
 )
 
 // FileSource represents the source of a file
@@ -110,7 +125,7 @@ type Knowledgebase struct {
 	ChunkNum               int64      `gorm:"column:chunk_num;default:0;index" json:"chunk_num"`
 	SimilarityThreshold    float64    `gorm:"column:similarity_threshold;default:0.2;index" json:"similarity_threshold"`
 	VectorSimilarityWeight float64    `gorm:"column:vector_similarity_weight;default:0.3;index" json:"vector_similarity_weight"`
-	ParserID               string     `gorm:"column:parser_id;size:32;not null;default:naive;index" json:"parser_id"`
+	ParserID               string     `gorm:"column:parser_id;size:32;not null;default:general;index" json:"parser_id"`
 	PipelineID             *string    `gorm:"column:pipeline_id;size:32;index" json:"pipeline_id,omitempty"`
 	ParserConfig           JSONMap    `gorm:"column:parser_config;type:json" json:"parser_config"`
 	Pagerank               int64      `gorm:"column:pagerank;default:0" json:"pagerank"`

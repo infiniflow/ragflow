@@ -36,23 +36,29 @@ import (
 func newChunkerByName(name string, params map[string]any) (runtime.Component, error) {
 	switch name {
 	case ComponentNameTokenChunker:
+		// The DSL contract (shared by the web UI and the Python runtime)
+		// expresses single-chunk mode as TokenChunker delimiter_mode "one";
+		// in Go that behaviour lives in the OneChunker component.
+		if mode, _ := params["delimiter_mode"].(string); mode == "one" {
+			return NewOneChunker(params)
+		}
 		return NewTokenChunker(params)
 	case ComponentNameTitleChunker:
 		return NewTitleChunker(params)
 	case ComponentNameGroupTitleChunker:
 		return NewGroupTitleChunker(params)
+	case ComponentNameManualChunker:
+		return NewManualChunker(params)
 	case ComponentNameHierarchyTitleChunker:
 		return NewHierarchyTitleChunker(params)
 	case ComponentNameQAChunker:
 		return NewQAChunker(params)
 	case ComponentNameOneChunker:
 		return NewOneChunker(params)
-	case ComponentNameTagChunker:
-		return NewTagChunker(params)
 	case ComponentNameTableChunker:
 		return NewTableChunker(params)
-	case ComponentNamePresentationChunker:
-		return NewPresentationChunker(params)
+	case ComponentNamePageChunker:
+		return NewPageChunker(params)
 	default:
 		return nil, fmt.Errorf("chunker: unknown component %q", name)
 	}

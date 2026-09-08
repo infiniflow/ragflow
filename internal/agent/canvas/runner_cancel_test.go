@@ -6,6 +6,7 @@ package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -65,4 +66,72 @@ func TestRunnerParentContextCancelsManagedRun(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("RunFunc was left running after parent context cancellation")
 	}
+}
+
+func TestRunnerEmitsCancelledEvent(t *testing.T) {
+	r := NewRunner()
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	events := r.Run(WithEventContext(ctx, context.Background()), blockingRun(started), "canvas", "session", nil, map[string]any{})
+	<-started
+	cancel()
+
+	select {
+	case ev, ok := <-events:
+		if !ok {
+			t.Fatal("run event channel closed without a cancellation event")
+		}
+		if ev.Type != "cancelled" {
+			t.Fatalf("event type = %q, want cancelled", ev.Type)
+		}
+		var payload CancelledEvent
+		if err := json.Unmarshal([]byte(ev.Data), &payload); err != nil {
+			t.Fatalf("decode cancellation event: %v", err)
+		}
+		if payload.Message != "Agent run was cancelled." {
+			t.Errorf("cancellation message = %q, want default message", payload.Message)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for cancellation event")
+	}
+
+	if _, ok := <-events; ok {
+		t.Fatal("run event channel should close after cancellation event")
+	}
+}
+
+// TestPushEventSkipsCancelledConsumer verifies that an already-cancelled
+// event context prevents delivery even when the destination buffer is writable.
+func TestPushEventSkipsCancelledConsumer(t *testing.T) {
+	eventCtx, cancelEvents := context.WithCancel(context.Background())
+	workflowCtx := WithEventContext(t.Context(), eventCtx)
+	events := make(chan RunEvent, 1)
+	cancelEvents()
+
+	PushEvent(workflowCtx, events, RunEvent{Type: "message"})
+	if len(events) != 0 {
+		t.Fatalf("event channel length = %d, want 0 after consumer cancellation", len(events))
+	}
+}
+
+// TestRunnerDropsEventsAfterConsumerCancellation verifies that a blocked
+// producer is released when the event consumer cancels its context.
+func TestRunnerDropsEventsAfterConsumerCancellation(t *testing.T) {
+	r := NewRunner()
+	runCtx := t.Context()
+	eventCtx, cancelEvents := context.WithCancel(context.Background())
+	runCtx = WithEventContext(runCtx, eventCtx)
+	started := make(chan struct{})
+	run := func(ctx context.Context, root map[string]any) (*CanvasState, error) {
+		close(started)
+		events := root["__events__"].(chan RunEvent)
+		for i := 0; i <= cap(events); i++ {
+			PushEvent(ctx, events, RunEvent{Type: "message"})
+		}
+		return nil, nil
+	}
+	events := r.Run(runCtx, run, "canvas", "session", nil, map[string]any{})
+	<-started
+	cancelEvents()
+	waitClosed(t, events)
 }

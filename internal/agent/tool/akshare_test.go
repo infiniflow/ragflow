@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -137,7 +136,7 @@ func TestAkShare_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewAkShareTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(t.Context())
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}

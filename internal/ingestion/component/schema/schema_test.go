@@ -504,8 +504,8 @@ func TestTokenizerOutputsJSONRoundTrip(t *testing.T) {
 
 func TestExtractorParamDefaults(t *testing.T) {
 	p := ExtractorParam{}.Defaults()
-	if p.FieldName != "" {
-		t.Errorf("default field_name should be empty, got %q", p.FieldName)
+	if p.LLMID != "" {
+		t.Errorf("default llm_id should be empty, got %q", p.LLMID)
 	}
 	if err := p.Validate(); err != nil {
 		t.Fatalf("default ExtractorParam should pass Validate, got %v", err)
@@ -516,8 +516,8 @@ func TestExtractorParamValidate(t *testing.T) {
 	if err := (&ExtractorParam{}).Validate(); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if err := (&ExtractorParam{FieldName: "summary"}).Validate(); err != nil {
-		t.Fatalf("Validate with field_name should pass, got %v", err)
+	if err := (&ExtractorParam{LLMID: "model@provider"}).Validate(); err != nil {
+		t.Fatalf("Validate should pass, got %v", err)
 	}
 }
 
@@ -567,15 +567,3 @@ func TestExtractorOutputsJSONRoundTrip(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func ptrString(s string) *string { return &s }
-
-// TestTokenChunkerParamMergeStrategy locks the UnderCap bool -> MergeStrategy
-// mapping so a future refactor cannot silently flip OVER_CAP/UNDER_CAP without
-// a failing test.
-func TestTokenChunkerParamMergeStrategy(t *testing.T) {
-	if got := (TokenChunkerParam{}).MergeStrategy(); got != MergeOverCap {
-		t.Errorf("default (UnderCap=false) want MergeOverCap, got %v", got)
-	}
-	if got := (TokenChunkerParam{UnderCap: true}).MergeStrategy(); got != MergeUnderCap {
-		t.Errorf("UnderCap=true want MergeUnderCap, got %v", got)
-	}
-}

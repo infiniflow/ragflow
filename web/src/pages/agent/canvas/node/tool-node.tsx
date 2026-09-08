@@ -41,6 +41,7 @@ function InnerToolNode({
         isConnectable={isConnectable}
         isConnectableStart={false}
         className="!bg-accent-primary !size-2"
+        isConnectableEnd={false}
       />
 
       <NodeCollapsible items={[tools, mcpList]}>

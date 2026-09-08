@@ -20,7 +20,47 @@ from playhouse.pool import PooledMySQLDatabase
 
 from common.time_utils import current_timestamp, timestamp_to_date
 
-from api.db.db_models import DB, DataBaseModel
+from api.db.db_models import DB, DataBaseModel, is_gaussdb_compatible_database
+
+
+def _gaussdb_replace_insert_by_id(model, batch, preserve):
+    """Replace Peewee ``ON CONFLICT`` upserts on A/ORA-compatible GaussDB.
+
+    Peewee's PostgreSQL dialect renders
+    ``insert_many(...).on_conflict(conflict_target="id")`` as
+    ``INSERT ... ON CONFLICT (...) DO UPDATE ... RETURNING``. A/ORA-compatible
+    GaussDB rejects that syntax, which breaks APIs such as
+    ``/datasets/{id}/documents/parse`` when they batch-write tasks.
+
+    For ``DB_TYPE=gaussdb`` only, split this replace-by-id operation into two
+    steps:
+
+    * Query the IDs already present in the batch and update those rows using
+      the same columns that Peewee's PostgreSQL path would preserve.
+    * Insert rows with new IDs without generating unsupported ``ON CONFLICT``
+      SQL.
+
+    MySQL retains its on-duplicate-key behavior, and PostgreSQL/OceanBase retain
+    Peewee's existing generation path. SQL for other databases is unchanged.
+    """
+    ids = [data.get("id") for data in batch if data.get("id") is not None]
+    existing_ids = set()
+    if ids:
+        existing_ids = {row[0] for row in model.select(model.id).where(model.id.in_(ids)).tuples()}
+
+    insert_rows = []
+    update_columns = [column for column in preserve if column != "id"]
+    for data in batch:
+        row_id = data.get("id")
+        if row_id in existing_ids:
+            update_payload = {column: data[column] for column in update_columns if column in data}
+            if update_payload:
+                model.update(update_payload).where(model.id == row_id).execute()
+        else:
+            insert_rows.append(data)
+
+    if insert_rows:
+        model.insert_many(insert_rows).execute()
 
 
 @DB.connection_context()
@@ -46,6 +86,13 @@ def bulk_insert_into_db(model, data_source, replace_on_conflict=False):
             if replace_on_conflict:
                 if isinstance(DB, PooledMySQLDatabase):
                     query = query.on_conflict(preserve=preserve)
+                elif is_gaussdb_compatible_database():
+                    # Peewee's PostgreSQL path emits `ON CONFLICT (...) DO
+                    # UPDATE ... RETURNING`, which A/ORA-compatible GaussDB
+                    # rejects. Query existing IDs first, then UPDATE or INSERT
+                    # to preserve the operation without leaking PostgreSQL SQL.
+                    _gaussdb_replace_insert_by_id(model, data_source[i : i + batch_size], preserve)
+                    continue
                 else:
                     query = query.on_conflict(conflict_target="id", preserve=preserve)
             query.execute()

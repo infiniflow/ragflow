@@ -47,9 +47,10 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 
-	parserID := ""
+	parserID := string(entity.ParserTypeGeneral)
 	permission := "me"
 	embeddingModel := ""
+	var language *string
 	pipelineID := req.PipelineID
 
 	if req.Permission != nil {
@@ -59,10 +60,11 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 	if req.ParserID != nil {
-		parserID = strings.TrimSpace(*req.ParserID)
-		if err := validateParserID(parserID); err != nil {
+		canonicalID, err := canonicalDatasetParserID(strings.TrimSpace(*req.ParserID))
+		if err != nil {
 			return nil, common.CodeDataError, err
 		}
+		parserID = canonicalID
 		pipelineID = nil
 	}
 	if req.PipelineID != nil {
@@ -71,12 +73,22 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 			return nil, common.CodeDataError, err
 		}
 		pipelineID = normalizedPipelineID
+		if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
+			parserID = ""
+		}
 	}
 	if req.EmbeddingModel != nil {
 		embeddingModel = strings.TrimSpace(*req.EmbeddingModel)
 		if err = validateDatasetEmbeddingModel(embeddingModel); err != nil {
 			return nil, common.CodeDataError, err
 		}
+	}
+	if req.Language != nil {
+		normalizedLanguage := strings.TrimSpace(*req.Language)
+		if len(normalizedLanguage) > 32 {
+			return nil, common.CodeDataError, errors.New("String should have at most 32 characters")
+		}
+		language = &normalizedLanguage
 	}
 
 	if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
@@ -135,6 +147,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		PipelineID:   pipelineID,
 		ParserConfig: entity.JSONMap(parserConfigMap),
 		Permission:   permission,
+		Language:     language,
 		EmbdID:       embdID,
 		TenantEmbdID: stringPtrIfNotEmpty(tenantEmbdID),
 		Status:       &status,

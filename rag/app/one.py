@@ -20,7 +20,7 @@ import re
 
 from deepdoc.parser.utils import get_text
 from rag.app import naive
-from rag.nlp import rag_tokenizer, tokenize
+from rag.nlp import rag_tokenizer, tokenize, DEFAULT_DELIMITER
 from deepdoc.parser import PdfParser, ExcelParser, HtmlParser
 from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper_naive
 from rag.app.naive import by_plaintext, PARSERS
@@ -65,7 +65,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     Supported file formats are docx, pdf, excel, txt.
     One file forms a chunk which maintains original text order.
     """
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC"})
     eng = lang.lower() == "english"  # is_english(cks)
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
@@ -145,6 +145,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
         sections = excel_parser.html(binary, MAXIMUM_TASK_PAGE_NUMBER)
+        # One parser tokenizes the whole file as a single chunk, so per-cell
+        # coordinates cannot be cited. Keep the HTML text only.
+        sections = [s[0] if isinstance(s, tuple) else s for s in sections]
 
     elif re.search(r"\.(txt|md|markdown|mdx)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")

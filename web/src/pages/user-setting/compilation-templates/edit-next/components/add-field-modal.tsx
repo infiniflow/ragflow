@@ -106,7 +106,7 @@ export function AddFieldModal({
   const handleNoMatchEnter = useCallback(
     (searchValue: string) => {
       if (isDuplicateType(searchValue)) {
-        message.warning(t('setting.fieldTypeExists'));
+        message.warning(t('knowledgeCompilation.fieldTypeExists'));
         return false;
       }
       return true;
@@ -118,7 +118,7 @@ export function AddFieldModal({
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      title={`${initialField ? t('setting.editFieldModalTitle') : t('setting.addFieldModalTitle')} - ${startCase(sectionName)}`}
+      title={`${initialField ? t('knowledgeCompilation.editField') : t('knowledgeCompilation.addField')} - ${startCase(sectionName)}`}
       size="default"
       footer={
         <div className="flex justify-end gap-2">
@@ -141,7 +141,7 @@ export function AddFieldModal({
               rules={{
                 required: getRequiredMessage('type'),
                 validate: (value: string) =>
-                  !isDuplicateType(value) || t('setting.fieldTypeExists'),
+                  !isDuplicateType(value) || t('knowledgeCompilation.fieldTypeExists'),
               }}
             >
               {(field) => (
@@ -154,7 +154,7 @@ export function AddFieldModal({
                     handleTypeChange(value);
                   }}
                   onNoMatchEnter={handleNoMatchEnter}
-                  placeholder={t('setting.selectFieldType')}
+                  placeholder={t('knowledgeCompilation.selectFieldType')}
                   allowCustomValue
                 />
               )}
@@ -174,7 +174,7 @@ export function AddFieldModal({
               }
             >
               <Textarea
-                placeholder={t('setting.descriptionPlaceholder')}
+                placeholder={t('common.descriptionPlaceholder')}
                 rows={key === 'description' ? 4 : 10}
                 resize="vertical"
               />

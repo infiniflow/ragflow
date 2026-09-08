@@ -79,14 +79,85 @@ class MockChatModel:
         pass
 
 
+@pytest.mark.asyncio
+async def test_load_refine_failures_decodes_persisted_page_markers(monkeypatch):
+    store = MagicMock()
+    store.index_exist.return_value = True
+    store.get_fields.return_value = {
+        "row-1": {
+            "slug_kwd": ["entity/alice"],
+            "content_with_weight": json.dumps({"entity_names": ["Alice"], "error": "429"}),
+        },
+        "row-2": {"slug_kwd": "entity/bob", "content_with_weight": "{}"},
+    }
+
+    async def fake_thread_pool_exec(*args, **kwargs):
+        return object()
+
+    monkeypatch.setattr(_wiki.settings, "docStoreConn", store)
+    monkeypatch.setattr(_wiki, "thread_pool_exec", fake_thread_pool_exec)
+
+    failures = await _wiki._wiki_load_refine_failures("tenant", "kb")
+
+    assert failures == {
+        "entity/alice": {"entity_names": ["Alice"], "error": "429"},
+        "entity/bob": {},
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        "**ERROR**: ERROR_MAX_RETRIES - upstream unavailable",
+        "partial response\n**ERROR**: ERROR_SERVER - connection lost",
+        ("**ERROR**: ERROR_GENERIC - invalid request", 0),
+    ],
+)
+async def test_chat_mdl_ask_raises_for_model_error_response(response):
+    chat_mdl = MockChatModel(response)
+
+    with pytest.raises(RuntimeError, match="Wiki LLM call failed"):
+        await _wiki._chat_mdl_ask(chat_mdl, "system", "user")
+
+
+@pytest.mark.asyncio
+async def test_chat_mdl_ask_returns_normal_response():
+    response = "SUMMARY: Apple\n\nApple is a company."
+
+    assert await _wiki._chat_mdl_ask(MockChatModel(response), "system", "user") == response
+
+
+@pytest.mark.asyncio
+async def test_refine_page_does_not_persist_model_error_response():
+    doc_store = make_doc_store()
+
+    with patch("common.settings.docStoreConn", doc_store):
+        with pytest.raises(RuntimeError, match="Wiki LLM call failed"):
+            await _wiki._wiki_refine_page(
+                mode="generate",
+                page_id="entity/Apple",
+                page_title="Apple",
+                existing_page=None,
+                chat_mdl=MockChatModel("**ERROR**: ERROR_MAX_RETRIES - upstream unavailable"),
+                embd_mdl=MockEmbeddingModel(),
+                tenant_id="t1",
+                kb_id="kb1",
+                page_version=0,
+            )
+
+    doc_store.insert.assert_not_called()
+    doc_store.update.assert_not_called()
+
+
 def make_doc_store(search_results: list[dict] | None = None):
     """Create a mock settings.docStoreConn."""
     conn = MagicMock()
     conn.index_exist = MagicMock(return_value=True)
-    conn.search = AsyncMock(return_value={"hits": {"total": {"value": len(search_results or [])}, "hits": search_results or []}})
-    conn.insert = AsyncMock(return_value=None)
-    conn.update = AsyncMock(return_value=None)
-    conn.delete = AsyncMock(return_value=None)
+    conn.search = MagicMock(return_value={"hits": {"total": {"value": len(search_results or [])}, "hits": search_results or []}})
+    conn.insert = MagicMock(return_value=None)
+    conn.update = MagicMock(return_value=None)
+    conn.delete = MagicMock(return_value=None)
     conn.refresh_idx = MagicMock(return_value=True)
 
     def _get_fields(res, fields):
@@ -1099,6 +1170,60 @@ async def test_finalize_auto_links_mentions():
 
 
 @pytest.mark.asyncio
+async def test_finalize_auto_link_prefers_longest_name_without_nested_links():
+    search_results = [
+        {
+            "_source": {
+                "slug_kwd": "entity/虎牢关",
+                "title_kwd": "虎牢关",
+                "md_with_weight": "虎牢关是关隘。",
+                "page_type_kwd": "entity",
+            }
+        },
+        {
+            "_source": {
+                "slug_kwd": "entity/关",
+                "title_kwd": "关",
+                "md_with_weight": "关是称谓。",
+                "page_type_kwd": "entity",
+            }
+        },
+        {
+            "_source": {
+                "slug_kwd": "concept/虎牢关之战",
+                "title_kwd": "虎牢关之战",
+                "md_with_weight": "虎牢关之战发生在关前。",
+                "page_type_kwd": "concept",
+            }
+        },
+    ]
+    doc_store = make_doc_store(search_results)
+
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(f"{_wiki.__name__}._load_canonical_entities", new_callable=AsyncMock, return_value={}),
+    ):
+        await _wiki._wiki_finalize(tenant_id="t1", kb_id="kb1", embd_mdl=None)
+
+    update = next(args[0][1] for args in doc_store.update.call_args_list if args[0][0].get("id") == "concept/虎牢关之战")
+    body = update["md_with_weight"]
+    assert "[虎牢关](artifact/kb1/entity/虎牢关)" in body
+    assert "[关](artifact/kb1/entity/关)前" in body
+    assert "[虎牢[" not in body
+
+
+def test_find_unlinked_mention_skips_raw_and_rendered_links():
+    content = "[[entity/虎牢关|虎牢关]]与[虎牢关](artifact/kb1/entity/虎牢关)，关前"
+    assert _wiki._wiki_find_unlinked_mention(content, "虎牢关") == -1
+    assert _wiki._wiki_find_unlinked_mention(content, "关") == content.index("关前")
+
+
+def test_find_unlinked_mention_skips_unterminated_raw_link():
+    content = "before [[entity/X|Name"
+    assert _wiki._wiki_find_unlinked_mention(content, "Name") == -1
+
+
+@pytest.mark.asyncio
 async def test_finalize_preserves_merged_entity_name_as_link_label():
     """A merged page must not replace a member mention with its page title."""
     search_results = [
@@ -1139,13 +1264,6 @@ async def test_finalize_preserves_merged_entity_name_as_link_label():
 
     update = next(args[0][1] for args in doc_store.update.call_args_list if args[0][0].get("id") == "entity/曹操")
     assert "[治世之能臣，乱世之奸雄](artifact/kb1/entity/五色棒)" in update["md_with_weight"]
-
-
-def test_inside_wikilink():
-    content = "before [[entity/X]] after"
-    assert _wiki._inside_wikilink(content, content.index("entity"))
-    assert not _wiki._inside_wikilink(content, content.index("before"))
-    assert not _wiki._inside_wikilink(content, content.index("after"))
 
 
 def test_extract_outlinks_from_content():
@@ -1270,6 +1388,8 @@ async def test_finalize_links_via_map_relations():
                 "_source": {
                     "doc_id": "map1",
                     "compile_kwd": "wiki_map_extract",
+                    "source_chunk_ids": ["chunk-1"],
+                    "chunk_hash_kwd": "hash-1",
                     "content_with_weight": json.dumps(
                         {
                             "entities": [{"name": "肖亮", "type": "person"}, {"name": "肖立", "type": "person"}],
@@ -1286,7 +1406,12 @@ async def test_finalize_links_via_map_relations():
         patch("common.settings.docStoreConn", doc_store),
         patch(f"{_wiki.__name__}._load_canonical_entities", new_callable=AsyncMock, return_value={}),
     ):
-        await _wiki._wiki_finalize(tenant_id="t1", kb_id="kb1", embd_mdl=None)
+        await _wiki._wiki_finalize(
+            tenant_id="t1",
+            kb_id="kb1",
+            embd_mdl=None,
+            chunk_state={"chunk-1": {"doc_id": "map1", "hash": "hash-1"}},
+        )
 
     update_calls = doc_store.update.call_args_list
     xiaoliang_upd = None
@@ -1904,3 +2029,63 @@ async def test_local_split_preserves_all_members_and_original_slug():
     assert any(page_id.startswith("_new_") for page_id in split)
     assert {entity["entity_name"] for entities in split.values() for entity in entities} == set(names)
     assert "entity-0" in {entity["entity_name"] for entity in split["entity/original"]}
+
+
+@pytest.mark.asyncio
+async def test_reduce_entity_retracts_only_invalidated_chunk_claims():
+    existing_page = {
+        "claims": [
+            {"statement": "old-c1", "source_doc_id": "doc-1", "chunk_ids": ["c1"]},
+            {"statement": "keep-c2", "source_doc_id": "doc-1", "chunk_ids": ["c2"]},
+        ],
+        "source_chunk_ids": ["c1", "c2"],
+    }
+
+    delta = await _wiki._wiki_reduce_entity(
+        entity_name="Alpha",
+        new_claims=[{"statement": "new-c1", "source_doc_id": "doc-1", "chunk_ids": ["c1"]}],
+        existing_page=existing_page,
+        deleted_doc_ids=set(),
+        invalidated_chunk_ids={"c1"},
+        source_doc_ids=["doc-1"],
+        source_chunk_ids=["c1", "c2"],
+    )
+
+    assert delta["action"] == "update"
+    assert [claim["statement"] for claim in delta["retractions"]] == ["old-c1"]
+    assert [claim["statement"] for claim in delta["additions"]] == ["new-c1"]
+    assert delta["source_chunk_ids"] == ["c1", "c2"]
+
+
+@pytest.mark.asyncio
+async def test_reduce_entity_deletes_page_when_last_chunk_is_removed():
+    delta = await _wiki._wiki_reduce_entity(
+        entity_name="Alpha",
+        new_claims=[],
+        existing_page={
+            "claims": [{"statement": "only claim", "source_doc_id": "doc-1", "chunk_ids": ["c1"]}],
+            "source_chunk_ids": ["c1"],
+        },
+        deleted_doc_ids=set(),
+        invalidated_chunk_ids={"c1"},
+    )
+
+    assert delta["action"] == "delete"
+    assert delta["source_chunk_ids"] == []
+    assert [claim["statement"] for claim in delta["retractions"]] == ["only claim"]
+
+
+def test_as_int_accepts_string_doc_store_values():
+    assert _wiki._as_int("7") == 7
+    assert _wiki._as_int(None, 3) == 3
+
+
+def test_contextual_hints_accepts_native_string_relations():
+    hints = _wiki._wiki_build_contextual_hints(
+        "entity/Alpha",
+        {"related_kb_pages_kwd": ["entity/Beta", "concept/Gamma"]},
+        {},
+    )
+
+    assert "[[entity/Beta]] — related" in hints
+    assert "[[concept/Gamma]] — related" in hints
