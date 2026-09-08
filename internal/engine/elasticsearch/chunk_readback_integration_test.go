@@ -60,7 +60,7 @@ func TestInsertChunks_ReadBackSuffixedFields(t *testing.T) {
 		"position_int":         int(2),
 	}
 
-	if _, err := engine.InsertChunks(ctx, []map[string]interface{}{chunk}, baseName, datasetID); err != nil {
+	if _, err := engine.InsertChunks(ctx, []map[string]interface{}{chunk}, baseName, datasetID, ""); err != nil {
 		t.Fatalf("InsertChunks: %v", err)
 	}
 

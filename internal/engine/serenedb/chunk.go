@@ -227,7 +227,7 @@ func prepareChunkRow(chunk map[string]interface{}, defaultKbID string) ([]string
 // InsertChunks upserts chunks by id. Rows are grouped by identical column set
 // and inserted in one multi-row statement per group. Returns an empty slice on
 // success (ids are the caller's own).
-func (e *serenedbEngine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName, datasetID string) ([]string, error) {
+func (e *serenedbEngine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName, datasetID, language string) ([]string, error) {
 	if len(chunks) == 0 {
 		return []string{}, nil
 	}
