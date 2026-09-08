@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -30,6 +29,7 @@ import (
 // without an X-API-Key header.
 func TestKeenable_KeylessPath(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotMethod, gotPath, gotUA, gotTitle, gotAPIKey, gotCT string
 	var gotBody map[string]any
@@ -52,7 +52,7 @@ func TestKeenable_KeylessPath(t *testing.T) {
 	})
 	tool := NewKeenableToolWithEnvBaseURL(helper, func() string { return "https://" + srv.URL[len("http://"):] })
 
-	if _, err := tool.InvokableRun(context.Background(), `{"query":"ragflow"}`); err != nil {
+	if _, err := tool.InvokableRun(ctx, `{"query":"ragflow"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 
@@ -87,6 +87,7 @@ func TestKeenable_KeylessPath(t *testing.T) {
 // the request.
 func TestKeenable_KeyedPath(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotPath, gotAPIKey string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +104,7 @@ func TestKeenable_KeyedPath(t *testing.T) {
 	tool := NewKeenableToolWithAPIKey(helper, "key-xyz")
 	tool.envBaseURL = func() string { return "https://" + srv.URL[len("http://"):] }
 
-	if _, err := tool.InvokableRun(context.Background(),
+	if _, err := tool.InvokableRun(ctx,
 		`{"query":"ragflow","mode":"realtime"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -120,6 +121,7 @@ func TestKeenable_KeyedPath(t *testing.T) {
 // that the result list is truncated to top_n.
 func TestKeenable_SiteAndTopN(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -139,7 +141,7 @@ func TestKeenable_SiteAndTopN(t *testing.T) {
 	})
 	tool := NewKeenableToolWithEnvBaseURL(helper, func() string { return "https://" + srv.URL[len("http://"):] })
 
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"query":"x","site":"example.com","top_n":2}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -171,6 +173,7 @@ func TestKeenable_SiteAndTopN(t *testing.T) {
 // results from the upstream response (the default in the Python tool).
 func TestKeenable_DefaultTopN(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 12 results; default top_n is 10, so we expect 10 in the envelope.
@@ -193,7 +196,7 @@ func TestKeenable_DefaultTopN(t *testing.T) {
 	})
 	tool := NewKeenableToolWithEnvBaseURL(helper, func() string { return "https://" + srv.URL[len("http://"):] })
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"x"}`)
+	out, err := tool.InvokableRun(ctx, `{"query":"x"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -209,9 +212,10 @@ func TestKeenable_DefaultTopN(t *testing.T) {
 
 func TestKeenable_MissingQuery(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewKeenableTool()
-	out, err := tool.InvokableRun(context.Background(), `{}`)
+	out, err := tool.InvokableRun(ctx, `{}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -228,9 +232,10 @@ func TestKeenable_MissingQuery(t *testing.T) {
 // of realtime mode without a configured api_key.
 func TestKeenable_RealtimeRequiresAPIKey(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewKeenableTool()
-	_, err := tool.InvokableRun(context.Background(), `{"query":"x","mode":"realtime"}`)
+	_, err := tool.InvokableRun(ctx, `{"query":"x","mode":"realtime"}`)
 	if err == nil {
 		t.Fatal("expected error for realtime mode without api_key")
 	}
@@ -243,9 +248,10 @@ func TestKeenable_RealtimeRequiresAPIKey(t *testing.T) {
 // up front instead of being forwarded to the upstream.
 func TestKeenable_InvalidMode(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewKeenableTool()
-	_, err := tool.InvokableRun(context.Background(), `{"query":"x","mode":"bogus"}`)
+	_, err := tool.InvokableRun(ctx, `{"query":"x","mode":"bogus"}`)
 	if err == nil {
 		t.Fatal("expected error for invalid mode")
 	}
@@ -302,6 +308,7 @@ func TestKeenable_ResolveBaseURL(t *testing.T) {
 // the test does not depend on the host environment.
 func TestKeenable_BaseURLFromEnv(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -318,7 +325,7 @@ func TestKeenable_BaseURLFromEnv(t *testing.T) {
 		return "https://" + srv.URL[len("http://"):]
 	})
 
-	if _, err := tool.InvokableRun(context.Background(), `{"query":"x"}`); err != nil {
+	if _, err := tool.InvokableRun(ctx, `{"query":"x"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	if gotPath != "/v1/search/public" {
@@ -330,9 +337,10 @@ func TestKeenable_BaseURLFromEnv(t *testing.T) {
 // reported back to the caller instead of being silently sent.
 func TestKeenable_BadBaseURL(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewKeenableToolWithEnvBaseURL(NewHTTPHelper(), func() string { return "http://example.com" })
-	_, err := tool.InvokableRun(context.Background(), `{"query":"x"}`)
+	_, err := tool.InvokableRun(ctx, `{"query":"x"}`)
 	if err == nil {
 		t.Fatal("expected error for non-https non-loopback base URL")
 	}
@@ -345,6 +353,7 @@ func TestKeenable_BadBaseURL(t *testing.T) {
 // is surfaced as an error and an _ERROR envelope.
 func TestKeenable_UpstreamError(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
@@ -356,7 +365,7 @@ func TestKeenable_UpstreamError(t *testing.T) {
 	})
 	tool := NewKeenableToolWithEnvBaseURL(helper, func() string { return "https://" + srv.URL[len("http://"):] })
 
-	out, err := tool.InvokableRun(context.Background(), `{"query":"x"}`)
+	out, err := tool.InvokableRun(ctx, `{"query":"x"}`)
 	if err == nil {
 		t.Fatal("expected error for 5xx response")
 	}
@@ -372,9 +381,10 @@ func TestKeenable_UpstreamError(t *testing.T) {
 // TestKeenable_Info verifies the model-facing metadata.
 func TestKeenable_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewKeenableTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -411,6 +421,7 @@ func TestKeenable_Info(t *testing.T) {
 
 func TestKeenable_ComponentContractReferencesAndOutputs(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewKeenableTool()
 	spec := tool.ComponentSpec()
@@ -430,7 +441,7 @@ func TestKeenable_ComponentContractReferencesAndOutputs(t *testing.T) {
 		"url":         "https://example.com/item",
 		"description": "Fresh search result",
 	}}}
-	chunks, docAggs := tool.BuildReferences(context.Background(), envelope)
+	chunks, docAggs := tool.BuildReferences(ctx, envelope)
 	if len(chunks) != 1 || len(docAggs) != 1 {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}

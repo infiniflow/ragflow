@@ -64,15 +64,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	rediscli "ragflow/internal/engine/redis"
+	"ragflow/internal/service"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	"ragflow/internal/dao"
@@ -131,8 +135,11 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 		return
 	}
 
-	// 2. Reject DataFlow.
-	if cv.CanvasCategory == "DataFlow" {
+	// 2. Reject DataFlow. DataFlow canvases are ingestion pipelines, not
+	// interactive agents, and must not be triggered by an external webhook.
+	// Mirrors Python agent_api.py:1786, which returns
+	// "Dataflow can not be triggered by webhook." for the same case.
+	if cv.CanvasCategory == "dataflow_canvas" {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Dataflow can not be triggered by webhook.")
 		return
 	}
@@ -160,7 +167,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 
 	// 6. Security gate (strict; surfaces all errors as 102).
 	securityCfg := stringMap(webhookCfg["security"])
-	if err := validateWebhookSecurity(securityCfg, c, canvasID); err != nil {
+	if err = validateWebhookSecurity(securityCfg, c, canvasID); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
@@ -224,7 +231,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 		}
 		// Detached background run — does NOT inherit c.Request.Context()
 		// so a client disconnect does not cancel the canvas run.
-		go h.runWebhookDetached(cv, clean, isTest, startTs)
+		go h.runWebhookDetached(c.Request.Context(), cv, clean, isTest, startTs)
 		c.Data(status, contentType, payload)
 		return
 	}
@@ -494,33 +501,75 @@ func renderImmediatelyResponse(cfg map[string]any) (int, string, []byte, error) 
 	return status, "text/plain", []byte(bodyTpl), nil
 }
 
-// runWebhookDetached runs the canvas in the background. It uses
-// context.Background() with a 5-minute timeout (NOT
-// c.Request.Context()) so a client disconnect does NOT cancel the run.
+// runWebhookDetached runs the canvas with a five-minute timeout. It preserves
+// request-scoped context values while intentionally detaching cancellation so
+// a client disconnect does not cancel an Immediate webhook run.
 // Trace events are appended to the redis key when isTest is true.
 //
 // Mirrors python: agent_api.py:2123-2175 (the asyncio.create_task body
 // inside the Immediately branch).
 func (h *AgentHandler) runWebhookDetached(
-	cv *entity.UserCanvas, payload map[string]any, isTest bool, startTs time.Time,
+	parent context.Context, cv *entity.UserCanvas, payload map[string]any, isTest bool, startTs time.Time,
 ) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	sessionID := utility.GenerateToken()
+	parent = service.WithAgentSessionID(parent, sessionID)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Minute)
 	defer cancel()
+	h.runWebhookDetachedWithContext(ctx, cv, payload, isTest, startTs, sessionID)
+}
 
+func (h *AgentHandler) runWebhookDetachedWithContext(
+	ctx context.Context, cv *entity.UserCanvas, payload map[string]any,
+	isTest bool, startTs time.Time, sessionID string,
+) {
 	events, err := h.loader.RunAgentWithWebhook(ctx, cv.UserID, cv.ID, payload)
 	if err != nil {
 		common.Warn("webhook detached run start failed",
 			zap.String("canvas", cv.ID),
 			zap.Error(err))
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			if isTest {
+				event := webhookContextTerminalEvent(ctxErr, sessionID)
+				h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+			}
+			return
+		}
 		if isTest {
-			appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "error", Data: mustJSON(map[string]any{"message": err.Error()})})
+			h.appendWebhookRunTrace(ctx, cv.ID, startTs, webhookStartErrorEvent(err, sessionID))
+			h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
 		}
 		return
 	}
 	for ev := range events {
-		if isTest {
-			appendWebhookTrace(cv.ID, startTs, ev)
+		if ev.SessionID == "" {
+			ev.SessionID = sessionID
 		}
+		terminal := isWebhookTerminalEvent(ev)
+		if terminal {
+			if isTest {
+				event := sanitizeWebhookTraceEvent(ev)
+				if ctx.Err() != nil {
+					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+				} else {
+					h.appendWebhookRunTrace(ctx, cv.ID, startTs, event)
+					h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+				}
+			}
+			return
+		}
+		if isTest {
+			h.appendWebhookRunTrace(ctx, cv.ID, startTs, sanitizeWebhookTraceEvent(ev))
+		}
+	}
+	if err = ctx.Err(); err != nil {
+		if isTest {
+			event := webhookContextTerminalEvent(err, sessionID)
+			h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+		}
+		return
+	}
+	if isTest {
+		h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, true)
 	}
 }
 
@@ -538,23 +587,46 @@ func (h *AgentHandler) runWebhookSync(
 	isTest bool, startTs time.Time,
 ) webhookSyncResult {
 	status := 200
+	sessionID := utility.GenerateToken()
+	ctx = service.WithAgentSessionID(ctx, sessionID)
 	events, err := h.loader.RunAgentWithWebhook(ctx, cv.UserID, cv.ID, payload)
 	if err != nil {
-		if isTest {
-			appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "error", Data: mustJSON(map[string]any{"message": err.Error()})})
-			appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "finished", Data: mustJSON(map[string]any{"success": false})})
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			event := webhookContextTerminalEvent(ctxErr, sessionID)
+			if isTest {
+				h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+			}
+			result, _ := webhookTerminalResult(event, sessionID)
+			return result
 		}
-		return webhookSyncResult{status: http.StatusBadRequest, body: gin.H{
-			"code":    400,
-			"message": err.Error(),
-			"success": false,
-		}}
+		errorEvent := webhookStartErrorEvent(err, sessionID)
+		if isTest {
+			h.appendWebhookRunTrace(ctx, cv.ID, startTs, errorEvent)
+			h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+		}
+		code, message := mapAgentError(err)
+		return newWebhookFailureResult(webhookHTTPStatusForAgentError(code, err), message, sessionID)
 	}
 
 	contents := []string{}
 	for ev := range events {
+		if ev.SessionID == "" {
+			ev.SessionID = sessionID
+		}
+		if result, terminal := webhookTerminalResult(ev, sessionID); terminal {
+			if isTest {
+				event := sanitizeWebhookTraceEvent(ev)
+				if ctx.Err() != nil {
+					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+				} else {
+					h.appendWebhookRunTrace(ctx, cv.ID, startTs, event)
+					h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
+				}
+			}
+			return result
+		}
 		if isTest {
-			appendWebhookTrace(cv.ID, startTs, ev)
+			h.appendWebhookRunTrace(ctx, cv.ID, startTs, ev)
 		}
 		switch ev.Type {
 		case "message":
@@ -583,15 +655,154 @@ func (h *AgentHandler) runWebhookSync(
 			}
 		}
 	}
+	if err = ctx.Err(); err != nil {
+		event := webhookContextTerminalEvent(err, sessionID)
+		if isTest {
+			h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+		}
+		result, _ := webhookTerminalResult(event, sessionID)
+		return result
+	}
 	final := strings.Join(contents, "")
 	if isTest {
-		appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "finished", Data: mustJSON(map[string]any{"success": true})})
+		h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, true)
 	}
 	return webhookSyncResult{status: status, body: gin.H{
-		"message": final,
-		"success": true,
-		"code":    status,
+		"message":    final,
+		"success":    true,
+		"code":       status,
+		"task_id":    sessionID,
+		"session_id": sessionID,
 	}}
+}
+
+func webhookStartErrorEvent(err error, sessionID string) canvas.RunEvent {
+	code, message := mapAgentError(err)
+	payload := canvas.ErrorEvent{Message: message}
+	if code == common.CodeServerError {
+		payload.Kind = canvas.RunErrorKindInternal
+	}
+	return canvas.RunEvent{
+		Type:      "error",
+		SessionID: sessionID,
+		Data:      mustJSON(payload),
+	}
+}
+
+func webhookHTTPStatusForAgentError(code common.ErrorCode, err error) int {
+	switch {
+	case code == common.CodeServerError:
+		return http.StatusInternalServerError
+	case errors.Is(err, service.ErrAgentSessionBusy):
+		return http.StatusConflict
+	case code == common.CodeOperatingError:
+		return http.StatusForbidden
+	default:
+		return http.StatusBadRequest
+	}
+}
+
+func webhookTerminalResult(ev canvas.RunEvent, sessionID string) (webhookSyncResult, bool) {
+	switch ev.Type {
+	case "error":
+		return newWebhookFailureResult(
+			http.StatusInternalServerError,
+			agentRunEventMessage(ev, "Agent run failed."),
+			sessionID,
+		), true
+	case "cancelled":
+		return newWebhookFailureResult(
+			http.StatusConflict,
+			agentRunEventMessage(ev, "Agent run was cancelled."),
+			sessionID,
+		), true
+	case "waiting_for_user":
+		return newWebhookFailureResult(
+			http.StatusConflict,
+			agentWaitingForUserMessage(ev),
+			sessionID,
+		), true
+	default:
+		return webhookSyncResult{}, false
+	}
+}
+
+func newWebhookFailureResult(status int, message, sessionID string) webhookSyncResult {
+	return webhookSyncResult{status: status, body: gin.H{
+		"code":       status,
+		"message":    message,
+		"success":    false,
+		"task_id":    sessionID,
+		"session_id": sessionID,
+	}}
+}
+
+func isWebhookTerminalEvent(ev canvas.RunEvent) bool {
+	switch ev.Type {
+	case "error", "cancelled", "waiting_for_user":
+		return true
+	default:
+		return false
+	}
+}
+
+func webhookContextTerminalEvent(err error, sessionID string) canvas.RunEvent {
+	eventType := "cancelled"
+	message := "Agent run was cancelled."
+	if errors.Is(err, context.DeadlineExceeded) {
+		eventType = "error"
+		message = "Agent run timed out."
+	}
+	return canvas.RunEvent{
+		Type:      eventType,
+		SessionID: sessionID,
+		Data:      mustJSON(canvas.ErrorEvent{Message: message}),
+	}
+}
+
+func sanitizeWebhookTraceEvent(ev canvas.RunEvent) canvas.RunEvent {
+	if ev.Type != "error" {
+		return ev
+	}
+	var payload canvas.ErrorEvent
+	if err := json.Unmarshal([]byte(ev.Data), &payload); err != nil || payload.Kind != canvas.RunErrorKindInternal {
+		return ev
+	}
+	payload.Message = canvas.InternalRunErrorMessage
+	ev.Data = mustJSON(payload)
+	return ev
+}
+
+func (h *AgentHandler) appendWebhookRunTrace(
+	ctx context.Context, agentID string, startTs time.Time, ev canvas.RunEvent,
+) {
+	if h.webhookTraceAppender != nil {
+		h.webhookTraceAppender(ctx, agentID, startTs, ev)
+		return
+	}
+	appendWebhookTrace(ctx, agentID, startTs, ev)
+}
+
+func (h *AgentHandler) appendWebhookFinishedTrace(
+	ctx context.Context, agentID string, startTs time.Time, sessionID string, success bool,
+) {
+	h.appendWebhookRunTrace(ctx, agentID, startTs, canvas.RunEvent{
+		Type:      "finished",
+		SessionID: sessionID,
+		Data: mustJSON(map[string]any{
+			"elapsed_time": time.Since(startTs).Seconds(),
+			"success":      success,
+		}),
+	})
+}
+
+func (h *AgentHandler) appendWebhookInterruptedTrace(
+	ctx context.Context, agentID string, startTs time.Time, sessionID string, event canvas.RunEvent,
+) {
+	traceCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	h.appendWebhookRunTrace(traceCtx, agentID, startTs, event)
+	h.appendWebhookFinishedTrace(traceCtx, agentID, startTs, sessionID, false)
 }
 
 // mustJSON marshals v to a JSON object string. Used by trace appenders;
@@ -603,42 +814,30 @@ func mustJSON(v any) string {
 	return buf.String()
 }
 
+const (
+	webhookTraceTTL        = 10 * time.Minute
+	webhookTraceMaxRetries = 100
+)
+
 // appendWebhookTrace appends a single RunEvent to the per-canvas trace
-// key in Redis. Mirrors python's append_webhook_trace at
-// agent_api.py:2073-2091.
-//
-// The trace key is `webhook-trace-<agent_id>-logs` with a 600 s TTL.
-// Each event is recorded as {"ts": <float>, "event": <type>, ...}.
-// Tests use miniredis to verify the key shape.
-func appendWebhookTrace(agentID string, startTs time.Time, ev canvas.RunEvent) {
+// key in Redis. Each event is recorded as {"ts": <float>, "event": <type>, ...}.
+func appendWebhookTrace(ctx context.Context, agentID string, startTs time.Time, ev canvas.RunEvent) {
 	rdb := rediscli.Get()
-	if rdb == nil {
+	if rdb == nil || rdb.GetClient() == nil {
 		return
 	}
+	if err := appendWebhookTraceWithClient(ctx, rdb.GetClient(), agentID, startTs, ev); err != nil {
+		common.Warn("webhook trace append failed", zap.String("agent_id", agentID), zap.Error(err))
+	}
+}
 
-	key := fmt.Sprintf("webhook-trace-%s-logs", agentID)
-	raw, _ := rdb.Get(key)
-	obj := map[string]any{}
-	if raw != "" {
-		_ = json.Unmarshal([]byte(raw), &obj)
-	}
-	whs, _ := obj["webhooks"].(map[string]any)
-	if whs == nil {
-		whs = map[string]any{}
-		obj["webhooks"] = whs
-	}
-	entryKey := strconv.FormatFloat(float64(startTs.UnixNano())/1e9, 'f', -1, 64)
-	entry, _ := whs[entryKey].(map[string]any)
-	if entry == nil {
-		entry = map[string]any{
-			"start_ts": float64(startTs.UnixNano()) / 1e9,
-			"events":   []any{},
-		}
-		whs[entryKey] = entry
-	}
-	events, _ := entry["events"].([]any)
+func appendWebhookTraceWithClient(
+	ctx context.Context, client *goredis.Client, agentID string, startTs time.Time, ev canvas.RunEvent,
+) error {
+	key := "webhook-trace-" + agentID + "-logs"
+	startSeconds := float64(startTs.UnixNano()) / 1e9
+	entryKey := strconv.FormatFloat(startSeconds, 'f', -1, 64)
 	eventRecord := map[string]any{
-		"ts":    float64(time.Now().UnixNano()) / 1e9,
 		"event": ev.Type,
 	}
 	if ev.Data != "" {
@@ -647,18 +846,63 @@ func appendWebhookTrace(agentID string, startTs time.Time, ev canvas.RunEvent) {
 	if ev.MessageID != "" {
 		eventRecord["message_id"] = ev.MessageID
 	}
-	if ev.TaskID != "" {
-		eventRecord["task_id"] = ev.TaskID
-	}
 	if ev.SessionID != "" {
+		eventRecord["task_id"] = ev.SessionID
 		eventRecord["session_id"] = ev.SessionID
 	}
-	entry["events"] = append(events, eventRecord)
 
-	encoded, err := json.Marshal(obj)
-	if err != nil {
-		common.Warn("webhook trace marshal failed", zap.Error(err))
-		return
+	for range webhookTraceMaxRetries {
+		err := client.Watch(ctx, func(tx *goredis.Tx) error {
+			store := webhookTraceStore{Webhooks: make(map[string]webhookTraceRun)}
+			raw, getErr := tx.Get(ctx, key).Bytes()
+			switch {
+			case getErr == nil:
+				if err := json.Unmarshal(raw, &store); err != nil {
+					return fmt.Errorf("decode webhook trace: %w", err)
+				}
+				if store.Webhooks == nil {
+					store.Webhooks = make(map[string]webhookTraceRun)
+				}
+			case errors.Is(getErr, goredis.Nil):
+			default:
+				return fmt.Errorf("read webhook trace: %w", getErr)
+			}
+
+			run, ok := store.Webhooks[entryKey]
+			if !ok {
+				run = webhookTraceRun{StartTS: startSeconds}
+			}
+			eventTimestamp := float64(time.Now().UnixNano()) / 1e9
+			latestTimestamp := float64(0)
+			for _, existingEvent := range run.Events {
+				latestTimestamp = max(latestTimestamp, webhookTraceEventTimestamp(existingEvent))
+			}
+			if eventTimestamp <= latestTimestamp {
+				eventTimestamp = math.Nextafter(latestTimestamp, math.Inf(1))
+			}
+			eventRecord["ts"] = eventTimestamp
+			run.Events = append(run.Events, eventRecord)
+			store.Webhooks[entryKey] = run
+
+			payload, err := json.Marshal(store)
+			if err != nil {
+				return fmt.Errorf("encode webhook trace: %w", err)
+			}
+			_, err = tx.TxPipelined(ctx, func(pipe goredis.Pipeliner) error {
+				pipe.Set(ctx, key, payload, webhookTraceTTL)
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("write webhook trace: %w", err)
+			}
+			return nil
+		}, key)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, goredis.TxFailedErr) {
+			return err
+		}
 	}
-	rdb.SetObj(key, string(encoded), 600*time.Second)
+	return fmt.Errorf("update webhook trace: transaction failed after %d retries", webhookTraceMaxRetries)
 }

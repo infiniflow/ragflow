@@ -76,8 +76,15 @@ class GitHub(ToolBase, ABC):
                 if self.check_if_canceled("GitHub processing"):
                     return
 
-                self._retrieve_chunks(response["items"], get_title=lambda r: r["name"], get_url=lambda r: r["html_url"], get_content=lambda r: str(r["description"]) + "\n stars:" + str(r["watchers"]))
-                self.set_output("json", response["items"])
+                # the github search api reports rate limits (403/429) and invalid
+                # queries (422) through a "message" field and omits "items"; surface
+                # that instead of raising a cryptic KeyError on the missing key.
+                if "items" not in response:
+                    raise Exception(response.get("message", "GitHub search returned no items."))
+
+                items = response["items"]
+                self._retrieve_chunks(items, get_title=lambda r: r["name"], get_url=lambda r: r["html_url"], get_content=lambda r: str(r["description"]) + "\n stars:" + str(r["watchers"]))
+                self.set_output("json", items)
                 return self.output("formalized_content")
             except Exception as e:
                 if self.check_if_canceled("GitHub processing"):

@@ -513,7 +513,7 @@ func hasClassToken(n *xhtml.Node, want string) bool {
 		if a.Key != "class" {
 			continue
 		}
-		for _, token := range strings.Fields(a.Val) {
+		for token := range strings.FieldsSeq(a.Val) {
 			if token == want {
 				return true
 			}
@@ -563,13 +563,6 @@ func normalizeDuckDuckGoLink(raw string) string {
 
 func normalizeWhitespace(s string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func duckduckgoJSON(env duckduckgoEnvelope) string {

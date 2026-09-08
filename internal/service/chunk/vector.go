@@ -39,8 +39,8 @@ type vectorFetcher interface {
 // This is used by citation insertion (insert_citations) to hydrate chunk
 // vectors on demand, since the main retrieval path skips vector transport.
 //
-// On Infinity / OceanBase the chunks already carry vectors, so we skip
-// the round-trip. On ES we query by chunk ID list.
+// Infinity search results already carry vectors. Other engines hydrate them
+// with a filtered query.
 //
 // Degrades gracefully: if the engine returns an error, zero vectors are
 // returned for all chunk IDs rather than failing the caller.
@@ -55,8 +55,7 @@ func FetchChunkVectors(ctx context.Context, engine vectorFetcher, chunkIDs, tena
 	}
 
 	// Infinity already ships vectors with chunks; no need to fetch.
-	// TODO: OceanBase engine is not yet implemented — add "oceanbase" here when it lands.
-	if engine.GetType() == "infinity" || engine.GetType() == "oceanbase" {
+	if engine.GetType() == "infinity" {
 		for _, cid := range chunkIDs {
 			out[cid] = zeroVector(dim)
 		}

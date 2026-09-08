@@ -30,7 +30,6 @@ const INSTANCE_RESERVED_KEYS = new Set([
   'instance_name',
   'llm_factory',
   'provider_name',
-  'api_base',
   'base_url',
   'region',
   'verify',
@@ -113,20 +112,13 @@ const collectModelExtras = (payload: FlatPayload) => {
 };
 
 export const splitProviderPayload = (payload: FlatPayload): SplitResult => {
-  const {
-    instance_name,
-    llm_factory,
-    base_url,
-    api_base,
-    region,
-    model_info,
-    ...other
-  } = payload;
+  const { instance_name, llm_factory, base_url, region, model_info, ...other } =
+    payload;
   const instancePayload = {
     instance_name: instance_name as string,
     llm_factory: llm_factory as string,
     api_key: collectApiKeyExtras(payload),
-    base_url: (base_url ?? api_base) as string | undefined,
+    base_url: base_url as string | undefined,
     region: (region as string | undefined) || 'default',
     model_info: model_info,
     ...other,

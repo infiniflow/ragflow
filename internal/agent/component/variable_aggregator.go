@@ -32,6 +32,8 @@ import (
 	"fmt"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 const componentNameVariableAggregator = "VariableAggregator"
@@ -158,7 +160,7 @@ func (v *VariableAggregatorComponent) Name() string { return v.name }
 // contract: the engine is allowed to pass the resolved variable list
 // per-invocation. When inputs["variables"] is absent the static param
 // config is used unchanged.
-func (v *VariableAggregatorComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (v *VariableAggregatorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
 		return nil, fmt.Errorf("VariableAggregator: %w", err)
@@ -230,8 +232,8 @@ func (v *VariableAggregatorComponent) Invoke(ctx context.Context, inputs map[str
 }
 
 // Stream mirrors Invoke; VariableAggregator is a single-shot reduce.
-func (v *VariableAggregatorComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := v.Invoke(ctx, inputs)
+func (v *VariableAggregatorComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := v.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

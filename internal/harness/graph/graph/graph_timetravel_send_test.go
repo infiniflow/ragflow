@@ -39,7 +39,7 @@ func TestTimeTravel_MultiStepInject(t *testing.T) {
 	insp := getInspector(t, cg)
 
 	tid := "tt-multi-inject"
-	ctx := context.Background()
+	ctx := t.Context()
 	cfg := &types.RunnableConfig{
 		Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tid},
 	}
@@ -95,7 +95,7 @@ func TestTimeTravel_ForkFromCheckpoint(t *testing.T) {
 	}
 	insp := getInspector(t, cg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Run thread A.
 	tidA := "tt-fork-a"
@@ -161,7 +161,7 @@ func TestChain_SequentialMapReduce(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]any{})
+	result, err := cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestChain_Collector(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]any{})
+	result, err := cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestConditionalEdge_Fallback(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := cg.Invoke(ctx, map[string]any{"target": "unknown"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -289,7 +289,7 @@ func TestReducer_AcrossCheckpoint(t *testing.T) {
 	}
 
 	tid := "reducer-across-cp"
-	ctx := context.Background()
+	ctx := t.Context()
 	cfg := &types.RunnableConfig{
 		Configurable: map[string]interface{}{constants.ConfigKeyThreadID: tid},
 	}
@@ -321,7 +321,7 @@ func TestEngine_50Threads_SharedEngine(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
@@ -366,7 +366,7 @@ func TestBinaryOp_IntAccumulator(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]any{})
+	result, err := cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestEngine_StarTopology(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = cg.Invoke(context.Background(), map[string]any{})
+	_, err = cg.Invoke(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

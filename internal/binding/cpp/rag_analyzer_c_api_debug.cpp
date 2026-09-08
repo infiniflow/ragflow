@@ -112,6 +112,13 @@ void RAGAnalyzer_SetEnablePosition(RAGAnalyzerHandle handle, bool enable_positio
     fprintf(stderr, "[C_API] SetEnablePosition: %d\n", enable_position);
 }
 
+void RAGAnalyzer_SetLanguage(RAGAnalyzerHandle handle, const char* language) {
+    if (!handle || !language) return;
+    RAGAnalyzer* analyzer = static_cast<RAGAnalyzer*>(handle);
+    analyzer->SetLanguage(std::string(language));
+    fprintf(stderr, "[C_API] SetLanguage: %s\n", language);
+}
+
 int RAGAnalyzer_Analyze(RAGAnalyzerHandle handle, const char* text, RAGTokenCallback callback) {
     if (!handle || !text || !callback) return -1;
 

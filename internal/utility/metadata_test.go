@@ -25,14 +25,12 @@ func TestUpdateMetadataTo_NewKeysAdded(t *testing.T) {
 	}
 }
 
-func TestUpdateMetadataTo_ExistingKeyMergedToList(t *testing.T) {
+func TestUpdateMetadataTo_ExistingKeyScalarOverwrite(t *testing.T) {
+	// Python update_metadata_to overwrites a scalar target with the incoming
+	// (merged-in) value rather than list-ifying it.
 	result := UpdateMetadataTo(map[string]any{"author": "Alice"}, map[string]any{"author": "Bob"})
-	tags, ok := result["author"].([]string)
-	if !ok {
-		t.Fatalf("author should be []string, got %T", result["author"])
-	}
-	if len(tags) != 2 || tags[0] != "Alice" || tags[1] != "Bob" {
-		t.Errorf("author = %v, want [Alice Bob]", tags)
+	if result["author"] != "Bob" {
+		t.Errorf("author = %v, want Bob (incoming scalar overwrites)", result["author"])
 	}
 }
 
@@ -57,25 +55,25 @@ func TestUpdateMetadataTo_ListAppend(t *testing.T) {
 	}
 }
 
-func TestUpdateMetadataTo_StringToListMerge(t *testing.T) {
+func TestUpdateMetadataTo_StringScalarOverwrite(t *testing.T) {
+	// Scalar target is overwritten by the incoming scalar (mirrors Python).
 	result := UpdateMetadataTo(
 		map[string]any{"tags": "a"},
 		map[string]any{"tags": "b"},
 	)
-	tags := result["tags"].([]string)
-	if len(tags) != 2 || tags[0] != "a" || tags[1] != "b" {
-		t.Errorf("tags = %v, want [a b]", tags)
+	if result["tags"] != "b" {
+		t.Errorf("tags = %v, want b", result["tags"])
 	}
 }
 
 func TestUpdateMetadataTo_DeduplicateList(t *testing.T) {
 	result := UpdateMetadataTo(
-		map[string]any{"tags": "a"},
-		map[string]any{"tags": "a"},
+		map[string]any{"tags": []string{"a", "b"}},
+		map[string]any{"tags": []string{"b", "c"}},
 	)
 	tags := result["tags"].([]string)
-	if len(tags) != 1 {
-		t.Errorf("tags should be deduplicated: got %v", tags)
+	if len(tags) != 3 {
+		t.Errorf("tags should be deduplicated union: got %v", tags)
 	}
 }
 
@@ -111,5 +109,23 @@ func TestUpdateMetadataTo_SkipOnlyEmptyStringsList(t *testing.T) {
 	)
 	if _, exists := result["tags"]; exists {
 		t.Error("all-empty list should be skipped")
+	}
+}
+
+// TestUpdateMetadataTo_ScalarScalarKeepsExistingPythonParity pins the exact
+// Python update_metadata_to (common/metadata_utils.py:301) scalar semantics for
+// the "re-ingest + same key + both sides scalar" scenario: the loop iterates
+// the second argument (existing_meta), so when the target already holds a
+// scalar the EXISTING (stored) value wins — NOT a [old,new] list. This guards
+// against a regression where scalar+scalar would be list-ified.
+func TestUpdateMetadataTo_ScalarScalarKeepsExistingPythonParity(t *testing.T) {
+	// mergeDocMetadata calls UpdateMetadataTo(new, existing), so existing is
+	// the second argument and must win for a shared scalar key.
+	result := UpdateMetadataTo(
+		map[string]any{"author": "NEWLY_EXTRACTED"},
+		map[string]any{"author": "STORED"},
+	)
+	if result["author"] != "STORED" {
+		t.Errorf("author = %v, want STORED (existing scalar wins, Python parity)", result["author"])
 	}
 }

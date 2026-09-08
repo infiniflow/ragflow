@@ -1,7 +1,6 @@
 package reduction
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/harness/core"
@@ -48,7 +47,7 @@ func TestBeforeModelRewrite_Truncation(t *testing.T) {
 		schema.ToolMessage("This is a very long tool output that should be truncated", "call1"),
 	}
 	state := core.NewReActAgentState(msgs, nil, 10)
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
+	_, newState, err := mw.BeforeModelRewrite(t.Context(), state, nil)
 	if err != nil {
 		t.Fatalf("BeforeModelRewrite: %v", err)
 	}
