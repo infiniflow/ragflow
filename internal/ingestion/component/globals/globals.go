@@ -73,6 +73,38 @@ var GlobalMetadataKeys = []string{
 	DebugChunkCapKey,
 }
 
+// taskIDKey is the CanvasState.Globals slot carrying the ingestion task id of
+// the current run. It is deliberately unexported and absent from
+// GlobalMetadataKeys: the pipeline seeds it once via SetTaskID, so no run
+// input and no component output can overwrite the run's task scope.
+const taskIDKey = "task_id"
+
+// SetTaskID records the ingestion task id of the current run so components can
+// scope per-task bookkeeping (e.g. the per-chunk cache manifest). Called once
+// by the pipeline at run start. No-op when no CanvasState is attached.
+func SetTaskID(ctx context.Context, taskID string) {
+	if taskID == "" {
+		return
+	}
+	if st := canvasStateFromContext(ctx); st != nil {
+		st.SetGlobal(taskIDKey, taskID)
+	}
+}
+
+// TaskID returns the ingestion task id of the current run, or "" when the run
+// has no task scope (headless component tests, or a canvas invoked outside the
+// ingestion pipeline). Callers must treat "" as "skip per-task bookkeeping".
+func TaskID(ctx context.Context) string {
+	if st := canvasStateFromContext(ctx); st != nil {
+		if v, ok := st.GetGlobal(taskIDKey); ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
 // DebugChunkCapKey is the run-input key (seeded into CanvasState.Globals)
 // carrying the canvas-debug (dry-run) chunk cap: when >= 1, a chunker node in
 // a debug run emits at most this many leading chunks for preview. 0 means "no

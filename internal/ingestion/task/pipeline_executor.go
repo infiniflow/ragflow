@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -283,6 +284,13 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 	if err := s.indexWriter.Write(ctx, chunks); err != nil {
 		return nil, err
+	}
+	// Persist succeeded: drop the per-chunk cache entries this task produced so
+	// they don't linger until TTL. PurgeTask is a best-effort cleanup keyed by
+	// the task manifest; it is silent when no manifest exists (e.g. a
+	// Redis-less run, where chunkcache.Client() is nil).
+	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
+		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
 	}
 	if err := s.reconcileDocumentCompiledProducts(ctx, oldCompiledProductIDs, chunks); err != nil {
 		return nil, err

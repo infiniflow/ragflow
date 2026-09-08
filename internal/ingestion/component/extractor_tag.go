@@ -26,8 +26,8 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -611,7 +611,7 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 					case <-ctx.Done():
 						return
 					}
-					llmTagChunk(ctx, db, inv, docsToTag[idx], indexed.allTags, examples, in.llmID, driver, model, apiKey, baseURL, topN, indexed)
+					llmTagChunk(ctx, db, inv, docsToTag[idx], indexed.allTags, examples, in.cache, in.llmID, driver, model, apiKey, baseURL, topN, indexed)
 				}(i)
 			}
 			wg.Wait()
@@ -974,10 +974,13 @@ func getChunkText(chunk map[string]any) string {
 
 	var parts []string
 
-	// 1. Extract main chunk content (prioritize content_with_weight, then text)
-	if v, ok := chunk["content_with_weight"].(string); ok && strings.TrimSpace(v) != "" {
+	// 1. Main chunk content. "text" is preferred because every chunker writes
+	// the authoritative body there and derives the chunk id from it. Legacy
+	// chunks that only carry "content_with_weight" (parser-block output, many
+	// unit tests) are accepted as a fallback so detection/tagging still works.
+	if v, ok := chunk["text"].(string); ok && strings.TrimSpace(v) != "" {
 		parts = append(parts, strings.TrimSpace(v))
-	} else if v, ok := chunk["text"].(string); ok && strings.TrimSpace(v) != "" {
+	} else if v, ok := chunk["content_with_weight"].(string); ok && strings.TrimSpace(v) != "" {
 		parts = append(parts, strings.TrimSpace(v))
 	}
 
@@ -1112,6 +1115,7 @@ func llmTagChunk(
 	chunk map[string]any,
 	allTags map[string]float64,
 	examples []schema.TaggedChunk,
+	cache chunkcache.Store,
 	llmID, driver, model, apiKey, baseURL string,
 	topN int,
 	idx *MemoryTagIndex,
@@ -1120,6 +1124,7 @@ func llmTagChunk(
 	if text == "" {
 		return
 	}
+	chunkID := chunkCacheID(chunk)
 
 	textHash := int64(xxhash.Sum64String(text))
 	var picked []schema.TaggedChunk
@@ -1147,7 +1152,7 @@ func llmTagChunk(
 		}
 	}
 
-	if cached := getTaggerLLMCache(ctx, llmID, text, allTags, picked, topN); cached != nil {
+	if cached := getTaggerLLMCache(ctx, cache, llmID, chunkID, allTags, picked, topN); cached != nil {
 		chunk[common.TAG_FLD] = cached
 		chunk["tag_kwd"] = sortedTagWeightsKeys(cached)
 		return
@@ -1198,7 +1203,7 @@ func llmTagChunk(
 	if len(result) > 0 {
 		chunk[common.TAG_FLD] = result
 		chunk["tag_kwd"] = sortedTagWeightsKeys(result)
-		setTaggerLLMCache(ctx, llmID, text, allTags, picked, topN, result)
+		setTaggerLLMCache(ctx, cache, llmID, chunkID, allTags, picked, topN, result)
 	}
 }
 
@@ -1280,34 +1285,24 @@ func jsonRepairExtract(raw string) map[string]any {
 	return obj
 }
 
-func taggerCacheKey(llmID, text string, allTags map[string]float64, examples []schema.TaggedChunk, topN int) string {
-	hasher := xxhash.New()
-	hasher.Write([]byte(llmID))
-	hasher.Write([]byte("\x00"))
-	hasher.Write([]byte(text))
-	hasher.Write([]byte("\x00"))
-	tagNames := sortedTagNames(allTags)
-	hasher.Write([]byte(strings.Join(tagNames, ",")))
-	hasher.Write([]byte("\x00"))
+// taggerCacheKey builds the cache key for one chunk's LLM tagging. Keyed on the
+// chunk id rather than the chunk text, like the other per-chunk caches. The tag
+// set, the few-shot examples and topN also participate: none of them is derived
+// from the chunk, so a change in any of them yields different tags.
+func taggerCacheKey(llmID, chunkID string, allTags map[string]float64, examples []schema.TaggedChunk, topN int) string {
+	config := make([]string, 0, 2*len(examples)+2)
+	config = append(config, strings.Join(sortedTagNames(allTags), ","))
 	for _, ex := range examples {
-		hasher.Write([]byte(ex.Content))
-		hasher.Write([]byte("\x00"))
 		tagsJSON, _ := json.Marshal(ex.TagWeights)
-		hasher.Write(tagsJSON)
-		hasher.Write([]byte("\x00"))
+		config = append(config, ex.Content, string(tagsJSON))
 	}
-	hasher.Write([]byte(fmt.Sprintf("%d", topN)))
-	return fmt.Sprintf("tagger:%x", hasher.Sum64())
+	config = append(config, strconv.Itoa(topN))
+	return chunkcache.Key("tagger", llmID, chunkID, config...)
 }
 
-func getTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[string]float64, examples []schema.TaggedChunk, topN int) map[string]int {
-	client := redis.Get()
-	if client == nil {
-		return nil
-	}
-	key := taggerCacheKey(llmID, text, allTags, examples, topN)
-	data, err := client.Get(ctx, key)
-	if err != nil || data == "" {
+func getTaggerLLMCache(ctx context.Context, store chunkcache.Store, llmID, chunkID string, allTags map[string]float64, examples []schema.TaggedChunk, topN int) map[string]int {
+	data, hit := chunkcache.Get(ctx, store, taggerCacheKey(llmID, chunkID, allTags, examples, topN))
+	if !hit {
 		return nil
 	}
 	var result map[string]int
@@ -1317,20 +1312,15 @@ func getTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[stri
 	return result
 }
 
-func setTaggerLLMCache(ctx context.Context, llmID, text string, allTags map[string]float64, examples []schema.TaggedChunk, topN int, result map[string]int) {
+func setTaggerLLMCache(ctx context.Context, store chunkcache.Store, llmID, chunkID string, allTags map[string]float64, examples []schema.TaggedChunk, topN int, result map[string]int) {
 	if result == nil {
 		return
 	}
-	client := redis.Get()
-	if client == nil {
-		return
-	}
-	key := taggerCacheKey(llmID, text, allTags, examples, topN)
 	data, err := json.Marshal(result)
 	if err != nil {
 		return
 	}
-	client.Set(ctx, key, string(data), 24*time.Hour)
+	chunkcache.Set(ctx, store, taggerCacheKey(llmID, chunkID, allTags, examples, topN), string(data))
 }
 
 func sortedTagNames(allTags map[string]float64) []string {

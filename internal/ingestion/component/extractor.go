@@ -43,7 +43,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cespare/xxhash/v2"
 	eschema "github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -51,9 +50,9 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -509,6 +508,11 @@ type extractorInputs struct {
 	// (or the chat-model default) decides. The keyword/question helpers set it to
 	// extractorTemperature (0.2) to mirror generator.py.
 	temperature *float64
+	// cache memoises per-chunk extraction results so a resumed run (which
+	// re-executes every stage after the Parser checkpoint) pays no LLM cost
+	// for chunks it already extracted. nil disables caching: a Redis-less
+	// deployment, or a test that wants every call to reach the model.
+	cache chunkcache.Store
 }
 
 // resolveInputs overlays per-call inputs on top of the
@@ -518,6 +522,7 @@ type extractorInputs struct {
 func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInputs {
 	out := extractorInputs{
 		llmID: c.Param.LLMID,
+		cache: chunkcache.Client(),
 	}
 	if inputs == nil {
 		return out
@@ -637,26 +642,20 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	}, nil
 }
 
-// extractorLLMCacheKey builds a Redis key for textual extractions.
-func extractorLLMCacheKey(taskType, modelID, systemPrompt, text string) string {
-	h := xxhash.New()
-	h.WriteString(taskType)
-	h.WriteString("\x00")
-	h.WriteString(modelID)
-	h.WriteString("\x00")
-	h.WriteString(systemPrompt)
-	h.WriteString("\x00")
-	h.WriteString(text)
-	return fmt.Sprintf("kc:extractor:%s:%x", taskType, h.Sum64())
+// extractorLLMCacheKey builds the cache key for one textual extraction. The
+// chunk id — not the chunk text — carries the chunk's identity: it already
+// derives from the text (component.ChunkID) and is the same handle the persist
+// stage uses, so the two stages agree on what "the same chunk" is. Returns ""
+// when the chunk has no id, which makes the cache a no-op for that chunk.
+func extractorLLMCacheKey(taskType, modelID, systemPrompt, chunkID string) string {
+	return chunkcache.Key("extractor:"+taskType, modelID, chunkID, systemPrompt)
 }
 
-// callTextCached wraps callText with a 24-hour Redis cache.
-func (c *ExtractorComponent) callTextCached(ctx context.Context, db *gorm.DB, in extractorInputs, taskType, systemPrompt, chunkText string) (string, error) {
-	key := extractorLLMCacheKey(taskType, in.llmID, systemPrompt, chunkText)
-	if client := redis.Get(); client != nil {
-		if data, err := client.Get(ctx, key); err == nil && data != "" {
-			return data, nil
-		}
+// callTextCached wraps callText with the per-chunk result cache.
+func (c *ExtractorComponent) callTextCached(ctx context.Context, db *gorm.DB, in extractorInputs, taskType, systemPrompt, chunkText, chunkID string) (string, error) {
+	key := extractorLLMCacheKey(taskType, in.llmID, systemPrompt, chunkID)
+	if cached, hit := chunkcache.Get(ctx, in.cache, key); hit {
+		return cached, nil
 	}
 	res, err := c.callText(ctx, db, in, systemPrompt, chunkText)
 	if err != nil {
@@ -664,9 +663,7 @@ func (c *ExtractorComponent) callTextCached(ctx context.Context, db *gorm.DB, in
 	}
 	res = cleanExtractionResult(res)
 	if res != "" && !strings.Contains(res, "**ERROR**") {
-		if client := redis.Get(); client != nil {
-			client.Set(ctx, key, res, 24*time.Hour)
-		}
+		chunkcache.Set(ctx, in.cache, key, res)
 	}
 	return res, nil
 }
@@ -691,8 +688,9 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	kwIn := extractorInputs{
 		llmID:       in.llmID,
 		temperature: &kwTemp,
+		cache:       in.cache,
 	}
-	resultStr, err := c.callTextCached(ctx, db, kwIn, "keywords", systemPrompt, chunkText)
+	resultStr, err := c.callTextCached(ctx, db, kwIn, "keywords", systemPrompt, chunkText, chunkCacheID(ck))
 	if err != nil {
 		return err
 	}
@@ -731,8 +729,9 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	qIn := extractorInputs{
 		llmID:       in.llmID,
 		temperature: &qTemp,
+		cache:       in.cache,
 	}
-	resultStr, err := c.callTextCached(ctx, db, qIn, "questions", systemPrompt, chunkText)
+	resultStr, err := c.callTextCached(ctx, db, qIn, "questions", systemPrompt, chunkText, chunkCacheID(ck))
 	if err != nil {
 		return err
 	}
@@ -777,8 +776,9 @@ func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in
 	sumIn := extractorInputs{
 		llmID:       in.llmID,
 		temperature: &sumTemp,
+		cache:       in.cache,
 	}
-	resultStr, err := c.callTextCached(ctx, db, sumIn, "summary", systemPrompt, chunkText)
+	resultStr, err := c.callTextCached(ctx, db, sumIn, "summary", systemPrompt, chunkText, chunkCacheID(ck))
 	if err != nil {
 		return err
 	}
@@ -798,10 +798,7 @@ func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.D
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(in.chunks))
 	for i, ck := range in.chunks {
 		i, ck := i, ck
-		text, _ := ck["content_with_weight"].(string)
-		if strings.TrimSpace(text) == "" {
-			text, _ = ck["text"].(string)
-		}
+		text := extractorChunkText(ck)
 		fn := func() error {
 			if err := c.runAutoKeywords(ctx, db, in, ck, text); err != nil {
 				return fmt.Errorf("chunk %d keywords: %w", i, err)
@@ -826,10 +823,7 @@ func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *go
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(in.chunks))
 	for i, ck := range in.chunks {
 		i, ck := i, ck
-		text, _ := ck["content_with_weight"].(string)
-		if strings.TrimSpace(text) == "" {
-			text, _ = ck["text"].(string)
-		}
+		text := extractorChunkText(ck)
 		fn := c.remainingExtractionJob(ctx, db, in, i, ck, text)
 		f, err := extractorPool.Submit(ctx, fn)
 		if err != nil {
@@ -911,20 +905,21 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	}
 	schemaStr := string(schemaJSON)
 
-	// LLM cache (mirrors Python get_llm_cache/set_llm_cache in
-	// task_executor.py:543/550 gen_metadata_task): identical (model + chunk
-	// text + schema) extractions are served from Redis within a 24h window so
-	// repeated runs / identical chunks don't re-pay the LLM call.
-	// Best-effort: a missing Redis client or any cache error falls through to
-	// a live call instead of failing the extraction.
+	// Per-chunk result cache: identical (model + chunk + schema) extractions
+	// are served from the cache so a resumed run — which re-executes every
+	// stage after the Parser checkpoint — doesn't re-pay the LLM call.
+	// Best-effort: a missing client or any cache error falls through to a live
+	// call instead of failing the extraction.
+	chunkID := chunkCacheID(ck)
 	var parsed map[string]any
-	if cached, hit := getMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText); hit {
+	if cached, hit := getMetadataLLMCache(ctx, in, schemaStr, chunkID); hit {
 		parsed = cached
 	} else {
 		metaTemp := extractorTemperature
 		metaIn := extractorInputs{
 			llmID:       in.llmID,
 			temperature: &metaTemp,
+			cache:       in.cache,
 		}
 		systemPrompt := fmt.Sprintf(autoMetadataPrompt, schemaStr)
 		parsed, err = c.callStructured(ctx, db, metaIn, systemPrompt, chunkText)
@@ -935,7 +930,7 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 			// Non-JSON or empty response — nothing to extract, not an error.
 			return nil
 		}
-		setMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText, parsed)
+		setMetadataLLMCache(ctx, in, schemaStr, chunkID, parsed)
 	}
 	// Merge into the chunk metadata map, preserving existing keys.
 	var meta map[string]any
@@ -957,53 +952,63 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	return nil
 }
 
-// metadataLLMCacheTTL mirrors Python get_llm_cache/set_llm_cache 24h TTL.
-const metadataLLMCacheTTL = 24 * time.Hour
+// extractorChunkText resolves the body an extraction is run against.
+//
+// "text" wins over "content_with_weight": every chunker writes the
+// authoritative body to "text" (and derives the chunk id from it), while
+// "content_with_weight" may survive as pass-through metadata from an upstream
+// parser block. Preferring the latter would send the LLM a different body than
+// the one the chunk id — and therefore the cache entry — stands for. This is
+// the same priority the Tokenizer applies (normalizeChunkTextFallback) and the
+// chunkers apply (itemText). The fallback keeps a chunk that only carries the
+// structured field extractable rather than sending an empty body.
+func extractorChunkText(ck map[string]any) string {
+	if v, _ := ck["text"].(string); strings.TrimSpace(v) != "" {
+		return v
+	}
+	v, _ := ck["content_with_weight"].(string)
+	return v
+}
 
-// metadataLLMCacheKey builds a Redis key from (llm id, chunk text, "metadata",
-// schema), mirroring Python get_llm_cache's xxh64(llmnm + txt + history + genconf).
-func metadataLLMCacheKey(llmID, schemaJSON, chunkText string) string {
-	h := xxhash.New()
-	h.WriteString(llmID)
-	h.WriteString("\x00")
-	h.WriteString(chunkText)
-	h.WriteString("\x00")
-	h.WriteString("metadata")
-	h.WriteString("\x00")
-	h.WriteString(schemaJSON)
-	return fmt.Sprintf("kc:meta:%x", h.Sum64())
+// chunkCacheID returns the chunk's stable per-chunk id, assigned by the chunker
+// (component.ChunkID over doc id + text). Returns "" when the chunk carries no
+// id — e.g. chunks that reached the Extractor without passing a chunker — in
+// which case callers must skip the cache instead of sharing one bucket across
+// every unidentified chunk.
+func chunkCacheID(ck map[string]any) string {
+	id, _ := ck["id"].(string)
+	return id
+}
+
+// metadataLLMCacheKey builds the cache key for one metadata extraction. The
+// schema is part of the key so editing the field set invalidates results
+// extracted against the previous one.
+func metadataLLMCacheKey(llmID, schemaJSON, chunkID string) string {
+	return chunkcache.Key("meta", llmID, chunkID, schemaJSON)
 }
 
 // getMetadataLLMCache returns a cached extraction for the given chunk, or
-// (nil, false) on miss / Redis unavailable / decode error. Best-effort.
-func getMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText string) (map[string]any, bool) {
-	client := redis.Get()
-	if client == nil {
-		return nil, false
-	}
-	data, err := client.Get(ctx, metadataLLMCacheKey(llmID, schemaJSON, chunkText))
-	if err != nil || data == "" {
+// (nil, false) on miss / cache unavailable / decode error. Best-effort.
+func getMetadataLLMCache(ctx context.Context, in extractorInputs, schemaJSON, chunkID string) (map[string]any, bool) {
+	data, hit := chunkcache.Get(ctx, in.cache, metadataLLMCacheKey(in.llmID, schemaJSON, chunkID))
+	if !hit {
 		return nil, false
 	}
 	var parsed map[string]any
-	if err = json.Unmarshal([]byte(data), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(data), &parsed); err != nil {
 		return nil, false
 	}
 	return parsed, true
 }
 
-// setMetadataLLMCache stores an extraction result for 24h. Best-effort: a
-// missing Redis client or marshal error is silently ignored.
-func setMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText string, parsed map[string]any) {
-	client := redis.Get()
-	if client == nil {
-		return
-	}
+// setMetadataLLMCache stores an extraction result. Best-effort: an unavailable
+// cache or a marshal error is silently ignored.
+func setMetadataLLMCache(ctx context.Context, in extractorInputs, schemaJSON, chunkID string, parsed map[string]any) {
 	data, err := json.Marshal(parsed)
 	if err != nil {
 		return
 	}
-	client.Set(ctx, metadataLLMCacheKey(llmID, schemaJSON, chunkText), string(data), metadataLLMCacheTTL)
+	chunkcache.Set(ctx, in.cache, metadataLLMCacheKey(in.llmID, schemaJSON, chunkID), string(data))
 }
 
 // callRaw runs one chat call against the LLM (per chunk in the normal path)

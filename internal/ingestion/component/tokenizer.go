@@ -93,6 +93,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -382,7 +383,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	// so embedding is skipped there — debug only exercises parse+chunk and
 	// must stay side-effect free.
 	if shouldHaveEmbedding(c.param.SearchMethod, kbID) {
-		chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, embeddingModel, name, chunks)
+		chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, embeddingModel, name, chunks, chunkcache.Client())
 		if err != nil {
 			return nil, err
 		}
@@ -408,7 +409,7 @@ func copyPipelineControlValues(output, input map[string]any) {
 	}
 }
 
-func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, embeddingModel, name string, chunks []schema.ChunkDoc) ([]schema.ChunkDoc, int, error) {
+func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, embeddingModel, name string, chunks []schema.ChunkDoc, store chunkcache.Store) ([]schema.ChunkDoc, int, error) {
 	if len(chunks) == 0 {
 		return chunks, 0, nil
 	}
@@ -429,21 +430,46 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		return nil, 0, fmt.Errorf("tokenizer: embedding requested but encoder resolution returned nil")
 	}
 
+	// store may be nil (no redis configured / unit test); cache lookups then
+	// degrade to a no-op and every chunk is embedded normally.
+
+	// resolved[i] holds the content embedding vector for chunks[i] once known:
+	// either served from the per-chunk cache (isHit) or produced by the batch
+	// Encode below. nil means the chunk produced no embeddable text.
+	type resolvedVec struct {
+		content []float64
+		isHit   bool
+	}
+	resolved := make([]*resolvedVec, len(chunks))
 	texts := make([]string, 0, len(chunks))
 	pairs := make([]int, 0, len(chunks))
 	for i, ck := range chunks {
 		raw := concatFields(ck, c.param.Fields)
 		txt := htmlTableRE.ReplaceAllString(raw, " ")
 		txt = strings.TrimSpace(txt)
-		trunc := truncateForEmbedding(txt, embedder.MaxTokens())
 		if txt == "" {
 			continue
 		}
+		// Per-chunk embedding cache: identical (model, chunk) pairs reuse the
+		// previous content vector, skipping the LLM embed round-trip on resume.
+		if chunkID, ok := ck.GetExtraString("id"); ok && store != nil {
+			if cached, hit := chunkcache.Get(ctx, store, chunkcache.Key("emb", embeddingModel, chunkID)); hit {
+				var vec []float64
+				if err := json.Unmarshal([]byte(cached), &vec); err == nil && len(vec) > 0 {
+					resolved[i] = &resolvedVec{content: vec, isHit: true}
+					continue
+				}
+			}
+		}
+		trunc := truncateForEmbedding(txt, embedder.MaxTokens())
 		texts = append(texts, trunc)
 		pairs = append(pairs, i)
 	}
 	if len(texts) == 0 {
-		return chunks, 0, nil
+		// Nothing to embed — but cache hits may still need to be written through.
+		if store == nil {
+			return chunks, 0, nil
+		}
 	}
 
 	trimmedName := strings.TrimSpace(name)
@@ -502,16 +528,35 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	}
 
 	titleWeight := c.param.FilenameEmbdWeight
+	// Wire freshly embedded content into the resolved slice; cache hits already
+	// carry their vector from the loop above.
 	for i, idx := range pairs {
-		merged := append([]float64(nil), contentResults[i].Vector...)
+		resolved[idx] = &resolvedVec{content: contentResults[i].Vector}
+	}
+	for i, re := range resolved {
+		if re == nil {
+			continue
+		}
+		merged := append([]float64(nil), re.content...)
 		if hasTitleVec {
-			merged, err = mergeEmbeddingVectors(titleVec, contentResults[i].Vector, titleWeight)
+			merged, err = mergeEmbeddingVectors(titleVec, re.content, titleWeight)
 			if err != nil {
 				return nil, 0, fmt.Errorf("tokenizer: merge vectors: %w", err)
 			}
 		}
-		if err := chunks[idx].SetExtraValue(fmt.Sprintf("q_%d_vec", len(merged)), merged); err != nil {
+		if err := chunks[i].SetExtraValue(fmt.Sprintf("q_%d_vec", len(merged)), merged); err != nil {
 			return nil, 0, fmt.Errorf("tokenizer: vector marshal: %w", err)
+		}
+		// Backfill the per-chunk cache only for freshly embedded content; cache
+		// hits are left untouched. The key intentionally omits title weighting:
+		// the content vector is title-weight independent, so identical chunk
+		// content reuses across runs even when only the filename weight changes.
+		if !re.isHit {
+			if chunkID, ok := chunks[i].GetExtraString("id"); ok && store != nil {
+				if b, merr := json.Marshal(re.content); merr == nil {
+					chunkcache.Set(ctx, store, chunkcache.Key("emb", embeddingModel, chunkID), string(b))
+				}
+			}
 		}
 	}
 	return chunks, tokenCount, nil
