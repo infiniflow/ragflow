@@ -1152,27 +1152,11 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 
-	if req.Page == nil {
-		defaultPage := 1
-		req.Page = &defaultPage
-	}
-	if req.PageSize == nil && req.Size == nil {
-		defaultSize := 30
-		req.PageSize = &defaultSize
-	}
-	if req.KNNTopK == nil && req.TopK == nil {
-		defaultTopK := 1024
-		req.KNNTopK = &defaultTopK
-	}
-	if req.KNNNumCandidates == nil {
-		defaultNumCandidates := 2048
-		req.KNNNumCandidates = &defaultNumCandidates
-	}
-	if req.UseKG == nil {
-		defaultUseKG := false
-		req.UseKG = &defaultUseKG
-	}
-
+	// Defaults live in the service layer. Pre-filling them here would mark
+	// the fields as explicitly set, which would stop a saved search app's
+	// search_config from filling fields the caller left unset (the Python
+	// API merges {**search_config, **req}, so only truly request-set fields
+	// win over the saved config).
 	req.Question = strings.TrimSpace(req.Question)
 	if req.Question == "" {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")

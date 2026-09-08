@@ -283,3 +283,45 @@ func decodeSearchResponse(t *testing.T, rec *httptest.ResponseRecorder) map[stri
 	}
 	return body
 }
+
+// TestSearchDatasetsLeavesUnsetFieldsNil pins the contract that the handler
+// must not pre-fill retrieval defaults: a saved search app's search_config
+// fills fields the caller left unset (Python merges {**search_config, **req}),
+// which only works if unset fields arrive at the service as nil.
+func TestSearchDatasetsLeavesUnsetFieldsNil(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSearchDatasetsService{resp: &service.SearchDatasetsResponse{Total: 0}}
+	h := &DatasetsHandler{searchDatasetsService: fake}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/retrieval", strings.NewReader(`{"question":"hello","dataset_ids":["ds-1"],"search_id":"search-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-1"})
+
+	h.SearchDatasets(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if fake.req == nil {
+		t.Fatal("service never called")
+	}
+	checks := map[string]bool{
+		"Page":                fake.req.Page != nil,
+		"PageSize":            fake.req.PageSize != nil,
+		"KNNTopK":             fake.req.KNNTopK != nil,
+		"KNNNumCandidates":    fake.req.KNNNumCandidates != nil,
+		"UseKG":               fake.req.UseKG != nil,
+		"SimilarityThreshold": fake.req.SimilarityThreshold != nil,
+	}
+	for name, prefilled := range checks {
+		if prefilled {
+			t.Errorf("%s pre-filled by handler - unset fields must stay nil so the saved search config can fill them", name)
+		}
+	}
+	if fake.req.SearchID == nil || *fake.req.SearchID != "search-1" {
+		t.Errorf("search_id lost: %#v", fake.req.SearchID)
+	}
+}
