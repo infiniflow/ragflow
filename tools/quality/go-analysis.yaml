@@ -1,0 +1,26 @@
+schema_version: 1
+module_file: go.mod
+source_root: .
+profiles:
+- id: linux-cgo
+  goos: linux
+  goarch: amd64
+  cgo: true
+  tags:
+  - unix
+  go_version: "1.26"
+  entrypoints:
+  - path: cmd/ragflow_server.go
+  - path: cmd/ragflow-cli.go
+    ignore_build_constraints: true
+    rationale: build.sh compiles this explicitly even though the source carries the conventional ignore tag.
+- id: linux-no-cgo
+  goos: linux
+  goarch: amd64
+  cgo: false
+  tags:
+  - unix
+  go_version: "1.26"
+  entrypoints:
+  - path: cmd/ragflow_server.go
+  rationale: Preserve visibility of the repository's explicit no-CGO source alternatives without claiming that build.sh produces this profile.

@@ -1,6 +1,7 @@
 """Isolated Git fixtures for the T0 inventory capture, without application imports."""
 
 import importlib.util
+import hashlib
 from pathlib import Path
 import subprocess
 import tempfile
@@ -119,6 +120,61 @@ class CaptureInventoryTests(unittest.TestCase):
         first, second = self.snapshot("core.py"), self.snapshot("core.py")
         self.assertEqual(first["snapshot_sha256"], second["snapshot_sha256"])
         self.assertEqual(before, (self.git("status", "--porcelain"), (self.repo / "core.py").read_bytes()))
+
+    def test_upstream_evidence_refreshes_first_parent_history(self):
+        (self.repo / "core.py").write_text("base = 2\n", encoding="utf-8")
+        (self.repo / "extension.py").write_text("extension = True\n", encoding="utf-8")
+        self.git("add", "core.py", "extension.py")
+        self.git("commit", "-qm", "local feature")
+        existing = {
+            "official_commits": [{"sha": self.base["commit"], "source_url": "https://example.invalid/commit"}],
+            "graph_merge_base": "recorded-local-observation",
+            "ancestry_only_merge": {"meaning": "fixture"},
+        }
+
+        evidence = capture_module.refresh_upstream_evidence(self.repo, self.base, existing)
+
+        self.assertEqual(evidence["head"], self.git("rev-parse", "HEAD"))
+        self.assertEqual(evidence["official_commits"], existing["official_commits"])
+        self.assertEqual(evidence["graph_merge_base"], "recorded-local-observation")
+        self.assertEqual(len(evidence["first_parent_fork_commits"]), 1)
+        commit = evidence["first_parent_fork_commits"][0]
+        self.assertEqual(commit["subject"], "local feature")
+        self.assertEqual(commit["changes_from_first_parent"], {"core.py": "M", "extension.py": "A"})
+        self.assertEqual(evidence["baseline_diff_summary"], "2 files changed, 2 insertions(+), 1 deletion(-)")
+
+    def test_ignored_artifacts_refresh_is_bounded_and_hashes_sources(self):
+        (self.repo / ".gitignore").write_text(
+            "agent/business_requirements/\ndeployment/linux-pg/\nservices/asr-online-service/\n",
+            encoding="utf-8",
+        )
+        source = self.repo / "agent/business_requirements/diagram.puml"
+        archive = self.repo / "deployment/linux-pg/release-v1.0.0/archive.tar.gz"
+        staged_copy = self.repo / "deployment/linux-pg/release-v1.0.0/stage-deadbeef/core.py"
+        runtime_result = self.repo / "services/asr-online-service/artifacts/task/result.json"
+        cache = self.repo / "services/asr-online-service/.venv/pyvenv.cfg"
+        for target, content in (
+            (source, "@startuml\n@enduml\n"),
+            (archive, "archive"),
+            (staged_copy, "copied"),
+            (runtime_result, "{}"),
+            (cache, "cache"),
+        ):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+        report = capture_module.refresh_ignored_artifacts(self.repo)
+        records = {record["path"]: record for record in report["records"]}
+
+        self.assertEqual(
+            set(records),
+            {
+                "agent/business_requirements/diagram.puml",
+                "deployment/linux-pg/release-v1.0.0/archive.tar.gz",
+            },
+        )
+        self.assertEqual(records["agent/business_requirements/diagram.puml"]["sha256"], hashlib.sha256(source.read_bytes()).hexdigest())
+        self.assertEqual(records["deployment/linux-pg/release-v1.0.0/archive.tar.gz"]["digest_policy"], "metadata only; contents not read or backed up")
 
 
 if __name__ == "__main__":

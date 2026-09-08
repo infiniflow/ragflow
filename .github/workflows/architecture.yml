@@ -1,0 +1,157 @@
+name: architecture-policy
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: architecture-policy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  architecture-policy:
+    name: architecture-policy
+    runs-on: [self-hosted, ragflow-test]
+    steps:
+      - name: Ensure workspace ownership
+        run: sudo chown -R "${USER}" "${GITHUB_WORKSPACE}"
+
+      - name: Check out candidate
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve comparison base
+        id: comparison
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            base="${PR_BASE_SHA}"
+          elif [[ "${EVENT_NAME}" == "push" && -n "${PUSH_BEFORE_SHA}" && ! "${PUSH_BEFORE_SHA}" =~ ^0+$ ]]; then
+            base="${PUSH_BEFORE_SHA}"
+          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            base="HEAD^"
+          else
+            base="HEAD"
+          fi
+          base=$(git rev-parse "${base}^{commit}")
+          echo "base=${base}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create fresh evidence directory
+        id: evidence
+        run: |
+          set -euo pipefail
+          evidence_dir="${RUNNER_TEMP}/architecture-policy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ -e "${evidence_dir}" ]]; then
+            echo "Refusing stale architecture evidence: ${evidence_dir}" >&2
+            exit 2
+          fi
+          mkdir -p "${evidence_dir}"
+          echo "directory=${evidence_dir}" >> "${GITHUB_OUTPUT}"
+
+      - name: Select architecture lanes
+        id: selection
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          COMPARISON_BASE: ${{ steps.comparison.outputs.base }}
+        run: |
+          set -euo pipefail
+          uv run --no-project --with PyYAML==6.0.3 python -B tools/quality/check_architecture_policy.py \
+            select --base "${COMPARISON_BASE}" --output "${EVIDENCE_DIR}/selection.json" \
+            --github-output "${GITHUB_OUTPUT}"
+
+      - name: Prepare root Python contracts
+        if: steps.selection.outputs.python_architecture == 'true' || steps.selection.outputs.policy_fixtures == 'true'
+        run: uv sync --python 3.13 --group test --frozen
+
+      - name: Prepare ASR contract environment
+        if: steps.selection.outputs.python_architecture == 'true'
+        run: uv sync --project services/asr-online-service --python 3.13 --frozen
+
+      - name: Prepare locked TypeScript parser
+        if: steps.selection.outputs.python_architecture == 'true' || steps.selection.outputs.runtime_graph == 'true' || steps.selection.outputs.policy_fixtures == 'true'
+        run: pnpm --dir web install --frozen-lockfile
+
+      - name: Check configured Python architecture
+        if: steps.selection.outputs.python_architecture == 'true'
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          COMPARISON_BASE: ${{ steps.comparison.outputs.base }}
+        run: |
+          set -euo pipefail
+          .venv/bin/python -B tools/quality/check_architecture.py --base-ref "${COMPARISON_BASE}" \
+            --output "${EVIDENCE_DIR}/architecture-python.json"
+
+      - name: Classify TypeScript and Go runtime graphs
+        if: steps.selection.outputs.runtime_graph == 'true'
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+        run: |
+          set -euo pipefail
+          set +e
+          uv run --no-project --with PyYAML==6.0.3 python -B tools/quality/inspect_typescript.py \
+            --output "${EVIDENCE_DIR}/typescript-analysis.json"
+          typescript_exit=$?
+          set -e
+          if [[ ${typescript_exit} -ne 0 && ${typescript_exit} -ne 2 ]]; then
+            exit "${typescript_exit}"
+          fi
+          uv run --no-project --with PyYAML==6.0.3 python -B tools/quality/inspect_go.py \
+            --output "${EVIDENCE_DIR}/go-analysis.json"
+          uv run --no-project --with PyYAML==6.0.3 python -B tools/quality/check_runtime_graph_policy.py \
+            --typescript-report "${EVIDENCE_DIR}/typescript-analysis.json" \
+            --go-report "${EVIDENCE_DIR}/go-analysis.json" \
+            --output "${EVIDENCE_DIR}/runtime-graph.json"
+
+      - name: Plan changed Go build profiles
+        if: steps.selection.outputs.go_build_plan == 'true'
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+        run: |
+          set -euo pipefail
+          uv run --no-project --with PyYAML==6.0.3 python -B tools/quality/check_go_build_profiles.py \
+            --output "${EVIDENCE_DIR}/go-build-plan.json"
+
+      - name: Exercise architecture policy fixtures
+        if: steps.selection.outputs.policy_fixtures == 'true'
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: |
+          set -euo pipefail
+          .venv/bin/python -B -m pytest -p pytest_asyncio.plugin test/unit_test/tools/quality -q \
+            --junitxml="${EVIDENCE_DIR}/policy-fixtures.xml"
+
+      - name: Aggregate architecture evidence
+        if: always() && steps.selection.outcome == 'success'
+        env:
+          EVIDENCE_DIR: ${{ steps.evidence.outputs.directory }}
+        run: |
+          set -euo pipefail
+          reports=()
+          [[ ! -f "${EVIDENCE_DIR}/architecture-python.json" ]] || reports+=(--report "python-architecture=${EVIDENCE_DIR}/architecture-python.json")
+          [[ ! -f "${EVIDENCE_DIR}/runtime-graph.json" ]] || reports+=(--report "runtime-graph=${EVIDENCE_DIR}/runtime-graph.json")
+          [[ ! -f "${EVIDENCE_DIR}/go-build-plan.json" ]] || reports+=(--report "go-build-plan=${EVIDENCE_DIR}/go-build-plan.json")
+          [[ ! -f "${EVIDENCE_DIR}/policy-fixtures.xml" ]] || reports+=(--report "policy-fixtures=${EVIDENCE_DIR}/policy-fixtures.xml")
+          uv run --no-project --with PyYAML==6.0.3 python -B tools/quality/check_architecture_policy.py \
+            aggregate --plan "${EVIDENCE_DIR}/selection.json" "${reports[@]}" \
+            --output "${EVIDENCE_DIR}/aggregate.json"
+
+      - name: Upload architecture evidence
+        if: always() && steps.evidence.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-policy-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.evidence.outputs.directory }}
+          if-no-files-found: error
+          retention-days: 14

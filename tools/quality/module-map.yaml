@@ -452,6 +452,7 @@ modules:
   - test/unit_test/common/test_observability.py
   - test/unit_test/api/utils/test_admin_service_health.py
   - test/unit_test/api/db/services/test_audit_service.py
+  - test/unit_test/tools/quality/test_admin_server_bootstrap.py
   public_surfaces:
   - api/db/services/audit_service.py
   - admin/server/audit_feed.py
@@ -489,6 +490,7 @@ modules:
   - docker/observability/tempo.yaml
   - internal/observability/otel/provider.go
   - test/unit_test/admin/test_audit_feed.py
+  - test/unit_test/tools/quality/test_admin_server_bootstrap.py
   - test/unit_test/admin/test_service_status_config.py
   - test/unit_test/api/db/services/test_audit_service.py
   - test/unit_test/api/utils/test_admin_service_health.py
@@ -509,6 +511,7 @@ modules:
   - internal/entity/models/ollama_test.go
   - test/unit_test/api/apps/services/test_models_api_service_list_tenant_added_models.py
   - test/unit_test/api/db/joint_services/test_tenant_model_service_max_tokens.py
+  - test/unit_test/tools/quality/test_models_runtime_registration.py
   - test/playwright/e2e/test_next_apps_chat.py
   - test/playwright/e2e/test_business_document_live_intake.py
   - test/testcases/restful_api/test_user_tenant_routes_unit.py
@@ -537,6 +540,7 @@ modules:
   - test/unit_test/api/apps/services/test_models_api_service_list_tenant_added_models.py
   - test/unit_test/api/db/joint_services/test_tenant_model_service_max_tokens.py
   - test/unit_test/rag/llm/test_chat_model_thinking_policy.py
+  - test/unit_test/tools/quality/test_models_runtime_registration.py
   - web/src/pages/user-setting/setting-model/components/system-setting.tsx
 - id: persistence
   title: Shared data-model registration and time conversion
@@ -592,6 +596,7 @@ modules:
   - test/unit_test/api/apps/restful_apis/test_rerun_agent_authorization.py
   - test/unit_test/api/apps/restful_apis/test_agentbots_access_control.py
   - test/integration/test_saved_canvas_dsl_live.py
+  - test/unit_test/tools/quality/test_agent_runtime_registration.py
   public_surfaces:
   - agent/canvas.py
   - api/apps/restful_apis/agent_api.py
@@ -624,6 +629,7 @@ modules:
   - test/unit_test/api/apps/restful_apis/test_get_agent_session.py
   - test/unit_test/api/apps/restful_apis/test_rerun_agent_authorization.py
   - test/integration/test_saved_canvas_dsl_live.py
+  - test/unit_test/tools/quality/test_agent_runtime_registration.py
 - id: ingestion-connectors
   title: Ingestion and connector plumbing
   owner: fork-maintainer
@@ -641,6 +647,7 @@ modules:
   - test/playwright/e2e/test_live_document_roundtrip.py
   - test/playwright/e2e/test_dataset_upload_parse.py
   - test/integration/test_local_docker_connectors_live.py
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py
   public_surfaces:
   - common/data_source/__init__.py
   - rag/svr/sync_data_source.py
@@ -677,6 +684,7 @@ modules:
   - test/unit_test/common/test_ssrf_guard.py
   - test/unit_test/data_source/test_html_utils.py
   - test/unit_test/rag/test_sync_data_source.py
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py
 - id: api-files-chat
   title: Shared API, file and chat integration
   owner: fork-maintainer
@@ -746,6 +754,7 @@ modules:
   tests:
   - test/unit_test/deployment/test_linux_pg_upgrade_delivery.py
   - services/asr-online-service/tests/test_install_contract.py
+  - test/unit_test/tools/quality/test_ragflow_server_bootstrap.py
   public_surfaces:
   - deployment/linux-pg/README.md
   - deployment/linux-pg/docker-compose.release.yml
@@ -797,6 +806,7 @@ modules:
   - docker/service_conf.yaml.template
   - docs/administrator/linux_sources_runbook_ru.md
   - docs/administrator/local_windows_sources_runbook_ru.md
+  - test/unit_test/tools/quality/test_ragflow_server_bootstrap.py
 - id: frontend-foundation
   title: Shared frontend integration and type/build fixes
   owner: fork-maintainer
@@ -1057,8 +1067,10 @@ modules:
   - Provenance evidence and no guessed upstream baseline
   - Existing checks remain distinct from future architecture gates
   tests:
+  - test/unit_test/tools/quality/test_architecture_workflow.py
   - test/unit_test/tools/quality/test_capture_inventory.py
   - test/unit_test/tools/quality/test_check_architecture.py
+  - test/unit_test/tools/quality/test_check_architecture_policy.py
   - test/unit_test/tools/quality/test_check_go_build_profiles.py
   - test/unit_test/tools/quality/test_check_python_dead_code.py
   - test/unit_test/tools/hooks/test_check_files.py
@@ -1068,13 +1080,21 @@ modules:
   - test/integration/live_ragflow/README.md
   - test/unit_test/playwright/test_browser_server.py
   - test/unit_test/tools/quality/test_inspect_python.py
+  - test/unit_test/tools/quality/test_inspect_typescript.py
+  - test/unit_test/tools/quality/test_inspect_go.py
+  - test/unit_test/tools/quality/test_check_runtime_graph_policy.py
   - test/integration/fixtures/New-T1LocalFixtures.ps1
   public_surfaces:
   - AGENTS.md
+  - .github/workflows/architecture.yml
   - tools/quality/capture_inventory.py
   - tools/quality/check_architecture.py
+  - tools/quality/check_architecture_policy.py
   - tools/quality/check_go_build_profiles.py
   - tools/quality/check_python_dead_code.py
+  - tools/quality/inspect_typescript.py
+  - tools/quality/inspect_go.py
+  - tools/quality/check_runtime_graph_policy.py
   - run_tests.py
   - .github/workflows/tests.yml
   integration_dependencies: []
@@ -1088,6 +1108,7 @@ modules:
   - .github/actionlint.yaml
   - .github/copilot-instructions.md
   - .github/pull_request_template.md
+  - .github/workflows/architecture.yml
   - .github/workflows/browser-regression.yml
   - .github/workflows/release.yml
   - .github/workflows/sep-tests.yml
@@ -1106,7 +1127,11 @@ modules:
   - docs/develop/t1-regression-report-ru.md
   - docs/develop/t1-regression-results.json
   - docs/develop/t2-python-analysis-ru.md
+  - docs/develop/t2-typescript-analysis-ru.md
+  - docs/develop/t2-go-analysis-ru.md
+  - docs/develop/t2-runtime-graph-classification-ru.md
   - docs/develop/t2-go-build-profiles-ru.md
+  - docs/develop/t3-architecture-policy-ru.md
   - docs/develop/user-guide-structure-ru.css
   - docs/develop/user-guide-structure-ru.html
   - docs/develop/user-guide-structure-ru.md
@@ -1175,24 +1200,31 @@ modules:
   - test/unit_test/tools/hooks/test_check_files.py
   - test/unit_test/tools/hooks/test_process_preparation.py
   - test/unit_test/tools/quality/test_browser_workflow.py
+  - test/unit_test/tools/quality/test_architecture_workflow.py
   - test/unit_test/tools/quality/test_build_identity.py
   - test/unit_test/tools/quality/test_candidate.py
   - test/unit_test/tools/quality/test_capture_inventory.py
   - test/unit_test/tools/quality/test_check_architecture.py
+  - test/unit_test/tools/quality/test_check_architecture_policy.py
   - test/unit_test/tools/quality/test_check_go_build_profiles.py
   - test/unit_test/tools/quality/test_check_python_dead_code.py
   - test/unit_test/tools/quality/test_docker_bundle.py
   - test/unit_test/tools/quality/test_frontend_artifact.py
   - test/unit_test/tools/quality/test_inspect_python.py
+  - test/unit_test/tools/quality/test_inspect_typescript.py
+  - test/unit_test/tools/quality/test_inspect_go.py
+  - test/unit_test/tools/quality/test_check_runtime_graph_policy.py
   - test/unit_test/tools/quality/test_release_workflow.py
   - test/unit_test/tools/quality/test_verify.py
   - tools/hooks/check_files.py
   - tools/hooks/prepare_web.py
   - tools/hooks/web_check.py
   - tools/quality/browser_inventory.py
+  - tools/quality/architecture-policy.json
   - tools/quality/candidate.py
   - tools/quality/capture_inventory.py
   - tools/quality/check_architecture.py
+  - tools/quality/check_architecture_policy.py
   - tools/quality/check_go_build_profiles.py
   - tools/quality/check_python_dead_code.py
   - tools/quality/checks.yaml
@@ -1201,12 +1233,19 @@ modules:
   - tools/quality/file-inventory.json
   - tools/quality/frontend_artifact.py
   - tools/quality/go-build-profiles.yaml
+  - tools/quality/go-analysis.yaml
+  - tools/quality/runtime-graph-policy.yaml
   - tools/quality/ignored-artifacts.json
   - tools/quality/inspect_python.py
+  - tools/quality/inspect_typescript.cjs
+  - tools/quality/inspect_typescript.py
+  - tools/quality/inspect_go.py
+  - tools/quality/check_runtime_graph_policy.py
   - tools/quality/module-map.yaml
   - tools/quality/probe_python_runtime.py
   - tools/quality/python-boundaries.yaml
   - tools/quality/python-dead-code.yaml
+  - tools/quality/typescript-analysis.yaml
   - tools/quality/preserved-features.yaml
   - tools/quality/upstream-base.json
   - tools/quality/upstream-evidence.json

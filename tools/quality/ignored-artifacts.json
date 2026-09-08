@@ -1,27 +1,20 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-09-05T16:14:04.838864+00:00",
+  "captured_at": "2026-09-08T21:22:09.538140+00:00",
   "scopes": [
     "deployment/linux-pg",
     "agent/business_requirements",
     "services/asr-online-service"
   ],
-  "scope_policy": "Bounded scan of extension/release roots, untracked ignored files only. Not a global ignored-file inventory or runtime-data backup. Tracked files in ignored directories remain in file-inventory.json.",
-  "excluded_directories": [
-    "deployment/linux-pg/__pycache__",
-    "services/asr-online-service/.pytest_cache",
-    "services/asr-online-service/.venv",
-    "services/asr-online-service/src/asr_service/__pycache__",
-    "services/asr-online-service/src/asr_service/api/__pycache__",
-    "services/asr-online-service/src/asr_service/http/__pycache__",
-    "services/asr-online-service/src/asr_service/jobs/__pycache__",
-    "services/asr-online-service/src/asr_service/models/__pycache__",
-    "services/asr-online-service/src/asr_service/models/engines/__pycache__",
-    "services/asr-online-service/src/asr_service/pipeline/__pycache__",
-    "services/asr-online-service/src/asr_service/tools/__pycache__",
-    "services/asr-online-service/tests/__pycache__",
-    "services/asr-online-service/tests/smoke/__pycache__",
-    "services/asr-online-service/uploads"
+  "scope_policy": "Bounded scan of extension/release roots, untracked ignored files only. Unpacked release trees, runtime outputs, dependencies and caches are excluded by policy; tracked files remain in file-inventory.json.",
+  "excluded_directory_patterns": [
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/.venv",
+    "services/asr-online-service/artifacts",
+    "services/asr-online-service/uploads",
+    "deployment/linux-pg/release-*/stage-*",
+    "deployment/linux-pg/release-*/validation"
   ],
   "records": [
     {
@@ -112,8 +105,8 @@
       "path": "deployment/linux-pg/ragflow-linux-pg-v1.6.0-registry.tar.gz.sha256",
       "bytes": 106,
       "modified_at": "2026-09-03T19:21:22.047812+00:00",
-      "kind": "ignored_artifact_or_local_config",
-      "digest_policy": "metadata only; contents not read or backed up"
+      "kind": "ignored_source_or_document",
+      "sha256": "878f280cfee2984ac55c541f8975d1a190f5363c02a42ada72448a7cf274e667"
     },
     {
       "path": "deployment/linux-pg/release-v1.11.0-upgrade/ragflow-linux-pg-v1.11.0-offline.tar.gz",
@@ -126,8 +119,8 @@
       "path": "deployment/linux-pg/release-v1.11.0-upgrade/ragflow-linux-pg-v1.11.0-offline.tar.gz.sha256",
       "bytes": 106,
       "modified_at": "2026-09-04T17:57:26.567158+00:00",
-      "kind": "ignored_artifact_or_local_config",
-      "digest_policy": "metadata only; contents not read or backed up"
+      "kind": "ignored_source_or_document",
+      "sha256": "f505f4aafd2ce2da4a8a1bc8798c7b9aac4002dede41817c388cf258cb712f4e"
     },
     {
       "path": "deployment/linux-pg/release-v1.11.1-upgrade/ragflow-linux-pg-v1.11.1-offline.tar.gz",
@@ -140,8 +133,8 @@
       "path": "deployment/linux-pg/release-v1.11.1-upgrade/ragflow-linux-pg-v1.11.1-offline.tar.gz.sha256",
       "bytes": 106,
       "modified_at": "2026-09-04T19:10:50.195260+00:00",
-      "kind": "ignored_artifact_or_local_config",
-      "digest_policy": "metadata only; contents not read or backed up"
+      "kind": "ignored_source_or_document",
+      "sha256": "8405d5328d45eca7d795c10ba05928dfb70901cdb0c274277351c09ed6142f3b"
     },
     {
       "path": "deployment/linux-pg/release-v1.11.2-upgrade/ragflow-linux-pg-v1.11.2-offline.tar.gz",
@@ -154,8 +147,8 @@
       "path": "deployment/linux-pg/release-v1.11.2-upgrade/ragflow-linux-pg-v1.11.2-offline.tar.gz.sha256",
       "bytes": 106,
       "modified_at": "2026-09-04T20:00:18.545361+00:00",
-      "kind": "ignored_artifact_or_local_config",
-      "digest_policy": "metadata only; contents not read or backed up"
+      "kind": "ignored_source_or_document",
+      "sha256": "4f69287808bb94cdb5bc347b03aff488df54b0249c9e56df403acedd1fc92975"
     },
     {
       "path": "deployment/linux-pg/release-v1.12.0-upgrade/ragflow-linux-pg-v1.12.0-offline.tar.gz",
@@ -168,62 +161,125 @@
       "path": "deployment/linux-pg/release-v1.12.0-upgrade/ragflow-linux-pg-v1.12.0-offline.tar.gz.sha256",
       "bytes": 107,
       "modified_at": "2026-09-05T08:13:52.224519+00:00",
+      "kind": "ignored_source_or_document",
+      "sha256": "556846a71863e2f757c2fa2af5a1b66d6fa515f876194b68f2a0e9a68c149b04"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.13.0-remote/git-head-5100b7e3b.tar",
+      "bytes": 105431040,
+      "modified_at": "2026-09-05T16:59:00.110137+00:00",
       "kind": "ignored_artifact_or_local_config",
       "digest_policy": "metadata only; contents not read or backed up"
     },
     {
-      "path": "services/asr-online-service/artifacts/0e402bf1-6a7b-4117-a2d8-d572dd612c6f/result.json",
-      "bytes": 45,
-      "modified_at": "2026-09-03T16:27:18.991233+00:00",
+      "path": "deployment/linux-pg/release-v1.13.0-remote/ragflow-linux-pg-v1.13.0-source-safe.tar.gz",
+      "bytes": 287739726,
+      "modified_at": "2026-09-05T17:01:35.942906+00:00",
       "kind": "ignored_artifact_or_local_config",
       "digest_policy": "metadata only; contents not read or backed up"
     },
     {
-      "path": "services/asr-online-service/artifacts/7a556935-b627-482d-bc65-1455285aa4a1/result.json",
-      "bytes": 46,
-      "modified_at": "2026-08-27T11:58:07.068310+00:00",
+      "path": "deployment/linux-pg/release-v1.13.0-remote/ragflow-linux-pg-v1.13.0-source-safe.tar.gz.sha256",
+      "bytes": 110,
+      "modified_at": "2026-09-05T17:01:37.242085+00:00",
+      "kind": "ignored_source_or_document",
+      "sha256": "f43fefa68df14cd127bcf644ced484be01da8303977c18cbdf0e37c4d3f6c25b"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.13.0-remote/ragflow-linux-pg-v1.13.0-source.tar.gz",
+      "bytes": 287740148,
+      "modified_at": "2026-09-05T17:00:38.333808+00:00",
       "kind": "ignored_artifact_or_local_config",
       "digest_policy": "metadata only; contents not read or backed up"
     },
     {
-      "path": "services/asr-online-service/artifacts/99836716-4bb5-499e-946b-71cd81e21dac/result.docx",
-      "bytes": 36591,
-      "modified_at": "2026-09-03T16:27:16.709793+00:00",
+      "path": "deployment/linux-pg/release-v1.13.0-remote/ragflow-linux-pg-v1.13.0-source.tar.gz.sha256",
+      "bytes": 105,
+      "modified_at": "2026-09-05T17:00:39.558841+00:00",
+      "kind": "ignored_source_or_document",
+      "sha256": "7bd36bfdb09551ae65a1e01f38257d98c5bdcb759dc8c4ea3a6eb1c0a19e8589"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.14.0-remote/git-head-490d10e40.tar",
+      "bytes": 106188800,
+      "modified_at": "2026-09-05T20:09:13.217346+00:00",
       "kind": "ignored_artifact_or_local_config",
       "digest_policy": "metadata only; contents not read or backed up"
     },
     {
-      "path": "services/asr-online-service/artifacts/99836716-4bb5-499e-946b-71cd81e21dac/result.json",
-      "bytes": 65,
-      "modified_at": "2026-09-03T16:27:16.670314+00:00",
+      "path": "deployment/linux-pg/release-v1.14.0-remote/ragflow-linux-pg-v1.14.0-source-safe.tar.gz",
+      "bytes": 118703890,
+      "modified_at": "2026-09-05T20:10:27.920179+00:00",
       "kind": "ignored_artifact_or_local_config",
       "digest_policy": "metadata only; contents not read or backed up"
     },
     {
-      "path": "services/asr-online-service/artifacts/99836716-4bb5-499e-946b-71cd81e21dac/result.txt",
-      "bytes": 22,
-      "modified_at": "2026-09-03T16:27:16.671876+00:00",
+      "path": "deployment/linux-pg/release-v1.14.0-remote/ragflow-linux-pg-v1.14.0-source-safe.tar.gz.sha256",
+      "bytes": 110,
+      "modified_at": "2026-09-05T20:10:29.655342+00:00",
+      "kind": "ignored_source_or_document",
+      "sha256": "e6b4fabf1bb1da1342546c3c98a5e3623c0846798ff65aa4edd9233d314c934f"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.14.0-remote/run_upgrade.sh",
+      "bytes": 667,
+      "modified_at": "2026-09-05T20:12:50.204670+00:00",
+      "kind": "ignored_source_or_document",
+      "sha256": "0feb2118e0b8ee40c13c2ef1f70cbc9ea53d5595f7d1e1eca6c6060301a59995"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.14.0-remote/run_upgrade_reuse_images.sh",
+      "bytes": 707,
+      "modified_at": "2026-09-05T20:18:25.543282+00:00",
+      "kind": "ignored_source_or_document",
+      "sha256": "322e40b7d20a82c7538f13be795f2248c85c1ac80b46dfe969952224945aa74f"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.14.1-remote/accept_release.sh",
+      "bytes": 5501,
+      "modified_at": "2026-09-05T20:34:32.538388+00:00",
+      "kind": "ignored_source_or_document",
+      "sha256": "32c7c86ad3f99a0cc39b861a06dfc1d8c93e40bd46a55160d646db381a4a8743"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.14.1-remote/acceptance.log",
+      "bytes": 1142,
+      "modified_at": "2026-09-05T20:36:28.450752+00:00",
       "kind": "ignored_artifact_or_local_config",
       "digest_policy": "metadata only; contents not read or backed up"
     },
     {
-      "path": "services/asr-online-service/artifacts/bd5f0dce-0fba-4577-a1db-2fb97c135ee8/result.json",
-      "bytes": 195,
-      "modified_at": "2026-09-03T16:27:14.679526+00:00",
+      "path": "deployment/linux-pg/release-v1.14.1-remote/git-parent-490d10e40.tar",
+      "bytes": 106188800,
+      "modified_at": "2026-09-05T20:26:43.277650+00:00",
       "kind": "ignored_artifact_or_local_config",
       "digest_policy": "metadata only; contents not read or backed up"
     },
     {
-      "path": "services/asr-online-service/artifacts/c8bffa24-6137-4884-8257-c860c1825ca8/result.json",
-      "bytes": 78,
-      "modified_at": "2026-09-03T16:27:14.015883+00:00",
+      "path": "deployment/linux-pg/release-v1.14.1-remote/ragflow-linux-pg-v1.14.1-source-safe.tar.gz",
+      "bytes": 118705862,
+      "modified_at": "2026-09-05T20:27:20.764243+00:00",
       "kind": "ignored_artifact_or_local_config",
       "digest_policy": "metadata only; contents not read or backed up"
     },
     {
-      "path": "services/asr-online-service/artifacts/d9f4ef12-2f07-477e-b8f1-b2c0d1405f93/result.json",
-      "bytes": 46,
-      "modified_at": "2026-09-03T16:27:15.563229+00:00",
+      "path": "deployment/linux-pg/release-v1.14.1-remote/ragflow-linux-pg-v1.14.1-source-safe.tar.gz.sha256",
+      "bytes": 110,
+      "modified_at": "2026-09-05T20:27:21.548420+00:00",
+      "kind": "ignored_source_or_document",
+      "sha256": "1a94540f8684c63237b9bb8670d292101f1ec4b1d1db1c5e5525a876fcc39061"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.14.1-remote/run_upgrade.sh",
+      "bytes": 689,
+      "modified_at": "2026-09-05T20:27:29.751724+00:00",
+      "kind": "ignored_source_or_document",
+      "sha256": "322b6c5e3cba2cbf7422424fb726ff7861d45ca77da449c77f5ed9d719f3a33a"
+    },
+    {
+      "path": "deployment/linux-pg/release-v1.14.1-remote/upgrade.log",
+      "bytes": 5659,
+      "modified_at": "2026-09-05T20:36:05.759067+00:00",
       "kind": "ignored_artifact_or_local_config",
       "digest_policy": "metadata only; contents not read or backed up"
     },
@@ -231,8 +287,8 @@
       "path": "services/asr-online-service/uv.lock",
       "bytes": 52,
       "modified_at": "2026-09-03T16:22:45.490396+00:00",
-      "kind": "ignored_artifact_or_local_config",
-      "digest_policy": "metadata only; contents not read or backed up"
+      "kind": "ignored_source_or_document",
+      "sha256": "96599229fba386c9268987794da072036c3f16443f7b828004fc56c8d9b00b27"
     }
   ]
 }

@@ -1,10 +1,14 @@
 import json
 import logging
 import time
+import types
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
+from asr_service import main as main_module
+from asr_service.jobs.worker import Worker
 from asr_service.logging_json import JsonFormatter
 from asr_service.main import app
 
@@ -46,6 +50,73 @@ def test_runtime_route_inventory_is_exact():
     actual = {(route.path, tuple(sorted(getattr(route, "methods", None) or ())), route.name, type(route).__name__) for route in app.routes}
 
     assert actual == EXPECTED_RUNTIME_ROUTES
+
+
+@pytest.mark.asyncio
+async def test_application_lifespan_stops_worker_on_failure(monkeypatch):
+    events = []
+    application = types.SimpleNamespace(state=types.SimpleNamespace())
+    lifecycle_worker = types.SimpleNamespace(
+        start=lambda: events.append(("worker_start",)),
+        stop=lambda: events.append(("worker_stop",)),
+    )
+    health_checks = {"ffmpeg": {"ok": True}, "sox": {"ok": True}}
+    monkeypatch.setattr(main_module, "worker", lifecycle_worker)
+    monkeypatch.setattr(main_module, "_build_health_checks", lambda: events.append(("health_checks",)) or health_checks)
+
+    with pytest.raises(RuntimeError, match="serve failed"):
+        async with main_module._lifespan(application):
+            events.append(("serve",))
+            assert application.state.health_checks is health_checks
+            raise RuntimeError("serve failed")
+
+    assert events == [
+        ("health_checks",),
+        ("worker_start",),
+        ("serve",),
+        ("worker_stop",),
+    ]
+
+
+def test_worker_thread_lifecycle_is_exact(monkeypatch, tmp_path):
+    events = []
+
+    class Thread:
+        def __init__(self, *, target, daemon):
+            self.target = target
+            self.daemon = daemon
+            self.alive = False
+            events.append(("thread_init", target.__name__, daemon))
+
+        def is_alive(self):
+            return self.alive
+
+        def start(self):
+            self.alive = True
+            events.append(("thread_start", self.target.__name__))
+
+        def join(self, *, timeout):
+            events.append(("thread_join", self.target.__name__, timeout))
+            self.alive = False
+
+    monkeypatch.setattr("asr_service.jobs.worker.threading.Thread", Thread)
+    settings = types.SimpleNamespace(artifacts_dir=str(tmp_path / "artifacts"), max_concurrent_jobs=2)
+    worker = Worker(store=object(), queue=object(), registry=object(), manager=object(), settings=settings)
+
+    worker.start()
+    worker.start()
+    worker.stop()
+
+    assert worker._stop_event.is_set()
+    assert len(worker._threads) == 2
+    assert events == [
+        ("thread_init", "_run", True),
+        ("thread_init", "_run", True),
+        ("thread_start", "_run"),
+        ("thread_start", "_run"),
+        ("thread_join", "_run", 30),
+        ("thread_join", "_run", 30),
+    ]
 
 
 def test_enum_contract_matches_runtime():

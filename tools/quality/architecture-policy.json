@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "mode": "report_only",
+  "job_name": "architecture-policy",
+  "tool_path": "tools/quality/check_architecture_policy.py",
+  "lanes": [
+    {
+      "id": "provenance",
+      "contract": "inventory",
+      "always": true,
+      "rules": ["UPG-01", "UPG-02", "POL-02"],
+      "selectors": {}
+    },
+    {
+      "id": "python-architecture",
+      "contract": "python_architecture",
+      "tool": "check_architecture",
+      "rules": ["ARC-01", "ARC-02", "ARC-03", "POL-02"],
+      "selectors": {
+        "paths": [
+          "pyproject.toml",
+          "uv.lock",
+          "tools/quality/python-boundaries.yaml",
+          "tools/quality/probe_python_runtime.py",
+          "tools/quality/module-map.yaml",
+          "tools/quality/upstream-base.json"
+        ],
+        "prefixes": ["services/asr-online-service/"],
+        "suffixes": [".py"]
+      }
+    },
+    {
+      "id": "runtime-graph",
+      "contract": "runtime_graph",
+      "tool": "check_runtime_graph_policy",
+      "rules": ["ARC-02", "ARC-03", "DEAD-01", "DEAD-02", "POL-02"],
+      "selectors": {
+        "paths": [
+          "build.sh",
+          "go.mod",
+          "go.sum",
+          "web/package.json",
+          "web/pnpm-lock.yaml",
+          "web/tsconfig.json",
+          "tools/quality/inspect_typescript.cjs",
+          "tools/quality/typescript-analysis.yaml",
+          "tools/quality/go-analysis.yaml",
+          "tools/quality/runtime-graph-policy.yaml",
+          "tools/quality/module-map.yaml",
+          "tools/quality/upstream-base.json"
+        ],
+        "prefixes": [],
+        "suffixes": [".ts", ".tsx", ".go"]
+      }
+    },
+    {
+      "id": "go-build-plan",
+      "contract": "go_build_plan",
+      "tool": "check_go_build_profiles",
+      "rules": ["BUILD-01", "POL-02"],
+      "selectors": {
+        "paths": [
+          "build.sh",
+          "go.mod",
+          "go.sum",
+          "tools/quality/go-build-profiles.yaml",
+          "tools/quality/module-map.yaml",
+          "tools/quality/upstream-base.json"
+        ],
+        "prefixes": [],
+        "suffixes": [".go"]
+      }
+    },
+    {
+      "id": "policy-fixtures",
+      "contract": "junit",
+      "tool": "pytest",
+      "rules": ["POL-01", "POL-02", "TEST-02"],
+      "required_cases": [
+        "test_selector_preserves_deleted_and_renamed_path_ownership",
+        "test_aggregate_rejects_missing_stale_and_forged_evidence",
+        "test_recomputed_selection_rejects_lane_bypass",
+        "test_workflow_is_unconditional_report_only_and_fail_closed"
+      ],
+      "selectors": {
+        "paths": [
+          "AGENTS.md",
+          "CLAUDE.md",
+          ".github/workflows/architecture.yml"
+        ],
+        "prefixes": [
+          "tools/quality/",
+          "test/unit_test/tools/quality/",
+          "docs/develop/architecture",
+          "docs/develop/t2-",
+          "docs/develop/t3-"
+        ],
+        "suffixes": []
+      }
+    }
+  ]
+}

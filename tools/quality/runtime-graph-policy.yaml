@@ -1,0 +1,171 @@
+schema_version: 1
+typescript:
+  profile_id: frontend-web
+  entrypoints:
+  - id: frontend-browser-bootstrap
+    role: production
+    path: web/src/main.tsx
+    evidence:
+    - path: web/index.html
+      contains: /src/main.tsx
+  auxiliary_roots:
+  - id: frontend-storybook
+    role: development
+    evidence:
+    - path: web/.storybook/main.ts
+      contains: '../src/**/*.stories.@(js|jsx|mjs|ts|tsx)'
+  - id: frontend-jest
+    role: test
+    evidence:
+    - path: web/package.json
+      contains: '"test": "jest --coverage"'
+  - id: pdfjs-worker-asset
+    role: external_runtime_asset
+    evidence:
+    - path: web/src/components/document-preview/pdf-preview.tsx
+      contains: 'workerSrc="/pdfjs-dist/pdf.worker.min.js"'
+      target: web/public/pdfjs-dist/pdf.worker.min.js
+  dynamic_registrations:
+  - id: svg-asset-glob
+    source: web/src/components/svg-icon.tsx
+    line: 29
+    kind: import.meta.glob
+    computed: false
+    patterns:
+    - '@/assets/svg/**/*.svg'
+    classification: runtime_asset_registration
+    evidence: Literal Vite glob; exact pattern and source are pinned, but glob expansion remains outside the observer.
+  classified_incomplete_reasons:
+  - id: inherited-dynamic-svg-helper
+    source: web/src/hooks/common-hooks.tsx
+    line: 64
+    kind: computed_dynamic_import
+    detail: name
+    type_only: false
+    classification: inherited_upstream_dynamic_gap
+    require_unchanged_upstream: true
+    policy_effect: Manual review if the upstream helper or its consumers are changed; never treat the unresolved target as a local PASS.
+  unreachable_owned_runtime:
+  - path: web/src/components/markdown-content/image-carousel.tsx
+    classification: static_candidate
+    reason: No static consumer; another image carousel exists in the active message-reference path.
+    next_action: Verify Storybook, browser rendering and external imports before a separate deletion change.
+  - path: web/src/components/ui/sidebar.tsx
+    classification: static_candidate
+    reason: No static or type-only consumer in the indexed application and test sources.
+    next_action: Verify generator/catalog usage and browser composition before a separate deletion change.
+  - path: web/src/pages/agent/canvas/context-menu/index.tsx
+    classification: static_candidate
+    reason: No static or type-only consumer in the indexed application and test sources.
+    next_action: Verify saved Canvas behavior and browser context-menu journeys before a separate deletion change.
+  - path: web/src/pages/business-documents/types.ts
+    classification: type_only_contract
+    reason: Consumers import only compile-time Business Documents types, so runtime reachability is intentionally absent.
+    next_action: Keep while type consumers exist; reassess individual exported types with compiler evidence.
+  - path: web/src/pages/dataflow-result/chunker.tsx
+    classification: static_candidate
+    reason: Its only apparent JSX call site is commented out and the graph has no runtime consumer.
+    next_action: Verify dataflow browser behavior and persisted pipeline contracts before a separate deletion change.
+  - path: web/src/pages/dataflow-result/components/chunk-card/index.tsx
+    classification: static_candidate
+    reason: Its only runtime consumer is the unreachable ChunkerContainer candidate.
+    next_action: Review together with the dataflow ChunkerContainer candidate; do not delete independently.
+  - path: web/src/pages/dataset/dataset-setting/components/link-data-pipeline.tsx
+    classification: static_candidate
+    reason: It forms an isolated two-file cluster with the pipeline modal and has no reachable consumer.
+    next_action: Verify dataset pipeline linking journeys and saved configuration before a separate cluster deletion.
+  - path: web/src/pages/dataset/dataset-setting/components/link-data-pipline-modal.tsx
+    classification: static_candidate
+    reason: It forms an isolated two-file cluster with the link component and has no reachable consumer.
+    next_action: Review with link-data-pipeline.tsx and preserve the current external contract until verified.
+  - path: web/src/pages/dataset/dataset/set-meta-dialog.tsx
+    classification: static_candidate
+    reason: Its dataset-table JSX call site is commented out and the graph has no runtime consumer.
+    next_action: Verify metadata editing journeys and API contracts before a separate deletion change.
+  - path: web/src/pages/dataset/knowledge-graph/constant.ts
+    classification: static_candidate
+    reason: The sample graph export has no static or type-only consumer in the indexed sources.
+    next_action: Verify documentation, Storybook and fixture use before a separate deletion change.
+  - path: web/src/pages/openmetadata/types.ts
+    classification: type_only_contract
+    reason: OpenMetadata page and service consumers import only compile-time types.
+    next_action: Keep while type consumers exist; reassess individual exported types with compiler evidence.
+  - path: web/src/pages/skills/types.ts
+    classification: type_only_contract
+    reason: Skills pages, hooks and validation consume these definitions only as compile-time types.
+    next_action: Keep while type consumers exist; reassess individual exported types with compiler evidence.
+go:
+  profiles:
+  - id: linux-cgo
+    entrypoints:
+    - cmd/ragflow_server.go
+    - cmd/ragflow-cli.go
+  - id: linux-no-cgo
+    entrypoints:
+    - cmd/ragflow_server.go
+  roots:
+  - id: go-server-binary
+    role: production
+    evidence:
+    - path: build.sh
+      contains: 'go build "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" cmd/ragflow_server.go'
+  - id: go-cli-binary
+    role: production
+    evidence:
+    - path: build.sh
+      contains: 'go build "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go'
+  auxiliary_entrypoints:
+  - path: tools/gen-component-parity/main.go
+    role: development_tool
+    reason: Standalone component parity generator; not a deployed runtime root.
+  - path: tools/migrate-canvas/main.go
+    role: development_tool
+    reason: Standalone Canvas migration utility; not a deployed runtime root.
+  directives:
+  - id: docx-template-assets
+    source: internal/agent/component/io/docx_writer.go
+    kind: embed
+    arguments:
+    - templates/content_types.xml
+    - templates/rels.xml
+    - templates/document_rels.xml.tmpl
+    - templates/styles.xml.tmpl
+    - templates/document.xml.tmpl
+    - templates/header.xml.tmpl
+    - templates/footer.xml.tmpl
+    classification: runtime_embedded_asset
+  - id: evals-developer-command
+    source: internal/harness/core/evals/evals.go
+    kind: generate
+    arguments:
+    - echo "RunT is designed for use with go test"
+    classification: development_directive
+  - id: tenant-test-linkname
+    source: internal/service/tenant_test.go
+    kind: linkname
+    arguments:
+    - daoModelProviderManager ragflow/internal/dao.modelProviderManager
+    classification: test_only_directive
+future_policy_scopes:
+- id: typescript-owned-runtime-graph
+  mode: report_only
+  rules:
+  - ARC-02
+  - ARC-03
+  - DEAD-01
+  selector: Owned TypeScript runtime changes plus changes to browser roots, dynamic registrations or their exact consumers.
+- id: go-owned-package-graph
+  mode: report_only
+  rules:
+  - ARC-02
+  - ARC-03
+  - DEAD-01
+  - BUILD-01
+  selector: Owned Go changes plus changes to main packages, build constraints, directives or mapped build-profile consumers.
+- id: runtime-root-integrity
+  mode: report_only
+  rules:
+  - ARC-02
+  - DEAD-02
+  - POL-02
+  selector: Changes to declared production or auxiliary roots, loader evidence, observer configuration or classification policy.

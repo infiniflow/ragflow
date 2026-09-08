@@ -13,13 +13,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
+import faulthandler
 import importlib
 import importlib.util
 import os
+import runpy
 import sys
 import types
 import warnings
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -82,6 +86,131 @@ _install_xgboost_stub_if_unavailable()
 _install_ollama_stub()
 
 sync_data_source = importlib.import_module("rag.svr.sync_data_source")
+_ROOT = Path(__file__).resolve().parents[3]
+
+
+_EXPECTED_CONNECTOR_FACTORY = {
+    "rss": "RSS",
+    "s3": "S3",
+    "r2": "R2",
+    "oci_storage": "OCI_STORAGE",
+    "google_cloud_storage": "GOOGLE_CLOUD_STORAGE",
+    "notion": "Notion",
+    "discord": "Discord",
+    "confluence": "Confluence",
+    "eva_wiki": "EvaWiki",
+    "openmetadata": "OpenMetadata",
+    "gmail": "Gmail",
+    "google_drive": "GoogleDrive",
+    "jira": "Jira",
+    "sharepoint": "SharePoint",
+    "onedrive": "OneDrive",
+    "outlook": "Outlook",
+    "azure_blob": "AzureBlob",
+    "salesforce": "Salesforce",
+    "slack": "Slack",
+    "teams": "Teams",
+    "moodle": "Moodle",
+    "dropbox": "Dropbox",
+    "webdav": "WebDAV",
+    "box": "BOX",
+    "airtable": "Airtable",
+    "asana": "Asana",
+    "imap": "IMAP",
+    "zendesk": "Zendesk",
+    "github": "Github",
+    "gitlab": "Gitlab",
+    "bitbucket": "Bitbucket",
+    "seafile": "SeaFile",
+    "mysql": "MySQL",
+    "postgresql": "PostgreSQL",
+    "bigquery": "BigQuery",
+    "dingtalk_ai_table": "DingTalkAITable",
+    "rest_api": "REST_API",
+}
+
+
+def _connector_factory_inventory(factory):
+    return {source.value: handler.__name__ for source, handler in factory.items()}
+
+
+def _assert_connector_factory(factory):
+    assert _connector_factory_inventory(factory) == _EXPECTED_CONNECTOR_FACTORY
+
+
+def test_connector_factory_inventory_is_exact():
+    _assert_connector_factory(sync_data_source.func_factory)
+
+
+def test_connector_factory_contract_rejects_missing_handler():
+    mutated = dict(sync_data_source.func_factory)
+    mutated.pop(sync_data_source.FileSource.OPENMETADATA)
+
+    with pytest.raises(AssertionError):
+        _assert_connector_factory(mutated)
+
+
+@pytest.mark.asyncio
+async def test_sync_worker_main_lifecycle_is_exact(monkeypatch):
+    events = []
+
+    class StopEvent:
+        checks = 0
+
+        def is_set(self):
+            self.checks += 1
+            return self.checks > 1
+
+    async def dispatch_tasks():
+        events.append(("dispatch",))
+
+    fake_signal = types.SimpleNamespace(
+        SIGINT="SIGINT",
+        SIGTERM="SIGTERM",
+        signal=lambda signal_name, handler: events.append(("signal", signal_name, handler.__name__)),
+    )
+    settings = types.SimpleNamespace(init_settings=lambda: events.append(("settings_init",)))
+    monkeypatch.setattr(sync_data_source.sys, "platform", "win32")
+    monkeypatch.setattr(sync_data_source, "signal", fake_signal)
+    monkeypatch.setattr(sync_data_source, "settings", settings)
+    monkeypatch.setattr(sync_data_source, "stop_event", StopEvent())
+    monkeypatch.setattr(sync_data_source, "dispatch_tasks", dispatch_tasks)
+    monkeypatch.setattr(sync_data_source, "get_ragflow_version", lambda: events.append(("version",)) or "test-version")
+    monkeypatch.setattr(sync_data_source, "show_configs", lambda: events.append(("show_configs",)))
+
+    await sync_data_source.main()
+
+    assert events == [
+        ("version",),
+        ("show_configs",),
+        ("settings_init",),
+        ("signal", "SIGINT", "signal_handler"),
+        ("signal", "SIGTERM", "signal_handler"),
+        ("dispatch",),
+    ]
+
+
+def test_sync_worker_main_module_handoff_is_exact(monkeypatch):
+    events = []
+
+    def fake_asyncio_run(coroutine):
+        events.append(("asyncio.run", coroutine.cr_code.co_name))
+        coroutine.close()
+
+    monkeypatch.setattr(sys, "argv", ["sync_data_source.py", "7"])
+    monkeypatch.setattr(faulthandler, "enable", lambda: events.append(("faulthandler",)))
+    monkeypatch.setattr(asyncio, "run", fake_asyncio_run)
+    monkeypatch.setattr(sys.modules["common.log_utils"], "init_root_logger", lambda name: events.append(("root_logger", name)))
+
+    namespace = runpy.run_path(str(_ROOT / "rag" / "svr" / "sync_data_source.py"), run_name="__main__")
+
+    assert namespace["CONSUMER_NO"] == "7"
+    assert namespace["CONSUMER_NAME"] == "data_sync_7"
+    assert events == [
+        ("faulthandler",),
+        ("root_logger", "data_sync_7"),
+        ("asyncio.run", "main"),
+    ]
 
 
 class _FakeSync(sync_data_source.SyncBase):

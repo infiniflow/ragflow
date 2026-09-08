@@ -1,7 +1,7 @@
 schema_version: 1
 stage: T1
-status: Local tests executed with explicit boundaries; T1 acceptance INCOMPLETE. See
-  docs/develop/t1-regression-report-ru.md
+status: T1 baseline complete with known failures and explicit boundaries; affected refactors
+  remain blocked where evidence failed. See docs/develop/t1-regression-report-ru.md
 features:
 - id: KEEP-business-documents
   owner: fork-maintainer
@@ -331,6 +331,9 @@ features:
   - AGENTS.md
   - tools/quality/capture_inventory.py
   - tools/quality/check_architecture.py
+  - tools/quality/inspect_typescript.py
+  - tools/quality/inspect_go.py
+  - tools/quality/check_runtime_graph_policy.py
   - tools/quality/probe_python_runtime.py
   - run_tests.py
   - .github/workflows/tests.yml
@@ -344,11 +347,15 @@ features:
   - test/unit_test/playwright/test_browser_server.py
   - test/unit_test/tools/quality/test_check_architecture.py
   - test/unit_test/tools/quality/test_inspect_python.py
+  - test/unit_test/tools/quality/test_inspect_typescript.py
+  - test/unit_test/tools/quality/test_inspect_go.py
+  - test/unit_test/tools/quality/test_check_runtime_graph_policy.py
   execution_status: PARTIAL_T1
-  next_action: Partial T2 Python observation with direct reverse consumers, report-only
-    ARC-01/02 static checks, isolated Business Documents import/HTTP registration probes,
-    two agent registry/Canvas contracts and two adapter contract tests are documented in
-    docs/develop/t2-python-analysis-ru.md. Expand runtime coverage, complete entrypoint
-    reachability, dead-code and other-language analysis, calibrate rules, then introduce
-    enforced policy in T3; T1 remains incomplete.
+  next_action: T2 report-only observers, runtime contracts and the exact TypeScript/Go
+    signal classification are documented in docs/develop/t2-python-analysis-ru.md and
+    docs/develop/t2-runtime-graph-classification-ru.md. Introduce the calibrated
+    selector and fail-closed report-only aggregate are now implemented as a T3
+    bootstrap. Next, execute the trusted base checker, run negative PR probes and
+    verify required branch protection; T1 remains a complete baseline with known
+    failures.
   execution_evidence: docs/develop/t1-regression-results.json#KEEP-quality-governance

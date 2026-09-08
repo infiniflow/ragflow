@@ -1,0 +1,19 @@
+schema_version: 1
+profiles:
+- id: frontend-web
+  source_root: web/src
+  entrypoints:
+  - web/src/main.tsx
+  extensions:
+  - .ts
+  - .tsx
+  aliases:
+    '@': web/src
+    '@parent': .
+  tsconfig: web/tsconfig.json
+  typescript_module: web/node_modules/typescript/lib/typescript.js
+  test_markers:
+  - .test.
+  - .spec.
+  - /__tests__/
+  rationale: Observe the complete Vite application import graph from its real browser bootstrap without treating static reachability as a dead-code or architecture verdict.

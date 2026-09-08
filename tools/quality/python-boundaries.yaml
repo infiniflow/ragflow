@@ -315,7 +315,7 @@ runtime_probes:
   - test/unit_test/api/apps/business_documents/test_business_document_adapter_contracts.py::test_litellm_callback_drain_does_not_stop_or_clear_the_global_worker
   expected_tests: 5
   rationale: The two production adapters must preserve their exact tenant, prompt, retry, token-limit, actor, request and result contracts without external LLM or search calls, while dependency injection remains the same single production boundary.
-- id: owned-frontend-route-entrypoints
+- id: owned-frontend-registrations
   owner_module: frontend-foundation
   profile: frontend-web
   rule_id: ARC-02
@@ -323,8 +323,9 @@ runtime_probes:
   timeout_seconds: 60
   test_ids:
   - test/unit_test/tools/quality/test_frontend_entrypoints.py::test_owned_frontend_route_entrypoints_are_registered_and_resolvable
-  expected_tests: 1
-  rationale: The real TypeScript route registry must retain every locally owned lazy page entrypoint and the public navigation paths for OpenMetadata and Business Documents, with each imported module resolving from the locked frontend tree.
+  - test/unit_test/tools/quality/test_frontend_entrypoints.py::test_frontend_bootstrap_and_service_registrations_are_exact
+  expected_tests: 2
+  rationale: The real TypeScript route registry must retain every locally owned lazy page entrypoint and public navigation path; the application bootstrap, provider/router composition and both HTTP service factories must preserve their exact registration behavior from the locked frontend tree.
 - id: asr-contract-imports
   owner_module: asr
   profile: asr-service
@@ -367,8 +368,10 @@ runtime_probes:
   working_directory: services/asr-online-service
   test_ids:
   - services/asr-online-service/tests/test_openapi_contract.py::test_runtime_route_inventory_is_exact
-  expected_tests: 1
-  rationale: The real FastAPI application must retain its exact ASR, OpenAI-compatible, health, metrics, documentation and static-web route inventory from the service working directory.
+  - services/asr-online-service/tests/test_openapi_contract.py::test_application_lifespan_stops_worker_on_failure
+  - services/asr-online-service/tests/test_openapi_contract.py::test_worker_thread_lifecycle_is_exact
+  expected_tests: 3
+  rationale: The real FastAPI application must retain its exact ASR, OpenAI-compatible, health, metrics, documentation and static-web route inventory from the service working directory; its lifespan must stop the worker even when serving fails, and the worker must preserve bounded idempotent thread-pool startup and joined shutdown.
 - id: ingestion-connectors-http-registration
   owner_module: ingestion-connectors
   profile: root-python-api-worker
@@ -400,3 +403,88 @@ runtime_probes:
   - test/unit_test/tools/quality/test_api_files_chat_registration.py::test_api_files_chat_route_inventory_is_exact
   expected_tests: 5
   rationale: The real search, bot, chat, chat-channel and document API loaders must retain their exact CRUD, session, completion, retrieval, upload, parsing and agent route inventories while infrastructure dependencies are replaced by deterministic test doubles.
+- id: agent-runtime-http-registration
+  owner_module: agent-runtime
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 60
+  test_ids:
+  - test/unit_test/tools/quality/test_agent_runtime_registration.py::test_agent_runtime_route_inventory_is_exact
+  expected_tests: 1
+  rationale: The real agent API loader must retain the exact session, canvas, upload, debug, completion, webhook and attachment route inventory while infrastructure dependencies are replaced by deterministic test doubles.
+- id: models-runtime-http-registration
+  owner_module: models-runtime
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 60
+  test_ids:
+  - test/unit_test/tools/quality/test_models_runtime_registration.py::test_models_runtime_route_inventory_is_exact
+  expected_tests: 2
+  rationale: The real models and provider API loaders must retain their exact catalog, default-model, provider, instance, connection and model-operation route inventories while service dependencies are replaced by deterministic test doubles.
+- id: ragflow-server-bootstrap
+  owner_module: deployment
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 60
+  test_ids:
+  - test/unit_test/tools/quality/test_ragflow_server_bootstrap.py::test_ragflow_server_bootstrap_contract_is_exact
+  expected_tests: 1
+  rationale: The real Python API process entrypoint must preserve database, settings, runtime, plugin, signal, progress timer, chat-channel, Business Documents worker and HTTP startup wiring while every external boundary is replaced by a deterministic test double.
+- id: business-documents-worker-lifecycle
+  owner_module: business-documents
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 60
+  test_ids:
+  - test/unit_test/api/apps/business_documents/test_business_document_worker_exports.py::test_worker_start_is_singleton_and_wake_interrupts_idle_wait
+  expected_tests: 1
+  rationale: The real Business Documents worker entrypoint must retain its single daemon-thread lifecycle, configured polling interval and explicit wake signal without opening database or network connections.
+- id: ingestion-connector-dispatch-registry
+  owner_module: ingestion-connectors
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 60
+  test_ids:
+  - test/unit_test/rag/test_sync_data_source.py::test_connector_factory_inventory_is_exact
+  - test/unit_test/rag/test_sync_data_source.py::test_sync_worker_main_lifecycle_is_exact
+  - test/unit_test/rag/test_sync_data_source.py::test_sync_worker_main_module_handoff_is_exact
+  expected_tests: 3
+  rationale: The real synchronization worker must retain the exact FileSource-to-handler registry for all 37 externally synchronized connector types while local and knowledge-base sources remain outside that dispatch table, and its process root must preserve consumer identity, logger/async handoff, settings, signal and dispatch-loop wiring.
+- id: task-executor-runtime-root
+  owner_module: ingestion-connectors
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 60
+  test_ids:
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_runtime_registries_are_exact
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_main_bootstrap_is_exact
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_run_modes_preserve_cleanup_and_ack
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_main_cancels_report_and_workers_on_stop
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_collect_replays_unacked_before_live_queue
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_collect_acks_non_runnable_messages
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_collect_failure_returns_no_task
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_empty_poll_backs_off_without_counting
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_cancellation_completes_and_acks
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_failure_marks_trace_progress_and_acks
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_task_manager_releases_limiter_when_cancelled
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_collect_hydrates_special_fanout_task
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_records_special_pipeline_operation_before_ack
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py::test_task_executor_heartbeat_reports_and_cleans_expired_workers
+  expected_tests: 18
+  rationale: The real ingestion task executor module must retain its exact registries, CLI identity, three execution modes, unacked-before-live selection, special fan-out hydration, non-runnable acknowledgement, empty/error poll behavior, success/cancellation/failure accounting and cleanup, failure trace/progress reporting, special-task operation logging before acknowledgement, heartbeat reporting and stale-worker cleanup, limiter release and worker/heartbeat cancellation order, while infrastructure and scheduling boundaries are deterministic test doubles.
+- id: admin-server-bootstrap
+  owner_module: observability
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 60
+  test_ids:
+  - test/unit_test/tools/quality/test_admin_server_bootstrap.py::test_admin_server_bootstrap_contract_is_exact
+  expected_tests: 1
+  rationale: The real Flask admin process entrypoint must preserve telemetry, blueprint, session, login, settings, authentication, configuration and threaded HTTP startup wiring while external services are deterministic test doubles.

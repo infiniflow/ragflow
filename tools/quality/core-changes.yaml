@@ -1,6 +1,6 @@
 schema_version: 1
 upstream_base: cb93883f3f8c975eecb2fed81210effeb3bdb06f
-head: f019c812ded5b8e9c127dfe824276d1dbf5179ad
+head: f726860d889b708e6528a5318e1eb157fe24686e
 changes:
 - id: CORE-eva-integration
   owner: fork-maintainer
@@ -15,8 +15,8 @@ changes:
   - test/unit_test/agent/test_retrieval_dynamic_registration.py
   - test/unit_test/api/apps/business_documents/test_eva_document_changes.py
   - test/unit_test/api/db/services/test_user_external_credential_service.py
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -36,8 +36,8 @@ changes:
   - test/unit_test/rag/app/test_audio_video_transcription.py
   - test/unit_test/api/utils/test_api_file_utils.py
   - services/asr-online-service/tests/integration/test_tone_real_inference.py
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -55,8 +55,8 @@ changes:
   - internal/dao/canvas_template_seed_test.go
   - test/unit_test/api/db/test_template_utils.py
   - test/integration/test_mrz_document_reader_live.py
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -98,8 +98,8 @@ changes:
   - web/src/pages/user-setting/settings-access-policy.test.ts
   - test/playwright/e2e/test_navigation_visibility_admin.py
   - test/unit_test/api/db/services/test_access_group_persistence.py
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -142,11 +142,11 @@ changes:
   - path: test/testcases/restful_api/test_user_tenant_routes_unit.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/testcases/test_web_api/test_dataset_management/test_dataset_sdk_routes_unit.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/testcases/test_web_api/test_system_app/test_apps_init_unit.py
     committed: M
     staged: null
@@ -220,8 +220,9 @@ changes:
   - test/unit_test/common/test_observability.py
   - test/unit_test/api/utils/test_admin_service_health.py
   - test/unit_test/api/db/services/test_audit_service.py
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  - test/unit_test/tools/quality/test_admin_server_bootstrap.py
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -261,11 +262,12 @@ changes:
   - internal/entity/models/ollama_test.go
   - test/unit_test/api/apps/services/test_models_api_service_list_tenant_added_models.py
   - test/unit_test/api/db/joint_services/test_tenant_model_service_max_tokens.py
+  - test/unit_test/tools/quality/test_models_runtime_registration.py
   - test/playwright/e2e/test_next_apps_chat.py
   - test/playwright/e2e/test_business_document_live_intake.py
   - test/testcases/restful_api/test_user_tenant_routes_unit.py
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -336,8 +338,8 @@ changes:
   - test/integration/fixtures/upgrade_data_probe.py
   - test/integration/test_minio_backup_restore.py
   - test/integration/test_postgres_minio_coordinated_restore.py
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -365,8 +367,9 @@ changes:
   - test/unit_test/api/apps/restful_apis/test_rerun_agent_authorization.py
   - test/unit_test/api/apps/restful_apis/test_agentbots_access_control.py
   - test/integration/test_saved_canvas_dsl_live.py
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  - test/unit_test/tools/quality/test_agent_runtime_registration.py
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -438,8 +441,9 @@ changes:
   - test/playwright/e2e/test_live_document_roundtrip.py
   - test/playwright/e2e/test_dataset_upload_parse.py
   - test/integration/test_local_docker_connectors_live.py
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  - test/unit_test/tools/quality/test_task_executor_entrypoint.py
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -494,14 +498,14 @@ changes:
   - path: test/testcases/restful_api/test_connector_routes_unit.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/testcases/test_web_api/test_connector_app/test_connector_routes_unit.py
     committed: M
     staged: null
     unstaged: null
   - path: test/unit_test/rag/test_sync_data_source.py
     committed: M
-    staged: null
+    staged: M
     unstaged: null
 - id: CORE-api-files-chat
   owner: fork-maintainer
@@ -522,8 +526,8 @@ changes:
   - test/playwright/e2e/test_live_document_roundtrip.py
   - test/playwright/e2e/test_dataset_upload_parse.py
   - test/testcases/restful_api/test_user_tenant_routes_unit.py
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -576,9 +580,9 @@ changes:
     staged: null
     unstaged: null
   - path: test/testcases/test_web_api/test_search_app/test_search_routes_unit.py
-    committed: null
+    committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: test/unit_test/api/apps/restful_apis/test_attachment_download_missing_blob.py
     committed: M
     staged: null
@@ -610,8 +614,9 @@ changes:
   tests:
   - test/unit_test/deployment/test_linux_pg_upgrade_delivery.py
   - services/asr-online-service/tests/test_install_contract.py
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  - test/unit_test/tools/quality/test_ragflow_server_bootstrap.py
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -676,8 +681,8 @@ changes:
   - web/src/layouts/components/global-navbar.test.tsx
   - web/src/pages/home/index.test.tsx
   - web/src/pages/agent/utils/tests/dsl-bridge.test.ts
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -732,7 +737,7 @@ changes:
   - path: web/src/components/embed-container.tsx
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/components/embed-dialog/index.tsx
     committed: M
     staged: null
@@ -1466,8 +1471,10 @@ changes:
   - Provenance evidence and no guessed upstream baseline
   - Existing checks remain distinct from future architecture gates
   tests:
+  - test/unit_test/tools/quality/test_architecture_workflow.py
   - test/unit_test/tools/quality/test_capture_inventory.py
   - test/unit_test/tools/quality/test_check_architecture.py
+  - test/unit_test/tools/quality/test_check_architecture_policy.py
   - test/unit_test/tools/quality/test_check_go_build_profiles.py
   - test/unit_test/tools/quality/test_check_python_dead_code.py
   - test/unit_test/tools/hooks/test_check_files.py
@@ -1477,9 +1484,12 @@ changes:
   - test/integration/live_ragflow/README.md
   - test/unit_test/playwright/test_browser_server.py
   - test/unit_test/tools/quality/test_inspect_python.py
+  - test/unit_test/tools/quality/test_inspect_typescript.py
+  - test/unit_test/tools/quality/test_inspect_go.py
+  - test/unit_test/tools/quality/test_check_runtime_graph_policy.py
   - test/integration/fixtures/New-T1LocalFixtures.ps1
-  validation: Paths and provenance verified in T0; behavior and necessity of individual
-    hunks await T1/review
+  validation: Paths and provenance verified in T0; behavior evidence and remaining
+    limits are tracked by T1/T2 reports and focused review
   upstream_status: Local delta against the verified content baseline; not certified
     for newer upstream
   paths:
@@ -1513,8 +1523,8 @@ changes:
     unstaged: null
   - path: AGENTS.md
     committed: M
-    staged: null
-    unstaged: M
+    staged: M
+    unstaged: null
   - path: Dockerfile
     committed: M
     staged: null
@@ -1537,8 +1547,8 @@ changes:
     unstaged: null
   - path: pyproject.toml
     committed: M
-    staged: null
-    unstaged: M
+    staged: M
+    unstaged: null
   - path: ragflow_deps/download_deps.py
     committed: M
     staged: null
@@ -1657,5 +1667,5 @@ changes:
     unstaged: null
   - path: uv.lock
     committed: M
-    staged: null
-    unstaged: M
+    staged: M
+    unstaged: null

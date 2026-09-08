@@ -45,10 +45,14 @@ def _check_tool(tool_path: str) -> dict:
 
 def _build_health_checks() -> dict:
     ffmpeg = _check_tool(settings.ffmpeg_path)
-    sox = _check_tool(settings.sox_path) if settings.enable_sox_normalize else {
-        "ok": True,
-        "details": {"resolved_path": None, "checked_at": datetime.now(timezone.utc).isoformat(), "error": "check skipped (normalization disabled)"},
-    }
+    sox = (
+        _check_tool(settings.sox_path)
+        if settings.enable_sox_normalize
+        else {
+            "ok": True,
+            "details": {"resolved_path": None, "checked_at": datetime.now(timezone.utc).isoformat(), "error": "check skipped (normalization disabled)"},
+        }
+    )
     return {"ffmpeg": ffmpeg, "sox": sox}
 
 
@@ -56,12 +60,14 @@ def _build_health_checks() -> dict:
 async def _lifespan(application: FastAPI):
     application.state.health_checks = _build_health_checks()
     worker.start()
-    logging.getLogger("asr.control").info(
-        "service_start",
-        extra={"event": "service_start", "payload": {"swagger_url": f"http://localhost:{settings.service_port}/docs"}},
-    )
-    yield
-    worker.stop()
+    try:
+        logging.getLogger("asr.control").info(
+            "service_start",
+            extra={"event": "service_start", "payload": {"swagger_url": f"http://localhost:{settings.service_port}/docs"}},
+        )
+        yield
+    finally:
+        worker.stop()
 
 
 app = FastAPI(title="ASR Online Service", version="0.2.0", lifespan=_lifespan)

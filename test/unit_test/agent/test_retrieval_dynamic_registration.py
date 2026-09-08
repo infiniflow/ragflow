@@ -67,6 +67,12 @@ def deny_network(event, args):
 
 sys.addaudithook(deny_network)
 
+# This contract verifies registry and Canvas persistence, not synonym lookup.
+# Avoid importing the external WordNet corpus as an unrelated subprocess side effect.
+from nltk.corpus import wordnet
+
+wordnet.ensure_loaded = lambda: None
+
 from agent.component import component_class
 from agent.canvas import Canvas
 
