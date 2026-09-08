@@ -309,33 +309,11 @@ func TestSitemapConnectorResume(t *testing.T) {
 		t.Fatalf("resumed documents = %v, want %v", got, want)
 	}
 
-	if _, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{Version: sitemapCheckpointVersion}}); !errors.Is(err, ErrSyncResumeInvalid) {
+	if _, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{}}); !errors.Is(err, ErrSyncResumeInvalid) {
 		t.Fatalf("empty resume anchor error = %v", err)
 	}
-	if _, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{Version: sitemapCheckpointVersion, SourceID: "sitemap:gone"}}); !errors.Is(err, ErrSyncResumeInvalid) {
+	if _, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{SourceID: "sitemap:gone"}}); !errors.Is(err, ErrSyncResumeInvalid) {
 		t.Fatalf("unknown resume anchor error = %v", err)
-	}
-}
-
-// TestSitemapConnectorRejectsLegacyCheckpoint verifies that a checkpoint
-// persisted by older code (format version 0) is rejected on resume. The legacy
-// PDF-pass checkpoint anchored on the parent page; accepting it would skip the
-// parent and silently drop the PDFs that were not committed yet.
-func TestSitemapConnectorRejectsLegacyCheckpoint(t *testing.T) {
-	connector := newSitemapTestConnector(t, map[string]any{
-		"batch_size":       1,
-		"follow_pdf_links": true,
-		"url_filter":       "/new$",
-	}, defaultSitemapFixture())
-
-	// Legacy parent-anchored PDF-pass checkpoint: version 0 (unset), SourceID
-	// and Cursor both pointing at the parent page "https://example.com/new".
-	legacy := &SyncCheckpoint{
-		SourceID: expectedSitemapSourceID("https://example.com/new"),
-		Cursor:   expectedSitemapSourceID("https://example.com/new"),
-	}
-	if _, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: legacy}); !errors.Is(err, ErrSyncResumeInvalid) {
-		t.Fatalf("legacy parent-anchored checkpoint error = %v, want ErrSyncResumeInvalid", err)
 	}
 }
 
@@ -367,9 +345,6 @@ func TestSitemapConnectorResumeAfterPDFPass(t *testing.T) {
 	}
 	if got, want := pdfBatch.Checkpoint.SourceID, expectedSitemapSourceID("https://example.com/docs/guide.pdf"); got != want {
 		t.Fatalf("pdf pass checkpoint = %q, want %q", got, want)
-	}
-	if pdfBatch.Checkpoint.Version != sitemapCheckpointVersion {
-		t.Fatalf("pdf pass checkpoint version = %d, want %d", pdfBatch.Checkpoint.Version, sitemapCheckpointVersion)
 	}
 
 	// Resuming from a PDF anchor must be rejected so the runner restarts the

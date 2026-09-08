@@ -321,7 +321,6 @@ func cloneSyncCheckpoint(checkpoint *syncerconnector.SyncCheckpoint) *syncerconn
 		return nil
 	}
 	clone := &syncerconnector.SyncCheckpoint{
-		Version:  checkpoint.Version,
 		Cursor:   checkpoint.Cursor,
 		SourceID: checkpoint.SourceID,
 	}
