@@ -519,6 +519,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       general: 'General',
       chunkMethodTab: 'Chunk method',
       testResults: 'Results',
+      openChunkInDocument: 'Open this chunk in the document',
       testSetting: 'Setting',
       retrievalTesting: 'Retrieval testing',
       retrievalTestingDescription:
@@ -1000,6 +1001,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
     },
     chunk: {
       type: 'Type',
+      showingRetrievedChunk: 'Showing only the chunk you opened from retrieval testing.',
+      showAllChunks: 'Show all chunks',
       docType: {
         image: 'Image',
         table: 'Table',
