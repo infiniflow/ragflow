@@ -16,7 +16,7 @@
 import logging
 from datetime import datetime
 
-from api.apps import login_required
+from api.apps import current_user, login_required
 from api.db.services.task_service import TaskService, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.utils.api_utils import (
     get_json_result,
@@ -55,6 +55,26 @@ async def _cancel_task(task_id):
     Sets a Redis cancel flag, updates the task progress to -1 (cancelled),
         and marks the associated document's run status as CANCEL if applicable.
     """
+    exists, task = TaskService.get_by_id(task_id)
+    if not exists:
+        return get_json_result(data=True)
+
+    # Cancelling flips the document to CANCEL and sets the worker cancel flag,
+    # so the caller must be able to access the dataset that owns the document -
+    # otherwise any logged-in user could stop another tenant's parsing tasks by
+    # guessing a task id. Tasks bound to fake doc ids (canvas debug,
+    # graph/raptor) carry no resolvable document and are cancelled through the
+    # kb-scoped flows instead.
+    doc_id = task.doc_id
+    if doc_id and doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
+        from api.db.services.document_service import DocumentService
+        from api.db.services.knowledgebase_service import KnowledgebaseService
+
+        _, doc = DocumentService.get_by_id(doc_id)
+        if doc and not KnowledgebaseService.accessible(doc.kb_id, current_user.id):
+            logging.warning("task cancel denied: task_id=%s user_id=%s", task_id, current_user.id)
+            return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="no authorization")
+
     try:
         REDIS_CONN.set(f"{task_id}-cancel", "x")
     except Exception as e:
@@ -63,10 +83,6 @@ async def _cancel_task(task_id):
             code=RetCode.CONNECTION_ERROR,
             message="Failed to stop task",
         )
-
-    exists, task = TaskService.get_by_id(task_id)
-    if not exists:
-        return get_json_result(data=True)
 
     # Append a cancellation message so the user can see it in progress_msg.
     try:
