@@ -75,6 +75,20 @@ def test_download_still_raises_api_error_without_attachment(monkeypatch):
 
 
 @pytest.mark.p2
+def test_download_raises_api_error_with_extra_response_fields(monkeypatch):
+    response = _DownloadResponse(
+        b'{"code": 102, "message": "document not found", "data": null}',
+        {"code": 102, "message": "document not found", "data": None},
+        {"Content-Type": "application/json"},
+    )
+    document = Document(None, {"id": "doc", "dataset_id": "dataset"})
+    monkeypatch.setattr(document, "get", lambda *_args, **_kwargs: response)
+
+    with pytest.raises(Exception, match="document not found"):
+        document.download()
+
+
+@pytest.mark.p2
 @pytest.mark.parametrize(
     "content,payload",
     [

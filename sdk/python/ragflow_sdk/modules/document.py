@@ -71,10 +71,9 @@ class Document(Base):
             logger.debug("Document.download returning attachment content dataset_id=%s document_id=%s", self.dataset_id, self.id)
             return res.content
 
-        error_keys = {"code", "message"}
         try:
             response = res.json()
-            if isinstance(response, dict) and set(response) == error_keys and response.get("code") != 0:
+            if isinstance(response, dict) and "code" in response and response["code"] != 0:
                 raise Exception(response.get("message"))
         except ValueError:
             pass
