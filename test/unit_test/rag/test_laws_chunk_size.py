@@ -29,7 +29,7 @@ import re
 
 import pytest
 
-import rag.nlp as nlp
+from rag import nlp
 from rag.nlp import tree_merge
 
 # bull=3 is the BULLET_PATTERN entry for "PART/Chapter/Section/Article" headings,
@@ -62,7 +62,7 @@ def test_single_heading_long_body_respects_chunk_token_num():
     chunks = tree_merge(BULL, sections, 2, chunk_token_num=20)
     assert len(chunks) > 1
     # A paragraph is never split mid-way, so allow one paragraph of slack over budget.
-    assert all(len(c.split()) <= 20 + 4 for c in chunks)
+    assert all(nlp.num_tokens_from_string(c) <= 20 + 4 for c in chunks)
     # No content lost: every paragraph marker still appears exactly once.
     joined = "\n".join(chunks)
     for i in range(40):
@@ -113,3 +113,26 @@ def test_body_just_under_budget_stays_single_chunk():
     total = sum(len(s.split()) for s in sections)
     chunks = tree_merge(BULL, sections, 2, chunk_token_num=total)
     assert len(chunks) == 1
+
+
+@pytest.mark.p2
+def test_ancestor_with_children_and_own_body_is_not_duplicated_unsplit():
+    # Regression: a heading node that has both children (Chapter I -> Section
+    # 1) and its own body text merged onto it before that first child appeared
+    # (an intro paragraph, attached by build_tree onto the current stack top)
+    # used to fold that body into path_titles and repeat it, whole and
+    # uncapped, into every descendant chunk instead of splitting or counting
+    # it against the budget.
+    sections = ["Chapter I"] + _body(6, prefix="intro") + ["Section 1", "Article 1"] + _body(20, prefix="body")
+    chunks = tree_merge(BULL, sections, 2, chunk_token_num=20)
+    assert len(chunks) > 1
+    # No chunk exceeds the budget, including the formerly-unsplit title prefix.
+    assert all(nlp.num_tokens_from_string(c) <= 20 + 4 for c in chunks)
+    # No paragraph is duplicated across chunks.
+    joined = "\n".join(chunks)
+    for i in range(6):
+        assert len(re.findall(rf"\bintro{i}\b", joined)) == 1
+    for i in range(20):
+        assert len(re.findall(rf"\bbody{i}\b", joined)) == 1
+    # The ancestor heading still carries into every descendant chunk.
+    assert all("Chapter I" in c for c in chunks)
