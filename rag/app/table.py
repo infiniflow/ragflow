@@ -74,7 +74,7 @@ class Excel(ExcelParser):
         lang="English",
         **kwargs,
     ):
-        if not binary:
+        if binary is None:
             wb = Excel._load_excel_to_workbook(fnm)
         else:
             wb = Excel._load_excel_to_workbook(BytesIO(binary))

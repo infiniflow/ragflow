@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -41,13 +42,51 @@ func allowLoopbackForTests(t *testing.T) func() {
 	return func() { LookupHost = orig }
 }
 
+func TestStreamableSessionCleanupBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		timeout time.Duration
+		want    time.Duration
+	}{
+		{name: "shorter operation timeout", timeout: 100 * time.Millisecond, want: 100 * time.Millisecond},
+		{name: "cleanup timeout cap", timeout: 30 * time.Second, want: 5 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := streamableSessionCleanupBudget(tc.timeout); got != tc.want {
+				t.Errorf("streamableSessionCleanupBudget(%s)=%s, want %s", tc.timeout, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestFetchToolsStreamableHTTPJSON(t *testing.T) {
 	defer allowLoopbackForTests(t)()
 
-	var initCount, listCount, notifyCount int32
+	var initCount, listCount, notifyCount, deleteCount int32
+	var mu sync.Mutex
+	var requestOrder []string
+	recordRequest := func(method string) {
+		mu.Lock()
+		defer mu.Unlock()
+		requestOrder = append(requestOrder, method)
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer fetch-token" {
+			t.Errorf("Authorization=%q, want rendered header", got)
+		}
+		if r.Method == http.MethodDelete {
+			atomic.AddInt32(&deleteCount, 1)
+			recordRequest(http.MethodDelete)
+			if got := r.Header.Get(sessionHeader); got != "test-session" {
+				t.Errorf("DELETE session header=%q, want test-session", got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method != http.MethodPost {
-			t.Errorf("expected POST, got %s", r.Method)
+			t.Errorf("request method=%s, want POST or DELETE", r.Method)
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+			return
 		}
 		body, _ := io.ReadAll(r.Body)
 		var req map[string]interface{}
@@ -58,7 +97,14 @@ func TestFetchToolsStreamableHTTPJSON(t *testing.T) {
 			http.Error(w, "bad body", http.StatusBadRequest)
 			return
 		}
-		switch req["method"] {
+		method, _ := req["method"].(string)
+		recordRequest(method)
+		if method != "initialize" {
+			if got := r.Header.Get(sessionHeader); got != "test-session" {
+				t.Errorf("%s session header=%q, want test-session", method, got)
+			}
+		}
+		switch method {
 		case "initialize":
 			atomic.AddInt32(&initCount, 1)
 			w.Header().Set(sessionHeader, "test-session")
@@ -83,6 +129,14 @@ func TestFetchToolsStreamableHTTPJSON(t *testing.T) {
 	tools, err := FetchTools(t.Context(), FetchOptions{
 		URL:        srv.URL,
 		ServerType: TransportStreamableHTTP,
+		Headers: map[string]string{
+			"${header_name}": "Bearer ${token}",
+			sessionHeader:    "stale-session",
+		},
+		Variables: map[string]string{
+			"header_name": "Authorization",
+			"token":       "fetch-token",
+		},
 		HTTPClient: srv.Client(),
 		Timeout:    2 * time.Second,
 	})
@@ -98,8 +152,14 @@ func TestFetchToolsStreamableHTTPJSON(t *testing.T) {
 	if tools[1].Name != "fetch" {
 		t.Errorf("tool 1 = %+v", tools[1])
 	}
-	if atomic.LoadInt32(&initCount) != 1 || atomic.LoadInt32(&notifyCount) != 1 || atomic.LoadInt32(&listCount) != 1 {
-		t.Errorf("expected 1 init / 1 notify / 1 list, got %d/%d/%d", initCount, notifyCount, listCount)
+	if atomic.LoadInt32(&initCount) != 1 || atomic.LoadInt32(&notifyCount) != 1 || atomic.LoadInt32(&listCount) != 1 || atomic.LoadInt32(&deleteCount) != 1 {
+		t.Errorf("expected 1 init / 1 notify / 1 list / 1 delete, got %d/%d/%d/%d", initCount, notifyCount, listCount, deleteCount)
+	}
+	mu.Lock()
+	gotOrder := strings.Join(requestOrder, ",")
+	mu.Unlock()
+	if want := "initialize,notifications/initialized,tools/list,DELETE"; gotOrder != want {
+		t.Errorf("request order=%q, want %q", gotOrder, want)
 	}
 }
 

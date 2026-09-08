@@ -95,6 +95,13 @@ async def create_dataset(tenant_id: str, req: dict):
     :param req: dataset creation request
     :return: (success, result) or (success, error_message)
     """
+    # Drop language when not provided so the model/database default applies
+    # (the create request is parsed with exclude_unset=False, so the key is
+    # always present with a None default when the caller omits it).
+    if req.get("language") is None:
+        req.pop("language", None)
+        logging.debug("create_dataset: 'language' not provided; falling back to the model/database default.")
+
     # Map auto_metadata_config (if provided) into parser_config structure
     auto_meta = req.pop("auto_metadata_config", {})
     if auto_meta:
@@ -2472,6 +2479,26 @@ async def _current_chunk_doc_ids(index_nm, dataset_id: str, doc_ids: set[str]) -
     )
 
 
+async def _current_structure_product_doc_ids(index_nm, dataset_id: str, kind: str, doc_ids: set[str]) -> set[str]:
+    """Return documents that have produced a document-scoped structure graph."""
+    if not doc_ids:
+        return set()
+    stored_kinds = sorted(_ALTERATION_ELIGIBLE_TEMPLATE_KINDS.get(kind) or {kind})
+    return await _involved_doc_ids_paged(
+        index_nm,
+        dataset_id,
+        {
+            "doc_id": sorted(doc_ids),
+            "scope_kwd": ["doc"],
+            "knowledge_graph_kwd": ["entity", "relation"],
+            "compilation_template_kind_kwd": stored_kinds,
+        },
+        "doc_id",
+        from_list=False,
+        raise_on_error=True,
+    )
+
+
 async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str, tenant_id: str, wiki_map_state: dict | None = None) -> set:
     """Gather the doc ids baked into the compiled product for ``kind``."""
     if kind == "wiki":
@@ -2568,11 +2595,14 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
             eligible_before_chunk_filter = len(eligible_doc_ids)
             chunk_doc_ids = await _current_chunk_doc_ids(index_nm, dataset_id, eligible_doc_ids)
             eligible_doc_ids &= chunk_doc_ids
+            product_doc_ids = await _current_structure_product_doc_ids(index_nm, dataset_id, kind, eligible_doc_ids)
+            eligible_doc_ids &= product_doc_ids
             logging.debug(
-                "alteration: structure chunk eligibility kind=%s kb=%s before=%d after=%d",
+                "alteration: structure eligibility kind=%s kb=%s before=%d after_chunks=%d after_products=%d",
                 kind,
                 dataset_id,
                 eligible_before_chunk_filter,
+                len(chunk_doc_ids),
                 len(eligible_doc_ids),
             )
         wiki_map_state = None
