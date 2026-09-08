@@ -38,7 +38,7 @@ func NewN1NModel(baseURL map[string]string, urlSuffix URLSuffix) *N1NModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -88,33 +88,12 @@ func newN1NJSONRequest(ctx context.Context, method, endpoint string, payload int
 	return req, nil
 }
 
-type n1nChatChoice struct {
-	Message      n1nChatMessage `json:"message"`
-	Delta        n1nChatDelta   `json:"delta"`
-	FinishReason string         `json:"finish_reason"`
-}
-
-type n1nChatMessage struct {
-	Content          *string `json:"content"`
-	ReasoningContent string  `json:"reasoning_content"`
-}
-
-type n1nChatDelta struct {
-	Content          string `json:"content"`
-	ReasoningContent string `json:"reasoning_content"`
-}
-
-type n1nChatResponse struct {
-	Choices []n1nChatChoice `json:"choices"`
-}
-
 // ChatWithMessages sends a single, non-streaming chat completion
 // against n1n.ai's /v1/chat/completions endpoint.
 func (n *N1NModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	apiKey := *apiConfig.ApiKey
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
@@ -136,49 +115,12 @@ func (n *N1NModel) ChatWithMessages(ctx context.Context, modelName string, messa
 		reqBody["thinking"] = map[string]interface{}{"type": thinkingType}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := newN1NJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
+	body, err := n.baseModel.doRequest(ctx, endpoint, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := n.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("n1n chat API error: %s, body: %s", resp.Status, string(body))
-	}
-
-	var parsed n1nChatResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-	if len(parsed.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-	if parsed.Choices[0].Message.Content == nil {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	content := *parsed.Choices[0].Message.Content
-	chatResp := &ChatResponse{
-		Answer: &content,
-	}
-	if parsed.Choices[0].Message.ReasoningContent != "" {
-		reasonContent := parsed.Choices[0].Message.ReasoningContent
-		chatResp.ReasonContent = &reasonContent
-	}
-	return chatResp, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends a streaming chat completion.
@@ -196,7 +138,6 @@ func (n *N1NModel) ChatStreamlyWithSender(ctx context.Context, modelName string,
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	apiKey := *apiConfig.ApiKey
 
 	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Chat)
 	if err != nil {
@@ -208,6 +149,7 @@ func (n *N1NModel) ChatStreamlyWithSender(ctx context.Context, modelName string,
 	}
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
 		thinkingType := "disabled"
 		if *chatModelConfig.Thinking {
@@ -216,86 +158,9 @@ func (n *N1NModel) ChatStreamlyWithSender(ctx context.Context, modelName string,
 		reqBody["thinking"] = map[string]interface{}{"type": thinkingType}
 	}
 
-	req, err := newN1NJSONRequest(ctx, "POST", endpoint, reqBody, apiKey)
-	if err != nil {
-		return err
-	}
-
-	resp, err := n.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("n1n chat stream API error: %s, body: %s", resp.Status, string(body))
-	}
-
-	sawTerminal := false
-	accumulatedToolCalls := make(map[int]map[string]interface{})
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		common.Info(fmt.Sprintf("%v", event))
-
-		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
-		if usageErr != nil {
-			return usageErr
-		}
-		if found {
-			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
-		}
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			sawTerminal = true
-		}
-		return nil
+	return n.baseModel.doStreamRequest(ctx, endpoint, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !done && !sawTerminal {
-		return fmt.Errorf("deepseek: stream ended before [DONE] or finish_reason")
-	}
-
-	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
-
-	endOfStream := "[DONE]"
-	if err := sender(&endOfStream, nil); err != nil {
-		return err
-	}
-	return nil
 }
 
 type n1nEmbeddingData struct {
@@ -316,12 +181,12 @@ type n1nEmbeddingRequest struct {
 }
 
 // Embed turns a list of texts into embedding vectors
-func (n *N1NModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (n *N1NModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	apiKey := *apiConfig.ApiKey
@@ -336,7 +201,7 @@ func (n *N1NModel) Embed(ctx context.Context, modelName *string, texts []string,
 
 	reqBody := n1nEmbeddingRequest{
 		Model: *modelName,
-		Input: texts,
+		Input: request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody.Dimensions = embeddingConfig.Dimension
@@ -365,15 +230,15 @@ func (n *N1NModel) Embed(ctx context.Context, modelName *string, texts []string,
 	}
 
 	var parsed n1nEmbeddingResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
+	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([]EmbeddingData, len(texts))
-	filled := make([]bool, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	filled := make([]bool, len(request.Texts))
 	for _, item := range parsed.Data {
-		if item.Index < 0 || item.Index >= len(texts) {
-			return nil, fmt.Errorf("n1n: embedding response index %d out of range for %d inputs", item.Index, len(texts))
+		if item.Index < 0 || item.Index >= len(request.Texts) {
+			return nil, fmt.Errorf("n1n: embedding response index %d out of range for %d inputs", item.Index, len(request.Texts))
 		}
 		if filled[item.Index] {
 			return nil, fmt.Errorf("n1n: duplicate embedding index %d in response", item.Index)
@@ -410,11 +275,12 @@ type n1nRerankRequest struct {
 
 // Rerank scores a query against a list of documents using
 // n1n.ai's /v1/rerank endpoint (Cohere-shaped response).
-func (n *N1NModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (n *N1NModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -542,7 +408,6 @@ func (n *N1NModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[strin
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-// TranscribeAudio: n1n.ai exposes /v1/audio/transcriptions
 func (n *N1NModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
@@ -551,7 +416,6 @@ func (n *N1NModel) TranscribeAudioWithSender(ctx context.Context, modelName *str
 	return fmt.Errorf("%s, no such method", n.Name())
 }
 
-// AudioSpeech: n1n.ai exposes /v1/audio/speech
 func (n *N1NModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
@@ -570,7 +434,6 @@ func (n *N1NModel) ParseFile(ctx context.Context, modelName *string, content []b
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-// ListTasks: n1n.ai has /v1/contents/generations/tasks
 func (n *N1NModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }

@@ -166,13 +166,21 @@ class DataflowService:
 
             time_cost = timer() - start_ts
             task_time_cost = timer() - task_start_ts
-            self._progress(prog=1.0, msg="Indexing done ({:.2f}s). Task done ({:.2f}s)".format(time_cost, task_time_cost))
 
-            # Update document stats
+            # Update document stats (chunk counters) BEFORE marking the task
+            # as done, so the async _sync_progress loop never observes DONE
+            # with stale chunk_num=0.  If the stats update fails, the task
+            # is still marked DONE — chunk counters are not critical to the
+            # parse result.
             if ctx.write_interceptor:
                 ctx.write_interceptor.intercept("DocumentService.increment_chunk_num")
             else:
-                DocumentService.increment_chunk_num(doc_id, task_dataset_id, embedding_token_consumption, len(chunks), task_time_cost)
+                try:
+                    DocumentService.increment_chunk_num(doc_id, task_dataset_id, embedding_token_consumption, len(chunks), task_time_cost)
+                except Exception:
+                    logging.exception("increment_chunk_num failed for doc %s", doc_id)
+
+            self._progress(prog=1.0, msg="Indexing done ({:.2f}s). Task done ({:.2f}s)".format(time_cost, task_time_cost))
 
             logging.info("[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks), embedding_token_consumption, task_time_cost))
             ctx.recording_context.record("dataflow_chunks", chunks)
@@ -284,7 +292,7 @@ class DataflowService:
             return None, token_consumption
 
     @classmethod
-    async def _encode_batch(cls, txts: List[str], embedding_model) -> Tuple[np.ndarray, int]:
+    def _encode_batch(cls, txts: List[str], embedding_model) -> Tuple[np.ndarray, int]:
         """Batch encode texts using the embedding model with truncation."""
         truncated = EmbeddingUtils.truncate_texts(txts, embedding_model.max_length)
         return embedding_model.encode(truncated)
@@ -299,9 +307,12 @@ class DataflowService:
             ck["docnm_kwd"] = ctx.name
             ck["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             ck["create_timestamp_flt"] = datetime.now().timestamp()
+            text = ck.get("text") or ck.get("content_with_weight") or ck.get("summary") or ck.get("questions") or ""
+            if not isinstance(text, str):
+                text = str(text)
 
             if not ck.get("id"):
-                ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
+                ck["id"] = xxhash.xxh64((text + str(ck["doc_id"])).encode("utf-8")).hexdigest()
 
             if "questions" in ck:
                 if "question_tks" not in ck:
@@ -326,8 +337,8 @@ class DataflowService:
                 del ck["metadata"]
 
             if "content_with_weight" not in ck:
-                ck["content_with_weight"] = ck["text"] or ""
-            del ck["text"]
+                ck["content_with_weight"] = text
+            ck.pop("text", None)
 
             if "positions" in ck:
                 add_positions(ck, ck["positions"])

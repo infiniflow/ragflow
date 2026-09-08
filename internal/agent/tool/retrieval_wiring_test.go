@@ -31,7 +31,7 @@ func TestRetrievalTool_StubReturnsServiceMissing(t *testing.T) {
 	SetRetrievalService(nil)
 	tool := NewRetrievalTool()
 	ctx := t.Context()
-	_, err := tool.InvokableRun(ctx, `{"query":"hi"}`)
+	_, err := tool.InvokableRun(ctx, `{"query":"hi","dataset_ids":["kb-1"]}`)
 	if !errors.Is(err, ErrRetrievalServiceMissing) {
 		t.Errorf("err=%v, want ErrRetrievalServiceMissing", err)
 	}
@@ -46,7 +46,7 @@ func TestRetrievalTool_SimpleServiceReturnsChunks(t *testing.T) {
 
 	tool := NewRetrievalTool()
 	ctx := t.Context()
-	out, err := tool.InvokableRun(ctx, `{"query":"hello world","top_n":2}`)
+	out, err := tool.InvokableRun(ctx, `{"query":"hello world","dataset_ids":["kb-1"],"top_n":2}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}

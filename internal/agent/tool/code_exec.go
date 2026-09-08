@@ -43,7 +43,9 @@ var ErrCodeExecSandboxMissing = errors.New(
 const codeExecToolName = "execute_code"
 
 const codeExecToolDescription = "This tool has a sandbox that can execute code written in 'Python'/'Javascript'. " +
-	"It receives a piece of code and returns a JSON string."
+	"It receives a piece of code and returns a JSON string. " +
+	"The code must define a main function (Python) or export main (JavaScript); " +
+	"the return value of main is returned as the tool result."
 
 // codeExecArgs is the JSON shape the model sends in. The Python
 // tool accepts "lang" + "script"; we also accept "code" as a
@@ -68,7 +70,7 @@ type codeExecArgs struct {
 // shape mirrors the Python tool's `content` / `_ERROR` / `actual_type`
 // fields so downstream nodes can pattern-match unchanged. Artifacts and
 // Attachments are surfaced for the model and downstream component
-// consumption (e.g. Message component's artifact markdown formatter).
+// consumption (e.g. Message component's artifact Markdown formatter).
 type codeExecResult struct {
 	Content     string           `json:"content,omitempty"`
 	ActualType  string           `json:"actual_type,omitempty"`
@@ -100,15 +102,15 @@ func (c *CodeExecTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		Name: codeExecToolName,
 		Desc: codeExecToolDescription,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"language": {
+			"lang": {
 				Type:     schema.String,
-				Desc:     "The programming language of the code. Allowed: 'python' (or 'python3'), 'javascript' (or 'nodejs').",
-				Enum:     []string{"python", "python3", "javascript", "nodejs"},
+				Desc:     "The programming language of this piece of code.",
+				Enum:     []string{"python", "javascript"},
 				Required: true,
 			},
-			"code": {
+			"script": {
 				Type:     schema.String,
-				Desc:     "The code to execute. Must define a `main` function (Python) or export `main` (JavaScript).",
+				Desc:     "A piece of code in the correct format. It must define main(...).",
 				Required: true,
 			},
 		}),
@@ -182,7 +184,7 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 //     surface it as `_ARTIFACTS` to match the Python envelope).
 //   - Metadata["attachments"] → Attachments (rendered into
 //     downstream Markdown by Message via the same path the Agent
-//     tool artifact markdown uses).
+//     tool artifact Markdown uses).
 //
 // Artifacts / Attachments with the wrong element type (anything
 // other than map[string]any) are silently dropped with a log

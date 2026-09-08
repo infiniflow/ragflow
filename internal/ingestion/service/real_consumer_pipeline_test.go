@@ -1,4 +1,4 @@
-//go:build integration
+//go:build e2e
 
 package service
 
@@ -91,7 +91,7 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 		t.Fatalf("task status after UpdateStatusIfCurrent = %s, want %s", task.Status, common.RUNNING)
 	}
 
-	ingestor := NewIngestor("queue-test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("queue-test", 1, []string{"pdf"})
 	var routedToPipeline bool
 	taskCtx := taskpkg.NewTaskContextForScheduling(
 		context.Background(),

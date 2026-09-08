@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -25,29 +24,11 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
-	"sync"
-	"time"
 )
-
-// modelscopeStreamIdleTimeout bounds how long a stream can go without
-var modelscopeStreamIdleTimeout = 60 * time.Second
 
 // ModelScopeModel implements ModelDriver for ModelScope chat models.
 type ModelScopeModel struct {
 	baseModel BaseModel
-}
-
-type modelscopeChatChoice struct {
-	Message struct {
-		Content          string `json:"content"`
-		ReasoningContent string `json:"reasoning_content"`
-		Reasoning        string `json:"reasoning"`
-		Thinking         string `json:"thinking"`
-	} `json:"message"`
-}
-
-type modelscopeChatResponse struct {
-	Choices []modelscopeChatChoice `json:"choices"`
 }
 
 type modelscopeModelListResponse struct {
@@ -61,7 +42,7 @@ func NewModelScopeModel(baseURL map[string]string, urlSuffix URLSuffix) *ModelSc
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(),
+			httpClient:       NewDriverHTTPClient(true),
 		},
 	}
 }
@@ -85,28 +66,6 @@ func normalizeModelScopeBaseURL(base string) string {
 	return trimmed
 }
 
-func modelscopeReasoningFromStrings(reasoningContent string, reasoning string, thinking string) string {
-	switch {
-	case reasoningContent != "":
-		return reasoningContent
-	case reasoning != "":
-		return reasoning
-	case thinking != "":
-		return thinking
-	default:
-		return ""
-	}
-}
-
-func modelscopeReasoningFromMap(value map[string]interface{}) string {
-	for _, field := range []string{"reasoning_content", "reasoning", "thinking"} {
-		if text, ok := value[field].(string); ok && text != "" {
-			return text
-		}
-	}
-	return ""
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (m *ModelScopeModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -125,56 +84,13 @@ func (m *ModelScopeModel) ChatWithMessages(ctx context.Context, modelName string
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-	jsonData, err := json.Marshal(reqBody)
+
+	body, err := m.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
-	}
-
-	resp, err := m.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result modelscopeChatResponse
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-	if len(result.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	content := result.Choices[0].Message.Content
-	reasonContent := modelscopeReasoningFromStrings(
-		result.Choices[0].Message.ReasoningContent,
-		result.Choices[0].Message.Reasoning,
-		result.Choices[0].Message.Thinking,
-	)
-
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender.
@@ -189,8 +105,8 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	if chatModelConfig != nil && chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
-		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+	if err := validateStreamConfig(chatModelConfig); err != nil {
+		return err
 	}
 
 	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
@@ -201,112 +117,18 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
-	}
-
-	resp, err := m.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	lastActive := time.Now()
-	var lastActiveMu sync.Mutex
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		ticker := time.NewTicker(modelscopeStreamIdleTimeout / 4)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case now := <-ticker.C:
-				lastActiveMu.Lock()
-				idle := now.Sub(lastActive)
-				lastActiveMu.Unlock()
-				if idle >= modelscopeStreamIdleTimeout {
-					cancel()
-					return
-				}
-			}
-		}
-	}()
-
-	sawTerminal := false
-	accumulatedToolCalls := make(map[int]map[string]any)
-	streamDone, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		lastActiveMu.Lock()
-		lastActive = time.Now()
-		lastActiveMu.Unlock()
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		if delta, ok := firstChoice["delta"].(map[string]interface{}); ok {
-			accumulateToolCallDeltas(delta, accumulatedToolCalls)
-			if reasoning := modelscopeReasoningFromMap(delta); reasoning != "" {
-				if err := sender(nil, &reasoning); err != nil {
-					return err
-				}
-			}
-			if content, ok := delta["content"].(string); ok && content != "" {
-				if err := sender(&content, nil); err != nil {
-					return err
-				}
-			}
-		}
-
-		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-		}
-		return nil
+	return m.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
-	if err != nil {
-		if ctx.Err() != nil {
-			return fmt.Errorf("modelscope: stream idle for more than %s, aborted", modelscopeStreamIdleTimeout)
-		}
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !streamDone && !sawTerminal {
-		return fmt.Errorf("modelscope: stream ended before [DONE] or finish_reason")
-	}
-
-	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
-
-	endOfStream := "[DONE]"
-	return sender(&endOfStream, nil)
 }
 
-func (m *ModelScopeModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (m *ModelScopeModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
-func (m *ModelScopeModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (m *ModelScopeModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 

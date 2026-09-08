@@ -396,12 +396,12 @@ class TestDatasetCreate:
             ("raptor_true", {"raptor": {"use_raptor": True}}),
             ("raptor_false", {"raptor": {"use_raptor": False}}),
             ("raptor_prompt", {"raptor": {"prompt": "Who are you?"}}),
-            ("raptor_max_token_min", {"raptor": {"max_token": 1}}),
+            ("raptor_max_token_min", {"raptor": {"max_token": 512}}),
             ("raptor_max_token_mid", {"raptor": {"max_token": 1024}}),
             ("raptor_max_token_max", {"raptor": {"max_token": 2048}}),
-            ("raptor_threshold_min", {"raptor": {"threshold": 0.0}}),
-            ("raptor_threshold_mid", {"raptor": {"threshold": 0.5}}),
-            ("raptor_threshold_max", {"raptor": {"threshold": 1.0}}),
+            ("raptor_clustering_threshold_min", {"raptor": {"clustering_threshold": 0.0}}),
+            ("raptor_clustering_threshold_mid", {"raptor": {"clustering_threshold": 0.5}}),
+            ("raptor_clustering_threshold_max", {"raptor": {"clustering_threshold": 1.0}}),
             ("raptor_max_cluster_min", {"raptor": {"max_cluster": 1}}),
             ("raptor_max_cluster_mid", {"raptor": {"max_cluster": 512}}),
             ("raptor_max_cluster_max", {"raptor": {"max_cluster": 1024}}),
@@ -449,9 +449,9 @@ class TestDatasetCreate:
             "raptor_max_token_min",
             "raptor_max_token_mid",
             "raptor_max_token_max",
-            "raptor_threshold_min",
-            "raptor_threshold_mid",
-            "raptor_threshold_max",
+            "raptor_clustering_threshold_min",
+            "raptor_clustering_threshold_mid",
+            "raptor_clustering_threshold_max",
             "raptor_max_cluster_min",
             "raptor_max_cluster_mid",
             "raptor_max_cluster_max",
@@ -463,6 +463,9 @@ class TestDatasetCreate:
         payload = {"name": name, "parser_config": parser_config_o}
         dataset = client.create_dataset(**payload)
         for k, v in parser_config.items():
+            if k in {"graphrag", "raptor"}:
+                assert not hasattr(dataset.parser_config, k), str(dataset)
+                continue
             if isinstance(v, dict):
                 for kk, vv in v.items():
                     assert attrgetter(f"{k}.{kk}")(dataset.parser_config) == vv, str(dataset)
@@ -512,13 +515,11 @@ class TestDatasetCreate:
             ("raptor_type_invalid", {"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
             ("raptor_prompt_empty", {"raptor": {"prompt": ""}}, "String should have at least 1 character"),
             ("raptor_prompt_space", {"raptor": {"prompt": " "}}, "String should have at least 1 character"),
-            ("raptor_max_token_min_limit", {"raptor": {"max_token": 0}}, "Input should be greater than or equal to 1"),
             ("raptor_max_token_max_limit", {"raptor": {"max_token": 2049}}, "Input should be less than or equal to 2048"),
-            ("raptor_max_token_float_not_allowed", {"raptor": {"max_token": 3.14}}, "Input should be a valid integer"),
             ("raptor_max_token_type_invalid", {"raptor": {"max_token": "string"}}, "Input should be a valid integer"),
-            ("raptor_threshold_min_limit", {"raptor": {"threshold": -0.1}}, "Input should be greater than or equal to 0"),
-            ("raptor_threshold_max_limit", {"raptor": {"threshold": 1.1}}, "Input should be less than or equal to 1"),
-            ("raptor_threshold_type_invalid", {"raptor": {"threshold": "string"}}, "Input should be a valid number"),
+            ("raptor_clustering_threshold_min_limit", {"raptor": {"clustering_threshold": -0.1}}, "Input should be greater than or equal to 0"),
+            ("raptor_clustering_threshold_max_limit", {"raptor": {"clustering_threshold": 1.1}}, "Input should be less than or equal to 1"),
+            ("raptor_clustering_threshold_type_invalid", {"raptor": {"clustering_threshold": "string"}}, "Input should be a valid number"),
             ("raptor_max_cluster_min_limit", {"raptor": {"max_cluster": 0}}, "Input should be greater than or equal to 1"),
             ("raptor_max_cluster_max_limit", {"raptor": {"max_cluster": 1025}}, "Input should be less than or equal to 1024"),
             ("raptor_max_cluster_float_not_allowed", {"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer"),
@@ -568,13 +569,11 @@ class TestDatasetCreate:
             "raptor_type_invalid",
             "raptor_prompt_empty",
             "raptor_prompt_space",
-            "raptor_max_token_min_limit",
             "raptor_max_token_max_limit",
-            "raptor_max_token_float_not_allowed",
             "raptor_max_token_type_invalid",
-            "raptor_threshold_min_limit",
-            "raptor_threshold_max_limit",
-            "raptor_threshold_type_invalid",
+            "raptor_clustering_threshold_min_limit",
+            "raptor_clustering_threshold_max_limit",
+            "raptor_clustering_threshold_type_invalid",
             "raptor_max_cluster_min_limit",
             "raptor_max_cluster_max_limit",
             "raptor_max_cluster_float_not_allowed",
@@ -657,10 +656,8 @@ class TestParserConfigBugFix:
         dataset = client.create_dataset(**payload)
 
         config = dataset.parser_config
-        assert hasattr(config, "raptor"), "raptor field should be present"
-        assert hasattr(config, "graphrag"), "graphrag field should be present"
-        assert config.raptor.use_raptor is False, "raptor.use_raptor should default to False"
-        assert config.graphrag.use_graphrag is False, "graphrag.use_graphrag should default to False"
+        assert not hasattr(config, "raptor"), "raptor field should not be exposed"
+        assert not hasattr(config, "graphrag"), "graphrag field should not be exposed"
         assert config.chunk_token_num == 1024, "User-provided chunk_token_num should be preserved"
 
     @pytest.mark.p1
@@ -670,9 +667,8 @@ class TestParserConfigBugFix:
         dataset = client.create_dataset(**payload)
 
         config = dataset.parser_config
-        assert config.raptor.use_raptor is True, "User-provided raptor.use_raptor should be preserved"
-        assert hasattr(config, "graphrag"), "graphrag field should be present"
-        assert config.graphrag.use_graphrag is False, "graphrag.use_graphrag should default to False"
+        assert not hasattr(config, "raptor"), "raptor field should not be exposed"
+        assert not hasattr(config, "graphrag"), "graphrag field should not be exposed"
 
     @pytest.mark.p1
     def test_parser_config_with_only_graphrag(self, client):
@@ -681,9 +677,8 @@ class TestParserConfigBugFix:
         dataset = client.create_dataset(**payload)
 
         config = dataset.parser_config
-        assert hasattr(config, "raptor"), "raptor field should be present"
-        assert config.raptor.use_raptor is False, "raptor.use_raptor should default to False"
-        assert config.graphrag.use_graphrag is True, "User-provided graphrag.use_graphrag should be preserved"
+        assert not hasattr(config, "raptor"), "raptor field should not be exposed"
+        assert not hasattr(config, "graphrag"), "graphrag field should not be exposed"
 
     @pytest.mark.p1
     def test_parser_config_with_both_fields(self, client):
@@ -692,8 +687,8 @@ class TestParserConfigBugFix:
         dataset = client.create_dataset(**payload)
 
         config = dataset.parser_config
-        assert config.raptor.use_raptor is True, "User-provided raptor.use_raptor should be preserved"
-        assert config.graphrag.use_graphrag is True, "User-provided graphrag.use_graphrag should be preserved"
+        assert not hasattr(config, "raptor"), "raptor field should not be exposed"
+        assert not hasattr(config, "graphrag"), "graphrag field should not be exposed"
 
     @pytest.mark.p2
     @pytest.mark.parametrize("chunk_method", ["qa", "manual", "paper", "book", "laws", "presentation"])
@@ -703,7 +698,5 @@ class TestParserConfigBugFix:
         dataset = client.create_dataset(**payload)
 
         config = dataset.parser_config
-        assert hasattr(config, "raptor"), f"raptor field should be present for {chunk_method}"
-        assert hasattr(config, "graphrag"), f"graphrag field should be present for {chunk_method}"
-        assert config.raptor.use_raptor is False, f"raptor.use_raptor should default to False for {chunk_method}"
-        assert config.graphrag.use_graphrag is False, f"graphrag.use_graphrag should default to False for {chunk_method}"
+        assert not hasattr(config, "raptor"), f"raptor field should not be exposed for {chunk_method}"
+        assert not hasattr(config, "graphrag"), f"graphrag field should not be exposed for {chunk_method}"

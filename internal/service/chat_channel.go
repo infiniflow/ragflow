@@ -321,6 +321,7 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		nil,
 		map[string]interface{}{"quote": false},
 		false,
+		true,
 		false,
 		false,
 		nil,

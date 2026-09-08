@@ -71,7 +71,6 @@ class TenkiProvider(SandboxProvider):
 
     def __init__(self):
         self.api_key = ""
-        self.project_id = ""
         self.base_url = ""
         self.image = ""
         self.allow_outbound = False
@@ -89,7 +88,6 @@ class TenkiProvider(SandboxProvider):
 
     def initialize(self, config: Dict[str, Any]) -> bool:
         self.api_key = str(config.get("api_key", "") or "").strip()
-        self.project_id = str(config.get("project_id", "") or "").strip()
         self.base_url = str(config.get("base_url", "") or "").strip()
         self.image = str(config.get("image", "") or "").strip()
         self.allow_outbound = bool(config.get("allow_outbound", False))
@@ -105,7 +103,6 @@ class TenkiProvider(SandboxProvider):
         is_valid, error_message = self.validate_config(
             {
                 "api_key": self.api_key,
-                "project_id": self.project_id,
                 "timeout": self.timeout,
                 "max_lifetime": self.max_lifetime,
                 "max_output_bytes": self.max_output_bytes,
@@ -131,7 +128,6 @@ class TenkiProvider(SandboxProvider):
         errors = self._tenki_errors()
 
         create_kwargs: dict[str, Any] = {
-            "project_id": self.project_id,
             "allow_outbound": self.allow_outbound,
             "max_duration": self.max_lifetime,
             "metadata": {"source": "ragflow"},
@@ -285,13 +281,6 @@ class TenkiProvider(SandboxProvider):
                 "placeholder": "tk_...",
                 "description": "Tenki API key. Create one at https://app.tenki.cloud under API Keys.",
             },
-            "project_id": {
-                "type": "string",
-                "required": True,
-                "label": "Project ID",
-                "placeholder": "Tenki project UUID",
-                "description": "Tenki project that sandboxes are created under.",
-            },
             "base_url": {
                 "type": "string",
                 "required": False,
@@ -388,12 +377,9 @@ class TenkiProvider(SandboxProvider):
 
     def validate_config(self, config: Dict[str, Any]) -> tuple[bool, Optional[str]]:
         api_key = str(config.get("api_key", "") or "").strip()
-        project_id = str(config.get("project_id", "") or "").strip()
 
         if not api_key:
             return False, "Tenki API key is required"
-        if not project_id:
-            return False, "Tenki project_id is required"
 
         for key in ("timeout", "max_lifetime", "max_output_bytes", "max_artifacts", "max_artifact_bytes"):
             try:
@@ -528,8 +514,8 @@ def _get_tenki_module():
     try:
         import tenki_sandbox
     except ImportError as exc:
-        # tenki-sandbox is an optional dependency: it requires protobuf>=6.31,
+        # tenki is an optional dependency: it requires protobuf>=6.31,
         # which conflicts with RAGFlow's pinned gRPC stack, so it is not a core
         # dependency. Install it into the runtime to enable this provider.
-        raise SandboxProviderConfigError("tenki-sandbox is required for the Tenki sandbox provider. Install it with `pip install tenki-sandbox` (or `uv pip install tenki-sandbox`).") from exc
+        raise SandboxProviderConfigError("tenki is required for the Tenki sandbox provider. Install it with `pip install tenki` (or `uv pip install tenki`).") from exc
     return tenki_sandbox

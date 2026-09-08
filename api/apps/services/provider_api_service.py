@@ -17,6 +17,7 @@ import os
 import json
 import logging
 import asyncio
+from urllib.parse import urlparse, urlunparse
 
 from common.constants import LLMType, ActiveStatusEnum, ModelVerifyStatusEnum
 from common.settings import FACTORY_LLM_INFOS
@@ -25,7 +26,7 @@ from api.db.joint_services.tenant_model_service import resolve_model_config, del
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
-from api.utils.model_utils import get_model_type_human, calculate_model_type
+from api.utils import model_utils
 from rag.llm import ChatModel, CvModel, EmbeddingModel, ModelMeta, OcrModel, RerankModel, Seq2txtModel, TTSModel
 
 
@@ -38,9 +39,7 @@ def _to_int(v, default=500):
 
 def _factory_model_types(llm: dict) -> list[str]:
     model_type = llm.get("model_type")
-    if isinstance(model_type, list):
-        return model_type
-    return [model_type] if model_type else []
+    return model_utils.normalize_model_types(model_type) if model_type else []
 
 
 def _normalize_provider_base_url(provider_name: str, base_url: str | None):
@@ -52,10 +51,91 @@ def _normalize_provider_base_url(provider_name: str, base_url: str | None):
     return base_url
 
 
+def _redact_url(url: str | None) -> str:
+    """Drop credentials from a user-supplied URL before it reaches a log or a response.
+
+    Provider base URLs are typed by the user and routinely carry secrets, either as
+    userinfo (`https://user:token@host/v1`) or as a query token
+    (`https://host/v1?api-key=...`). Keep the scheme, host, port and path, which is
+    what makes a discovery failure diagnosable, and drop the rest.
+    """
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url)
+        # A base URL with no authority is malformed for our purposes, and `.port` only
+        # validates on access, so an unparsable port raises here rather than at parse
+        # time. Either way the input is unsafe to echo back, so give up on it entirely.
+        if not parsed.netloc:
+            return "<unparsable url>"
+        netloc = parsed.hostname or ""
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+    except ValueError:
+        return "<unparsable url>"
+    if parsed.username or parsed.password:
+        netloc = f"***@{netloc}"
+    return urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
+
+
+def _scrub_url_secrets(text: str, url: str | None) -> str:
+    """Remove every secret-bearing fragment of *url* from provider-produced text.
+
+    A client echoes back the URL it was handed, whole or in part, so replacing only
+    the exact string it was given is not enough to keep userinfo and query tokens out
+    of a message built from an exception.
+    """
+    if not text or not url:
+        return text
+    text = text.replace(url, _redact_url(url))
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return text
+    fragments = [parsed.password, parsed.username, parsed.query, parsed.fragment]
+    for fragment in sorted((f for f in fragments if f), key=len, reverse=True):
+        text = text.replace(fragment, "***")
+    return text
+
+
 def _normalize_provider_api_key(provider_name: str, api_key: str | dict | None):
     if provider_name == "VLLM" and not api_key:
         return "x"
     return api_key
+
+
+def _bedrock_api_key_config(api_key: str | dict | None) -> dict | None:
+    if isinstance(api_key, dict):
+        config = api_key
+    elif isinstance(api_key, str):
+        try:
+            config = json.loads(api_key)
+        except json.JSONDecodeError:
+            return None
+    else:
+        return None
+    if isinstance(config, dict) and config.get("auth_mode") == "bedrock_api_key":
+        return config
+    return None
+
+
+def _validate_bedrock_api_key_config(api_key: str | dict | None) -> dict[str, object] | None:
+    config = _bedrock_api_key_config(api_key)
+    if config is None:
+        return None
+
+    bedrock_api_key = config.get("bedrock_api_key")
+    if not isinstance(bedrock_api_key, str) or not bedrock_api_key.strip():
+        raise ValueError("Bedrock API key must be provided")
+    bedrock_region = config.get("bedrock_region")
+    if not isinstance(bedrock_region, str) or not bedrock_region.strip():
+        raise ValueError("AWS region must be provided")
+
+    return {
+        **config,
+        "bedrock_api_key": bedrock_api_key.strip(),
+        "bedrock_region": bedrock_region.strip(),
+    }
 
 
 def _factory_llm_name(llm: dict) -> str:
@@ -90,7 +170,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
             elif factory_info["name"] == "Tongyi-Qianwen":
-                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-model/v1"
+                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
             providers.append(provider)
         providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
         return True, providers
@@ -113,7 +193,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
             elif factory_info["name"] == "Tongyi-Qianwen":
-                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-model/v1"
+                provider["url"]["intl"] = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
             providers.append(provider)
     providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
     return True, providers
@@ -182,7 +262,11 @@ def show_provider(provider_id_or_name: str):
     return True, {"base_url": {"default": factory_info.get("url", "")}, "name": factory_info["name"], "total_models": len(factory_info.get("llm", []))}
 
 
-async def list_provider_models(provider_id_or_name: str, api_key: str = None, base_url: str = None):
+async def list_provider_models(
+    provider_id_or_name: str,
+    api_key: str | dict | None = None,
+    base_url: str | None = None,
+):
     """
     List all models for a provider from the LLM dictionary.
 
@@ -211,16 +295,36 @@ async def list_provider_models(provider_id_or_name: str, api_key: str = None, ba
 
     model_base_url = _normalize_provider_base_url(provider_name, base_url) or factory_info[0].get("url", "")
     remote_models = []
-    if provider_name in ModelMeta:
-        remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
+    bedrock_api_key_config = _bedrock_api_key_config(api_key)
+    should_fetch_remote = provider_name in ModelMeta and (provider_name != "Bedrock" or bedrock_api_key_config is not None)
+    if should_fetch_remote:
+        try:
+            remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
+        except ValueError as error:
+            if provider_name == "Bedrock":
+                return False, str(error)
+            raise
+
+    if provider_name == "Bedrock" and bedrock_api_key_config is not None and not remote_models:
+        return False, "No Bedrock models were discovered"
 
     if not static_llms and not remote_models:
         return True, []
 
-    # Merge static and remote models, preferring remote_models on name conflicts
-    merged = {m["name"]: m for m in static_llms}
-    merged.update({m["name"]: m for m in remote_models})
-    models = list(merged.values())
+    if provider_name == "Bedrock" and bedrock_api_key_config is not None:
+        static_models = {model["name"]: model for model in static_llms}
+        models = [
+            {
+                **model,
+                "max_tokens": static_models.get(model["name"], {}).get("max_tokens", model.get("max_tokens", 8192)),
+            }
+            for model in remote_models
+        ]
+    else:
+        # Merge static and remote models, preferring remote_models on name conflicts
+        merged = {m["name"]: m for m in static_llms}
+        merged.update({m["name"]: m for m in remote_models})
+        models = list(merged.values())
 
     models.sort(key=lambda x: x["name"])
     return True, models
@@ -259,7 +363,15 @@ def show_provider_model(provider_id_or_name: str, model_name: str):
 
 
 async def update_provider_instance(
-    tenant_id: str, provider_id_or_name: str, instance_id_or_name: str, instance_name: str, api_key: str | dict, base_url: str, region: str, model_info: list[dict] = None, verify: bool = True
+    tenant_id: str,
+    provider_id_or_name: str,
+    instance_id_or_name: str,
+    instance_name: str,
+    api_key: str | dict,
+    base_url: str,
+    region: str,
+    model_info: list[dict] = None,
+    verify: bool = True,
 ):
     """
     Update a provider instance.
@@ -309,6 +421,15 @@ async def update_provider_instance(
 
     base_url = _normalize_provider_base_url(provider_name, base_url)
     api_key = _normalize_provider_api_key(provider_name, api_key)
+    region = (region or "").strip()
+
+    try:
+        bedrock_api_key_config = _validate_bedrock_api_key_config(api_key) if provider_name == "Bedrock" else None
+    except ValueError as error:
+        return False, str(error)
+    bedrock_api_key_auth = bedrock_api_key_config is not None
+    if bedrock_api_key_auth:
+        api_key = bedrock_api_key_config
 
     api_key_str = ""
     if api_key:
@@ -316,7 +437,8 @@ async def update_provider_instance(
 
     # Verify api_key
     model_verify_result = {}
-    if verify:
+    runtime_verify = verify and not bedrock_api_key_auth
+    if runtime_verify:
         success, msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
         if not success:
             return False, msg
@@ -363,7 +485,7 @@ async def update_provider_instance(
             model_name = model.get("model_name")
             if not model_name:
                 continue
-            if verify:
+            if runtime_verify:
                 verify_status = model_verify_result.get(model_name, ModelVerifyStatusEnum.UNKNOWN.value)
                 if model.get("extra"):
                     model["extra"].update({"verify": verify_status})
@@ -374,11 +496,11 @@ async def update_provider_instance(
                 # Update existing model
                 update_dict = {}
                 if isinstance(model.get("model_type"), (str, list)):
-                    target_model_type = calculate_model_type(model["model_type"])
+                    target_model_type = model_utils.calculate_model_type(model["model_type"])
                     if target_model_type != existing_model_names[model_name].model_type:
                         update_dict["model_type"] = target_model_type
                 merged_extra = json.loads(existing_model_names[model_name].extra) if existing_model_names[model_name].extra else {}
-                merged_extra.update(model["extra"])
+                merged_extra.update(model.get("extra") or {})
                 if "max_tokens" in model:
                     merged_extra.update({"max_tokens": model["max_tokens"]})
                 update_dict["extra"] = json.dumps(merged_extra)
@@ -399,7 +521,7 @@ async def update_provider_instance(
                 if llm_name in existing_model_names:
                     # Update existing
                     update_dict = {}
-                    target_model_type = calculate_model_type(_factory_model_types(llm))
+                    target_model_type = model_utils.calculate_model_type(_factory_model_types(llm))
                     if target_model_type != existing_model_names[llm_name].model_type:
                         update_dict["model_type"] = target_model_type
                     db_extra = json.loads(existing_model_names[llm_name].extra) if existing_model_names[llm_name].extra else {}
@@ -408,7 +530,7 @@ async def update_provider_instance(
                         "is_tools": llm.get("is_tools", False),
                         "thinking": "thinking" in llm.get("features", []),
                     }
-                    if verify:
+                    if runtime_verify:
                         verify_status = model_verify_result.get(llm_name, ModelVerifyStatusEnum.UNKNOWN.value)
                         db_extra_fields["verify"] = verify_status
                     db_extra.update(db_extra_fields)
@@ -420,7 +542,7 @@ async def update_provider_instance(
                         "is_tools": llm.get("is_tools", False),
                         "thinking": "thinking" in llm.get("features", []),
                     }
-                    if verify:
+                    if runtime_verify:
                         verify_status = model_verify_result.get(llm_name, ModelVerifyStatusEnum.UNKNOWN.value)
                         extra_fields["verify"] = verify_status
                     success, _msg = add_model_to_instance(
@@ -428,7 +550,8 @@ async def update_provider_instance(
                     )
                     if not success:
                         msg += _msg
-
+    if msg:
+        return False, msg
     return True, "success"
 
 
@@ -469,6 +592,7 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
 
     base_url = _normalize_provider_base_url(provider_name, base_url)
     api_key = _normalize_provider_api_key(provider_name, api_key)
+    region = (region or "").strip()
 
     if instance_name == "default":
         return False, "Instance name cannot be 'default'"
@@ -478,13 +602,26 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
     if provider_name not in allowed_factories:
         return False, f"Provider '{provider_name}' is not allowed"
 
+    try:
+        bedrock_api_key_config = _validate_bedrock_api_key_config(api_key) if provider_name == "Bedrock" else None
+    except ValueError as error:
+        return False, str(error)
+    bedrock_api_key_auth = bedrock_api_key_config is not None
+    if bedrock_api_key_auth:
+        api_key = bedrock_api_key_config
+
     api_key_str = ""
     if api_key:
         api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
 
-    success, verify_msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
-    if not success:
-        return False, verify_msg
+    if bedrock_api_key_auth:
+        if not model_info:
+            return False, "At least one Bedrock model must be selected"
+        model_verify_result = {}
+    else:
+        success, verify_msg, model_verify_result = await verify_api_key(provider_name, api_key, base_url, region, model_info)
+        if not success:
+            return False, verify_msg
 
     extra_fields = {}
     if base_url:
@@ -670,6 +807,7 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
         factory_llms = factory_info[0]["llm"]
         if not factory_llms:
             model_base_url = base_url or factory_info[0].get("url", "")
+            discovery_error = ""
             try:
                 if provider_name in ModelMeta:
                     remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
@@ -682,22 +820,25 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                             for m in remote_models
                             for mt in m.get("model_types", [])
                         ]
-            except Exception:
-                pass
+            except Exception as e:
+                # Discovery reaches a user-supplied base URL, so it fails for mundane reasons:
+                # the host is unreachable from inside the container, TLS is wrong, the port is
+                # closed. Reporting only "no models found" sends people hunting for a bad key.
+                safe_url = _redact_url(model_base_url)
+                reason = _scrub_url_secrets(str(e), model_base_url)
+                # logging.exception would write the raw `e` and its traceback, and clients
+                # echo the URL they were handed, so the credentials would land in the log
+                # even though the caller-visible message is clean. Log the scrubbed reason.
+                logging.error("Model discovery failed for provider %s at %s: %s: %s", provider_name, safe_url, type(e).__name__, reason)
+                discovery_error = f" Discovery against {safe_url} failed: {reason}"
             if not factory_llms:
-                return False, f"No models found for provider '{provider_id_or_name}'", {}
+                return False, f"No models found for provider '{provider_id_or_name}'.{discovery_error}", {}
 
     model_verify_result = {}
     # test if api key works
     timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
     extra = {"provider": provider_name}
     msg = ""
-    if provider_name == "BaiduYiyan":
-        if isinstance(api_key, str):
-            try:
-                json.loads(api_key)
-            except (json.JSONDecodeError, TypeError):
-                api_key = {"yiyan_ak": api_key, "yiyan_sk": ""}
     api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
     # check passed types
     passed_types = set()
@@ -714,8 +855,14 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                     msg += f"\nEmbedding model from {provider_name} is not supported yet."
                     model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                     continue
-                mdl = EmbeddingModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
                 label = f"embedding model({llm['llm_name']})"
+                try:
+                    mdl = EmbeddingModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
+                except Exception as e:
+                    logging.exception("Fail to init %s", label)
+                    msg += f"\nFail to access {label}.{str(e)}"
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
                 ok, result = await _run_verification(label, asyncio.to_thread(mdl.encode, ["Test if the api key is available"]), timeout_seconds)
                 if not ok:
                     msg += result
@@ -732,7 +879,14 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                     msg += f"\nChat model from {provider_name} is not supported yet."
                     model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
                     continue
-                mdl = ChatModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url, **extra)
+                label = f"model({provider_name}/{llm['llm_name']})"
+                try:
+                    mdl = ChatModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url, **extra)
+                except Exception as e:
+                    logging.exception("Fail to init %s", label)
+                    msg += f"\nFail to access {label}.{str(e)}"
+                    model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
+                    continue
 
                 temperature = 1 if llm["llm_name"] in ("kimi-k3", "kimi-k2.7-code") else 0.9
 
@@ -746,7 +900,6 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                             return True
                     return False
 
-                label = f"model({provider_name}/{llm['llm_name']})"
                 ok, result = await _run_verification(label, check_streamly(), timeout_seconds)
                 if not ok:
                     msg += result
@@ -865,6 +1018,9 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
                 model_verify_result[llm["llm_name"]] = ModelVerifyStatusEnum.FAIL.value
         if any_passed:
             msg = ""
+            break
+        else:
+            msg = msg or "No model passed verification"
 
     success = bool(passed_types)
     return success, "success" if success else msg, model_verify_result
@@ -1006,7 +1162,7 @@ def _reconcile_nvidia_instance_models(provider_obj, instance_obj, remote_models:
         for model in normalized:
             model_name = model["name"]
             model_types = model.get("model_types") or [LLMType.CHAT.value]
-            model_type = calculate_model_type(model_types)
+            model_type = model_utils.calculate_model_type(model_types)
             if existing := existing_by_name.pop(model_name, None):
                 extra = json.loads(existing.extra or "{}")
                 _set_discovered_model_metadata(extra, model)
@@ -1103,12 +1259,13 @@ async def list_instance_models(tenant_id: str, provider_id_or_name: str, instanc
         model_list.append(
             {
                 "name": model.model_name,
-                "model_type": get_model_type_human(model.model_type),
+                "model_type": model_utils.get_model_type_human(model.model_type),
                 "max_tokens": model_extra.get("max_tokens", 8192) if model.extra else 8192,
                 "status": model.status,
                 "verify": model_extra.get("verify", ModelVerifyStatusEnum.UNKNOWN.value),
                 "features": (["is_tools"] if model_extra.get("is_tools") else []) + (["thinking"] if model_extra.get("thinking") else []),
                 "rank": model_rank_map.get(model.model_name, 500),
+                "extra": model_extra,
             }
         )
     model_list.sort(key=lambda x: (-x["rank"], x["name"]))
@@ -1140,7 +1297,7 @@ def update_instance_models(tenant_id: str, provider_id_or_name: str, instance_id
     if not_exist_models:
         return False, f"Models {not_exist_models} not found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
 
-    target_model_type_bin = calculate_model_type(model_types)
+    target_model_type_bin = model_utils.calculate_model_type(model_types)
     to_update = [model_obj.id for model_obj in model_objs if model_obj.model_type != target_model_type_bin and model_obj.model_name in model_names]
     if to_update:
         TenantModelService.batch_update_model_type(to_update, target_model_type_bin)
@@ -1173,7 +1330,7 @@ def add_model_to_instance(tenant_id: str, provider_id_or_name: str, instance_id_
     if isinstance(model_type, str):
         model_type = [model_type]
 
-    model_type_bin = calculate_model_type(model_type)
+    model_type_bin = model_utils.calculate_model_type(model_type)
     extra_fields = {"max_tokens": max_tokens}
     target_model = [llm for llm in llms if llm["llm_name"] == model_name]
     if target_model:
@@ -1226,6 +1383,9 @@ def update_model(tenant_id: str, provider_id_or_name: str, instance_id_or_name: 
         return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
 
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, model_name)
+    if not model_obj:
+        return False, f"Model '{model_name}' not added for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
+
     to_update = {}
     if "status" in update_dict and update_dict.get("status") != model_obj.status:
         to_update.update({"status": update_dict["status"]})
@@ -1239,7 +1399,7 @@ def update_model(tenant_id: str, provider_id_or_name: str, instance_id_or_name: 
         db_extra.update(**new_extra)
         to_update.update({"extra": json.dumps(db_extra)})
     if "model_type" in update_dict:
-        target_model_type = calculate_model_type(update_dict["model_type"])
+        target_model_type = model_utils.calculate_model_type(update_dict["model_type"])
         if target_model_type != model_obj.model_type:
             to_update.update({"model_type": target_model_type})
 

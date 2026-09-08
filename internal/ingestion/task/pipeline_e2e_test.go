@@ -14,6 +14,8 @@
 // limitations under the License.
 //
 
+//go:build e2e
+
 package task
 
 import (
@@ -28,8 +30,9 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
+	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 	"ragflow/internal/ingestion/testutil"
-	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"ragflow/internal/service"
 )
 
@@ -64,7 +67,7 @@ func setupTestDocEngine(t *testing.T, engineType engine.EngineType, tenantID, da
 			esPassword = "infini_rag_flow"
 		}
 
-		cfg := &server.ElasticsearchConfig{
+		cfg := config.ElasticsearchConfig{
 			Hosts:    esHost,
 			Username: esUser,
 			Password: esPassword,
@@ -88,7 +91,7 @@ func setupTestDocEngine(t *testing.T, engineType engine.EngineType, tenantID, da
 			return nil, func() {}
 		}
 
-		cfg := &server.InfinityConfig{
+		cfg := config.InfinityConfig{
 			URI:          infURI,
 			DBName:       "ragflow_e2e_test",
 			PostgresPort: 5432,
@@ -245,7 +248,7 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 							"q_2_vec": []float64{0.3, 0.4}, // Pre-vectorized to skip embedding
 						},
 					},
-					EmbeddingTokenConsumptionKey: 100,
+					indexdoc.EmbeddingTokenConsumptionKey: 100,
 				}, dsl, nil
 			})
 

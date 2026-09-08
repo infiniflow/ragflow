@@ -96,10 +96,16 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	}
 
 	orderby := c.DefaultQuery("orderby", "create_time")
+	switch orderby {
+	case "create_time", "update_time", "name":
+	default:
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+		return
+	}
 
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
-		desc = descStr != "false"
+		desc = !strings.EqualFold(descStr, "false")
 	}
 
 	ownerIDs := getOwnerIDs(c)
@@ -363,6 +369,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"similarity_threshold":     chat.SimilarityThreshold,
 		"vector_similarity_weight": chat.VectorSimilarityWeight,
 		"top_n":                    chat.TopN,
+		"rerank_candidates_count":  chat.RerankCandidatesCount,
 		"top_k":                    chat.TopK,
 		"do_refer":                 chat.DoRefer,
 		"rerank_id":                chat.RerankID,

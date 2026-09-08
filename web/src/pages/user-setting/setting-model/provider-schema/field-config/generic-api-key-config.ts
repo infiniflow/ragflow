@@ -32,6 +32,7 @@ export const GenericApiKeyConfig: ProviderConfig = {
       required: true,
       placeholder: 'instanceNameMessage',
       tooltip: 'instanceNameTip',
+      autoComplete: 'new-password',
       validation: { message: 'instanceNameMessage' },
     },
     {
@@ -40,6 +41,7 @@ export const GenericApiKeyConfig: ProviderConfig = {
       type: FormFieldType.Password,
       required: true,
       placeholder: 'apiKeyMessage',
+      autoComplete: 'new-password',
       validation: { message: 'apiKeyMessage' },
     },
     {
@@ -64,6 +66,7 @@ export const GenericApiKeyConfig: ProviderConfig = {
         return 'openaiBaseUrlPlaceholder';
       },
       shouldRender: 'showBaseUrl',
+      autoComplete: 'new-password',
     },
     {
       name: 'group_id',
@@ -71,6 +74,7 @@ export const GenericApiKeyConfig: ProviderConfig = {
       type: FormFieldType.Text,
       required: false,
       shouldRender: 'showGroupId',
+      autoComplete: 'new-password',
     },
   ],
   verifyTransform: (values) => ({
@@ -88,15 +92,3 @@ export const GenericApiKeyConfig: ProviderConfig = {
     };
   },
 };
-
-/**
- * List of factories supporting base_url (used for the generic ApiKey modal)
- */
-export const FACTORIES_WITH_BASE_URL = [
-  LLMFactory.OpenAI,
-  LLMFactory.AzureOpenAI,
-  LLMFactory.TongYiQianWen,
-  LLMFactory.MiniMax,
-  LLMFactory.SILICONFLOW,
-  LLMFactory.TencentHunYuan,
-];

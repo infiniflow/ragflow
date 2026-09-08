@@ -43,6 +43,40 @@ func newGroqForTest(baseURL string) *GroqModel {
 	)
 }
 
+// groqChatPayload returns a minimal valid Groq chat completion response.
+// Tests override the fields they care about.
+func groqChatPayload(content, reasoning string, usage *groqUsage) map[string]any {
+	p := map[string]any{
+		"id":      "chatcmpl-test",
+		"object":  "chat.completion",
+		"created": 1730241104,
+		"model":   "llama-3.3-70b-versatile",
+		"choices": []map[string]any{{
+			"index": 0,
+			"message": map[string]any{
+				"role":              "assistant",
+				"content":           content,
+				"reasoning_content": reasoning,
+			},
+			"finish_reason": "stop",
+		}},
+	}
+	if usage != nil {
+		p["usage"] = map[string]any{
+			"prompt_tokens":     usage.promptTokens,
+			"completion_tokens": usage.completionTokens,
+			"total_tokens":      usage.totalTokens,
+		}
+	}
+	return p
+}
+
+type groqUsage struct {
+	promptTokens     int
+	completionTokens int
+	totalTokens      int
+}
+
 func TestGroqName(t *testing.T) {
 	if got := newGroqForTest("http://unused").Name(); got != "groq" {
 		t.Errorf("Name()=%q", got)
@@ -79,6 +113,7 @@ func TestNewGroqModelHandlesCustomDefaultTransport(t *testing.T) {
 }
 
 func TestGroqChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s", r.Method)
@@ -91,9 +126,6 @@ func TestGroqChatHappyPath(t *testing.T) {
 		}
 		if body["stream"] != false {
 			t.Errorf("stream=%v want false", body["stream"])
-		}
-		if body["max_tokens"] != float64(32) {
-			t.Errorf("max_tokens=%v", body["max_tokens"])
 		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v", body["temperature"])
@@ -108,14 +140,9 @@ func TestGroqChatHappyPath(t *testing.T) {
 		if _, ok := body["reasoning_effort"]; ok {
 			t.Errorf("reasoning_effort should not be sent: %v", body["reasoning_effort"])
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"choices": []map[string]interface{}{{
-				"message": map[string]interface{}{
-					"content":           "pong",
-					"reasoning_content": "thinking",
-				},
-			}},
-		})
+		_ = json.NewEncoder(w).Encode(groqChatPayload("pong", "thinking", &groqUsage{
+			promptTokens: 18, completionTokens: 556, totalTokens: 574,
+		}))
 	})
 	defer srv.Close()
 
@@ -143,9 +170,16 @@ func TestGroqChatHappyPath(t *testing.T) {
 	if resp.ReasonContent == nil || *resp.ReasonContent != "thinking" {
 		t.Fatalf("ReasonContent=%v, want thinking", resp.ReasonContent)
 	}
+	if resp.Usage == nil {
+		t.Fatalf("Usage=nil, want populated")
+	}
+	if resp.Usage.PromptTokens != 18 || resp.Usage.CompletionTokens != 556 || resp.Usage.TotalTokens != 574 {
+		t.Fatalf("Usage=%#v, want prompt=18 completion=556 total=574", resp.Usage)
+	}
 }
 
 func TestGroqChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newGroqForTest("http://unused").ChatWithMessages(ctx, "", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -155,6 +189,7 @@ func TestGroqChatRequiresModelName(t *testing.T) {
 }
 
 func TestGroqChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newGroqForTest("http://unused").ChatWithMessages(ctx, "llama-3.3-70b-versatile", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -164,6 +199,7 @@ func TestGroqChatRequiresMessages(t *testing.T) {
 }
 
 func TestGroqChatRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":{"message":"unauthorized"}}`))
@@ -186,6 +222,7 @@ func TestGroqChatRejectsHTTPError(t *testing.T) {
 }
 
 func TestGroqStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -245,6 +282,7 @@ func TestGroqStreamHappyPath(t *testing.T) {
 }
 
 func TestGroqStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	stream := false
 	ctx := t.Context()
@@ -263,6 +301,7 @@ func TestGroqStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestGroqStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	ctx := t.Context()
 	err := newGroqForTest("http://unused").ChatStreamlyWithSender(
@@ -280,6 +319,7 @@ func TestGroqStreamRequiresSender(t *testing.T) {
 }
 
 func TestGroqStreamRejectsUnterminatedStream(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"partial"}}]}`+"\n")
@@ -303,6 +343,7 @@ func TestGroqStreamRejectsUnterminatedStream(t *testing.T) {
 }
 
 func TestGroqListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -335,21 +376,18 @@ func TestGroqListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestGroqBaseURLTrimsTrailingSlash(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"choices": []map[string]interface{}{{
-				"message": map[string]interface{}{"content": "ok"},
-			}},
-		})
+		_ = json.NewEncoder(w).Encode(groqChatPayload("ok", "", nil))
 	})
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newGroqForTest(srv.URL+"/").ChatWithMessages(
+	resp, err := newGroqForTest(srv.URL+"/").ChatWithMessages(
 		ctx,
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "x"}},
@@ -360,19 +398,19 @@ func TestGroqBaseURLTrimsTrailingSlash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
+	if resp.Usage != nil {
+		t.Fatalf("Usage=%#v, want nil for usage-less response", resp.Usage)
+	}
 }
 
 func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"choices": []map[string]interface{}{{
-				"message": map[string]interface{}{"content": "ok"},
-			}},
-		})
+		_ = json.NewEncoder(w).Encode(groqChatPayload("ok", "", nil))
 	})
 	defer srv.Close()
 
@@ -382,7 +420,7 @@ func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
 		map[string]string{"": srv.URL},
 		URLSuffix{Chat: "chat/completions", Models: "models"},
 	)
-	_, err := model.ChatWithMessages(
+	resp, err := model.ChatWithMessages(
 		ctx,
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "x"}},
@@ -393,15 +431,19 @@ func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
+	if resp.Usage != nil {
+		t.Fatalf("Usage=%#v, want nil for usage-less response", resp.Usage)
+	}
 }
 
 func TestGroqUnsupportedMethods(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newGroqForTest("http://unused")
-	if _, err := m.Embed(ctx, nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(ctx, nil, EmbedRequest{}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed error=%v", err)
 	}
-	if _, err := m.Rerank(ctx, nil, "", nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, nil, RerankRequest{}, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank error=%v", err)
 	}
 	if _, err := m.Balance(ctx, nil); err == nil || !strings.Contains(err.Error(), "no such method") {

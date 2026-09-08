@@ -11,7 +11,7 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
     if (id) {
       values = form?.getValues();
 
-      updateNodeForm(id, { ...values, items: values.items?.slice() || [] });
+      updateNodeForm(id, { ...values, items: values.items || [] });
     }
   }, [id, updateNodeForm, values]);
 }

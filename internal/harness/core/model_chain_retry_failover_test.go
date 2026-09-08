@@ -83,7 +83,7 @@ func TestRetryThenFailover_Generate_RetryExhaustedTriggersFailover(t *testing.T)
 
 	failoverWrapped := WithModelFailover(retryWrapped, m2)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	resp, err := failoverWrapped.Generate(ctx, []Message{schema.UserMessage("test")})
 	if err != nil {
 		t.Fatalf("Generate after retry+failover: %v", err)
@@ -108,7 +108,7 @@ func TestRetryThenFailover_Generate_AllExhausted(t *testing.T) {
 
 	failoverWrapped := WithModelFailover(retryWrapped, m2)
 
-	_, err := failoverWrapped.Generate(context.Background(), []Message{schema.UserMessage("test")})
+	_, err := failoverWrapped.Generate(t.Context(), []Message{schema.UserMessage("test")})
 	if err == nil {
 		t.Fatal("expected error after all exhausted")
 	}
@@ -124,7 +124,7 @@ func TestRetryThenFailover_Generate_RetrySucceedsNoFailover(t *testing.T) {
 
 	failoverWrapped := WithModelFailover(retryWrapped, m2)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	resp, err := failoverWrapped.Generate(ctx, []Message{schema.UserMessage("test")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
@@ -146,7 +146,7 @@ func TestRetryThenFailover_Stream_RetryExhaustedTriggersFailover(t *testing.T) {
 
 	failoverWrapped := WithModelFailover(retryWrapped, m2)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	stream, err := failoverWrapped.Stream(ctx, []Message{schema.UserMessage("test")})
 	if err != nil {
 		t.Fatalf("Stream after retry+failover: %v", err)
@@ -171,7 +171,7 @@ func TestRetryThenFailover_Stream_AllExhausted(t *testing.T) {
 
 	failoverWrapped := WithModelFailover(retryWrapped, m2)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := failoverWrapped.Stream(ctx, []Message{schema.UserMessage("test")})
 	if err == nil {
 		t.Fatal("expected error after all exhausted")
@@ -196,7 +196,7 @@ func TestRetryThenFailover_ShouldRetry_Generate_TriggersFailover(t *testing.T) {
 
 	failoverWrapped := WithModelFailover(retryWrapped, m2)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	resp, err := failoverWrapped.Generate(ctx, []Message{schema.UserMessage("test")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
@@ -214,7 +214,7 @@ func TestErrStreamCanceled_Failover_Stream(t *testing.T) {
 
 	failoverWrapped := WithModelFailover(m1, m2)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	resp, err := failoverWrapped.Generate(ctx, []Message{schema.UserMessage("test")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
@@ -230,7 +230,7 @@ func TestErrStreamCanceled_Failover_Generate(t *testing.T) {
 
 	failoverWrapped := WithModelFailover(m1, m2)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	resp, err := failoverWrapped.Generate(ctx, []Message{schema.UserMessage("test")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
@@ -250,7 +250,7 @@ func TestFailover_GetFailoverModelNil(t *testing.T) {
 		ShouldFailover: func(ctx context.Context, err error) bool { return true },
 	})
 
-	_, err := failoverWrapped.Generate(context.Background(), []Message{schema.UserMessage("test")})
+	_, err := failoverWrapped.Generate(t.Context(), []Message{schema.UserMessage("test")})
 	if err == nil {
 		t.Fatal("expected error when all models fail")
 	}
@@ -287,7 +287,7 @@ func TestBuildModelWrapperChain_RetryThenFailover_Integration(t *testing.T) {
 
 	wrapped := BuildModelWrapperChain(m1, nil, cfg, nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	resp, err := wrapped.Generate(ctx, []Message{schema.UserMessage("test")})
 	if err != nil {
 		t.Fatalf("wrapped chain: %v", err)

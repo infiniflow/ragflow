@@ -1,0 +1,18 @@
+{
+  "id": "token__json_single",
+  "component": "TokenChunker",
+  "notes": "Baseline: a single structured JSON item shorter than chunk_token_size passes through untouched. Locks the no-op path so harness bugs are distinguishable from real divergence.",
+  "param": {
+    "chunk_token_size": 128
+  },
+  "input": {
+    "name": "t",
+    "output_format": "json",
+    "json": [
+      {
+        "text": "hello world",
+        "doc_type_kwd": "text"
+      }
+    ]
+  }
+}

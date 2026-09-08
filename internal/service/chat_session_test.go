@@ -118,12 +118,25 @@ func (f *fakeSessionStore) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	return nil
 }
 
-func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID string) ([]*entity.ChatSession, error) {
+func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) ([]*entity.ChatSession, error) {
 	var result []*entity.ChatSession
 	for _, s := range f.sessions {
-		if s.DialogID == chatID {
-			result = append(result, s)
+		if s.DialogID != chatID {
+			continue
 		}
+		if sessionID != "" && s.ID != sessionID {
+			continue
+		}
+		if name != "" {
+			var sessionName string
+			if s.Name != nil {
+				sessionName = *s.Name
+			}
+			if sessionName != name {
+				continue
+			}
+		}
+		result = append(result, s)
 	}
 	return result, nil
 }
@@ -291,7 +304,7 @@ func TestListChatSessions_Success(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1")
+	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "create_time", true, 1, 30)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -310,9 +323,9 @@ func TestListChatSessions_NotOwner(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1")
-	if err == nil || !strings.Contains(err.Error(), "only owner") {
-		t.Fatalf("expected 'only owner' error, got %v", err)
+	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "create_time", true, 1, 30)
+	if err == nil || !strings.Contains(err.Error(), "no authorization") {
+		t.Fatalf("got %v", err)
 	}
 }
 
@@ -480,7 +493,7 @@ func TestUpdateSession_ValidationErrors(t *testing.T) {
 		message string
 		code    common.ErrorCode
 	}{
-		{name: "empty body", req: map[string]interface{}{}, message: "request body cannot be empty", code: common.CodeArgumentError},
+		// Empty body is now a valid no-op per the contract.
 		{name: "message", req: map[string]interface{}{"message": []interface{}{}}, message: "`messages` cannot be changed", code: common.CodeDataError},
 		{name: "messages", req: map[string]interface{}{"messages": []interface{}{}}, message: "`messages` cannot be changed", code: common.CodeDataError},
 		{name: "reference", req: map[string]interface{}{"reference": []interface{}{}}, message: "`reference` cannot be changed", code: common.CodeDataError},
@@ -602,7 +615,7 @@ func TestUpdateMessageFeedback_AppliesChunkFeedbackWithResolvedTenantAndContext(
 		pipeline:       &fakePipeline{},
 		docEngine:      docEngine,
 	}
-	ctx := context.WithValue(context.Background(), feedbackContextKey{}, "request-context")
+	ctx := context.WithValue(t.Context(), feedbackContextKey{}, "request-context")
 
 	resp, code, err := svc.UpdateMessageFeedback(ctx, "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
 		"thumbup": true,
@@ -661,7 +674,7 @@ func TestUpdateMessageFeedback_ToggleUsesResolvedTenantForUndoAndApply(t *testin
 		docEngine:      docEngine,
 	}
 
-	resp, code, err := svc.UpdateMessageFeedback(context.Background(), "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
+	resp, code, err := svc.UpdateMessageFeedback(t.Context(), "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
 		"thumbup":  false,
 		"feedback": "not useful",
 	})
@@ -690,7 +703,7 @@ func TestApplyChunkFeedback_DisabledDoesNotTouchEngine(t *testing.T) {
 	docEngine := &fakeFeedbackDocEngine{}
 	svc := &ChatSessionService{docEngine: docEngine}
 
-	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+	result, err := svc.applyChunkFeedback(t.Context(), "tenant-1", map[string]interface{}{
 		"chunks": []interface{}{map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1"}},
 	}, true)
 	if err != nil {
@@ -711,7 +724,7 @@ func TestApplyChunkFeedback_UniformSplitsOneVoteAcrossChunks(t *testing.T) {
 	docEngine := &fakeFeedbackDocEngine{}
 	svc := &ChatSessionService{docEngine: docEngine}
 
-	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+	result, err := svc.applyChunkFeedback(t.Context(), "tenant-1", map[string]interface{}{
 		"chunks": []interface{}{
 			map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1"},
 			map[string]interface{}{"id": "chunk-2", "kb_id": "kb-1"},
@@ -738,7 +751,7 @@ func TestApplyChunkFeedback_RelevanceDistributesOneVoteBySignals(t *testing.T) {
 	docEngine := &fakeFeedbackDocEngine{}
 	svc := &ChatSessionService{docEngine: docEngine}
 
-	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+	result, err := svc.applyChunkFeedback(t.Context(), "tenant-1", map[string]interface{}{
 		"chunks": []interface{}{
 			map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1", "similarity": 2.0},
 			map[string]interface{}{"id": "chunk-2", "kb_id": "kb-1", "vector_similarity": 1.0},
@@ -764,7 +777,7 @@ func TestUpdateChunkWeight_InfinityUsesAtomicAdjuster(t *testing.T) {
 	docEngine := &fakeInfinityFeedbackDocEngine{}
 	svc := &ChatSessionService{docEngine: docEngine}
 
-	if ok := svc.updateChunkWeight(context.Background(), "tenant-1", "chunk-1", "kb-1", 0.25); !ok {
+	if ok := svc.updateChunkWeight(t.Context(), "tenant-1", "chunk-1", "kb-1", 0.25); !ok {
 		t.Fatal("expected updateChunkWeight to succeed")
 	}
 	if docEngine.getChunkCalled {
@@ -791,7 +804,7 @@ func TestApplyChunkFeedback_FallbackClampsAndRemovesPagerank(t *testing.T) {
 	}
 	svc := &ChatSessionService{docEngine: docEngine}
 
-	result, err := svc.applyChunkFeedback(context.Background(), "tenant-1", map[string]interface{}{
+	result, err := svc.applyChunkFeedback(t.Context(), "tenant-1", map[string]interface{}{
 		"chunks": []interface{}{map[string]interface{}{"id": "chunk-1", "kb_id": "kb-1"}},
 	}, false)
 	if err != nil {
@@ -906,7 +919,7 @@ func TestChatCompletionsPassesRequestUserIDToPipeline(t *testing.T) {
 	}
 
 	_, err := svc.ChatCompletions(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"dialog-1",
 		"session-1",
@@ -917,6 +930,7 @@ func TestChatCompletionsPassesRequestUserIDToPipeline(t *testing.T) {
 		nil,
 		nil,
 		false,
+		true,
 		false,
 		false,
 		nil,
@@ -986,7 +1000,7 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 
 	streamChan := make(chan string, 8)
 	_, err := svc.ChatCompletions(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"dialog-1",
 		"session-1",
@@ -997,6 +1011,7 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 		nil,
 		nil,
 		false,
+		true,
 		false,
 		true,
 		streamChan,
@@ -1082,7 +1097,7 @@ func TestChatCompletionsModelIDOverrideUsesModelResolver(t *testing.T) {
 	}
 
 	_, err := svc.ChatCompletions(
-		context.Background(),
+		t.Context(),
 		"user-1",
 		"dialog-1",
 		"session-1",
@@ -1093,6 +1108,7 @@ func TestChatCompletionsModelIDOverrideUsesModelResolver(t *testing.T) {
 		nil,
 		nil,
 		false,
+		true,
 		false,
 		false,
 		nil,
@@ -1105,6 +1121,69 @@ func TestChatCompletionsModelIDOverrideUsesModelResolver(t *testing.T) {
 	}
 	if store.dialogs["dialog-1"].LLMID != modelID {
 		t.Fatalf("dialog LLMID=%q, want model id %q", store.dialogs["dialog-1"].LLMID, modelID)
+	}
+}
+
+// Multi-model comparison sends store_history_messages=false; the ephemeral
+// session must never be persisted, otherwise every model card adds a
+// "New session" row to the session list.
+func TestChatCompletionsStoreHistoryFalseDoesNotPersistSession(t *testing.T) {
+	store := newFakeSessionStore()
+	store.dialogs["dialog-1"] = &entity.Chat{
+		ID:         "dialog-1",
+		TenantID:   "tenant-owner",
+		LLMID:      "chat@factory",
+		LLMSetting: entity.JSONMap{},
+		PromptConfig: entity.JSONMap{
+			"parameters": []interface{}{},
+			"prologue":   "Welcome!",
+		},
+	}
+	store.dialogExists["tenant-owner|dialog-1"] = true
+
+	pipeline := &fakePipeline{
+		resultChan: makeResultChan(
+			AsyncChatResult{Answer: "ok", Final: true, Reference: map[string]interface{}{"chunks": []interface{}{}}},
+		),
+	}
+
+	svc := &ChatSessionService{
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
+		pipeline:       pipeline,
+	}
+
+	result, err := svc.ChatCompletions(
+		t.Context(),
+		"user-1",
+		"dialog-1",
+		"",
+		[]map[string]interface{}{{"role": "user", "content": "hi"}},
+		"",
+		nil,
+		"",
+		nil,
+		nil,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatCompletions failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected a non-nil answer")
+	}
+	if len(store.createCalled) != 0 {
+		t.Fatalf("session must not be created when store_history_messages=false, got %d creates", len(store.createCalled))
+	}
+	if len(store.updateCalled) != 0 {
+		t.Fatalf("session must not be updated when store_history_messages=false, got %d updates", len(store.updateCalled))
+	}
+	if len(store.sessions) != 0 {
+		t.Fatalf("no session should be stored, got %d", len(store.sessions))
 	}
 }
 
@@ -1252,7 +1331,7 @@ func TestCompletionStream_Success(t *testing.T) {
 	}
 
 	streamChan := make(chan string, 10)
-	err := svc.CompletionStream(context.Background(), "user-1", "session-1", []map[string]interface{}{
+	err := svc.CompletionStream(t.Context(), "user-1", "session-1", []map[string]interface{}{
 		{"role": "user", "content": "hi"},
 	}, "", nil, "msg-1", streamChan)
 	if err != nil {
@@ -1568,5 +1647,69 @@ func TestChunksFormat_UnsupportedTypeReturnsEmpty(t *testing.T) {
 	result := svc.chunksFormat(ref)
 	if len(result) != 0 {
 		t.Fatalf("expected empty for string type, got %d", len(result))
+	}
+}
+
+func drainResults(events []AsyncChatResult) <-chan AsyncChatResult {
+	ch := make(chan AsyncChatResult, len(events))
+	for _, e := range events {
+		ch <- e
+	}
+	close(ch)
+	return ch
+}
+
+func TestAccumulateNonStreamAnswer_MetadataFromFinalEventOnly(t *testing.T) {
+	// Intermediate events carry conflicting metadata; the response must
+	// reflect only the final event's values.
+	ans := accumulateNonStreamAnswer(drainResults([]AsyncChatResult{
+		{Answer: "partial ", AudioBinary: "intermediate-audio", Prompt: "intermediate-prompt", CreatedAt: 111},
+		{Answer: "answer", Final: true, AudioBinary: "final-audio", Prompt: "final-prompt", CreatedAt: 222},
+	}))
+	if ans["audio_binary"] != "final-audio" {
+		t.Fatalf("audio_binary=%v, want final-audio", ans["audio_binary"])
+	}
+	if ans["prompt"] != "final-prompt" {
+		t.Fatalf("prompt=%v, want final-prompt", ans["prompt"])
+	}
+	if ans["created_at"] != float64(222) {
+		t.Fatalf("created_at=%v, want 222", ans["created_at"])
+	}
+	if ans["answer"] != "answer" {
+		t.Fatalf("answer=%v, want final decorated answer", ans["answer"])
+	}
+}
+
+func TestAccumulateNonStreamAnswer_FinalEventOmitsMetadata(t *testing.T) {
+	// The final event omits metadata; it must be assigned as-is (nil/zero)
+	// rather than leaking values from intermediate events.
+	ans := accumulateNonStreamAnswer(drainResults([]AsyncChatResult{
+		{Answer: "partial ", AudioBinary: "intermediate-audio", Prompt: "intermediate-prompt", CreatedAt: 111},
+		{Answer: "full answer", Final: true},
+	}))
+	if ans["audio_binary"] != nil {
+		t.Fatalf("audio_binary=%v, want nil", ans["audio_binary"])
+	}
+	if ans["prompt"] != "" {
+		t.Fatalf("prompt=%v, want empty", ans["prompt"])
+	}
+	if _, ok := ans["created_at"]; ok {
+		t.Fatalf("created_at should be omitted, got %v", ans["created_at"])
+	}
+}
+
+func TestAccumulateNonStreamAnswer_AccumulatesDeltasUntilFinal(t *testing.T) {
+	ans := accumulateNonStreamAnswer(drainResults([]AsyncChatResult{
+		{Answer: "Hello, "},
+		{Answer: "world"},
+	}))
+	if ans["answer"] != "Hello, world" {
+		t.Fatalf("answer=%v, want accumulated deltas", ans["answer"])
+	}
+	if ans["final"] != true {
+		t.Fatalf("final=%v, want true", ans["final"])
+	}
+	if ref, _ := ans["reference"].(map[string]interface{}); ref != nil {
+		t.Fatalf("reference=%v, want nil", ref)
 	}
 }

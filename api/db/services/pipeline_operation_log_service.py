@@ -16,6 +16,7 @@
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 
 from peewee import fn
@@ -40,7 +41,7 @@ _PIPELINE_TASK_TYPE_TO_FINISH_FIELD = {
     PipelineTaskType.GRAPH_RAG: "graphrag_task_finish_at",
     PipelineTaskType.RAPTOR: "raptor_task_finish_at",
     PipelineTaskType.MINDMAP: "mindmap_task_finish_at",
-    PipelineTaskType.ARTIFACT: "artifact_task_finish_at",
+    PipelineTaskType.ARTIFACT: "wiki_task_finish_at",
     PipelineTaskType.SKILL: "skill_task_finish_at",
     PipelineTaskType.STRUCTURE_GRAPH: "structure_graph_task_finish_at",
     PipelineTaskType.STRUCTURE_MINDMAP: "structure_mindmap_task_finish_at",
@@ -49,6 +50,22 @@ _PIPELINE_TASK_TYPE_TO_FINISH_FIELD = {
     PipelineTaskType.SESSION_ESSENCE: "session_essence_task_finish_at",
     PipelineTaskType.STRUCTURE: "structure_task_finish_at",
 }
+
+_EMBEDDING_VECTOR_FIELD = re.compile(r"^q_\d+_vec$")
+
+
+def _remove_embedding_vectors(value):
+    """Remove index-only embedding vectors from a runtime pipeline snapshot."""
+    if isinstance(value, dict):
+        for key in list(value):
+            if _EMBEDDING_VECTOR_FIELD.fullmatch(str(key)):
+                del value[key]
+            else:
+                _remove_embedding_vectors(value[key])
+    elif isinstance(value, list):
+        for item in value:
+            _remove_embedding_vectors(item)
+    return value
 
 
 class PipelineOperationLogService(CommonService):
@@ -205,7 +222,7 @@ class PipelineOperationLogService(CommonService):
             progress_msg=progress_msg,
             process_begin_at=process_begin_at,
             process_duration=process_duration,
-            dsl=json.loads(dsl),
+            dsl=_remove_embedding_vectors(json.loads(dsl)),
             task_type=task_type,
             operation_status=operation_status,
             avatar=avatar,
@@ -217,6 +234,38 @@ class PipelineOperationLogService(CommonService):
         log["update_time"] = timestamp
         log["update_date"] = datetime_now
         with DB.atomic():
+            operation_status_value = operation_status.value if isinstance(operation_status, TaskStatus) else str(operation_status)
+            if document_id != GRAPH_RAPTOR_FAKE_DOC_ID and operation_status_value == TaskStatus.CANCEL.value:
+                # Serialize page-task finalizers for the same canceled document.
+                locked_document = Document.select(Document.id, Document.run, Document.update_time).where(Document.id == document.id).for_update().first()
+                if locked_document is None or locked_document.run != TaskStatus.CANCEL.value:
+                    return None
+                cancel_update_time = locked_document.update_time or timestamp
+                if locked_document.update_time is None:
+                    Document.update(update_time=cancel_update_time, update_date=datetime_now).where(Document.id == locked_document.id).execute()
+                pipeline_filter = cls.model.pipeline_id == pipeline_id if pipeline_id else (cls.model.pipeline_id.is_null(True) | (cls.model.pipeline_id == ""))
+                existing = (
+                    cls.model.select()
+                    .where(
+                        (cls.model.document_id == document_id)
+                        & pipeline_filter
+                        & (cls.model.task_type == task_type)
+                        & (cls.model.operation_status == TaskStatus.CANCEL.value)
+                        & (cls.model.create_time >= cancel_update_time)
+                    )
+                    .first()
+                )
+                if existing:
+                    logging.debug(
+                        "Skip duplicate pipeline operation log document_id=%s pipeline_id=%s task_type=%s process_begin_at=%s existing_id=%s",
+                        document_id,
+                        pipeline_id,
+                        task_type,
+                        process_begin_at,
+                        existing.id,
+                    )
+                    return existing
+
             obj = cls.save(**log)
 
             limit = int(os.getenv("PIPELINE_OPERATION_LOG_LIMIT", 1000))

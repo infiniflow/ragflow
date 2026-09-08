@@ -20,6 +20,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/cloudwego/eino/components/model"
@@ -68,6 +69,274 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 	if calls != 1 {
 		t.Errorf("runner called %d times, want 1", calls)
 	}
+}
+
+func TestScanAllStreamForToolCallWaitsPastTextChunks(t *testing.T) {
+	stream := schema.StreamReaderFromArray([]*schema.Message{
+		{Role: schema.Assistant, Content: "I will calculate this."},
+		{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{{
+				ID:   "call-1",
+				Type: "function",
+				Function: schema.FunctionCall{
+					Name:      "execute_code",
+					Arguments: `{"lang":"python","script":"def main(): return 2"}`,
+				},
+			}},
+		},
+	})
+
+	hasToolCall, err := scanAllStreamForToolCall(t.Context(), stream)
+	if err != nil {
+		t.Fatalf("scanAllStreamForToolCall: %v", err)
+	}
+	if !hasToolCall {
+		t.Fatal("scanAllStreamForToolCall = false, want true")
+	}
+}
+
+func TestScanAllStreamForToolCallAllowsDirectAnswer(t *testing.T) {
+	stream := schema.StreamReaderFromArray([]*schema.Message{
+		{Role: schema.Assistant, Content: "No tool is needed."},
+	})
+
+	hasToolCall, err := scanAllStreamForToolCall(t.Context(), stream)
+	if err != nil {
+		t.Fatalf("scanAllStreamForToolCall: %v", err)
+	}
+	if hasToolCall {
+		t.Fatal("scanAllStreamForToolCall = true, want false")
+	}
+}
+
+type textThenToolCallModel struct {
+	turn       int
+	boundTools []*schema.ToolInfo
+}
+
+func (m *textThenToolCallModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	m.boundTools = append([]*schema.ToolInfo(nil), tools...)
+	return m, nil
+}
+
+func (m *textThenToolCallModel) Generate(_ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+	m.turn++
+	if m.turn == 1 {
+		return &schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{{
+				ID:   "call-1",
+				Type: "function",
+				Function: schema.FunctionCall{
+					Name:      "execute_code",
+					Arguments: `{"lang":"python","script":"def main(): return 2"}`,
+				},
+			}},
+		}, nil
+	}
+	return &schema.Message{Role: schema.Assistant, Content: "2"}, nil
+}
+
+func (m *textThenToolCallModel) Stream(_ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	m.turn++
+	if m.turn == 1 {
+		return schema.StreamReaderFromArray([]*schema.Message{
+			{Role: schema.Assistant, Content: "I will calculate this."},
+			{
+				Role: schema.Assistant,
+				ToolCalls: []schema.ToolCall{{
+					ID:   "call-1",
+					Type: "function",
+					Function: schema.FunctionCall{
+						Name:      "execute_code",
+						Arguments: `{"lang":"python","script":"def main(): return 2"}`,
+					},
+				}},
+			},
+		}), nil
+	}
+	return schema.StreamReaderFromArray([]*schema.Message{
+		{Role: schema.Assistant, Content: "2"},
+	}), nil
+}
+
+func TestReactStreamCheckerExecutesToolCallAfterText(t *testing.T) {
+	mdl := &textThenToolCallModel{}
+	tool := &passthroughTool{name: "execute_code"}
+	agent, err := react.NewAgent(t.Context(), &react.AgentConfig{
+		ToolCallingModel: mdl,
+		ToolsConfig: compose.ToolsNodeConfig{
+			Tools: []einotool.BaseTool{tool},
+		},
+		StreamToolCallChecker: scanAllStreamForToolCall,
+		MaxStep:               4,
+	})
+	if err != nil {
+		t.Fatalf("react.NewAgent: %v", err)
+	}
+
+	stream, err := agent.Stream(t.Context(), []*schema.Message{schema.UserMessage("calculate")})
+	if err != nil {
+		t.Fatalf("agent.Stream: %v", err)
+	}
+	defer stream.Close()
+
+	var chunks []*schema.Message
+	for {
+		chunk, recvErr := stream.Recv()
+		if recvErr == io.EOF {
+			break
+		}
+		if recvErr != nil {
+			t.Fatalf("stream.Recv: %v", recvErr)
+		}
+		if chunk != nil {
+			chunks = append(chunks, chunk)
+		}
+	}
+	if mdl.turn < 2 {
+		t.Fatalf("model turns = %d, want a second turn after tool execution", mdl.turn)
+	}
+	if len(mdl.boundTools) != 1 || mdl.boundTools[0].Name != "execute_code" {
+		t.Fatalf("bound tools = %#v, want execute_code", mdl.boundTools)
+	}
+	if got := tool.calls.Load(); got != 1 {
+		t.Fatalf("tool invocations = %d, want exactly 1", got)
+	}
+	final, err := schema.ConcatMessages(chunks)
+	if err != nil {
+		t.Fatalf("schema.ConcatMessages: %v", err)
+	}
+	if final.Content != "2" {
+		t.Fatalf("final content = %q, want 2", final.Content)
+	}
+}
+
+// slowThinkingModel streams a few reasoning chunks (each delayed) before a
+// tool call, then answers directly on the second turn. It is used to prove
+// that thinking deltas reach the agent message emitter while agent.Stream is
+// still blocked inside the stream-tool-call checker.
+type slowThinkingModel struct {
+	turn int
+}
+
+func (m *slowThinkingModel) WithTools(_ []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return m, nil
+}
+
+func (m *slowThinkingModel) Generate(_ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+	m.turn++
+	return &schema.Message{Role: schema.Assistant, Content: "2"}, nil
+}
+
+func (m *slowThinkingModel) Stream(_ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	m.turn++
+	if m.turn == 1 {
+		sr, sw := schema.Pipe[*schema.Message](1)
+		go func() {
+			defer sw.Close()
+			for _, chunk := range []*schema.Message{
+				{Role: schema.Assistant, ReasoningContent: "thinking one"},
+				{Role: schema.Assistant, ReasoningContent: "thinking two"},
+				{Role: schema.Assistant, ReasoningContent: "thinking three"},
+				{
+					Role: schema.Assistant,
+					ToolCalls: []schema.ToolCall{{
+						ID:   "call-1",
+						Type: "function",
+						Function: schema.FunctionCall{
+							Name:      "execute_code",
+							Arguments: `{"lang":"python","script":"def main(): return 2"}`,
+						},
+					}},
+				},
+			} {
+				time.Sleep(30 * time.Millisecond)
+				if sw.Send(chunk, nil) {
+					return
+				}
+			}
+		}()
+		return sr, nil
+	}
+	return schema.StreamReaderFromArray([]*schema.Message{{Role: schema.Assistant, Content: "2"}}), nil
+}
+
+// TestReactCheckerStreamsThinkingBeforeAgentReturns pins the fix for the
+// stream realtime regression: the stream-tool-call checker drains the whole
+// round synchronously inside the graph main loop, so agent.Stream cannot
+// return until the model finishes. The collector (emitAgentModelStreams)
+// must therefore be started before agent.Stream and deliver the first
+// thinking delta while the model is still streaming.
+func TestReactCheckerStreamsThinkingBeforeAgentReturns(t *testing.T) {
+	mdl := &slowThinkingModel{}
+	tool := &passthroughTool{name: "execute_code"}
+	agent, err := react.NewAgent(t.Context(), &react.AgentConfig{
+		ToolCallingModel: mdl,
+		ToolsConfig: compose.ToolsNodeConfig{
+			Tools: []einotool.BaseTool{tool},
+		},
+		StreamToolCallChecker: scanAllStreamForToolCall,
+		MaxStep:               4,
+	})
+	if err != nil {
+		t.Fatalf("react.NewAgent: %v", err)
+	}
+
+	thinkingSeen := make(chan struct{}, 1)
+	ctx := runtime.WithAgentMessageEmitter(t.Context(), func(content, thinking string) {
+		if thinking != "" {
+			select {
+			case thinkingSeen <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	opt, future := react.WithMessageFuture()
+	emitDone := emitAgentModelStreams(ctx, future)
+
+	streamCh := make(chan *schema.StreamReader[*schema.Message], 1)
+	errCh := make(chan error, 1)
+	go func() {
+		s, streamErr := agent.Stream(ctx, []*schema.Message{schema.UserMessage("calculate")}, opt)
+		if streamErr != nil {
+			errCh <- streamErr
+			return
+		}
+		streamCh <- s
+	}()
+
+	select {
+	case <-thinkingSeen:
+		// First thinking delta arrived while the model is still streaming.
+	case <-streamCh:
+		t.Fatal("agent.Stream returned before any thinking delta was emitted")
+	case <-errCh:
+		t.Fatal("agent.Stream errored before any thinking delta was emitted")
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for a thinking delta")
+	}
+
+	var stream *schema.StreamReader[*schema.Message]
+	select {
+	case stream = <-streamCh:
+	case err := <-errCh:
+		t.Fatalf("agent.Stream: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("agent.Stream did not return")
+	}
+	defer stream.Close()
+	for {
+		if _, recvErr := stream.Recv(); recvErr == io.EOF {
+			break
+		}
+	}
+	if got := tool.calls.Load(); got != 1 {
+		t.Fatalf("tool invocations = %d, want exactly 1", got)
+	}
+	<-emitDone
 }
 
 func TestAgent_EmitsThinking(t *testing.T) {
@@ -518,7 +787,7 @@ func TestAgent_Invoke_RespectsParentCancellation(t *testing.T) {
 	})
 	c := NewAgentComponent(AgentParam{ModelID: "echo", MaxRounds: 1})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancel
 
 	_, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "hi"})
@@ -654,6 +923,43 @@ func TestAgent_NewAcceptsCanvasToolObjects(t *testing.T) {
 	}
 }
 
+func TestAgent_NewAcceptsCodeExecCanvasToolObject(t *testing.T) {
+	cmp, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "x",
+		"tools": []any{
+			map[string]any{
+				"component_name": "CodeExec",
+				"params":         map[string]any{},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	agent, ok := cmp.(*AgentComponent)
+	if !ok {
+		t.Fatalf("New(Agent) returned %T, want *AgentComponent", cmp)
+	}
+	if len(agent.param.Tools) != 1 || agent.param.Tools[0] != "CodeExec" {
+		t.Fatalf("agent.param.Tools = %#v, want [CodeExec]", agent.param.Tools)
+	}
+	tools, err := buildAgentTools(t.Context(), agent.param)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("len(tools) = %d, want 1", len(tools))
+	}
+	info, err := tools[0].Info(t.Context())
+	if err != nil {
+		t.Fatalf("CodeExec tool Info: %v", err)
+	}
+	if info.Name != "execute_code" {
+		t.Errorf("CodeExec tool Info().Name = %q, want execute_code", info.Name)
+	}
+}
+
 type fakeToolCallingChatModel struct {
 	tools []*schema.ToolInfo
 }
@@ -759,15 +1065,16 @@ func TestAgent_CanvasSubAgentToolBuildsDynamicTool(t *testing.T) {
 	if len(agent.param.SubAgents) != 1 {
 		t.Fatalf("sub agents = %d, want 1", len(agent.param.SubAgents))
 	}
+	ctx := t.Context()
 
-	tools, err := buildAgentTools(t.Context(), agent.param)
+	tools, err := buildAgentTools(ctx, agent.param)
 	if err != nil {
 		t.Fatalf("buildAgentTools: %v", err)
 	}
 	if len(tools) != 1 {
 		t.Fatalf("len(tools) = %d, want 1", len(tools))
 	}
-	info, err := tools[0].Info(context.Background())
+	info, err := tools[0].Info(ctx)
 	if err != nil {
 		t.Fatalf("tool.Info: %v", err)
 	}
@@ -819,7 +1126,7 @@ func TestAgent_CanvasSubAgentToolNamesAreUniqueAfterNormalization(t *testing.T) 
 	}
 	var names []string
 	for _, tool := range tools {
-		info, err := tool.Info(context.Background())
+		info, err := tool.Info(t.Context())
 		if err != nil {
 			t.Fatalf("tool.Info: %v", err)
 		}

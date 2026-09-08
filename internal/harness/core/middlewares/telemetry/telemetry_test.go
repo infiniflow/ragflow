@@ -45,12 +45,12 @@ func TestWrapModelNoTracer(t *testing.T) {
 		},
 	}
 
-	wrapped, err := mw.WrapModel(context.Background(), model, &core.ModelContext{})
+	wrapped, err := mw.WrapModel(t.Context(), model, &core.ModelContext{})
 	if err != nil {
 		t.Fatalf("WrapModel failed: %v", err)
 	}
 
-	result, err := wrapped.Generate(context.Background(), []*schema.Message{{Role: "user", Content: "hi"}})
+	result, err := wrapped.Generate(t.Context(), []*schema.Message{{Role: "user", Content: "hi"}})
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}

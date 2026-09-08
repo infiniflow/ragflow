@@ -14,10 +14,10 @@
 //  limitations under the License.
 //
 
-// Package chunker holds the ingestion chunker components: TokenChunker,
-// TitleChunker, GroupTitleChunker, HierarchyTitleChunker. The four
-// components share the same upstream payload (schema.ChunkerFromUpstream)
-// and the same output shape (schema.ChunkerOutputs).
+// Package chunker holds the ingestion chunker components. The variants share
+// the same upstream payload (schema.ChunkerFromUpstream) and the same output
+// shape (schema.ChunkerOutputs); each registers via MustRegisterChunker from
+// its own file.
 //
 // The package is intentionally separate from internal/agent/component/
 // (the agent canvas) and from internal/ingestion/component/schema/
@@ -30,12 +30,13 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/globals"
 
 	"gorm.io/gorm"
 )
 
 // MustRegisterChunker registers a single chunker component under
-// CategoryIngestion. The four chunker files each carry exactly one
+// CategoryIngestion. Each chunker file carries exactly one
 // init() that calls this with the registered component's name; the
 // factory body resolves the typed constructor via newChunkerByName
 // (in common.go).
@@ -71,6 +72,20 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	if !ok || len(chunks) == 0 {
 		return out, nil
 	}
+
+	// Canvas-debug (dry-run) chunk cap: when set (>=1), keep only the leading
+	// N chunks for preview. This is the single choke point every chunker
+	// variant flows through, so the cap applies regardless of variant, and it
+	// also limits downstream compiler/tokenizer work in the debug run — the
+	// intended cost saving. Truncation happens FIRST, before any per-chunk
+	// work below: dropped chunks get no id computation and no image upload /
+	// byte dropping, so a chunk can never be persisted to storage and then
+	// discarded by this cap. No chunker node (or cap == 0) → untouched.
+	if chunkCap := globals.DebugChunkCap(ctx); chunkCap > 0 && len(chunks) > chunkCap {
+		chunks = chunks[:chunkCap]
+		out["chunks"] = chunks
+	}
+
 	kbID, docID := resolveImageUploadContext(ctx, inputs)
 
 	// Compute and write the deterministic chunk id (component.ChunkID) for
@@ -82,30 +97,44 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 		ck["id"] = common.ChunkID(docID, text)
 	}
 
-	if err := uploadChunkImages(ctx, chunks, ChunkImageUploader, kbID); err != nil {
-		return nil, err
+	// kb_id is empty only in canvas debug (dry-run) mode; production ingestion
+	// always supplies a KB, so kb_id == "" never occurs in normal operation.
+	// Image bytes are uploaded to MinIO only when a KB is present (i.e. a
+	// persist run); in debug we drop the raw bytes so they are not held in
+	// memory until a persist stage that will never run.
+	if kbID != "" {
+		if err := uploadChunkImages(ctx, chunks, ChunkImageUploader, kbID); err != nil {
+			return nil, err
+		}
+	} else {
+		for _, ck := range chunks {
+			delete(ck, "image")
+		}
 	}
 	return out, nil
 }
 
 // ChunkerInputs is the static, registered input descriptor shared
-// by all four chunker variants.
+// by all chunker variants.
 var ChunkerInputs = map[string]string{
 	"text":          "Plain-text input. The chunker slices this into downstream chunks.",
 	"content":       "Alias for \"text\".",
 	"chunks":        "Optional upstream chunk list (structured JSON form).",
-	"name":          "Source document name. Required by the upstream payload convention.",
+	"name":          "Source document name. Not required on the payload: when absent it is read from the workflow-wide globals bag (CanvasState.Globals) via globals.GlobalOrInput.",
 	"_created_time": "Optional upstream timestamp (RFC3339Nano, s).",
 	"_elapsed_time": "Optional upstream elapsed time (s).",
 }
 
 // ChunkerOutputs is the static, registered output descriptor shared
-// by all four chunker variants.
+// by all chunker variants.
+//
+// Note: this map is the component's emitted output only. Run-level metadata
+// that downstream components still need — name, tenant_id, kb_id — is NOT
+// re-emitted here; it lives in the workflow-wide CanvasState.Globals bag and
+// is read directly from ctx (see runtime.CanvasState.Globals and
+// globals.GlobalOrInput). Do not add those keys here.
 var ChunkerOutputs = map[string]string{
 	"output_format": "Always \"chunks\" on success.",
 	"chunks":        "list[object]: per-chunk map (text + optional meta keys).",
-	"name":          "Source document name, carried forward from upstream (pass-through) when present — Tokenizer consumes it for title embedding.",
-	"tenant_id":     "Carried forward from upstream (pass-through) when present — Tokenizer consumes it to resolve the embedding model.",
-	"kb_id":         "Carried forward from upstream (pass-through) when present — Tokenizer consumes it to resolve the embedding model.",
 	"_ERROR":        "Set only on validation failure.",
 }

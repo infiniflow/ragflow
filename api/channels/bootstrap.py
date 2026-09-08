@@ -219,13 +219,17 @@ async def _start_channel(running: dict, account_id: str, channel: str, credentia
     return True
 
 
-async def _reconcile(running: dict, failed: dict) -> None:
+async def _reconcile(running: dict, failed: dict, stop_event: threading.Event) -> None:
     """Diff desired (DB) vs running channels and apply start/stop/restart.
 
     ``failed`` remembers configs that could not be started so they are not
     retried (and re-logged) every tick until their credentials change.
     """
+    if stop_event.is_set():
+        return
     desired = await asyncio.to_thread(_desired_channels)
+    if stop_event.is_set():
+        return
 
     # Stop channels that were removed or whose credentials/type changed.
     for account_id in list(running.keys()):
@@ -266,7 +270,12 @@ async def run_channels(stop_event: threading.Event) -> None:
     try:
         while not stop_event.is_set():
             try:
-                await _reconcile(running, failed)
+                await _reconcile(running, failed, stop_event)
+            except RuntimeError as ex:
+                if stop_event.is_set():
+                    LOGGER.info("chat channel reconcile stopped")
+                    break
+                LOGGER.error("chat channel reconcile failed: %s", ex)
             except Exception as ex:
                 LOGGER.error("chat channel reconcile failed: %s", ex)
 

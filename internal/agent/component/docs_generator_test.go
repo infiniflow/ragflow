@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -96,7 +95,7 @@ func TestDocsGenerator_Invoke_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(DocsGenerator): %v", err)
 	}
-	_, _ = c.Invoke(context.Background(), nil, map[string]any{})
+	_, _ = c.Invoke(t.Context(), nil, map[string]any{})
 	// We do not assert err == nil here because txt output requires
 	// the internal writer (which may not be available in this
 	// checkout). The test pins that the call doesn't panic.
@@ -110,7 +109,7 @@ func TestDocsGenerator_Invoke_UsesQueryWhenContentEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(DocsGenerator): %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"query": "Hello from begin query",
 	})
 	if err != nil {
@@ -134,10 +133,11 @@ func TestDocsGenerator_Invoke_AcceptsDecorationParamNames(t *testing.T) {
 		"footer_text":    "Canonical Footer",
 		"watermark_text": "Canonical Watermark",
 	})
+	ctx := t.Context()
 	if err != nil {
 		t.Fatalf("New(DocsGenerator): %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke canonical params: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestDocsGenerator_Invoke_AcceptsDecorationParamNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(DocsGenerator alias params): %v", err)
 	}
-	out, err = c.Invoke(context.Background(), nil, map[string]any{})
+	out, err = c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke alias params: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestDocsGenerator_Invoke_StoresAgentAttachment(t *testing.T) {
 	}
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
@@ -205,7 +205,7 @@ func TestDocsGenerator_Invoke_StoresAgentAttachment(t *testing.T) {
 	if !ok || docID == "" {
 		t.Fatalf("doc_id = %v, want non-empty string", out["doc_id"])
 	}
-	blob, err := memStorage.Get("tenant-1-downloads", docID)
+	blob, err := memStorage.Get(ctx, "tenant-1-downloads", docID)
 	if err != nil {
 		t.Fatalf("stored blob missing: %v", err)
 	}
@@ -225,5 +225,26 @@ func TestDocsGenerator_Invoke_StoresAgentAttachment(t *testing.T) {
 	}
 	if _, ok := out["download_info"].(map[string]any); !ok {
 		t.Fatalf("download_info has type %T, want map", out["download_info"])
+	}
+}
+
+// TestResolveDocsGeneratorContent_ThinkAndTrim pins the static-content path:
+// a think preamble is stripped, and outer whitespace is trimmed even when no
+// think block is present — matching Python _strip_thinking's final .strip().
+func TestResolveDocsGeneratorContent_ThinkAndTrim(t *testing.T) {
+	got, err := resolveDocsGeneratorContent(t.Context(), "<think>reasoning</think>\n# Title\n", nil)
+	if err != nil {
+		t.Fatalf("resolveDocsGeneratorContent: %v", err)
+	}
+	if got != "# Title" {
+		t.Errorf("content = %q, want %q", got, "# Title")
+	}
+
+	got, err = resolveDocsGeneratorContent(t.Context(), "  plain  \n", nil)
+	if err != nil {
+		t.Fatalf("resolveDocsGeneratorContent: %v", err)
+	}
+	if got != "plain" {
+		t.Errorf("content = %q, want %q", got, "plain")
 	}
 }

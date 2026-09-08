@@ -70,7 +70,7 @@
       "name": "sandbox.self_managed",
       "source": "variable",
       "data_type": "json",
-      "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"timeout\": 30, \"max_retries\": 3, \"pool_size\": 10}"
+      "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"timeout\": 30, \"max_retries\": 3}"
     },
     {
       "name": "sandbox.aliyun_codeinterpreter",
@@ -80,6 +80,12 @@
     },
     {
       "name": "sandbox.e2b",
+      "source": "variable",
+      "data_type": "json",
+      "value": "{}"
+    },
+    {
+      "name": "sandbox.ucloud_agent_sandbox",
       "source": "variable",
       "data_type": "json",
       "value": "{}"

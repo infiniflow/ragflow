@@ -25,6 +25,7 @@ import (
 )
 
 func TestOpenAICompatibleProvidersExtractStreamingUsage(t *testing.T) {
+	withSSRFBypass(t)
 	providers := []struct {
 		name string
 		new  func(string) ModelDriver

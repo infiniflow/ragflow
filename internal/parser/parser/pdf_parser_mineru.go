@@ -19,14 +19,14 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 	}
 	apiServer := strings.TrimSpace(parser.MinerUAPIServer)
 	if apiServer == "" {
-		apiServer = strings.TrimSpace(common.GetEnv(common.EnvMineruApiServer))
+		apiServer = strings.TrimSpace(common.GetEnv(common.EnvMineruAPIServer))
 	}
 	if apiServer == "" {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU requires mineru_apiserver or MINERU_APISERVER")}
 	}
 	apiKey := parser.MinerUAPIKey
 	if strings.TrimSpace(apiKey) == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvMineruApiKey))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvMineruAPIKey))
 	}
 	backend := strings.TrimSpace(parser.MinerUBackend)
 	if backend == "" {

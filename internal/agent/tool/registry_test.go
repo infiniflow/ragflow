@@ -1,7 +1,6 @@
 package tool
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
@@ -14,14 +13,15 @@ func TestBuildAll_KnownTools(t *testing.T) {
 	if len(tools) != 2 {
 		t.Fatalf("len(tools) = %d, want 2", len(tools))
 	}
-	info0, err := tools[0].Info(context.Background())
+	ctx := t.Context()
+	info0, err := tools[0].Info(ctx)
 	if err != nil {
 		t.Fatalf("tools[0].Info: %v", err)
 	}
 	if info0.Name != "search_my_dateset" {
 		t.Errorf("tools[0].Info().Name = %q, want search_my_dateset", info0.Name)
 	}
-	info1, err := tools[1].Info(context.Background())
+	info1, err := tools[1].Info(ctx)
 	if err != nil {
 		t.Fatalf("tools[1].Info: %v", err)
 	}
@@ -40,26 +40,118 @@ func TestBuildAll_UnknownTool(t *testing.T) {
 	}
 }
 
-func TestBuildByName_TavilyCanvasComponentNames(t *testing.T) {
-	for _, tc := range []struct {
-		name string
+func TestBuildByName_CanvasComponentNames(t *testing.T) {
+	tests := []struct {
+		name         string
+		wantToolName string
 	}{
-		{name: "TavilySearch"},
-		{name: "TavilyExtract"},
+		{name: "CodeExec", wantToolName: "execute_code"},
+		{name: "GoogleScholar", wantToolName: "google_scholar_search"},
+		{name: "KeenableSearch", wantToolName: "keenable_search"},
+		{name: "QueritContents", wantToolName: "querit_contents"},
+		{name: "QueritSearch", wantToolName: "querit_search"},
+		{name: "TavilyExtract", wantToolName: "tavily_extract"},
+		{name: "TavilySearch", wantToolName: "tavily_search"},
+		{name: "YahooFinance", wantToolName: "yahoo_finance"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			built, err := BuildByName(tc.name, nil)
+			if err != nil {
+				t.Fatalf("BuildByName(%q): %v", tc.name, err)
+			}
+			info, err := built.Info(t.Context())
+			if err != nil {
+				t.Fatalf("BuildByName(%q).Info: %v", tc.name, err)
+			}
+			if info.Name != tc.wantToolName {
+				t.Errorf("BuildByName(%q).Info().Name = %q, want %q", tc.name, info.Name, tc.wantToolName)
+			}
+		})
+	}
+}
+
+func TestBuildAll_CanvasComponentNameUsesCanonicalParams(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		paramsKey string
+		topN      int
+	}{
+		{name: "canonical key", paramsKey: "google_scholar", topN: 7},
+		{name: "canvas key", paramsKey: "googlescholar", topN: 9},
 	} {
-		built, err := BuildByName(tc.name, nil)
+		t.Run(tc.name, func(t *testing.T) {
+			tools, err := BuildAll(
+				[]string{"GoogleScholar"},
+				map[string]map[string]any{
+					tc.paramsKey: {"top_n": tc.topN},
+				},
+			)
+			if err != nil {
+				t.Fatalf("BuildAll: %v", err)
+			}
+			if len(tools) != 1 {
+				t.Fatalf("len(tools) = %d, want 1", len(tools))
+			}
+			scholar, ok := tools[0].(*GoogleScholarTool)
+			if !ok {
+				t.Fatalf("tools[0] = %T, want *GoogleScholarTool", tools[0])
+			}
+			if scholar.defaults.TopN != tc.topN {
+				t.Errorf("GoogleScholar defaults.TopN = %d, want %d", scholar.defaults.TopN, tc.topN)
+			}
+		})
+	}
+}
+
+func TestBuildByName_QueritAliases(t *testing.T) {
+	for _, name := range []string{"querit", "querit_search", "queritsearch", "QueritSearch"} {
+		built, err := BuildByName(name, map[string]any{
+			"api_key":          "stored-key",
+			"count":            float64(8),
+			"chunks_per_doc":   float64(2),
+			"site_include":     []any{"example.com"},
+			"site_exclude":     []string{"blocked.example"},
+			"time_range":       "d7",
+			"country_include":  []any{"CN"},
+			"language_include": []any{"zh"},
+			"outputs":          map[string]any{"json": map[string]any{}},
+		})
 		if err != nil {
-			t.Fatalf("BuildByName(%q): %v", tc.name, err)
+			t.Fatalf("BuildByName(%q): %v", name, err)
 		}
-		switch tc.name {
-		case "TavilySearch":
-			if _, ok := built.(*TavilyTool); !ok {
-				t.Errorf("BuildByName(%q) returned %T, want *TavilyTool", tc.name, built)
-			}
-		case "TavilyExtract":
-			if _, ok := built.(*TavilyExtractTool); !ok {
-				t.Errorf("BuildByName(%q) returned %T, want *TavilyExtractTool", tc.name, built)
-			}
+		querit, ok := built.(*QueritTool)
+		if !ok {
+			t.Fatalf("BuildByName(%q) returned %T, want *QueritTool", name, built)
+		}
+		if querit.defaults.Count != 8 || querit.defaults.ChunksPerDoc == nil || *querit.defaults.ChunksPerDoc != 2 || len(querit.defaults.SiteInclude) != 1 {
+			t.Fatalf("BuildByName(%q) defaults = %#v", name, querit.defaults)
+		}
+		info, infoErr := built.Info(t.Context())
+		if infoErr != nil || info.Name != "querit_search" {
+			t.Fatalf("BuildByName(%q).Info() = %#v, %v", name, info, infoErr)
+		}
+	}
+}
+
+func TestBuildByName_QueritContentsAliases(t *testing.T) {
+	for _, name := range []string{"querit_contents", "queritcontents", "QueritContents"} {
+		built, err := BuildByName(name, map[string]any{
+			"api_key":       "stored-key",
+			"format":        "html",
+			"crawl_timeout": float64(20),
+			"extras_meta":   true,
+		})
+		if err != nil {
+			t.Fatalf("BuildByName(%q): %v", name, err)
+		}
+		contents, ok := built.(*QueritContentsTool)
+		if !ok {
+			t.Fatalf("BuildByName(%q) returned %T, want *QueritContentsTool", name, built)
+		}
+		if contents.defaults.Format != "html" || contents.defaults.CrawlTimeout != 20 || !contents.defaults.ExtrasMeta {
+			t.Fatalf("BuildByName(%q) defaults = %#v", name, contents.defaults)
 		}
 	}
 }
@@ -70,6 +162,7 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
+		"querit", "querit_contents", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
@@ -133,6 +226,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
+		"querit", "querit_contents", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
@@ -170,7 +264,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 
 	// Schema-level checks per entry.
 	for i, name := range names {
-		info, err := tools[i].Info(context.Background())
+		info, err := tools[i].Info(t.Context())
 		if err != nil {
 			t.Errorf("tools[%d] (registry name %q).Info: %v", i, name, err)
 			continue
@@ -202,6 +296,9 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"web_crawler":           "web_crawler",
 		"wikipedia":             "wikipedia_search",
 		"wikipedia_search":      "wikipedia_search",
+		"querit":                "querit_search",
+		"querit_contents":       "querit_contents",
+		"querit_search":         "querit_search",
 	}
 	for _, name := range names {
 		canonical, ok := canonicalByAlias[name]
@@ -209,7 +306,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 			continue
 		}
 		idx := indexOf(names, name)
-		info, err := tools[idx].Info(context.Background())
+		info, err := tools[idx].Info(t.Context())
 		if err != nil {
 			continue
 		}

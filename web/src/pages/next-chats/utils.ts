@@ -1,10 +1,25 @@
-import { EmptyConversationId, MessageType } from '@/constants/chat';
-import {
-  IConversation,
-  IMessage,
-  IReference,
-} from '@/interfaces/database/chat';
-import { isEmpty } from 'lodash';
+import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
+import { EmptyConversationId } from '@/constants/chat';
+import { IConversation, IReference } from '@/interfaces/database/chat';
+import storage from '@/utils/authorization-util';
+
+/**
+ * Regenerate is triggered from the transcript, which has no access to the input
+ * box's thinking / internet toggles, so callers replay the options of their last
+ * send. A view that hasn't sent anything yet has no record: fall back to the
+ * input box's own defaults — it re-reads the persisted thinking level and starts
+ * with internet off, so both stay in sync after a remount.
+ */
+export function resolveResendOptions(
+  lastSendOptions: NextMessageInputOnPressEnterParameter,
+): NextMessageInputOnPressEnterParameter {
+  const {
+    enableThinking = storage.getThinkingLevel(),
+    enableInternet = false,
+  } = lastSendOptions;
+
+  return { enableThinking, enableInternet };
+}
 
 export const isConversationIdExist = (conversationId: string) => {
   return conversationId !== EmptyConversationId && conversationId !== '';
@@ -27,33 +42,11 @@ export const getDocumentIdsFromConversionReference = (data: IConversation) => {
   return documentIds.join(',');
 };
 
-export const buildMessageItemReference = (
-  conversation: { messages: IMessage[]; reference: IReference[] },
-  message: IMessage,
-) => {
-  const assistantMessages = conversation.messages
-    ?.filter(
-      (x) =>
-        x.role === MessageType.Assistant && !x.content.startsWith('**ERROR**:'), // Exclude error messages
-    )
-    .slice(1);
-  const referenceIndex = assistantMessages.findIndex(
-    (x) => x.id === message.id,
-  );
-  // An assistant message that has not received any content yet is still
-  // being generated. Never resolve its reference from the conversation
-  // reference list — the indices only align with completed answers, so the
-  // lookup would surface a stale reference from a previous turn (or from a
-  // previously opened conversation) while the answer is streaming.
-  const isPendingAnswer =
-    message.role === MessageType.Assistant &&
-    !message.content &&
-    isEmpty(message?.reference);
-  const reference = !isEmpty(message?.reference)
-    ? message?.reference
-    : isPendingAnswer
-      ? undefined
-      : (conversation?.reference ?? [])[referenceIndex];
-
-  return reference ?? { doc_aggs: [], chunks: [], total: 0 };
+// Shared fallback so a message without a reference keeps handing MessageItem the
+// same object across renders. A fresh literal here would break the item's memo
+// on every streaming flush. See useMessageReferences.
+export const EmptyReference: IReference = {
+  doc_aggs: [],
+  chunks: [],
+  total: 0,
 };

@@ -10,6 +10,7 @@ export default {
       name: '名稱',
       save: '保持',
       namePlaceholder: '請輸入名稱',
+      nameSlashError: '名稱不能包含 "/"',
       next: '下一步',
       create: '創建',
       edit: '編輯',
@@ -119,7 +120,7 @@ export default {
         '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。請注意這裡的改動不會被自動保存。如果你調整了這裡的默認設置，比如關鍵詞相似度權重，請務必在聊天助手設置或者召回算子設置處同步更新相關設置。',
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
-        '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。預設值設定為 0.2，也就是說，文本塊的混合相似度得分至少要 20 才會被檢索。',
+        '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。預設值設定為 20，也就是說，文本塊的混合相似度得分至少要 20 才會被檢索。',
       vectorSimilarityWeight: '矢量相似度權重',
       vectorSimilarityWeightTip:
         '我們使用混合相似性評分來評估兩行文本之間的距離。它是加權關鍵字相似性和矢量餘弦相似性或rerank得分（0〜1）。兩個權重的總和為1.0。',
@@ -139,6 +140,7 @@ export default {
       runningStatus2: '取消',
       runningStatus3: '成功',
       runningStatus4: '失敗',
+      runningStatusQueued: '排隊中',
       pageRanges: '頁碼範圍',
       pageRangesTip:
         '頁碼範圍：定義需要解析的頁面範圍。不包含在這些範圍內的頁面將被忽略。',
@@ -148,7 +150,7 @@ export default {
       toMessage: '缺少結束頁碼（不包含）',
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
-        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。如需更多資訊，請參閱 https://ragflow.io/docs/dev/select_pdf_parser。',
+        '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。如需更多資訊，請參閱 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
       taskPageSize: '任務頁面大小',
       taskPageSizeMessage: '請輸入您的任務頁面大小！',
       taskPageSizeTip: `如果使用佈局識別，PDF 文件將被分成連續的組。佈局分析將在組之間並行執行，以提高處理速度。“任務頁面大小”決定組的大小。頁面大小越大，將頁面之間的連續文本分割成不同塊的機會就越低。`,
@@ -172,7 +174,7 @@ export default {
       delimiterTip:
         '支持多字符作為分隔符，多字符用兩個反引號 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建议文本块大小」設定的大小進行拼裝。在设置文本分段標識符之前，請確保您已理解上述文本分段切片機制。',
       html4excel: '表格轉HTML',
-      html4excelTip: `與 General 切片方法配合使用。未開啟狀態下，表格檔案（XLSX、XLS（Excel 97-2003）會按行解析為鍵值對。開啟後，表格檔案會被解析為 HTML 表格。若原始表格超過 12 行，系統會自動按每 12 行拆分為多個 HTML 表格。欲了解更多資訊，請參閱 https://ragflow.io/docs/dev/enable_excel2html。`,
+      html4excelTip: `與 General 切片方法配合使用。未開啟狀態下，表格檔案（XLSX、XLS（Excel 97-2003）會按行解析為鍵值對。開啟後，表格檔案會被解析為 HTML 表格。若原始表格超過 12 行，系統會自動按每 12 行拆分為多個 HTML 表格。欲了解更多資訊，請參閱 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
       autoKeywords: '自動關鍵字',
       autoKeywordsTip: `自動為每個文字區塊中提取 N 個關鍵詞，以提升查詢精度。請注意：此功能採用「系統模型設定」中設定的預設聊天模型提取關鍵詞，因此也會產生更多 Token 消耗。此外，你也可以手動更新生成的關鍵詞。詳情請參見 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
       autoQuestions: '自動問題',
@@ -246,6 +248,12 @@ export default {
       methodExamplesDescription: '為方便您理解，我們附上相關截圖供您參考。',
       dialogueExamplesTitle: '對話示例',
       methodEmpty: '這將顯示知識庫類別的可視化解釋',
+      audio: `<p>支援的檔案格式為 <b>WAV、MP3、AAC、FLAC、OGG</b> 及其他常見音訊格式。</p>
+<p>本方法使用語音轉文字模型將音訊檔案轉錄為文字。</p>`,
+      email: `<p>支援的檔案格式為 <b>EML</b> 和 <b>MSG</b>。</p>
+<p>本方法解析電子郵件檔案，擷取標頭欄位（如寄件者、收件者、副本、主旨和日期）、內文以及附件。</p>`,
+      knowledgeCompiler: `<p>本 pipeline 先解析檔案並分塊，然後透過 Knowledge Compiler 元件將分塊編譯為結構化知識單元（知識圖譜、百科、RAPTOR、心智圖或資料集導航）。</p>
+<p>編譯後的知識單元以分塊形式合併進分塊流輸出，適合在分塊文件之上構建可檢索的知識層。</p>`,
       book: `<p>支持的文件格式為<b>DOCX</b>、<b>PDF</b>、<b>TXT</b>。</p><p>
         由於一本書很長，並不是所有部分都有用，如果是 PDF，
         請為每本書設置<i>頁面範圍</i>，以消除負面影響並節省分析計算時間。</p>`,
@@ -353,7 +361,7 @@ export default {
       maxClusterTip: '最多可創建的聚類數。',
       entityTypes: '實體類型',
       pageRank: '頁面排名',
-      pageRankTip: `知識庫檢索時，你可以為特定知識庫設置較高的 PageRank 分數，該知識庫中匹配文本塊的混合相似度得分會自動疊加 PageRank 分數，從而提升排序權重。詳見 https://ragflow.io/docs/dev/set_page_rank。`,
+      pageRankTip: `知識庫檢索時，你可以為特定知識庫設置較高的 PageRank 分數，該知識庫中匹配文本塊的混合相似度得分會自動疊加 PageRank 分數，從而提升排序權重。詳見 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '標籤',
       frequency: '頻次',
       searchTags: '搜尋標籤',
@@ -371,7 +379,7 @@ export default {
         <li>在給你的知識庫文本塊批量打標籤之前，你需要先生成標籤集作為樣本。</li>
         <li>自動關鍵詞功能中的關鍵詞由 LLM 生成，此過程相對耗時，並且會產生一定的 Token 消耗。</li>
       </ul>
-      <p>詳情請參閱 https://ragflow.io/docs/dev/use_tag_sets。</p>
+      <p>詳情請參閱 https://ragflow.io/docs/dataset_configuration#basic-information。</p>
  `,
       tags: '標籤',
       addTag: '增加標籤',
@@ -471,7 +479,7 @@ export default {
       variable: '變量',
       variableTip: `你可以透過對話 API，並配合變數設定來動態調整大模型的系統提示詞。
       {knowledge}為系統預留變數，代表從指定知識庫召回的文本塊。
-     「系統提示詞」中的所有變數都必須用大括號{}括起來。詳見 https://ragflow.io/docs/dev/set_chat_variables。`,
+     「系統提示詞」中的所有變數都必須用大括號{}括起來。詳見 https://ragflow.io/docs/chat_configuration#system-prompt。`,
       add: '新增',
       key: '關鍵字',
       optional: '可選的',
@@ -772,6 +780,7 @@ export default {
       modelsToBeAddedTooltip:
         '若您的模型供應商未列於此處，但宣稱與 OpenAI 相容，可透過選擇「OpenAI-API-compatible」卡片來設定相關模型。',
       dropboxDescription: '連接 Dropbox，同步指定帳號下的文件與文件夾。',
+      azure_devopsDescription: '連接 Azure DevOps 以同步儲存庫檔案和拉取請求。',
       bitbucketDescription: '連接 Bitbucket，同步 PR 內容。',
       zendeskDescription: '連接 Zendesk，同步工單、文章及其他內容。',
       bitbucketTopWorkspaceTip:
@@ -791,6 +800,7 @@ export default {
       modified: '更新成功',
       created: '創建成功',
       deleted: '刪除成功',
+      noLangfuseConfigToDelete: '沒有可刪除的 Langfuse 配置',
       renamed: '重命名成功',
       operated: '操作成功',
       updated: '更新成功',

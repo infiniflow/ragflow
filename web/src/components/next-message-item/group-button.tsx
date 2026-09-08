@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { PromptIcon } from '@/assets/icon/next-icon';
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import {
@@ -9,6 +25,7 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
 import { AgentChatContext } from '@/pages/agent/context';
 import { downloadAgentFile } from '@/services/file-manager-service';
+import { removeThinkSection } from '@/utils/chat';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import {
   DeleteOutlined,
@@ -19,7 +36,7 @@ import {
   SyncOutlined,
 } from '@ant-design/icons';
 import { Download, NotebookText } from 'lucide-react';
-import { useCallback, useContext } from 'react';
+import { useCallback, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import FeedbackDialog from '../feedback-dialog';
 import { PromptDialog } from '../prompt-dialog';
@@ -69,6 +86,8 @@ export const AssistantGroupButton = ({
 
   const { showLogSheet } = useContext(AgentChatContext);
 
+  const copyText = useMemo(() => removeThinkSection(content), [content]);
+
   const handleShowLogSheet = useCallback(() => {
     showLogSheet(messageId);
   }, [messageId, showLogSheet]);
@@ -83,7 +102,7 @@ export const AssistantGroupButton = ({
       >
         <ToggleGroupItem value="a">
           <CopyToClipboard
-            text={content}
+            text={copyText}
             className="border-none hover:!bg-transparent"
             avoidButtonWrapper
           ></CopyToClipboard>
@@ -128,7 +147,7 @@ export const AssistantGroupButton = ({
             </Tooltip>
           </ToggleGroupItem>
         )}
-        {!!attachment?.doc_id && !isShare && (
+        {!!attachment?.doc_id && (
           <ToggleGroupItem
             value="g"
             onClick={async () => {

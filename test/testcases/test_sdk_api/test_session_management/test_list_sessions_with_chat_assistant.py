@@ -73,7 +73,7 @@ class TestSessionsWithChatAssistantList:
         "params, expected_page_size, expected_message",
         [
             ({"page_size": None}, 0, "not instance of"),
-            ({"page_size": 0}, 0, ""),
+            ({"page_size": 0}, 5, ""),
             ({"page_size": 1}, 1, ""),
             ({"page_size": 6}, 5, ""),
             ({"page_size": "1"}, 0, "not instance of"),

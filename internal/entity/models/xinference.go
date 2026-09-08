@@ -28,28 +28,11 @@ import (
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 )
-
-var xinferenceStreamIdleTimeout = 60 * time.Second
 
 // XinferenceModel implements ModelDriver for Xinference chat models.
 type XinferenceModel struct {
 	baseModel BaseModel
-}
-
-type xinferenceChatChoice struct {
-	Message struct {
-		Content          string `json:"content"`
-		ReasoningContent string `json:"reasoning_content"`
-		Reasoning        string `json:"reasoning"`
-		Thinking         string `json:"thinking"`
-	} `json:"message"`
-}
-
-type xinferenceChatResponse struct {
-	Choices []xinferenceChatChoice `json:"choices"`
 }
 
 type xinferenceModelListResponse struct {
@@ -63,7 +46,7 @@ func NewXinferenceModel(baseURL map[string]string, urlSuffix URLSuffix) *Xinfere
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(),
+			httpClient:       NewDriverHTTPClient(true),
 		},
 	}
 }
@@ -87,28 +70,6 @@ func normalizeXinferenceBaseURL(base string) string {
 	return trimmed
 }
 
-func xinferenceReasoningFromStrings(reasoningContent string, reasoning string, thinking string) string {
-	switch {
-	case reasoningContent != "":
-		return reasoningContent
-	case reasoning != "":
-		return reasoning
-	case thinking != "":
-		return thinking
-	default:
-		return ""
-	}
-}
-
-func xinferenceReasoningFromMap(value map[string]interface{}) string {
-	for _, field := range []string{"reasoning_content", "reasoning", "thinking"} {
-		if text, ok := value[field].(string); ok && text != "" {
-			return text
-		}
-	}
-	return ""
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (x *XinferenceModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -127,56 +88,13 @@ func (x *XinferenceModel) ChatWithMessages(ctx context.Context, modelName string
 	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-	jsonData, err := json.Marshal(reqBody)
+
+	body, err := x.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
-	}
-
-	resp, err := x.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result xinferenceChatResponse
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-	if len(result.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	content := result.Choices[0].Message.Content
-	reasonContent := xinferenceReasoningFromStrings(
-		result.Choices[0].Message.ReasoningContent,
-		result.Choices[0].Message.Reasoning,
-		result.Choices[0].Message.Thinking,
-	)
-
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender.
@@ -203,101 +121,13 @@ func (x *XinferenceModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+	reqBody["stream_options"] = map[string]interface{}{
+		"include_usage": true,
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
-	}
-
-	resp, err := x.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	lastActive := time.Now()
-	var lastActiveMu sync.Mutex
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		ticker := time.NewTicker(xinferenceStreamIdleTimeout / 4)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case now := <-ticker.C:
-				lastActiveMu.Lock()
-				idle := now.Sub(lastActive)
-				lastActiveMu.Unlock()
-				if idle >= xinferenceStreamIdleTimeout {
-					cancel()
-					return
-				}
-			}
-		}
-	}()
-
-	sawTerminal := false
-	sseDone, parseErr := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		lastActiveMu.Lock()
-		lastActive = time.Now()
-		lastActiveMu.Unlock()
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		if delta, ok := firstChoice["delta"].(map[string]interface{}); ok {
-			if reasoning := xinferenceReasoningFromMap(delta); reasoning != "" {
-				if err := sender(nil, &reasoning); err != nil {
-					return err
-				}
-			}
-			if content, ok := delta["content"].(string); ok && content != "" {
-				if err := sender(&content, nil); err != nil {
-					return err
-				}
-			}
-		}
-
-		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-		}
-		return nil
+	return x.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
-	if parseErr != nil {
-		if ctx.Err() != nil {
-			return fmt.Errorf("xinference: stream idle for more than %s, aborted", xinferenceStreamIdleTimeout)
-		}
-		return fmt.Errorf("failed to scan response body: %w", parseErr)
-	}
-	if !sseDone && !sawTerminal {
-		return fmt.Errorf("xinference: stream ended before [DONE] or finish_reason")
-	}
-
-	endOfStream := "[DONE]"
-	return sender(&endOfStream, nil)
 }
 
 // Index is *int so a missing JSON field is distinguishable from index 0.
@@ -309,12 +139,12 @@ type xinferenceEmbeddingResponse struct {
 }
 
 // Embed POSTs the input texts to the tenant's Xinference
-func (x *XinferenceModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (x *XinferenceModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || *modelName == "" {
@@ -333,7 +163,7 @@ func (x *XinferenceModel) Embed(ctx context.Context, modelName *string, texts []
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -375,15 +205,15 @@ func (x *XinferenceModel) Embed(ctx context.Context, modelName *string, texts []
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([]EmbeddingData, len(texts))
-	seen := make([]bool, len(texts))
+	embeddings := make([]EmbeddingData, len(request.Texts))
+	seen := make([]bool, len(request.Texts))
 	for _, d := range parsed.Data {
 		if d.Index == nil {
 			return nil, fmt.Errorf("xinference: missing embedding index in response item")
 		}
 		idx := *d.Index
-		if idx < 0 || idx >= len(texts) {
-			return nil, fmt.Errorf("xinference: embedding index %d out of range for %d inputs", idx, len(texts))
+		if idx < 0 || idx >= len(request.Texts) {
+			return nil, fmt.Errorf("xinference: embedding index %d out of range for %d inputs", idx, len(request.Texts))
 		}
 		if len(d.Embedding) == 0 {
 			return nil, fmt.Errorf("xinference: missing embedding vector for response item at index %d", idx)
@@ -417,10 +247,12 @@ type xinferenceRerankResponse struct {
 // in the API's ranking order. Caller may sort by Index to recover
 // original input order. Xinference rerank models are launched with
 // --model-type rerank and exposed under the OpenAI-compatible base URL.
-func (x *XinferenceModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (x *XinferenceModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	documents := request.Documents
+	query := request.Query
 
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil

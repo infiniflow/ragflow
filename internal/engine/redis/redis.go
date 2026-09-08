@@ -19,10 +19,12 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
 	"ragflow/internal/common"
+	"ragflow/internal/server/config"
 	"strconv"
 	"sync"
 	"time"
@@ -45,7 +47,7 @@ type Client struct {
 	luaDeleteIfEqual *redis.Script
 	luaTokenBucket   *redis.Script
 	luaAutoIncrement *redis.Script
-	config           *server.RedisConfig
+	config           config.RedisConfig
 }
 
 // Message represents a message from Redis Stream
@@ -104,41 +106,44 @@ const (
 	`
 )
 
-// Init initializes Redis client
-func Init(cfg *server.RedisConfig) error {
+// Init InitRedis initializes Redis client
+func Init(ctx context.Context) error {
 	var initErr error
 	once.Do(func() {
-		if cfg.Host == "" {
+		globalConfig := server.GetConfig()
+		redisConfig := globalConfig.GetRedisConfig()
+
+		if redisConfig.Host == "" {
 			common.Info("Redis host not configured, skipping Redis initialization")
 			return
 		}
 
 		client := redis.NewClient(&redis.Options{
-			Addr:     fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-			Password: cfg.Password,
-			DB:       cfg.DB,
+			Addr:     fmt.Sprintf("%s:%d", redisConfig.Host, redisConfig.Port),
+			Password: redisConfig.Password,
+			DB:       redisConfig.DB,
 		})
 
 		// Test connection
-		ctx, cancel := context.WithTimeout(context.Background(), server.DefaultConnectTimeout)
+		redisCtx, cancel := context.WithTimeout(ctx, server.DefaultConnectTimeout)
 		defer cancel()
 
-		if err := client.Ping(ctx).Err(); err != nil {
+		if err := client.Ping(redisCtx).Err(); err != nil {
 			initErr = fmt.Errorf("failed to connect to Redis: %w", err)
 			return
 		}
 
 		globalClient = &Client{
 			client:           client,
-			config:           cfg,
+			config:           redisConfig,
 			luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
 			luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
 		}
 
 		common.Info("Redis client initialized",
-			zap.String("host", cfg.Host),
-			zap.Int("port", cfg.Port),
-			zap.Int("db", cfg.DB),
+			zap.String("host", redisConfig.Host),
+			zap.Int("port", redisConfig.Port),
+			zap.Int("db", redisConfig.DB),
 		)
 	})
 	return initErr
@@ -163,11 +168,10 @@ func IsEnabled() bool {
 }
 
 // Health checks if Redis is healthy
-func (r *Client) Health() bool {
+func (r *Client) Health(ctx context.Context) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	if err := r.client.Ping(ctx).Err(); err != nil {
 		return false
 	}
@@ -186,11 +190,10 @@ func (r *Client) Health() bool {
 }
 
 // Info returns Redis server information
-func (r *Client) Info() map[string]interface{} {
+func (r *Client) Info(ctx context.Context) map[string]interface{} {
 	if r.client == nil {
 		return nil
 	}
-	ctx := context.Background()
 	infoStr, err := r.client.Info(ctx).Result()
 	if err != nil {
 		common.Warn("Failed to get Redis info", zap.Error(err))
@@ -274,11 +277,10 @@ func (r *Client) IsAlive() bool {
 }
 
 // Exist checks if key exists
-func (r *Client) Exist(key string) (bool, error) {
+func (r *Client) Exist(ctx context.Context, key string) (bool, error) {
 	if r.client == nil {
 		return false, nil
 	}
-	ctx := context.Background()
 	exists, err := r.client.Exists(ctx, key).Result()
 	if err != nil {
 		common.Warn("Redis Exist error", zap.String("key", key), zap.Error(err))
@@ -288,13 +290,12 @@ func (r *Client) Exist(key string) (bool, error) {
 }
 
 // Get gets value by key
-func (r *Client) Get(key string) (string, error) {
+func (r *Client) Get(ctx context.Context, key string) (string, error) {
 	if r.client == nil {
 		return "", nil
 	}
-	ctx := context.Background()
 	val, err := r.client.Get(ctx, key).Result()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return "", nil
 	}
 	if err != nil {
@@ -305,11 +306,10 @@ func (r *Client) Get(key string) (string, error) {
 }
 
 // SetObj sets object with JSON serialization
-func (r *Client) SetObj(key string, obj interface{}, exp time.Duration) bool {
+func (r *Client) SetObj(ctx context.Context, key string, obj interface{}, exp time.Duration) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	data, err := json.Marshal(obj)
 	if err != nil {
 		common.Warn("Redis SetObj marshal error", zap.String("key", key), zap.Error(err))
@@ -322,14 +322,13 @@ func (r *Client) SetObj(key string, obj interface{}, exp time.Duration) bool {
 	return true
 }
 
-// GetObj gets and unmarshals object from Redis
-func (r *Client) GetObj(key string, dest interface{}) bool {
+// GetObj gets and unmarshal object from Redis
+func (r *Client) GetObj(ctx context.Context, key string, dest interface{}) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	data, err := r.client.Get(ctx, key).Result()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return false
 	}
 	if err != nil {
@@ -344,11 +343,10 @@ func (r *Client) GetObj(key string, dest interface{}) bool {
 }
 
 // Set sets value with expiration
-func (r *Client) Set(key string, value string, exp time.Duration) bool {
+func (r *Client) Set(ctx context.Context, key string, value string, exp time.Duration) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	if err := r.client.Set(ctx, key, value, exp).Err(); err != nil {
 		common.Warn("Redis Set error", zap.String("key", key), zap.Error(err))
 		return false
@@ -357,11 +355,10 @@ func (r *Client) Set(key string, value string, exp time.Duration) bool {
 }
 
 // SetNX sets value only if key does not exist
-func (r *Client) SetNX(key string, value string, exp time.Duration) bool {
+func (r *Client) SetNX(ctx context.Context, key string, value string, exp time.Duration) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	ok, err := r.client.SetNX(ctx, key, value, exp).Result()
 	if err != nil {
 		common.Warn("Redis SetNX error", zap.String("key", key), zap.Error(err))
@@ -370,13 +367,12 @@ func (r *Client) SetNX(key string, value string, exp time.Duration) bool {
 	return ok
 }
 
-// GetOrCreateSecretKey atomically retrieves an existing key or creates a new one
+// GetOrCreateKey atomically retrieves an existing key or creates a new one
 // Uses Redis SETNX command to ensure atomicity across multiple goroutines/processes
-func (r *Client) GetOrCreateKey(key string, value string) (string, error) {
+func (r *Client) GetOrCreateKey(ctx context.Context, key string, value string) (string, error) {
 	if r.client == nil {
 		return "", nil
 	}
-	ctx := context.Background()
 	// First, try to get the existing key
 	existingKey, err := r.client.Get(ctx, key).Result()
 	if err == nil {
@@ -389,7 +385,7 @@ func (r *Client) GetOrCreateKey(key string, value string) (string, error) {
 	// SETNX returns true if the key was set, false if it already existed
 	success, err := r.client.SetNX(ctx, key, value, 0).Result()
 	if err != nil {
-		return "", fmt.Errorf("failed to set key in Redis: %v", err)
+		return "", fmt.Errorf("failed to set key in Redis: %w", err)
 	}
 
 	if success {
@@ -401,18 +397,17 @@ func (r *Client) GetOrCreateKey(key string, value string) (string, error) {
 	// Retrieve and return that key
 	finalKey, err := r.client.Get(ctx, key).Result()
 	if err != nil {
-		return "", fmt.Errorf("failed to get key set by another process: %v", err)
+		return "", fmt.Errorf("failed to get key set by another process: %w", err)
 	}
 
 	return finalKey, nil
 }
 
 // SAdd adds member to set
-func (r *Client) SAdd(key string, member string) bool {
+func (r *Client) SAdd(ctx context.Context, key string, member string) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	if err := r.client.SAdd(ctx, key, member).Err(); err != nil {
 		common.Warn("Redis SAdd error", zap.String("key", key), zap.Error(err))
 		return false
@@ -421,11 +416,10 @@ func (r *Client) SAdd(key string, member string) bool {
 }
 
 // SRem removes member from set
-func (r *Client) SRem(key string, member string) bool {
+func (r *Client) SRem(ctx context.Context, key string, member string) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	if err := r.client.SRem(ctx, key, member).Err(); err != nil {
 		common.Warn("Redis SRem error", zap.String("key", key), zap.Error(err))
 		return false
@@ -434,11 +428,10 @@ func (r *Client) SRem(key string, member string) bool {
 }
 
 // SMembers returns all members of a set
-func (r *Client) SMembers(key string) ([]string, error) {
+func (r *Client) SMembers(ctx context.Context, key string) ([]string, error) {
 	if r.client == nil {
 		return nil, nil
 	}
-	ctx := context.Background()
 	members, err := r.client.SMembers(ctx, key).Result()
 	if err != nil {
 		common.Warn("Redis SMembers error", zap.String("key", key), zap.Error(err))
@@ -448,11 +441,10 @@ func (r *Client) SMembers(key string) ([]string, error) {
 }
 
 // SIsMember checks if member exists in set
-func (r *Client) SIsMember(key string, member string) bool {
+func (r *Client) SIsMember(ctx context.Context, key string, member string) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	ok, err := r.client.SIsMember(ctx, key, member).Result()
 	if err != nil {
 		common.Warn("Redis SIsMember error", zap.String("key", key), zap.Error(err))
@@ -462,11 +454,10 @@ func (r *Client) SIsMember(key string, member string) bool {
 }
 
 // ZAdd adds member with score to sorted set
-func (r *Client) ZAdd(key string, member string, score float64) bool {
+func (r *Client) ZAdd(ctx context.Context, key string, member string, score float64) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	if err := r.client.ZAdd(ctx, key, redis.Z{Score: score, Member: member}).Err(); err != nil {
 		common.Warn("Redis ZAdd error", zap.String("key", key), zap.Error(err))
 		return false
@@ -475,11 +466,10 @@ func (r *Client) ZAdd(key string, member string, score float64) bool {
 }
 
 // ZCount returns count of members with score in range
-func (r *Client) ZCount(key string, min, max float64) int64 {
+func (r *Client) ZCount(ctx context.Context, key string, min, max float64) int64 {
 	if r.client == nil {
 		return 0
 	}
-	ctx := context.Background()
 	count, err := r.client.ZCount(ctx, key, fmt.Sprintf("%f", min), fmt.Sprintf("%f", max)).Result()
 	if err != nil {
 		common.Warn("Redis ZCount error", zap.String("key", key), zap.Error(err))
@@ -489,11 +479,10 @@ func (r *Client) ZCount(key string, min, max float64) int64 {
 }
 
 // ZPopMin pops minimum score members from sorted set
-func (r *Client) ZPopMin(key string, count int) ([]redis.Z, error) {
+func (r *Client) ZPopMin(ctx context.Context, key string, count int) ([]redis.Z, error) {
 	if r.client == nil {
 		return nil, nil
 	}
-	ctx := context.Background()
 	members, err := r.client.ZPopMin(ctx, key, int64(count)).Result()
 	if err != nil {
 		common.Warn("Redis ZPopMin error", zap.String("key", key), zap.Error(err))
@@ -503,11 +492,10 @@ func (r *Client) ZPopMin(key string, count int) ([]redis.Z, error) {
 }
 
 // ZRangeByScore returns members with score in range
-func (r *Client) ZRangeByScore(key string, min, max float64) ([]string, error) {
+func (r *Client) ZRangeByScore(ctx context.Context, key string, min, max float64) ([]string, error) {
 	if r.client == nil {
 		return nil, nil
 	}
-	ctx := context.Background()
 	members, err := r.client.ZRangeByScore(ctx, key, &redis.ZRangeBy{
 		Min: fmt.Sprintf("%f", min),
 		Max: fmt.Sprintf("%f", max),
@@ -520,11 +508,10 @@ func (r *Client) ZRangeByScore(key string, min, max float64) ([]string, error) {
 }
 
 // ZRemRangeByScore removes members with score in range
-func (r *Client) ZRemRangeByScore(key string, min, max float64) int64 {
+func (r *Client) ZRemRangeByScore(ctx context.Context, key string, min, max float64) int64 {
 	if r.client == nil {
 		return 0
 	}
-	ctx := context.Background()
 	count, err := r.client.ZRemRangeByScore(ctx, key, fmt.Sprintf("%f", min), fmt.Sprintf("%f", max)).Result()
 	if err != nil {
 		common.Warn("Redis ZRemRangeByScore error", zap.String("key", key), zap.Error(err))
@@ -534,11 +521,10 @@ func (r *Client) ZRemRangeByScore(key string, min, max float64) int64 {
 }
 
 // IncrBy increments key by increment
-func (r *Client) IncrBy(key string, increment int64) (int64, error) {
+func (r *Client) IncrBy(ctx context.Context, key string, increment int64) (int64, error) {
 	if r.client == nil {
 		return 0, nil
 	}
-	ctx := context.Background()
 	val, err := r.client.IncrBy(ctx, key, increment).Result()
 	if err != nil {
 		common.Warn("Redis IncrBy error", zap.String("key", key), zap.Error(err))
@@ -548,11 +534,10 @@ func (r *Client) IncrBy(key string, increment int64) (int64, error) {
 }
 
 // DecrBy decrements key by decrement
-func (r *Client) DecrBy(key string, decrement int64) (int64, error) {
+func (r *Client) DecrBy(ctx context.Context, key string, decrement int64) (int64, error) {
 	if r.client == nil {
 		return 0, nil
 	}
-	ctx := context.Background()
 	val, err := r.client.DecrBy(ctx, key, decrement).Result()
 	if err != nil {
 		common.Warn("Redis DecrBy error", zap.String("key", key), zap.Error(err))
@@ -562,7 +547,7 @@ func (r *Client) DecrBy(key string, decrement int64) (int64, error) {
 }
 
 // GenerateAutoIncrementID generates auto-increment ID
-func (r *Client) GenerateAutoIncrementID(keyPrefix string, namespace string, increment int64, ensureMinimum *int64) int64 {
+func (r *Client) GenerateAutoIncrementID(ctx context.Context, keyPrefix string, namespace string, increment int64, ensureMinimum *int64) int64 {
 	if r.client == nil {
 		return -1
 	}
@@ -577,7 +562,6 @@ func (r *Client) GenerateAutoIncrementID(keyPrefix string, namespace string, inc
 	}
 
 	redisKey := fmt.Sprintf("%s:%s", keyPrefix, namespace)
-	ctx := context.Background()
 
 	// Check if key exists
 	exists, err := r.client.Exists(ctx, redisKey).Result()
@@ -612,11 +596,10 @@ func (r *Client) GenerateAutoIncrementID(keyPrefix string, namespace string, inc
 }
 
 // Transaction sets key with NX flag (transaction-like behavior)
-func (r *Client) Transaction(key string, value string, exp time.Duration) bool {
+func (r *Client) Transaction(ctx context.Context, key string, value string, exp time.Duration) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	pipe := r.client.Pipeline()
 	pipe.SetNX(ctx, key, value, exp)
 	_, err := pipe.Exec(ctx)
@@ -628,11 +611,10 @@ func (r *Client) Transaction(key string, value string, exp time.Duration) bool {
 }
 
 // QueueProduct produces a message to Redis Stream
-func (r *Client) QueueProduct(queue string, message interface{}) bool {
+func (r *Client) QueueProduct(ctx context.Context, queue string, message interface{}) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
 		data, err := json.Marshal(message)
@@ -655,11 +637,10 @@ func (r *Client) QueueProduct(queue string, message interface{}) bool {
 }
 
 // QueueConsumer consumes a message from Redis Stream
-func (r *Client) QueueConsumer(queueName, groupName, consumerName string, msgID string) (*Message, error) {
+func (r *Client) QueueConsumer(ctx context.Context, queueName, groupName, consumerName string, msgID string) (*Message, error) {
 	if r.client == nil {
 		return nil, nil
 	}
-	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
 		// Create consumer group if not exists
@@ -695,7 +676,7 @@ func (r *Client) QueueConsumer(queueName, groupName, consumerName string, msgID 
 			Block:    5 * time.Second,
 		}).Result()
 
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			return nil, nil
 		}
 		if err != nil {
@@ -726,11 +707,10 @@ func (r *Client) QueueConsumer(queueName, groupName, consumerName string, msgID 
 }
 
 // Ack acknowledges the message
-func (m *Message) Ack() bool {
+func (m *Message) Ack(ctx context.Context) bool {
 	if m.consumer == nil {
 		return false
 	}
-	ctx := context.Background()
 	err := m.consumer.XAck(ctx, m.queueName, m.groupName, m.msgID).Err()
 	if err != nil {
 		common.Warn("Message Ack error", zap.Error(err))
@@ -750,11 +730,11 @@ func (m *Message) GetMsgID() string {
 }
 
 // GetPendingMsg gets pending messages
-func (r *Client) GetPendingMsg(queue, groupName string) ([]redis.XPendingExt, error) {
+func (r *Client) GetPendingMsg(ctx context.Context, queue, groupName string) ([]redis.XPendingExt, error) {
 	if r.client == nil {
 		return nil, nil
 	}
-	ctx := context.Background()
+
 	messages, err := r.client.XPendingExt(ctx, &redis.XPendingExtArgs{
 		Stream: queue,
 		Group:  groupName,
@@ -772,11 +752,10 @@ func (r *Client) GetPendingMsg(queue, groupName string) ([]redis.XPendingExt, er
 }
 
 // RequeueMsg re-enqueues a message
-func (r *Client) RequeueMsg(queue, groupName, msgID string) {
+func (r *Client) RequeueMsg(ctx context.Context, queue, groupName, msgID string) {
 	if r.client == nil {
 		return
 	}
-	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
 		msgs, err := r.client.XRange(ctx, queue, msgID, msgID).Result()
@@ -799,11 +778,10 @@ func (r *Client) RequeueMsg(queue, groupName, msgID string) {
 }
 
 // QueueInfo returns queue group info
-func (r *Client) QueueInfo(queue, groupName string) (map[string]interface{}, error) {
+func (r *Client) QueueInfo(ctx context.Context, queue, groupName string) (map[string]interface{}, error) {
 	if r.client == nil {
 		return nil, nil
 	}
-	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
 		groups, err := r.client.XInfoGroups(ctx, queue).Result()
@@ -829,11 +807,10 @@ func (r *Client) QueueInfo(queue, groupName string) (map[string]interface{}, err
 }
 
 // DeleteIfEqual deletes key if its value equals expected value (atomic)
-func (r *Client) DeleteIfEqual(key, expectedValue string) bool {
+func (r *Client) DeleteIfEqual(ctx context.Context, key, expectedValue string) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	result, err := r.luaDeleteIfEqual.Run(ctx, r.client, []string{key}, expectedValue).Result()
 	if err != nil {
 		common.Warn("Redis DeleteIfEqual error", zap.Error(err))
@@ -843,11 +820,10 @@ func (r *Client) DeleteIfEqual(key, expectedValue string) bool {
 }
 
 // Delete deletes a key
-func (r *Client) Delete(key string) bool {
+func (r *Client) Delete(ctx context.Context, key string) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	if err := r.client.Del(ctx, key).Err(); err != nil {
 		common.Warn("Redis Delete error", zap.String("key", key), zap.Error(err))
 		return false
@@ -856,11 +832,10 @@ func (r *Client) Delete(key string) bool {
 }
 
 // Expire sets expiration on a key
-func (r *Client) Expire(key string, exp time.Duration) bool {
+func (r *Client) Expire(ctx context.Context, key string, exp time.Duration) bool {
 	if r.client == nil {
 		return false
 	}
-	ctx := context.Background()
 	if err := r.client.Expire(ctx, key, exp).Err(); err != nil {
 		common.Warn("Redis Expire error", zap.String("key", key), zap.Error(err))
 		return false
@@ -869,11 +844,10 @@ func (r *Client) Expire(key string, exp time.Duration) bool {
 }
 
 // TTL gets remaining time to live of a key
-func (r *Client) TTL(key string) time.Duration {
+func (r *Client) TTL(ctx context.Context, key string) time.Duration {
 	if r.client == nil {
 		return -2
 	}
-	ctx := context.Background()
 	ttl, err := r.client.TTL(ctx, key).Result()
 	if err != nil {
 		common.Warn("Redis TTL error", zap.String("key", key), zap.Error(err))
@@ -909,13 +883,13 @@ func NewDistributedLock(lockKey string, lockValue string, timeout time.Duration,
 }
 
 // Acquire acquires the lock
-func (l *DistributedLock) Acquire() bool {
+func (l *DistributedLock) Acquire(ctx context.Context) bool {
 	if l.client == nil {
 		return false
 	}
 	// Delete if stale
-	l.client.DeleteIfEqual(l.lockKey, l.lockValue)
-	return l.client.SetNX(l.lockKey, l.lockValue, l.timeout)
+	l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
+	return l.client.SetNX(ctx, l.lockKey, l.lockValue, l.timeout)
 }
 
 // SpinAcquire keeps trying to acquire the lock
@@ -925,8 +899,8 @@ func (l *DistributedLock) SpinAcquire(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			l.client.DeleteIfEqual(l.lockKey, l.lockValue)
-			if l.client.SetNX(l.lockKey, l.lockValue, l.timeout) {
+			l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
+			if l.client.SetNX(ctx, l.lockKey, l.lockValue, l.timeout) {
 				return nil
 			}
 			time.Sleep(10 * time.Second)
@@ -935,11 +909,11 @@ func (l *DistributedLock) SpinAcquire(ctx context.Context) error {
 }
 
 // Release releases the lock
-func (l *DistributedLock) Release() bool {
+func (l *DistributedLock) Release(ctx context.Context) bool {
 	if l.client == nil {
 		return false
 	}
-	return l.client.DeleteIfEqual(l.lockKey, l.lockValue)
+	return l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
 }
 
 // TokenBucket token bucket rate limiter
@@ -964,11 +938,10 @@ func NewTokenBucket(key string, capacity, rate float64) *TokenBucket {
 }
 
 // Allow checks if request is allowed
-func (tb *TokenBucket) Allow(cost float64) (bool, float64) {
+func (tb *TokenBucket) Allow(ctx context.Context, cost float64) (bool, float64) {
 	if tb.client == nil || tb.client.client == nil {
 		return true, 0
 	}
-	ctx := context.Background()
 	now := float64(time.Now().Unix())
 
 	result, err := tb.client.luaTokenBucket.Run(ctx, tb.client.client, []string{tb.key},

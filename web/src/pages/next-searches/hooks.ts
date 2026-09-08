@@ -1,11 +1,29 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 // src/pages/next-searches/hooks.ts
 
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import searchService from '@/services/search-service';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback, useState } from 'react';
@@ -88,10 +106,16 @@ interface SearchListResponse {
 }
 
 export const useFetchSearchList = () => {
-  const { handleInputChange, searchString, pagination, setPagination } =
-    useHandleSearchChange();
+  const {
+    handleInputChange,
+    searchString,
+    setSearchString,
+    pagination,
+    setPagination,
+  } = useHandleSearchChange();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
   const { data, isLoading, isError, refetch } = useQuery<
     SearchListResponse,
     Error
@@ -130,10 +154,12 @@ export const useFetchSearchList = () => {
     isError,
     pagination,
     searchString,
+    setSearchString,
     handleInputChange,
     setPagination,
     refetch,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   };
 };
@@ -155,6 +181,10 @@ export interface IllmSettingProps {
   top_p?: number;
   frequency_penalty?: number;
   presence_penalty?: number;
+  temperature_enabled?: boolean;
+  top_p_enabled?: boolean;
+  frequency_penalty_enabled?: boolean;
+  presence_penalty_enabled?: boolean;
 }
 interface IllmSettingEnableProps {
   temperatureEnabled?: boolean;
@@ -183,6 +213,7 @@ export interface ISearchAppDetailProps {
     summary: boolean;
     llm_setting: IllmSettingProps & IllmSettingEnableProps;
     top_k: number;
+    rerank_candidates_count: number;
     use_kg: boolean;
     vector_similarity_weight: number;
     web_search: boolean;
@@ -253,6 +284,7 @@ export const useDeleteSearch = () => {
       }
 
       queryClient.invalidateQueries({ queryKey: ['searchList'] });
+      markListItemsDeleted(ListDeletionKey.SearchList);
       return response;
     },
     onSuccess: () => {

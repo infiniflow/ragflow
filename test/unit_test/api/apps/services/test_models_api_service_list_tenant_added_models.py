@@ -295,6 +295,65 @@ def test_list_tenant_added_models_still_works_for_plain_model_names(monkeypatch)
 
 
 @pytest.mark.p2
+def test_list_tenant_added_models_returns_tei_builtin_without_providers(monkeypatch):
+    """A tenant with no added providers still sees the TEI Builtin model.
+
+    When the `tei-*` compose profile is enabled, the tenant gets the default
+    embedding model (TEI_MODEL) even if it has never added any model provider.
+    This guards against the regression where `list_tenant_added_models` early
+    returned `[]` before appending the synthesized Builtin model.
+    """
+    monkeypatch.setenv("COMPOSE_PROFILES", "elasticsearch,cpu,metadata-mysql,tei-cpu")
+    monkeypatch.setenv("TEI_MODEL", "BAAI/bge-small-en-v1.5")
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    monkeypatch.setattr(stubs["tenant_model_provider_service"].TenantModelProviderService, "get_by_tenant_id", lambda tenant_id: [])
+    monkeypatch.setattr(stubs["tenant_model_instance_service"].TenantModelInstanceService, "get_by_provider_ids", lambda provider_ids: [])
+
+    success, result = module.list_tenant_added_models("tenant-1", "embedding")
+
+    assert success is True
+    assert len(result) == 1
+    assert result[0]["provider_name"] == "Builtin"
+    assert result[0]["name"] == "BAAI/bge-small-en-v1.5"
+    assert result[0]["tenant_id"] == "tenant-1"
+
+
+@pytest.mark.p2
+def test_list_tenant_added_models_returns_tei_builtin_without_type_filter(monkeypatch):
+    """The TEI Builtin model is listed even when no type filter is passed."""
+    monkeypatch.setenv("COMPOSE_PROFILES", "tei-gpu")
+    monkeypatch.setenv("TEI_MODEL", "BAAI/bge-small-en-v1.5")
+    module, stubs = _load_module(monkeypatch, tenant_model_records=[])
+    monkeypatch.setattr(stubs["tenant_model_provider_service"].TenantModelProviderService, "get_by_tenant_id", lambda tenant_id: [])
+    monkeypatch.setattr(stubs["tenant_model_instance_service"].TenantModelInstanceService, "get_by_provider_ids", lambda provider_ids: [])
+
+    success, result = module.list_tenant_added_models("tenant-1")
+
+    assert success is True
+    assert len(result) == 1
+    assert result[0]["provider_name"] == "Builtin"
+    assert result[0]["name"] == "BAAI/bge-small-en-v1.5"
+
+
+@pytest.mark.p2
+def test_list_tenant_added_models_appends_tei_builtin_after_provider_models(monkeypatch):
+    """The TEI Builtin model is appended after the tenant's own models."""
+    monkeypatch.setenv("COMPOSE_PROFILES", "elasticsearch,cpu,metadata-mysql,tei-cpu")
+    monkeypatch.setenv("TEI_MODEL", "BAAI/bge-small-en-v1.5")
+    record = _make_model_record("text-embedding-nomic-embed-text-v1.5@q8_0")
+    module, _ = _load_module(monkeypatch, tenant_model_records=[record])
+
+    success, result = module.list_tenant_added_models("tenant-1", "embedding")
+
+    assert success is True
+    assert len(result) == 2
+    names = {m["name"] for m in result}
+    assert names == {"text-embedding-nomic-embed-text-v1.5@q8_0", "BAAI/bge-small-en-v1.5"}
+    tei = [m for m in result if m["provider_name"] == "Builtin"][0]
+    assert tei["name"] == "BAAI/bge-small-en-v1.5"
+
+
+@pytest.mark.p2
 def test_get_model_info_two_part_embedded_at(monkeypatch):
     """Two-part default_model is parsed as model@provider (suffix wins).
 

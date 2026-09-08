@@ -26,8 +26,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloudwego/eino/compose"
 	"ragflow/internal/agent/workflowx"
+
+	"github.com/cloudwego/eino/compose"
 )
 
 // TestBuildInputSpec_BasicFields passes enable_tips/tips/inputs and
@@ -56,7 +57,7 @@ func TestBuildInputSpec_BasicFields(t *testing.T) {
 func TestUserFillUpNodeBody_ResolvesTipsFromCanvasState(t *testing.T) {
 	state := NewCanvasState("run-1", "task-1")
 	state.SetVar("Agent:MoodyIdeasMarry", "content", "How old are you?")
-	ctx := WithState(context.Background(), state)
+	ctx := WithState(t.Context(), state)
 
 	body := UserFillUpNodeBody("UserFillUp:TwelveBadgersRescue", map[string]any{
 		"enable_tips": true,
@@ -85,7 +86,7 @@ func TestUserFillUpNodeBody_OmitsDisabledTips(t *testing.T) {
 		"enable_tips": false,
 		"tips":        "should not be shown",
 	})
-	_, err := body(context.Background(), nil)
+	_, err := body(t.Context(), nil)
 	if err == nil {
 		t.Fatal("UserFillUp should interrupt while waiting for input")
 	}
@@ -165,10 +166,10 @@ func TestExtractInterruptContexts_FlattensSubGraphs(t *testing.T) {
 	}))
 	subNode.AddInput(compose.START)
 	sub.End().AddInput("waiter")
-
+	ctx := t.Context()
 	outer := compose.NewWorkflow[int, int]()
 	loopNode, err := workflowx.AddLoopNode(
-		context.Background(),
+		ctx,
 		outer,
 		"loop",
 		sub,
@@ -180,11 +181,11 @@ func TestExtractInterruptContexts_FlattensSubGraphs(t *testing.T) {
 	loopNode.AddInput(compose.START)
 	outer.End().AddInput("loop")
 
-	compiled, err := outer.Compile(context.Background())
+	compiled, err := outer.Compile(ctx)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	_, err = compiled.Invoke(context.Background(), 0)
+	_, err = compiled.Invoke(ctx, 0)
 	if err == nil {
 		t.Fatal("expected interrupt error, got nil")
 	}
@@ -194,8 +195,8 @@ func TestExtractInterruptContexts_FlattensSubGraphs(t *testing.T) {
 		t.Fatalf("len(ExtractInterruptContexts) = %d; want >= 1", len(got))
 	}
 	foundUserFillUp := false
-	for _, ctx := range got {
-		if info, ok := ctx.Info.(map[string]any); ok {
+	for _, interruptCtx := range got {
+		if info, ok := interruptCtx.Info.(map[string]any); ok {
 			if kind, _ := info["kind"].(string); kind == "user_fill_up" {
 				foundUserFillUp = true
 				break
@@ -279,7 +280,7 @@ func TestUserFillUpNodeBody_FirstCallInterrupts(t *testing.T) {
 		"enable_tips": true,
 		"tips":        "hello",
 	})
-	_, err := body(context.Background(), map[string]any{"x": 1})
+	_, err := body(t.Context(), map[string]any{"x": 1})
 	if err == nil {
 		t.Fatalf("UserFillUpNodeBody first call returned nil err; want interrupt signal")
 	}
@@ -312,7 +313,7 @@ func TestUserFillUpNodeBody_ResumeReturnsInput(t *testing.T) {
 	// string form of the node's address. We pass the cpnID as the
 	// address — that's what UserFillUpNodeBody advertises when it
 	// composes its output.
-	ctx := compose.ResumeWithData(context.Background(), "ufu_1", "user typed this")
+	ctx := compose.ResumeWithData(t.Context(), "ufu_1", "user typed this")
 
 	_, err := body(ctx, map[string]any{"x": 1})
 	// Outside an engine runner, GetResumeContext cannot match the
@@ -387,7 +388,7 @@ func TestBuildUserFillUpResumeOutput_ValueFieldMirrorsResumeData(t *testing.T) {
 func TestUserFillUpNodeBody_DoesNotConsumeSysQuery(t *testing.T) {
 	state := NewCanvasState("run-1", "task-1")
 	state.Sys["query"] = "loop"
-	ctx := WithState(context.Background(), state)
+	ctx := WithState(t.Context(), state)
 
 	body := UserFillUpNodeBody("ufu_1", map[string]any{
 		"inputs": map[string]any{

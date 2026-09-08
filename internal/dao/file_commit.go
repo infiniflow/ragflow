@@ -18,10 +18,23 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"ragflow/internal/entity"
+	"strconv"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// toInterfaceSlice converts a string slice into an []interface{} for use as
+// parameterized query variables.
+func toInterfaceSlice(ss []string) []interface{} {
+	out := make([]interface{}, len(ss))
+	for i := range ss {
+		out[i] = ss[i]
+	}
+	return out
+}
 
 // FileCommitDAO file commit data access object
 type FileCommitDAO struct{}
@@ -110,6 +123,41 @@ func (dao *FileCommitDAO) ListByFolderID(ctx context.Context, db *gorm.DB, folde
 	return commits, total, nil
 }
 
+// ListByIDs lists commits whose IDs are in the given set, preserving the
+// order of commitIDs (most-recent-first for page-edit history). Returns the
+// total matched count for pagination.
+func (dao *FileCommitDAO) ListByIDs(ctx context.Context, db *gorm.DB, commitIDs []string, page, pageSize int) ([]*entity.FileCommit, int64, error) {
+	if len(commitIDs) == 0 {
+		return []*entity.FileCommit{}, 0, nil
+	}
+	var commits []*entity.FileCommit
+	var total int64
+	query := db.WithContext(ctx).Model(&entity.FileCommit{}).Where("id IN ?", commitIDs)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	// Preserve the incoming (most-recent-first) order with a parameterized
+	// CASE expression rather than a MySQL-specific FIELD() interpolation.
+	orderExpr := "CASE id"
+	for i := range commitIDs {
+		orderExpr += " WHEN ? THEN " + strconv.Itoa(i)
+	}
+	orderExpr += " END"
+	ordered := query.Clauses(clause.OrderBy{Expression: clause.Expr{
+		SQL:  orderExpr,
+		Vars: toInterfaceSlice(commitIDs),
+	}})
+	// Apply pagination in the query itself so long histories never load the
+	// full set into memory before slicing.
+	if page > 0 && pageSize > 0 {
+		ordered = ordered.Offset((page - 1) * pageSize).Limit(pageSize)
+	}
+	if err := ordered.Find(&commits).Error; err != nil {
+		return nil, 0, err
+	}
+	return commits, total, nil
+}
+
 // FileCommitItemDAO file commit item data access object
 type FileCommitItemDAO struct{}
 
@@ -145,4 +193,25 @@ func (dao *FileCommitItemDAO) GetByCommitIDAndFileID(ctx context.Context, db *go
 		return nil, err
 	}
 	return &item, nil
+}
+
+// GetLatestCommitIDByFileID returns the most recent commit_id that modified the
+// given wiki page file key, or "" if none. Used to build the parent chain for
+// page-edit commits.
+func (dao *FileCommitItemDAO) GetLatestCommitIDByFileID(ctx context.Context, db *gorm.DB, fileID string) (string, error) {
+	var item entity.FileCommitItem
+	err := db.WithContext(ctx).
+		Where("file_id = ?", fileID).
+		// Order by the monotonic auto-increment sequence so the most recently
+		// inserted item is always selected even when multiple edits share the
+		// same create_time millisecond.
+		Order("seq DESC").
+		First(&item).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	return item.CommitID, nil
 }

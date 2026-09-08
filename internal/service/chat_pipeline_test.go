@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 )
 
 // dialForTest builds a minimal *entity.Chat suitable for the
@@ -80,7 +81,7 @@ func TestAsyncChat_RejectsNonUserLastMessage(t *testing.T) {
 		{"role": "user", "content": "first"},
 		{"role": "assistant", "content": "last message must not be assistant"},
 	}
-	_, err := s.AsyncChat(context.Background(), "user-1", dialForTest(""), messages, false, nil)
+	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), messages, false, nil)
 	if err == nil {
 		t.Fatal("expected error for non-user last message, got nil")
 	}
@@ -93,7 +94,7 @@ func TestAsyncChat_RejectsNonUserLastMessage(t *testing.T) {
 // service should return an error before spawning the goroutine.
 func TestAsyncChat_EmptyMessages(t *testing.T) {
 	s := &ChatPipelineService{}
-	_, err := s.AsyncChat(context.Background(), "user-1", dialForTest(""), nil, false, nil)
+	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
 	}
@@ -107,7 +108,7 @@ func TestDecorateAnswer_TimerFormatAlwaysEmitted(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"hello world",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -145,7 +146,7 @@ func TestDecorateAnswer_ThinkMarkersPreserved(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"<think>reasoning</think>visible answer",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -175,7 +176,7 @@ func TestDecorateAnswer_InvalidKeySuffix(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"oops: invalid api key",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -202,7 +203,7 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"see [ID:12] for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -229,7 +230,7 @@ func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"see (ID: 12) for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
@@ -269,7 +270,7 @@ func TestDecorateAnswer_RepairRunsWhenQuote(t *testing.T) {
 		"doc_aggs": []interface{}{},
 	}
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"see (ID: 12) for details",
 		kb,
 		"system prompt",
@@ -298,7 +299,7 @@ func TestDecorateAnswer_PreCheckSkipsInsertCitations(t *testing.T) {
 	timer, _ := newTimerAndPrompt()
 	in := "answer has [ID:3] already in it"
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		in,
 		map[string]interface{}{
 			// No chunks → insertCitations path is gated off anyway,
@@ -446,7 +447,7 @@ func TestFallbackToLatestUser(t *testing.T) {
 // TestHydrateChunkVectors_NoChunksNoop pins the no-op behavior of
 // the hydration helper on empty input.
 func TestHydrateChunkVectors_NoChunksNoop(t *testing.T) {
-	hits, err := HydrateChunkVectors(context.Background(),
+	hits, err := HydrateChunkVectors(t.Context(),
 		map[string]interface{}{"chunks": []interface{}{}},
 		nil, nil, nil,
 	)
@@ -461,7 +462,7 @@ func TestHydrateChunkVectors_NoChunksNoop(t *testing.T) {
 // TestHydrateChunkVectors_NilKbinfosNoop pins the no-op behavior of
 // the hydration helper on nil kbinfos.
 func TestHydrateChunkVectors_NilKbinfosNoop(t *testing.T) {
-	hits, err := HydrateChunkVectors(context.Background(), nil, nil, nil, nil)
+	hits, err := HydrateChunkVectors(t.Context(), nil, nil, nil, nil)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -524,7 +525,7 @@ func TestNormalizeSQL_StripsThinkBlocks(t *testing.T) {
 func TestBuildSQLReference_Scalar(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "", "",
+		t.Context(), nil, "", "",
 		[]map[string]interface{}{{"count": 42.0}},
 		"", "", nil, nil,
 	)
@@ -551,7 +552,7 @@ func TestBuildSQLReference_MultiRowTable(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "", "select id, name from t",
+		t.Context(), nil, "", "select id, name from t",
 		rows,
 		"sys", "elasticsearch", nil, nil,
 	)
@@ -644,7 +645,7 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 		"doc_aggs": []interface{}{},
 	}
 	result := s.decorateAnswer(
-		context.Background(),
+		t.Context(),
 		"x",
 		kb,
 		"system prompt",
@@ -830,7 +831,7 @@ func TestStripISOTimestamps(t *testing.T) {
 		{"multiple", "x T01:02:03|y T04:05:06|z", "x |y |z"},
 		{"no space before T", "abcT13:24:55|def", "abc|def"},
 		{"empty", "", ""},
-		// Realistic markdown cell: |2024-01-15T13:24:55| → |2024-01-15|
+		// Realistic Markdown cell: |2024-01-15T13:24:55| → |2024-01-15|
 		{"realistic cell", "|2024-01-15T13:24:55|", "|2024-01-15|"},
 	}
 	for _, tc := range cases {
@@ -1112,6 +1113,9 @@ func TestExpectedDocNameColumn(t *testing.T) {
 	if got := expectedDocNameColumn("oceanbase"); got != "docnm_kwd" {
 		t.Errorf("oceanbase = %q, want docnm_kwd", got)
 	}
+	if got := expectedDocNameColumn("seekdb"); got != "docnm_kwd" {
+		t.Errorf("seekdb = %q, want docnm_kwd", got)
+	}
 	if got := expectedDocNameColumn("elasticsearch"); got != "docnm_kwd" {
 		t.Errorf("elasticsearch = %q, want docnm_kwd", got)
 	}
@@ -1186,10 +1190,10 @@ func (f *sqlFakeEngine) RunSQL(ctx context.Context, table, sqlText string, kbIDs
 // Infinity multi-KB short-circuit (mirrors Python's add_kb_filter
 // no-op for Infinity).
 func TestFetchAggregateChunks_SkipsInfinityMultiKB(t *testing.T) {
-	engine := &sqlFakeEngine{engineType: "infinity"}
+	sqlEngine := &sqlFakeEngine{engineType: "infinity"}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), engine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm", []string{"kb_a", "kb_b"},
 	)
@@ -1202,7 +1206,7 @@ func TestFetchAggregateChunks_SkipsInfinityMultiKB(t *testing.T) {
 // path populates chunks and doc_aggs correctly.
 func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	chunksSQL := "select doc_id, docnm_kwd from t where x = 1 limit 20"
-	engine := &sqlFakeEngine{
+	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
 		rowsBySQL: map[string][]map[string]interface{}{
 			chunksSQL: {
@@ -1214,7 +1218,7 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), engine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1243,10 +1247,10 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 // TestFetchAggregateChunks_NoWhereClause verifies the no-WHERE early
 // return (matches Python's aggregate fallback at L1365).
 func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
-	engine := &sqlFakeEngine{engineType: "elasticsearch"}
+	sqlEngine := &sqlFakeEngine{engineType: "elasticsearch"}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), engine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1257,7 +1261,7 @@ func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
 
 // TestFetchAggregateChunks_RunSQLError verifies graceful failure.
 func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
-	engine := &sqlFakeEngine{
+	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
 		runSQL: func(ctx context.Context, table, sqlText string, kbIDs []string) ([]map[string]interface{}, error) {
 			return nil, fmt.Errorf("engine boom")
@@ -1265,7 +1269,7 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		context.Background(), engine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		"docnm_kwd", []string{"kb_a"},
 	)
@@ -1278,7 +1282,7 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 func TestBuildSQLReference_EmptyRows(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "", "", nil,
+		t.Context(), nil, "", "", nil,
 		"", "", nil, nil,
 	)
 	if ans != "No results." {
@@ -1300,7 +1304,7 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "t", "select doc_id, docnm_kwd, title from t",
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
 		rows, "", "elasticsearch", kbs, nil,
 	)
 	if !strings.Contains(ans, "Source|") {
@@ -1336,7 +1340,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 		{"count": 42.0, "label": "total"},
 	}
 	chunksSQL := "select doc_id, docnm_kwd from t where x = 1 limit 20"
-	engine := &sqlFakeEngine{
+	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
 		rowsBySQL: map[string][]map[string]interface{}{
 			chunksSQL: {
@@ -1347,7 +1351,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), engine, "t",
+		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
 		rows, "", "elasticsearch", kbs, nil,
 	)
@@ -1371,7 +1375,7 @@ func TestBuildSQLReference_NonAggregateMissingSourceEmptyRefs(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		context.Background(), nil, "t", "select title from t",
+		t.Context(), nil, "t", "select title from t",
 		rows, "", "elasticsearch", nil, nil,
 	)
 	if !strings.Contains(ans, "T1") || !strings.Contains(ans, "T2") {
@@ -1399,7 +1403,7 @@ func TestBuildSQLReference_DisplayNameTranslation(t *testing.T) {
 	fieldMap := map[string]interface{}{"title": "My Title"}
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
-		context.Background(), nil, "t", "select doc_id, docnm_kwd, title from t",
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
 		rows, "", "elasticsearch", nil, fieldMap,
 	)
 	if !strings.Contains(ans, "|My Title|") {
@@ -1418,7 +1422,7 @@ func TestBuildSQLReference_ISOTimestampStripped(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
-		context.Background(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
 		rows, "", "elasticsearch", nil, nil,
 	)
 	if strings.Contains(ans, "T13:24:55") {
@@ -1439,15 +1443,22 @@ func TestBuildChatConfig_RequestOverrides(t *testing.T) {
 		LLMSetting: entity.JSONMap{
 			"temperature": 0.5,
 			"top_p":       0.9,
+			"max_tokens":  float64(512),
 		},
 	}
-	req := map[string]interface{}{"temperature": temp}
+	req := map[string]interface{}{
+		"temperature": temp,
+		"max_tokens":  128,
+	}
 	cfg := BuildChatConfig(dialog, req)
 	if cfg.Temperature == nil || *cfg.Temperature != temp {
 		t.Fatalf("expected request temperature %v, got %v", temp, cfg.Temperature)
 	}
 	if cfg.TopP == nil || *cfg.TopP != 0.9 {
 		t.Fatalf("expected dialog top_p 0.9 to be preserved, got %v", cfg.TopP)
+	}
+	if cfg.MaxTokens == nil || *cfg.MaxTokens != 128 {
+		t.Fatalf("expected request max_tokens 128, got %v", cfg.MaxTokens)
 	}
 }
 
@@ -1460,5 +1471,72 @@ func TestBuildChatConfig_FromEmptyDialog(t *testing.T) {
 	cfg := BuildChatConfig(dialog, req)
 	if cfg.Temperature == nil || *cfg.Temperature != temp {
 		t.Fatalf("expected temperature %v, got %v", temp, cfg.Temperature)
+	}
+}
+
+func TestClampChatConfigMaxTokensUsesRemainingBudget(t *testing.T) {
+	dialog := &entity.Chat{
+		LLMSetting: entity.JSONMap{"max_tokens": float64(1024)},
+	}
+	cfg := BuildChatConfig(dialog, map[string]interface{}{"max_tokens": 700})
+
+	adjusted, ok, err := clampChatConfigMaxTokens(cfg, 1000, 450)
+	if err != nil {
+		t.Fatalf("clampChatConfigMaxTokens returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected max_tokens to be clamped")
+	}
+	if adjusted != 550 {
+		t.Fatalf("adjusted max_tokens = %d, want 550", adjusted)
+	}
+	if cfg.MaxTokens == nil || *cfg.MaxTokens != 550 {
+		t.Fatalf("config max_tokens = %v, want 550", cfg.MaxTokens)
+	}
+	if dialog.LLMSetting["max_tokens"] != float64(1024) {
+		t.Fatalf("dialog max_tokens was mutated: %v", dialog.LLMSetting["max_tokens"])
+	}
+}
+
+func TestBuildChatConfigIgnoresNonPositiveMaxTokens(t *testing.T) {
+	dialog := &entity.Chat{
+		LLMSetting: entity.JSONMap{"max_tokens": float64(0)},
+	}
+	cfg := BuildChatConfig(dialog, nil)
+	if cfg.MaxTokens != nil {
+		t.Fatalf("persisted max_tokens=0 must not populate ChatConfig, got %v", *cfg.MaxTokens)
+	}
+
+	cfg = BuildChatConfig(&entity.Chat{}, map[string]interface{}{"max_tokens": -1})
+	if cfg.MaxTokens != nil {
+		t.Fatalf("request max_tokens=-1 must not populate ChatConfig, got %v", *cfg.MaxTokens)
+	}
+}
+
+func TestClampChatConfigMaxTokensRejectsNonPositive(t *testing.T) {
+	for _, value := range []int{0, -1} {
+		cfg := &modelModule.ChatConfig{MaxTokens: &value}
+		if adjusted, ok, err := clampChatConfigMaxTokens(cfg, 1000, 100); err != nil {
+			t.Fatalf("max_tokens=%d returned unexpected error: %v", value, err)
+		} else if ok {
+			t.Fatalf("max_tokens=%d unexpectedly clamped to %d", value, adjusted)
+		}
+		if cfg.MaxTokens != nil {
+			t.Fatalf("max_tokens=%d should be cleared before provider request, got %v", value, *cfg.MaxTokens)
+		}
+	}
+}
+
+func TestClampChatConfigMaxTokensRejectsExhaustedCapacity(t *testing.T) {
+	for _, usedTokenCount := range []int{1000, 1001} {
+		maxTokens := 700
+		cfg := &modelModule.ChatConfig{MaxTokens: &maxTokens}
+
+		if adjusted, ok, err := clampChatConfigMaxTokens(cfg, 1000, usedTokenCount); err == nil {
+			t.Fatalf("usedTokenCount=%d expected capacity error, got adjusted=%d ok=%t", usedTokenCount, adjusted, ok)
+		}
+		if cfg.MaxTokens == nil || *cfg.MaxTokens != maxTokens {
+			t.Fatalf("capacity error should not set max_tokens to zero, got %v", cfg.MaxTokens)
+		}
 	}
 }

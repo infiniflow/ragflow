@@ -1,0 +1,11 @@
+{
+  "label": "Admin UI",
+  "link": {
+    "type": "generated-index",
+    "description": "Admin UI."
+  },
+  "position": 1,
+  "customProps": {
+    "categoryIcon": "LucidePalette"
+  }
+}

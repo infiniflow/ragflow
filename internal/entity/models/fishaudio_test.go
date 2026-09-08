@@ -28,6 +28,7 @@ func newFishAudioForListModelsTest(baseURL string) *FishAudioModel {
 }
 
 func TestFishAudioListModels(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -62,6 +63,7 @@ func TestFishAudioListModels(t *testing.T) {
 }
 
 func TestFishAudioListModelsRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	if _, err := newFishAudioForListModelsTest("http://unused").ListModels(ctx, &APIConfig{}); err == nil {
 		t.Fatal("ListModels: expected error for missing api key, got nil")
@@ -69,6 +71,7 @@ func TestFishAudioListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestFishAudioListModelsRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

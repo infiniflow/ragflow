@@ -10,6 +10,7 @@ import {
   useChangeChunkTextMode,
   useDeleteChunkByIds,
   useGetChunkHighlights,
+  useGetSelectedChunk,
   useHandleChunkCardClick,
   useUpdateChunk,
 } from './hooks';
@@ -24,10 +25,7 @@ import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import message from '@/components/ui/message';
-import {
-  RAGFlowPagination,
-  RAGFlowPaginationType,
-} from '@/components/ui/ragflow-pagination';
+import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
   ResizableHandle,
   ResizablePanel,
@@ -38,6 +36,8 @@ import {
   QueryStringMap,
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
+import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
+import { getExtension } from '@/utils/document-util';
 import { LucideArrowBigLeft } from 'lucide-react';
 
 function Chunk() {
@@ -74,13 +74,12 @@ function Chunk() {
   useEffect(() => {
     setChunkList(data);
   }, [data]);
-  const onPaginationChange: RAGFlowPaginationType['onChange'] = (
-    page,
-    size,
-  ) => {
+
+  const clearSelectedChunkIds = useCallback(() => {
     setSelectedChunkIds([]);
-    pagination.onChange?.(page, size);
-  };
+  }, []);
+
+  useClearSelectionOnPageChange(pagination, clearSelectedChunkIds);
 
   const selectAllChunk = useCallback(
     (checked: boolean) => {
@@ -123,12 +122,18 @@ function Chunk() {
     if (selectedChunkIds.length > 0) {
       const resCode: number = await removeChunk(selectedChunkIds, documentId);
       if (resCode === 0) {
-        setSelectedChunkIds([]);
+        clearSelectedChunkIds();
       }
     } else {
       showSelectedChunkWarning();
     }
-  }, [selectedChunkIds, documentId, removeChunk, showSelectedChunkWarning]);
+  }, [
+    selectedChunkIds,
+    documentId,
+    removeChunk,
+    showSelectedChunkWarning,
+    clearSelectedChunkIds,
+  ]);
 
   const handleSwitchChunk = useCallback(
     async (available?: number, chunkIds?: string[]) => {
@@ -166,19 +171,26 @@ function Chunk() {
 
   const { highlights, setWidthAndHeight } =
     useGetChunkHighlights(selectedChunkId);
+  const selectedChunk = useGetSelectedChunk(selectedChunkId);
+  const positions = Array.isArray(selectedChunk?.positions)
+    ? selectedChunk.positions
+    : [];
 
   const fileType = useMemo(() => {
+    const name = documentInfo?.name || '';
+    if (name.includes('.')) {
+      return getExtension(name);
+    }
     switch (documentInfo?.type) {
       case 'doc':
-        return documentInfo?.name.split('.').pop() || 'doc';
       case 'visual':
-        return documentInfo?.name.split('.').pop() || 'visual';
+        return documentInfo?.name?.split('.').pop() || documentInfo.type;
       case 'docx':
       case 'txt':
       case 'md':
       case 'mdx':
       case 'pdf':
-        return documentInfo?.type;
+        return documentInfo.type;
     }
     return 'unknown';
   }, [documentInfo]);
@@ -208,6 +220,7 @@ function Chunk() {
                   highlights={highlights}
                   setWidthAndHeight={setWidthAndHeight}
                   url={fileUrl}
+                  positions={positions}
                   onChunkIdsChange={handleChunkIdsChange}
                 />
               </article>
@@ -282,9 +295,7 @@ function Chunk() {
                         pageSize={pagination.pageSize}
                         current={pagination.current}
                         total={total}
-                        onChange={(page, pageSize) => {
-                          onPaginationChange(page, pageSize);
-                        }}
+                        onChange={pagination.onChange}
                       />
                     </footer>
                   </div>

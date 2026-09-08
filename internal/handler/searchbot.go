@@ -52,6 +52,7 @@ type SearchBotRetrievalTestRequest struct {
 	Question               string                 `json:"question" binding:"required"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
 	TopK                   *int                   `json:"top_k,omitempty"`
@@ -89,8 +90,10 @@ func (r *SearchBotRetrievalTestRequest) UnmarshalJSON(data []byte) error {
 }
 
 // SearchBotRequest is the request body for POST /api/v1/searchbots/related_questions.
+// Question is validated manually below so the error message follows the
+// established API contract instead of the Gin validator format.
 type SearchBotRequest struct {
-	Question string `json:"question" binding:"required"`
+	Question string `json:"question"`
 	SearchID string `json:"search_id,omitempty"`
 }
 
@@ -507,6 +510,7 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 		Question:               h.Question,
 		Page:                   h.Page,
 		Size:                   h.Size,
+		RerankCandidatesCount:  h.RerankCandidatesCount,
 		DocIDs:                 h.DocIDs,
 		UseKG:                  h.UseKG,
 		TopK:                   h.TopK,

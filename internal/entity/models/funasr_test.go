@@ -1,7 +1,6 @@
 package models
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -32,6 +31,7 @@ func writeFunASRTestAudio(t *testing.T) string {
 }
 
 func TestFunASRTranscribeAudioWithoutAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -56,7 +56,7 @@ func TestFunASRTranscribeAudioWithoutAPIKey(t *testing.T) {
 	modelName := " fun-asr-nano "
 	file := writeFunASRTestAudio(t)
 	resp, err := newFunASRForTest(srv.URL).TranscribeAudio(
-		context.Background(), &modelName, &file, &APIConfig{}, nil, nil,
+		t.Context(), &modelName, &file, &APIConfig{}, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("TranscribeAudio: %v", err)
@@ -67,6 +67,7 @@ func TestFunASRTranscribeAudioWithoutAPIKey(t *testing.T) {
 }
 
 func TestFunASRTranscribeAudioRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	file := writeFunASRTestAudio(t)
 	apiKey := "test-key"
 	blankModelName := "   "
@@ -79,7 +80,7 @@ func TestFunASRTranscribeAudioRequiresModelName(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := newFunASRForTest("http://unused").TranscribeAudio(
-				context.Background(), tc.modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil,
+				t.Context(), tc.modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil,
 			)
 			if err == nil || !strings.Contains(err.Error(), "model name is missing") {
 				t.Fatalf("expected missing-model-name error, got %v", err)
@@ -89,6 +90,7 @@ func TestFunASRTranscribeAudioRequiresModelName(t *testing.T) {
 }
 
 func TestFunASRListModelsWithoutAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -103,16 +105,17 @@ func TestFunASRListModelsWithoutAPIKey(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	models, err := newFunASRForTest(srv.URL).ListModels(context.Background(), &APIConfig{})
+	models, err := newFunASRForTest(srv.URL).ListModels(t.Context(), &APIConfig{})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if len(models) != 1 || models[0].Name != "fun-asr-nano@funasr" {
-		t.Fatalf("models=%v, want fun-asr-nano@funasr", models)
+	if len(models) != 1 || models[0].Name != "fun-asr-nano" {
+		t.Fatalf("models=%v, want fun-asr-nano", models)
 	}
 }
 
 func TestFunASRListModelsSendsAuthWhenProvided(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer secret" {
 			t.Errorf("Authorization=%q, want Bearer secret", got)
@@ -123,7 +126,7 @@ func TestFunASRListModelsSendsAuthWhenProvided(t *testing.T) {
 
 	apiKey := " secret "
 	if _, err := newFunASRForTest(srv.URL).ListModels(
-		context.Background(), &APIConfig{ApiKey: &apiKey},
+		t.Context(), &APIConfig{ApiKey: &apiKey},
 	); err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}

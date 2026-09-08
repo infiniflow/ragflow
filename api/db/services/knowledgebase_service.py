@@ -15,18 +15,19 @@
 #
 from datetime import datetime
 
-from peewee import fn, JOIN
+from peewee import JOIN, fn
 
+from api.constants import DATASET_NAME_LIMIT
 from api.db import TenantPermission
 from api.db.db_models import DB, Document, Knowledgebase, User, UserCanvas
-from api.db.services.common_service import CommonService
-from common.time_utils import current_timestamp, datetime_format
+from api.db.joint_services.tenant_model_service import get_composite_model_name_by_ids
 from api.db.services import duplicate_name
+from api.db.services.common_service import CommonService
 from api.db.services.user_service import TenantService
-from common.misc_utils import get_uuid
+from api.utils.api_utils import get_data_error_result, get_parser_config
 from common.constants import StatusEnum
-from api.constants import DATASET_NAME_LIMIT
-from api.utils.api_utils import get_parser_config, get_data_error_result
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, datetime_format
 
 
 def _base_model_name(embd_id: str) -> str:
@@ -35,8 +36,36 @@ def _base_model_name(embd_id: str) -> str:
     return parts[0]
 
 
+def _kb_embedding_base_name(kb, resolved_names) -> str:
+    """Resolve a dataset's embedding reference to its base model name.
+
+    ``tenant_embd_id`` — or ``embd_id`` itself when it stores a raw
+    tenant_model id — is resolved through ``resolved_names`` (id to
+    ``model@instance@provider``). An id that no longer resolves falls back to
+    the composite base name when ``embd_id`` holds one, otherwise to the id
+    itself so only exact matches group together.
+    """
+    embd_id = (kb.embd_id or "").strip()
+    ref = (getattr(kb, "tenant_embd_id", None) or "").strip()
+    if not ref and "@" not in embd_id:
+        ref = embd_id
+    if not ref:
+        return _base_model_name(embd_id)
+    composite = resolved_names.get(ref)
+    if composite:
+        return _base_model_name(composite)
+    if embd_id and embd_id != ref:
+        return _base_model_name(embd_id)
+    return ref
+
+
 def validate_dataset_embedding_models(kbs):
     """Validate that all given datasets use the same embedding model (or all use none).
+
+    Embedding references are resolved through tenant_model first, so datasets
+    storing a raw tenant_model id and datasets storing a legacy
+    ``model@instance@provider`` composite compare equal when they point at the
+    same model.
 
     Returns an error message string on failure, or ``None`` on success.
     """
@@ -46,7 +75,20 @@ def validate_dataset_embedding_models(kbs):
     if has_embd and len(embd_ids) != len(kbs):
         return "Cannot search across datasets where some have embedding models and others do not."
     if has_embd:
-        embd_nms = list({_base_model_name(eid) for eid in embd_ids})
+        candidates = []
+        for kb in kbs:
+            if not kb.embd_id:
+                continue
+            ref = (getattr(kb, "tenant_embd_id", None) or "").strip()
+            if not ref and "@" not in kb.embd_id:
+                ref = kb.embd_id.strip()
+            if ref:
+                candidates.append(ref)
+        try:
+            resolved_names = get_composite_model_name_by_ids(candidates)
+        except Exception:  # noqa: BLE001 - resolution is best-effort; unresolvable ids keep their raw value
+            resolved_names = {}
+        embd_nms = {_kb_embedding_base_name(kb, resolved_names) for kb in kbs if kb.embd_id}
         if len(embd_nms) > 1:
             return f"Datasets use different embedding models: {[kb.embd_id for kb in kbs]}"
     return None
@@ -129,8 +171,8 @@ class KnowledgebaseService(CommonService):
         # Returns:
         #     If all documents are parsed successfully, returns (True, None)
         #     If any document is not fully parsed, returns (False, error_message)
-        from common.constants import TaskStatus
         from api.db.services.document_service import DocumentService
+        from common.constants import TaskStatus
 
         # Get dataset information
         kbs = cls.query(id=kb_id)
@@ -247,7 +289,7 @@ class KnowledgebaseService(CommonService):
         # find team kb and owned kb
         kbs = cls.model.select(*fields).where(cls._visibility_and_status_filter(tenant_ids, user_id))
         # sort by create_time asc
-        kbs.order_by(cls.model.create_time.asc())
+        kbs = kbs.order_by(cls.model.create_time.asc())
         # maybe cause slow query by deep paginate, optimize later.
         offset, limit = 0, 50
         res = []
@@ -306,8 +348,8 @@ class KnowledgebaseService(CommonService):
             cls.model.raptor_task_finish_at,
             cls.model.mindmap_task_id,
             cls.model.mindmap_task_finish_at,
-            cls.model.artifact_task_id,
-            cls.model.artifact_task_finish_at,
+            cls.model.wiki_task_id,
+            cls.model.wiki_task_finish_at,
             cls.model.skill_task_id,
             cls.model.skill_task_finish_at,
             cls.model.structure_graph_task_id,
@@ -352,11 +394,9 @@ class KnowledgebaseService(CommonService):
                 if k not in old:
                     old[k] = v
                     continue
-                if isinstance(v, dict):
-                    assert isinstance(old[k], dict)
+                if isinstance(v, dict) and isinstance(old[k], dict):
                     dfs_update(old[k], v)
-                elif isinstance(v, list):
-                    assert isinstance(old[k], list)
+                elif isinstance(v, list) and isinstance(old[k], list):
                     old[k] = list(set(old[k] + v))
                 else:
                     old[k] = v
@@ -463,7 +503,7 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_list(cls, joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, id, name, keywords, parser_id=None):
+    def get_list(cls, joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, id, name, keywords, parser_id=None, ids=None):
         # Get list of knowledge bases with filtering and pagination
         # Args:
         #     joined_tenant_ids: List of tenant IDs
@@ -482,6 +522,8 @@ class KnowledgebaseService(CommonService):
         kbs = cls.model.select()
         if id:
             kbs = kbs.where(cls.model.id == id)
+        if ids:
+            kbs = kbs.where(cls.model.id.in_(ids))
         if name:
             kbs = kbs.where(cls.model.name == name)
         if keywords:
@@ -500,6 +542,12 @@ class KnowledgebaseService(CommonService):
         kbs = kbs.paginate(page_number, items_per_page)
 
         return list(kbs.dicts()), total
+
+    @classmethod
+    @DB.connection_context()
+    def get_accessible_ids(cls, joined_tenant_ids, user_id, ids):
+        kbs = cls.model.select(cls.model.id).where(cls.model.id.in_(ids), cls._visibility_and_status_filter(joined_tenant_ids, user_id))
+        return {kb.id for kb in kbs}
 
     @classmethod
     @DB.connection_context()
