@@ -158,7 +158,7 @@ var tokenizedFullTextFields = []string{"title_tks", "title_sm_tks", "important_t
 
 // CreateChunkStore creates or upgrades the legacy shared tenant table. The
 // dataset ID is a row-level discriminator for chunk and memory tables.
-func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	if err := validateIdentifier(baseName); err != nil {
 		return err
 	}
