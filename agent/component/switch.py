@@ -56,6 +56,12 @@ class SwitchParam(ComponentParamBase):
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
+    def param_refs(self) -> list[str]:
+        # Condition items read other components' outputs by reference; without
+        # this the batch scheduler cannot see the dependency and may route on a
+        # stale value when the producer shares the switch's dispatch window.
+        return [item.get("cpn_id") for cond in self._param.conditions for item in cond.get("items", []) if item.get("cpn_id")]
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("Switch processing"):
