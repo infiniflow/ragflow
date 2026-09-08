@@ -103,6 +103,14 @@ def _dialog(llm_id="qwen3-vl-plus@Tongyi-Qianwen"):
         llm_setting={"temperature": 0.1},
         prompt_config={},
         meta_data_filter=None,
+        # rag_agent forwards the assistant's retrieval settings to RAGTools, so a
+        # dialog stub without them raises AttributeError before reaching anything
+        # these tests assert on. Values are the Dialog model's own defaults.
+        similarity_threshold=0.2,
+        vector_similarity_weight=0.3,
+        top_n=6,
+        rerank_candidates_count=64,
+        top_k=1024,
     )
 
 

@@ -27,7 +27,7 @@ from common.misc_utils import hash_str2int
 from rag.nlp import rag_tokenizer
 from rag.prompts.template import load_prompt
 from common.constants import TAG_FLD
-from common.token_utils import encoder, num_tokens_from_string
+from common.token_utils import get_encoder, num_tokens_from_string
 
 STOP_TOKEN = "<|STOP|>"
 COMPLETE_TASK = "complete_task"
@@ -83,7 +83,8 @@ def message_fit_in(msg, max_length=4000):
 
     def trim_content(content, limit):
         limit = max(0, limit)
-        return encoder.decode(encoder.encode(content)[:limit])
+        enc = get_encoder()
+        return enc.decode(enc.encode(content)[:limit])
 
     c = count()
     if c < max_length:
@@ -339,16 +340,25 @@ async def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
     if kwd.find("**ERROR**") >= 0:
         raise Exception(kwd)
 
-    try:
-        obj = json_repair.loads(kwd)
-    except json_repair.JSONDecodeError:
-        try:
-            result = kwd.replace(rendered_prompt[:-1], "").replace("user", "").replace("model", "").strip()
-            result = "{" + result.split("{")[1].split("}")[0] + "}"
-            obj = json_repair.loads(result)
-        except Exception as e:
-            logging.exception(f"JSON parsing error: {result} -> {e}")
-            raise e
+    obj = json_repair.loads(kwd)
+    if isinstance(obj, list):
+        # A model that wraps the object in an array, or emits several objects in a row,
+        # parses to a list. The tags are still there, so merge the objects it holds.
+        merged = {}
+        found_object = False
+        for item in obj:
+            if isinstance(item, dict):
+                found_object = True
+                merged.update(item)
+        if not found_object:
+            logging.warning(f"content_tagging: reply parsed to a list of {len(obj)} values holding no object ({len(kwd)} chars).")
+            return {}
+        obj = merged
+    if not isinstance(obj, dict):
+        # A reply holding no JSON object parses to "", which used to reach .items() below.
+        # The reply can echo the chunk back, so log its shape rather than its content.
+        logging.warning(f"content_tagging: expected a JSON object of tags, got {type(obj).__name__} ({len(kwd)} chars).")
+        return {}
     res = {}
     for k, v in obj.items():
         try:

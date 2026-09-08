@@ -436,7 +436,7 @@ func TestRestAPIFetchPageIntegration(t *testing.T) {
 		"auth_type":      "bearer",
 		"credentials":    map[string]any{"token": "tok"},
 	})
-	if _, err := c.fetchPage(context.Background(), map[string]any{"page": 1}); err != nil {
+	if _, err := c.fetchPage(t.Context(), map[string]any{"page": 1}); err != nil {
 		t.Fatalf("fetchPage: %v", err)
 	}
 	mu.Lock()
@@ -478,7 +478,7 @@ func TestRestAPIFetchPagePOST(t *testing.T) {
 		"content_fields": "title",
 		"request_body":   map[string]any{"q": "x"},
 	})
-	if _, err := c.fetchPage(context.Background(), nil); err != nil {
+	if _, err := c.fetchPage(t.Context(), nil); err != nil {
 		t.Fatalf("fetchPage: %v", err)
 	}
 	mu.Lock()
@@ -519,7 +519,7 @@ func TestRestAPIFetchPageErrorMapping(t *testing.T) {
 				"url":            server.URL,
 				"content_fields": "title",
 			})
-			_, err := c.fetchPage(context.Background(), nil)
+			_, err := c.fetchPage(t.Context(), nil)
 			if err == nil || !strings.Contains(err.Error(), tt.wantSubstr) {
 				t.Fatalf("err=%v want contains %q", err, tt.wantSubstr)
 			}
@@ -557,7 +557,7 @@ func TestRestAPIFetchPageRetries(t *testing.T) {
 		"url":            server.URL,
 		"content_fields": "title",
 	})
-	if _, err := c.fetchPage(context.Background(), nil); err != nil {
+	if _, err := c.fetchPage(t.Context(), nil); err != nil {
 		t.Fatalf("fetchPage: %v", err)
 	}
 	if attempts.Load() != 3 {
@@ -583,7 +583,7 @@ func TestRestAPIFetchPage429RetryAfter(t *testing.T) {
 		"url":            server.URL,
 		"content_fields": "title",
 	})
-	if _, err := c.fetchPage(context.Background(), nil); err != nil {
+	if _, err := c.fetchPage(t.Context(), nil); err != nil {
 		t.Fatalf("fetchPage: %v", err)
 	}
 	if attempts.Load() != 2 {
@@ -616,7 +616,7 @@ func TestRestAPIFetchPageRedirectStripsAuth(t *testing.T) {
 		"auth_type":      "bearer",
 		"credentials":    map[string]any{"token": "tok"},
 	})
-	if _, err := c.fetchPage(context.Background(), nil); err != nil {
+	if _, err := c.fetchPage(t.Context(), nil); err != nil {
 		t.Fatalf("fetchPage: %v", err)
 	}
 	mu.Lock()
@@ -665,7 +665,7 @@ func TestRestAPISyncSessionPagination(t *testing.T) {
 		"batch_size":        2,
 		"request_delay":     0,
 	})
-	session, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -714,7 +714,7 @@ func TestRestAPISyncSessionWindowFilter(t *testing.T) {
 	})
 	start := time.Date(2026, 8, 14, 11, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 8, 14, 13, 0, 0, 0, time.UTC)
-	session, err := c.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	session, err := c.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: end})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -765,7 +765,7 @@ func TestRestAPIValidateConnectorSetting(t *testing.T) {
 		"url":            server.URL,
 		"content_fields": "title",
 	})
-	if err := c.ValidateConnectorSetting(context.Background(), nil); err != nil {
+	if err := c.ValidateConnectorSetting(t.Context(), nil); err != nil {
 		t.Fatalf("ValidateConnectorSetting: %v", err)
 	}
 	if requests.Load() != 1 {
@@ -794,7 +794,7 @@ func TestRestAPIMaxPages(t *testing.T) {
 		"max_pages":         1,
 		"request_delay":     0,
 	})
-	session, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -820,7 +820,7 @@ func TestRestAPIOpenPruneUnsupported(t *testing.T) {
 		"url":            "https://example.com",
 		"content_fields": "title",
 	})
-	_, err := c.OpenPrune(context.Background(), PruneRequest{})
+	_, err := c.OpenPrune(t.Context(), PruneRequest{})
 	if !errors.Is(err, ErrPruneUnsupported) {
 		t.Fatalf("err=%v want ErrPruneUnsupported", err)
 	}
@@ -851,7 +851,7 @@ func TestRestAPIFetchPageServerErrorIsTransient(t *testing.T) {
 		"url":            server.URL,
 		"content_fields": "title",
 	})
-	_, err := c.fetchPage(context.Background(), nil)
+	_, err := c.fetchPage(t.Context(), nil)
 	if err == nil || !strings.Contains(err.Error(), "http 500") {
 		t.Fatalf("err=%v want message containing http 500", err)
 	}
@@ -873,7 +873,7 @@ func TestRestAPIFetchPage429ExhaustionIsTransient(t *testing.T) {
 		"url":            server.URL,
 		"content_fields": "title",
 	})
-	_, err := c.fetchPage(context.Background(), nil)
+	_, err := c.fetchPage(t.Context(), nil)
 	if err == nil || !strings.Contains(err.Error(), "too many requests") {
 		t.Fatalf("err=%v want message containing too many requests", err)
 	}
@@ -904,7 +904,7 @@ func TestRestAPISyncSessionNoneNoCheckpoint(t *testing.T) {
 		"id_field":       "id",
 		"batch_size":     2,
 	})
-	session, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -962,7 +962,7 @@ func TestRestAPISyncSessionPageResume(t *testing.T) {
 		"batch_size":        2,
 		"request_delay":     0,
 	})
-	session, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -981,7 +981,7 @@ func TestRestAPISyncSessionPageResume(t *testing.T) {
 		t.Fatalf("cursor=%+v want page 1 source id 2", cursor)
 	}
 
-	resumed, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: batch.Checkpoint})
+	resumed, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: batch.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync: %v", err)
 	}
@@ -1049,7 +1049,7 @@ func TestRestAPISyncSessionOffsetResume(t *testing.T) {
 		"batch_size":        2,
 		"request_delay":     0,
 	})
-	session, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -1068,7 +1068,7 @@ func TestRestAPISyncSessionOffsetResume(t *testing.T) {
 		t.Fatalf("cursor=%+v want offset 0 source id 2", cursor)
 	}
 
-	resumed, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: batch.Checkpoint})
+	resumed, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: batch.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync: %v", err)
 	}
@@ -1138,7 +1138,7 @@ func TestRestAPISyncSessionCursorResume(t *testing.T) {
 		"batch_size":        2,
 		"request_delay":     0,
 	})
-	session, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -1157,7 +1157,7 @@ func TestRestAPISyncSessionCursorResume(t *testing.T) {
 		t.Fatalf("cursor=%+v want empty cursor source id 2", cursor)
 	}
 
-	resumed, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: batch.Checkpoint})
+	resumed, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: batch.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync: %v", err)
 	}
@@ -1222,7 +1222,7 @@ func TestRestAPISyncSessionCheckpointResumesInsidePage(t *testing.T) {
 		"batch_size":        2,
 		"request_delay":     0,
 	})
-	session, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -1250,7 +1250,7 @@ func TestRestAPISyncSessionCheckpointResumesInsidePage(t *testing.T) {
 		t.Fatalf("cursor=%+v want page 1 source id 4", cursor)
 	}
 
-	resumed, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: second.Checkpoint})
+	resumed, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: second.Checkpoint})
 	if err != nil {
 		t.Fatalf("resume OpenSync: %v", err)
 	}
@@ -1302,7 +1302,7 @@ func TestRestAPISyncSessionResumeRejectsInvalidCheckpoint(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			session, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: tc.checkpoint})
+			session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: tc.checkpoint})
 			if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
 				t.Fatalf("OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 			}
@@ -1347,7 +1347,7 @@ func TestRestAPISyncSessionResumeRejectsMissingAnchor(t *testing.T) {
 		"request_delay":     0,
 	})
 	raw, _ := json.Marshal(restAPISyncCursor{Page: 1, SourceID: restAPIHash128("rest_api:2")})
-	session, err := c.OpenSync(context.Background(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{Cursor: string(raw)}})
+	session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{Cursor: string(raw)}})
 	if err != nil {
 		t.Fatalf("resume OpenSync: %v", err)
 	}

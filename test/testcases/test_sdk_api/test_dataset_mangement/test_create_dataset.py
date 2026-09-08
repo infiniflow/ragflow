@@ -463,6 +463,9 @@ class TestDatasetCreate:
         payload = {"name": name, "parser_config": parser_config_o}
         dataset = client.create_dataset(**payload)
         for k, v in parser_config.items():
+            if k in {"graphrag", "raptor"}:
+                assert not hasattr(dataset.parser_config, k), str(dataset)
+                continue
             if isinstance(v, dict):
                 for kk, vv in v.items():
                     assert attrgetter(f"{k}.{kk}")(dataset.parser_config) == vv, str(dataset)
@@ -653,10 +656,8 @@ class TestParserConfigBugFix:
         dataset = client.create_dataset(**payload)
 
         config = dataset.parser_config
-        assert hasattr(config, "raptor"), "raptor field should be present"
-        assert hasattr(config, "graphrag"), "graphrag field should be present"
-        assert config.raptor.use_raptor is False, "raptor.use_raptor should default to False"
-        assert config.graphrag.use_graphrag is False, "graphrag.use_graphrag should default to False"
+        assert not hasattr(config, "raptor"), "raptor field should not be exposed"
+        assert not hasattr(config, "graphrag"), "graphrag field should not be exposed"
         assert config.chunk_token_num == 1024, "User-provided chunk_token_num should be preserved"
 
     @pytest.mark.p1
@@ -666,9 +667,8 @@ class TestParserConfigBugFix:
         dataset = client.create_dataset(**payload)
 
         config = dataset.parser_config
-        assert config.raptor.use_raptor is True, "User-provided raptor.use_raptor should be preserved"
-        assert hasattr(config, "graphrag"), "graphrag field should be present"
-        assert config.graphrag.use_graphrag is False, "graphrag.use_graphrag should default to False"
+        assert not hasattr(config, "raptor"), "raptor field should not be exposed"
+        assert not hasattr(config, "graphrag"), "graphrag field should not be exposed"
 
     @pytest.mark.p1
     def test_parser_config_with_only_graphrag(self, client):
@@ -677,9 +677,8 @@ class TestParserConfigBugFix:
         dataset = client.create_dataset(**payload)
 
         config = dataset.parser_config
-        assert hasattr(config, "raptor"), "raptor field should be present"
-        assert config.raptor.use_raptor is False, "raptor.use_raptor should default to False"
-        assert config.graphrag.use_graphrag is True, "User-provided graphrag.use_graphrag should be preserved"
+        assert not hasattr(config, "raptor"), "raptor field should not be exposed"
+        assert not hasattr(config, "graphrag"), "graphrag field should not be exposed"
 
     @pytest.mark.p1
     def test_parser_config_with_both_fields(self, client):
@@ -688,8 +687,8 @@ class TestParserConfigBugFix:
         dataset = client.create_dataset(**payload)
 
         config = dataset.parser_config
-        assert config.raptor.use_raptor is True, "User-provided raptor.use_raptor should be preserved"
-        assert config.graphrag.use_graphrag is True, "User-provided graphrag.use_graphrag should be preserved"
+        assert not hasattr(config, "raptor"), "raptor field should not be exposed"
+        assert not hasattr(config, "graphrag"), "graphrag field should not be exposed"
 
     @pytest.mark.p2
     @pytest.mark.parametrize("chunk_method", ["qa", "manual", "paper", "book", "laws", "presentation"])
@@ -699,7 +698,5 @@ class TestParserConfigBugFix:
         dataset = client.create_dataset(**payload)
 
         config = dataset.parser_config
-        assert hasattr(config, "raptor"), f"raptor field should be present for {chunk_method}"
-        assert hasattr(config, "graphrag"), f"graphrag field should be present for {chunk_method}"
-        assert config.raptor.use_raptor is False, f"raptor.use_raptor should default to False for {chunk_method}"
-        assert config.graphrag.use_graphrag is False, f"graphrag.use_graphrag should default to False for {chunk_method}"
+        assert not hasattr(config, "raptor"), f"raptor field should not be exposed for {chunk_method}"
+        assert not hasattr(config, "graphrag"), f"graphrag field should not be exposed for {chunk_method}"

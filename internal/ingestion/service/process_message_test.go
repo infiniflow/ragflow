@@ -33,8 +33,6 @@ func TestProcessMessage_MemoryTaskDispatches(t *testing.T) {
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
 
 	payload, err := json.Marshal(map[string]any{
-		"id":        "mem-task-1",
-		"task_type": "memory",
 		"memory_id": "mem-1",
 		"source_id": 42,
 		"message_dict": map[string]any{
@@ -114,8 +112,8 @@ func TestExecuteMemoryTaskAlreadyFailedAcks(t *testing.T) {
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeMemory}}
-	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), map[string]any{
-		"id": taskID, "task_type": "memory", "memory_id": "mem-3", "source_id": 7,
+	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), taskID, map[string]any{
+		"memory_id": "mem-3", "source_id": 7,
 		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
 	}, handle)
 
@@ -123,7 +121,7 @@ func TestExecuteMemoryTaskAlreadyFailedAcks(t *testing.T) {
 	// HandleSaveToMemoryTask return the "already failed" error. Otherwise the
 	// Ack below would only reflect the success path and prove nothing about
 	// the Ack-on-failure contract.
-	if err := ingestor.memorySvc.HandleSaveToMemoryTask(context.Background(), taskCtx.MemoryPayload); err == nil {
+	if err := ingestor.memorySvc.HandleSaveToMemoryTask(context.Background(), taskID, taskCtx.MemoryPayload); err == nil {
 		t.Fatal("expected HandleSaveToMemoryTask to fail on an already-failed (progress=-1) task, got nil")
 	}
 
@@ -149,14 +147,14 @@ func TestExecuteMemoryTaskTransientFailureNacks(t *testing.T) {
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-task-x", TaskType: common.TaskTypeMemory}}
-	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), map[string]any{
-		"id": "mem-task-x", "task_type": "memory", "memory_id": "mem-x", "source_id": 1,
+	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), "mem-task-x", map[string]any{
+		"memory_id": "mem-x", "source_id": 1,
 		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
 	}, handle)
 
 	// Precondition: with no tasks table, HandleSaveToMemoryTask must fail with a
 	// transient error that is NOT wrapped in ErrMemoryTaskTerminal.
-	err := ingestor.memorySvc.HandleSaveToMemoryTask(context.Background(), taskCtx.MemoryPayload)
+	err := ingestor.memorySvc.HandleSaveToMemoryTask(context.Background(), "mem-task-x", taskCtx.MemoryPayload)
 	if err == nil {
 		t.Fatal("expected HandleSaveToMemoryTask to fail with missing tasks table, got nil")
 	}
@@ -203,6 +201,39 @@ func TestProcessMessage_TaskNotFoundAcks(t *testing.T) {
 	ingestor.processMessage(handle)
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("not-found: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// TestProcessMessage_CreatedTaskStartsRunning verifies that a worker can claim
+// a task after NATS accepts its message but before the API records SCHEDULED.
+func TestProcessMessage_CreatedTaskStartsRunning(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.CREATED).Error; err != nil {
+		t.Fatalf("reset task to CREATED: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
+
+	ingestor.processMessage(handle)
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("CREATED task: expected 0 Ack/0 Nack (deferred), got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 1 {
+		t.Fatalf("expected 1 task enqueued, got %d", len(ingestor.taskChan))
+	}
+
+	var task entity.IngestionTask
+	if err := db.Where("id = ?", taskID).First(&task).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("status = %q, want %q", task.Status, common.RUNNING)
 	}
 }
 
@@ -258,10 +289,11 @@ func TestProcessMessage_AlreadyCompletedAcks(t *testing.T) {
 	}
 }
 
-// TestProcessMessage_ClaimFailsAcks: a RUNNING task whose claim fails
-// (redelivery guard) is acked without enqueuing — another worker is already
-// processing it.
-func TestProcessMessage_ClaimFailsAcks(t *testing.T) {
+// TestProcessMessage_ClaimFailsRenewsLease: a RUNNING task whose claim fails
+// is already owned by another worker. The duplicate must not Ack the broker
+// message before that owner reaches a durable outcome; it only renews the
+// delivery lease and stays out of the worker queue.
+func TestProcessMessage_ClaimFailsRenewsLease(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -274,8 +306,11 @@ func TestProcessMessage_ClaimFailsAcks(t *testing.T) {
 	handle := newFakeHandle(taskID, common.TaskTypeIngestionTask)
 
 	ingestor.processMessage(handle)
-	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
-		t.Fatalf("claim-fail: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("claim-fail: expected 0 Ack/0 Nack while owner runs, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if handle.inProgress.Load() != 1 {
+		t.Fatalf("claim-fail: expected duplicate lease renewal, got InProgress=%d", handle.inProgress.Load())
 	}
 	if len(ingestor.taskChan) != 0 {
 		t.Fatal("expected no task enqueued when claim fails")
@@ -464,5 +499,267 @@ func TestProcessMessage_StartRunningErrorNacks(t *testing.T) {
 	}
 	if len(ingestor.taskChan) != 0 {
 		t.Fatal("expected no task enqueued on activation failure")
+	}
+}
+
+// TestProcessMessage_MemoryTaskHeartbeatsWhileQueued verifies that a claimed
+// memory message renews its broker lease before a worker starts it. Without
+// this, a task waiting in taskChan can exceed AckWait and consume unnecessary
+// broker deliveries before a worker starts it.
+func TestProcessMessage_MemoryTaskHeartbeatsWhileQueued(t *testing.T) {
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+	ingestor.heartbeatInterval = 5 * time.Millisecond
+
+	payload, err := json.Marshal(map[string]any{
+		"memory_id": "mem-1", "source_id": 42,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-queued-hb-1", TaskType: common.TaskTypeMemory, Payload: payload}}
+
+	ingestor.processMessage(handle)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for handle.inProgress.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if handle.inProgress.Load() == 0 {
+		t.Fatal("expected InProgress heartbeat while memory task was queued without a worker")
+	}
+
+	// Drain and stop the lease so the heartbeat goroutine does not leak.
+	taskCtx := <-ingestor.taskChan
+	taskCtx.StopLease()
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("queued memory task must not be settled by admission, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// TestProcessMessage_MemoryTaskRedeliveryRenewsLease verifies the claim guard on
+// the memory dispatch path: when a memory task is redelivered by the broker
+// while the first copy is still queued/in-flight, the duplicate must renew its
+// lease without Acking it or enqueuing a second worker. A different task id
+// must still be accepted (claim is per-task-id).
+func TestProcessMessage_MemoryTaskRedeliveryRenewsLease(t *testing.T) {
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+
+	payload, err := json.Marshal(map[string]any{
+		"memory_id": "mem-1", "source_id": 42,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	// First delivery: claim succeeds, task is enqueued, message unsettled.
+	first := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-redeliver-1", TaskType: common.TaskTypeMemory, Payload: payload}}
+	ingestor.processMessage(first)
+	if first.acks.Load() != 0 || first.nacks.Load() != 0 {
+		t.Fatalf("first delivery: expected 0 Ack/0 Nack (settled by worker), got acks=%d nacks=%d", first.acks.Load(), first.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 1 {
+		t.Fatalf("first delivery: expected 1 memory task enqueued, got %d", len(ingestor.taskChan))
+	}
+
+	// Redelivery while the first copy is still queued: claim fails, the
+	// duplicate must renew its lease and NOT be enqueued.
+	dup := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-redeliver-1", TaskType: common.TaskTypeMemory, Payload: payload}}
+	ingestor.processMessage(dup)
+	if dup.acks.Load() != 0 || dup.nacks.Load() != 0 {
+		t.Fatalf("redelivered copy: expected 0 Ack/0 Nack while owner runs, got acks=%d nacks=%d", dup.acks.Load(), dup.nacks.Load())
+	}
+	if dup.inProgress.Load() != 1 {
+		t.Fatalf("redelivered copy: expected 1 lease renewal, got InProgress=%d", dup.inProgress.Load())
+	}
+	if len(ingestor.taskChan) != 1 {
+		t.Fatalf("redelivered copy must not be enqueued, got %d tasks in channel", len(ingestor.taskChan))
+	}
+
+	// A different memory task must still be accepted (claim is per-task-id).
+	otherPayload, err := json.Marshal(map[string]any{
+		"memory_id": "mem-2", "source_id": 43,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	})
+	if err != nil {
+		t.Fatalf("marshal other payload: %v", err)
+	}
+	other := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-redeliver-2", TaskType: common.TaskTypeMemory, Payload: otherPayload}}
+	ingestor.processMessage(other)
+	if len(ingestor.taskChan) != 2 {
+		t.Fatalf("different memory task should be enqueued, got %d tasks in channel", len(ingestor.taskChan))
+	}
+
+	// Drain both and stop leases so heartbeat goroutines do not leak.
+	firstCtx := <-ingestor.taskChan
+	firstCtx.StopLease()
+	secondCtx := <-ingestor.taskChan
+	secondCtx.StopLease()
+}
+
+// TestProcessMessage_MemoryTaskEmptyIDAcks verifies that a memory task with an
+// empty envelope task id is Acked and skipped before claiming — an empty claim
+// key would otherwise strand a no-op entry in currentTasks.
+func TestProcessMessage_MemoryTaskEmptyIDAcks(t *testing.T) {
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+
+	payload, err := json.Marshal(map[string]any{
+		"memory_id": "mem-1", "source_id": 42,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "", TaskType: common.TaskTypeMemory, Payload: payload}}
+
+	ingestor.processMessage(handle)
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("empty-id memory task: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if len(ingestor.taskChan) != 0 {
+		t.Fatalf("empty-id memory task must not be enqueued, got %d tasks", len(ingestor.taskChan))
+	}
+	if _, claimed := ingestor.currentTasks[""]; claimed {
+		t.Fatal("empty-id memory task must not claim the empty key")
+	}
+}
+
+// TestExecuteMemoryTask_ReleasesClaim verifies that executeMemoryTask releases
+// the claim taken by processMessage once the worker finishes, so a later
+// redelivery (e.g. after restart) can re-claim and re-run the task instead of
+// being permanently ack-skipped.
+func TestExecuteMemoryTask_ReleasesClaim(t *testing.T) {
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+	// Stub the runner so no DB / LLM is touched.
+	ingestor.runMemoryTask = func(_ context.Context, _ string, _ map[string]any) error {
+		return nil
+	}
+
+	if !ingestor.claimTask("mem-release-1") {
+		t.Fatal("expected claim to succeed")
+	}
+
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-release-1", TaskType: common.TaskTypeMemory}}
+	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), "mem-release-1", map[string]any{
+		"memory_id": "mem-r", "source_id": 1,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	}, handle)
+
+	ingestor.executeMemoryTask(context.Background(), taskCtx)
+
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack on success, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if _, stillClaimed := ingestor.currentTasks["mem-release-1"]; stillClaimed {
+		t.Fatal("expected claim released after executeMemoryTask finished")
+	}
+	if !ingestor.claimTask("mem-release-1") {
+		t.Fatal("expected re-claim to succeed after release (future redelivery can re-run)")
+	}
+	ingestor.releaseTask("mem-release-1")
+}
+
+// TestExecuteMemoryTask_HeartbeatsInProgressDuringLongTask drives the real
+// admission path (processMessage claim + lease) then executes the task: a
+// long-running memory task (LLM extraction can take 10-65s) must renew the
+// broker lease via InProgress, and settlement must stop the heartbeat before
+// Acking (no Ack while an InProgress is in flight).
+func TestExecuteMemoryTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(nil))
+	ingestor.heartbeatInterval = 5 * time.Millisecond
+
+	started := make(chan struct{})
+	proceed := make(chan struct{})
+	ingestor.runMemoryTask = func(_ context.Context, _ string, _ map[string]any) error {
+		close(started) // admission heartbeat is running by now
+		<-proceed      // simulate a long LLM extraction
+		return nil
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"memory_id": "mem-h", "source_id": 1,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-hb-1", TaskType: common.TaskTypeMemory, Payload: payload}}
+
+	// Admit through processMessage so the claim + lease are real, then drain
+	// and execute like a worker would. executeMemoryTask's deferred settlement
+	// (stop lease → Ack → release claim) runs before the goroutine exits, so
+	// waiting on done before reading currentTasks is race-free.
+	ingestor.processMessage(handle)
+	taskCtx := <-ingestor.taskChan
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ingestor.executeMemoryTask(context.Background(), taskCtx)
+	}()
+	<-started
+
+	// Poll for heartbeats with a generous deadline so the test is resilient
+	// to slow CI schedulers.
+	heartbeatDeadline := time.Now().Add(2 * time.Second)
+	for handle.inProgress.Load() == 0 && time.Now().Before(heartbeatDeadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if handle.inProgress.Load() == 0 {
+		t.Fatal("expected InProgress heartbeats while runMemoryTask was blocked, got 0")
+	}
+
+	close(proceed) // release the long task — only after confirming heartbeats
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("executeMemoryTask did not return after the long task was released")
+	}
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack on completion after heartbeat, got acks=%d nacks=%d inProgress=%d",
+			handle.acks.Load(), handle.nacks.Load(), handle.inProgress.Load())
+	}
+	if handle.wasSettledWithInProgress() {
+		t.Fatal("Ack ran while an InProgress was still in flight — heartbeat must stop before settlement")
+	}
+	if _, stillClaimed := ingestor.currentTasks["mem-hb-1"]; stillClaimed {
+		t.Fatal("expected claim released after executeMemoryTask finished")
+	}
+}
+
+// TestExecuteMemoryTaskAlreadyCompletedAcks verifies the idempotent
+// short-circuit for a task row already extracted to completion (progress=1.0):
+// a redelivery after restart (or a duplicate copy) must NOT re-run the LLM
+// extraction — which would insert duplicate memory entries — but must Ack the
+// message. The production runner short-circuits on the progress=1.0 row.
+func TestExecuteMemoryTaskAlreadyCompletedAcks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	taskID := "mem-completed-1"
+	if err := dao.DB.Create(&entity.Task{ID: taskID, DocID: "doc-mem-c", Progress: 1.0}).Error; err != nil {
+		t.Fatalf("insert already-completed task: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	// Real memory service so the production runner path is exercised.
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
+
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeMemory}}
+	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), taskID, map[string]any{
+		"memory_id": "mem-c", "source_id": 7,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	}, handle)
+
+	ingestor.executeMemoryTask(context.Background(), taskCtx)
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("already-completed memory task: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 }

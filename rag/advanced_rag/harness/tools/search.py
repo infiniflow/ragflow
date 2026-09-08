@@ -191,6 +191,16 @@ async def hybrid_search(
     if use_compiled and kbinfos.get("chunks"):
         _LOG.info("[Hybrid search] Compiled expansion enabled — enriching with page_index/tree/KG navigation.")
         await _expand_with_compiled(tools, query, keywords, kbinfos, doc_scope)
+    chunks_now = kbinfos.get("chunks") or []
+    if chunks_now:
+        _doc_stats: dict = {}
+        for _c in chunks_now:
+            _d = str(_c.get("docnm_kwd") or _c.get("docnm") or _c.get("doc_name") or "?")
+            _s = _doc_stats.setdefault(_d, [0, 0])
+            _s[0] += 1
+            _s[1] += len(str(_c.get("content") or _c.get("content_with_weight") or ""))
+        _detail = "; ".join(f"{d}:{n}chunk({sz}chars)" for d, (n, sz) in sorted(_doc_stats.items()))
+        _LOG.info(f'[Hybrid search] "{query[:80]}" -> {len(chunks_now)} chunk(s): {_detail}')
     if cache is not None:
         cache[cache_key] = kbinfos
     return kbinfos
@@ -345,6 +355,22 @@ _GREP_OUT_TOTAL_CHARS = 8000
 _LIST_CHUNKS_MAX_CHUNKS = 80
 
 
+def _is_table_chunk(c: dict) -> bool:
+    """Corpus-neutral table detector: HTML table markup or >=3 pipe rows.
+
+    Table chunks must NOT be term-narrowed: their answer rows often sit
+    mid/late-table (e.g. a rank row at ~62% of a 14.7K-char table), and the
+    grep context window truncates them to a header-only snippet, hiding the
+    answer from the action-session model (Q86: 2011 Pan Am standings rank 19
+    at char 5181 of 14717 was cut by the 700-char narrow).
+    """
+    t = str(_chunk_text(c) or "")
+    if "<table" in t.lower() or "<tr" in t.lower():
+        return True
+    pipe_rows = sum(1 for line in t.splitlines() if line.count("|") >= 2)
+    return pipe_rows >= 3
+
+
 def _grep_terms_from_query(query: str, max_terms: int = _GREP_TERMS_MAX) -> list[str]:
     """Extract compact grep terms from a query: bare alnum words of length>=2,
     deduped (order-preserving) and capped. Numbers/ids are preserved as-is."""
@@ -372,10 +398,16 @@ async def grep_search(
     kb_ids: list[str] | None = None,
     top_n: int = 60,
     doc_scope: list[str] | None = None,
+    keywords: str | None = None,
 ) -> dict:
     """Exact keyword/pattern locate: BM25-first candidate pool, then a
     case-insensitive regex locate with a short context window (like dynamic's
     grep_chunks, but returning the ``Pipeline`` ``{"chunks": [...]}`` contract).
+
+    ``keywords`` (optional) is a SOFT retrieval hint fed to the BM25 candidate
+    pool — e.g. the nav-routed docs' summaries ("nav is a hint, not a
+    constraint"). When empty, the query's own terms are extracted instead. It
+    never acts as a hard filter; the candidate pool still spans the whole corpus.
 
     Returns compact snippet chunks (token-cheap) for the sub-agent. When grep
     matches nothing, the BM25 candidates are returned unchanged so evidence is
@@ -386,21 +418,36 @@ async def grep_search(
     _LOG.info('[Grep search] Keyword-first locate for "%s"', query)
     if not query or not str(query).strip():
         return {"chunks": [], "doc_aggs": []}
-    res = await bm25_search(tools, query=str(query).strip(), kb_ids=kb_ids, top_n=top_n, doc_scope=doc_scope)
-    chunks = res.get("chunks", []) or []
     terms = _grep_terms_from_query(str(query).strip())
+    # Pass the extracted terms (or the explicit nav hint) as BM25 keywords so the
+    # candidate pool is built from "sentence + discriminating terms". A long
+    # question buries its proper nouns (e.g. "Culdect Saga") under stopwords;
+    # without the keywords boost the noun chunk never enters the pool and grep
+    # has nothing to locate.
+    hint = keywords if keywords else " ".join(terms)
+    res = await bm25_search(tools, query=str(query).strip(), kb_ids=kb_ids, top_n=top_n, doc_scope=doc_scope, keywords=hint)
+    chunks = res.get("chunks", []) or []
     if not chunks or not terms:
         return res
     try:
-        out = narrow_by_terms(
-            chunks,
-            terms,
-            keywords=str(query).strip(),
-            context={"before": 1, "after": 0},
-            max_out_chars_per_chunk=_GREP_OUT_CHARS_PER_CHUNK,
-            max_out_total_chars=_GREP_OUT_TOTAL_CHARS,
-        )
-        kept = out.get("kept") or []
+        # Table chunks pass through UN-narrowed (full text): term-grep windows
+        # truncate them to a header-only snippet and hide mid-table answer rows.
+        # Prose chunks keep the compact narrow.
+        table_chunks = [c for c in chunks if _is_table_chunk(c)]
+        prose_chunks = [c for c in chunks if not _is_table_chunk(c)]
+        if prose_chunks:
+            out = narrow_by_terms(
+                prose_chunks,
+                terms,
+                keywords=str(query).strip(),
+                context={"before": 1, "after": 0},
+                max_out_chars_per_chunk=_GREP_OUT_CHARS_PER_CHUNK,
+                max_out_total_chars=_GREP_OUT_TOTAL_CHARS,
+            )
+            kept = out.get("kept") or []
+        else:
+            kept = []
+        kept = table_chunks + kept
         if kept:
             _LOG.info(
                 "[Grep search] narrowed %d->%d chunk(s), %.1fK chars.",
@@ -411,6 +458,20 @@ async def grep_search(
             res["chunks"] = kept
     except Exception:
         _LOG.exception("[Grep search] narrow failed; using raw BM25 candidates.")
+    _g = res.get("chunks") or []
+    if _g:
+        _gs: dict = {}
+        for _c in _g:
+            _d = str(_c.get("docnm_kwd") or _c.get("docnm") or "?")
+            _e = _gs.setdefault(_d, [0, 0])
+            _e[0] += 1
+            _e[1] += len(str(_c.get("content") or _c.get("content_with_weight") or ""))
+        _LOG.info(
+            '[Grep search] "%s" -> %d chunk(s): %s',
+            str(query)[:80],
+            len(_g),
+            "; ".join(f"{d}:{n}chunk({sz}chars)" for d, (n, sz) in sorted(_gs.items())),
+        )
     return res
 
 

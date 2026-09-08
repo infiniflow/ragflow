@@ -307,6 +307,11 @@ class InfinityConnectionBase(DocStoreConnection):
         return sep.join(lst)
 
     def equivalent_condition_to_str(self, condition: dict, table_instance=None, is_delete: bool = False) -> str | None:
+        """Translate structured filters into an Infinity scalar predicate.
+
+        Existence filters compare a field with its typed schema default and
+        require the table's column metadata.
+        """
         assert "_id" not in condition
         columns = {}
         if table_instance:
@@ -314,12 +319,12 @@ class InfinityConnectionBase(DocStoreConnection):
                 columns[n] = (ty, de)
 
         def exists(cln):
+            """Compare a column with its default, quoting text and JSON values."""
             nonlocal columns
             assert cln in columns, f"'{cln}' should be in '{columns}'."
             ty, de = columns[cln]
-            if ty.lower().find("cha"):
-                if not de:
-                    de = ""
+            if "char" in ty.lower() or ty.lower() == "json":
+                de = str(de or "").replace("'", "''")
                 return f" {cln}!='{de}' "
             return f"{cln}!={de}"
 
@@ -430,11 +435,11 @@ class InfinityConnectionBase(DocStoreConnection):
                     for kk, vv in v.items():
                         if kk == "exists":
                             cond.append("NOT (%s)" % exists(vv))
+            elif k == "exists":
+                cond.append(exists(v))
             elif isinstance(v, str):
                 escaped_v = v.replace("'", "''")
                 cond.append(f"{k}='{escaped_v}'")
-            elif k == "exists":
-                cond.append(exists(v))
             else:
                 cond.append(f"{k}={str(v)}")
         return " AND ".join(cond) if cond else "1=1"

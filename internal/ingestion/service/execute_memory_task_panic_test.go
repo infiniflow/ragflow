@@ -35,13 +35,13 @@ func TestExecuteMemoryTask_PanicDoesNotPropagate(t *testing.T) {
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
 	// Inject a panicking memory runner through the same seam used in production
 	// (defaultRunMemoryTask calls memorySvc.HandleSaveToMemoryTask).
-	ingestor.runMemoryTask = func(_ context.Context, _ map[string]any) error {
+	ingestor.runMemoryTask = func(_ context.Context, _ string, _ map[string]any) error {
 		panic("simulated memory extraction panic")
 	}
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-panic-1", TaskType: common.TaskTypeMemory}}
-	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), map[string]any{
-		"id": "mem-panic-1", "task_type": "memory", "memory_id": "mem-p", "source_id": 1,
+	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), "mem-panic-1", map[string]any{
+		"memory_id": "mem-p", "source_id": 1,
 		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
 	}, handle)
 
@@ -82,7 +82,7 @@ func TestWorkerLoop_SurvivesMemoryPanicAndKeepsServing(t *testing.T) {
 
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
-	ingestor.runMemoryTask = func(_ context.Context, _ map[string]any) error {
+	ingestor.runMemoryTask = func(_ context.Context, _ string, _ map[string]any) error {
 		panic("simulated memory extraction panic")
 	}
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
@@ -90,8 +90,8 @@ func TestWorkerLoop_SurvivesMemoryPanicAndKeepsServing(t *testing.T) {
 	}
 
 	memHandle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-panic-2", TaskType: common.TaskTypeMemory}}
-	memCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), map[string]any{
-		"id": "mem-panic-2", "task_type": "memory", "memory_id": "mem-p2", "source_id": 1,
+	memCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), "mem-panic-2", map[string]any{
+		"memory_id": "mem-p2", "source_id": 1,
 		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
 	}, memHandle)
 

@@ -2,8 +2,9 @@
 
 // This file is compiled only with -tags fetch_testdata. Its init() downloads
 // and symlinks the external DeepDoc testdata for this package (pkg = "native")
-// so the consuming tests can run. The download is best-effort: if it fails, the
-// guard in testdata_skip.go skips the tests instead of failing.
+// so the consuming tests can run. A fetch failure is fatal under this build tag:
+// it sets testdataFetchFailed so TestMain fails the package instead of silently
+// skipping — a missing fixture must never be a green CI run.
 package native
 
 import (
@@ -17,6 +18,7 @@ import (
 func init() {
 	if err := fetchTestdata(); err != nil {
 		fmt.Fprintf(os.Stderr, "fetch_deepdoc_testdata: not fetched (%v)\n", err)
+		testdataFetchFailed = true
 		return
 	}
 	testdataFetchAttempted = true

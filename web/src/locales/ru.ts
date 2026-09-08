@@ -370,6 +370,7 @@ export default {
       runningStatus2: 'ОТМЕНЕНО',
       runningStatus3: 'УСПЕХ',
       runningStatus4: 'НЕУДАЧА',
+      runningStatusQueued: 'В очереди',
       pageRanges: 'Диапазон страниц',
       pageRangesTip:
         'Диапазон страниц для парсинга; страницы вне этого диапазона обрабатываться не будут.',
@@ -1066,6 +1067,8 @@ export default {
         'Загрузите OAuth JSON, сгенерированный в Google Console. Если он содержит только учетные данные клиента, выполните одноразовое подтверждение в браузере, чтобы получить долгоживущие токены обновления.',
       dropboxDescription:
         'Подключите ваш Dropbox для синхронизации файлов и папок из выбранного аккаунта.',
+      sitemapDescription:
+        'Подключите публичный sitemap.xml, чтобы синхронизировать перечисленные веб-страницы и PDF-документы с базой знаний.',
       azure_devopsDescription:
         "Подключите Azure DevOps для синхронизации файлов репозитория и pull request'ов.",
       bitbucketDescription:

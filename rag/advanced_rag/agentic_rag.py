@@ -787,12 +787,21 @@ class RAGTools:
             )
             if not chunks:
                 break
+            budget_hit = False
             for ck in chunks:
                 num = num_tokens_from_string(str(ck["content_with_weight"]))
                 if tokens + num > self.chat_mdl.max_length:
+                    budget_hit = True
                     break
                 tokens += num
                 cks.append(ck)
+            if budget_hit:
+                # Break the OUTER paging loop too. The bare `break` above only
+                # exits the inner loop, so a document that hits the token budget
+                # still ran all ~79 pages — pure waste, and enough of it (one
+                # navigate_tree call used to fan this out over 8 documents) to
+                # overwhelm the doc store.
+                break
         if not cks:
             return {"chunks": [], "doc_aggs": []}
         doc_name = next((c.get("docnm_kwd") or "" for c in cks if c.get("docnm_kwd")), "")

@@ -400,7 +400,7 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 			"max_dimension":  model.MaxDimension,
 			"max_batch_size": model.MaxBatchSize,
 			"dimensions":     model.Dimensions,
-			"content_length": model.ContentLength,
+			"context_length": model.ContextLength,
 			"max_output":     model.MaxOutput,
 			"model_types":    model.ModelTypes,
 			"thinking":       model.Thinking,
@@ -1593,6 +1593,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 
 	// Mirror Python's ensure_*_from_env calls.
 	_ = m.ensureMineruFromEnv(ctx, tenantID)
+	_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
 	_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
 	_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
 
@@ -1837,8 +1838,13 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
-// env key / default config tables for the three OCR providers.
-// Mirrors common/constants.py MINERU_ENV_KEYS, PADDLEOCR_ENV_KEYS, OPENDATALOADER_ENV_KEYS.
+// ensureMonkeyOCRv2FromEnv mirrors Python's ensure_monkeyocrv2_from_env.
+func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCRv2", "monkeyocrv2-from-env", config)
+}
+
+// Environment-key/default tables mirror the Python OCR provider settings.
 var (
 	mineruEnvKeys = []string{
 		common.EnvMineruAPIServer,
@@ -1871,6 +1877,14 @@ var (
 	}
 	openDataLoaderDefaultConfig = map[string]interface{}{
 		common.EnvOpenDataLoaderAPIServer: "",
+	}
+	monkeyOCRv2EnvKeys = []string{
+		common.EnvMonkeyOCRv2ServerURL,
+		common.EnvMonkeyOCRv2Timeout,
+	}
+	monkeyOCRv2DefaultConfig = map[string]interface{}{
+		common.EnvMonkeyOCRv2ServerURL: "",
+		common.EnvMonkeyOCRv2Timeout:   600,
 	}
 )
 
@@ -3618,7 +3632,7 @@ func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID 
 }
 
 // ResolveModelContextLength returns the chat model's effective context window
-// (content_length) in tokens, or 0 when unknown. content_length is the total
+// (context_length) in tokens, or 0 when unknown. context_length is the total
 // context window and max_output is the generation cap; the
 // knowledge_compiler prompt-budget logic needs the context window, not the
 // output cap. modelRef accepts either a tenant model UUID or a
@@ -3626,7 +3640,7 @@ func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID 
 //
 // The resolution is delegated to dao.ResolveModelContentLength so every
 // consumer shares one path: a tenant-configured "max_tokens" override in the
-// tenant_model.extra wins, otherwise the provider catalog's content_length is
+// tenant_model.extra wins, otherwise the provider catalog's context_length is
 // used (D22/D23).
 func (m *ModelProviderService) ResolveModelContextLength(ctx context.Context, tenantID string, modelRef string) (int, error) {
 	if strings.TrimSpace(modelRef) == "" {
