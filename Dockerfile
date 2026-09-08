@@ -296,3 +296,8 @@ COPY --from=builder /ragflow/VERSION /ragflow/VERSION
 ENV HF_ENDPOINT=https://hf-mirror.com
 
 ENTRYPOINT ["./entrypoint.sh"]
+# 设置允许代理下载的环境变量，避免触发 NLTK 代理安全拦截
+ENV NLTK_ALLOW_PROXIED_URLOPEN=1
+
+# 一次性预下载所有必需的 NLTK 数据包到镜像内部
+RUN python3 -c "import nltk; nltk.download('punkt_tab'); nltk.download('wordnet'); nltk.download('punkt'); nltk.download('averaged_perceptron_tagger')"
