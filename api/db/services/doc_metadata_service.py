@@ -43,6 +43,12 @@ METADATA_ID_BATCH_SIZE = 10000
 ES_MAX_BUCKETS = 65536
 META_VALUE_SPACE_PAGE_SIZE = 1000
 
+# The facet is scoped by document id, and ES rejects a terms query with more
+# clauses than index.max_terms_count, so a dataset larger than that is asked for
+# in batches. 65,536 is that setting's default; a store configured below it
+# refuses the request, which lands in the caller's fall back to the scan.
+METADATA_FACET_ID_BATCH = 65536
+
 
 class MetaValueSpaceIncomplete(Exception):
     """The metadata value space could not be read in full.
@@ -847,6 +853,74 @@ class DocMetadataService:
             return moment.strftime("%Y-%m-%d")
         return moment.isoformat().replace("+00:00", "Z")
 
+    @staticmethod
+    def _require_complete_es_response(payload: dict, label: str) -> dict:
+        """Return the aggregations of a response that read every shard.
+
+        The client's default lets ES answer HTTP 200 with some shards missing,
+        and a value absent because its shard failed is indistinguishable here
+        from a value that does not exist. Every caller of this module's
+        aggregations would rather have no answer than a quietly partial one.
+        """
+        shards = payload.get("_shards") or {}
+        if payload.get("timed_out") or shards.get("failed"):
+            raise MetaValueSpaceIncomplete(f"partial aggregation response for {label}: timed_out={payload.get('timed_out')}, shards={shards}")
+        return payload.get("aggregations", {})
+
+    @classmethod
+    def _iter_meta_value_buckets_es(cls, es, index_name: str, query: dict, fields: dict[str, tuple[str, str]], label: str):
+        """Yield ``(key, es_type, bucket)`` for every distinct value of every key.
+
+        composite, not terms: a terms aggregation returns only the top ``size``
+        values and drops the rest silently, which is the incompleteness the
+        callers of this helper exist to remove. composite pages instead, so the
+        page size bounds a round trip rather than the answer.
+
+        All keys travel in one request, each as its own composite aggregation
+        with its own after_key. Only a key whose values filled an entire page is
+        carried into another round, so the common case -- every key below the
+        page size -- costs exactly one search.
+        """
+        page_size = max(1, min(META_VALUE_SPACE_PAGE_SIZE, ES_MAX_BUCKETS // max(1, len(fields))))
+        after: dict[str, dict] = {}
+        pending = dict(fields)
+        requests = 0
+        values = 0
+        while pending:
+            aggs = {}
+            for key, (field, _typ) in pending.items():
+                composite = {"size": page_size, "sources": [{key: {"terms": {"field": field}}}]}
+                if key in after:
+                    composite["after"] = after[key]
+                aggs[f"vs_{key}"] = {"composite": composite}
+            res = es.search(
+                index=index_name,
+                body={"size": 0, "query": query, "aggs": aggs},
+                allow_partial_search_results=False,
+            )
+            requests += 1
+            result = cls._require_complete_es_response(getattr(res, "body", res), label)
+            unfinished = {}
+            for key, (field, typ) in pending.items():
+                agg = result.get(f"vs_{key}")
+                if agg is None:
+                    # A requested aggregation that came back absent is not an
+                    # empty result; treating it as one would silently drop the
+                    # whole key.
+                    raise MetaValueSpaceIncomplete(f"aggregation vs_{key} missing from the response for {label}")
+                buckets = agg.get("buckets") or []
+                for bucket in buckets:
+                    values += 1
+                    yield key, typ, bucket
+                if len(buckets) == page_size and agg.get("after_key"):
+                    # after_key must go back in the store's own representation
+                    # (epoch millis for a date), not the formatted one.
+                    after[key] = agg["after_key"]
+                    unfinished[key] = (field, typ)
+            pending = unfinished
+
+        logging.debug("[meta-aggregation] %s key_count=%d value_count=%d requests=%d", label, len(fields), values, requests)
+
     @classmethod
     @DB.connection_context()
     def get_meta_value_space_by_kbs(cls, kb_ids: list[str]) -> dict:
@@ -888,69 +962,9 @@ class DocMetadataService:
 
             es = settings.docStoreConn.es
             query = {"bool": {"filter": [{"terms": {"kb_id": list(kb_ids)}}]}}
-            # composite, not terms: a terms aggregation returns only the top
-            # `size` values and drops the rest silently, which is the same class
-            # of incompleteness this method exists to remove. composite pages
-            # instead, so the page size bounds a round trip rather than the
-            # answer.
-            #
-            # All keys travel in one request, each as its own composite
-            # aggregation with its own after_key. Only a key whose values filled
-            # an entire page is carried into another round, so the common case --
-            # every key below the page size -- costs exactly one search.
-            page_size = max(1, min(META_VALUE_SPACE_PAGE_SIZE, ES_MAX_BUCKETS // max(1, len(fields))))
             space: dict[str, list[str]] = {}
-            after: dict[str, dict] = {}
-            pending = dict(fields)
-            requests = 0
-            while pending:
-                aggs = {}
-                for key, (field, _typ) in pending.items():
-                    composite = {"size": page_size, "sources": [{key: {"terms": {"field": field}}}]}
-                    if key in after:
-                        composite["after"] = after[key]
-                    aggs[f"vs_{key}"] = {"composite": composite}
-                # allow_partial_search_results=False: the client's default lets ES
-                # answer HTTP 200 with some shards missing, and a value absent
-                # because its shard failed is indistinguishable here from a value
-                # that does not exist. Filtering on that silently drops matching
-                # documents, so refuse the answer instead.
-                res = es.search(
-                    index=index_name,
-                    body={"size": 0, "query": query, "aggs": aggs},
-                    allow_partial_search_results=False,
-                )
-                requests += 1
-                payload = getattr(res, "body", res)
-                shards = payload.get("_shards") or {}
-                if payload.get("timed_out") or shards.get("failed"):
-                    raise MetaValueSpaceIncomplete(f"partial aggregation response for kb_ids={kb_ids}: timed_out={payload.get('timed_out')}, shards={shards}")
-                result = payload.get("aggregations", {})
-                unfinished = {}
-                for key, (field, typ) in pending.items():
-                    agg = result.get(f"vs_{key}")
-                    if agg is None:
-                        # A requested aggregation that came back absent is not an
-                        # empty result; treating it as one would silently drop the
-                        # whole key from the value space.
-                        raise MetaValueSpaceIncomplete(f"aggregation vs_{key} missing from the response for kb_ids={kb_ids}")
-                    buckets = agg.get("buckets") or []
-                    if buckets:
-                        space.setdefault(key, []).extend(cls._format_meta_value(b["key"][key], typ) for b in buckets)
-                    if len(buckets) == page_size and agg.get("after_key"):
-                        # after_key must go back in the store's own representation
-                        # (epoch millis for a date), not the formatted one.
-                        after[key] = agg["after_key"]
-                        unfinished[key] = (field, typ)
-                pending = unfinished
-
-            logging.debug(
-                "[get_meta_value_space_by_kbs] source=aggregation kb_count=%d key_count=%d value_count=%d requests=%d",
-                len(kb_ids),
-                len(space),
-                sum(len(values) for values in space.values()),
-                requests,
-            )
+            for key, typ, bucket in cls._iter_meta_value_buckets_es(es, index_name, query, fields, f"kb_ids={kb_ids}"):
+                space.setdefault(key, []).append(cls._format_meta_value(bucket["key"][key], typ))
             return space
 
         except MetaValueSpaceIncomplete:
@@ -961,6 +975,111 @@ class DocMetadataService:
         except Exception:
             logging.exception(f"get_meta_value_space_by_kbs failed for {kb_ids}; falling back to the paged scan")
             return _fallback()
+
+    @classmethod
+    def _count_docs_carrying_metadata_es(cls, es, index_name: str, query: dict, fields: dict[str, tuple[str, str]], label: str) -> int:
+        """How many documents in ``query``'s scope carry at least one metadata value.
+
+        The facet's empty-metadata bucket is the rest of the dataset, so knowing
+        this count is what keeps the whole facet independent of the document
+        count.
+
+        The same request checks that no value is invisible to the aggregation:
+        a dynamically mapped string field aggregates through its ``.keyword``
+        subfield, which carries ``ignore_above`` (256 by default), so a longer
+        value is indexed as text and never appears as a bucket. Counting the
+        documents that hold such a value is one filter per key and turns a facet
+        that would silently omit values into a fall back to the scan.
+        """
+        aggs = {"carrying": {"filter": {"bool": {"should": [{"exists": {"field": f"meta_fields.{key}"}} for key in fields], "minimum_should_match": 1}}}}
+        # Only a key aggregated through a subfield can lose values this way.
+        unindexed = {
+            key: {"bool": {"filter": [{"exists": {"field": f"meta_fields.{key}"}}], "must_not": [{"exists": {"field": field}}]}}
+            for key, (field, _typ) in fields.items()
+            if field != f"meta_fields.{key}"
+        }
+        if unindexed:
+            aggs["unindexed"] = {"filters": {"filters": unindexed}}
+
+        res = es.search(index=index_name, body={"size": 0, "query": query, "aggs": aggs}, allow_partial_search_results=False)
+        result = cls._require_complete_es_response(getattr(res, "body", res), label)
+
+        dropped = {key: bucket["doc_count"] for key, bucket in ((result.get("unindexed") or {}).get("buckets") or {}).items() if bucket.get("doc_count")}
+        if dropped:
+            raise MetaValueSpaceIncomplete(f"values too long to be aggregated (keyword ignore_above) for {label}: {dropped}")
+        return (result.get("carrying") or {}).get("doc_count", 0)
+
+    @classmethod
+    @DB.connection_context()
+    def get_metadata_facets(cls, kb_id: str, doc_ids: list[str]) -> tuple[dict[str, dict[str, int]], int] | None:
+        """Per-value document counts over ``doc_ids``, read as aggregations.
+
+        Returns ``({key: {value: count}}, documents_carrying_metadata)``, or
+        ``None`` when the doc store cannot answer it -- the caller then counts
+        the documents itself, which is correct but reads every document's
+        metadata to do it.
+
+        Scoped by document id rather than by kb_id, because the two are not the
+        same set: the doc-meta index also holds rows whose document is gone or
+        was never created (1,569 of them in a 113,492-document dataset when this
+        was written), and counting those would offer the file list values that
+        match nothing.
+        """
+        es = getattr(settings.docStoreConn, "es", None)
+        if es is None:
+            return None
+        if not doc_ids:
+            return {}, 0
+
+        label = f"kb_id={kb_id}"
+        try:
+            kb = Knowledgebase.get_by_id(kb_id)
+            if not kb:
+                return None
+            index_name = cls._get_doc_meta_index_name(kb.tenant_id)
+            if not settings.docStoreConn.index_exist(index_name, ""):
+                # No metadata has ever been written for this tenant. Deliberately
+                # not created here: this is a read.
+                return {}, 0
+
+            fields = cls._agg_fields_from_mapping_es(index_name)
+            if not fields:
+                # Either there is no metadata or the mapping could not be read,
+                # and those are not distinguishable here. Hand the question to
+                # the scan rather than answering "no metadata" on a guess.
+                return None
+
+            counts: dict[str, dict[str, int]] = {}
+            carrying = 0
+            for offset in range(0, len(doc_ids), METADATA_FACET_ID_BATCH):
+                batch = doc_ids[offset : offset + METADATA_FACET_ID_BATCH]
+                query = {
+                    "bool": {
+                        "filter": [
+                            {"term": {"kb_id": kb_id}},
+                            {"bool": {"should": [{"terms": {"id": batch}}, {"terms": {"_id": batch}}], "minimum_should_match": 1}},
+                        ]
+                    }
+                }
+                carrying += cls._count_docs_carrying_metadata_es(es, index_name, query, fields, label)
+                for key, typ, bucket in cls._iter_meta_value_buckets_es(es, index_name, query, fields, label):
+                    value = cls._format_meta_value(bucket["key"][key], typ)
+                    if not value.strip():
+                        # The document scan skips blank values, and a facet entry
+                        # with an empty label cannot be selected anyway.
+                        continue
+                    # Batches are disjoint and two raw values can format to one
+                    # label (dates do), so add rather than assign.
+                    per_value = counts.setdefault(key, {})
+                    per_value[value] = per_value.get(value, 0) + bucket.get("doc_count", 0)
+            return counts, carrying
+
+        except MetaValueSpaceIncomplete as e:
+            logging.warning(f"metadata facets for {label} would be incomplete ({e}); counting the documents instead")
+            return None
+        except Exception:
+            logging.exception(f"metadata facets for {label} failed; counting the documents instead")
+            return None
 
     @classmethod
     @DB.connection_context()
