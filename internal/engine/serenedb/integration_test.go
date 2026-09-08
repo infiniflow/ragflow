@@ -108,7 +108,7 @@ func TestIntegrationChunkLifecycle(t *testing.T) {
 	_ = e.DropChunkStore(ctx, base, kb)
 	defer func() { _ = e.DropChunkStore(ctx, base, kb) }()
 
-	if err := e.CreateChunkStore(ctx, base, kb, 4, ""); err != nil {
+	if err := e.CreateChunkStore(ctx, base, kb, 4, "", ""); err != nil {
 		t.Fatalf("CreateChunkStore: %v", err)
 	}
 	if ok, _ := e.ChunkStoreExists(ctx, base, kb); !ok {
