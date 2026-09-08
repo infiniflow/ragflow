@@ -62,8 +62,29 @@ for v in "${!GEN_@}"; do
   if [ -n "${!v:-}" ]; then NEED_WRITE=1; break; fi
 done
 
-# Already a correct symlink -> done.
-if [ -L "$TARGET" ] && [ "$(readlink -f "$TARGET")" = "$(readlink -f "$SRC")" ] && [ -n "$(ls -A "$SRC" 2>/dev/null)" ]; then
+# src_complete: the cache is usable only when every file the pinned tree
+# records for the subtree is present on disk. A partial checkout (interrupted
+# lazy blob fetch, clone clobbered by a concurrent run, leftover from a
+# cancelled job) is non-empty but incomplete, and linking it fails the tests
+# on missing fixtures — so treat it as absent and re-clone.
+src_complete() {
+  [ -d "$SRC" ] || return 1
+  git -C "$CACHE" rev-parse --verify HEAD >/dev/null 2>&1 || return 1
+  local listed missing
+  listed="$(git -C "$CACHE" ls-tree -r --name-only HEAD -- "deepdoc/$PKG/testdata" 2>/dev/null || true)"
+  [ -n "$listed" ] || return 1
+  missing="$(printf '%s\n' "$listed" | while IFS= read -r f; do
+    [ -f "$CACHE/$f" ] || echo "$f"
+  done)"
+  if [ -n "$missing" ]; then
+    echo "fetch_deepdoc_testdata: cache at $CACHE is missing pinned files:" >&2
+    printf '%s\n' "$missing" | head -5 | sed 's/^/  /' >&2
+    return 1
+  fi
+}
+
+# Already a correct symlink over a complete cache -> done.
+if [ -L "$TARGET" ] && [ "$(readlink -f "$TARGET")" = "$(readlink -f "$SRC")" ] && src_complete; then
   echo "fetch_deepdoc_testdata: $PKG already linked ($REF)"
   exit 0
 fi
@@ -74,10 +95,10 @@ if [ -d "$TARGET" ] && [ ! -L "$TARGET" ] && [ -n "$(ls -A "$TARGET" 2>/dev/null
   exit 0
 fi
 
-# Absent (or stale symlink) -> fetch.
+# Absent (or stale symlink / incomplete cache) -> fetch.
 rm -f "$TARGET" 2>/dev/null || true
 
-if [ ! -e "$SRC" ] || [ -z "$(ls -A "$SRC" 2>/dev/null)" ]; then
+if ! src_complete; then
   echo "fetch_deepdoc_testdata: cloning $REPO @ $REF (subtree deepdoc/$PKG/testdata)"
   mkdir -p "$CACHE_BASE"
   # Network clones are best-effort and occasionally fail with a transient TLS
@@ -91,7 +112,8 @@ if [ ! -e "$SRC" ] || [ -z "$(ls -A "$SRC" 2>/dev/null)" ]; then
     rm -rf "$CACHE"
     if git clone --depth 1 --filter=blob:none --branch "$REF" --sparse \
          "https://github.com/$REPO.git" "$CACHE" >&2 && \
-       git -C "$CACHE" sparse-checkout set "deepdoc/$PKG/testdata" >&2; then
+       git -C "$CACHE" sparse-checkout set "deepdoc/$PKG/testdata" >&2 && \
+       src_complete; then
       fetched=1
       break
     fi
@@ -102,11 +124,6 @@ if [ ! -e "$SRC" ] || [ -z "$(ls -A "$SRC" 2>/dev/null)" ]; then
     echo "fetch_deepdoc_testdata: clone failed after $max_attempts attempts" >&2
     exit 1
   fi
-fi
-
-if [ ! -e "$SRC" ] || [ -z "$(ls -A "$SRC" 2>/dev/null)" ]; then
-  echo "fetch_deepdoc_testdata: cloned but subtree deepdoc/$PKG/testdata is empty" >&2
-  exit 1
 fi
 
 if [ "$NEED_WRITE" -eq 1 ]; then
