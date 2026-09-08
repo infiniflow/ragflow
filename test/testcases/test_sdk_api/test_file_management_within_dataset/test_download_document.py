@@ -28,6 +28,8 @@ class _DownloadResponse:
         self.headers = headers or {}
 
     def json(self):
+        if isinstance(self._payload, Exception):
+            raise self._payload
         return self._payload
 
 
@@ -70,6 +72,22 @@ def test_download_still_raises_api_error_without_attachment(monkeypatch):
 
     with pytest.raises(Exception, match="document not found"):
         document.download()
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "content,payload",
+    [
+        (b'{"code": 0, "message": "success"}', {"code": 0, "message": "success"}),
+        (b"plain text", ValueError("not JSON")),
+    ],
+)
+def test_download_preserves_non_error_content_without_attachment(monkeypatch, content, payload):
+    response = _DownloadResponse(content, payload, {"Content-Type": "application/json"})
+    document = Document(None, {"id": "doc", "dataset_id": "dataset"})
+    monkeypatch.setattr(document, "get", lambda *_args, **_kwargs: response)
+
+    assert document.download() == content
 
 
 @pytest.mark.p1
