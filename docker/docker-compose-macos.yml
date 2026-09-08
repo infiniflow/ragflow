@@ -4,6 +4,7 @@ include:
 services:
   ragflow:
     platform: linux/amd64
+    image: ${RAGFLOW_IMAGE}
     depends_on:
       mysql:
         condition: service_healthy
