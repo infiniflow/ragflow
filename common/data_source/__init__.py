@@ -63,6 +63,7 @@ from .rss_connector import RSSConnector
 from .salesforce_connector import SalesforceConnector
 from .seafile_connector import SeaFileConnector
 from .sharepoint_connector import SharePointConnector
+from .sitemap_connector import SitemapConnector
 from .slack_connector import SlackConnector
 from .teams_connector import TeamsConnector
 from .webdav_connector import WebDAVConnector
@@ -83,6 +84,7 @@ CONNECTOR_BY_SOURCE: dict[str, type] = {
     FileSource.GOOGLE_DRIVE: GoogleDriveConnector,
     FileSource.JIRA: JiraConnector,
     FileSource.SHAREPOINT: SharePointConnector,
+    FileSource.SITEMAP: SitemapConnector,
     FileSource.SLACK: SlackConnector,
     FileSource.TEAMS: TeamsConnector,
     FileSource.WEBDAV: WebDAVConnector,
@@ -160,6 +162,7 @@ __all__ = [
     "SalesforceConnector",
     "SeaFileConnector",
     "SharePointConnector",
+    "SitemapConnector",
     "SlackConnector",
     "TeamsConnector",
     "TextSection",

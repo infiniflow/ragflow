@@ -17,6 +17,7 @@
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowSelect } from '@/components/ui/select';
+import { useFetchAllAgentList } from '@/hooks/use-agent-request';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -24,6 +25,7 @@ import {
   useConnectChatChannelDialog,
 } from '../hooks';
 import { IChatChannelBase } from '../interface';
+import { toChatChannelTargetValue } from '../connect-target';
 
 const ConnectDialogModal = ({
   visible,
@@ -36,25 +38,43 @@ const ConnectDialogModal = ({
 }) => {
   const { t } = useTranslation();
   const { dialogs } = useChatChannelDialogList();
+  const { data: agents } = useFetchAllAgentList();
   const { connect, connecting } = useConnectChatChannelDialog();
-  const [dialogId, setDialogId] = useState<string | undefined>(
-    channel?.chat_id ?? undefined,
+  const [targetValue, setTargetValue] = useState<string | undefined>(
+    channel?.agent_id
+      ? toChatChannelTargetValue('agent', channel.agent_id)
+      : toChatChannelTargetValue('chat', channel?.chat_id),
   );
 
   useEffect(() => {
-    setDialogId(channel?.chat_id ?? undefined);
-  }, [channel?.id, channel?.chat_id]);
+    setTargetValue(
+      channel?.agent_id
+        ? toChatChannelTargetValue('agent', channel.agent_id)
+        : toChatChannelTargetValue('chat', channel?.chat_id),
+    );
+  }, [channel?.id, channel?.chat_id, channel?.agent_id]);
 
   const options = useMemo(
-    () => (dialogs || []).map((d) => ({ label: d.name, value: d.id })),
-    [dialogs],
+    () => [
+      ...(dialogs || []).map((d) => ({
+        label: `[${t('setting.chatChannelAssistant')}] ${d.name}`,
+        value: toChatChannelTargetValue('chat', d.id)!,
+      })),
+      ...(agents || [])
+        .filter((agent) => 'title' in agent)
+        .map((agent) => ({
+          label: `[${t('setting.chatChannelAgent')}] ${agent.title}`,
+          value: toChatChannelTargetValue('agent', agent.id)!,
+        })),
+    ],
+    [agents, dialogs, t],
   );
 
   const handleConfirm = async () => {
     if (!channel) {
       return;
     }
-    await connect({ channelId: channel.id, dialogId: dialogId || null });
+    await connect({ channelId: channel.id, targetValue });
     hideModal();
   };
 
@@ -80,8 +100,8 @@ const ConnectDialogModal = ({
           {t('setting.selectDialog')}
         </label>
         <RAGFlowSelect
-          value={dialogId}
-          onChange={(val: string) => setDialogId(val || undefined)}
+          value={targetValue}
+          onChange={(val: string) => setTargetValue(val || undefined)}
           options={options}
           allowClear
           placeholder={t('setting.selectDialog')}
