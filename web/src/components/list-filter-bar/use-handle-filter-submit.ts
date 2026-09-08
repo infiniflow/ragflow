@@ -43,13 +43,19 @@ const mergeFilterValue = (
   filterValue: FilterValue,
   ids: string[],
 ): FilterValue => {
-  const value = {} as FilterValue;
+  const value: FilterValue = {};
   for (const key in filterValue) {
-    if (Array.isArray(filterValue[key])) {
-      const keyIds = filterValue[key] as string[];
-      value[key] = ids.filter((id) => keyIds.includes(id));
-    } else if (typeof filterValue[key] === 'object') {
-      value[key] = mergeFilterValue(filterValue[key], ids);
+    const fieldValue = filterValue[key];
+    if (Array.isArray(fieldValue)) {
+      value[key] = ids.filter((id) => fieldValue.includes(id));
+    } else {
+      const nestedValue: Record<string, string[]> = {};
+      for (const nestedKey in fieldValue) {
+        nestedValue[nestedKey] = ids.filter((id) =>
+          fieldValue[nestedKey].includes(id),
+        );
+      }
+      value[key] = nestedValue;
     }
   }
   return value;
