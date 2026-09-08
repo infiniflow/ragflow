@@ -103,7 +103,7 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	out := make(map[string]any, len(inputs))
 	mapsCopy(out, inputs)
 	for _, field := range b.inputFields {
-		if value, ok := beginInputValue(inputs, field); ok {
+		if value, ok := b.beginInputValue(inputs, field); ok {
 			out[field] = value
 		}
 	}
@@ -132,10 +132,14 @@ func beginInputFields(params map[string]any) []string {
 }
 
 // beginInputValue maps the workflow's canonical query input to a Begin DSL
-// field. A scalar query is valid when the Begin node has one declared field;
-// a map query can populate several named fields. Directly supplied named
-// inputs are also accepted for webhook and programmatic callers.
-func beginInputValue(inputs map[string]any, field string) (any, bool) {
+// field. A scalar query is valid only when the Begin node has exactly one
+// declared field; a map query can populate several named fields. Directly
+// supplied named inputs are also accepted for webhook and programmatic
+// callers. The scalar-query guard mirrors agent/component/begin.py's
+// `if len(fields) == 1` branch in _merge_runtime_inputs — with several
+// declared inputs the scalar is ambiguous and the engine leaves every
+// field unset.
+func (b *BeginComponent) beginInputValue(inputs map[string]any, field string) (any, bool) {
 	if value, ok := inputs[field]; ok {
 		return unwrapBeginInputValue(value), true
 	}
@@ -149,6 +153,9 @@ func beginInputValue(inputs map[string]any, field string) (any, bool) {
 			return nil, false
 		}
 		return unwrapBeginInputValue(value), true
+	}
+	if len(b.inputFields) != 1 {
+		return nil, false
 	}
 	return query, true
 }
