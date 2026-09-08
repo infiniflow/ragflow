@@ -16,6 +16,7 @@
 import json
 import logging
 import math
+import os
 import time
 from abc import ABC
 from urllib.parse import urljoin
@@ -30,8 +31,12 @@ from common.token_utils import num_tokens_from_string, truncate, total_token_cou
 from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.utils.url_utils import append_api_path, ensure_v1
 
+MAX_RERANK_TOKEN = 8196
+
 
 class Base(ABC):
+    max_token = MAX_RERANK_TOKEN
+
     def __init__(self, key, model_name, **kwargs):
         pass
 
@@ -39,9 +44,10 @@ class Base(ABC):
         """Score ``texts`` against ``query`` and return ``(rank, token_count)``.
 
         This is the single public entry point shared by every reranker. It
-        short-circuits empty input and guarantees the returned scores are
-        min-max normalized to ``[0, 1]`` regardless of what the backend emits
-        (relevance scores, cosine similarities or raw logits). Downstream
+        short-circuits empty input, applies the configured token-limit policy,
+        and guarantees the returned scores are min-max normalized to ``[0, 1]``
+        regardless of what the backend emits (relevance scores, cosine
+        similarities or raw logits). Downstream
         hybrid scoring blends the reranker output with token similarity on a
         fixed ``[0, 1]`` scale, so an un-normalized provider (e.g. NVIDIA's
         unbounded logits) would otherwise corrupt the final ordering.
@@ -51,6 +57,19 @@ class Base(ABC):
         """
         if not query or not texts:
             return np.zeros(len(texts) if texts else 0, dtype=float), 0
+        token_limit_mode = os.getenv("RERANK_TOKEN_LIMIT_MODE", "truncate").strip().lower()
+        if token_limit_mode not in {"truncate", "passthrough", "error"}:
+            raise ValueError(f"Invalid RERANK_TOKEN_LIMIT_MODE {token_limit_mode!r}; expected 'truncate', 'passthrough', or 'error'")
+
+        if token_limit_mode != "passthrough":
+            query_tokens = num_tokens_from_string(query)
+            if token_limit_mode == "truncate":
+                texts = [truncate(text, max(self.max_token - query_tokens, 0)) for text in texts]
+            else:
+                for index, text in enumerate(texts):
+                    input_tokens = query_tokens + num_tokens_from_string(text)
+                    if input_tokens > self.max_token:
+                        raise ValueError(f"Rerank input at document index {index} has {input_tokens} tokens, exceeding the configured maximum of {self.max_token}")
         rank, token_count = self._compute_rank(query, texts)
         rank = np.asarray(rank, dtype=float)
         if rank.size:
@@ -104,7 +123,6 @@ class JinaRerank(Base):
         self.model_name = model_name
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
-        texts = [truncate(t, 8196) for t in texts]
         data = {"model": self.model_name, "query": query, "documents": texts, "top_n": len(texts)}
         response = requests.post(self.base_url, headers=self.headers, json=data, timeout=30)
         response.raise_for_status()
@@ -145,10 +163,7 @@ class XInferenceRerank(Base):
             self.headers["Authorization"] = f"Bearer {key}"
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
-        pairs = [(query, truncate(t, 4096)) for t in texts]
-        token_count = 0
-        for _, t in pairs:
-            token_count += num_tokens_from_string(t)
+        token_count = sum(num_tokens_from_string(t) for t in texts)
         data = {"model": self.model_name, "query": query, "return_documents": "true", "return_len": "true", "documents": texts}
         response = requests.post(self.base_url, headers=self.headers, json=data, timeout=30)
         response.raise_for_status()
@@ -174,7 +189,6 @@ class LocalAIRerank(Base):
         self.model_name = model_name.split("___")[0]
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
-        texts = [truncate(t, 500) for t in texts]
         data = {
             "model": self.model_name,
             "query": query,
@@ -238,7 +252,6 @@ class NvidiaRerank(Base):
             "model": self.model_name,
             "query": {"text": query},
             "passages": [{"text": text} for text in texts],
-            "truncate": "END",
             "top_n": len(texts),
         }
         response = requests.post(self.base_url, headers=self.headers, json=data, timeout=30)
@@ -276,7 +289,6 @@ class OpenAI_APIRerank(Base):
         self.model_name = model_name.split("___")[0]
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
-        texts = [truncate(t, 500) for t in texts]
         data = {
             "model": self.model_name,
             "query": query,
@@ -310,7 +322,7 @@ class MWSRerank(OpenAI_APIRerank):
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         """Score candidate texts and restore scores to document input order."""
-        documents = [truncate(text, 500) for text in texts]
+        documents = texts
         log_context = {
             "provider": self._FACTORY_NAME,
             "operation": "rerank",
@@ -426,10 +438,7 @@ class CoHereRerank(Base):
 class BedrockRerank(Base):
     _FACTORY_NAME = "Bedrock"
 
-    # Hard limits of the bedrock-agent-runtime Rerank API: each document text
-    # (RerankTextDocument.text) is capped at 32,000 characters, and a single
-    # request accepts at most 1,000 sources / numberOfResults.
-    _MAX_DOC_CHARS = 32000
+    # A single request accepts at most 1,000 sources / numberOfResults.
     _MAX_SOURCES = 1000
 
     def __init__(self, key, model_name, **kwargs):
@@ -449,12 +458,6 @@ class BedrockRerank(Base):
         self.model_name = model_name
         # On-demand foundation-model ARN; works for amazon.rerank-v1:0 / cohere.rerank-*.
         self.model_arn = f"arn:aws:bedrock:{self.bedrock_region}::foundation-model/{self.model_name}"
-        # Per-document truncation guard sized to the model window. Cohere Rerank
-        # v3.5 shares a ~4k window between query and document (~2048 for docs);
-        # Amazon Rerank v1 handles 32k, but chunks are small so a generous cap
-        # just bounds pathological payloads. Bedrock also truncates internally.
-        self.doc_max_tokens = 2048 if self.model_name.split(".")[0] == "cohere" else 8192
-
         # Rerank lives on the bedrock-agent-runtime service, not bedrock-runtime.
         if mode == "access_key_secret":
             self.client = boto3.client(
@@ -482,10 +485,6 @@ class BedrockRerank(Base):
             raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
-        # Truncate to the model token window, then enforce the API's hard 32k-char
-        # per-text limit (a longer RerankTextQuery / RerankTextDocument is rejected).
-        query = query[: self._MAX_DOC_CHARS]
-        texts = [truncate(t, self.doc_max_tokens)[: self._MAX_DOC_CHARS] for t in texts]
         # Bedrock does not report token usage; count locally like CoHereRerank.
         token_count = num_tokens_from_string(query) + sum(num_tokens_from_string(t) for t in texts)
 
@@ -696,7 +695,7 @@ class HuggingfaceRerank(Base):
             try:
                 # Fix: Add request timeout
                 res = requests.post(
-                    endpoint, headers={"Content-Type": "application/json"}, json={"query": query, "texts": texts[i : i + batch_size], "raw_scores": False, "truncate": True}, timeout=30
+                    endpoint, headers={"Content-Type": "application/json"}, json={"query": query, "texts": texts[i : i + batch_size], "raw_scores": False, "truncate": False}, timeout=30
                 )
                 res.raise_for_status()
                 for o in res.json():
@@ -791,7 +790,6 @@ class Ai302Rerank(Base):
         self.model_name = model_name
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
-        texts = [truncate(t, 500) for t in texts]
         data = {"model": self.model_name, "query": query, "documents": texts, "top_n": len(texts)}
         response = requests.post(self.base_url, headers=self.headers, json=data, timeout=30)
         response.raise_for_status()
@@ -838,7 +836,6 @@ class RAGconRerank(Base):
         self.model_name = model_name
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
-        texts = [truncate(t, 500) for t in texts]
         data = {
             "model": self.model_name,
             "query": query,
@@ -874,7 +871,6 @@ class NewAPIRerank(Base):
         self.model_name = model_name.split("___")[0]
 
     def _compute_rank(self, query: str, texts: list):
-        texts = [truncate(t, 500) for t in texts]
         data = {
             "model": self.model_name,
             "query": query,
