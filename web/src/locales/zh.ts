@@ -1272,6 +1272,22 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       azureDevOpsOrganizationScopeTip: '将索引该组织中令牌可见的所有仓库。',
       azureDevOpsContentTypesTip:
         '选择要索引的内容：源文件、拉取请求，或两者。',
+      sitemapDescription:
+        '连接公开的 sitemap.xml，将其中列出的网页和 PDF 文档同步到知识库。',
+      dataSourceFieldSitemapUrl: 'Sitemap URL',
+      dataSourceFieldUrlFilter: 'URL 过滤（正则）',
+      dataSourceFieldFollowPdfLinks: '跟随 PDF 链接',
+      dataSourceFieldRestrictPdfToDomain: '仅限 sitemap 所在域名的 PDF',
+      dataSourceFieldUserAgent: 'User-Agent',
+      sitemapUrlTip:
+        '要抓取的 sitemap.xml 或 sitemap 索引的 URL，例如 https://example.com/sitemap.xml。sitemap 索引会被递归跟随（最多 5 层）。',
+      sitemapUrlFilterTip:
+        '可选的正则表达式。仅索引与之匹配的 URL，例如 ^https://example\\.com/docs/ 可将同步限制在站点的某个栏目。',
+      sitemapFollowPdfLinksTip: '同时索引已抓取 HTML 页面中链接的 PDF 文件。',
+      sitemapRestrictPdfToDomainTip: '仅跟随与 sitemap 同域名下的 PDF 链接。',
+      sitemapUserAgentTip:
+        '每次请求发送的 User-Agent 请求头。留空则使用 RAGFlow-SitemapConnector/1.0。',
+      sitemapBatchSizeTip: '每批抓取并发送到 RAGFlow 的页面数量。',
       azure_devopsDescription: '连接 Azure DevOps 以同步仓库文件和拉取请求。',
       bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
       bitbucketTopWorkspaceTip:
@@ -1554,12 +1570,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       deleteChannelModalTitle: '删除聊天渠道',
       deleteChannelModalContent:
         '确定要删除此聊天渠道机器人吗？此操作无法撤销。',
-      connectDialog: '关联助手',
-      connectDialogTitle: '将 {{name}} 关联到助手',
-      selectDialog: '选择助手',
+      connectDialog: '关联助手或智能体',
+      connectDialogTitle: '将 {{name}} 关联到助手或智能体',
+      selectDialog: '选择助手或智能体',
       connectDialogTip:
-        '该渠道收到的消息将由关联的助手回复。清空选择即可解除关联。',
-      notConnected: '未关联助手',
+        '该渠道收到的消息将由关联的助手或智能体回复。清空选择即可解除关联。',
+      notConnected: '未关联助手或智能体',
+      chatChannelAssistant: '聊天助手',
+      chatChannelAgent: '智能体',
       chatChannelDesc: {
         clickclack: '连接 ClickClack 机器人',
         discord: '连接 Discord 机器人',
@@ -2405,6 +2423,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       youComFreshnessMonth: '一个月内',
       youComFreshnessYear: '一年内',
       youComApiKeyTip: '可选。留空则使用免密钥的免费额度。',
+      sofyaSearch: 'Sofya',
+      sofyaSearchDescription:
+        '基于 Sofya 的网络搜索组件。根据搜索深度，结果附带结果页面的正文内容或仅附带搜索摘要。需要配置 API Key。',
+      sofyaSearchDepth: '搜索深度',
+      sofyaSearchDepthTip:
+        'Basic 返回每条结果页面的正文内容；Snippets 只返回搜索摘要，速度更快、消耗更少。',
+      sofyaSearchDepthBasic: '页面正文',
+      sofyaSearchDepthSnippets: '仅摘要',
+      sofyaApiKeyTip: '必填。请在 sofya.co 申请 API Key。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       browser: 'Browser',

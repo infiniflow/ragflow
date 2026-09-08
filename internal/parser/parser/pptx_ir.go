@@ -62,6 +62,19 @@ func buildPPTXJSONSections(irJSON string) ([]map[string]any, error) {
 	return items, nil
 }
 
+// itemsAllEmpty reports whether every item carries no extractable text.
+// A deck whose IR sections all flatten to "" (e.g. text the IR walker does
+// not yet cover) must fall back to PlainText instead of emitting empty
+// chunks that the Tokenizer later filters, silently yielding 0 chunks.
+func itemsAllEmpty(items []map[string]any) bool {
+	for _, it := range items {
+		if text, _ := it["text"].(string); strings.TrimSpace(text) != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // itemsFromPlainText wraps whole-document plain text as a single JSON
 // item. It salvages a still-readable deck when the structured IR cannot
 // be used (IR serialization failure or a sectionless IR); a document
