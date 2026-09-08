@@ -290,6 +290,15 @@ if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
     fi
 fi
 
+# Create the DB tables before any admin server starts. The Python admin runs
+# init_default_admin() at import time and exits when the user table is missing,
+# so starting it first only adds a crash-restart loop whose heavyweight imports
+# compete with init_database_tables() for CPU and push first readiness past the
+# CI health-probe budget.
+if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
+    ensure_db_init
+fi
+
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
@@ -307,7 +316,6 @@ fi
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     ensure_docling
-    ensure_db_init
 
     echo "Starting nginx..."
     /usr/sbin/nginx -c /etc/nginx/nginx.conf
