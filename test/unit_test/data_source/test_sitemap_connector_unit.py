@@ -3,7 +3,6 @@
 import asyncio
 import importlib
 import logging
-import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -102,9 +101,11 @@ def _patch_requests(monkeypatch, url_map: dict):
 
 
 def _patch_trafilatura(monkeypatch, text="# Title\n\nBody text."):
-    mock = MagicMock()
-    mock.extract.return_value = text
-    monkeypatch.setitem(sys.modules, "trafilatura", mock)
+    """Stub the shared HTML→Markdown helper (html_utils.web_html_to_markdown) used by the connector."""
+    from common.data_source.html_utils import ParsedHTML
+
+    mock = MagicMock(return_value=ParsedHTML(title=None, cleaned_text=text))
+    monkeypatch.setattr(_sitemap_mod, "web_html_to_markdown", mock)
     return mock
 
 

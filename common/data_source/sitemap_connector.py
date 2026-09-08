@@ -18,6 +18,7 @@ from common.data_source.config import (
     REQUEST_TIMEOUT_SECONDS,
     DocumentSource,
 )
+from common.data_source.html_utils import web_html_to_markdown
 from common.data_source.interfaces import LoadConnector, PollConnector, SlimConnectorWithPermSync
 from common.data_source.models import (
     Document,
@@ -454,16 +455,7 @@ class SitemapConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                         seen.add(pdf_url)
 
             try:
-                import trafilatura
-
-                text = trafilatura.extract(
-                    raw.decode("utf-8", errors="replace"),
-                    output_format="markdown",
-                    include_links=True,
-                    include_tables=True,
-                    include_images=False,
-                    favor_recall=True,
-                )
+                text = web_html_to_markdown(raw.decode("utf-8", errors="replace")).cleaned_text
             except Exception as exc:  # noqa: BLE001 - third-party extractor, any failure just skips the page
                 logger.warning("Failed to parse page %s: %s", url, exc)
                 return None

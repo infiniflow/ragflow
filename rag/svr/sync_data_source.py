@@ -547,6 +547,7 @@ class Sitemap(SyncBase):
     def _sanitize_docs(gen):
         """Strip URL scheme from semantic_identifier so object storage accepts it as a key."""
         from urllib.parse import urlparse
+
         for batch in gen:
             sanitized = []
             for doc in batch:
