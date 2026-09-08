@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -954,7 +955,9 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	messages, err := msgQueueEngine.PullMessages(req.MessageCount)
+	pullCtx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+	defer cancel()
+	messages, err := msgQueueEngine.PullMessages(pullCtx, req.MessageCount)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return

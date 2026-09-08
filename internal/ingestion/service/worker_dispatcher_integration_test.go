@@ -251,7 +251,9 @@ func TestIntegration_SlowTaskHeartbeatPreventsPrematureRedelivery(t *testing.T) 
 	// because the heartbeat extended the lease.
 	time.Sleep(5500 * time.Millisecond)
 
-	handles, err := mq.PullMessages(1)
+	pullCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	handles, err := mq.PullMessages(pullCtx, 1)
 	if err != nil {
 		t.Fatalf("PullMessages: %v", err)
 	}

@@ -257,18 +257,20 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	return nil
 }
 
-// PullMessages collects up to messageCount messages for the manual admin
-// endpoint. Scheduling code uses PullTaskStream for single-message pulls.
-func (n *NatsEngine) PullMessages(messageCount int) ([]common.TaskHandle, error) {
+// PullMessages fetches up to messageCount messages before ctx expires.
+func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]common.TaskHandle, error) {
 	if messageCount < 1 || messageCount > common.MaxManualPullMessages {
 		return nil, fmt.Errorf("message count must be between 1 and %d", common.MaxManualPullMessages)
 	}
 	if n.consumer == nil {
 		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
 	}
+	if _, ok := ctx.Deadline(); !ok {
+		return nil, errors.New("pull messages context must have a deadline")
+	}
 
 	resultMessages := make([]common.TaskHandle, 0, messageCount)
-	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchMaxWait(1*time.Second))
+	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch messages: %w", err)
 	}
@@ -276,9 +278,12 @@ func (n *NatsEngine) PullMessages(messageCount int) ([]common.TaskHandle, error)
 		resultMessages = append(resultMessages, NewNatsMessageHandle(message))
 	}
 	if batchErr := messages.Error(); batchErr != nil {
+		if errors.Is(batchErr, context.DeadlineExceeded) {
+			return resultMessages, nil
+		}
 		for _, message := range resultMessages {
 			if nackErr := message.Nack(); nackErr != nil {
-				common.Error("nack admin message after failed pull", nackErr)
+				common.Error("nack message after failed pull", nackErr)
 			}
 		}
 		return nil, fmt.Errorf("failed to fetch messages: %w", batchErr)
@@ -286,108 +291,17 @@ func (n *NatsEngine) PullMessages(messageCount int) ([]common.TaskHandle, error)
 	return resultMessages, nil
 }
 
-// PullTaskStream requests one task message and yields its handle when it
-// arrives. The caller must supply a deadline-bearing context so the
-// server-side pull request has a bounded expiry.
-func (n *NatsEngine) PullTaskStream(ctx context.Context) (common.TaskHandleStream, error) {
-	if n.consumer == nil {
-		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
-	}
-	if n.nc == nil {
-		return nil, errors.New("NATS connection is nil, engine not properly initialized")
-	}
-	if _, ok := ctx.Deadline(); !ok {
-		return nil, errors.New("pull task stream context must have a deadline")
-	}
-
-	statusChanges := n.nc.StatusChanged(nats.DISCONNECTED, nats.CLOSED)
-	batch, err := n.consumer.Fetch(1, jetstream.FetchContext(ctx))
+// PullMessagesStream returns one task handle from PullMessages. A nil handle
+// with a nil error means the pull expired without an available task.
+func (n *NatsEngine) PullMessagesStream(ctx context.Context) (common.TaskHandle, error) {
+	messages, err := n.PullMessages(ctx, 1)
 	if err != nil {
-		n.nc.RemoveStatusListener(statusChanges)
-		return nil, fmt.Errorf("fetch task stream: %w", err)
+		return nil, err
 	}
-
-	stream := &taskHandleStream{
-		messages: make(chan common.TaskHandle),
-		done:     make(chan struct{}),
+	if len(messages) == 0 {
+		return nil, nil
 	}
-	go stream.forward(ctx, batch, statusChanges, func() {
-		n.nc.RemoveStatusListener(statusChanges)
-	})
-	return stream, nil
-}
-
-var errTaskStreamConnectionLost = errors.New("NATS connection lost while pulling task stream")
-
-type taskHandleStream struct {
-	messages chan common.TaskHandle
-	done     chan struct{}
-
-	mu  sync.RWMutex
-	err error
-}
-
-func (s *taskHandleStream) Messages() <-chan common.TaskHandle {
-	return s.messages
-}
-
-func (s *taskHandleStream) Done() <-chan struct{} {
-	return s.done
-}
-
-func (s *taskHandleStream) Err() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.err
-}
-
-func (s *taskHandleStream) forward(ctx context.Context, batch jetstream.MessageBatch, statusChanges <-chan nats.Status, removeStatusListener func()) {
-	defer removeStatusListener()
-	defer close(s.done)
-	defer close(s.messages)
-	messages := batch.Messages()
-	for {
-		select {
-		case <-ctx.Done():
-			s.setError(ctx.Err())
-			return
-		case status, ok := <-statusChanges:
-			if !ok {
-				statusChanges = nil
-				continue
-			}
-			s.setError(fmt.Errorf("%w: %s", errTaskStreamConnectionLost, status))
-			return
-		case message, ok := <-messages:
-			if !ok {
-				s.setError(batch.Error())
-				return
-			}
-		deliverMessage:
-			for {
-				select {
-				case s.messages <- NewNatsMessageHandle(message):
-					break deliverMessage
-				case <-ctx.Done():
-					s.setError(ctx.Err())
-					return
-				case status, ok := <-statusChanges:
-					if !ok {
-						statusChanges = nil
-						continue
-					}
-					s.setError(fmt.Errorf("%w: %s", errTaskStreamConnectionLost, status))
-					return
-				}
-			}
-		}
-	}
-}
-
-func (s *taskHandleStream) setError(err error) {
-	s.mu.Lock()
-	s.err = err
-	s.mu.Unlock()
+	return messages[0], nil
 }
 
 func (n *NatsEngine) CheckStatus() string {

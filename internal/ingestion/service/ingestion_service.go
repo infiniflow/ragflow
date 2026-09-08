@@ -258,20 +258,16 @@ func (e *Ingestor) consumePull(messageQueueEngine engine.MessageQueue, w *worker
 	pullStart := time.Now()
 	pullCtx, cancel := context.WithTimeout(e.dispatchCtx, taskPullRequestTimeout)
 	defer cancel()
-	stream, err := messageQueueEngine.PullTaskStream(pullCtx)
+	handle, err := messageQueueEngine.PullMessagesStream(pullCtx)
 	if err != nil {
 		e.logPullError(err)
-		e.waitAfterPullError()
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			e.waitAfterPullError()
+		}
 		e.returnWorkers([]*worker{w})
 		return
 	}
-
-	handle, ok := <-stream.Messages()
-	if !ok {
-		if err := stream.Err(); err != nil && !errors.Is(err, context.DeadlineExceeded) {
-			e.logPullError(err)
-			e.waitAfterPullError()
-		}
+	if handle == nil {
 		e.returnWorkers([]*worker{w})
 		return
 	}
@@ -297,7 +293,7 @@ func (e *Ingestor) logPullError(err error) {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return
 	}
-	common.Error("error consuming task stream", err)
+	common.Error("error pulling task message", err)
 }
 
 func (e *Ingestor) waitAfterPullError() {

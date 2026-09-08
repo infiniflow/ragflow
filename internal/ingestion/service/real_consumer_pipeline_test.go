@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -21,7 +22,9 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 	}
 
 	for {
-		handles, err := natsEngine.PullMessages(1)
+		pullCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+		handles, err := natsEngine.PullMessages(pullCtx, 1)
+		cancel()
 		if err != nil {
 			t.Fatalf("drain queue: %v", err)
 		}
@@ -65,7 +68,9 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 		t.Fatalf("PublishTask: %v", err)
 	}
 
-	handles, err := natsEngine.PullMessages(1)
+	pullCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	handles, err := natsEngine.PullMessages(pullCtx, 1)
 	if err != nil {
 		t.Fatalf("PullMessages: %v", err)
 	}

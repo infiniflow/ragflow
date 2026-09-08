@@ -60,15 +60,6 @@ type TaskHandle interface {
 	InProgress() error
 }
 
-// TaskHandleStream yields task handles as the broker delivers them. Done is
-// closed after Messages, and Err reports the terminal pull error after Done
-// closes.
-type TaskHandleStream interface {
-	Messages() <-chan TaskHandle
-	Done() <-chan struct{}
-	Err() error
-}
-
 // RawMessage is a broker message carrying opaque bytes (used by the dataset-level
 // compile consumer, which publishes arbitrary JSON payloads rather than the
 // TaskMessage shape). The NATS engine returns RawMessage from FetchKnowledgeCompileMessages.
