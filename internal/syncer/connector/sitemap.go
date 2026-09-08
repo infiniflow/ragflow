@@ -45,6 +45,11 @@ const (
 	maxSitemapRedirects     = 10
 	maxSitemapFileSize      = 64 * 1024 * 1024
 	sitemapFetchTimeout     = 60 * time.Second
+	// sitemapCheckpointVersion is the current sitemap checkpoint format. Format
+	// 1 anchors every checkpoint on the document's own SourceID (PDF-pass
+	// checkpoints anchor on the PDF itself). Checkpoints persisted by older code
+	// (version 0) may anchor on the parent page and are rejected on resume.
+	sitemapCheckpointVersion = 1
 )
 
 // sitemapFetchFunc downloads one URL and returns its body and Content-Type.
@@ -527,9 +532,17 @@ func (s *sitemapSyncSession) Close() error {
 // that anchor is not a sitemap-listed URL, so ErrSyncResumeInvalid is returned
 // here and the runner restarts the whole window. Skipping past the parent page
 // instead would silently drop any of its PDFs that were not committed yet.
+//
+// Checkpoints persisted by older code (format version 0) cannot be
+// distinguished from page anchors and may be parent-anchored PDF-pass
+// checkpoints, so they are rejected as well: the runner restarts the window
+// instead of resuming past a parent page whose PDFs were never committed.
 func (s *sitemapSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
 		return nil
+	}
+	if checkpoint.Version != sitemapCheckpointVersion {
+		return fmt.Errorf("sitemap sync checkpoint has unsupported format version %d: %w", checkpoint.Version, ErrSyncResumeInvalid)
 	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 	if sourceID == "" {
@@ -555,6 +568,7 @@ func (s *sitemapSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 func sitemapSyncCheckpoint(doc SourceDocument) *SyncCheckpoint {
 	updatedAt := doc.UpdatedAt
 	return &SyncCheckpoint{
+		Version:   sitemapCheckpointVersion,
 		Cursor:    doc.SourceID,
 		SourceID:  doc.SourceID,
 		UpdatedAt: &updatedAt,

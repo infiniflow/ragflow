@@ -46,7 +46,14 @@ type FetchReference struct {
 }
 
 // SyncCheckpoint is a connector-owned resume point.
+//
+// Version is the connector checkpoint format version. Connectors that change
+// the meaning of their checkpoint fields bump it so their resume logic can
+// reject checkpoints persisted by older code instead of misinterpreting them
+// (see the Sitemap connector). Connectors that do not version their
+// checkpoints leave it at zero.
 type SyncCheckpoint struct {
+	Version   int        `json:"version,omitempty"`
 	Cursor    string     `json:"cursor,omitempty"`
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 	SourceID  string     `json:"source_id,omitempty"`
