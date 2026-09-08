@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -36,6 +37,9 @@ const (
 type wikiMapVersionStore struct {
 	engine            engine.DocEngine
 	resolveVectorSize func(context.Context) (int, error)
+	// resolveLanguage returns the dataset language a missing Infinity chunk
+	// table is created with; nil reads it from the dataset row.
+	resolveLanguage func(ctx context.Context, datasetID string) (string, error)
 }
 
 func (s *wikiMapVersionStore) GetWikiMapActiveState(ctx context.Context, tenantID, datasetID, key string) ([]byte, error) {
@@ -123,10 +127,32 @@ func (s *wikiMapVersionStore) ensureInfinityChunkStore(ctx context.Context, tena
 	if vectorSize <= 0 {
 		return fmt.Errorf("resolve Wiki MAP vector size: got %d", vectorSize)
 	}
-	if err := s.engine.CreateChunkStore(ctx, baseName, datasetID, vectorSize, ""); err != nil {
+	// The table is the dataset's chunk table, and Infinity fixes its fulltext
+	// analyzer here, so it has to be created with the dataset language.
+	resolveLanguage := s.resolveLanguage
+	if resolveLanguage == nil {
+		resolveLanguage = datasetLanguageByID
+	}
+	language, err := resolveLanguage(ctx, datasetID)
+	if err != nil {
+		return fmt.Errorf("resolve Wiki MAP dataset language: %w", err)
+	}
+	if err := s.engine.CreateChunkStore(ctx, baseName, datasetID, vectorSize, "", language); err != nil {
 		return fmt.Errorf("initialize Infinity chunk store for Wiki MAP: %w", err)
 	}
 	return nil
+}
+
+// datasetLanguageByID reads the dataset's language, "" when it is unset.
+func datasetLanguageByID(ctx context.Context, datasetID string) (string, error) {
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, datasetID)
+	if err != nil {
+		return "", err
+	}
+	if kb.Language == nil {
+		return "", nil
+	}
+	return *kb.Language, nil
 }
 
 func (s *wikiMapVersionStore) GetWikiMapVersions(ctx context.Context, tenantID, datasetID string, keys []string) (map[string][]byte, error) {

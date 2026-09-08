@@ -55,7 +55,7 @@ func (f *fakeEngine) DeleteChunks(_ context.Context, condition map[string]interf
 
 // --- stubs: the reader/writer path under test never exercises these. ---
 
-func (f *fakeEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+func (f *fakeEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
 func (f *fakeEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, _, _ string) ([]string, error) {
