@@ -62,7 +62,7 @@ func (s *blockingTaskHandleStream) close(err error) {
 	})
 }
 
-type slotTestQueue struct {
+type dispatcherTestQueue struct {
 	engine.MessageQueue
 
 	mu      sync.Mutex
@@ -71,7 +71,7 @@ type slotTestQueue struct {
 	calls   chan int
 }
 
-func (q *slotTestQueue) PullTaskStream(ctx context.Context, max int) (common.TaskHandleStream, error) {
+func (q *dispatcherTestQueue) PullTaskStream(ctx context.Context, max int) (common.TaskHandleStream, error) {
 	q.mu.Lock()
 	stream := q.streams[q.next]
 	q.next++
@@ -85,11 +85,11 @@ func (q *slotTestQueue) PullTaskStream(ctx context.Context, max int) (common.Tas
 	return stream, nil
 }
 
-// TestSlotDispatcherStartsNewPullWhileEarlierPullWaits prevents a pending
+// TestWorkerDispatcherStartsNewPullWhileEarlierPullWaits prevents a pending
 // Pull(1) from delaying a newly-idle worker until its one-second expiry. A
 // synchronous Fetch loop would only record the first call before the timeout.
-func TestSlotDispatcherStartsNewPullWhileEarlierPullWaits(t *testing.T) {
-	queue := &slotTestQueue{
+func TestWorkerDispatcherStartsNewPullWhileEarlierPullWaits(t *testing.T) {
+	queue := &dispatcherTestQueue{
 		streams: []*blockingTaskHandleStream{
 			newBlockingTaskHandleStream(),
 			newBlockingTaskHandleStream(),
@@ -130,12 +130,12 @@ func TestSlotDispatcherStartsNewPullWhileEarlierPullWaits(t *testing.T) {
 	}
 }
 
-// TestSlotDispatcherBatchesSlotsAlreadyIdleInSameTurn prevents the dispatcher
-// from turning slots that are already available into redundant Pull(1)
-// requests. It must drain only the slots visible in this turn and issue one
+// TestWorkerDispatcherBatchesAvailableWorkersInSameTurn prevents the dispatcher
+// from turning workers that are already available into redundant Pull(1)
+// requests. It must drain only the workers visible in this turn and issue one
 // Pull(K).
-func TestSlotDispatcherBatchesSlotsAlreadyIdleInSameTurn(t *testing.T) {
-	queue := &slotTestQueue{
+func TestWorkerDispatcherBatchesAvailableWorkersInSameTurn(t *testing.T) {
+	queue := &dispatcherTestQueue{
 		streams: []*blockingTaskHandleStream{newBlockingTaskHandleStream()},
 		calls:   make(chan int, 1),
 	}
@@ -143,7 +143,7 @@ func TestSlotDispatcherBatchesSlotsAlreadyIdleInSameTurn(t *testing.T) {
 	engine.SetMessageQueueEngine(queue)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousQueue) })
 
-	ingestor := newUnitIngestor("test-batch-visible-slots", 2, nil)
+	ingestor := newUnitIngestor("test-batch-visible-workers", 2, nil)
 	ingestor.workerQueue <- &worker{id: 1, inbox: make(chan common.TaskHandle)}
 	ingestor.workerQueue <- &worker{id: 2, inbox: make(chan common.TaskHandle)}
 	ingestor.dispatcherWg.Add(1)
@@ -164,12 +164,12 @@ func TestSlotDispatcherBatchesSlotsAlreadyIdleInSameTurn(t *testing.T) {
 	}
 }
 
-// TestSlotDispatcherHandsOffFirstStreamMessageImmediately prevents a
+// TestWorkerDispatcherHandsOffFirstStreamMessageImmediately prevents a
 // slice-collecting Pull implementation from delaying the first task until the
 // requested batch fills or expires.
-func TestSlotDispatcherHandsOffFirstStreamMessageImmediately(t *testing.T) {
+func TestWorkerDispatcherHandsOffFirstStreamMessageImmediately(t *testing.T) {
 	stream := newBlockingTaskHandleStream()
-	queue := &slotTestQueue{
+	queue := &dispatcherTestQueue{
 		streams: []*blockingTaskHandleStream{stream},
 		calls:   make(chan int, 1),
 	}
@@ -211,12 +211,12 @@ func TestSlotDispatcherHandsOffFirstStreamMessageImmediately(t *testing.T) {
 	}
 }
 
-// TestPullBatchReturnsOnlyUnmatchedSlots prevents a partial Pull(K) from
-// losing an unused slot or registering a slot whose handle was already handed
+// TestPullBatchReturnsOnlyUnmatchedWorkers prevents a partial Pull(K) from
+// losing an unused worker or registering a worker whose handle was already handed
 // off to a worker.
-func TestPullBatchReturnsOnlyUnmatchedSlots(t *testing.T) {
+func TestPullBatchReturnsOnlyUnmatchedWorkers(t *testing.T) {
 	stream := newBlockingTaskHandleStream()
-	queue := &slotTestQueue{
+	queue := &dispatcherTestQueue{
 		streams: []*blockingTaskHandleStream{stream},
 		calls:   make(chan int, 1),
 	}
@@ -274,7 +274,7 @@ func TestPullBatchReturnsOnlyUnmatchedSlots(t *testing.T) {
 // must not be locally Acked, Nacked, or handed off after cancellation.
 func TestPullBatchCancellationLeavesReservedHandleUnsettled(t *testing.T) {
 	stream := newBlockingTaskHandleStream()
-	queue := &slotTestQueue{
+	queue := &dispatcherTestQueue{
 		streams: []*blockingTaskHandleStream{stream},
 		calls:   make(chan int, 1),
 	}

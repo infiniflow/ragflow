@@ -30,10 +30,10 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
-// TestSlotDispatcherBurstCompletesEveryTask protects against the former
-// backpressure loss: a burst must stay in JetStream until a concrete worker
-// slot is ready, rather than being Nacked repeatedly until MaxDeliver drops it.
-func TestSlotDispatcherBurstCompletesEveryTask(t *testing.T) {
+// TestWorkerDispatcherBurstCompletesEveryTask verifies that a burst stays in
+// JetStream until a concrete worker is ready, rather than being Nacked
+// repeatedly until MaxDeliver drops it.
+func TestWorkerDispatcherBurstCompletesEveryTask(t *testing.T) {
 	const (
 		taskCount   = 20
 		concurrency = 1
@@ -49,7 +49,7 @@ func TestSlotDispatcherBurstCompletesEveryTask(t *testing.T) {
 	engine.SetMessageQueueEngine(queue)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousQueue) })
 
-	ingestor := newUnitIngestor("test-slot-burst", concurrency, []string{"pdf"})
+	ingestor := newUnitIngestor("test-worker-burst", concurrency, []string{"pdf"})
 	firstTaskStarted := make(chan struct{})
 	releaseFirstTask := make(chan struct{})
 	var firstTask sync.Once
@@ -98,7 +98,7 @@ func TestSlotDispatcherBurstCompletesEveryTask(t *testing.T) {
 	}
 
 	// The sole worker is busy, so the remaining 19 tasks must remain broker
-	// pending. A buffered dispatcher used to Nack this burst until MaxDeliver.
+	// pending. A buffered dispatcher can Nack this burst until MaxDeliver.
 	releaseFirst()
 
 	deadline := time.Now().Add(10 * time.Second)

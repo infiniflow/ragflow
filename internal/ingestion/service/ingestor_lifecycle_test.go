@@ -474,10 +474,10 @@ func TestStartSchedulesCreatedTasks(t *testing.T) {
 	}
 }
 
-// TestSlotDispatcherDoesNotActivateTaskUntilWorkerOwnsSlot prevents a busy
-// worker from prefetching its next task. With the old buffered dispatcher,
-// task-2 moves to RUNNING while task-1 still occupies the only worker.
-func TestSlotDispatcherDoesNotActivateTaskUntilWorkerOwnsSlot(t *testing.T) {
+// TestWorkerDispatcherDoesNotActivateTaskUntilWorkerReceivesTask prevents a busy
+// worker from prefetching its next task. task-2 must remain SCHEDULED while
+// task-1 still occupies the only worker.
+func TestWorkerDispatcherDoesNotActivateTaskUntilWorkerReceivesTask(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	t.Cleanup(cleanup)
@@ -495,7 +495,7 @@ func TestSlotDispatcherDoesNotActivateTaskUntilWorkerOwnsSlot(t *testing.T) {
 	engine.SetMessageQueueEngine(queue)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
-	ingestor := newUnitIngestor("test-slot-dispatch", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test-worker-dispatch", 1, []string{"pdf"})
 	releaseFirst := make(chan struct{})
 	firstStarted := make(chan struct{})
 	ingestor.runDocumentTask = func(_ context.Context, task *entity.IngestionTask) error {

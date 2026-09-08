@@ -343,9 +343,9 @@ func TestHandleAndExecute_SlowAdmissionHeartbeatsUnderLeaseProtection(t *testing
 	}
 }
 
-// TestSlotDispatcher_WaitAfterPullErrorCancelsCleanly verifies that waitAfterPullError
+// TestWorkerDispatcher_WaitAfterPullErrorCancelsCleanly verifies that waitAfterPullError
 // unblocks promptly when dispatch context is cancelled, without hanging on the sleep.
-func TestSlotDispatcher_WaitAfterPullErrorCancelsCleanly(t *testing.T) {
+func TestWorkerDispatcher_WaitAfterPullErrorCancelsCleanly(t *testing.T) {
 	ingestor := newUnitIngestor("test-pull-backoff-cancel", 1, nil)
 
 	done := make(chan struct{})
