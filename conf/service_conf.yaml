@@ -10,6 +10,8 @@ mysql:
   name: 'rag_flow'
   user: 'root'
   password: 'infini_rag_flow'
+  # For local native dev (PowerShell): use 127.0.0.1:3307 (Docker host port)
+  # For full Docker containers: revert to mysql:3306 (Docker network container name)
   host: 127.0.0.1
   port: 3307
   max_connections: 900
