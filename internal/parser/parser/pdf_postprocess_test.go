@@ -751,8 +751,10 @@ func TestFilterPDFTOCFragmentPages_IgnoresPositionlessAndMedia(t *testing.T) {
 }
 
 // TestRemovePDFTOC_FragmentedPageEndToEnd pins the wiring: removePDFTOC runs
-// the fragment-page pass after the legacy passes, so a headingless fragmented
-// TOC page is cleared through the same entry point production calls.
+// the fragment-page pass before the entry-line filter (the entry filter
+// deletes in place and can strip the page-number fragments the classifier
+// counts on), so a headingless fragmented TOC page is cleared through the
+// same entry point production calls.
 func TestRemovePDFTOC_FragmentedPageEndToEnd(t *testing.T) {
 	sections := fragmentedTOCPage([]string{
 		"Chapter 1",
@@ -768,6 +770,82 @@ func TestRemovePDFTOC_FragmentedPageEndToEnd(t *testing.T) {
 	result := &deepdoctype.ParseResult{Sections: sections}
 	removePDFTOC(result)
 	if got, want := sectionTexts(result.Sections), []string{"II"}; !slices.Equal(got, want) {
+		t.Fatalf("sections = %v, want %v", got, want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_ThresholdBoundary pins the exact minima: one
+// title short of the threshold leaves the page untouched, while exactly the
+// minima classify it.
+func TestFilterPDFTOCFragmentPages_ThresholdBoundary(t *testing.T) {
+	below := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	if got := filterPDFTOCFragmentPages(below); !slices.Equal(sectionTexts(got), sectionTexts(below)) {
+		t.Fatalf("below threshold: sections = %v, want untouched %v", sectionTexts(got), sectionTexts(below))
+	}
+	atMinima := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	if got := filterPDFTOCFragmentPages(atMinima); len(got) != 0 {
+		t.Fatalf("at minima: sections = %v, want empty", sectionTexts(got))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_KeepsUnanchoredShortText pins the anchor
+// gate: short text with no TOC signal in either neighbor survives on a
+// classified page, while anchored short text is debris.
+func TestFilterPDFTOCFragmentPages_KeepsUnanchoredShortText(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+		"standalone note",
+		"another standalone note",
+		"yet another standalone note",
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{"another standalone note", "yet another standalone note"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_KeepsBracketedTitle pins the book-title
+// guard: a 《》-wrapped heading on a classified page is content, not debris,
+// even though it is short enough to delete.
+func TestFilterPDFTOCFragmentPages_KeepsBracketedTitle(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	sections = append(sections, makePDFSection("《Test Book》", "text", 0, 50, 550, 300, 318))
+	got := filterPDFTOCFragmentPages(sections)
+	if got, want := sectionTexts(got), []string{"《Test Book》"}; !slices.Equal(got, want) {
 		t.Fatalf("sections = %v, want %v", got, want)
 	}
 }
