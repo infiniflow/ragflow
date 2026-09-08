@@ -65,3 +65,25 @@ def test_openai_api_asr_transcription_calls_audio_endpoint(mock_openai, tmp_path
 def test_openai_api_asr_requires_base_url():
     with pytest.raises(ValueError, match="url cannot be None"):
         OpenAI_APISeq2txt(key="compatible-secret", model_name="whisper-compatible", base_url="")
+
+
+@patch("rag.llm.sequence2txt_model.OpenAI")
+def test_openai_api_asr_allows_http_for_trusted_local_hosts(mock_openai):
+    for base_url in ("http://localhost:8000", "http://127.0.0.1:9090/v1", "http://192.168.1.10:9090/v1"):
+        OpenAI_APISeq2txt(key="compatible-secret", model_name="whisper-compatible", base_url=base_url)
+
+    assert mock_openai.call_count == 3
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://compatible.example.com/v1",
+        "http://8.8.8.8/v1",
+        "compatible.example.com/v1",
+        "ftp://compatible.example.com/v1",
+    ],
+)
+def test_openai_api_asr_rejects_non_https_public_endpoints(base_url):
+    with pytest.raises(ValueError, match="must use HTTPS"):
+        OpenAI_APISeq2txt(key="compatible-secret", model_name="whisper-compatible", base_url=base_url)
