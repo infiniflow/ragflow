@@ -311,6 +311,7 @@ func TestSearchDatasetsLeavesUnsetFieldsNil(t *testing.T) {
 	checks := map[string]bool{
 		"Page":                fake.req.Page != nil,
 		"PageSize":            fake.req.PageSize != nil,
+		"Size":                fake.req.Size != nil,
 		"KNNTopK":             fake.req.KNNTopK != nil,
 		"KNNNumCandidates":    fake.req.KNNNumCandidates != nil,
 		"UseKG":               fake.req.UseKG != nil,
