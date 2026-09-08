@@ -60,7 +60,7 @@ type Ingestor struct {
 	ctx    context.Context // execution context for handles already owned by workers
 	cancel context.CancelFunc
 
-	dispatchCtx    context.Context // slot registration and Pull lifecycle
+	dispatchCtx    context.Context // worker queue registration and Pull lifecycle
 	dispatchCancel context.CancelFunc
 
 	// Configuration
@@ -81,7 +81,7 @@ type Ingestor struct {
 	ShutdownCh chan struct{}
 
 	// Worker pool
-	idleSlots    chan *workerSlot
+	workerQueue  chan *worker
 	pullWg       sync.WaitGroup
 	dispatcherWg sync.WaitGroup
 	workerWg     sync.WaitGroup
@@ -135,60 +135,13 @@ type Ingestor struct {
 	checkpointExists func(ctx context.Context, taskID string) (bool, error)
 }
 
-// SlotState represents the lifecycle phase of a worker slot (TaskRP.md §2.2).
-type SlotState int32
-
-const (
-	SlotStateIdle SlotState = iota
-	SlotStateReserved
-	SlotStateHandling
-)
-
-func (s SlotState) String() string {
-	switch s {
-	case SlotStateIdle:
-		return "Idle"
-	case SlotStateReserved:
-		return "Reserved"
-	case SlotStateHandling:
-		return "Handling"
-	default:
-		return "Unknown"
-	}
-}
-
-type workerSlot struct {
+type worker struct {
 	id    int32
 	inbox chan common.TaskHandle
-	state atomic.Int32 // SlotState
 }
 
 type activeLease struct {
 	abandoned atomic.Bool
-}
-
-func (e *Ingestor) markSlotIdle(slot *workerSlot) {
-	slot.state.Store(int32(SlotStateIdle))
-}
-
-func (e *Ingestor) markSlotReserved(slot *workerSlot) {
-	if !slot.state.CompareAndSwap(int32(SlotStateIdle), int32(SlotStateReserved)) {
-		common.Error("slot transition to Reserved failed: unexpected old state",
-			fmt.Errorf("slot %d state is %s", slot.id, SlotState(slot.state.Load())),
-			zap.Int32("slot_id", slot.id),
-			zap.String("slot_state", SlotState(slot.state.Load()).String()),
-		)
-	}
-}
-
-func (e *Ingestor) markSlotHandling(slot *workerSlot) {
-	if !slot.state.CompareAndSwap(int32(SlotStateReserved), int32(SlotStateHandling)) {
-		common.Error("slot transition to Handling failed: unexpected old state",
-			fmt.Errorf("slot %d state is %s", slot.id, SlotState(slot.state.Load())),
-			zap.Int32("slot_id", slot.id),
-			zap.String("slot_state", SlotState(slot.state.Load()).String()),
-		)
-	}
 }
 
 func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
@@ -210,7 +163,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		version:           "1.0.0",
 		currentTasks:      make(map[string]struct{}),
 		activeLeases:      make(map[*Heartbeat]*activeLease),
-		idleSlots:         make(chan *workerSlot, maxConcurrency),
+		workerQueue:       make(chan *worker, maxConcurrency),
 		ShutdownCh:        make(chan struct{}, 1),
 		ingestionTaskSvc:  servicepkg.NewIngestionTaskService(),
 		docState:          newDocStateUpdater(),
@@ -277,27 +230,25 @@ func (e *Ingestor) start() error {
 	return nil
 }
 
-// consumeLoop is the slot dispatcher for tasks.RAGFLOW. It starts a Pull only
-// for concrete workers that are blocked on their private inbox. An already
-// executing worker cannot register another slot, so it cannot prefetch work.
+// consumeLoop is the worker dispatcher for tasks.RAGFLOW. It starts a Pull only
+// for concrete workers that are waiting in workerQueue. An executing worker
+// cannot register in workerQueue until its task completes, preventing work prefetch.
 func (e *Ingestor) consumeLoop() {
 	defer e.dispatcherWg.Done()
 	msgQueueEngine := engine.GetMessageQueueEngine()
 	for {
-		var firstSlot *workerSlot
+		var firstWorker *worker
 		select {
 		case <-e.dispatchCtx.Done():
 			return
-		case firstSlot = <-e.idleSlots:
-			e.markSlotReserved(firstSlot)
+		case firstWorker = <-e.workerQueue:
 		}
 
-		slots := []*workerSlot{firstSlot}
+		workers := []*worker{firstWorker}
 		for {
 			select {
-			case slot := <-e.idleSlots:
-				e.markSlotReserved(slot)
-				slots = append(slots, slot)
+			case w := <-e.workerQueue:
+				workers = append(workers, w)
 			default:
 				goto startPull
 			}
@@ -305,25 +256,25 @@ func (e *Ingestor) consumeLoop() {
 
 	startPull:
 		if e.dispatchCtx.Err() != nil {
-			e.returnIdleSlots(slots)
+			e.returnWorkers(workers)
 			return
 		}
 		e.pullWg.Add(1)
-		go e.consumePullBatch(msgQueueEngine, slots)
+		go e.consumePullBatch(msgQueueEngine, workers)
 	}
 }
 
-func (e *Ingestor) consumePullBatch(messageQueueEngine engine.MessageQueue, slots []*workerSlot) {
+func (e *Ingestor) consumePullBatch(messageQueueEngine engine.MessageQueue, workers []*worker) {
 	defer e.pullWg.Done()
 
 	pullStart := time.Now()
 	pullCtx, cancel := context.WithTimeout(e.dispatchCtx, taskPullRequestTimeout)
 	defer cancel()
-	stream, err := messageQueueEngine.PullTaskStream(pullCtx, len(slots))
+	stream, err := messageQueueEngine.PullTaskStream(pullCtx, len(workers))
 	if err != nil {
 		e.logPullError(err)
 		e.waitAfterPullError()
-		e.returnIdleSlots(slots)
+		e.returnWorkers(workers)
 		return
 	}
 
@@ -338,21 +289,20 @@ func (e *Ingestor) consumePullBatch(messageQueueEngine engine.MessageQueue, slot
 				zap.Duration("pull_first_handle_latency", latency),
 			)
 		}
-		if matched == len(slots) {
+		if matched == len(workers) {
 			break
 		}
-		targetSlot := slots[matched]
-		e.markSlotHandling(targetSlot)
+		targetWorker := workers[matched]
 		select {
-		case targetSlot.inbox <- handle:
+		case targetWorker.inbox <- handle:
 			matched++
 			handoffDuration := time.Since(recvTime)
-			common.Debug(fmt.Sprintf("Handed off handle to worker slot %d in %v", targetSlot.id, handoffDuration),
-				zap.Int32("slot_id", targetSlot.id),
+			common.Debug(fmt.Sprintf("Handed off handle to worker %d in %v", targetWorker.id, handoffDuration),
+				zap.Int32("worker_id", targetWorker.id),
 				zap.Duration("handoff_duration", handoffDuration),
 			)
 		case <-e.dispatchCtx.Done():
-			e.returnIdleSlots(slots[matched:])
+			e.returnWorkers(workers[matched:])
 			return
 		}
 	}
@@ -360,7 +310,7 @@ func (e *Ingestor) consumePullBatch(messageQueueEngine engine.MessageQueue, slot
 		e.logPullError(err)
 		e.waitAfterPullError()
 	}
-	e.returnIdleSlots(slots[matched:])
+	e.returnWorkers(workers[matched:])
 }
 
 func (e *Ingestor) logPullError(err error) {
@@ -377,11 +327,10 @@ func (e *Ingestor) waitAfterPullError() {
 	}
 }
 
-func (e *Ingestor) returnIdleSlots(slots []*workerSlot) {
-	for _, slot := range slots {
-		e.markSlotIdle(slot)
+func (e *Ingestor) returnWorkers(workers []*worker) {
+	for _, w := range workers {
 		select {
-		case e.idleSlots <- slot:
+		case e.workerQueue <- w:
 		case <-e.dispatchCtx.Done():
 			return
 		}
@@ -633,28 +582,27 @@ func (e *Ingestor) startWorkerPool() {
 	e.workerOnce.Do(func() {
 		for i := int32(0); i < e.maxConcurrency; i++ {
 			e.workerWg.Add(1)
-			slot := &workerSlot{id: i, inbox: make(chan common.TaskHandle)}
-			go e.workerLoop(slot)
+			w := &worker{id: i, inbox: make(chan common.TaskHandle)}
+			go e.workerLoop(w)
 		}
 		common.Info(fmt.Sprintf("Worker pool started with %d workers", e.maxConcurrency))
 	})
 }
 
-func (e *Ingestor) workerLoop(slot *workerSlot) {
+func (e *Ingestor) workerLoop(w *worker) {
 	defer e.workerWg.Done()
 	defer e.activeWorkers.Add(-1)
 	e.activeWorkers.Add(1)
-	common.Info(fmt.Sprintf("Worker %d started", slot.id))
+	common.Info(fmt.Sprintf("Worker %d started", w.id))
 	for {
-		e.markSlotIdle(slot)
 		select {
-		case e.idleSlots <- slot:
+		case e.workerQueue <- w:
 		case <-e.dispatchCtx.Done():
 			return
 		}
 
 		select {
-		case handle := <-slot.inbox:
+		case handle := <-w.inbox:
 			e.handleAndExecute(handle)
 		case <-e.dispatchCtx.Done():
 			return
@@ -1250,7 +1198,7 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 	}
 }
 
-// Stop first stops slot registration and Pull batches, then cancels execution
+// Stop first stops worker registration and Pull batches, then cancels execution
 // after no goroutine can add another Pull to pullWg. The caller's deadline
 // bounds the wait for non-cooperative task execution.
 func (e *Ingestor) Stop(ctx context.Context) {

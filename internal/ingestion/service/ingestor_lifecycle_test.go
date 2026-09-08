@@ -147,8 +147,8 @@ func TestStop_TimesOutWhenWorkerStuck(t *testing.T) {
 		t.Fatalf("set task RUNNING: %v", err)
 	}
 
-	slot := <-ingestor.idleSlots
-	slot.inbox <- &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
+	w := <-ingestor.workerQueue
+	w.inbox <- &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
 
 	select {
 	case <-started:
@@ -201,8 +201,8 @@ func TestStopDeadlineStopsStuckWorkerHeartbeat(t *testing.T) {
 	}
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
-	slot := <-ingestor.idleSlots
-	slot.inbox <- handle
+	w := <-ingestor.workerQueue
+	w.inbox <- handle
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):
@@ -255,8 +255,8 @@ func TestStopDeadlineLeavesStuckMemoryHandleUnsettled(t *testing.T) {
 		TaskType: common.TaskTypeMemory,
 		Payload:  []byte(`{}`),
 	}}
-	slot := <-ingestor.idleSlots
-	slot.inbox <- handle
+	w := <-ingestor.workerQueue
+	w.inbox <- handle
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):

@@ -343,50 +343,6 @@ func TestHandleAndExecute_SlowAdmissionHeartbeatsUnderLeaseProtection(t *testing
 	}
 }
 
-// TestSlotStateTransitions verifies the workerSlot state transitions between Idle, Reserved, and Handling.
-func TestSlotStateTransitions(t *testing.T) {
-	const concurrency int32 = 2
-	ingestor := newUnitIngestor("test-slot-transitions", concurrency, []string{"pdf"})
-	ingestor.startWorkerPool()
-
-	// Wait for workers to start and register idle
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && ingestor.activeWorkers.Load() < concurrency {
-		time.Sleep(time.Millisecond)
-	}
-
-	// Drain one slot (simulating dispatcher reserve)
-	var slot *workerSlot
-	select {
-	case slot = <-ingestor.idleSlots:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for worker slot to register idle")
-	}
-	if SlotState(slot.state.Load()) != SlotStateIdle {
-		t.Fatalf("initial slot state = %v, want Idle", SlotState(slot.state.Load()))
-	}
-
-	ingestor.markSlotReserved(slot)
-	if SlotState(slot.state.Load()) != SlotStateReserved {
-		t.Fatalf("state after reserve = %v, want Reserved", SlotState(slot.state.Load()))
-	}
-
-	// Move to handling
-	ingestor.markSlotHandling(slot)
-	if SlotState(slot.state.Load()) != SlotStateHandling {
-		t.Fatalf("state after handling = %v, want Handling", SlotState(slot.state.Load()))
-	}
-
-	// Return to idle
-	ingestor.markSlotIdle(slot)
-	if SlotState(slot.state.Load()) != SlotStateIdle {
-		t.Fatalf("state after return = %v, want Idle", SlotState(slot.state.Load()))
-	}
-
-	ingestor.dispatchCancel()
-	ingestor.workerWg.Wait()
-}
-
 // TestSlotDispatcher_WaitAfterPullErrorCancelsCleanly verifies that waitAfterPullError
 // unblocks promptly when dispatch context is cancelled, without hanging on the sleep.
 func TestSlotDispatcher_WaitAfterPullErrorCancelsCleanly(t *testing.T) {

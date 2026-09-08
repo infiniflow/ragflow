@@ -109,24 +109,24 @@ func TestSlotDispatcherStartsNewPullWhileEarlierPullWaits(t *testing.T) {
 		ingestor.pullWg.Wait()
 	})
 
-	ingestor.idleSlots <- &workerSlot{id: 1, inbox: make(chan common.TaskHandle)}
+	ingestor.workerQueue <- &worker{id: 1, inbox: make(chan common.TaskHandle)}
 	select {
 	case max := <-queue.calls:
 		if max != 1 {
 			t.Fatalf("first Pull max = %d, want 1", max)
 		}
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("first idle slot did not start Pull(1)")
+		t.Fatal("first idle worker did not start Pull(1)")
 	}
 
-	ingestor.idleSlots <- &workerSlot{id: 2, inbox: make(chan common.TaskHandle)}
+	ingestor.workerQueue <- &worker{id: 2, inbox: make(chan common.TaskHandle)}
 	select {
 	case max := <-queue.calls:
 		if max != 1 {
 			t.Fatalf("second Pull max = %d, want 1", max)
 		}
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("new idle slot waited for the earlier Pull to expire")
+		t.Fatal("new idle worker waited for the earlier Pull to expire")
 	}
 }
 
@@ -144,8 +144,8 @@ func TestSlotDispatcherBatchesSlotsAlreadyIdleInSameTurn(t *testing.T) {
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousQueue) })
 
 	ingestor := newUnitIngestor("test-batch-visible-slots", 2, nil)
-	ingestor.idleSlots <- &workerSlot{id: 1, inbox: make(chan common.TaskHandle)}
-	ingestor.idleSlots <- &workerSlot{id: 2, inbox: make(chan common.TaskHandle)}
+	ingestor.workerQueue <- &worker{id: 1, inbox: make(chan common.TaskHandle)}
+	ingestor.workerQueue <- &worker{id: 2, inbox: make(chan common.TaskHandle)}
 	ingestor.dispatcherWg.Add(1)
 	go ingestor.consumeLoop()
 	t.Cleanup(func() {
@@ -157,10 +157,10 @@ func TestSlotDispatcherBatchesSlotsAlreadyIdleInSameTurn(t *testing.T) {
 	select {
 	case max := <-queue.calls:
 		if max != 2 {
-			t.Fatalf("Pull max = %d, want 2 for the two visible slots", max)
+			t.Fatalf("Pull max = %d, want 2 for the two visible workers", max)
 		}
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("visible idle slots did not start a Pull")
+		t.Fatal("visible workers did not start a Pull")
 	}
 }
 
@@ -178,10 +178,10 @@ func TestSlotDispatcherHandsOffFirstStreamMessageImmediately(t *testing.T) {
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousQueue) })
 
 	ingestor := newUnitIngestor("test-first-stream-handoff", 2, nil)
-	firstSlot := &workerSlot{id: 1, inbox: make(chan common.TaskHandle)}
-	secondSlot := &workerSlot{id: 2, inbox: make(chan common.TaskHandle)}
-	ingestor.idleSlots <- firstSlot
-	ingestor.idleSlots <- secondSlot
+	firstWorker := &worker{id: 1, inbox: make(chan common.TaskHandle)}
+	secondWorker := &worker{id: 2, inbox: make(chan common.TaskHandle)}
+	ingestor.workerQueue <- firstWorker
+	ingestor.workerQueue <- secondWorker
 	ingestor.dispatcherWg.Add(1)
 	go ingestor.consumeLoop()
 	t.Cleanup(func() {
@@ -196,13 +196,13 @@ func TestSlotDispatcherHandsOffFirstStreamMessageImmediately(t *testing.T) {
 			t.Fatalf("Pull max = %d, want 2", max)
 		}
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("slots did not start Pull(2)")
+		t.Fatal("workers did not start Pull(2)")
 	}
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "first-stream-message"}}
 	go func() { stream.messages <- handle }()
 	select {
-	case received := <-firstSlot.inbox:
+	case received := <-firstWorker.inbox:
 		if received != handle {
 			t.Fatalf("handed-off handle = %v, want first stream handle", received)
 		}
@@ -221,13 +221,11 @@ func TestPullBatchReturnsOnlyUnmatchedSlots(t *testing.T) {
 		calls:   make(chan int, 1),
 	}
 	ingestor := newUnitIngestor("test-partial-pull", 2, nil)
-	firstSlot := &workerSlot{id: 1, inbox: make(chan common.TaskHandle)}
-	secondSlot := &workerSlot{id: 2, inbox: make(chan common.TaskHandle)}
-	ingestor.markSlotReserved(firstSlot)
-	ingestor.markSlotReserved(secondSlot)
+	firstWorker := &worker{id: 1, inbox: make(chan common.TaskHandle)}
+	secondWorker := &worker{id: 2, inbox: make(chan common.TaskHandle)}
 
 	ingestor.pullWg.Add(1)
-	go ingestor.consumePullBatch(queue, []*workerSlot{firstSlot, secondSlot})
+	go ingestor.consumePullBatch(queue, []*worker{firstWorker, secondWorker})
 	t.Cleanup(func() {
 		ingestor.dispatchCancel()
 		ingestor.pullWg.Wait()
@@ -245,7 +243,7 @@ func TestPullBatchReturnsOnlyUnmatchedSlots(t *testing.T) {
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "partial-pull"}}
 	go func() { stream.messages <- handle }()
 	select {
-	case received := <-firstSlot.inbox:
+	case received := <-firstWorker.inbox:
 		if received != handle {
 			t.Fatalf("handed-off handle = %v, want partial-pull handle", received)
 		}
@@ -256,16 +254,16 @@ func TestPullBatchReturnsOnlyUnmatchedSlots(t *testing.T) {
 	ingestor.pullWg.Wait()
 
 	select {
-	case returned := <-ingestor.idleSlots:
-		if returned != secondSlot {
-			t.Fatalf("returned slot = %d, want unmatched slot %d", returned.id, secondSlot.id)
+	case returned := <-ingestor.workerQueue:
+		if returned != secondWorker {
+			t.Fatalf("returned worker = %d, want unmatched worker %d", returned.id, secondWorker.id)
 		}
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("partial Pull did not return its unmatched slot")
+		t.Fatal("partial Pull did not return its unmatched worker")
 	}
 	select {
-	case duplicate := <-ingestor.idleSlots:
-		t.Fatalf("unexpected duplicate slot registration: %d", duplicate.id)
+	case duplicate := <-ingestor.workerQueue:
+		t.Fatalf("unexpected duplicate worker registration: %d", duplicate.id)
 	default:
 	}
 }
@@ -281,11 +279,10 @@ func TestPullBatchCancellationLeavesReservedHandleUnsettled(t *testing.T) {
 		calls:   make(chan int, 1),
 	}
 	ingestor := newUnitIngestor("test-cancel-reserved-handle", 1, nil)
-	slot := &workerSlot{id: 1, inbox: make(chan common.TaskHandle)}
-	ingestor.markSlotReserved(slot)
+	w := &worker{id: 1, inbox: make(chan common.TaskHandle)}
 
 	ingestor.pullWg.Add(1)
-	go ingestor.consumePullBatch(queue, []*workerSlot{slot})
+	go ingestor.consumePullBatch(queue, []*worker{w})
 	t.Cleanup(func() {
 		ingestor.dispatchCancel()
 		ingestor.pullWg.Wait()
@@ -324,11 +321,8 @@ func TestPullBatchCancellationLeavesReservedHandleUnsettled(t *testing.T) {
 		t.Fatalf("reserved handle settlement = %d Ack / %d Nack, want none", handle.acks.Load(), handle.nacks.Load())
 	}
 	select {
-	case received := <-slot.inbox:
+	case received := <-w.inbox:
 		t.Fatalf("reserved handle was handed off after cancellation: %v", received)
 	default:
-	}
-	if SlotState(slot.state.Load()) != SlotStateIdle {
-		t.Fatalf("cancelled slot state = %v, want Idle", SlotState(slot.state.Load()))
 	}
 }
