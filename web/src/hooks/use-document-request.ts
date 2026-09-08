@@ -233,9 +233,6 @@ export const useFetchDocumentList = (loop = true) => {
         },
       );
       if (ret.data.code === 0) {
-        queryClient.invalidateQueries({
-          queryKey: DocumentKeys.allFilters(),
-        });
         return ret.data.data;
       }
 
@@ -310,6 +307,14 @@ export const useFetchDocumentsByIds = (
 };
 
 // get document filter
+const EmptyDocumentFilter: IDocumentInfoFilter = {
+  run_status: {},
+  suffix: {},
+  metadata: {},
+};
+
+const DocumentFilterStaleTimeMs = 30_000;
+
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
   onOpenChange: (open: boolean) => void;
@@ -318,10 +323,16 @@ export const useGetDocumentFilter = (): {
   const { searchString } = useHandleSearchChange();
   const { id } = useParams();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const [open, setOpen] = useState<number>(0);
+  // The counts are only rendered inside the filter popover, and the backend
+  // builds them by reading the metadata of every document in the dataset.
+  // Fetch them when the popover is first opened and refresh them on later
+  // opens, instead of on every visit to the file list.
+  const [filterOpened, setFilterOpened] = useState(false);
   const datasetId = knowledgeId || id;
-  const { data } = useQuery({
-    queryKey: DocumentKeys.filter(debouncedSearchString, knowledgeId),
+  const { data, dataUpdatedAt, isFetching, refetch } = useQuery({
+    queryKey: DocumentKeys.filter(debouncedSearchString, datasetId),
+    enabled: !!datasetId && filterOpened,
+    staleTime: DocumentFilterStaleTimeMs,
     queryFn: async () => {
       if (!datasetId) {
         return;
@@ -332,18 +343,26 @@ export const useGetDocumentFilter = (): {
       }
     },
   });
-  const handleOpenChange = (e: boolean) => {
-    if (e) {
-      const currentOpen = open + 1;
-      setOpen(currentOpen);
-    }
-  };
-  return {
-    filter: data?.filter || {
-      run_status: {},
-      suffix: {},
-      metadata: {},
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        return;
+      }
+      if (filterOpened) {
+        if (
+          !isFetching &&
+          Date.now() - dataUpdatedAt >= DocumentFilterStaleTimeMs
+        ) {
+          refetch();
+        }
+        return;
+      }
+      setFilterOpened(true);
     },
+    [dataUpdatedAt, filterOpened, isFetching, refetch],
+  );
+  return {
+    filter: data?.filter ?? EmptyDocumentFilter,
     onOpenChange: handleOpenChange,
   };
 };

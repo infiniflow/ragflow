@@ -34,8 +34,8 @@ export const DocumentKeys = {
   list: (searchString: string, pagination: unknown, filter: unknown) =>
     [...DocumentKeys.all(), searchString, pagination, filter] as const,
   allFilters: () => [DocumentApiAction.FetchDocumentFilter] as const,
-  filter: (searchString: string, knowledgeId?: string) =>
-    [...DocumentKeys.allFilters(), searchString, knowledgeId] as const,
+  filter: (searchString: string, datasetId?: string) =>
+    [...DocumentKeys.allFilters(), searchString, datasetId] as const,
   thumbnails: (ids: string[]) =>
     [DocumentApiAction.FetchDocumentThumbnails, ids] as const,
   byIds: (ids: string[]) =>

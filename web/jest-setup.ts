@@ -13,6 +13,22 @@ if (typeof globalThis.TextEncoder === 'undefined') {
   Object.assign(globalThis, { TextDecoder, TextEncoder });
 }
 
+// jsdom does not provide the WHATWG stream classes that eventsource-parser
+// touches at module scope
+if (typeof globalThis.TransformStream === 'undefined') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const {
+    ReadableStream,
+    TransformStream,
+    WritableStream,
+  } = require('node:stream/web');
+  Object.assign(globalThis, {
+    ReadableStream,
+    TransformStream,
+    WritableStream,
+  });
+}
+
 // Vite's import.meta.glob is rewritten to this stub by jest-esbuild-transformer.cjs
 (globalThis as Record<string, unknown>).jestImportMetaGlob = () => ({});
 
