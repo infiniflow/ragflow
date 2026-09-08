@@ -788,6 +788,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dialogueExamplesTitle: 'view',
       methodEmpty:
         'This will display a visual explanation of the dataset categories',
+      imageLoadFailed: 'Failed to load image',
       audio: `<p>Supported file formats are <b>WAV, MP3, AAC, FLAC, OGG</b> and other common audio formats.</p>
 <p>This method transcribes audio files into text using a speech-to-text model.</p>`,
       email: `<p>Supported file formats are <b>EML</b> and <b>MSG</b>.</p>
