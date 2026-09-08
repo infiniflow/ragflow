@@ -1477,7 +1477,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 
 	ctx, cancel := context.WithTimeout(ctx, 600*time.Second)
 	defer cancel()
-	if _, err = s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID); err != nil {
+	if _, err = s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID, datasetLanguageOf(kb)); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
 	}
 
@@ -1865,8 +1865,9 @@ func releaseChunkImageLock(key string) {
 }
 
 // datasetLanguageOf is the dataset's language, or "" when unset. A query is
-// folded the way its dataset was indexed, so a search over one dataset has to
-// carry it.
+// folded the way its dataset was indexed, and on engines whose fulltext
+// analyzer is fixed when the chunk store is created a write that may create it
+// has to carry the language too.
 func datasetLanguageOf(kb *entity.Knowledgebase) string {
 	if kb == nil || kb.Language == nil {
 		return ""

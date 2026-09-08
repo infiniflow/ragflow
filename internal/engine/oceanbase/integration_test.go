@@ -66,7 +66,7 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 		"content_ltks": "hello oceanbase", "important_kwd": []string{"hello"},
 		"metadata":     map[string]interface{}{"_group_id": "group-1", "custom": "json-value"},
 		"custom_field": "kept-in-extra", "q_2_vec": []float64{0.25, 0.5},
-	}}, tableName, datasetID); err != nil {
+	}}, tableName, datasetID, ""); err != nil {
 		t.Fatal(err)
 	}
 	row, err := engine.GetChunk(ctx, tableName, "chunk-1", []string{datasetID})
@@ -133,7 +133,7 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 	if _, err := engine.InsertChunks(ctx, []map[string]interface{}{
 		{"id": memoryA + "_1", "message_id": "1", "memory_id": memoryA, "content": "first", "content_embed": []float64{0.1, 0.2}},
 		{"id": memoryB + "_1", "message_id": "1", "memory_id": memoryB, "content": "second", "content_embed": []float64{0.3, 0.4}},
-	}, memoryTable, memoryA); err != nil {
+	}, memoryTable, memoryA, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := engine.DropChunkStore(ctx, memoryTable, memoryA); err != nil {

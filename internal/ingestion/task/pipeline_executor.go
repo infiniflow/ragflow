@@ -106,7 +106,7 @@ func validateTaskContext(taskCtx *TaskContext) error {
 // an engine that implements it can write chunks without waiting for an index
 // refresh.
 type noRefreshChunkInserter interface {
-	InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
+	InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error)
 }
 
 // insertChunksForIngestion writes non-final chunks through the engine's
@@ -116,21 +116,24 @@ type noRefreshChunkInserter interface {
 // Refreshing every batch adds unnecessary latency. The writer uses the regular
 // inserter for its final batch, so all preceding batches become searchable
 // before the document task is acknowledged and its completion event is sent.
-func insertChunksForIngestion(eng engine.DocEngine) InsertFunc {
+//
+// The first write creates the chunk store, and on Infinity that fixes the
+// fulltext analyzer, so the dataset language has to travel with it.
+func insertChunksForIngestion(eng engine.DocEngine, language string) InsertFunc {
 	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
 		if bulk, ok := eng.(noRefreshChunkInserter); ok {
-			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID)
+			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID, language)
 		}
-		return eng.InsertChunks(ctx, chunks, baseName, datasetID)
+		return eng.InsertChunks(ctx, chunks, baseName, datasetID, language)
 	}
 }
 
 // insertFinalChunksForIngestion waits for the index refresh before returning.
 // The final write makes every preceding no-refresh batch searchable before the
 // document task is acknowledged and its completion event is published.
-func insertFinalChunksForIngestion(eng engine.DocEngine) InsertFunc {
+func insertFinalChunksForIngestion(eng engine.DocEngine, language string) InsertFunc {
 	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
-		return eng.InsertChunks(ctx, chunks, baseName, datasetID)
+		return eng.InsertChunks(ctx, chunks, baseName, datasetID, language)
 	}
 }
 
@@ -150,11 +153,11 @@ func NewPipelineExecutor(
 		canvasID:    canvasID,
 		docBulkSize: docBulkSize,
 		indexWriter: newChunkIndexWriter(
-			insertChunksForIngestion(engine.Get()),
+			insertChunksForIngestion(engine.Get(), datasetLanguage(taskCtx)),
 			fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID),
 			taskCtx.Doc.KbID,
 			docBulkSize,
-		).withFinalInsertFunc(insertFinalChunksForIngestion(engine.Get())),
+		).withFinalInsertFunc(insertFinalChunksForIngestion(engine.Get(), datasetLanguage(taskCtx))),
 		deleteChunksFunc: func(ctx context.Context, condition map[string]any, baseName, datasetID string) (int64, error) {
 			return engine.Get().DeleteChunks(ctx, condition, baseName, datasetID)
 		},
@@ -1267,4 +1270,14 @@ func injectDebugChunkCap(inputs map[string]any) map[string]any {
 		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
 	}
 	return inputs
+}
+
+// datasetLanguage is the language of the dataset being ingested, or "" when it
+// is unset. It selects the fulltext analyzer on engines that fix it when the
+// chunk store is created.
+func datasetLanguage(taskCtx *TaskContext) string {
+	if taskCtx == nil || taskCtx.KB.Language == nil {
+		return ""
+	}
+	return *taskCtx.KB.Language
 }
