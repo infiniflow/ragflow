@@ -399,8 +399,26 @@ def test_resolve_page_url_rejects_embedded_credentials():
             AUTHOR,
             "https://user:password@eva.example.com/project/Document/BR-42",
         )
-
     assert exc_info.value.code == "INVALID_EVA_PAGE_URL"
+
+
+def test_read_connected_page_returns_current_markdown_and_refreshes_binding():
+    client = FakeEvaClient()
+    binding = {
+        "connector_id": CONNECTOR.id,
+        "document_id": client.document["id"],
+        "page_url": client.document["web_url"],
+        "status": "CONNECTED",
+    }
+
+    with patch.object(EvaDocumentChangeService, "_connector", return_value=(CONNECTOR, client)):
+        refreshed, markdown = EvaDocumentChangeService.read_connected_page(AUTHOR, binding)
+
+    assert "Бизнес-требования" in markdown
+    assert "Старый текст." in markdown
+    assert refreshed["document_name"] == client.document["name"]
+    assert refreshed["remote_version"] == client.document["version"]
+    assert refreshed["remote_content_hash"].startswith("sha256:")
 
 
 def test_full_eva_change_flow_keeps_publish_as_separate_action(database):

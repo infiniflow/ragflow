@@ -1,44 +1,44 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-09-07T17:08:16.343992+00:00",
-  "head": "51594df6232e44edbe0edc7ae72b4edddeb61383",
+  "captured_at": "2026-09-08T08:30:27.394358+00:00",
+  "head": "f019c812ded5b8e9c127dfe824276d1dbf5179ad",
   "upstream_base": "cb93883f3f8c975eecb2fed81210effeb3bdb06f",
   "branch": "main",
   "shallow": true,
-  "snapshot_sha256": "aa8b820cd5a03bcdf35a1418b590bef6a9b789f0bc93625f46c24e766d094533",
+  "snapshot_sha256": "674edfd31b2f31d9d81899b216a9799f97a15d9df5e12dd47e3658dc19659a20",
   "scope": "All tracked deltas from the content baseline, staged/unstaged changes and nonignored untracked files; generated outputs explicitly listed without recursive digest",
   "rename_policy": "Renames represented by explicit delete/add paths; no paths discarded by similarity heuristics",
   "counts": {
     "base_files": 4441,
-    "head_files": 4778,
-    "index_files": 4778,
-    "committed_delta": 681,
+    "head_files": 4779,
+    "index_files": 4779,
+    "committed_delta": 682,
     "staged_delta": 0,
-    "unstaged_delta": 30,
-    "untracked": 3,
-    "inventory_records": 684,
+    "unstaged_delta": 48,
+    "untracked": 22,
+    "inventory_records": 706,
     "by_origin": {
-      "core_change": 344,
-      "extension": 340
+      "core_change": 346,
+      "extension": 360
     },
     "by_module": {
-      "quality-governance": 117,
+      "quality-governance": 129,
       "observability": 26,
-      "access-policy": 42,
-      "business-documents": 72,
-      "eva-integration": 17,
-      "agent-runtime": 14,
+      "access-policy": 44,
+      "business-documents": 71,
+      "eva-integration": 18,
+      "agent-runtime": 15,
       "openmetadata": 18,
-      "mrz-assets": 6,
+      "mrz-assets": 7,
       "models-runtime": 12,
-      "api-files-chat": 18,
-      "ingestion-connectors": 17,
-      "persistence": 5,
+      "api-files-chat": 20,
+      "ingestion-connectors": 19,
+      "persistence": 6,
       "deployment": 34,
-      "frontend-foundation": 215,
+      "frontend-foundation": 216,
       "asr": 71
     },
-    "unchanged_upstream_index_paths": 4097,
+    "unchanged_upstream_index_paths": 4095,
     "unclassified": 0
   },
   "records": [
@@ -315,13 +315,13 @@
       },
       "committed_change": "M",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "M",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 11979,
-        "sha256": "9573e05896f794b388208fbf95be48713de5361e6225e220ee3e15886cc6b500"
+        "bytes": 13280,
+        "sha256": "e2dd42e43ecf2cef48f999261bb997d872bcd4368490166aed2a80268a83b67b"
       }
     },
     {
@@ -502,11 +502,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "fcb48e41e6c0cfde40ef2a9ec1ddaaede4069a87"
+        "oid": "25e3a4447e2d421f2321ea0396d2e9ed497d2edc"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "fcb48e41e6c0cfde40ef2a9ec1ddaaede4069a87"
+        "oid": "25e3a4447e2d421f2321ea0396d2e9ed497d2edc"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -515,8 +515,8 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 16020,
-        "sha256": "e7e62d3229ecd47e557f9c11f6fa689041064754f0e21c02bbca395088ee05ec"
+        "bytes": 16256,
+        "sha256": "5a45bdc263fdbb516c71c870d77384a0a07886a970b18f93014600cbd2f0fdf4"
       }
     },
     {
@@ -552,11 +552,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "2a06535848d0f31c30c57399cb767006afb90713"
+        "oid": "d876dc4be6bee9a98647b90bc3b8522df491f095"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "2a06535848d0f31c30c57399cb767006afb90713"
+        "oid": "d876dc4be6bee9a98647b90bc3b8522df491f095"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -565,8 +565,8 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 7323,
-        "sha256": "0b990c93170a46e19197393c9f7f4f99f22ba7acfd67f9ed7faa9300bb9de9a8"
+        "bytes": 7529,
+        "sha256": "bb98bdb6df8f36f3da1024313f60805f7f08c010c2494fdad66fdfeba43dce74"
       }
     },
     {
@@ -674,17 +674,24 @@
       "module": "business-documents",
       "origin": "extension",
       "base_entry": null,
-      "head_entry": null,
-      "index_entry": null,
-      "committed_change": null,
+      "head_entry": {
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "c79e08595b64d9c78c4172c97d0f692efd00e98e"
+      },
+      "index_entry": {
+        "mode": "100644",
+        "oid": "c79e08595b64d9c78c4172c97d0f692efd00e98e"
+      },
+      "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
-      "untracked": true,
+      "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 1826,
-        "sha256": "73fb96394c6dbefa6a22d7d479d907f264a5e90e1c1d7d2f3891cc83cbe3f1bf"
+        "bytes": 1757,
+        "sha256": "340ba4b5f3e7f0d86d5382f5d8936ae3b2aeea450a52897e21be0cb368bfa33e"
       }
     },
     {
@@ -953,13 +960,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 2894,
-        "sha256": "39dd33729289646210f9dad1ec3fe15a25cec91ddaa5a4ffd695b4235e57efa4"
+        "bytes": 3162,
+        "sha256": "50f8637f4d8896698c320f0ef820e7dc3ec58f361e247f30f3a1a498fc1f33c2"
       }
     },
     {
@@ -1003,13 +1010,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 1352,
-        "sha256": "484efe435bde427e34bc8246cb1509a4803af532437cdc19ff661a191c5bc38c"
+        "bytes": 1508,
+        "sha256": "6411ef1dc7a9c9e60986258544bb532dbc40d1b562bfb1bd60a57b567c4771f5"
       }
     },
     {
@@ -1240,13 +1247,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 37399,
-        "sha256": "c86eab9dab62a8dd01ef716db76ba8dfd6334717f3b27436f925f0278e2a36f3"
+        "bytes": 47622,
+        "sha256": "e21dfe14eb5ccf89f2ffb4e0c741d04a2369298b85b704f900d1e7e06ab81deb"
       }
     },
     {
@@ -1257,11 +1264,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "12d6132bde079a5e14feb9d562a6c5bbac34ee1a"
+        "oid": "7e6bac577365b80fa8ad9d6ab3fae2dbdbb15e00"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "12d6132bde079a5e14feb9d562a6c5bbac34ee1a"
+        "oid": "7e6bac577365b80fa8ad9d6ab3fae2dbdbb15e00"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -1270,8 +1277,8 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 15541,
-        "sha256": "3c154a52a2712679b60f6f4bec34302cb778826f51a1f35eb11cdbdd24a71ee3"
+        "bytes": 20010,
+        "sha256": "030b2642a640591de42e5c57a1f10c5397a13e84a5061dcfc4611b2b36364676"
       }
     },
     {
@@ -1365,13 +1372,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 53642,
-        "sha256": "88a88de6991b7cd05bc8b4af6055df979bf6c54658298c613f90adc584aeb202"
+        "bytes": 55337,
+        "sha256": "a18221e5399f5b9919213fb6d2b0f9abbb7a1150e1e24234f753a642520bd122"
       }
     },
     {
@@ -1432,11 +1439,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "c4eef4a965a788a6f86e772870902388214b8409"
+        "oid": "5923fac82111b2f57df70a1e8363e55be30fbea9"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "c4eef4a965a788a6f86e772870902388214b8409"
+        "oid": "5923fac82111b2f57df70a1e8363e55be30fbea9"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -1445,8 +1452,8 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 147460,
-        "sha256": "cf3ca1413546e6f853f927451f9a1f19306153dc8da31e8241c670cbe3fcfad6"
+        "bytes": 153111,
+        "sha256": "b8967236ac44d7c2ffb46bda68e9ac3a8046fcb5995aa8a585b227768d61460d"
       }
     },
     {
@@ -1569,15 +1576,15 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "8848014a256a1bd21b8195d17e718404ff2cefdd"
+        "oid": "00c7fb8356e0e982a6133fbf655a3febf9e45ca6"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "8848014a256a1bd21b8195d17e718404ff2cefdd"
+        "oid": "00c7fb8356e0e982a6133fbf655a3febf9e45ca6"
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": "M",
+      "unstaged_change": null,
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
@@ -2100,15 +2107,15 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "822e02c3d62db42b85774524f11691021f8963e4"
+        "oid": "1399fedc883b846693c5c8f220edf6e949308acf"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "822e02c3d62db42b85774524f11691021f8963e4"
+        "oid": "1399fedc883b846693c5c8f220edf6e949308acf"
       },
       "committed_change": "M",
       "staged_change": null,
-      "unstaged_change": "M",
+      "unstaged_change": null,
       "working_change_from_base": "M",
       "untracked": false,
       "working_file": {
@@ -2641,13 +2648,20 @@
       "module": "business-documents",
       "origin": "extension",
       "base_entry": null,
-      "head_entry": null,
-      "index_entry": null,
-      "committed_change": null,
+      "head_entry": {
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "22fef5d9886e0a9f319d92ff649dcd0d5dcd1704"
+      },
+      "index_entry": {
+        "mode": "100644",
+        "oid": "22fef5d9886e0a9f319d92ff649dcd0d5dcd1704"
+      },
+      "committed_change": "A",
       "staged_change": null,
       "unstaged_change": null,
       "working_change_from_base": "A",
-      "untracked": true,
+      "untracked": false,
       "working_file": {
         "present": true,
         "bytes": 16679,
@@ -2659,13 +2673,20 @@
       "module": "business-documents",
       "origin": "extension",
       "base_entry": null,
-      "head_entry": null,
-      "index_entry": null,
-      "committed_change": null,
+      "head_entry": {
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "1cd467385a4bc50e246b3d67cca312d4419f1d3c"
+      },
+      "index_entry": {
+        "mode": "100644",
+        "oid": "1cd467385a4bc50e246b3d67cca312d4419f1d3c"
+      },
+      "committed_change": "A",
       "staged_change": null,
       "unstaged_change": null,
       "working_change_from_base": "A",
-      "untracked": true,
+      "untracked": false,
       "working_file": {
         "present": true,
         "bytes": 1274,
@@ -4131,13 +4152,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 77034,
-        "sha256": "f8f849e70410ccee403d72e8fa74f120a140ea8e21a42f48169007507e97a5ed"
+        "bytes": 77541,
+        "sha256": "cf065d1293d30c4552a8cdc15a3347142dea8a1641c3794a3832b5ab817af7fe"
       }
     },
     {
@@ -4156,13 +4177,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 32102,
-        "sha256": "7b9c78102880424a57e36166133eb180579aeefc3e61f0c7a2204c4dfaff9dcb"
+        "bytes": 37712,
+        "sha256": "9cdf7d8579f2a15464ee48828704d1056e9a50c057d2bd7b4397211a0b0f36d4"
       }
     },
     {
@@ -4181,13 +4202,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 29030,
-        "sha256": "9f725695e66782004a77519759f37711575b4baed994ef024a841dd635fef247"
+        "bytes": 32805,
+        "sha256": "409e92ac106a9563be14029bd0f19196280dffd21bf3d94944eec340e9730188"
       }
     },
     {
@@ -4231,13 +4252,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 9501,
-        "sha256": "cfa46791b35ab0becc4066775838862714dded8bf3b65abf96ec43ee12f5e35f"
+        "bytes": 10834,
+        "sha256": "59f425a7ae5e3bc673e9bff65596b2b8f1cef6819234a718c7520dc89f67bcc4"
       }
     },
     {
@@ -4256,13 +4277,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 39984,
-        "sha256": "35b962951ec65b24fe704820f98223adbc2262a2423eb5fb5dcd0f653ef7b558"
+        "bytes": 40613,
+        "sha256": "c11eab79e35431bf12441cee24f9f4869e8d2c13ca867aa5a5c34162f1db1fdb"
       }
     },
     {
@@ -4331,13 +4352,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 14231,
-        "sha256": "43e74bbffd61f0a66070d2d22937217a952aca6f1127c40aa1ee0e287fcb328d"
+        "bytes": 14225,
+        "sha256": "7610ae348f31d6be0ddeca5a358b4ad4ac80cdbd74320f58482ccc624c6912dc"
       }
     },
     {
@@ -4356,13 +4377,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 24688,
-        "sha256": "a75f628a34cada3e09207fece4aa08f9381e28c12d949b5e333813bb6c8fcce2"
+        "bytes": 38197,
+        "sha256": "5348a1e516e225153342b34415115bd26ddeb93957da12489b5a1ea97e95e87a"
       }
     },
     {
@@ -4381,13 +4402,31 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 1393370,
-        "sha256": "13cb7d5d34f7ad1590747b1aac021e413eeb59494d42697d9b3da0fa0f7cccdc"
+        "bytes": 1402427,
+        "sha256": "65155681c521b24559a4711cb059900fad0d1ffbe083646fff71f352c75ebcc0"
+      }
+    },
+    {
+      "path": "docs/develop/t2-go-build-profiles-ru.md",
+      "module": "quality-governance",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 7727,
+        "sha256": "0afcd7c61e3d8e29aa6fc3e6c2a0fb6c55012ab30b2e7ba5cb3c160740e9ad33"
       }
     },
     {
@@ -4406,13 +4445,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 12978,
-        "sha256": "37ce1be1741825a1dd9d1264c96319de5d8f0f6e0a218000b15517624da71329"
+        "bytes": 30720,
+        "sha256": "616e7bd8010a50575f9dc8f1884212914ce7cf51ca6292a426b4e0dec720c233"
       }
     },
     {
@@ -4560,13 +4599,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 18576,
-        "sha256": "2ac2e8d0df264107277a70af621e719f8e3097229affc358d5c54f640583a5d1"
+        "bytes": 19662,
+        "sha256": "1e330326e279bcd36f7b243987f2357a4a2df918370bbe46aff40fec9903614a"
       }
     },
     {
@@ -5037,11 +5076,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "7d57d6f3291f661e93f63c6647d08079a90dee5b"
+        "oid": "a9526b750f0c6dcd4002ec2f6d13fc3f785aaf32"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "7d57d6f3291f661e93f63c6647d08079a90dee5b"
+        "oid": "a9526b750f0c6dcd4002ec2f6d13fc3f785aaf32"
       },
       "committed_change": "M",
       "staged_change": null,
@@ -5051,7 +5090,7 @@
       "working_file": {
         "present": true,
         "bytes": 11694,
-        "sha256": "59e33f131ec1e564a0cb2cb40e32c6ea4f965117c2bc674c3a98094dc80e06ec"
+        "sha256": "bf63b77c2461505631cbf860759febda968df1cee8edf68b461a21dc3aebe411"
       }
     },
     {
@@ -6106,13 +6145,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 7456,
-        "sha256": "b3aa2b591cfd44b148616b8b37fb264986b812809fd17238a7e605125c6c32fe"
+        "bytes": 8198,
+        "sha256": "24c58d76fe4b87941588e8ca5cd417586a18b63cc0d52bde60634218a8c511cf"
       }
     },
     {
@@ -6581,13 +6620,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 1824,
-        "sha256": "91e73e90e6fad9e8837ce07a514a6e65f9fd0d0f30864527162e2972c9ef70ab"
+        "bytes": 4141,
+        "sha256": "5bd9b9349c85ca1da74d548519e843de77e87f4ce5048bebbadb665baf6ef28a"
       }
     },
     {
@@ -6781,13 +6820,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 5232,
-        "sha256": "56687a00b4e142e128d9fe9478190d81e1c6159f8126758b59a4bd2d8ab21bb6"
+        "bytes": 8722,
+        "sha256": "0c4006811279d43bfa838fa6da0a17e51e9d040eb713c069b958cff049997a7c"
       }
     },
     {
@@ -6831,13 +6870,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 6280,
-        "sha256": "506f7dce00310e11d32c4ffe5636d065ad314b285aab6504ff7b9583ba00034f"
+        "bytes": 7680,
+        "sha256": "fe8087cc01f0d2e08975da0e1e78c68f316634d2175ba94a0af5f1c412ceea85"
       }
     },
     {
@@ -7081,13 +7120,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 8813,
-        "sha256": "adbab811349b5ecda6151479df44cb542651453fae9e5214a5b1349abeb42ee5"
+        "bytes": 11903,
+        "sha256": "fb2a9d9710cca2dec2a87f497649b29f10501a064d62fc5f329eacf94398210f"
       }
     },
     {
@@ -7148,15 +7187,15 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "92f9ff4be201f465cb3f69dce7e980a7bb08f988"
+        "oid": "a133a572af13504628a4d8254daa5faa692eaff2"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "92f9ff4be201f465cb3f69dce7e980a7bb08f988"
+        "oid": "a133a572af13504628a4d8254daa5faa692eaff2"
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": "M",
+      "unstaged_change": null,
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
@@ -7206,13 +7245,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 4470,
-        "sha256": "e864eebb229c96b6baf1589b3d55142cacc070d77782f2daa2d3f092483279c6"
+        "bytes": 5260,
+        "sha256": "a4ca8695364778045d675755d93dc86b17c64e7d522ad608b472c069ace37b80"
       }
     },
     {
@@ -7223,11 +7262,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "a65a1532f867b3030a6306aff98ee4cdb0dfd651"
+        "oid": "aa01386139ca58cc2055a76ada5f92d77648ac0c"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "a65a1532f867b3030a6306aff98ee4cdb0dfd651"
+        "oid": "aa01386139ca58cc2055a76ada5f92d77648ac0c"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -7236,8 +7275,26 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 10056,
-        "sha256": "b43eb3ef1afa81356e8bc1dae0900703cf3d626868e4e3f804365f9809d9e299"
+        "bytes": 10371,
+        "sha256": "f327a980fadc6e025e4edaed6a8dd36a809e6829e32c73217490bada9793d603"
+      }
+    },
+    {
+      "path": "test/integration/fixtures/New-T1LocalFixtures.ps1",
+      "module": "quality-governance",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 2938,
+        "sha256": "245444f76c8c91a9422ebbad57caa370b566d2687ffd4d653351d5c6ce7cce00"
       }
     },
     {
@@ -7391,6 +7448,24 @@
       }
     },
     {
+      "path": "test/integration/test_local_docker_connectors_live.py",
+      "module": "ingestion-connectors",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 8467,
+        "sha256": "40178949a783a31c29c2be6370109b9ec850f8952eee084b64308fd2bed1bcc9"
+      }
+    },
+    {
       "path": "test/integration/test_minio_backup_restore.py",
       "module": "persistence",
       "origin": "extension",
@@ -7416,6 +7491,42 @@
       }
     },
     {
+      "path": "test/integration/test_mrz_document_reader_live.py",
+      "module": "mrz-assets",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 2767,
+        "sha256": "deb9cca914cf0a6847e37e33b63997e93f63fa80415246852af55c07f4a85877"
+      }
+    },
+    {
+      "path": "test/integration/test_postgres_minio_coordinated_restore.py",
+      "module": "persistence",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 10549,
+        "sha256": "4ff7f4129d05c83ffcbcd5391b222a70b13d50d326b303de19db1bfef39cee5e"
+      }
+    },
+    {
       "path": "test/integration/test_previous_release_data_upgrade.py",
       "module": "persistence",
       "origin": "extension",
@@ -7438,6 +7549,24 @@
         "present": true,
         "bytes": 10514,
         "sha256": "103a9409e599afcbb78fed0c8c0712c00fda90449448c8c33de0724765540e86"
+      }
+    },
+    {
+      "path": "test/integration/test_saved_canvas_dsl_live.py",
+      "module": "agent-runtime",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 5414,
+        "sha256": "b94a57e2d67d3deaf05849c08fbe46e08eaad70e6b388a784b3df7272c5fce3a"
       }
     },
     {
@@ -7730,11 +7859,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "10e374c38521fb88a9eb8e567a88ef1c7a7d595b"
+        "oid": "f74b1e9f78103a8d8c5a92be53addaf3d3b81b95"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "10e374c38521fb88a9eb8e567a88ef1c7a7d595b"
+        "oid": "f74b1e9f78103a8d8c5a92be53addaf3d3b81b95"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -7743,8 +7872,8 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 32652,
-        "sha256": "98fdc22c35f7300a17c8c4fba98cf241ff06071ad83d4da5e2088bd6509555ee"
+        "bytes": 34140,
+        "sha256": "b884049ad4ecac362e82400c71221279b91584776a12ac84138b044b48f5b665"
       }
     },
     {
@@ -8365,13 +8494,13 @@
       },
       "committed_change": "M",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "M",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 39348,
-        "sha256": "dc5dee524df778d78e0327e917852ffb02876d491806fbad0a6f5ce5b8ae1a7a"
+        "bytes": 40959,
+        "sha256": "234a3a3987500570fbf5299092fcdd612dae4e68911b084d801f5cd2843b16ac"
       }
     },
     {
@@ -8481,13 +8610,13 @@
       },
       "committed_change": "M",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "M",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 76796,
-        "sha256": "033b4aace8ab68419b0de3f548bd6c0f6a2e2c1bc402b6a516fa199972dac4d7"
+        "bytes": 78282,
+        "sha256": "0960c54072c766c3b435a9957819d2594251e47f3a200f21343231cb6dec8cda"
       }
     },
     {
@@ -8575,6 +8704,64 @@
         "present": true,
         "bytes": 30848,
         "sha256": "f3e87b9af807b97e4657e88a2bf81f0c5915ce35b8c975f368a885fa9d65c00c"
+      }
+    },
+    {
+      "path": "test/testcases/test_web_api/test_dataset_management/test_dataset_sdk_routes_unit.py",
+      "module": "access-policy",
+      "origin": "core_change",
+      "base_entry": {
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "55bd787638f8092a3c30862e58b40ef993d61d42"
+      },
+      "head_entry": {
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "55bd787638f8092a3c30862e58b40ef993d61d42"
+      },
+      "index_entry": {
+        "mode": "100644",
+        "oid": "55bd787638f8092a3c30862e58b40ef993d61d42"
+      },
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": "M",
+      "working_change_from_base": "M",
+      "untracked": false,
+      "working_file": {
+        "present": true,
+        "bytes": 37084,
+        "sha256": "4ecc8f2f87bc2d62402885fda1dbbe36b9b4d28d404aa11f468f1aee51350f1e"
+      }
+    },
+    {
+      "path": "test/testcases/test_web_api/test_search_app/test_search_routes_unit.py",
+      "module": "api-files-chat",
+      "origin": "core_change",
+      "base_entry": {
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "3de9f3c15658c223b1bc7db3a5afb7d313a9071a"
+      },
+      "head_entry": {
+        "mode": "100644",
+        "kind": "blob",
+        "oid": "3de9f3c15658c223b1bc7db3a5afb7d313a9071a"
+      },
+      "index_entry": {
+        "mode": "100644",
+        "oid": "3de9f3c15658c223b1bc7db3a5afb7d313a9071a"
+      },
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": "M",
+      "working_change_from_base": "M",
+      "untracked": false,
+      "working_file": {
+        "present": true,
+        "bytes": 20863,
+        "sha256": "df1a923e85281dcac0c20325d621c4f2a4a67722e51e7e313e83fa13099fc93a"
       }
     },
     {
@@ -8772,11 +8959,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "23815f18f3dbc193b15ef71292b0964b25e0b395"
+        "oid": "d8bc4489103b2bc85a8fc0ac4ea8638288fa31a0"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "23815f18f3dbc193b15ef71292b0964b25e0b395"
+        "oid": "d8bc4489103b2bc85a8fc0ac4ea8638288fa31a0"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -8785,8 +8972,8 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 7763,
-        "sha256": "c0b82a672b3946806a78a8a125c53571ef71ae00acab9154af6ddae005981050"
+        "bytes": 8531,
+        "sha256": "797f4551862c570f00c9be5bafd889ec433bcf20b9f58429f1b8505895987997"
       }
     },
     {
@@ -8865,6 +9052,24 @@
       }
     },
     {
+      "path": "test/unit_test/agent/test_retrieval_dynamic_registration.py",
+      "module": "eva-integration",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 4170,
+        "sha256": "f149a0826ec2e3c65754e310f6038f70b00e5d3d9c66ff14ca8d0ae38baf5efb"
+      }
+    },
+    {
       "path": "test/unit_test/api/apps/business_documents/helpers.py",
       "module": "business-documents",
       "origin": "extension",
@@ -8890,6 +9095,24 @@
       }
     },
     {
+      "path": "test/unit_test/api/apps/business_documents/test_business_document_adapter_contracts.py",
+      "module": "business-documents",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 5145,
+        "sha256": "8032ecfb33345f13a29beda58beaea01a16df855fb74cd06ddef475194888565"
+      }
+    },
+    {
       "path": "test/unit_test/api/apps/business_documents/test_business_document_ai_export_boundaries.py",
       "module": "business-documents",
       "origin": "extension",
@@ -8897,11 +9120,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "3a3c89b3e8bee634daf0240ce71659e853f4833f"
+        "oid": "b62793200e248c4ed5ffedbaef0068423f7dfa3d"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "3a3c89b3e8bee634daf0240ce71659e853f4833f"
+        "oid": "b62793200e248c4ed5ffedbaef0068423f7dfa3d"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -8910,8 +9133,8 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 36443,
-        "sha256": "965e72c2cf905c59d3dca1ba8b552fcbc15f2597481838646dc97b4c93a99721"
+        "bytes": 41534,
+        "sha256": "f60acd09b76df020ea7d4abdf3819c9ec2bd87b25a50dbbb51da8be45024858f"
       }
     },
     {
@@ -8922,15 +9145,15 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "7efbaf9538116c2e157192aa60f3de340c551d61"
+        "oid": "b8336c8aa0dd1b60e5d5de7d9b96643e33b5e22d"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "7efbaf9538116c2e157192aa60f3de340c551d61"
+        "oid": "b8336c8aa0dd1b60e5d5de7d9b96643e33b5e22d"
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": "M",
+      "unstaged_change": null,
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
@@ -8972,11 +9195,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "29c56378ea9502ff874fdc051af6a3278eb4eaaa"
+        "oid": "457ded0a008791c49f808393d3a284edc5dc93a0"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "29c56378ea9502ff874fdc051af6a3278eb4eaaa"
+        "oid": "457ded0a008791c49f808393d3a284edc5dc93a0"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -8985,8 +9208,8 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 117502,
-        "sha256": "612ec638cafe021c95e9008c3bff0491c10927998c6a09eabe49c5c8b367cdce"
+        "bytes": 124639,
+        "sha256": "c5de2da65ab2d5147cceff8f18d877b9ead6250d7779f7ad22fa9fba43b82d1c"
       }
     },
     {
@@ -9030,13 +9253,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 46878,
-        "sha256": "1d4389a9b0e3a48b44001811e402388fe1416a4be0623e0a87a1ae9a10b76a07"
+        "bytes": 47690,
+        "sha256": "0e1230a2658ab812e68eb423daa3047446c8a3f353af21c148e650cb4d3ef8e6"
       }
     },
     {
@@ -9105,15 +9328,15 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "9b01fd97b178368e76b0f10019822ce3c90a9dff"
+        "oid": "edd4fe314edc559864e27fa5bff51f4411b09ec3"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "9b01fd97b178368e76b0f10019822ce3c90a9dff"
+        "oid": "edd4fe314edc559864e27fa5bff51f4411b09ec3"
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": "M",
+      "unstaged_change": null,
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
@@ -10350,6 +10573,42 @@
       }
     },
     {
+      "path": "test/unit_test/tools/quality/test_access_policy_registration.py",
+      "module": "access-policy",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 7467,
+        "sha256": "7fcef15b2221600651c4f7cd88d2332f1d1ace3d552a76066c3e8f43b31fa9df"
+      }
+    },
+    {
+      "path": "test/unit_test/tools/quality/test_api_files_chat_registration.py",
+      "module": "api-files-chat",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 15857,
+        "sha256": "87d2b7e04675c424eb991c5e5ac289c964c6537daadca44ee280fcfb5b7f950b"
+      }
+    },
+    {
       "path": "test/unit_test/tools/quality/test_browser_workflow.py",
       "module": "quality-governance",
       "origin": "extension",
@@ -10450,6 +10709,78 @@
       }
     },
     {
+      "path": "test/unit_test/tools/quality/test_check_architecture.py",
+      "module": "quality-governance",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 28361,
+        "sha256": "423af7121bffbf77d51b81ee2c5bd90fc1b86ddb9cff84c5bd007f2697d22d53"
+      }
+    },
+    {
+      "path": "test/unit_test/tools/quality/test_check_go_build_profiles.py",
+      "module": "quality-governance",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 9453,
+        "sha256": "b1d038ac9ff49c7df21f0d0aa5eb9762b5258902b1cb08d805cddb2baa666ac8"
+      }
+    },
+    {
+      "path": "test/unit_test/tools/quality/test_check_python_dead_code.py",
+      "module": "quality-governance",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 8879,
+        "sha256": "6e24a0c725856fcca20765739e4f724ed9a13152fd1457451c056a25c04e8ba7"
+      }
+    },
+    {
+      "path": "test/unit_test/tools/quality/test_connector_registration.py",
+      "module": "ingestion-connectors",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 1106,
+        "sha256": "e53fd71bf6c837d55e4adc6c167a1d1218b95189b79a9fbc5d3260273073fcfb"
+      }
+    },
+    {
       "path": "test/unit_test/tools/quality/test_docker_bundle.py",
       "module": "quality-governance",
       "origin": "extension",
@@ -10500,6 +10831,24 @@
       }
     },
     {
+      "path": "test/unit_test/tools/quality/test_frontend_entrypoints.py",
+      "module": "frontend-foundation",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 5050,
+        "sha256": "4a2ed89669fa56a19b3486b67979be60e85dcfe0ff025a867989fbcc99be6c4e"
+      }
+    },
+    {
       "path": "test/unit_test/tools/quality/test_inspect_python.py",
       "module": "quality-governance",
       "origin": "extension",
@@ -10515,13 +10864,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 13742,
-        "sha256": "ae551916280535accc83b9fcef48d3d34ccb17e6731391494fbba3df31c3e570"
+        "bytes": 17008,
+        "sha256": "87d74c783c2c8228295e5d83a8151b7a3f71d834300678647328d73b48b8e0c3"
       }
     },
     {
@@ -10729,6 +11078,60 @@
       }
     },
     {
+      "path": "tools/quality/check_architecture.py",
+      "module": "quality-governance",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 64327,
+        "sha256": "d36af91b7af74d318918cbd49a8f1e48dcd56a852d9a15eb3651cc28a5e6f2bb"
+      }
+    },
+    {
+      "path": "tools/quality/check_go_build_profiles.py",
+      "module": "quality-governance",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 25617,
+        "sha256": "ff7b700ddc73ac7f6fa117eaa22a60363688ec0e605a2a51d7c5d8bcc9a6f71c"
+      }
+    },
+    {
+      "path": "tools/quality/check_python_dead_code.py",
+      "module": "quality-governance",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 15352,
+        "sha256": "16c4000a238ff7b6ab026045b413d827a0a90a1c01b4ef515ad4dff7ff3543e4"
+      }
+    },
+    {
       "path": "tools/quality/checks.yaml",
       "module": "quality-governance",
       "origin": "extension",
@@ -10761,11 +11164,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "3600935c39859cb9e1e5bb0a285c187ee5bfbfaf"
+        "oid": "0e599c6b69ccc2bd0f5a1ef8df36974ca0d35b2e"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "3600935c39859cb9e1e5bb0a285c187ee5bfbfaf"
+        "oid": "0e599c6b69ccc2bd0f5a1ef8df36974ca0d35b2e"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -10810,11 +11213,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "e8c441e2b257c3f8d178535cc5e991a5e716ff67"
+        "oid": "569f1abafc0a439bdd8127e4a784e2a027c4046a"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "e8c441e2b257c3f8d178535cc5e991a5e716ff67"
+        "oid": "569f1abafc0a439bdd8127e4a784e2a027c4046a"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -10849,6 +11252,24 @@
         "present": true,
         "bytes": 11633,
         "sha256": "a63004e2f0ea692f31356e33b91fa4ca34b979688b5be2bbd580769cfaa1f6ed"
+      }
+    },
+    {
+      "path": "tools/quality/go-build-profiles.yaml",
+      "module": "quality-governance",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 1389,
+        "sha256": "8ef596182642e432a037b73cb71a21317a7056f8130d98343d673b87d6e67930"
       }
     },
     {
@@ -10892,13 +11313,13 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 22380,
-        "sha256": "be88bbc7dbe73859a26ddd3b28e17dc2436494d4e12d1718cd615040bae1db51"
+        "bytes": 25023,
+        "sha256": "d14b024a1265d3ac290807fafa5d84a113548bc8c7477749a8ed817304b2b23a"
       }
     },
     {
@@ -10909,11 +11330,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "0272c666721f70b07edbc5f82964856b560b5fc1"
+        "oid": "e6b0d7d459c83ff5831f4860091ebc18010fd064"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "0272c666721f70b07edbc5f82964856b560b5fc1"
+        "oid": "e6b0d7d459c83ff5831f4860091ebc18010fd064"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -10922,8 +11343,8 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 54911,
-        "sha256": "d57f63b38616056c72dbceb7a138e53a88544b981bd353f51b113f0969f7badc"
+        "bytes": 57133,
+        "sha256": "1fe7aff8d0e11ffb4098e8995fadfad7316a900af583d07c5e01d5acb0aa4854"
       }
     },
     {
@@ -10942,13 +11363,67 @@
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 16006,
-        "sha256": "9dfa004cc3be20be1481f6d83d87dc4fa6e2368be094069021fa450f366ad85f"
+        "bytes": 16571,
+        "sha256": "5f02d5b36c586a0b6a34b979716b861c914d9b2afdc494157dc53962683610c9"
+      }
+    },
+    {
+      "path": "tools/quality/probe_python_runtime.py",
+      "module": "quality-governance",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 14901,
+        "sha256": "75f6944f8b2ea274f6606569355288bdb67c9bf2faba3e9357b1990b10912df1"
+      }
+    },
+    {
+      "path": "tools/quality/python-boundaries.yaml",
+      "module": "quality-governance",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 16255,
+        "sha256": "664698d3b55bfd32423e43bc1fcc67cd7887b5ff322caa334a82377358eaea76"
+      }
+    },
+    {
+      "path": "tools/quality/python-dead-code.yaml",
+      "module": "quality-governance",
+      "origin": "extension",
+      "base_entry": null,
+      "head_entry": null,
+      "index_entry": null,
+      "committed_change": null,
+      "staged_change": null,
+      "unstaged_change": null,
+      "working_change_from_base": "A",
+      "untracked": true,
+      "working_file": {
+        "present": true,
+        "bytes": 729,
+        "sha256": "384636c4829b8528656dec65023a0d8357ae88762bfaa536e67784c8ed8c64e3"
       }
     },
     {
@@ -11063,11 +11538,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "c44f669013fd7ca2cff338786d25e47e6539153c"
+        "oid": "a008c99fe3e9137160f539bbd10c9897b8dd8aee"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "c44f669013fd7ca2cff338786d25e47e6539153c"
+        "oid": "a008c99fe3e9137160f539bbd10c9897b8dd8aee"
       },
       "committed_change": "M",
       "staged_change": null,
@@ -11077,7 +11552,7 @@
       "working_file": {
         "present": true,
         "bytes": 846437,
-        "sha256": "0d8789c346c86379bc72b875c2258bf646dfc368819dd163c7e8de6529f869a0"
+        "sha256": "284310ff6ca4d3bd842e546d7f9fb67d875545f4d92ee41669db52f7fbc3c6cf"
       }
     },
     {
@@ -11570,15 +12045,15 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "a3b6aa5fcf93154da571ecee33a9131956e9eb24"
+        "oid": "8c0d9298215af63bc323463ad6b849a9df06e8b6"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "a3b6aa5fcf93154da571ecee33a9131956e9eb24"
+        "oid": "8c0d9298215af63bc323463ad6b849a9df06e8b6"
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": "M",
+      "unstaged_change": null,
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
@@ -11595,15 +12070,15 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "92ba719ccdead5cbf39e36c5143c3b455d472bf6"
+        "oid": "7b444208c5561e1c61d8da081c8c0b6029dd2051"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "92ba719ccdead5cbf39e36c5143c3b455d472bf6"
+        "oid": "7b444208c5561e1c61d8da081c8c0b6029dd2051"
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": "M",
+      "unstaged_change": null,
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
@@ -11748,13 +12223,13 @@
       },
       "committed_change": "M",
       "staged_change": null,
-      "unstaged_change": null,
+      "unstaged_change": "M",
       "working_change_from_base": "M",
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 1974,
-        "sha256": "e39d086743e3c0380ca018257996bd5e194514f90f4a33a327c7b8067a512943"
+        "bytes": 2056,
+        "sha256": "16b5f1077d1931c01fe607a052723f089f0d0236eb4d4a6300c00eec9fa0bb18"
       }
     },
     {
@@ -15375,15 +15850,15 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "64818d72084302b36f5b95d7eef34439214d3076"
+        "oid": "1129f24781db7c9dc1a6b79f8faca8579dd664e3"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "64818d72084302b36f5b95d7eef34439214d3076"
+        "oid": "1129f24781db7c9dc1a6b79f8faca8579dd664e3"
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": "M",
+      "unstaged_change": null,
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
@@ -15465,52 +15940,6 @@
         "present": true,
         "bytes": 28721,
         "sha256": "deb107dcdd25475787e4f3e0be1acaea95781da21393dcc4bedb11f83eb1332a"
-      }
-    },
-    {
-      "path": "web/src/pages/business-documents/components/plantuml-diagram.test.tsx",
-      "module": "business-documents",
-      "origin": "extension",
-      "base_entry": null,
-      "head_entry": {
-        "mode": "100644",
-        "kind": "blob",
-        "oid": "dec28787ce9e9e9cacba5b54a6de0b80306f8654"
-      },
-      "index_entry": {
-        "mode": "100644",
-        "oid": "dec28787ce9e9e9cacba5b54a6de0b80306f8654"
-      },
-      "committed_change": "A",
-      "staged_change": null,
-      "unstaged_change": "D",
-      "working_change_from_base": null,
-      "untracked": false,
-      "working_file": {
-        "present": false
-      }
-    },
-    {
-      "path": "web/src/pages/business-documents/components/plantuml-diagram.tsx",
-      "module": "business-documents",
-      "origin": "extension",
-      "base_entry": null,
-      "head_entry": {
-        "mode": "100644",
-        "kind": "blob",
-        "oid": "5311b0fd4b83bdefbde060b27eed6a346f1ff989"
-      },
-      "index_entry": {
-        "mode": "100644",
-        "oid": "5311b0fd4b83bdefbde060b27eed6a346f1ff989"
-      },
-      "committed_change": "A",
-      "staged_change": null,
-      "unstaged_change": "D",
-      "working_change_from_base": null,
-      "untracked": false,
-      "working_file": {
-        "present": false
       }
     },
     {
@@ -15646,11 +16075,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "2f94fefb6269aba934c4ee6d3296fe2ee8647d70"
+        "oid": "f818641ebed739f2e141288df2f650585a5be830"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "2f94fefb6269aba934c4ee6d3296fe2ee8647d70"
+        "oid": "f818641ebed739f2e141288df2f650585a5be830"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -15659,8 +16088,8 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 84143,
-        "sha256": "bcbf3752c87cca852a08eeeb293ebcbd05487475fa592cab025e06150bef2487"
+        "bytes": 85170,
+        "sha256": "fa2105a6ff0eaba6acf1e778f40c7ded44fc05df0f252f633070b9f5967170e7"
       }
     },
     {
@@ -15671,11 +16100,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "95a5eea814004f980dae545b9b5bcefdbe6dfb63"
+        "oid": "2e97ceeeaa5f2cdb7abdc870714d4c3cb9f59d51"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "95a5eea814004f980dae545b9b5bcefdbe6dfb63"
+        "oid": "2e97ceeeaa5f2cdb7abdc870714d4c3cb9f59d51"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -15684,8 +16113,8 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 62073,
-        "sha256": "9fc1e58c4dd016e9e2ba30c62715dec3683040ca52291b6395158bc3f3b243d5"
+        "bytes": 60283,
+        "sha256": "65863d52dc18fd9f9d0291cc54092e56f56ee9c15be9db313a523882203e7b11"
       }
     },
     {
@@ -15696,11 +16125,11 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "fdf2fb3674575a2255aeda6b2540cf5576469089"
+        "oid": "dc01512c0ee2514ca92ec7a4acc70fb28a0299fe"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "fdf2fb3674575a2255aeda6b2540cf5576469089"
+        "oid": "dc01512c0ee2514ca92ec7a4acc70fb28a0299fe"
       },
       "committed_change": "A",
       "staged_change": null,
@@ -15709,8 +16138,8 @@
       "untracked": false,
       "working_file": {
         "present": true,
-        "bytes": 12368,
-        "sha256": "3099e52cfcda25da6e08224f57d3679fa63c85507024a7cdf54c3e9c98744ba5"
+        "bytes": 12345,
+        "sha256": "1e1d0673d86950d92a849912ee1cd779d001af4b2ef60ef94fc9a2ce1a6fe1d9"
       }
     },
     {
@@ -18055,15 +18484,15 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "e4b3dc0d81e75f4082624f650c89c73b012c0fbc"
+        "oid": "2ffedf28a1affc28b0209a16d4526a3ca625c792"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "e4b3dc0d81e75f4082624f650c89c73b012c0fbc"
+        "oid": "2ffedf28a1affc28b0209a16d4526a3ca625c792"
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": "M",
+      "unstaged_change": null,
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
@@ -18080,15 +18509,15 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "54c034020efbfd48ce54808006e7ca47ef1325a5"
+        "oid": "f06564c3f584ab21af428de7c7f8fb15bc2a5484"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "54c034020efbfd48ce54808006e7ca47ef1325a5"
+        "oid": "f06564c3f584ab21af428de7c7f8fb15bc2a5484"
       },
       "committed_change": "A",
       "staged_change": null,
-      "unstaged_change": "M",
+      "unstaged_change": null,
       "working_change_from_base": "A",
       "untracked": false,
       "working_file": {
@@ -18304,15 +18733,15 @@
       "head_entry": {
         "mode": "100644",
         "kind": "blob",
-        "oid": "7ddd158e3008653151ea9c9c82c89ecb9a8722c8"
+        "oid": "5c74a76ee6aeeaa000769497053fac00c5605014"
       },
       "index_entry": {
         "mode": "100644",
-        "oid": "7ddd158e3008653151ea9c9c82c89ecb9a8722c8"
+        "oid": "5c74a76ee6aeeaa000769497053fac00c5605014"
       },
       "committed_change": "M",
       "staged_change": null,
-      "unstaged_change": "M",
+      "unstaged_change": null,
       "working_change_from_base": "M",
       "untracked": false,
       "working_file": {

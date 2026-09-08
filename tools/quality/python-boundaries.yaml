@@ -1,0 +1,402 @@
+schema_version: 1
+status: T2 report-only Python ARC-01, static ARC-02, scoped ARC-03 cycles, isolated import/registration probes, and exact dynamic agent/tool DSL contracts; not a CI gate or full architecture verdict
+profiles:
+- id: root-python-api-worker
+  source_roots:
+  - api
+  - admin
+  - agent
+  - business_documents
+  - common
+  - rag
+  - deepdoc
+- id: frontend-web
+  source_roots:
+  - web
+- id: asr-service
+  source_roots:
+  - services
+  python_paths:
+  - services/asr-online-service/src
+  python_executable_candidates:
+  - services/asr-online-service/.venv/Scripts/python.exe
+  - services/asr-online-service/.venv/bin/python
+boundaries:
+- id: business-documents-domain
+  owner_module: business-documents
+  profile: root-python-api-worker
+  rule_id: ARC-01
+  path_prefixes:
+  - business_documents/
+  forbidden_markers:
+  - bootstrap
+  - orm
+  - http_framework
+  - network_client
+  rationale: The owned domain package must remain importable without application bootstrap, ORM, HTTP frameworks, or network clients.
+connections:
+- id: business-documents-package-wiring
+  owner_module: business-documents
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  extension_path_prefixes:
+  - business_documents/
+  extension_module_prefixes:
+  - business_documents
+  allowed_forward_imports: []
+  allowed_reverse_imports:
+  - source: api.apps.business_documents.service
+    target: business_documents.domain.names
+    symbols:
+    - normalize_title
+    - title_key
+  - source: api.db.db_models
+    target: business_documents.domain.catalog
+    symbols:
+    - load_document_catalog
+  - source: api.db.db_models
+    target: business_documents.domain.names
+    symbols:
+    - title_key
+  - source: common.data_source.eva_wiki_connector
+    target: business_documents.domain.names
+    symbols:
+    - normalize_title
+  rationale: The root extension package has no direct core dependency; exact core-to-extension imports are limited to the known service, persistence, and EVA integration points.
+cycle_checks:
+- id: business-documents-domain-cycles
+  owner_module: business-documents
+  profile: root-python-api-worker
+  rule_id: ARC-03
+  path_prefixes:
+  - business_documents/
+  rationale: The owned pure domain package must not acquire an explicit runtime import cycle; package parent initialization edges are reported elsewhere and are not treated as explicit imports.
+- id: asr-service-cycles
+  owner_module: asr
+  profile: asr-service
+  rule_id: ARC-03
+  path_prefixes:
+  - services/asr-online-service/src/asr_service/
+  rationale: The separately packaged owned ASR service must not acquire explicit runtime import cycles across its API, jobs, model, pipeline, and HTTP packages.
+runtime_probes:
+- id: business-documents-domain-import
+  owner_module: business-documents
+  profile: root-python-api-worker
+  rule_id: ARC-01
+  kind: isolated_import
+  timeout_seconds: 20
+  targets:
+  - module: business_documents.domain
+    path: business_documents/domain/__init__.py
+    required_symbols:
+    - normalize_title
+    - title_key
+  - module: business_documents.domain.catalog
+    path: business_documents/domain/catalog.py
+    required_symbols:
+    - load_document_catalog
+  forbidden_module_prefixes:
+  - admin
+  - agent
+  - api
+  - common
+  - deepdoc
+  - peewee
+  - quart
+  - rag
+  rationale: A fresh interpreter must load the owned domain surface without application bootstrap, ORM, HTTP framework, network/process effects, output, or background threads.
+- id: business-documents-http-registration
+  owner_module: business-documents
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: ragflow_quart_blueprint
+  timeout_seconds: 30
+  target:
+    module: api.apps.restful_apis.business_document_api_runtime_probe
+    path: api/apps/restful_apis/business_document_api.py
+    required_symbols: []
+  parent_stub:
+    module: api.apps
+    path: api/apps
+  blueprint_name: business_document_api_runtime_probe
+  url_prefix: /api/v1
+  stub_modules:
+  - module: api.apps.business_documents.eva_changes
+    symbols:
+      EvaDocumentChangeService: class
+  - module: api.apps.business_documents.errors
+    symbols:
+      BusinessDocumentError: exception
+  - module: api.apps.business_documents.exports
+    symbols:
+      BusinessDocumentExportService: class
+  - module: api.apps.business_documents.service
+    symbols:
+      BusinessDocumentService: class
+  - module: api.apps.business_documents.worker
+    symbols:
+      wake_business_document_worker: function
+  - module: api.utils.api_utils
+    symbols:
+      get_request_json: function
+  - module: common.misc_utils
+    symbols:
+      thread_pool_exec: function
+  expected_routes:
+  - path: /api/v1/business-documents/eva/sources
+    methods: [GET]
+    endpoint: search_eva_business_document_sources
+  - path: /api/v1/business-documents/eva/changes
+    methods: [POST]
+    endpoint: create_eva_business_document_change
+  - path: /api/v1/business-documents/eva/changes
+    methods: [GET]
+    endpoint: list_eva_business_document_changes
+  - path: /api/v1/business-documents/eva/changes/<change_id>
+    methods: [GET]
+    endpoint: get_eva_business_document_change
+  - path: /api/v1/business-documents/eva/changes/<change_id>/generate
+    methods: [POST]
+    endpoint: generate_eva_business_document_change_draft
+  - path: /api/v1/business-documents/eva/changes/<change_id>/approve
+    methods: [POST]
+    endpoint: approve_eva_business_document_change
+  - path: /api/v1/business-documents/eva/changes/<change_id>/prepare
+    methods: [POST]
+    endpoint: prepare_eva_business_document_change
+  - path: /api/v1/business-documents/eva/changes/<change_id>/publish
+    methods: [POST]
+    endpoint: publish_eva_business_document_change
+  - path: /api/v1/business-documents
+    methods: [POST]
+    endpoint: create_business_document
+  - path: /api/v1/business-documents
+    methods: [GET]
+    endpoint: list_business_documents
+  - path: /api/v1/business-documents/catalog
+    methods: [GET]
+    endpoint: list_business_document_catalog
+  - path: /api/v1/business-documents/access/users
+    methods: [GET]
+    endpoint: list_business_document_access_users
+  - path: /api/v1/business-documents/access/users/<user_id>
+    methods: [PATCH]
+    endpoint: update_business_document_access_user
+  - path: /api/v1/business-documents/<document_id>
+    methods: [GET]
+    endpoint: get_business_document
+  - path: /api/v1/business-documents/<document_id>
+    methods: [DELETE]
+    endpoint: delete_business_document
+  - path: /api/v1/business-documents/<document_id>/owner
+    methods: [PUT]
+    endpoint: assign_business_document_owner
+  - path: /api/v1/business-documents/<document_id>/eva/pull
+    methods: [POST]
+    endpoint: pull_business_document_from_eva
+  - path: /api/v1/business-documents/<document_id>/eva/rebind
+    methods: [POST]
+    endpoint: rebind_business_document_to_eva
+  - path: /api/v1/business-documents/<document_id>/eva/changes
+    methods: [POST]
+    endpoint: create_business_document_eva_change
+  - path: /api/v1/business-documents/<document_id>/commands
+    methods: [POST]
+    endpoint: execute_business_document_command
+  - path: /api/v1/business-documents/<document_id>/revisions
+    methods: [GET]
+    endpoint: list_business_document_revisions
+  - path: /api/v1/business-documents/<document_id>/revisions/<revision_id>
+    methods: [GET]
+    endpoint: get_business_document_revision
+  - path: /api/v1/business-documents/<document_id>/jobs
+    methods: [GET]
+    endpoint: list_business_document_jobs
+  - path: /api/v1/business-documents/<document_id>/exports
+    methods: [GET]
+    endpoint: list_business_document_exports
+  - path: /api/v1/business-documents/<document_id>/exports/<artifact_id>/download
+    methods: [GET]
+    endpoint: download_business_document_export
+  forbidden_module_prefixes: []
+  rationale: The actual file-loader contract must register the complete governed HTTP surface in a fresh process while the infrastructure-heavy api.apps parent is replaced by its narrow registration boundary.
+- id: openmetadata-agent-dsl-registration
+  owner_module: openmetadata
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 120
+  test_ids:
+  - test/unit_test/agent/test_openmetadata_dynamic_registration.py::test_saved_openmetadata_canvas_loads_through_dynamic_registry
+  expected_tests: 1
+  rationale: The real agent.component registry and Canvas loader must resolve the owned OpenMetadata component and parameter classes and round-trip every supported saved role without network access.
+- id: eva-retrieval-dsl-registration
+  owner_module: eva-integration
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 120
+  test_ids:
+  - test/unit_test/agent/test_retrieval_dynamic_registration.py::test_retrieval_canvas_loads_through_dynamic_tool_registry
+  expected_tests: 1
+  rationale: The real agent.tools registry and Canvas loader must resolve the locally changed Retrieval classes and preserve current and legacy dataset fields through a saved DSL round-trip without network access.
+- id: openmetadata-http-registration
+  owner_module: openmetadata
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: ragflow_quart_blueprint
+  timeout_seconds: 30
+  target:
+    module: api.apps.restful_apis.openmetadata_api_runtime_probe
+    path: api/apps/restful_apis/openmetadata_api.py
+    required_symbols: []
+  parent_stub:
+    module: api.apps
+    path: api/apps
+  blueprint_name: openmetadata_api_runtime_probe
+  url_prefix: /api/v1
+  stub_modules:
+  - module: api.apps.services.openmetadata_copilot_service
+    symbols:
+      OpenMetadataAuthenticationError: exception
+      OpenMetadataConfigurationError: exception
+      OpenMetadataConflictError: exception
+      OpenMetadataCopilotService: class
+      OpenMetadataError: exception
+      OpenMetadataNotFoundError: exception
+      OpenMetadataPermissionError: exception
+  - module: api.utils.api_utils
+    symbols:
+      get_json_result: function
+      get_request_json: function
+  - module: common.constants
+    symbols:
+      RetCode: class
+  - module: common.misc_utils
+    symbols:
+      thread_pool_exec: function
+  expected_routes:
+  - path: /api/v1/openmetadata/status
+    methods: [GET]
+    endpoint: status
+  - path: /api/v1/openmetadata/starter-questions
+    methods: [GET]
+    endpoint: starter_questions
+  - path: /api/v1/openmetadata/agents/provision
+    methods: [POST]
+    endpoint: provision_agents
+  - path: /api/v1/openmetadata/query
+    methods: [POST]
+    endpoint: query_catalog
+  - path: /api/v1/openmetadata/entities
+    methods: [GET]
+    endpoint: search_entities
+  - path: /api/v1/openmetadata/entities/<entity_id>/relationships
+    methods: [GET]
+    endpoint: entity_relationships
+  - path: /api/v1/openmetadata/governance/preview
+    methods: [POST]
+    endpoint: governance_preview
+  - path: /api/v1/openmetadata/governance/confirm
+    methods: [POST]
+    endpoint: governance_confirm
+  forbidden_module_prefixes: []
+  rationale: The api.apps file loader must register the complete owned OpenMetadata facade through one exact authenticated route surface without importing its network-backed service during observation.
+- id: business-documents-adapter-contracts
+  owner_module: business-documents
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 120
+  test_ids:
+  - test/unit_test/api/apps/business_documents/test_business_document_adapter_contracts.py::test_llm_adapter_preserves_tenant_prompt_payload_and_retry_contract
+  - test/unit_test/api/apps/business_documents/test_business_document_adapter_contracts.py::test_dataset_search_adapter_forwards_actor_request_and_result
+  - test/unit_test/api/apps/business_documents/test_business_document_adapter_contracts.py::test_default_and_injected_adapters_keep_one_production_boundary
+  - test/unit_test/api/apps/business_documents/test_business_document_adapter_contracts.py::test_litellm_callback_drain_does_not_stop_or_clear_the_global_worker
+  expected_tests: 5
+  rationale: The two production adapters must preserve their exact tenant, prompt, retry, token-limit, actor, request and result contracts without external LLM or search calls, while dependency injection remains the same single production boundary.
+- id: owned-frontend-route-entrypoints
+  owner_module: frontend-foundation
+  profile: frontend-web
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 60
+  test_ids:
+  - test/unit_test/tools/quality/test_frontend_entrypoints.py::test_owned_frontend_route_entrypoints_are_registered_and_resolvable
+  expected_tests: 1
+  rationale: The real TypeScript route registry must retain every locally owned lazy page entrypoint and the public navigation paths for OpenMetadata and Business Documents, with each imported module resolving from the locked frontend tree.
+- id: asr-contract-imports
+  owner_module: asr
+  profile: asr-service
+  rule_id: ARC-01
+  kind: isolated_import
+  timeout_seconds: 20
+  targets:
+  - module: asr_service.jobs.job_models
+    path: services/asr-online-service/src/asr_service/jobs/job_models.py
+    required_symbols:
+    - CreateJobRequest
+    - Job
+    - JobStatus
+  - module: asr_service.jobs.job_queue
+    path: services/asr-online-service/src/asr_service/jobs/job_queue.py
+    required_symbols:
+    - JobQueue
+  - module: asr_service.jobs.job_store
+    path: services/asr-online-service/src/asr_service/jobs/job_store.py
+    required_symbols:
+    - JobStore
+  - module: asr_service.models.engines.base
+    path: services/asr-online-service/src/asr_service/models/engines/base.py
+    required_symbols:
+    - AsrEngine
+    - EngineDescriptor
+  forbidden_module_prefixes:
+  - asr_service.api
+  - asr_service.main
+  - fastapi
+  - starlette
+  - uvicorn
+  rationale: The ASR job contracts, queue, store and engine protocol must load from the nested service source root without importing the HTTP application or framework and without import-time process, network, output or thread effects.
+- id: asr-fastapi-route-registration
+  owner_module: asr
+  profile: asr-service
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 60
+  working_directory: services/asr-online-service
+  test_ids:
+  - services/asr-online-service/tests/test_openapi_contract.py::test_runtime_route_inventory_is_exact
+  expected_tests: 1
+  rationale: The real FastAPI application must retain its exact ASR, OpenAI-compatible, health, metrics, documentation and static-web route inventory from the service working directory.
+- id: ingestion-connectors-http-registration
+  owner_module: ingestion-connectors
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 60
+  test_ids:
+  - test/unit_test/tools/quality/test_connector_registration.py::test_connector_route_inventory_is_exact
+  expected_tests: 1
+  rationale: The real connector file loader must retain the exact CRUD, validation and OAuth callback route inventory while its database, Redis and provider boundaries are replaced by deterministic test doubles.
+- id: access-policy-http-registration
+  owner_module: access-policy
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 60
+  test_ids:
+  - test/unit_test/tools/quality/test_access_policy_registration.py::test_user_route_inventory_is_exact
+  - test/unit_test/tools/quality/test_access_policy_registration.py::test_access_policy_route_inventory_is_exact
+  expected_tests: 4
+  rationale: The real user, system, dataset and file-commit API loaders must retain their exact governed HTTP route inventories, including generated commit endpoint names, while infrastructure dependencies are replaced by deterministic test doubles.
+- id: api-files-chat-http-registration
+  owner_module: api-files-chat
+  profile: root-python-api-worker
+  rule_id: ARC-02
+  kind: pytest_contract
+  timeout_seconds: 60
+  test_ids:
+  - test/unit_test/tools/quality/test_api_files_chat_registration.py::test_api_files_chat_route_inventory_is_exact
+  expected_tests: 5
+  rationale: The real search, bot, chat, chat-channel and document API loaders must retain their exact CRUD, session, completion, retrieval, upload, parsing and agent route inventories while infrastructure dependencies are replaced by deterministic test doubles.

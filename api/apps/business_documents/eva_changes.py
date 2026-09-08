@@ -448,6 +448,34 @@ class EvaDocumentChangeService:
             return binding
 
     @classmethod
+    def read_connected_page(cls, actor_id: str, binding: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        """Read one already resolved EVA page for deterministic document import."""
+
+        connector_id = cls._validate_text(binding.get("connector_id"), "connector_id", maximum=32)
+        document_id = cls._validate_text(binding.get("document_id"), "document_id", maximum=128)
+        _, client = cls._connector(connector_id, actor_id)
+        try:
+            remote = client.get_document_for_edit(document_id)
+        except Exception as error:
+            raise cls._map_external_error(error) from error
+        remote_markdown = _html_to_markdown(str(remote.get("html") or ""))
+        if not remote_markdown:
+            raise ValidationError("EVA_DOCUMENT_EMPTY", "Страница EVA не содержит опубликованного текста")
+        updated_binding = {
+            **binding,
+            "page_url": str(remote.get("web_url") or binding.get("page_url") or ""),
+            "status": "CONNECTED",
+            "capabilities": ["OPEN", "PULL_FROM_EVA", "CREATE_EVA_CHANGE"],
+            "project_id": str(remote.get("project_id") or binding.get("project_id") or "") or None,
+            "document_id": str(remote.get("id") or document_id),
+            "document_code": str(remote.get("code") or binding.get("document_code") or "") or None,
+            "document_name": str(remote.get("name") or binding.get("document_name") or "") or None,
+            "remote_version": str(remote.get("version") or "") or None,
+            "remote_content_hash": _content_hash(remote_markdown),
+        }
+        return updated_binding, remote_markdown
+
+    @classmethod
     def create_change(
         cls,
         tenant_id: str,

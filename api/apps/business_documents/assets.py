@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
@@ -54,6 +55,12 @@ _JOB_PROMPTS = {
     "PLAN_CHANGES": "change_planner",
     "GENERATE_EVA_CHANGE": "eva_change",
 }
+_MARKDOWN_SECTION_HEADING = re.compile(r"^(#{1,6})\s+([0-9]+(?:\.[0-9]+)*)\.\s+(.+?)\s*$")
+_FENCED_CODE_BLOCK = re.compile(
+    r"```(?P<language>[A-Za-z0-9_-]*)[ \t]*\n(?P<source>.*?)(?:\n)?```",
+    re.DOTALL,
+)
+_MAX_PARAGRAPH_SIZE = 20_000
 
 
 @lru_cache(maxsize=None)
@@ -162,6 +169,102 @@ def validate_document_ast(document: object) -> dict[str, Any]:
     _validate_conceptual_diagram(sections["4.1"])
     _validate_client_scenario(sections["4.3"])
     return document
+
+
+def import_document_markdown(markdown: object) -> dict[str, Any]:
+    """Convert a previously exported business document back to its governed AST.
+
+    EVA pages are accepted only when their numbered headings still match the
+    published template. This avoids silently assigning arbitrary page content to
+    the wrong semantic sections while keeping the import deterministic and free
+    of an LLM rewrite.
+    """
+
+    if not isinstance(markdown, str) or not markdown.strip():
+        raise ValidationError("EVA_DOCUMENT_EMPTY", "Страница EVA не содержит опубликованного текста")
+    normalized = markdown.replace("\r\n", "\n").replace("\r", "\n").strip()
+    template = published_template()
+    template_sections = template["sections"]
+    expected = {section["id"]: section for section in template_sections}
+    base_level = int(template.get("rendering", {}).get("body_heading_base_level", 2))
+
+    found: list[tuple[str, int, int]] = []
+    offset = 0
+    for line in normalized.splitlines(keepends=True):
+        heading = _MARKDOWN_SECTION_HEADING.match(line.rstrip("\n"))
+        if heading:
+            section_id = heading.group(2)
+            template_section = expected.get(section_id)
+            expected_level = base_level + section_id.count(".")
+            if template_section is not None and len(heading.group(1)) == expected_level and heading.group(3).strip() == template_section["title"]:
+                found.append((section_id, offset, offset + len(line)))
+        offset += len(line)
+
+    actual_ids = [item[0] for item in found]
+    expected_ids = [section["id"] for section in template_sections]
+    if actual_ids != expected_ids:
+        raise ValidationError(
+            "EVA_DOCUMENT_TEMPLATE_MISMATCH",
+            "Страница EVA не соответствует текущему шаблону бизнес-документа",
+            {"expected_section_ids": expected_ids, "actual_section_ids": actual_ids},
+        )
+    if normalized[: found[0][1]].strip():
+        raise ValidationError(
+            "EVA_DOCUMENT_TEMPLATE_MISMATCH",
+            "Перед первым разделом страницы EVA найден текст вне шаблона",
+        )
+
+    sections = []
+    for index, (section_id, _, body_start) in enumerate(found):
+        body_end = found[index + 1][1] if index + 1 < len(found) else len(normalized)
+        body = normalized[body_start:body_end].strip()
+        sections.append(
+            {
+                "id": section_id,
+                "title": expected[section_id]["title"],
+                "blocks": _import_markdown_blocks(body),
+            }
+        )
+    return validate_document_ast(
+        {
+            "schema_version": "1",
+            "document_type": "business_requirements",
+            "template_version": template["template_version"],
+            "sections": sections,
+        }
+    )
+
+
+def _import_markdown_blocks(markdown: str) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    cursor = 0
+    for match in _FENCED_CODE_BLOCK.finditer(markdown):
+        source = match.group("source").strip()
+        language = match.group("language").casefold()
+        is_plantuml = language == "plantuml" or (source.startswith("@startuml") and source.endswith("@enduml"))
+        if not is_plantuml:
+            continue
+        blocks.extend(_paragraph_blocks(markdown[cursor : match.start()].strip()))
+        if source:
+            blocks.append({"type": "plantuml", "source": source})
+        cursor = match.end()
+    blocks.extend(_paragraph_blocks(markdown[cursor:].strip()))
+    return blocks
+
+
+def _paragraph_blocks(text: str) -> list[dict[str, str]]:
+    blocks: list[dict[str, str]] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= _MAX_PARAGRAPH_SIZE:
+            blocks.append({"type": "paragraph", "text": remaining})
+            break
+        split_at = remaining.rfind("\n", 0, _MAX_PARAGRAPH_SIZE + 1)
+        if split_at <= 0:
+            split_at = _MAX_PARAGRAPH_SIZE
+        blocks.append({"type": "paragraph", "text": remaining[:split_at]})
+        remaining = remaining[split_at:].lstrip("\n")
+    return blocks
 
 
 def normalize_document_ast(document: object) -> object:

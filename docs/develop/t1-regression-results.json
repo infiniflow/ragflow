@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "stage": "T1",
-  "acceptance": "INCOMPLETE",
+  "acceptance": "BASELINE_COMPLETE_WITH_KNOWN_FAILURES",
   "candidate_c_local_verdict": "FAIL",
   "failed_lanes": [
     "frontend/chromium",
@@ -29,7 +29,7 @@
     },
     "publishable": false
   },
-  "scope_note": "The lanes field preserves immutable candidate C outcomes, including failures. post_c_scoped_verification records a separate three-file test-harness overlay and root unit run; it does not replace C results. Counts overlap and must not be summed. Not full T1 or release acceptance.",
+  "scope_note": "The lanes field preserves immutable candidate C outcomes, including failures. Later continuation blocks record scoped overlays and the local Docker baseline; they do not relabel candidate C. Counts overlap and must not be summed. T1 acceptance means a reproducible classified baseline, not product or release acceptance.",
   "historical_runs": {
     "initial": {
       "path": ".codex_tmp/t1-20260906/historical-initial-results.json",
@@ -33884,21 +33884,21 @@
   "remaining_gaps": [
     {
       "rule": "TEST-01",
-      "scope": "EVA/OpenMetadata real service read/write and retry/recovery",
-      "state": "INCOMPLETE",
-      "next": "Dedicated QA service endpoints and local credential configuration are required"
+      "scope": "MRZ real Image2Text output",
+      "state": "KNOWN_BASELINE_FAILURE",
+      "next": "Fix or replace the failing Image2Text boundary in a separately authorized change; do not change prompts or model defaults to make the baseline green"
     },
     {
       "rule": "TEST-01",
-      "scope": "Full document quality, microphone/cancellation, real MRZ images, historical DSL and complete route/role journeys",
-      "state": "INCOMPLETE_WITH_REPRODUCED_QUALITY_FAILURE",
-      "next": "Fix QUESTION_STAGE_CONFLICT and LiteLLM callback teardown, then rerun full intake-to-draft quality; other feature boundaries still need real fixtures."
+      "scope": "Existing current and attached historical Canvas DSL",
+      "state": "KNOWN_BASELINE_FAILURES",
+      "next": "Classify each incompatible record and migrate only supported contracts; do not recreate obsolete providers blindly"
     },
     {
       "rule": "DATA-03",
-      "scope": "Atomic PostgreSQL plus object snapshot and full old release installer/dependency recovery",
-      "state": "INCOMPLETE",
-      "next": "Separate release rehearsal; current data/MinIO tests validate selected rows and independent object archives"
+      "scope": "Full old release installer/dependency recovery",
+      "state": "DEFERRED_TO_T6",
+      "next": "Run the complete release rehearsal in T6; coordinated PostgreSQL plus MinIO restore is green in T1"
     }
   ],
   "future_stages": [
@@ -34056,5 +34056,250 @@
       }
     ],
     "scope_note": "Separate C plus exact eval overlay; no replacement of original C or three-file browser-overlay results."
+  },
+  "continuation_2026_09_08": {
+    "status": "BLOCKED_EXTERNAL_PREREQUISITES",
+    "local_verdict": "PASS",
+    "source_head": "f019c812ded5b8e9c127dfe824276d1dbf5179ad",
+    "scope": "Current working-tree local T1 closure; prior candidate C evidence remains historical and is not relabelled.",
+    "provenance": {
+      "classification": "extension",
+      "owner": "business-documents",
+      "upstream_core_changed_by_this_fix": false,
+      "current_fingerprint": "tools/quality/file-inventory.json"
+    },
+    "architecture_observation": {
+      "exact_runner": {
+        "status": "PASS",
+        "boundaries": 1,
+        "connections": 1,
+        "runtime_probes": 4,
+        "findings": 0,
+        "output": "output/quality/python-boundaries.json"
+      },
+      "owner_observer": {
+        "analysis_status": "INCOMPLETE",
+        "policy_status": "NOT_EVALUATED",
+        "selected_files": 16,
+        "coupling_paths": 220,
+        "incomplete_reasons": 15,
+        "output": "output/quality/python-analysis.json",
+        "limit": "Known dynamic/unresolved transitive imports prevent a policy claim; this is not converted to PASS."
+      }
+    },
+    "live_quality": {
+      "status": "PASS",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 102.953,
+      "model": "qwen2.5:14b-instruct",
+      "model_digest": "7cdf5a0187d5c58cc5d369b255592f7841d1c4696d45a8c8a9489440385b22f6",
+      "relevant_file_map_sha256": "93e789933d1db071cc7b3aee4927605240fac7f70c44c9305ed4f9b7e8486073",
+      "jobs_completed": 4,
+      "weighted_score": 3.6,
+      "grounded_reference_precision": 1.0,
+      "grounded_claim_count": 2,
+      "unsupported_measurable_claims": [],
+      "hard_failures": [],
+      "protocol_separated": true,
+      "question_bounds_valid": true,
+      "evidence_directory": ".codex_tmp/t1-20260907/live-quality",
+      "cleanup": {
+        "remaining_containers": 0,
+        "named_volumes_created": 0,
+        "database_destroyed_with_tmpfs_cluster": true,
+        "relevant_source_unchanged": true
+      },
+      "negative_control": "The installed qwen2.5:7b-instruct did not produce a complete valid draft and is not counted as a pass."
+    },
+    "regression": {
+      "python_unit": {
+        "passed": 2814,
+        "skipped": 35,
+        "subtests_passed": 167,
+        "seconds": 352.41,
+        "junit": ".codex_tmp/t1-20260907/python-unit.xml"
+      },
+      "business_documents_coverage": {
+        "passed": 171,
+        "coverage_percent": 79.94,
+        "required_percent": 79
+      },
+      "golden_and_quality_scorer_passed": 8,
+      "route_units_passed": 33,
+      "browser_result_assertions_passed": 53,
+      "frontend_jest": {
+        "suites_passed": 23,
+        "tests_passed": 170
+      },
+      "frontend_type_check": "PASS",
+      "frontend_lint": {
+        "status": "PASS",
+        "errors": 0,
+        "existing_warnings": 138
+      },
+      "frontend_build": {
+        "status": "PASS",
+        "modules_transformed": 13226
+      },
+      "browser_matrix": {
+        "chromium": "52 passed",
+        "firefox": "52 passed after full sequential rerun",
+        "webkit": "52 passed",
+        "classified_retry": "Initial parallel Firefox run: 51 passed, 1 timeout locating files-list; isolated case 1 passed and full sequential rerun 52 passed."
+      },
+      "go": "NOT_RERUN_NO_GO_OR_NATIVE_INPUT_CHANGE"
+    },
+    "remaining_external_gaps": [
+      {
+        "rule": "TEST-01",
+        "scope": "EVA/OpenMetadata real read/write and retry/recovery",
+        "required": ["dedicated QA endpoints", "local non-production credentials"]
+      },
+      {
+        "rule": "TEST-01",
+        "scope": "Real MRZ images and microphone/cancellation audio paths",
+        "required": ["approved real fixtures", "audio input hardware or deterministic device fixture"]
+      },
+      {
+        "rule": "DATA-03",
+        "scope": "Coordinated PostgreSQL plus object snapshot and full restore",
+        "required": ["disposable PostgreSQL target", "disposable object-storage target", "complete release dependencies"]
+      }
+    ],
+    "missing_environment": [
+      "BUSINESS_DOCUMENT_TEST_POSTGRES_DSN",
+      "RAGFLOW_UPGRADE_TEST_DISPOSABLE",
+      "RAGFLOW_UPGRADE_TEST_POSTGRES_DSN",
+      "RAGFLOW_UPGRADE_TEST_POSTGRES_CONTAINER",
+      "RAGFLOW_MINIO_BACKUP_TEST",
+      "ASR_REAL_TONE_AUDIO",
+      "RAGFLOW_BASE_URL",
+      "OPENMETADATA_API_KEY",
+      "OPENMETADATA_JWT_TOKEN",
+      "EVA_API_TOKEN"
+    ]
+  },
+  "local_docker_followup_2026_09_08": {
+    "status": "BASELINE_COMPLETE_WITH_KNOWN_FAILURES",
+    "t0_inventory": "tools/quality/file-inventory.json",
+    "t0_inventory_records": 701,
+    "t0_unclassified": 0,
+    "external_prerequisite_assessment": "CLOSED_BY_EXISTING_OR_DISPOSABLE_LOCAL_DOCKER_RESOURCES",
+    "scope": "Live local Docker checks added after continuation_2026_09_08; historical candidate and continuation results remain unchanged.",
+    "model_or_prompt_settings_changed": false,
+    "secrets_persisted_or_reported": false,
+    "services": {
+      "ragflow_application": "HEALTHY",
+      "postgresql": "HEALTHY",
+      "minio": "HEALTHY",
+      "t_one_asr": "HEALTHY_AFTER_REBUILD",
+      "eva_wiki": "HEALTHY",
+      "openmetadata": "HEALTHY"
+    },
+    "fixtures": {
+      "generator": "test/integration/fixtures/New-T1LocalFixtures.ps1",
+      "synthetic_russian_wav": {
+        "bytes": 281924,
+        "sha256": "70396b95e9f9fd02906ae25e8059be3b51d29b434d61ff3a197ea4ead839bfca"
+      },
+      "synthetic_russian_long_wav": {
+        "bytes": 3382614,
+        "sha256": "de15164bc911058b9a5ea8d574fcdf69079002f4176cf80ad4556d4ef9a3d381"
+      },
+      "synthetic_td3_closeup_png": {
+        "bytes": 23867,
+        "sha256": "3d2852e423d7716530bf3174dd5291f46cf337019c261b3ba70a8bba7fad4c8d",
+        "visual_check": "PASS"
+      }
+    },
+    "connector_live": {
+      "test": "test/integration/test_local_docker_connectors_live.py",
+      "result": "2 passed",
+      "seconds": 56.74,
+      "openmetadata": {
+        "validation": "PASS",
+        "tables_read": 908,
+        "transient_503_retry": "PASS",
+        "write_readback_restore": "PASS"
+      },
+      "eva": {
+        "transient_503_retry": "PASS",
+        "create_publish_read_update_publish_read": "PASS",
+        "delete_and_absence_check": "PASS"
+      }
+    },
+    "coordinated_postgresql_minio_restore": {
+      "test": "test/integration/test_postgres_minio_coordinated_restore.py",
+      "result": "1 passed",
+      "seconds": 21.18,
+      "shared_snapshot_id_and_digest": "PASS",
+      "restore_to_fresh_containers_and_volumes": "PASS",
+      "missing_object_negative_control": "PASS",
+      "remaining_containers": 0,
+      "remaining_volumes": 0
+    },
+    "asr": {
+      "initial_live_cancel_result": "FAIL_DONE_AFTER_CANCEL_REQUEST",
+      "classification": "owned extension module asr",
+      "fix": "Cancellation wins at the next safe stage boundary and clears result, artifacts and error.",
+      "focused_status_tests": "5 passed",
+      "service_suite": "47 passed, 2 skipped",
+      "live_inference_and_cancel": "2 passed",
+      "exact_transcript_match": true,
+      "live_cancel": {
+        "status": "canceled",
+        "cancel_requested": true,
+        "result": null,
+        "artifacts": {},
+        "seconds": 24.3
+      },
+      "limitation": "The synchronous engine call is cooperatively canceled at a stage boundary, not interrupted mid-call."
+    },
+    "mrz": {
+      "test": "test/integration/test_mrz_document_reader_live.py",
+      "result": "1 failed",
+      "seconds": 36.58,
+      "transport_or_component_error": false,
+      "validator": {
+        "valid": false,
+        "error": "mrz_not_found"
+      },
+      "classification": "KNOWN_BASELINE_FAILURE_AT_CONFIGURED_IMAGE2TEXT_OUTPUT",
+      "model_or_prompt_reconfiguration_attempted": false
+    },
+    "saved_dsl": {
+      "test": "test/integration/test_saved_canvas_dsl_live.py",
+      "synthetic_current_and_two_historical_roundtrip": "1 passed",
+      "synthetic_cleanup": "PASS_ZERO_ROWS",
+      "existing_current": {
+        "checked": 18,
+        "loaded": 16,
+        "failed": 2,
+        "failure_classes": {
+          "missing_runtime_dependency": 1,
+          "invalid_required_component_config": 1
+        }
+      },
+      "existing_attached_history": {
+        "checked": 195,
+        "loaded": 158,
+        "failed": 37,
+        "failure_classes": {
+          "missing_runtime_dependency": 30,
+          "invalid_required_component_config": 6,
+          "AssertionError": 1
+        },
+        "orphan_versions_excluded": 9
+      },
+      "classification": "KNOWN_BASELINE_DATA_COMPATIBILITY_FAILURES"
+    },
+    "remaining_limits": [
+      "Physical browser microphone hardware was not exercised; API and worker inference/cancellation were exercised with deterministic audio.",
+      "Full installer and old-release dependency recovery are T6, not an unprovisioned T1 dependency.",
+      "MRZ and incompatible persisted DSL owners remain blocked from refactoring until their baseline failures are fixed or migrated."
+    ]
   }
 }

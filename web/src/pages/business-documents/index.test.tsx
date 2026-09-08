@@ -396,6 +396,15 @@ beforeEach(() => {
     total: 0,
     page: 1,
     page_size: 20,
+    access_role: 'AUTHOR_CREATOR',
+    capabilities: {
+      read: true,
+      create: true,
+      edit_own: true,
+      edit_all: false,
+      delete: false,
+      assign: false,
+    },
   });
   mockedListRevisions.mockResolvedValue([projection.current_revision!]);
   mockedListAccessUsers.mockResolvedValue({ items: [] });
@@ -1768,6 +1777,13 @@ test('shows the active attempt and previous validation error while retrying', as
 });
 
 test('creates a new business requirements document', async () => {
+  mockedCreate.mockResolvedValueOnce({
+    ...projection,
+    state_version: 1,
+    lifecycle_state: 'INTAKE',
+    current_revision: null,
+    active_review_cycle: 0,
+  });
   renderPage('/business-documents');
 
   expect(screen.queryByText('Источники RAGFlow')).not.toBeInTheDocument();
@@ -1797,7 +1813,7 @@ test('creates a new business requirements document', async () => {
     'doc-1',
     expect.objectContaining({
       schema_version: '1',
-      expected_state_version: projection.state_version,
+      expected_state_version: 1,
       type: 'REQUEST_INTAKE_ASSESSMENT',
       payload: {},
     }),
@@ -1814,6 +1830,13 @@ test('creates a new business requirements document', async () => {
 });
 
 test('opens the created document when automatic analysis cannot be started', async () => {
+  mockedCreate.mockResolvedValueOnce({
+    ...projection,
+    state_version: 1,
+    lifecycle_state: 'INTAKE',
+    current_revision: null,
+    active_review_cycle: 0,
+  });
   mockedSubmit.mockRejectedValueOnce(new Error('analysis unavailable'));
   renderPage('/business-documents');
 
@@ -1843,7 +1866,18 @@ test('does not show linked RAGFlow source counts in a document', async () => {
   expect(screen.queryByText('Источников: 1')).not.toBeInTheDocument();
 });
 
-test('offers matching EVA pages and confirms replacement before binding', async () => {
+test('opens a selected free EVA page in the document editor without replacement confirmation', async () => {
+  const importedProjection = {
+    ...projection,
+    state_version: 2,
+    active_review_cycle: 1,
+    protocol: { questions: [], proposals: [], comments: [] },
+    allowed_commands: [
+      'ADD_COMMENT',
+      'REQUEST_REVIEW_ASSESSMENT',
+    ] as BusinessDocumentProjection['allowed_commands'],
+  };
+  mockedFetch.mockResolvedValueOnce(importedProjection);
   mockedCreate
     .mockRejectedValueOnce(
       new BusinessDocumentConflictError(
@@ -1907,7 +1941,7 @@ test('offers matching EVA pages and confirms replacement before binding', async 
         },
       ),
     )
-    .mockResolvedValueOnce(projection);
+    .mockResolvedValueOnce(importedProjection);
   renderPage('/business-documents');
 
   await selectCatalogEntry();
@@ -1930,23 +1964,12 @@ test('offers matching EVA pages and confirms replacement before binding', async 
     'href',
     'https://eva.example.com/archive/Document/ARCHIVE',
   );
-  const bindButtons = screen.getAllByRole('button', { name: 'Привязать' });
+  const bindButtons = screen.getAllByRole('button', {
+    name: 'Открыть в редакторе',
+  });
   expect(bindButtons).toHaveLength(2);
   expect(bindButtons[1]).toBeDisabled();
   fireEvent.click(bindButtons[0]);
-  expect(
-    await screen.findByTestId('eva-replace-confirmation'),
-  ).toHaveTextContent('полностью заменено содержимым документа');
-  fireEvent.click(screen.getByRole('button', { name: 'Отмена' }));
-  await waitFor(() =>
-    expect(
-      screen.queryByTestId('eva-replace-confirmation'),
-    ).not.toBeInTheDocument(),
-  );
-  expect(mockedCreate).toHaveBeenCalledTimes(1);
-
-  fireEvent.click(bindButtons[0]);
-  fireEvent.click(screen.getByTestId('confirm-eva-replace'));
 
   await waitFor(() => expect(mockedCreate).toHaveBeenCalledTimes(2));
   expect(mockedCreate.mock.calls[1][0]).toEqual(
@@ -1954,9 +1977,20 @@ test('offers matching EVA pages and confirms replacement before binding', async 
       schema_version: '3',
       catalog_entry_id: catalogEntry.id,
       eva_page_url: 'https://eva.example.com/project/Document/BR-42',
-      eva_decision: { mode: 'BIND', confirm_replace: true },
+      eva_decision: { mode: 'BIND' },
     }),
   );
+  expect(
+    screen.queryByTestId('eva-replace-confirmation'),
+  ).not.toBeInTheDocument();
+  expect(
+    await screen.findByTestId('business-document-markdown'),
+  ).toHaveTextContent('Сократить время перевода');
+  expect(screen.getByRole('textbox', { name: 'Комментарий' })).toBeVisible();
+  expect(
+    screen.getByRole('button', { name: 'Проанализировать замечания' }),
+  ).toBeVisible();
+  expect(mockedSubmit).not.toHaveBeenCalled();
 });
 
 test('creates without EVA binding after the user explicitly skips matches', async () => {
@@ -2008,7 +2042,7 @@ test('creates without EVA binding after the user explicitly skips matches', asyn
 test('keeps voice input for the idea while the title comes from the catalog', async () => {
   renderPage('/business-documents');
 
-  const idea = screen.getByRole('textbox', { name: 'Описание идеи' });
+  const idea = await screen.findByRole('textbox', { name: 'Описание идеи' });
   await selectCatalogEntry();
   fireEvent.change(idea, { target: { value: 'Исходная идея.' } });
 
@@ -2097,7 +2131,7 @@ test('switches between my and all documents', async () => {
   await waitFor(() => expect(mockedList).toHaveBeenCalledWith(1, 20, 'all'));
 });
 
-test('does not offer document creation to an author-editor', async () => {
+test('hides the creation and EVA sidebar from an author-editor', async () => {
   mockedList.mockResolvedValueOnce({
     items: [],
     total: 0,
@@ -2115,10 +2149,14 @@ test('does not offer document creation to an author-editor', async () => {
   });
   renderPage('/business-documents');
 
-  expect(
-    await screen.findByTestId('business-document-create-denied'),
-  ).toHaveTextContent('Создание документов недоступно');
-  expect(screen.getByTestId('new-document-mode')).toBeDisabled();
+  await waitFor(() => expect(mockedList).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(
+      screen.queryByTestId('business-document-create-panel'),
+    ).not.toBeInTheDocument(),
+  );
+  expect(screen.queryByTestId('new-document-mode')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('eva-change-mode')).not.toBeInTheDocument();
   expect(
     screen.queryByRole('button', { name: 'Начать работу' }),
   ).not.toBeInTheDocument();
@@ -2309,7 +2347,7 @@ test('finds an existing EVA document and opens a pinned change request', async (
   mockedCreateEva.mockResolvedValueOnce(evaChange);
   renderPage('/business-documents');
 
-  fireEvent.click(screen.getByTestId('eva-change-mode'));
+  fireEvent.click(await screen.findByTestId('eva-change-mode'));
   fireEvent.change(
     screen.getByRole('textbox', { name: 'Поиск документа EVA' }),
     { target: { value: 'BR-42' } },

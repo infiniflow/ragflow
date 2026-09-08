@@ -18,15 +18,41 @@ import asyncio
 import base64
 import importlib.util
 import sys
+from functools import wraps
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
 
 
+EXPECTED_USER_ROUTES = {
+    ("/auth/login", ("POST",), "login"),
+    ("/auth/login/channels", ("GET",), "get_login_channels"),
+    ("/auth/login/<channel>", ("GET",), "oauth_login"),
+    ("/auth/logout", ("POST",), "log_out"),
+    ("/auth/oauth/<channel>/callback", ("GET",), "oauth_callback"),
+    ("/auth/password/forgot/captcha", ("POST",), "forget_get_captcha"),
+    ("/auth/password/forgot/otp", ("POST",), "forget_send_otp"),
+    ("/auth/password/forgot/otp/verify", ("POST",), "forget_verify_otp"),
+    ("/auth/password/reset", ("POST",), "forget_reset_password"),
+    ("/users", ("POST",), "user_add"),
+    ("/users/me", ("GET",), "user_profile"),
+    ("/users/me", ("PATCH",), "setting_user"),
+    ("/users/me/eva-credentials", ("GET",), "list_user_eva_credentials"),
+    ("/users/me/eva-credentials/<connector_id>", ("DELETE",), "delete_user_eva_credential"),
+    ("/users/me/eva-credentials/<connector_id>", ("PUT",), "put_user_eva_credential"),
+    ("/users/me/models", ("GET",), "tenant_info"),
+    ("/users/me/models", ("PATCH",), "set_tenant_info"),
+}
+
+
 class _DummyManager:
-    def route(self, *_args, **_kwargs):
+    def __init__(self):
+        self.routes = []
+
+    def route(self, path, *, methods):
         def decorator(func):
+            self.routes.append((path, tuple(sorted(methods)), func.__name__))
             return func
 
         return decorator
@@ -71,10 +97,10 @@ def _run(coro):
 
 
 def _passthrough_login_required(func):
+    @wraps(func)
     async def _wrapper(*args, **kwargs):
         return await func(*args, **kwargs)
 
-    _wrapper.__wrapped__ = func
     return _wrapper
 
 
@@ -728,6 +754,14 @@ def _load_user_app(monkeypatch):
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.mark.p2
+def test_user_route_inventory_is_exact(monkeypatch):
+    module = _load_user_app(monkeypatch)
+
+    assert len(module.manager.routes) == len(EXPECTED_USER_ROUTES)
+    assert set(module.manager.routes) == EXPECTED_USER_ROUTES
 
 
 @pytest.mark.p2

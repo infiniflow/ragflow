@@ -30,6 +30,39 @@ class ImportAnalysisTests(unittest.TestCase):
         self.assertEqual(report["policy_status"], "NOT_EVALUATED")
         self.assertFalse(any(edge["target"].endswith(".Value") for edge in report["edges"]))
 
+    def test_explicit_import_root_indexes_nested_src_layout(self):
+        sources = {
+            "services/example-service/src/owned/__init__.py": "",
+            "services/example-service/src/owned/domain.py": "from .dto import Value\n",
+            "services/example-service/src/owned/dto.py": "Value = object()\n",
+        }
+        graph = observer.collect_import_graph(
+            sources,
+            import_roots={"services/example-service/src"},
+        )
+        self.assertEqual(graph["index"]["owned.domain"], "services/example-service/src/owned/domain.py")
+        self.assertTrue(any(edge["source"] == "owned.domain" and edge["target"] == "owned.dto" for edge in graph["edges"]))
+
+    def test_from_import_records_original_symbols(self):
+        report = self.analyze({"owned/domain.py": "from owned.dto import Value as Renamed, Other", "owned/dto.py": "Value = Other = object()"})
+        edge = next(edge for edge in report["edges"] if edge["source"] == "owned.domain" and edge["target"] == "owned.dto" and edge["kind"] == "import")
+        self.assertEqual(edge["symbols"], ["Other", "Value"])
+
+    def test_parent_initializer_does_not_inherit_child_symbols(self):
+        report = self.analyze(
+            {
+                "owned/domain.py": "from api.db.service import Value",
+                "api/__init__.py": "",
+                "api/db/__init__.py": "",
+                "api/db/service.py": "Value = object()",
+            }
+        )
+        explicit = next(edge for edge in report["edges"] if edge["target"] == "api.db.service" and edge["kind"] == "import")
+        parents = [edge for edge in report["edges"] if edge["kind"] == "parent_init" and edge["source"] == "owned.domain"]
+        self.assertEqual(explicit["symbols"], ["Value"])
+        self.assertTrue(parents)
+        self.assertTrue(all(edge["symbols"] == [] for edge in parents))
+
     def test_relative_imports_and_namespace_packages(self):
         report = self.analyze({"owned/domain.py": "from . import dto\nfrom .dto import Value", "owned/dto.py": "class Value: pass", "owned/__init__.py": "from . import dto"})
         targets = {edge["target"] for edge in report["edges"]}
@@ -130,6 +163,22 @@ class ImportAnalysisTests(unittest.TestCase):
         self.assertEqual(report["analysis_status"], "OBSERVED")
         self.assertEqual(report["dead_code_status"], "NOT_ANALYZED")
 
+    def test_reverse_imports_show_direct_consumers_without_claiming_dead_code(self):
+        report = self.analyze(
+            {
+                "owned/domain.py": "Value = object()\n",
+                "owned/internal.py": "from owned.domain import Value\n",
+                "api/consumer.py": "from owned.domain import Value\n",
+                "api/type_consumer.py": "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n from owned.domain import Value\n",
+                "api/registry.py": "import importlib\nimportlib.import_module(target)\n",
+            }
+        )
+        reverse = next(item for item in report["reverse_imports"] if item["module"] == "owned.domain")
+        self.assertEqual(reverse["consumer_modules"], ["api.consumer", "owned.internal"])
+        self.assertTrue(all(edge["symbols"] == ["Value"] for edge in reverse["incoming_edges"]))
+        self.assertNotIn("api.type_consumer", reverse["consumer_modules"])
+        self.assertEqual(report["dead_code_status"], "NOT_ANALYZED")
+
     def test_nested_functions_do_not_hide_or_double_count_complexity(self):
         report = self.analyze({"owned/domain.py": "def outer(items):\n def inner(items):\n  for a in items:\n   for b in items:\n    if a and b:\n     yield a\n return inner(items)\n"})
         functions = {item["symbol"]: item for item in report["functions"]}
@@ -158,6 +207,8 @@ class CommandTests(unittest.TestCase):
         self.base = {"commit": self.git("rev-parse", "HEAD"), "tree": self.git("rev-parse", "HEAD^{tree}")}
         self.write(".gitignore", "output/\n")
         self.write("api/owned.py", "import json\n")
+        self.write("business_documents/__init__.py", "from business_documents.domain import value\n")
+        self.write("business_documents/domain.py", "value = 1\n")
         self.write("tools/quality/upstream-base.json", json.dumps(self.base))
         self.mapping = {
             "modules": [
@@ -166,6 +217,8 @@ class CommandTests(unittest.TestCase):
                     "paths": [
                         ".gitignore",
                         "api/owned.py",
+                        "business_documents/__init__.py",
+                        "business_documents/domain.py",
                         "tools/quality/upstream-base.json",
                         "tools/quality/module-map.yaml",
                         "tools/quality/file-inventory.json",
@@ -198,7 +251,10 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads((self.root / "output/report.json").read_text())
         self.assertEqual(report["input"]["upstream_base"], self.base["commit"])
-        self.assertEqual(report["scope"]["selected_paths"], ["api/owned.py"])
+        self.assertEqual(
+            report["scope"]["selected_paths"],
+            ["api/owned.py", "business_documents/__init__.py", "business_documents/domain.py"],
+        )
         self.assertEqual(self.git("status", "--porcelain"), status)
 
     def test_incomplete_analysis_writes_report_but_returns_nonzero(self):

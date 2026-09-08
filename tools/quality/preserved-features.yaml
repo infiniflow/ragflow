@@ -23,10 +23,10 @@ features:
   - web/src/pages/business-documents/index.test.tsx
   - test/playwright/e2e/test_business_document_live_intake.py
   execution_status: PARTIAL_T1
-  next_action: C services/data/intake checks remain valid for C. Later controlled-evidence
-    real quality run failed at second intake with QUESTION_STAGE_CONFLICT plus LiteLLM
-    callback teardown; fix and rerun to draft before this boundary is refactored.
-    See T1 continuation evidence.
+  next_action: Current-tree services, browser matrix and controlled-evidence real-model
+    quality pass. Dedicated external EVA/OpenMetadata, real-image/audio and coordinated
+    PostgreSQL-plus-object recovery lanes remain prerequisites for full T1 acceptance.
+    See the 2026-09-08 continuation evidence.
   execution_evidence: docs/develop/t1-regression-results.json#KEEP-business-documents
 - id: KEEP-eva-integration
   owner: fork-maintainer
@@ -41,12 +41,14 @@ features:
   - api/db/services/user_external_credential_service.py
   evidence_paths:
   - test/unit_test/data_source/test_eva_wiki_connector.py
+  - test/unit_test/agent/test_retrieval_dynamic_registration.py
   - test/unit_test/api/apps/business_documents/test_eva_document_changes.py
   - test/unit_test/api/db/services/test_user_external_credential_service.py
   execution_status: PARTIAL_T1
   next_action: Obtain dedicated EVA QA configuration; exercise real reads, personal-token
-    writes, retry after uncertain response and recovery. Mocks and preserved database
-    rows do not prove external publication.
+    writes, retry after uncertain response and recovery. The required Retrieval dynamic
+    registry/generated Canvas DSL contract passes, but mocks and preserved database rows
+    do not prove external publication.
   execution_evidence: docs/develop/t1-regression-results.json#KEEP-eva-integration
 - id: KEEP-openmetadata
   owner: fork-maintainer
@@ -69,8 +71,8 @@ features:
   - test/unit_test/agent/test_openmetadata_dynamic_registration.py
   execution_status: PARTIAL_T1
   next_action: Obtain dedicated OpenMetadata QA configuration; exercise real sync/copilot/agent
-    calls and browser journeys. Current DSL registration and mocked services pass
-    on C; historical saved DSL remains to verify.
+    calls and browser journeys. The required dynamic registry/generated Canvas DSL
+    contract and mocked services pass on C; historical saved DSL remains to verify.
   execution_evidence: docs/develop/t1-regression-results.json#KEEP-openmetadata
 - id: KEEP-asr
   owner: fork-maintainer
@@ -328,6 +330,8 @@ features:
   entrypoints:
   - AGENTS.md
   - tools/quality/capture_inventory.py
+  - tools/quality/check_architecture.py
+  - tools/quality/probe_python_runtime.py
   - run_tests.py
   - .github/workflows/tests.yml
   evidence_paths:
@@ -338,9 +342,13 @@ features:
   - test/unit_test/deployment/test_disposable_live_runner.py
   - test/integration/live_ragflow/README.md
   - test/unit_test/playwright/test_browser_server.py
+  - test/unit_test/tools/quality/test_check_architecture.py
   - test/unit_test/tools/quality/test_inspect_python.py
   execution_status: PARTIAL_T1
-  next_action: Partial T2 Python observation tool is documented in docs/develop/t2-python-analysis-ru.md.
-    Complete runtime/dynamic and other-language analysis, calibrate rules, then introduce
+  next_action: Partial T2 Python observation with direct reverse consumers, report-only
+    ARC-01/02 static checks, isolated Business Documents import/HTTP registration probes,
+    two agent registry/Canvas contracts and two adapter contract tests are documented in
+    docs/develop/t2-python-analysis-ru.md. Expand runtime coverage, complete entrypoint
+    reachability, dead-code and other-language analysis, calibrate rules, then introduce
     enforced policy in T3; T1 remains incomplete.
   execution_evidence: docs/develop/t1-regression-results.json#KEEP-quality-governance

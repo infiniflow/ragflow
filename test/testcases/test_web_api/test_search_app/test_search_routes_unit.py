@@ -209,6 +209,10 @@ def _load_search_api(monkeypatch):
     search_service_mod.SearchService = _SearchService
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
 
+    knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
+    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(accessible=lambda _kb_id, _user_id: True)
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
+
     dialog_service_mod = ModuleType("api.db.services.dialog_service")
 
     async def _async_ask(*_args, **_kwargs):
@@ -265,6 +269,10 @@ def _load_search_api(monkeypatch):
     api_utils_mod.validate_request = _validate_request
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
     utils_pkg.api_utils = api_utils_mod
+
+    pagination_utils_mod = ModuleType("api.utils.pagination_utils")
+    pagination_utils_mod.validate_rest_api_page_size = lambda page_size: page_size
+    monkeypatch.setitem(sys.modules, "api.utils.pagination_utils", pagination_utils_mod)
 
     module_name = "test_search_api_unit_module"
     module_path = repo_root / "api" / "apps" / "restful_apis" / "search_api.py"

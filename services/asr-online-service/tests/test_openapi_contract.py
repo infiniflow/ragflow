@@ -9,6 +9,28 @@ from asr_service.logging_json import JsonFormatter
 from asr_service.main import app
 
 
+EXPECTED_RUNTIME_ROUTES = {
+    ("", (), "webapp", "Mount"),
+    ("/docs", ("GET", "HEAD"), "swagger_ui_html", "Route"),
+    ("/docs/oauth2-redirect", ("GET", "HEAD"), "swagger_ui_redirect", "Route"),
+    ("/health/live", ("GET",), "live", "APIRoute"),
+    ("/health/ready", ("GET",), "ready", "APIRoute"),
+    ("/metrics", ("GET",), "metrics", "APIRoute"),
+    ("/openapi.json", ("GET", "HEAD"), "openapi", "Route"),
+    ("/redoc", ("GET", "HEAD"), "redoc_html", "Route"),
+    ("/v1/asr/jobs", ("POST",), "create_job", "APIRoute"),
+    ("/v1/asr/jobs/{job_id}", ("DELETE",), "cancel_job", "APIRoute"),
+    ("/v1/asr/jobs/{job_id}", ("GET",), "get_job", "APIRoute"),
+    ("/v1/asr/jobs/{job_id}/artifacts/{kind}", ("GET",), "download_artifact", "APIRoute"),
+    ("/v1/asr/jobs/{job_id}/result", ("GET",), "get_result", "APIRoute"),
+    ("/v1/asr/languages", ("GET",), "get_languages", "APIRoute"),
+    ("/v1/asr/models", ("GET",), "get_models", "APIRoute"),
+    ("/v1/asr/uploads", ("POST",), "upload_audio", "APIRoute"),
+    ("/v1/audio/transcriptions", ("POST",), "create_transcription", "APIRoute"),
+    ("/v1/models", ("GET",), "list_models", "APIRoute"),
+}
+
+
 def _extract_enum(yaml_text: str, key: str) -> list[str]:
     marker = f"    {key}:"
     start = yaml_text.find(marker)
@@ -16,8 +38,14 @@ def _extract_enum(yaml_text: str, key: str) -> list[str]:
     enum_marker = "      enum: ["
     enum_start = block.find(enum_marker)
     enum_end = block.find("]", enum_start)
-    values = block[enum_start + len(enum_marker):enum_end]
+    values = block[enum_start + len(enum_marker) : enum_end]
     return [v.strip() for v in values.split(",")]
+
+
+def test_runtime_route_inventory_is_exact():
+    actual = {(route.path, tuple(sorted(getattr(route, "methods", None) or ())), route.name, type(route).__name__) for route in app.routes}
+
+    assert actual == EXPECTED_RUNTIME_ROUTES
 
 
 def test_enum_contract_matches_runtime():
@@ -80,6 +108,7 @@ def test_job_api_artifacts_docx_txt(monkeypatch):
             assert client.get(f"/v1/asr/jobs/{job_id}/artifacts/docx").status_code == 200
     finally:
         descriptor.available = previous
+
 
 def test_log_masked_mode_hides_strings():
     formatter = JsonFormatter(data_mode="masked")

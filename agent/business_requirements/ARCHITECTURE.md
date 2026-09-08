@@ -21,6 +21,7 @@ questions, decisions, comments, jobs, or audit history.
 | Finalization | Review exit conditions hold | One new immutable revision, or an audited no-change agreement | Every authorizing input has exactly one disposition and the aggregate is `AGREED` |
 | Export | The requested revision is the current agreed revision | Durable hash-verified artifact | Artifact metadata and bytes are readable by the owner |
 | Continuation | Owner starts another review on an agreed document | New append-only review cycle | The same document/chat remains the aggregate root |
+| EVA import | New catalog document has one unbound exact-title EVA page | Binding, immutable revision 1 and import audit event in one transaction | The aggregate opens directly in `REVIEW` with comments and review analysis available |
 
 Each process owns its transaction and may communicate with the next process
 only through persisted aggregate state, events, immutable snapshots, and the

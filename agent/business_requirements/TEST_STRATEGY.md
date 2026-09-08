@@ -27,6 +27,7 @@ evidence adapter, exporter, or UI interaction that owns the behavior.
 | Revision/protocol | body mutation while questions are open, non-append-only history | aggregate tests and golden conversations |
 | Export | wrong revision, protocol leakage, unsafe HTML/URLs, corrupt storage | byte-level Markdown/DOCX/EvaWiki and storage readback tests |
 | Workbench | direct edits, wrong command payload, stale selection/conflict loss | Jest interaction tests, TypeScript, ESLint, production build |
+| EVA title import | duplicate title, occupied/multiple pages, template mismatch, partial create, wrong initial analysis | service transaction tests, Jest interaction tests and authenticated browser flow |
 | Packaging | missing policy/template/schema/prompt assets | wheel archive inventory |
 
 ## Positive scenario

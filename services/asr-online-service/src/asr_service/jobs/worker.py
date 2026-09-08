@@ -37,10 +37,7 @@ class Worker:
         if any(t.is_alive() for t in self._threads):
             return
         self._stop_event.clear()
-        self._threads = [
-            threading.Thread(target=self._run, daemon=True)
-            for _ in range(self._n_workers)
-        ]
+        self._threads = [threading.Thread(target=self._run, daemon=True) for _ in range(self._n_workers)]
         for t in self._threads:
             t.start()
 
@@ -91,6 +88,20 @@ class Worker:
         filtered.pop("segments", None)
         return filtered
 
+    @staticmethod
+    def _finish_canceled(job) -> bool:
+        """Make a cancellation observed at a stage boundary terminal."""
+
+        if not job.cancel_requested:
+            return False
+        job.status = JobStatus.canceled
+        job.stage = "canceled"
+        job.percent = 100
+        job.result = None
+        job.artifacts = {}
+        job.error = None
+        return True
+
     def _process_job(self, job_id: str) -> None:
         job = self._store.get(job_id)
         if not job or job.status in {JobStatus.canceled, JobStatus.expired}:
@@ -112,24 +123,32 @@ class Worker:
         engine: AsrEngine | None = None
         try:
             engine = self._manager.acquire(descriptor)
-            if job.cancel_requested:
-                job.status = JobStatus.canceled
-                job.stage = "canceled"
-                job.percent = 100
+            if self._finish_canceled(job):
                 return
 
             job_dir = self._artifacts_dir / job.id
             prepared_audio_path, normalized_wav = preprocess_audio(job.source_uri, self._settings, job_dir)
+            if self._finish_canceled(job):
+                return
             raw = engine.transcribe(audio_path=prepared_audio_path, language=job.language)
+            # Engines expose a synchronous contract and cannot all be interrupted
+            # safely.  A cancel received during inference must still win at the
+            # next stage boundary instead of being overwritten by ``done``.
+            if self._finish_canceled(job):
+                return
             result = finalize_transcript(raw)
             if job.options.enrich.enabled:
                 if not self._settings.ollama_model:
                     raise RuntimeError("W-ASR-OLLAMA-NOT-CONFIGURED")
                 result["enriched_text"] = enrich_text(self._settings, result["transcript"])
+            if self._finish_canceled(job):
+                return
 
             result = self._apply_output_contract(result, job.options.output.include_segments)
             job.result = result
             job.artifacts = self._write_artifacts(job.id, result, job.options.output.artifact_formats, normalized_wav)
+            if self._finish_canceled(job):
+                return
             job.status = JobStatus.done
             job.stage = "done"
             job.percent = 100

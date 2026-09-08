@@ -34,10 +34,9 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["mode", "confirm_replace"],
+          "required": ["mode"],
           "properties": {
-            "mode": { "const": "BIND" },
-            "confirm_replace": { "const": true }
+            "mode": { "const": "BIND" }
           }
         }
       ]

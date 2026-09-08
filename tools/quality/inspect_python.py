@@ -20,8 +20,8 @@ import yaml
 from capture_inventory import capture, git, paths, safe_path
 
 
-VERSION = "0.1.0"
-SOURCE_ROOTS = ("api", "admin", "agent", "common", "rag", "deepdoc")
+VERSION = "0.5.0"
+SOURCE_ROOTS = ("api", "admin", "agent", "business_documents", "common", "rag", "deepdoc")
 MARKERS = {
     "bootstrap": ("api.apps", "api.ragflow_server"),
     "orm": ("peewee", "playhouse", "api.db.db_models"),
@@ -34,15 +34,19 @@ LIMITS = [
     "External libraries, custom import hooks, sys.path mutation and reflection are not resolved transitively.",
     "A possible from-import submodule may be shadowed by a package export; its edge is conservative.",
     "No dead-code verdict, deletion, call graph, runtime benchmark or asymptotic-complexity proof.",
+    "No direct static consumer does not mean dead code; registries, persisted DSL, reflection and external contracts need separate evidence.",
     "Root Python profile only; secondary source roots, frontend and Go require separate analyzers.",
 ]
 
 
-def module_index(sources):
+def module_index(sources, import_roots=frozenset()):
     index = {}
     packages = set()
+    normalized_roots = sorted({root.rstrip("/") + "/" for root in import_roots}, key=len, reverse=True)
     for path in sorted(sources):
-        parts = list(Path(path).with_suffix("").parts)
+        matching_root = next((root for root in normalized_roots if path.startswith(root)), None)
+        module_path = path[len(matching_root) :] if matching_root else path
+        parts = list(Path(module_path).with_suffix("").parts)
         if parts[-1] == "__init__":
             parts.pop()
         if not parts or not all(part.isidentifier() for part in parts):
@@ -92,7 +96,7 @@ class Imports(ast.NodeVisitor):
     def issue(self, node, kind, detail):
         self.issues.append({"source": self.name, "path": self.path, "line": getattr(node, "lineno", 0), "kind": kind, "detail": detail, "type_only": self.type_only})
 
-    def edge(self, target, node, kind="import"):
+    def edge(self, target, node, kind="import", symbols=None):
         if target in self.index:
             resolution = "local"
         elif target in self.packages:
@@ -113,13 +117,14 @@ class Imports(ast.NodeVisitor):
                 "conditional": self.conditional,
                 "type_only": self.type_only,
                 "resolution": resolution,
+                "symbols": sorted(set(symbols or [])),
             }
         )
         # Importing a dotted local target also initializes its parent packages.
         for i in range(1, len(target.split("."))):
             parent = ".".join(target.split(".")[:i])
             if parent != self.name and self.index.get(parent, "").endswith("/__init__.py"):
-                self.edges.append({**self.edges[-1], "target": parent, "kind": "parent_init", "resolution": "local"})
+                self.edges.append({**self.edges[-1], "target": parent, "kind": "parent_init", "resolution": "local", "symbols": []})
 
     def visit_Import(self, node):
         for alias in node.names:
@@ -131,7 +136,7 @@ class Imports(ast.NodeVisitor):
         except (ImportError, ValueError):
             self.issue(node, "invalid_relative_import", "Relative import cannot be resolved in this package")
             return
-        self.edge(target, node)
+        self.edge(target, node, symbols=[alias.name for alias in node.names])
         for alias in node.names:
             if alias.name == "*":
                 self.issue(node, "star_exports", target)
@@ -300,8 +305,8 @@ def function_metrics(tree, path):
     return results
 
 
-def analyze(sources, selected, ownership):
-    index, packages = module_index(sources)
+def collect_import_graph(sources, selected=frozenset(), import_roots=frozenset()):
+    index, packages = module_index(sources, import_roots)
     edges, issues, metrics = [], [], []
     for name, path in index.items():
         try:
@@ -320,6 +325,12 @@ def analyze(sources, selected, ownership):
         if path in selected:
             metrics.extend(function_metrics(tree, path))
     edges = list({json.dumps(edge, sort_keys=True): edge for edge in edges}.values())
+    return {"index": index, "packages": packages, "edges": edges, "issues": issues, "functions": metrics}
+
+
+def analyze(sources, selected, ownership, import_roots=frozenset()):
+    graph = collect_import_graph(sources, selected, import_roots)
+    index, edges, issues, metrics = graph["index"], graph["edges"], graph["issues"], graph["functions"]
     outgoing = {}
     for edge in edges:
         if not edge["type_only"]:
@@ -345,13 +356,47 @@ def analyze(sources, selected, ownership):
                     previous[edge["target"]] = edge
                     queue.append(edge["target"])
     relevant_issues = [issue for issue in issues if issue["source"] in reached and not issue["type_only"]]
+    selected_modules = {name: path for name, path in index.items() if path in selected}
+    incoming_by_target = {module: [] for module in selected_modules}
+    for edge in edges:
+        if edge["target"] not in incoming_by_target or edge["type_only"] or edge["source"] == edge["target"]:
+            continue
+        source_path = index.get(edge["source"])
+        incoming_by_target[edge["target"]].append(
+            {
+                **edge,
+                "source_path": source_path,
+                "source_origin": ownership.get(source_path, {}).get("origin") if source_path else None,
+                "source_owner": ownership.get(source_path, {}).get("owner") if source_path else None,
+            }
+        )
+    reverse_imports = []
+    for module, path in sorted(selected_modules.items()):
+        incoming = incoming_by_target[module]
+        incoming.sort(key=lambda edge: (edge["source"], edge["kind"], edge["line"], edge["path"]))
+        reverse_imports.append(
+            {
+                "module": module,
+                "path": path,
+                "consumer_modules": sorted({edge["source"] for edge in incoming}),
+                "incoming_edges": incoming,
+                "interpretation": "direct potential static import consumers only; absence is not a dead-code verdict",
+            }
+        )
     return {
         "analysis_status": "INCOMPLETE" if relevant_issues else "OBSERVED",
         "policy_status": "NOT_EVALUATED",
         "dead_code_status": "NOT_ANALYZED",
-        "scope": {"selected_paths": sorted(selected), "indexed_files": len(index), "reachable_modules": len(reached)},
+        "scope": {
+            "selected_paths": sorted(selected),
+            "indexed_files": len(index),
+            "reachable_modules": len(reached),
+            "direct_static_consumer_edges": sum(len(item["incoming_edges"]) for item in reverse_imports),
+            "selected_without_static_consumers": sum(not item["incoming_edges"] for item in reverse_imports),
+        },
         "nodes": [{"module": name, "path": path, **ownership.get(path, {"origin": "unknown", "owner": None})} for name, path in index.items() if name in reached],
         "edges": [edge for edge in edges if edge["source"] in reached],
+        "reverse_imports": reverse_imports,
         "coupling_paths": observed,
         "incomplete_reasons": relevant_issues,
         "other_parse_errors": [issue for issue in issues if issue["kind"] == "syntax_error" and issue not in relevant_issues],

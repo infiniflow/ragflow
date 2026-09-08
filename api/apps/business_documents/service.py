@@ -20,6 +20,7 @@ import hashlib
 from itertools import chain
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 import unicodedata
@@ -28,6 +29,7 @@ from peewee import IntegrityError, fn
 
 from api.apps.business_documents.assets import (
     apply_change_plan,
+    import_document_markdown,
     prompt_descriptor,
     published_template,
     process_policy,
@@ -81,6 +83,15 @@ _MODEL_TABLES = (
 )
 
 _MAX_EVA_SYNC_MARKDOWN_SIZE = 100_000
+
+
+@dataclass(frozen=True)
+class _EvaInitialRevision:
+    binding: dict[str, Any]
+    document_ast: dict[str, Any]
+    body_markdown: str
+    event_id: str
+    revision_id: str
 
 
 def _timestamps() -> dict[str, Any]:
@@ -173,11 +184,16 @@ class BusinessDocumentService:
         if schema_version not in {"2", "3"} and raw.get("eva_page_url"):
             raise ValidationError(
                 "EVA_BINDING_REQUIRES_SCHEMA_V2",
-                "EVA page binding requires create-document schema version 2 or 3 and explicit replacement confirmation",
+                "EVA page binding requires create-document schema version 2 or 3",
             )
         if raw.get("eva_page_url"):
             requested_decision = raw.get("eva_decision")
-            if not isinstance(requested_decision, dict) or requested_decision.get("mode") != "BIND" or requested_decision.get("confirm_replace") is not True:
+            if not isinstance(requested_decision, dict) or requested_decision.get("mode") != "BIND":
+                raise ValidationError(
+                    "EVA_BINDING_DECISION_REQUIRED",
+                    "Подтвердите выбор страницы EVA для импорта в новый документ",
+                )
+            if schema_version == "2" and requested_decision.get("confirm_replace") is not True:
                 raise ValidationError(
                     "EVA_REPLACE_CONFIRMATION_REQUIRED",
                     "Confirm that publishing this document will replace the current EVA page content",
@@ -227,6 +243,9 @@ class BusinessDocumentService:
         if policy_version != process_policy()["policy_version"]:
             raise ValidationError("POLICY_NOT_PUBLISHED", "Requested business requirements policy version is not published")
         eva_binding = cls._resolve_create_eva_binding(actor_id, raw, schema_version, display_title)
+        eva_import = cls._prepare_eva_import(actor_id, schema_version, display_title, eva_binding)
+        if eva_import is not None:
+            eva_binding = eva_import.binding
 
         database = BusinessDocument._meta.database
         try:
@@ -273,6 +292,8 @@ class BusinessDocumentService:
                     },
                     correlation_id=document_id,
                 )
+                if eva_import is not None:
+                    cls._store_initial_eva_revision(document_id, actor_id, eva_import)
         except IntegrityError as error:
             if BusinessDocument.select().where(BusinessDocument.title_key == normalized_title_key).exists():
                 raise ConflictError("DOCUMENT_TITLE_ALREADY_EXISTS", "A business document with this title already exists") from error
@@ -1775,8 +1796,8 @@ class BusinessDocumentService:
         return proposal_id, True
 
     @classmethod
-    def _insert_revision(cls, document_id, revision_number, document_ast, body, source_event_ids, author_id=None):
-        revision_id = get_uuid()
+    def _insert_revision(cls, document_id, revision_number, document_ast, body, source_event_ids, author_id=None, *, revision_id=None):
+        revision_id = revision_id or get_uuid()
         BusinessDocumentRevision.create(
             id=revision_id,
             document_id=document_id,
@@ -2528,12 +2549,12 @@ class BusinessDocumentService:
                     }
                 )
                 continue
-            if event.event_type == "EvaDocumentPulled":
+            if event.event_type in {"EvaDocumentImported", "EvaDocumentPulled"}:
                 basis.append(
                     {
                         **common,
                         "type": "EVA_SYNC",
-                        "title": "Изменения из EVA",
+                        "title": "Исходная версия из EVA" if event.event_type == "EvaDocumentImported" else "Изменения из EVA",
                         "summary": str(event.payload.get("page_url") or "Связанная страница EVA"),
                         "details": str(event.payload.get("remote_version") or "") or None,
                         "section_id": None,
@@ -2573,6 +2594,99 @@ class BusinessDocumentService:
         return result
 
     @classmethod
+    def _prepare_eva_import(
+        cls,
+        actor_id: str,
+        schema_version: object,
+        display_title: str,
+        binding: dict[str, Any] | None,
+    ) -> _EvaInitialRevision | None:
+        if schema_version != "3" or binding is None:
+            return None
+
+        from api.apps.business_documents.eva_changes import EvaDocumentChangeService
+
+        if binding.get("status") != "CONNECTED":
+            raise ConflictError(
+                "EVA_IMPORT_UNAVAILABLE",
+                "Не удалось прочитать выбранную страницу EVA для импорта",
+            )
+        refreshed_binding, remote_markdown = EvaDocumentChangeService.read_connected_page(actor_id, binding)
+        remote_title = str(refreshed_binding.get("document_name") or "").strip()
+        if remote_title and normalize_title(remote_title) != normalize_title(display_title):
+            raise ConflictError(
+                "EVA_PAGE_TITLE_CHANGED",
+                "Название выбранной страницы EVA изменилось",
+                {"actual_title": remote_title},
+            )
+        if len(remote_markdown) > _MAX_EVA_SYNC_MARKDOWN_SIZE:
+            raise ValidationError(
+                "EVA_DOCUMENT_TOO_LARGE",
+                "Страница EVA слишком велика для импорта в бизнес-документ",
+                {"maximum": _MAX_EVA_SYNC_MARKDOWN_SIZE},
+            )
+        document_ast = import_document_markdown(remote_markdown)
+        event_id = get_uuid()
+        return _EvaInitialRevision(
+            binding={
+                **refreshed_binding,
+                "last_pulled_content_hash": refreshed_binding.get("remote_content_hash"),
+                "last_pulled_at": current_timestamp(),
+                "last_pull_event_id": event_id,
+                "last_pull_review_cycle": 1,
+            },
+            document_ast=document_ast,
+            body_markdown=render_document_ast(document_ast),
+            event_id=event_id,
+            revision_id=get_uuid(),
+        )
+
+    @classmethod
+    def _store_initial_eva_revision(
+        cls,
+        document_id: str,
+        actor_id: str,
+        imported: _EvaInitialRevision,
+    ) -> None:
+        cls._create_event(
+            document_id=document_id,
+            sequence=2,
+            event_type="EvaDocumentImported",
+            actor_type="USER",
+            actor_id=actor_id,
+            payload={
+                "review_cycle": 1,
+                "revision_id": imported.revision_id,
+                "page_url": imported.binding["page_url"],
+                "connector_id": imported.binding["connector_id"],
+                "document_id": imported.binding["document_id"],
+                "remote_version": imported.binding.get("remote_version"),
+                "remote_content_hash": imported.binding.get("remote_content_hash"),
+            },
+            correlation_id=document_id,
+            event_id=imported.event_id,
+        )
+        cls._insert_revision(
+            document_id,
+            1,
+            imported.document_ast,
+            imported.body_markdown,
+            [imported.event_id],
+            actor_id,
+            revision_id=imported.revision_id,
+        )
+        document = BusinessDocument.get_by_id(document_id)
+        cls._optimistic_update(
+            document,
+            {
+                "lifecycle_state": LifecycleState.REVIEW.value,
+                "current_revision_id": imported.revision_id,
+                "active_review_cycle": 1,
+                "state_version": 2,
+            },
+        )
+
+    @classmethod
     def _resolve_create_eva_binding(
         cls,
         actor_id: str,
@@ -2590,7 +2704,8 @@ class BusinessDocumentService:
 
         if page_url:
             binding = EvaDocumentChangeService.resolve_page_url(actor_id, page_url)
-            if binding.get("status") not in {"CONNECTED", "LINK_ONLY"}:
+            allowed_statuses = {"CONNECTED"} if schema_version == "3" else {"CONNECTED", "LINK_ONLY"}
+            if binding.get("status") not in allowed_statuses:
                 raise ConflictError("EVA_BINDING_UNAVAILABLE", "The selected EVA page could not be verified")
             remote_title = str(binding.get("document_name") or "").strip()
             if remote_title and normalize_title(remote_title) != normalize_title(display_title):
@@ -2602,12 +2717,25 @@ class BusinessDocumentService:
             return binding
         if decision_mode == "SKIP":
             return None
-        matches = EvaDocumentChangeService.find_title_matches(actor_id, display_title)
+        matches = cls._eva_matches_with_occupancy(EvaDocumentChangeService.find_title_matches(actor_id, display_title))
+        available_matches = [match for match in matches if match.get("binding_available")]
+        if schema_version == "3" and len(available_matches) == 1:
+            binding = EvaDocumentChangeService.resolve_page_url(actor_id, available_matches[0].get("web_url"))
+            if binding.get("status") != "CONNECTED":
+                raise ConflictError("EVA_IMPORT_UNAVAILABLE", "Не удалось прочитать найденную страницу EVA для импорта")
+            remote_title = str(binding.get("document_name") or "").strip()
+            if remote_title and normalize_title(remote_title) != normalize_title(display_title):
+                raise ConflictError(
+                    "EVA_PAGE_TITLE_CHANGED",
+                    "Название найденной страницы EVA изменилось",
+                    {"actual_title": binding.get("document_name")},
+                )
+            return binding
         if matches:
             raise ConflictError(
                 "EVA_BINDING_DECISION_REQUIRED",
-                "EVA Wiki contains pages with this title. Choose a page or continue without linking.",
-                {"matches": cls._eva_matches_with_occupancy(matches)},
+                "EVA Wiki contains pages with this title. Choose an available page or continue without linking.",
+                {"matches": matches},
             )
         return None
 

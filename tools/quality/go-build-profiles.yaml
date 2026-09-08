@@ -1,0 +1,66 @@
+schema_version: 1
+status: T2 report-only Go package build profiles; execution requires the repository build.sh native toolchain
+profiles:
+- id: owned-go-delta
+  rule_id: BUILD-01
+  platform: linux
+  driver: build.sh
+  required_tools:
+  - bash
+  - go
+  c_compilers:
+  - clang
+  - gcc
+  native_dependencies:
+  - office_oxide
+  - pdfium-static
+  - pdf_oxide
+  timeout_seconds: 600
+  test_args:
+  - -json
+  - -p
+  - "4"
+  - -timeout
+  - 5m
+  targets:
+  - id: server-entrypoints
+    owners: [deployment]
+    path_prefixes:
+    - cmd/
+    build_args:
+    - --go
+    artifacts:
+    - bin/ragflow_server
+    - bin/ragflow-cli
+  - id: agent-runtime
+    owners: [agent-runtime]
+    path_prefixes:
+    - internal/agent/component/
+    - internal/handler/
+    packages:
+    - ./internal/agent/component
+    - ./internal/handler
+  - id: canvas-template-seed
+    owners: [mrz-assets]
+    path_prefixes:
+    - internal/dao/
+    packages:
+    - ./internal/dao
+  - id: model-runtime
+    owners: [models-runtime]
+    path_prefixes:
+    - internal/entity/models/
+    packages:
+    - ./internal/entity/models
+  - id: telemetry-provider
+    owners: [observability]
+    path_prefixes:
+    - internal/observability/otel/
+    packages:
+    - ./internal/observability/otel
+  - id: storage-regression
+    owners: [quality-governance]
+    path_prefixes:
+    - internal/storage/
+    packages:
+    - ./internal/storage

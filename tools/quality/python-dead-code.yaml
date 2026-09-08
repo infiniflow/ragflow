@@ -1,0 +1,17 @@
+schema_version: 1
+status: T2 report-only DEAD-01 static candidate scan; no deletion verdict or apply mode
+profiles:
+- id: business-documents-domain
+  owner_module: business-documents
+  source_roots: [api, business_documents, common]
+  path_prefixes:
+  - business_documents/
+  rationale: Scan the pure owned domain package while treating public contracts and unresolved dynamic use conservatively.
+- id: asr-service
+  owner_module: asr
+  source_roots: [services]
+  python_paths:
+  - services/asr-online-service/src
+  path_prefixes:
+  - services/asr-online-service/src/asr_service/
+  rationale: Scan the owned ASR service while treating FastAPI routes, model registries, public contracts and unresolved dynamic use conservatively.

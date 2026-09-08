@@ -129,7 +129,7 @@ def _patch_json_parser(monkeypatch, module, payload_state, err_state=None):
     monkeypatch.setattr(module, "validate_and_parse_json_request", _parse_json)
 
 
-def _load_dataset_module(monkeypatch):
+def _load_dataset_module(monkeypatch, *, registration_only=False):
     repo_root = Path(__file__).resolve().parents[4]
 
     quart_mod = ModuleType("quart")
@@ -182,6 +182,10 @@ def _load_dataset_module(monkeypatch):
     services_pkg = ModuleType("api.db.services")
     services_pkg.__path__ = []
     monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
+    managed_resource_service_mod = ModuleType("api.db.services.managed_resource_service")
+    managed_resource_service_mod.ManagedResourceService = SimpleNamespace(owner_id=lambda tenant_id: tenant_id)
+    monkeypatch.setitem(sys.modules, "api.db.services.managed_resource_service", managed_resource_service_mod)
 
     document_service_mod = ModuleType("api.db.services.document_service")
 
@@ -393,6 +397,7 @@ def _load_dataset_module(monkeypatch):
     api_utils_mod.get_error_argument_result = _get_error_argument_result
     api_utils_mod.get_error_data_result = _get_error_data_result
     api_utils_mod.get_error_permission_result = _get_error_permission_result
+    api_utils_mod.get_json_result = _get_result
     api_utils_mod.get_parser_config = lambda _chunk_method, _unused: {"auto": True}
     api_utils_mod.get_result = _get_result
     api_utils_mod.remap_dictionary_keys = lambda data: data
@@ -425,6 +430,22 @@ def _load_dataset_module(monkeypatch):
     search_mod.index_name = lambda _tenant_id: "idx"
     monkeypatch.setitem(sys.modules, "rag.nlp.search", search_mod)
     rag_nlp_pkg.search = search_mod
+
+    if registration_only:
+        apps_services_pkg = ModuleType("api.apps.services")
+        apps_services_pkg.__path__ = []
+        dataset_api_service_mod = ModuleType("api.apps.services.dataset_api_service")
+        dataset_api_service_mod.KnowledgebaseService = _StubKnowledgebaseService
+        dataset_api_service_mod.DocumentService = _StubDocumentService
+        dataset_api_service_mod.File2DocumentService = _StubFile2DocumentService
+        dataset_api_service_mod.FileService = _StubFileService
+        dataset_api_service_mod.TaskService = _StubTaskService
+        dataset_api_service_mod.TenantService = _StubTenantService
+        dataset_api_service_mod.settings = common_pkg.settings
+        dataset_api_service_mod.queue_raptor_o_graphrag_tasks = document_service_mod.queue_raptor_o_graphrag_tasks
+        apps_services_pkg.dataset_api_service = dataset_api_service_mod
+        monkeypatch.setitem(sys.modules, "api.apps.services", apps_services_pkg)
+        monkeypatch.setitem(sys.modules, "api.apps.services.dataset_api_service", dataset_api_service_mod)
 
     module_name = "test_dataset_sdk_routes_unit_module"
     module_path = repo_root / "api" / "apps" / "restful_apis" / "dataset_api.py"

@@ -303,7 +303,7 @@ interface CreateBusinessDocumentRequestBase {
   idea: string;
   dataset_ids?: string[];
   eva_page_url?: string;
-  eva_decision?: { mode: 'SKIP' } | { mode: 'BIND'; confirm_replace: true };
+  eva_decision?: { mode: 'SKIP' } | { mode: 'BIND' };
 }
 
 export type CreateBusinessDocumentRequest =

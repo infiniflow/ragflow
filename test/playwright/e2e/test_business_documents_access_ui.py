@@ -449,7 +449,7 @@ class BusinessDocumentsAccessStub:
 
 class EvaBindingChallengeStub(BusinessDocumentsAccessStub):
     def __init__(self):
-        super().__init__("AUTHOR_CREATOR")
+        super().__init__("AUTHOR_CREATOR", owner_id=ACTOR_ID)
         self.matches = [
             {
                 "connector_id": "connector-ui",
@@ -471,6 +471,30 @@ class EvaBindingChallengeStub(BusinessDocumentsAccessStub):
                 "connector_id": "connector-ui",
                 "connector_name": "EVA Wiki",
                 "eva_origin": "https://eva-api.example.test",
+                "id": "eva-available-portfolio",
+                "name": "Новый продукт",
+                "code": "BR-43",
+                "project_id": "project-portfolio",
+                "web_url": "https://eva.example.test/portfolio/Document/BR-43",
+                "breadcrumbs": [
+                    {
+                        "id": "folder-portfolio",
+                        "name": "Портфель",
+                        "web_url": "https://eva.example.test/portfolio/Document/PORTFOLIO",
+                    },
+                    {
+                        "id": "eva-available-portfolio",
+                        "name": "Новый продукт",
+                        "web_url": "https://eva.example.test/portfolio/Document/BR-43",
+                    },
+                ],
+                "hierarchy": "Портфель › Новый продукт",
+                "binding_available": True,
+            },
+            {
+                "connector_id": "connector-ui",
+                "connector_name": "EVA Wiki",
+                "eva_origin": "https://eva-api.example.test",
                 "id": "eva-occupied",
                 "name": "Новый продукт",
                 "code": "BR-99",
@@ -485,6 +509,12 @@ class EvaBindingChallengeStub(BusinessDocumentsAccessStub):
                 "linked_document": {"document_id": "doc-existing", "title": "Занятые требования"},
             },
         ]
+
+    def _current_projection(self):
+        projection = super()._current_projection()
+        projection["protocol"] = {"questions": [], "proposals": [], "comments": []}
+        projection["allowed_commands"] = ["ADD_COMMENT", "REQUEST_REVIEW_ASSESSMENT"]
+        return projection
 
     def __call__(self, route):
         request = route.request
@@ -626,8 +656,9 @@ def test_document_role_matrix_controls_browser_actions(
     stub = BusinessDocumentsAccessStub(role)
     _open_documents(page, base_url, stub)
 
-    expect(page.get_by_test_id("new-document-mode")).to_be_enabled(enabled=can_create)
-    expect(page.get_by_test_id("business-document-create-denied")).to_have_count(0 if can_create else 1)
+    expect(page.get_by_test_id("business-document-create-panel")).to_have_count(1 if can_create else 0)
+    expect(page.get_by_test_id("new-document-mode")).to_have_count(1 if can_create else 0)
+    expect(page.get_by_test_id("eva-change-mode")).to_have_count(1 if can_create else 0)
 
     page.goto(f"{base_url.rstrip('/')}/business-documents/{DOCUMENT_ID}")
     expect(page.get_by_test_id("business-document-workbench")).to_be_visible(timeout=RESULT_TIMEOUT_MS)
@@ -756,7 +787,7 @@ def test_create_permission_error_preserves_form_and_does_not_navigate(page, base
 
 @pytest.mark.p1
 @pytest.mark.auth
-def test_eva_title_challenge_requires_page_selection_and_replace_confirmation(page, base_url):
+def test_eva_title_challenge_opens_the_selected_free_page_in_the_editor(page, base_url):
     stub = EvaBindingChallengeStub()
     _open_documents(page, base_url, stub)
     page.get_by_label("Название документа").select_option(CATALOG_ENTRY_ID)
@@ -767,26 +798,22 @@ def test_eva_title_challenge_requires_page_selection_and_replace_confirmation(pa
     expect(banner).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     expect(banner).to_contain_text("Занятые требования")
     expect(page.get_by_role("link", name="Проекты")).to_have_attribute("href", stub.matches[0]["breadcrumbs"][0]["web_url"])
-    expect(page.get_by_role("link", name="Архив")).to_have_attribute("href", stub.matches[1]["breadcrumbs"][0]["web_url"])
-    bind_buttons = page.get_by_role("button", name="Привязать")
-    expect(bind_buttons).to_have_count(2)
-    expect(bind_buttons.nth(1)).to_be_disabled()
+    expect(page.get_by_role("link", name="Портфель")).to_have_attribute("href", stub.matches[1]["breadcrumbs"][0]["web_url"])
+    expect(page.get_by_role("link", name="Архив")).to_have_attribute("href", stub.matches[2]["breadcrumbs"][0]["web_url"])
+    bind_buttons = page.get_by_role("button", name="Открыть в редакторе")
+    expect(bind_buttons).to_have_count(3)
+    expect(bind_buttons.nth(2)).to_be_disabled()
 
     bind_buttons.nth(0).click()
-    confirmation = page.get_by_test_id("eva-replace-confirmation")
-    expect(confirmation).to_contain_text("будет полностью заменено содержимым документа")
-    page.get_by_role("button", name="Отмена").click()
-    expect(confirmation).to_be_hidden()
-    assert len(stub.mutations) == 1
-
-    bind_buttons.nth(0).click()
-    page.get_by_test_id("confirm-eva-replace").click()
     expect(page).to_have_url(re.compile(f"/business-documents/{DOCUMENT_ID}$"), timeout=RESULT_TIMEOUT_MS)
+    expect(page.get_by_test_id("business-document-markdown")).to_be_visible()
+    expect(page.get_by_role("textbox", name="Комментарий")).to_be_visible()
+    expect(page.get_by_role("button", name="Проанализировать замечания")).to_be_visible()
     create_payloads = [payload for method, path, payload in stub.mutations if method == "POST" and path == "/api/v1/business-documents"]
     assert create_payloads[1]["schema_version"] == "3"
     assert create_payloads[1]["catalog_entry_id"] == CATALOG_ENTRY_ID
     assert create_payloads[1]["eva_page_url"] == stub.matches[0]["web_url"]
-    assert create_payloads[1]["eva_decision"] == {"mode": "BIND", "confirm_replace": True}
+    assert create_payloads[1]["eva_decision"] == {"mode": "BIND"}
 
 
 @pytest.mark.p1

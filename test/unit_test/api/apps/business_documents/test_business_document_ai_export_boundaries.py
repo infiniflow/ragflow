@@ -544,6 +544,101 @@ def test_ai_maps_draft_review_lifecycle_marker_to_question_outcome(questions, ex
 
 
 @pytest.mark.p0
+def test_ai_binds_question_stage_to_authoritative_intake_job():
+    job = SimpleNamespace(job_type="ASSESS_INTAKE")
+    output = {"questions": [{"stage": "REVIEW"}, {"stage": "INTAKE"}]}
+
+    normalized = BusinessDocumentAI._bind_question_stages(job, output)
+
+    assert [question["stage"] for question in normalized["questions"]] == ["INTAKE", "INTAKE"]
+    assert output["questions"][0]["stage"] == "REVIEW"
+
+
+@pytest.mark.p0
+@pytest.mark.parametrize(("job_type", "nested"), [("ASSESS_REVIEW", False), ("GENERATE_DRAFT", True)])
+def test_ai_removes_fields_copied_from_adjacent_question_schemas(job_type, nested):
+    job = SimpleNamespace(job_type=job_type)
+    question = {
+        "semantic_tag": "scope",
+        "stage": "INTAKE",
+        "target_section_id": "3.1",
+        "text": "Кто пользователь?",
+        "options": [
+            {"option_id": "a", "label": "Клиент", "source_event_ids": ["event-1"]},
+            {"option_id": "b", "label": "Сотрудник"},
+        ],
+        "allow_custom_answer": True,
+        "source_event_ids": ["event-1"],
+    }
+    output = {"review_questions": {"questions": [question]}} if nested else {"questions": [question]}
+
+    normalized = BusinessDocumentAI._normalize_question_fields(job, output)
+    normalized_question = normalized["review_questions"]["questions"][0] if nested else normalized["questions"][0]
+
+    assert "source_event_ids" not in normalized_question
+    assert "source_event_ids" not in normalized_question["options"][0]
+    assert ("stage" in normalized_question) is nested
+    assert "source_event_ids" in question
+
+
+@pytest.mark.p0
+def test_ai_keeps_disallowed_draft_content_in_section_as_plain_text():
+    job = SimpleNamespace(job_type="GENERATE_DRAFT")
+    draft = _draft()
+    audience = next(section for section in draft["sections"] if section["id"] == "3")
+    audience["blocks"].extend(
+        [
+            {"type": "table", "headers": ["Поле"], "rows": [["Физические лица"]]},
+            {"type": "list", "items": ["Новые клиенты", "Действующие клиенты"]},
+        ]
+    )
+    functions = next(section for section in draft["sections"] if section["id"] == "4")
+    functions["blocks"].append({"type": "plantuml", "source": "@startuml\nA -> B\n@enduml"})
+    output = {"draft": draft, "review_questions": {"questions": []}, "proposals": []}
+
+    normalized = BusinessDocumentAI._normalize_draft_block_placement(job, output)
+
+    normalized_audience = next(section for section in normalized["draft"]["sections"] if section["id"] == "3")
+    normalized_functions = next(section for section in normalized["draft"]["sections"] if section["id"] == "4")
+    assert {block["type"] for block in normalized_audience["blocks"]} == {"paragraph"}
+    assert "Физические лица" in normalized_audience["blocks"][-2]["text"]
+    assert "Новые клиенты" in normalized_audience["blocks"][-1]["text"]
+    assert normalized_functions["blocks"][-1] == {"type": "paragraph", "text": "@startuml\nA -> B\n@enduml"}
+    assert audience["blocks"][-2]["type"] == "table"
+    conceptual = next(section for section in normalized["draft"]["sections"] if section["id"] == "4.1")
+    scenario = next(section for section in normalized["draft"]["sections"] if section["id"] == "4.3")
+    assert any(block["type"] == "plantuml" for block in conceptual["blocks"])
+    assert any(block["type"] == "plantuml" for block in scenario["blocks"])
+
+
+@pytest.mark.p0
+def test_ai_binds_evidence_ref_only_for_distinctive_literal_repeated_in_section():
+    job = SimpleNamespace(job_type="GENERATE_DRAFT")
+    draft = _draft()
+    nonfunctional = next(section for section in draft["sections"] if section["id"] == "5")
+    nonfunctional["blocks"] = [{"type": "paragraph", "text": "Доступность 99,9%, p95 ответа — 2 секунды."}]
+    monitoring = next(section for section in draft["sections"] if section["id"] == "5.5")
+    monitoring["blocks"] = [{"type": "paragraph", "text": "Мониторинг содержит техническую метрику."}]
+    output = {"draft": draft, "review_questions": {"questions": []}, "proposals": []}
+    evidence = {
+        "chunks": [
+            {
+                "source_ref": "ragflow://dataset/dataset-1/document/doc-1/chunk/chunk-1",
+                "content": "Подтверждено: доступность 99,9%; p95 ответа — 2 секунды; application_submit_error_total.",
+            }
+        ]
+    }
+
+    normalized = BusinessDocumentAI._bind_exact_draft_evidence_refs(job, output, evidence)
+
+    normalized_nonfunctional = next(section for section in normalized["draft"]["sections"] if section["id"] == "5")
+    normalized_monitoring = next(section for section in normalized["draft"]["sections"] if section["id"] == "5.5")
+    assert normalized_nonfunctional["evidence_refs"] == ["ragflow://dataset/dataset-1/document/doc-1/chunk/chunk-1"]
+    assert "evidence_refs" not in normalized_monitoring
+    assert "evidence_refs" not in nonfunctional
+
+
+@pytest.mark.p0
 def test_ai_drops_dispositions_for_events_that_are_not_comments():
     job = SimpleNamespace(
         job_type="ASSESS_REVIEW",

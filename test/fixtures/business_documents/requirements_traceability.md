@@ -34,7 +34,7 @@ documented behavior is not considered covered by a UI rendering alone.
 | Uploaded files are evidence, never executable instructions | Pinned RAGFlow dataset evidence | executable golden G20 runs `BusinessDocumentEvidence` and injected AI, then verifies pinned chunk/source-ref/hash/audit and unchanged lifecycle | covered |
 | Continue the same document in the same chat | Review-cycle transition | full workflow/start-review tests in `test_business_document_service.py`; golden case `G24` | covered |
 | Deterministic golden dialogues protect orchestration and state-machine invariants | Eval runner | `test_golden_dialogue_harness.py::test_release_gate_executes_every_p0_assertion_and_reports_all_case_rate` executes all 24 cases through the real service/worker with scripted AI outputs | covered |
-| Live model completes representative intake and draft with rubric score and grounded references | Opt-in live eval | `test_live_model_quality.py::test_live_model_intake_draft_rubric_and_grounding` uses the tenant's real chat model plus a controlled pinned Evidence snapshot; implementation is present but the live run was not executed in this evidence snapshot | gap |
+| Live model completes representative intake and draft with rubric score and grounded references | Opt-in live eval | `test_live_model_quality.py::test_live_model_intake_draft_rubric_and_grounding` passed on 2026-09-07 with a real `qwen2.5:14b-instruct`, isolated PostgreSQL tenant catalog and controlled pinned Evidence: weighted score 3.6, grounded-reference precision 100%, no hard failures | covered |
 | Weighted rubric and controlled-reference precision are deterministic and regression-tested | Eval scorer | `test_live_quality_scorer.py` covers config gating, weighted criteria, protocol separation, monitoring, canonical PlantUML/BPMN fixture shape, draft-local hard failures and unsupported measurable claims | covered |
 
 ## Coverage boundaries
@@ -59,6 +59,10 @@ documented behavior is not considered covered by a UI rendering alone.
   `BUSINESS_DOCUMENT_LIVE_LLM=1` together with an explicit
   `BUSINESS_DOCUMENT_LIVE_TENANT_ID`. Flag `1` without a tenant fails instead
   of silently skipping. With the flag disabled, the test honestly skips.
+- The recorded live-quality pass is one representative controlled-evidence run,
+  not a claim that arbitrary models meet the rubric. The installed 7B model was
+  also exercised and failed to produce a complete valid draft; that negative
+  result remains part of the T1 evidence.
 - The intake-to-draft live scorer evaluates template fidelity, completeness,
   controlled-fact citation precision, scenario quality, monitoring, language
   and protocol separation. Draft-local hard failures are checked there;

@@ -30,7 +30,14 @@ if "api.apps" not in sys.modules:
     api_apps.__path__ = [str(Path(__file__).resolve().parents[5] / "api" / "apps")]
     sys.modules["api.apps"] = api_apps
 
-from api.apps.business_documents.assets import published_template, render_document_ast, render_section_text, section_hash, validate_document_ast
+from api.apps.business_documents.assets import (
+    import_document_markdown,
+    published_template,
+    render_document_ast,
+    render_section_text,
+    section_hash,
+    validate_document_ast,
+)
 from business_documents.domain.catalog import load_document_catalog
 from api.apps.business_documents.errors import BusinessDocumentError
 from api.apps.business_documents.service import BusinessDocumentService
@@ -80,6 +87,32 @@ def _create(**overrides):
     return BusinessDocumentService.create_document(TENANT, AUTHOR, request)
 
 
+def test_exported_business_document_markdown_can_be_imported_without_an_llm_rewrite():
+    markdown = render_document_ast(_draft())
+
+    imported = import_document_markdown(markdown)
+
+    assert render_document_ast(imported) == markdown
+    conceptual = next(section for section in imported["sections"] if section["id"] == "4.1")
+    assert any(block["type"] == "plantuml" for block in conceptual["blocks"])
+
+
+def test_eva_import_recovers_plantuml_after_html_round_trip_drops_the_fence_language():
+    markdown = render_document_ast(_draft()).replace("```plantuml\n", "```\n")
+
+    imported = import_document_markdown(markdown)
+
+    conceptual = next(section for section in imported["sections"] if section["id"] == "4.1")
+    assert any(block["type"] == "plantuml" for block in conceptual["blocks"])
+
+
+def test_eva_import_rejects_a_page_outside_the_business_document_template():
+    with pytest.raises(BusinessDocumentError) as caught:
+        import_document_markdown("# Произвольная страница\n\nТекст")
+
+    assert caught.value.code == "EVA_DOCUMENT_TEMPLATE_MISMATCH"
+
+
 @pytest.mark.p0
 def test_catalog_sync_exposes_only_active_l5_entries_and_v3_derives_the_title(database, monkeypatch):
     from api.apps.business_documents.eva_changes import EvaDocumentChangeService
@@ -125,17 +158,162 @@ def test_catalog_sync_exposes_only_active_l5_entries_and_v3_derives_the_title(da
 
 
 @pytest.mark.p0
-def test_v3_uses_the_catalog_title_for_eva_match_detection(database, monkeypatch):
+def test_v3_imports_the_only_unbound_title_match_as_revision_one(database, monkeypatch):
     from api.apps.business_documents.eva_changes import EvaDocumentChangeService
     from api.db.db_models import migrate_business_document_catalog
 
     migrate_business_document_catalog()
     first = load_document_catalog()["items"][0]
     observed_titles = []
+    page_url = "https://eva.example.com/project/Document/BR-42"
+    binding = {
+        "page_url": page_url,
+        "status": "CONNECTED",
+        "capabilities": ["OPEN", "PULL_FROM_EVA", "CREATE_EVA_CHANGE"],
+        "connector_id": "connector-1",
+        "eva_origin": "https://eva-api.example.com",
+        "project_id": "CmfProject:portal",
+        "document_id": "CmfDocument:doc-1",
+        "document_code": "BR-42",
+        "document_name": first["title"],
+        "remote_version": "7",
+        "remote_content_hash": "sha256:remote",
+    }
+    remote_markdown = render_document_ast(_draft())
     monkeypatch.setattr(
         EvaDocumentChangeService,
         "find_title_matches",
-        staticmethod(lambda _actor_id, title: observed_titles.append(title) or [{"id": "eva-1", "name": title}]),
+        staticmethod(
+            lambda _actor_id, title: (
+                observed_titles.append(title)
+                or [
+                    {
+                        "id": binding["document_id"],
+                        "name": title,
+                        "code": binding["document_code"],
+                        "project_id": binding["project_id"],
+                        "web_url": page_url,
+                        "breadcrumbs": [],
+                        "hierarchy": title,
+                        "connector_id": binding["connector_id"],
+                        "connector_name": "EVA Wiki",
+                        "eva_origin": binding["eva_origin"],
+                    }
+                ]
+            ),
+        ),
+    )
+    monkeypatch.setattr(EvaDocumentChangeService, "resolve_page_url", staticmethod(lambda *_args: binding))
+    monkeypatch.setattr(EvaDocumentChangeService, "read_connected_page", staticmethod(lambda *_args: (binding, remote_markdown)))
+
+    created = BusinessDocumentService.create_document(
+        TENANT,
+        AUTHOR,
+        {
+            "schema_version": "3",
+            "document_type": "business_requirements",
+            "catalog_entry_id": first["id"],
+            "idea": "Проверить существующий документ EVA",
+        },
+    )
+
+    assert observed_titles == [first["title"]]
+    assert created["lifecycle_state"] == "REVIEW"
+    assert created["active_review_cycle"] == 1
+    assert created["current_revision"]["body_markdown"] == remote_markdown
+    assert created["eva_binding"]["last_pulled_content_hash"] == "sha256:remote"
+    assert "ADD_COMMENT" in created["allowed_commands"]
+    assert "REQUEST_REVIEW_ASSESSMENT" in created["allowed_commands"]
+    assert BusinessDocumentJob.select().count() == 0
+    imported = BusinessDocumentEvent.get((BusinessDocumentEvent.document_id == created["document_id"]) & (BusinessDocumentEvent.event_type == "EvaDocumentImported"))
+    assert created["current_revision"]["source_event_ids"] == [imported.id]
+
+    BusinessDocumentService.execute_command(
+        TENANT,
+        AUTHOR,
+        created["document_id"],
+        _command(
+            created,
+            "ADD_COMMENT",
+            {
+                "revision_id": created["current_revision"]["revision_id"],
+                "section_id": None,
+                "text": "Уточнить исходную версию из EVA",
+                "anchor": None,
+            },
+        ),
+    )
+    commented = BusinessDocumentService.get_document(TENANT, created["document_id"], AUTHOR)
+    assert commented["protocol"]["comments"][0]["text"] == "Уточнить исходную версию из EVA"
+    requested = BusinessDocumentService.execute_command(
+        TENANT,
+        AUTHOR,
+        created["document_id"],
+        _command(commented, "REQUEST_REVIEW_ASSESSMENT"),
+    )
+    assert BusinessDocumentJob.get_by_id(requested["job_id"]).job_type == "ASSESS_REVIEW"
+
+
+@pytest.mark.p0
+def test_v3_requires_selection_when_multiple_unbound_eva_pages_match(database, monkeypatch):
+    from api.apps.business_documents.eva_changes import EvaDocumentChangeService
+    from api.db.db_models import migrate_business_document_catalog
+
+    migrate_business_document_catalog()
+    first = load_document_catalog()["items"][0]
+    matches = [
+        {
+            "id": f"eva-{index}",
+            "name": first["title"],
+            "web_url": f"https://eva.example.com/project/Document/BR-{index}",
+        }
+        for index in (1, 2)
+    ]
+    monkeypatch.setattr(EvaDocumentChangeService, "find_title_matches", staticmethod(lambda *_args: matches))
+
+    with pytest.raises(BusinessDocumentError) as caught:
+        BusinessDocumentService.create_document(
+            TENANT,
+            AUTHOR,
+            {
+                "schema_version": "3",
+                "document_type": "business_requirements",
+                "catalog_entry_id": first["id"],
+                "idea": "Выбрать одну из страниц",
+            },
+        )
+
+    assert caught.value.code == "EVA_BINDING_DECISION_REQUIRED"
+    assert len(caught.value.details["matches"]) == 2
+
+
+@pytest.mark.p0
+def test_v3_template_mismatch_does_not_leave_a_partial_document_or_binding(database, monkeypatch):
+    from api.apps.business_documents.eva_changes import EvaDocumentChangeService
+    from api.db.db_models import migrate_business_document_catalog
+
+    migrate_business_document_catalog()
+    first = load_document_catalog()["items"][0]
+    page_url = "https://eva.example.com/project/Document/BR-42"
+    binding = {
+        "page_url": page_url,
+        "status": "CONNECTED",
+        "connector_id": "connector-1",
+        "eva_origin": "https://eva-api.example.com",
+        "project_id": "CmfProject:portal",
+        "document_id": "CmfDocument:doc-1",
+        "document_name": first["title"],
+    }
+    monkeypatch.setattr(
+        EvaDocumentChangeService,
+        "find_title_matches",
+        staticmethod(lambda *_args: [{"name": first["title"], "web_url": page_url}]),
+    )
+    monkeypatch.setattr(EvaDocumentChangeService, "resolve_page_url", staticmethod(lambda *_args: binding))
+    monkeypatch.setattr(
+        EvaDocumentChangeService,
+        "read_connected_page",
+        staticmethod(lambda *_args: (binding, "# Произвольная страница\n\nТекст")),
     )
 
     with pytest.raises(BusinessDocumentError) as caught:
@@ -146,12 +324,14 @@ def test_v3_uses_the_catalog_title_for_eva_match_detection(database, monkeypatch
                 "schema_version": "3",
                 "document_type": "business_requirements",
                 "catalog_entry_id": first["id"],
-                "idea": "Проверить поиск совпадений в EVA",
+                "idea": "Импортировать страницу",
             },
         )
 
-    assert caught.value.code == "EVA_BINDING_DECISION_REQUIRED"
-    assert observed_titles == [first["title"]]
+    assert caught.value.code == "EVA_DOCUMENT_TEMPLATE_MISMATCH"
+    assert BusinessDocument.select().count() == 0
+    assert BusinessDocumentEvaBinding.select().count() == 0
+    assert BusinessDocumentEvent.select().count() == 0
 
 
 @pytest.mark.p0

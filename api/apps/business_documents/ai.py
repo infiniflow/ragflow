@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 import json
+import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 import unicodedata
@@ -42,6 +44,35 @@ from api.db.db_models import BusinessDocumentJob
 
 
 _AI_JOB_TYPES = {"ASSESS_INTAKE", "ASSESS_REVIEW", "GENERATE_DRAFT", "PLAN_CHANGES"}
+
+
+async def _drain_litellm_callbacks() -> None:
+    """Let LiteLLM callbacks finish before the adapter's private loop closes.
+
+    LiteLLM 1.82.5 schedules callback coroutines on a global worker.  This
+    adapter is synchronous and creates a short-lived event loop, so returning
+    immediately can abandon callbacks bound to this loop.  Wait for queued and
+    already-running callbacks, but never stop or clear the process-global worker:
+    those operations could cancel telemetry from a concurrent LLM request.
+    """
+
+    from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
+
+    # Give the worker a turn to dequeue callbacks created by the completion.
+    await asyncio.sleep(0)
+    try:
+        # With no configured remote callback this normally completes within a
+        # single event-loop turn.  Do not let best-effort provider telemetry
+        # consume the durable job's own model timeout.
+        await asyncio.wait_for(GLOBAL_LOGGING_WORKER.flush(), timeout=1.0)
+        loop = asyncio.get_running_loop()
+        running = tuple(task for task in getattr(GLOBAL_LOGGING_WORKER, "_running_tasks", ()) if not task.done() and task.get_loop() is loop)
+        if running:
+            _, pending = await asyncio.wait(running, timeout=1.0)
+            if pending:
+                raise TimeoutError
+    except TimeoutError:
+        logging.warning("Timed out waiting for LiteLLM callbacks before closing the adapter event loop")
 
 
 def _active_change_input_event_ids(job_payload: dict[str, Any]) -> list[str]:
@@ -158,17 +189,22 @@ class RAGFlowLLMAdapter:
         model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
         task_type = input_payload.get("job_input", {}).get("task_type")
         max_completion_tokens = 8192 if task_type in {"GENERATE_DRAFT", "GENERATE_EVA_CHANGE"} else 4096
+
         # The durable business-document queue owns retries and exposes each
         # failure to the user.  Provider-internal retries can otherwise keep a
         # single visible attempt inside repeated five-minute HTTP calls.
-        with LLMBundle(tenant_id, model_config, lang="Russian", max_retries=0) as bundle:
-            return asyncio.run(
-                bundle.async_chat(
-                    system_prompt,
-                    [{"role": "user", "content": json.dumps(input_payload, ensure_ascii=False)}],
-                    {"temperature": 0, "top_p": 0.1, "max_completion_tokens": max_completion_tokens},
-                )
-            )
+        async def generate() -> str:
+            with LLMBundle(tenant_id, model_config, lang="Russian", max_retries=0) as bundle:
+                try:
+                    return await bundle.async_chat(
+                        system_prompt,
+                        [{"role": "user", "content": json.dumps(input_payload, ensure_ascii=False)}],
+                        {"temperature": 0, "top_p": 0.1, "max_completion_tokens": max_completion_tokens},
+                    )
+                finally:
+                    await _drain_litellm_callbacks()
+
+        return asyncio.run(generate())
 
 
 @dataclass(frozen=True)
@@ -190,11 +226,15 @@ class BusinessDocumentAI:
         parsed = self._parse(raw)
         parsed = self._normalize_contract_envelope(job, parsed)
         parsed = self._normalize_schema_versions(parsed)
+        parsed = self._normalize_question_fields(job, parsed)
+        parsed = self._bind_question_stages(job, parsed)
         parsed = self._normalize_draft_review_outcome(job, parsed)
+        parsed = self._normalize_draft_block_placement(job, parsed)
         parsed = self._drop_answered_questions(job, parsed)
         parsed = self._drop_existing_proposals(job, parsed)
         parsed = self._drop_unknown_comment_dispositions(job, parsed)
         parsed = self._bind_change_plan_source_sections(job, parsed)
+        parsed = self._bind_exact_draft_evidence_refs(job, parsed, evidence)
         parsed = self._filter_evidence_refs(parsed, evidence)
         return self._validate(job, parsed)
 
@@ -253,8 +293,9 @@ class BusinessDocumentAI:
             system += f"\n\n# Опубликованные неизменяемые шаблон и политики\n{trusted_assets_json}"
         system += (
             "\n\n# Допустимые ссылки на события\n"
-            "Если выходной контракт содержит source_event_ids, используй только event_id из "
-            "job_input.source_events. Не создавай и не угадывай идентификаторы событий."
+            "Если выходной контракт содержит source_event_ids, используй это поле только там, где оно явно объявлено "
+            "в JSON Schema, и только с event_id из job_input.source_events. Не добавляй source_event_ids в questions, "
+            "даже если рядом передан review_plan. Не создавай и не угадывай идентификаторы событий."
         )
         system += (
             "\n\n# Граница доказательств\n"
@@ -394,6 +435,155 @@ class BusinessDocumentAI:
             return value
 
         return normalize(output)
+
+    @staticmethod
+    def _bind_question_stages(job: BusinessDocumentJob, output: dict[str, Any]) -> dict[str, Any]:
+        """Bind redundant model stage discriminators to the authoritative job."""
+
+        if job.job_type == "ASSESS_INTAKE":
+            questions = output.get("questions")
+            if not isinstance(questions, list) or not any(isinstance(question, dict) and question.get("stage") != "INTAKE" for question in questions):
+                return output
+            bound = deepcopy(output)
+            for question in bound["questions"]:
+                if isinstance(question, dict) and question.get("stage") in {"INTAKE", "REVIEW"}:
+                    question["stage"] = "INTAKE"
+            return bound
+        if job.job_type != "GENERATE_DRAFT":
+            return output
+        review = output.get("review_questions")
+        questions = review.get("questions") if isinstance(review, dict) else None
+        if not isinstance(questions, list) or not any(isinstance(question, dict) and question.get("stage") != "REVIEW" for question in questions):
+            return output
+        bound = deepcopy(output)
+        for question in bound["review_questions"]["questions"]:
+            if isinstance(question, dict) and question.get("stage") in {"INTAKE", "REVIEW"}:
+                question["stage"] = "REVIEW"
+        return bound
+
+    @staticmethod
+    def _normalize_question_fields(job: BusinessDocumentJob, output: dict[str, Any]) -> dict[str, Any]:
+        """Remove fields copied by a model from adjacent question/proposal schemas."""
+
+        if job.job_type == "ASSESS_REVIEW":
+            schema_name = "review_plan"
+            questions = output.get("questions")
+            path = ("questions",)
+        elif job.job_type == "ASSESS_INTAKE":
+            schema_name = "question_batch"
+            questions = output.get("questions")
+            path = ("questions",)
+        elif job.job_type == "GENERATE_DRAFT" and isinstance(output.get("review_questions"), dict):
+            schema_name = "question_batch"
+            questions = output["review_questions"].get("questions")
+            path = ("review_questions", "questions")
+        else:
+            return output
+        if not isinstance(questions, list):
+            return output
+        schema = contract_schema(schema_name)
+        question_schema = schema["properties"]["questions"]["items"]
+        allowed_question_fields = set(question_schema["properties"])
+        option_schema = question_schema["properties"]["options"]["items"]
+        allowed_option_fields = set(option_schema["properties"])
+        if not any(
+            isinstance(question, dict) and (set(question) - allowed_question_fields or any(isinstance(option, dict) and set(option) - allowed_option_fields for option in question.get("options", [])))
+            for question in questions
+        ):
+            return output
+        normalized = deepcopy(output)
+        normalized_questions = normalized[path[0]] if len(path) == 1 else normalized[path[0]][path[1]]
+        for question in normalized_questions:
+            if not isinstance(question, dict):
+                continue
+            for field in set(question) - allowed_question_fields:
+                question.pop(field)
+            options = question.get("options")
+            if isinstance(options, list):
+                for option in options:
+                    if isinstance(option, dict):
+                        for field in set(option) - allowed_option_fields:
+                            option.pop(field)
+        return normalized
+
+    @staticmethod
+    def _normalize_draft_block_placement(job: BusinessDocumentJob, output: dict[str, Any]) -> dict[str, Any]:
+        """Keep model content in its section while degrading unsupported formatting."""
+
+        if job.job_type != "GENERATE_DRAFT" or not isinstance(output.get("draft"), dict):
+            return output
+        sections = output["draft"].get("sections")
+        if not isinstance(sections, list):
+            return output
+        allowed_by_section = {section["id"]: set(section["allowed_blocks"]) for section in published_template()["sections"]}
+        normalized = deepcopy(output)
+        changed = False
+        for section in normalized["draft"].get("sections", []):
+            if not isinstance(section, dict) or not isinstance(section.get("blocks"), list):
+                continue
+            allowed = allowed_by_section.get(section.get("id"))
+            if not allowed or "paragraph" not in allowed:
+                continue
+            for index, block in enumerate(section["blocks"]):
+                if not isinstance(block, dict) or block.get("type") in allowed:
+                    continue
+                text = BusinessDocumentAI._unsupported_block_text(block)
+                if text is None or not 1 <= len(text) <= 20_000:
+                    continue
+                section["blocks"][index] = {"type": "paragraph", "text": text}
+                changed = True
+        return normalized if changed else output
+
+    @staticmethod
+    def _unsupported_block_text(block: dict[str, Any]) -> str | None:
+        block_type = block.get("type")
+        if block_type == "list" and isinstance(block.get("items"), list):
+            return "\n".join(f"• {item}" for item in block["items"] if isinstance(item, str)).strip() or None
+        if block_type == "table" and isinstance(block.get("headers"), list) and isinstance(block.get("rows"), list):
+            rows = [block["headers"], *block["rows"]]
+            return "\n".join(" | ".join(str(cell) for cell in row) for row in rows if isinstance(row, list)).strip() or None
+        if block_type == "plantuml" and isinstance(block.get("source"), str):
+            return block["source"].strip() or None
+        if block_type in {"image", "reference"}:
+            label = block.get("alt") if block_type == "image" else block.get("label")
+            url = block.get("url")
+            if isinstance(label, str) and isinstance(url, str):
+                return f"{label.strip()}: {url.strip()}".strip(" :") or None
+        return None
+
+    @staticmethod
+    def _bind_exact_draft_evidence_refs(job: BusinessDocumentJob, output: dict[str, Any], evidence: dict[str, Any] | None) -> dict[str, Any]:
+        """Attach a source only when the section repeats a distinctive literal."""
+
+        if job.job_type != "GENERATE_DRAFT" or not isinstance(output.get("draft"), dict):
+            return output
+        sections = output["draft"].get("sections")
+        chunks = (evidence or {}).get("chunks")
+        if not isinstance(sections, list) or not isinstance(chunks, list):
+            return output
+        sources: list[tuple[str, tuple[str, ...]]] = []
+        for chunk in chunks:
+            if not isinstance(chunk, dict) or not isinstance(chunk.get("source_ref"), str) or not isinstance(chunk.get("content"), str):
+                continue
+            anchors = {" ".join(match.casefold().split()) for match in re.findall(r"(?<!\w)\d+(?:[.,]\d+)?\s*(?:%|[A-Za-zА-Яа-яЁё]{2,})|(?<!\w)[A-Za-z][A-Za-z0-9_]{7,}(?!\w)", chunk["content"])}
+            if anchors:
+                sources.append((chunk["source_ref"], tuple(sorted(anchors))))
+        if not sources:
+            return output
+        normalized = deepcopy(output)
+        changed = False
+        for section in normalized["draft"].get("sections", []):
+            if not isinstance(section, dict) or not isinstance(section.get("blocks"), list):
+                continue
+            text = " ".join(json.dumps(section["blocks"], ensure_ascii=False).casefold().split())
+            refs = list(section.get("evidence_refs", [])) if isinstance(section.get("evidence_refs", []), list) else []
+            for source_ref, anchors in sources:
+                if source_ref not in refs and any(anchor in text for anchor in anchors):
+                    refs.append(source_ref)
+                    changed = True
+            if refs:
+                section["evidence_refs"] = refs
+        return normalized if changed else output
 
     @staticmethod
     def _drop_answered_questions(job: BusinessDocumentJob, output: dict[str, Any]) -> dict[str, Any]:

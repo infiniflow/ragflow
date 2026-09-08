@@ -62,6 +62,7 @@ import {
 import {
   FormEvent,
   MouseEvent,
+  ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -144,6 +145,25 @@ const BusinessDocumentKeys = {
   accessUsers: () => ['business-document-access-users'] as const,
 };
 
+function BusinessDocumentCreationSidebar({
+  visible,
+  children,
+}: {
+  visible: boolean;
+  children: ReactNode;
+}) {
+  if (!visible) return null;
+
+  return (
+    <section
+      className="min-h-0 overflow-y-auto scrollbar-auto"
+      data-testid="business-document-create-panel"
+    >
+      {children}
+    </section>
+  );
+}
+
 function CreateBusinessDocumentPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -151,8 +171,6 @@ function CreateBusinessDocumentPage() {
   const [catalogEntryId, setCatalogEntryId] = useState('');
   const [idea, setIdea] = useState('');
   const [evaMatches, setEvaMatches] = useState<EvaTitleMatch[]>([]);
-  const [pendingEvaBinding, setPendingEvaBinding] =
-    useState<EvaTitleMatch | null>(null);
   const [page, setPage] = useState(1);
   const [scope, setScope] = useState<'mine' | 'all'>('mine');
   const documentsQuery = useQuery({
@@ -174,12 +192,15 @@ function CreateBusinessDocumentPage() {
   const selectedCatalogEntry = catalogQuery.data?.items.find(
     (item) => item.id === catalogEntryId,
   );
-  const canCreate = documentsQuery.data?.capabilities?.create !== false;
+  const canCreate = documentsQuery.data?.capabilities?.create === true;
   const createMutation = useMutation({
     mutationFn: createBusinessDocument,
     onSuccess: async (document) => {
       setEvaMatches([]);
-      setPendingEvaBinding(null);
+      if (document.current_revision) {
+        navigate(`${Routes.BusinessDocuments}/${document.document_id}`);
+        return;
+      }
       const command: BusinessDocumentCommand = {
         schema_version: '1',
         command_id: makeId('cmd-initial-analysis'),
@@ -254,9 +275,17 @@ function CreateBusinessDocumentPage() {
         </p>
       </header>
 
-      <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(360px,440px)] max-lg:grid-cols-1 max-lg:overflow-y-auto">
+      <div
+        className={`grid min-h-0 ${
+          canCreate
+            ? 'grid-cols-[minmax(0,1fr)_minmax(360px,440px)] max-lg:grid-cols-1 max-lg:overflow-y-auto'
+            : 'grid-cols-1'
+        }`}
+      >
         <section
-          className="min-h-0 overflow-y-auto border-e border-border-button scrollbar-auto"
+          className={`min-h-0 overflow-y-auto scrollbar-auto ${
+            canCreate ? 'border-e border-border-button' : ''
+          }`}
           data-testid="business-document-list"
           aria-label="Сохранённые документы"
         >
@@ -473,13 +502,12 @@ function CreateBusinessDocumentPage() {
           )}
         </section>
 
-        <section className="min-h-0 overflow-y-auto scrollbar-auto">
+        <BusinessDocumentCreationSidebar visible={canCreate}>
           <div className="sticky top-0 z-20 flex gap-1 border-b border-border-button bg-bg-base px-6 py-3 lg:px-8">
             <Button
               size="sm"
               variant={mode === 'new' ? 'secondary' : 'ghost'}
               onClick={() => setMode('new')}
-              disabled={!canCreate}
               data-testid="new-document-mode"
             >
               <FilePlus2 className="size-4" />
@@ -496,20 +524,7 @@ function CreateBusinessDocumentPage() {
             </Button>
           </div>
 
-          {mode === 'new' && !canCreate ? (
-            <div
-              className="px-6 py-10 lg:px-8"
-              data-testid="business-document-create-denied"
-            >
-              <h2 className="text-lg font-semibold text-text-primary">
-                Создание документов недоступно
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-text-secondary">
-                Ваша роль позволяет читать доступные документы и редактировать
-                назначенные вам, но не создавать новые.
-              </p>
-            </div>
-          ) : mode === 'new' ? (
+          {mode === 'new' ? (
             <form onSubmit={submit} className="px-6 py-7 lg:px-8">
               <div className="flex items-center gap-2 text-sm font-medium text-accent-primary">
                 <FilePlus2 className="size-4" />
@@ -600,8 +615,8 @@ function CreateBusinessDocumentPage() {
                         В EVA Wiki найдены страницы с таким названием
                       </p>
                       <p className="mt-1 text-xs leading-5 text-text-secondary">
-                        Выберите страницу для привязки или создайте документ без
-                        привязки.
+                        Выберите свободную страницу: её содержимое откроется как
+                        первая ревизия для комментариев и анализа.
                       </p>
                       <div className="mt-3 space-y-2">
                         {evaMatches.map((match) => (
@@ -661,9 +676,14 @@ function CreateBusinessDocumentPage() {
                                   !match.binding_available ||
                                   createMutation.isPending
                                 }
-                                onClick={() => setPendingEvaBinding(match)}
+                                onClick={() =>
+                                  createDocument(
+                                    { mode: 'BIND' },
+                                    match.web_url,
+                                  )
+                                }
                               >
-                                Привязать
+                                Открыть в редакторе
                               </Button>
                             </div>
                           </div>
@@ -684,44 +704,6 @@ function CreateBusinessDocumentPage() {
                   </div>
                 </div>
               )}
-
-              <AlertDialog
-                open={pendingEvaBinding !== null}
-                onOpenChange={(open) => {
-                  if (!open) setPendingEvaBinding(null);
-                }}
-              >
-                <AlertDialogContent data-testid="eva-replace-confirmation">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Привязать страницу EVA?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      При последующей публикации этого документа текущее
-                      содержимое страницы «
-                      {pendingEvaBinding?.name || selectedCatalogEntry?.title}»
-                      будет полностью заменено содержимым документа. Продолжить?
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Отмена</AlertDialogCancel>
-                    <AlertDialogAction
-                      type="button"
-                      onClick={() => {
-                        const selected = pendingEvaBinding;
-                        setPendingEvaBinding(null);
-                        if (selected) {
-                          createDocument(
-                            { mode: 'BIND', confirm_replace: true },
-                            selected.web_url,
-                          );
-                        }
-                      }}
-                      data-testid="confirm-eva-replace"
-                    >
-                      Подтвердить и привязать
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
 
               {createMutation.error &&
                 !(
@@ -750,7 +732,7 @@ function CreateBusinessDocumentPage() {
           ) : (
             <EvaChangeCreatePanel />
           )}
-        </section>
+        </BusinessDocumentCreationSidebar>
       </div>
     </main>
   );

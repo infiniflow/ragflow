@@ -24,9 +24,33 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 
+EXPECTED_CONNECTOR_ROUTES = {
+    ("/connectors", ("GET",), "list_connector"),
+    ("/connectors", ("POST",), "create_connector"),
+    ("/connectors/<connector_id>", ("DELETE",), "rm_connector"),
+    ("/connectors/<connector_id>", ("GET",), "get_connector"),
+    ("/connectors/<connector_id>", ("PATCH",), "update_connector"),
+    ("/connectors/<connector_id>/logs", ("GET",), "list_logs"),
+    ("/connectors/<connector_id>/rebuild", ("POST",), "rebuild"),
+    ("/connectors/<connector_id>/test", ("POST",), "test_connector"),
+    ("/connectors/box/oauth/web/callback", ("GET",), "box_web_oauth_callback"),
+    ("/connectors/box/oauth/web/result", ("POST",), "poll_box_web_result"),
+    ("/connectors/box/oauth/web/start", ("POST",), "start_box_web_oauth"),
+    ("/connectors/eva-wiki/projects", ("POST",), "list_eva_wiki_projects"),
+    ("/connectors/gmail/oauth/web/callback", ("GET",), "google_gmail_web_oauth_callback"),
+    ("/connectors/google-drive/oauth/web/callback", ("GET",), "google_drive_web_oauth_callback"),
+    ("/connectors/google/oauth/web/result", ("POST",), "poll_google_web_result"),
+    ("/connectors/google/oauth/web/start", ("POST",), "start_google_web_oauth"),
+}
+
+
 class _DummyManager:
-    def route(self, *_args, **_kwargs):
+    def __init__(self):
+        self.routes = []
+
+    def route(self, path, *, methods):
         def decorator(func):
+            self.routes.append((path, tuple(sorted(methods)), func.__name__))
             return func
 
         return decorator
@@ -369,6 +393,14 @@ def _load_connector_app(monkeypatch):
     module.manager = _DummyManager()
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.mark.p2
+def test_connector_route_inventory_is_exact(monkeypatch):
+    module = _load_connector_app(monkeypatch)
+
+    assert len(module.manager.routes) == len(EXPECTED_CONNECTOR_ROUTES)
+    assert set(module.manager.routes) == EXPECTED_CONNECTOR_ROUTES
 
 
 @pytest.mark.p2

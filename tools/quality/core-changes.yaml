@@ -1,6 +1,6 @@
 schema_version: 1
 upstream_base: cb93883f3f8c975eecb2fed81210effeb3bdb06f
-head: 51594df6232e44edbe0edc7ae72b4edddeb61383
+head: f019c812ded5b8e9c127dfe824276d1dbf5179ad
 changes:
 - id: CORE-eva-integration
   owner: fork-maintainer
@@ -12,6 +12,7 @@ changes:
   - Retry does not duplicate external publication
   tests:
   - test/unit_test/data_source/test_eva_wiki_connector.py
+  - test/unit_test/agent/test_retrieval_dynamic_registration.py
   - test/unit_test/api/apps/business_documents/test_eva_document_changes.py
   - test/unit_test/api/db/services/test_user_external_credential_service.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
@@ -53,6 +54,7 @@ changes:
   - test/unit_test/agent/test_mrz_document_reader_template.py
   - internal/dao/canvas_template_seed_test.go
   - test/unit_test/api/db/test_template_utils.py
+  - test/integration/test_mrz_document_reader_live.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -86,6 +88,8 @@ changes:
   - test/unit_test/api/db/services/test_navigation_visibility_service.py
   - test/testcases/restful_api/test_user_tenant_routes_unit.py
   - test/testcases/restful_api/test_file_commit_routes_unit.py
+  - test/unit_test/tools/quality/test_access_policy_registration.py
+  - test/testcases/test_web_api/test_dataset_management/test_dataset_sdk_routes_unit.py
   - test/testcases/test_web_api/test_system_app/test_apps_init_unit.py
   - test/testcases/test_web_api/test_system_app/test_system_routes_unit.py
   - test/playwright/e2e/test_managed_datasets_access_ui.py
@@ -138,7 +142,11 @@ changes:
   - path: test/testcases/restful_api/test_user_tenant_routes_unit.py
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
+  - path: test/testcases/test_web_api/test_dataset_management/test_dataset_sdk_routes_unit.py
+    committed: null
+    staged: null
+    unstaged: M
   - path: test/testcases/test_web_api/test_system_app/test_apps_init_unit.py
     committed: M
     staged: null
@@ -327,6 +335,7 @@ changes:
   - test/integration/test_previous_release_data_upgrade.py
   - test/integration/fixtures/upgrade_data_probe.py
   - test/integration/test_minio_backup_restore.py
+  - test/integration/test_postgres_minio_coordinated_restore.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -335,7 +344,7 @@ changes:
   - path: api/db/db_models.py
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: common/time_utils.py
     committed: M
     staged: null
@@ -355,6 +364,7 @@ changes:
   - test/unit_test/api/apps/restful_apis/test_get_agent_session.py
   - test/unit_test/api/apps/restful_apis/test_rerun_agent_authorization.py
   - test/unit_test/api/apps/restful_apis/test_agentbots_access_control.py
+  - test/integration/test_saved_canvas_dsl_live.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -427,6 +437,7 @@ changes:
   - test/unit_test/data_source/test_html_utils.py
   - test/playwright/e2e/test_live_document_roundtrip.py
   - test/playwright/e2e/test_dataset_upload_parse.py
+  - test/integration/test_local_docker_connectors_live.py
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -483,7 +494,7 @@ changes:
   - path: test/testcases/restful_api/test_connector_routes_unit.py
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: test/testcases/test_web_api/test_connector_app/test_connector_routes_unit.py
     committed: M
     staged: null
@@ -504,6 +515,8 @@ changes:
   - test/unit_test/api/apps/restful_apis/test_attachment_download_missing_blob.py
   - test/unit_test/api/db/services/test_file_service_upload_document.py
   - test/testcases/restful_api/test_search_datasets_consistency.py
+  - test/unit_test/tools/quality/test_api_files_chat_registration.py
+  - test/testcases/test_web_api/test_search_app/test_search_routes_unit.py
   - test/playwright/e2e/test_next_apps_chat.py
   - test/playwright/e2e/test_next_apps_search.py
   - test/playwright/e2e/test_live_document_roundtrip.py
@@ -562,6 +575,10 @@ changes:
     committed: M
     staged: null
     unstaged: null
+  - path: test/testcases/test_web_api/test_search_app/test_search_routes_unit.py
+    committed: null
+    staged: null
+    unstaged: M
   - path: test/unit_test/api/apps/restful_apis/test_attachment_download_missing_blob.py
     committed: M
     staged: null
@@ -653,6 +670,7 @@ changes:
   - Frontend build and typing; no upstream UI loss
   tests:
   - web/package.json
+  - test/unit_test/tools/quality/test_frontend_entrypoints.py
   - web/src/components/diagram-code-block/index.test.tsx
   - web/src/components/highlight-markdown/__tests__/index.test.tsx
   - web/src/layouts/components/global-navbar.test.tsx
@@ -714,7 +732,7 @@ changes:
   - path: web/src/components/embed-container.tsx
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: web/src/components/embed-dialog/index.tsx
     committed: M
     staged: null
@@ -1418,7 +1436,7 @@ changes:
   - path: web/src/utils/api.ts
     committed: M
     staged: null
-    unstaged: M
+    unstaged: null
   - path: web/src/utils/chat.ts
     committed: M
     staged: null
@@ -1449,6 +1467,9 @@ changes:
   - Existing checks remain distinct from future architecture gates
   tests:
   - test/unit_test/tools/quality/test_capture_inventory.py
+  - test/unit_test/tools/quality/test_check_architecture.py
+  - test/unit_test/tools/quality/test_check_go_build_profiles.py
+  - test/unit_test/tools/quality/test_check_python_dead_code.py
   - test/unit_test/tools/hooks/test_check_files.py
   - test/REGRESSION.md
   - test/unit_test/playwright/test_page_error_gate.py
@@ -1456,6 +1477,7 @@ changes:
   - test/integration/live_ragflow/README.md
   - test/unit_test/playwright/test_browser_server.py
   - test/unit_test/tools/quality/test_inspect_python.py
+  - test/integration/fixtures/New-T1LocalFixtures.ps1
   validation: Paths and provenance verified in T0; behavior and necessity of individual
     hunks await T1/review
   upstream_status: Local delta against the verified content baseline; not certified
@@ -1492,7 +1514,7 @@ changes:
   - path: AGENTS.md
     committed: M
     staged: null
-    unstaged: null
+    unstaged: M
   - path: Dockerfile
     committed: M
     staged: null

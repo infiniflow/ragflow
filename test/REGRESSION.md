@@ -14,7 +14,11 @@ must not change the selection of unit tests or P0 document requirements.
 | PostgreSQL races | `python -m pytest test/integration/test_business_document_postgres.py` | Requires `BUSINESS_DOCUMENT_TEST_POSTGRES_DSN`; separate connections and temporary schema with verified cleanup |
 | Previous-release data | `python -m pytest test/integration/test_previous_release_data_upgrade.py` | Explicit disposable PostgreSQL cluster; real v1.12.0/current initializers, dump/restore, repeated initialization and injected DDL failure; no deployment-script acceptance |
 | MinIO backup/restore | `python -m pytest test/integration/test_minio_backup_restore.py` | Requires `RAGFLOW_MINIO_BACKUP_TEST=1`; creates its own containers/volumes, archives raw `/data`, restores and compares object bytes/metadata, verifies cleanup |
-| Real T-One inference | From `services/asr-online-service`: `python tests/integration/test_tone_real_inference.py` | Requires `ASR_REAL_TONE_AUDIO`, installed Tone runtime/model and FFmpeg; actual endpoint/worker/model with a predeclared transcript, no inference mocks |
+| Coordinated PostgreSQL+MinIO restore | `$env:RAGFLOW_COORDINATED_BACKUP_TEST='1'; uv run pytest -q test/integration/test_postgres_minio_coordinated_restore.py` | Creates source and restore containers/volumes, freezes writes, restores a linked manifest/object pair, runs a missing-object negative control and verifies cleanup |
+| Local Docker EVA/OpenMetadata | Copy `test/integration/test_local_docker_connectors_live.py` into the application container, then run it there with `RAGFLOW_LOCAL_DOCKER_CONNECTOR_TEST=1` | Uses existing non-production connector rows without serializing credentials; real read/write/retry/recovery and cleanup |
+| Real T-One inference and cancel | From `services/asr-online-service`: `python tests/integration/test_tone_real_inference.py` | Requires `ASR_REAL_TONE_AUDIO` and `ASR_REAL_TONE_LONG_AUDIO`, installed Tone runtime and FFmpeg; actual endpoint/worker/inference with a predeclared transcript and mid-inference cancellation, no inference mocks |
+| MRZ real image | Copy `test/integration/test_mrz_document_reader_live.py` and a generated PNG into the application container, then run with `RAGFLOW_MRZ_TEST_IMAGE=<container-path>` | Executes the deployed Canvas template with the tenant's existing Image2Text setting and deterministic checksum validator; does not change a model or prompt |
+| Saved Canvas DSL | Copy `test/integration/test_saved_canvas_dsl_live.py` into the application container, then run with `RAGFLOW_SAVED_DSL_TEST=1` | Synthetic current/two-version roundtrip with cleanup plus read-only audit of current and attached historical records; reports failure classes without provider secrets |
 | Frontend | `cd web` then `pnpm test --runInBand` | Jest; measured global floors for statements, lines, functions and branches |
 | Local browser server | `python -m pytest test/unit_test/playwright/test_browser_server.py` | Actual HTTP server, connection reuse, SPA fallback and unmocked API rejection; no browser or backend |
 | Isolated browser | `python test/run_browser_regression.py --browser chromium` | Built SPA, intercepted API, no live backend; also accepts `firefox` and `webkit` |
@@ -73,8 +77,39 @@ For real ASR, mount the service source and audio read-only in a disposable
 runtime. Set `LOAD_FROM_FOLDER` to the installed T-One weights and use separate
 temporary `ASR_UPLOAD_DIR` and `ASR_ARTIFACTS_DIR`. The expected Russian phrase
 is declared in the test before inference; a match on one synthetic recording
-is not a general recognition-quality benchmark. Missing opt-in prerequisites
-are skips, never evidence that this lane passed.
+is not a general recognition-quality benchmark. Cancellation is cooperative at
+safe worker stage boundaries: a synchronous engine call may finish computing,
+but a requested cancel must prevent `done`, result and artifacts. Missing opt-in
+prerequisites are skips, never evidence that this lane passed.
+
+Generate the local T1 audio and MRZ fixtures from PowerShell with:
+
+```powershell
+pwsh -File test/integration/fixtures/New-T1LocalFixtures.ps1 -OutputDirectory .codex_tmp/t1-local-fixtures
+```
+
+The generator requires a local Russian SAPI voice and FFmpeg. Fixtures are
+synthetic and may be recreated; do not commit the generated audio or image.
+For the local connector lane, use only the dedicated non-production rows in the
+Docker database. The test restores the OpenMetadata field exactly and deletes
+the EVA page it creates. A failed cleanup or missing record is a failure, not an
+acceptable residue. Do not export connector credentials into a command, log or
+evidence file.
+
+The coordinated storage lane is deliberately independent of the running
+application data. It creates unique Docker resources and validates a shared
+snapshot identifier and object digest after restore. Its negative control must
+detect a PostgreSQL row whose referenced MinIO object is absent. Full installer
+and old-release recovery remain T6 work even when this data-consistency lane is
+green.
+
+The saved-DSL lane has two different purposes. Its synthetic test proves a
+current record and two historical revisions can round-trip and be removed. The
+other two tests audit existing contour data read-only; their failures are
+baseline compatibility findings and must not be hidden by recreating providers
+or modifying model settings. The MRZ lane follows the same rule: use the
+configured Image2Text boundary unchanged and preserve any real failure for
+classification.
 
 Use `tools/quality/candidate.py` to create an explicit source snapshot before
 cross-lane acceptance. A dirty snapshot is a non-publishable test input. Keep
