@@ -173,6 +173,14 @@ var (
 	ErrArtifactInvalidFilename = errors.New("invalid filename")
 	ErrArtifactInvalidFileType = errors.New("invalid file type")
 	ErrArtifactNotFound        = errors.New("artifact not found")
+
+	// ErrPreviewDocumentNotFound covers both "document row missing" and
+	// "caller may not read this document" so the preview endpoint cannot be
+	// used to probe foreign document IDs. Mirrors the Python preview route.
+	ErrPreviewDocumentNotFound = errors.New("document not found")
+	// ErrPreviewFileEmpty mirrors Python's "This file is empty." preview
+	// response for a document whose backing object has zero bytes.
+	ErrPreviewFileEmpty = errors.New("This file is empty.")
 )
 
 var artifactContentTypes = map[string]string{

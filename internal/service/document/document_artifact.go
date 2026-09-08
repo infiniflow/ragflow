@@ -194,15 +194,50 @@ func shouldForceArtifactAttachment(ext, contentType string) bool {
 	return ok
 }
 
-func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) (*DocumentPreview, error) {
-	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
+// previewAccessible reports whether userID may read doc's bytes. It applies
+// the same rule the chunk list on the same page uses (chunk.ChunkService.List):
+// the dataset's owning tenant, or any tenant the user has joined. Keeping the
+// two panels on one rule means a user who can list chunks can always preview
+// the source file, and vice versa.
+func (s *DocumentService) previewAccessible(ctx context.Context, userID string, doc *entity.Document) bool {
+	if userID == "" || doc == nil {
+		return false
+	}
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
+	if err != nil || kb == nil {
+		return false
+	}
+	if kb.TenantID == userID {
+		return true
+	}
+	tenants, err := dao.NewUserTenantDAO().GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
-		return nil, err
+		return false
+	}
+	for _, tenant := range tenants {
+		if tenant.TenantID == kb.TenantID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID string) (*DocumentPreview, error) {
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
+	if err != nil || doc == nil {
+		return nil, ErrPreviewDocumentNotFound
+	}
+
+	if !s.previewAccessible(ctx, userID, doc) {
+		// Indistinguishable from a missing document so an unauthorized
+		// caller cannot probe document IDs (mirrors Python
+		// DocumentService.accessible in document_api.py preview).
+		return nil, ErrPreviewDocumentNotFound
 	}
 
 	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve storage address for document %s: %w", docID, err)
 	}
 
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -212,10 +247,10 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 
 	data, err := storageImpl.Get(ctx, bucket, name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read document object %s/%s: %w", bucket, name, err)
 	}
 	if len(data) == 0 {
-		return nil, ErrArtifactNotFound
+		return nil, ErrPreviewFileEmpty
 	}
 
 	fileName := ""
