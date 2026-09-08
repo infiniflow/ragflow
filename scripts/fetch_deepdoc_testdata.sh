@@ -56,6 +56,46 @@ CACHE="$CACHE_BASE/$REF"
 SRC="$CACHE/deepdoc/$PKG/testdata"
 TARGET="$ROOT/internal/deepdoc/$PKG/testdata"
 
+# Serialize concurrent invocations. `go test ./internal/deepdoc/native/...`
+# builds the `native` and `croptest` test binaries and runs them in parallel,
+# and both link package native, whose fetch_testdata-tagged init() runs this
+# script for the same <pkg> at the same time. The instances share $CACHE and
+# $TARGET, so an unlocked `rm -rf $CACHE` in one destroys the other's in-flight
+# clone/sparse-checkout — or a cache the other just finished linking — and the
+# tests then fail on missing fixtures. Hold an exclusive lock across the whole
+# decide/clone/link section; a waiter acquires it only after the winner is done
+# and then takes the read-only "already linked" fast path without mutating.
+mkdir -p "$CACHE_BASE"
+LOCK="$CACHE_BASE/fetch.lock"
+lock_acquired=0
+lock_deadline=$(( $(date +%s) + 600 ))
+while :; do
+  if mkdir "$LOCK" 2>/dev/null; then
+    lock_acquired=1
+    break
+  fi
+  # Break a stale lock left by a killed run (cancelled job, crash): no healthy
+  # clone outlives 15 minutes here.
+  if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +15 2>/dev/null)" ]; then
+    echo "fetch_deepdoc_testdata: removing stale lock $LOCK" >&2
+    rm -rf "$LOCK" 2>/dev/null || true
+    continue
+  fi
+  if [ "$(date +%s)" -ge "$lock_deadline" ]; then
+    # Deadlocking the test binary forever is worse than the race this lock
+    # fixes; give up and run unlocked (loudly).
+    echo "fetch_deepdoc_testdata: timed out waiting for $LOCK; proceeding unlocked" >&2
+    break
+  fi
+  sleep 1
+done
+release_lock() {
+  if [ "$lock_acquired" -eq 1 ]; then
+    rm -rf "$LOCK" 2>/dev/null || true
+  fi
+}
+trap release_lock EXIT
+
 # Determine whether we need a writable copy (regeneration) or a symlink.
 NEED_WRITE=0
 for v in "${!GEN_@}"; do
@@ -100,7 +140,6 @@ rm -f "$TARGET" 2>/dev/null || true
 
 if ! src_complete; then
   echo "fetch_deepdoc_testdata: cloning $REPO @ $REF (subtree deepdoc/$PKG/testdata)"
-  mkdir -p "$CACHE_BASE"
   # Network clones are best-effort and occasionally fail with a transient TLS
   # reset (seen on the self-hosted runner). Retry a few times before giving up
   # so a CI blip does not redden the run.
