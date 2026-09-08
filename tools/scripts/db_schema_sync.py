@@ -39,6 +39,7 @@ from peewee_migrate import Router
 # Add project root to path for imports
 PROJECT_BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_BASE)
+from tools.scripts.migration_sql_renderer import render_migrator_sql
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -577,9 +578,9 @@ def generate_migration_content(new_tables: list, field_changes: dict, migrate_di
         if changes.get("added"):
             for field_name, field in changes["added"].items():
                 sql, index_sql = generate_add_field_sql(table_name, field, field_name)
-                lines.append(f'    migrator.sql("{sql}")')
+                lines.append(render_migrator_sql(sql))
                 if index_sql:
-                    lines.append(f'    migrator.sql("{index_sql}")')
+                    lines.append(render_migrator_sql(index_sql))
                 lines.append("")
 
     # Generate SQL for modifying fields in existing tables
@@ -587,7 +588,7 @@ def generate_migration_content(new_tables: list, field_changes: dict, migrate_di
         if changes.get("changed"):
             for field_name, (old_info, field) in changes["changed"].items():
                 modify_sql = generate_modify_field_sql(table_name, field, field_name)
-                lines.append(f'    migrator.sql("{modify_sql}")')
+                lines.append(render_migrator_sql(modify_sql))
                 lines.append("")
 
     # Generate SQL for dropping removed fields from existing tables
@@ -597,7 +598,7 @@ def generate_migration_content(new_tables: list, field_changes: dict, migrate_di
                 for field_name, col_info in changes["removed"].items():
                     drop_sql = generate_drop_field_sql(table_name, field_name)
                     lines.append(f"    # WARNING: Dropping column `{field_name}` from `{table_name}` - this will permanently delete data!")
-                    lines.append(f'    migrator.sql("{drop_sql}")')
+                    lines.append(render_migrator_sql(drop_sql))
                     lines.append("")
 
     # Generate rollback
@@ -613,9 +614,9 @@ def generate_migration_content(new_tables: list, field_changes: dict, migrate_di
                 for field_name, col_info in changes["removed"].items():
                     add_sql, index_sql = generate_rollback_add_field_sql(table_name, col_info, field_name)
                     lines.append(f"    # Re-add dropped column `{field_name}` to `{table_name}` (data is lost)")
-                    lines.append(f'    migrator.sql("{add_sql}")')
+                    lines.append(render_migrator_sql(add_sql))
                     if index_sql:
-                        lines.append(f'    migrator.sql("{index_sql}")')
+                        lines.append(render_migrator_sql(index_sql))
 
     # Rollback: reverse field type changes first (before removing added fields)
     for table_name, changes in field_changes.items():
@@ -623,14 +624,14 @@ def generate_migration_content(new_tables: list, field_changes: dict, migrate_di
             for field_name, (old_info, field) in changes["changed"].items():
                 rollback_modify_sql = generate_rollback_modify_sql(table_name, old_info, field_name)
                 lines.append("    # Note: Data values may need manual handling if type conversion caused data loss")
-                lines.append(f'    migrator.sql("{rollback_modify_sql}")')
+                lines.append(render_migrator_sql(rollback_modify_sql))
 
     # Rollback: remove added fields using SQL
     for table_name, changes in field_changes.items():
         if changes.get("added"):
             for field_name in changes["added"].keys():
                 rollback_sql = generate_rollback_field_sql(table_name, field_name)
-                lines.append(f'    migrator.sql("{rollback_sql}")')
+                lines.append(render_migrator_sql(rollback_sql))
 
     # Rollback: remove tables (in reverse order)
     for model in reversed(new_tables):
