@@ -26,10 +26,27 @@ export const azureDevOpsConstant = (t: TFunction) => [
     tooltip: t('setting.azureDevOpsPatTip'),
   },
   {
+    label: t('setting.dataSourceFieldAzureDevOpsBaseUrl'),
+    name: 'config.base_url',
+    type: FormFieldType.Text,
+    required: false,
+    placeholder: 'https://dev.azure.com',
+    tooltip: t('setting.azureDevOpsBaseUrlTip'),
+  },
+  {
     label: t('setting.dataSourceFieldAzureDevOpsOrganization'),
     name: 'config.organization',
     type: FormFieldType.Text,
-    required: true,
+    required: false,
+    customValidate: (val: string, formValues: any) => {
+      const baseUrl = formValues?.config?.base_url;
+      if (!val?.trim() && !baseUrl?.trim()) {
+        return t('setting.dataSourceValidationFieldRequired', {
+          label: t('setting.dataSourceFieldAzureDevOpsOrganization'),
+        });
+      }
+      return true;
+    },
     tooltip: t('setting.azureDevOpsOrganizationTip'),
   },
   {

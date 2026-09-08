@@ -1414,6 +1414,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldIsCloud: 'Is Cloud',
       dataSourceFieldIndexMode: 'Index Mode',
       dataSourceFieldAzureDevOpsPat: 'Azure DevOps personal access token',
+      dataSourceFieldAzureDevOpsBaseUrl: 'Base URL',
       dataSourceFieldAzureDevOpsOrganization: 'Azure DevOps organization',
       dataSourceFieldAzureDevOpsRepositories: 'Repositories',
       dataSourceFieldAzureDevOpsContentTypes: 'Content types',
@@ -1603,8 +1604,10 @@ Example: Virtual Hosted Style`,
       sharepointSiteUrlTip:
         'Full URL of the SharePoint site to index, e.g. https://contoso.sharepoint.com/sites/MySite. Requires an Azure AD app with Sites.Read.All and Files.Read.All application permissions (admin consent).',
       azureDevOpsPatTip: 'A personal access token with the Code (Read) scope.',
+      azureDevOpsBaseUrlTip:
+        'The Base URL of your Azure DevOps instance (e.g. https://dev.azure.com, or http://tfs.corp.local:8080/tfs for Azure DevOps Server / closed network). Defaults to https://dev.azure.com if omitted.',
       azureDevOpsOrganizationTip:
-        'Organization name (e.g. "contoso"), or the full collection URL of a self-hosted Azure DevOps Server (e.g. https://tfs.contoso.com/DefaultCollection).',
+        'Organization name (e.g. "contoso"), or project collection name (e.g. "DefaultCollection"), or the full collection URL of a self-hosted Azure DevOps Server.',
       azureDevOpsProjectsTip:
         'Comma separated team project names. E.g., Project1,Project2',
       azureDevOpsRepositoriesTip:

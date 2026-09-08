@@ -1971,6 +1971,7 @@ class AzureDevOps(SyncBase):
     async def _generate(self, task: dict):
         self.connector = AzureDevOpsConnector(
             organization=self.conf.get("organization"),
+            base_url=self.conf.get("base_url"),
             index_mode=self.conf.get("index_mode") or "organization",
             projects=self.conf.get("projects"),
             repositories=self.conf.get("repositories"),
@@ -2025,7 +2026,8 @@ class AzureDevOps(SyncBase):
             for batch in document_batches():
                 yield batch
 
-        self.log_connection("AzureDevOps", f"organization({self.conf.get('organization')})", task)
+        target = self.conf.get("base_url") or f"organization({self.conf.get('organization')})"
+        self.log_connection("AzureDevOps", target, task)
         return wrapper()
 
 

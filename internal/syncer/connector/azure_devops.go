@@ -95,15 +95,16 @@ func (e *azureDevOpsHTTPError) Error() string {
 
 // AzureDevOpsConnector reads Azure Repos source files and pull requests.
 type AzureDevOpsConnector struct {
-	organization string
-	indexMode    string
-	projects     []string
-	repositories []string
-	contentTypes string
-	pat          string
-	batchSize    int
-	baseURL      string
-	httpClient   *http.Client
+	organization  string
+	customBaseURL string
+	indexMode     string
+	projects      []string
+	repositories  []string
+	contentTypes  string
+	pat           string
+	batchSize     int
+	baseURL       string
+	httpClient    *http.Client
 }
 
 // azureDevOpsRepository is one repository selected for indexing.
@@ -158,36 +159,63 @@ type azureDevOpsPullRequest struct {
 func NewAzureDevOpsConnector(config map[string]any) (*AzureDevOpsConnector, error) {
 	credentials, _ := config["credentials"].(map[string]any)
 	organization := strings.TrimSpace(stringConfig(config["organization"]))
+	customBaseURL := strings.TrimRight(strings.TrimSpace(stringConfig(config["base_url"])), "/")
+
+	baseURL, effectiveOrg := azureDevOpsResolveURL(organization, customBaseURL)
 
 	connector := &AzureDevOpsConnector{
-		organization: organization,
-		indexMode:    firstNonEmpty(strings.TrimSpace(stringConfig(config["index_mode"])), azureDevOpsIndexModeOrganization),
-		projects:     splitAzureDevOpsList(stringConfig(config["projects"])),
-		repositories: splitAzureDevOpsList(stringConfig(config["repositories"])),
-		contentTypes: firstNonEmpty(strings.TrimSpace(stringConfig(config["content_types"])), azureDevOpsContentBoth),
-		pat:          strings.TrimSpace(stringConfig(credentials["azure_devops_pat"])),
-		batchSize:    configInt(config["batch_size"], defaultAzureDevOpsBatchSize),
-		baseURL:      azureDevOpsOrganizationURL(organization),
-		httpClient:   &http.Client{Timeout: 60 * time.Second},
+		organization:  effectiveOrg,
+		customBaseURL: customBaseURL,
+		indexMode:     firstNonEmpty(strings.TrimSpace(stringConfig(config["index_mode"])), azureDevOpsIndexModeOrganization),
+		projects:      splitAzureDevOpsList(stringConfig(config["projects"])),
+		repositories:  splitAzureDevOpsList(stringConfig(config["repositories"])),
+		contentTypes:  firstNonEmpty(strings.TrimSpace(stringConfig(config["content_types"])), azureDevOpsContentBoth),
+		pat:           strings.TrimSpace(stringConfig(credentials["azure_devops_pat"])),
+		batchSize:     configInt(config["batch_size"], defaultAzureDevOpsBatchSize),
+		baseURL:       baseURL,
+		httpClient:    &http.Client{Timeout: 60 * time.Second},
 	}
 	return connector, nil
+}
+
+func azureDevOpsResolveURL(organization, customBaseURL string) (string, string) {
+	cleanBase := strings.TrimRight(strings.TrimSpace(customBaseURL), "/")
+	cleanOrg := strings.TrimRight(strings.TrimSpace(organization), "/")
+
+	if cleanBase != "" {
+		if cleanOrg == "" {
+			if u, err := url.Parse(cleanBase); err == nil && u.Path != "" {
+				trimmedPath := strings.Trim(u.Path, "/")
+				if trimmedPath != "" {
+					parts := strings.Split(trimmedPath, "/")
+					cleanOrg = parts[len(parts)-1]
+				}
+			}
+			return cleanBase, cleanOrg
+		}
+		if strings.HasPrefix(cleanOrg, "http://") || strings.HasPrefix(cleanOrg, "https://") {
+			return cleanOrg, cleanOrg
+		}
+		if strings.HasSuffix(cleanBase, "/"+cleanOrg) || strings.HasSuffix(cleanBase, "/"+url.PathEscape(cleanOrg)) {
+			return cleanBase, cleanOrg
+		}
+		return cleanBase + "/" + url.PathEscape(cleanOrg), cleanOrg
+	}
+
+	if cleanOrg == "" {
+		return "", ""
+	}
+	if strings.HasPrefix(cleanOrg, "http://") || strings.HasPrefix(cleanOrg, "https://") {
+		return cleanOrg, cleanOrg
+	}
+	return azureDevOpsHostedBaseURL + "/" + url.PathEscape(cleanOrg), cleanOrg
 }
 
 // azureDevOpsOrganizationURL resolves the API root of a hosted organization or
 // a self-hosted Azure DevOps Server collection.
 func azureDevOpsOrganizationURL(organization string) string {
-	if organization == "" {
-		return ""
-	}
-	if strings.HasPrefix(organization, "http://") {
-		// Rejected in checkSettings; never build a client that would send the
-		// personal access token in cleartext.
-		return ""
-	}
-	if strings.HasPrefix(organization, "https://") {
-		return strings.TrimRight(organization, "/")
-	}
-	return azureDevOpsHostedBaseURL + "/" + url.PathEscape(organization)
+	baseURL, _ := azureDevOpsResolveURL(organization, "")
+	return baseURL
 }
 
 func splitAzureDevOpsList(value string) []string {
@@ -213,14 +241,21 @@ func (c *AzureDevOpsConnector) checkSettings() error {
 	if c == nil {
 		return fmt.Errorf("azure devops connector is nil")
 	}
-	if c.organization == "" {
-		return fmt.Errorf("Invalid connector settings: 'organization' must be provided")
+	if c.organization == "" && c.baseURL == "" {
+		return fmt.Errorf("Invalid connector settings: 'organization' or 'base_url' must be provided")
 	}
 	if c.pat == "" {
 		return fmt.Errorf("Missing azure_devops_pat in credentials")
 	}
-	if strings.HasPrefix(c.organization, "http://") {
-		return fmt.Errorf("Invalid connector settings: Azure DevOps collection URLs must use HTTPS, the personal access token is sent in the Authorization header")
+	if c.customBaseURL != "" {
+		if !strings.HasPrefix(c.customBaseURL, "http://") && !strings.HasPrefix(c.customBaseURL, "https://") {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps base URL must use HTTP or HTTPS")
+		}
+	}
+	if c.organization != "" && strings.Contains(c.organization, "://") {
+		if !strings.HasPrefix(c.organization, "http://") && !strings.HasPrefix(c.organization, "https://") {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps collection URLs must use HTTP or HTTPS")
+		}
 	}
 	switch c.indexMode {
 	case azureDevOpsIndexModeOrganization, azureDevOpsIndexModeProjects, azureDevOpsIndexModeRepositories:

@@ -101,18 +101,38 @@ def build_auth_client(personal_access_token: str) -> httpx.Client:
     return httpx.Client(auth=("", personal_access_token), timeout=REQUEST_TIMEOUT_SECONDS)
 
 
-def organization_url(organization: str) -> str:
+def organization_url(organization: str | None = None, base_url: str | None = None) -> str:
     """Resolve the API root for a hosted organization or a self-hosted server.
 
-    ``organization`` may be a bare organization name (Azure DevOps Services) or a
-    full base URL such as ``https://tfs.contoso.com/DefaultCollection`` for
-    Azure DevOps Server.
+    ``organization`` may be a bare organization name (Azure DevOps Services),
+    a collection name, or a full base URL such as
+    ``https://tfs.contoso.com/DefaultCollection`` for Azure DevOps Server.
+
+    ``base_url`` is an optional custom base URL (e.g. ``https://dev.azure.com``,
+    ``https://tfs.contoso.com/tfs``, or ``http://tfs.corp.local:8080/tfs``).
     """
-    if organization.startswith("http://"):
-        raise UnexpectedValidationError("Azure DevOps collection URLs must use HTTPS; the personal access token is sent in the Authorization header.")
-    if organization.startswith("https://"):
-        return organization.rstrip("/")
-    return f"https://dev.azure.com/{quote(organization, safe='')}"
+    clean_base = (base_url or "").strip().rstrip("/")
+    clean_org = (organization or "").strip().rstrip("/")
+
+    if clean_base:
+        if not clean_base.startswith(("http://", "https://")):
+            raise UnexpectedValidationError("Azure DevOps base URL must use HTTP or HTTPS.")
+        if not clean_org:
+            return clean_base
+        if clean_org.startswith(("http://", "https://")):
+            return clean_org
+        if clean_base.endswith((f"/{clean_org}", f"/{quote(clean_org, safe='')}")):
+            return clean_base
+        return f"{clean_base}/{quote(clean_org, safe='')}"
+
+    if not clean_org:
+        raise UnexpectedValidationError("Azure DevOps organization or base URL must be provided.")
+
+    if clean_org.startswith(("http://", "https://")):
+        return clean_org
+    if "://" in clean_org:
+        raise UnexpectedValidationError("Azure DevOps collection URLs must use HTTP or HTTPS.")
+    return f"https://dev.azure.com/{quote(clean_org, safe='')}"
 
 
 def raise_for_auth(response: httpx.Response, expect_json: bool = True) -> None:
