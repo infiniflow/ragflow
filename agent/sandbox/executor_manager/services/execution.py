@@ -262,6 +262,7 @@ async def execute_code(req: CodeExecutionRequest):
 
             if returncode == 0:
                 clean_stdout, structured_result = _extract_result_envelope(stdout)
+                await _promote_root_artifacts(container, task_id)
                 artifacts = await _collect_artifacts(container, task_id, workdir)
                 return CodeExecutionResult(
                     status=ResultStatus.SUCCESS,
@@ -329,6 +330,31 @@ MAX_ARTIFACT_SIZE = 10 * 1024 * 1024  # 10MB per file
 
 async def _collect_artifacts(container: str, task_id: str, host_workdir: str) -> list[ArtifactItem]:
     artifacts_path = f"/workspace/{task_id}/artifacts"
+    return await _collect_artifacts_from_path(container, artifacts_path)
+
+
+async def _promote_root_artifacts(container: str, task_id: str) -> None:
+    """Move allowlisted outputs into the request's artifacts directory."""
+    task_root = f"/workspace/{task_id}"
+    artifacts = f"{task_root}/artifacts"
+    excluded = {"main.py", "runner.py", "args.json"}
+    for root in (task_root, "/workspace"):
+        returncode, stdout, _ = await async_run_command(
+            "docker", "exec", container, "find", root, "-maxdepth", "1", "-type", "f", timeout=5
+        )
+        if returncode != 0:
+            continue
+        for line in stdout.splitlines():
+            name = line.rsplit("/", 1)[-1]
+            if not name or name in excluded or name.startswith("."):
+                continue
+            if os.path.splitext(name)[1].lower() not in ALLOWED_ARTIFACT_EXTENSIONS:
+                continue
+            await async_run_command("docker", "exec", container, "mv", f"{root}/{name}", f"{artifacts}/{name}", timeout=5)
+
+
+async def _collect_artifacts_from_path(container: str, artifacts_path: str, excluded: set[str] | None = None) -> list[ArtifactItem]:
+    excluded = excluded or set()
 
     # List files in the artifacts directory inside the container
     returncode, stdout, _ = await async_run_command(
@@ -348,7 +374,7 @@ async def _collect_artifacts(container: str, task_id: str, host_workdir: str) ->
 
     raw_names = [line.split("/")[-1] for line in stdout.strip().splitlines() if line.strip()]
     # Sanitize: reject names with path traversal or control characters
-    filenames = [n for n in raw_names if n and "/" not in n and "\\" not in n and ".." not in n and not n.startswith(".")]
+    filenames = [n for n in raw_names if n and n not in excluded and "/" not in n and "\\" not in n and ".." not in n and not n.startswith(".")]
     if not filenames:
         return []
 

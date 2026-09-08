@@ -208,6 +208,11 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	if err != nil {
 		return nil, err
 	}
+	if containsToolResult(internal) {
+		choice := "auto"
+		chatCfg.ToolChoice = &choice
+		chatCfg.ToolChoiceValue = nil
+	}
 	resp, err := m.inner.ModelDriver.ChatWithMessages(ctx, *m.inner.ModelName, internal, m.inner.APIConfig, chatCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *m.inner.ModelName, err)
@@ -222,6 +227,15 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 		recordUsageFromResponse(ctx, m.inner)
 	}
 	return fromInternalResponse(resp), nil
+}
+
+func containsToolResult(messages []Message) bool {
+	for _, message := range messages {
+		if message.Role == "tool" {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *EinoChatModel) chatConfigForGenerate() (*ChatConfig, error) {
@@ -239,7 +253,25 @@ func (m *EinoChatModel) chatConfigForGenerate() (*ChatConfig, error) {
 	}
 	cfg.Tools = tools
 	choice := "auto"
+	for _, tool := range m.tools {
+		if tool != nil && tool.Name == "execute_code" {
+			// MiniMax may answer with prose instead of emitting the callable
+			// CodeExec request. Require one tool dispatch for code-exec agents;
+			// the subsequent ReAct turn remains free to produce the final text.
+			choice = "required"
+			break
+		}
+	}
 	cfg.ToolChoice = &choice
+	for _, tool := range m.tools {
+		if tool != nil && tool.Name == "execute_code" {
+			cfg.ToolChoiceValue = map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "execute_code"},
+			}
+			break
+		}
+	}
 	return cfg, nil
 }
 
@@ -341,6 +373,23 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	chatCfg, err := m.chatConfigForGenerate()
 	if err != nil {
 		return nil, err
+	}
+	// Some OpenAI-compatible providers (including the configured MiniMax
+	// endpoint) stream tool intent as ordinary prose. Use the provider's
+	// non-streaming parser for tool-bound turns so structured tool_calls are
+	// preserved; ReAct still streams the final answer turn normally.
+	if len(m.tools) > 0 {
+		msg, err := m.Generate(ctx, msgs, opts...)
+		if err != nil {
+			return nil, err
+		}
+		sr, sw := schema.Pipe[*schema.Message](1)
+		if !sw.Send(msg, nil) {
+			sw.Close()
+			return sr, nil
+		}
+		sw.Close()
+		return sr, nil
 	}
 
 	sr, sw := schema.Pipe[*schema.Message](1)

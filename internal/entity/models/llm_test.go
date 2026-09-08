@@ -10,6 +10,46 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+func TestEinoChatModelRequiresExecuteCodeTool(t *testing.T) {
+	name := "chat"
+	base := NewChatModel(&streamSentinelDriver{}, &name, &APIConfig{})
+	model := NewEinoChatModel(base, nil)
+	bound, err := model.WithTools([]*schema.ToolInfo{{Name: "execute_code"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := bound.(*EinoChatModel).chatConfigForGenerate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ToolChoice == nil || *cfg.ToolChoice != "required" {
+		t.Fatalf("ToolChoice = %v, want required", cfg.ToolChoice)
+	}
+	choice, ok := cfg.ToolChoiceValue.(map[string]any)
+	if !ok || choice["type"] != "function" {
+		t.Fatalf("ToolChoiceValue = %#v, want named function choice", cfg.ToolChoiceValue)
+	}
+}
+
+func TestEinoChatModelAllowsFinalAnswerAfterToolResult(t *testing.T) {
+	name := "chat"
+	driver := &captureToolDriver{resp: &ChatResponse{}}
+	model := NewEinoChatModel(NewChatModel(driver, &name, &APIConfig{}), nil)
+	bound, err := model.WithTools([]*schema.ToolInfo{{Name: "execute_code"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bound.Generate(t.Context(), []*schema.Message{
+		schema.UserMessage("make a chart"),
+		{Role: schema.Tool, ToolCallID: "call-1", Content: "done"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if driver.lastConfig.ToolChoice == nil || *driver.lastConfig.ToolChoice != "auto" || driver.lastConfig.ToolChoiceValue != nil {
+		t.Fatalf("tool result choice = %#v / %#v, want auto / nil", driver.lastConfig.ToolChoice, driver.lastConfig.ToolChoiceValue)
+	}
+}
+
 func TestEinoChatModelStreamFiltersDoneSentinel(t *testing.T) {
 	modelName := "chat"
 	driver := &streamSentinelDriver{captureToolDriver: &captureToolDriver{}}

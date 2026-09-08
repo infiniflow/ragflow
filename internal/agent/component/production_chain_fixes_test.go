@@ -761,8 +761,8 @@ func TestCodeExec_LegacyDSLWrapperPreservesExecutionError(t *testing.T) {
 	}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{})
-	if err == nil {
-		t.Fatal("CodeExec.Invoke: want wrapped execution error, got nil")
+	if err != nil {
+		t.Fatalf("CodeExec.Invoke: execution failures should remain in _ERROR output: %v", err)
 	}
 	if got, _ := out["_ERROR"].(string); got != "Container pool is busy" {
 		t.Errorf("CodeExec _ERROR = %v, want sandbox execution error", out["_ERROR"])
