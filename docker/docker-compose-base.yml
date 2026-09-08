@@ -290,8 +290,9 @@ services:
       - ragflow
     restart: unless-stopped
     healthcheck:
-      # The Kvrocks image ships no redis-cli, so probe with a raw TCP PING.
-      test: ["CMD", "sh", "-c", "echo PING | nc -w 2 localhost 6379 | grep -q PONG"]
+      # The Kvrocks image ships redis-cli and requirepass is enforced, so ping
+      # with the password. (The image has no nc, so a raw-tcp probe is wrong.)
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 10s
       retries: 120

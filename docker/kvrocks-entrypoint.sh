@@ -18,15 +18,21 @@
 # Intentionally omitted (invalid in kvrocks 2.16.0): maxmemory, maxmemory-policy.
 set -eu
 
-mkdir -p /var/lib/kvrocks
+# REDIS_PASSWORD is mandatory: the previous Valkey deployment always required it,
+# and an unauthenticated cache/queue backend is a security exposure. Refuse to
+# start rather than silently run open.
+: "${REDIS_PASSWORD:?REDIS_PASSWORD must be set (inject via compose env_file or -e)}"
+
+# KVROCKS_DIR overrides the RocksDB data/config dir (defaults to the compose
+# mount point). Test harnesses use it to redirect writes to a temp dir.
+KVROCKS_DIR="${KVROCKS_DIR:-/var/lib/kvrocks}"
+mkdir -p "$KVROCKS_DIR"
 
 {
   echo "bind 0.0.0.0"
   echo "port 6379"
-  echo "dir /var/lib/kvrocks"
-  if [ -n "${REDIS_PASSWORD:-}" ]; then
-    printf 'requirepass %s\n' "$REDIS_PASSWORD"
-  fi
-} > /var/lib/kvrocks/kvrocks.conf
+  echo "dir $KVROCKS_DIR"
+  printf 'requirepass %s\n' "$REDIS_PASSWORD"
+} > "$KVROCKS_DIR/kvrocks.conf"
 
-exec kvrocks -c /var/lib/kvrocks/kvrocks.conf --dir /var/lib/kvrocks
+exec kvrocks -c "$KVROCKS_DIR/kvrocks.conf" --dir "$KVROCKS_DIR"

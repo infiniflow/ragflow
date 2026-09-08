@@ -32,9 +32,12 @@ jobs:
 
       # Pinned to 2.16.0+ on purpose (TTL contract + no maxmemory). Reuse the repo
       # entrypoint script so this job also exercises the deployment's conf renderer.
+      # `-e REDIS_PASSWORD` forwards the password into the container so the
+      # entrypoint can render requirepass; without it Kvrocks starts open and the
+      # parity tests fail to AUTH.
       - name: Start Kvrocks
         run: |
-          docker run -d --name kvrocks -p 6379:6379 \
+          docker run -d --name kvrocks -p 6379:6379 -e REDIS_PASSWORD \
             -v "${{ github.workspace }}/docker/kvrocks-entrypoint.sh:/etc/kvrocks/entrypoint.sh:ro" \
             --user 0:0 --entrypoint /bin/sh apache/kvrocks:2.16.0 -c "/etc/kvrocks/entrypoint.sh"
         env:
@@ -45,7 +48,7 @@ jobs:
           REDIS_PASSWORD: ci-test-pass
         run: |
           for i in $(seq 1 30); do
-            if docker exec kvrocks sh -c "printf 'AUTH ${REDIS_PASSWORD}\r\nPING\r\n' | nc -w 2 localhost 6379" | grep -q PONG; then
+            if docker exec kvrocks redis-cli -a "${REDIS_PASSWORD}" ping 2>/dev/null | grep -q PONG; then
               echo "Kvrocks ready"; break
             fi
             sleep 1
