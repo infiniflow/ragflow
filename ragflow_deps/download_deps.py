@@ -273,3 +273,21 @@ if __name__ == "__main__":
     for repo_id in repos:
         print(f"Downloading huggingface repo {repo_id}...")
         download_model(repo_id)
+
+    # Guard: the Go in-process DeepDoc backend loads the .ort weights from the
+    # InfiniFlow/deepdoc snapshot pulled above. snapshot_download fetches the
+    # whole repo, so these must be present; fail loudly if a future repo layout
+    # drops them, so the Go backend can never silently ship without its models.
+    # (internal/common.DeepDocModelFiles is the authoritative list.)
+    deepdoc_local = os.path.abspath(os.path.join("huggingface.co", "InfiniFlow", "deepdoc"))
+    go_model_files = ["det.ort", "layout.ort", "tsr.ort", "rec.ort", "ocr.res"]
+    if os.path.isdir(deepdoc_local):
+        for f in go_model_files:
+            if not os.path.exists(os.path.join(deepdoc_local, f)):
+                print(
+                    f"  ERROR: expected Go model file {f} missing from {deepdoc_local}; "
+                    f"the InfiniFlow/deepdoc snapshot no longer ships .ort weights.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        print(f"  ✓ Go .ort model files present under {deepdoc_local}")
