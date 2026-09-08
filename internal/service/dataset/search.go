@@ -108,7 +108,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// search_config (kb_ids), exactly like the Python API's
 	// {**search_config, **req} merge. Resolve them before the access
 	// check so the merged set is what gets authorized.
-	if len(datasetIDs) == 0 && searchID != "" {
+	if searchID != "" {
 		if d.searchService == nil {
 			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
 			return nil, fmt.Errorf("invalid search_id")
@@ -123,16 +123,10 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			return nil, fmt.Errorf("invalid search_id")
 		}
 		if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
-			datasetIDs = stringSliceFromConfig(searchConfig["dataset_ids"])
-			if len(datasetIDs) == 0 {
-				datasetIDs = stringSliceFromConfig(searchConfig["kb_ids"])
-			}
-			if len(documentIDs) == 0 {
-				documentIDs = stringSliceFromConfig(searchConfig["document_ids"])
-				if len(documentIDs) == 0 {
-					documentIDs = stringSliceFromConfig(searchConfig["doc_ids"])
-				}
-			}
+			// Python merges {**search_config, **req}: each id list comes
+			// from the request when set, otherwise from the saved config,
+			// independently of the other list.
+			datasetIDs, documentIDs = mergeSavedSearchIDs(searchConfig, datasetIDs, documentIDs)
 		}
 	}
 
@@ -398,6 +392,29 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
+}
+
+// mergeSavedSearchIDs resolves the effective dataset and document id sets
+// for a saved-search request. Each list is taken from the request when the
+// caller set it and from the saved search config (dataset_ids/kb_ids and
+// document_ids/doc_ids) otherwise - the two lists merge independently,
+// matching Python's {**search_config, **req}.
+func mergeSavedSearchIDs(searchConfig map[string]interface{}, reqDatasetIDs, reqDocumentIDs []string) ([]string, []string) {
+	datasetIDs := reqDatasetIDs
+	if len(datasetIDs) == 0 {
+		datasetIDs = stringSliceFromConfig(searchConfig["dataset_ids"])
+		if len(datasetIDs) == 0 {
+			datasetIDs = stringSliceFromConfig(searchConfig["kb_ids"])
+		}
+	}
+	documentIDs := reqDocumentIDs
+	if len(documentIDs) == 0 {
+		documentIDs = stringSliceFromConfig(searchConfig["document_ids"])
+		if len(documentIDs) == 0 {
+			documentIDs = stringSliceFromConfig(searchConfig["doc_ids"])
+		}
+	}
+	return datasetIDs, documentIDs
 }
 
 // stringSliceFromConfig converts a JSON-decoded config value into a string

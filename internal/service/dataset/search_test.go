@@ -135,3 +135,41 @@ func TestSearchDatasetsUsesDatasetIDsFromSavedSearch(t *testing.T) {
 		t.Fatalf("cross-tenant search_id must be rejected, got: %v", err3)
 	}
 }
+
+func TestMergeSavedSearchIDs(t *testing.T) {
+	cfg := map[string]interface{}{
+		"kb_ids":       []interface{}{"cfg-ds"},
+		"document_ids": []interface{}{"cfg-doc"},
+	}
+	// Request sets neither: both come from the config.
+	ds, docs := mergeSavedSearchIDs(cfg, nil, nil)
+	if len(ds) != 1 || ds[0] != "cfg-ds" {
+		t.Errorf("dataset ids = %v, want [cfg-ds]", ds)
+	}
+	if len(docs) != 1 || docs[0] != "cfg-doc" {
+		t.Errorf("document ids = %v, want [cfg-doc]", docs)
+	}
+	// Request sets dataset ids only: config document ids still merge
+	// (Python merges the two lists independently).
+	ds, docs = mergeSavedSearchIDs(cfg, []string{"req-ds"}, nil)
+	if len(ds) != 1 || ds[0] != "req-ds" {
+		t.Errorf("explicit dataset ids overridden: %v", ds)
+	}
+	if len(docs) != 1 || docs[0] != "cfg-doc" {
+		t.Errorf("config document ids not merged when request sets dataset ids: %v", docs)
+	}
+	// Request sets both: config contributes nothing.
+	ds, docs = mergeSavedSearchIDs(cfg, []string{"req-ds"}, []string{"req-doc"})
+	if ds[0] != "req-ds" || docs[0] != "req-doc" {
+		t.Errorf("explicit ids overridden: ds=%v docs=%v", ds, docs)
+	}
+	// Legacy aliases: kb_ids and doc_ids.
+	cfg2 := map[string]interface{}{
+		"dataset_ids": []interface{}{"cfg-ds2"},
+		"doc_ids":     []interface{}{"cfg-doc2"},
+	}
+	ds, docs = mergeSavedSearchIDs(cfg2, nil, nil)
+	if ds[0] != "cfg-ds2" || docs[0] != "cfg-doc2" {
+		t.Errorf("aliases not honored: ds=%v docs=%v", ds, docs)
+	}
+}
