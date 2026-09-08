@@ -68,16 +68,16 @@ type dispatcherTestQueue struct {
 	mu      sync.Mutex
 	streams []*blockingTaskHandleStream
 	next    int
-	calls   chan int
+	calls   chan struct{}
 }
 
-func (q *dispatcherTestQueue) PullTaskStream(ctx context.Context, maxMessages int) (common.TaskHandleStream, error) {
+func (q *dispatcherTestQueue) PullTaskStream(ctx context.Context) (common.TaskHandleStream, error) {
 	q.mu.Lock()
 	stream := q.streams[q.next]
 	q.next++
 	q.mu.Unlock()
 
-	q.calls <- maxMessages
+	q.calls <- struct{}{}
 	go func() {
 		<-ctx.Done()
 		stream.close(ctx.Err())
@@ -94,7 +94,7 @@ func TestWorkerDispatcherStartsNewPullWhileEarlierPullWaits(t *testing.T) {
 			newBlockingTaskHandleStream(),
 			newBlockingTaskHandleStream(),
 		},
-		calls: make(chan int, 2),
+		calls: make(chan struct{}, 2),
 	}
 	previousQueue := engine.GetMessageQueueEngine()
 	engine.SetMessageQueueEngine(queue)
@@ -111,33 +111,28 @@ func TestWorkerDispatcherStartsNewPullWhileEarlierPullWaits(t *testing.T) {
 
 	ingestor.workerQueue <- &worker{id: 1, inbox: make(chan common.TaskHandle)}
 	select {
-	case max := <-queue.calls:
-		if max != 1 {
-			t.Fatalf("first Pull max = %d, want 1", max)
-		}
+	case <-queue.calls:
 	case <-time.After(250 * time.Millisecond):
 		t.Fatal("first idle worker did not start Pull(1)")
 	}
 
 	ingestor.workerQueue <- &worker{id: 2, inbox: make(chan common.TaskHandle)}
 	select {
-	case max := <-queue.calls:
-		if max != 1 {
-			t.Fatalf("second Pull max = %d, want 1", max)
-		}
+	case <-queue.calls:
 	case <-time.After(250 * time.Millisecond):
 		t.Fatal("new idle worker waited for the earlier Pull to expire")
 	}
 }
 
-// TestWorkerDispatcherBatchesAvailableWorkersInSameTurn prevents the dispatcher
-// from turning workers that are already available into redundant Pull(1)
-// requests. It must drain only the workers visible in this turn and issue one
-// Pull(K).
-func TestWorkerDispatcherBatchesAvailableWorkersInSameTurn(t *testing.T) {
+// TestWorkerDispatcherStartsPullForEachAvailableWorker ensures each idle
+// worker gets an independent single-message pull request.
+func TestWorkerDispatcherStartsPullForEachAvailableWorker(t *testing.T) {
 	queue := &dispatcherTestQueue{
-		streams: []*blockingTaskHandleStream{newBlockingTaskHandleStream()},
-		calls:   make(chan int, 1),
+		streams: []*blockingTaskHandleStream{
+			newBlockingTaskHandleStream(),
+			newBlockingTaskHandleStream(),
+		},
+		calls: make(chan struct{}, 2),
 	}
 	previousQueue := engine.GetMessageQueueEngine()
 	engine.SetMessageQueueEngine(queue)
@@ -154,13 +149,12 @@ func TestWorkerDispatcherBatchesAvailableWorkersInSameTurn(t *testing.T) {
 		ingestor.pullWg.Wait()
 	})
 
-	select {
-	case max := <-queue.calls:
-		if max != 2 {
-			t.Fatalf("Pull max = %d, want 2 for the two visible workers", max)
+	for range 2 {
+		select {
+		case <-queue.calls:
+		case <-time.After(250 * time.Millisecond):
+			t.Fatal("each visible worker did not start a Pull(1)")
 		}
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("visible workers did not start a Pull")
 	}
 }
 
@@ -171,7 +165,7 @@ func TestWorkerDispatcherHandsOffFirstStreamMessageImmediately(t *testing.T) {
 	stream := newBlockingTaskHandleStream()
 	queue := &dispatcherTestQueue{
 		streams: []*blockingTaskHandleStream{stream},
-		calls:   make(chan int, 1),
+		calls:   make(chan struct{}, 1),
 	}
 	previousQueue := engine.GetMessageQueueEngine()
 	engine.SetMessageQueueEngine(queue)
@@ -179,9 +173,7 @@ func TestWorkerDispatcherHandsOffFirstStreamMessageImmediately(t *testing.T) {
 
 	ingestor := newUnitIngestor("test-first-stream-handoff", 2, nil)
 	firstWorker := &worker{id: 1, inbox: make(chan common.TaskHandle)}
-	secondWorker := &worker{id: 2, inbox: make(chan common.TaskHandle)}
 	ingestor.workerQueue <- firstWorker
-	ingestor.workerQueue <- secondWorker
 	ingestor.dispatcherWg.Add(1)
 	go ingestor.consumeLoop()
 	t.Cleanup(func() {
@@ -191,12 +183,9 @@ func TestWorkerDispatcherHandsOffFirstStreamMessageImmediately(t *testing.T) {
 	})
 
 	select {
-	case max := <-queue.calls:
-		if max != 2 {
-			t.Fatalf("Pull max = %d, want 2", max)
-		}
+	case <-queue.calls:
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("workers did not start Pull(2)")
+		t.Fatal("worker did not start Pull(1)")
 	}
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "first-stream-message"}}
@@ -211,78 +200,19 @@ func TestWorkerDispatcherHandsOffFirstStreamMessageImmediately(t *testing.T) {
 	}
 }
 
-// TestPullBatchReturnsOnlyUnmatchedWorkers prevents a partial Pull(K) from
-// losing an unused worker or registering a worker whose handle was already handed
-// off to a worker.
-func TestPullBatchReturnsOnlyUnmatchedWorkers(t *testing.T) {
+// TestPullReturnsWorkerWhenStreamCompletesWithoutMessage ensures a worker is
+// available for a later pull when its single-message request expires empty.
+func TestPullReturnsWorkerWhenStreamCompletesWithoutMessage(t *testing.T) {
 	stream := newBlockingTaskHandleStream()
 	queue := &dispatcherTestQueue{
 		streams: []*blockingTaskHandleStream{stream},
-		calls:   make(chan int, 1),
+		calls:   make(chan struct{}, 1),
 	}
-	ingestor := newUnitIngestor("test-partial-pull", 2, nil)
-	firstWorker := &worker{id: 1, inbox: make(chan common.TaskHandle)}
-	secondWorker := &worker{id: 2, inbox: make(chan common.TaskHandle)}
+	ingestor := newUnitIngestor("test-empty-pull", 1, nil)
+	worker := &worker{id: 1, inbox: make(chan common.TaskHandle)}
 
 	ingestor.pullWg.Add(1)
-	go ingestor.consumePullBatch(queue, []*worker{firstWorker, secondWorker})
-	t.Cleanup(func() {
-		ingestor.dispatchCancel()
-		ingestor.pullWg.Wait()
-	})
-
-	select {
-	case max := <-queue.calls:
-		if max != 2 {
-			t.Fatalf("Pull max = %d, want 2", max)
-		}
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("Pull batch did not start")
-	}
-
-	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "partial-pull"}}
-	go func() { stream.messages <- handle }()
-	select {
-	case received := <-firstWorker.inbox:
-		if received != handle {
-			t.Fatalf("handed-off handle = %v, want partial-pull handle", received)
-		}
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("partial Pull did not hand off its first handle")
-	}
-	stream.close(nil)
-	ingestor.pullWg.Wait()
-
-	select {
-	case returned := <-ingestor.workerQueue:
-		if returned != secondWorker {
-			t.Fatalf("returned worker = %d, want unmatched worker %d", returned.id, secondWorker.id)
-		}
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("partial Pull did not return its unmatched worker")
-	}
-	select {
-	case duplicate := <-ingestor.workerQueue:
-		t.Fatalf("unexpected duplicate worker registration: %d", duplicate.id)
-	default:
-	}
-}
-
-// TestPullBatchCancellationLeavesReservedHandleUnsettled prevents shutdown
-// from blocking forever when a Pull has received a handle but its worker has
-// not yet taken the private inbox. The handle belongs to the broker again; it
-// must not be locally Acked, Nacked, or handed off after cancellation.
-func TestPullBatchCancellationLeavesReservedHandleUnsettled(t *testing.T) {
-	stream := newBlockingTaskHandleStream()
-	queue := &dispatcherTestQueue{
-		streams: []*blockingTaskHandleStream{stream},
-		calls:   make(chan int, 1),
-	}
-	ingestor := newUnitIngestor("test-cancel-reserved-handle", 1, nil)
-	w := &worker{id: 1, inbox: make(chan common.TaskHandle)}
-
-	ingestor.pullWg.Add(1)
-	go ingestor.consumePullBatch(queue, []*worker{w})
+	go ingestor.consumePull(queue, worker)
 	t.Cleanup(func() {
 		ingestor.dispatchCancel()
 		ingestor.pullWg.Wait()
@@ -291,7 +221,51 @@ func TestPullBatchCancellationLeavesReservedHandleUnsettled(t *testing.T) {
 	select {
 	case <-queue.calls:
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("Pull batch did not start")
+		t.Fatal("Pull did not start")
+	}
+
+	stream.close(nil)
+	ingestor.pullWg.Wait()
+
+	select {
+	case returned := <-ingestor.workerQueue:
+		if returned != worker {
+			t.Fatalf("returned worker = %d, want worker %d", returned.id, worker.id)
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("empty Pull did not return its worker")
+	}
+	select {
+	case duplicate := <-ingestor.workerQueue:
+		t.Fatalf("unexpected duplicate worker registration: %d", duplicate.id)
+	default:
+	}
+}
+
+// TestPullCancellationLeavesReservedHandleUnsettled prevents shutdown
+// from blocking forever when a Pull has received a handle but its worker has
+// not yet taken the private inbox. The handle belongs to the broker again; it
+// must not be locally Acked, Nacked, or handed off after cancellation.
+func TestPullCancellationLeavesReservedHandleUnsettled(t *testing.T) {
+	stream := newBlockingTaskHandleStream()
+	queue := &dispatcherTestQueue{
+		streams: []*blockingTaskHandleStream{stream},
+		calls:   make(chan struct{}, 1),
+	}
+	ingestor := newUnitIngestor("test-cancel-reserved-handle", 1, nil)
+	w := &worker{id: 1, inbox: make(chan common.TaskHandle)}
+
+	ingestor.pullWg.Add(1)
+	go ingestor.consumePull(queue, w)
+	t.Cleanup(func() {
+		ingestor.dispatchCancel()
+		ingestor.pullWg.Wait()
+	})
+
+	select {
+	case <-queue.calls:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("Pull did not start")
 	}
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "reserved-on-stop"}}
@@ -303,7 +277,7 @@ func TestPullBatchCancellationLeavesReservedHandleUnsettled(t *testing.T) {
 	select {
 	case <-sent:
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("Pull batch did not reserve the streamed handle")
+		t.Fatal("Pull did not reserve the streamed handle")
 	}
 
 	ingestor.dispatchCancel()

@@ -29,11 +29,9 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// TestPullTaskStreamDeliversFirstMessageBeforeBatchCompletes proves the
-// dispatcher can hand a task to an idle slot without waiting for a requested
-// batch to fill. Replacing PullTaskStream with the old slice-collecting Fetch
-// path would make this test time out.
-func TestPullTaskStreamDeliversFirstMessageBeforeBatchCompletes(t *testing.T) {
+// TestPullTaskStreamDeliversAvailableMessage proves the dispatcher can hand a
+// task to an idle worker as soon as its single-message pull is fulfilled.
+func TestPullTaskStreamDeliversAvailableMessage(t *testing.T) {
 	host, port := newEmbeddedNatsServer(t)
 	queue := NewNatsEngine(host, port)
 	if err := queue.Init(); err != nil {
@@ -56,7 +54,7 @@ func TestPullTaskStreamDeliversFirstMessageBeforeBatchCompletes(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	stream, err := queue.PullTaskStream(ctx, 2)
+	stream, err := queue.PullTaskStream(ctx)
 	if err != nil {
 		t.Fatalf("PullTaskStream: %v", err)
 	}
@@ -74,6 +72,65 @@ func TestPullTaskStreamDeliversFirstMessageBeforeBatchCompletes(t *testing.T) {
 	}
 }
 
+// TestPullTaskStreamDeliversOneTask ensures one pull request cannot reserve
+// more than one task when additional tasks are already pending.
+func TestPullTaskStreamDeliversOneTask(t *testing.T) {
+	host, port := newEmbeddedNatsServer(t)
+	queue := NewNatsEngine(host, port)
+	if err := queue.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := queue.InitConsumer(common.TaskSubject); err != nil {
+		t.Fatalf("InitConsumer: %v", err)
+	}
+
+	for _, taskID := range []string{"first-single-pull", "second-single-pull"} {
+		payload, err := json.Marshal(common.TaskMessage{
+			TaskID:   taskID,
+			TaskType: common.TaskTypeIngestionTask,
+		})
+		if err != nil {
+			t.Fatalf("marshal task message: %v", err)
+		}
+		if err := queue.PublishTask(common.TaskSubject, payload); err != nil {
+			t.Fatalf("PublishTask: %v", err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	stream, err := queue.PullTaskStream(ctx)
+	if err != nil {
+		t.Fatalf("PullTaskStream: %v", err)
+	}
+
+	select {
+	case handle := <-stream.Messages():
+		if handle == nil {
+			t.Fatal("PullTaskStream closed before delivering the available task")
+		}
+		if got := handle.GetMessage().TaskID; got != "first-single-pull" {
+			t.Fatalf("task id = %q, want first-single-pull", got)
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("PullTaskStream did not deliver the first task")
+	}
+
+	select {
+	case <-stream.Done():
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("PullTaskStream did not end after its single task")
+	}
+	select {
+	case _, ok := <-stream.Messages():
+		if ok {
+			t.Fatal("PullTaskStream delivered more than one task")
+		}
+	default:
+		t.Fatal("PullTaskStream Messages channel remained open after Done")
+	}
+}
+
 // TestPullTaskStreamRequiresDeadline prevents an unbounded server-side pending
 // request when a caller later cancels its local context.
 func TestPullTaskStreamRequiresDeadline(t *testing.T) {
@@ -86,7 +143,7 @@ func TestPullTaskStreamRequiresDeadline(t *testing.T) {
 		t.Fatalf("InitConsumer: %v", err)
 	}
 
-	_, err := queue.PullTaskStream(t.Context(), 1)
+	_, err := queue.PullTaskStream(t.Context())
 	if err == nil {
 		t.Fatal("PullTaskStream without a deadline succeeded")
 	}
@@ -110,7 +167,7 @@ func TestPullTaskStreamCancellationEndsLocalStream(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
-	stream, err := queue.PullTaskStream(ctx, 1)
+	stream, err := queue.PullTaskStream(ctx)
 	if err != nil {
 		cancel()
 		t.Fatalf("PullTaskStream: %v", err)
@@ -155,7 +212,7 @@ func TestPullTaskStreamReportsConnectionClose(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	stream, err := queue.PullTaskStream(ctx, 1)
+	stream, err := queue.PullTaskStream(ctx)
 	if err != nil {
 		t.Fatalf("PullTaskStream: %v", err)
 	}
@@ -204,10 +261,10 @@ func TestPullTaskStreamReportsMaxWaiting(t *testing.T) {
 	defer cancelFirst()
 	secondCtx, cancelSecond := context.WithTimeout(t.Context(), time.Second)
 	defer cancelSecond()
-	if _, err := queue.PullTaskStream(firstCtx, 1); err != nil {
+	if _, err := queue.PullTaskStream(firstCtx); err != nil {
 		t.Fatalf("first PullTaskStream: %v", err)
 	}
-	if _, err := queue.PullTaskStream(secondCtx, 1); err != nil {
+	if _, err := queue.PullTaskStream(secondCtx); err != nil {
 		t.Fatalf("second PullTaskStream: %v", err)
 	}
 
@@ -230,7 +287,7 @@ func TestPullTaskStreamReportsMaxWaiting(t *testing.T) {
 
 	thirdCtx, cancelThird := context.WithTimeout(t.Context(), time.Second)
 	defer cancelThird()
-	stream, err := queue.PullTaskStream(thirdCtx, 1)
+	stream, err := queue.PullTaskStream(thirdCtx)
 	if err == nil {
 		select {
 		case <-stream.Done():
@@ -244,8 +301,8 @@ func TestPullTaskStreamReportsMaxWaiting(t *testing.T) {
 	}
 }
 
-// TestPullMessagesFetchesMessages verifies that manual pulls can retrieve
-// published task messages from the shared consumer.
+// TestPullMessagesFetchesMessages verifies that manual pulls can retrieve the
+// requested number of published task messages from the shared consumer.
 func TestPullMessagesFetchesMessages(t *testing.T) {
 	host, port := newEmbeddedNatsServer(t)
 	queue := NewNatsEngine(host, port)
@@ -256,26 +313,30 @@ func TestPullMessagesFetchesMessages(t *testing.T) {
 		t.Fatalf("InitConsumer: %v", err)
 	}
 
-	payload, err := json.Marshal(common.TaskMessage{
-		TaskID:   "admin-direct-pull",
-		TaskType: common.TaskTypeIngestionTask,
-	})
-	if err != nil {
-		t.Fatalf("marshal task: %v", err)
-	}
-	if err := queue.PublishTask(common.TaskSubject, payload); err != nil {
-		t.Fatalf("PublishTask: %v", err)
+	for _, taskID := range []string{"admin-direct-pull-1", "admin-direct-pull-2"} {
+		payload, err := json.Marshal(common.TaskMessage{
+			TaskID:   taskID,
+			TaskType: common.TaskTypeIngestionTask,
+		})
+		if err != nil {
+			t.Fatalf("marshal task: %v", err)
+		}
+		if err := queue.PublishTask(common.TaskSubject, payload); err != nil {
+			t.Fatalf("PublishTask: %v", err)
+		}
 	}
 
-	handles, err := queue.PullMessages(1)
+	handles, err := queue.PullMessages(2)
 	if err != nil {
 		t.Fatalf("PullMessages: %v", err)
 	}
-	if len(handles) != 1 {
-		t.Fatalf("len(handles) = %d, want 1", len(handles))
+	if len(handles) != 2 {
+		t.Fatalf("len(handles) = %d, want 2", len(handles))
 	}
-	if handles[0].GetMessage().TaskID != "admin-direct-pull" {
-		t.Fatalf("task id = %s, want admin-direct-pull", handles[0].GetMessage().TaskID)
+	for i, taskID := range []string{"admin-direct-pull-1", "admin-direct-pull-2"} {
+		if got := handles[i].GetMessage().TaskID; got != taskID {
+			t.Fatalf("task id = %s, want %s", got, taskID)
+		}
 	}
 }
 
@@ -307,7 +368,7 @@ func TestPullMessagesReportsBatchError(t *testing.T) {
 	}
 	queue.consumer = consumer
 
-	if _, err := queue.PullTaskStream(ctx, 1); err != nil {
+	if _, err := queue.PullTaskStream(ctx); err != nil {
 		t.Fatalf("occupy consumer waiting slot: %v", err)
 	}
 	deadline := time.Now().Add(time.Second)
@@ -345,7 +406,7 @@ func TestPullTaskStreamClosesMessagesBeforeDone(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	stream, err := queue.PullTaskStream(ctx, 1)
+	stream, err := queue.PullTaskStream(ctx)
 	if err != nil {
 		cancel()
 		t.Fatalf("PullTaskStream: %v", err)

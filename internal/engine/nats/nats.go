@@ -257,51 +257,48 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	return nil
 }
 
-// PullMessages collects up to messageCount messages from one task stream for
-// the manual admin endpoint. Scheduling code consumes the stream directly.
+// PullMessages collects up to messageCount messages for the manual admin
+// endpoint. Scheduling code uses PullTaskStream for single-message pulls.
 func (n *NatsEngine) PullMessages(messageCount int) ([]common.TaskHandle, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	stream, err := n.PullTaskStream(ctx, messageCount)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch messages: %w", err)
+	if n.consumer == nil {
+		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
 	}
 
 	resultMessages := make([]common.TaskHandle, 0, messageCount)
-	for message := range stream.Messages() {
-		resultMessages = append(resultMessages, message)
+	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchMaxWait(1*time.Second))
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch messages: %w", err)
 	}
-	if streamErr := stream.Err(); streamErr != nil && !errors.Is(streamErr, context.DeadlineExceeded) {
+	for message := range messages.Messages() {
+		resultMessages = append(resultMessages, NewNatsMessageHandle(message))
+	}
+	if batchErr := messages.Error(); batchErr != nil {
 		for _, message := range resultMessages {
 			if nackErr := message.Nack(); nackErr != nil {
 				common.Error("nack admin message after failed pull", nackErr)
 			}
 		}
-		return nil, fmt.Errorf("failed to fetch messages: %w", streamErr)
+		return nil, fmt.Errorf("failed to fetch messages: %w", batchErr)
 	}
 	return resultMessages, nil
 }
 
-// PullTaskStream requests up to maxMessages task messages and yields each
-// handle when it arrives. The caller must supply a deadline-bearing context so
-// the server-side pull request has a bounded expiry.
-func (n *NatsEngine) PullTaskStream(ctx context.Context, maxMessages int) (common.TaskHandleStream, error) {
+// PullTaskStream requests one task message and yields its handle when it
+// arrives. The caller must supply a deadline-bearing context so the
+// server-side pull request has a bounded expiry.
+func (n *NatsEngine) PullTaskStream(ctx context.Context) (common.TaskHandleStream, error) {
 	if n.consumer == nil {
 		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
 	}
 	if n.nc == nil {
 		return nil, errors.New("NATS connection is nil, engine not properly initialized")
 	}
-	if maxMessages <= 0 {
-		return nil, fmt.Errorf("max messages must be positive: %d", maxMessages)
-	}
 	if _, ok := ctx.Deadline(); !ok {
 		return nil, errors.New("pull task stream context must have a deadline")
 	}
 
 	statusChanges := n.nc.StatusChanged(nats.DISCONNECTED, nats.CLOSED)
-	batch, err := n.consumer.Fetch(maxMessages, jetstream.FetchContext(ctx))
+	batch, err := n.consumer.Fetch(1, jetstream.FetchContext(ctx))
 	if err != nil {
 		n.nc.RemoveStatusListener(statusChanges)
 		return nil, fmt.Errorf("fetch task stream: %w", err)

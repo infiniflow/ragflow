@@ -237,80 +237,60 @@ func (e *Ingestor) consumeLoop() {
 	defer e.dispatcherWg.Done()
 	msgQueueEngine := engine.GetMessageQueueEngine()
 	for {
-		var firstWorker *worker
+		var w *worker
 		select {
 		case <-e.dispatchCtx.Done():
 			return
-		case firstWorker = <-e.workerQueue:
+		case w = <-e.workerQueue:
 		}
-
-		workers := []*worker{firstWorker}
-		for {
-			select {
-			case w := <-e.workerQueue:
-				workers = append(workers, w)
-			default:
-				goto startPull
-			}
-		}
-
-	startPull:
 		if e.dispatchCtx.Err() != nil {
-			e.returnWorkers(workers)
+			e.returnWorkers([]*worker{w})
 			return
 		}
 		e.pullWg.Add(1)
-		go e.consumePullBatch(msgQueueEngine, workers)
+		go e.consumePull(msgQueueEngine, w)
 	}
 }
 
-func (e *Ingestor) consumePullBatch(messageQueueEngine engine.MessageQueue, workers []*worker) {
+func (e *Ingestor) consumePull(messageQueueEngine engine.MessageQueue, w *worker) {
 	defer e.pullWg.Done()
 
 	pullStart := time.Now()
 	pullCtx, cancel := context.WithTimeout(e.dispatchCtx, taskPullRequestTimeout)
 	defer cancel()
-	stream, err := messageQueueEngine.PullTaskStream(pullCtx, len(workers))
+	stream, err := messageQueueEngine.PullTaskStream(pullCtx)
 	if err != nil {
 		e.logPullError(err)
 		e.waitAfterPullError()
-		e.returnWorkers(workers)
+		e.returnWorkers([]*worker{w})
 		return
 	}
 
-	matched := 0
-	firstArrived := false
-	for handle := range stream.Messages() {
-		recvTime := time.Now()
-		if !firstArrived {
-			firstArrived = true
-			latency := time.Since(pullStart)
-			common.Debug(fmt.Sprintf("Pull delivered first handle in %v", latency),
-				zap.Duration("pull_first_handle_latency", latency),
-			)
+	handle, ok := <-stream.Messages()
+	if !ok {
+		if err := stream.Err(); err != nil {
+			e.logPullError(err)
+			e.waitAfterPullError()
 		}
-		if matched == len(workers) {
-			break
-		}
-		targetWorker := workers[matched]
-		select {
-		case targetWorker.inbox <- handle:
-			matched++
-			handoffDuration := time.Since(recvTime)
-			common.Debug(fmt.Sprintf("Handed off handle to worker %d in %v", targetWorker.id, handoffDuration),
-				zap.Int32("worker_id", targetWorker.id),
-				zap.Duration("handoff_duration", handoffDuration),
-			)
-		case <-e.dispatchCtx.Done():
-			e.returnWorkers(workers[matched:])
-			return
-		}
+		e.returnWorkers([]*worker{w})
+		return
 	}
-	if err := stream.Err(); err != nil {
-		e.logPullError(err)
-		e.waitAfterPullError()
+
+	recvTime := time.Now()
+	latency := time.Since(pullStart)
+	common.Debug(fmt.Sprintf("Pull delivered handle in %v", latency),
+		zap.Duration("pull_first_handle_latency", latency),
+	)
+	select {
+	case w.inbox <- handle:
+		handoffDuration := time.Since(recvTime)
+		common.Debug(fmt.Sprintf("Handed off handle to worker %d in %v", w.id, handoffDuration),
+			zap.Int32("worker_id", w.id),
+			zap.Duration("handoff_duration", handoffDuration),
+		)
+	case <-e.dispatchCtx.Done():
+		e.returnWorkers([]*worker{w})
 	}
-	e.returnWorkers(workers[matched:])
 }
 
 func (e *Ingestor) logPullError(err error) {
