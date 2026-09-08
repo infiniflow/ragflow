@@ -36,8 +36,10 @@ from api.db.services.document_counter_service import release_reparse_counters
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.llm_service import LLMBundle
+from api.db.services.search_service import SearchService
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.db.services.tenant_llm_service import TenantLLMService
+from common.llm_request_context import normalize_llm_user_id, reset_llm_request_context, set_llm_request_context
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     check_duplicate_ids,
@@ -56,13 +58,22 @@ from api.utils.reference_metadata_utils import (
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
-from common.metadata_utils import convert_conditions, filter_doc_ids_by_metadata
+from common.metadata_utils import apply_meta_data_filter, convert_conditions, filter_doc_ids_by_metadata
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.tag_feature_utils import validate_tag_features
 from rag.app.tag import label_question
 from rag.nlp import search
 from rag.prompts.generator import cross_languages, keyword_extraction
+
+
+def _encode_with_request_user(embd_mdl, texts, req):
+    token = set_llm_request_context(user_id=normalize_llm_user_id(req.get("user_id")))
+    try:
+        return embd_mdl.encode(texts)
+    finally:
+        reset_llm_request_context(token)
+
 
 DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
 DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
@@ -206,6 +217,7 @@ async def parse(tenant_id, dataset_id):
     req = await get_request_json()
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
+    llm_user_id = normalize_llm_user_id(req.get("user_id"))
     doc_list = req.get("document_ids")
     unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_list, "document")
     doc_list = unique_doc_ids
@@ -247,7 +259,7 @@ async def parse(tenant_id, dataset_id):
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
         doc = doc.to_dict()
-        DocumentService.run(tenant_id, doc, kb_table_num_map)
+        DocumentService.run(tenant_id, doc, kb_table_num_map, user_id=llm_user_id)
         success_count += 1
     if not_found:
         return get_result(message=f"Documents not found: {not_found}", code=RetCode.DATA_ERROR)
@@ -318,11 +330,33 @@ async def stop_parsing(tenant_id, dataset_id):
     return get_result()
 
 
+@manager.route("/datasets/<dataset_id>/search", methods=["POST"])  # noqa: F821
+@manager.route("/datasets/search", methods=["POST"])  # noqa: F821
 @manager.route("/retrieval", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def retrieval_test(tenant_id):
+async def retrieval_test(tenant_id, dataset_id=None):
     req = await get_request_json()
+    if dataset_id:
+        req["dataset_ids"] = [dataset_id]
+    if "document_ids" not in req and "doc_ids" in req:
+        req["document_ids"] = req["doc_ids"]
+    if "page_size" not in req and "size" in req:
+        req["page_size"] = req["size"]
+    request_fields = set(req)
+    search_id = req.get("search_id", "")
+    search_config = {}
+    if search_id:
+        search_detail = SearchService.get_detail(search_id)
+        if not search_detail or search_detail.get("tenant_id") != tenant_id:
+            return get_error_data_result("Invalid search_id")
+        search_config = dict(search_detail.get("search_config") or {})
+        search_config.setdefault("rerank_candidates_count", 100)
+        if "kb_ids" in search_config:
+            search_config["dataset_ids"] = search_config["kb_ids"]
+        if "doc_ids" in search_config:
+            search_config["document_ids"] = search_config["doc_ids"]
+        req = {**search_config, **req}
     if not req.get("dataset_ids"):
         return get_error_data_result("`dataset_ids` is required.")
     kb_ids = req["dataset_ids"]
@@ -347,30 +381,59 @@ async def retrieval_test(tenant_id):
     toc_enhance = req.get("toc_enhance", False)
     langs = req.get("cross_languages", [])
     if not isinstance(doc_ids, list):
-        return get_error_data_result("`documents` should be a list")
+        return get_error_data_result("`document_ids` should be a list")
     if doc_ids:
         doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
         for doc_id in doc_ids:
             if doc_id not in doc_ids_list:
                 return get_error_data_result(f"The datasets don't own the document {doc_id}")
-    if not doc_ids:
-        metadata_condition = req.get("metadata_condition")
-        if metadata_condition:
-            doc_ids = filter_doc_ids_by_metadata(
-                kb_ids,
-                convert_conditions(metadata_condition),
-                metadata_condition.get("logic", "and"),
-                lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
-            )
-            if not doc_ids and metadata_condition.get("conditions"):
-                return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
-            if metadata_condition and not doc_ids:
-                doc_ids = ["-999"]
+    metadata_condition = req.get("metadata_condition")
+    meta_data_filter = None if "metadata_condition" in request_fields else req.get("meta_data_filter")
+    if meta_data_filter:
+        chat_mdl = None
+        if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+            chat_id = req.get("chat_id", "")
+            if chat_id:
+                chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, chat_id)
+            else:
+                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(tenant_id, chat_model_config)
+        doc_ids = await apply_meta_data_filter(
+            meta_data_filter,
+            None,
+            question,
+            chat_mdl,
+            doc_ids,
+            kb_ids=kb_ids,
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+        )
+    elif metadata_condition:
+        filtered_doc_ids = filter_doc_ids_by_metadata(
+            kb_ids,
+            convert_conditions(metadata_condition),
+            metadata_condition.get("logic", "and"),
+            lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+        )
+        if doc_ids:
+            filtered_doc_id_set = set(filtered_doc_ids)
+            doc_ids = [doc_id for doc_id in doc_ids if doc_id in filtered_doc_id_set]
         else:
-            doc_ids = None
-    similarity_threshold = float(req.get("similarity_threshold", 0.2))
-    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
-    if "top_k" in req:
+            doc_ids = filtered_doc_ids
+        if not doc_ids and metadata_condition.get("conditions"):
+            return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
+        if metadata_condition and not doc_ids:
+            doc_ids = ["-999"]
+    elif not doc_ids:
+        doc_ids = None
+    try:
+        similarity_threshold = float(req.get("similarity_threshold", 0.2))
+    except (TypeError, ValueError):
+        return get_error_data_result("`similarity_threshold` should be a number")
+    try:
+        vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+    except (TypeError, ValueError):
+        return get_error_data_result("`vector_similarity_weight` should be a number")
+    if "top_k" in request_fields:
         logging.warning("`top_k` is deprecated for POST /api/v1/retrieval; use `knn_top_k` instead.")
     knn_top_k_parameter = "knn_top_k" if "knn_top_k" in req else "top_k"
     try:
@@ -440,6 +503,7 @@ async def retrieval_test(tenant_id):
             rerank_mdl=rerank_mdl,
             highlight=highlight,
             rank_feature=label_question(question, kbs),
+            trace_id=search_id,
             must_not=None if include_knowledge_compilation else {"exists": "compile_kwd"},
             rerank_candidates_count=rerank_candidates_count,
         )
@@ -668,8 +732,6 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     if isinstance(parser_config, dict):
         if "compilation_template_group_id" in parser_config:
             group_ids = _group_ids(parser_config.get("compilation_template_group_id"))
-        elif isinstance(parser_config.get("ext"), dict):
-            group_ids = _group_ids(parser_config["ext"].get("compilation_template_group_id"))
 
     configured_ids: list[str] = []
     seen_configured_ids: set[str] = set()
@@ -1146,7 +1208,11 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     embd_id = DocumentService.get_embd_id(document_id)
     model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
-    v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
+    v, c = _encode_with_request_user(
+        embd_mdl,
+        [doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])],
+        req,
+    )
     v = 0.1 * v[0] + 0.9 * v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
     settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
@@ -1300,11 +1366,13 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         q, a = rmPrefix(arr[0]), rmPrefix(arr[1])
         d = beAdoc(d, arr[0], arr[1], not any([rag_tokenizer.is_chinese(t) for t in q + a]))
 
-    v, _ = embd_mdl.encode(
+    v, _ = _encode_with_request_user(
+        embd_mdl,
         [
             doc.name,
             d["content_with_weight"] if not d.get("question_kwd") else "\n".join(d["question_kwd"]),
-        ]
+        ],
+        req,
     )
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()

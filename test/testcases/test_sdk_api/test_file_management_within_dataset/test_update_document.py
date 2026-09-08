@@ -417,7 +417,7 @@ class TestUpdateDocumentParserConfig:
             (
                 "naive",
                 {"invalid_key": "invalid_value"},
-                "Extra inputs are not permitted",
+                "",
             ),
             (
                 "naive",

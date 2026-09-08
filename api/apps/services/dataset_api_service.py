@@ -95,8 +95,12 @@ async def create_dataset(tenant_id: str, req: dict):
     :param req: dataset creation request
     :return: (success, result) or (success, error_message)
     """
-    # Extract ext field for additional parameters
-    ext_fields = req.pop("ext", {})
+    # Drop language when not provided so the model/database default applies
+    # (the create request is parsed with exclude_unset=False, so the key is
+    # always present with a None default when the caller omits it).
+    if req.get("language") is None:
+        req.pop("language", None)
+        logging.debug("create_dataset: 'language' not provided; falling back to the model/database default.")
 
     # Map auto_metadata_config (if provided) into parser_config structure
     auto_meta = req.pop("auto_metadata_config", {})
@@ -116,8 +120,6 @@ async def create_dataset(tenant_id: str, req: dict):
         parser_cfg["metadata"] = fields
         parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
         req["parser_config"] = parser_cfg
-    req.update(ext_fields)
-
     e, create_dict = KnowledgebaseService.create_with_name(name=req.pop("name", None), tenant_id=tenant_id, parser_id=req.pop("parser_id", None), **req)
 
     if not e:
@@ -320,9 +322,6 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     if kb is None:
         return False, "Invalid Dataset ID"
 
-    # Extract ext field for additional parameters
-    ext_fields = req.pop("ext", {})
-
     # Map auto_metadata_config into parser_config if present
     auto_meta = req.pop("auto_metadata_config", {})
     if auto_meta:
@@ -342,9 +341,6 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         parser_cfg["enable_metadata"] = auto_meta.get("enabled", True)
         req["parser_config"] = parser_cfg
 
-    # Merge ext fields with req
-    req.update(ext_fields)
-
     # Extract connectors from request
     connectors = []
     if "connectors" in req:
@@ -362,10 +358,7 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
             req["parser_config"]["enable_children"] = False
             req["parser_config"]["parent_child"] = {}
 
-        parser_config = req["parser_config"]
-        req_ext_fields = parser_config.pop("ext", {})
-        parser_config.update(req_ext_fields)
-        req["parser_config"] = deep_merge(kb.parser_config, parser_config)
+        req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])
 
     if (chunk_method := req.get("parser_id")) and chunk_method != kb.parser_id:
         if not req.get("parser_config"):
@@ -439,9 +432,8 @@ def list_datasets(tenant_id: str, args: dict):
     name = args.get("name")
     page = int(args.get("page", 1))
     page_size = int(args.get("page_size", 30))
-    ext_fields = args.get("ext", {})
-    parser_id = ext_fields.get("parser_id")
-    keywords = ext_fields.get("keywords", "")
+    parser_id = args.get("parser_id")
+    keywords = args.get("keywords", "")
     orderby = args.get("orderby", "create_time")
     desc_arg = args.get("desc", "true")
     if isinstance(desc_arg, str):
@@ -463,7 +455,7 @@ def list_datasets(tenant_id: str, args: dict):
         kbs = KnowledgebaseService.get_kb_by_name(name, tenant_id)
         if not kbs:
             return False, f"User '{tenant_id}' lacks permission for dataset '{name}'"
-    owner_ids = [owner_id.strip() for owner_id in ext_fields.get("owner_ids", []) if isinstance(owner_id, str) and owner_id.strip()]
+    owner_ids = [owner_id.strip() for owner_id in args.get("owner_ids", []) if isinstance(owner_id, str) and owner_id.strip()]
     if owner_ids:
         tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
         allowed_tenant_ids = {m["tenant_id"] for m in tenants}
@@ -2487,6 +2479,26 @@ async def _current_chunk_doc_ids(index_nm, dataset_id: str, doc_ids: set[str]) -
     )
 
 
+async def _current_structure_product_doc_ids(index_nm, dataset_id: str, kind: str, doc_ids: set[str]) -> set[str]:
+    """Return documents that have produced a document-scoped structure graph."""
+    if not doc_ids:
+        return set()
+    stored_kinds = sorted(_ALTERATION_ELIGIBLE_TEMPLATE_KINDS.get(kind) or {kind})
+    return await _involved_doc_ids_paged(
+        index_nm,
+        dataset_id,
+        {
+            "doc_id": sorted(doc_ids),
+            "scope_kwd": ["doc"],
+            "knowledge_graph_kwd": ["entity", "relation"],
+            "compilation_template_kind_kwd": stored_kinds,
+        },
+        "doc_id",
+        from_list=False,
+        raise_on_error=True,
+    )
+
+
 async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str, tenant_id: str, wiki_map_state: dict | None = None) -> set:
     """Gather the doc ids baked into the compiled product for ``kind``."""
     if kind == "wiki":
@@ -2583,11 +2595,14 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
             eligible_before_chunk_filter = len(eligible_doc_ids)
             chunk_doc_ids = await _current_chunk_doc_ids(index_nm, dataset_id, eligible_doc_ids)
             eligible_doc_ids &= chunk_doc_ids
+            product_doc_ids = await _current_structure_product_doc_ids(index_nm, dataset_id, kind, eligible_doc_ids)
+            eligible_doc_ids &= product_doc_ids
             logging.debug(
-                "alteration: structure chunk eligibility kind=%s kb=%s before=%d after=%d",
+                "alteration: structure eligibility kind=%s kb=%s before=%d after_chunks=%d after_products=%d",
                 kind,
                 dataset_id,
                 eligible_before_chunk_filter,
+                len(chunk_doc_ids),
                 len(eligible_doc_ids),
             )
         wiki_map_state = None

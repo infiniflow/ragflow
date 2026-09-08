@@ -775,10 +775,11 @@ class NovitaRerank(JinaRerank):
 class GiteeRerank(JinaRerank):
     _FACTORY_NAME = "GiteeAI"
 
-    def __init__(self, key, model_name, base_url="https://ai.gitee.com/v1/rerank"):
-        if not base_url:
-            base_url = "https://ai.gitee.com/v1/rerank"
-        super().__init__(key, model_name, base_url)
+    def __init__(self, key, model_name, base_url="https://api.moark.com/v1/rerank"):
+        endpoint = (base_url or "https://api.moark.com/v1/rerank").rstrip("/")
+        if endpoint.endswith("/v1"):
+            endpoint += "/rerank"
+        super().__init__(key, model_name, base_url=endpoint)
 
 
 class Ai302Rerank(Base):

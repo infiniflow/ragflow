@@ -102,7 +102,7 @@ func getDetSession(modelPath string, rh, rw int64) (*session, func(), error) {
 // extraction uses the pure-Go connected-components backend.
 func RunDet(ctx context.Context, modelDir string, img *Image) (DetResult, error) {
 	blob, rh, rw, sh, sw := detPreprocess(img)
-	sess, release, e := getDetSession(filepath.Join(modelDir, "det.onnx"), int64(rh), int64(rw))
+	sess, release, e := getDetSession(filepath.Join(modelDir, "det.ort"), int64(rh), int64(rw))
 	if e != nil {
 		return DetResult{}, e
 	}

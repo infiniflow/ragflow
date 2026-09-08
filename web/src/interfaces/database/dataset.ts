@@ -84,7 +84,6 @@ interface Parserconfig {
 
 interface Raptor {
   clustering_method?: 'gmm' | 'ahc';
-  ext?: { clustering_method: 'gmm' | 'ahc'; tree_builder: 'raptor' | 'psi' };
   max_cluster: number;
   max_token: number;
   prompt: string;
@@ -172,22 +171,20 @@ export interface IChunk {
 }
 
 export interface ITestingChunk {
-  chunk_id: string;
+  id: string;
   content_ltks: string;
-  content_with_weight: string;
-  doc_id: string;
-  doc_name: string;
-  img_id: string;
+  content: string;
+  document_id: string;
+  document_keyword: string;
   image_id: string;
-  important_kwd: any[];
-  kb_id: string;
+  important_keywords: any[];
+  questions?: any[];
+  dataset_id: string;
   similarity: number;
   term_similarity: number;
-  vector: number[];
   vector_similarity: number;
   highlight: string;
   positions: number[][];
-  docnm_kwd: string;
   doc_type_kwd: string;
   document_metadata?: Record<string, any>;
 }

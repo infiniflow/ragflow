@@ -66,8 +66,8 @@ import {
   useHandleSearchChange,
 } from './logic-hooks';
 import {
-  extractParserConfigExt,
   isPipelineParserConfig,
+  normalizeParserConfig,
 } from './parser-config-utils';
 import {
   useGetKnowledgeSearchParams,
@@ -220,7 +220,7 @@ export const useFetchDocumentList = (loop = true) => {
       const ret = await listDocument(
         {
           id: knowledgeId || id,
-          ext: { keywords: debouncedSearchString },
+          keywords: debouncedSearchString,
           page_size: pagination.pageSize,
           page: pagination.current,
         },
@@ -589,7 +589,7 @@ export const useSetDocumentParser = () => {
       }
 
       if (parserConfig) {
-        updateData.parser_config = extractParserConfigExt(parserConfig);
+        updateData.parser_config = normalizeParserConfig(parserConfig);
       }
 
       const { data } = await changeDocumentParser(
@@ -654,7 +654,7 @@ export const useSetDocumentPipelineParser = () => {
       if (parserConfig) {
         updateData.parser_config = isPipelineParserConfig(parserConfig)
           ? parserConfig
-          : extractParserConfigExt(parserConfig);
+          : normalizeParserConfig(parserConfig);
       }
 
       const { data } = await changeDocumentParser(
