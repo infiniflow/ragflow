@@ -254,7 +254,7 @@ def download_go_models(use_china_mirrors=False):
         sys.exit(1)
 
     print(f"  ✓ Go DeepDoc models ready under {target_dir}")
-    print(f"    No MODEL_DIR env needed: the Go backend auto-discovers this directory.")
+    print("    No MODEL_DIR env needed: the Go backend auto-discovers this directory.")
 
 
 if __name__ == "__main__":

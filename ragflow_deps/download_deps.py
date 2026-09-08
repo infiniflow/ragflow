@@ -33,6 +33,7 @@
 import argparse
 import os
 import shutil
+import sys
 import urllib.request
 
 # NLTK >=3.10 refuses proxied downloads (SSRF guard) unless opted in; the
@@ -285,8 +286,7 @@ if __name__ == "__main__":
         for f in go_model_files:
             if not os.path.exists(os.path.join(deepdoc_local, f)):
                 print(
-                    f"  ERROR: expected Go model file {f} missing from {deepdoc_local}; "
-                    f"the InfiniFlow/deepdoc snapshot no longer ships .ort weights.",
+                    f"  ERROR: expected Go model file {f} missing from {deepdoc_local}; the InfiniFlow/deepdoc snapshot no longer ships .ort weights.",
                     file=sys.stderr,
                 )
                 sys.exit(1)
