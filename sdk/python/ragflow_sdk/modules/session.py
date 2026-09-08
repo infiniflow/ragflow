@@ -148,7 +148,9 @@ class Session(Base):
 
     def _structure_answer(self, json_data):
         answer = ""
+        event = None
         if self.__session_type == "agent":
+            event = json_data.get("event")
             json_data = json_data["data"]
             answer = json_data.get("content", "")
         elif self.__session_type == "chat":
@@ -160,6 +162,9 @@ class Session(Base):
             if isinstance(chunks, dict):
                 chunks = list(chunks.values())
             temp_dict["reference"] = chunks
+            if self.__session_type == "agent":
+                reference_count = len(chunks) if isinstance(chunks, list) else 0
+                logger.debug("Session.ask parsed agent references session_id=%s event=%s reference_count=%s", self.id, event, reference_count)
         message = Message(self.rag, temp_dict)
         return message
 

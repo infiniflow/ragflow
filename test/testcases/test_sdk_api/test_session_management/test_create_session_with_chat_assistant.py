@@ -167,8 +167,9 @@ def test_session_module_streaming_and_helper_paths_unit(monkeypatch):
 
 
 @pytest.mark.p2
-def test_agent_session_preserves_non_stream_reference_chunks(monkeypatch):
-    chunk = {"id": "chunk-1", "content": "source text"}
+def test_agent_session_preserves_non_stream_reference_chunks(monkeypatch, caplog):
+    first_chunk = {"id": "chunk-1", "content": "first source"}
+    second_chunk = {"id": "chunk-2", "content": "second source"}
     session = Session(None, {"id": "session-agent", "agent_id": "agent-1"})
     response = _DummyJsonResponse(
         {
@@ -176,18 +177,22 @@ def test_agent_session_preserves_non_stream_reference_chunks(monkeypatch):
                 "event": "message_end",
                 "data": {
                     "content": "agent-answer",
-                    "reference": {"chunks": {"123": chunk}},
+                    "reference": {"chunks": {"500": first_chunk, "100": second_chunk}},
                 },
             }
         }
     )
     monkeypatch.setattr(session, "post", lambda *_args, **_kwargs: response)
 
-    messages = list(session.ask("hello agent", stream=False))
+    with caplog.at_level("DEBUG", logger="ragflow_sdk.modules.session"):
+        messages = list(session.ask("hello agent", stream=False))
 
     assert len(messages) == 1
     assert messages[0].content == "agent-answer"
-    assert messages[0].reference == [chunk]
+    assert messages[0].reference == [first_chunk, second_chunk]
+    assert "session_id=session-agent event=message_end reference_count=2" in caplog.text
+    assert "first source" not in caplog.text
+    assert "second source" not in caplog.text
 
 
 @pytest.mark.p2
@@ -198,9 +203,9 @@ def test_agent_session_streams_all_message_references_without_duplicate_content(
     response = _DummyStreamResponse(
         [
             'data: {"event":"message","data":{"content":"first answer"}}',
-            'data: {"event":"message_end","data":{"reference":{"chunks":{"123":{"id":"chunk-1","content":"first source"}}}}}',
+            'data: {"event":"message_end","data":{"content":"first answer","reference":{"chunks":{"123":{"id":"chunk-1","content":"first source"}}}}}',
             'data: {"event":"message","data":{"content":"second answer"}}',
-            'data: {"event":"message_end","data":{"reference":{"chunks":{"456":{"id":"chunk-2","content":"second source"}}}}}',
+            'data: {"event":"message_end","data":{"content":"second answer","reference":{"chunks":{"456":{"id":"chunk-2","content":"second source"}}}}}',
             "data: [DONE]",
         ]
     )
