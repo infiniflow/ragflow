@@ -31,11 +31,12 @@ import (
 // manifest bookkeeping, with call counters so tests can assert the exact
 // command sequence (a real Redis is an integration-tier dependency).
 type fakeStore struct {
-	kv      map[string]string
-	sets    map[string]map[string]bool
-	ttl     map[string]time.Duration
-	deleted []string
-	failSet bool
+	kv          map[string]string
+	sets        map[string]map[string]bool
+	ttl         map[string]time.Duration
+	deleted     []string
+	failSet     bool
+	expireFails bool
 }
 
 func newFakeStore() *fakeStore {
@@ -88,6 +89,9 @@ func (f *fakeStore) Delete(_ context.Context, key string) bool {
 }
 
 func (f *fakeStore) Expire(_ context.Context, key string, exp time.Duration) bool {
+	if f.expireFails {
+		return false
+	}
 	f.ttl[key] = exp
 	return true
 }
@@ -130,6 +134,30 @@ func TestSet_WritesValueAndRegistersManifest(t *testing.T) {
 	}
 	if got := f.ttl["kc:manifest:task-1"]; got != TTL {
 		t.Errorf("manifest TTL = %v, want %v (must not outlive its entries)", got, TTL)
+	}
+}
+
+// TestSet_ManifestExpireFailureDeletesManifest asserts that when the manifest's
+// TTL cannot be applied (Expire returns false) Set removes the manifest key
+// rather than leaving a TTL-less set that leaks one empty key per abandoned task
+// forever. The value itself was already written and keeps its own TTL.
+func TestSet_ManifestExpireFailureDeletesManifest(t *testing.T) {
+	f := newFakeStore()
+	f.expireFails = true
+	ctx := taskCtx("task-1")
+	Set(ctx, f, "kc:extractor:keywords:abc", "result")
+
+	// Value is still cached (its own Set succeeded).
+	if got := f.kv["kc:extractor:keywords:abc"]; got != "result" {
+		t.Errorf("cached value = %q, want it kept", got)
+	}
+	// Manifest must NOT linger without a TTL.
+	mk := manifestKey("task-1")
+	if _, ok := f.sets[mk]; ok {
+		t.Errorf("manifest %q leaked after Expire failure; want it deleted", mk)
+	}
+	if len(f.deleted) == 0 || f.deleted[len(f.deleted)-1] != mk {
+		t.Errorf("expected manifest %q to be deleted on Expire failure, deleted=%v", mk, f.deleted)
 	}
 }
 
@@ -287,6 +315,19 @@ func TestKey_IsPrefixedByKind(t *testing.T) {
 func TestKey_EmptyChunkIDYieldsNoKey(t *testing.T) {
 	if k := Key("emb", "bge-m3@builtin", ""); k != "" {
 		t.Errorf("Key(empty chunk id) = %q, want \"\"", k)
+	}
+}
+
+// TestKey_EmptyModelIDYieldsNoKey asserts the symmetric contract: an empty
+// model id yields no key, so a caller that forgot to resolve the model (e.g.
+// keyed on a raw, empty llm_id override) cannot collapse every model onto one
+// bucket. Mirrors TestKey_EmptyChunkIDYieldsNoKey.
+func TestKey_EmptyModelIDYieldsNoKey(t *testing.T) {
+	if k := Key("emb", "", "chunk-1"); k != "" {
+		t.Errorf("Key(empty model id) = %q, want \"\"", k)
+	}
+	if k := Key("extractor:questions", "", "chunk-1", "prompt"); k != "" {
+		t.Errorf("Key(empty model id) = %q, want \"\"", k)
 	}
 }
 

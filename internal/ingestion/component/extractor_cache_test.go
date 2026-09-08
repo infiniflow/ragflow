@@ -270,7 +270,7 @@ func TestMetadataLLMCache_KeyedByChunkID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal metadata schema: %v", err)
 	}
-	setMetadataLLMCache(cacheTaskCtx("task-9"), in, string(schemaJSON), "chunk-1", map[string]any{"category": "cached"})
+	setMetadataLLMCache(cacheTaskCtx("task-9"), in.cache, "model-1", string(schemaJSON), "chunk-1", map[string]any{"category": "cached"})
 
 	ck := map[string]any{"id": "chunk-1", "text": "a body that no longer participates in the key"}
 	if err := c.runEnableMetadata(t.Context(), nil, in, ck, "a body that no longer participates in the key"); err != nil {
@@ -291,12 +291,12 @@ func TestMetadataLLMCache_DistinctChunksDoNotShare(t *testing.T) {
 	store := newFakeCacheStore()
 	in := extractorInputs{llmID: "model-1", cache: store}
 	ctx := cacheTaskCtx("task-9")
-	setMetadataLLMCache(ctx, in, `{"category":"string"}`, "chunk-1", map[string]any{"category": "one"})
+	setMetadataLLMCache(ctx, in.cache, "model-1", `{"category":"string"}`, "chunk-1", map[string]any{"category": "one"})
 
-	if _, hit := getMetadataLLMCache(ctx, in, `{"category":"string"}`, "chunk-2"); hit {
+	if _, hit := getMetadataLLMCache(ctx, in.cache, "model-1", `{"category":"string"}`, "chunk-2"); hit {
 		t.Error("chunk-2 must not read chunk-1's metadata entry")
 	}
-	got, hit := getMetadataLLMCache(ctx, in, `{"category":"string"}`, "chunk-1")
+	got, hit := getMetadataLLMCache(ctx, in.cache, "model-1", `{"category":"string"}`, "chunk-1")
 	if !hit || got["category"] != "one" {
 		t.Errorf("getMetadataLLMCache(chunk-1) = %v (hit=%v), want category=one", got, hit)
 	}
@@ -308,8 +308,8 @@ func TestMetadataLLMCache_SchemaChangeInvalidates(t *testing.T) {
 	store := newFakeCacheStore()
 	in := extractorInputs{llmID: "model-1", cache: store}
 	ctx := cacheTaskCtx("task-9")
-	setMetadataLLMCache(ctx, in, `{"category":"string"}`, "chunk-1", map[string]any{"category": "one"})
-	if _, hit := getMetadataLLMCache(ctx, in, `{"region":"string"}`, "chunk-1"); hit {
+	setMetadataLLMCache(ctx, in.cache, "model-1", `{"category":"string"}`, "chunk-1", map[string]any{"category": "one"})
+	if _, hit := getMetadataLLMCache(ctx, in.cache, "model-1", `{"region":"string"}`, "chunk-1"); hit {
 		t.Error("a different metadata schema must not reuse the previous entry")
 	}
 }
@@ -320,45 +320,51 @@ func TestMetadataLLMCache_NoChunkIDBypassesCache(t *testing.T) {
 	store := newFakeCacheStore()
 	in := extractorInputs{llmID: "model-1", cache: store}
 	ctx := cacheTaskCtx("task-9")
-	setMetadataLLMCache(ctx, in, `{"category":"string"}`, "", map[string]any{"category": "one"})
+	setMetadataLLMCache(ctx, in.cache, "model-1", `{"category":"string"}`, "", map[string]any{"category": "one"})
 	if len(store.kv) != 0 {
 		t.Errorf("cache writes = %v, want none without a chunk id", store.kv)
 	}
-	if _, hit := getMetadataLLMCache(ctx, in, `{"category":"string"}`, ""); hit {
+	if _, hit := getMetadataLLMCache(ctx, in.cache, "model-1", `{"category":"string"}`, ""); hit {
 		t.Error("getMetadataLLMCache with no chunk id must miss")
 	}
 }
 
-// TestTaggerCacheKey_UsesChunkIDNotText asserts the tagger cache key switched
-// to the chunk id while still discriminating the few-shot examples (whose
-// content is not part of any chunk id).
-func TestTaggerCacheKey_UsesChunkIDNotText(t *testing.T) {
+// TestTaggerCacheKey_ScopedByChunkID_ModelAndText asserts the tagger cache key
+// is built from the model id, the chunk id, AND the chunk text fed to the model
+// (getChunkText folds in the body and important_kwd). The key must stay
+// deterministic for identical inputs, discriminate chunks/models/tag-sets/
+// few-shot examples/topN, treat a missing chunk id as a no-op, and bust when the
+// chunk text changes (a different important_kwd would otherwise serve stale tags).
+func TestTaggerCacheKey_ScopedByChunkID_ModelAndText(t *testing.T) {
 	allTags := map[string]float64{"a": 1, "b": 2}
 	ex := []schema.TaggedChunk{{Content: "example one", Tags: []string{"a"}}}
 
-	base := taggerCacheKey("llm-1", "chunk-1", allTags, ex, 3)
+	base := taggerCacheKey("llm-1", "chunk-1", "the body", allTags, ex, 3)
 	if base == "" {
 		t.Fatal("taggerCacheKey returned empty for a valid chunk id")
 	}
-	if got := taggerCacheKey("llm-1", "chunk-1", allTags, ex, 3); got != base {
+	if got := taggerCacheKey("llm-1", "chunk-1", "the body", allTags, ex, 3); got != base {
 		t.Errorf("taggerCacheKey is not deterministic: %q vs %q", got, base)
 	}
-	if got := taggerCacheKey("llm-1", "chunk-2", allTags, ex, 3); got == base {
+	if got := taggerCacheKey("llm-1", "chunk-2", "the body", allTags, ex, 3); got == base {
 		t.Error("a different chunk id must not collide")
 	}
-	if got := taggerCacheKey("llm-2", "chunk-1", allTags, ex, 3); got == base {
+	if got := taggerCacheKey("llm-2", "chunk-1", "the body", allTags, ex, 3); got == base {
 		t.Error("a different model must not collide")
 	}
-	if got := taggerCacheKey("llm-1", "chunk-1", map[string]float64{"a": 1}, ex, 3); got == base {
+	if got := taggerCacheKey("llm-1", "chunk-1", "a different body", allTags, ex, 3); got == base {
+		t.Error("a different chunk text (e.g. changed important_kwd) must not reuse the entry")
+	}
+	if got := taggerCacheKey("llm-1", "chunk-1", "the body", map[string]float64{"a": 1}, ex, 3); got == base {
 		t.Error("a different tag set must not collide")
 	}
-	if got := taggerCacheKey("llm-1", "chunk-1", allTags, []schema.TaggedChunk{{Content: "example two", Tags: []string{"a"}}}, 3); got == base {
+	if got := taggerCacheKey("llm-1", "chunk-1", "the body", allTags, []schema.TaggedChunk{{Content: "example two", Tags: []string{"a"}}}, 3); got == base {
 		t.Error("different few-shot examples must not collide")
 	}
-	if got := taggerCacheKey("llm-1", "chunk-1", allTags, ex, 5); got == base {
+	if got := taggerCacheKey("llm-1", "chunk-1", "the body", allTags, ex, 5); got == base {
 		t.Error("a different topN must not collide")
 	}
-	if got := taggerCacheKey("llm-1", "", allTags, ex, 3); got != "" {
+	if got := taggerCacheKey("llm-1", "", "the body", allTags, ex, 3); got != "" {
 		t.Errorf("taggerCacheKey(no chunk id) = %q, want \"\"", got)
 	}
 }
@@ -371,20 +377,20 @@ func TestTaggerLLMCache_RoundTripsUnderSharedTTL(t *testing.T) {
 	allTags := map[string]float64{"a": 1}
 	want := map[string]int{"a": 4}
 
-	setTaggerLLMCache(ctx, store, "llm-1", "chunk-1", allTags, nil, 3, want)
+	setTaggerLLMCache(ctx, store, "llm-1", "chunk-1", "the body", allTags, nil, 3, want)
 
-	key := taggerCacheKey("llm-1", "chunk-1", allTags, nil, 3)
+	key := taggerCacheKey("llm-1", "chunk-1", "the body", allTags, nil, 3)
 	if got := store.ttl[key]; got != chunkcache.TTL {
 		t.Errorf("tagger cache TTL = %v, want %v", got, chunkcache.TTL)
 	}
 	if members := store.members("kc:manifest:task-9"); len(members) != 1 || members[0] != key {
 		t.Errorf("manifest = %v, want [%s]", members, key)
 	}
-	got := getTaggerLLMCache(ctx, store, "llm-1", "chunk-1", allTags, nil, 3)
+	got := getTaggerLLMCache(ctx, store, "llm-1", "chunk-1", "the body", allTags, nil, 3)
 	if got == nil || got["a"] != 4 {
 		t.Errorf("getTaggerLLMCache = %v, want %v", got, want)
 	}
-	if other := getTaggerLLMCache(ctx, store, "llm-1", "chunk-2", allTags, nil, 3); other != nil {
+	if other := getTaggerLLMCache(ctx, store, "llm-1", "chunk-2", "the body", allTags, nil, 3); other != nil {
 		t.Errorf("chunk-2 read chunk-1's entry: %v", other)
 	}
 }

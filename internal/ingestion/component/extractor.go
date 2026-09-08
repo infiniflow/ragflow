@@ -651,9 +651,34 @@ func extractorLLMCacheKey(taskType, modelID, systemPrompt, chunkID string) strin
 	return chunkcache.Key("extractor:"+taskType, modelID, chunkID, systemPrompt)
 }
 
+// extractorCacheModelID returns the model identity the per-chunk extraction
+// cache is keyed on. The cache must capture the model that actually produced
+// the text, not the raw llm_id override: when llm_id is empty the pipeline
+// falls back to the tenant's default chat model (resolveExtractorChatTarget,
+// extractor.go:1212), so keying on the empty override would collapse every
+// tenant-default run onto one bucket and serve extractions from a model the
+// tenant no longer uses. This mirrors the tokenizer's decision to key on the
+// dataset-bound embd_id rather than the raw DSL string.
+//
+// Non-empty llm_id is already a stable tenant-model id, so it is used as-is
+// (no behaviour change for the configured path). Only the empty case is
+// resolved to its real default-model identity. A resolution failure returns ""
+// — chunkcache.Key turns an empty modelID into an empty key, which disables
+// caching for that chunk rather than risking a cross-model hit.
+func extractorCacheModelID(ctx context.Context, db *gorm.DB, llmID string) string {
+	if llmID != "" {
+		return llmID
+	}
+	driver, modelName, _, _, err := resolveExtractorChatTarget(ctx, db, "")
+	if err != nil || (driver == "" && modelName == "") {
+		return ""
+	}
+	return driver + "/" + modelName
+}
+
 // callTextCached wraps callText with the per-chunk result cache.
 func (c *ExtractorComponent) callTextCached(ctx context.Context, db *gorm.DB, in extractorInputs, taskType, systemPrompt, chunkText, chunkID string) (string, error) {
-	key := extractorLLMCacheKey(taskType, in.llmID, systemPrompt, chunkID)
+	key := extractorLLMCacheKey(taskType, extractorCacheModelID(ctx, db, in.llmID), systemPrompt, chunkID)
 	if cached, hit := chunkcache.Get(ctx, in.cache, key); hit {
 		return cached, nil
 	}
@@ -911,8 +936,9 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	// Best-effort: a missing client or any cache error falls through to a live
 	// call instead of failing the extraction.
 	chunkID := chunkCacheID(ck)
+	modelID := extractorCacheModelID(ctx, db, in.llmID)
 	var parsed map[string]any
-	if cached, hit := getMetadataLLMCache(ctx, in, schemaStr, chunkID); hit {
+	if cached, hit := getMetadataLLMCache(ctx, in.cache, modelID, schemaStr, chunkID); hit {
 		parsed = cached
 	} else {
 		metaTemp := extractorTemperature
@@ -930,7 +956,7 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 			// Non-JSON or empty response — nothing to extract, not an error.
 			return nil
 		}
-		setMetadataLLMCache(ctx, in, schemaStr, chunkID, parsed)
+		setMetadataLLMCache(ctx, in.cache, modelID, schemaStr, chunkID, parsed)
 	}
 	// Merge into the chunk metadata map, preserving existing keys.
 	var meta map[string]any
@@ -989,8 +1015,8 @@ func metadataLLMCacheKey(llmID, schemaJSON, chunkID string) string {
 
 // getMetadataLLMCache returns a cached extraction for the given chunk, or
 // (nil, false) on miss / cache unavailable / decode error. Best-effort.
-func getMetadataLLMCache(ctx context.Context, in extractorInputs, schemaJSON, chunkID string) (map[string]any, bool) {
-	data, hit := chunkcache.Get(ctx, in.cache, metadataLLMCacheKey(in.llmID, schemaJSON, chunkID))
+func getMetadataLLMCache(ctx context.Context, store chunkcache.Store, modelID, schemaJSON, chunkID string) (map[string]any, bool) {
+	data, hit := chunkcache.Get(ctx, store, metadataLLMCacheKey(modelID, schemaJSON, chunkID))
 	if !hit {
 		return nil, false
 	}
@@ -1003,12 +1029,12 @@ func getMetadataLLMCache(ctx context.Context, in extractorInputs, schemaJSON, ch
 
 // setMetadataLLMCache stores an extraction result. Best-effort: an unavailable
 // cache or a marshal error is silently ignored.
-func setMetadataLLMCache(ctx context.Context, in extractorInputs, schemaJSON, chunkID string, parsed map[string]any) {
+func setMetadataLLMCache(ctx context.Context, store chunkcache.Store, modelID, schemaJSON, chunkID string, parsed map[string]any) {
 	data, err := json.Marshal(parsed)
 	if err != nil {
 		return
 	}
-	chunkcache.Set(ctx, in.cache, metadataLLMCacheKey(in.llmID, schemaJSON, chunkID), string(data))
+	chunkcache.Set(ctx, store, metadataLLMCacheKey(modelID, schemaJSON, chunkID), string(data))
 }
 
 // callRaw runs one chat call against the LLM (per chunk in the normal path)

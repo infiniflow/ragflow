@@ -285,13 +285,6 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	if err := s.indexWriter.Write(ctx, chunks); err != nil {
 		return nil, err
 	}
-	// Persist succeeded: drop the per-chunk cache entries this task produced so
-	// they don't linger until TTL. PurgeTask is a best-effort cleanup keyed by
-	// the task manifest; it is silent when no manifest exists (e.g. a
-	// Redis-less run, where chunkcache.Client() is nil).
-	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
-		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
-	}
 	if err := s.reconcileDocumentCompiledProducts(ctx, oldCompiledProductIDs, chunks); err != nil {
 		return nil, err
 	}
@@ -330,6 +323,18 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	builtInMetadata, autoMetaEnabled := builtInMetadataFromParserConfig(
 		s.taskCtx.Doc.ParserConfig,
 	)
+
+	// Persist is now fully durable: every failure-capable step above
+	// (index write, compiled-product reconcile, Wiki active-MAP state) has
+	// succeeded. Only now drop the per-chunk cache entries this task produced,
+	// so a failure in any of those steps leaves the cache intact for the retry —
+	// the retry resumes after the Parser checkpoint and would otherwise have to
+	// re-pay every embedding/LLM call, which is exactly the cost this cache
+	// exists to absorb. PurgeTask is best-effort and silent when no manifest
+	// exists (e.g. a Redis-less run, where chunkcache.Client() is nil).
+	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
+		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
+	}
 
 	return &PipelineResult{
 		DocID:                 s.taskCtx.Doc.ID,

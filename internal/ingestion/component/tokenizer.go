@@ -416,14 +416,20 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 
 	// resolved[i] holds the content embedding vector for chunks[i] once known:
 	// either served from the per-chunk cache (isHit) or produced by the batch
-	// Encode below. nil means the chunk produced no embeddable text.
+	// Encode below. nil means the chunk produced no embeddable text. trunc is the
+	// exact text fed to the model, carried so the Set-side key matches the
+	// Get-side key (the key includes the embedded text, not just the chunk id).
 	type resolvedVec struct {
 		content []float64
 		isHit   bool
+		trunc   string
 	}
 	resolved := make([]*resolvedVec, len(chunks))
 	texts := make([]string, 0, len(chunks))
 	pairs := make([]int, 0, len(chunks))
+	// truncs[i] is the embedded text for texts[i] / pairs[i]; carried so the
+	// Set-side key matches the Get-side key for freshly embedded content.
+	truncs := make([]string, 0, len(chunks))
 	for i, ck := range chunks {
 		raw := concatFields(ck, c.param.Fields)
 		txt := htmlTableRE.ReplaceAllString(raw, " ")
@@ -431,21 +437,27 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		if txt == "" {
 			continue
 		}
-		// Per-chunk embedding cache: identical (dataset embd_id, chunk) pairs
-		// reuse the previous content vector, skipping the embed round-trip on
-		// resume. embdID must be non-empty or every model would collapse onto
-		// one key and served vectors could come from a different model.
+		// Per-chunk embedding cache: identical (dataset embd_id, chunk, embedded
+		// text) triples reuse the previous content vector, skipping the embed
+		// round-trip on resume. The key includes the text that is actually
+		// embedded — after field selection (c.param.Fields) and truncation — not
+		// just the chunk id. A tokenizer-config or model change alters the
+		// embedded input; reusing the prior vector for that case would serve a
+		// stale embedding for up to the cache TTL. embdID must be non-empty or
+		// every model would collapse onto one key and served vectors could come
+		// from a different model.
+		trunc := truncateForEmbedding(txt, embedder.MaxTokens())
 		if chunkID, ok := ck.GetExtraString("id"); ok && embdID != "" && store != nil {
-			if cached, hit := chunkcache.Get(ctx, store, chunkcache.Key("emb", embdID, chunkID)); hit {
+			if cached, hit := chunkcache.Get(ctx, store, chunkcache.Key("emb", embdID, chunkID, trunc)); hit {
 				var vec []float64
 				if err := json.Unmarshal([]byte(cached), &vec); err == nil && len(vec) > 0 {
-					resolved[i] = &resolvedVec{content: vec, isHit: true}
+					resolved[i] = &resolvedVec{content: vec, isHit: true, trunc: trunc}
 					continue
 				}
 			}
 		}
-		trunc := truncateForEmbedding(txt, embedder.MaxTokens())
 		texts = append(texts, trunc)
+		truncs = append(truncs, trunc)
 		pairs = append(pairs, i)
 	}
 	if len(texts) == 0 {
@@ -514,7 +526,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	// Wire freshly embedded content into the resolved slice; cache hits already
 	// carry their vector from the loop above.
 	for i, idx := range pairs {
-		resolved[idx] = &resolvedVec{content: contentResults[i].Vector}
+		resolved[idx] = &resolvedVec{content: contentResults[i].Vector, trunc: truncs[i]}
 	}
 	for i, re := range resolved {
 		if re == nil {
@@ -534,10 +546,13 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		// hits are left untouched. The key intentionally omits title weighting:
 		// the content vector is title-weight independent, so identical chunk
 		// content reuses across runs even when only the filename weight changes.
+		// The embedded text (trunc) is part of the key so a config/model change
+		// that alters the embedded input forces a fresh embed rather than serving
+		// a stale vector.
 		if !re.isHit {
 			if chunkID, ok := chunks[i].GetExtraString("id"); ok && embdID != "" && store != nil {
 				if b, merr := json.Marshal(re.content); merr == nil {
-					chunkcache.Set(ctx, store, chunkcache.Key("emb", embdID, chunkID), string(b))
+					chunkcache.Set(ctx, store, chunkcache.Key("emb", embdID, chunkID, re.trunc), string(b))
 				}
 			}
 		}

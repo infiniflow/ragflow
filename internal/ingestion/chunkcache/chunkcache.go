@@ -76,14 +76,27 @@ func Client() Store {
 // Key builds the cache key for one (kind, model, chunk) triple, mixing any
 // extra config that changes the result (a prompt, a JSON schema, a top-N).
 //
+// modelID is the identity of the model that produced the cached value:
+// for the "emb" kind that is the dataset's embedding model id (kb.embd_id);
+// for the "extractor:*"/"meta"/"tagger" kinds it is the chat model id (llm_id,
+// or — when that is empty — the resolved tenant-default chat model). Callers
+// must resolve the model id to the value that actually generated the result
+// before calling Key, never a raw/possibly-empty override string: keying on an
+// empty modelID would collapse every model onto one bucket and serve a result
+// produced by a model the tenant no longer uses. The tokenizer keys on embd_id;
+// the extractor resolves its chat target (see extractorCacheModelID in the
+// component package) for the same reason.
+//
 // The chunk id — not the chunk text — is the identity input: it is the stable
 // per-chunk handle the chunker assigns (component.ChunkID), and it already
 // derives from the text, so keying on it keeps entries short and keeps the
 // pipeline and the persist stage agreeing on what "the same chunk" means.
-// An empty chunk id yields an empty key: the caller must then skip the cache
-// rather than let every unidentified chunk share one bucket.
+//
+// Either an empty chunk id or an empty modelID yields an empty key: in both
+// cases the caller must skip the cache rather than let every unidentified
+// chunk (or every model-less entry) share one bucket.
 func Key(kind, modelID, chunkID string, config ...string) string {
-	if chunkID == "" {
+	if chunkID == "" || modelID == "" {
 		return ""
 	}
 	h := xxhash.New()
@@ -144,7 +157,11 @@ func Set(ctx context.Context, s Store, key, value string) {
 	if s.SAdd(ctx, mk, key) {
 		// Bound the manifest's own lifetime: it must not outlive the entries
 		// it lists, or an abandoned task would leak one set per task forever.
-		s.Expire(ctx, mk, TTL)
+		// If the TTL cannot be applied, drop the manifest immediately rather
+		// than leave a TTL-less set that leaks one empty key per task.
+		if !s.Expire(ctx, mk, TTL) {
+			s.Delete(ctx, mk)
+		}
 	}
 }
 

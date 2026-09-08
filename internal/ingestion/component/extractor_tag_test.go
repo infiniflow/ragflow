@@ -1166,10 +1166,10 @@ func TestTaggerCacheKey_IncludesFewShot(t *testing.T) {
 		{Content: "sample one", TagWeights: map[string]int{"TagA": 5}},
 	}
 
-	k1 := taggerCacheKey("llm-1", "test text", allTags, ex1, 3)
-	k2 := taggerCacheKey("llm-1", "test text", allTags, ex2, 3)
-	k3 := taggerCacheKey("llm-1", "test text", allTags, ex3, 3)
-	kEmpty := taggerCacheKey("llm-1", "test text", allTags, nil, 3)
+	k1 := taggerCacheKey("llm-1", "test text", "body", allTags, ex1, 3)
+	k2 := taggerCacheKey("llm-1", "test text", "body", allTags, ex2, 3)
+	k3 := taggerCacheKey("llm-1", "test text", "body", allTags, ex3, 3)
+	kEmpty := taggerCacheKey("llm-1", "test text", "body", allTags, nil, 3)
 
 	if k1 == k2 {
 		t.Fatalf("expected different cache keys for different few-shot examples: %s vs %s", k1, k2)
@@ -1182,7 +1182,7 @@ func TestTaggerCacheKey_IncludesFewShot(t *testing.T) {
 	}
 
 	// Identical few-shot examples produce identical key
-	k1Dup := taggerCacheKey("llm-1", "test text", allTags, ex1, 3)
+	k1Dup := taggerCacheKey("llm-1", "test text", "body", allTags, ex1, 3)
 	if k1 != k1Dup {
 		t.Fatalf("expected identical cache keys for same few-shot examples: %s vs %s", k1, k1Dup)
 	}

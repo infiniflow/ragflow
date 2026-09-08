@@ -234,6 +234,55 @@ func TestEmbedChunks_CacheIgnoresDSLEmbeddingModel(t *testing.T) {
 	}
 }
 
+// TestEmbedChunks_CacheKeyScopedByFields proves the embedding cache key captures
+// the text actually embedded — which depends on c.param.Fields — so changing the
+// tokenizer field selection forces a fresh embed instead of serving a stale
+// vector for up to the cache TTL. The chunk id is unchanged across the two runs,
+// isolating the variable to the embedded text.
+func TestEmbedChunks_CacheKeyScopedByFields(t *testing.T) {
+	embdID := "embd-test"
+	stub := newStubEmbedder(4)
+	build := func(fields []string) *TokenizerComponent {
+		comp, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) {
+			return stub, embdID, nil
+		})
+		if err != nil {
+			t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+		}
+		c := comp.(*TokenizerComponent)
+		c.param.Fields = fields
+		return c
+	}
+
+	store := newMemCacheStore()
+	doc := schema.ChunkDoc{Text: "hello", Questions: "q1;q2"}
+	doc.Extra = map[string]json.RawMessage{}
+	if err := doc.SetExtraValue("id", "chunk-1"); err != nil {
+		t.Fatalf("SetExtraValue(id): %v", err)
+	}
+	chunks := []schema.ChunkDoc{doc}
+
+	// Fields=["text"]: only the body is embedded -> cache miss, 1 call.
+	if _, _, err := build([]string{"text"}).embedChunks(context.Background(), "tenant", "kb", "", chunks, store); err != nil {
+		t.Fatalf("embedChunks (fields=text): %v", err)
+	}
+	if got := stub.calls.Load(); got != 1 {
+		t.Fatalf("expected 1 embedder call with fields=text, got %d", got)
+	}
+
+	// Fields=["text","questions"]: the embedded text now includes the questions,
+	// so the key must differ and the cache must be bypassed (another call).
+	if _, _, err := build([]string{"text", "questions"}).embedChunks(context.Background(), "tenant", "kb", "", chunks, store); err != nil {
+		t.Fatalf("embedChunks (fields=text,questions): %v", err)
+	}
+	if got := stub.calls.Load(); got != 2 {
+		t.Fatalf("expected a fresh embed when Fields change the embedded text, got calls=%d (stale vector would otherwise be served)", got)
+	}
+	if n := store.countEmbKeys(); n != 2 {
+		t.Fatalf("expected 2 emb cache keys (one per embedded-text variant), got %d", n)
+	}
+}
+
 func TestEmbedChunks_MissingChunkIDSkipsCache(t *testing.T) {
 	comp, stub := withStubEmbedder(t, 4)
 	comp.param.Fields = []string{"text"}

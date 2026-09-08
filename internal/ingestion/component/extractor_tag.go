@@ -1125,6 +1125,7 @@ func llmTagChunk(
 		return
 	}
 	chunkID := chunkCacheID(chunk)
+	modelID := extractorCacheModelID(ctx, db, llmID)
 
 	textHash := int64(xxhash.Sum64String(text))
 	var picked []schema.TaggedChunk
@@ -1152,7 +1153,7 @@ func llmTagChunk(
 		}
 	}
 
-	if cached := getTaggerLLMCache(ctx, cache, llmID, chunkID, allTags, picked, topN); cached != nil {
+	if cached := getTaggerLLMCache(ctx, cache, modelID, chunkID, text, allTags, picked, topN); cached != nil {
 		chunk[common.TAG_FLD] = cached
 		chunk["tag_kwd"] = sortedTagWeightsKeys(cached)
 		return
@@ -1203,7 +1204,7 @@ func llmTagChunk(
 	if len(result) > 0 {
 		chunk[common.TAG_FLD] = result
 		chunk["tag_kwd"] = sortedTagWeightsKeys(result)
-		setTaggerLLMCache(ctx, cache, llmID, chunkID, allTags, picked, topN, result)
+		setTaggerLLMCache(ctx, cache, modelID, chunkID, text, allTags, picked, topN, result)
 	}
 }
 
@@ -1288,20 +1289,25 @@ func jsonRepairExtract(raw string) map[string]any {
 // taggerCacheKey builds the cache key for one chunk's LLM tagging. Keyed on the
 // chunk id rather than the chunk text, like the other per-chunk caches. The tag
 // set, the few-shot examples and topN also participate: none of them is derived
-// from the chunk, so a change in any of them yields different tags.
-func taggerCacheKey(llmID, chunkID string, allTags map[string]float64, examples []schema.TaggedChunk, topN int) string {
-	config := make([]string, 0, 2*len(examples)+2)
+// from the chunk, so a change in any of them yields different tags. chunkText is
+// the exact text fed to the model (getChunkText folds in the chunk body and
+// important_kwd): it participates in the key so a change to the chunk's keywords
+// — which changes the tagging prompt — busts the cache instead of serving stale
+// tags for up to the cache TTL.
+func taggerCacheKey(modelID, chunkID, chunkText string, allTags map[string]float64, examples []schema.TaggedChunk, topN int) string {
+	config := make([]string, 0, 2*len(examples)+3)
 	config = append(config, strings.Join(sortedTagNames(allTags), ","))
 	for _, ex := range examples {
 		tagsJSON, _ := json.Marshal(ex.TagWeights)
 		config = append(config, ex.Content, string(tagsJSON))
 	}
 	config = append(config, strconv.Itoa(topN))
-	return chunkcache.Key("tagger", llmID, chunkID, config...)
+	config = append(config, chunkText)
+	return chunkcache.Key("tagger", modelID, chunkID, config...)
 }
 
-func getTaggerLLMCache(ctx context.Context, store chunkcache.Store, llmID, chunkID string, allTags map[string]float64, examples []schema.TaggedChunk, topN int) map[string]int {
-	data, hit := chunkcache.Get(ctx, store, taggerCacheKey(llmID, chunkID, allTags, examples, topN))
+func getTaggerLLMCache(ctx context.Context, store chunkcache.Store, modelID, chunkID, chunkText string, allTags map[string]float64, examples []schema.TaggedChunk, topN int) map[string]int {
+	data, hit := chunkcache.Get(ctx, store, taggerCacheKey(modelID, chunkID, chunkText, allTags, examples, topN))
 	if !hit {
 		return nil
 	}
@@ -1312,7 +1318,7 @@ func getTaggerLLMCache(ctx context.Context, store chunkcache.Store, llmID, chunk
 	return result
 }
 
-func setTaggerLLMCache(ctx context.Context, store chunkcache.Store, llmID, chunkID string, allTags map[string]float64, examples []schema.TaggedChunk, topN int, result map[string]int) {
+func setTaggerLLMCache(ctx context.Context, store chunkcache.Store, modelID, chunkID, chunkText string, allTags map[string]float64, examples []schema.TaggedChunk, topN int, result map[string]int) {
 	if result == nil {
 		return
 	}
@@ -1320,7 +1326,7 @@ func setTaggerLLMCache(ctx context.Context, store chunkcache.Store, llmID, chunk
 	if err != nil {
 		return
 	}
-	chunkcache.Set(ctx, store, taggerCacheKey(llmID, chunkID, allTags, examples, topN), string(data))
+	chunkcache.Set(ctx, store, taggerCacheKey(modelID, chunkID, chunkText, allTags, examples, topN), string(data))
 }
 
 func sortedTagNames(allTags map[string]float64) []string {
