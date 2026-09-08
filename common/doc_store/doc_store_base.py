@@ -169,9 +169,12 @@ class DocStoreConnection(ABC):
     """
 
     @abstractmethod
-    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None):
+    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None, language: str = None):
         """
-        Create an index with given name
+        Create an index with given name.
+
+        ``language`` is the dataset language. Only engines whose analyzer is
+        fixed at index creation need it -- see the Infinity connector.
         """
         raise NotImplementedError("Not implemented")
 

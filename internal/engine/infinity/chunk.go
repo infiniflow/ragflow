@@ -50,17 +50,18 @@ var pagerankAdjustLocks [pagerankAdjustLockCount]sync.Mutex
 // baseName is the table name prefix (e.g., "ragflow_<tenant_id>")
 // The full table name is built as "{baseName}_{datasetID}"
 // For skill index (datasetID="skill"), tableName is just baseName and uses skill_infinity_mapping.json
-func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+// language is the dataset language, which selects the fulltext analyzer; see analyzerForLanguage.
+func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
 	defer release()
 
-	return e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID)
+	return e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID, language)
 }
 
-func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, datasetID string, vectorSize int, parserID string) error {
+func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	vecSize := vectorSize
 
 	// Determine table name and mapping file based on index type
@@ -208,11 +209,9 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 			}
 		}
 
-		for _, analyzer := range analyzers {
-			indexNameFt := fmt.Sprintf("ft_%s_%s",
-				regexp.MustCompile(`[^a-zA-Z0-9]`).ReplaceAllString(fieldName, "_"),
-				regexp.MustCompile(`[^a-zA-Z0-9]`).ReplaceAllString(analyzer, "_"),
-			)
+		for _, configured := range analyzers {
+			analyzer := analyzerForLanguage(configured, language)
+			indexNameFt := fulltextIndexName(fieldName, analyzer)
 			_, err = table.CreateIndex(
 				indexNameFt,
 				infinity.NewIndexInfo(fieldName, infinity.IndexTypeFullText, map[string]string{"ANALYZER": analyzer}),
@@ -311,8 +310,10 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 			parserID = "table"
 		}
 
-		// Create table
-		if err := e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID); err != nil {
+		// Create table. No dataset language here, so the table gets the default
+		// analyzers; CreateChunkStore is the path that knows the language and
+		// normally runs first.
+		if err := e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID, ""); err != nil {
 			return nil, fmt.Errorf("failed to create table: %w", err)
 		}
 

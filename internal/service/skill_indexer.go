@@ -899,7 +899,7 @@ func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tena
 
 	// Use the doc engine's CreateChunkStore method with skill-specific mapping
 	// The mapping file is loaded from conf/skill_es_mapping.json or conf/skill_infinity_mapping.json
-	err := docEngine.CreateChunkStore(ctx, indexName, "skill", dimension, "")
+	err := docEngine.CreateChunkStore(ctx, indexName, "skill", dimension, "", "")
 	if err != nil {
 		common.Error("Failed to create skill index", err)
 		return err
