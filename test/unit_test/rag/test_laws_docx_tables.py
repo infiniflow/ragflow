@@ -55,6 +55,7 @@ def docx_chunker():
         _stub("deepdoc.parser.utils", get_text=lambda *a, **k: "")
         _stub("rag.app.naive", by_plaintext=lambda *a, **k: ([], [], None), PARSERS={})
         _stub("common.parser_config_utils", normalize_layout_recognizer=lambda x: (x, None))
+        _stub("api.db.joint_services.tenant_model_service", get_composite_model_name_by_id=lambda x: x)
         module = import_module("rag.app.laws")
         module = reload(module)
         yield module.Docx

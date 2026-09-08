@@ -28,7 +28,7 @@ LOGGER = logging.getLogger(__name__)
 def _chat_channel_auth_error(channel_id: str, user_id: str):
     """Return the chat channel authorization failure response and log the denial."""
     LOGGER.warning("chat channel access denied: channel_id=%s user_id=%s", channel_id, user_id)
-    return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
 
 @manager.route("/chat-channels", methods=["POST"])  # noqa: F821

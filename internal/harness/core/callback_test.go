@@ -14,7 +14,7 @@ import (
 // layer: context propagation, filtering, and option handling.
 
 func TestInitAgentCallbacks_NoCallbacks(t *testing.T) {
-	ctx := initAgentCallbacks(context.Background(), "test_agent", "ReActAgent")
+	ctx := initAgentCallbacks(t.Context(), "test_agent", "ReActAgent")
 	cbs := getCallbacks(ctx)
 	if cbs != nil {
 		t.Error("expected nil callbacks when no options provided")
@@ -75,7 +75,7 @@ func TestCallbacks_WithAgentNamesFilter_CallbackSavedAndFiltered(t *testing.T) {
 	opts := []RunOption{WithCallbacks(cb), WithAgentNames("filtered_agent")}
 
 	// Callback is at the option level; it gets injected during flowAgent.Run
-	iter := agent.Run(context.Background(), &AgentInput{
+	iter := agent.Run(t.Context(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	}, opts...)
 	for {
@@ -92,7 +92,7 @@ func TestCallbacks_EmptyCallbacks(t *testing.T) {
 	model.addResp("no-cb")
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model})
 	agent.name = "no_cb"
-	iter := agent.Run(context.Background(), &AgentInput{
+	iter := agent.Run(t.Context(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	})
 	for {
@@ -160,7 +160,7 @@ func TestFilterCallbackHandlersForNestedAgents_MatchingAgent(t *testing.T) {
 // ---- RunLocalValue tests ----
 
 func TestSetRunLocalValue_NotInAgentExec(t *testing.T) {
-	err := SetRunLocalValue(context.Background(), "key", "value")
+	err := SetRunLocalValue(t.Context(), "key", "value")
 	if err == nil {
 		t.Error("expected error when not in agent execution context")
 	}
@@ -174,21 +174,21 @@ func TestSetRunLocalValue_NotInAgentExec(t *testing.T) {
 }
 
 func TestGetRunLocalValue_NotInAgentExec(t *testing.T) {
-	_, _, err := GetRunLocalValue(context.Background(), "key")
+	_, _, err := GetRunLocalValue(t.Context(), "key")
 	if err == nil {
 		t.Error("expected error when not in agent execution context")
 	}
 }
 
 func TestDeleteRunLocalValue_NotInAgentExec(t *testing.T) {
-	err := DeleteRunLocalValue(context.Background(), "key")
+	err := DeleteRunLocalValue(t.Context(), "key")
 	if err == nil {
 		t.Error("expected error when not in agent execution context")
 	}
 }
 
 func TestSendEvent_NotInAgentExec(t *testing.T) {
-	err := SendEvent(context.Background(), nil)
+	err := SendEvent(t.Context(), nil)
 	if err == nil {
 		t.Error("expected error when not in agent execution context")
 	}
@@ -289,7 +289,7 @@ func TestWithCallbacks_Nil(t *testing.T) {
 
 func TestWithCallbacks_Context(t *testing.T) {
 	cb := callbackHandler{}
-	ctx := withCallbacks(context.Background(), []callbackHandler{cb})
+	ctx := withCallbacks(t.Context(), []callbackHandler{cb})
 	cbs := getCallbacks(ctx)
 	if len(cbs) != 1 {
 		t.Errorf("expected 1 callback, got %d", len(cbs))
@@ -297,15 +297,15 @@ func TestWithCallbacks_Context(t *testing.T) {
 }
 
 func TestGetCallbacks_NoCallbacks(t *testing.T) {
-	cbs := getCallbacks(context.Background())
+	cbs := getCallbacks(t.Context())
 	if cbs != nil {
 		t.Error("expected nil")
 	}
 }
 
 func TestWithCallbacks_Empty(t *testing.T) {
-	ctx := withCallbacks(context.Background(), nil)
-	if ctx != context.Background() {
+	ctx := withCallbacks(t.Context(), nil)
+	if ctx != t.Context() {
 		t.Errorf("empty callbacks should return original context")
 	}
 }

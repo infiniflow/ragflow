@@ -19,7 +19,7 @@ import (
 // TestToolsNode_ConcurrentInvoke verifies concurrent tool Invoke calls are safe.
 func TestToolsNode_ConcurrentInvoke(t *testing.T) {
 	tool := &mockTool{name: "conc_tool", desc: "concurrency test tool"}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	var wg sync.WaitGroup
 	errs := make(chan error, 20)
@@ -59,7 +59,7 @@ func TestWorkflow_ParallelAgentConcurrency(t *testing.T) {
 	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("par_conc_a")
 	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("par_conc_b")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	par, err := NewParallel(ctx, &ParallelConfig{
 		Name:      "par_conc_test",
 		SubAgents: []Agent{a1, a2},
@@ -105,7 +105,7 @@ func TestWorkflow_ParallelAgentConcurrency(t *testing.T) {
 // TestTurnLoop_ConcurrentPushStop verifies AgentLoop handles concurrent
 // Push and Stop operations safely.
 func TestTurnLoop_ConcurrentPushStop(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	loop := NewAgentLoop[*schema.Message](AgentLoopConfig[*schema.Message]{
 		GenInput: func(_ context.Context, l *AgentLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
@@ -145,7 +145,7 @@ func TestTurnLoop_ConcurrentPushStop(t *testing.T) {
 
 // TestReActAgent_ConcurrentRun verifies multiple agents can run concurrently.
 func TestReActAgent_ConcurrentRun(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var wg sync.WaitGroup
 	errs := make(chan error, 10)
 
@@ -188,7 +188,7 @@ func TestReActAgent_ConcurrentRun(t *testing.T) {
 // TestRunner_ConcurrentInstances verifies multiple Runner instances
 // executing concurrently don't interfere.
 func TestRunner_ConcurrentInstances(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var wg sync.WaitGroup
 	errs := make(chan error, 8)
 
@@ -233,7 +233,7 @@ func TestTool_ConcurrentAgent(t *testing.T) {
 	innerM.addResp("inner agent result")
 	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{Model: innerM}).WithName("inner_conc").WithDescription("inner agent")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, innerAgent)
 
 	parentM := &forcedToolModel{
@@ -284,7 +284,7 @@ func TestTool_ConcurrentAgent(t *testing.T) {
 // TestWorkflow_SequentialConcurrent verifies multiple sequential workflows
 // run concurrently without interference.
 func TestWorkflow_SequentialConcurrent(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	var wg sync.WaitGroup
 	errs := make(chan error, 6)
 
@@ -347,7 +347,7 @@ func TestCancel_ConcurrentTrigger(t *testing.T) {
 	cancelOpt, cancelFunc := WithCancel()
 	store := newCancelTestStore()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("cancel conc test")}, cancelOpt)
 
 	// Trigger cancel from multiple goroutines
@@ -377,7 +377,7 @@ func TestCancel_ConcurrentTrigger(t *testing.T) {
 
 // TestInterrupt_Concurrent verifies interrupt state can be read concurrently.
 func TestInterrupt_Concurrent(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &forcedToolModel{
 		inner:     &mockModel{},
 		toolCalls: []schema.ToolCall{{ID: "ci", Function: schema.ToolCallFunction{Name: "ci_tool", Arguments: "{}"}}},

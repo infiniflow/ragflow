@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "python_engine": "deepdoc.parser.html_parser.RAGFlowHtmlParser",
+    "generator": "rag/flow/parser/parser.py:_html (HtmlParser()(name, blob, 512))",
+    "sample": "internal/parser/parser/testdata/html.sample.zh.html",
+    "delimiter": "\\n!?;。；！？",
+    "separate_tables": false,
+    "accepted_divergences": ["table"],
+    "note": "No generator script is committed. To regenerate: call RAGFlowHtmlParser.read_text_recursively on the sample at chunk_token_num=512, apply the TITLE_TAGS heading prefix (\"# \"/\"## \" …) inline, emit every block (including the inline <table>…</table> markup) as a {\"text\": …, \"doc_type_kwd\": \"text\"} record, then wrap in {meta, items}. Go also appends a structured doc_type_kwd:\"table\" item; that extra record is excluded via meta.accepted_divergences in the alignment test."
+  },
+  "items": [
+    {
+      "text": "# 产品指南",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "第一步：打开应用。第二步：点击设置完成配置。",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "<table>\n<tr><th>姓名</th><th>年龄</th></tr>\n<tr><td>张三</td><td>30</td></tr>\n<tr><td>李四</td><td>25</td></tr>\n</table>",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "## 使用条款",
+      "doc_type_kwd": "text"
+    },
+    {
+      "text": "欢迎使用我们的智能助手，它能帮你快速完成任务。",
+      "doc_type_kwd": "text"
+    }
+  ]
+}

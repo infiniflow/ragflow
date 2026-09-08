@@ -50,7 +50,8 @@ class Excel(ExcelParser):
             for i, r in enumerate(rows):
                 q, a = "", ""
                 for cell in r:
-                    if not cell.value:
+                    # A 0, 0.0, or False answer is falsy but is real content.
+                    if cell.value is None or str(cell.value).strip() == "":
                         continue
                     if not q:
                         q = str(cell.value)
@@ -229,6 +230,8 @@ class Docx(DocxParser):
                         if c.text == r.cells[j].text:
                             span += 1
                             i = j
+                        else:
+                            break
                     i += 1
                     html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
                 html += "</tr>"

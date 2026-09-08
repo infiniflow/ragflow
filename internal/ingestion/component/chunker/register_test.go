@@ -22,13 +22,13 @@ import (
 	"ragflow/internal/agent/runtime"
 )
 
-// TestNewChunkersRegistered pins that OneChunker, TagChunker and
-// TableChunker are registered under CategoryIngestion (the exact
+// TestNewChunkersRegistered pins that OneChunker, QAChunker, TableChunker
+// and PageChunker are registered under CategoryIngestion (the exact
 // invariant the handler/service component-list tests assert). It lives
 // here so the check runs without the parser package, which has an
 // unrelated, pre-existing build break on the diverged branch.
 func TestNewChunkersRegistered(t *testing.T) {
-	for _, name := range []string{ComponentNameOneChunker, ComponentNameTagChunker, ComponentNameTableChunker, ComponentNamePresentationChunker} {
+	for _, name := range []string{ComponentNameOneChunker, ComponentNameQAChunker, ComponentNameTableChunker, ComponentNamePageChunker} {
 		_, cat, _, ok := runtime.DefaultRegistry.Lookup(name)
 		if !ok {
 			t.Fatalf("%s: not registered", name)

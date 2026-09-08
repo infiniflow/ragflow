@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cloudwego/eino/components/model"
@@ -86,7 +87,7 @@ func TestAgent_ReActAgent_CollectsArtifactsFromCodeExecTool(t *testing.T) {
 	}
 
 	opt, future := react.WithMessageFuture()
-	agent, err := react.NewAgent(context.Background(), &react.AgentConfig{
+	agent, err := react.NewAgent(t.Context(), &react.AgentConfig{
 		ToolCallingModel: &artifactModel{
 			callID:   "call_1",
 			toolName: "artifact_tool",
@@ -102,7 +103,7 @@ func TestAgent_ReActAgent_CollectsArtifactsFromCodeExecTool(t *testing.T) {
 		t.Fatalf("react.NewAgent: %v", err)
 	}
 
-	_, err = agent.Generate(context.Background(), []*schema.Message{
+	_, err = agent.Generate(t.Context(), []*schema.Message{
 		schema.UserMessage("generate a test image"),
 	}, opt)
 	if err != nil {
@@ -117,7 +118,7 @@ func TestAgent_ReActAgent_CollectsArtifactsFromCodeExecTool(t *testing.T) {
 
 	// Re-create the same sequence in a context and call the collector.
 	fakeFuture := newSliceFuture(msgs)
-	ctx := setArtifactCollector(context.Background(), fakeFuture)
+	ctx := setArtifactCollector(t.Context(), fakeFuture)
 	got := collectArtifactsFromToolCalls(ctx, nil)
 
 	if len(got) != 1 {
@@ -231,7 +232,8 @@ func (m *replayModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChat
 
 // passthroughTool echoes its input as a tool result.
 type passthroughTool struct {
-	name string
+	name  string
+	calls atomic.Int32
 }
 
 func (t *passthroughTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -245,5 +247,6 @@ func (t *passthroughTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 }
 
 func (t *passthroughTool) InvokableRun(_ context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+	t.calls.Add(1)
 	return argumentsInJSON, nil
 }

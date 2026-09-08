@@ -27,7 +27,7 @@ class TestSessionWithChatAssistantUpdate:
             pytest.param({"name": "valid_name"}, "", marks=pytest.mark.p3),
             pytest.param({"name": "a" * (SESSION_WITH_CHAT_NAME_LIMIT + 1)}, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, "", marks=pytest.mark.skip(reason="issues/")),
-            pytest.param({"name": ""}, "`name` can not be empty.", marks=pytest.mark.p3),
+            pytest.param({"name": ""}, "`name` can not be empty", marks=pytest.mark.p3),
             pytest.param({"name": "duplicated_name"}, "", marks=pytest.mark.p3),
             pytest.param({"name": "case insensitive"}, "", marks=pytest.mark.p3),
         ],
@@ -95,4 +95,4 @@ class TestSessionWithChatAssistantUpdate:
 
         with pytest.raises(Exception) as exception_info:
             sessions[0].update({"name": "valid_name"})
-        assert "No authorization." in str(exception_info.value)
+        assert "no authorization" in str(exception_info.value)

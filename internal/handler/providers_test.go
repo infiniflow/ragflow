@@ -88,8 +88,8 @@ func TestProviderHandlerAlterModelRejectsMissingModelSelector(t *testing.T) {
 	ctx, recorder := newProviderHandlerRequest(
 		t,
 		map[string]interface{}{"status": "active"},
-		gin.Param{Key: "provider_name", Value: "OpenAI"},
-		gin.Param{Key: "instance_name", Value: "default"},
+		gin.Param{Key: "provider_id_or_name", Value: "OpenAI"},
+		gin.Param{Key: "instance_id_or_name", Value: "default"},
 	)
 
 	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
@@ -107,8 +107,8 @@ func TestProviderHandlerAlterModelRejectsInvalidStatus(t *testing.T) {
 	ctx, recorder := newProviderHandlerRequest(
 		t,
 		map[string]interface{}{"status": "disabled"},
-		gin.Param{Key: "provider_name", Value: "OpenAI"},
-		gin.Param{Key: "instance_name", Value: "default"},
+		gin.Param{Key: "provider_id_or_name", Value: "OpenAI"},
+		gin.Param{Key: "instance_id_or_name", Value: "default"},
 		gin.Param{Key: "model_name", Value: "gpt-test"},
 	)
 
@@ -131,8 +131,8 @@ func TestProviderHandlerAlterModelUpdatesStatus(t *testing.T) {
 	ctx, recorder := newProviderHandlerRequest(
 		t,
 		map[string]interface{}{"status": "inactive"},
-		gin.Param{Key: "provider_name", Value: "OpenAI"},
-		gin.Param{Key: "instance_name", Value: "default"},
+		gin.Param{Key: "provider_id_or_name", Value: "OpenAI"},
+		gin.Param{Key: "instance_id_or_name", Value: "default"},
 		gin.Param{Key: "model_name", Value: "gpt-test"},
 	)
 

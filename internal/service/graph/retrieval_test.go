@@ -134,7 +134,7 @@ func TestSearchTypeSamples_Success(t *testing.T) {
 			}},
 		},
 	}
-	result, err := searchTypeSamples(context.Background(), mock, []string{"ragflow_tenant1"}, []string{"kb1"})
+	result, err := searchTypeSamples(t.Context(), mock, []string{"ragflow_tenant1"}, []string{"kb1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestSearchTypeSamples_Success(t *testing.T) {
 
 func TestSearchTypeSamples_Empty(t *testing.T) {
 	mock := &mockRetrievalEngine{}
-	result, err := searchTypeSamples(context.Background(), mock, []string{"ragflow_tenant1"}, []string{"kb1"})
+	result, err := searchTypeSamples(t.Context(), mock, []string{"ragflow_tenant1"}, []string{"kb1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestRetrieval_Basic(t *testing.T) {
 			}},
 		},
 	}
-	result, err := Retrieval(context.Background(), mock, nil, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
+	result, err := Retrieval(t.Context(), mock, nil, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
 	if err != nil {
 		t.Fatalf("Retrieval failed: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestRetrieval_Basic(t *testing.T) {
 
 func TestRetrieval_NoEntities(t *testing.T) {
 	mock := &mockRetrievalEngine{}
-	result, err := Retrieval(context.Background(), mock, nil, nil, []string{"kb1"}, []string{"tenant1"}, "test")
+	result, err := Retrieval(t.Context(), mock, nil, nil, []string{"kb1"}, []string{"tenant1"}, "test")
 	if err != nil {
 		t.Fatalf("Retrieval failed: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestRetrieval_WithChatModel(t *testing.T) {
 	// chatModel with nil ModelName so queryRewrite falls back to raw question,
 	// but the ty2entsJSON construction path is still exercised.
 	chatModel := &modelModule.ChatModel{ModelName: nil, APIConfig: nil}
-	result, err := Retrieval(context.Background(), mock, chatModel, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
+	result, err := Retrieval(t.Context(), mock, chatModel, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
 	if err != nil {
 		t.Fatalf("Retrieval failed: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestEntitySearch_MultiEntities(t *testing.T) {
 			},
 		},
 	}
-	mock.Search(context.Background(), entsReq)
+	mock.Search(t.Context(), entsReq)
 	if !strings.Contains(capturedText, "Elon Musk") || !strings.Contains(capturedText, "SpaceX") {
 		t.Errorf("expected both entities in query, got %q", capturedText)
 	}
@@ -297,7 +297,8 @@ func (e *searchCaptureEngine) Search(ctx context.Context, req *types.SearchReque
 // --- queryRewrite ---
 
 func TestQueryRewrite_Fallback(t *testing.T) {
-	typeKeywords, entities := queryRewrite(nil, "What is SpaceX?", "{}")
+	ctx := t.Context()
+	typeKeywords, entities := queryRewrite(ctx, nil, "What is SpaceX?", "{}")
 	if typeKeywords != nil {
 		t.Errorf("expected nil typeKeywords when no LLM, got %v", typeKeywords)
 	}
@@ -307,7 +308,8 @@ func TestQueryRewrite_Fallback(t *testing.T) {
 }
 
 func TestQueryRewrite_EmptyQuestion(t *testing.T) {
-	typeKeywords, entities := queryRewrite(nil, "", "")
+	ctx := t.Context()
+	typeKeywords, entities := queryRewrite(ctx, nil, "", "")
 	if typeKeywords != nil || entities != nil {
 		t.Errorf("expected nil for empty question, got type=%v entities=%v", typeKeywords, entities)
 	}
@@ -322,8 +324,8 @@ type spyEmbedDriver struct {
 	err           error
 }
 
-func (s *spyEmbedDriver) Embed(_ *string, texts []string, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig, _ *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
-	s.capturedTexts = texts
+func (s *spyEmbedDriver) Embed(ctx context.Context, _ *string, req modelModule.EmbedRequest, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig, _ *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
+	s.capturedTexts = req.Texts
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -390,12 +392,13 @@ func TestBuildFusionExpr_AsymmetricWeights(t *testing.T) {
 // --- buildSearchExprs ---
 
 func TestBuildSearchExprs_NoEmbModel(t *testing.T) {
+	ctx := t.Context()
 	matchText := &types.MatchTextExpr{
 		Fields:       []string{"entity_kwd^10"},
 		MatchingText: "test",
 		TopN:         10,
 	}
-	exprs := buildSearchExprs(nil, matchText, 0, 0)
+	exprs := buildSearchExprs(ctx, nil, matchText, 0, 0)
 	if len(exprs) != 1 {
 		t.Fatalf("expected 1 expr, got %d", len(exprs))
 	}
@@ -409,6 +412,7 @@ func TestBuildSearchExprs_NoEmbModel(t *testing.T) {
 }
 
 func TestBuildSearchExprs_WithEmbModel(t *testing.T) {
+	ctx := t.Context()
 	driver := &spyEmbedDriver{vector: []float64{0.1, 0.2, 0.3}}
 	embModel := modelModule.NewEmbeddingModel(driver, strPtr("text-embedding"), &modelModule.APIConfig{}, 512)
 	matchText := &types.MatchTextExpr{
@@ -416,7 +420,7 @@ func TestBuildSearchExprs_WithEmbModel(t *testing.T) {
 		MatchingText: "Elon Musk SpaceX",
 		TopN:         50,
 	}
-	exprs := buildSearchExprs(embModel, matchText, defaultSimThreshold, defaultDenseTopK)
+	exprs := buildSearchExprs(ctx, embModel, matchText, defaultSimThreshold, defaultDenseTopK)
 	// Verify Embed was called with matchText.MatchingText, not raw question
 	if len(driver.capturedTexts) != 1 || driver.capturedTexts[0] != "Elon Musk SpaceX" {
 		t.Errorf("expected Embed to receive %q, got %v", "Elon Musk SpaceX", driver.capturedTexts)
@@ -457,6 +461,7 @@ func TestBuildSearchExprs_WithEmbModel(t *testing.T) {
 }
 
 func TestBuildSearchExprs_EmbModelFallback(t *testing.T) {
+	ctx := t.Context()
 	driver := &spyEmbedDriver{err: assertError("embed failed")}
 	embModel := modelModule.NewEmbeddingModel(driver, strPtr("text-embedding"), &modelModule.APIConfig{}, 512)
 	matchText := &types.MatchTextExpr{
@@ -464,7 +469,7 @@ func TestBuildSearchExprs_EmbModelFallback(t *testing.T) {
 		MatchingText: "fallback test",
 		TopN:         10,
 	}
-	exprs := buildSearchExprs(embModel, matchText, defaultSimThreshold, defaultDenseTopK)
+	exprs := buildSearchExprs(ctx, embModel, matchText, defaultSimThreshold, defaultDenseTopK)
 	// Should fall back to text-only when Embed fails
 	if len(exprs) != 1 {
 		t.Fatalf("expected 1 expr (text-only fallback), got %d", len(exprs))
@@ -510,7 +515,7 @@ func TestIndexName_Empty(t *testing.T) {
 
 func TestSearchKGCommunityContent_EmptyEntities(t *testing.T) {
 	mock := &mockRetrievalEngine{}
-	result := searchCommunityContent(context.Background(), mock, []string{"ragflow_t1"}, []string{"kb1"}, nil, 1, intPtr(100))
+	result := searchCommunityContent(t.Context(), mock, []string{"ragflow_t1"}, []string{"kb1"}, nil, 1, intPtr(100))
 	if result != "" {
 		t.Errorf("expected empty, got %q", result)
 	}
@@ -527,7 +532,7 @@ func TestSearchKGCommunityContent_WithContent(t *testing.T) {
 			}},
 		},
 	}
-	result := searchCommunityContent(context.Background(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, intPtr(500))
+	result := searchCommunityContent(t.Context(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, intPtr(500))
 	if result == "" {
 		t.Fatal("expected non-empty result")
 	}
@@ -547,7 +552,7 @@ func TestSearchKGCommunityContent_WithContent(t *testing.T) {
 
 func TestSearchKGCommunityContent_NilMaxToken(t *testing.T) {
 	mock := &mockRetrievalEngine{}
-	result := searchCommunityContent(context.Background(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, nil)
+	result := searchCommunityContent(t.Context(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, nil)
 	if result != "" {
 		t.Errorf("expected empty when maxToken is nil, got %q", result)
 	}
@@ -555,7 +560,7 @@ func TestSearchKGCommunityContent_NilMaxToken(t *testing.T) {
 
 func TestSearchKGCommunityContent_ZeroMaxToken(t *testing.T) {
 	mock := &mockRetrievalEngine{}
-	result := searchCommunityContent(context.Background(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, intPtr(0))
+	result := searchCommunityContent(t.Context(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, intPtr(0))
 	if result != "" {
 		t.Errorf("expected empty when maxToken=0, got %q", result)
 	}

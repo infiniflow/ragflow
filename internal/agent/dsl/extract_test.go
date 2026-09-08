@@ -31,10 +31,10 @@ func happyDSL() map[string]any {
 					"component_name": "Begin",
 					"params": map[string]any{
 						"mode": "Manual",
-					},
-					"input_form": map[string]any{
-						"query": map[string]any{
-							"type": "string",
+						"inputs": map[string]any{
+							"query": map[string]any{
+								"type": "string",
+							},
 						},
 					},
 				},
@@ -78,7 +78,7 @@ func TestExtractComponentInputForm_MissingObj(t *testing.T) {
 }
 
 func TestExtractComponentInputForm_MissingInputForm(t *testing.T) {
-	// "answer" has obj but no input_form.
+	// "answer" has obj but no params.inputs.
 	_, err := ExtractComponentInputForm(happyDSL(), "answer")
 	if !errors.Is(err, ErrMissingInputForm) {
 		t.Errorf("err = %v, want ErrMissingInputForm", err)
@@ -219,13 +219,36 @@ func TestFindBeginComponentID_NilDSL(t *testing.T) {
 // TestExtractPrologue_HappyPath pins the prologue lookup path.
 func TestExtractPrologue_HappyPath(t *testing.T) {
 	dsl := happyDSL()
-	dsl["components"].(map[string]any)["begin"].(map[string]any)["obj"].(map[string]any)["prologue"] = "hello"
+	dsl["components"].(map[string]any)["begin"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)["prologue"] = "hello"
 	got, err := ExtractPrologue(dsl)
 	if err != nil {
 		t.Fatalf("err = %v, want nil", err)
 	}
 	if got != "hello" {
 		t.Errorf("prologue = %q, want hello", got)
+	}
+}
+
+func TestExtractPrologue_FromBeginParams(t *testing.T) {
+	dsl := map[string]any{
+		"components": map[string]any{
+			"begin": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Begin",
+					"params": map[string]any{
+						"mode":     "conversational",
+						"prologue": "Welcome from params",
+					},
+				},
+			},
+		},
+	}
+	got, err := ExtractPrologue(dsl)
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if got != "Welcome from params" {
+		t.Errorf("prologue = %q, want Welcome from params", got)
 	}
 }
 
@@ -244,7 +267,7 @@ func TestExtractPrologue_NotFound(t *testing.T) {
 // TestExtractMode_HappyPath pins the mode lookup path.
 func TestExtractMode_HappyPath(t *testing.T) {
 	dsl := happyDSL()
-	dsl["components"].(map[string]any)["begin"].(map[string]any)["obj"].(map[string]any)["mode"] = "Agent"
+	dsl["components"].(map[string]any)["begin"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)["mode"] = "Agent"
 	got, err := ExtractMode(dsl)
 	if err != nil {
 		t.Fatalf("err = %v, want nil", err)

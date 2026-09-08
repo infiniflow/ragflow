@@ -70,13 +70,13 @@ type CanvasState struct {
 	Globals            map[string]any
 	CancelFlag         *atomic.Bool
 	RunID              string
-	TaskID             string
+	SessionID          string
 }
 
 // NewCanvasState returns a zero-valued CanvasState with all maps allocated.
 // The atomic CancelFlag is allocated eagerly so nodes can safely poll it
 // even before any cancel signal has been wired.
-func NewCanvasState(runID, taskID string) *CanvasState {
+func NewCanvasState(runID, sessionID string) *CanvasState {
 	s := &CanvasState{
 		activeHistoryIndex: -1,
 		Outputs:            make(map[string]map[string]any),
@@ -89,13 +89,13 @@ func NewCanvasState(runID, taskID string) *CanvasState {
 		Globals:            make(map[string]any),
 		CancelFlag:         &atomic.Bool{},
 		RunID:              runID,
-		TaskID:             taskID,
+		SessionID:          sessionID,
 	}
 	s.EnsureSysDate()
 	return s
 }
 
-// EnsureSysDate fills sys.date with the current UTC timestamp when it
+// EnsureSysDate fills sys.date with the current local timestamp when it
 // is missing or blank. Python canvas initializes the same variable with
 // "%Y-%m-%d %H:%M:%S"; keep that wire format for DSL compatibility.
 func (s *CanvasState) EnsureSysDate() {
@@ -110,7 +110,7 @@ func (s *CanvasState) EnsureSysDate() {
 	if v, ok := s.Sys["date"]; ok && strings.TrimSpace(fmt.Sprint(v)) != "" {
 		return
 	}
-	s.Sys["date"] = time.Now().UTC().Format("2006-01-02 15:04:05")
+	s.Sys["date"] = time.Now().Format("2006-01-02 15:04:05")
 }
 
 // init registers CanvasState with eino's internal type registry so
@@ -142,7 +142,7 @@ type canvasStateJSON struct {
 	Globals            map[string]any            `json:"globals,omitempty"`
 	CancelFlag         bool                      `json:"cancel_flag"`
 	RunID              string                    `json:"run_id"`
-	TaskID             string                    `json:"task_id"`
+	SessionID          string                    `json:"session_id"`
 }
 
 // MarshalJSON serialises the CanvasState for eino's StatePre/Post
@@ -181,7 +181,7 @@ func (s *CanvasState) MarshalJSON() ([]byte, error) {
 		Globals:            s.Globals,
 		CancelFlag:         s.CancelFlag != nil && s.CancelFlag.Load(),
 		RunID:              s.RunID,
-		TaskID:             s.TaskID,
+		SessionID:          s.SessionID,
 	}
 	// Use SafeJSONMarshal to handle non-serializable values (funcs,
 	// channels) that may have leaked into state maps. Mirrors the
@@ -228,7 +228,7 @@ func (s *CanvasState) UnmarshalJSON(b []byte) error {
 	}
 	s.CancelFlag.Store(snap.CancelFlag)
 	s.RunID = snap.RunID
-	s.TaskID = snap.TaskID
+	s.SessionID = snap.SessionID
 	return nil
 }
 

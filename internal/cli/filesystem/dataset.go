@@ -711,13 +711,6 @@ func getString(v interface{}) string {
 	return fmt.Sprintf("%v", v)
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func getFloat(v interface{}) float64 {
 	if v == nil {
 		return 0

@@ -94,9 +94,13 @@ def test_number_of_results_covers_all_documents():
 
 
 def test_missing_auth_mode_raises():
-    with patch("boto3.client"):
-        with pytest.raises(ValueError):
-            BedrockRerank(json.dumps({"bedrock_region": "eu-central-1"}), "amazon.rerank-v1:0")
+    with patch("boto3.client"), pytest.raises(ValueError):
+        BedrockRerank(json.dumps({"bedrock_region": "eu-central-1"}), "amazon.rerank-v1:0")
+
+
+def test_missing_region_raises_before_building_model_arn():
+    with pytest.raises(ValueError, match="region must be provided"):
+        BedrockRerank(json.dumps({"auth_mode": "assume_role"}), "amazon.rerank-v1:0")
 
 
 def test_access_key_secret_mode_wires_the_client():
@@ -108,6 +112,18 @@ def test_access_key_secret_mode_wires_the_client():
     assert kwargs["region_name"] == "eu-central-1"
     assert kwargs["aws_access_key_id"] == "AKIA_TEST"
     assert kwargs["aws_secret_access_key"] == "secret_test"
+
+
+def test_bedrock_api_key_mode_is_rejected_for_rerank():
+    key = json.dumps(
+        {
+            "auth_mode": "bedrock_api_key",
+            "bedrock_region": "eu-central-1",
+            "bedrock_api_key": "bedrock-test-key",
+        }
+    )
+    with pytest.raises(ValueError, match="not supported for rerank"):
+        BedrockRerank(key, "amazon.rerank-v1:0")
 
 
 @pytest.mark.parametrize("query, texts", [("", ["a"]), ("q", [])])

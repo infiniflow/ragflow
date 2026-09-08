@@ -3,14 +3,19 @@
  * Theme follows the app's Nimbalyst theme system.
  */
 
-import type { OnChange, OnMount } from '@monaco-editor/react';
-import Editor from '@monaco-editor/react';
+import Editor, {
+  loader,
+  type OnChange,
+  type OnMount,
+} from '@monaco-editor/react';
 import { Eye } from 'lucide-react';
 import type { editor as monacoEditor } from 'monaco-editor';
 import type { JSX } from 'react';
 import { useEffect, useRef } from 'react';
 
 import { useTheme } from '@/components/theme-provider';
+
+loader.config({ paths: { vs: '/vs' } });
 
 interface Props {
   content: string;

@@ -200,7 +200,7 @@ def test_chunk_add_keyword_question_and_tag_contract(rest_client, create_documen
             [
                 ({"content": "chunk test", "important_keywords": ["a", "b", "c"]}, 0, ""),
                 ({"content": "chunk test", "important_keywords": [""]}, 0, ""),
-                ({"content": "chunk test", "important_keywords": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
+                ({"content": "chunk test", "important_keywords": [1]}, 102, "`important_keywords` must be a list of strings"),
                 ({"content": "chunk test", "important_keywords": ["a", "a"]}, 0, ""),
                 ({"content": "chunk test", "important_keywords": "abc"}, 102, "`important_keywords` is required to be a list"),
                 ({"content": "chunk test", "important_keywords": 123}, 102, "`important_keywords` is required to be a list"),
@@ -211,7 +211,7 @@ def test_chunk_add_keyword_question_and_tag_contract(rest_client, create_documen
             [
                 ({"content": "chunk test", "questions": ["a", "b", "c"]}, 0, ""),
                 ({"content": "chunk test", "questions": [""]}, 0, ""),
-                ({"content": "chunk test", "questions": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
+                ({"content": "chunk test", "questions": [1]}, 102, "`questions` must be a list of strings"),
                 ({"content": "chunk test", "questions": ["a", "a"]}, 0, ""),
                 ({"content": "chunk test", "questions": "abc"}, 102, "`questions` is required to be a list"),
                 ({"content": "chunk test", "questions": 123}, 102, "`questions` is required to be a list"),
@@ -281,7 +281,7 @@ def test_chunk_add_invalid_dataset_and_document_contract(rest_client, create_doc
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+    assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
 
 @pytest.mark.p2
@@ -315,7 +315,7 @@ def test_chunk_add_repeated_and_deleted_document_contract(rest_client, create_do
     assert add_after_delete_res.status_code == 200
     add_after_delete_payload = add_after_delete_res.json()
     assert add_after_delete_payload["code"] == 102, add_after_delete_payload
-    assert add_after_delete_payload["message"] == f"You don't own the document {document_id}.", add_after_delete_payload
+    assert add_after_delete_payload["message"] == f"you don't own the document {document_id}", add_after_delete_payload
 
 
 @pytest.mark.p2
@@ -446,7 +446,7 @@ def test_chunk_delete_partial_duplicate_repeat_and_invalid_target_contract(rest_
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+    assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
 
 @pytest.mark.p2
@@ -560,7 +560,7 @@ def test_chunk_list_default_get_id_and_invalid_target_contract(rest_client, crea
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+    assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
 
 @pytest.mark.p2
@@ -600,19 +600,19 @@ def test_chunk_list_page_and_page_size_contract(rest_client, create_document):
 
     cases = [
         ("page none", {"page": None, "page_size": 2}, 0, 2, ""),
-        ("page zero", {"page": 0, "page_size": 2}, 100, None, "ValueError('Search does not support negative slicing.')"),
+        ("page zero", {"page": 0, "page_size": 2}, 0, 2, ""),
         ("page two", {"page": 2, "page_size": 2}, 0, 2, ""),
         ("page three", {"page": 3, "page_size": 2}, 0, 1, ""),
         ("page string", {"page": "3", "page_size": 2}, 0, 1, ""),
-        ("page negative", {"page": -1, "page_size": 2}, 100, None, "ValueError('Search does not support negative slicing.')"),
-        ("page alpha", {"page": "a", "page_size": 2}, 100, None, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page negative", {"page": -1, "page_size": 2}, 0, 2, ""),
+        ("page alpha", {"page": "a", "page_size": 2}, 0, 2, ""),
         ("page_size none", {"page_size": None}, 0, 5, ""),
         ("page_size zero", {"page_size": 0}, 0, 5, ""),
         ("page_size one", {"page_size": 1}, 0, 1, ""),
         ("page_size six", {"page_size": 6}, 0, 5, ""),
         ("page_size string", {"page_size": "1"}, 0, 1, ""),
         ("page_size negative", {"page_size": -1}, 0, 5, ""),
-        ("page_size alpha", {"page_size": "a"}, 100, None, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page_size alpha", {"page_size": "a"}, 0, 5, ""),
     ]
 
     for scenario_name, params, expected_code, expected_total, expected_message in cases:
@@ -752,7 +752,7 @@ def test_chunk_update_invalid_target_and_param_contract(rest_client, create_docu
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+    assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
     invalid_chunk_res = rest_client.patch(
         f"{base_path}/{INVALID_ID_32}",
@@ -826,6 +826,6 @@ def test_chunk_update_repeated_concurrent_and_deleted_document_contract(rest_cli
     update_after_delete_payload = update_after_delete.json()
     assert update_after_delete_payload["code"] == 102, update_after_delete_payload
     assert update_after_delete_payload["message"] in {
-        f"You don't own the document {document_id}.",
+        f"you don't own the document {document_id}",
         f"Can't find this chunk {chunk_id}",
     }, update_after_delete_payload

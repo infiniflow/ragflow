@@ -238,6 +238,13 @@ class Recognizer:
         for i, b in enumerate(boxes):
             if box.get("layoutno", "0") != b.get("layoutno", "0"):
                 continue
+            # layoutno is f"table-{index}" and resets per page, so the same string
+            # names a different table on every page. Only accept a candidate that
+            # shares vertical extent with the box; top/bottom are page-cumulative,
+            # so this rejects a same-layoutno column from another page whose x range
+            # happens to be closer.
+            if min(box["bottom"], b["bottom"]) <= max(box["top"], b["top"]):
+                continue
             dis = min(abs(box["x0"] - b["x0"]), abs(box["x1"] - b["x1"]), abs(box["x0"] + box["x1"] - b["x1"] - b["x0"]) / 2)
             if dis < min_dis:
                 min_i = i

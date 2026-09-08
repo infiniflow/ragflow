@@ -41,7 +41,7 @@ class TestSessionWithChatAssistantCreate:
             ("valid_name", ""),
             pytest.param("a" * (SESSION_WITH_CHAT_NAME_LIMIT + 1), "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param(1, "", marks=pytest.mark.skip(reason="issues/")),
-            ("", "`name` can not be empty."),
+            ("", "`name` can not be empty"),
             ("duplicated_name", ""),
             ("case insensitive", ""),
         ],
@@ -86,7 +86,7 @@ class TestSessionWithChatAssistantCreate:
         client.delete_chats(ids=[chat_assistant.id])
         with pytest.raises(Exception) as exception_info:
             chat_assistant.create_session(name="valid_name")
-        assert "No authorization." in str(exception_info.value)
+        assert "no authorization" in str(exception_info.value)
 
 
 @pytest.mark.p2
