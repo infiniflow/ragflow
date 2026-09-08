@@ -147,6 +147,12 @@ releases! 🌟
 
 ## 🎬 Self-Hosting
 
+### Deploy on Sealos
+
+[![Deploy on Sealos](https://sealos.io/Deploy-on-Sealos.svg)](https://sealos.io/products/app-store/ragflow)
+
+The community-maintained [Sealos template](https://github.com/labring-actions/templates/tree/kb-0.9/template/ragflow) provisions RAGFlow 0.26.4 with managed MySQL, Redis, Infinity, and private S3-compatible object storage. Its end-to-end deployment checks are recorded in [labring-actions/templates#737](https://github.com/labring-actions/templates/pull/737).
+
 ### 📝 Prerequisites
 
 - CPU >= 4 cores
