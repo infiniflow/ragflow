@@ -523,7 +523,7 @@ async def test_current_structure_product_doc_ids_only_returns_document_scoped_pr
     result = await module._current_structure_product_doc_ids(
         "tenant-index",
         "kb-1",
-        "knowledge_graph",
+        "graph",
         {"doc-with-product", "doc-without-product"},
     )
 
@@ -535,11 +535,18 @@ async def test_current_structure_product_doc_ids_only_returns_document_scoped_pr
             "scope_kwd": ["doc"],
             "knowledge_graph_kwd": ["entity", "relation"],
             "compilation_template_kind_kwd": ["knowledge_graph"],
-            "available_int": [1],
         },
         "field": "doc_id",
         "from_list": False,
     }
+
+    await module._current_structure_product_doc_ids(
+        "tenant-index",
+        "kb-1",
+        "tree",
+        {"doc-with-product"},
+    )
+    assert captured["condition"]["compilation_template_kind_kwd"] == ["page_index", "tree"]
 
 
 @pytest.mark.asyncio

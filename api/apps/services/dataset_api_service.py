@@ -2476,6 +2476,7 @@ async def _current_structure_product_doc_ids(index_nm, dataset_id: str, kind: st
     """Return documents that have produced a document-scoped structure graph."""
     if not doc_ids:
         return set()
+    stored_kinds = sorted(_ALTERATION_ELIGIBLE_TEMPLATE_KINDS.get(kind) or {kind})
     return await _involved_doc_ids_paged(
         index_nm,
         dataset_id,
@@ -2483,8 +2484,7 @@ async def _current_structure_product_doc_ids(index_nm, dataset_id: str, kind: st
             "doc_id": sorted(doc_ids),
             "scope_kwd": ["doc"],
             "knowledge_graph_kwd": ["entity", "relation"],
-            "compilation_template_kind_kwd": [kind],
-            "available_int": [1],
+            "compilation_template_kind_kwd": stored_kinds,
         },
         "doc_id",
         from_list=False,
