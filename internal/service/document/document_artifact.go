@@ -194,44 +194,19 @@ func shouldForceArtifactAttachment(ext, contentType string) bool {
 	return ok
 }
 
-// previewAccessible reports whether userID may read doc's bytes. It applies
-// the same rule the chunk list on the same page uses (chunk.ChunkService.List):
-// the dataset's owning tenant, or any tenant the user has joined. Keeping the
-// two panels on one rule means a user who can list chunks can always preview
-// the source file, and vice versa.
-func (s *DocumentService) previewAccessible(ctx context.Context, userID string, doc *entity.Document) bool {
-	if userID == "" || doc == nil {
-		return false
-	}
-	kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
-	if err != nil || kb == nil {
-		return false
-	}
-	if kb.TenantID == userID {
-		return true
-	}
-	tenants, err := dao.NewUserTenantDAO().GetByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return false
-	}
-	for _, tenant := range tenants {
-		if tenant.TenantID == kb.TenantID {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID string) (*DocumentPreview, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil || doc == nil {
 		return nil, ErrPreviewDocumentNotFound
 	}
 
-	if !s.previewAccessible(ctx, userID, doc) {
-		// Indistinguishable from a missing document so an unauthorized
-		// caller cannot probe document IDs (mirrors Python
-		// DocumentService.accessible in document_api.py preview).
+	// Reuse KnowledgebaseDAO.Accessible — the exact rule the chunk list on
+	// the same page uses — so the two panels can never disagree: the owning
+	// tenant always, and tenant members only when the dataset's permission
+	// is TEAM. A denial stays indistinguishable from a missing document so
+	// an unauthorized caller cannot probe document IDs (mirrors Python
+	// DocumentService.accessible in the preview path).
+	if !s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID) {
 		return nil, ErrPreviewDocumentNotFound
 	}
 
