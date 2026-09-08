@@ -16,6 +16,7 @@
 import logging
 
 from api.apps import current_user, login_required
+from api.channels.targets import validate_agent_target
 from api.db.services.chat_channel_service import ChatChannelService
 from api.db.services.dialog_service import DialogService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
@@ -37,7 +38,26 @@ def _chat_channel_auth_error(channel_id: str, user_id: str):
 async def create_chat_channel():
     """Create a chat channel bot owned by the current tenant."""
     req = await get_request_json()
-    channel = {"id": get_uuid(), "tenant_id": current_user.id, "name": req["name"], "channel": req["channel"], "config": req.get("config") or {}, "chat_id": req.get("chat_id") or None}
+    chat_id = req.get("chat_id") or None
+    agent_id = req.get("agent_id") or None
+    if chat_id and agent_id:
+        return get_data_error_result(message="Choose either a chat assistant or an Agent, not both.")
+    channel_id = get_uuid()
+    if agent_id:
+        target_error = validate_agent_target(agent_id, current_user.id)
+        if target_error == "not_found":
+            return get_data_error_result(message="Can't find this Agent!")
+        if target_error == "forbidden":
+            return _chat_channel_auth_error(channel_id, current_user.id)
+    channel = {
+        "id": channel_id,
+        "tenant_id": current_user.id,
+        "name": req["name"],
+        "channel": req["channel"],
+        "config": req.get("config") or {},
+        "chat_id": chat_id,
+        "agent_id": agent_id,
+    }
     ChatChannelService.insert(**channel)
 
     e, conn = ChatChannelService.get_by_id(channel["id"])
@@ -81,6 +101,9 @@ async def update_chat_channel(channel_id):
     if isinstance(req, dict) and isinstance(req.get("data"), dict):
         req = req["data"]
 
+    if req.get("chat_id") and req.get("agent_id"):
+        return get_data_error_result(message="Choose either a chat assistant or an Agent, not both.")
+
     # Validate the connected dialog (if provided) belongs to the channel's tenant.
     if req.get("chat_id"):
         e, dia = DialogService.get_by_id(req["chat_id"])
@@ -89,7 +112,18 @@ async def update_chat_channel(channel_id):
         if dia.tenant_id != conn.tenant_id:
             return _chat_channel_auth_error(channel_id, current_user.id)
 
-    update_fields = {fld: req[fld] for fld in ["name", "config", "chat_id"] if fld in req}
+    if req.get("agent_id"):
+        target_error = validate_agent_target(req["agent_id"], conn.tenant_id)
+        if target_error == "not_found":
+            return get_data_error_result(message="Can't find this Agent!")
+        if target_error == "forbidden":
+            return _chat_channel_auth_error(channel_id, current_user.id)
+
+    update_fields = {fld: req[fld] for fld in ["name", "config", "chat_id", "agent_id"] if fld in req}
+    if req.get("chat_id"):
+        update_fields["agent_id"] = None
+    elif req.get("agent_id"):
+        update_fields["chat_id"] = None
     if update_fields:
         ChatChannelService.update_by_id(channel_id, update_fields)
 
