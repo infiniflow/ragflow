@@ -339,9 +339,7 @@ async def _promote_root_artifacts(container: str, task_id: str) -> None:
     artifacts = f"{task_root}/artifacts"
     excluded = {"main.py", "runner.py", "args.json"}
     for root in (task_root, "/workspace"):
-        returncode, stdout, _ = await async_run_command(
-            "docker", "exec", container, "find", root, "-maxdepth", "1", "-type", "f", timeout=5
-        )
+        returncode, stdout, _ = await async_run_command("docker", "exec", container, "find", root, "-maxdepth", "1", "-type", "f", timeout=5)
         if returncode != 0:
             continue
         for line in stdout.splitlines():
