@@ -15,6 +15,7 @@
  */
 
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
+import { isEqual } from 'lodash';
 import { useCallback, useState } from 'react';
 import {
   FilterChange,
@@ -81,7 +82,11 @@ export function useHandleFilterSubmit() {
       if (!preValue) return preValue;
 
       const newValue: FilterValue = mergeFilterValue(preValue, validFields);
-      return newValue;
+      // Keep the previous reference when nothing was actually pruned, so a
+      // catalog refresh (e.g. the document poll invalidating the filter
+      // counts every 5s) doesn't trigger a throwaway state update and the
+      // re-render churn that follows.
+      return isEqual(preValue, newValue) ? preValue : newValue;
     });
   }, []);
 

@@ -1,4 +1,5 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
+import { cloneDeep } from 'lodash';
 import {
   FileType,
   FileTypeDefaultModelFieldMap,
@@ -8,28 +9,6 @@ import {
 
 export function buildFieldNameWithPrefix(name: string, prefix: string) {
   return `${prefix}.${name}`;
-}
-
-export function withDefaultParserModels(
-  formValues: Record<string, any>,
-  defaultModelDictionary: Record<string, string>,
-) {
-  const setups = formValues?.setups;
-  if (!Array.isArray(setups)) {
-    return formValues;
-  }
-
-  return {
-    ...formValues,
-    setups: setups.map((setup) => {
-      const field = FileTypeDefaultModelFieldMap[setup?.fileFormat as FileType];
-      const modelId = field ? defaultModelDictionary[field] : '';
-      if (!modelId || setup?.vlm?.llm_id) {
-        return setup;
-      }
-      return { ...setup, vlm: { ...setup?.vlm, llm_id: modelId } };
-    }),
-  };
 }
 
 export function getInitialParseMethod(fileType: FileType): string {
@@ -63,4 +42,48 @@ export function isForeignParseMethod(
     KnownStaticParseMethods.has(value) &&
     value !== getInitialParseMethod(fileType)
   );
+}
+
+export function isStaticParseMethod(value: unknown): value is string {
+  return typeof value === 'string' && KnownStaticParseMethods.has(value);
+}
+
+// Builds the default setup for a file type being added to the parser form,
+// prefilling the tenant default model for types that have one (video/audio).
+export function buildInitialParserSetup(
+  fileType: FileType,
+  defaultModelDictionary: Record<string, string>,
+) {
+  const setup = initialParserValues.setups.find(
+    (x) => x.fileFormat === fileType,
+  );
+  if (!setup) {
+    return undefined;
+  }
+
+  const nextSetup = cloneDeep(setup) as Record<string, any>;
+  const field = FileTypeDefaultModelFieldMap[fileType];
+  const modelId = field ? defaultModelDictionary[field] : '';
+  if (modelId) {
+    nextSetup.vlm = { ...nextSetup.vlm, llm_id: modelId };
+  }
+  return nextSetup;
+}
+
+// Form values for a freshly added Parser node: every default file type with its
+// tenant default model prefilled. Only applies to node creation — an existing
+// form is shown as saved, so a cleared model stays cleared.
+export function buildInitialParserValues(
+  defaultModelDictionary: Record<string, string>,
+) {
+  return {
+    ...initialParserValues,
+    setups: initialParserValues.setups.map(
+      (setup) =>
+        buildInitialParserSetup(
+          setup.fileFormat as FileType,
+          defaultModelDictionary,
+        ) ?? setup,
+    ),
+  };
 }
