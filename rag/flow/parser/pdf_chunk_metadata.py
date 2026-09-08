@@ -22,11 +22,8 @@ import numpy as np
 import pdfplumber
 from PIL import Image
 
-from api.db.services.file2document_service import File2DocumentService
-from api.db.services.file_service import FileService
 from common import settings
 from common.misc_utils import get_uuid
-from deepdoc.parser.pdf_parser import LOCK_KEY_pdfplumber, RAGFlowPdfParser
 from rag.utils.base64_image import image2id
 
 PDF_PREVIEW_GAP = 6
@@ -47,6 +44,8 @@ def _extract_raw_positions(item):
 
     position_tag = item.get("position_tag")
     if isinstance(position_tag, str) and position_tag:
+        from deepdoc.parser.pdf_parser import RAGFlowPdfParser
+
         return [[pos[0][-1], *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(position_tag)]
 
     position_int = item.get("position_int")
@@ -187,6 +186,9 @@ def finalize_pdf_chunk(chunk):
 
 
 def _fetch_source_blob(from_upstream, canvas):
+    from api.db.services.file2document_service import File2DocumentService
+    from api.db.services.file_service import FileService
+
     if canvas._doc_id:
         bucket, name = File2DocumentService.get_storage_address(doc_id=canvas._doc_id)
         return settings.STORAGE_IMPL.get(bucket, name)
@@ -196,6 +198,8 @@ def _fetch_source_blob(from_upstream, canvas):
 
 
 def _load_pdf_page_images(blob, zoom=PDF_PREVIEW_ZOOM):
+    from deepdoc.parser.pdf_parser import LOCK_KEY_pdfplumber
+
     with sys.modules[LOCK_KEY_pdfplumber]:
         with pdfplumber.open(io.BytesIO(blob)) as pdf:
             return [page.to_image(resolution=72 * zoom, antialias=True).annotated for page in pdf.pages]

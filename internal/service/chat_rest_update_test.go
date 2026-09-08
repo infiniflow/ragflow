@@ -22,7 +22,7 @@ func setupChatRESTUpdateServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(
+	if err = db.AutoMigrate(
 		&entity.Chat{},
 		&entity.Tenant{},
 		&entity.Knowledgebase{},
@@ -489,6 +489,24 @@ func TestChatServiceCreateRejectsInvalidPromptConfig(t *testing.T) {
 	}
 }
 
+func TestChatServiceUpdateRejectsDuplicatePromptParameterKeys(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	svc := NewChatService()
+	_, err := svc.UpdateChat(t.Context(), "user-1", "chat-1", map[string]interface{}{
+		"prompt_config": map[string]interface{}{
+			"parameters": []interface{}{
+				map[string]interface{}{"key": "knowledge"},
+				map[string]interface{}{"key": "knowledge"},
+			},
+		},
+	})
+	if err == nil || err.Error() != "`parameters` contains duplicate key: knowledge" {
+		t.Fatalf("expected duplicate parameter key error, got %v", err)
+	}
+}
+
 func TestChatServiceCreatePromptDefaultsContract(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 
@@ -519,13 +537,39 @@ func TestChatServiceCreatePromptDefaultsContract(t *testing.T) {
 	if !ok || param["key"] != "knowledge" || param["optional"] != false {
 		t.Fatalf("expected knowledge parameter, got %#v", params[0])
 	}
-	if promptConfig["system"] == "" {
-		t.Fatal("expected non-empty default system prompt")
+	if promptConfig["system"] != "" {
+		t.Fatalf("expected empty default system prompt without a dataset, got %#v", promptConfig["system"])
 	}
 	if promptConfig["prologue"] == "" {
 		t.Fatal("expected non-empty default prologue")
 	}
 	if promptConfig["empty_response"] == "" {
 		t.Fatal("expected non-empty default empty_response")
+	}
+}
+
+func TestChatServiceCreateWithDatasetSeedsDatasetSystemPrompt(t *testing.T) {
+	setupChatRESTUpdateServiceTestDB(t)
+
+	svc := NewChatService()
+	ctx := t.Context()
+	resp, code, err := svc.Create(ctx, "user-1", map[string]interface{}{
+		"name":   "prompt defaults chat with dataset",
+		"kb_ids": []interface{}{"kb-1"},
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	promptConfig, ok := resp["prompt_config"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected prompt_config map, got %T: %+v", resp["prompt_config"], resp["prompt_config"])
+	}
+	system, _ := promptConfig["system"].(string)
+	if system == "" || !strings.Contains(system, "{knowledge}") || !strings.Contains(system, "not found in the dataset") {
+		t.Fatalf("expected dataset-oriented default system prompt, got %#v", promptConfig["system"])
 	}
 }

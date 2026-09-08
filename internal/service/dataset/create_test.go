@@ -1,7 +1,6 @@
 package dataset
 
 import (
-	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -57,8 +56,8 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	if result["parser_id"] != strings.TrimSpace(chunkMethod) {
-		t.Fatalf("expected parser_id %q, got %#v", chunkMethod, result["parser_id"])
+	if result["parser_id"] != string(entity.ParserTypeGeneral) {
+		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
 }
 
@@ -85,6 +84,13 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	if !ok || len(parserConfig) == 0 {
 		t.Fatal("expected non-empty parser_config for general pipeline")
 	}
+	extractor, ok := parserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected extractor component params, got %#v", parserConfig["Extractor:AutoExtractDefault"])
+	}
+	if extractor["llm_id"] != "llm-default" {
+		t.Fatalf("extractor llm_id = %#v, want llm-default", extractor["llm_id"])
+	}
 }
 
 func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
@@ -108,8 +114,8 @@ func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	if result["parser_id"] != chunkMethod {
-		t.Fatalf("expected parser_id %q, got %#v", chunkMethod, result["parser_id"])
+	if result["parser_id"] != string(entity.ParserTypeGeneral) {
+		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
 	if v, ok := result["pipeline_id"]; ok && v != nil {
 		t.Fatalf("expected pipeline_id to be nil for BuiltIn mode, got %#v", v)

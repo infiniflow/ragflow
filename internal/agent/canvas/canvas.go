@@ -15,7 +15,7 @@ import (
 )
 
 // legacyNoOpNames is the set of component names that the Go port
-// recognises for DSL v1 compatibility but does not ship a real
+// recognizes for DSL v1 compatibility but does not ship a real
 // implementation for. Encountering one of these in a DSL is mapped to
 // the same no-op echo lambda used for placeholder bodies by the
 // BuildWorkflow in scheduler.go. New DSLs should not use these names —

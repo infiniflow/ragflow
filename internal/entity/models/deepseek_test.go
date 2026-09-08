@@ -18,6 +18,7 @@ func newDeepSeekForTest(baseURL string) *DeepSeekModel {
 }
 
 func TestDeepSeekChatWithMessagesSupportsToolCalls(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	var requestBody map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -108,6 +109,7 @@ func TestDeepSeekChatWithMessagesSupportsToolCalls(t *testing.T) {
 }
 
 func TestDeepSeekChatWithMessagesForwardsToolHistory(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	var requestBody map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
@@ -30,12 +31,13 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 )
 
 // CreateMetadataStore creates the document metadata index
-func (e *elasticsearchEngine) CreateMetadataStore(ctx context.Context, tenantID string) error {
+func (e *Engine) CreateMetadataStore(ctx context.Context, tenantID string) error {
 	indexName := buildMetadataIndexName(tenantID)
 
 	// Check if index already exists
@@ -47,9 +49,18 @@ func (e *elasticsearchEngine) CreateMetadataStore(ctx context.Context, tenantID 
 		return nil
 	}
 
-	// Index will be created with mapping from index template (ragflow_doc_meta_mapping)
+	mappingPath, err := utility.FindConfFileInProject("doc_meta_es_mapping.json")
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(*mappingPath)
+	if err != nil {
+		return fmt.Errorf("failed to read mapping file %q: %w", *mappingPath, err)
+	}
+
 	req := esapi.IndicesCreateRequest{
 		Index: indexName,
+		Body:  bytes.NewReader(data),
 	}
 	res, err := req.Do(ctx, e.client)
 	if err != nil {
@@ -77,7 +88,7 @@ func (e *elasticsearchEngine) CreateMetadataStore(ctx context.Context, tenantID 
 
 // InsertMetadata inserts documents into tenant's metadata index
 // If a document with the same id and kb_id already exists, it will be updated with the new value
-func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
+func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
 	indexName := buildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.InsertMetadata called", zap.String("index_name", indexName), zap.String("tenant_id", tenantID), zap.Int("doc_count", len(metadata)))
 
@@ -166,7 +177,7 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 //
 // The metadata index must already exist; the service layer is responsible
 // for creating it before writing.
-func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
+func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
 	indexName := buildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.UpdateMetadata called", zap.String("index_name", indexName), zap.String("docID", docID), zap.String("datasetID", datasetID))
 
@@ -246,7 +257,7 @@ func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, 
 // DeleteMetadata deletes metadata from tenant's metadata index by condition
 // The condition is a map used to build an ES query (e.g., map["kb_id"]="xxx")
 // Returns the number of deleted documents
-func (e *elasticsearchEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
+func (e *Engine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
 	indexName := buildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.DeleteMetadata called", zap.String("index_name", indexName), zap.Any("condition", condition))
 
@@ -314,7 +325,7 @@ func (e *elasticsearchEngine) DeleteMetadata(ctx context.Context, condition map[
 
 // DeleteMetadataKeys deletes specific metadata keys from a document's meta_fields.
 // If deleting those keys leaves no metadata entries, the metadata document is removed.
-func (e *elasticsearchEngine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error {
+func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error {
 	indexName := buildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.DeleteMetadataKeys called", zap.String("index_name", indexName), zap.String("docID", docID), zap.Any("keys", keys))
 
@@ -509,19 +520,19 @@ func (e *elasticsearchEngine) DeleteMetadataKeys(ctx context.Context, docID stri
 }
 
 // DropMetadataStore drops a metadata index from Elasticsearch
-func (e *elasticsearchEngine) DropMetadataStore(ctx context.Context, tenantID string) error {
+func (e *Engine) DropMetadataStore(ctx context.Context, tenantID string) error {
 	indexName := buildMetadataIndexName(tenantID)
 	return e.dropIndex(ctx, indexName)
 }
 
 // MetadataStoreExists checks if a metadata index exists in Elasticsearch
-func (e *elasticsearchEngine) MetadataStoreExists(ctx context.Context, tenantID string) (bool, error) {
+func (e *Engine) MetadataStoreExists(ctx context.Context, tenantID string) (bool, error) {
 	indexName := buildMetadataIndexName(tenantID)
 	return e.indexExists(ctx, indexName)
 }
 
 // SearchMetadata executes search specifically for metadata indices (ragflow_doc_meta_*)
-func (e *elasticsearchEngine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
 	tenantID := req.TenantID
 	common.Debug("SearchMetadata in Elasticsearch started", zap.String("tenantID", tenantID))
 
@@ -620,7 +631,7 @@ func (e *elasticsearchEngine) SearchMetadata(ctx context.Context, req *types.Sea
 }
 
 // buildMetadataQueryFromCondition builds an ES query for metadata index
-func (e *elasticsearchEngine) buildMetadataQueryFromCondition(condition map[string]interface{}) map[string]interface{} {
+func (e *Engine) buildMetadataQueryFromCondition(condition map[string]interface{}) map[string]interface{} {
 	if len(condition) == 0 {
 		return nil
 	}
@@ -701,7 +712,7 @@ const metaPushdownMaxSize = 10000
 //	nil        -> push-down was not viable / errored / result overflowed the
 //	              push-down cap (caller should fall back to in-memory)
 //	[]string{} -> push-down succeeded but found 0 matching docs (empty result is definitive)
-func (e *elasticsearchEngine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB, kbIDs []string, conditions []map[string]interface{}, logic string) []string {
+func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB, kbIDs []string, conditions []map[string]interface{}, logic string) []string {
 	if len(conditions) == 0 || len(kbIDs) == 0 {
 		return nil
 	}

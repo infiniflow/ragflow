@@ -159,6 +159,62 @@ func TestRetrieval_KbIDsTranslatedToDatasetIDs(t *testing.T) {
 	if !ok || len(ds3) != 1 || ds3[0] != "kb-new" {
 		t.Errorf("dataset_ids should keep call-time value %v, got %v", "kb-new", merged3["dataset_ids"])
 	}
+
+	// Case 4: canonical node-level dataset_ids override stale kb_ids.
+	canonical, err := newRetrievalComponent(map[string]any{
+		"dataset_ids": []any{"kb-current"},
+		"kb_ids":      []any{"kb-stale"},
+	})
+	if err != nil {
+		t.Fatalf("newRetrievalComponent with canonical dataset_ids: %v", err)
+	}
+	merged4 := canonical.(*retrievalComponent).applyDefaults(nil)
+	if ds, ok := merged4["dataset_ids"].([]any); !ok || len(ds) != 1 || ds[0] != "kb-current" {
+		t.Errorf("node dataset_ids should override stale kb_ids, got %v", merged4["dataset_ids"])
+	}
+
+	// Case 5: an explicitly empty canonical list clears stale kb_ids.
+	cleared, err := newRetrievalComponent(map[string]any{
+		"dataset_ids": []any{},
+		"kb_ids":      []any{"kb-stale"},
+	})
+	if err != nil {
+		t.Fatalf("newRetrievalComponent with empty dataset_ids: %v", err)
+	}
+	merged5 := cleared.(*retrievalComponent).applyDefaults(nil)
+	if _, ok := merged5["dataset_ids"]; ok {
+		t.Errorf("empty dataset_ids should clear stale kb_ids, got %v", merged5["dataset_ids"])
+	}
+}
+
+func TestRetrieval_NodeQueryResolvedFromCanvasState(t *testing.T) {
+	previous := agenttool.GetRetrievalService()
+	agenttool.SetSimpleRetrievalService()
+	t.Cleanup(func() { agenttool.SetRetrievalService(previous) })
+
+	c, err := newRetrievalComponent(map[string]any{
+		"query":  "{sys.query}",
+		"kb_ids": []any{"kb-1"},
+	})
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.Sys["query"] = "AirPure X200 vs AirPure X300"
+	ctx := runtime.WithState(t.Context(), state)
+	out, err := c.Invoke(ctx, nil, map[string]any{
+		"category":      "Product Feature Comparison",
+		"category_name": "Product Feature Comparison",
+		"_next":         []string{"Retrieval:EightyDaysHappen"},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	formalizedContent, _ := out["formalized_content"].(string)
+	if !strings.Contains(formalizedContent, "AirPure X200 vs AirPure X300") {
+		t.Fatalf("formalized_content = %q, want resolved canvas query", formalizedContent)
+	}
 }
 
 func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
@@ -171,17 +227,17 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 		t.Fatalf("failed to unwrap sql db: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+	if err = db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
 		t.Fatalf("failed to migrate knowledgebase: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate user_tenant: %v", err)
 	}
 	origDB := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = origDB })
 	activeStatus := "1"
-	if err := db.Create(&entity.UserTenant{
+	if err = db.Create(&entity.UserTenant{
 		ID:        "ut-1",
 		UserID:    "user-1",
 		TenantID:  "tenant-1",
@@ -192,7 +248,7 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 		t.Fatalf("failed to seed user_tenant: %v", err)
 	}
 
-	if err := db.Create(&entity.Knowledgebase{
+	if err = db.Create(&entity.Knowledgebase{
 		ID:         "kb-da1",
 		Name:       "da1",
 		TenantID:   "tenant-1",
@@ -214,7 +270,7 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 	})
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
-	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), db, merged)
+	normalizeLegacyRetrievalInputs(runtime.WithState(t.Context(), state), db, merged)
 
 	if got, _ := merged["query"].(string); got != "diamond necklace" {
 		t.Fatalf("query = %q, want diamond necklace", got)
@@ -280,7 +336,7 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 	})
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
-	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), db, merged)
+	normalizeLegacyRetrievalInputs(runtime.WithState(t.Context(), state), db, merged)
 
 	if got, _ := merged["query"].(string); got != "合同" {
 		t.Fatalf("query = %q, want 合同", got)
@@ -322,7 +378,7 @@ func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
 
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	if got := resolveRetrievalDatasetID(ctx, db, "da1"); got != "kb-da1" {
 		t.Fatalf("resolveRetrievalDatasetID = %q, want kb-da1", got)
@@ -345,7 +401,7 @@ func TestRetrieval_StructuredInputPreservesQueryWhenDatasetIDsAlreadyPresent(t *
 		},
 	})
 
-	consumed := normalizeStructuredRetrievalInputs(context.Background(), nil, merged)
+	consumed := normalizeStructuredRetrievalInputs(t.Context(), nil, merged)
 	if !consumed {
 		t.Fatal("normalizeStructuredRetrievalInputs should consume structured query")
 	}
@@ -387,7 +443,7 @@ func TestRetrieval_KbIDsEndToEndThroughTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(Retrieval): %v", err)
 	}
-	out, err := wrapper.Invoke(context.Background(), nil, map[string]any{"query": "ragflow"})
+	out, err := wrapper.Invoke(t.Context(), nil, map[string]any{"query": "ragflow"})
 	if err != nil {
 		t.Fatalf("Retrieval.Invoke: %v", err)
 	}
@@ -501,7 +557,7 @@ func TestCodeExec_LegacyDSLWrapperBridgesParamsAndOutputs(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"arguments": map[string]any{
 			"x": 7,
 		},
@@ -573,7 +629,7 @@ func TestCodeExec_LegacyDSLWrapperResolvesArgumentRefsFromState(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"state": map[string]map[string]any{
 			"UserFillUp:CodeInput": {
 				"x": "8",
@@ -624,7 +680,7 @@ func TestCodeExec_LegacyDSLWrapperResolvesSysArgumentRefsFromCanvasState(t *test
 
 	state := runtime.NewCanvasState("run-codeexec", "task-codeexec")
 	state.Sys["query"] = "532"
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("CodeExec.Invoke: %v", err)
@@ -664,7 +720,7 @@ func TestCodeExec_LegacyDSLWrapperContractMismatchSetsError(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("CodeExec.Invoke: %v", err)
 	}
@@ -704,7 +760,7 @@ func TestCodeExec_LegacyDSLWrapperPreservesExecutionError(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err == nil {
 		t.Fatal("CodeExec.Invoke: want wrapped execution error, got nil")
 	}
@@ -796,7 +852,7 @@ func TestLLM_RetryStackingSemantics(t *testing.T) {
 			}
 			// The retry chain always returns errLLMRetryTestAlwaysFail
 			// so we can count attempts deterministically.
-			_, _ = comp.Invoke(context.Background(), nil, nil)
+			_, _ = comp.Invoke(t.Context(), nil, nil)
 			if counter.calls < tc.wantMinAttempts {
 				t.Errorf("counter.calls = %d, want >= %d (MaxRetries=%d stacking regression?)",
 					counter.calls, tc.wantMinAttempts, tc.maxRetries)

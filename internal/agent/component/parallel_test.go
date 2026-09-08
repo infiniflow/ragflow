@@ -34,7 +34,6 @@
 package component
 
 import (
-	"context"
 	"slices"
 	"testing"
 )
@@ -75,7 +74,9 @@ func TestParallel_InvokeIsNoOp(t *testing.T) {
 		ItemsRef:       "sys.arr",
 		MaxConcurrency: 3,
 	})
-	out, err := c.Invoke(context.Background(), nil, map[string]any{"in": 1})
+	ctx := t.Context()
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"in": 1})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -88,7 +89,9 @@ func TestParallel_InvokeIsNoOp(t *testing.T) {
 // empty-map chunk and closes.
 func TestParallel_StreamMirrorsInvoke(t *testing.T) {
 	c := NewParallelComponent(ParallelParam{})
-	ch, err := c.Stream(context.Background(), nil, nil)
+	ctx := t.Context()
+
+	ch, err := c.Stream(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}

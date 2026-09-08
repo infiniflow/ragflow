@@ -1,5 +1,6 @@
 jest.mock('@/constants/agent', () => ({
   Operator: {
+    QueritContents: 'QueritContents',
     QueritSearch: 'QueritSearch',
   },
 }));
@@ -12,6 +13,13 @@ describe('getToolOperatorName', () => {
     'maps the Querit timeline name %p to its operator',
     (toolName) => {
       expect(getToolOperatorName(toolName)).toBe(Operator.QueritSearch);
+    },
+  );
+
+  it.each(['QueritContents', 'querit_contents'])(
+    'maps the Querit Contents timeline name %p to its operator',
+    (toolName) => {
+      expect(getToolOperatorName(toolName)).toBe(Operator.QueritContents);
     },
   );
 

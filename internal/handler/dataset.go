@@ -50,12 +50,6 @@ type searchDatasetService interface {
 	SearchDataset(ctx context.Context, datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error)
 }
 
-type listDatasetsExt struct {
-	Keywords string   `json:"keywords,omitempty"`
-	OwnerIDs []string `json:"owner_ids,omitempty"`
-	ParserID string   `json:"parser_id,omitempty"`
-}
-
 // NewDatasetsHandler creates a new datasets' handler.
 func NewDatasetsHandler(datasetsService *dataset.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
 	h := &DatasetsHandler{
@@ -144,26 +138,54 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		desc = parsed
 	}
 
-	keywords := ""
-	parserID := ""
+	keywords := c.Query("keywords")
+	parserID := c.Query("parser_id")
 	var ownerIDs []string
-
-	// ext keeps the same compatibility payload as the Python REST API.
-	if extStr := c.Query("ext"); extStr != "" {
-		var ext listDatasetsExt
-		if err := json.Unmarshal([]byte(extStr), &ext); err != nil {
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
-			return
+	for _, item := range c.QueryArray("owner_ids") {
+		for _, ownerID := range strings.Split(item, ",") {
+			if ownerID = strings.TrimSpace(ownerID); ownerID != "" {
+				ownerIDs = append(ownerIDs, ownerID)
+			}
 		}
-		keywords = ext.Keywords
-		parserID = ext.ParserID
-		ownerIDs = ext.OwnerIDs
 	}
 
 	// Mirror pydantic: a present-but-empty id fails UUID validation.
 	if rawID, exists := c.GetQuery("id"); exists {
 		if _, err := dataset.NormalizeDatasetID(strings.TrimSpace(rawID)); err != nil {
 			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+			return
+		}
+	}
+
+	// Mirror pydantic's ListDatasetReq.ids: each occurrence is comma-split,
+	// every value must be a valid UUID, and duplicates are rejected.
+	var ids []string
+	if rawIDs, exists := c.Request.URL.Query()["ids"]; exists {
+		seen := make(map[string]int)
+		for _, item := range rawIDs {
+			for _, value := range strings.Split(item, ",") {
+				if value == "" {
+					continue
+				}
+				normalizedID, err := dataset.NormalizeDatasetID(strings.TrimSpace(value))
+				if err != nil {
+					common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+					return
+				}
+				seen[normalizedID]++
+				ids = append(ids, normalizedID)
+			}
+		}
+		duplicates := make([]string, 0, len(ids))
+		reported := make(map[string]bool)
+		for _, normalizedID := range ids {
+			if seen[normalizedID] > 1 && !reported[normalizedID] {
+				reported[normalizedID] = true
+				duplicates = append(duplicates, normalizedID)
+			}
+		}
+		if len(duplicates) > 0 {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Duplicate ids: '%s'", strings.Join(duplicates, ", ")))
 			return
 		}
 	}
@@ -181,6 +203,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		ownerIDs,
 		parserID,
 		user.ID,
+		ids,
 	)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
@@ -202,8 +225,12 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		return
 	}
 
-	bodyBytes, _, ok := parseJSONRequestObject(c)
+	bodyBytes, raw, ok := parseJSONRequestObject(c)
 	if !ok {
+		return
+	}
+	if _, exists := raw["ext"]; exists {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Extra inputs are not permitted: ext")
 		return
 	}
 
@@ -323,12 +350,12 @@ func pythonJSONTypeName(v interface{}) string {
 }
 
 // listDatasetsAllowedParams mirrors the query field set of Python's
-// ListDatasetReq (BaseListReq + include_parsing_status/ext; `type` is handled
+// ListDatasetReq (BaseListReq + dataset filters; `type` is handled
 // before validation in the Python endpoint).
 var listDatasetsAllowedParams = map[string]bool{
-	"id": true, "name": true, "page": true, "page_size": true,
+	"id": true, "ids": true, "name": true, "page": true, "page_size": true,
 	"orderby": true, "desc": true, "include_parsing_status": true,
-	"ext": true, "type": true,
+	"keywords": true, "owner_ids": true, "parser_id": true, "type": true,
 }
 
 // updateDatasetAllowedFields mirrors the field set of Python's UpdateDatasetReq
@@ -336,7 +363,7 @@ var listDatasetsAllowedParams = map[string]bool{
 var updateDatasetAllowedFields = map[string]bool{
 	"name": true, "avatar": true, "description": true, "embedding_model": true,
 	"permission": true, "parse_type": true, "pipeline_id": true, "chunk_method": true,
-	"parser_id": true, "parser_config": true, "auto_metadata_config": true, "ext": true,
+	"parser_id": true, "parser_config": true, "auto_metadata_config": true,
 	"dataset_id": true, "pagerank": true, "language": true, "connectors": true,
 }
 
@@ -385,6 +412,21 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 			if !updateDatasetAllowedFields[field] {
 				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Extra inputs are not permitted: %s", field))
 				return
+			}
+		}
+		if parserConfig, ok := providedFields["parser_config"]; ok {
+			var config map[string]interface{}
+			if json.Unmarshal(parserConfig, &config) == nil {
+				if _, ok := config["ext"]; ok {
+					common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "parser_config.ext is not supported; send parser configuration fields directly")
+					return
+				}
+				if raptor, ok := config["raptor"].(map[string]interface{}); ok {
+					if _, ok := raptor["ext"]; ok {
+						common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "parser_config.raptor.ext is not supported; send RAPTOR configuration fields directly")
+						return
+					}
+				}
 			}
 		}
 	}
@@ -974,114 +1016,28 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
-// RunIndex Run an indexing task (graph/raptor/mindmap) for a dataset.
-func (h *DatasetsHandler) RunIndex(c *gin.Context) {
+// GetCompilationStatus returns the dataset-level knowledge-compile lifecycle
+// state (scheduler contract for API_PROXY_SCHEME=go/hybrid). It replaces the
+// Python-era TraceIndex task-progress endpoint for the Go backend.
+func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
 		return
 	}
-
 	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user_id is required")
-		return
-	}
-
 	ctx := c.Request.Context()
-	indexType := strings.ToLower(strings.TrimSpace(c.Query("type")))
-	data, code, err := h.datasetsService.RunIndex(ctx, userID, datasetID, indexType)
+	st, code, err := h.datasetsService.GetDatasetCompilationStatus(ctx, userID, datasetID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
-
-	common.SuccessWithData(c, data, "success")
-}
-
-// TraceIndex Trace an indexing task (graph/raptor/mindmap) for a dataset.
-func (h *DatasetsHandler) TraceIndex(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user_id is required")
-		return
-	}
-
-	ctx := c.Request.Context()
-
-	indexType := strings.ToLower(strings.TrimSpace(c.Query("type")))
-	result, code, err := h.datasetsService.TraceIndex(ctx, datasetID, userID, indexType)
-	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
-		return
-	}
-	if result == nil {
-		common.SuccessWithData(c, map[string]interface{}{}, "success")
-		return
-	}
-
-	common.SuccessWithData(c, result, "success")
-}
-
-// DeleteIndex Delete an indexing task (graph/raptor/mindmap) for a dataset.
-func (h *DatasetsHandler) DeleteIndex(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user_id is required")
-		return
-	}
-
-	indexType := strings.ToLower(strings.TrimSpace(c.Param("index_type")))
-	if indexType == "" {
-		indexType = strings.ToLower(strings.TrimSpace(c.Query("type")))
-	}
-
-	wipeArg := strings.ToLower(strings.TrimSpace(c.DefaultQuery("wipe", "true")))
-	wipe := true
-	switch wipeArg {
-	case "false", "0", "no", "off":
-		wipe = false
-	}
-
-	ctx := c.Request.Context()
-
-	code, err := h.datasetsService.DeleteIndex(ctx, userID, datasetID, indexType, wipe)
-	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, map[string]interface{}{}, "success")
+	common.SuccessWithData(c, st, "success")
 }
 
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.
@@ -1204,9 +1160,13 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		defaultSize := 30
 		req.Size = &defaultSize
 	}
-	if req.TopK == nil {
+	if req.KNNTopK == nil && req.TopK == nil {
 		defaultTopK := 1024
-		req.TopK = &defaultTopK
+		req.KNNTopK = &defaultTopK
+	}
+	if req.KNNNumCandidates == nil {
+		defaultNumCandidates := 2048
+		req.KNNNumCandidates = &defaultNumCandidates
 	}
 	if req.UseKG == nil {
 		defaultUseKG := false
@@ -1309,22 +1269,40 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
-	return validateSearchParams(req.Page, req.Size, req.TopK, req.SimilarityThreshold, req.VectorSimilarityWeight)
+	return validateSearchParams(req.Page, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
 
 func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
-	return validateSearchParams(req.Page, req.Size, req.TopK, req.SimilarityThreshold, req.VectorSimilarityWeight)
+	return validateSearchParams(req.Page, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
 
-func validateSearchParams(page, size, topK *int, similarityThreshold, vectorSimilarityWeight *float64) error {
+func validateSearchParams(page, size, knnTopK, topK, knnNumCandidates *int, similarityThreshold, vectorSimilarityWeight *float64) error {
 	if page != nil && *page < 1 {
 		return fmt.Errorf("page must be greater than or equal to 1")
 	}
 	if size != nil && *size < 1 {
 		return fmt.Errorf("size must be greater than or equal to 1")
 	}
-	if topK != nil && *topK < 1 {
-		return fmt.Errorf("top_k must be greater than or equal to 1")
+	effectiveKNNTopK := 1024
+	knnTopKName := "knn_top_k"
+	if knnTopK != nil {
+		effectiveKNNTopK = *knnTopK
+	} else if topK != nil {
+		effectiveKNNTopK = *topK
+		knnTopKName = "top_k (alias for knn_top_k)"
+	}
+	if effectiveKNNTopK < 1 || effectiveKNNTopK > 2048 {
+		return fmt.Errorf("%s must be between 1 and 2048", knnTopKName)
+	}
+	effectiveKNNNumCandidates := 2048
+	if knnNumCandidates != nil {
+		effectiveKNNNumCandidates = *knnNumCandidates
+	}
+	if effectiveKNNNumCandidates < 1 || effectiveKNNNumCandidates > 10000 {
+		return fmt.Errorf("knn_num_candidates must be between 1 and 10000")
+	}
+	if effectiveKNNNumCandidates < effectiveKNNTopK {
+		return fmt.Errorf("knn_num_candidates must be greater than or equal to knn_top_k")
 	}
 	if similarityThreshold != nil && (*similarityThreshold < 0 || *similarityThreshold > 1) {
 		return fmt.Errorf("similarity_threshold must be between 0 and 1")

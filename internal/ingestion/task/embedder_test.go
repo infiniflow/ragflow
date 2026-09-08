@@ -77,14 +77,14 @@ type stubDriver struct {
 	capturedTexts []string
 }
 
-func (d *stubDriver) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *models.APIConfig, embeddingConfig *models.EmbeddingConfig, usage *common.ModelUsage) ([]models.EmbeddingData, error) {
-	d.capturedTexts = texts
-	result := make([]models.EmbeddingData, len(texts))
-	for i := range texts {
+func (d *stubDriver) Embed(ctx context.Context, modelName *string, request models.EmbedRequest, apiConfig *models.APIConfig, embeddingConfig *models.EmbeddingConfig, usage *common.ModelUsage) ([]models.EmbeddingData, error) {
+	d.capturedTexts = request.Texts
+	result := make([]models.EmbeddingData, len(request.Texts))
+	for i := range request.Texts {
 		result[i] = models.EmbeddingData{
 			Embedding:  []float64{float64(i), 0.1},
 			Index:      i,
-			TokenCount: len(texts[i]),
+			TokenCount: len(request.Texts[i]),
 		}
 	}
 	return result, nil
@@ -97,7 +97,7 @@ func (d *stubDriver) ChatWithMessages(ctx context.Context, modelName string, mes
 func (d *stubDriver) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []models.Message, apiConfig *models.APIConfig, modelConfig *models.ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
 	return nil
 }
-func (d *stubDriver) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *models.APIConfig, rerankConfig *models.RerankConfig, usage *common.ModelUsage) (*models.RerankResponse, error) {
+func (d *stubDriver) Rerank(ctx context.Context, modelName *string, request models.RerankRequest, apiConfig *models.APIConfig, rerankConfig *models.RerankConfig, usage *common.ModelUsage) (*models.RerankResponse, error) {
 	return nil, nil
 }
 func (d *stubDriver) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *models.APIConfig, asrConfig *models.ASRConfig, usage *common.ModelUsage) (*models.ASRResponse, error) {

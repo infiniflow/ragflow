@@ -8,6 +8,7 @@ import (
 )
 
 func TestProviderEmbeddingAndRerankUsage(t *testing.T) {
+	withSSRFBypass(t)
 	type providerCase struct {
 		name           string
 		newModel       func(string) ModelDriver
@@ -147,7 +148,7 @@ func TestProviderEmbeddingAndRerankUsage(t *testing.T) {
 			model := tc.newModel(server.URL)
 
 			embeddingUsage := &common.ModelUsage{}
-			embeddings, err := model.Embed(t.Context(), &modelName, []string{"document"}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{}, embeddingUsage)
+			embeddings, err := model.Embed(t.Context(), &modelName, EmbedRequest{Texts: []string{"document"}}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{}, embeddingUsage)
 			if err != nil {
 				t.Fatalf("Embed: %v", err)
 			}
@@ -163,7 +164,7 @@ func TestProviderEmbeddingAndRerankUsage(t *testing.T) {
 			}
 
 			rerankUsage := &common.ModelUsage{}
-			reranked, err := model.Rerank(t.Context(), &modelName, "query", []string{"document"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 1}, rerankUsage)
+			reranked, err := model.Rerank(t.Context(), &modelName, RerankRequest{Query: "query", Documents: []string{"document"}}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 1}, rerankUsage)
 			if err != nil {
 				t.Fatalf("Rerank: %v", err)
 			}

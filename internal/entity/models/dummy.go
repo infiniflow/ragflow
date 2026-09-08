@@ -50,30 +50,22 @@ func (d *DummyModel) ChatWithMessages(ctx context.Context, modelName string, mes
 	return nil, fmt.Errorf("not implemented")
 }
 
-// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+// ChatStreamlyWithSender sends messages and streams response via sender function (the best performance, no channel)
 func (d *DummyModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
 
+type EmbedInput struct {
+	Texts []string
+}
+
 // Embed embeds a list of texts into embeddings
-func (d *DummyModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (d *DummyModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
-}
-
-func (d *DummyModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (d *DummyModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
-}
-
-func (d *DummyModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
 }
 
 // Rerank calculates similarity scores between query and documents
-func (d *DummyModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (d *DummyModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", d.Name())
 }
 
@@ -103,6 +95,18 @@ func (d *DummyModel) OCRFile(ctx context.Context, modelName *string, content []b
 // ParseFile parse file
 func (d *DummyModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
+func (d *DummyModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (d *DummyModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("no such method")
+}
+
+func (d *DummyModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	return fmt.Errorf("no such method")
 }
 
 func (d *DummyModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {

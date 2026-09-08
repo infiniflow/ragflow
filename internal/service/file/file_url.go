@@ -46,7 +46,7 @@ func (s *FileService) UploadFromURL(ctx context.Context, tenantID, rawURL string
 		return nil, err
 	}
 	filename, contentType, data = utility.NormalizeUploadInfoContent(filename, contentType, data)
-	return s.storeUploadInfoBlob(storageImpl, tenantID, filename, contentType, data)
+	return s.storeUploadInfoBlob(ctx, storageImpl, tenantID, filename, contentType, data)
 }
 
 func normalizeRemoteUploadFilename(rawURL, contentType string, data []byte) string {

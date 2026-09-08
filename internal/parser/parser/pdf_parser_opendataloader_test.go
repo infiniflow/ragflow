@@ -10,6 +10,7 @@ import (
 )
 
 func TestPDFParser_ParseWithResult_OpenDataLoaderJSONIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
 			http.NotFound(w, r)
@@ -84,6 +85,7 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderJSONIntegration(t *testing.T) {
 }
 
 func TestPDFParser_ParseWithResult_OpenDataLoaderMarkdownFallback(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/file_parse" {
 			http.NotFound(w, r)

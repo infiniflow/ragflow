@@ -17,7 +17,6 @@
 package models
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +25,7 @@ import (
 )
 
 func TestGreenPTListModelsClassifiesSpeech(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -38,7 +38,7 @@ func TestGreenPTListModelsClassifiesSpeech(t *testing.T) {
 
 	driver := NewGreenPTModel(map[string]string{"default": server.URL}, URLSuffix{Models: "v1/models"})
 	key := "test"
-	models, err := driver.ListModels(context.Background(), &APIConfig{ApiKey: &key})
+	models, err := driver.ListModels(t.Context(), &APIConfig{ApiKey: &key})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +69,7 @@ func TestGreenPTListModelsClassifiesSpeech(t *testing.T) {
 }
 
 func TestGreenPTTranscribeAudio(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/listen" || r.URL.Query().Get("model") != "green-s" {
 			t.Errorf("unexpected request URL: %s", r.URL.String())
@@ -105,7 +106,7 @@ func TestGreenPTTranscribeAudio(t *testing.T) {
 
 	driver := NewGreenPTModel(map[string]string{"default": server.URL}, URLSuffix{ASR: "v1/listen"})
 	key, model, path := "test-key", "green-s", audio.Name()
-	response, err := driver.TranscribeAudio(context.Background(), &model, &path, &APIConfig{ApiKey: &key}, nil, nil)
+	response, err := driver.TranscribeAudio(t.Context(), &model, &path, &APIConfig{ApiKey: &key}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

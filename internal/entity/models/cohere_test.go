@@ -18,6 +18,7 @@ func newCohereForTest(baseURL string) *CoHereModel {
 }
 
 func TestCohereChatAllowsToolCallOnlyResponse(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v2/chat" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -70,6 +71,7 @@ func TestCohereChatAllowsToolCallOnlyResponse(t *testing.T) {
 }
 
 func TestCohereStreamRecordsDeltaUsage(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v2/chat" {
 			t.Errorf("path=%s", r.URL.Path)

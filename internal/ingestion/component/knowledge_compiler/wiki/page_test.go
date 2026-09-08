@@ -202,12 +202,33 @@ func TestTransformWikiLinks(t *testing.T) {
 		"See [[concept/beta|Beta]] and [[entity/alpha]]. Also [Beta](artifact/kb/concept/beta).",
 		"kb",
 		map[string]string{"entity/alpha": "Alpha", "concept/beta": "Beta"},
+		map[string]string{"entity/alpha": "entity", "concept/beta": "concept"},
 	)
 	if !strings.Contains(rendered, "(artifact/kb/concept/beta)") || !strings.Contains(rendered, "(artifact/kb/entity/alpha)") {
 		t.Fatalf("rendered links not rewritten: %q", rendered)
 	}
 	if len(outlinks) != 2 {
 		t.Fatalf("outlinks = %#v, want 2 unique slugs", outlinks)
+	}
+}
+
+func TestTransformWikiLinksBareSlugGetsPageType(t *testing.T) {
+	// A bare wikilink (no page_type prefix) resolves its page_type from the
+	// plan map so the rendered link is clickable by the frontend parser.
+	rendered, outlinks := transformWikiLinks(
+		"See [[董卓]] and [[刘备|Liu Bei]].",
+		"kb",
+		map[string]string{"董卓": "董卓", "刘备": "刘备"},
+		map[string]string{"董卓": "entity", "刘备": "entity"},
+	)
+	if !strings.Contains(rendered, "(artifact/kb/entity/董卓)") {
+		t.Fatalf("bare slug link missing page_type: %q", rendered)
+	}
+	if !strings.Contains(rendered, "(artifact/kb/entity/刘备)") {
+		t.Fatalf("bare slug link missing page_type: %q", rendered)
+	}
+	if len(outlinks) != 2 {
+		t.Fatalf("outlinks = %#v, want 2", outlinks)
 	}
 }
 

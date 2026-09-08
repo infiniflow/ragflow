@@ -102,11 +102,12 @@ func TestSSH_PrivateKeyInline(t *testing.T) {
 }
 
 func TestSSH_Initialize_MissingHost(t *testing.T) {
+	ctx := t.Context()
 	t.Setenv("SSH_HOST", "")
 	t.Setenv("SSH_USERNAME", "u")
 	t.Setenv("SSH_PASSWORD", "p")
 	p := newSSHProviderFromEnv()
-	if err := p.Initialize(context.Background()); err == nil {
+	if err := p.Initialize(ctx); err == nil {
 		t.Errorf("Initialize with empty host: got nil error, want one")
 	} else if !strings.Contains(err.Error(), "SSH_HOST") {
 		t.Errorf("err = %v, want to mention SSH_HOST", err)
@@ -114,23 +115,25 @@ func TestSSH_Initialize_MissingHost(t *testing.T) {
 }
 
 func TestSSH_Initialize_MissingUsername(t *testing.T) {
+	ctx := t.Context()
 	t.Setenv("SSH_HOST", "h")
 	t.Setenv("SSH_USERNAME", "")
 	t.Setenv("SSH_PASSWORD", "p")
 	p := newSSHProviderFromEnv()
-	if err := p.Initialize(context.Background()); err == nil {
+	if err := p.Initialize(ctx); err == nil {
 		t.Errorf("Initialize with empty username: got nil error, want one")
 	}
 }
 
 func TestSSH_Initialize_MissingAuth(t *testing.T) {
+	ctx := t.Context()
 	t.Setenv("SSH_HOST", "h")
 	t.Setenv("SSH_USERNAME", "u")
 	t.Setenv("SSH_PASSWORD", "")
 	t.Setenv("SSH_PRIVATE_KEY", "")
 	t.Setenv("SSH_PRIVATE_KEY_PATH", "")
 	p := newSSHProviderFromEnv()
-	if err := p.Initialize(context.Background()); err == nil {
+	if err := p.Initialize(ctx); err == nil {
 		t.Errorf("Initialize with no auth: got nil error, want one")
 	} else if !strings.Contains(err.Error(), "SSH_PASSWORD") {
 		t.Errorf("err = %v, want to mention SSH_PASSWORD", err)
@@ -139,31 +142,33 @@ func TestSSH_Initialize_MissingAuth(t *testing.T) {
 
 func TestSSH_AllOps_BeforeInit(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 	p := &SSHProvider{}
 	inst := &SandboxInstance{InstanceID: "x", Provider: ProviderSSH}
-	if _, err := p.CreateInstance(context.Background(), "python"); err == nil {
+	if _, err := p.CreateInstance(ctx, "python"); err == nil {
 		t.Errorf("CreateInstance before init: got nil error, want one")
 	}
-	if _, err := p.ExecuteCode(context.Background(), inst, "x", "python", 5, nil); err == nil {
+	if _, err := p.ExecuteCode(ctx, inst, "x", "python", 5, nil); err == nil {
 		t.Errorf("ExecuteCode before init: got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), inst); err == nil {
+	if err := p.DestroyInstance(ctx, inst); err == nil {
 		t.Errorf("DestroyInstance before init: got nil error, want one")
 	}
-	if err := p.HealthCheck(context.Background()); err == nil {
+	if err := p.HealthCheck(ctx); err == nil {
 		t.Errorf("HealthCheck before init: got nil error, want one")
 	}
 }
 
 func TestSSH_CreateInstance_RejectsBadLanguage(t *testing.T) {
+	ctx := t.Context()
 	t.Setenv("SSH_HOST", "h")
 	t.Setenv("SSH_USERNAME", "u")
 	t.Setenv("SSH_PASSWORD", "p")
 	p := newSSHProviderFromEnv()
-	if err := p.Initialize(context.Background()); err != nil {
+	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	if _, err := p.CreateInstance(context.Background(), "ruby"); err == nil {
+	if _, err := p.CreateInstance(ctx, "ruby"); err == nil {
 		t.Errorf("CreateInstance(ruby): got nil error, want one")
 	}
 }
@@ -172,6 +177,7 @@ func TestSSH_CreateInstance_RejectsBadLanguage(t *testing.T) {
 // a clear error when the host is unreachable. We bind then close
 // an ephemeral listener to obtain a guaranteed-closed port.
 func TestSSH_Dial_ConnectionRefused(t *testing.T) {
+	ctx := t.Context()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen for ephemeral port: %v", err)
@@ -185,22 +191,23 @@ func TestSSH_Dial_ConnectionRefused(t *testing.T) {
 	t.Setenv("SSH_PASSWORD", "p")
 	t.Setenv("SSH_TIMEOUT", "2")
 	p := newSSHProviderFromEnv()
-	if err := p.Initialize(context.Background()); err != nil {
+	if err = p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	newCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if _, err := p.dial(ctx); err == nil {
+	if _, err = p.dial(newCtx); err == nil {
 		t.Errorf("dial: got nil error, want one")
 	}
 }
 
 func TestSSH_ExecuteCode_RejectsBadInputs(t *testing.T) {
+	ctx := t.Context()
 	t.Setenv("SSH_HOST", "h")
 	t.Setenv("SSH_USERNAME", "u")
 	t.Setenv("SSH_PASSWORD", "p")
 	p := newSSHProviderFromEnv()
-	if err := p.Initialize(context.Background()); err != nil {
+	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -212,7 +219,7 @@ func TestSSH_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "empty instance id",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: ""}, "x", "python", 5, nil)
 				return err
 			},
@@ -221,7 +228,7 @@ func TestSSH_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "unsupported language",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "x"}, "x", "ruby", 5, nil)
 				return err
 			},
@@ -230,7 +237,7 @@ func TestSSH_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "unknown instance id",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(ctx,
 					&SandboxInstance{InstanceID: "nope"}, "x", "python", 5, nil)
 				return err
 			},

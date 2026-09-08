@@ -1,5 +1,6 @@
 import { CircleX } from 'lucide-react';
 import { useCallback, type MouseEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { IconFontFill } from '@/components/icon-font';
 import { GenerateType } from '@/constants/knowledge';
@@ -8,6 +9,7 @@ import {
   useDatasetGenerate,
   useGenerateStatus,
 } from '@/hooks/use-dataset-generate';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { cn } from '@/lib/utils';
 import { toFixed } from '@/utils/common-util';
 
@@ -20,8 +22,10 @@ export function UpdateRunProgress({
   data,
   generateType,
 }: UpdateRunProgressProps) {
+  const { t } = useTranslation();
   const { pauseGenerate } = useDatasetGenerate();
   const { status, percent } = useGenerateStatus(data);
+  const isGo = useIsGoBackend();
 
   const handlePause = useCallback(
     (e: MouseEvent) => {
@@ -32,6 +36,40 @@ export function UpdateRunProgress({
     },
     [pauseGenerate, data?.id, generateType],
   );
+
+  // Go: no scheduler task-level cancel, and no stable terminal state, so
+  // show the MySQL inflight/backlog entry counts instead of a percentage and no
+  // pause button. Error diagnostic takes priority (see plan v4.1 §4.2).
+  if (isGo && status === 'running') {
+    return (
+      <span className="flex items-center gap-2 text-sm text-text-secondary">
+        <span className="size-2 rounded-full bg-accent-primary" />
+        {data?.compilationError
+          ? data.compilationError
+          : data?.currentPhase ||
+            t('knowledgeCompilation.compiling', {
+              defaultValue: 'Compiling…',
+            })}
+        {!data?.compilationError && (
+          <span>
+            {t('knowledgeCompilation.compilingCounts', {
+              inflight: data?.inflight ?? 0,
+              backlog: data?.backlog ?? 0,
+              defaultValue: '{{inflight}} processing / {{backlog}} queued',
+            })}
+          </span>
+        )}
+      </span>
+    );
+  }
+  if (isGo && status === 'failed') {
+    return (
+      <span className="flex items-center gap-2 text-sm text-state-error">
+        <IconFontFill name="reparse" className="text-accent-primary" />
+        {data?.compilationError || t('message.operated')}
+      </span>
+    );
+  }
 
   return (
     <span className="flex items-center gap-2">

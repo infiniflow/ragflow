@@ -408,6 +408,8 @@ func (p *Parser) parseAdminShowCommands() (*Command, error) {
 		return p.parseAdminShowCurrent()
 	case TokenFingerprint:
 		return p.parseAdminShowFingerprint()
+	case TokenSoft:
+		return p.parseAdminShowSoftFingerprint()
 	case TokenLicense:
 		return p.parseAdminShowLicense()
 	case TokenProvider:
@@ -435,13 +437,13 @@ func (p *Parser) parseAdminShowCommands() (*Command, error) {
 
 func (p *Parser) parseAdminShowService() (*Command, error) {
 	p.nextToken() // consume SERVICE
-	serviceIndex, err := p.parseNumber()
+	serviceName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
 	cmd := NewCommand("admin_show_service")
-	cmd.Params["service_index"] = serviceIndex
+	cmd.Params["service_name"] = serviceName
 
 	p.nextToken()
 	// Semicolon is optional
@@ -734,6 +736,23 @@ func (p *Parser) parseAdminShowFingerprint() (*Command, error) {
 	}
 
 	return NewCommand("admin_show_fingerprint"), nil
+}
+
+// SHOW SOFT FINGERPRINT;
+func (p *Parser) parseAdminShowSoftFingerprint() (*Command, error) {
+	p.nextToken() // consume SOFT
+
+	if p.curToken.Type != TokenFingerprint {
+		return nil, fmt.Errorf("expected FINGERPRINT")
+	}
+	p.nextToken()
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return NewCommand("admin_show_soft_fingerprint"), nil
 }
 
 // SHOW LICENSE;
@@ -1836,6 +1855,8 @@ func (p *Parser) parseAdminSetCommand() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenLicense:
 		return p.parseAdminSetLicense()
+	case TokenSoft:
+		return p.parseAdminSetSoftFingerprint()
 	case TokenVar:
 		return p.parseAdminSetVariable()
 	case TokenRole:
@@ -1877,6 +1898,30 @@ func (p *Parser) parseAdminSetLicense() (*Command, error) {
 
 	cmd := NewCommand("admin_set_license")
 	cmd.Params["license"] = license
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminSetSoftFingerprint() (*Command, error) {
+	p.nextToken() // consume SOFT
+
+	if p.curToken.Type != TokenFingerprint {
+		return nil, fmt.Errorf("expected FINGERPRINT")
+	}
+	p.nextToken()
+
+	softFingerprint, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_set_soft_fingerprint")
+	cmd.Params["soft_fingerprint"] = softFingerprint
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -2097,13 +2142,13 @@ func (p *Parser) parseAdminStartService() (*Command, error) {
 	}
 	p.nextToken()
 
-	serviceIndex, err := p.parseNumber()
+	serviceName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
 	cmd := NewCommand("admin_start_service")
-	cmd.Params["service_index"] = serviceIndex
+	cmd.Params["service_name"] = serviceName
 
 	p.nextToken()
 	// Semicolon is optional
@@ -2129,13 +2174,13 @@ func (p *Parser) parseAdminShutdownCommands() (*Command, error) {
 func (p *Parser) parseAdminShutdownService() (*Command, error) {
 	p.nextToken() // consume SERVICE
 
-	serviceIndex, err := p.parseNumber()
+	serviceName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
 	cmd := NewCommand("admin_shutdown_service")
-	cmd.Params["service_index"] = serviceIndex
+	cmd.Params["service_name"] = serviceName
 
 	p.nextToken()
 	// Semicolon is optional
@@ -2171,13 +2216,13 @@ func (p *Parser) parseAdminRestart() (*Command, error) {
 	}
 	p.nextToken()
 
-	serviceIndex, err := p.parseNumber()
+	serviceName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
 	cmd := NewCommand("admin_restart_service")
-	cmd.Params["service_index"] = serviceIndex
+	cmd.Params["service_name"] = serviceName
 
 	p.nextToken()
 	// Semicolon is optional
@@ -2280,6 +2325,8 @@ func (p *Parser) parseAdminDeleteCommands() (*Command, error) {
 		return p.parseAPIDeleteAdminServer()
 	case TokenProvider:
 		return p.parseAdminDeleteProvider()
+	case TokenSoft:
+		return p.parseAdminDeleteSoftFingerprint()
 	default:
 		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
@@ -2356,6 +2403,25 @@ func (p *Parser) parseAdminDeleteModel(providerName, instanceName string) (*Comm
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
+}
+
+// syntax: delete soft fingerprint;
+func (p *Parser) parseAdminDeleteSoftFingerprint() (*Command, error) {
+	p.nextToken() // consume SOFT
+
+	if p.curToken.Type != TokenFingerprint {
+		return nil, fmt.Errorf("expected FINGERPRINT after SOFT")
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_delete_soft_fingerprint")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
 	return cmd, nil
 }
 

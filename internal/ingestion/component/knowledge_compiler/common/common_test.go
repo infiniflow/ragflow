@@ -1,8 +1,26 @@
 package common
 
 import (
+	"context"
 	"testing"
 )
+
+type captureChat struct{ req ChatRequest }
+
+func (c *captureChat) Chat(_ context.Context, req ChatRequest) (*ChatResponse, error) {
+	c.req = req
+	return &ChatResponse{Content: `{"ok":true}`}, nil
+}
+
+func TestGenJSONDisablesInvokerRetry(t *testing.T) {
+	chat := &captureChat{}
+	if _, err := GenJSON(context.Background(), chat, ChatRequest{UserPrompt: "test"}, 0); err != nil {
+		t.Fatalf("GenJSON: %v", err)
+	}
+	if !chat.req.DisableRetry {
+		t.Fatal("GenJSON must disable retries in the underlying ChatInvoker")
+	}
+}
 
 func vec(a, b, c float32) []float32 { return []float32{a, b, c} }
 

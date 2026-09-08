@@ -79,58 +79,64 @@ func (m *OpenAIAPICompatibleModel) ListModels(ctx context.Context, apiConfig *AP
 	return filtered, nil
 }
 
-// Hint keywords for model type inference, matching Python's
-// OpenAIAPICompatible class-level hint constants.
-var (
-	embeddingHints = []string{"embed", "embedding", "bge"}
-	rerankHints    = []string{"rerank", "reranker"}
-	asrHints       = []string{"asr", "stt", "transcribe", "transcriber", "whisper"}
-	ttsHints       = []string{"tts", "text-to-speech"}
-	visionHints    = []string{
-		"vl", "vision", "llava", "internvl", "minicpm-v",
-		"gpt-4o", "glm-4v", "qvq", "qwen-vl", "pixtral",
+// ChatWithMessages sends multiple messages with roles and returns response
+func (m *OpenAIAPICompatibleModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	ocrHints = []string{"ocr"}
-)
 
-// containsHint checks whether modelName (lowercased) contains any of the
-// given hint substrings.
-func containsHint(modelName string, hints []string) bool {
-	for _, hint := range hints {
-		if strings.Contains(modelName, hint) {
-			return true
-		}
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
 	}
-	return false
+
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
+
+	// Build request body
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	applyVllmCompatibleThinking(reqBody, modelName, chatModelConfig)
+
+	body, err := m.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
-// InferModelTypes derives RAGFlow LLM model types from the model name using
-// keyword heuristics, covering all seven supported types: chat, embedding,
-// rerank, asr, tts, ocr, and vision (always combined with chat).
-func InferModelTypes(modelName string) []string {
-	lower := strings.ToLower(modelName)
-
-	if containsHint(lower, rerankHints) {
-		return []string{"rerank"}
-	}
-	if containsHint(lower, embeddingHints) {
-		return []string{"embedding"}
-	}
-	if containsHint(lower, asrHints) {
-		return []string{"asr"}
-	}
-	if containsHint(lower, ttsHints) {
-		return []string{"tts"}
-	}
-	if containsHint(lower, ocrHints) {
-		return []string{"ocr"}
+// ChatStreamlyWithSender sends messages and streams response via sender function
+func (m *OpenAIAPICompatibleModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
-	types := []string{"chat"}
-	if containsHint(lower, visionHints) {
-		types = append(types, "vision")
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
 	}
-	return types
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
+
+	// Build request body with streaming enabled
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{
+		"include_usage": true,
+	}
+
+	applyVllmCompatibleThinking(reqBody, modelName, chatModelConfig)
+
+	return m.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 // ttsVoiceForModel maps model names to appropriate TTS voices for
@@ -326,7 +332,7 @@ func (m *OpenAIAPICompatibleModel) TranscribeAudio(ctx context.Context, modelNam
 	var result struct {
 		Text string `json:"text"`
 	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
+	if err = json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w, body=%s", err, string(respBody))
 	}
 

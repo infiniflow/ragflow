@@ -20,7 +20,7 @@ import re
 
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
 from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, attach_media_context
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, attach_media_context, DEFAULT_DELIMITER
 from deepdoc.parser import PdfParser
 import numpy as np
 from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
@@ -137,7 +137,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     Only pdf is supported.
     The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
     """
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
         tenant_id = kwargs.get("tenant_id")
@@ -180,12 +180,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             paper = {"title": filename, "authors": " ", "abstract": "", "sections": sections, "tables": tables}
 
         tbls = paper["tables"]
-        tbls = vision_figure_parser_pdf_wrapper(
-            tbls=tbls,
-            sections=sections,
-            callback=callback,
-            **kwargs,
-        )
+        if name != "mineru":
+            tbls = vision_figure_parser_pdf_wrapper(
+                tbls=tbls,
+                sections=sections,
+                callback=callback,
+                lang=lang,
+                **kwargs,
+            )
         paper["tables"] = tbls
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")

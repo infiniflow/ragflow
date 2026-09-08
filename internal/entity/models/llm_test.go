@@ -16,7 +16,7 @@ func TestEinoChatModelStreamFiltersDoneSentinel(t *testing.T) {
 	base := NewChatModel(driver, &modelName, &APIConfig{})
 	model := NewEinoChatModel(base, &ChatConfig{})
 
-	stream, err := model.Stream(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	stream, err := model.Stream(t.Context(), []*schema.Message{schema.UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestEinoChatModelGenerateSendsBoundTools(t *testing.T) {
 			Name: "search_my_dateset",
 			Desc: "Search datasets.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"query": &schema.ParameterInfo{Type: schema.String, Required: true},
+				"query": {Type: schema.String, Required: true},
 			}),
 		},
 	})
@@ -72,7 +72,7 @@ func TestEinoChatModelGenerateSendsBoundTools(t *testing.T) {
 		t.Fatalf("WithTools: %v", err)
 	}
 
-	msg, err := bound.Generate(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	msg, err := bound.Generate(t.Context(), []*schema.Message{schema.UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestEinoChatModelStreamWithToolsYieldsToolCalls(t *testing.T) {
 			Name: "search_my_dateset",
 			Desc: "Search datasets.",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"query": &schema.ParameterInfo{Type: schema.String, Required: true},
+				"query": {Type: schema.String, Required: true},
 			}),
 		},
 	})
@@ -130,7 +130,7 @@ func TestEinoChatModelStreamWithToolsYieldsToolCalls(t *testing.T) {
 		t.Fatalf("WithTools: %v", err)
 	}
 
-	stream, err := bound.Stream(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+	stream, err := bound.Stream(t.Context(), []*schema.Message{schema.UserMessage("hello")})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestEinoChatModelStreamWithToolsStreamsFinalAnswer(t *testing.T) {
 		t.Fatalf("WithTools: %v", err)
 	}
 
-	stream, err := bound.Stream(context.Background(), []*schema.Message{
+	stream, err := bound.Stream(t.Context(), []*schema.Message{
 		schema.UserMessage("hello"),
 		{
 			Role:       schema.Tool,
@@ -264,10 +264,10 @@ func (d *captureToolDriver) ChatStreamlyWithSender(ctx context.Context, _ string
 	}
 	return nil
 }
-func (d *captureToolDriver) Embed(ctx context.Context, _ *string, _ []string, _ *APIConfig, _ *EmbeddingConfig, _ *common.ModelUsage) ([]EmbeddingData, error) {
+func (d *captureToolDriver) Embed(ctx context.Context, _ *string, _ EmbedRequest, _ *APIConfig, _ *EmbeddingConfig, _ *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, nil
 }
-func (d *captureToolDriver) Rerank(ctx context.Context, _ *string, _ string, _ []string, _ *APIConfig, _ *RerankConfig, _ *common.ModelUsage) (*RerankResponse, error) {
+func (d *captureToolDriver) Rerank(ctx context.Context, _ *string, _ RerankRequest, _ *APIConfig, _ *RerankConfig, _ *common.ModelUsage) (*RerankResponse, error) {
 	return nil, nil
 }
 func (d *captureToolDriver) TranscribeAudio(ctx context.Context, _ *string, _ *string, _ *APIConfig, _ *ASRConfig, _ *common.ModelUsage) (*ASRResponse, error) {
@@ -300,4 +300,96 @@ func (d *captureToolDriver) ListTasks(ctx context.Context, _ *APIConfig) ([]List
 }
 func (d *captureToolDriver) ShowTask(ctx context.Context, _ string, _ *APIConfig) (*TaskResponse, error) {
 	return nil, nil
+}
+
+// TestToInternalMessagesConvertsMultiModalContent guards the eino→driver
+// boundary: UserInputMultiContent must become OpenAI-style content blocks
+// ([]interface{} of {type:text} / {type:image_url}) on Message.Content,
+// otherwise image parts produced by the component layer are silently
+// dropped before the request reaches any driver.
+func TestToInternalMessagesConvertsMultiModalContent(t *testing.T) {
+	uri := "data:image/png;base64,iVBORw0KGgo="
+	internal := toInternalMessages([]*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "describe the image"},
+				{Type: schema.ChatMessagePartTypeImageURL,
+					Image: &schema.MessageInputImage{
+						MessagePartCommon: schema.MessagePartCommon{URL: &uri},
+					}},
+			},
+		},
+	})
+	if len(internal) != 1 {
+		t.Fatalf("len(internal) = %d, want 1", len(internal))
+	}
+	blocks, ok := internal[0].Content.([]interface{})
+	if !ok {
+		t.Fatalf("Content type = %T, want []interface{} content blocks", internal[0].Content)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("len(blocks) = %d, want 2", len(blocks))
+	}
+	textBlock, ok := blocks[0].(map[string]interface{})
+	if !ok || textBlock["type"] != "text" || textBlock["text"] != "describe the image" {
+		t.Fatalf("text block = %#v, want {type:text, text:describe the image}", blocks[0])
+	}
+	imageBlock, ok := blocks[1].(map[string]interface{})
+	if !ok || imageBlock["type"] != "image_url" {
+		t.Fatalf("image block = %#v, want type image_url", blocks[1])
+	}
+	imageURL, ok := imageBlock["image_url"].(map[string]interface{})
+	if !ok || imageURL["url"] != uri {
+		t.Fatalf("image_url = %#v, want url %q", imageBlock["image_url"], uri)
+	}
+}
+
+// TestToInternalMessagesReassemblesBase64Image: parts that carry Base64Data
+// instead of a URL are reassembled into a data URI.
+func TestToInternalMessagesReassemblesBase64Image(t *testing.T) {
+	b64 := "aGVsbG8="
+	internal := toInternalMessages([]*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeImageURL,
+					Image: &schema.MessageInputImage{
+						MessagePartCommon: schema.MessagePartCommon{
+							Base64Data: &b64,
+							MIMEType:   "image/jpeg",
+						},
+					}},
+			},
+		},
+	})
+	blocks, ok := internal[0].Content.([]interface{})
+	if !ok || len(blocks) != 1 {
+		t.Fatalf("Content = %#v, want one content block", internal[0].Content)
+	}
+	imageBlock, ok := blocks[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("block = %#v, want map", blocks[0])
+	}
+	imageURL, ok := imageBlock["image_url"].(map[string]interface{})
+	if !ok || imageURL["url"] != "data:image/jpeg;base64,aGVsbG8=" {
+		t.Fatalf("image_url = %#v, want reassembled data URI", imageBlock["image_url"])
+	}
+}
+
+// TestToInternalMessagesUnsupportedPartsFallBackToString: when every part is
+// of an unsupported type, Content stays the plain string.
+func TestToInternalMessagesUnsupportedPartsFallBackToString(t *testing.T) {
+	internal := toInternalMessages([]*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "plain",
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeAudioURL},
+			},
+		},
+	})
+	if content, ok := internal[0].Content.(string); !ok || content != "plain" {
+		t.Fatalf("Content = %#v, want string %q", internal[0].Content, "plain")
+	}
 }

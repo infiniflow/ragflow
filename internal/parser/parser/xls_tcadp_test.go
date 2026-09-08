@@ -7,6 +7,7 @@ import (
 )
 
 func TestXLSXParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	zipPayload := tcadpZipFixture(t)
 	var server *httptest.Server
@@ -45,6 +46,7 @@ func TestXLSXParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 }
 
 func TestXLSParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	zipPayload := tcadpZipFixture(t)
 	var server *httptest.Server
@@ -80,6 +82,7 @@ func TestXLSParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 }
 
 func TestCSVParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	zipPayload := tcadpZipFixture(t)
 	var server *httptest.Server
@@ -112,6 +115,7 @@ func TestCSVParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 }
 
 func TestXLSXParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	zipPayload := tcadpZipFixture(t)
 	var server *httptest.Server

@@ -38,6 +38,16 @@ func ExtractAllComponentParams(dslJSON []byte) ([]ComponentParamsSchema, error) 
 		return nil, fmt.Errorf("ExtractAllComponentParams: DSL has no components")
 	}
 
+	extractorCount := 0
+	for cpnID, comp := range dsl.Components {
+		if isExtractorComponent(cpnID, comp.Obj.ComponentName) {
+			extractorCount++
+		}
+	}
+	if extractorCount > 1 {
+		return nil, fmt.Errorf("ExtractAllComponentParams: at most 1 Extractor component is allowed, found %d", extractorCount)
+	}
+
 	out := make([]ComponentParamsSchema, 0, len(dsl.Components))
 	for cpnID, comp := range dsl.Components {
 		params := make(map[string]any, len(comp.Obj.Params))

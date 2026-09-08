@@ -10,6 +10,7 @@ import (
 )
 
 func TestPDFParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	zipPayload := tcadpZipFixture(t)
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +48,7 @@ func TestPDFParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 }
 
 func TestPDFParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	zipPayload := tcadpZipFixture(t)
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

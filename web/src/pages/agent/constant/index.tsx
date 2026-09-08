@@ -87,14 +87,11 @@ export enum RetrievalFrom {
 export const initialRetrievalValues = {
   query: AgentGlobalsSysQueryWithBrace,
   top_n: 8,
-  top_k: 1024,
-  kb_ids: [],
+  rerank_candidates_count: 64,
+  dataset_ids: [],
   rerank_id: '',
-  empty_response: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
-  use_kg: false,
-  toc_enhance: false,
   cross_languages: [],
   retrieval_from: RetrievalFrom.Dataset,
   outputs: {
@@ -197,6 +194,31 @@ export enum KeenableMode {
   Pro = 'pro',
   Realtime = 'realtime',
 }
+
+export enum YouComFreshness {
+  Any = 'any',
+  Day = 'day',
+  Week = 'week',
+  Month = 'month',
+  Year = 'year',
+}
+
+export const initialYouComValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  freshness: YouComFreshness.Any,
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
 
 export const initialKeenableValues = {
   api_key: '',
@@ -451,6 +473,7 @@ export const initialEmailValues = {
 
 export const initialIterationValues = {
   items_ref: '',
+  max_concurrency: 0,
   outputs: {},
 };
 
@@ -493,6 +516,7 @@ export const initialAgentValues = {
   exception_default_value: '',
   tools: [],
   mcp: [],
+  tool_timeout: 10,
   cite: true,
   showStructuredOutput: false,
   outputs: {
@@ -587,6 +611,26 @@ export const initialQueritValues = {
       value: '',
       type: 'string',
     },
+    json: {
+      value: {},
+      type: 'object',
+    },
+  },
+};
+
+export enum QueritContentFormat {
+  Text = 'text',
+  Markdown = 'markdown',
+  Html = 'html',
+}
+
+export const initialQueritContentsValues = {
+  api_key: '',
+  urls: '',
+  format: QueritContentFormat.Markdown,
+  crawl_timeout: 10,
+  extras_meta: false,
+  outputs: {
     json: {
       value: {},
       type: 'object',
@@ -730,6 +774,7 @@ export const RestrictedUpstreamMap = {
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
   [Operator.SearXNG]: [Operator.Begin, Operator.Retrieval],
   [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.YouComSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -744,6 +789,7 @@ export const RestrictedUpstreamMap = {
   [Operator.WaitingDialogue]: [Operator.Begin],
   [Operator.Agent]: [Operator.Begin],
   [Operator.TavilySearch]: [Operator.Begin],
+  [Operator.QueritContents]: [Operator.Begin],
   [Operator.QueritSearch]: [Operator.Begin],
   [Operator.TavilyExtract]: [Operator.Begin],
   [Operator.StringTransform]: [Operator.Begin],
@@ -785,6 +831,7 @@ export const NodeMap = {
   [Operator.GitHub]: 'ragNode',
   [Operator.SearXNG]: 'ragNode',
   [Operator.KeenableSearch]: 'ragNode',
+  [Operator.YouComSearch]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',
@@ -800,6 +847,7 @@ export const NodeMap = {
   [Operator.Agent]: 'agentNode',
   [Operator.Tool]: 'toolNode',
   [Operator.TavilySearch]: 'ragNode',
+  [Operator.QueritContents]: 'ragNode',
   [Operator.QueritSearch]: 'ragNode',
   [Operator.UserFillUp]: 'ragNode',
   [Operator.StringTransform]: 'ragNode',

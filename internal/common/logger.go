@@ -48,6 +48,7 @@ var (
 // applied by callers (see resolveCompress) so that "not set" can be distinguished
 // from "explicitly false" via the *bool LogConfig.Compress field.
 type FileOutput struct {
+	Filename   string
 	Path       string
 	MaxSize    int
 	MaxBackups int
@@ -87,7 +88,7 @@ func logLevelName(level zapcore.Level) string {
 	return strings.ToUpper(level.String())
 }
 
-// Init initializes the global logger. stdout is always written. If file.Path
+// InitLogger initializes the global logger. stdout is always written. If file.Path
 // is non-empty, a rotated file is also written via lumberjack.
 //
 // Callers should pass a non-empty Path so that file logging is preserved
@@ -96,7 +97,7 @@ func logLevelName(level zapcore.Level) string {
 //
 // Numeric fields (MaxSize, MaxBackups, MaxAge) are defaulted to 100/10/30
 // when zero. Compress is taken as supplied.
-func Init(level string, file FileOutput, serviceName string) error {
+func InitLogger(level string, file FileOutput, serviceName string) error {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		zapLevel = zapcore.InfoLevel
@@ -139,17 +140,15 @@ func Init(level string, file FileOutput, serviceName string) error {
 	}
 
 	syncers := []zapcore.WriteSyncer{zapcore.AddSync(os.Stdout)}
-	if file.Path != "" {
-		ljLogger := &lumberjack.Logger{
-			Filename:   filepath.Join("logs", file.Path),
-			MaxSize:    maxSize,
-			MaxBackups: maxBackups,
-			MaxAge:     maxAge,
-			Compress:   file.Compress,
-			LocalTime:  true,
-		}
-		syncers = append(syncers, zapcore.AddSync(ljLogger))
+	ljLogger := &lumberjack.Logger{
+		Filename:   filepath.Join(file.Path, file.Filename),
+		MaxSize:    maxSize,
+		MaxBackups: maxBackups,
+		MaxAge:     maxAge,
+		Compress:   file.Compress,
+		LocalTime:  true,
 	}
+	syncers = append(syncers, zapcore.AddSync(ljLogger))
 
 	core := zapcore.NewCore(
 		zapcore.NewConsoleEncoder(encoderConfig),
@@ -158,9 +157,15 @@ func Init(level string, file FileOutput, serviceName string) error {
 	)
 
 	if serviceName != "" {
-		Logger = zap.New(core, zap.AddCallerSkip(1)).Named(serviceName)
+		Logger = zap.New(core,
+			zap.Fields(zap.Int("pid", os.Getpid())),
+			zap.AddCallerSkip(1),
+		).Named(serviceName)
 	} else {
-		Logger = zap.New(core, zap.AddCallerSkip(1))
+		Logger = zap.New(core,
+			zap.Fields(zap.Int("pid", os.Getpid())),
+			zap.AddCallerSkip(1),
+		)
 	}
 	Sugar = Logger.Sugar()
 
@@ -232,13 +237,6 @@ func SetLogLevel(level string) error {
 	}
 	atomicLevel.SetLevel(zapLevel)
 	return nil
-}
-
-func ResolveCompress(c *bool) bool {
-	if c == nil {
-		return true
-	}
-	return *c
 }
 
 // GinLogger returns a gin middleware that emits one log line per request

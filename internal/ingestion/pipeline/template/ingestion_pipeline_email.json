@@ -83,7 +83,7 @@
                     "params": {
                         "children_delimiters": [],
                         "chunk_token_size": 512,
-                        "delimiter_mode": "token_size",
+                        "delimiter_mode": "delimiter",
                         "delimiters": [
                             "\n",
                             "!",
@@ -130,19 +130,25 @@
                 "obj": {
                     "component_name": "Extractor",
                     "params": {
-                        "field_name": "",
-                        "outputs": {
-                            "chunks": {
-                                "type": "Array<Object>",
-                                "value": []
-                            }
-                        },
-                        "auto_keywords": 0,
-                        "auto_questions": 0,
                         "llm_id": "",
-                        "auto_tags": 0,
-                        "enable_metadata": 0,
-                        "metadata": []
+                        "keywords": {
+                            "top_n": 0
+                        },
+                        "questions": {
+                            "top_n": 0
+                        },
+                        "tags": {
+                            "top_n": 0,
+                            "tag_file_id": ""
+                        },
+                        "summary": {
+                            "enabled": false
+                        },
+                        "metadata": {
+                            "enabled": false,
+                            "metadata": [],
+                            "built_in_metadata": []
+                        }
                     }
                 }
             }
@@ -242,7 +248,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_email_0"
+                        "name": "Parser_email"
                     },
                     "dragging": false,
                     "id": "Parser:BirdsFlutterHigh",
@@ -264,7 +270,7 @@
                         "form": {
                             "children_delimiters": [],
                             "chunk_token_size": 512,
-                            "delimiter_mode": "token_size",
+                            "delimiter_mode": "delimiter",
                             "delimiters": [
                                 {
                                     "value": "\n"
@@ -292,7 +298,7 @@
                             "overlapped_percent": 0
                         },
                         "label": "TokenChunker",
-                        "name": "Token Chunker_email_0"
+                        "name": "Token Chunker_email"
                     },
                     "id": "TokenChunker:WarmBreadSmells",
                     "measured": {
@@ -320,7 +326,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_email_0"
+                        "name": "Indexer_email"
                     },
                     "id": "Tokenizer:NiceWordsSpoken",
                     "measured": {
@@ -344,7 +350,7 @@
                     },
                     "data": {
                         "label": "Extractor",
-                        "name": "Extractor_0"
+                        "name": "Extractor"
                     }
                 }
             ]

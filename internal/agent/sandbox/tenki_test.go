@@ -105,13 +105,13 @@ func TestTenkiProvider_AllOps_BeforeInit(t *testing.T) {
 	// Do NOT call Initialize.
 
 	inst := &SandboxInstance{InstanceID: "x", Provider: ProviderTenki}
-	if _, err := p.CreateInstance(context.Background(), "python"); err == nil {
+	if _, err := p.CreateInstance(t.Context(), "python"); err == nil {
 		t.Errorf("CreateInstance before init: got nil error, want one")
 	}
-	if _, err := p.ExecuteCode(context.Background(), inst, "x", "python", 5, nil); err == nil {
+	if _, err := p.ExecuteCode(t.Context(), inst, "x", "python", 5, nil); err == nil {
 		t.Errorf("ExecuteCode before init: got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), inst); err == nil {
+	if err := p.DestroyInstance(t.Context(), inst); err == nil {
 		t.Errorf("DestroyInstance before init: got nil error, want one")
 	}
 	if err := p.HealthCheck(context.Background()); err == nil {
@@ -134,7 +134,7 @@ func TestTenkiProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "empty instance id",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(t.Context(),
 					&SandboxInstance{InstanceID: ""}, "x", "python", 5, nil)
 				return err
 			},
@@ -143,7 +143,7 @@ func TestTenkiProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "nil instance",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(t.Context(),
 					nil, "x", "python", 5, nil)
 				return err
 			},
@@ -152,7 +152,7 @@ func TestTenkiProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "unsupported language",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(t.Context(),
 					&SandboxInstance{InstanceID: "x"}, "x", "ruby", 5, nil)
 				return err
 			},
@@ -161,7 +161,7 @@ func TestTenkiProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "timeout too small",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(t.Context(),
 					&SandboxInstance{InstanceID: "x"}, "x", "python", 0, nil)
 				return err
 			},
@@ -170,7 +170,7 @@ func TestTenkiProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 		{
 			name: "timeout too large",
 			fn: func() error {
-				_, err := p.ExecuteCode(context.Background(),
+				_, err := p.ExecuteCode(t.Context(),
 					&SandboxInstance{InstanceID: "x"}, "x", "python", 1000, nil)
 				return err
 			},
@@ -194,7 +194,7 @@ func TestTenkiProvider_CreateInstance_UnsupportedLanguage(t *testing.T) {
 	t.Parallel()
 	p := newTenkiProviderFromEnv()
 	p.initialized = true
-	if _, err := p.CreateInstance(context.Background(), "ruby"); err == nil {
+	if _, err := p.CreateInstance(t.Context(), "ruby"); err == nil {
 		t.Errorf("CreateInstance(ruby): got nil error, want one")
 	}
 }
@@ -203,10 +203,10 @@ func TestTenkiProvider_DestroyInstance_EmptyID(t *testing.T) {
 	t.Parallel()
 	p := newTenkiProviderFromEnv()
 	p.initialized = true
-	if err := p.DestroyInstance(context.Background(), &SandboxInstance{InstanceID: ""}); err == nil {
+	if err := p.DestroyInstance(t.Context(), &SandboxInstance{InstanceID: ""}); err == nil {
 		t.Errorf("DestroyInstance(empty id): got nil error, want one")
 	}
-	if err := p.DestroyInstance(context.Background(), nil); err == nil {
+	if err := p.DestroyInstance(t.Context(), nil); err == nil {
 		t.Errorf("DestroyInstance(nil): got nil error, want one")
 	}
 }
@@ -242,12 +242,12 @@ func TestTenkiProvider_BuildTenkiExecutionResult(t *testing.T) {
 // always runs (so missing-secrets shows up in CI logs). When enabled,
 // it creates a real sandbox, runs Python, and destroys it.
 func TestTenkiProvider_FullE2E_SkipWithoutKey(t *testing.T) {
-	apiKey := common.GetEnv(common.EnvTenkiApiKey)
+	apiKey := common.GetEnv(common.EnvTenkiAPIKey)
 	if apiKey == "" {
 		t.Skip("TENKI_API_KEY not set — skipping full E2E test (real network call)")
 	}
 	p := newTenkiProviderFromEnv()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
 	if err := p.Initialize(ctx); err != nil {
 		t.Fatalf("Initialize: %v", err)
@@ -257,7 +257,7 @@ func TestTenkiProvider_FullE2E_SkipWithoutKey(t *testing.T) {
 		t.Fatalf("CreateInstance: %v", err)
 	}
 	defer func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		cleanupCtx, cleanupCancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cleanupCancel()
 		if err := p.DestroyInstance(cleanupCtx, inst); err != nil {
 			t.Errorf("DestroyInstance: %v", err)

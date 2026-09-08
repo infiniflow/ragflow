@@ -38,6 +38,9 @@
 //	export OPENAI_MODEL=...
 //	rtk go test ./internal/agent/component/ -count=1 \
 //	  -run TestStagehandRuntime_Extract -v -timeout 3m
+
+//go:build integration
+
 package component
 
 import (
@@ -84,7 +87,7 @@ import (
 // against https://www.bbc.com/news/world — returns a non-empty
 // summary string in ~10s.
 func TestStagehandRuntime_Extract(t *testing.T) {
-	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
+	apiKey := common.GetEnv(common.EnvOpenAIAPIKey)
 	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
 	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {
@@ -126,7 +129,7 @@ func TestStagehandRuntime_Extract(t *testing.T) {
 		Schema:      schema,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
 
 	t.Logf("starting stagehand RunExtract (timeout 3m); spawns subprocess, calls LLM once with schema=%s",
@@ -187,7 +190,7 @@ func cacheDirGuess() string {
 //
 // Skipped unless OPENAI_* env vars are configured.
 func TestBrowser_E2E_Extract(t *testing.T) {
-	apiKey := common.GetEnv(common.EnvOpenAIApiKey)
+	apiKey := common.GetEnv(common.EnvOpenAIAPIKey)
 	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
 	model := common.GetEnv(common.EnvOpenAIModel)
 	if apiKey == "" || baseURL == "" || model == "" {
@@ -237,7 +240,7 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 		t.Fatalf("NewBrowserComponent: %v", err)
 	}
 
-	ctx := canvas.WithState(context.Background(), canvas.NewCanvasState("run-1", "task-1"))
+	ctx := canvas.WithState(t.Context(), canvas.NewCanvasState("run-1", "task-1"))
 	state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	state.Sys["user_id"] = "tenant-1"
 

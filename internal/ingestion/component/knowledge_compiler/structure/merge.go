@@ -6,8 +6,23 @@ import (
 	"strings"
 	"sync"
 
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/tokenizer"
+
+	"go.uber.org/zap"
 )
+
+// maxWindowUsage is the fraction of the model's limits a single
+// DecideBatch sub-call may consume — applied both to the combined
+// (input+output) budget (fraction of content_length) and to the output budget
+// (fraction of max_output). The reply is an array of per-pair
+// {"duplicated","merged"} objects, and each merged object is roughly the size of
+// the longer of the two inputs, so the batch is split so the summed estimate
+// stays under this cap. 0.2 is deliberately conservative (smaller than the
+// default 0.6) so each sub-call stays well inside the window and generation cap
+// even for models with tight limits, at the cost of more, smaller sub-calls.
+const maxWindowUsage = 0.2
 
 // Merge prompts, verbatim from Python structure.py. The merge is driven by
 // the user-supplied prompts; the decision instruction lets us branch on the
@@ -29,6 +44,19 @@ const mergeDecisionInstruction = `First decide whether Item A and Item B refer t
 
 Return ONLY a JSON object with this exact structure (no markdown fences, no commentary):
 {
+  "duplicated": <true | false>,
+  "merged": <merged JSON object using the same keys as the inputs when duplicated=true; otherwise null>
+}`
+
+// batchMergeDecisionInstruction mirrors mergeDecisionInstruction but for many
+// pairs at once: the model judges every pair in a single round-trip and returns
+// an array (wrapped under "pairs") so the consumer can fold an entire batch of
+// (existing, incoming) groups without one LLM call per pair.
+const batchMergeDecisionInstruction = `You are judging several (Item A, Item B) pairs at once. For each pair decide whether they refer to the same logical entity (for entities) or the same logical relation (for relations), and merge them only if they are the same.
+
+Return ONLY a JSON object with exactly one key "pairs", whose value is a JSON array with one element per pair, in the same order as listed. Each element MUST have this exact structure (no markdown fences, no commentary):
+{
+  "index": <the integer pair number from the input>,
   "duplicated": <true | false>,
   "merged": <merged JSON object using the same keys as the inputs when duplicated=true; otherwise null>
 }`
@@ -80,6 +108,26 @@ type LLMMergeDecider struct {
 	Embed     common.Embedder
 	Threshold float64
 
+	// maxBatchTotal caps the estimated combined size (prompt input + JSON reply)
+	// of a single DecideBatch sub-call. It guards the model's context window
+	// (content_length): a chunk starts a fresh one when adding a pair would push
+	// (input+output) past modelContentLength*maxWindowUsage. When 0 the
+	// whole batch is sent in one call (historic behavior).
+	maxBatchTotal int
+	// maxBatchOutput caps the estimated reply (output) size of a single
+	// DecideBatch sub-call. It guards the model's generation cap (max_output):
+	// each merged reply is roughly the size of the longer of the two inputs in a
+	// pair, so the batch is also split so the sum of per-pair output estimates
+	// stays within modelMaxOutput*maxWindowUsage. A sub-call must satisfy
+	// BOTH this cap and maxBatchTotal.
+	maxBatchOutput int
+
+	// submit runs LLM sub-batches off the shared knowledge-compilation pool.
+	// When nil each sub-batch runs inline (sequentially). It is injected by the
+	// knowledge_compile package so every stage shares one process-wide,
+	// vCPU-sized concurrency bound.
+	submit func(ctx context.Context, jobs []func() error) error
+
 	mu      sync.Mutex
 	aliases map[string]string
 }
@@ -87,6 +135,47 @@ type LLMMergeDecider struct {
 // NewLLMMergeDecider constructs the decider used by the structure variant.
 func NewLLMMergeDecider(chat common.ChatInvoker, llmID string, embed common.Embedder, threshold float64) *LLMMergeDecider {
 	return &LLMMergeDecider{Chat: chat, LLMID: llmID, Embed: embed, Threshold: threshold, aliases: map[string]string{}}
+}
+
+// SetMaxBatchTokens sets the two token budgets that bound a single DecideBatch
+// sub-call, derived from the model's two limits:
+//   - modelContentLength: the model's context window (content_length); the
+//     effective combined budget is modelContentLength*maxWindowUsage, i.e.
+//     a sub-call may not exceed that many tokens of (prompt input + JSON reply).
+//   - modelMaxOutput: the model's generation cap (max_output); the effective
+//     reply budget is modelMaxOutput*maxWindowUsage.
+//
+// modelContentLength <= 0 disables both budgets (historic whole-batch behavior);
+// modelMaxOutput <= 0 falls back to combined-budget-only batching. splitByTokens
+// then keeps every sub-call inside BOTH the combined budget and the output
+// budget, so a large candidate set can never overflow the window nor the
+// generation cap.
+func (d *LLMMergeDecider) SetMaxBatchTokens(modelContentLength, modelMaxOutput int) {
+	d.maxBatchOutput = 0
+	if modelContentLength <= 0 {
+		d.maxBatchTotal = 0
+		return
+	}
+	totalBudget := int(float64(modelContentLength) * maxWindowUsage)
+	if totalBudget <= 0 {
+		d.maxBatchTotal = 0
+		return
+	}
+	d.maxBatchTotal = totalBudget
+	if modelMaxOutput > 0 {
+		outputBudget := int(float64(modelMaxOutput) * maxWindowUsage)
+		if outputBudget > 0 {
+			d.maxBatchOutput = outputBudget
+		}
+	}
+}
+
+// SetSubmitter injects the shared knowledge-compilation pool so DecideBatch can
+// run its token-bounded sub-batches concurrently. A nil submitter (the default)
+// falls back to running sub-batches sequentially. The submitter must enqueue
+// all jobs on a bounded pool, wait for them, and return the first error.
+func (d *LLMMergeDecider) SetSubmitter(submit func(ctx context.Context, jobs []func() error) error) {
+	d.submit = submit
 }
 
 // Decide implements MergeDecider.
@@ -101,7 +190,19 @@ func (d *LLMMergeDecider) Decide(ctx context.Context, existing, incoming common.
 	if merged == nil {
 		return DecisionKeepBoth, common.Product{}, nil
 	}
+	replacement, err := d.BuildReplacement(ctx, existing, incoming, merged)
+	if err != nil {
+		return DecisionKeepBoth, common.Product{}, err
+	}
+	return DecisionMerge, replacement, nil
+}
 
+// buildReplacement folds an LLM-merged payload back into a replacement Product
+// for the existing row: aliases are recorded (entities), merge invariants are
+// applied (relations), provenance is unioned, and the payload is re-embedded.
+// Shared by Decide (single pair) and the batched judge so both paths produce
+// identical merged rows.
+func (d *LLMMergeDecider) BuildReplacement(ctx context.Context, existing, incoming common.Product, merged map[string]any) (common.Product, error) {
 	kind, _ := existing.Meta["kind"].(string)
 	if kind == "entity" {
 		oldName := entityNameValue(existing)
@@ -122,10 +223,10 @@ func (d *LLMMergeDecider) Decide(ctx context.Context, existing, incoming common.
 	texts := []string{payloadDescription(merged)}
 	vecs, err := d.Embed.Encode(ctx, texts)
 	if err != nil {
-		return DecisionKeepBoth, common.Product{}, err
+		return common.Product{}, err
 	}
 	if len(vecs) == 0 {
-		return DecisionKeepBoth, common.Product{}, fmt.Errorf("knowledge_compiler: re-embed of merged payload returned no vector")
+		return common.Product{}, fmt.Errorf("knowledge_compiler: re-embed of merged payload returned no vector")
 	}
 
 	meta := map[string]any{}
@@ -134,7 +235,7 @@ func (d *LLMMergeDecider) Decide(ctx context.Context, existing, incoming common.
 	}
 	meta["source_chunk_ids"] = chunkIDs
 	refreshMetaFromPayload(meta, kind, merged)
-	replacement := common.Product{
+	return common.Product{
 		ID:       existing.ID,
 		DocID:    existing.DocID,
 		TenantID: existing.TenantID,
@@ -142,8 +243,205 @@ func (d *LLMMergeDecider) Decide(ctx context.Context, existing, incoming common.
 		Content:  payloadJSON(merged),
 		Vector:   vecs[0],
 		Meta:     meta,
+	}, nil
+}
+
+// MergePairInput is one (existing, incoming) pair fed to the batched judge.
+type MergePairInput struct {
+	Index    int
+	Existing string
+	Incoming string
+}
+
+// BatchMergeResult is the judge's verdict for one pair.
+type BatchMergeResult struct {
+	Index      int
+	Duplicated bool
+	Merged     map[string]any
+}
+
+// DecideBatch judges every pair and returns the verdicts in input order. It is
+// the batched counterpart of Decide's single-pair judge. Besides deciding each
+// duplicate pair it also performs the actual merge: for a pair the LLM judges as
+// duplicated, mergePairsBatch has the model emit the combined payload (merged),
+// which the caller re-embeds and persists in place of the existing row. When a
+// token budget is configured it splits the pairs into sub-batches bounded by
+// BOTH the model's combined (input+output) budget and its output cap, each
+// sub-batch still judged in a single LLM call (preserving pair order), so a
+// large candidate set can never overflow the context window nor the generation
+// cap.
+func (d *LLMMergeDecider) DecideBatch(ctx context.Context, pairs []MergePairInput) ([]BatchMergeResult, error) {
+	if len(pairs) == 0 {
+		return nil, nil
 	}
-	return DecisionMerge, replacement, nil
+	if d.maxBatchTotal <= 0 && d.maxBatchOutput <= 0 {
+		return mergePairsBatch(ctx, d.Chat, d.LLMID, pairs)
+	}
+	chunks := splitByTokens(pairs, d.maxBatchTotal, d.maxBatchOutput)
+	// The merge decisions are LLM-bounded, not CPU-bounded: run the token-bounded
+	// sub-batches concurrently on the injected shared pool (vCPU-sized) when more
+	// than one chunk exists. Order is preserved by writing each chunk's verdicts
+	// into its own slot (the model echoes the global pair index, so callers still
+	// key by input index regardless of execution order).
+	if len(chunks) == 1 || d.submit == nil {
+		out := make([]BatchMergeResult, 0, len(pairs))
+		for _, chunk := range chunks {
+			sub, err := mergePairsBatch(ctx, d.Chat, d.LLMID, chunk)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, sub...)
+		}
+		return out, nil
+	}
+	results := make([][]BatchMergeResult, len(chunks))
+	jobs := make([]func() error, 0, len(chunks))
+	for i, chunk := range chunks {
+		i, chunk := i, chunk
+		jobs = append(jobs, func() error {
+			sub, err := mergePairsBatch(ctx, d.Chat, d.LLMID, chunk)
+			if err != nil {
+				return err
+			}
+			results[i] = sub
+			return nil
+		})
+	}
+	// Submit the complete batch in one call. The shared pool owns fan-out and
+	// bounded concurrency; the caller only waits for the pool's futures.
+	if err := d.submit(ctx, jobs); err != nil {
+		return nil, err
+	}
+	out := make([]BatchMergeResult, 0, len(pairs))
+	for _, sub := range results {
+		out = append(out, sub...)
+	}
+	return out, nil
+}
+
+// splitByTokens groups pairs into contiguous chunks bounded by BOTH the model's
+// combined budget (prompt input + JSON reply, guarding content_length) and its
+// output budget (guarding max_output). The prompt size of a pair is roughly
+// existing+incoming; the merged reply for a pair is roughly the longer of the
+// two inputs (the merge emits the union of both objects). So a chunk starts a
+// fresh one when adding a pair would push either the combined (input+output)
+// estimate past totalBudget or the output estimate past outputBudget — keeping
+// every sub-call inside the context window AND the generation cap. The original
+// (global) Index of every pair is preserved — the model echoes it back — so
+// callers can still key verdicts by the input index. A single pair that alone
+// exceeds either budget is sent on its own (the model may still truncate, but we
+// never silently drop it).
+func splitByTokens(pairs []MergePairInput, totalBudget, outputBudget int) [][]MergePairInput {
+	var chunks [][]MergePairInput
+	cur := make([]MergePairInput, 0, len(pairs))
+	usedTotal := 0
+	usedOutput := 0
+	flush := func(usedTotal, usedOutput int) {
+		// Diagnostic: expose each chunk's realized budget utilization so the
+		// split can be tuned. usedTotal = Σ(input+output) and usedOutput = Σ
+		// (longer input) of the chunk's pairs; both must stay ≤ their budget for
+		// the sub-call to fit the model. "final" marks the last chunk flushed.
+		appcommon.Info("knowledge_compiler: merge batch split flush",
+			zap.Int("pairs", len(cur)),
+			zap.Int("total_budget", totalBudget),
+			zap.Int("output_budget", outputBudget),
+			zap.Int("used_total", usedTotal),
+			zap.Int("used_output", usedOutput))
+	}
+	appcommon.Info("knowledge_compiler: merge batch split start",
+		zap.Int("pairs", len(pairs)),
+		zap.Int("total_budget", totalBudget),
+		zap.Int("output_budget", outputBudget))
+	for _, p := range pairs {
+		// The pair contents dominate the prompt size; the "Pair N:" wrappers
+		// are a negligible constant overhead per pair, ignored here. Each input
+		// is tokenized once and reused for both the prompt and the output
+		// estimate.
+		estExisting := tokenizer.NumTokensFromString(p.Existing)
+		estIncoming := tokenizer.NumTokensFromString(p.Incoming)
+		estPrompt := estExisting + estIncoming
+		// The merged reply for a pair is at most the size of its longer input
+		// (we keep all existing fields and union in the incoming ones).
+		estOutput := estExisting
+		if estIncoming > estOutput {
+			estOutput = estIncoming
+		}
+		overOutput := outputBudget > 0 && usedOutput+estOutput > outputBudget
+		overTotal := totalBudget > 0 && usedTotal+estPrompt+estOutput > totalBudget
+		if len(cur) > 0 && (overOutput || overTotal) {
+			flush(usedTotal, usedOutput)
+			chunks = append(chunks, cur)
+			// Fresh backing array: cur[:0] shares the buffer with the chunk we
+			// just appended, so the next iteration would overwrite it.
+			cur = make([]MergePairInput, 0, len(pairs))
+			usedTotal = 0
+			usedOutput = 0
+		}
+		cur = append(cur, p)
+		usedTotal += estPrompt + estOutput
+		usedOutput += estOutput
+	}
+	if len(cur) > 0 {
+		flush(usedTotal, usedOutput)
+		chunks = append(chunks, cur)
+	}
+	return chunks
+}
+
+// mergePairsBatch mirrors mergePair but judges every pair in one LLM call and
+// returns the verdicts in input order. Pairs whose inputs are unparseable or
+// whose verdict is missing are reported as not-duplicated (mirrors the
+// per-pair skip behavior: Python logs and keeps both).
+func mergePairsBatch(ctx context.Context, chat common.ChatInvoker, llmID string, pairs []MergePairInput) ([]BatchMergeResult, error) {
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+	var b strings.Builder
+	for _, p := range pairs {
+		b.WriteString(fmt.Sprintf("Pair %d:\nItem A (existing):\n%s\n\nItem B (incoming):\n%s\n\n", p.Index, p.Existing, p.Incoming))
+	}
+	res, err := common.GenJSON(ctx, chat, common.ChatRequest{
+		LLMID:        llmID,
+		SystemPrompt: mergeSystemPrompt + "\n\n" + batchMergeDecisionInstruction,
+		UserPrompt:   b.String(),
+		Temperature:  &mergeJudgeTemperature,
+	})
+	if err != nil {
+		return nil, err
+	}
+	arr, ok := res["pairs"].([]any)
+	if !ok {
+		// Model returned no array: treat every pair as not duplicated rather
+		// than failing the whole batch.
+		out := make([]BatchMergeResult, len(pairs))
+		for i, p := range pairs {
+			out[i] = BatchMergeResult{Index: p.Index}
+		}
+		return out, nil
+	}
+	byIndex := make(map[int]BatchMergeResult, len(arr))
+	for _, el := range arr {
+		obj, ok := el.(map[string]any)
+		if !ok {
+			continue
+		}
+		idx, _ := obj["index"].(float64)
+		dup, _ := obj["duplicated"].(bool)
+		var merged map[string]any
+		if m, ok := obj["merged"].(map[string]any); ok {
+			merged = m
+		}
+		byIndex[int(idx)] = BatchMergeResult{Index: int(idx), Duplicated: dup, Merged: merged}
+	}
+	out := make([]BatchMergeResult, len(pairs))
+	for i, p := range pairs {
+		if r, ok := byIndex[p.Index]; ok {
+			out[i] = r
+		} else {
+			out[i] = BatchMergeResult{Index: p.Index}
+		}
+	}
+	return out, nil
 }
 
 // recordAlias adds one alias→canonical mapping (thread-safe).

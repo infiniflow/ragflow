@@ -25,7 +25,7 @@ import (
 )
 
 // dropIndex deletes an index
-func (e *elasticsearchEngine) dropIndex(ctx context.Context, indexName string) error {
+func (e *Engine) dropIndex(ctx context.Context, indexName string) error {
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
@@ -65,7 +65,7 @@ func (e *elasticsearchEngine) dropIndex(ctx context.Context, indexName string) e
 }
 
 // indexExists checks if index exists
-func (e *elasticsearchEngine) indexExists(ctx context.Context, indexName string) (bool, error) {
+func (e *Engine) indexExists(ctx context.Context, indexName string) (bool, error) {
 	if indexName == "" {
 		return false, fmt.Errorf("index name cannot be empty")
 	}

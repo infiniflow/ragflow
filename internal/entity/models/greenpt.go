@@ -67,6 +67,88 @@ func (m *GreenPTModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 	return models, nil
 }
 
+// ChatWithMessages sends multiple messages with roles and returns response
+func (m *GreenPTModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
+	}
+
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
+
+	// Build request body
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+		if *chatModelConfig.Thinking {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "enabled",
+			}
+		} else {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "disabled",
+			}
+		}
+	}
+
+	body, err := m.baseModel.doRequest(ctx, baseURL, apiConfig, reqBody, nonStreamCallTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+}
+
+// ChatStreamlyWithSender sends messages and streams response via sender function
+func (m *GreenPTModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
+	if chatModelConfig != nil {
+		chatModelConfig.ToolCallsResult = nil
+		chatModelConfig.UsageResult = nil
+	}
+
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
+
+	// Build request body with streaming enabled
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{
+		"include_usage": true,
+	}
+
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+		if *chatModelConfig.Thinking {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "enabled",
+			}
+		} else {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "disabled",
+			}
+		}
+	}
+
+	return m.baseModel.doStreamRequest(ctx, baseURL, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
+}
+
 // TranscribeAudio calls GreenPT's Deepgram-compatible /v1/listen endpoint.
 func (m *GreenPTModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {

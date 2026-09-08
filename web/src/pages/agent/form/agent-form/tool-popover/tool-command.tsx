@@ -12,7 +12,6 @@ import { Operator } from '@/pages/agent/constant';
 import OperatorIcon from '@/components/operator-icon';
 import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
-import { LucidePlus } from 'lucide-react';
 import { PropsWithChildren, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGetNodeTools, useUpdateAgentNodeTools } from './use-update-tools';
@@ -23,6 +22,7 @@ const Menus = [
     list: [
       Operator.TavilySearch,
       Operator.TavilyExtract,
+      Operator.QueritContents,
       Operator.QueritSearch,
       Operator.Google,
       // Operator.Bing,
@@ -30,6 +30,7 @@ const Menus = [
       Operator.Wikipedia,
       Operator.SearXNG,
       Operator.KeenableSearch,
+      Operator.YouComSearch,
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.BGPT,
@@ -71,13 +72,7 @@ function ToolCommandItem({
 }: ToolCommandItemProps & PropsWithChildren) {
   return (
     <CommandItem className="cursor-pointer" onSelect={() => toggleOption(id)}>
-      {id === Operator.Retrieval ? (
-        <span>
-          <LucidePlus className="size-4" />
-        </span>
-      ) : (
-        <Checkbox checked={isSelected} />
-      )}
+      <Checkbox checked={isSelected} />
       {children}
     </CommandItem>
   );

@@ -11,6 +11,7 @@ import (
 )
 
 func TestPDFParser_ParseWithResult_MinerUMarkdownIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	var submitCalled atomic.Bool
 	var resultCalled atomic.Bool
 
@@ -100,6 +101,7 @@ func TestPDFParser_ParseWithResult_MinerUMarkdownIntegration(t *testing.T) {
 }
 
 func TestPDFParser_ParseWithResult_MinerUJSONIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/file_parse":

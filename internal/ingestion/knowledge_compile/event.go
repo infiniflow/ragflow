@@ -54,7 +54,6 @@ type KCCompileEvent struct {
 	DatasetID string `json:"dataset_id"` // the KB scope
 	DocID     string `json:"doc_id"`     // the contributing document
 	EventType string `json:"event_type"` // EventType value
-	Seq       uint64 `json:"seq"`        // per-doc monotonic sequence, for out-of-order correction
 	Timestamp int64  `json:"ts"`
 }
 
@@ -78,38 +77,49 @@ func ParseEvent(data []byte) (KCCompileEvent, error) {
 	return e, nil
 }
 
-// defaultScheduler is the package-level Scheduler used by the publishing path
+// defaultPublisher is the package-level Publisher used by the publishing path
 // (PublishCompleted / PublishDeleted). It is installed by Provision (called
 // once by the owning Ingestor at startup). Until then, publishing is a no-op.
-var defaultScheduler Scheduler
+var defaultPublisher Publisher
 
-// SetScheduler installs the package-level Scheduler used for publishing.
-func SetScheduler(s Scheduler) { defaultScheduler = s }
+// defaultClaimer is the package-level Claimer handed to the consumer workers.
+// It is the same underlying instance as defaultPublisher (a *mysqlScheduler
+// satisfies both roles), set together by SetScheduler.
+var defaultClaimer Claimer
 
-// DefaultScheduler returns the package-level Scheduler (nil until Provision).
-func DefaultScheduler() Scheduler { return defaultScheduler }
-
-// PublishCompleted records a doc_completed event: it appends the doc to the
-// KB's durable MySQL backlog and wakes idle workers over NATS. It is a no-op
-// when no Scheduler has been installed (e.g. DB unavailable). A failure is
-// returned so callers can log but never fail the pipeline on it.
-func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string, seq uint64) error {
-	if defaultScheduler == nil {
-		return nil
+// SetScheduler installs the package-level Publisher and Claimer used for
+// publishing and consuming. The same *mysqlScheduler satisfies both interfaces.
+func SetScheduler(s Publisher) {
+	defaultPublisher = s
+	if c, ok := s.(Claimer); ok {
+		defaultClaimer = c
 	}
-	if err := defaultScheduler.AppendBacklog(ctx, tenantID, datasetID, docID, string(EventTypeCompleted), seq); err != nil {
-		return err
-	}
-	return defaultScheduler.Notify(ctx, datasetID)
 }
 
-// PublishDeleted records a doc_deleted event the same way (append + notify).
-func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string, seq uint64) error {
-	if defaultScheduler == nil {
+// DefaultPublisher returns the package-level Publisher used by the producer path.
+func DefaultPublisher() Publisher { return defaultPublisher }
+
+// DefaultClaimer returns the package-level Claimer used by consumer workers.
+func DefaultClaimer() Claimer { return defaultClaimer }
+
+// PublishCompleted records a doc_completed event: it appends the doc to the
+// KB's durable MySQL backlog and wakes idle workers over NATS. variants carries
+// the doc-level compile types (tree/structure/wiki/mindmap) produced by this
+// doc so the consumer can dispatch to the matching dataset-level path. It is a
+// no-op when no Publisher has been installed (e.g. DB unavailable). A failure is
+// returned so callers can log but never fail the pipeline on it.
+func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string, variants []string) error {
+	if defaultPublisher == nil {
 		return nil
 	}
-	if err := defaultScheduler.AppendBacklog(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), seq); err != nil {
-		return err
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeCompleted), variants)
+}
+
+// PublishDeleted records a doc_deleted event the same way (Publish handles the
+// append + notify pairing). Deleted events carry no compile types.
+func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string) error {
+	if defaultPublisher == nil {
+		return nil
 	}
-	return defaultScheduler.Notify(ctx, datasetID)
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), nil)
 }

@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -39,21 +40,70 @@ func TestIsValidMCPServerType(t *testing.T) {
 	}
 }
 
+func TestUpdateMCPServerRejectsDuplicatedName(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pushServiceDB(t, testDB)
+
+	const tenantID = "tenant-1"
+	for _, srv := range []*entity.MCPServer{
+		{ID: "mcp-1", Name: "alpha", TenantID: tenantID, URL: "http://example.com/sse", ServerType: mcpServerTypeSSE},
+		{ID: "mcp-2", Name: "beta", TenantID: tenantID, URL: "http://example.com/sse", ServerType: mcpServerTypeSSE},
+	} {
+		if err := testDB.Create(srv).Error; err != nil {
+			t.Fatalf("create mcp server: %v", err)
+		}
+	}
+
+	s := NewMCPService()
+	ctx := t.Context()
+
+	nameReq := func(name string) UpdateMCPServerRequest {
+		raw, err := json.Marshal(name)
+		if err != nil {
+			t.Fatalf("marshal name: %v", err)
+		}
+		return UpdateMCPServerRequest{"name": raw}
+	}
+
+	// Renaming to an existing server name of the same tenant is rejected.
+	if _, code, err := s.UpdateMCPServer(ctx, tenantID, "mcp-1", nameReq("beta")); err == nil || code != common.CodeDataError {
+		t.Errorf("expected duplicated name data error, got code=%v err=%v", code, err)
+	}
+
+	// Keeping the current name is allowed.
+	if _, code, err := s.UpdateMCPServer(ctx, tenantID, "mcp-1", nameReq("alpha")); err != nil || code != common.CodeSuccess {
+		t.Errorf("expected success keeping current name, got code=%v err=%v", code, err)
+	}
+
+	// Renaming to a fresh name is allowed.
+	updated, code, err := s.UpdateMCPServer(ctx, tenantID, "mcp-1", nameReq("gamma"))
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("expected success renaming to fresh name, got code=%v err=%v", code, err)
+	}
+	if updated.Name != "gamma" {
+		t.Errorf("expected renamed server name %q, got %q", "gamma", updated.Name)
+	}
+}
+
 func TestServerInputValidation(t *testing.T) {
 	s := &MCPService{}
+	ctx := t.Context()
 
 	// Empty URL is rejected before any connection attempt.
-	if _, err := s.TestServer("id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer(ctx, "id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for empty url, got %v", err)
 	}
 
 	// nil body is treated as empty URL.
-	if _, err := s.TestServer("id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer(ctx, "id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for nil body, got %v", err)
 	}
 
 	// Invalid server type is rejected before connecting.
-	if _, err := s.TestServer("id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
+	if _, err := s.TestServer(ctx, "id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
 		t.Errorf("expected ErrMCPInvalidType for bad type, got %v", err)
 	}
 }

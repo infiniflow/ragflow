@@ -20,8 +20,6 @@ import (
 	"errors"
 	"fmt"
 
-	"go.uber.org/zap"
-
 	"ragflow/internal/common"
 )
 
@@ -137,8 +135,6 @@ type FusionExpr struct {
 
 // LogSearchRequest logs SearchRequest in debug mode
 func LogSearchRequest(engineName string, req *SearchRequest) {
-	common.Info(fmt.Sprintf("Search in %s started", engineName), zap.Any("indexNames", req.IndexNames))
-
 	if !common.IsDebugEnabled() {
 		return
 	}

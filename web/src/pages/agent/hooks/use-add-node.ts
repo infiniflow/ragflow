@@ -1,4 +1,5 @@
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
+import { pickByBackend } from '@/utils/backend-variant';
 import { Connection, Node, Position, ReactFlowInstance } from '@xyflow/react';
 import humanId from 'human-id';
 import { t } from 'i18next';
@@ -23,7 +24,7 @@ import {
   initialDuckValues,
   initialEmailValues,
   initialExeSqlValues,
-  initialExtractorValues,
+  getInitialExtractorValues,
   initialGithubValues,
   initialGoogleScholarValues,
   initialGoogleValues,
@@ -31,6 +32,7 @@ import {
   initialIterationStartValues,
   initialIterationValues,
   initialKeenableValues,
+  initialYouComValues,
   initialListOperationsValues,
   initialLoopValues,
   initialMessageValues,
@@ -38,6 +40,7 @@ import {
   initialParserValues,
   initialPubMedValues,
   initialBGPTValues,
+  initialQueritContentsValues,
   initialQueritValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
@@ -57,6 +60,7 @@ import {
   initialWikipediaValues,
   initialYahooFinanceValues,
 } from '../constant';
+import { withDefaultParserModels } from '../form/parser-form/utils';
 import useGraphStore from '../store';
 import {
   generateNodeNamesWithIncreasingIndex,
@@ -168,24 +172,37 @@ export const useInitializeOperatorParams = () => {
       [Operator.Agent]: { ...initialAgentValues, llm_id: llmId },
       [Operator.Tool]: {},
       [Operator.TavilySearch]: initialTavilyValues,
+      [Operator.QueritContents]: initialQueritContentsValues,
       [Operator.QueritSearch]: initialQueritValues,
       [Operator.KeenableSearch]: initialKeenableValues,
+      [Operator.YouComSearch]: initialYouComValues,
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
       [Operator.TavilyExtract]: initialTavilyExtractValues,
       [Operator.Placeholder]: {},
       [Operator.File]: {},
-      [Operator.Parser]: initialParserValues,
+      [Operator.Parser]: withDefaultParserModels(
+        initialParserValues,
+        defaultModelDictionary,
+      ),
       [Operator.Tokenizer]: initialTokenizerValues,
       [Operator.TokenChunker]: initialTokenChunkerValues,
       [Operator.TitleChunker]: initialTitleChunkerValues,
       [Operator.Extractor]: {
-        ...initialExtractorValues,
+        ...getInitialExtractorValues(),
         llm_id: llmId,
-        sys_prompt: t('flow.prompts.system.summary'),
-        prompts: t('flow.prompts.user.summary'),
+        // sys_prompt/prompts belong to the Python extractor form. The Go
+        // form seeds summary.system_prompt itself, and the Go extractor
+        // falls back to a built-in prompt when it is empty.
+        ...pickByBackend({
+          go: {},
+          python: {
+            sys_prompt: t('flow.prompts.system.summary'),
+            prompts: t('flow.prompts.user.summary'),
+          },
+        }),
       },
-      [Operator.Compiler]: initialCompilationValues,
+      [Operator.Compiler]: { ...initialCompilationValues, llm_id: llmId },
       [Operator.DataOperations]: initialDataOperationsValues,
       [Operator.ListOperations]: initialListOperationsValues,
       [Operator.VariableAssigner]: initialVariableAssignerValues,
@@ -197,7 +214,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Browser]: { ...initialBrowserValues, llm_id: llmId },
       [Operator.ExcelProcessor]: {},
     };
-  }, [llmId]);
+  }, [defaultModelDictionary, llmId]);
 
   const initializeOperatorParams = useCallback(
     (operatorName: Operator, position: Position) => {

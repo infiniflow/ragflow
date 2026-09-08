@@ -214,7 +214,7 @@ func newTavilyExtractTool(h *HTTPHelper, envKey func() string, defaults tavilyEx
 // defaultTavilyEnvKey is the production env-key resolver. Pulled out
 // as a named function (not a var) so tests cannot accidentally
 // mutate it via package-var assignment.
-func defaultTavilyEnvKey() string { return common.GetEnv(common.EnvTavilyApiKey) }
+func defaultTavilyEnvKey() string { return common.GetEnv(common.EnvTavilyAPIKey) }
 
 // Info returns the tool's metadata for the chat model.
 func (t *TavilyTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -234,11 +234,13 @@ func (t *TavilyTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 			},
 			"include_domains": {
 				Type:     schema.Array,
+				ElemInfo: &schema.ParameterInfo{Type: schema.String},
 				Desc:     "Domains that search results must include.",
 				Required: false,
 			},
 			"exclude_domains": {
 				Type:     schema.Array,
+				ElemInfo: &schema.ParameterInfo{Type: schema.String},
 				Desc:     "Domains that search results must exclude.",
 				Required: false,
 			},
@@ -254,6 +256,7 @@ func (t *TavilyExtractTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"urls": {
 				Type:     schema.Array,
+				ElemInfo: &schema.ParameterInfo{Type: schema.String},
 				Desc:     "The URLs to extract content from.",
 				Required: true,
 			},

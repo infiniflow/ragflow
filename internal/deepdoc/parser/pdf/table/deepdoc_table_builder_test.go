@@ -108,9 +108,17 @@ func TestDeepDocTableBuildService_GroupCells_SpanInjection(t *testing.T) {
 		t.Errorf("grid[0][0] X range = (%.0f,%.0f), want (0,200)", spanCell.X0, spanCell.X1)
 	}
 
-	// grid[0][1] should be covered (bbox zeroed).
-	if !isZeroCell(grid[0][1]) {
-		t.Errorf("grid[0][1] should be covered (zero bbox), got (%.0f,%.0f,%.0f,%.0f)",
+	// grid[0][1] is covered by the span but keeps its own row×col bbox.
+	// Python keeps every covered cell's geometry — construct_table folds
+	// covered text into the span cell only at render time (__cal_spans), so
+	// zeroing the bbox here would starve the covered cell of box text and
+	// make downstream orphan-row/column cleanup drop the row/column
+	// (dell/prodeploy real-PDF parity gap).
+	if isZeroCell(grid[0][1]) {
+		t.Errorf("grid[0][1] must keep its row×col bbox (covered by span), got zero bbox")
+	}
+	if grid[0][1].X0 != 100 || grid[0][1].Y0 != 0 || grid[0][1].X1 != 200 || grid[0][1].Y1 != 50 {
+		t.Errorf("grid[0][1] bbox = (%.0f,%.0f,%.0f,%.0f), want (100,0,200,50)",
 			grid[0][1].X0, grid[0][1].Y0, grid[0][1].X1, grid[0][1].Y1)
 	}
 

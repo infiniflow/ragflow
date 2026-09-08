@@ -8,7 +8,7 @@
 //      http://www.apache.org/licenses/LICENSE-2.0
 //
 
-// exesql_trino_stub.go — minimal implementations of the Trino DSN
+// Package tool implements minimal implementations of the Trino DSN
 // helpers referenced by exesql_trino_test.go. The real
 // implementation lands when the trino driver integration moves
 // from "registered via self-register" to "explicit DSN

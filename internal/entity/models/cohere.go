@@ -44,7 +44,7 @@ func NewCoHereModel(baseURL map[string]string, urlSuffix URLSuffix) *CoHereModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -197,7 +197,7 @@ func (c *CoHereModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Cohere chat API error: %d %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("cohere chat API error: %d %s", resp.StatusCode, string(body))
 	}
 
 	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
@@ -289,7 +289,7 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Cohere stream API error %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("cohere stream API error %d: %s", resp.StatusCode, string(body))
 	}
 
 	sawTerminal := false
@@ -348,7 +348,7 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 	if !done && !sawTerminal {
-		return fmt.Errorf("Cohere: stream ended before [DONE] or finish_reason")
+		return fmt.Errorf("cohere: stream ended before [DONE] or finish_reason")
 	}
 
 	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
@@ -357,12 +357,12 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	return sender(&endOfStream, nil)
 }
 
-func (c *CoHereModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (c *CoHereModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -376,7 +376,7 @@ func (c *CoHereModel) Embed(ctx context.Context, modelName *string, texts []stri
 
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
-		"texts":           texts,
+		"texts":           request.Texts,
 		"input_type":      "search_document",
 		"embedding_types": []string{"float"},
 	}
@@ -414,7 +414,7 @@ func (c *CoHereModel) Embed(ctx context.Context, modelName *string, texts []stri
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Cohere embedding API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("cohere embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var result struct {
@@ -434,7 +434,7 @@ func (c *CoHereModel) Embed(ctx context.Context, modelName *string, texts []stri
 	}
 
 	if len(result.Embeddings.Float) == 0 {
-		return nil, fmt.Errorf("Cohere embedding response contains no float data: %s", string(body))
+		return nil, fmt.Errorf("cohere embedding response contains no float data: %s", string(body))
 	}
 
 	var embeddings []EmbeddingData
@@ -449,11 +449,12 @@ func (c *CoHereModel) Embed(ctx context.Context, modelName *string, texts []stri
 	return embeddings, nil
 }
 
-func (c *CoHereModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (c *CoHereModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -507,7 +508,7 @@ func (c *CoHereModel) Rerank(ctx context.Context, modelName *string, query strin
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Cohere rerank API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("cohere rerank API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var rerankResp struct {
@@ -643,7 +644,7 @@ func (c *CoHereModel) TranscribeAudio(ctx context.Context, modelName *string, fi
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Cohere ASR API error: status %d, body: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("cohere ASR API error: status %d, body: %s", resp.StatusCode, string(respBody))
 	}
 
 	var result struct {
@@ -714,7 +715,7 @@ func (c *CoHereModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Cohere API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("cohere API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Parse response

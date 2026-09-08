@@ -13,8 +13,6 @@ import {
 } from '@tanstack/react-table';
 import * as React from 'react';
 
-import { ChunkMethodDialog } from '@/components/chunk-method-dialog';
-import { DocumentPipelineDialog } from '@/components/document-pipeline-dialog';
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { RenameDialog } from '@/components/rename-dialog';
@@ -29,13 +27,12 @@ import {
 } from '@/components/ui/table';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { isGoBackend } from '@/utils/backend-runtime';
-import { getExtension } from '@/utils/document-util';
 import { t } from 'i18next';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
 import ProcessLogModal from '../process-log-modal';
+import { ChangeParserDialog } from './change-parser-dialog';
 import { useShowLog } from './hooks';
 import { useChangeDocumentParser } from './use-change-document-parser';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
@@ -47,6 +44,7 @@ export type DatasetTableProps = Pick<
 > &
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> & {
     showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
+    bulkOperateBarVisible?: boolean;
   };
 
 export function DatasetTable({
@@ -56,6 +54,7 @@ export function DatasetTable({
   rowSelection,
   setRowSelection,
   showManageMetadataModal,
+  bulkOperateBarVisible = false,
 }: DatasetTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -82,13 +81,6 @@ export function DatasetTable({
     initialName,
   } = useRenameDocument();
 
-  // const {
-  //   hideSetMetaModal,
-  //   setMetaVisible,
-  //   setMetaLoading,
-  //   onSetMetaModalOk,
-  //   metaRecord,
-  // } = useSaveMeta();
   const { showLog, logInfo, logVisible, hideLog } = useShowLog(documents);
 
   const columns = useDatasetTableColumns({
@@ -96,6 +88,7 @@ export function DatasetTable({
     showRenameModal,
     showManageMetadataModal,
     showLog,
+    setRowSelection,
   });
 
   const currentPagination = useMemo(() => {
@@ -130,7 +123,13 @@ export function DatasetTable({
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-280px)]">
+      <Table
+        rootClassName={
+          bulkOperateBarVisible
+            ? 'max-h-[calc(100vh-320px)]'
+            : 'max-h-[calc(100vh-280px)]'
+        }
+      >
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -189,29 +188,15 @@ export function DatasetTable({
           ></RAGFlowPagination>
         </div>
       </div>
-      {changeParserVisible &&
-        (isGoBackend() ? (
-          <DocumentPipelineDialog
-            parserId={changeParserRecord.chunk_method}
-            pipelineId={changeParserRecord.pipeline_id}
-            parserConfig={changeParserRecord.parser_config}
-            onOk={onChangeParserOk}
-            hideModal={hideChangeParserModal}
-            loading={changeParserLoading}
-          ></DocumentPipelineDialog>
-        ) : (
-          <ChunkMethodDialog
-            documentId={changeParserRecord.id}
-            parserId={changeParserRecord.chunk_method}
-            pipelineId={changeParserRecord.pipeline_id}
-            parserConfig={changeParserRecord.parser_config}
-            documentExtension={getExtension(changeParserRecord.name)}
-            onOk={onChangeParserOk}
-            visible={changeParserVisible}
-            hideModal={hideChangeParserModal}
-            loading={changeParserLoading}
-          ></ChunkMethodDialog>
-        ))}
+      {changeParserVisible && (
+        <ChangeParserDialog
+          record={changeParserRecord}
+          visible={changeParserVisible}
+          onOk={onChangeParserOk}
+          hideModal={hideChangeParserModal}
+          loading={changeParserLoading}
+        />
+      )}
 
       {renameVisible && (
         <RenameDialog
@@ -223,14 +208,6 @@ export function DatasetTable({
         ></RenameDialog>
       )}
 
-      {/* {setMetaVisible && (
-        <SetMetaDialog
-          hideModal={hideSetMetaModal}
-          loading={setMetaLoading}
-          onOk={onSetMetaModalOk}
-          initialMetaData={metaRecord.meta_fields}
-        ></SetMetaDialog>
-      )} */}
       {logVisible && (
         <ProcessLogModal
           title={t('knowledgeDetails.fileLogs')}

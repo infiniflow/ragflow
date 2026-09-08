@@ -20,13 +20,16 @@ import re
 
 from deepdoc.parser.utils import get_text
 from rag.app import naive
-from rag.nlp import rag_tokenizer, tokenize
+from rag.nlp import rag_tokenizer, tokenize, DEFAULT_DELIMITER
 from deepdoc.parser import PdfParser, ExcelParser, HtmlParser
 from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper_naive
 from rag.app.naive import by_plaintext, PARSERS
 from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
 from common.constants import MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
 from common.parser_config_utils import normalize_layout_recognizer
+
+
+logger = logging.getLogger(__name__)
 
 
 class Pdf(PdfParser):
@@ -62,7 +65,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     Supported file formats are docx, pdf, excel, txt.
     One file forms a chunk which maintains original text order.
     """
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC"})
     eng = lang.lower() == "english"  # is_english(cks)
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
@@ -83,7 +86,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
             cks.append({"text": text, "image": image, "ck_type": ck_type})
 
-        vision_figure_parser_docx_wrapper_naive(cks, image_idxs, callback, **kwargs)
+        logger.info(
+            "DOCX figure vision enhancement: language=%s image_count=%d",
+            lang or "English",
+            len(image_idxs),
+        )
+        vision_figure_parser_docx_wrapper_naive(cks, image_idxs, callback, lang=lang, **kwargs)
         sections = [ck["text"] for ck in cks if ck.get("text")]
         callback(0.8, "Finish parsing.")
 
@@ -137,6 +145,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.1, "Start to parse.")
         excel_parser = ExcelParser()
         sections = excel_parser.html(binary, MAXIMUM_TASK_PAGE_NUMBER)
+        # One parser tokenizes the whole file as a single chunk, so per-cell
+        # coordinates cannot be cited. Keep the HTML text only.
+        sections = [s[0] if isinstance(s, tuple) else s for s in sections]
 
     elif re.search(r"\.(txt|md|markdown|mdx)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")

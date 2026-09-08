@@ -51,6 +51,35 @@ func TestNormalizeMetadataListValue(t *testing.T) {
 	}
 }
 
+func TestSplitCombinedDocumentMetadataValues(t *testing.T) {
+	meta := map[string]interface{}{
+		"character": []interface{}{"关羽、孙权", "张辽|赵云", "曹操"},
+		"author":    "alice,bob",
+		"year":      2026,
+	}
+
+	got := splitCombinedDocumentMetadataValues(meta)
+	characters, ok := got["character"].([]interface{})
+	if !ok {
+		t.Fatalf("character has unexpected type: %T", got["character"])
+	}
+	want := []interface{}{"关羽", "孙权", "张辽", "赵云", "曹操"}
+	if len(characters) != len(want) {
+		t.Fatalf("character length = %d, want %d: %#v", len(characters), len(want), characters)
+	}
+	for i := range want {
+		if characters[i] != want[i] {
+			t.Fatalf("character[%d] = %#v, want %#v", i, characters[i], want[i])
+		}
+	}
+	if got["author"] != "alice,bob" {
+		t.Fatalf("scalar author should be preserved, got %#v", got["author"])
+	}
+	if got["year"] != 2026 {
+		t.Fatalf("year should be preserved, got %#v", got["year"])
+	}
+}
+
 func TestFirstScalarMetadataValue(t *testing.T) {
 	if v, ok := firstScalarMetadataValue([]interface{}{"a", "b"}); !ok || v != "a" {
 		t.Errorf("should return first non-nil scalar: %v (ok=%v)", v, ok)

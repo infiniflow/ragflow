@@ -1,11 +1,11 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useConnectToKnowledge, useRenameFile } from '@/hooks/use-file-request';
-import { useSelectKnowledgeOptions } from '@/hooks/use-knowledge-request';
 import { TableRowSelection } from '@/interfaces/antd-compat';
 import { IFile } from '@/interfaces/database/file-manager';
 import { ConnectFileToKnowledgeMode } from '@/interfaces/request/file-manager';
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
+import { isFolderType } from './util';
 
 export const useGetFolderId = () => {
   const [searchParams] = useSearchParams();
@@ -86,7 +86,6 @@ export const useHandleConnectToKnowledge = () => {
   const [record, setRecord] = useState<IFile>({} as IFile);
   const [documentIds, setDocumentIds] = useState<string[]>([]);
   const [mode, setMode] = useState<ConnectFileToKnowledgeMode>('replace');
-  const { options: knowledgeOptions } = useSelectKnowledgeOptions();
 
   const initialValue = useMemo(() => {
     return Array.isArray(record?.kbs_info)
@@ -94,25 +93,13 @@ export const useHandleConnectToKnowledge = () => {
       : [];
   }, [record?.kbs_info]);
 
-  const knowledgeNameMap = useMemo(() => {
-    return new Map(
-      knowledgeOptions?.map((option) => [
-        option.value,
-        typeof option.label === 'string' ? option.label : String(option.label),
-      ]) ?? [],
-    );
-  }, [knowledgeOptions]);
-
   const onConnectToKnowledgeOk = useCallback(
-    async (knowledgeIds: string[]) => {
+    async (kbsInfo: { kb_id: string; kb_name: string }[]) => {
       const ret = await connectToKnowledge({
         fileIds: documentIds,
-        kbIds: knowledgeIds,
+        kbIds: kbsInfo.map((kb) => kb.kb_id),
         mode,
-        kbsInfo: knowledgeIds.map((id) => ({
-          kb_id: id,
-          kb_name: knowledgeNameMap.get(id) ?? id,
-        })),
+        kbsInfo,
       });
 
       if (ret === 0) {
@@ -120,13 +107,7 @@ export const useHandleConnectToKnowledge = () => {
       }
       return ret;
     },
-    [
-      connectToKnowledge,
-      hideConnectToKnowledgeModal,
-      documentIds,
-      mode,
-      knowledgeNameMap,
-    ],
+    [connectToKnowledge, hideConnectToKnowledgeModal, documentIds, mode],
   );
 
   const handleShowConnectToKnowledgeModal = useCallback(
@@ -138,7 +119,7 @@ export const useHandleConnectToKnowledge = () => {
       } else {
         setRecord(documents);
         setDocumentIds([documents.id]);
-        setMode('replace');
+        setMode(isFolderType(documents.type) ? 'add' : 'replace');
       }
 
       showConnectToKnowledgeModal();

@@ -28,7 +28,7 @@ func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseRe
 	}
 	apiKey := parser.SoMarkAPIKey
 	if strings.TrimSpace(apiKey) == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvSOMarkApiKey))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvSOMarkAPIKey))
 	}
 	taskID, err := soMarkSubmit(strings.TrimRight(baseURL, "/"), filename, data, parser, apiKey)
 	if err != nil {
@@ -84,7 +84,7 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 		return "", fmt.Errorf("parser: SoMark request: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	resp, err := models.NewDriverHTTPClient().Do(req)
+	resp, err := models.NewDriverHTTPClient(false).Do(req)
 	if err != nil {
 		return "", fmt.Errorf("parser: SoMark submit: %w", err)
 	}
@@ -122,7 +122,7 @@ func soMarkPoll(baseURL, taskID, apiKey string) (map[string]any, error) {
 		return nil, fmt.Errorf("parser: SoMark poll request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := models.NewDriverHTTPClient().Do(req)
+	resp, err := models.NewDriverHTTPClient(false).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("parser: SoMark poll: %w", err)
 	}
