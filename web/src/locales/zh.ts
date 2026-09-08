@@ -463,6 +463,7 @@ export default {
       general: '通用',
       chunkMethodTab: '切片方法',
       testResults: '测试结果',
+      openChunkInDocument: '在文档中打开该解析块',
       testSetting: '测试设置',
       retrievalTesting: '知识检索测试',
       retrievalTestingDescription:
@@ -904,6 +905,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
     },
     chunk: {
       chunk: '解析块',
+      showingRetrievedChunk: '仅显示从检索测试中打开的解析块。',
+      showAllChunks: '显示全部解析块',
       createChunk: '创建解析块',
       editChunk: '编辑解析块',
       bulk: '批量',
