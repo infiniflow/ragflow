@@ -86,9 +86,9 @@ func TestRerunDocument_E2E_EnqueuesThroughRealMessageQueue(t *testing.T) {
 	}
 
 	// The enqueue actually landed on tasks.RAGFLOW.
-	handles, err := mq.PullMessagesForAdmin(1)
+	handles, err := mq.PullMessages(1)
 	if err != nil {
-		t.Fatalf("PullMessagesForAdmin: %v", err)
+		t.Fatalf("PullMessages: %v", err)
 	}
 	if len(handles) != 1 {
 		t.Fatalf("expected 1 message on tasks.RAGFLOW, got %d", len(handles))

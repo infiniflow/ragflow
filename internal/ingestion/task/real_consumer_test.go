@@ -41,7 +41,7 @@ func TestRealProducerConsumer(t *testing.T) {
 
 	// Purge stale messages
 	for {
-		h, err := natsEngine.PullMessagesForAdmin(1)
+		h, err := natsEngine.PullMessages(1)
 		if err != nil {
 			t.Fatalf("drain queue: %v", err)
 		}
@@ -86,9 +86,9 @@ func TestRealProducerConsumer(t *testing.T) {
 	t.Logf("Producer: Published %s", payload)
 
 	// ── 4. Consumer: Mirrors Ingestor.Start():131-189 exactly ──
-	handles, err := natsEngine.PullMessagesForAdmin(1)
+	handles, err := natsEngine.PullMessages(1)
 	if err != nil {
-		t.Fatalf("PullMessagesForAdmin: %v", err)
+		t.Fatalf("PullMessages: %v", err)
 	}
 	if len(handles) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(handles))

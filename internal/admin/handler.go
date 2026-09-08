@@ -949,7 +949,7 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	messages, err := msgQueueEngine.PullMessagesForAdmin(req.MessageCount)
+	messages, err := msgQueueEngine.PullMessages(req.MessageCount)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return

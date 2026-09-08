@@ -257,9 +257,9 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	return nil
 }
 
-// PullMessagesForAdmin collects up to messageCount messages for the manual
-// admin endpoint. Scheduling code must use PullTaskStream instead.
-func (n *NatsEngine) PullMessagesForAdmin(messageCount int) ([]common.TaskHandle, error) {
+// PullMessages collects up to messageCount messages for the manual admin
+// endpoint. Scheduling code must use PullTaskStream instead.
+func (n *NatsEngine) PullMessages(messageCount int) ([]common.TaskHandle, error) {
 	if n.consumer == nil {
 		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
 	}

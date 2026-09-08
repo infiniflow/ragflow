@@ -244,9 +244,9 @@ func TestPullTaskStreamReportsMaxWaiting(t *testing.T) {
 	}
 }
 
-// TestPullMessagesForAdminFetchesMessages verifies that manual pulls can retrieve
+// TestPullMessagesFetchesMessages verifies that manual pulls can retrieve
 // published task messages from the shared consumer.
-func TestPullMessagesForAdminFetchesMessages(t *testing.T) {
+func TestPullMessagesFetchesMessages(t *testing.T) {
 	host, port := newEmbeddedNatsServer(t)
 	queue := NewNatsEngine(host, port)
 	if err := queue.Init(); err != nil {
@@ -267,9 +267,9 @@ func TestPullMessagesForAdminFetchesMessages(t *testing.T) {
 		t.Fatalf("PublishTask: %v", err)
 	}
 
-	handles, err := queue.PullMessagesForAdmin(1)
+	handles, err := queue.PullMessages(1)
 	if err != nil {
-		t.Fatalf("PullMessagesForAdmin: %v", err)
+		t.Fatalf("PullMessages: %v", err)
 	}
 	if len(handles) != 1 {
 		t.Fatalf("len(handles) = %d, want 1", len(handles))
@@ -279,9 +279,9 @@ func TestPullMessagesForAdminFetchesMessages(t *testing.T) {
 	}
 }
 
-// TestPullMessagesForAdminReportsBatchError ensures an asynchronous JetStream
+// TestPullMessagesReportsBatchError ensures an asynchronous JetStream
 // pull failure is not reported to the admin endpoint as an empty queue.
-func TestPullMessagesForAdminReportsBatchError(t *testing.T) {
+func TestPullMessagesReportsBatchError(t *testing.T) {
 	host, port := newEmbeddedNatsServer(t)
 	queue := NewNatsEngine(host, port)
 	if err := queue.Init(); err != nil {
@@ -327,8 +327,8 @@ func TestPullMessagesForAdminReportsBatchError(t *testing.T) {
 		t.Fatal("initial PullTaskStream did not occupy the consumer waiting slot")
 	}
 
-	if _, err := queue.PullMessagesForAdmin(1); err == nil {
-		t.Fatal("PullMessagesForAdmin succeeded after the consumer rejected its pull")
+	if _, err := queue.PullMessages(1); err == nil {
+		t.Fatal("PullMessages succeeded after the consumer rejected its pull")
 	}
 }
 
