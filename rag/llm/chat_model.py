@@ -1183,6 +1183,11 @@ class HubrisChat(Base):
     _BASE_URL = "https://api.hubris.pw/v1"
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
+        """Build the client against the fixed Hubris endpoint.
+
+        ``base_url`` is accepted for signature compatibility with the other
+        chat adapters and deliberately ignored.
+        """
         super().__init__(key, model_name, self._BASE_URL, **kwargs)
 
 
