@@ -190,7 +190,13 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 	}
 	common.Info("Created vector index", zap.String("indexName", vectorIndexName), zap.String("column", vectorColName))
 
-	// Create full-text indexes for varchar fields with analyzers
+	// Create full-text indexes for varchar fields with analyzers. CreateTable
+	// above is ConflictTypeIgnore, so this may be an existing table whose
+	// analyzer was settled under another language.
+	existingIndexes, err := listIndexNames(table)
+	if err != nil {
+		return fmt.Errorf("failed to list indexes on %s: %w", tableName, err)
+	}
 	for _, fieldName := range schema.Keys {
 		fieldInfo := schema.Fields[fieldName]
 		if fieldInfo.Type != "varchar" || fieldInfo.Analyzer == nil {
@@ -209,9 +215,14 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 			}
 		}
 
-		for _, configured := range analyzers {
-			analyzer := analyzerForLanguage(configured, language)
-			indexNameFt := fulltextIndexName(fieldName, analyzer)
+		wanted := wantedFulltextIndexes(fieldName, analyzers, language)
+		if hasForeignRagIndex(existingIndexes, fieldName, wanted) {
+			common.Info("Table keeps its existing analyzer; this language needs a fresh table",
+				zap.String("tableName", tableName), zap.String("field", fieldName), zap.String("language", language))
+			continue
+		}
+
+		for indexNameFt, analyzer := range wanted {
 			_, err = table.CreateIndex(
 				indexNameFt,
 				infinity.NewIndexInfo(fieldName, infinity.IndexTypeFullText, map[string]string{"ANALYZER": analyzer}),
@@ -267,7 +278,7 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 // Table name format: {baseName}_{datasetID}
 // Auto-create the table if it doesn't exist
 // Delete existing rows with matching IDs before insert
-func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
+func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
 	tableName := buildChunkTableName(baseName, datasetID)
 	common.Info("InfinityConnection.InsertChunks called", zap.String("tableName", tableName), zap.Int("chunkCount", len(chunks)))
 
@@ -310,10 +321,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 			parserID = "table"
 		}
 
-		// Create table. No dataset language here, so the table gets the default
-		// analyzers; CreateChunkStore is the path that knows the language and
-		// normally runs first.
-		if err := e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID, ""); err != nil {
+		// Create table. This is the path the ingestion pipeline actually takes,
+		// so the dataset language has to reach it here.
+		if err := e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID, language); err != nil {
 			return nil, fmt.Errorf("failed to create table: %w", err)
 		}
 

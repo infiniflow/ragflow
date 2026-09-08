@@ -260,7 +260,7 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 					zap.String("id", metaString(chunks[0], "id")),
 				)
 			}
-			_, err := eng.InsertChunks(ctx, chunks, baseName, kb)
+			_, err := eng.InsertChunks(ctx, chunks, baseName, kb, "")
 			return err
 		})
 	}
@@ -469,7 +469,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 		}
 		batch := rows[start:end]
 		jobs = append(jobs, func() error {
-			_, err := eng.InsertChunks(ctx, batch, baseName, kb)
+			_, err := eng.InsertChunks(ctx, batch, baseName, kb, "")
 			return err
 		})
 	}
@@ -1589,7 +1589,7 @@ func (w engineWriter) insertWikiGraphChunks(ctx context.Context, tenant, kb stri
 		}
 		batch := rows[start:end]
 		jobs = append(jobs, func() error {
-			_, err := eng.InsertChunks(ctx, batch, baseName, kb)
+			_, err := eng.InsertChunks(ctx, batch, baseName, kb, "")
 			return err
 		})
 	}

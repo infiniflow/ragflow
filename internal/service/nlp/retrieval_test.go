@@ -139,7 +139,7 @@ func (e *retrievalCountEngine) SupportsPageRank() bool     { return false }
 func (e *retrievalCountEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
-func (e *retrievalCountEngine) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+func (e *retrievalCountEngine) InsertChunks(context.Context, []map[string]interface{}, string, string, string) ([]string, error) {
 	return nil, nil
 }
 func (e *retrievalCountEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {

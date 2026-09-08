@@ -298,7 +298,7 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 	for i, message := range messages {
 		docs[i] = mapStringAny(message)
 	}
-	if _, err := s.memories.docEngine.InsertChunks(ctx, docs, indexName, mem.ID); err != nil {
+	if _, err := s.memories.docEngine.InsertChunks(ctx, docs, indexName, mem.ID, ""); err != nil {
 		return fmt.Errorf("insert message into memory: %w", err)
 	}
 

@@ -25,7 +25,7 @@ type memNavEngine struct {
 
 func newMemNavEngine() *memNavEngine { return &memNavEngine{} }
 
-func (m *memNavEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, _ string, datasetID string) ([]string, error) {
+func (m *memNavEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, _ string, datasetID string, _ string) ([]string, error) {
 	ids := make([]string, 0, len(chunks))
 	for _, c := range chunks {
 		m.nextID++
@@ -651,7 +651,7 @@ func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
 			"doc_count_int": 1,
 		})
 	}
-	if _, err := eng.InsertChunks(t.Context(), rows, idx, "kb1"); err != nil {
+	if _, err := eng.InsertChunks(t.Context(), rows, idx, "kb1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := ns.maybeSplitCluster(t.Context(), "t1", "kb1", clusterName, ""); err != nil {

@@ -116,7 +116,10 @@ func NewPipelineExecutor(
 		docBulkSize: docBulkSize,
 		indexWriter: newChunkIndexWriter(
 			func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
-				return engine.Get().InsertChunks(ctx, chunks, baseName, datasetID)
+				// The first write creates the chunk store, and on Infinity that
+				// fixes the fulltext analyzer, so the dataset language has to
+				// travel with it.
+				return engine.Get().InsertChunks(ctx, chunks, baseName, datasetID, datasetLanguage(taskCtx))
 			},
 			fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID),
 			taskCtx.Doc.KbID,
@@ -1080,4 +1083,14 @@ func injectDebugChunkCap(inputs map[string]any) map[string]any {
 		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
 	}
 	return inputs
+}
+
+// datasetLanguage is the language of the dataset being ingested, or "" when it
+// is unset. It selects the fulltext analyzer on engines that fix it when the
+// chunk store is created.
+func datasetLanguage(taskCtx *TaskContext) string {
+	if taskCtx == nil || taskCtx.KB.Language == nil {
+		return ""
+	}
+	return *taskCtx.KB.Language
 }

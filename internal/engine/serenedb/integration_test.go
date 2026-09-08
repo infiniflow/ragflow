@@ -120,7 +120,7 @@ func TestIntegrationChunkLifecycle(t *testing.T) {
 		{"id": "b", "doc_id": "d1", "kb_id": kb, "content_ltks": "gamma delta", "content_with_weight": "gamma delta", "q_4_vec": []float64{0, 1, 0, 0}, "important_kwd": []interface{}{"gamma"}},
 		{"id": "c", "doc_id": "d2", "kb_id": kb, "content_ltks": "alpha gamma", "content_with_weight": "alpha gamma", "q_4_vec": []float64{0.9, 0.1, 0, 0}, "important_kwd": []interface{}{"alpha", "gamma"}},
 	}
-	if _, err := e.InsertChunks(ctx, chunks, base, kb); err != nil {
+	if _, err := e.InsertChunks(ctx, chunks, base, kb, ""); err != nil {
 		t.Fatalf("InsertChunks: %v", err)
 	}
 
