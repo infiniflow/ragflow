@@ -64,14 +64,16 @@ class Document(Base):
 
     def download(self):
         res = self.get(f"/datasets/{self.dataset_id}/documents/{self.id}")
-        error_keys = set(["code", "message"])
+        content_disposition = res.headers.get("Content-Disposition", "")
+        if content_disposition.lstrip().lower().startswith("attachment"):
+            return res.content
+
+        error_keys = {"code", "message"}
         try:
             response = res.json()
-            actual_keys = set(response.keys())
-            if actual_keys == error_keys:
+            if isinstance(response, dict) and set(response) == error_keys:
                 raise Exception(response.get("message"))
-            else:
-                return res.content
+            return res.content
         except json.JSONDecodeError:
             return res.content
 
