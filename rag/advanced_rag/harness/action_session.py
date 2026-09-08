@@ -248,7 +248,12 @@ _SEARCH_CHUNKS_TOOL_SPEC = {
             "its structural neighbours (parent/child headings, sibling pages). "
             "If the dataset has NO compiled structure (incl. no wiki), expansion "
             "is a no-op — no error, just semantic hits. "
-            "Returns snippet chunks ranked by relevance. 1-2 queries per call."
+            "Returns snippet chunks ranked by relevance. 1-2 queries per call. "
+            "Results may LEAD with [claim score=...] entries — those are the "
+            "dataset's compiled atomic facts with VERBATIM evidence quotes "
+            "(original document text, not summaries). If a claim directly "
+            "answers the query, cite it and answer WITHOUT further searching; "
+            "deep-read its listed chunk only for missing context or numbers."
         ),
         "parameters": {
             "type": "object",
@@ -340,8 +345,14 @@ _NAVIGATE_STRUCTURE_TOOL_SPEC = {
             "Use AFTER you know the doc_id (from navigate_tree / search_chunks / "
             "retrieve) and need to find where the answer lives WITHOUT reading "
             "every chunk. Returns the structure outline annotated with matching "
-            "chunk_ids (reading-order aware). Then call list_chunks(doc_id, "
-            "chunk_ids) to read exactly those. "
+            "chunk_ids (reading-order aware). [claim] lines carry VERBATIM "
+            "quotes from the document — their Evidence is original text, NOT a "
+            "summary. When those quotes directly answer the query (or the doc "
+            "is marked <claims_sufficient/>), cite them and answer WITHOUT "
+            "calling list_chunks; deep-read the claimed chunk ids only for "
+            "surrounding context or numbers the quotes lack. Otherwise call "
+            "list_chunks(doc_id, chunk_ids) to read exactly the chunks the "
+            "outline points at. "
             "kind: 'catalog' (default) for page-index/heading/timeline trees, "
             "'mindmap' for concept maps, 'graph' for entity-relation graphs. "
             "If the document has NO compiled structure, an empty <doc/> is "
@@ -679,6 +690,61 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
     return False
 
 
+# Claim hits REPLACE the chunk search for that query (not stack on top of it):
+# a claim's verbatim evidence is the answer material, and echoing the same
+# passages as chunk snippets burns tokens without adding information.  Flip to
+# False for the additive behaviour (claims first, chunks after).
+_CLAIM_PREFETCH_EXCLUSIVE = True
+
+
+async def _claim_prefetch(tools, query: str, kbinfos: dict, kb_seen: set) -> tuple:
+    """Framework-automatic claim-first prefetch for every corpus search.
+
+    KB-wide KNN over claim rows; matched claims (with their verbatim evidence)
+    lead the search output AND enter the shared evidence pool as pseudo-chunks,
+    so the model sees and can cite them without having chosen
+    navigate_structure — retrieval priority must not rest on the model's tool
+    pick.  Best effort: any failure returns empty and the search proceeds
+    exactly as before.
+    """
+    import hashlib
+
+    if not query:
+        return [], []
+    try:
+        from rag.advanced_rag.harness.tools.navigation import (
+            _STRUCT_CLAIM_EVIDENCE_CHARS,
+            recall_dataset_claims,
+        )
+
+        claims = await recall_dataset_claims(tools, query)
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[Action Session] claim prefetch failed", exc_info=True)
+        return [], []
+    entries: list = []
+    new_ids: list = []
+    for c in claims:
+        cid = "claim_" + hashlib.md5(f"{c['doc_id']}:{c['name']}".encode("utf-8", "ignore")).hexdigest()[:12]
+        if cid in kb_seen:
+            continue
+        content = f"[claim #{c.get('rank') or '?'}] {c['name']}"
+        if c.get("description") and c["description"] != c["name"]:
+            content += f" — {c['description']}"
+        if c.get("quote"):
+            content += f'\nEvidence (verbatim): "{str(c["quote"])[:_STRUCT_CLAIM_EVIDENCE_CHARS]}"'
+        doc_id = c.get("doc_id") or ""
+        entries.append({"id": cid, "content": content[:1200], "doc_id": doc_id})
+        new_ids.append(cid)
+        kb_seen.add(cid)
+        # Enter the shared pool as a pseudo-chunk so the compose stage can cite
+        # the verbatim evidence directly (search-context parity with chunks).
+        # source_chunk_ids ride along so a later deep-read of the underlying
+        # chunk can retire this pseudo-chunk (its quote would then duplicate
+        # the full text already in the pool).
+        kbinfos["chunks"].append({"chunk_id": cid, "content_with_weight": content, "doc_id": doc_id, "source_chunk_ids": c["chunk_ids"]})
+    return entries, new_ids
+
+
 async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, **kw) -> tuple:
     """Run a corpus search fn per query and admit hits to output + evidence pool.
 
@@ -695,6 +761,17 @@ async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, *
     new_evidence = 0
     kbinfos = _seed_evidence(tools)
     kb_seen = {_chunk_id(c) for c in kbinfos["chunks"] if isinstance(c, dict)}
+    # Claim-first, MUTUALLY EXCLUSIVE: when claims hit, their verbatim evidence
+    # IS the answer material — shipping 20 chunk snippets on top would echo the
+    # same passages a second time and burn tokens.  Claims carry their chunk
+    # pointers, so deep-reading stays one list_chunks away.  No hits → chunk
+    # search runs exactly as before.
+    claim_entries, claim_ids = await _claim_prefetch(tools, (queries or [""])[0], kbinfos, kb_seen)
+    out.extend(claim_entries)
+    ids.extend(claim_ids)
+    new_evidence += len(claim_ids)
+    if claim_entries and _CLAIM_PREFETCH_EXCLUSIVE:
+        return out, ids, new_evidence
     for fq in queries[:max_q]:
         try:
             res = await search_fn(tools, fq, kb_ids=kb_ids, top_n=top_n, **kw)
@@ -830,6 +907,13 @@ async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
             continue
         if _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=False):
             new_ev += 1
+    # A deep-read COVERS its claims: once the full chunk text is in the pool,
+    # the claim's 1200-char quote of the same passage is duplicated tokens in
+    # every later prompt. Retire claim pseudo-chunks whose source chunk was
+    # just read — the claim already did its job (it pointed here).
+    read_ids = set(ids)
+    if read_ids:
+        kbinfos["chunks"] = [c for c in kbinfos["chunks"] if not (str(c.get("chunk_id") or "").startswith("claim_") and read_ids.intersection(c.get("source_chunk_ids") or []))]
     return _search_outcome(out, ids, new_ev)
 
 

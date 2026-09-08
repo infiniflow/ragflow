@@ -3888,10 +3888,16 @@ _LAYERS_HANDLERS: dict[str, str] = {
 #       evidence pool 42-67 passages, 166s per question against a 180s budget,
 #       with several timeouts yielding no answer at all.
 #   "compiled_agg" — page_index entity rows only; "fusion" — chunk + compiled.
+#   "claim_agg" — tree claim rows only; "fusion" also folds them in when present.
+#       Claims are the tree compiler's atomic facts (entity_type_kwd="claim"),
+#       invisible to every other leg, so this is the only way routing sees them.
+#       Claims decide the ranking outright; the chunk leg runs only when the
+#       claim leg returns nothing at all.  ACTIVE by default
+#       pending the frame_benchmark verdict (see working notes 2026-09-08).
 #   "tree" — BFS beam descent over the nav cluster tree.  This is what main
 #       branch does.  Kept as the A/B baseline; drop it, and
 #       ``search_nav_tree_descent`` with it, once a winner is settled.
-_NAV_TREE_ROUTER = "chunk_agg"
+_NAV_TREE_ROUTER = "claim_agg"
 
 # Cap on how many documents a flat router hands back.  The cluster beam descent
 # that main uses returns ~2 by construction (its per-level pruning keeps only
@@ -3927,9 +3933,19 @@ _NAV_COMPILED_SIMILARITY = 0.1
 # payload after the fetch.
 _NAV_COMPILED_TITLE_TYPES = ("title",)
 _NAV_COMPILED_FACT_TYPES = ("fact", "conclusion")
-# Weights applied when the fusion router combines the three legs.  Only used
+# Tree claims (raptor).  A claim is an atomic proposition like a page_index
+# fact, but it is written by the tree compiler as its own row
+# (``entity_type_kwd="claim"``, no ``knowledge_graph_kwd``), so it stays out of
+# everything the artifacts/graph queries read — which is exactly why the routing
+# layer needs a leg of its own to see it.
+_NAV_COMPILED_CLAIM_TYPES = ("claim",)
+# Weights applied when the fusion router combines the legs.  Only used
 # when documents are hit by several legs.
-_NAV_FUSION_WEIGHTS = {"chunk": 1.0, "title": 0.8, "fact": 0.9}
+_NAV_FUSION_WEIGHTS = {"chunk": 1.0, "title": 0.8, "fact": 0.9, "claim": 0.9}
+# Claim leg (same seam as the compiled leg: claim rows carry their own vector and
+# are invisible to the generic retriever because they carry compile_kwd).
+_NAV_CLAIM_POOL = 256
+_NAV_CLAIM_COMPILE_KWDS = ("tree",)
 
 # Section bridge (stage 3): resolve each hit fact to its owning title.  The
 # relation type carrying TOC containment in the page_index template, plus caps
@@ -4119,12 +4135,25 @@ async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, em
         )
         return True, {"mode": "navigation_tree", "total": len(items), "items": items}
 
+    if _NAV_TREE_ROUTER == "claim_agg":
+        # Claims decide the document ranking; the chunk leg only runs when the
+        # claim leg comes back empty (no strong hits, or a KB without claim
+        # rows).  The compiled (page_index entity) leg is deliberately NOT
+        # fetched here — the claim verdict replaces it, not joins it; that is
+        # what the "fusion" router is for.
+        _ok, claim_payload = await _search_layers_claim_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+        if (claim_payload or {}).get("items"):
+            return _ok, claim_payload
+        return await _search_layers_chunk_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+
     if _NAV_TREE_ROUTER in ("compiled_agg", "fusion"):
-        ok, payload = await _search_layers_compiled_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+        ok, compiled_payload = await _search_layers_compiled_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
         if _NAV_TREE_ROUTER == "compiled_agg":
-            return ok, payload
-        # Fusion keeps going: the compiled leg ranks alongside the chunk leg.
-        return await _search_layers_fusion(tenant_id, dataset_id, query, top_k, embd_mdl, kb, compiled=payload, doc_scope=doc_scope)
+            return ok, compiled_payload
+        _ok, claim_payload = await _search_layers_claim_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+        # Fusion keeps going: the compiled and claim legs rank alongside the
+        # chunk leg.
+        return await _search_layers_fusion(tenant_id, dataset_id, query, top_k, embd_mdl, kb, compiled=compiled_payload, claim=claim_payload, doc_scope=doc_scope)
 
     return await _search_layers_chunk_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
 
@@ -4229,8 +4258,7 @@ async def _search_layers_compiled_agg(tenant_id, dataset_id, query, top_k, embd_
     pack = _compiled_index_or_none(kb.tenant_id, kb.id) if kb is not None else None
     if pack is None:
         return True, {"mode": "navigation_tree", "total": 0, "items": []}
-    from common.doc_store.doc_store_base import OrderByExpr
-    from rag.nlp.search import MatchTextExpr
+    from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr
 
     index_nm, _ = pack
 
@@ -4322,27 +4350,144 @@ async def _search_layers_compiled_agg(tenant_id, dataset_id, query, top_k, embd_
     return True, {"mode": "navigation_tree", "total": len(items), "items": items}
 
 
-async def _search_layers_fusion(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, compiled=None, doc_scope=None):
-    """Combine the chunk leg and the compiled leg into one routing decision.
+async def _search_layers_claim_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, doc_scope=None):
+    """Route to documents through the tree compiler's claim rows.
 
-    The two legs measure different things and are not directly comparable: chunk
-    ``_score`` is Infinity's normalized weighted sum, while the compiled leg is a
-    raw cosine.  Each leg is therefore normalized by its own maximum before
-    being combined, so neither leg's scale can dominate the other.
+    Mirror of ``_search_layers_compiled_agg`` for raptor: a claim is an atomic
+    proposition carrying its own vector, so matching one means the document
+    actually asserts that fact — sharper than a chunk that merely mentions the
+    words, and the only way to see claims at all here, since claim rows carry
+    ``entity_type_kwd="claim"`` and no ``knowledge_graph_kwd`` (they are excluded
+    from the chunk index by ``compile_kwd`` and from the artifacts query by the
+    missing graph marker).
+
+    Returns ``ok=True, total=0`` when the KB has no claim rows — a raptor-less or
+    pre-claim KB is a legitimate empty leg, not a failure, so the caller can fall
+    back.
+    """
+    pack = _compiled_index_or_none(kb.tenant_id, kb.id) if kb is not None else None
+    if pack is None:
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+    from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr
+
+    index_nm, _ = pack
+    pool = _NAV_CLAIM_POOL
+    condition = {
+        "compile_kwd": list(_NAV_CLAIM_COMPILE_KWDS),
+        "entity_type_kwd": ["claim"],
+        # Exclude the KB-wide merged rows written by the Build button.
+        "scope_kwd": ["doc"],
+    }
+    if doc_scope:
+        condition["doc_id"] = [str(d) for d in doc_scope if str(d).strip()]
+
+    fields = ["content_with_weight", "source_chunk_ids", "doc_id", "name_kwd"]
+    try:
+        # HYBRID recall: one BM25 leg (exact/proper-noun) + one KNN leg
+        # (paraphrase), merged by row id — the dict update dedupes rows hit by
+        # both legs.  No similarity threshold: the store ranks, the top-N are
+        # the hit set, and the caller's fallback is driven by emptiness alone.
+        from rag.advanced_rag.knowlege_compile.dataset_nav import _tokenize
+
+        legs: list[list] = []
+        if embd_mdl:
+            try:
+                legs.append(
+                    [
+                        await settings.retriever.get_vector(
+                            query,
+                            embd_mdl,
+                            top_k=pool,
+                            # HNSW ef_search — must be >= top_k or the ANN search collapses.
+                            num_candidates=pool,
+                        )
+                    ]
+                )
+            except Exception:
+                logging.exception("dataset_nav: claim vector build failed for kb=%s", kb.id)
+        legs.append([MatchTextExpr(["content_ltks", "content_sm_ltks"], _tokenize(query), pool)])
+        field_map: dict = {}
+        for exprs in legs:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                select_fields=fields,
+                highlight_fields=[],
+                condition=condition,
+                match_expressions=exprs,
+                order_by=OrderByExpr(),
+                offset=0,
+                limit=pool,
+                index_names=index_nm,
+                knowledgebase_ids=[kb.id],
+            )
+            field_map.update(settings.docStoreConn.get_fields(res, fields) or {})
+    except Exception:
+        logging.exception("dataset_nav: claim-agg retrieval failed for kb=%s", kb.id)
+        return False, {"error": "claim retrieval failed", "code": RetCode.SERVER_ERROR}
+
+    buckets = _nav_bucket_compiled_rows(field_map or {})
+    if not (buckets.get("claim") or {}):
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+    # No similarity gate: the hybrid recall returns the store's best-matching
+    # claims and the top-N ARE the hit set — the caller's fallback to the chunk
+    # leg is driven purely by this leg coming back empty.
+    ranked = _nav_rank_compiled_buckets(buckets, top_k)
+    if not ranked:
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+
+    # Compile rows can outlive a deleted document, and this leg reads the store
+    # directly, so it applies the existence check itself.
+    alive = await _nav_existing_doc_ids([doc_id for doc_id, _ in ranked])
+    ranked = [(d, e) for d, e in ranked if d in alive]
+    if not ranked:
+        return True, {"mode": "navigation_tree", "total": 0, "items": []}
+
+    # Same focus cap as the sibling routers: routing to many documents makes the
+    # agent carry that many times the evidence in every later round.
+    focus = _NAV_DOC_FOCUS_LIMIT or (top_k or pool)
+    if focus > 0:
+        ranked = ranked[:focus]
+
+    summaries = await _nav_doc_summaries(kb, [doc_id for doc_id, _ in ranked])
+    items = [
+        {
+            "doc_id": doc_id,
+            "score": round(entry["best"], 4),
+            "_nav": {"doc_id": doc_id, "description": summaries.get(doc_id, "")},
+            "_agg": {"fused": round(entry["score"], 4), "hits": entry["hits"], "legs": sorted(entry["legs"])},
+        }
+        for doc_id, entry in ranked
+    ]
+    return True, {"mode": "navigation_tree", "total": len(items), "items": items}
+
+
+async def _search_layers_fusion(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, compiled=None, claim=None, doc_scope=None):
+    """Combine the chunk, compiled and claim legs into one routing decision.
+
+    The legs measure different things and are not directly comparable: chunk
+    ``_score`` is Infinity's normalized weighted sum, while the compiled and claim
+    legs are raw cosines.  Each leg is therefore normalized by its own maximum
+    before being combined, so no leg's scale can dominate the others.
     """
     ok, chunk_payload = await _search_layers_chunk_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
     if not ok:
         return ok, chunk_payload
 
     compiled_items = (compiled or {}).get("items") or []
-    if not compiled_items:
-        # No page_index products (or a raptor KB): the chunk leg alone decides.
-        # Tag the items so callers see one shape whichever path produced them.
+    claim_items = (claim or {}).get("items") or []
+    if not compiled_items and not claim_items:
+        # No page_index products and no claims (or a pre-claim KB): the chunk leg
+        # alone decides.  Tag the items so callers see one shape whichever path
+        # produced them.
         for item in chunk_payload.get("items") or []:
             item.setdefault("_agg", {}).setdefault("legs", ["chunk"])
         return ok, chunk_payload
 
-    legs = [("chunk", chunk_payload.get("items") or [], _NAV_FUSION_WEIGHTS["chunk"]), ("compiled", compiled_items, 1.0)]
+    legs = [("chunk", chunk_payload.get("items") or [], _NAV_FUSION_WEIGHTS["chunk"])]
+    if compiled_items:
+        legs.append(("compiled", compiled_items, 1.0))
+    if claim_items:
+        legs.append(("claim", claim_items, _NAV_FUSION_WEIGHTS["claim"]))
     fused = _nav_fuse_legs(legs, top_k)
 
     summaries = await _nav_doc_summaries(kb, [doc_id for doc_id, _ in fused])
@@ -4402,6 +4547,7 @@ def _nav_bucket_compiled_rows(field_map: dict) -> dict[str, dict]:
     """
     title_bucket: dict[str, dict] = {}
     fact_bucket: dict[str, dict] = {}
+    claim_bucket: dict[str, dict] = {}
     fact_names: dict[str, list[str]] = {}
     for row in field_map.values():
         doc_id = str(row.get("doc_id") or "").strip()
@@ -4424,6 +4570,8 @@ def _nav_bucket_compiled_rows(field_map: dict) -> dict[str, dict]:
             name = str(payload.get("name") or "").strip()
             if name:
                 fact_names.setdefault(doc_id, []).append(name)
+        elif rtype in _NAV_COMPILED_CLAIM_TYPES:
+            bucket = claim_bucket
         else:
             continue
         score = float(row.get("similarity") or row.get("_score") or 0.0)
@@ -4435,7 +4583,7 @@ def _nav_bucket_compiled_rows(field_map: dict) -> dict[str, dict]:
         entry["hits"] += 1
         if score > entry["best"]:
             entry["best"] = score
-    return {"title": title_bucket, "fact": fact_bucket, "fact_names": fact_names}
+    return {"title": title_bucket, "fact": fact_bucket, "claim": claim_bucket, "fact_names": fact_names}
 
 
 def _nav_rank_compiled_buckets(buckets: dict, top_k) -> list[tuple[str, dict]]:
@@ -4446,7 +4594,11 @@ def _nav_rank_compiled_buckets(buckets: dict, top_k) -> list[tuple[str, dict]]:
     DocScore first, which is what keeps facts from swamping titles.
     """
     merged: dict[str, dict] = {}
-    for leg, bucket in (("title", buckets.get("title") or {}), ("fact", buckets.get("fact") or {})):
+    for leg, bucket in (
+        ("title", buckets.get("title") or {}),
+        ("fact", buckets.get("fact") or {}),
+        ("claim", buckets.get("claim") or {}),
+    ):
         weight = _NAV_FUSION_WEIGHTS.get(leg, 1.0)
         for doc_id, entry in bucket.items():
             contribution = _nav_doc_score(entry) * weight
