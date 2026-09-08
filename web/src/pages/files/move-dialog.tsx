@@ -16,7 +16,6 @@ import { IFile } from '@/interfaces/database/file-manager';
 import { isEmpty, uniqBy } from 'lodash';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { isFolderType } from './util';
 
 export function MoveDialog({ hideModal, onOk, loading }: IModalProps<any>) {
   const { t } = useTranslation();
@@ -35,13 +34,7 @@ export function MoveDialog({ hideModal, onOk, loading }: IModalProps<any>) {
           return uniqBy(
             tree.concat(
               ret.data.files
-                .filter(
-                  (x: IFile) =>
-                    x.type === 'folder' &&
-                    !(
-                      isFolderType(x.type) && x.name.toLowerCase() === 'skills'
-                    ),
-                )
+                .filter((x: IFile) => x.type === 'folder')
                 .map((x: IFile) => ({
                   id: x.id,
                   parentId: x.parent_id,
