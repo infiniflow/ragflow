@@ -64,7 +64,7 @@ func setupRealNatsCluster(t *testing.T) (host string, port int) {
 
 // TestIntegration_MultiInstanceSharedConsumerNoOverExecution verifies TaskRP.md §6.2:
 // Multiple ingestor instances sharing the same JetStream durable consumer (RAGFLOW_CONSUMER)
-// compete for tasks without duplicate or overlapping execution.
+// compete for tasks without duplicate or overlapping execution while the broker is healthy.
 func TestIntegration_MultiInstanceSharedConsumerNoOverExecution(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -173,7 +173,7 @@ func TestIntegration_MultiInstanceSharedConsumerNoOverExecution(t *testing.T) {
 	defer mu.Unlock()
 	for _, id := range taskIDs {
 		if count := executionCounts[id]; count != 1 {
-			t.Fatalf("task %s execution count = %d, want 1 (exactly-once without duplicate execution)", id, count)
+			t.Fatalf("task %s execution count = %d, want 1 during healthy shared-consumer delivery", id, count)
 		}
 	}
 	t.Logf("Multi-instance executed %d tasks cleanly. Max concurrency across instances = %d", taskCount, maxConcurrentObserved.Load())

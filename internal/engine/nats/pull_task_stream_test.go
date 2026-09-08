@@ -279,6 +279,59 @@ func TestPullMessagesForAdminFetchesMessages(t *testing.T) {
 	}
 }
 
+// TestPullMessagesForAdminReportsBatchError ensures an asynchronous JetStream
+// pull failure is not reported to the admin endpoint as an empty queue.
+func TestPullMessagesForAdminReportsBatchError(t *testing.T) {
+	host, port := newEmbeddedNatsServer(t)
+	queue := NewNatsEngine(host, port)
+	if err := queue.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := queue.InitConsumer(common.TaskSubject); err != nil {
+		t.Fatalf("InitConsumer: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	if err := queue.stream.DeleteConsumer(ctx, "RAGFLOW_CONSUMER"); err != nil {
+		t.Fatalf("delete default consumer: %v", err)
+	}
+	consumer, err := queue.stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+		Name:          "RAGFLOW_CONSUMER",
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		FilterSubject: "tasks.>",
+		MaxWaiting:    1,
+	})
+	if err != nil {
+		t.Fatalf("create limited consumer: %v", err)
+	}
+	queue.consumer = consumer
+
+	if _, err := queue.PullTaskStream(ctx, 1); err != nil {
+		t.Fatalf("occupy consumer waiting slot: %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	waitingReached := false
+	for time.Now().Before(deadline) {
+		info, err := queue.consumer.Info(t.Context())
+		if err != nil {
+			t.Fatalf("consumer info: %v", err)
+		}
+		if info.NumWaiting == 1 {
+			waitingReached = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !waitingReached {
+		t.Fatal("initial PullTaskStream did not occupy the consumer waiting slot")
+	}
+
+	if _, err := queue.PullMessagesForAdmin(1); err == nil {
+		t.Fatal("PullMessagesForAdmin succeeded after the consumer rejected its pull")
+	}
+}
+
 // TestPullTaskStreamClosesMessagesBeforeDone verifies that the Messages channel
 // is closed before the Done channel closes upon stream termination.
 func TestPullTaskStreamClosesMessagesBeforeDone(t *testing.T) {

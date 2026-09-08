@@ -272,6 +272,14 @@ func (n *NatsEngine) PullMessagesForAdmin(messageCount int) ([]common.TaskHandle
 	for msg := range messages.Messages() {
 		resultMessages = append(resultMessages, NewNatsMessageHandle(msg))
 	}
+	if batchErr := messages.Error(); batchErr != nil {
+		for _, message := range resultMessages {
+			if nackErr := message.Nack(); nackErr != nil {
+				common.Error("nack admin message after failed pull", nackErr)
+			}
+		}
+		return nil, fmt.Errorf("failed to fetch messages: %w", batchErr)
+	}
 	return resultMessages, nil
 }
 

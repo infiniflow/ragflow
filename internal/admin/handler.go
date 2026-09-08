@@ -923,7 +923,7 @@ func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	err = msgQueueEngine.PublishTask("tasks.RAGFLOW", taskMessageStr)
+	err = msgQueueEngine.PublishTask(common.TaskSubject, taskMessageStr)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
