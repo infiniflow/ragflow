@@ -209,22 +209,29 @@ func docxIRTableToHTML(el docxIRElement) string {
 // A bare "text" block is not part of the current IR schema, but is
 // passed through so its payload is never silently dropped. Returns ""
 // for image and unknown types.
-func docxElementText(el docxIRElement) string {
+//
+// For table elements, cellSep joins the cells within a single row. Pass
+// "\n" to put each cell on its own line (the pptx/docx flatten behavior,
+// equivalent to the previous flat-all-cells rendering), or " | " to keep a
+// row's cells on one line (the legacy .doc viewport).
+func docxElementText(el docxIRElement, cellSep string) string {
 	switch el.Type {
 	case "paragraph", "heading":
 		return joinDOCXIRRuns(el.contentRuns())
 	case "text":
 		return el.Text
 	case "table":
-		var lines []string
+		var rows []string
 		for _, row := range el.Rows {
+			var cells []string
 			for _, cell := range row.Cells {
 				if t := joinCellText(cell); t != "" {
-					lines = append(lines, t)
+					cells = append(cells, t)
 				}
 			}
+			rows = append(rows, strings.Join(cells, cellSep))
 		}
-		return strings.Join(lines, "\n")
+		return strings.Join(rows, "\n")
 	case "list":
 		var lines []string
 		for _, item := range el.Items {
@@ -339,7 +346,7 @@ func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
 				flat = append(flat, flatBlock{image: b64})
 				continue
 			}
-			text := docxElementText(el)
+			text := docxElementText(el, "\n")
 			flat = append(flat, flatBlock{text: text})
 		}
 	}

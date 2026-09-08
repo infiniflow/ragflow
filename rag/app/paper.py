@@ -20,7 +20,7 @@ import re
 
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
 from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, attach_media_context
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, attach_media_context, DEFAULT_DELIMITER
 from deepdoc.parser import PdfParser
 import numpy as np
 from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
@@ -38,7 +38,7 @@ class Pdf(PdfParser):
 
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
         start = timer()
@@ -137,7 +137,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     Only pdf is supported.
     The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
     """
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
         tenant_id = kwargs.get("tenant_id")
@@ -157,7 +157,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         if name == "deepdoc":
             pdf_parser = Pdf()
-            paper = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+            paper = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
             sections = paper.get("sections", [])
         else:
             kwargs.pop("parse_method", None)

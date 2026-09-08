@@ -223,7 +223,7 @@ func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 			service := NewMemoryService()
 			service.docEngine = docEngine
 
-			if err := service.ForgetMessage(context.Background(), "user-1", "memory-1", 42); err != nil {
+			if err := service.ForgetMessage(t.Context(), "user-1", "memory-1", 42); err != nil {
 				t.Fatalf("ForgetMessage() error = %v", err)
 			}
 			if docEngine.updateCond["id"] != "memory-1_42" {
@@ -280,7 +280,7 @@ func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
 
 	svc := NewMemoryService()
 	samePermission := " TEAM "
-	if _, err := svc.UpdateMemory(context.Background(), "member-1", "mem-team", &UpdateMemoryRequest{
+	if _, err := svc.UpdateMemory(t.Context(), "member-1", "mem-team", &UpdateMemoryRequest{
 		Description: sptr("member edit"),
 		Permissions: &samePermission,
 	}); err != nil {
@@ -288,7 +288,7 @@ func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
 	}
 
 	nextPermission := "me"
-	if _, err := svc.UpdateMemory(context.Background(), "member-1", "mem-team", &UpdateMemoryRequest{
+	if _, err := svc.UpdateMemory(t.Context(), "member-1", "mem-team", &UpdateMemoryRequest{
 		Permissions: &nextPermission,
 	}); err == nil {
 		t.Fatal("UpdateMemory permission change error = nil, want error")
@@ -361,13 +361,13 @@ func TestUpdateMemoryTeamMemberResolvesModelsAgainstOwnerTenant(t *testing.T) {
 	}
 
 	llmID := "gpt-4o@default@OpenAI"
-	if _, err := NewMemoryService().UpdateMemory(context.Background(), "member-1", "mem-model", &UpdateMemoryRequest{
+	if _, err := NewMemoryService().UpdateMemory(t.Context(), "member-1", "mem-model", &UpdateMemoryRequest{
 		LLMID: &llmID,
 	}); err != nil {
 		t.Fatalf("UpdateMemory model error = %v", err)
 	}
 
-	updated, err := dao.NewMemoryDAO().GetByID(context.Background(), dao.DB, "mem-model")
+	updated, err := dao.NewMemoryDAO().GetByID(t.Context(), dao.DB, "mem-model")
 	if err != nil {
 		t.Fatalf("get updated memory: %v", err)
 	}
@@ -549,7 +549,7 @@ func TestSaveAgentMessageBypassesRequestAccessFilter(t *testing.T) {
 		AgentResponse: "hello",
 	}
 
-	ok, detail, err := svc.AddMessage(context.Background(), "", []string{"mem-owned"}, msg)
+	ok, detail, err := svc.AddMessage(t.Context(), "", []string{"mem-owned"}, msg)
 	if err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
@@ -557,7 +557,7 @@ func TestSaveAgentMessageBypassesRequestAccessFilter(t *testing.T) {
 		t.Fatalf("AddMessage with empty current user = (%v, %q), want permission-filtered not found", ok, detail)
 	}
 
-	ok, detail, err = svc.saveAgentMessage(context.Background(), []string{"mem-owned"}, msg)
+	ok, detail, err = svc.saveAgentMessage(t.Context(), []string{"mem-owned"}, msg)
 	if err != nil {
 		t.Fatalf("saveAgentMessage: %v", err)
 	}
@@ -597,7 +597,7 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 	}
 	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), docEngine: docEngine}
 
-	got, code, err := svc.GetMessages(context.Background(), []string{"mem-owned", "mem-other"}, "user-1", "agent-1", "session-1", 3)
+	got, code, err := svc.GetMessages(t.Context(), []string{"mem-owned", "mem-other"}, "user-1", "agent-1", "session-1", 3)
 	if err != nil {
 		t.Fatalf("GetMessages error: %v", err)
 	}
@@ -671,7 +671,7 @@ func TestSearchMessageFiltersAccessibleMemoryAndDefaultsStatus(t *testing.T) {
 		"top_n":                      5,
 	}
 
-	got, code, err := svc.SearchMessage(context.Background(), "user-1", filter, params)
+	got, code, err := svc.SearchMessage(t.Context(), "user-1", filter, params)
 	if err != nil {
 		t.Fatalf("SearchMessage error: %v", err)
 	}
@@ -710,7 +710,7 @@ func TestUpdateMessageUpdatesStatusByMessageDocID(t *testing.T) {
 	docEngine := &memoryMessageDocEngine{}
 	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), docEngine: docEngine}
 
-	ok, err := svc.UpdateMessage(context.Background(), "user-1", "mem-owned", 42, true)
+	ok, err := svc.UpdateMessage(t.Context(), "user-1", "mem-owned", 42, true)
 	if err != nil {
 		t.Fatalf("UpdateMessage error: %v", err)
 	}
