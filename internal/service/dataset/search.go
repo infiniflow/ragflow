@@ -25,9 +25,6 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if req.Question == "" {
 		return nil, fmt.Errorf("question is required")
 	}
-	if len(req.DatasetIDs) == 0 {
-		return nil, fmt.Errorf("dataset_ids is required")
-	}
 	common.Info("SearchDatasets started", zap.String("userID", userID), zap.Any("datasets", req.DatasetIDs), zap.String("question", req.Question))
 
 	page := 1
@@ -106,6 +103,43 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 
 	modelProviderSvc := service.NewModelProviderService()
+
+	// A saved search app can supply the dataset ids through its
+	// search_config (kb_ids), exactly like the Python API's
+	// {**search_config, **req} merge. Resolve them before the access
+	// check so the merged set is what gets authorized.
+	if len(datasetIDs) == 0 && searchID != "" {
+		if d.searchService == nil {
+			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("invalid search_id")
+		}
+		searchDetail, err := d.searchService.GetDetail(ctx, searchID)
+		if err != nil || searchDetail == nil || len(searchDetail) == 0 {
+			common.Warn("Invalid search_id", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("invalid search_id")
+		}
+		if searchTenantID, ok := searchDetail["tenant_id"].(string); !ok || searchTenantID != userID {
+			common.Warn("Invalid search_id", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("invalid search_id")
+		}
+		if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
+			datasetIDs = stringSliceFromConfig(searchConfig["dataset_ids"])
+			if len(datasetIDs) == 0 {
+				datasetIDs = stringSliceFromConfig(searchConfig["kb_ids"])
+			}
+			if len(documentIDs) == 0 {
+				documentIDs = stringSliceFromConfig(searchConfig["document_ids"])
+				if len(documentIDs) == 0 {
+					documentIDs = stringSliceFromConfig(searchConfig["doc_ids"])
+				}
+			}
+		}
+	}
+
+	// After the saved search config merge, the dataset set must be known.
+	if len(datasetIDs) == 0 {
+		return nil, fmt.Errorf("`dataset_ids` is required")
+	}
 
 	// Access check for all datasets
 	var tenantIDs []string
@@ -364,4 +398,22 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
+}
+
+// stringSliceFromConfig converts a JSON-decoded config value into a string
+// slice, accepting both []interface{} (JSON arrays) and []string.
+func stringSliceFromConfig(value interface{}) []string {
+	switch v := value.(type) {
+	case []string:
+		return v
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if str, ok := item.(string); ok && str != "" {
+				out = append(out, str)
+			}
+		}
+		return out
+	}
+	return nil
 }
