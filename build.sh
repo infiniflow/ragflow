@@ -206,6 +206,47 @@ check_pdfium_deps() {
 }
 
 # Check pdf_oxide static library.
+# pdf_oxide_validate_version <pool_text> <required_version>
+#
+# Validates the pdf_oxide version embedded in a lib's string constant pool
+# against the pinned <required_version>. The marker "pdf_oxide <version>" is
+# merged into Rust's constant pool and has no fixed length, so a suffixed build
+# (e.g. 0.3.73.1) and a clean 0.3.73 whose next pooled constant begins with a
+# digit are byte-identical and cannot be told apart.
+#
+# Capture exactly three dotted segments and reject any trailing [0-9.] as
+# ambiguous, rather than silently truncating it into a (wrong) match.
+#
+# Returns:
+#   0  exact match (prints the found version)
+#   1  version missing or mismatched (prints the found version, or empty)
+#   2  ambiguous: the marker is followed by extra digits/dots in the pool
+pdf_oxide_validate_version() {
+    local pool_text="$1" required="$2"
+    local found esc
+    found=$(printf '%s\n' "$pool_text" \
+        | grep -oE "pdf_oxide [0-9]+\.[0-9]+\.[0-9]+" | head -1 | cut -d' ' -f2)
+    if [ -z "$found" ]; then
+        return 1
+    fi
+    # A digit or dot immediately after the captured "pdf_oxide X.Y.Z" marker
+    # means a suffixed build (0.3.73.1) or a constant concatenated on to the
+    # version. Treat it as ambiguous rather than as a wrong version.
+    # Anchor to the exact captured version (dots escaped) so the third segment
+    # cannot backtrack and swallow the trailing digit, which would otherwise
+    # flag a clean 0.3.73<letter> marker as ambiguous.
+    esc="${found//./\\.}"
+    if printf '%s\n' "$pool_text" | grep -qE "pdf_oxide ${esc}[0-9.]"; then
+        return 2
+    fi
+    if [ "$found" != "$required" ]; then
+        printf '%s\n' "$found"
+        return 1
+    fi
+    printf '%s\n' "$found"
+    return 0
+}
+
 check_pdf_oxide_deps() {
     _seed_from_system "pdf_oxide" || true
     # Map platform to tarball-internal subdirectory.
@@ -236,25 +277,39 @@ check_pdf_oxide_deps() {
         # lib left over from an earlier pin is reused silently and the upgrade
         # becomes a no-op.
         #
-        # The marker here differs from office_oxide: instead of a standalone
-        # "0.1.9" line it is "pdf_oxide <version>" merged into Rust's string
-        # constant pool, so a whole-line match cannot be used. Extract the
-        # version and compare it exactly — a substring match would let a pin of
-        # "0.3.7" accept a 0.3.73 lib. The "pdf_oxide " prefix keeps bare
-        # version numbers of vendored dependencies out of the match.
-        local found_version
-        found_version=$(strings "$lib_path" 2>/dev/null \
-            | grep -oE "pdf_oxide [0-9]+\.[0-9]+\.[0-9]+" | head -1 | cut -d' ' -f2)
-        if [ "$found_version" != "$PDF_OXIDE_VERSION" ]; then
-            echo -e "${RED}Error: pdf_oxide native lib version mismatch${NC}"
-            echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
-            echo "  A stale lib silently reverts PDF parsing fixes. Refresh:"
-            echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/pdf_oxide-go-ffi-linux-amd64.tar.gz"
-            echo "    uv run python3 ragflow_deps/download_go_deps.py"
-            return 1
-        fi
-        echo "  pdf_oxide (static) → ${PDF_OXIDE_PREFIX}"
-        return 0
+        # The version marker "pdf_oxide <version>" is merged into Rust's string
+        # constant pool (unlike office_oxide's standalone "0.1.9" line), so we
+        # capture exactly three dotted segments and reject any trailing [0-9.]
+        # as ambiguous — a suffixed build (0.3.73.1) or a constant that is
+        # byte-identical to one must not be silently accepted. The "pdf_oxide "
+        # prefix keeps bare version numbers of vendored dependencies out of the
+        # match.
+        local pool_text found_version rc
+        pool_text=$(strings "$lib_path" 2>/dev/null)
+        found_version=$(pdf_oxide_validate_version "$pool_text" "$PDF_OXIDE_VERSION"); rc=$?
+        case "$rc" in
+            0)
+                echo "  pdf_oxide (static) → ${PDF_OXIDE_PREFIX}"
+                return 0
+                ;;
+            2)
+                echo -e "${RED}Error: pdf_oxide native lib version ambiguous${NC}"
+                echo "  The version marker is followed by extra digits/dots in the"
+                echo "  string pool; this is usually a suffixed build (e.g. ${PDF_OXIDE_VERSION}.1)"
+                echo "  or a concatenated constant byte-identical to one. Refresh the lib"
+                echo "  to a clean pin."
+                echo "  Required: v${PDF_OXIDE_VERSION}"
+                return 1
+                ;;
+            *)
+                echo -e "${RED}Error: pdf_oxide native lib version mismatch${NC}"
+                echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
+                echo "  A stale lib silently reverts PDF parsing fixes. Refresh:"
+                echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/pdf_oxide-go-ffi-linux-amd64.tar.gz"
+                echo "    uv run python3 ragflow_deps/download_go_deps.py"
+                return 1
+                ;;
+        esac
     fi
 
     echo "  pdf_oxide (static) not found"
@@ -936,4 +991,8 @@ main() {
     esac
 }
 
-main "$@"
+# Only run the build when executed directly. When sourced (e.g. by tests),
+# skip main so the version-gate helpers can be unit-tested in isolation.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    main "$@"
+fi
