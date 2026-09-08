@@ -32,6 +32,9 @@ from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.utils.url_utils import append_api_path, ensure_v1
 
 MAX_RERANK_TOKEN = 8196
+RERANK_TOKEN_LIMIT_MODE = os.getenv("RERANK_TOKEN_LIMIT_MODE", "truncate").strip().lower()
+if RERANK_TOKEN_LIMIT_MODE not in {"truncate", "passthrough", "raise_error"}:
+    raise ValueError(f"Invalid RERANK_TOKEN_LIMIT_MODE {RERANK_TOKEN_LIMIT_MODE!r}; expected 'truncate', 'passthrough', or 'raise_error'")
 
 
 class Base(ABC):
@@ -55,13 +58,9 @@ class Base(ABC):
         """
         if not query or not texts:
             return np.zeros(len(texts) if texts else 0, dtype=float), 0
-        token_limit_mode = os.getenv("RERANK_TOKEN_LIMIT_MODE", "truncate").strip().lower()
-        if token_limit_mode not in {"truncate", "passthrough", "error"}:
-            raise ValueError(f"Invalid RERANK_TOKEN_LIMIT_MODE {token_limit_mode!r}; expected 'truncate', 'passthrough', or 'error'")
-
-        if token_limit_mode != "passthrough":
+        if RERANK_TOKEN_LIMIT_MODE != "passthrough":
             query_tokens = num_tokens_from_string(query)
-            if token_limit_mode == "truncate":
+            if RERANK_TOKEN_LIMIT_MODE == "truncate":
                 texts = [truncate(text, max(self.max_token - query_tokens, 0)) for text in texts]
             else:
                 for index, text in enumerate(texts):
