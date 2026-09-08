@@ -264,7 +264,7 @@ def test_retrieval_vector_similarity_and_top_k_contract(rest_client, ensure_pars
         ("vector 0", {"vector_similarity_weight": 0}, 0, ""),
         ("vector 0.5", {"vector_similarity_weight": 0.5}, 0, ""),
         ("vector 10", {"vector_similarity_weight": 10}, 0, ""),
-        ("vector alpha", {"vector_similarity_weight": "a"}, 100, "could not convert string to float"),
+        ("vector alpha", {"vector_similarity_weight": "a"}, 102, "could not convert string to float"),
         ("top_k 10", {"top_k": 10}, 0, ""),
         ("top_k 1", {"top_k": 1}, 0, ""),
         ("top_k -1", {"top_k": -1}, 102, "`top_k` must be greater than 0"),
