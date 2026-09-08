@@ -204,3 +204,61 @@ func TestBegin_EmptyWebhookPayload(t *testing.T) {
 		t.Errorf("state.Sys[webhook_payload] should not be set for empty payload; got %v", state.Sys["webhook_payload"])
 	}
 }
+
+// TestBegin_ScalarQueryWithMultipleDeclaredInputs pins the Python parity
+// rule: a scalar query maps onto a Begin node's declared inputs only when
+// exactly one field is declared. With several declared fields the scalar
+// is ambiguous, so Python's Begin._merge_runtime_inputs returns {} and no
+// field is populated - the Go component must not copy the whole query
+// into every declared field.
+func TestBegin_ScalarQueryWithMultipleDeclaredInputs(t *testing.T) {
+	c, err := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{
+			"customer_review": map[string]any{},
+			"language":        map[string]any{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewBeginComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-multi-field-scalar", "task-multi-field-scalar")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": "Damaged package"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if _, ok := out["customer_review"]; ok {
+		t.Errorf("customer_review populated from ambiguous scalar query: %#v", out["customer_review"])
+	}
+	if _, ok := out["language"]; ok {
+		t.Errorf("language populated from ambiguous scalar query: %#v", out["language"])
+	}
+	// The scalar query itself still passes through untouched.
+	if out["query"] != "Damaged package" {
+		t.Errorf("query passthrough = %#v", out["query"])
+	}
+}
+
+// TestBegin_SingleFieldScalarQueryStillMaps guards the valid direction:
+// with exactly one declared field a scalar query populates it.
+func TestBegin_SingleFieldScalarQueryStillMaps(t *testing.T) {
+	c, err := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{
+			"question": map[string]any{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewBeginComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-single-field-scalar", "task-single-field-scalar")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": "hello"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["question"] != "hello" {
+		t.Errorf("single declared field not populated from scalar query: %#v", out)
+	}
+}
