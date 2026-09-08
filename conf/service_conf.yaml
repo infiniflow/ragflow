@@ -10,7 +10,7 @@ mysql:
   name: 'rag_flow'
   user: 'root'
   password: 'infini_rag_flow'
-  host: 'localhost'
+  host: 'mysql'
   port: 3306
   max_connections: 900
   stale_timeout: 300
