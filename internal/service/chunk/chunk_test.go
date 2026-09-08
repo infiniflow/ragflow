@@ -1091,7 +1091,8 @@ func TestAddChunkSuccess(t *testing.T) {
 	if inserted["img_id"] != nil {
 		t.Fatalf("did not expect image id in inserted chunk: %#v", inserted)
 	}
-	// A manual chunk is tokenized like the dataset's parsed chunks.
+	// A manual chunk is tokenized like the dataset's parsed chunks, and the
+	// write that may create the chunk store carries the dataset language.
 	if len(tokenizeLanguages) != 4 {
 		t.Fatalf("tokenizer calls = %v, want 4", tokenizeLanguages)
 	}
@@ -1099,6 +1100,9 @@ func TestAddChunkSuccess(t *testing.T) {
 		if lang != language {
 			t.Fatalf("tokenized with language %q, want %q", lang, language)
 		}
+	}
+	if engine.insertLanguage != language {
+		t.Fatalf("InsertChunks language = %q, want %q", engine.insertLanguage, language)
 	}
 	vec, ok := inserted["q_2_vec"].([]float64)
 	if !ok {
@@ -1793,7 +1797,7 @@ func (e *parseTestDocEngine) CreateChunkStore(context.Context, string, string, i
 	return nil
 }
 
-func (e *parseTestDocEngine) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+func (e *parseTestDocEngine) InsertChunks(context.Context, []map[string]interface{}, string, string, string) ([]string, error) {
 	return nil, nil
 }
 
@@ -1894,13 +1898,15 @@ type addChunkTestEngine struct {
 	insertedChunks []map[string]interface{}
 	insertIndex    string
 	insertDataset  string
+	insertLanguage string
 	insertErr      error
 }
 
-func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
+func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
 	e.insertedChunks = chunks
 	e.insertIndex = baseName
 	e.insertDataset = datasetID
+	e.insertLanguage = language
 	return nil, e.insertErr
 }
 
@@ -2210,7 +2216,7 @@ type switchChunksEngineMock struct {
 func (m *switchChunksEngineMock) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
-func (m *switchChunksEngineMock) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+func (m *switchChunksEngineMock) InsertChunks(context.Context, []map[string]interface{}, string, string, string) ([]string, error) {
 	return nil, nil
 }
 func (m *switchChunksEngineMock) UpdateChunks(_ context.Context, condition map[string]interface{}, newValue map[string]interface{}, indexName string, datasetID string) error {

@@ -26,7 +26,7 @@ import (
 )
 
 // InsertChunks writes chunks or memory messages with legacy REPLACE semantics.
-func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName, datasetID string) ([]string, error) {
+func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName, datasetID, language string) ([]string, error) {
 	if len(chunks) == 0 {
 		return []string{}, nil
 	}
