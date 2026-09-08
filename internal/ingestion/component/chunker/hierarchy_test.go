@@ -532,3 +532,113 @@ func TestHierarchyTitleChunker_ConsecutiveNonTextOrder(t *testing.T) {
 		t.Errorf("non-text order wrong: imgA=%d imgB=%d body=%d, want imgA<imgB<body", iA, iB, iBody)
 	}
 }
+
+// TestHierarchyTitleChunker_PreservesAncestorHeadingAfterMedia pins
+// issue #18293: text that still belongs to the same heading but appears
+// *after* an image/table must keep the ancestor heading path. Before the
+// fix, flush_text_records cleared all heading context on the media
+// flush, so post-media body text lost its heading prefix.
+func TestHierarchyTitleChunker_PreservesAncestorHeadingAfterMedia(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy":               1,
+		"levels":                  [][]string{{`^# `}},
+		"include_heading_content": true,
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "# Chapter 1", "doc_type_kwd": "text"},
+		{"text": "body before figure", "doc_type_kwd": "text"},
+		{"text": "figure caption", "doc_type_kwd": "image", "img_id": "fig1"},
+		{"text": "body after figure", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":   "doc",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	var afterChunk string
+	for _, ck := range chunks {
+		text, _ := ck["text"].(string)
+		if strings.Contains(text, "body after figure") {
+			afterChunk = text
+			break
+		}
+	}
+	if afterChunk == "" {
+		t.Fatal("no chunk contains 'body after figure'")
+	}
+	if !strings.Contains(afterChunk, "Chapter 1") {
+		t.Errorf("post-media chunk lost ancestor heading\ngot:  %q\nwant: contains %q", afterChunk, "Chapter 1")
+	}
+}
+
+// TestHierarchyTitleChunker_PreservesNestedAncestorHeadingAfterMedia
+// verifies the two-level case from issue #18293: text after a media
+// chunk that still belongs to ## 1.1 must carry the full ancestor
+// path "Chapter 1 › 1.1".
+func TestHierarchyTitleChunker_PreservesNestedAncestorHeadingAfterMedia(t *testing.T) {
+	c, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy":               2,
+		"levels":                  [][]string{{`^# `, `^## `}},
+		"include_heading_content": true,
+	})
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	items := []map[string]any{
+		{"text": "# Chapter 1", "doc_type_kwd": "text"},
+		{"text": "## 1.1 Background", "doc_type_kwd": "text"},
+		{"text": "text before figure", "doc_type_kwd": "text"},
+		{"text": "figure caption", "doc_type_kwd": "image", "img_id": "fig1"},
+		{"text": "text after figure", "doc_type_kwd": "text"},
+		{"text": "## 1.2 Goals", "doc_type_kwd": "text"},
+		{"text": "text goals", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":   "doc",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+
+	findChunk := func(sub string) string {
+		for _, ck := range chunks {
+			if text, _ := ck["text"].(string); strings.Contains(text, sub) {
+				return text
+			}
+		}
+		return ""
+	}
+
+	afterChunk := findChunk("text after figure")
+	if afterChunk == "" {
+		t.Fatal("no chunk contains 'text after figure'")
+	}
+	if !strings.Contains(afterChunk, "Chapter 1") || !strings.Contains(afterChunk, "1.1 Background") {
+		t.Errorf("post-media chunk lost ancestor heading path\ngot:  %q\nwant: contains %q and %q",
+			afterChunk, "Chapter 1", "1.1 Background")
+	}
+
+	goalsChunk := findChunk("text goals")
+	if goalsChunk == "" {
+		t.Fatal("no chunk contains 'text goals'")
+	}
+	if !strings.Contains(goalsChunk, "Chapter 1") {
+		t.Errorf("sibling heading chunk lost ancestor heading\ngot:  %q\nwant: contains %q",
+			goalsChunk, "Chapter 1")
+	}
+
+	for _, ck := range chunks {
+		text, _ := ck["text"].(string)
+		if strings.Contains(text, "figure caption") && strings.Contains(text, "Chapter 1") {
+			t.Errorf("image chunk should not contain heading text, got %q", text)
+		}
+	}
+}
