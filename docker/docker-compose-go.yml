@@ -69,6 +69,10 @@ services:
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint-go.sh:/ragflow/entrypoint.sh
     env_file: .env-go
+    # Route the Go services' cache/queue backend to the separate Kvrocks service
+    # (overriding REDIS_HOST=redis from .env-go). The Python services keep Valkey.
+    environment:
+      - REDIS_HOST=kvrocks
     networks:
       - ragflow
     restart: unless-stopped
@@ -125,6 +129,10 @@ services:
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
     env_file: .env-go
+    # Route the Go services' cache/queue backend to the separate Kvrocks service
+    # (overriding REDIS_HOST=redis from .env-go). The Python services keep Valkey.
+    environment:
+      - REDIS_HOST=kvrocks
     networks:
       - ragflow
     restart: unless-stopped
