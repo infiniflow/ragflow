@@ -15,6 +15,7 @@
  */
 
 import { AgentCategory, AgentQuery } from '@/constants/agent';
+import { KnowledgeSearchParams } from '@/constants/knowledge';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
@@ -161,11 +162,16 @@ export const useNavigatePage = () => {
   );
 
   const navigateToChunkParsedResult = useCallback(
-    (id: string, knowledgeId?: string) => () => {
-      navigate(
-        `${Routes.ParsedResult}/chunks?id=${knowledgeId}&doc_id=${id}`,
-        // `${Routes.DataflowResult}?id=${knowledgeId}&doc_id=${id}&type=chunk`,
-      );
+    (id: string, knowledgeId?: string, chunkId?: string) => () => {
+      const params = new URLSearchParams({
+        [KnowledgeSearchParams.KnowledgeId]: knowledgeId ?? '',
+        [KnowledgeSearchParams.DocumentId]: id,
+      });
+      if (chunkId) {
+        // Lets the chunk page open on this specific chunk instead of page 1.
+        params.set(KnowledgeSearchParams.ChunkId, chunkId);
+      }
+      navigate(`${Routes.ParsedResult}/chunks?${params.toString()}`);
     },
     [navigate],
   );

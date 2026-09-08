@@ -5,12 +5,17 @@ import { FilterPopover } from '@/components/list-filter-bar/filter-popover';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import { Card } from '@/components/ui/card';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useTestRetrieval } from '@/hooks/use-knowledge-request';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import {
+  useKnowledgeBaseId,
+  useTestRetrieval,
+} from '@/hooks/use-knowledge-request';
 import { ITestingChunk } from '@/interfaces/database/dataset';
 import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
 import { t } from 'i18next';
 import camelCase from 'lodash/camelCase';
-import { useMemo } from 'react';
+import { KeyboardEvent, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const similarityList: Array<{ field: keyof ITestingChunk; label: string }> = [
   { field: 'similarity', label: 'Hybrid Similarity' },
@@ -32,6 +37,60 @@ const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
   );
 };
 
+type ChunkResultCardProps = {
+  item: ITestingChunk;
+  onOpen: (item: ITestingChunk) => void;
+};
+
+function ChunkResultCard({ item, onOpen }: ChunkResultCardProps) {
+  const { t } = useTranslation();
+
+  const handleClick = useCallback(() => {
+    // A click that ends a drag-selection leaves a non-collapsed selection
+    // behind; navigating there would make the result text impossible to copy.
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      return;
+    }
+    onOpen(item);
+  }, [item, onOpen]);
+
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLElement>) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+      event.preventDefault();
+      onOpen(item);
+    },
+    [item, onOpen],
+  );
+
+  return (
+    <article>
+      <Card
+        role="button"
+        tabIndex={0}
+        aria-label={t('knowledgeDetails.openChunkInDocument')}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        className="px-5 py-2.5 bg-transparent shadow-none cursor-pointer transition-colors hover:bg-bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+      >
+        <ChunkTitle item={item}></ChunkTitle>
+        <div
+          className="!mt-2.5 whitespace-pre-wrap [&_em]:text-accent-primary [&_em]:not-italic"
+          dangerouslySetInnerHTML={{
+            __html: sanitizeHtmlWithImagesAsText(item.highlight || item.content),
+          }}
+        />
+        <div className="mt-2.5 text-right text-xs text-text-sub-title-invert">
+          {item.document_keyword}
+        </div>
+      </Card>
+    </article>
+  );
+}
+
 type TestingResultProps = Pick<
   ReturnType<typeof useTestRetrieval>,
   'data' | 'filterValue' | 'handleFilterSubmit' | 'loading'
@@ -43,6 +102,9 @@ export function TestingResult({
   loading,
   data,
 }: TestingResultProps) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const { navigateToChunkParsedResult } = useNavigatePage();
+
   const filters: FilterCollection[] = useMemo(() => {
     return [
       {
@@ -57,6 +119,17 @@ export function TestingResult({
       },
     ];
   }, [data.doc_aggs]);
+
+  const openChunkInDocument = useCallback(
+    (item: ITestingChunk) => {
+      navigateToChunkParsedResult(
+        item.document_id,
+        item.dataset_id || knowledgeBaseId,
+        item.id,
+      )();
+    },
+    [knowledgeBaseId, navigateToChunkParsedResult],
+  );
 
   return (
     <article className="size-full flex flex-col">
@@ -82,22 +155,11 @@ export function TestingResult({
           <>
             <section className="px-5 pb-5 flex flex-col gap-5 overflow-auto scrollbar-thin min-h-0">
               {data.chunks?.map((x) => (
-                <article key={x.id}>
-                  <Card className="px-5 py-2.5 bg-transparent shadow-none">
-                    <ChunkTitle item={x}></ChunkTitle>
-                    <div
-                      className="!mt-2.5 whitespace-pre-wrap [&_em]:text-accent-primary [&_em]:not-italic"
-                      dangerouslySetInnerHTML={{
-                        __html: sanitizeHtmlWithImagesAsText(
-                          x.highlight || x.content,
-                        ),
-                      }}
-                    />
-                    <div className="mt-2.5 text-right text-xs text-text-sub-title-invert">
-                      {x.document_keyword}
-                    </div>
-                  </Card>
-                </article>
+                <ChunkResultCard
+                  key={x.id}
+                  item={x}
+                  onOpen={openChunkInDocument}
+                ></ChunkResultCard>
               ))}
             </section>
           </>
