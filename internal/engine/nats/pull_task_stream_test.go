@@ -340,6 +340,33 @@ func TestPullMessagesFetchesMessages(t *testing.T) {
 	}
 }
 
+func TestPullMessagesRejectsOutOfRangeMessageCount(t *testing.T) {
+	host, port := newEmbeddedNatsServer(t)
+	queue := NewNatsEngine(host, port)
+	if err := queue.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := queue.InitConsumer(common.TaskSubject); err != nil {
+		t.Fatalf("InitConsumer: %v", err)
+	}
+
+	for _, testCase := range []struct {
+		name         string
+		messageCount int
+	}{
+		{name: "zero", messageCount: 0},
+		{name: "negative", messageCount: -1},
+		{name: "above limit", messageCount: 101},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := queue.PullMessages(testCase.messageCount)
+			if err == nil {
+				t.Fatal("PullMessages succeeded for an out-of-range message count")
+			}
+		})
+	}
+}
+
 // TestPullMessagesReportsBatchError ensures an asynchronous JetStream
 // pull failure is not reported to the admin endpoint as an empty queue.
 func TestPullMessagesReportsBatchError(t *testing.T) {

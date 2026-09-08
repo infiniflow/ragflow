@@ -24,6 +24,9 @@ const (
 	// symbol so the routing contract cannot diverge (mirrors the RAGFLOW_TASKS
 	// JetStream subject in internal/engine/nats).
 	TaskSubject = "tasks.RAGFLOW"
+	// MaxManualPullMessages is the largest task batch the administrative queue
+	// pull endpoint accepts.
+	MaxManualPullMessages = 100
 
 	TaskTypeIngestionTask = "ingestion_task"
 	TaskTypeIngestionTest = "ingestion_test"

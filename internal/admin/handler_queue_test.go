@@ -19,6 +19,7 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -78,5 +79,40 @@ func TestPullMessageFromQueueInitializesSharedConsumer(t *testing.T) {
 	}
 	if len(response.Data) != 1 || response.Data[0].ID != "admin-pull-before-ingestor" || response.Data[0].Ack != "true" {
 		t.Fatalf("pull response = %+v, want acked admin-pull-before-ingestor", response.Data)
+	}
+}
+
+func TestPullMessageFromQueueRejectsOutOfRangeMessageCount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, testCase := range []struct {
+		name         string
+		messageCount int
+	}{
+		{name: "negative", messageCount: -1},
+		{name: "zero", messageCount: 0},
+		{name: "above limit", messageCount: 101},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(
+				http.MethodPost,
+				"/",
+				bytes.NewBufferString(fmt.Sprintf(`{"message_count":%d,"ack_policy":"ACK"}`, testCase.messageCount)),
+			)
+			ctx.Request.Header.Set("Content-Type", "application/json")
+
+			(&Handler{}).PullMessageFromQueue(ctx)
+
+			var response struct {
+				Code int `json:"code"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if response.Code != int(common.CodeBadRequest) {
+				t.Fatalf("response code = %d, want %d; body = %s", response.Code, common.CodeBadRequest, recorder.Body.String())
+			}
+		})
 	}
 }

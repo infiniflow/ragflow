@@ -242,6 +242,43 @@ func TestPullReturnsWorkerWhenStreamCompletesWithoutMessage(t *testing.T) {
 	}
 }
 
+// TestPullReturnsWorkerImmediatelyAfterDeadline ensures an empty queue's
+// normal pull expiry does not add failed-pull backoff before the worker can
+// issue its next request.
+func TestPullReturnsWorkerImmediatelyAfterDeadline(t *testing.T) {
+	stream := newBlockingTaskHandleStream()
+	queue := &dispatcherTestQueue{
+		streams: []*blockingTaskHandleStream{stream},
+		calls:   make(chan struct{}, 1),
+	}
+	ingestor := newUnitIngestor("test-empty-deadline-pull", 1, nil)
+	worker := &worker{id: 1, inbox: make(chan common.TaskHandle)}
+
+	ingestor.pullWg.Add(1)
+	go ingestor.consumePull(queue, worker)
+	t.Cleanup(func() {
+		ingestor.dispatchCancel()
+		ingestor.pullWg.Wait()
+	})
+
+	select {
+	case <-queue.calls:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("Pull did not start")
+	}
+
+	stream.close(context.DeadlineExceeded)
+	select {
+	case returned := <-ingestor.workerQueue:
+		if returned != worker {
+			t.Fatalf("returned worker = %d, want worker %d", returned.id, worker.id)
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("empty pull deadline delayed the worker with failed-pull backoff")
+	}
+	ingestor.pullWg.Wait()
+}
+
 // TestPullCancellationLeavesReservedHandleUnsettled prevents shutdown
 // from blocking forever when a Pull has received a handle but its worker has
 // not yet taken the private inbox. The handle belongs to the broker again; it

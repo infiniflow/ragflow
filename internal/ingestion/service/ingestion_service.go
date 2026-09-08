@@ -181,7 +181,7 @@ func (e *Ingestor) ID() string {
 	return e.id
 }
 
-// consumeErrorBackoff paces failed Pull batches so a persistent MQ failure
+// consumeErrorBackoff paces failed Pull requests so a persistent MQ failure
 // does not pin a CPU. The backoff is cancellable and does not block another
 // idle worker from making its own Pull request.
 const consumeErrorBackoff = 1 * time.Second
@@ -268,7 +268,7 @@ func (e *Ingestor) consumePull(messageQueueEngine engine.MessageQueue, w *worker
 
 	handle, ok := <-stream.Messages()
 	if !ok {
-		if err := stream.Err(); err != nil {
+		if err := stream.Err(); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 			e.logPullError(err)
 			e.waitAfterPullError()
 		}

@@ -933,7 +933,7 @@ func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 }
 
 type PullMessageFromQueueRequest struct {
-	MessageCount int    `json:"message_count" binding:"required"`
+	MessageCount int    `json:"message_count" binding:"required,gt=0"`
 	AckPolicy    string `json:"ack_policy" binding:"required"`
 }
 
@@ -941,6 +941,11 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 	var req PullMessageFromQueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, fmt.Sprintf("Message count error: %s", err.Error()))
+		return
+	}
+	if req.MessageCount > common.MaxManualPullMessages {
+		common.ErrorWithCode(c, common.CodeBadRequest,
+			fmt.Sprintf("message count must be between 1 and %d", common.MaxManualPullMessages))
 		return
 	}
 
