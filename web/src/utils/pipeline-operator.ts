@@ -17,6 +17,7 @@
 import { Operator } from '@/constants/agent';
 import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
+  FileType,
   getInitialExtractorValues,
   initialGoExtractorValues,
   initialParserValues,
@@ -466,6 +467,31 @@ export function buildOperatorNode(
       rawForm,
       transformApiConfigToForm(operatorType, apiConfig), // Convert API config to form format, then merge (DSL template is baseline, API overrides)
     );
+    if (operatorType === Operator.Parser && Array.isArray(rawForm.setups)) {
+      rawForm.setups = rawForm.setups.map((setup: any) => {
+        if (setup.fileFormat === FileType.Spreadsheet) {
+          const column_names =
+            setup.column_names && setup.column_names.length > 0
+              ? setup.column_names
+              : (pipelineParserConfig.table_column_names ?? []);
+          const column_mode =
+            setup.column_mode ||
+            pipelineParserConfig.table_column_mode ||
+            'auto';
+          const column_roles =
+            setup.column_roles && Object.keys(setup.column_roles).length > 0
+              ? setup.column_roles
+              : (pipelineParserConfig.table_column_roles ?? {});
+          return {
+            ...setup,
+            column_names,
+            column_mode,
+            column_roles,
+          };
+        }
+        return setup;
+      });
+    }
   }
 
   return {

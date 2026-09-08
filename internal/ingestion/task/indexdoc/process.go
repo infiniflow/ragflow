@@ -184,7 +184,7 @@ func processChunkPositions(ck map[string]any) {
 // for columns with role "metadata" or "both", merges them into document metadata.
 // Mirrors Python: rag/utils/table_es_metadata.py:aggregate_table_doc_metadata
 func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]interface{}) map[string]any {
-	mode, roles, tableColumnNames := resolveTableColumnConfig(parserConfig)
+	mode, roles, tableColumnNames := ResolveTableColumnConfig(parserConfig)
 	if mode == "" {
 		mode = "auto"
 	}
@@ -194,6 +194,35 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 	if roles == nil {
 		roles = map[string]interface{}{}
 	}
+	if len(tableColumnNames) == 0 {
+		for _, ck := range chunks {
+			if names, ok := ck["table_column_names"].([]string); ok && len(names) > 0 {
+				tableColumnNames = make([]interface{}, len(names))
+				for i, n := range names {
+					tableColumnNames[i] = n
+				}
+				break
+			}
+			if names, ok := ck["table_column_names"].([]interface{}); ok && len(names) > 0 {
+				tableColumnNames = names
+				break
+			}
+		}
+	}
+	if len(tableColumnNames) == 0 && mode == "auto" {
+		seen := make(map[string]struct{})
+		for _, ck := range chunks {
+			if cd, ok := ck["chunk_data"].(map[string]interface{}); ok {
+				for k := range cd {
+					if _, ok := seen[k]; !ok {
+						seen[k] = struct{}{}
+						tableColumnNames = append(tableColumnNames, k)
+					}
+				}
+			}
+		}
+	}
+
 	var metaCols []string
 	if len(tableColumnNames) > 0 {
 		for _, n := range tableColumnNames {
@@ -257,10 +286,10 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 	return out
 }
 
-// resolveTableColumnConfig reads table column settings from parser_config.
+// ResolveTableColumnConfig reads table column settings from parser_config.
 // Tries root-level flat keys first; falls back to resolving from a Parser
 // component entry's spreadsheet config in a component-ID-keyed parser_config.
-func resolveTableColumnConfig(parserConfig map[string]interface{}) (mode string, roles map[string]interface{}, names []interface{}) {
+func ResolveTableColumnConfig(parserConfig map[string]interface{}) (mode string, roles map[string]interface{}, names []interface{}) {
 	mode, _ = parserConfig["table_column_mode"].(string)
 	roles, _ = parserConfig["table_column_roles"].(map[string]interface{})
 	rawNames, _ := parserConfig["table_column_names"].([]interface{})
@@ -291,4 +320,37 @@ func resolveTableColumnConfig(parserConfig map[string]interface{}) (mode string,
 		return mode, roles, rawNames
 	}
 	return "", nil, nil
+}
+
+// TableParserStripDocMetadataKeys returns the keys to strip from existing document metadata
+// on reparse.
+func TableParserStripDocMetadataKeys(parserConfig map[string]interface{}) []string {
+	_, roles, tableColumnNames := ResolveTableColumnConfig(parserConfig)
+	if len(tableColumnNames) > 0 {
+		seen := make(map[string]struct{}, len(tableColumnNames))
+		keys := make([]string, 0, len(tableColumnNames))
+		for _, n := range tableColumnNames {
+			s, _ := n.(string)
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			if _, ok := seen[s]; !ok {
+				seen[s] = struct{}{}
+				keys = append(keys, s)
+			}
+		}
+		return keys
+	}
+	if len(roles) > 0 {
+		keys := make([]string, 0, len(roles))
+		for k := range roles {
+			s := strings.TrimSpace(k)
+			if s != "" {
+				keys = append(keys, s)
+			}
+		}
+		return keys
+	}
+	return nil
 }

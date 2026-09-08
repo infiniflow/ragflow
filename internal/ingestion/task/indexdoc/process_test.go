@@ -461,3 +461,135 @@ func TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts(t *testing.T) {
 		t.Fatalf("executor important_kwd = %v, want %v (empty parts dropped)", kwd, want)
 	}
 }
+
+// =============================================================================
+// Table Column Mode & Metadata Aggregation Tests
+// =============================================================================
+
+func TestResolveTableColumnConfig_Flat(t *testing.T) {
+	cfg := map[string]interface{}{
+		"table_column_mode":  "manual",
+		"table_column_roles": map[string]interface{}{"col1": "indexing", "col2": "metadata"},
+		"table_column_names": []interface{}{"col1", "col2"},
+	}
+	mode, roles, names := ResolveTableColumnConfig(cfg)
+	if mode != "manual" {
+		t.Errorf("mode = %q, want \"manual\"", mode)
+	}
+	if len(roles) != 2 {
+		t.Errorf("roles len = %d, want 2", len(roles))
+	}
+	if len(names) != 2 {
+		t.Errorf("names len = %d, want 2", len(names))
+	}
+}
+
+func TestResolveTableColumnConfig_NestedComponent(t *testing.T) {
+	cfg := map[string]interface{}{
+		"Parser:HipSignsRhyme": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{
+				"column_mode":  "manual",
+				"column_roles": map[string]interface{}{"age": "metadata"},
+				"column_names": []interface{}{"name", "age"},
+			},
+		},
+	}
+	mode, roles, names := ResolveTableColumnConfig(cfg)
+	if mode != "manual" {
+		t.Errorf("mode = %q, want \"manual\"", mode)
+	}
+	if len(roles) != 1 || roles["age"] != "metadata" {
+		t.Errorf("roles = %v, want age=metadata", roles)
+	}
+	if len(names) != 2 {
+		t.Errorf("names len = %d, want 2", len(names))
+	}
+}
+
+func TestTableParserStripDocMetadataKeys(t *testing.T) {
+	cfg := map[string]interface{}{
+		"table_column_names": []interface{}{"col1", "col2", "col1", "  "},
+	}
+	keys := TableParserStripDocMetadataKeys(cfg)
+	if len(keys) != 2 || keys[0] != "col1" || keys[1] != "col2" {
+		t.Errorf("keys = %v, want [col1, col2]", keys)
+	}
+
+	// Fallback to roles if names absent
+	cfgRoles := map[string]interface{}{
+		"table_column_roles": map[string]interface{}{"roleA": "both"},
+	}
+	keysRoles := TableParserStripDocMetadataKeys(cfgRoles)
+	if len(keysRoles) != 1 || keysRoles[0] != "roleA" {
+		t.Errorf("keysRoles = %v, want [roleA]", keysRoles)
+	}
+}
+
+func TestAggregateTableDocMetadata_AutoMode(t *testing.T) {
+	chunks := []map[string]any{
+		{
+			"text": "- Name: Alice\n- City: Beijing",
+			"chunk_data": map[string]interface{}{
+				"Name": "Alice",
+				"City": "Beijing",
+			},
+		},
+		{
+			"text": "- Name: Bob\n- City: Beijing",
+			"chunk_data": map[string]interface{}{
+				"Name": "Bob",
+				"City": "Beijing",
+			},
+		},
+	}
+	cfg := map[string]interface{}{
+		"table_column_mode": "auto",
+	}
+	meta := AggregateTableDocMetadata(chunks, cfg)
+	if meta == nil {
+		t.Fatal("expected non-nil meta")
+	}
+	cities, ok := meta["City"].([]string)
+	if !ok || len(cities) != 1 || cities[0] != "Beijing" {
+		t.Errorf("City = %v, want [Beijing]", meta["City"])
+	}
+	names, ok := meta["Name"].([]string)
+	if !ok || len(names) != 2 {
+		t.Errorf("Name = %v, want 2 names", meta["Name"])
+	}
+}
+
+func TestAggregateTableDocMetadata_ManualMode(t *testing.T) {
+	chunks := []map[string]any{
+		{
+			"text": "- Name: Alice",
+			"chunk_data": map[string]interface{}{
+				"Age": "30",
+			},
+		},
+		{
+			"text": "- Name: Bob",
+			"chunk_data": map[string]interface{}{
+				"Age": "25",
+			},
+		},
+	}
+	cfg := map[string]interface{}{
+		"table_column_mode": "manual",
+		"table_column_roles": map[string]interface{}{
+			"Name": "indexing",
+			"Age":  "metadata",
+		},
+	}
+	meta := AggregateTableDocMetadata(chunks, cfg)
+	if meta == nil {
+		t.Fatal("expected non-nil meta")
+	}
+	if _, hasName := meta["Name"]; hasName {
+		t.Errorf("Name should not be in doc metadata when role is indexing")
+	}
+	ages, ok := meta["Age"].([]string)
+	if !ok || len(ages) != 2 {
+		t.Errorf("Age = %v, want 2 entries", meta["Age"])
+	}
+}

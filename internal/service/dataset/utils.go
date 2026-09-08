@@ -58,6 +58,7 @@ func datasetToMap(kb *entity.Knowledgebase) map[string]interface{} {
 		"similarity_threshold":     kb.SimilarityThreshold,
 		"vector_similarity_weight": kb.VectorSimilarityWeight,
 		"parser_id":                datasetParserIDForResponse(kb.ParserID),
+		"chunk_method":             datasetParserIDForResponse(kb.ParserID),
 		"parser_config":            kb.ParserConfig,
 		"pagerank":                 kb.Pagerank,
 		"create_time":              kb.CreateTime,

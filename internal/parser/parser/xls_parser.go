@@ -34,6 +34,8 @@ type XLSParser struct {
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
+	ColumnMode                     string
+	ColumnRoles                    map[string]string
 }
 
 func NewXLSParser(libType string) (*XLSParser, error) {
@@ -75,6 +77,14 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
 	}
+	if mode, roles := DecodeTableColumnConfig(setup); mode != "" || roles != nil {
+		if mode != "" {
+			p.ColumnMode = mode
+		}
+		if roles != nil {
+			p.ColumnRoles = roles
+		}
+	}
 }
 
 func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
@@ -93,6 +103,14 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		return ParseResult{
 			Err: fmt.Errorf("unsupported XLS parse method: %q", p.ParseMethod),
 		}
+	}
+
+	if p.ColumnMode != "" {
+		items, allColumns, warnings, sheets, err := parseXLSXRowsJSON(data, p.ColumnMode, p.ColumnRoles)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
+		}
+		return xlsxRowParseResult(filename, items, allColumns, warnings, sheets)
 	}
 
 	f, err := excelize.OpenReader(bytes.NewReader(data))

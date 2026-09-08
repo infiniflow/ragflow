@@ -39,6 +39,7 @@ import (
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // PipelineResult is the outcome of a pipeline run: chunks have been
@@ -250,9 +251,20 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		if metadata == nil {
 			metadata = make(map[string]any)
 		}
+		for _, stripKey := range indexdoc.TableParserStripDocMetadataKeys(map[string]interface{}(s.taskCtx.Doc.ParserConfig)) {
+			delete(metadata, stripKey)
+		}
 		for k, v := range tableMeta {
 			if _, exists := metadata[k]; !exists {
 				metadata[k] = v
+			}
+		}
+	}
+
+	if fileVal, ok := globals.GetGlobal(ctx, "file"); ok {
+		if fileMap, ok := fileVal.(map[string]any); ok {
+			if names, ok := fileMap["table_column_names"].([]string); ok && len(names) > 0 && s.taskCtx.Doc.KbID != "" && dao.DB != nil {
+				_ = s.syncTableColumnNamesToKB(ctx, s.taskCtx.Doc.KbID, names)
 			}
 		}
 	}
@@ -896,11 +908,51 @@ func warnUnknownComponentParams(dsl string, parserConfig map[string]any) {
 		dslCPNs[s.CpnID] = struct{}{}
 	}
 	for cpnID := range parserConfig {
+		if cpnID == "table_column_mode" || cpnID == "table_column_roles" || cpnID == "table_column_names" {
+			continue
+		}
 		if _, ok := dslCPNs[cpnID]; !ok {
 			common.Warn(fmt.Sprintf(
 				"parser_config references cpnID %q not present in the pipeline DSL; it will be ignored at runtime", cpnID))
 		}
 	}
+}
+
+func injectTableColumnOverride(docConfig, kbConfig map[string]interface{}, dsl []byte) map[string]interface{} {
+	if docConfig == nil {
+		docConfig = map[string]interface{}{}
+	}
+	mode, roles, names := indexdoc.ResolveTableColumnConfig(docConfig)
+	if mode == "" && len(roles) == 0 && len(names) == 0 && kbConfig != nil {
+		mode, roles, names = indexdoc.ResolveTableColumnConfig(kbConfig)
+	}
+	if mode == "" && len(roles) == 0 && len(names) == 0 {
+		return docConfig
+	}
+	parserCpnID := pipelinepkg.ExtractParserCpnID(dsl, component.ComponentNameParser)
+	if parserCpnID == "" {
+		return docConfig
+	}
+	cpnEntry, ok := docConfig[parserCpnID].(map[string]any)
+	if !ok {
+		cpnEntry = map[string]any{}
+		docConfig[parserCpnID] = cpnEntry
+	}
+	ssEntry, ok := cpnEntry["spreadsheet"].(map[string]any)
+	if !ok {
+		ssEntry = map[string]any{}
+		cpnEntry["spreadsheet"] = ssEntry
+	}
+	if mode != "" && ssEntry["column_mode"] == nil {
+		ssEntry["column_mode"] = mode
+	}
+	if len(roles) > 0 && ssEntry["column_roles"] == nil {
+		ssEntry["column_roles"] = roles
+	}
+	if len(names) > 0 && ssEntry["column_names"] == nil {
+		ssEntry["column_names"] = names
+	}
+	return docConfig
 }
 
 func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (map[string]any, string, error) {
@@ -915,6 +967,13 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		// injected in place below without a nil-map assignment panic.
 		parserConfig = map[string]interface{}{}
 	}
+
+	var kbConfig map[string]interface{}
+	if s.taskCtx.KB.ParserConfig != nil {
+		kbConfig = map[string]interface{}(s.taskCtx.KB.ParserConfig)
+	}
+	parserConfig = injectTableColumnOverride(parserConfig, kbConfig, []byte(dsl))
+	s.taskCtx.Doc.ParserConfig = parserConfig
 
 	// Surface component params whose cpnID is absent from the DSL. The
 	// runtime merge (override_params) silently drops such entries;
@@ -1067,4 +1126,82 @@ func injectDebugChunkCap(inputs map[string]any) map[string]any {
 		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
 	}
 	return inputs
+}
+
+func (s *PipelineExecutor) syncTableColumnNamesToKB(ctx context.Context, kbID string, newNames []string) error {
+	if len(newNames) == 0 || kbID == "" || dao.DB == nil {
+		return nil
+	}
+
+	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var kb entity.Knowledgebase
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND status = ?", kbID, string(entity.StatusValid)).
+			First(&kb).Error; err != nil {
+			return err
+		}
+
+		existingNames := make([]string, 0)
+		if kb.ParserConfig != nil {
+			if raw, ok := kb.ParserConfig["table_column_names"].([]any); ok {
+				for _, item := range raw {
+					if str, ok := item.(string); ok && str != "" {
+						existingNames = append(existingNames, str)
+					}
+				}
+			} else if raw, ok := kb.ParserConfig["table_column_names"].([]string); ok {
+				existingNames = raw
+			}
+			for k, v := range kb.ParserConfig {
+				if strings.HasPrefix(k, "Parser:") {
+					if compMap, ok := v.(map[string]interface{}); ok {
+						if ssMap, ok := compMap["spreadsheet"].(map[string]interface{}); ok {
+							if names, ok := ssMap["column_names"].([]any); ok {
+								for _, item := range names {
+									if str, ok := item.(string); ok && str != "" {
+										existingNames = append(existingNames, str)
+									}
+								}
+							} else if names, ok := ssMap["column_names"].([]string); ok {
+								existingNames = append(existingNames, names...)
+							}
+						}
+					}
+				}
+			}
+		}
+		seen := make(map[string]struct{}, len(existingNames)+len(newNames))
+		merged := make([]string, 0, len(existingNames)+len(newNames))
+		for _, n := range existingNames {
+			if _, ok := seen[n]; !ok {
+				seen[n] = struct{}{}
+				merged = append(merged, n)
+			}
+		}
+		existingCount := len(merged)
+		for _, n := range newNames {
+			if _, ok := seen[n]; !ok {
+				seen[n] = struct{}{}
+				merged = append(merged, n)
+			}
+		}
+		if len(merged) == existingCount {
+			return nil
+		}
+
+		updateMap := map[string]interface{}{
+			"table_column_names": merged,
+		}
+		for k, v := range kb.ParserConfig {
+			if strings.HasPrefix(k, "Parser:") {
+				if compMap, ok := v.(map[string]interface{}); ok {
+					if ssMap, ok := compMap["spreadsheet"].(map[string]interface{}); ok {
+						ssMap["column_names"] = merged
+						updateMap[k] = compMap
+					}
+				}
+			}
+		}
+		return dao.NewKnowledgebaseDAO().UpdateParserConfig(ctx, tx, kbID, updateMap)
+	})
 }
