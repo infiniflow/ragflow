@@ -402,14 +402,12 @@ var pdfTOCRomanMarkerPattern = regexp.MustCompile(`^[IVXLCivxlc]+$`)
 // a subtitle line and a bare page number — that neither the anchored title
 // pass nor the entry-line filter recognizes.
 //
-// Classification ignores boilerplate (watermarks and storefront promos are
-// neither TOC signals nor body prose). A page qualifies when it carries
-// enough title-like and page-number-like fragments and, outside title-layout
-// sections, zero body-length prose. Body chapter pages (one or two headings
-// plus long prose) never satisfy the thresholds, so a mixed page degrades
-// to untouched instead of deleting prose. Sections without positions take no
-// part in the classification and are never deleted; table and figure
-// sections are excluded on both sides.
+// Classification counts title-like and page-number-like fragments and
+// requires zero body-length prose outside title-layout sections. Body
+// chapter pages (one or two headings plus long prose) never satisfy the
+// thresholds, so a mixed page degrades to untouched instead of deleting
+// prose. Sections without positions take no part in the classification and
+// are never deleted; table and figure sections are excluded on both sides.
 func filterPDFTOCFragmentPages(sections []deepdoctype.Section) []deepdoctype.Section {
 	pages := map[int][]int{}
 	for i, s := range sections {
@@ -429,7 +427,7 @@ func filterPDFTOCFragmentPages(sections []deepdoctype.Section) []deepdoctype.Sec
 			if entry || pdfTOCBarePageRefPattern.MatchString(text) {
 				refs++
 			}
-			if entry || pdfTOCBoilerplateText(text) || len([]rune(text)) < pdfTOCBodyTextRunesMin {
+			if entry || len([]rune(text)) < pdfTOCBodyTextRunesMin {
 				continue
 			}
 			if strings.TrimSpace(sections[i].LayoutType) == deepdoctype.LayoutTypeTitle {
@@ -480,17 +478,16 @@ func pdfTOCFragmentPage(s deepdoctype.Section) (int, bool) {
 
 // pdfTOCFragmentDeletable reports whether the section at idx on a classified
 // TOC page is TOC debris: a title candidate, an entry line, a bare page
-// reference, a page-number-like title, or short text (subtitles and
-// same-page watermarks) anchored by a neighboring TOC signal. Book titles
-// (non-title headings), roman-numeral page markers, long prose and non-text
-// layouts are kept.
+// reference, a page-number-like title, or short text (subtitles and debris)
+// anchored by a neighboring TOC signal. Book titles (non-title headings),
+// roman-numeral page markers, long prose and non-text layouts are kept.
 func pdfTOCFragmentDeletable(sections []deepdoctype.Section, idx int) bool {
 	s := sections[idx]
 	switch strings.TrimSpace(s.LayoutType) {
 	case "", deepdoctype.LayoutTypeText:
 	case deepdoctype.LayoutTypeTitle:
 		t := sectionText(s)
-		if !isPDFTOCTitleCandidate(t) && !isPDFTOCEntrySection(t) && !pdfTOCBarePageRefPattern.MatchString(t) && !pdfTOCBoilerplateText(t) {
+		if !isPDFTOCTitleCandidate(t) && !isPDFTOCEntrySection(t) && !pdfTOCBarePageRefPattern.MatchString(t) {
 			return false
 		}
 	default:
@@ -502,7 +499,7 @@ func pdfTOCFragmentDeletable(sections []deepdoctype.Section, idx int) bool {
 		return true
 	case pdfTOCRomanMarkerPattern.MatchString(text), strings.Contains(text, "《"):
 		return false
-	case pdfTOCBoilerplateText(text), pdfTOCBarePageRefPattern.MatchString(text):
+	case pdfTOCBarePageRefPattern.MatchString(text):
 		return true
 	case len([]rune(text)) < pdfTOCShortTextRunesMax && pdfTOCFragmentAnchorText(sections, idx):
 		return true
@@ -529,16 +526,6 @@ func pdfTOCFragmentAnchorText(sections []deepdoctype.Section, idx int) bool {
 		}
 	}
 	return false
-}
-
-// pdfTOCBoilerplatePattern matches storefront boilerplate that repeats on
-// TOC front matter pages. It is neither body prose nor a TOC signal: it must
-// not veto page classification and is deleted as short-text debris on a
-// classified page.
-var pdfTOCBoilerplatePattern = regexp.MustCompile(`更多、更全|免费(注册|下载)|欢迎访问|http[s]?://|www\.|\.cn|bbs\.|forum\.|下载|木瓜树`)
-
-func pdfTOCBoilerplateText(text string) bool {
-	return pdfTOCBoilerplatePattern.MatchString(text)
 }
 
 func isPDFTOCEntrySection(text string) bool {
