@@ -22,7 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import { DocumentType } from './constant';
-import { isDocumentProcessing } from './utils';
+import { isDocumentProcessing } from './document-status';
 
 export function useBulkOperateDataset({
   rowSelection,

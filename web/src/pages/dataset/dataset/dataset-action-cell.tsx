@@ -17,7 +17,7 @@ import { Download, Eye, PenLine, Trash2 } from 'lucide-react';
 import { omit } from 'lodash';
 import { useCallback } from 'react';
 import { UseRenameDocumentShowType } from './use-rename-document';
-import { isDocumentProcessing } from './utils';
+import { isDocumentProcessing } from './document-status';
 
 const Fields = ['name', 'size', 'type', 'create_time', 'update_time'];
 

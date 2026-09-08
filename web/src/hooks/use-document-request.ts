@@ -32,7 +32,7 @@ import {
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
-import { isDocumentProcessing } from '@/pages/dataset/dataset/utils';
+import { isDocumentProcessing } from '@/pages/dataset/dataset/document-status';
 import documentStructureService from '@/services/document-structure-service';
 import kbService, {
   changeDocumentParser,
