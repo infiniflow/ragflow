@@ -96,6 +96,65 @@ func TestBegin_MapsNamedQueryInputs(t *testing.T) {
 	}
 }
 
+// TestBegin_ScalarQueryMultiInput guards the regression described in
+// #19395: with two or more declared input fields, a scalar query must
+// NOT be duplicated into every field. Python's _merge_runtime_inputs
+// returns {} in that case, so the engine leaves the field outputs
+// unset. The previous Go implementation returned the scalar for every
+// field, producing e.g. customer_review = language = "Damaged package".
+func TestBegin_ScalarQueryMultiInput(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{
+			"customer_review": map[string]any{},
+			"language":        map[string]any{},
+		},
+	})
+	state := canvas.NewCanvasState("run-multi-input", "task-multi-input")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": "Damaged package"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if _, ok := out["customer_review"]; ok {
+		t.Errorf("customer_review should be unset for a scalar query with multiple declared fields; got %v", out["customer_review"])
+	}
+	if _, ok := out["language"]; ok {
+		t.Errorf("language should be unset for a scalar query with multiple declared fields; got %v", out["language"])
+	}
+	// state.Sys[query] still carries the canonical chat input.
+	if got, _ := state.Sys["query"].(string); got != "Damaged package" {
+		t.Errorf("state.Sys[query]: got %q, want %q", got, "Damaged package")
+	}
+}
+
+// TestBegin_DirectInputWinsOverScalarQuery pins that an explicitly
+// supplied named input takes precedence over the scalar-query fallback,
+// even when the Begin node declares a single field. This is the same
+// precedence as the single-field case in Python: direct named inputs
+// are returned before the query is consulted.
+func TestBegin_DirectInputWinsOverScalarQuery(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{
+			"customer_review": map[string]any{},
+		},
+	})
+	state := canvas.NewCanvasState("run-direct-wins", "task-direct-wins")
+	ctx := canvas.WithState(t.Context(), state)
+
+	inputs := map[string]any{
+		"query":           "Damaged package",
+		"customer_review": map[string]any{"value": "ignored direct value"},
+	}
+	out, err := c.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["customer_review"] != "ignored direct value" {
+		t.Errorf("customer_review = %v, want direct input value to win", out["customer_review"])
+	}
+}
+
 // TestBegin_PassesThroughInputs asserts the full inputs map — including
 // arbitrary keys beyond query / user_id — is returned unchanged as
 // outputs. This is the contract downstream components rely on to access
