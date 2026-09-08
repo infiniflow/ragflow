@@ -1986,9 +1986,14 @@ class Node:
         if level == 0 and texts:
             _emit(titles, texts)
 
-        # Titles within configured depth are accumulated into the current path
+        # Titles within configured depth are accumulated into the current path.
+        # Only the node's own heading (texts[:1]) is carried forward: any body
+        # text merged onto this node before its first child appeared
+        # (build_tree attaches beyond-depth lines onto the current stack top)
+        # is emitted as its own budgeted chunk below instead of being folded,
+        # unsplit, into every descendant chunk's title prefix.
         if 1 <= level <= self.depth:
-            path_titles = titles + texts
+            path_titles = titles + texts[:1]
         else:
             path_titles = titles
 
@@ -2001,6 +2006,14 @@ class Node:
         # onto it; split only the body and repeat the heading path on every piece so a
         # continuation chunk never loses the title.
         elif not child and (1 <= level <= self.depth):
+            _emit(titles + texts[:1], texts[1:])
+
+        # A node with children can still carry body text of its own, accumulated
+        # before its first child appeared. Emit that overflow as its own
+        # budgeted chunk under this node's title path, same as a leaf's own
+        # body, instead of folding it unsplit into path_titles for every
+        # descendant chunk (which duplicated it, uncapped, into every split).
+        elif child and (1 <= level <= self.depth) and len(texts) > 1:
             _emit(titles + texts[:1], texts[1:])
 
         # Recurse into children with the updated title path
