@@ -20,27 +20,29 @@ import time
 from quart import Response, jsonify
 
 from api.apps import current_user, login_required
+from api.apps.restful_apis._generation_params import extract_generation_config, merge_generation_config
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.doc_metadata_service import DocMetadataService
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_api_key
+from api.db.joint_services.tenant_model_service import resolve_model_config, get_api_key
 from api.utils.api_utils import get_error_data_result, get_request_json, validate_request
 from common.constants import RetCode, StatusEnum
 from common.metadata_utils import convert_conditions, meta_filter
 from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import chunks_format
 
+
 def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
         return None
 
     model_type = (llm_setting or {}).get("model_type")
-    if model_type not in {"chat", "image2text"}:
+    if model_type not in {"chat", "vision"}:
         model_type = "chat"
 
     try:
-        get_model_config_from_provider_instance(
+        resolve_model_config(
             tenant_id=tenant_id,
-            model_name=llm_id,
+            model_ref=llm_id,
             model_type=model_type,
         )
     except Exception as e:
@@ -51,6 +53,7 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
 
 import logging
 from api.utils.reference_metadata_utils import enrich_chunks_with_document_metadata
+
 
 def _build_reference_chunks(reference, include_metadata=False, metadata_fields=None):
     chunks = chunks_format(reference)
@@ -193,6 +196,7 @@ async def _stream_chat_completion_sse(
     yield f"data:{json.dumps(response, ensure_ascii=False)}\n\n"
     yield "data:[DONE]\n\n"
 
+
 def _normalize_message_content(content):
     """Convert OpenAI message content to a string for the dialog layer.
 
@@ -278,6 +282,7 @@ async def openai_chat_completions(chat_id):
         dia.llm_id = requested_model
         if not get_api_key(tenant_id=dia.tenant_id, model_name=requested_model):
             return get_error_data_result(message=f"Cannot use specified model {requested_model}.")
+    merge_generation_config(dia, extract_generation_config(req))
 
     metadata_condition = extra_body.get("metadata_condition") or {}
     if metadata_condition and not isinstance(metadata_condition, dict):

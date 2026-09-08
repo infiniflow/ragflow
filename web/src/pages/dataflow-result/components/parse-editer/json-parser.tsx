@@ -1,7 +1,7 @@
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { isArray } from 'lodash';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ChunkTextMode } from '../../constant';
 import styles from '../../index.module.less';
 import { IChunk } from '../../interface';
@@ -23,10 +23,13 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
     textMode,
     clickChunk,
     isReadonly,
+    newChunkIndex,
   } = props;
 
   const { content, activeEditIndex, setActiveEditIndex, editDivRef } =
     useParserInit({ initialValue });
+
+  const sectionRefs = useRef<(HTMLElement | null)[]>([]);
 
   const parserKey = useMemo(() => {
     const key =
@@ -76,23 +79,57 @@ export const ArrayContainer = (props: IJsonContainerProps) => {
     }
   }, [editDivRef, activeEditIndex, content, parserKey]);
 
+  useEffect(() => {
+    if (newChunkIndex === undefined) return;
+    const target = sectionRefs.current[newChunkIndex];
+    if (!target) return;
+
+    // Scroll only the nearest scrollable ancestor so the whole page doesn't shift
+    let scrollContainer: HTMLElement | null = target.parentElement;
+    while (scrollContainer) {
+      const { overflowY } = window.getComputedStyle(scrollContainer);
+      if (overflowY === 'auto' || overflowY === 'scroll') break;
+      scrollContainer = scrollContainer.parentElement;
+    }
+
+    if (scrollContainer) {
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const offsetTop =
+        targetRect.top - containerRect.top + scrollContainer.scrollTop;
+      const targetCenter = offsetTop + target.clientHeight / 2;
+      scrollContainer.scrollTo({
+        top: Math.max(0, targetCenter - scrollContainer.clientHeight / 2),
+        behavior: 'smooth',
+      });
+    }
+  }, [newChunkIndex, content]);
+
   return (
     <>
       {isArray(content.value) &&
         content.value?.map((item, index) => {
           if (
-            item[parserKeyMap[content.key as keyof typeof parserKeyMap]] === ''
+            item[parserKeyMap[content.key as keyof typeof parserKeyMap]] ===
+              '' ||
+            !item[parserKey]
           ) {
             return null;
           }
           return (
             <section
               key={index}
+              ref={(el) => {
+                sectionRefs.current[index] = el;
+              }}
               className={cn(
                 isChunck
-                  ? 'bg-bg-card my-2 p-2 rounded-lg flex gap-1 items-start'
+                  ? 'bg-bg-card my-2 p-2 rounded-lg flex gap-1 items-start transition-shadow duration-300'
                   : '',
                 activeEditIndex === index && isChunck ? 'bg-bg-title' : '',
+                newChunkIndex === index && isChunck
+                  ? 'ring-2 ring-accent-primary'
+                  : '',
               )}
             >
               {isChunck && !isReadonly && (

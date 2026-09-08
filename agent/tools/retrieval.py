@@ -27,7 +27,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.memory_service import MemoryService
 from api.db.joint_services import memory_message_service
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
 from common import settings
 from common.connection_utils import timeout
 from rag.app.tag import label_question
@@ -40,7 +40,7 @@ class RetrievalParam(ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
+        self.meta: ToolMeta = {
             "name": "search_my_dateset",
             "description": "This tool can be utilized for relevant content searching in the datasets.",
             "parameters": {
@@ -48,9 +48,9 @@ class RetrievalParam(ToolParamBase):
                     "type": "string",
                     "description": "The keywords to search the dataset. The keywords should be the most important words/terms(includes synonyms) from the original request.",
                     "default": "",
-                    "required": True
+                    "required": True,
                 }
-            }
+            },
         }
         super().__init__()
         self.function_name = "search_my_dateset"
@@ -58,6 +58,7 @@ class RetrievalParam(ToolParamBase):
         self.similarity_threshold = 0.2
         self.keywords_similarity_weight = 0.5
         self.top_n = 8
+        self.rerank_candidates_count = 64
         self.top_k = 1024
         self.dataset_ids = []
         self.kb_ids = []  # Deprecated: keep for backward compatibility
@@ -68,7 +69,7 @@ class RetrievalParam(ToolParamBase):
         self.use_kg = False
         self.cross_languages = []
         self.toc_enhance = False
-        self.meta_data_filter={}
+        self.meta_data_filter = {}
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
@@ -76,12 +77,8 @@ class RetrievalParam(ToolParamBase):
         self.check_positive_number(self.top_n, "[Retrieval] Top N")
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "query": {
-                "name": "Query",
-                "type": "line"
-            }
-        }
+        return {"query": {"name": "Query", "type": "line"}}
+
 
 class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
@@ -90,6 +87,27 @@ class Retrieval(ToolBase, ABC):
     def _dataset_ids(self):
         """Get dataset IDs with backward compatibility for kb_ids."""
         return self._param.dataset_ids or getattr(self._param, "kb_ids", None) or []
+
+    def _resolve_manual_filter(self, flt: dict) -> dict:
+        # Return a new dict instead of mutating `flt` in place. The caller
+        # passes filters straight out of self._param.meta_data_filter, so
+        # mutating them would make later invocations reuse a stale value.
+        pat = re.compile(self.variable_ref_patt)
+        content = flt.get("value", "")
+
+        def replace(match):
+            value = self._canvas.get_variable_value(match.group(1))
+            if value is None:
+                return ""
+            elif isinstance(value, partial):
+                return "".join(value())
+            elif isinstance(value, str):
+                return value
+            return json.dumps(value, ensure_ascii=False)
+
+        resolved = dict(flt)
+        resolved["value"] = self._replace_template_matches(pat, content, replace)
+        return resolved
 
     async def _retrieve_kb(self, query_text: str):
         kb_ids: list[str] = []
@@ -101,8 +119,7 @@ class Retrieval(ToolBase, ABC):
             # if kb_nm is a list
             kb_nm_list = kb_nm if isinstance(kb_nm, list) else [kb_nm]
             for nm_or_id in kb_nm_list:
-                e, kb = KnowledgebaseService.get_by_name(nm_or_id,
-                                                         self._canvas._tenant_id)
+                e, kb = KnowledgebaseService.get_by_name(nm_or_id, self._canvas._tenant_id)
                 if not e:
                     e, kb = KnowledgebaseService.get_by_id(nm_or_id)
                     if not e:
@@ -121,12 +138,12 @@ class Retrieval(ToolBase, ABC):
         embd_mdl = None
         if embd_nms:
             tenant_id = self._canvas.get_tenant_id()
-            embd_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.EMBEDDING, embd_nms[0])
+            embd_model_config = resolve_model_config(tenant_id, LLMType.EMBEDDING, embd_nms[0])
             embd_mdl = LLMBundle(tenant_id, embd_model_config)
 
         rerank_mdl = None
         if self._param.rerank_id:
-            rerank_model_config = get_model_config_from_provider_instance(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
+            rerank_model_config = resolve_model_config(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
             rerank_mdl = LLMBundle(kbs[0].tenant_id, rerank_model_config)
 
         vars = self.get_input_elements_from_text(query_text)
@@ -141,41 +158,6 @@ class Retrieval(ToolBase, ABC):
             def _load_metas() -> dict:
                 return DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
 
-            def _resolve_manual_filter(flt: dict) -> dict:
-                # Return a new dict instead of mutating `flt` in place. The
-                # caller passes filters straight out of self._param.meta_data_filter,
-                # so mutating them would replace the variable reference with its
-                # resolved value and every subsequent invocation (e.g. inside an
-                # Iteration component) would reuse that stale value.
-                pat = re.compile(self.variable_ref_patt)
-                s = flt.get("value", "")
-                out_parts = []
-                last = 0
-
-                for m in pat.finditer(s):
-                    out_parts.append(s[last:m.start()])
-                    key = m.group(1)
-                    v = self._canvas.get_variable_value(key)
-                    if v is None:
-                        rep = ""
-                    elif isinstance(v, partial):
-                        buf = []
-                        for chunk in v():
-                            buf.append(chunk)
-                        rep = "".join(buf)
-                    elif isinstance(v, str):
-                        rep = v
-                    else:
-                        rep = json.dumps(v, ensure_ascii=False)
-
-                    out_parts.append(rep)
-                    last = m.end()
-
-                out_parts.append(s[last:])
-                resolved = dict(flt)
-                resolved["value"] = "".join(out_parts)
-                return resolved
-
             chat_mdl = None
             if self._param.meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 tenant_id = self._canvas.get_tenant_id()
@@ -188,7 +170,7 @@ class Retrieval(ToolBase, ABC):
                 query,
                 chat_mdl,
                 doc_ids,
-                _resolve_manual_filter if self._param.meta_data_filter.get("method") == "manual" else None,
+                self._resolve_manual_filter if self._param.meta_data_filter.get("method") == "manual" else None,
                 kb_ids=kb_ids,
                 metas_loader=_load_metas,
             )
@@ -207,11 +189,12 @@ class Retrieval(ToolBase, ABC):
                 self._param.top_n,
                 self._param.similarity_threshold,
                 1 - self._param.keywords_similarity_weight,
-                top=self._param.top_k,
+                knn_top_k=self._param.top_k,
                 doc_ids=doc_ids,
                 aggs=True,
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),
+                rerank_candidates_count=self._param.rerank_candidates_count,
             )
             if self.check_if_canceled("Retrieval processing"):
                 return
@@ -220,22 +203,16 @@ class Retrieval(ToolBase, ABC):
                 tenant_id = self._canvas._tenant_id
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
                 chat_mdl = LLMBundle(tenant_id, chat_model_config)
-                cks = await settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs],
-                                                          chat_mdl, self._param.top_n)
+                cks = await settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs], chat_mdl, self._param.top_n)
                 if self.check_if_canceled("Retrieval processing"):
                     return
                 if cks:
                     kbinfos["chunks"] = cks
-            kbinfos["chunks"] = settings.retriever.retrieval_by_children(kbinfos["chunks"],
-                                                                         [kb.tenant_id for kb in kbs])
+            kbinfos["chunks"] = settings.retriever.retrieval_by_children(kbinfos["chunks"], [kb.tenant_id for kb in kbs])
             if self._param.use_kg:
                 tenant_id = self._canvas.get_tenant_id()
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                ck = await settings.kg_retriever.retrieval(query,
-                                                     [kb.tenant_id for kb in kbs],
-                                                     kb_ids,
-                                                     embd_mdl,
-                                                     LLMBundle(tenant_id, chat_model_config))
+                ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], kb_ids, embd_mdl, LLMBundle(tenant_id, chat_model_config))
                 if self.check_if_canceled("Retrieval processing"):
                     return
                 if ck["content_with_weight"]:
@@ -245,8 +222,7 @@ class Retrieval(ToolBase, ABC):
 
         if self._param.use_kg and kbs:
             chat_model_config = get_tenant_default_model_by_type(kbs[0].tenant_id, LLMType.CHAT)
-            ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl,
-                                                 LLMBundle(kbs[0].tenant_id, chat_model_config))
+            ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, chat_model_config))
             if self.check_if_canceled("Retrieval processing"):
                 return
             if ck["content_with_weight"]:
@@ -293,16 +269,14 @@ class Retrieval(ToolBase, ABC):
         filter_dict: dict = {"memory_id": memory_ids}
         if user_id:
             import re
+
             # is variable
             if re.match(r"^{.*}$", user_id):
                 user_id = self._canvas.get_variable_value(user_id)
             filter_dict["user_id"] = user_id
-        message_list = memory_message_service.query_message(filter_dict, {
-            "query": query,
-            "similarity_threshold": self._param.similarity_threshold,
-            "keywords_similarity_weight": self._param.keywords_similarity_weight,
-            "top_n": self._param.top_n
-        })
+        message_list = memory_message_service.query_message(
+            filter_dict, {"query": query, "similarity_threshold": self._param.similarity_threshold, "keywords_similarity_weight": self._param.keywords_similarity_weight, "top_n": self._param.top_n}
+        )
         if not message_list:
             self.set_output("formalized_content", self._param.empty_response)
             return ""

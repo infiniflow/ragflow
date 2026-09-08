@@ -1,0 +1,251 @@
+# base stage
+FROM ubuntu:24.04 AS base
+USER root
+SHELL ["/bin/bash", "-c"]
+
+ARG NEED_MIRROR=1
+
+#Optional parameter
+#If set NEED_MIRROR=1, and set GITEE_TOKEN="xxxxx" , donwload source from gitee.
+#If don't set GITEE_TOKEN , download from github
+ARG GITEE_TOKEN
+
+WORKDIR /ragflow
+
+# copy models downloaded via download_deps.py
+# layout.laws/manual/paper.onnx are byte-identical to layout.onnx, so we
+# exclude them from the tar extract and symlink them to layout.onnx instead,
+# saving ~219MB in the image.
+RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
+    tar --exclude='.*' \
+        --exclude='layout.laws.onnx' \
+        --exclude='layout.manual.onnx' \
+        --exclude='layout.paper.onnx' \
+        -cf - \
+        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
+        /huggingface.co/InfiniFlow/deepdoc \
+        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc && \
+    ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.laws.onnx && \
+    ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.manual.onnx && \
+    ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.paper.onnx
+
+# Copy the cl100k_base BPE table used by the Go tokenizer (tiktoken-go
+# cl100k_base). The deps image ships it at its root; the Go image previously
+# mounted only /huggingface.co and omitted this file, so NumTokensFromString
+# silently returned 0. localBpeLoader resolves it from <workdir>/ragflow_deps/,
+# so dropping it here makes the table load offline at startup (see
+# InitCL100KEncoder fail-fast guard).
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/cl100k_base.tiktoken,target=/tmp/cl100k_base.tiktoken \
+    mkdir -p /ragflow/ragflow_deps && \
+    cp /tmp/cl100k_base.tiktoken /ragflow/ragflow_deps/cl100k_base.tiktoken
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Setup apt
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        # CI runners may inject a proxy whose TLS certificate is not trusted inside
+        # the fresh Ubuntu base image yet. Keep the Ubuntu mirror on HTTP here so
+        # the mirror switch remains usable before the full CA store is available.
+        sed -i 's|http://archive.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
+        sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
+    fi; \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
+    chmod 1777 /tmp && \
+    apt update && \
+    #apt --no-install-recommends install -y ca-certificates \
+    #libglib2.0-0 libglx-mesa0 libgl1 pkg-config libgdiplus default-jdk libatk-bridge2.0-0 \
+    #libgtk-4-1 libnss3 xdg-utils libjemalloc-dev gnupg unzip curl wget git vim less \
+    #ghostscript pandoc texlive texlive-latex-extra texlive-xetex texlive-lang-chinese \
+    #fonts-freefont-ttf fonts-noto-cjk postgresql-client libjemalloc2
+
+    apt --no-install-recommends install -y ca-certificates curl vim unzip iproute2 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Download resource from GitHub to /usr/share/infinity
+# Ship only the directories required by the runtime tokenizer:
+#   rag     - base analyzer dictionaries (mandatory)
+#   opencc  - Traditional/Simplified Chinese conversion
+#   wordnet - WordNet resources
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    mkdir -p /usr/share/infinity/resource && \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        if [ -n "$GITEE_TOKEN" ]; then \
+            git clone --depth 1 --single-branch "https://oauth2:${GITEE_TOKEN}@gitee.com/infiniflow/resource" /tmp/resource; \
+        else \
+            git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource; \
+        fi; \
+    else \
+        git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource; \
+    fi && \
+    for d in rag opencc wordnet; do \
+        cp -r "/tmp/resource/$d" /usr/share/infinity/resource/; \
+    done && \
+    rm -rf /tmp/resource && \
+    apt-get purge -y git && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+ARG NGINX_VERSION=1.31.3-1~noble
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt -o Acquire::Retries=5 update && \
+    apt -o Acquire::Retries=5 install -y --no-install-recommends gnupg && \
+    mkdir -p /etc/apt/keyrings && \
+    curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/keyrings/nginx-archive-keyring.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/nginx-archive-keyring.gpg] https://nginx.org/packages/mainline/ubuntu/ noble nginx" > /etc/apt/sources.list.d/nginx.list && \
+    apt -o Acquire::Retries=5 update && \
+    apt -o Acquire::Retries=5 install -y --no-install-recommends nginx=${NGINX_VERSION} && \
+    apt-mark hold nginx && \
+    apt-get purge -y gnupg && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+#ENV PATH=/root/.local/bin:$PATH
+
+# NOTE: Node.js is intentionally NOT installed in `base`. The pure-Go backend
+# serves the prebuilt static frontend via nginx and needs no Node runtime at
+# runtime. Node.js is only required to *build* the frontend, so it lives
+# exclusively in the `web-builder` stage and never reaches the final image.
+
+
+# ── go-builder stage ──
+FROM infiniflow/github_action_runner:latest AS go-builder
+USER root
+SHELL ["/bin/bash", "-c"]
+WORKDIR /ragflow
+
+COPY internal internal
+COPY cmd cmd
+COPY go.mod go.sum ./
+COPY build.sh ./
+
+# Download and extract ONNX Runtime static archives into the user-cache path
+# that build.sh expects (ONNXRUNTIME_STATIC_PREFIX =
+# ~/ragflow-native-libs/onnxruntime/static_lib).
+#
+# The github_action_runner base image does NOT ship native libs at
+# /opt/ragflow-native-libs, so build.sh's _seed_from_system finds nothing
+# and silently skips ORT linking — the resulting binary then fails at
+# startup with "no in-process DeepDoc backend serving" because
+# dlopen(NULL)/dlsym can't find OrtGetApiBase.
+#
+# We download ONLY the ORT static zip (not the full download_deps.py, which
+# also pulls chrome/tika/nltk/huggingface models that the Go build doesn't
+# need). These .a files are consumed at link time only; they do NOT enter
+# the final production image (only COPY --from=go-builder /ragflow/bin does).
+#
+# Seed the ONNX Runtime static archives from the runner image's system
+# pre-bake into the user-cache path that build.sh expects
+# (ONNXRUNTIME_STATIC_PREFIX = ~/ragflow-native-libs/onnxruntime/static_lib).
+# Without this, build.sh's _seed_from_system finds the archives only under
+# /opt and silently skips ORT linking — the resulting binary then fails at
+# startup with "no in-process DeepDoc backend serving" because
+# dlopen(NULL)/dlsym can't find OrtGetApiBase.
+# Use ${HOME} (not a hard-coded /root) so the cache path matches
+# build.sh's ONNXRUNTIME_STATIC_PREFIX regardless of the image's HOME.
+# These .a files are consumed at link time only; they do NOT enter the
+# final production image (only COPY --from=go-builder /ragflow/bin does).
+ARG ORT_VERSION=1.23.2
+RUN set -eux; \
+    mkdir -p "${HOME}/ragflow-native-libs/onnxruntime"; \
+    cp -rn /opt/ragflow-native-libs/onnxruntime/* "${HOME}/ragflow-native-libs/onnxruntime/"; \
+    find "${HOME}/ragflow-native-libs/onnxruntime/static_lib" -name '*.a' | head -5
+
+# Overwrite C++ build artifact from cpp-builder
+#COPY --from=cpp-builder \
+#     /ragflow/internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.a \
+#     /ragflow/internal/binding/cpp/cmake-build-release/librag_tokenizer_c_api.a
+
+RUN git config --global safe.directory "*" && \
+    cd /ragflow && ./build.sh --cpp
+
+RUN git config --global safe.directory "*" && \
+    ./build.sh --go
+
+
+# ── web-builder stage ──
+# Builds the static frontend. Node.js is installed HERE only, so the runtime
+# image (production, which extends `base`) never contains Node.js.
+FROM base AS web-builder
+USER root
+
+WORKDIR /ragflow
+
+# Install Node.js 22.x (Ubuntu 24.04's Node.js is too old)
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get purge -y nodejs npm && \
+    apt-get autoremove -y && \
+    apt-get update && \
+    apt-get install -y nodejs
+
+# Install frontend dependencies — depends only on package manifests so
+# web source / docs changes don't invalidate this layer.
+COPY web/package.json web/package-lock.json web/.npmrc ./web/
+RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
+    cd web && NODE_OPTIONS="--max-old-space-size=8192" npm install
+
+# Copy full web source and docs for the frontend build.
+COPY web web
+COPY docs docs
+RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
+    cd web && NODE_OPTIONS="--max-old-space-size=8192" VITE_BUILD_SOURCEMAP=false VITE_MINIFY=esbuild npm run build
+
+RUN --mount=type=bind,source=.git,target=/ragflow/.git \
+    --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    version_info=$(git describe --tags --match=v* --first-parent --always) && \
+    echo "$version_info" > /ragflow/VERSION && \
+    apt-get purge -y git && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+# production stage
+FROM base AS production
+USER root
+
+WORKDIR /ragflow
+
+# Copy the compiled Go backend binaries (set exec bits at copy time to avoid a redundant chmod layer)
+COPY --from=go-builder --chmod=755 /ragflow/bin/ragflow_server /ragflow/bin/ragflow_server
+
+ENV PYTHONPATH=/ragflow/
+
+COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
+COPY docker/entrypoint*.sh ./
+RUN chmod +x ./entrypoint*.sh
+
+# Copy nginx configuration for frontend serving
+RUN mkdir -p /etc/nginx/conf.d /var/log/nginx
+
+COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
+COPY docker/nginx/ragflow.conf.golang \
+     /etc/nginx/conf.d/
+
+RUN rm -f /etc/nginx/sites-enabled/default
+
+
+COPY conf conf
+COPY agent/templates agent/templates
+COPY rag/prompts rag/prompts
+
+# Wiki page-structure presets read at runtime by the Go backend
+# (CompilationTemplateService.LoadWikiPresets).
+COPY api/db/init_data/compilation_templates ./api/db/init_data/compilation_templates
+
+
+# Copy compiled web pages
+COPY --from=web-builder /ragflow/web/dist /ragflow/web/dist
+
+# Copy version info
+COPY --from=web-builder /ragflow/VERSION /ragflow/VERSION
+
+# Set environment variables
+ENV HF_ENDPOINT=https://hf-mirror.com
+
+ENTRYPOINT ["./entrypoint-go.sh"]

@@ -1,9 +1,11 @@
 ---
 sidebar_position: 2
+title: "What Is Agent Context Engine?"
+sidebar_label: "What Is Agent Context Engine?"
 slug: /what-is-agent-context-engine
 ---
 
-# What is Agent context engine?
+# What Is Agent Context Engine?
 
 From 2025, a silent revolution began beneath the dazzling surface of AI Agents. While the world marveled at agents that could write code, analyze data, and automate workflows, a fundamental bottleneck emerged: why do even the most advanced agents still stumble on simple questions, forget previous conversations, or misuse available tools?
 
@@ -11,7 +13,7 @@ The answer lies not in the intelligence of the Large Language Model (LLM) itself
 
 This is where the Agent Context Engine comes in. It is not merely an incremental improvement but a foundational shift, representing the evolution of RAG from a singular technique into the core data and intelligence substrate for the entire Agent ecosystem.
 
-## Beyond the hype: The reality of today's "intelligent" Agents
+## Beyond the Hype: The Reality of Today's "Intelligent" Agents
 Today, the “intelligence” behind most AI Agents hides a mountain of human labor. Developers must:
 
 - Hand-craft elaborate prompt templates
@@ -33,7 +35,7 @@ At its core, an Agent Context Engine is built on a triumvirate of next-generatio
 
 3. The Tool Orchestrator: As MCP (Model Context Protocol) enables the connection of hundreds of internal services as tools, a new problem arises: tool selection. The Context Engine solves this with Tool Retrieval. Instead of dumping all tool descriptions into the prompt, it maintains an index of tools and—critically—an index of Skills (best practices on when and how to use tools). For a given task, it retrieves only the most relevant tools and instructions, transforming the LLM’s job from "searching a haystack" to "following a recipe."
 
-## Why we need a dedicated engine? The case for a unified substrate
+## Why Do We Need a Dedicated Engine? The Case for a Unified Substrate
 
 The necessity of an Agent Context Engine becomes clear when we examine the alternative: siloed, manually wired components.
 
@@ -50,7 +52,7 @@ The shift from Context Engineering to a Context Platform/Engine marks the matura
 | Context maintenance | A development and operational burden, logic locked in code.                | A manageable platform function, with visibility and control returned to the business.               |
 
 
-## RAGFlow: A resolute march toward the context engine of Agents
+## RAGFlow: A Resolute March Toward the Context Engine of Agents
 
 This is the future RAGFlow is forging.
 
