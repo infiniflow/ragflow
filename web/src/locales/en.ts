@@ -1307,6 +1307,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldContainerName: 'Container Name',
       dataSourceFieldPrefixOptional: 'Prefix (optional)',
       dataSourceFieldFeedUrl: 'Feed URL',
+      dataSourceFieldSitemapUrl: 'Sitemap URL',
+      dataSourceFieldUrlFilter: 'URL filter (regex)',
+      dataSourceFieldFollowPdfLinks: 'Follow PDF links',
+      dataSourceFieldRestrictPdfToDomain: 'Restrict PDFs to sitemap domain',
+      dataSourceFieldUserAgent: 'User-Agent',
       dataSourceFieldGcsAccessKeyId: 'GCS Access Key ID',
       dataSourceFieldGcsSecretAccessKey: 'GCS Secret Access Key',
       dataSourceFieldBucketName: 'Bucket Name',
@@ -1608,6 +1613,20 @@ Example: Virtual Hosted Style`,
         'Every repository visible to the token in this organization will be indexed.',
       azureDevOpsContentTypesTip:
         'Choose what to index: source files, pull requests, or both.',
+      sitemapDescription:
+        'Connect a public sitemap.xml to sync the listed web pages and PDF documents into your knowledge base.',
+      sitemapUrlTip:
+        'URL of the sitemap.xml or sitemap index to crawl, e.g. https://example.com/sitemap.xml. Sitemap indexes are followed recursively (up to 5 levels).',
+      sitemapUrlFilterTip:
+        'Optional regular expression. Only URLs matching it are indexed, e.g. ^https://example\\.com/docs/ to restrict the sync to a section of the site.',
+      sitemapFollowPdfLinksTip:
+        'Also index the PDF files linked from the crawled HTML pages.',
+      sitemapRestrictPdfToDomainTip:
+        'Only follow PDF links hosted on the same domain as the sitemap.',
+      sitemapUserAgentTip:
+        'User-Agent header sent with every request. Leave empty to use RAGFlow-SitemapConnector/1.0.',
+      sitemapBatchSizeTip:
+        'Number of pages fetched and sent to RAGFlow per batch.',
       azure_devopsDescription:
         'Connect Azure DevOps to sync repository files and pull requests.',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
