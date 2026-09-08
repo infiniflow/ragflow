@@ -265,7 +265,7 @@ class TCADPParser(RAGFlowPdfParser):
     def _file_to_base64(self, file_path: str, binary: bytes = None) -> str:
         """Convert file to Base64 format"""
 
-        if binary:
+        if binary is not None:
             # If binary data is directly available, convert directly
             return base64.b64encode(binary).decode("utf-8")
         else:
@@ -392,13 +392,13 @@ class TCADPParser(RAGFlowPdfParser):
     ) -> tuple:
         """Parse PDF document"""
 
-        self.outlines = extract_pdf_outlines(binary if binary else filepath)
+        self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
         temp_file = None
         created_tmp_dir = False
 
         try:
             # Handle input file
-            if binary:
+            if binary is not None:
                 temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
                 temp_file.write(binary)
                 temp_file.close()
