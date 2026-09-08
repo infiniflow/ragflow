@@ -124,10 +124,8 @@ func TestEmbedChunks_PerChunkCacheMissThenHit(t *testing.T) {
 	store := newMemCacheStore()
 	chunks := []schema.ChunkDoc{chunkWithID("chunk-1", "hello world")}
 
-	model := "test-model@provider"
-
 	// First pass: cache miss -> embedder is called once.
-	out1, _, err := comp.embedChunks(context.Background(), "tenant", "kb", model, "", chunks, store)
+	out1, _, err := comp.embedChunks(context.Background(), "tenant", "kb", "", chunks, store)
 	if err != nil {
 		t.Fatalf("embedChunks (miss): %v", err)
 	}
@@ -140,7 +138,7 @@ func TestEmbedChunks_PerChunkCacheMissThenHit(t *testing.T) {
 	}
 
 	// Second pass with the same chunk id: cache hit -> embedder NOT called again.
-	out2, _, err := comp.embedChunks(context.Background(), "tenant", "kb", model, "", chunks, store)
+	out2, _, err := comp.embedChunks(context.Background(), "tenant", "kb", "", chunks, store)
 	if err != nil {
 		t.Fatalf("embedChunks (hit): %v", err)
 	}
@@ -158,16 +156,16 @@ func TestEmbedChunks_PerChunkCacheMissThenHit(t *testing.T) {
 	}
 }
 
-func TestEmbedChunks_CacheKeyScopedByChunkAndModel(t *testing.T) {
-	comp, stub := withStubEmbedder(t, 4)
+func TestEmbedChunks_CacheKeyScopedByChunkAndEmbdID(t *testing.T) {
+	embdID := "embd-a"
+	comp, stub := withStubEmbedderEmbdID(t, 4, &embdID)
 	comp.param.Fields = []string{"text"}
 
 	store := newMemCacheStore()
-	model := "test-model@provider"
 
 	// Two distinct chunks -> two embedder calls, two cache keys.
 	a := []schema.ChunkDoc{chunkWithID("chunk-a", "alpha"), chunkWithID("chunk-b", "beta")}
-	if _, _, err := comp.embedChunks(context.Background(), "tenant", "kb", model, "", a, store); err != nil {
+	if _, _, err := comp.embedChunks(context.Background(), "tenant", "kb", "", a, store); err != nil {
 		t.Fatalf("embedChunks: %v", err)
 	}
 	if got := stub.calls.Load(); got != 1 {
@@ -177,16 +175,62 @@ func TestEmbedChunks_CacheKeyScopedByChunkAndModel(t *testing.T) {
 		t.Fatalf("expected 2 emb cache keys for 2 distinct chunks, got %d", n)
 	}
 
-	// Re-embedding chunk-a with a DIFFERENT model must bypass the cache.
+	// Rebinding the dataset to a different embedding model must bypass the
+	// cache: the key is derived from the dataset's embd_id, so the entry
+	// written under embd-a is not reusable and a stale vector is never served.
+	embdID = "embd-b"
 	b := []schema.ChunkDoc{chunkWithID("chunk-a", "alpha")}
-	if _, _, err := comp.embedChunks(context.Background(), "tenant", "kb", "other-model@provider", "", b, store); err != nil {
-		t.Fatalf("embedChunks (other model): %v", err)
+	if _, _, err := comp.embedChunks(context.Background(), "tenant", "kb", "", b, store); err != nil {
+		t.Fatalf("embedChunks (rebound embd_id): %v", err)
 	}
 	if got := stub.calls.Load(); got != 2 {
-		t.Fatalf("expected a new embedder call for a different model, got calls=%d", got)
+		t.Fatalf("expected a new embedder call after the dataset's embd_id changed, got calls=%d", got)
 	}
 	if n := store.countEmbKeys(); n != 3 {
-		t.Fatalf("expected 3 emb cache keys after distinct-model embed, got %d", n)
+		t.Fatalf("expected 3 emb cache keys after embd_id change, got %d", n)
+	}
+}
+
+// The embedding model comes from the dataset, never from the DSL: two components
+// configured with different setups.embedding_model but the same dataset embd_id
+// must resolve to the same cache entry. This locks in that the DSL cannot
+// influence the cache key (and would fail if setups.embedding_model were read
+// again), which is what previously let a re-bound dataset serve a stale vector.
+func TestEmbedChunks_CacheIgnoresDSLEmbeddingModel(t *testing.T) {
+	embdID := "embd-a"
+	stub := newStubEmbedder(4)
+	build := func(dslModel string) *TokenizerComponent {
+		comp, err := NewTokenizerComponentWithResolver(
+			map[string]any{"setups": map[string]any{"embedding_model": dslModel}},
+			func(_ context.Context, _, _ string) (Embedder, string, error) { return stub, embdID, nil },
+		)
+		if err != nil {
+			t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+		}
+		c := comp.(*TokenizerComponent)
+		c.param.Fields = []string{"text"}
+		return c
+	}
+
+	store := newMemCacheStore()
+	chunks := []schema.ChunkDoc{chunkWithID("chunk-1", "hello world")}
+
+	if _, _, err := build("dsl-model-a").embedChunks(context.Background(), "tenant", "kb", "", chunks, store); err != nil {
+		t.Fatalf("embedChunks (dsl-model-a): %v", err)
+	}
+	if got := stub.calls.Load(); got != 1 {
+		t.Fatalf("expected 1 embedder call on miss, got %d", got)
+	}
+
+	// Same dataset embd_id, different DSL model -> must hit the same entry.
+	if _, _, err := build("dsl-model-b").embedChunks(context.Background(), "tenant", "kb", "", chunks, store); err != nil {
+		t.Fatalf("embedChunks (dsl-model-b): %v", err)
+	}
+	if got := stub.calls.Load(); got != 1 {
+		t.Fatalf("DSL embedding_model must not affect the cache key: expected a hit, got calls=%d", got)
+	}
+	if n := store.countEmbKeys(); n != 1 {
+		t.Fatalf("expected 1 emb cache key across both DSL models, got %d", n)
 	}
 }
 
@@ -198,7 +242,7 @@ func TestEmbedChunks_MissingChunkIDSkipsCache(t *testing.T) {
 	// Chunk without an id: cannot be cached, always embedded.
 	noID, _ := schema.ChunkDocFromMap(map[string]any{"text": "no id here"})
 
-	first, _, err := comp.embedChunks(context.Background(), "tenant", "kb", "test-model@provider", "", []schema.ChunkDoc{noID}, store)
+	first, _, err := comp.embedChunks(context.Background(), "tenant", "kb", "", []schema.ChunkDoc{noID}, store)
 	if err != nil {
 		t.Fatalf("embedChunks (no id): %v", err)
 	}
@@ -211,7 +255,7 @@ func TestEmbedChunks_MissingChunkIDSkipsCache(t *testing.T) {
 	}
 
 	// Second pass: still no id -> still embedded (calls increment).
-	comp.embedChunks(context.Background(), "tenant", "kb", "test-model@provider", "", []schema.ChunkDoc{noID}, store)
+	comp.embedChunks(context.Background(), "tenant", "kb", "", []schema.ChunkDoc{noID}, store)
 	if stub.calls.Load() != 2 {
 		t.Fatalf("expected a second embedder call for id-less chunk (cache not used), got %d", stub.calls.Load())
 	}

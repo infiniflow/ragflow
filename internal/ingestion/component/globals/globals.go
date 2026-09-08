@@ -53,10 +53,11 @@ func canvasStateFromContext(ctx context.Context) *runtime.CanvasState {
 // depends on (e.g. TokenChunker drops `name`, which Tokenizer consumes for
 // title embedding). Storing the shared fields in CanvasState.Globals restores
 // the Python behaviour without mutating every component output.
-// The embedding-model id is intentionally NOT a global: it is a
-// Tokenizer-scoped setup (params["setups"]["embedding_model"]). Keeping it out
-// of the shared bag prevents another component (e.g. one expecting a chat
-// model) from misreading a generic "model_id" global as its own.
+// The embedding-model id is intentionally NOT a global: the Tokenizer resolves
+// it from the dataset's own embd_id (kb_id) via its injected resolver, never
+// from a run input. Keeping it out of the shared bag prevents another component
+// (e.g. one expecting a chat model) from misreading a generic "model_id" global
+// as its own.
 var GlobalMetadataKeys = []string{
 	"name",
 	"doc_id",
