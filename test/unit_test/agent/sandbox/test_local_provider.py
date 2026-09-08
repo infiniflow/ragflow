@@ -56,12 +56,7 @@ def test_local_provider_collects_artifacts(tmp_path):
     try:
         result = provider.execute_code(
             instance.instance_id,
-            (
-                "from pathlib import Path\n"
-                "def main() -> dict:\n"
-                "    Path('artifacts/chart.png').write_bytes(b'PNGDATA')\n"
-                "    return {'ok': True}\n"
-            ),
+            ("from pathlib import Path\ndef main() -> dict:\n    Path('artifacts/chart.png').write_bytes(b'PNGDATA')\n    return {'ok': True}\n"),
             "python",
             timeout=5,
         )

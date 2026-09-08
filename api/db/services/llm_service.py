@@ -22,64 +22,58 @@ import threading
 from functools import partial
 from typing import Generator
 
+from langfuse import propagate_attributes
+
 from api.db.db_models import LLM
 from api.db.services.common_service import CommonService
 from api.db.services.tenant_llm_service import LLM4Tenant
-from common.constants import LLMType
-from common.token_utils import num_tokens_from_string
+from common.token_utils import langfuse_run_attrs, num_tokens_from_string, record_run_token_usage, truncate
+
+# Default values for the four LLM generation parameters stored in
+# search_config.llm_setting.  When the corresponding ``_enabled`` flag is
+# ``False`` (or the key is absent), the default is used instead of whatever
+# the user may have stored in ``llm_setting``.
+LLM_SETTING_DEFAULTS = {
+    "temperature": 0.1,
+    "top_p": 0.3,
+    "frequency_penalty": 0.7,
+    "presence_penalty": 0.4,
+}
+
+
+def resolve_llm_setting(llm_setting):
+    """Resolve *llm_setting* values according to their enable flags.
+
+    For each of the four generation parameters the dictionary may carry a
+    ``{key}_enabled`` boolean.  When the flag is ``True`` and the value
+    exists in *llm_setting*, the user-configured value is kept; otherwise
+    the default from :data:`LLM_SETTING_DEFAULTS` is substituted.
+
+    Keys whose name ends with ``_enabled`` are stripped from the result so
+    they are never forwarded to the downstream LLM call.
+    """
+    if not llm_setting:
+        return dict(LLM_SETTING_DEFAULTS)
+
+    resolved = {}
+    for key, default_val in LLM_SETTING_DEFAULTS.items():
+        enabled_key = f"{key}_enabled"
+        if llm_setting.get(enabled_key, True) and key in llm_setting:
+            resolved[key] = llm_setting[key]
+        else:
+            resolved[key] = default_val
+
+    # Carry over any extra keys that are not generation parameters and not
+    # enable flags (e.g. ``llm_id``, ``model_type``).
+    for key, val in llm_setting.items():
+        if key not in resolved and not key.endswith("_enabled"):
+            resolved[key] = val
+
+    return resolved
 
 
 class LLMService(CommonService):
     model = LLM
-
-
-def get_init_tenant_llm(user_id):
-    from common import settings
-
-    tenant_llm = []
-
-    model_configs = {
-        LLMType.CHAT: settings.CHAT_CFG,
-        LLMType.EMBEDDING: settings.EMBEDDING_CFG,
-        LLMType.SPEECH2TEXT: settings.ASR_CFG,
-        LLMType.IMAGE2TEXT: settings.IMAGE2TEXT_CFG,
-        LLMType.RERANK: settings.RERANK_CFG,
-    }
-
-    seen = set()
-    factory_configs = []
-    for factory_config in [
-        settings.CHAT_CFG,
-        settings.EMBEDDING_CFG,
-        settings.ASR_CFG,
-        settings.IMAGE2TEXT_CFG,
-        settings.RERANK_CFG,
-    ]:
-        factory_name = factory_config["factory"]
-        if factory_name not in seen:
-            seen.add(factory_name)
-            factory_configs.append(factory_config)
-
-    for factory_config in factory_configs:
-        for llm in LLMService.query(fid=factory_config["factory"]):
-            tenant_llm.append(
-                {
-                    "tenant_id": user_id,
-                    "llm_factory": factory_config["factory"],
-                    "llm_name": llm.llm_name,
-                    "model_type": llm.model_type,
-                    "api_key": model_configs.get(llm.model_type, {}).get("api_key", factory_config["api_key"]),
-                    "api_base": model_configs.get(llm.model_type, {}).get("base_url", factory_config["base_url"]),
-                    "max_tokens": llm.max_tokens if llm.max_tokens else 8192,
-                }
-            )
-
-    unique = {}
-    for item in tenant_llm:
-        key = (item["tenant_id"], item["llm_factory"], item["llm_name"])
-        if key not in unique:
-            unique[key] = item
-    return list(unique.values())
 
 
 class LLMBundle(LLM4Tenant):
@@ -87,13 +81,64 @@ class LLMBundle(LLM4Tenant):
         super().__init__(tenant_id, model_config, lang, **kwargs)
 
     def _start_langfuse_observation(self, **kwargs):
+        # Correlating attributes (session_id/user_id) let Langfuse group all of a
+        # turn's generations. They may come from this bundle (chat/dialog path) or,
+        # for agent runs whose bundles are created without them, from the per-run
+        # context installed by Canvas.run.
+        attrs = {}
         if self.langfuse_session_id:
-            kwargs["session_id"] = self.langfuse_session_id
+            attrs["session_id"] = self.langfuse_session_id
+        run_attrs = langfuse_run_attrs.get()
+        if run_attrs:
+            for k in ("session_id", "user_id"):
+                if run_attrs.get(k) and k not in attrs:
+                    attrs[k] = run_attrs[k]
+        if attrs:
+            with propagate_attributes(**attrs):
+                return self.langfuse.start_observation(**kwargs)
         return self.langfuse.start_observation(**kwargs)
+
+    def _reset_last_usage(self) -> None:
+        """Clear the model's per-call usage so a failed call that returns before
+        updating it cannot leak the previous call's usage into this run."""
+        if hasattr(self.mdl, "last_usage"):
+            self.mdl.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+    def _report_usage(self, total_tokens: int) -> dict:
+        """Record a chat call's usage to the active agent run and return the
+        prompt/completion/total split for Langfuse.
+
+        ``total_tokens`` is the authoritative total from the call. The prompt/completion
+        split is taken from the provider response (``mdl.last_usage``) only when it is
+        consistent with ``total_tokens`` (i.e. produced by this same call); otherwise the
+        split is reported as 0 while the total still aggregates correctly.
+        """
+        split = getattr(self.mdl, "last_usage", None) or {}
+        prompt = int(split.get("prompt_tokens", 0) or 0)
+        completion = int(split.get("completion_tokens", 0) or 0)
+        if not total_tokens:
+            total_tokens = int(split.get("total_tokens", 0) or 0)
+        if (prompt + completion) != total_tokens:
+            # Stale or inconsistent split — keep the total, drop the unreliable split.
+            prompt, completion = 0, 0
+        record_run_token_usage(prompt, completion, total_tokens)
+        return {"input": prompt, "output": completion, "total": total_tokens}
 
     def close(self):
         """Release resources held by this LLMBundle instance."""
         super().close()
+
+    def clone(self):
+        kwargs = {
+            "trace_context": dict(self.trace_context or {}),
+            "langfuse_session_id": self.langfuse_session_id,
+            "verbose_tool_use": self.verbose_tool_use,
+        }
+        for attr, key in (("max_retries", "max_retries"), ("base_delay", "retry_interval"), ("max_rounds", "max_rounds")):
+            value = getattr(self.mdl, attr, None)
+            if value is not None:
+                kwargs[key] = value
+        return LLMBundle(self.tenant_id, dict(self.model_config), lang=getattr(self, "lang", "Chinese"), **kwargs)
 
     def __enter__(self):
         """Enter context manager."""
@@ -106,7 +151,7 @@ class LLMBundle(LLM4Tenant):
 
     def bind_tools(self, toolcall_session, tools):
         if not self.is_tools:
-            logging.warning(f"Model {self.model_config['llm_name']} does not support tool call, but you have assigned one or more tools to it!")
+            logging.warning("Model does not support tool call, but you have assigned one or more tools to it!")
             return
         self.mdl.bind_tools(toolcall_session, tools)
 
@@ -126,6 +171,11 @@ class LLMBundle(LLM4Tenant):
             if text is None or not str(text).strip():
                 marker = "None" if text is None else "whitespace-only"
                 logging.warning(
+                    # codeql[py/clear-text-logging-sensitive-data] False positive:
+                    # model_config["llm_name"] is the model identifier (e.g.
+                    # "gpt-4"), not an API key or credential. CodeQL flags
+                    # it as a sensitive data source only because it lives
+                    # in the same dict as api_key.
                     "LLMBundle.encode: empty input at index %d (%s) coerced to placeholder 'None' for model %s",
                     idx,
                     marker,
@@ -134,9 +184,16 @@ class LLMBundle(LLM4Tenant):
                 safe_texts.append("None")
                 continue
             token_size = num_tokens_from_string(text)
-            if token_size > self.max_length:
+            if token_size > self.max_length * 0.95:
                 target_len = int(self.max_length * 0.95)
-                safe_texts.append(text[:target_len])
+                logging.debug(
+                    "LLMBundle.encode truncating input: index=%d model=%s original_tokens=%d target_tokens=%d",
+                    idx,
+                    self.model_config["llm_name"],
+                    token_size,
+                    target_len,
+                )
+                safe_texts.append(truncate(text, target_len))
             else:
                 safe_texts.append(text)
 
@@ -144,7 +201,7 @@ class LLMBundle(LLM4Tenant):
         if self.model_config["llm_factory"] == "Builtin":
             logging.debug("LLMBundle.encode query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(texts, len(embeddings), used_tokens))
         else:
-            logging.info("LLMBundle.encode used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+            logging.info("LLMBundle.encode used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(usage_details={"total_tokens": used_tokens})
@@ -159,6 +216,9 @@ class LLMBundle(LLM4Tenant):
         if query is None or not str(query).strip():
             marker = "None" if query is None else "whitespace-only"
             logging.warning(
+                # codeql[py/clear-text-logging-sensitive-data] False positive:
+                # llm_name is a model identifier, not a credential. See the
+                # matching suppression on the encode() warning above.
                 "LLMBundle.encode_queries: empty query (%s) coerced to placeholder 'None' for model %s",
                 marker,
                 self.model_config["llm_name"],
@@ -168,7 +228,7 @@ class LLMBundle(LLM4Tenant):
         if self.model_config["llm_factory"] == "Builtin":
             logging.info("LLMBundle.encode_queries query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(query, len(emd), used_tokens))
         else:
-            logging.info("LLMBundle.encode_queries used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+            logging.info("LLMBundle.encode_queries used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(usage_details={"total_tokens": used_tokens})
@@ -178,10 +238,12 @@ class LLMBundle(LLM4Tenant):
 
     def similarity(self, query: str, texts: list):
         if self.langfuse:
-            generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="similarity", model=self.model_config["llm_name"], input={"query": query, "texts": texts})
+            generation = self._start_langfuse_observation(
+                trace_context=self.trace_context, as_type="generation", name="similarity", model=self.model_config["llm_name"], input={"query": query, "texts": texts}
+            )
 
         sim, used_tokens = self.mdl.similarity(query, texts)
-        logging.info("LLMBundle.similarity used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+        logging.info("LLMBundle.similarity used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(usage_details={"total_tokens": used_tokens})
@@ -194,7 +256,7 @@ class LLMBundle(LLM4Tenant):
             generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="describe", metadata={"model": self.model_config["llm_name"]})
 
         txt, used_tokens = self.mdl.describe(image)
-        logging.info("LLMBundle.describe used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+        logging.info("LLMBundle.describe used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
@@ -204,10 +266,12 @@ class LLMBundle(LLM4Tenant):
 
     def describe_with_prompt(self, image, prompt):
         if self.langfuse:
-            generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="describe_with_prompt", metadata={"model": self.model_config["llm_name"], "prompt": prompt})
+            generation = self._start_langfuse_observation(
+                trace_context=self.trace_context, as_type="generation", name="describe_with_prompt", metadata={"model": self.model_config["llm_name"], "prompt": prompt}
+            )
 
         txt, used_tokens = self.mdl.describe_with_prompt(image, prompt)
-        logging.info("LLMBundle.describe_with_prompt used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+        logging.info("LLMBundle.describe_with_prompt used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
@@ -220,7 +284,7 @@ class LLMBundle(LLM4Tenant):
             generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="transcription", metadata={"model": self.model_config["llm_name"]})
 
         txt, used_tokens = self.mdl.transcription(audio)
-        logging.info("LLMBundle.transcription used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+        logging.info("LLMBundle.transcription used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
@@ -233,7 +297,8 @@ class LLMBundle(LLM4Tenant):
         supports_stream = hasattr(mdl, "stream_transcription") and callable(getattr(mdl, "stream_transcription"))
         if supports_stream:
             if self.langfuse:
-                generation = self._start_langfuse_observation(as_type="generation",
+                generation = self._start_langfuse_observation(
+                    as_type="generation",
                     trace_context=self.trace_context,
                     name="stream_transcription",
                     metadata={"model": self.model_config["llm_name"]},
@@ -255,7 +320,7 @@ class LLMBundle(LLM4Tenant):
             finally:
                 if final_text:
                     used_tokens = num_tokens_from_string(final_text)
-                    logging.info("LLMBundle.stream_transcription used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+                    logging.info("LLMBundle.stream_transcription used_tokens: %d", used_tokens)
 
                 if self.langfuse:
                     generation.update(
@@ -267,14 +332,15 @@ class LLMBundle(LLM4Tenant):
             return
 
         if self.langfuse:
-            generation = self._start_langfuse_observation(as_type="generation",
+            generation = self._start_langfuse_observation(
+                as_type="generation",
                 trace_context=self.trace_context,
                 name="stream_transcription",
                 metadata={"model": self.model_config["llm_name"]},
             )
 
         full_text, used_tokens = mdl.transcription(audio)
-        logging.info("LLMBundle.stream_transcription used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+        logging.info("LLMBundle.stream_transcription used_tokens: %d", used_tokens)
 
         if self.langfuse:
             generation.update(
@@ -295,6 +361,9 @@ class LLMBundle(LLM4Tenant):
 
         for chunk in self.mdl.tts(text):
             if isinstance(chunk, int):
+                # codeql[py/clear-text-logging-sensitive-data] False positive:
+                # llm_name is a model identifier (e.g. "tts-1"), not a
+                # credential. The token count is non-sensitive.
                 logging.info("LLMBundle.tts used_tokens: {}, model_name: {}".format(chunk, self.model_config["llm_name"]))
                 return
             yield chunk
@@ -413,11 +482,14 @@ class LLMBundle(LLM4Tenant):
 
         generation = None
         if self.langfuse:
-            generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="chat", model=self.model_config["llm_name"], input={"system": system, "history": history})
+            generation = self._start_langfuse_observation(
+                trace_context=self.trace_context, as_type="generation", name="chat", model=self.model_config["llm_name"], input={"system": system, "history": history}
+            )
 
         chat_partial = partial(base_fn, system, history, gen_conf)
         use_kwargs = self._clean_param(chat_partial, **kwargs)
 
+        self._reset_last_usage()
         try:
             txt, used_tokens = await chat_partial(**use_kwargs)
         except Exception as e:
@@ -431,10 +503,12 @@ class LLMBundle(LLM4Tenant):
             txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
 
         if used_tokens:
-            logging.info("LLMBundle.async_chat used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+            logging.info("LLMBundle.async_chat used_tokens: %d", used_tokens)
+
+        usage_details = self._report_usage(used_tokens)
 
         if generation:
-            generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
+            generation.update(output={"output": txt}, usage_details=usage_details)
             generation.end()
 
         return txt
@@ -454,11 +528,14 @@ class LLMBundle(LLM4Tenant):
 
         generation = None
         if self.langfuse:
-            generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="chat_streamly", model=self.model_config["llm_name"], input={"system": system, "history": history})
+            generation = self._start_langfuse_observation(
+                trace_context=self.trace_context, as_type="generation", name="chat_streamly", model=self.model_config["llm_name"], input={"system": system, "history": history}
+            )
 
         if stream_fn:
             chat_partial = partial(stream_fn, system, history, gen_conf)
             use_kwargs = self._clean_param(chat_partial, **kwargs)
+            self._reset_last_usage()
             try:
                 async for txt in chat_partial(**use_kwargs):
                     if isinstance(txt, int):
@@ -479,9 +556,22 @@ class LLMBundle(LLM4Tenant):
                     generation.end()
                 raise
             if total_tokens:
-                logging.info("LLMBundle.async_chat_streamly used_tokens: {}, llm_name: {}".format(total_tokens, self.model_config["llm_name"]))
+                logging.info("LLMBundle.async_chat_streamly used_tokens: %d", total_tokens)
+            # The streaming backend returns the authoritative total through
+            # the integer sentinel, but may not populate mdl.last_usage.
+            # Preserve that total so CountingChatModel can attribute it to
+            # the current phase instead of reporting zero tokens.
+            split = getattr(self.mdl, "last_usage", None) or {}
+            prompt_tokens = int(split.get("prompt_tokens", 0) or 0)
+            completion_tokens = int(split.get("completion_tokens", 0) or 0)
+            self.mdl.last_usage = {
+                "prompt_tokens": prompt_tokens if prompt_tokens + completion_tokens == total_tokens else 0,
+                "completion_tokens": completion_tokens if prompt_tokens + completion_tokens == total_tokens else 0,
+                "total_tokens": total_tokens,
+            }
+            usage_details = self._report_usage(total_tokens)
             if generation:
-                generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
+                generation.update(output={"output": ans}, usage_details=usage_details)
                 generation.end()
             return
 
@@ -497,11 +587,14 @@ class LLMBundle(LLM4Tenant):
 
         generation = None
         if self.langfuse:
-            generation = self._start_langfuse_observation(trace_context=self.trace_context, as_type="generation", name="chat_streamly", model=self.model_config["llm_name"], input={"system": system, "history": history})
+            generation = self._start_langfuse_observation(
+                trace_context=self.trace_context, as_type="generation", name="chat_streamly", model=self.model_config["llm_name"], input={"system": system, "history": history}
+            )
 
         if stream_fn:
             chat_partial = partial(stream_fn, system, history, gen_conf)
             use_kwargs = self._clean_param(chat_partial, **kwargs)
+            self._reset_last_usage()
             try:
                 async for txt in chat_partial(**use_kwargs):
                     if isinstance(txt, int):
@@ -522,8 +615,19 @@ class LLMBundle(LLM4Tenant):
                     generation.end()
                 raise
             if total_tokens:
-                logging.info("LLMBundle.async_chat_streamly_delta used_tokens: {}, llm_name: {}".format(total_tokens, self.model_config["llm_name"]))
+                logging.info("LLMBundle.async_chat_streamly_delta used_tokens: %d", total_tokens)
+            # Streaming providers may expose only the integer total sentinel;
+            # make it available to the phase accounting proxy.
+            split = getattr(self.mdl, "last_usage", None) or {}
+            prompt_tokens = int(split.get("prompt_tokens", 0) or 0)
+            completion_tokens = int(split.get("completion_tokens", 0) or 0)
+            self.mdl.last_usage = {
+                "prompt_tokens": prompt_tokens if prompt_tokens + completion_tokens == total_tokens else 0,
+                "completion_tokens": completion_tokens if prompt_tokens + completion_tokens == total_tokens else 0,
+                "total_tokens": total_tokens,
+            }
+            usage_details = self._report_usage(total_tokens)
             if generation:
-                generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
+                generation.update(output={"output": ans}, usage_details=usage_details)
                 generation.end()
             return

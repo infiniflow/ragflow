@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "go-only-chunk-id",
+      "tag": "go_intentional",
+      "kind": "extra_fields",
+      "applies_to": ["*"],
+      "fields": ["id"],
+      "permanent": true,
+      "reason": "register.go MustRegisterChunker wraps every chunker in imageUploadDecorator, which writes ck[\"id\"] = common.ChunkID(doc_id, text) before any image upload so uploadChunkImage and the persist stage share one chunk identity. Python derives chunk ids outside the chunker, so its _finalize_json_chunks output has no id."
+    },
+    {
+      "id": "go-only-token-metadata",
+      "tag": "go_intentional",
+      "kind": "extra_fields",
+      "applies_to": ["token__*"],
+      "fields": ["ck_type", "tk_nums"],
+      "permanent": true,
+      "reason": "Python builds both fields internally (token_chunker.py:141,144) but _finalize_json_chunks (token_chunker.py:256-259) whitelists only text/doc_type_kwd/_pdf_positions/mom/img_id, dropping them. Go keeps them because they are still live downstream: needsCrop (pdfcrop_cgo.go:151) reads ck_type, and tokenizer.go:615 forwards tk_nums. The divergence follows from Go cropping after the chunker returns, whereas Python crops inside _invoke (token_chunker.py:370) before finalizing."
+    },
+    {
+      "id": "token-custom-delim-newline-and-field",
+      "tag": "go_bug",
+      "kind": "chunk_text",
+      "applies_to": ["token__text_backtick", "token__markdown_backtick", "token__html_backtick"],
+      "owner_fix_side": "go",
+      "tracking": "TODO: file issue — Go emits an extra doc_type_kwd:'text' field on the text/markdown/html backtick path where Python emits only {'text': ...}",
+      "reason": "With a backtick-wrapped delimiter (e.g. `\\n`, _compile_delimiter_pattern, token_chunker.py:70-76) Python takes the custom-pattern branch. On that branch Python's _split_text_by_pattern (rag/flow/chunker/token_chunker.py:80-95) discards the delimiter, and the text path emits a list of {'text': ...} with no doc_type_kwd (token_chunker.py:341). Go no longer keeps the delimiter either: since #17868 it uses splitDroppingDelim, so chunk text matches Python exactly. The remaining Go-only behaviour is an extra doc_type_kwd:'text' field — invokeTextPayload (token.go:323, 338-341) defaults every chunk to DocType:'text', which Python's text-path output never includes."
+    },
+    {
+      "id": "token-hardcap-chunk-count",
+      "tag": "go_intentional",
+      "kind": "chunk_count",
+      "applies_to": ["token__b1_count_sensitive", "token__html_long", "token__json_multi_item_40", "token__json_single_long", "token__markdown_long", "token__text_long_paragraph", "token__text_overlap", "token__text_token_liveness"],
+      "owner_fix_side": "python",
+      "permanent": false,
+      "tracking": "Go TokenChunker hard-cap merge (方案 B). Python token_chunker still uses OVER_CAP (#17799: a chunk may exceed the target by one unit and an oversized unit stands whole); adopt the hard-cap contract on the Python side to resolve these rules.",
+      "reason": "Go TokenChunker now enforces a hard cap: no text chunk exceeds chunk_token_size. Oversized units are re-split on sentence boundaries with a hard token-split fallback, and the merge never lets a projected join exceed the target (UNDER_CAP). Python's token_chunker still uses OVER_CAP, so for over-budget inputs Go emits more, smaller chunks than Python."
+    },
+    {
+      "id": "token-hardcap-chunk-text",
+      "tag": "go_intentional",
+      "kind": "chunk_text",
+      "applies_to": ["token__html_default_delim", "token__markdown_default_delim", "token__text_default_delim"],
+      "owner_fix_side": "python",
+      "permanent": false,
+      "tracking": "Go TokenChunker hard-cap merge (方案 B). Python token_chunker still uses OVER_CAP; adopt the hard-cap contract on the Python side to resolve these rules.",
+      "reason": "Go TokenChunker now enforces a hard cap (UNDER_CAP merge + oversized-unit re-split), so chunk boundaries shift relative to Python's OVER_CAP merge-then-close on default-delimiter inputs: Go closes a chunk when the projected join would exceed the target, while Python merges the overflowing unit then closes. Same chunk count, different boundaries."
+    }
+  ]
+}

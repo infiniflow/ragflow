@@ -1,0 +1,71 @@
+kind: timeline
+display_name: List (Timeline) — Chronological events / Graph
+config:
+  kind: timeline
+  rechunk_rules: |
+    - Group only adjacent source chunks that belong to the same event or continuous time period.
+    - Preserve source order: use every source chunk exactly once; do not omit, overlap, duplicate, or reorder chunks.
+    - Split when the event, time period, or semantic focus changes.
+    - Keep self-contained tables, lists, figures, and code blocks intact; do not split their internal structure.
+    - Do not invent, rewrite, or return source text; return only chunk grouping metadata.
+  entity:
+    description: >-
+      You are a robust events-timeline extractor. Extract a complete, source-grounded
+      chronological sequence, preserving the source order and the relationship between
+      each timestamp and the event or events that occur at that time.
+    fields:
+      - type: timestamp
+        description: the date or time reference (clean, no extraneous text)
+        rule: |
+          - Format: prefer ISO 8601 (YYYY-MM-DD) or a normalized human-readable form
+            (e.g., "March 5, 2024").
+          - If only a relative time (e.g., "yesterday", "next week", "three days later",
+            "at age twenty-eight"), convert to absolute when the context allows; otherwise
+            preserve the original expression instead of dropping it.
+          - "timestamp" must be non-empty (or exactly "-1" if no valid time/date).
+          - If a chunk contains multiple events with distinct timestamps, expand them
+            in chronological order:
+              - Each event → {"timestamp":"...","event":"...","chunk_id":"<chunk_ID>"}.
+          - Do not use "-1" for a time expression merely because it is relative, historical,
+            approximate, or lacks a calendar year. Use "-1" only when no time reference exists.
+          - Keep language and numbering style of "timestamp" consistent with the input.
+      - type: event
+        description: the event description associated with the timestamp (concise, no metadata)
+        rule: |
+          - Length restriction:
+              • Chinese event: ≤40 characters
+              • English event: ≤120 characters
+          - "event" must be non-empty whenever the source describes an action, state,
+            appointment, birth, death, battle, movement, appointment, or other event.
+          - Every timestamp must be paired with at least one event when an event is present
+            in the same or immediately following source context. Do not emit timestamps alone
+            when the associated event can be identified.
+          - Preserve the core action and key entities; omit redundant phrasing.
+  relation:
+    description: >-
+      You are an expert sequential reasoning assistant specializing in chronological
+      timelines.
+    fields:
+      - type: ordered
+        description: Events are arranged in strict chronological order (earliest to latest).
+        rule: |
+          - "-1" for timestamp or event indicates invalid or missing data; such entries
+            do not participate in ordering.
+          - Create an ordered relation for every pair of adjacent valid timeline items in
+            source order; do not select only highlights or leave known items disconnected.
+          - A timestamp and the event(s) occurring at that timestamp are adjacent timeline
+            items unless the source places another event between them. Preserve textual order
+            when multiple events share one timestamp.
+          - Follow explicit temporal indicators (e.g., "then", "afterwards", "later", "at 3 PM");
+            otherwise use source order as the tie-breaker.
+          - Connect consecutive source chunks across batch boundaries when the last item in
+            one chunk and the first item in the next chunk belong to the same chronology.
+          - Use only extracted entity names as endpoints. Do not invent or skip intermediary items.
+          - Keep language and date formatting consistent across the timeline.
+  global_rules: |
+    - Extract all valid timestamps and events before creating relations.
+    - The final result should form one chronological chain for the source material whenever
+      the source describes one continuous chronology: each valid item has at most one
+      predecessor and one successor, except the first and last items.
+    - Do not drop an event merely to make the chain easier to construct. If two events share
+      a timestamp, keep both and order them by their source order.
