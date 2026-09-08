@@ -233,44 +233,55 @@ class DocumentService(CommonService):
         if suffix:
             query = query.where(cls.model.suffix.in_(suffix))
 
-        rows = query.select(cls.model.run, cls.model.suffix, cls.model.id)
-        total = rows.count()
+        total = query.count()
 
-        suffix_counter = {}
-        run_status_counter = {}
-        metadata_counter = {}
-        empty_metadata_count = 0
+        # Grouped in the database rather than by walking the rows: the counters
+        # only ever needed the group totals, and on a dataset of six figures the
+        # walk is most of the request.
+        suffix_counter = {row.suffix: row.doc_count for row in query.select(cls.model.suffix, fn.COUNT(cls.model.id).alias("doc_count")).group_by(cls.model.suffix)}
+        run_status_counter = {str(row.run): row.doc_count for row in query.select(cls.model.run, fn.COUNT(cls.model.id).alias("doc_count")).group_by(cls.model.run)}
 
-        doc_ids = [row.id for row in rows]
-        metadata = {}
-        if doc_ids:
-            try:
-                metadata = DocMetadataService.get_metadata_for_documents(doc_ids, kb_id)
-            except Exception as e:
-                logging.warning(f"Failed to fetch metadata from ES/Infinity: {e}")
+        # The database owns which documents the facet covers: the doc-meta index
+        # also holds rows whose document is gone, and counting those would offer
+        # the file list values that match nothing.
+        doc_ids = [row.id for row in query.select(cls.model.id)]
 
-        for row in rows:
-            suffix_counter[row.suffix] = suffix_counter.get(row.suffix, 0) + 1
-            run_status_counter[str(row.run)] = run_status_counter.get(str(row.run), 0) + 1
-            meta_fields = metadata.get(row.id, {})
-            if not meta_fields:
-                empty_metadata_count += 1
-                continue
-            has_valid_meta = False
-            for key, value in meta_fields.items():
-                values = value if isinstance(value, list) else [value]
-                for vv in values:
-                    if vv is None:
-                        continue
-                    if isinstance(vv, str) and not vv.strip():
-                        continue
-                    sv = str(vv)
-                    if key not in metadata_counter:
-                        metadata_counter[key] = {}
-                    metadata_counter[key][sv] = metadata_counter[key].get(sv, 0) + 1
-                    has_valid_meta = True
-            if not has_valid_meta:
-                empty_metadata_count += 1
+        facets = DocMetadataService.get_metadata_facets(kb_id, doc_ids)
+        if facets is not None:
+            metadata_counter, carrying_metadata = facets
+            empty_metadata_count = max(0, total - carrying_metadata)
+        else:
+            # The doc store cannot aggregate the facet: read the metadata of
+            # every document in scope and count it here.
+            metadata_counter = {}
+            empty_metadata_count = 0
+            metadata = {}
+            if doc_ids:
+                try:
+                    metadata = DocMetadataService.get_metadata_for_documents(doc_ids, kb_id)
+                except Exception as e:
+                    logging.warning(f"Failed to fetch metadata from ES/Infinity: {e}")
+
+            for doc_id in doc_ids:
+                meta_fields = metadata.get(doc_id, {})
+                if not meta_fields:
+                    empty_metadata_count += 1
+                    continue
+                has_valid_meta = False
+                for key, value in meta_fields.items():
+                    values = value if isinstance(value, list) else [value]
+                    for vv in values:
+                        if vv is None:
+                            continue
+                        if isinstance(vv, str) and not vv.strip():
+                            continue
+                        sv = str(vv)
+                        if key not in metadata_counter:
+                            metadata_counter[key] = {}
+                        metadata_counter[key][sv] = metadata_counter[key].get(sv, 0) + 1
+                        has_valid_meta = True
+                if not has_valid_meta:
+                    empty_metadata_count += 1
 
         metadata_counter["empty_metadata"] = {"true": empty_metadata_count}
         return {
