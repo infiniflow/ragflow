@@ -162,10 +162,9 @@ def _apply_claude_sampling_policy(model_name_lower: str, *targets: dict) -> None
     if "claude" not in model_name_lower:
         return
     if any(marker in model_name_lower for marker in _CLAUDE_NO_SAMPLING_MARKERS):
-        for target in targets:
-            for key in ("temperature", "top_p", "top_k"):
-                target.pop(key, None)
-        logging.warning("Claude sampling policy: dropped temperature/top_p/top_k for model %s (no sampling parameter accepted)", model_name_lower)
+        removed = [key for target in targets for key in ("temperature", "top_p", "top_k") if target.pop(key, None) is not None]
+        if removed:
+            logging.warning("Claude sampling policy: dropped %s for model %s (no sampling parameter accepted)", "/".join(sorted(set(removed))), model_name_lower)
         return
     version = _claude_version(model_name_lower)
     if version is not None and version < _CLAUDE_TEMPERATURE_XOR_TOP_P_SINCE:

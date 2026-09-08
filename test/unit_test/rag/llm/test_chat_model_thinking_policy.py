@@ -408,7 +408,17 @@ def test_claude_sampling_policy_logs_applied_policy(caplog):
     assert [record.levelno for record in records] == [logging.WARNING, logging.WARNING]
     messages = [record.getMessage() for record in records]
     assert "dropped top_p for model eu.anthropic.claude-sonnet-4-6" in messages[0]
-    assert "dropped temperature/top_p/top_k for model eu.anthropic.claude-opus-4-8-v1:0" in messages[1]
+    assert "dropped temperature for model eu.anthropic.claude-opus-4-8-v1:0" in messages[1]
+
+
+def test_claude_sampling_policy_no_sampling_model_without_params_does_not_log(caplog):
+    gen_conf = {"presence_penalty": 0.1}
+
+    with caplog.at_level(logging.DEBUG):
+        _apply_claude_sampling_policy("eu.anthropic.claude-opus-4-8-v1:0", gen_conf, {})
+
+    assert gen_conf == {"presence_penalty": 0.1}
+    assert not [record for record in caplog.records if "Claude sampling policy" in record.getMessage()]
 
 
 @pytest.mark.parametrize(
