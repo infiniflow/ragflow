@@ -71,13 +71,13 @@ type dispatcherTestQueue struct {
 	calls   chan int
 }
 
-func (q *dispatcherTestQueue) PullTaskStream(ctx context.Context, max int) (common.TaskHandleStream, error) {
+func (q *dispatcherTestQueue) PullTaskStream(ctx context.Context, maxMessages int) (common.TaskHandleStream, error) {
 	q.mu.Lock()
 	stream := q.streams[q.next]
 	q.next++
 	q.mu.Unlock()
 
-	q.calls <- max
+	q.calls <- maxMessages
 	go func() {
 		<-ctx.Done()
 		stream.close(ctx.Err())

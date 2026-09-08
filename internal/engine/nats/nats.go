@@ -283,25 +283,25 @@ func (n *NatsEngine) PullMessages(messageCount int) ([]common.TaskHandle, error)
 	return resultMessages, nil
 }
 
-// PullTaskStream requests up to messageCount task messages and yields each
+// PullTaskStream requests up to maxMessages task messages and yields each
 // handle when it arrives. The caller must supply a deadline-bearing context so
 // the server-side pull request has a bounded expiry.
-func (n *NatsEngine) PullTaskStream(ctx context.Context, messageCount int) (common.TaskHandleStream, error) {
+func (n *NatsEngine) PullTaskStream(ctx context.Context, maxMessages int) (common.TaskHandleStream, error) {
 	if n.consumer == nil {
 		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
 	}
 	if n.nc == nil {
 		return nil, errors.New("NATS connection is nil, engine not properly initialized")
 	}
-	if messageCount <= 0 {
-		return nil, fmt.Errorf("message count must be positive: %d", messageCount)
+	if maxMessages <= 0 {
+		return nil, fmt.Errorf("max messages must be positive: %d", maxMessages)
 	}
 	if _, ok := ctx.Deadline(); !ok {
 		return nil, errors.New("pull task stream context must have a deadline")
 	}
 
 	statusChanges := n.nc.StatusChanged(nats.DISCONNECTED, nats.CLOSED)
-	batch, err := n.consumer.Fetch(messageCount, jetstream.FetchContext(ctx))
+	batch, err := n.consumer.Fetch(maxMessages, jetstream.FetchContext(ctx))
 	if err != nil {
 		n.nc.RemoveStatusListener(statusChanges)
 		return nil, fmt.Errorf("fetch task stream: %w", err)
