@@ -78,7 +78,7 @@ func TestDatasetNav_AvailableIntZero_Isolation(t *testing.T) {
 	if err := server.Init(configPath); err != nil {
 		t.Fatalf("init service config: %v", err)
 	}
-	if err := engine.InitDocEngine(); err != nil {
+	if err := engine.InitDocEngine(context.Background()); err != nil {
 		t.Fatalf("init document engine: %v", err)
 	}
 	if engine.Get() == nil {

@@ -120,7 +120,8 @@ func (n *NatsEngine) PublishTask(subject string, payload []byte) error {
 	// by any consumer and un-reparsable ("already exists, status: SCHEDULED").
 	// Duplicate delivery is instead made safe at the consumer level:
 	// StartRunning's CREATED/SCHEDULED→RUNNING CAS plus the in-process claim guard
-	// ack-skip any second copy (see Ingestor.processMessage).
+	// prevent a second copy from executing while the first owner is active (see
+	// Ingestor.processMessage).
 	ack, err := n.jetStream.Publish(ctx, subject, payload)
 	if err != nil {
 		return err
@@ -225,8 +226,7 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	// 60s AckWait is the effective schedule if BackOff is ever dropped.
 	// INVARIANT: the worker's InProgress heartbeat (Ingestor
 	// defaultHeartbeatInterval) must stay below BackOff[0] = 5s, or in-flight
-	// messages get redelivered mid-run and the claim-guard ack-skip acks the
-	// only live copy.
+	// messages get redelivered mid-run before the owning worker can settle them.
 	// Note: CreateOrUpdateConsumer is atomic. MaxWaiting is immutable after
 	// creation; if it mismatches the whole update fails (error "max waiting
 	// can not be updated") and NONE of AckWait/BackOff/MaxAckPending are

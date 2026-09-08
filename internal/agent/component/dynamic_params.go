@@ -53,6 +53,10 @@ func validateDynamicParams(component string, params map[string]any) error {
 		}
 	}
 	switch strings.ToLower(component) {
+	case "message":
+		if err := validateMessageContent(params); err != nil {
+			return fmt.Errorf("[%s] %w", component, err)
+		}
 	case "dataoperations":
 		for _, field := range []string{"select_keys", "remove_keys"} {
 			if values, ok := params[field].([]any); ok && containsBlank(values) {
@@ -88,6 +92,43 @@ func validateDynamicParams(component string, params map[string]any) error {
 		return validateVariableAggregatorGroups(component, params)
 	case "userfillup":
 		return validateInputOptions(component, params)
+	}
+	return nil
+}
+
+func validateMessageContent(params map[string]any) error {
+	if text, ok := params["text"]; ok {
+		if !isNonBlankString(text) {
+			return fmt.Errorf("content does not support empty value")
+		}
+		return nil
+	}
+	content, ok := params["content"]
+	if !ok {
+		return fmt.Errorf("content does not support empty value")
+	}
+	switch values := content.(type) {
+	case string:
+		if !isNonBlankString(values) {
+			return fmt.Errorf("content does not support empty value")
+		}
+	case []string:
+		for _, value := range values {
+			if strings.TrimSpace(value) == "" {
+				return fmt.Errorf("content does not support empty entries")
+			}
+		}
+	case []any:
+		if len(values) == 0 {
+			return fmt.Errorf("content does not support empty value")
+		}
+		for _, value := range values {
+			if !isNonBlankString(value) {
+				return fmt.Errorf("content does not support empty entries")
+			}
+		}
+	default:
+		return fmt.Errorf("content does not support empty value")
 	}
 	return nil
 }

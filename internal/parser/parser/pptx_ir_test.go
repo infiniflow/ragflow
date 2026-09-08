@@ -69,11 +69,13 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 			wantTexts: []string{"before\nafter"},
 		},
 		{
-			// Regression: two consecutive breaks must collapse to exactly
-			// one newline - not zero, and not a preserved blank line. Blank
-			// lines are dropped, keeping one newline between two non-empty
-			// lines.
-			name: "consecutive hard line breaks collapse to one newline",
+			// Internal newlines emitted by the shared IR walker (e.g. between
+			// table rows or list items) are preserved as-is. The element-level
+			// split (one element -> one value or none if empty) is the only
+			// collapse applied at this layer; per-line collapse across
+			// elements happens only at element boundaries, where blank
+			// elements are dropped.
+			name: "consecutive line breaks inside one element stay as newlines",
 			irJSON: `{"sections":[{"elements":[
 				{"type":"paragraph","content":[
 					{"type":"text","text":"before"},
@@ -81,6 +83,18 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 					{"type":"line_break"},
 					{"type":"text","text":"after"}
 				]}
+			]}]}`,
+			wantTexts: []string{"before\n\nafter"},
+		},
+		{
+			// Element-level collapse: a blank element between two text
+			// elements is dropped, leaving a single newline between the
+			// non-empty element values.
+			name: "blank element between two text elements is dropped",
+			irJSON: `{"sections":[{"elements":[
+				{"type":"paragraph","content":[{"type":"text","text":"before"}]},
+				{"type":"paragraph","content":[]},
+				{"type":"paragraph","content":[{"type":"text","text":"after"}]}
 			]}]}`,
 			wantTexts: []string{"before\nafter"},
 		},

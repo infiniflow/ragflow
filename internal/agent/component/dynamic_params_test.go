@@ -28,6 +28,7 @@ func TestValidateDynamicEntries(t *testing.T) {
 		componentDSL("Iteration", map[string]any{"outputs": map[string]any{
 			"result": map[string]any{"type": "string", "ref": "Iteration@result"},
 		}}),
+		componentDSL("Message", map[string]any{"text": "hello"}),
 		// Whitespace-only delimiters are legitimate split tokens: the web
 		// form's default row is "\n" (a real newline) and the delimiter
 		// input converts a typed "\n"/"\t" into the raw control character
@@ -61,6 +62,10 @@ func TestValidateDynamicEntries(t *testing.T) {
 		{"input option", componentDSL("UserFillUp", map[string]any{"inputs": map[string]any{"choice": map[string]any{"options": []any{"one", ""}}}}), "inputs.choice.options"},
 		{"empty delimiter entry", componentDSL("TokenChunker", map[string]any{"delimiters": []any{"ok", ""}}), "delimiters"},
 		{"empty children delimiter entry", componentDSL("TokenChunker", map[string]any{"children_delimiters": []any{""}}), "children_delimiters"},
+		{"empty message text", componentDSL("Message", map[string]any{"text": " \t "}), "Message"},
+		{"empty message content", componentDSL("Message", map[string]any{"content": []any{""}}), "Message"},
+		{"missing message content", componentDSL("Message", map[string]any{}), "Message"},
+		{"blank message row after valid row", componentDSL("Message", map[string]any{"content": []any{"hello", " "}}), "Message"},
 	}
 
 	for _, test := range tests {

@@ -942,7 +942,8 @@ export function convertToObjectArray<T extends string | number | boolean>(
 export function isEmptyMessageContent(content?: unknown): boolean {
   return (
     !Array.isArray(content) ||
-    !content.some((item) => typeof item === 'string' && item.trim() !== '')
+    content.length === 0 ||
+    content.some((item) => typeof item !== 'string' || item.trim() === '')
   );
 }
 

@@ -485,10 +485,10 @@ def _disable_tool(tools, name: str) -> None:
             disabled = set()
             try:
                 tools._disabled_tools = disabled
-            except Exception:  # tools may be frozen/slots in tests
+            except Exception:  # tools may be frozen/slots in tests  # noqa: BLE001
                 return
         disabled.add(name)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] could not mark tool %r disabled", name, exc_info=True)
 
 
@@ -536,13 +536,13 @@ def extract_json(text: str):
                     candidate = text[start : j + 1]
                     try:
                         return json.loads(candidate, strict=False)
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
                     try:
                         import json_repair
 
                         return json_repair.loads(candidate)
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         break  # invalid object; try the next "{"
         i = start + 1
     return None
@@ -566,7 +566,7 @@ def extract_tag(text: str, tag: str):
             want = {"new_states"} if tag == "state" else {"answer", "new_state"}
             if isinstance(obj, dict) and (keys & want):
                 return frag.strip()
-        except Exception:
+        except Exception:  # noqa: BLE001, S112
             continue
     return None
 
@@ -602,7 +602,7 @@ def apply_patch(base: State, branch_patches: list) -> State | None:
             try:
                 nv.candidate_strength = min(max(float(pv["candidate_strength"]), 0.0), 1.0)
                 changed = True
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         if isinstance(pv.get("discovered_clues"), list):
             nv.discovered_clues.extend(str(c)[:160] for c in pv["discovered_clues"][-4:])
@@ -629,7 +629,7 @@ def _seed_evidence(tools):
         kbinfos = {}
         try:
             tools.kbinfos = kbinfos
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
     kbinfos.setdefault("chunks", [])
     return kbinfos
@@ -699,7 +699,7 @@ async def _run_search(tools, search_fn, queries: list, top_n: int, max_q: int, *
         try:
             res = await search_fn(tools, fq, kb_ids=kb_ids, top_n=top_n, **kw)
             cands = res.get("chunks", []) or []
-        except Exception:
+        except Exception:  # noqa: BLE001
             _LOG.warning("[Action Session] %s failed for %r", getattr(search_fn, "__name__", "search"), fq, exc_info=True)
             continue
         for c in cands[:_SNIPPETS_PER_QUERY]:
@@ -794,7 +794,7 @@ async def _exec_web_search(tools, queries: list) -> ToolOutcome:
             web_res = provider.retrieve_chunks(q)
             if asyncio.iscoroutine(web_res) or hasattr(web_res, "__await__"):
                 web_res = await web_res
-        except Exception:
+        except Exception:  # noqa: BLE001
             _LOG.warning("[Action Session] web_search failed for %r", q, exc_info=True)
             continue
         for c in ((web_res or {}).get("chunks") or [])[:8]:
@@ -817,7 +817,7 @@ async def _exec_list_chunks(tools, doc_id: str) -> ToolOutcome:
 
     try:
         res = await list_chunks(tools, doc_id)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] list_chunks failed doc=%r", doc_id, exc_info=True)
         return ToolOutcome(payload=[], status=ERROR, reason="infra")
     out, ids, new_ev = [], [], 0
@@ -854,7 +854,7 @@ def _inject_nav_tools_ref(tools) -> None:
         import rag.advanced_rag.harness.tools.navigation as _nav
 
         _nav._tools_ref["tools"] = tools
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] could not inject navigation tools ref", exc_info=True)
 
 
@@ -948,7 +948,7 @@ async def _exec_calculate(tools, args: dict) -> ToolOutcome:
         return ToolOutcome(payload=[{"kind": "calculate", "error": "no model"}], status=ERROR, reason="infra")
     try:
         res = await compute_from_facts(mdl, question, facts)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] calculate failed", exc_info=True)
         res = None
     if not res:
@@ -977,7 +977,7 @@ async def _exec_graph_explore(tools, args: dict) -> ToolOutcome:
     doc_scope = [str(d) for d in (args.get("doc_scope") or []) if str(d).strip()]
     try:
         res = await graph_explore(tools, query, doc_scope=doc_scope or None)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] graph_explore failed", exc_info=True)
         res = {}
     answer = str(res.get("answer") or "").strip()
@@ -1059,7 +1059,7 @@ async def _acompletion(mdl, messages: list, tools_list=None, temperature: float 
         client = mdl.async_client
         chat_obj = getattr(client, "chat", client)
         completions = getattr(chat_obj, "completions", chat_obj)
-        create = getattr(completions, "create")
+        create = getattr(completions, "create")  # noqa: B009
         kwargs = {"model": mdl.model_name, "messages": oai_messages, "temperature": temperature}
         if tools_list:
             kwargs["tools"] = tools_list
@@ -1117,7 +1117,7 @@ def _parse_tool_calls(msg) -> list:
         raw_args = fn.arguments if fn else "{}"
         try:
             args = json.loads(raw_args) if isinstance(raw_args, str) and raw_args.strip() else (raw_args or {})
-        except Exception:
+        except Exception:  # noqa: BLE001
             args = {}
         if not isinstance(args, dict):
             args = {}
@@ -1491,7 +1491,7 @@ async def _finalize_node(state: _SessionState) -> dict:
             _LOG.info("[Action Session] answer salvaged from exhausted session")
         elif new_states:
             _LOG.info("[Action Session] %d branch(es) salvaged from exhausted session", len(new_states))
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("[Action Session] salvage call failed")
 
     # Loose-clue harvest (deterministic, zero-LLM): even when every JSON
@@ -1706,7 +1706,7 @@ async def _run_drill_merge(tools, ctx: _NavContext, available: set, budget_s: fl
             try:
                 async with asyncio.timeout(max(5.0, budget_s or _NAV_PREFIX_CALL_TIMEOUT_S)):
                     s_oc = await execute_tool(tools, "navigate_structure", {"doc_id": doc_id, "query": ctx.direction, "kind": "catalog"})
-            except Exception:
+            except Exception:  # noqa: BLE001
                 _LOG.warning("[Action Session] drill structure load failed doc=%s", doc_id, exc_info=True)
                 continue
             for d in s_oc.evidence_ids:
@@ -1807,7 +1807,7 @@ def _nav_tool_surface(tools) -> set:
     """Tools this session may call, or an empty set when it cannot be resolved."""
     try:
         return {s["function"]["name"] for s in _active_tool_specs(tools)}
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] could not resolve the tool surface", exc_info=True)
         return set()
 
@@ -1882,7 +1882,7 @@ async def _run_nav_chain(
             else:
                 async with asyncio.timeout(min(_NAV_PREFIX_CALL_TIMEOUT_S, remaining)):
                     oc = await execute_tool(tools, rule.tool, rule.args(ctx))
-        except Exception:
+        except Exception:  # noqa: BLE001
             _LOG.warning("[Action Session] nav chain step %r failed", rule_id, exc_info=True)
             break
 
@@ -2009,7 +2009,7 @@ async def run_action_session(
     if _NAV_RULES_ENABLED:
         try:
             prefix_msgs, prefix_ids, prefix_outcomes, pending_rule = await run_nav_prefix(tools, direction, budget_left, ctx=nav_ctx)
-        except Exception:
+        except Exception:  # noqa: BLE001
             _LOG.warning("[Action Session] navigation prefix failed; continuing with the plain loop", exc_info=True)
     if prefix_msgs:
         _LOG.info(
@@ -2045,7 +2045,7 @@ async def run_action_session(
     }
     try:
         final = await _SESSION_GRAPH.ainvoke(initial)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("[Action Session] session failed")
         return Result(messages=[], new_states=[])
     return Result(
@@ -2072,7 +2072,7 @@ async def _init_chat(tools, system: str, user: str, tmo: float) -> str:
             return str(ans or "")
     except TimeoutError:
         _LOG.warning("[Action Session:init] timed out (%ds)", tmo)
-    except Exception:
+    except Exception:  # noqa: BLE001
         _LOG.exception("[Action Session:init] failed")
     return ""
 
