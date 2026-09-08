@@ -35,10 +35,8 @@ MAX_RERANK_TOKEN = 8196
 
 
 class Base(ABC):
-    max_token = MAX_RERANK_TOKEN
-
-    def __init__(self, key, model_name, **kwargs):
-        pass
+    def __init__(self, key, model_name, max_token=MAX_RERANK_TOKEN, **kwargs):
+        self.max_token = max_token or MAX_RERANK_TOKEN
 
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         """Score ``texts`` against ``query`` and return ``(rank, token_count)``.
@@ -117,7 +115,8 @@ class Base(ABC):
 class JinaRerank(Base):
     _FACTORY_NAME = "Jina"
 
-    def __init__(self, key, model_name="jina-reranker-v2-base-multilingual", base_url="https://api.jina.ai/v1/rerank"):
+    def __init__(self, key, model_name="jina-reranker-v2-base-multilingual", base_url="https://api.jina.ai/v1/rerank", max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         self.base_url = base_url or "https://api.jina.ai/v1/rerank"
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
@@ -141,17 +140,18 @@ class GreenPTRerank(JinaRerank):
 
     _FACTORY_NAME = "GreenPT"
 
-    def __init__(self, key, model_name="green-rerank", base_url="https://api.greenpt.ai/v1/rerank"):
+    def __init__(self, key, model_name="green-rerank", base_url="https://api.greenpt.ai/v1/rerank", max_token=MAX_RERANK_TOKEN):
         endpoint = (base_url or "https://api.greenpt.ai/v1/rerank").rstrip("/")
         if not endpoint.endswith("/rerank"):
             endpoint += "/rerank"
-        super().__init__(key, model_name=model_name, base_url=endpoint)
+        super().__init__(key, model_name=model_name, base_url=endpoint, max_token=max_token)
 
 
 class XInferenceRerank(Base):
     _FACTORY_NAME = "Xinference"
 
-    def __init__(self, key="x", model_name="", base_url=""):
+    def __init__(self, key="x", model_name="", base_url="", max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         if base_url.find("/v1") == -1:
             base_url = urljoin(base_url, "/v1/rerank")
         if base_url.find("/rerank") == -1:
@@ -180,7 +180,8 @@ class XInferenceRerank(Base):
 class LocalAIRerank(Base):
     _FACTORY_NAME = "LocalAI"
 
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url, max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         if base_url.find("/rerank") == -1:
             self.base_url = urljoin(base_url, "/rerank")
         else:
@@ -213,7 +214,8 @@ class LocalAIRerank(Base):
 class NvidiaRerank(Base):
     _FACTORY_NAME = "NVIDIA"
 
-    def __init__(self, key, model_name, base_url="https://ai.api.nvidia.com/v1/retrieval/nvidia/"):
+    def __init__(self, key, model_name, base_url="https://ai.api.nvidia.com/v1/retrieval/nvidia/", max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         if not base_url:
             base_url = "https://ai.api.nvidia.com/v1/retrieval/nvidia/"
         base_url = base_url.rstrip("/") + "/"
@@ -269,8 +271,8 @@ class NvidiaRerank(Base):
 class LmStudioRerank(Base):
     _FACTORY_NAME = "LM-Studio"
 
-    def __init__(self, key, model_name, base_url, **kwargs):
-        pass
+    def __init__(self, key, model_name, base_url, max_token=MAX_RERANK_TOKEN, **kwargs):
+        super().__init__(key, model_name, max_token)
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         raise NotImplementedError("The LmStudioRerank has not been implemented")
@@ -279,7 +281,8 @@ class LmStudioRerank(Base):
 class OpenAI_APIRerank(Base):
     _FACTORY_NAME = "OpenAI-API-Compatible"
 
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url, max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         normalized_base_url = (base_url or "").strip()
         if "/rerank" in normalized_base_url:
             self.base_url = normalized_base_url.rstrip("/")
@@ -315,10 +318,10 @@ class MWSRerank(OpenAI_APIRerank):
 
     _FACTORY_NAME = "MWS"
 
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url, max_token=MAX_RERANK_TOKEN):
         """Initialize reranking access for an MWS project and deployment."""
         token = require_mws_token(key)
-        super().__init__(token, model_name, mws_api_url(base_url, "cohere/v2/rerank"))
+        super().__init__(token, model_name, mws_api_url(base_url, "cohere/v2/rerank"), max_token)
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         """Score candidate texts and restore scores to document input order."""
@@ -404,7 +407,8 @@ class MWSRerank(OpenAI_APIRerank):
 class CoHereRerank(Base):
     _FACTORY_NAME = ["Cohere", "VLLM"]
 
-    def __init__(self, key, model_name, base_url=None):
+    def __init__(self, key, model_name, base_url=None, max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         from cohere import Client
 
         client_kwargs = {"api_key": key, "timeout": 30.0}
@@ -441,7 +445,8 @@ class BedrockRerank(Base):
     # A single request accepts at most 1,000 sources / numberOfResults.
     _MAX_SOURCES = 1000
 
-    def __init__(self, key, model_name, **kwargs):
+    def __init__(self, key, model_name, max_token=MAX_RERANK_TOKEN, **kwargs):
+        super().__init__(key, model_name, max_token)
         import boto3
         from botocore.utils import validate_region_name
 
@@ -535,8 +540,8 @@ class BedrockRerank(Base):
 class TogetherAIRerank(Base):
     _FACTORY_NAME = "TogetherAI"
 
-    def __init__(self, key, model_name, base_url, **kwargs):
-        pass
+    def __init__(self, key, model_name, base_url, max_token=MAX_RERANK_TOKEN, **kwargs):
+        super().__init__(key, model_name, max_token)
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         raise NotImplementedError("The api has not been implemented")
@@ -545,7 +550,8 @@ class TogetherAIRerank(Base):
 class SILICONFLOWRerank(Base):
     _FACTORY_NAME = "SILICONFLOW"
 
-    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1/rerank"):
+    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1/rerank", max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         normalized_base_url = (base_url or "").strip()
         if not normalized_base_url:
             normalized_base_url = "https://api.siliconflow.cn/v1/rerank"
@@ -584,7 +590,8 @@ class SILICONFLOWRerank(Base):
 class BaiduYiyanRerank(Base):
     _FACTORY_NAME = "BaiduYiyan"
 
-    def __init__(self, key, model_name, base_url=None):
+    def __init__(self, key, model_name, base_url=None, max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         from qianfan.resources import Reranker
 
         try:
@@ -619,7 +626,8 @@ class BaiduYiyanRerank(Base):
 class VoyageRerank(Base):
     _FACTORY_NAME = "Voyage AI"
 
-    def __init__(self, key, model_name, base_url=None):
+    def __init__(self, key, model_name, base_url=None, max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         import voyageai
 
         self.client = voyageai.Client(api_key=key, timeout=30.0)
@@ -640,7 +648,8 @@ class VoyageRerank(Base):
 class QWenRerank(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
-    def __init__(self, key, model_name="gte-rerank-v2", **kwargs):
+    def __init__(self, key, model_name="gte-rerank-v2", max_token=MAX_RERANK_TOKEN, **kwargs):
+        super().__init__(key, model_name, max_token)
         self.api_key = key
         self.model_name = model_name if model_name else "gte-rerank-v2"
         # Remove invalid global timeout, use official SDK per-request timeout parameter
@@ -707,7 +716,8 @@ class HuggingfaceRerank(Base):
             raise exc
         return np.array(scores)
 
-    def __init__(self, key, model_name="BAAI/bge-reranker-v2-m3", base_url="http://127.0.0.1"):
+    def __init__(self, key, model_name="BAAI/bge-reranker-v2-m3", base_url="http://127.0.0.1", max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         self.model_name = model_name.split("___")[0]
         self.base_url = base_url
 
@@ -723,7 +733,8 @@ class GPUStackRerank(Base):
 
     _FACTORY_NAME = "GPUStack"
 
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url, max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         if not base_url:
             raise ValueError("url cannot be None")
 
@@ -765,26 +776,27 @@ class GPUStackRerank(Base):
 class NovitaRerank(JinaRerank):
     _FACTORY_NAME = "NovitaAI"
 
-    def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai/rerank"):
+    def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai/rerank", max_token=MAX_RERANK_TOKEN):
         if not base_url:
             base_url = "https://api.novita.ai/v3/openai/rerank"
-        super().__init__(key, model_name, base_url)
+        super().__init__(key, model_name, base_url, max_token)
 
 
 class GiteeRerank(JinaRerank):
     _FACTORY_NAME = "GiteeAI"
 
-    def __init__(self, key, model_name, base_url="https://api.moark.com/v1/rerank"):
+    def __init__(self, key, model_name, base_url="https://api.moark.com/v1/rerank", max_token=MAX_RERANK_TOKEN):
         endpoint = (base_url or "https://api.moark.com/v1/rerank").rstrip("/")
         if endpoint.endswith("/v1"):
             endpoint += "/rerank"
-        super().__init__(key, model_name, base_url=endpoint)
+        super().__init__(key, model_name, base_url=endpoint, max_token=max_token)
 
 
 class Ai302Rerank(Base):
     _FACTORY_NAME = "302.AI"
 
-    def __init__(self, key, model_name, base_url="https://api.302.ai/v1/rerank"):
+    def __init__(self, key, model_name, base_url="https://api.302.ai/v1/rerank", max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         self.base_url = base_url or "https://api.302.ai/v1/rerank"
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
@@ -806,26 +818,27 @@ class Ai302Rerank(Base):
 class JiekouAIRerank(JinaRerank):
     _FACTORY_NAME = "Jiekou.AI"
 
-    def __init__(self, key, model_name, base_url="https://api.jiekou.ai/openai/v1/rerank"):
+    def __init__(self, key, model_name, base_url="https://api.jiekou.ai/openai/v1/rerank", max_token=MAX_RERANK_TOKEN):
         if not base_url:
             base_url = "https://api.jiekou.ai/openai/v1/rerank"
-        super().__init__(key, model_name, base_url)
+        super().__init__(key, model_name, base_url, max_token)
 
 
 class FuturMixRerank(OpenAI_APIRerank):
     _FACTORY_NAME = "FuturMix"
 
-    def __init__(self, key, model_name, base_url="https://futurmix.ai/v1/rerank"):
+    def __init__(self, key, model_name, base_url="https://futurmix.ai/v1/rerank", max_token=MAX_RERANK_TOKEN):
         if not base_url:
             base_url = "https://futurmix.ai/v1/rerank"
-        super().__init__(key, model_name, base_url)
+        super().__init__(key, model_name, base_url, max_token)
         logging.info("[FuturMix] Rerank initialized with model %s", model_name)
 
 
 class RAGconRerank(Base):
     _FACTORY_NAME = "RAGcon"
 
-    def __init__(self, key, model_name, base_url=None, **kwargs):
+    def __init__(self, key, model_name, base_url=None, max_token=MAX_RERANK_TOKEN, **kwargs):
+        super().__init__(key, model_name, max_token)
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
 
@@ -858,7 +871,8 @@ class RAGconRerank(Base):
 class NewAPIRerank(Base):
     _FACTORY_NAME = "New API"
 
-    def __init__(self, key, model_name, base_url):
+    def __init__(self, key, model_name, base_url, max_token=MAX_RERANK_TOKEN):
+        super().__init__(key, model_name, max_token)
         normalized_base_url = (base_url or "").strip()
         if "/rerank" in normalized_base_url:
             self.base_url = normalized_base_url.rstrip("/")
