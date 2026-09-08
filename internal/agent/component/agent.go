@@ -173,11 +173,12 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	// decision that consumes the tool result. Reserve one additional step for
 	// the final model response, so max_rounds=1 can complete a tool call and
 	// produce its answer instead of failing with "exceeds max steps".
-	// Reserve one extra model/tool pair for a recoverable tool failure. The
-	// Python agent lets the model rewrite unsafe code and retry within the
-	// same configured round; Eino otherwise reaches its step limit after the
-	// first failed CodeExec call.
-	maxSteps := p.MaxRounds*2 + 3
+	maxSteps := p.MaxRounds*2 + 1
+	if hasCodeExecTool(p.Tools) {
+		// CodeExec user-code failures return a non-zero tool result, allowing
+		// one repair attempt without changing other agents' step budget.
+		maxSteps += 2
+	}
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: chatModel,
@@ -646,6 +647,16 @@ func optimizeMultiTurnQuestion(ctx context.Context, db *gorm.DB, p AgentParam, h
 		return "", err
 	}
 	return strings.TrimSpace(resp.Content), nil
+}
+
+func hasCodeExecTool(names []string) bool {
+	for _, name := range names {
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "codeexec", "code_exec", "execute_code":
+			return true
+		}
+	}
+	return false
 }
 
 func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, error) {

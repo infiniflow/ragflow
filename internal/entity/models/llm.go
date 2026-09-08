@@ -370,15 +370,11 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 		return nil, fmt.Errorf("models: EinoChatModel: nil model name")
 	}
 	internalMessage := toInternalMessages(msgs)
-	chatCfg, err := m.chatConfigForGenerate()
-	if err != nil {
-		return nil, err
-	}
 	// Some OpenAI-compatible providers (including the configured MiniMax
 	// endpoint) stream tool intent as ordinary prose. Use the provider's
 	// non-streaming parser for tool-bound turns so structured tool_calls are
 	// preserved; ReAct still streams the final answer turn normally.
-	if len(m.tools) > 0 {
+	if len(m.tools) > 0 && !containsToolResult(internalMessage) {
 		msg, err := m.Generate(ctx, msgs, opts...)
 		if err != nil {
 			return nil, err
@@ -390,6 +386,15 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 		}
 		sw.Close()
 		return sr, nil
+	}
+	chatCfg, err := m.chatConfigForGenerate()
+	if err != nil {
+		return nil, err
+	}
+	if containsToolResult(internalMessage) {
+		choice := "auto"
+		chatCfg.ToolChoice = &choice
+		chatCfg.ToolChoiceValue = nil
 	}
 
 	sr, sw := schema.Pipe[*schema.Message](1)

@@ -338,17 +338,19 @@ async def _promote_root_artifacts(container: str, task_id: str) -> None:
     task_root = f"/workspace/{task_id}"
     artifacts = f"{task_root}/artifacts"
     excluded = {"main.py", "runner.py", "args.json"}
-    for root in (task_root, "/workspace"):
-        returncode, stdout, _ = await async_run_command("docker", "exec", container, "find", root, "-maxdepth", "1", "-type", "f", timeout=5)
-        if returncode != 0:
+    returncode, _, _ = await async_run_command("docker", "exec", container, "mkdir", "-p", artifacts, timeout=5)
+    if returncode != 0:
+        return
+    returncode, stdout, _ = await async_run_command("docker", "exec", container, "find", task_root, "-maxdepth", "1", "-type", "f", "-print0", timeout=5)
+    if returncode != 0:
+        return
+    for path in stdout.split("\0"):
+        name = path.rsplit("/", 1)[-1]
+        if not name or name in excluded or name.startswith(".") or any(ord(char) < 32 or ord(char) == 127 for char in name):
             continue
-        for line in stdout.splitlines():
-            name = line.rsplit("/", 1)[-1]
-            if not name or name in excluded or name.startswith("."):
-                continue
-            if os.path.splitext(name)[1].lower() not in ALLOWED_ARTIFACT_EXTENSIONS:
-                continue
-            await async_run_command("docker", "exec", container, "mv", f"{root}/{name}", f"{artifacts}/{name}", timeout=5)
+        if os.path.splitext(name)[1].lower() not in ALLOWED_ARTIFACT_EXTENSIONS:
+            continue
+        await async_run_command("docker", "exec", container, "mv", path, f"{artifacts}/{name}", timeout=5)
 
 
 async def _collect_artifacts_from_path(container: str, artifacts_path: str, excluded: set[str] | None = None) -> list[ArtifactItem]:
@@ -365,14 +367,17 @@ async def _collect_artifacts_from_path(container: str, artifacts_path: str, excl
         "1",
         "-type",
         "f",
+        "-print0",
         timeout=5,
     )
     if returncode != 0 or not stdout.strip():
         return []
 
-    raw_names = [line.split("/")[-1] for line in stdout.strip().splitlines() if line.strip()]
+    raw_names = [path.rsplit("/", 1)[-1] for path in stdout.split("\0") if path]
     # Sanitize: reject names with path traversal or control characters
-    filenames = [n for n in raw_names if n and n not in excluded and "/" not in n and "\\" not in n and ".." not in n and not n.startswith(".")]
+    filenames = [
+        n for n in raw_names if n and n not in excluded and "/" not in n and "\\" not in n and ".." not in n and not n.startswith(".") and not any(ord(char) < 32 or ord(char) == 127 for char in n)
+    ]
     if not filenames:
         return []
 

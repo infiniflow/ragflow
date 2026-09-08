@@ -161,16 +161,10 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 		zap.Int("script_len", len(req.Script)))
 	resp, err := client.ExecuteCode(ctx, req)
 	if err != nil {
-		// Execution failures are tool results, not graph failures.  Returning
-		// the error to Eino aborts the ReAct loop before the model can rewrite
-		// unsafe code and retry (Python exposes the same failure as _ERROR).
-		// Keep the wiring/configuration sentinel terminal so a missing sandbox
-		// remains an actionable deployment error.
-		result := codeExecStubResult(err.Error())
-		if errors.Is(err, ErrCodeExecSandboxMissing) {
-			return result, err
-		}
-		return result, nil
+		// Providers return user-code failures as non-zero SandboxResponses.
+		// An error here is a sandbox or transport failure and must stop the
+		// ReAct loop instead of prompting retries against broken infrastructure.
+		return codeExecStubResult(err.Error()), err
 	}
 	out, mErr := codeExecResultJSON(resp)
 	if mErr != nil {
