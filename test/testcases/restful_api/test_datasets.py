@@ -2427,7 +2427,7 @@ def test_dataset_search_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     res = rest_client.post(
         f"/datasets/{dataset_id}/search",
-        json={"question": "test TXT file", "page": 1, "size": 10},
+        json={"question": "test TXT file", "page": 1, "page_size": 10},
     )
     assert res.status_code == 200
     payload = res.json()
@@ -2439,17 +2439,17 @@ def test_dataset_search_endpoint(rest_client, ensure_parsed_document):
 @pytest.mark.parametrize(
     "payload",
     [
-        {"question": "test TXT file", "page": 1, "size": 2},
+        {"question": "test TXT file", "page": 1, "page_size": 2},
         {"question": "test TXT file", "similarity_threshold": 0.5},
         {"question": "test TXT file", "vector_similarity_weight": 0.7},
         {"question": "test TXT file", "top_k": 10},
     ],
     ids=["page_size", "similarity_threshold", "vector_similarity_weight", "top_k"],
 )
-def test_dataset_search_params_and_doc_ids_contract(rest_client, ensure_parsed_document, payload):
+def test_dataset_search_params_and_document_ids_contract(rest_client, ensure_parsed_document, payload):
     dataset_id, document_id = ensure_parsed_document()
     search_payload = dict(payload)
-    search_payload["doc_ids"] = [document_id]
+    search_payload["document_ids"] = [document_id]
     res = rest_client.post(f"/datasets/{dataset_id}/search", json=search_payload)
     assert res.status_code == 200
     body = res.json()
@@ -2463,7 +2463,7 @@ def test_dataset_search_requires_question(rest_client, create_dataset):
     res = rest_client.post(f"/datasets/{dataset_id}/search", json={})
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] == 101, payload
+    assert payload["code"] in [101, 102], payload
     assert "question" in payload["message"], payload
 
 

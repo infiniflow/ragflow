@@ -4947,7 +4947,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT,SPEECH2TEXT,TEXT RE-RANK",
             "status": "1",
-            "url": "https://ai.gitee.com/v1/",
+            "url": "https://api.moark.com/v1",
             "llm": [
                 {
                     "llm_name": "ERNIE-4.5-Turbo",
@@ -5334,14 +5334,14 @@
                     "is_tools": false
                 },
                 {
-                    "llm_name": "bge-m3",
+                    "llm_name": "BAAI/bge-m3",
                     "tags": "TEXT EMBEDDING,TEXT RE-RANK",
                     "max_tokens": 8192,
                     "model_type": "embedding",
                     "is_tools": false
                 },
                 {
-                    "llm_name": "bge-reranker-v2-m3",
+                    "llm_name": "BAAI/bge-reranker-v2-m3",
                     "tags": "TEXT RE-RANK",
                     "max_tokens": 8192,
                     "model_type": "rerank",

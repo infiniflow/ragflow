@@ -84,11 +84,11 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 	if req.Language != nil {
-		normalizedLanguage := strings.TrimSpace(*req.Language)
-		if len(normalizedLanguage) > 32 {
-			return nil, common.CodeDataError, errors.New("String should have at most 32 characters")
+		normalized, err := normalizeDatasetLanguage(*req.Language)
+		if err != nil {
+			return nil, common.CodeDataError, err
 		}
-		language = &normalizedLanguage
+		language = &normalized
 	}
 
 	if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {

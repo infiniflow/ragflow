@@ -141,6 +141,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAI302Model(baseURL, urlSuffix), nil
 	case "mineru":
 		return NewMinerLocalUModel(baseURL, urlSuffix), nil
+	case "monkeyocrv2":
+		return NewMonkeyOCRv2Model(baseURL, urlSuffix), nil
 	case "futurmix":
 		return NewFuturMixModel(baseURL, urlSuffix), nil
 	case "perplexity":

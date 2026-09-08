@@ -31,6 +31,7 @@ from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
 from common.constants import StatusEnum, TaskStatus, MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
+from common.llm_request_context import normalize_llm_user_id
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
@@ -440,7 +441,7 @@ class TaskService(CommonService):
         return cls.model.delete().where(cls.model.doc_id.in_(doc_ids)).execute()
 
 
-def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
+def queue_tasks(doc: dict, bucket: str, name: str, priority: int, user_id: str | None = None):
     """Create and queue document processing tasks.
 
     This function creates processing tasks for a document based on its type and configuration.
@@ -453,6 +454,9 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         bucket (str): Storage bucket name where the document is stored.
         name (str): File name of the document.
         priority (int, optional): Priority level for task queueing (default is 0).
+        user_id (str, optional): End-user identifier forwarded on embedding HTTP
+            calls as the OpenAI ``user`` field. Stored on the Redis message only
+            (Task rows have no ``user_id`` column).
 
     Note:
         - For PDF documents, tasks are created per page range based on configuration
@@ -563,8 +567,15 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     if chunking_n > 0:
         assert seed_doc_chunking_counter(doc["id"], chunking_n), "Can't access Redis. Please check the Redis' status."
     try:
+        llm_user_id = normalize_llm_user_id(user_id) or normalize_llm_user_id(doc.get("llm_user_id"))
         for unfinished_task in unfinished_task_array:
-            assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, suffix), message=unfinished_task), "Can't access Redis. Please check the Redis' status."
+            message = dict(unfinished_task)
+            if llm_user_id:
+                # Redis-only: Task rows have no user_id column. The worker copies
+                # this onto the in-memory task and installs it as LLM request context
+                # so embedding HTTP calls can forward OpenAI ``user``.
+                message["user_id"] = llm_user_id
+            assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, suffix), message=message), "Can't access Redis. Please check the Redis' status."
     except Exception:
         abort_doc_chunking_counter(doc["id"])
         raise
@@ -634,7 +645,16 @@ def has_canceled(task_id):
     return False
 
 
-def queue_dataflow(tenant_id: str, flow_id: str, task_id: str, doc_id: str = CANVAS_DEBUG_DOC_ID, file: dict = None, priority: int = 0, rerun: bool = False) -> tuple[bool, str]:
+def queue_dataflow(
+    tenant_id: str,
+    flow_id: str,
+    task_id: str,
+    doc_id: str = CANVAS_DEBUG_DOC_ID,
+    file: dict = None,
+    priority: int = 0,
+    rerun: bool = False,
+    user_id: str | None = None,
+) -> tuple[bool, str]:
 
     task = dict(
         id=task_id,
@@ -654,6 +674,9 @@ def queue_dataflow(tenant_id: str, flow_id: str, task_id: str, doc_id: str = CAN
     task["tenant_id"] = tenant_id
     task["dataflow_id"] = flow_id
     task["file"] = file
+    llm_user_id = normalize_llm_user_id(user_id)
+    if llm_user_id:
+        task["user_id"] = llm_user_id
 
     if not REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, "common"), message=task):
         return False, "Can't access Redis. Please check the Redis' status."

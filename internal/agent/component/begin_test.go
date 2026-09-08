@@ -52,6 +52,50 @@ func TestBegin_InjectsSys(t *testing.T) {
 	}
 }
 
+func TestBegin_MapsQueryToDeclaredInput(t *testing.T) {
+	c, err := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{
+			"customer_review": map[string]any{"key": "customer_review"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewBeginComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-custom-input", "task-custom-input")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": "The product arrived damaged."})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["customer_review"]; got != "The product arrived damaged." {
+		t.Errorf("outputs[customer_review] = %v, want original review", got)
+	}
+}
+
+func TestBegin_MapsNamedQueryInputs(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{
+			"customer_review": map[string]any{},
+			"language":        map[string]any{},
+		},
+	})
+	state := canvas.NewCanvasState("run-named-inputs", "task-named-inputs")
+	ctx := canvas.WithState(t.Context(), state)
+	query := map[string]any{
+		"customer_review": map[string]any{"value": "Damaged package"},
+		"language":        "English",
+	}
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": query})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["customer_review"] != "Damaged package" || out["language"] != "English" {
+		t.Errorf("named inputs = %#v", out)
+	}
+}
+
 // TestBegin_PassesThroughInputs asserts the full inputs map — including
 // arbitrary keys beyond query / user_id — is returned unchanged as
 // outputs. This is the contract downstream components rely on to access

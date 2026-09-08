@@ -691,6 +691,7 @@ export default {
         '为帮助您更好地理解，我们提供了相关截图供您参考。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
+      imageLoadFailed: '图片加载失败',
       audio: `<p>支持的文件格式为 <b>WAV、MP3、AAC、FLAC、OGG</b> 及其他常见音频格式。</p>
 <p>本方法使用语音转文本模型将音频文件转录为文本。</p>`,
       email: `<p>支持的文件格式为 <b>EML</b> 和 <b>MSG</b>。</p>
@@ -831,6 +832,7 @@ export default {
       pageRank: '页面排名',
       pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '标签',
+      tagMessage: '请选择标签',
       frequency: '频次',
       searchTags: '搜索标签',
       tagCloud: '云',
@@ -1985,7 +1987,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       compilationTitleSuffix: '的数据集',
       llmWiki: 'Wiki',
       skills: 'To Skills',
-      navTree: 'Tree/Page index',
+      navTree: 'Tree/PageIndex',
       graph: 'Graph',
       structureMindmap: 'Mindmap',
       structureTimeline: 'Timeline',
@@ -2403,6 +2405,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       youComFreshnessMonth: '一个月内',
       youComFreshnessYear: '一年内',
       youComApiKeyTip: '可选。留空则使用免密钥的免费额度。',
+      sofyaSearch: 'Sofya',
+      sofyaSearchDescription:
+        '基于 Sofya 的网络搜索组件。根据搜索深度，结果附带结果页面的正文内容或仅附带搜索摘要。需要配置 API Key。',
+      sofyaSearchDepth: '搜索深度',
+      sofyaSearchDepthTip:
+        'Basic 返回每条结果页面的正文内容；Snippets 只返回搜索摘要，速度更快、消耗更少。',
+      sofyaSearchDepthBasic: '页面正文',
+      sofyaSearchDepthSnippets: '仅摘要',
+      sofyaApiKeyTip: '必填。请在 sofya.co 申请 API Key。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       browser: 'Browser',
