@@ -1,27 +1,32 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import {
+  ModelTreeSelectFormField,
+  ModelTypeMap,
+} from '@/components/model-tree-select';
+import {
   SelectWithSearch,
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { LlmModelType } from '@/constants/knowledge';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useOwnerTenantId } from '../../context';
+import { FileType } from '../../constant/pipeline';
 import {
   FlattenMediaToTextFormField,
   LanguageFormField,
-  LargeModelFormField,
   ParserMethodFormField,
   RemoveHeaderFooterFormField,
   RmdirFormField,
   TwoColumnCheckFormField,
 } from './common-form-fields';
 import { CommonProps } from './interface';
+import { DynamicPageRange } from './dynamic-page-range';
 import { useSetInitialLanguage } from './use-set-initial-language';
-import { buildFieldNameWithPrefix } from './utils';
+import { buildFieldNameWithPrefix, isForeignParseMethod } from './utils';
 
 const tableResultTypeOptions: SelectWithSearchFlagOptionType[] = [
   { label: 'Markdown', value: '0' },
@@ -36,11 +41,10 @@ const markdownImageResponseTypeOptions: SelectWithSearchFlagOptionType[] = [
 export function PdfFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const form = useFormContext();
+  const ownerTenantId = useOwnerTenantId();
+  const isGo = useIsGoBackend();
 
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Image2text,
-  ]);
   const parseMethod = useWatch({
     name: parseMethodName,
   });
@@ -66,7 +70,11 @@ export function PdfFormFields({ prefix }: CommonProps) {
   useSetInitialLanguage({ prefix, languageShown });
 
   useEffect(() => {
-    if (isEmpty(form.getValues(parseMethodName))) {
+    const current = form.getValues(parseMethodName);
+    // On a file-type switch the field remounts and react-hook-form re-seeds it
+    // from the node's saved form data, so it can hold another file type's
+    // static parse method (e.g. ocr) — reset it to DeepDOC in that case too.
+    if (isEmpty(current) || isForeignParseMethod(FileType.PDF, current)) {
       form.setValue(parseMethodName, ParseDocumentType.DeepDOC, {
         shouldValidate: true,
         shouldDirty: true,
@@ -107,12 +115,16 @@ export function PdfFormFields({ prefix }: CommonProps) {
       <RmdirFormField prefix={prefix} />
       <RemoveHeaderFooterFormField prefix={prefix} />
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
+      {isGo && <DynamicPageRange prefix={prefix} />}
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (
-        <LargeModelFormField
-          prefix={prefix}
-          options={modelOptions}
-        ></LargeModelFormField>
+        <ModelTreeSelectFormField
+          name={buildFieldNameWithPrefix('vlm.llm_id', prefix)}
+          label={t('chat.model')}
+          modelTypes={ModelTypeMap.img2txt_id}
+          allowClear
+          ownerTenantId={ownerTenantId}
+        />
       )}
       {languageShown && <LanguageFormField prefix={prefix}></LanguageFormField>}
       {tcadpOptionsShown && (

@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 	"time"
@@ -33,30 +34,21 @@ import (
 const replicatePollInterval = time.Second
 
 type ReplicateModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewReplicateModel(baseURL map[string]string, urlSuffix URLSuffix) *ReplicateModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
-	transport.DisableCompression = false
-	transport.ResponseHeaderTimeout = 60 * time.Second
-
 	return &ReplicateModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
 
 func (r *ReplicateModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewReplicateModel(baseURL, r.URLSuffix)
+	return NewReplicateModel(baseURL, r.baseModel.URLSuffix)
 }
 
 func (r *ReplicateModel) Name() string {
@@ -76,36 +68,28 @@ type replicatePrediction struct {
 	URLs   replicatePredictionURLs `json:"urls"`
 }
 
-type replicateModelsResponse struct {
-	Results []struct {
-		Owner string `json:"owner"`
-		Name  string `json:"name"`
-	} `json:"results"`
-}
-
 type replicateSSEEvent struct {
 	event string
 	data  string
 }
 
-func (r *ReplicateModel) baseURLForRegion(region string) (string, error) {
-	base, ok := r.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("replicate: no base URL configured for region %q", region)
-	}
-	return strings.TrimSuffix(base, "/"), nil
+type replicateModelList struct {
+	Results []replicateModelSummary `json:"results"`
+}
+
+type replicateModelSummary struct {
+	ID    string `json:"id"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
 }
 
 func (r *ReplicateModel) endpoint(apiConfig *APIConfig, suffix string) (string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
 
-	baseURL, err := r.baseURLForRegion(region)
+	baseURL, err := r.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return "", err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, suffix), nil
 }
 
@@ -116,7 +100,7 @@ func replicateUsesVersionEndpoint(modelName string) bool {
 
 func (r *ReplicateModel) predictionEndpoint(apiConfig *APIConfig, modelName string) (string, string, error) {
 	if replicateUsesVersionEndpoint(modelName) {
-		endpoint, err := r.endpoint(apiConfig, r.URLSuffix.Chat)
+		endpoint, err := r.endpoint(apiConfig, r.baseModel.URLSuffix.Chat)
 		return endpoint, modelName, err
 	}
 
@@ -125,7 +109,7 @@ func (r *ReplicateModel) predictionEndpoint(apiConfig *APIConfig, modelName stri
 		return "", "", fmt.Errorf("replicate: official model name must be owner/name")
 	}
 
-	modelsPrefix := strings.TrimSuffix(r.URLSuffix.Models, "models")
+	modelsPrefix := strings.TrimSuffix(r.baseModel.URLSuffix.Models, "models")
 	if modelsPrefix == "" {
 		modelsPrefix = "v1/"
 	}
@@ -180,9 +164,6 @@ func replicateInputFromMessages(messages []Message, chatModelConfig *ChatConfig)
 		input["system_prompt"] = systemPrompt
 	}
 	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			input["max_new_tokens"] = *chatModelConfig.MaxTokens
-		}
 		if chatModelConfig.Temperature != nil {
 			input["temperature"] = *chatModelConfig.Temperature
 		}
@@ -224,7 +205,7 @@ func replicateOutputToString(output interface{}) (string, error) {
 	}
 }
 
-func (r *ReplicateModel) createPrediction(ctx context.Context, url string, version string, input map[string]interface{}, stream bool, apiKey string, preferWait bool) (*replicatePrediction, error) {
+func (r *ReplicateModel) createPrediction(ctx context.Context, baseURL string, version string, input map[string]interface{}, stream bool, apiKey string, preferWait bool) (*replicatePrediction, error) {
 	body := map[string]interface{}{
 		"input":  input,
 		"stream": stream,
@@ -238,7 +219,7 @@ func (r *ReplicateModel) createPrediction(ctx context.Context, url string, versi
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -248,7 +229,7 @@ func (r *ReplicateModel) createPrediction(ctx context.Context, url string, versi
 		req.Header.Set("Prefer", "wait=60")
 	}
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := r.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -280,15 +261,15 @@ func replicatePredictionSucceeded(status string) bool {
 	return status == "successful"
 }
 
-func (r *ReplicateModel) getPrediction(ctx context.Context, url string, apiKey string) (*replicatePrediction, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (r *ReplicateModel) getPrediction(ctx context.Context, baseURL string, apiKey string) (*replicatePrediction, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := r.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -341,9 +322,9 @@ func (r *ReplicateModel) waitForPrediction(ctx context.Context, prediction *repl
 	}
 }
 
-func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (r *ReplicateModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -352,15 +333,15 @@ func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, 
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	url, version, err := r.predictionEndpoint(apiConfig, modelName)
+	baseURL, version, err := r.predictionEndpoint(apiConfig, modelName)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	prediction, err := r.createPrediction(ctx, url, version, replicateInputFromMessages(messages, chatModelConfig), false, *apiConfig.ApiKey, true)
+	prediction, err := r.createPrediction(ctx, baseURL, version, replicateInputFromMessages(messages, chatModelConfig), false, *apiConfig.ApiKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -380,12 +361,13 @@ func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, 
 	return &ChatResponse{Answer: &answer, ReasonContent: &reasonContent}, nil
 }
 
-func (r *ReplicateModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (r *ReplicateModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
-	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -397,17 +379,17 @@ func (r *ReplicateModel) ChatStreamlyWithSender(modelName string, messages []Mes
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
 
-	url, version, err := r.predictionEndpoint(apiConfig, modelName)
+	baseURL, version, err := r.predictionEndpoint(apiConfig, modelName)
 	if err != nil {
 		return err
 	}
 
-	prediction, err := r.createPrediction(context.Background(), url, version, replicateInputFromMessages(messages, chatModelConfig), true, *apiConfig.ApiKey, false)
+	prediction, err := r.createPrediction(ctx, baseURL, version, replicateInputFromMessages(messages, chatModelConfig), true, *apiConfig.ApiKey, false)
 	if err != nil {
 		return err
 	}
 	if prediction.URLs.Stream == "" {
-		ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+		ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 		defer cancel()
 		prediction, err = r.waitForPrediction(ctx, prediction, *apiConfig.ApiKey)
 		if err != nil {
@@ -426,18 +408,18 @@ func (r *ReplicateModel) ChatStreamlyWithSender(modelName string, messages []Mes
 		return sender(&endOfStream, nil)
 	}
 
-	return r.readPredictionStream(prediction.URLs.Stream, *apiConfig.ApiKey, sender)
+	return r.readPredictionStream(ctx, prediction.URLs.Stream, *apiConfig.ApiKey, sender)
 }
 
-func (r *ReplicateModel) readPredictionStream(url string, apiKey string, sender func(*string, *string) error) error {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+func (r *ReplicateModel) readPredictionStream(ctx context.Context, baseURL string, apiKey string, sender func(*string, *string) error) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := r.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -514,27 +496,27 @@ func dispatchReplicateSSEEvent(event replicateSSEEvent, sender func(*string, *st
 	}
 }
 
-func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+func (r *ReplicateModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url, err := r.endpoint(apiConfig, r.URLSuffix.Models)
+	baseURL, err := r.endpoint(apiConfig, r.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := r.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -548,22 +530,42 @@ func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result replicateModelsResponse
-	if err = json.Unmarshal(body, &result); err != nil {
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	models := make([]string, 0, len(result.Results))
-	for _, model := range result.Results {
-		if model.Owner != "" && model.Name != "" {
-			models = append(models, fmt.Sprintf("%s/%s", model.Owner, model.Name))
-		}
+	if modelList.Models != nil {
+		return ParseListModel(modelList), nil
 	}
-	return models, nil
+
+	var replicateList replicateModelList
+	if err = json.Unmarshal(body, &replicateList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if replicateList.Results == nil {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+	for _, model := range replicateList.Results {
+		modelName := strings.TrimSpace(model.ID)
+		if modelName == "" && model.Owner != "" && model.Name != "" {
+			modelName = fmt.Sprintf("%s/%s", model.Owner, model.Name)
+		}
+		if modelName == "" {
+			modelName = strings.TrimSpace(model.Name)
+		}
+		if modelName == "" {
+			continue
+		}
+		modelList.Models = append(modelList.Models, ModelListItem{
+			ID: modelName,
+		})
+	}
+
+	return ParseListModel(modelList), nil
 }
 
-func (r *ReplicateModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := r.ListModels(apiConfig)
+func (r *ReplicateModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := r.ListModels(ctx, apiConfig)
 	return err
 }
 
@@ -669,40 +671,32 @@ func replicateKeys(m map[string]interface{}) []string {
 }
 
 // Embed turns a list of texts into embedding vectors via Replicate's
-// prediction API. Replicate's embedding surface is the same async
-// /v1/predictions or /v1/models/{owner}/{name}/predictions endpoint
-// the chat path already uses: create a prediction with `Prefer: wait`
-// to skip the polling round-trip when possible, fall back to
-// waitForPrediction for predictions that don't finish in the wait
-// window. The driver targets the canonical Replicate embedding
-// schema (input.text / input.text_batch, output is an array of
-// {embedding: [floats]} objects); see replicateEmbedInput and
-// replicateEmbedOutputToVectors for details.
-func (r *ReplicateModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
+func (r *ReplicateModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+
+	if len(request.Texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	url, version, err := r.predictionEndpoint(apiConfig, *modelName)
+	baseURL, version, err := r.predictionEndpoint(apiConfig, *modelName)
 	if err != nil {
 		return nil, err
 	}
 
-	input, err := replicateEmbedInput(texts)
+	input, err := replicateEmbedInput(request.Texts)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	prediction, err := r.createPrediction(ctx, url, version, input, false, *apiConfig.ApiKey, true)
+	prediction, err := r.createPrediction(ctx, baseURL, version, input, false, *apiConfig.ApiKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -714,22 +708,10 @@ func (r *ReplicateModel) Embed(modelName *string, texts []string, apiConfig *API
 		return nil, fmt.Errorf("replicate: prediction ended with status %q", prediction.Status)
 	}
 
-	return replicateEmbedOutputToVectors(prediction.Output, len(texts))
+	return replicateEmbedOutputToVectors(prediction.Output, len(request.Texts))
 }
 
-// replicateRerankInput shapes the request body for Replicate's
-// canonical bge-style reranker schema. The documented input is a
-// single string field `input_list` carrying a JSON-encoded list of
-// `[query, passage]` pairs; the model returns a flat list of
-// numeric scores, one per pair, in the same order.
-//
-// See yxzwayne/bge-reranker-v2-m3's openapi_schema + default_example
-// at https://replicate.com/yxzwayne/bge-reranker-v2-m3. Other
-// reranker models on Replicate (sesamo-srl/bge-reranker-v2-m3,
-// ninehills/bge-reranker-large) follow compatible
-// pair-list-in-string conventions; this driver targets the
-// canonical shape and leaves model-specific adapters for future
-// PRs if other schemas are needed.
+// replicateRerankInput shapes the request body
 func replicateRerankInput(query string, documents []string) (map[string]interface{}, error) {
 	if len(documents) == 0 {
 		return nil, fmt.Errorf("replicate: documents is empty")
@@ -746,16 +728,6 @@ func replicateRerankInput(query string, documents []string) (map[string]interfac
 }
 
 // replicateRerankOutputToScores normalizes Replicate's two observed
-// rerank-output shapes into a []float64 aligned with the caller's
-// document order:
-//
-//	[]float64        — flat scores array, used by
-//	                   yxzwayne/bge-reranker-v2-m3 (canonical)
-//	{ "scores": [..] } — wrapped object, used by ninehills/bge-reranker-large
-//
-// Rejects mismatched cardinality and non-numeric scores rather than
-// silently truncate, matching the defensive posture the Embed
-// implementation already uses.
 func replicateRerankOutputToScores(output interface{}, n int) ([]float64, error) {
 	if scores, ok := output.([]interface{}); ok {
 		return replicateScoresFromInterface(scores, n)
@@ -789,30 +761,21 @@ func replicateScoresFromInterface(arr []interface{}, n int) ([]float64, error) {
 	return out, nil
 }
 
-// Rerank scores a query against a list of documents via Replicate's
-// prediction API. The driver targets bge-reranker-v2-m3-style models
-// (the most widely-published rerank schema on Replicate) and reuses
-// the existing createPrediction + waitForPrediction plumbing from
-// the chat and embed paths.
-//
-// Replicate rerank model outputs are raw similarity scores — they
-// are NOT normalized to [0, 1] like Cohere or Voyage rerank
-// responses. Higher scores still indicate stronger relevance; the
-// driver passes the raw value through without rescaling so callers
-// can compare against per-model thresholds, but the RelevanceScore
-// field should not be assumed to be a probability.
-func (r *ReplicateModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+// Rerank scores a query against a list of documents
+func (r *ReplicateModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
-	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	url, version, err := r.predictionEndpoint(apiConfig, *modelName)
+	baseURL, version, err := r.predictionEndpoint(apiConfig, *modelName)
 	if err != nil {
 		return nil, err
 	}
@@ -822,10 +785,10 @@ func (r *ReplicateModel) Rerank(modelName *string, query string, documents []str
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	prediction, err := r.createPrediction(ctx, url, version, input, false, *apiConfig.ApiKey, true)
+	prediction, err := r.createPrediction(ctx, baseURL, version, input, false, *apiConfig.ApiKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -842,11 +805,6 @@ func (r *ReplicateModel) Rerank(modelName *string, query string, documents []str
 		return nil, err
 	}
 
-	// Build the canonical RerankResponse with one entry per input
-	// document. Optional top_n trimming sorts by score descending
-	// and keeps the highest-ranking documents; otherwise return all
-	// scores in original document order, matching how Voyage's
-	// driver in this package surfaces its results.
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
 		topN = rerankConfig.TopN
@@ -869,39 +827,38 @@ func (r *ReplicateModel) Rerank(modelName *string, query string, documents []str
 	return &RerankResponse{Data: results}, nil
 }
 
-
-func (r *ReplicateModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (r *ReplicateModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (r *ReplicateModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (r *ReplicateModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (r *ReplicateModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (r *ReplicateModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (r *ReplicateModel) OCRFile(ctx context.Context, modelName *string, content []byte, baseURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (r *ReplicateModel) ParseFile(ctx context.Context, modelName *string, content []byte, baseURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (r *ReplicateModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (r *ReplicateModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }

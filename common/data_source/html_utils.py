@@ -7,9 +7,13 @@ from typing import IO
 
 import bs4
 
-from common.data_source.config import HTML_BASED_CONNECTOR_TRANSFORM_LINKS_STRATEGY, \
-    HtmlBasedConnectorTransformLinksStrategy, WEB_CONNECTOR_IGNORED_CLASSES, WEB_CONNECTOR_IGNORED_ELEMENTS, \
-    PARSE_WITH_TRAFILATURA
+from common.data_source.config import (
+    HTML_BASED_CONNECTOR_TRANSFORM_LINKS_STRATEGY,
+    HtmlBasedConnectorTransformLinksStrategy,
+    WEB_CONNECTOR_IGNORED_CLASSES,
+    WEB_CONNECTOR_IGNORED_ELEMENTS,
+    PARSE_WITH_TRAFILATURA,
+)
 
 MINTLIFY_UNWANTED = ["sticky", "hidden"]
 
@@ -38,11 +42,7 @@ def strip_newlines(document: str) -> str:
 def format_element_text(element_text: str, link_href: str | None) -> str:
     element_text_no_newlines = strip_newlines(element_text)
 
-    if (
-        not link_href
-        or HTML_BASED_CONNECTOR_TRANSFORM_LINKS_STRATEGY
-        == HtmlBasedConnectorTransformLinksStrategy.STRIP
-    ):
+    if not link_href or HTML_BASED_CONNECTOR_TRANSFORM_LINKS_STRATEGY == HtmlBasedConnectorTransformLinksStrategy.STRIP:
         return element_text_no_newlines
 
     return f"[{element_text_no_newlines}]({link_href})"
@@ -63,9 +63,7 @@ def parse_html_with_trafilatura(html_content: str) -> str:
     return strip_excessive_newlines_and_spaces(extracted_text) if extracted_text else ""
 
 
-def format_document_soup(
-    document: bs4.BeautifulSoup, table_cell_separator: str = "\t"
-) -> str:
+def format_document_soup(document: bs4.BeautifulSoup, table_cell_separator: str = "\t") -> str:
     """Format html to a flat text document.
 
     The following goals:
@@ -78,12 +76,24 @@ def format_document_soup(
     text = ""
     list_element_start = False
     verbatim_output = 0
-    in_table = False
     last_added_newline = False
-    link_href: str | None = None
+
+    # ``descendants`` yields opening tags only, so a flag set on <table>/<a> would
+    # never clear. Precompute scope by registering each <table>/<a> descendant;
+    # this avoids O(depth) ancestor walks while keeping lookups O(1).
+    table_scope = {id(d) for table in document.find_all("table") for d in table.descendants}
+    href_scope = {}
+    for anchor in document.find_all("a"):  # document order, so a nested <a> wins over its parent
+        href_value = anchor.get("href", None)
+        # mostly for typing, having multiple hrefs is not valid HTML
+        link_href = href_value[0] if isinstance(href_value, list) else href_value
+        href_scope.update((id(d), link_href) for d in anchor.descendants)
 
     for e in document.descendants:
         verbatim_output -= 1
+        in_table = id(e) in table_scope
+        link_href = href_scope.get(id(e))
+
         if isinstance(e, bs4.element.NavigableString):
             if isinstance(e, (bs4.element.Comment, bs4.element.Doctype)):
                 continue
@@ -101,44 +111,25 @@ def format_document_soup(
                 last_added_newline = False
 
             if element_text:
-                content_to_add = (
-                    element_text
-                    if verbatim_output > 0
-                    else format_element_text(element_text, link_href)
-                )
+                content_to_add = element_text if verbatim_output > 0 else format_element_text(element_text, link_href)
 
                 # Don't join separate elements without any spacing
-                if (text and not text[-1].isspace()) and (
-                    content_to_add and not content_to_add[0].isspace()
-                ):
+                if (text and not text[-1].isspace()) and (content_to_add and not content_to_add[0].isspace()):
                     text += " "
 
                 text += content_to_add
 
                 list_element_start = False
         elif isinstance(e, bs4.element.Tag):
-            # table is standard HTML element
-            if e.name == "table":
-                in_table = True
             # TR is for rows
-            elif e.name == "tr" and in_table:
+            if e.name == "tr" and in_table:
                 text += "\n"
             # td for data cell, th for header
             elif e.name in ["td", "th"] and in_table:
                 text += table_cell_separator
-            elif e.name == "/table":
-                in_table = False
             elif in_table:
                 # don't handle other cases while in table
                 pass
-            elif e.name == "a":
-                href_value = e.get("href", None)
-                # mostly for typing, having multiple hrefs is not valid HTML
-                link_href = (
-                    href_value[0] if isinstance(href_value, list) else href_value
-                )
-            elif e.name == "/a":
-                link_href = None
             elif e.name in ["p", "div"]:
                 if not list_element_start:
                     text += "\n"
@@ -185,12 +176,7 @@ def web_html_cleanup(
     if mintlify_cleanup_enabled:
         unwanted_classes.extend(MINTLIFY_UNWANTED)
     for undesired_element in unwanted_classes:
-        [
-            tag.extract()
-            for tag in soup.find_all(
-                class_=lambda x: x and undesired_element in x.split()
-            )
-        ]
+        [tag.extract() for tag in soup.find_all(class_=lambda x: x and undesired_element in x.split())]
 
     for undesired_tag in WEB_CONNECTOR_IGNORED_ELEMENTS:
         [tag.extract() for tag in soup.find_all(undesired_tag)]

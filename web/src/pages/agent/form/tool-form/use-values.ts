@@ -24,7 +24,7 @@ export function useValues() {
 
   const { initializeAgentToolValues } = useAgentToolInitialValues();
 
-  const values = useMemo(() => {
+  const values = useMemo<Record<string, any>>(() => {
     const agentNode = findUpstreamNodeById(clickedNodeId);
     const tool = getAgentToolById(clickedToolId, agentNode!);
     const formData = tool?.params;
@@ -37,9 +37,19 @@ export function useValues() {
       return defaultValues;
     }
 
-    return {
-      ...formData,
-    };
+    // DSLs predating the canonical `dataset_ids` field key retrieval
+    // bindings under the legacy `kb_ids` key. Fold it into the canonical
+    // field so the edited tool persists `dataset_ids` and save/run
+    // validation can see the binding.
+    const legacyDatasetIds = Array.isArray(formData?.dataset_ids)
+      ? undefined
+      : Array.isArray(formData?.kb_ids)
+        ? formData.kb_ids
+        : undefined;
+
+    return legacyDatasetIds
+      ? { ...formData, dataset_ids: legacyDatasetIds }
+      : { ...formData };
   }, [
     clickedNodeId,
     clickedToolId,
