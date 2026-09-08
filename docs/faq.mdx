@@ -21,16 +21,15 @@ import TOCInline from '@theme/TOCInline';
 
 ### What sets RAGFlow apart from other RAG products?
 
-The "garbage in garbage out" status quo remains unchanged despite the fact that LLMs have advanced Natural Language Processing (NLP) significantly. In its response, RAGFlow introduces two unique features compared to other Retrieval-Augmented Generation (RAG) products.
+RAGFlow provides an end-to-end RAG platform that goes beyond basic document chunking and retrieval. Its key strengths include:
 
-- Fine-grained document parsing: Document parsing involves images and tables, with the flexibility for you to intervene as needed.
-- Traceable answers with reduced hallucinations: You can trust RAGFlow's responses as you can view the citations and references supporting them.
+- **Deep document understanding** for complex content such as text, tables, and images.
+- **Flexible retrieval and traceable answers** with multiple retrieval strategies, reranking, and citations.
+- **Agentic capabilities** for multi-step retrieval, reasoning, tool use, and workflows.
+- **Knowledge compilation** for organizing documents into structured knowledge artifacts.
+- **Broad model and integration support** for building different RAG applications.
 
 ---
-
-### Which embedding models can be deployed locally?
-
-Starting from `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
 
 ---
 
@@ -76,12 +75,6 @@ You can deploy an open-source RAGFlow service and call it from a Python client o
 
 ---
 
-### Why does it take longer for RAGFlow to parse a document than LangChain?
-
-We put painstaking effort into document pre-processing tasks like layout analysis, table structure recognition, and OCR (Optical Character Recognition) using our vision models. This contributes to the additional time required.
-
----
-
 ### Why does RAGFlow require more resources than other projects?
 
 RAGFlow has a number of built-in models for document structure parsing, which account for the additional computational resources.
@@ -118,28 +111,12 @@ RESTful:
 
 ---
 
-### Do you support sharing dialogue through URL?
+### Key differences between search and chat?
 
-No, this feature is not supported.
+- **Search** is designed for direct knowledge retrieval. It retrieves and ranks relevant content from one or more datasets and presents the results for users to review.
+- **Chat** is designed for conversational question answering. It retrieves relevant knowledge and uses an LLM to generate answers, supporting multi-turn conversations and more advanced retrieval capabilities such as Agentic Retrieval.
 
----
-
-### Do you support multiple rounds of dialogues, referencing previous dialogues as context for the current query?
-
-Yes, we support enhancing user queries based on existing context of an ongoing conversation:
-
-1. On the **Chat** page, hover over the desired assistant and select **Edit**.
-2. In the **Chat Configuration** popup, click the **Prompt engine** tab.
-3. Switch on **Multi-turn optimization** to enable this feature.
-
----
-
-### Key differences between AI search and chat?
-
-- **AI search**: This is a single-turn AI conversation using a predefined retrieval strategy (a hybrid search of weighted keyword similarity and weighted vector similarity) and the system's default chat model. It does not involve advanced RAG strategies like knowledge graph, auto-keyword, or auto-question. Retrieved chunks will be listed below the chat model's response.
-- **AI chat**: This is a multi-turn AI conversation where you can define your retrieval strategy (a weighted reranking score can be used to replace the weighted vector similarity in a hybrid search) and choose your chat model. In an AI chat, you can configure advanced RAG strategies, such as knowledge graphs, auto-keyword, and auto-question, for your specific case. Retrieved chunks are not displayed along with the answer.
-
-When debugging your chat assistant, you can use AI search as a reference to verify your model settings and retrieval strategy.
+Use **Search** when you want to find and inspect relevant knowledge directly, and **Chat** when you want generated answers based on that knowledge.
 
 ---
 
@@ -622,6 +599,69 @@ All uploaded files are stored in Minio, RAGFlow's object storage solution. For i
 ### How to tune batch size for document parsing and embedding?
 
 You can control the batch size for document parsing and embedding by setting the environment variables `DOC_BULK_SIZE` and `EMBEDDING_BATCH_SIZE`. Increasing these values may improve throughput for large-scale data processing, but will also increase memory usage. Adjust them according to your hardware resources.
+
+---
+
+### Why can't I retrieve relevant content in Search or Chat even though the document was parsed successfully?
+
+Successful parsing only means that the document has been parsed and chunked. It does not guarantee that relevant content can be retrieved.
+
+First, use **Retrieval testing** to check whether the expected chunks can be retrieved. If not, check the chunking results, embedding model, similarity threshold, and reranker settings. If the expected chunks are retrieved but Chat still gives an incorrect answer, check the Chat retrieval settings, system prompt, and LLM.
+
+---
+
+### Why does the same query produce different results in Retrieval testing, Search, and Chat?
+
+**Retrieval testing** is mainly used to evaluate whether relevant chunks can be retrieved from a dataset. **Search** further filters and ranks retrieved content according to its configuration, while **Chat** uses the retrieved content as context for an LLM to generate an answer.
+
+Therefore, even when using the same dataset, differences in retrieval settings, reranking, and answer generation can lead to different results.
+
+---
+
+### How can I tell whether a problem comes from document parsing, chunking, retrieval, or answer generation?
+
+Check the RAG pipeline step by step:
+
+1. Verify that the document has been parsed correctly.
+2. Check whether the resulting chunks contain the expected content.
+3. Use **Retrieval testing** to verify that the relevant chunks can be retrieved.
+4. If retrieval works correctly but Chat or Agent produces an unexpected answer, check the application settings, system prompt, and LLM.
+
+This helps identify which stage of the pipeline is causing the problem.
+
+---
+
+### Can the same dataset be used by Search, Chat, and Agent?
+
+Yes. The same dataset can be used by different knowledge applications and Agents.
+
+The dataset manages and indexes the underlying knowledge, while Search, Chat, and Agent use that knowledge in different ways. Changing application-level settings generally does not modify the original documents or chunks in the dataset.
+
+---
+
+### Should I adjust chunking, retrieval settings, or models first?
+
+Start by verifying that the document is parsed and chunked correctly. Then use **Retrieval testing** to evaluate retrieval quality.
+
+If retrieval needs improvement, adjust settings such as the similarity threshold, vector similarity weight, or reranker. If retrieval results are already relevant but the generated answer is still unsatisfactory, consider adjusting the prompt or changing the LLM.
+
+---
+
+### What needs to be reprocessed after changing the embedding model, reranker, or LLM?
+
+These models affect different stages of the RAG pipeline:
+
+- Changing the **embedding model** generally requires rebuilding the vector index.
+- Changing the **reranker** affects how retrieved results are reordered and does not change the original documents.
+- Changing the **LLM** mainly affects query understanding and answer generation and generally does not require reparsing the dataset.
+
+---
+
+### Why can the model still hallucinate when the answer exists in the dataset?
+
+Having the correct information in the dataset does not guarantee that it will be retrieved or that the LLM will strictly follow the retrieved context.
+
+Check whether the content has been indexed correctly, whether the relevant chunks are retrieved, and whether the model uses the retrieved context appropriately when generating its answer.
 
 ---
 
