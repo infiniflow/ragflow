@@ -59,7 +59,7 @@ func RunDLA(ctx context.Context, modelDir string, img *Image) (DLAResult, error)
 	blob, sf := dlaPreprocess(img)
 	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
 	// parity (no contour extraction in the DLA Run path).
-	sess, release, err := getModelSession(filepath.Join(modelDir, "layout.onnx"), "images",
+	sess, release, err := getModelSession(filepath.Join(modelDir, "layout.ort"), "images",
 		[]int64{1, 3, dlaInputSize, dlaInputSize}, "output0",
 		[]int64{1, dlaMaxBoxes, 6}, 0)
 	if err != nil {
