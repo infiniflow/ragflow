@@ -653,9 +653,9 @@ To improve response speed:
 
 ### How to use MinerU to parse PDF documents?
 
-From v0.22.0 onwards, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF parser of multiple backends. Please note that RAGFlow acts only as a *remote client* for MinerU, calling the MinerU API to parse PDFs and reading the returned files. To use this feature:
+From v0.22.0 onwards, RAGFlow includes MinerU (&ge; 3.3.0) as an optional PDF parser of multiple backends. Please note that RAGFlow acts only as a *remote client* for MinerU, calling the MinerU API to parse PDFs and reading the returned files. To use this feature:
 
-1. Prepare a reachable MinerU API service (FastAPI server).
+1. Prepare a reachable MinerU API service (FastAPI server, MinerU &ge; 3.3.0).
 2. In the **.env** file or from the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
    - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
    - `MINERU_BACKEND`: The MinerU backend (matches current MinerU API / CLI `-b` values):
@@ -664,7 +664,7 @@ From v0.22.0 onwards, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF pa
       - `"hybrid-engine"`
       - `"vlm-http-client"`
       - `"hybrid-http-client"`.
-   - `MINERU_SERVER_URL`: (optional) The downstream OpenAI-compatible HTTP server (e.g., `http://vllm-host:30000`). Applicable when `MINERU_BACKEND` is `"vlm-http-client"` or `"hybrid-http-client"`.
+   - `MINERU_SERVER_URL`: Required when `MINERU_BACKEND` is `"vlm-http-client"` or `"hybrid-http-client"`; unused for other backends. The downstream OpenAI-compatible HTTP server (e.g., `http://vllm-host:30000`).
    - `MINERU_OUTPUT_DIR`: (optional) The local directory for holding the outputs of the MinerU API service (zip/JSON) before ingestion.
    - `MINERU_DELETE_OUTPUT`: Whether to delete temporary output when a temporary directory is used:
      - `1`: Delete.
@@ -675,6 +675,10 @@ From v0.22.0 onwards, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF pa
 
 :::note
 All MinerU environment variables are optional. When set, these values are used to auto-provision a MinerU OCR model for the tenant on first use. To avoid auto-provisioning, skip the environment variable settings and only configure MinerU from the **Model providers** page in the UI.
+:::
+
+:::caution WARNING
+**Upgrade note:** Older backend names (`vlm-transformers`, `vlm-vllm-engine`, `vlm-mlx-engine`, `vlm-vllm-async-engine`, `vlm-lmdeploy-engine`) are no longer accepted. After upgrading, re-select a current backend in **Model providers** (or update `MINERU_BACKEND`) and ensure your MinerU API service is &ge; 3.3.0.
 :::
 
 :::caution WARNING
@@ -690,7 +694,7 @@ The table below summarizes the most frequently used MinerU environment variables
 | ---------------------- | ---------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `MINERU_APISERVER`     | URL of the MinerU API service      | _unset_                             | `MINERU_APISERVER=http://your-mineru-server:8886`                                              |
 | `MINERU_BACKEND`       | MinerU parsing backend             | `pipeline`                          | `MINERU_BACKEND=pipeline\|vlm-engine\|hybrid-engine\|vlm-http-client\|hybrid-http-client` |
-| `MINERU_SERVER_URL`    | URL of remote OpenAI-compatible server (for `vlm-http-client` / `hybrid-http-client`) | _unset_ | `MINERU_SERVER_URL=http://your-vllm-server-ip:30000`                                           |
+| `MINERU_SERVER_URL`    | Required for `vlm-http-client` / `hybrid-http-client`; unused otherwise | _unset_ | `MINERU_SERVER_URL=http://your-vllm-server-ip:30000`                                           |
 | `MINERU_OUTPUT_DIR`    | Directory for MinerU output files  | System-defined temporary directory  | `MINERU_OUTPUT_DIR=/home/ragflow/mineru/output`                                                |
 | `MINERU_DELETE_OUTPUT` | Whether to delete MinerU output directory when a temp dir is used | `1` (delete temp output) | `MINERU_DELETE_OUTPUT=0`                                                                       |
 
