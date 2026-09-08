@@ -23,8 +23,8 @@ type ChatRequest struct {
 	// knowledge compilation pins extraction at 0.1 and merge judging at 0.0,
 	// so variants set it per call site.
 	Temperature *float64
-	// MaxTokens caps the generated summary length (mirrors Python's
-	// {"max_tokens": max(self._max_token, 512)} config, issue #10235).
+	// MaxTokens is an optional per-call override. Normal knowledge-compilation
+	// calls use the selected model's configured max_output value.
 	MaxTokens *int
 	APIKey    string
 	BaseURL   string
@@ -172,9 +172,7 @@ type Deps struct {
 	TenantID        string
 	DatasetID       string
 	// ModelContextLen is the chat model's context window in tokens
-	// (content_length). The prompt-budget helpers (wikiMapMaxTokens,
-	// deriveWikiPlanBudget, buildClusterContent) use it to size the input/output
-	// quotas (mirrors Python self._llm_model.max_length).
+	// (content_length). Prompt-packing helpers use it to size input quotas.
 	ModelContextLen int
 	// ModelMaxOutput is the chat model's generation cap (max_output), the most
 	// tokens one LLM response may emit. Cross-document merge judging packs many

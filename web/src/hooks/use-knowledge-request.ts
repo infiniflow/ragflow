@@ -137,7 +137,7 @@ export const useTestRetrieval = () => {
       ...values,
       kb_id: values?.kb_id || knowledgeBaseId,
       page: 1,
-      doc_ids: filterValue.doc_ids,
+      document_ids: filterValue.doc_ids,
       highlight: true,
       include_knowledge_compilation: false,
     };
@@ -164,7 +164,7 @@ export const useTestRetrieval = () => {
       if (mutation.data && queryParams.question) {
         const newParams = {
           ...queryParams,
-          doc_ids: value.doc_ids ?? [],
+          document_ids: value.doc_ids ?? [],
           page: 1,
         };
         mutation.mutate(newParams);
@@ -1295,7 +1295,7 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
         page,
-        size: pageSize,
+        page_size: pageSize,
       });
       if (data.code === 0) {
         const res = data.data;
@@ -1338,9 +1338,9 @@ export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
       const { data } = await kbService.retrievalTest({
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
-        doc_ids: [],
+        document_ids: [],
         page,
-        size: pageSize,
+        page_size: pageSize,
       });
       if (data.code === 0) {
         const res = data.data;
