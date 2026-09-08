@@ -60,7 +60,7 @@ type TokenizerFromUpstream struct {
 	// JSONResult is the upstream structured JSON list (alias "json").
 	JSONResult []ChunkDoc `json:"json,omitempty"`
 
-	// MarkdownResult is the upstream markdown payload (alias "markdown").
+	// MarkdownResult is the upstream Markdown payload (alias "markdown").
 	MarkdownResult *string `json:"markdown,omitempty"`
 
 	// TextResult is the upstream plain-text payload (alias "text").

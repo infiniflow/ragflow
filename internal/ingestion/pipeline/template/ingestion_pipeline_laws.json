@@ -99,6 +99,7 @@
                             "preprocess": [
                                 "main_content"
                             ],
+                            "remove_toc": true,
                             "suffix": [
                                 "pdf"
                             ],
@@ -198,17 +199,25 @@
                 "obj": {
                     "component_name": "Extractor",
                     "params": {
-                        "field_name": "",
-                        "outputs": {
-                            "chunks": {
-                                "type": "Array<Object>",
-                                "value": []
-                            }
-                        },
-                        "auto_keywords": 0,
-                        "auto_questions": 0,
                         "llm_id": "",
-                        "auto_tags": 0
+                        "keywords": {
+                            "top_n": 0
+                        },
+                        "questions": {
+                            "top_n": 0
+                        },
+                        "tags": {
+                            "top_n": 0,
+                            "tag_file_id": ""
+                        },
+                        "summary": {
+                            "enabled": false
+                        },
+                        "metadata": {
+                            "enabled": false,
+                            "metadata": [],
+                            "built_in_metadata": []
+                        }
                     }
                 }
             }
@@ -340,7 +349,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
@@ -462,7 +471,7 @@
                             ]
                         },
                         "label": "TitleChunker",
-                        "name": "Title Chunker_0"
+                        "name": "Title Chunker"
                     },
                     "id": "TitleChunker:SpicyKeysKick",
                     "measured": {
@@ -490,7 +499,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_0"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:PublicJobsTake",
                     "measured": {
@@ -515,7 +524,7 @@
                     },
                     "data": {
                         "label": "Extractor",
-                        "name": "Extractor_0"
+                        "name": "Extractor"
                     }
                 }
             ]

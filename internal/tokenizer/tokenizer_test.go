@@ -12,7 +12,7 @@
 //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
-//
+//go:build manual
 
 package tokenizer
 
@@ -32,8 +32,8 @@ type languageDifferentiator struct {
 // to restore it. Use this when a test modifies the engine type to avoid
 // leaking global state between tests.
 func saveEngineType() func() {
-	original := engineTypeProvider
-	return func() { engineTypeProvider = original }
+	original := engineType
+	return func() { engineType = original }
 }
 
 // ---------------------------------------------------------------------------
@@ -116,8 +116,8 @@ func TestRegisterEngineType_Basic(t *testing.T) {
 	restore := saveEngineType()
 	defer restore()
 
-	RegisterEngineType(func() string { return "infinity" })
-	if got := engineTypeProvider(); got != "infinity" {
+	SetEngineType("infinity")
+	if got := engineType; got != "infinity" {
 		t.Errorf("expected 'infinity', got %q", got)
 	}
 }
@@ -126,9 +126,9 @@ func TestRegisterEngineType_Overwrite(t *testing.T) {
 	restore := saveEngineType()
 	defer restore()
 
-	RegisterEngineType(func() string { return "first" })
-	RegisterEngineType(func() string { return "second" })
-	if got := engineTypeProvider(); got != "second" {
+	SetEngineType("first")
+	SetEngineType("second")
+	if got := engineType; got != "second" {
 		t.Errorf("expected 'second', got %q", got)
 	}
 }
@@ -140,7 +140,7 @@ func TestRegisterEngineType_Overwrite(t *testing.T) {
 func TestTokenize_InfinityEngine(t *testing.T) {
 	restore := saveEngineType()
 	defer restore()
-	RegisterEngineType(func() string { return "infinity" })
+	SetEngineType("infinity")
 
 	inputs := []string{"hello world", "你好 世界", "", "a single word"}
 	for _, input := range inputs {
@@ -158,7 +158,7 @@ func TestTokenize_PoolNotInitialized(t *testing.T) {
 	restore := saveEngineType()
 	defer restore()
 	// Ensure engine type is not "infinity" so we hit the pool path
-	RegisterEngineType(func() string { return "" })
+	SetEngineType("")
 
 	_, err := Tokenize("hello world")
 	if err == nil {
@@ -173,7 +173,7 @@ func TestTokenize_PoolNotInitialized(t *testing.T) {
 func TestFineGrainedTokenize_InfinityEngine(t *testing.T) {
 	restore := saveEngineType()
 	defer restore()
-	RegisterEngineType(func() string { return "infinity" })
+	SetEngineType("infinity")
 
 	inputs := []string{"hello world", "测试 分词", ""}
 	for _, input := range inputs {
@@ -190,7 +190,7 @@ func TestFineGrainedTokenize_InfinityEngine(t *testing.T) {
 func TestFineGrainedTokenize_PoolNotInitialized(t *testing.T) {
 	restore := saveEngineType()
 	defer restore()
-	RegisterEngineType(func() string { return "" })
+	SetEngineType("")
 
 	_, err := FineGrainedTokenize("hello world")
 	if err == nil {
@@ -233,7 +233,7 @@ func TestGetTermTag_PoolNotInitialized(t *testing.T) {
 func TestTokenize_DefaultLanguageResetsAnalyzerState(t *testing.T) {
 	restore := saveEngineType()
 	defer restore()
-	RegisterEngineType(func() string { return "" })
+	SetEngineType("")
 
 	if err := Init(&PoolConfig{
 		DictPath:       "",

@@ -514,7 +514,12 @@ class RedisDB:
         Do following atomically:
         Delete a key if its value is equals to the given one, do nothing otherwise.
         """
-        return bool(self.lua_delete_if_equal(keys=[key], args=[expected_value], client=self.REDIS))
+        try:
+            return bool(self.lua_delete_if_equal(keys=[key], args=[expected_value], client=self.REDIS))
+        except Exception as e:
+            logging.warning("RedisDB.delete_if_equal got exception: %s", str(e))
+            self.__open__()
+        return False
 
     def delete(self, key) -> bool:
         try:
@@ -537,15 +542,21 @@ class RedisDistributedLock:
         else:
             self.lock_value = str(uuid.uuid4())
         self.timeout = timeout
+        self.blocking_timeout = blocking_timeout
         self.lock = Lock(REDIS_CONN.REDIS, lock_key, timeout=timeout, blocking_timeout=blocking_timeout)
+
+    def _refresh_lock(self):
+        self.lock = Lock(REDIS_CONN.REDIS, self.lock_key, timeout=self.timeout, blocking_timeout=self.blocking_timeout)
 
     def acquire(self):
         REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
+        self._refresh_lock()
         return self.lock.acquire(token=self.lock_value)
 
     async def spin_acquire(self):
         REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
         while True:
+            self._refresh_lock()
             if self.lock.acquire(token=self.lock_value):
                 break
             await asyncio.sleep(10)

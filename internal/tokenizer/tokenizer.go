@@ -32,18 +32,10 @@ import (
 	rag "ragflow/internal/binding"
 )
 
-// engineTypeProvider is injected at startup by engine.RegisterEngineType
-// to break the tokenizer → engine import cycle.
-var engineTypeProvider = func() string { return "" }
+var engineType string
 
-// RegisterEngineType wires the engine package's GetEngineType into the
-// tokenizer, breaking the circular import (engine/elasticsearch → tokenizer → engine).
-func RegisterEngineType(get func() string) {
-	if get == nil {
-		engineTypeProvider = func() string { return "" }
-		return
-	}
-	engineTypeProvider = get
+func SetEngineType(engine string) {
+	engineType = engine
 }
 
 // PoolConfig configures the elastic analyzer pool
@@ -464,7 +456,7 @@ func Tokenize(text string) (string, error) {
 
 // Tokenize tokenizes the text using the tokenizer's request-scoped language.
 func (t Tokenizer) Tokenize(text string) (string, error) {
-	if engineTypeProvider() == "infinity" {
+	if engineType == "infinity" {
 		return text, nil
 	}
 	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) (string, error) {
@@ -518,7 +510,7 @@ func FineGrainedTokenize(tokens string) (string, error) {
 // FineGrainedTokenize performs fine-grained tokenization using the tokenizer's
 // request-scoped language.
 func (t Tokenizer) FineGrainedTokenize(tokens string) (string, error) {
-	if engineTypeProvider() == "infinity" {
+	if engineType == "infinity" {
 		return tokens, nil
 	}
 	return withAnalyzerResult(t.lang, func(a *rag.Analyzer) (string, error) {
@@ -568,9 +560,49 @@ func getCL100KEncoder() (*tiktoken.Tiktoken, error) {
 	return cl100kEncoder.enc, cl100kEncoder.err
 }
 
+// resetCL100KEncoderForTest clears the cl100k encoder cache so a test can force a
+// fresh load under a different search-root scope. Test-only; it mutates package
+// state. A plain assignment replaces the embedded sync.Once with an un-fired one
+// and wipes any cached result, so the next getCL100KEncoder / InitCL100KEncoder
+// re-runs the loader rather than returning a result cached by a sibling test.
+func resetCL100KEncoderForTest() {
+	cl100kEncoder = struct {
+		sync.Once
+		enc *tiktoken.Tiktoken
+		err error
+	}{}
+}
+
+// InitCL100KEncoder loads the cl100k_base BPE encoder once and returns an
+// error if the table is unavailable. Call it during server startup (before any
+// request reaches NumTokensFromString) so a missing table fails fast instead
+// of silently zeroing every token count.
+//
+// Why fail-fast and not a retry/warning: NumTokensFromString intentionally
+// returns 0 on encoder error to stay cheap on the hot path, which means a
+// missing cl100k_base.tiktoken (the Go image used to omit it) degraded every
+// token budget to 0 while content_ltks — a separate offline C++ tokenizer —
+// kept working, and the divergence went unnoticed. Catching it at startup turns
+// that silent data corruption into a hard, loud failure.
+func InitCL100KEncoder() error {
+	enc, err := getCL100KEncoder()
+	if err != nil {
+		return fmt.Errorf("cl100k_base BPE table unavailable (NumTokensFromString would silently return 0): %w", err)
+	}
+	if enc == nil {
+		return fmt.Errorf("cl100k_base encoder unavailable: GetEncoding returned a nil encoder without error")
+	}
+	return nil
+}
+
 // NumTokensFromString returns the number of tokens in s using the cl100k_base
 // BPE encoding. Mirrors Python's num_tokens_from_string (common/token_utils.py):
 // returns 0 on encoder error.
+//
+// Callers must ensure InitCL100KEncoder has succeeded at startup; otherwise a
+// missing table makes this return 0 for every non-empty string. The startup
+// check is the fail-fast guard — this cheap hot-path function stays silent by
+// design so it can be called per-token without error plumbing.
 func NumTokensFromString(s string) int {
 	if s == "" {
 		return 0

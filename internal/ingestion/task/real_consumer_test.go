@@ -1,5 +1,3 @@
-//go:build integration
-
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -14,7 +12,8 @@
 //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
-//
+
+//go:build e2e
 
 package task
 
@@ -67,7 +66,7 @@ func TestRealProducerConsumer(t *testing.T) {
 		DatasetID:  "kb1",
 		Status:     common.CREATED,
 	}
-	created, err := dao.NewIngestionTaskDAO().Create(ingestionTask)
+	created, err := dao.NewIngestionTaskDAO().Create(context.Background(), db, ingestionTask)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -103,11 +102,11 @@ func TestRealProducerConsumer(t *testing.T) {
 
 	// Mirrors Start():142-143 — UpdateStatusIfCurrent
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
-	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(taskMsg.TaskID, common.CREATED, common.RUNNING)
+	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, common.CREATED, common.RUNNING)
 	if err != nil {
 		t.Fatalf("UpdateStatusIfCurrent: %v", err)
 	}
-	task, err := ingestionTaskDAO.GetByID(taskMsg.TaskID)
+	task, err := ingestionTaskDAO.GetByID(context.Background(), db, taskMsg.TaskID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -135,11 +134,10 @@ func TestRealProducerConsumer(t *testing.T) {
 		t.Fatalf("set pipeline_id: %v", err)
 	}
 
-	tc, err := LoadFromIngestionTask(task)
+	tc, err := LoadFromIngestionTask(context.Background(), task)
 	if err != nil {
 		t.Fatalf("LoadFromIngestionTask: %v", err)
 	}
-	tc.Ctx = context.Background()
 	t.Logf("Consumer: Loaded Doc=%s Parser=%s KB=%s Tenant=%s",
 		tc.Doc.ID, tc.Doc.ParserID, tc.KB.ID, tc.Tenant.ID)
 
@@ -162,7 +160,7 @@ func TestRealProducerConsumer(t *testing.T) {
 	t.Log("Consumer: PipelineExecutor.Execute() - OK")
 
 	// Mirrors executeTask — mark as completed
-	if _, err := ingestionTaskDAO.UpdateStatusIfCurrent(task.ID, common.RUNNING, common.COMPLETED); err != nil {
+	if _, err := ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, task.ID, common.RUNNING, common.COMPLETED); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
 
@@ -170,7 +168,7 @@ func TestRealProducerConsumer(t *testing.T) {
 	taskHandle.Ack()
 
 	// ── 6. Verify ──
-	final, _ := ingestionTaskDAO.GetByID(task.ID)
+	final, _ := ingestionTaskDAO.GetByID(context.Background(), db, task.ID)
 	if final.Status != common.COMPLETED {
 		t.Errorf("final status = %s, want %s", final.Status, common.COMPLETED)
 	}

@@ -7,7 +7,7 @@
  * - LINK, HR
  */
 
-/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-object-type, no-useless-escape */
+/* oxlint-disable typescript/no-unused-vars, typescript/no-empty-object-type, no-useless-escape */
 
 import { $createCodeNode, $isCodeNode, CodeNode } from '@lexical/code';
 import {

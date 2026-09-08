@@ -110,7 +110,7 @@ func TestR3_DAG_InterruptAfterResumesWithoutRerun(t *testing.T) {
 	c.AddInput("B")
 	wf.End().AddInput("C")
 
-	compiled, err := wf.Compile(context.Background(),
+	compiled, err := wf.Compile(t.Context(),
 		compose.WithGraphName("root"),
 		compose.WithCheckPointStore(store),
 		compose.WithInterruptAfterNodes([]string{"B"}),
@@ -120,12 +120,12 @@ func TestR3_DAG_InterruptAfterResumesWithoutRerun(t *testing.T) {
 	}
 
 	cpID := "r3-dag"
-	_, invokeErr := compiled.Invoke(context.Background(), 1, compose.WithCheckPointID(cpID))
+	_, invokeErr := compiled.Invoke(t.Context(), 1, compose.WithCheckPointID(cpID))
 	if invokeErr == nil {
 		t.Fatal("expected interrupt after B, got nil")
 	}
 
-	resumeCtx := compose.ResumeWithData(context.Background(), r3FirstInterruptID(t, invokeErr), nil)
+	resumeCtx := compose.ResumeWithData(t.Context(), r3FirstInterruptID(t, invokeErr), nil)
 	out, err := compiled.Invoke(resumeCtx, 1, compose.WithCheckPointID(cpID))
 	if err != nil {
 		t.Fatalf("resume: %v", err)
@@ -171,7 +171,7 @@ func TestR3_DAG_CrashRecovery_RecompiledGraph(t *testing.T) {
 	}
 
 	// Process 1: compile, run, pause after B.
-	compiled1, err := build().Compile(context.Background(),
+	compiled1, err := build().Compile(t.Context(),
 		compose.WithGraphName("root"),
 		compose.WithCheckPointStore(store),
 		compose.WithInterruptAfterNodes([]string{"B"}),
@@ -180,7 +180,7 @@ func TestR3_DAG_CrashRecovery_RecompiledGraph(t *testing.T) {
 		t.Fatalf("compile1: %v", err)
 	}
 	cpID := "r3-dag-crash"
-	_, err = compiled1.Invoke(context.Background(), 1, compose.WithCheckPointID(cpID))
+	_, err = compiled1.Invoke(t.Context(), 1, compose.WithCheckPointID(cpID))
 	if err == nil {
 		t.Fatal("expected interrupt, got nil")
 	}
@@ -188,7 +188,7 @@ func TestR3_DAG_CrashRecovery_RecompiledGraph(t *testing.T) {
 	// Process 1 "crashes" — compiled1 is discarded.
 
 	// Process 2: fresh compile (same store, same cpID), resume.
-	compiled2, err := build().Compile(context.Background(),
+	compiled2, err := build().Compile(t.Context(),
 		compose.WithGraphName("root"),
 		compose.WithCheckPointStore(store),
 		compose.WithInterruptAfterNodes([]string{"B"}),
@@ -196,7 +196,7 @@ func TestR3_DAG_CrashRecovery_RecompiledGraph(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile2: %v", err)
 	}
-	resumeCtx := compose.ResumeWithData(context.Background(), interruptID, nil)
+	resumeCtx := compose.ResumeWithData(t.Context(), interruptID, nil)
 	out, err := compiled2.Invoke(resumeCtx, 1, compose.WithCheckPointID(cpID))
 	if err != nil {
 		t.Fatalf("resume: %v", err)
@@ -242,7 +242,7 @@ func TestR3_LoopInDAG_InterruptAfterPreLoopNode(t *testing.T) {
 		aCount++
 		return in + 1, nil
 	}))
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(t.Context(), outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(10),
 		WithLoopCheckpointIDBuilder(r3cp("r3-loop-pre")),
 	)
@@ -258,7 +258,7 @@ func TestR3_LoopInDAG_InterruptAfterPreLoopNode(t *testing.T) {
 	dNode.AddInput("loop")
 	outer.End().AddInput("D")
 
-	compiled, err := outer.Compile(context.Background(),
+	compiled, err := outer.Compile(t.Context(),
 		compose.WithGraphName("root"),
 		compose.WithCheckPointStore(store),
 		compose.WithInterruptAfterNodes([]string{"A"}),
@@ -268,11 +268,11 @@ func TestR3_LoopInDAG_InterruptAfterPreLoopNode(t *testing.T) {
 	}
 
 	cpID := "r3-loop-pre"
-	_, invokeErr := compiled.Invoke(context.Background(), 1, compose.WithCheckPointID(cpID))
+	_, invokeErr := compiled.Invoke(t.Context(), 1, compose.WithCheckPointID(cpID))
 	if invokeErr == nil {
 		t.Fatal("expected interrupt after A, got nil")
 	}
-	resumeCtx := compose.ResumeWithData(context.Background(), r3FirstInterruptID(t, invokeErr), nil)
+	resumeCtx := compose.ResumeWithData(t.Context(), r3FirstInterruptID(t, invokeErr), nil)
 	out, err := compiled.Invoke(resumeCtx, 1, compose.WithCheckPointID(cpID))
 	if err != nil {
 		t.Fatalf("resume: %v", err)
@@ -324,7 +324,7 @@ func TestR3_LoopInDAG_InterruptAfterLoopNode(t *testing.T) {
 		aCount++
 		return in + 1, nil
 	}))
-	loopNode, err := AddLoopNode(context.Background(), outer, "loop", sub, shouldQuit,
+	loopNode, err := AddLoopNode(t.Context(), outer, "loop", sub, shouldQuit,
 		WithLoopMaxIterations(10),
 		WithLoopCheckpointIDBuilder(r3cp("r3-loop-node")),
 	)
@@ -340,7 +340,7 @@ func TestR3_LoopInDAG_InterruptAfterLoopNode(t *testing.T) {
 	dNode.AddInput("loop")
 	outer.End().AddInput("D")
 
-	compiled, err := outer.Compile(context.Background(),
+	compiled, err := outer.Compile(t.Context(),
 		compose.WithGraphName("root"),
 		compose.WithCheckPointStore(store),
 		compose.WithInterruptAfterNodes([]string{"loop"}),
@@ -350,11 +350,11 @@ func TestR3_LoopInDAG_InterruptAfterLoopNode(t *testing.T) {
 	}
 
 	cpID := "r3-loop-node"
-	_, invokeErr := compiled.Invoke(context.Background(), 1, compose.WithCheckPointID(cpID))
+	_, invokeErr := compiled.Invoke(t.Context(), 1, compose.WithCheckPointID(cpID))
 	if invokeErr == nil {
 		t.Fatal("expected interrupt after loop, got nil")
 	}
-	resumeCtx := compose.ResumeWithData(context.Background(), r3FirstInterruptID(t, invokeErr), nil)
+	resumeCtx := compose.ResumeWithData(t.Context(), r3FirstInterruptID(t, invokeErr), nil)
 	out, err := compiled.Invoke(resumeCtx, 1, compose.WithCheckPointID(cpID))
 	if err != nil {
 		t.Fatalf("resume: %v", err)
@@ -397,7 +397,7 @@ func TestR3_ParallelInDAG_InterruptAfterParallelNode(t *testing.T) {
 		}
 		return out, nil
 	}))
-	parNode, err := AddParallelNode(context.Background(), outer, "parallel", sub)
+	parNode, err := AddParallelNode(t.Context(), outer, "parallel", sub)
 	if err != nil {
 		t.Fatalf("AddParallelNode: %v", err)
 	}
@@ -414,7 +414,7 @@ func TestR3_ParallelInDAG_InterruptAfterParallelNode(t *testing.T) {
 	dNode.AddInput("parallel")
 	outer.End().AddInput("D")
 
-	compiled, err := outer.Compile(context.Background(),
+	compiled, err := outer.Compile(t.Context(),
 		compose.WithGraphName("root"),
 		compose.WithCheckPointStore(store),
 		compose.WithInterruptAfterNodes([]string{"parallel"}),
@@ -425,11 +425,11 @@ func TestR3_ParallelInDAG_InterruptAfterParallelNode(t *testing.T) {
 
 	cpID := "r3-parallel"
 	input := []int{1, 2, 3}
-	_, invokeErr := compiled.Invoke(context.Background(), input, compose.WithCheckPointID(cpID))
+	_, invokeErr := compiled.Invoke(t.Context(), input, compose.WithCheckPointID(cpID))
 	if invokeErr == nil {
 		t.Fatal("expected interrupt after parallel, got nil")
 	}
-	resumeCtx := compose.ResumeWithData(context.Background(), r3FirstInterruptID(t, invokeErr), nil)
+	resumeCtx := compose.ResumeWithData(t.Context(), r3FirstInterruptID(t, invokeErr), nil)
 	out, err := compiled.Invoke(resumeCtx, input, compose.WithCheckPointID(cpID))
 	if err != nil {
 		t.Fatalf("resume: %v", err)

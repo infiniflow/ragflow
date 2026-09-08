@@ -56,11 +56,11 @@ export function VersionHistorySheet({
             </Button>
           </SheetTrigger>
         </TooltipTrigger>
-        <TooltipContent>{t('knowledgeDetails.version')}</TooltipContent>
+        <TooltipContent>{t('knowledgeCompilation.version')}</TooltipContent>
       </Tooltip>
       <SheetContent className="flex flex-col">
         <SheetHeader>
-          <SheetTitle>{t('knowledgeDetails.versionHistory')}</SheetTitle>
+          <SheetTitle>{t('knowledgeCompilation.versionHistory')}</SheetTitle>
         </SheetHeader>
         <div className="flex-1 overflow-y-auto">
           {loading && commits.length === 0 && (

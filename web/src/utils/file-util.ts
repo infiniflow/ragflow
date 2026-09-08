@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { FileMimeType } from '@/constants/common';
 import { UploadFile } from '@/interfaces/antd-compat';
 import fileManagerService from '@/services/file-manager-service';
@@ -66,6 +82,31 @@ export const transformBase64ToFile = (
     u8arr[n] = bstr.charCodeAt(n);
   }
   return new File([u8arr], filename, { type: mimeType });
+};
+
+// Decode a text file blob without assuming UTF-8. Detection order:
+// 1. Unicode BOM (UTF-8 / UTF-16LE / UTF-16BE) — authoritative when present.
+// 2. Strict UTF-8 decode (`fatal: true`) — throws on any byte sequence that
+//    is not valid UTF-8, which GB2312/GBK Chinese text almost always is.
+// 3. GBK fallback — covers GB2312/GBK/GB18030 single- and double-byte text.
+//    Browsers map the 'gb2312' label to the same decoder as 'gbk'.
+export const decodeBlobText = async (data: BlobPart): Promise<string> => {
+  const buffer = await new Blob([data]).arrayBuffer();
+  const bytes = new Uint8Array(buffer, 0, Math.min(3, buffer.byteLength));
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return new TextDecoder('utf-16le').decode(buffer);
+  }
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return new TextDecoder('utf-16be').decode(buffer);
+  }
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return new TextDecoder('utf-8').decode(buffer);
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    return new TextDecoder('gbk').decode(buffer);
+  }
 };
 
 export const normFile = (e: any) => {

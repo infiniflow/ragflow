@@ -41,6 +41,8 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 const componentNameListOperations = "ListOperations"
@@ -269,7 +271,7 @@ func (l *ListOperationsComponent) Name() string { return l.name }
 // errors) into a returned error. Any other panic is re-raised so a
 // real bug in the operator code is not masked as a "ListOperations:
 // ..." error.
-func (l *ListOperationsComponent) Invoke(ctx context.Context, _ map[string]any) (result map[string]any, err error) {
+func (l *ListOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map[string]any) (result map[string]any, err error) {
 	defer func() {
 		r := recover()
 		if r == nil {
@@ -330,8 +332,8 @@ func (l *ListOperationsComponent) Invoke(ctx context.Context, _ map[string]any) 
 }
 
 // Stream mirrors Invoke; ListOperations is a single-shot transform.
-func (l *ListOperationsComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := l.Invoke(ctx, inputs)
+func (l *ListOperationsComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := l.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

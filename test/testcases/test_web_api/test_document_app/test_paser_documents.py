@@ -88,8 +88,8 @@ class TestDocumentsParse:
         [
             pytest.param(None, 101, "required argument are missing: doc_ids, run; ", marks=pytest.mark.skip),
             pytest.param({"doc_ids": [], "run": "1"}, 0, "", marks=pytest.mark.p1),
-            pytest.param({"doc_ids": ["invalid_id"], "run": "1"}, 109, "No authorization.", marks=pytest.mark.p3),
-            pytest.param({"doc_ids": ["\n!?。；！？\"'"], "run": "1"}, 109, "No authorization.", marks=pytest.mark.p3),
+            pytest.param({"doc_ids": ["invalid_id"], "run": "1"}, 109, "no authorization", marks=pytest.mark.p3),
+            pytest.param({"doc_ids": ["\n!?。；！？\"'"], "run": "1"}, 109, "no authorization", marks=pytest.mark.p3),
             pytest.param("not json", 101, "required argument are missing: doc_ids, run; ", marks=pytest.mark.skip),
             pytest.param(lambda r: {"doc_ids": r[:1], "run": "1"}, 0, "", marks=pytest.mark.p1),
             pytest.param(lambda r: {"doc_ids": r, "run": "1"}, 0, "", marks=pytest.mark.p1),
@@ -121,7 +121,7 @@ class TestDocumentsParse:
             payload = payload(document_ids)
         res = parse_documents(WebApiAuth, payload)
         assert res["code"] == 109, res
-        assert res["message"] == "No authorization.", res
+        assert res["message"] == "no authorization", res
 
     @pytest.mark.p2
     def test_document_not_found(self, WebApiAuth, add_documents_func):
@@ -301,8 +301,8 @@ class TestDocumentsParseStop:
         [
             pytest.param(None, 101, "required argument are missing: doc_ids, run; ", marks=pytest.mark.skip),
             pytest.param({"doc_ids": [], "run": "2"}, 0, "", marks=pytest.mark.p1),
-            pytest.param({"doc_ids": ["invalid_id"], "run": "2"}, 109, "No authorization.", marks=pytest.mark.p3),
-            pytest.param({"doc_ids": ["\n!?。；！？\"'"], "run": "2"}, 109, "No authorization.", marks=pytest.mark.p3),
+            pytest.param({"doc_ids": ["invalid_id"], "run": "2"}, 109, "no authorization", marks=pytest.mark.p3),
+            pytest.param({"doc_ids": ["\n!?。；！？\"'"], "run": "2"}, 109, "no authorization", marks=pytest.mark.p3),
             pytest.param("not json", 101, "required argument are missing: doc_ids, run; ", marks=pytest.mark.skip),
             pytest.param(lambda r: {"doc_ids": r[:1], "run": "2"}, 0, "", marks=pytest.mark.p1),
             pytest.param(lambda r: {"doc_ids": r, "run": "2"}, 0, "", marks=pytest.mark.p1),
@@ -351,6 +351,6 @@ class TestDocumentsParseStop:
             payload = payload(document_ids)
         res = parse_documents(WebApiAuth, payload)
         assert res["code"] == 109, res
-        assert res["message"] == "No authorization.", res
+        assert res["message"] == "no authorization", res
 
         validate_document_parse_cancel(WebApiAuth, kb_id, document_ids)

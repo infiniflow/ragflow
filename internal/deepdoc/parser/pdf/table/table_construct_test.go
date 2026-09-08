@@ -48,6 +48,48 @@ func TestConstructTable_Simple3x2(t *testing.T) {
 	t.Logf("HTML:\n%s", html)
 }
 
+// TestConstructTable_DropsAllEmptyRow pins Python parity: when the
+// TSR-derived grid carries a row that no text box landed in
+// (e.g. an extra "table row" detected next to a "table projected row
+// header" on a cross-page table's continuation page), Python's
+// construct_table builds rows from box.R grouping and never emits that
+// row, while Go's grid carries every TSR row and previously kept the
+// empty row — leaking it into item.Rows and the HTML table.
+//
+// Repro fixture from 13_crosspage_table.pdf page 2: the first
+// "table row" (y0=885) sits on top of a "table projected row header"
+// with no OCR box overlap. Go's GroupCells keeps it as a 5-cell
+// row, all empty; this test pins the drop.
+func TestConstructTable_DropsAllEmptyRow(t *testing.T) {
+	mkRow := func(y0 float64, texts ...string) []pdf.TSRCell {
+		row := make([]pdf.TSRCell, 5)
+		for c := range row {
+			row[c] = pdf.TSRCell{X0: float64(c * 100), Y0: y0, X1: float64(c*100 + 100), Y1: y0 + 20}
+		}
+		for c, t := range texts {
+			row[c].Text = t
+		}
+		return row
+	}
+	item := &pdf.TableItem{
+		Grid: [][]pdf.TSRCell{
+			mkRow(0, "r0c0", "r0c1", "r0c2", "r0c3", "r0c4"),
+			mkRow(20), // all empty: TSR-detected row with no OCR box
+			mkRow(40, "r2c0", "r2c1", "r2c2", "r2c3", "r2c4"),
+		},
+	}
+	_ = ConstructTable(nil, nil, "", item)
+	if len(item.Rows) != 2 {
+		t.Fatalf("expected 2 rows after dropping all-empty row, got %d:\n%v", len(item.Rows), item.Rows)
+	}
+	if item.Rows[0][0] != "r0c0" || item.Rows[1][0] != "r2c0" {
+		t.Errorf("row content wrong: %v", item.Rows)
+	}
+	if len(item.Grid) != 2 {
+		t.Errorf("expected item.Grid also to drop the empty row, got len=%d", len(item.Grid))
+	}
+}
+
 func TestConstructTable_EmptyCells(t *testing.T) {
 	html := ConstructTable(nil, nil, "", nil)
 	if html != "" {
@@ -143,13 +185,14 @@ func TestExtractTableAndReplace_CellTextFilled(t *testing.T) {
 	// Simulate 公司差旅费 page 0 table coordinates.
 	// DLA region: X0=217, X1=1584, Y0=985, Y1=1599 at 216 DPI → PDF: 72-528 x 328-533
 	// Scale = 216/72 = 3.0
-	// cropOff ≈ region.X - region.W*0.03
+	// cropOff = region.X - 10pt*ZM = region.X - 30px (fixed margin, matches
+	// Python's MARGIN=10; NOT the old Go 3% proportional margin).
 	const scale = 3.0
-	const cropOffX = 176.0
-	const cropOffY = 967.0
+	const cropOffX = 187.0
+	const cropOffY = 955.0
 
 	// Post-merge boxes in PDF point space (inside the table region).
-	// PDF Y=470 → crop Top = 470*3-967 = 443 → overlaps crop cell at Y0=441.
+	// PDF Y=470 → crop Top = 470*3-955 = 455 → overlaps crop cell at Y0=441.
 	// Boxes must have R (row) and C (col) annotations matching cells,
 	// matching Python's construct_table which assigns boxes to cells by R/C.
 	boxes := []pdf.TextBox{
@@ -392,8 +435,10 @@ func TestExtractTableAndReplace_OnlyTableBoxes(t *testing.T) {
 }
 
 func TestFillCellText_RCOverSpatial(t *testing.T) {
-	// Box at X=30-270 overlaps all 3 cells (>30% each — spatial fills ALL).
-	// With R/C, it belongs only to cell[1] (R=0, C=1).
+	// Box at X=30-270 overlaps all 3 cells, but Python assigns it to exactly
+	// ONE cell via greedy best row + tightest column. With R/C it belongs to
+	// cell[1] (R=0, C=1); spatial fill must now agree (single assignment, the
+	// go_bug #1 fix) instead of duplicating across all overlapping cells.
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 30, Label: "table"},
 		{X0: 90, Y0: 0, X1: 200, Y1: 30, Label: "table"},
@@ -403,7 +448,7 @@ func TestFillCellText_RCOverSpatial(t *testing.T) {
 		{X0: 30, X1: 270, Top: 0, Bottom: 30, Text: "TEXT", LayoutType: "table", R: 0, C: 1},
 	}
 
-	// Spatial fill: fills ALL overlapping cells → duplication.
+	// Spatial fill: assigns the box to the single tightest column (cell[1]).
 	cellsCopy := make([]pdf.TSRCell, 3)
 	copy(cellsCopy, cells)
 	FillCellTextFromBoxes(cellsCopy, boxes)
@@ -413,10 +458,10 @@ func TestFillCellText_RCOverSpatial(t *testing.T) {
 			spatialCount++
 		}
 	}
-	if spatialCount <= 1 {
-		t.Errorf("spatial fill: expected >1 cells with text, got %d", spatialCount)
+	if spatialCount != 1 {
+		t.Errorf("spatial fill: expected exactly 1 cell with text, got %d", spatialCount)
 	}
-	t.Logf("spatial fill: %d cells (WRONG — duplication)", spatialCount)
+	t.Logf("spatial fill: %d cell (single assignment, matches R/C)", spatialCount)
 
 	// R/C fill: only cell matching box.R/C gets text.
 	cellsRC := make([]pdf.TSRCell, 3)
@@ -697,7 +742,8 @@ func TestMergeCaptions_NeedsCaptionLayoutType(t *testing.T) {
 }
 
 func TestCleanupOrphanColumns(t *testing.T) {
-	// Test 1: Less than 4 rows - no cleanup
+	// Test 1: column cleanup is gated on >=4 rows, so a 3-row table is
+	// skipped; even if it ran, this single-column grid has no orphan column.
 	t.Run("less than 4 rows", func(t *testing.T) {
 		rows := [][]pdf.TSRCell{
 			{{Text: "a"}},

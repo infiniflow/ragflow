@@ -1,0 +1,48 @@
+{
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "node": true
+  },
+  "plugins": ["typescript", "react"],
+  "settings": {
+    "react": {
+      "version": "18.2.0"
+    }
+  },
+  "rules": {
+    "typescript/no-use-before-define": [
+      "warn",
+      {
+        "functions": false,
+        "variables": true
+      }
+    ],
+    "typescript/no-explicit-any": "off",
+    "typescript/ban-ts-comment": "off",
+    "typescript/no-empty-function": "off",
+    "typescript/no-non-null-assertion": "off",
+    "react/react-in-jsx-scope": "off",
+    "react/no-unescaped-entities": "warn",
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "no-unused-vars": ["warn", { "fix": { "imports": "safe-fix" } }],
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "@/utils/backend-runtime",
+            "message": "Branch on the backend only through the dispatch primitives in @/utils/backend-variant (useIsGoBackend / <BackendVariant> / pickByBackend). backend-runtime may only be imported by backend-variant itself and the main.tsx bootstrap gate."
+          }
+        ]
+      }
+    ],
+    "no-restricted-globals": [
+      "error",
+      {
+        "name": "__API_PROXY_SCHEME__",
+        "message": "Backend identity comes from runtime detection, not the dev-proxy env. Branch only through @/utils/backend-variant (useIsGoBackend / <BackendVariant> / pickByBackend); do not declare or read API_PROXY_SCHEME in app code."
+      }
+    ]
+  }
+}

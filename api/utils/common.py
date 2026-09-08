@@ -26,4 +26,4 @@ def bytes_to_string(byte):
 
 # 128 bit = 32 character
 def hash128(data: str) -> str:
-    return xxhash.xxh128(data).hexdigest()
+    return xxhash.xxh128(string_to_bytes(data)).hexdigest()

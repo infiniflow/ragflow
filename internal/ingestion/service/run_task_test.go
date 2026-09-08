@@ -21,7 +21,7 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	var runDocCalled bool
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		runDocCalled = true
@@ -41,8 +41,9 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	if runDocCalled {
 		t.Fatal("expected runDocumentTask to be skipped on cancelled ctx")
 	}
+	testCtx := t.Context()
 	// Checkpoint must not have been bumped — no log row should exist.
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(taskID)
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(testCtx, db, taskID)
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
@@ -50,7 +51,7 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 		t.Fatalf("expected 0 checkpoint rows (ctx cancelled before checkpoint), got %d", len(logs))
 	}
 	// Task must be STOPPED, not left in RUNNING.
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	task, err := dao.NewIngestionTaskDAO().GetByID(testCtx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -78,14 +79,14 @@ func TestRunTask_CorruptedRunCountSkipped(t *testing.T) {
 		t.Fatalf("insert bad log: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	var runDocCalled bool
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		runDocCalled = true
 		return nil
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 
@@ -96,7 +97,8 @@ func TestRunTask_CorruptedRunCountSkipped(t *testing.T) {
 		t.Fatal("expected runDocumentTask to be called (bad run_count is skipped, not fatal)")
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -113,12 +115,12 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 	defer cleanup()
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return errors.New("boom")
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 
@@ -126,7 +128,8 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 		t.Fatal("expected true (terminal: durably marked FAILED)")
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -150,12 +153,12 @@ func TestRunTask_PipelineCancelledMarksStopped(t *testing.T) {
 		t.Fatalf("set task STOPPING: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return context.Canceled
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.STOPPING,
 	})
 
@@ -163,7 +166,8 @@ func TestRunTask_PipelineCancelledMarksStopped(t *testing.T) {
 		t.Fatal("expected true (terminal: durably marked STOPPED)")
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -182,12 +186,12 @@ func TestRunTask_ComponentTimeoutMarksFailed(t *testing.T) {
 	defer cleanup()
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return context.DeadlineExceeded
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 
@@ -195,7 +199,8 @@ func TestRunTask_ComponentTimeoutMarksFailed(t *testing.T) {
 		t.Fatal("expected true (terminal: durably marked FAILED)")
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -222,12 +227,12 @@ func TestRunTask_AlreadyCompletedAcksNotRedelivers(t *testing.T) {
 		t.Fatalf("set task COMPLETED: %v", err)
 	}
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return nil
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 
@@ -236,7 +241,8 @@ func TestRunTask_AlreadyCompletedAcksNotRedelivers(t *testing.T) {
 	}
 
 	// Task must still be COMPLETED (MarkCompleted failed to transition it).
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -257,16 +263,16 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 	defer cleanup()
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
 		// Simulate the user pressing Stop mid-pipeline: RUNNING->STOPPING.
-		if _, err := ingestor.ingestionTaskSvc.RequestStop(task.ID); err != nil {
+		if _, err := ingestor.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
 			t.Fatalf("RequestStop: %v", err)
 		}
 		return nil // pipeline still finishes successfully
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 
@@ -274,7 +280,8 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 		t.Fatal("expected true (terminal: settled to STOPPED, Ack)")
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -291,12 +298,12 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 	defer cleanup()
 	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return nil
 	}
 
-	terminal := ingestor.runTask(context.Background(), &entity.IngestionTask{
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
 
@@ -304,7 +311,8 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 		t.Fatal("expected true (terminal: durably completed)")
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}

@@ -17,7 +17,10 @@
 package dao
 
 import (
+	"context"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // File2DocumentDAO file to document mapping data access object
@@ -29,10 +32,10 @@ func NewFile2DocumentDAO() *File2DocumentDAO {
 }
 
 // GetKBInfoByFileID gets knowledge base info by file ID
-func (dao *File2DocumentDAO) GetKBInfoByFileID(fileID string) ([]map[string]interface{}, error) {
+func (dao *File2DocumentDAO) GetKBInfoByFileID(ctx context.Context, db *gorm.DB, fileID string) ([]map[string]interface{}, error) {
 	var results []map[string]interface{}
 
-	rows, err := DB.Model(&entity.File{}).
+	rows, err := db.WithContext(ctx).Model(&entity.File{}).
 		Select("knowledgebase.id, knowledgebase.name, file2document.document_id").
 		Joins("JOIN file2document ON file2document.file_id = ?", fileID).
 		Joins("JOIN document ON document.id = file2document.document_id").
@@ -46,7 +49,7 @@ func (dao *File2DocumentDAO) GetKBInfoByFileID(fileID string) ([]map[string]inte
 
 	for rows.Next() {
 		var kbID, kbName, docID string
-		if err := rows.Scan(&kbID, &kbName, &docID); err != nil {
+		if err = rows.Scan(&kbID, &kbName, &docID); err != nil {
 			continue
 		}
 		results = append(results, map[string]interface{}{
@@ -60,30 +63,30 @@ func (dao *File2DocumentDAO) GetKBInfoByFileID(fileID string) ([]map[string]inte
 }
 
 // GetByFileID gets file2document mappings by file ID
-func (dao *File2DocumentDAO) GetByFileID(fileID string) ([]*entity.File2Document, error) {
+func (dao *File2DocumentDAO) GetByFileID(ctx context.Context, db *gorm.DB, fileID string) ([]*entity.File2Document, error) {
 	var mappings []*entity.File2Document
-	err := DB.Where("file_id = ?", fileID).Find(&mappings).Error
+	err := db.WithContext(ctx).Where("file_id = ?", fileID).Find(&mappings).Error
 	return mappings, err
 }
 
 // DeleteByFileID deletes file2document mappings by file ID
-func (dao *File2DocumentDAO) DeleteByFileID(fileID string) error {
-	return DB.Unscoped().Where("file_id = ?", fileID).Delete(&entity.File2Document{}).Error
+func (dao *File2DocumentDAO) DeleteByFileID(ctx context.Context, db *gorm.DB, fileID string) error {
+	return db.WithContext(ctx).Unscoped().Where("file_id = ?", fileID).Delete(&entity.File2Document{}).Error
 }
 
 // GetByDocumentID gets file2document mappings by document ID
-func (dao *File2DocumentDAO) GetByDocumentID(docID string) ([]*entity.File2Document, error) {
+func (dao *File2DocumentDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, docID string) ([]*entity.File2Document, error) {
 	var mappings []*entity.File2Document
-	err := DB.Where("document_id = ?", docID).Find(&mappings).Error
+	err := db.WithContext(ctx).Where("document_id = ?", docID).Find(&mappings).Error
 	return mappings, err
 }
 
 // DeleteByDocumentID deletes file2document mappings by document ID
-func (dao *File2DocumentDAO) DeleteByDocumentID(docID string) error {
-	return DB.Unscoped().Where("document_id = ?", docID).Delete(&entity.File2Document{}).Error
+func (dao *File2DocumentDAO) DeleteByDocumentID(ctx context.Context, db *gorm.DB, docID string) error {
+	return db.WithContext(ctx).Unscoped().Where("document_id = ?", docID).Delete(&entity.File2Document{}).Error
 }
 
 // Create inserts a new file2document mapping record.
-func (dao *File2DocumentDAO) Create(mapping *entity.File2Document) error {
-	return DB.Create(mapping).Error
+func (dao *File2DocumentDAO) Create(ctx context.Context, db *gorm.DB, mapping *entity.File2Document) error {
+	return db.WithContext(ctx).Create(mapping).Error
 }

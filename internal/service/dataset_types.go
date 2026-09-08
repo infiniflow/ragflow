@@ -1,10 +1,5 @@
 package service
 
-// TraceIndexRequest is the request structure for tracing an index task.
-type TraceIndexRequest struct {
-	Type string `json:"type" binding:"required"`
-}
-
 // CheckEmbeddingRequest is the request structure for checking embedding compatibility.
 type CheckEmbeddingRequest struct {
 	EmbeddingID string `json:"embd_id" binding:"required"`
@@ -46,16 +41,21 @@ type SearchDatasetsRequest struct {
 	Question               string                 `json:"question" binding:"required"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
-	TopK                   *int                   `json:"top_k,omitempty"`
+	KNNTopK                *int                   `json:"knn_top_k,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"` // Legacy alias for knn_top_k.
+	KNNNumCandidates       *int                   `json:"knn_num_candidates,omitempty"`
 	CrossLanguages         []string               `json:"cross_languages,omitempty"`
 	SearchID               *string                `json:"search_id,omitempty"`
 	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
 	RerankID               *string                `json:"rerank_id,omitempty"`
 	Keyword                *bool                  `json:"keyword,omitempty"`
+	Highlight              *bool                  `json:"highlight,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+	IncludeCompiledChunks  *bool                  `json:"include_knowledge_compilation,omitempty"`
 	ForceRefresh           bool                   `json:"force_refresh"`
 }
 
@@ -72,9 +72,12 @@ type SearchDatasetRequest struct {
 	Question               string                 `json:"question"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
+	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
 	DocIDs                 []string               `json:"doc_ids,omitempty"`
 	UseKG                  *bool                  `json:"use_kg,omitempty"`
-	TopK                   *int                   `json:"top_k,omitempty"`
+	KNNTopK                *int                   `json:"knn_top_k,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"` // Legacy alias for knn_top_k.
+	KNNNumCandidates       *int                   `json:"knn_num_candidates,omitempty"`
 	CrossLanguages         []string               `json:"cross_languages,omitempty"`
 	SearchID               *string                `json:"search_id,omitempty"`
 	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
@@ -82,6 +85,7 @@ type SearchDatasetRequest struct {
 	Keyword                *bool                  `json:"keyword,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+	IncludeCompiledChunks  *bool                  `json:"include_knowledge_compilation,omitempty"`
 }
 
 // ToSearchDatasetsRequest converts a single-dataset search request into the multi-dataset form.
@@ -94,9 +98,12 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		Question:               req.Question,
 		Page:                   req.Page,
 		Size:                   req.Size,
+		RerankCandidatesCount:  req.RerankCandidatesCount,
 		DocIDs:                 req.DocIDs,
 		UseKG:                  req.UseKG,
+		KNNTopK:                req.KNNTopK,
 		TopK:                   req.TopK,
+		KNNNumCandidates:       req.KNNNumCandidates,
 		CrossLanguages:         req.CrossLanguages,
 		SearchID:               req.SearchID,
 		MetadataFilter:         req.MetadataFilter,
@@ -104,6 +111,7 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		Keyword:                req.Keyword,
 		SimilarityThreshold:    req.SimilarityThreshold,
 		VectorSimilarityWeight: req.VectorSimilarityWeight,
+		IncludeCompiledChunks:  req.IncludeCompiledChunks,
 	}
 }
 
@@ -117,6 +125,7 @@ type MetadataConfigField struct {
 
 // MetadataConfigRequest mirrors PUT /datasets/:dataset_id/metadata/config.
 type MetadataConfigRequest struct {
+	Enabled         *bool                 `json:"enabled,omitempty"`
 	Metadata        []MetadataConfigField `json:"metadata"`
 	BuiltInMetadata []MetadataConfigField `json:"built_in_metadata"`
 }
@@ -125,11 +134,12 @@ type MetadataConfigRequest struct {
 type CreateDatasetRequest struct {
 	Name           string  `json:"name" binding:"required"`
 	EmbeddingModel *string `json:"embedding_model,omitempty"`
+	Language       *string `json:"language,omitempty"`
 	Permission     *string `json:"permission,omitempty"`
 	ParserID       *string `json:"parser_id,omitempty"`
 	PipelineID     *string `json:"pipeline_id,omitempty"`
 	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
-	// 2 = Pipeline (pipeline_id). nil means unspecified (backward compat).
+	// 2 = Pipeline (pipeline_id). nil means unspecified.
 	ParseType *int `json:"parse_type,omitempty"`
 }
 
@@ -154,7 +164,7 @@ type UpdateDatasetRequest struct {
 	ParserConfig   map[string]interface{}     `json:"parser_config,omitempty"`
 	PipelineID     *string                    `json:"pipeline_id,omitempty"`
 	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
-	// 2 = Pipeline (pipeline_id). nil means unspecified (backward compat).
+	// 2 = Pipeline (pipeline_id). nil means unspecified.
 	ParseType *int `json:"parse_type,omitempty"`
 
 	// ParserConfigProvided reports whether the raw request body contained a

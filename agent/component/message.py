@@ -42,6 +42,14 @@ from common import settings
 
 from api.db.joint_services.memory_message_service import queue_save_to_memory_task
 
+_logger = logging.getLogger(__name__)
+
+
+def _valid_message_content(content: Any) -> list[str]:
+    if not isinstance(content, list):
+        return []
+    return [item for item in content if isinstance(item, str) and item.strip()]
+
 
 class MessageParam(ComponentParamBase):
     """
@@ -57,7 +65,8 @@ class MessageParam(ComponentParamBase):
         self.outputs = {"content": {"type": "str"}, "downloads": {"type": "list"}}
 
     def check(self):
-        self.check_empty(self.content, "[Message] Content")
+        if not _valid_message_content(self.content):
+            raise ValueError("[Message] Content does not support empty value.")
         self.check_boolean(self.stream, "[Message] stream")
         return True
 
@@ -190,7 +199,8 @@ class Message(ComponentBase):
         all_content = ""
         cache = {}
         downloads = []
-        for r in re.finditer(self.variable_ref_patt, rand_cnt, flags=re.DOTALL):
+        pattern = re.compile(self.variable_ref_patt, flags=re.DOTALL)
+        for r in self._iter_template_matches(pattern, rand_cnt):
             if self.check_if_canceled("Message streaming"):
                 return
 
@@ -225,6 +235,13 @@ class Message(ComponentBase):
                         all_content += t
                         cnt += t
                         yield t
+                if "@" in exp:
+                    source_component_id = exp.split("@", 1)[0]
+                    source_component = self._canvas.get_component_obj(source_component_id)
+                    if source_error := source_component.error():
+                        _logger.warning("Message stream stopped after source component error: %s", source_component_id)
+                        self.set_output("_ERROR", source_error)
+                        return
                 self.set_input_value(exp, cnt)
                 continue
             elif inspect.isawaitable(v):
@@ -251,12 +268,24 @@ class Message(ComponentBase):
         patt = [r"\{%.*%\}", "{{", "}}"]
         return any([re.search(p, content) for p in patt])
 
+    @staticmethod
+    def _apply_kwargs(content: str, kwargs: dict) -> str:
+        # Substitute the sanitized variable tokens with their concrete values.
+        # Both the token and the value are literals, so use str.replace rather
+        # than re.sub: a value containing regex escape sequences (e.g. a Windows
+        # path like "C:\10" or LaTeX like "\begin") would otherwise be read as a
+        # replacement backreference and raise re.error.
+        for n, v in kwargs.items():
+            if v is not None:
+                content = content.replace(n, str(v))
+        return content
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("Message processing"):
             return
 
-        rand_cnt = random.choice(self._param.content)
+        rand_cnt = random.choice(_valid_message_content(self._param.content))
         if self._param.stream and not self._is_jinjia2(rand_cnt):
             self.set_output("content", partial(self._stream, rand_cnt))
             return
@@ -273,9 +302,7 @@ class Message(ComponentBase):
         if self.check_if_canceled("Message processing"):
             return
 
-        for n, v in kwargs.items():
-            if v is not None:
-                content = re.sub(n, str(v), content)
+        content = self._apply_kwargs(content, kwargs)
 
         self.set_output("downloads", downloads)
         self.set_output("content", content)
