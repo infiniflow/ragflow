@@ -1800,3 +1800,65 @@ func TestDownloadDocument_NotFound(t *testing.T) {
 		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
 	}
 }
+
+// ── Tenant authorization on read-only document routes ────────────────────
+
+func ginContextAsUser(method, path, body, userID string) (*gin.Context, *httptest.ResponseRecorder) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Set("user", &entity.User{ID: userID})
+	c.Set("user_id", userID)
+	return c, w
+}
+
+func TestGetDocumentByID_ForeignDatasetRejected(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{doc: &document.DocumentResponse{ID: "doc-1", KbID: "ds-1"}}
+	h := &DocumentHandler{documentService: fake, datasetService: dataset.NewDatasetService()}
+
+	// ds-1 belongs to tenant-1/user-1 only; user-2 must get 404.
+	c, w := ginContextAsUser("GET", "/api/v1/documents/doc-1", "", "user-2")
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	h.GetDocumentByID(c)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for foreign user, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// The authorized user still gets the document.
+	c, w = ginContextAsUser("GET", "/api/v1/documents/doc-1", "", "user-1")
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	h.GetDocumentByID(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for owner, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestMetadataSummary_ForeignDatasetRejected(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{metadataSummary: map[string]interface{}{}}
+	h := &DocumentHandler{documentService: fake, datasetService: dataset.NewDatasetService()}
+
+	c, w := ginContextAsUser("POST", "/api/v1/document/metadata/summary", `{"kb_id": "ds-1"}`, "user-2")
+	h.MetadataSummary(c)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for foreign user, got %d: %s", w.Code, w.Body.String())
+	}
+
+	c, w = ginContextAsUser("POST", "/api/v1/document/metadata/summary", `{"kb_id": "ds-1"}`, "user-1")
+	h.MetadataSummary(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for owner, got %d: %s", w.Code, w.Body.String())
+	}
+}

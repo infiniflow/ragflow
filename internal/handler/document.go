@@ -116,7 +116,7 @@ func NewDocumentHandler(documentService documentServiceIface, datasetService *da
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [get]
 func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -133,6 +133,15 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "document not found",
+		})
+		return
+	}
+
+	// Authorize like UpdateDocument/DeleteDocument do: a document id alone
+	// must not expose another tenant's document metadata.
+	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "document not found",
 		})
@@ -1225,7 +1234,7 @@ func stringValue(value *string) string {
 
 // MetadataSummary handles the metadata summary request
 func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -1248,6 +1257,12 @@ func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	// The summary leaks a dataset's metadata schema and values, so require
+	// the same dataset access check MetadataSummaryByDataset applies.
+	if !h.datasetService.Accessible(ctx, kbID, user.ID) {
+		common.ResponseWithHttpCodeData(c, http.StatusNotFound, 1, nil, "Dataset not found")
+		return
+	}
 	summary, err := h.documentService.GetMetadataSummary(ctx, kbID, requestBody.DocIDs)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 1, nil, "Failed to get metadata summary: "+err.Error())
