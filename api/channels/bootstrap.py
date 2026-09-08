@@ -72,7 +72,7 @@ def _prepare_agent_turn(text: str, session_dsl) -> tuple[str, dict]:
         return text, {}
 
     component = (state.get("components") or {}).get(path[0]) or {}
-    params = ((component.get("obj") or {}).get("params") or {})
+    params = (component.get("obj") or {}).get("params") or {}
     fields = params.get("inputs") or {}
     if not isinstance(fields, dict) or not fields:
         return text, {}
