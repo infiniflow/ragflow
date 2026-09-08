@@ -257,28 +257,28 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	return nil
 }
 
-// PullMessages collects up to messageCount messages for the manual admin
-// endpoint. Scheduling code must use PullTaskStream instead.
+// PullMessages collects up to messageCount messages from one task stream for
+// the manual admin endpoint. Scheduling code consumes the stream directly.
 func (n *NatsEngine) PullMessages(messageCount int) ([]common.TaskHandle, error) {
-	if n.consumer == nil {
-		return nil, errors.New("NATS consumer is nil, engine not properly initialized")
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 
-	resultMessages := make([]common.TaskHandle, 0)
-	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchMaxWait(1*time.Second))
+	stream, err := n.PullTaskStream(ctx, messageCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch messages: %w", err)
 	}
-	for msg := range messages.Messages() {
-		resultMessages = append(resultMessages, NewNatsMessageHandle(msg))
+
+	resultMessages := make([]common.TaskHandle, 0, messageCount)
+	for message := range stream.Messages() {
+		resultMessages = append(resultMessages, message)
 	}
-	if batchErr := messages.Error(); batchErr != nil {
+	if streamErr := stream.Err(); streamErr != nil && !errors.Is(streamErr, context.DeadlineExceeded) {
 		for _, message := range resultMessages {
 			if nackErr := message.Nack(); nackErr != nil {
 				common.Error("nack admin message after failed pull", nackErr)
 			}
 		}
-		return nil, fmt.Errorf("failed to fetch messages: %w", batchErr)
+		return nil, fmt.Errorf("failed to fetch messages: %w", streamErr)
 	}
 	return resultMessages, nil
 }
