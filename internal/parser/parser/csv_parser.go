@@ -41,6 +41,8 @@ type CSVParser struct {
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
+	ColumnMode                     string
+	ColumnRoles                    map[string]string
 }
 
 func NewCSVParser() *CSVParser {
@@ -80,10 +82,20 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
 	}
+	if mode, roles := DecodeTableColumnConfig(setup); mode != "" || roles != nil {
+		if mode != "" {
+			p.ColumnMode = mode
+		}
+		if roles != nil {
+			p.ColumnRoles = roles
+		}
+	}
 }
 
 // ParseWithResult implements ParseResultProducer. It reads CSV rows and emits
 // a header item followed by ordered data-row items.
+// When OutputFormat is "json", it renders structured row records
+// respecting column_mode and column_roles (one chunk per row).
 // When TCADP parse_method is configured, the file is dispatched to
 // the Tencent Cloud Document Parsing API.
 func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
@@ -108,6 +120,18 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	decoded, encName := DecodeToUTF8(data, "text/csv")
 	text := string(decoded)
 	if strings.TrimSpace(text) == "" {
+		if strings.EqualFold(p.OutputFormat, "json") {
+			return ParseResult{
+				OutputFormat: "json",
+				File: map[string]any{
+					"name":               filename,
+					"size":               len(data),
+					"encoding":           encName,
+					"table_column_names": []string{},
+				},
+				JSON: []map[string]any{},
+			}
+		}
 		var emptyJSON []map[string]any
 		if p.HTML4Excel {
 			emptyJSON = []map[string]any{NewTableJSONItem("<table><caption>Data</caption></table>", csvSheetName, [][]float64{{1, 1, 1, 1, 1}})}
@@ -137,6 +161,20 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 
 	// Clean illegal control characters from all cells.
 	records = cleanIllegalControlChars(records)
+
+	if strings.EqualFold(p.OutputFormat, "json") {
+		items, headers := RenderRowsToJSONChunks(records, "", p.ColumnMode, p.ColumnRoles)
+		return ParseResult{
+			OutputFormat: "json",
+			File: map[string]any{
+				"name":               filename,
+				"size":               len(data),
+				"encoding":           encName,
+				"table_column_names": headers,
+			},
+			JSON: items,
+		}
+	}
 
 	dataRows := make([]int, len(records)-1)
 	for i := range dataRows {
