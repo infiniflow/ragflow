@@ -522,9 +522,11 @@ func (s *sitemapSyncSession) Close() error {
 
 // applyResume advances past the last committed sitemap page when retrying a task.
 //
-// Only sitemap-listed URLs can anchor a resume: PDFs discovered inside pages are
-// not known before those pages are fetched, so a checkpoint taken during the
-// PDF pass anchors on the last sitemap page instead and the PDF pass replays.
+// Only sitemap-listed URLs can anchor a partial resume. A checkpoint taken
+// during the PDF pass anchors on the PDF itself (see sitemapSyncCheckpoint);
+// that anchor is not a sitemap-listed URL, so ErrSyncResumeInvalid is returned
+// here and the runner restarts the whole window. Skipping past the parent page
+// instead would silently drop any of its PDFs that were not committed yet.
 func (s *sitemapSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
 		return nil
@@ -543,17 +545,18 @@ func (s *sitemapSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 }
 
 // sitemapSyncCheckpoint returns a resume point after a committed document.
+//
+// The anchor is the document's own SourceID, never the parent page. A
+// checkpoint taken during the PDF pass therefore anchors on the PDF itself;
+// that anchor is not a sitemap-listed URL, so applyResume reports
+// ErrSyncResumeInvalid and the runner restarts the window instead of skipping
+// the parent page and silently dropping the PDFs that had not been committed
+// yet (those PDFs are only known again once the parent page is re-fetched).
 func sitemapSyncCheckpoint(doc SourceDocument) *SyncCheckpoint {
-	// Discovered PDFs carry parent_url; anchor on the parent page so the
-	// checkpoint always points at a sitemap-listed URL.
-	anchor := doc.SourceID
-	if parent, ok := doc.Metadata["parent_url"].(string); ok && parent != "" {
-		anchor = sitemapSourceID(parent)
-	}
 	updatedAt := doc.UpdatedAt
 	return &SyncCheckpoint{
-		Cursor:    anchor,
-		SourceID:  anchor,
+		Cursor:    doc.SourceID,
+		SourceID:  doc.SourceID,
 		UpdatedAt: &updatedAt,
 	}
 }
