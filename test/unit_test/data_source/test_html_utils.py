@@ -89,3 +89,57 @@ def test_link_inside_a_table_cell_is_linkified(markdown_links):
 def test_link_is_stripped_under_the_default_strategy():
     # Default strategy is STRIP: no markdown link syntax at all.
     assert _fmt('<p>see <a href="http://x.com">link</a> after</p>') == "see link after"
+
+
+_PARAGRAPH = "<p>" + " ".join(["This paragraph describes the installation process in enough detail to count as real content."] * 3) + "</p>"
+# Realistic size on purpose: on very short documents trafilatura falls back to its
+# plain-text baseline and emits no Markdown structure.
+PAGE = f"""<html><head><title>Guide</title></head><body>
+<nav><a href="/">Home</a></nav>
+<main><h1>Getting started</h1><p>Install the <a href="/docs/cli">CLI</a> first.</p>{_PARAGRAPH}
+<h2>Steps</h2><ul><li>step one</li><li>step two</li></ul>{_PARAGRAPH}</main>
+<footer>© Example</footer></body></html>"""
+
+
+def test_web_html_to_markdown_keeps_structure_and_drops_boilerplate():
+    parsed = html_utils.web_html_to_markdown(PAGE)
+
+    assert parsed.title == "Guide"
+    assert "# Getting started" in parsed.cleaned_text
+    assert "## Steps" in parsed.cleaned_text
+    assert "[CLI](/docs/cli)" in parsed.cleaned_text
+    assert "step one" in parsed.cleaned_text and "step two" in parsed.cleaned_text
+    assert "Home" not in parsed.cleaned_text  # <nav> is in WEB_CONNECTOR_IGNORED_ELEMENTS
+    assert "© Example" not in parsed.cleaned_text  # <footer> too
+
+
+def test_web_html_to_markdown_does_not_depend_on_the_flat_text_switch(monkeypatch):
+    monkeypatch.setattr(html_utils, "PARSE_WITH_TRAFILATURA", False)
+    parsed = html_utils.web_html_to_markdown(PAGE)
+
+    assert "# Getting started" in parsed.cleaned_text
+
+
+def test_web_html_to_markdown_falls_back_to_flat_text_when_trafilatura_fails(monkeypatch):
+    def _boom(html_content, output_format="txt"):
+        raise RuntimeError("trafilatura exploded")
+
+    monkeypatch.setattr(html_utils, "parse_html_with_trafilatura", _boom)
+    parsed = html_utils.web_html_to_markdown(PAGE)
+
+    assert parsed.title == "Guide"
+    assert not parsed.cleaned_text.startswith("Guide")  # title tag dropped before the bs4 fallback
+    assert "Getting started" in parsed.cleaned_text
+    assert "Home" not in parsed.cleaned_text
+
+
+def test_web_html_cleanup_and_markdown_share_the_same_cleanup():
+    flat = html_utils.web_html_cleanup(PAGE)
+    markdown = html_utils.web_html_to_markdown(PAGE)
+
+    assert flat.title == markdown.title == "Guide"
+    for boilerplate in ("Home", "© Example"):
+        assert boilerplate not in flat.cleaned_text
+        assert boilerplate not in markdown.cleaned_text
+    assert "Getting started" in flat.cleaned_text
+    assert "# Getting started" in markdown.cleaned_text
