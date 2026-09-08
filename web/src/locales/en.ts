@@ -788,6 +788,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dialogueExamplesTitle: 'view',
       methodEmpty:
         'This will display a visual explanation of the dataset categories',
+      imageLoadFailed: 'Failed to load image',
       audio: `<p>Supported file formats are <b>WAV, MP3, AAC, FLAC, OGG</b> and other common audio formats.</p>
 <p>This method transcribes audio files into text using a speech-to-text model.</p>`,
       email: `<p>Supported file formats are <b>EML</b> and <b>MSG</b>.</p>
@@ -869,11 +870,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     </p><p>
     Applicable when you require the LLM to summarize the entire document, provided it can handle that amount of context length.
     </p>`,
-      knowledgeGraph: `<p>Supported file formats are <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
-
-<p>This approach chunks files using the 'naive'/'General' method. It splits a document into segments and then combines adjacent segments until the token count exceeds the threshold specified by 'Chunk token number for text', at which point a chunk is created.</p>
-<p>The chunks are then fed to the LLM to extract entities and relationships for a knowledge graph and a mind map.</p>
-<p>Ensure that you set the <b>Entity types</b>.</p>`,
       tag: `<p>A dataset using the 'Tag' chunking method functions as a tag set. Other datasets use it to tag their chunks, and queries to these datasets are also tagged using this tag set.</p>
 <p>A tag set will <b>NOT</b> be directly involved in a Retrieval-Augmented Generation (RAG) process.</p>
 <p>Each chunk in this dataset is an independent description-tag pair.</p>
@@ -924,6 +920,7 @@ Paragraphs:
       pageRank: 'Page rank',
       pageRankTip: `You can assign a higher PageRank score to specific datasets during retrieval. The corresponding score is added to the hybrid similarity scores of retrieved chunks from these datasets, increasing their ranking. See https://ragflow.io/docs/dataset_configuration#basic-information for details.`,
       tagName: 'Tag',
+      tagMessage: 'Please select a tag',
       frequency: 'Frequency',
       searchTags: 'Search tags',
       tagCloud: 'Cloud',
@@ -2367,7 +2364,7 @@ Example: Virtual Hosted Style`,
       compilationTitleSuffix: "' dataset",
       llmWiki: 'Wiki',
       skills: 'To Skills',
-      navTree: 'Tree/Page index',
+      navTree: 'Tree/PageIndex',
       graph: 'Graph',
       structureMindmap: 'Mind map',
       structureTimeline: 'Timeline',
@@ -2784,6 +2781,15 @@ Best for: Documents with flowing, contextually connected content — such as boo
       youComFreshnessMonth: 'Past month',
       youComFreshnessYear: 'Past year',
       youComApiKeyTip: 'Optional. Leave blank to use the keyless free tier.',
+      sofyaSearch: 'Sofya',
+      sofyaSearchDescription:
+        'A web search component powered by Sofya. Results carry the content of each result page, or only its search snippet, depending on the search depth. An API Key is required.',
+      sofyaSearchDepth: 'Search depth',
+      sofyaSearchDepthTip:
+        'Basic returns the content of each result page. Snippets returns the search snippets only, which is faster and costs less.',
+      sofyaSearchDepthBasic: 'Page content',
+      sofyaSearchDepthSnippets: 'Snippets only',
+      sofyaApiKeyTip: 'Required. Create an API Key at sofya.co.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
       browser: 'Browser',
@@ -3171,6 +3177,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       contentTip: 'content: Email content (Optional)',
       jsonUploadTypeErrorMessage: 'Please upload json file',
       jsonUploadContentErrorMessage: 'json file error',
+      nameExists: 'Name already exists',
       iteration: 'Iteration',
       iterationDescription: `A looping component that iterates over an input array and executes a defined logic for each item.`,
       delimiterTip: `
@@ -3379,9 +3386,13 @@ This process aggregates variables from multiple branches into a single variable 
       retrievalDatasetRequired: 'Please select at least one dataset',
       retrievalDatasetMissing:
         'Cannot save: "{{name}}" has no dataset selected. Please choose one first',
+      retrievalTemplateDatasetHint:
+        'This template has {{count}} dataset retrieval step(s) without a dataset. Select a knowledge base below and it will be applied to all of them; you can still fine-tune each retrieval in the canvas afterwards.',
       retrievalMemoryRequired: 'Please select at least one memory',
       retrievalMemoryMissing:
         'Cannot save: "{{name}}" has no memory selected. Please choose one first',
+      retrievalTemplateMemoryHint:
+        'This template has {{count}} memory retrieval step(s) without a memory. Select one below and it will be applied to all of them; you can still fine-tune each retrieval in the canvas afterwards.',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
       tokenChunker: 'Token Chunker',

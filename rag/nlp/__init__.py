@@ -197,6 +197,37 @@ def find_codec(blob):
     return "utf-8"
 
 
+def decode_text(blob, document_type="text"):
+    """Decode document bytes without silently accepting weak codec guesses."""
+    bom_codecs = (
+        (b"\x00\x00\xfe\xff", "utf-32-be"),
+        (b"\xff\xfe\x00\x00", "utf-32-le"),
+        (b"\xfe\xff", "utf-16-be"),
+        (b"\xff\xfe", "utf-16-le"),
+        (b"\xef\xbb\xbf", "utf-8-sig"),
+    )
+    for bom, encoding in bom_codecs:
+        if blob.startswith(bom):
+            return blob.decode(encoding), encoding
+
+    try:
+        return blob.decode("utf-8"), "utf-8"
+    except UnicodeDecodeError:
+        pass
+
+    detected = chardet.detect(blob[:1024])
+    encoding = detected.get("encoding")
+    confidence = detected.get("confidence") or 0.0
+    if encoding and encoding.lower().replace("-", "") in {"gb2312", "gbk"}:
+        encoding = "gb18030"
+    if not encoding or confidence < 0.8:
+        raise UnicodeError(f"Unable to reliably detect {document_type} encoding (confidence={confidence:.2f})")
+    try:
+        return blob.decode(encoding), encoding
+    except (LookupError, UnicodeDecodeError) as exc:
+        raise UnicodeError(f"Unable to decode {document_type} as {encoding}") from exc
+
+
 QUESTION_PATTERN = [
     r"第([零一二三四五六七八九十百0-9]+)问",
     r"第([零一二三四五六七八九十百0-9]+)条",

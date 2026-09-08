@@ -691,6 +691,7 @@ export default {
         '为帮助您更好地理解，我们提供了相关截图供您参考。',
       dialogueExamplesTitle: '对话示例',
       methodEmpty: '这将显示知识库类别的可视化解释',
+      imageLoadFailed: '图片加载失败',
       audio: `<p>支持的文件格式为 <b>WAV、MP3、AAC、FLAC、OGG</b> 及其他常见音频格式。</p>
 <p>本方法使用语音转文本模型将音频文件转录为文本。</p>`,
       email: `<p>支持的文件格式为 <b>EML</b> 和 <b>MSG</b>。</p>
@@ -781,13 +782,6 @@ export default {
       </p><p>
       如果你要总结的东西需要一篇文章的全部上下文，并且所选 LLM 的上下文长度覆盖了文档长度，你可以尝试这种方法。
       </p>`,
-      knowledgeGraph: `<p>支持的文件格式为<b>DOCX、EXCEL、PPT、IMAGE、PDF、TXT、MD、JSON、EML</b>
-
-<p>文件分块后，使用分块提取整个文档的 Graph 和 Mindmap。此方法将简单的方法应用于分块文件：
-连续的文本将被切成大约 512 个 Token 数的块。</p>
-<p>接下来，将分块传输到 LLM 以提取 Graph 和 Mindmap 的节点和边。</p>
-
-注意您需要指定的条目类型。</p>`,
       tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
 <p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
 <p>标签集中的每个文本分块都是相互独立的标签和标签描述的文本对。</p>
@@ -838,6 +832,7 @@ export default {
       pageRank: '页面排名',
       pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dataset_configuration#basic-information。`,
       tagName: '标签',
+      tagMessage: '请选择标签',
       frequency: '频次',
       searchTags: '搜索标签',
       tagCloud: '云',
@@ -1992,7 +1987,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       compilationTitleSuffix: '的数据集',
       llmWiki: 'Wiki',
       skills: 'To Skills',
-      navTree: 'Tree/Page index',
+      navTree: 'Tree/PageIndex',
       graph: 'Graph',
       structureMindmap: 'Mindmap',
       structureTimeline: 'Timeline',
@@ -2410,6 +2405,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       youComFreshnessMonth: '一个月内',
       youComFreshnessYear: '一年内',
       youComApiKeyTip: '可选。留空则使用免密钥的免费额度。',
+      sofyaSearch: 'Sofya',
+      sofyaSearchDescription:
+        '基于 Sofya 的网络搜索组件。根据搜索深度，结果附带结果页面的正文内容或仅附带搜索摘要。需要配置 API Key。',
+      sofyaSearchDepth: '搜索深度',
+      sofyaSearchDepthTip:
+        'Basic 返回每条结果页面的正文内容；Snippets 只返回搜索摘要，速度更快、消耗更少。',
+      sofyaSearchDepthBasic: '页面正文',
+      sofyaSearchDepthSnippets: '仅摘要',
+      sofyaApiKeyTip: '必填。请在 sofya.co 申请 API Key。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       browser: 'Browser',
@@ -2789,6 +2793,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       contentTip: 'content: 邮件内容(可选)',
       jsonUploadTypeErrorMessage: '请上传 json 文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
+      nameExists: '名称已存在',
       iteration: '迭代',
       iterationDescription: `该组件负责迭代生成新的内容，对列表对象执行多次步骤直至输出所有结果。`,
       delimiterTip: `该分隔符用于将输入文本分割成几个文本片段，每个文本片段的回显将作为每次迭代的输入项。`,
@@ -2937,8 +2942,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       agentModelMissing: '无法保存：“{{name}}” 未选择模型，请先选择',
       retrievalDatasetRequired: '请选择知识库',
       retrievalDatasetMissing: '无法保存：“{{name}}” 未选择知识库，请先选择',
+      retrievalTemplateDatasetHint:
+        '该模板包含 {{count}} 处未绑定知识库的数据集检索。请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       retrievalMemoryRequired: '请选择记忆库',
       retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆库，请先选择',
+      retrievalTemplateMemoryHint:
+        '该模板包含 {{count}} 处未绑定记忆库的记忆检索。请在下方选择一个记忆库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       tokenChunker: '按 Token 分块',
