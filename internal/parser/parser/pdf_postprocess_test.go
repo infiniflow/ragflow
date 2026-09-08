@@ -640,3 +640,134 @@ func TestFilterPDFHeaderFooter_SubstringMatch(t *testing.T) {
 		t.Errorf("#5 header/footer: body text %q should be kept", "text")
 	}
 }
+
+// fragmentedTOCPage builds sections on one page from plain texts: every text
+// gets a distinct vertical slot on the given page so page grouping is
+// exercised without depending on real layout coordinates.
+func fragmentedTOCPage(texts []string, page int, layout string) []deepdoctype.Section {
+	sections := make([]deepdoctype.Section, 0, len(texts))
+	for i, text := range texts {
+		top := float64(100 + i*20)
+		sections = append(sections, makePDFSection(text, layout, page, 50, 550, top, top+18))
+	}
+	return sections
+}
+
+// TestFilterPDFTOCFragmentPages_ClearsFragmentedTOCPage covers the DeepDoc
+// fragmentation shape: bare chapter titles, subtitle lines and bare page
+// numbers on one headingless TOC page are all dropped, while the book title
+// heading and the roman-numeral page marker survive.
+func TestFilterPDFTOCFragmentPages_ClearsFragmentedTOCPage(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Book Title Full Translation",
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"Chapter 6",
+		"Chapter 7",
+		"1",
+		"3",
+		"4",
+		"6",
+		"7",
+		"8",
+		"10",
+		"II",
+	}, 0, "text")
+	sections[0].LayoutType = "title"
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{"Book Title Full Translation", "II"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_KeepsBodyChapterPage pins the body guard: a
+// real chapter page (one heading plus long prose) never classifies as a TOC
+// page even though it carries a title candidate and a footer page number.
+func TestFilterPDFTOCFragmentPages_KeepsBodyChapterPage(t *testing.T) {
+	prose := "The way that can be told of is not the eternal way; the name " +
+		"that can be named is not the eternal name. The nameless is the origin."
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1 The Way",
+		prose,
+		"5",
+	}, 8, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
+		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_MixedPageDegradesToUntouched pins that a page
+// mixing TOC fragments with body prose is left alone: the body veto must win
+// over the fragment counts so prose is never deleted.
+func TestFilterPDFTOCFragmentPages_MixedPageDegradesToUntouched(t *testing.T) {
+	prose := "Sages treat worldly affairs with non-action and teach without " +
+		"words; all things arise and none is rejected by their teaching."
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+		prose,
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
+		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_IgnoresPositionlessAndMedia pins the scope:
+// sections without positions never vote and are never deleted, and table /
+// figure sections are excluded on both sides even on a classified TOC page.
+func TestFilterPDFTOCFragmentPages_IgnoresPositionlessAndMedia(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	sections = append(sections,
+		deepdoctype.Section{Text: "Chapter 6"},
+		deepdoctype.Section{Text: "| a | b |", LayoutType: "table", Positions: sections[0].Positions},
+		deepdoctype.Section{Text: "figure caption debris", LayoutType: "figure", Positions: sections[0].Positions},
+	)
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{"Chapter 6", "| a | b |", "figure caption debris"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestRemovePDFTOC_FragmentedPageEndToEnd pins the wiring: removePDFTOC runs
+// the fragment-page pass after the legacy passes, so a headingless fragmented
+// TOC page is cleared through the same entry point production calls.
+func TestRemovePDFTOC_FragmentedPageEndToEnd(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+		"II",
+	}, 0, "text")
+	result := &deepdoctype.ParseResult{Sections: sections}
+	removePDFTOC(result)
+	if got, want := sectionTexts(result.Sections), []string{"II"}; !slices.Equal(got, want) {
+		t.Fatalf("sections = %v, want %v", got, want)
+	}
+}
