@@ -17,7 +17,7 @@ class TestVerificationResult:
             es_index="ragflow_test",
             ob_table="ragflow_test",
         )
-        
+
         assert result.es_index == "ragflow_test"
         assert result.ob_table == "ragflow_test"
         assert result.es_count == 0
@@ -30,7 +30,7 @@ class TestVerificationResult:
             es_index="test",
             ob_table="test",
         )
-        
+
         assert result.count_match is False
         assert result.count_diff == 0
         assert result.sample_size == 0
@@ -50,7 +50,7 @@ class TestVerificationResult:
             ob_count=1000,
             count_match=True,
         )
-        
+
         assert result.es_count == 1000
         assert result.ob_count == 1000
         assert result.count_match is True
@@ -85,10 +85,10 @@ class TestMigrationVerifier:
         mock_es_client.count_documents.return_value = 1000
         mock_ob_client.count_rows.return_value = 1000
         mock_es_client.get_sample_documents.return_value = []
-        
+
         verifier = MigrationVerifier(mock_es_client, mock_ob_client)
         result = verifier.verify("ragflow_test", "ragflow_test", sample_size=0)
-        
+
         assert result.es_count == 1000
         assert result.ob_count == 1000
         assert result.count_match is True
@@ -99,10 +99,10 @@ class TestMigrationVerifier:
         mock_es_client.count_documents.return_value = 1000
         mock_ob_client.count_rows.return_value = 950
         mock_es_client.get_sample_documents.return_value = []
-        
+
         verifier = MigrationVerifier(mock_es_client, mock_ob_client)
         result = verifier.verify("ragflow_test", "ragflow_test", sample_size=0)
-        
+
         assert result.es_count == 1000
         assert result.ob_count == 950
         assert result.count_match is False
@@ -111,70 +111,64 @@ class TestMigrationVerifier:
     def test_verify_samples_all_match(self, mock_es_client, mock_ob_client):
         """Test sample verification when all samples match."""
         # Setup ES samples
-        es_samples = [
-            {"_id": f"doc_{i}", "id": f"doc_{i}", "kb_id": "kb_001", "content_with_weight": f"content_{i}"}
-            for i in range(10)
-        ]
+        es_samples = [{"_id": f"doc_{i}", "id": f"doc_{i}", "kb_id": "kb_001", "content_with_weight": f"content_{i}"} for i in range(10)]
         mock_es_client.count_documents.return_value = 100
         mock_es_client.get_sample_documents.return_value = es_samples
-        
+
         # Setup OB to return matching documents
         def get_row(table, doc_id):
             return {"id": doc_id, "kb_id": "kb_001", "content_with_weight": f"content_{doc_id.split('_')[1]}"}
-        
+
         mock_ob_client.count_rows.return_value = 100
         mock_ob_client.get_row_by_id.side_effect = get_row
-        
+
         verifier = MigrationVerifier(mock_es_client, mock_ob_client)
         result = verifier.verify("ragflow_test", "ragflow_test", sample_size=10)
-        
+
         assert result.samples_verified == 10
         assert result.samples_matched == 10
         assert result.sample_match_rate == 1.0
 
     def test_verify_samples_some_missing(self, mock_es_client, mock_ob_client):
         """Test sample verification when some documents are missing."""
-        es_samples = [
-            {"_id": f"doc_{i}", "id": f"doc_{i}", "kb_id": "kb_001"}
-            for i in range(10)
-        ]
+        es_samples = [{"_id": f"doc_{i}", "id": f"doc_{i}", "kb_id": "kb_001"} for i in range(10)]
         mock_es_client.count_documents.return_value = 100
         mock_es_client.get_sample_documents.return_value = es_samples
-        
+
         # Only return some documents
         def get_row(table, doc_id):
             idx = int(doc_id.split("_")[1])
             if idx < 7:  # Only return first 7
                 return {"id": doc_id, "kb_id": "kb_001"}
             return None
-        
+
         mock_ob_client.count_rows.return_value = 100
         mock_ob_client.get_row_by_id.side_effect = get_row
-        
+
         verifier = MigrationVerifier(mock_es_client, mock_ob_client)
         result = verifier.verify("ragflow_test", "ragflow_test", sample_size=10)
-        
+
         assert result.samples_verified == 10
         assert result.samples_matched == 7
         assert len(result.missing_in_ob) == 3
 
     def test_verify_samples_data_mismatch(self, mock_es_client, mock_ob_client):
         """Test sample verification when data doesn't match."""
-        es_samples = [
-            {"_id": "doc_1", "id": "doc_1", "kb_id": "kb_001", "available_int": 1}
-        ]
+        es_samples = [{"_id": "doc_1", "id": "doc_1", "kb_id": "kb_001", "available_int": 1}]
         mock_es_client.count_documents.return_value = 100
         mock_es_client.get_sample_documents.return_value = es_samples
-        
+
         # Return document with different data
         mock_ob_client.count_rows.return_value = 100
         mock_ob_client.get_row_by_id.return_value = {
-            "id": "doc_1", "kb_id": "kb_002", "available_int": 0  # Different values
+            "id": "doc_1",
+            "kb_id": "kb_002",
+            "available_int": 0,  # Different values
         }
-        
+
         verifier = MigrationVerifier(mock_es_client, mock_ob_client)
         result = verifier.verify("ragflow_test", "ragflow_test", sample_size=1)
-        
+
         assert result.samples_verified == 1
         assert result.samples_matched == 0
         assert len(result.data_mismatches) == 1
@@ -188,56 +182,36 @@ class TestMigrationVerifier:
     def test_values_equal_array_columns(self, verifier):
         """Test value comparison for array columns."""
         # Array stored as JSON string in OB
-        assert verifier._values_equal(
-            "important_kwd",
-            ["key1", "key2"],
-            '["key1", "key2"]'
-        ) is True
-        
+        assert verifier._values_equal("important_kwd", ["key1", "key2"], '["key1", "key2"]') is True
+
         # Order shouldn't matter for arrays
-        assert verifier._values_equal(
-            "important_kwd",
-            ["key2", "key1"],
-            '["key1", "key2"]'
-        ) is True
+        assert verifier._values_equal("important_kwd", ["key2", "key1"], '["key1", "key2"]') is True
 
     def test_values_equal_json_columns(self, verifier):
         """Test value comparison for JSON columns."""
-        assert verifier._values_equal(
-            "metadata",
-            {"author": "John"},
-            '{"author": "John"}'
-        ) is True
+        assert verifier._values_equal("metadata", {"author": "John"}, '{"author": "John"}') is True
 
     def test_values_equal_kb_id_list(self, verifier):
         """Test kb_id comparison when ES has list."""
         # ES sometimes stores kb_id as list
-        assert verifier._values_equal(
-            "kb_id",
-            ["kb_001", "kb_002"],
-            "kb_001"
-        ) is True
+        assert verifier._values_equal("kb_id", ["kb_001", "kb_002"], "kb_001") is True
 
     def test_values_equal_content_with_weight_dict(self, verifier):
         """Test content_with_weight comparison when OB has JSON string."""
-        assert verifier._values_equal(
-            "content_with_weight",
-            {"text": "content", "weight": 1.0},
-            '{"text": "content", "weight": 1.0}'
-        ) is True
+        assert verifier._values_equal("content_with_weight", {"text": "content", "weight": 1.0}, '{"text": "content", "weight": 1.0}') is True
 
     def test_determine_result_passed(self, mock_es_client, mock_ob_client):
         """Test result determination for passed verification."""
         mock_es_client.count_documents.return_value = 1000
         mock_ob_client.count_rows.return_value = 1000
-        
+
         es_samples = [{"_id": f"doc_{i}", "id": f"doc_{i}", "kb_id": "kb_001"} for i in range(100)]
         mock_es_client.get_sample_documents.return_value = es_samples
         mock_ob_client.get_row_by_id.side_effect = lambda t, d: {"id": d, "kb_id": "kb_001"}
-        
+
         verifier = MigrationVerifier(mock_es_client, mock_ob_client)
         result = verifier.verify("test", "test", sample_size=100)
-        
+
         assert result.passed is True
         assert "PASSED" in result.message
 
@@ -246,10 +220,10 @@ class TestMigrationVerifier:
         mock_es_client.count_documents.return_value = 1000
         mock_ob_client.count_rows.return_value = 500  # Big difference
         mock_es_client.get_sample_documents.return_value = []
-        
+
         verifier = MigrationVerifier(mock_es_client, mock_ob_client)
         result = verifier.verify("test", "test", sample_size=0)
-        
+
         assert result.passed is False
         assert "FAILED" in result.message
 
@@ -257,14 +231,14 @@ class TestMigrationVerifier:
         """Test result determination when sample verification fails."""
         mock_es_client.count_documents.return_value = 100
         mock_ob_client.count_rows.return_value = 100
-        
+
         es_samples = [{"_id": f"doc_{i}", "id": f"doc_{i}"} for i in range(10)]
         mock_es_client.get_sample_documents.return_value = es_samples
         mock_ob_client.get_row_by_id.return_value = None  # All missing
-        
+
         verifier = MigrationVerifier(mock_es_client, mock_ob_client)
         result = verifier.verify("test", "test", sample_size=10)
-        
+
         assert result.passed is False
 
     def test_generate_report(self, verifier):
@@ -283,9 +257,9 @@ class TestMigrationVerifier:
             passed=True,
             message="Verification PASSED",
         )
-        
+
         report = verifier.generate_report(result)
-        
+
         assert "ragflow_test" in report
         assert "1,000" in report
         assert "PASSED" in report
@@ -308,9 +282,9 @@ class TestMigrationVerifier:
             passed=False,
             message="Verification FAILED",
         )
-        
+
         report = verifier.generate_report(result)
-        
+
         assert "Missing in OceanBase" in report
         assert "doc_1" in report
         assert "FAILED" in report
@@ -327,20 +301,13 @@ class TestMigrationVerifier:
             samples_verified=10,
             samples_matched=8,
             sample_match_rate=0.8,
-            data_mismatches=[
-                {
-                    "id": "doc_1",
-                    "differences": [
-                        {"field": "kb_id", "es_value": "kb_001", "ob_value": "kb_002"}
-                    ]
-                }
-            ],
+            data_mismatches=[{"id": "doc_1", "differences": [{"field": "kb_id", "es_value": "kb_001", "ob_value": "kb_002"}]}],
             passed=False,
             message="Verification FAILED",
         )
-        
+
         report = verifier.generate_report(result)
-        
+
         assert "Data Mismatches" in report
         assert "doc_1" in report
         assert "kb_id" in report

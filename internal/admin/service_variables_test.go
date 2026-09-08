@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"testing"
 )
@@ -34,7 +35,7 @@ func TestValidateSystemSettingValue(t *testing.T) {
 		{name: "bool accepts true", dataType: "bool", value: "true"},
 		{name: "bool accepts false", dataType: "bool", value: "false"},
 		{name: "bool rejects non bool", dataType: "bool", value: "yes", wantError: true},
-		{name: "json accepts object", dataType: "json", value: `{"endpoint":"http://localhost:9385"}`},
+		{name: "json accepts object", dataType: "json", value: `{"endpoint":"http://sandbox-executor-manager:9385"}`},
 		{name: "json rejects invalid", dataType: "json", value: "{", wantError: true},
 		{name: "unknown type rejects", dataType: "float", value: "1.2", wantError: true},
 	}
@@ -42,7 +43,7 @@ func TestValidateSystemSettingValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			setting := entity.SystemSettings{Name: "test.setting", DataType: tt.dataType}
-			err := validateSystemSettingValue(setting, tt.value)
+			err := common.ValidateSystemSettingValue(setting, tt.value)
 			if (err != nil) != tt.wantError {
 				t.Fatalf("validateSystemSettingValue() error = %v, wantError %v", err, tt.wantError)
 			}
@@ -58,7 +59,7 @@ func TestInferSystemSettingDataType(t *testing.T) {
 	}
 
 	for name, want := range tests {
-		if got := inferSystemSettingDataType(name); got != want {
+		if got := common.InferSystemSettingDataType(name); got != want {
 			t.Fatalf("inferSystemSettingDataType(%q) = %q, want %q", name, got, want)
 		}
 	}

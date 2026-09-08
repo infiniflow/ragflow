@@ -13,16 +13,16 @@ import (
 
 // OptimizedEngineConfig configures the optimized Pregel engine.
 type OptimizedEngineConfig struct {
-	BumpStep          bool
+	BumpStep           bool
 	FinishNotification bool
-	TaskPriority      bool
+	TaskPriority       bool
 }
 
 // PregelOptimizedEngine extends Engine with Python-style Pregel algorithm optimizations.
 type PregelOptimizedEngine struct {
 	*Engine
 	config            *OptimizedEngineConfig
-	taskPriorityQueue  []*TaskWithPriority
+	taskPriorityQueue []*TaskWithPriority
 	stepQueue         map[int][]string
 	seenChannels      map[string]map[string]bool
 	readyChannels     map[string]bool
@@ -44,16 +44,16 @@ type TaskWithPriority struct {
 func NewPregelOptimizedEngine(baseEngine *Engine, config *OptimizedEngineConfig) *PregelOptimizedEngine {
 	if config == nil {
 		config = &OptimizedEngineConfig{
-			BumpStep:          true,
+			BumpStep:           true,
 			FinishNotification: true,
-			TaskPriority:      true,
+			TaskPriority:       true,
 		}
 	}
-	
+
 	return &PregelOptimizedEngine{
-		Engine:             baseEngine,
+		Engine:            baseEngine,
 		config:            config,
-		taskPriorityQueue:  make([]*TaskWithPriority, 0, 100),
+		taskPriorityQueue: make([]*TaskWithPriority, 0, 100),
 		stepQueue:         make(map[int][]string),
 		seenChannels:      make(map[string]map[string]bool),
 		readyChannels:     make(map[string]bool),
@@ -74,22 +74,22 @@ func (e *PregelOptimizedEngine) BumpStep(
 ) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	
+
 	// Mark task as finished
 	e.finishedTasks[taskName] = true
-	
+
 	// Find dependent tasks
 	dependencies, exists := e.taskDependencies[taskName]
 	if !exists || len(dependencies) == 0 {
 		// No dependent tasks, nothing to bump
 		return nil
 	}
-	
+
 	for _, depTask := range dependencies {
 		// Check if dependent task has seen all updated channels
 		ready := true
 		seenChannels := e.seenChannels[depTask]
-		
+
 		for channel := range updatedChannels {
 			if seenChannels != nil && !seenChannels[channel] {
 				// This dependent task needs to be bumped
@@ -97,11 +97,11 @@ func (e *PregelOptimizedEngine) BumpStep(
 				break
 			}
 		}
-		
+
 		if ready {
 			// Bump task to current step
 			e.stepQueue[completedStep+1] = append(e.stepQueue[completedStep+1], depTask)
-			
+
 			// Mark channels as seen for this task
 			if e.seenChannels[depTask] == nil {
 				e.seenChannels[depTask] = make(map[string]bool)
@@ -111,7 +111,7 @@ func (e *PregelOptimizedEngine) BumpStep(
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -120,24 +120,24 @@ func (e *PregelOptimizedEngine) BumpStep(
 func (e *PregelOptimizedEngine) FinishNotification(
 	ctx context.Context,
 	taskName string,
-	result interface{},
+	result any,
 	err error,
 	completedStep int,
 ) {
 	if !e.config.FinishNotification {
 		return
 	}
-	
+
 	// Build finish notification
 	notification := &FinishNotification{
-		TaskName:      taskName,
-		Output:        result,
-		Error:         err,
-		Step:          completedStep,
-		Timestamp:     time.Now(),
-		Namespace:      e.getNamespace(ctx),
+		TaskName:  taskName,
+		Output:    result,
+		Error:     err,
+		Step:      completedStep,
+		Timestamp: time.Now(),
+		Namespace: e.getNamespace(ctx),
 	}
-	
+
 	// Send to stream manager if available
 	// Note: This requires the Engine to have access to streamManager
 	// For now, we'll just log it
@@ -146,7 +146,7 @@ func (e *PregelOptimizedEngine) FinishNotification(
 	} else {
 		fmt.Printf("[FinishNotification] Task %s completed at step %d\n", taskName, completedStep)
 	}
-	
+
 	_ = notification // Mark as used to avoid unused variable error
 }
 
@@ -205,7 +205,7 @@ func (e *PregelOptimizedEngine) OptimizedApplyWrites(
 	})
 
 	// Group and apply writes
-	writesByChannel := make(map[string][]interface{})
+	writesByChannel := make(map[string][]any)
 
 	for _, result := range results {
 		if result.Err != nil {
@@ -233,7 +233,7 @@ func (e *PregelOptimizedEngine) OptimizedApplyWrites(
 			continue
 		}
 
-		filtered := make([]interface{}, 0, len(values))
+		filtered := make([]any, 0, len(values))
 		for _, v := range values {
 			if v != nil {
 				filtered = append(filtered, v)
@@ -290,11 +290,11 @@ func (e *PregelOptimizedEngine) OptimizedApplyWrites(
 func (e *PregelOptimizedEngine) AddTaskDependency(fromTask, toTask string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	
+
 	if e.taskDependencies[toTask] == nil {
 		e.taskDependencies[toTask] = make([]string, 0)
 	}
-	
+
 	// Add dependency (fromTask depends on toTask)
 	e.taskDependencies[toTask] = append(e.taskDependencies[toTask], fromTask)
 }
@@ -303,7 +303,7 @@ func (e *PregelOptimizedEngine) AddTaskDependency(fromTask, toTask string) {
 func (e *PregelOptimizedEngine) GetTaskDependencies(taskName string) []string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	if deps, exists := e.taskDependencies[taskName]; exists {
 		return append([]string{}, deps...)
 	}
@@ -314,20 +314,20 @@ func (e *PregelOptimizedEngine) GetTaskDependencies(taskName string) []string {
 func (e *PregelOptimizedEngine) IsTaskReady(taskName string) bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	// Check if task has been seen all required channels
 	// This is a simplified check - in practice you'd check specific channels
 	if len(e.taskDependencies[taskName]) == 0 {
 		return true
 	}
-	
+
 	// Check if any dependencies are still unfinished
 	for _, dep := range e.taskDependencies[taskName] {
 		if !e.finishedTasks[dep] {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -340,12 +340,12 @@ func (e *PregelOptimizedEngine) getNamespace(ctx context.Context) string {
 
 // FinishNotification represents a task completion notification.
 type FinishNotification struct {
-	TaskName  string      `json:"task_name"`
-	Output    interface{} `json:"output"`
-	Error      error       `json:"error,omitempty"`
-	Step       int         `json:"step"`
-	Timestamp  time.Time   `json:"timestamp"`
-	Namespace  string      `json:"namespace,omitempty"`
+	TaskName  string    `json:"task_name"`
+	Output    any       `json:"output"`
+	Error     error     `json:"error,omitempty"`
+	Step      int       `json:"step"`
+	Timestamp time.Time `json:"timestamp"`
+	Namespace string    `json:"namespace,omitempty"`
 }
 
 // TaskPriority represents task execution priority.
@@ -370,12 +370,12 @@ func (tp *TaskPriority) Compare(other *TaskPriority) int {
 	if tp.Priority != other.Priority {
 		return tp.Priority - other.Priority
 	}
-	
+
 	// Then by path length
 	if len(tp.Path) != len(other.Path) {
 		return len(tp.Path) - len(other.Path)
 	}
-	
+
 	// Finally by path lexicographically
 	for i := 0; i < len(tp.Path); i++ {
 		if tp.Path[i] != other.Path[i] {
@@ -385,7 +385,7 @@ func (tp *TaskPriority) Compare(other *TaskPriority) int {
 			return 1
 		}
 	}
-	
+
 	return 0
 }
 
@@ -396,8 +396,8 @@ func (tp *TaskPriority) Compare(other *TaskPriority) int {
 // callers to integrate into custom execution flows.
 func (e *PregelOptimizedEngine) OptimizedRun(
 	ctx context.Context,
-	input interface{},
-) (interface{}, error) {
+	input any,
+) (any, error) {
 	return e.RunSync(ctx, input)
 }
 
@@ -411,17 +411,17 @@ func (e *PregelOptimizedEngine) ExecuteTaskWithPriority(
 	// Mark task as executing
 	e.mu.Lock()
 	taskWithPriority := &TaskWithPriority{
-		Task:     task,
+		Task:      task,
 		Priority:  priority,
 		Namespace: namespace,
 		Path:      []string{namespace, task.Name},
 	}
 	e.taskPriorityQueue = append(e.taskPriorityQueue, taskWithPriority)
 	e.mu.Unlock()
-	
-		// Execute task
-		output, err := task.Func(ctx, nil)
-	
+
+	// Execute task
+	output, err := task.Func(ctx, nil)
+
 	return &TaskResult{
 		Name:   task.Name,
 		Output: output,
@@ -433,12 +433,12 @@ func (e *PregelOptimizedEngine) ExecuteTaskWithPriority(
 func (e *PregelOptimizedEngine) GetNextPriorityTask() *TaskWithPriority {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	
+
 	if len(e.taskPriorityQueue) == 0 {
 		return nil
 	}
-	
-		// Sort by priority (could use heap for better performance)
+
+	// Sort by priority (could use heap for better performance)
 	sort.Slice(e.taskPriorityQueue, func(i, j int) bool {
 		tp1 := &TaskPriority{
 			Name:     e.taskPriorityQueue[i].Name,
@@ -452,15 +452,15 @@ func (e *PregelOptimizedEngine) GetNextPriorityTask() *TaskWithPriority {
 		}
 		return tp1.Compare(tp2) < 0
 	})
-	
+
 	// Get first task
 	if len(e.taskPriorityQueue) == 0 {
 		return nil
 	}
-	
+
 	task := e.taskPriorityQueue[0]
 	e.taskPriorityQueue = e.taskPriorityQueue[1:]
-	
+
 	return task
 }
 
@@ -468,7 +468,7 @@ func (e *PregelOptimizedEngine) GetNextPriorityTask() *TaskWithPriority {
 func (e *PregelOptimizedEngine) ClearFinishedTasks() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	
+
 	e.finishedTasks = make(map[string]bool)
 }
 
@@ -476,12 +476,12 @@ func (e *PregelOptimizedEngine) ClearFinishedTasks() {
 func (e *PregelOptimizedEngine) GetFinishedTasks() []string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	tasks := make([]string, 0, len(e.finishedTasks))
 	for name := range e.finishedTasks {
 		tasks = append(tasks, name)
 	}
-	
+
 	return tasks
 }
 
@@ -489,7 +489,7 @@ func (e *PregelOptimizedEngine) GetFinishedTasks() []string {
 func (e *PregelOptimizedEngine) Reset() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	
+
 	e.taskPriorityQueue = make([]*TaskWithPriority, 0, 100)
 	e.stepQueue = make(map[int][]string)
 	e.seenChannels = make(map[string]map[string]bool)
@@ -552,7 +552,7 @@ func (e *PregelOptimizedEngine) getDependencies(taskName string) []string {
 func (e *PregelOptimizedEngine) hasSeenChannel(taskName, channel string) bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	if channels, exists := e.seenChannels[taskName]; exists {
 		return channels[channel]
 	}
@@ -581,7 +581,7 @@ func (e *PregelOptimizedEngine) getTriggersForNode(nodeName string) map[string]s
 func (e *PregelOptimizedEngine) getCurrentNamespace() string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	// Simplified - check config for namespace
 	if e.Engine != nil && e.Engine.config != nil {
 		if ns, ok := e.Engine.config.Get("namespace"); ok {
@@ -598,10 +598,10 @@ func (e *PregelOptimizedEngine) getCurrentNamespace() string {
 // which handles entry points, conditional edges, regular edges, and branches.
 func (e *PregelOptimizedEngine) PrepareNextTasksOptimized(
 	ctx context.Context,
-	registry interface{},
+	registry any,
 	visited map[string]bool,
 	trigger string,
-	currentState interface{},
+	currentState any,
 ) ([]*Task, map[string]struct{}, error) {
 	if e.Engine == nil || e.Engine.graph == nil {
 		return nil, nil, fmt.Errorf("PrepareNextTasksOptimized: engine not initialized")
@@ -610,5 +610,5 @@ func (e *PregelOptimizedEngine) PrepareNextTasksOptimized(
 	if !ok {
 		return nil, nil, fmt.Errorf("PrepareNextTasksOptimized: invalid registry type %T", registry)
 	}
-	return e.prepareNextTasks(reg, visited, trigger, currentState)
+	return e.prepareNextTasks(ctx, reg, visited, trigger, currentState)
 }

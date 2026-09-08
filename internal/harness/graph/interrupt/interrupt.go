@@ -15,6 +15,14 @@ import (
 // contextKey is the key for interrupt context in context.Context.
 type contextKey struct{}
 
+// SubGraphStateCtxKey is the context key for sub-graph checkpoint state
+// (e.g. Loop iteration, currentInput). Defined here so that both the
+// engine (pregel) and the sub-graph node (graph/loop.go) can access it
+// without import cycles.
+type SubGraphStateCtxKeyType struct{}
+
+var SubGraphStateCtxKey = SubGraphStateCtxKeyType{}
+
 // WithInterruptContext creates a new context with interrupt support.
 func WithInterruptContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, contextKey{}, &interruptContext{
@@ -213,7 +221,7 @@ func GetInterruptIndex(ctx context.Context) int {
 }
 
 // AppendResumeValue appends a resume value to the context.
-func AppendResumeValue(ctx context.Context, v interface{}) {
+func AppendResumeValue(ctx context.Context, value interface{}) {
 	var ic *interruptContext
 	if ctx != nil {
 		ic = GetInterruptContext(ctx)
@@ -221,7 +229,7 @@ func AppendResumeValue(ctx context.Context, v interface{}) {
 	if ic == nil {
 		ic = globalContext
 	}
-	ic.appendResumeValue(v)
+	ic.appendResumeValue(value)
 }
 
 // GetNullResume gets the null resume value from context.

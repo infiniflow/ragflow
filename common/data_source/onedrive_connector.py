@@ -27,8 +27,16 @@ _GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
 
 # File extensions we support for ingestion
 _SUPPORTED_EXTENSIONS = {
-    ".pdf", ".docx", ".doc", ".xlsx", ".xls",
-    ".pptx", ".ppt", ".txt", ".md", ".csv",
+    ".pdf",
+    ".docx",
+    ".doc",
+    ".xlsx",
+    ".xls",
+    ".pptx",
+    ".ppt",
+    ".txt",
+    ".md",
+    ".csv",
 }
 
 
@@ -49,6 +57,7 @@ def _normalize_folder_path(folder_path: str | None) -> str | None:
 
 class OneDriveCheckpoint(ConnectorCheckpoint):
     """OneDrive-specific checkpoint tracking delta links per drive."""
+
     delta_links: dict[str, str] | None = None
 
 
@@ -71,6 +80,13 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
         self._access_token: str | None = None
         self._tenant_id: str | None = None
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "OneDriveConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(batch_size=batch_size, folder_path=config.get("folder_path") or None)
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     # ------------------------------------------------------------------
     # Auth
     # ------------------------------------------------------------------
@@ -81,9 +97,7 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
         client_secret = credentials.get("client_secret")
 
         if not all([tenant_id, client_id, client_secret]):
-            raise ConnectorMissingCredentialError(
-                "OneDrive credentials are incomplete (tenant_id, client_id, client_secret required)"
-            )
+            raise ConnectorMissingCredentialError("OneDrive credentials are incomplete (tenant_id, client_id, client_secret required)")
 
         self._tenant_id = tenant_id
 
@@ -96,9 +110,7 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
 
         if "access_token" not in result:
             error = result.get("error_description", result.get("error", "unknown"))
-            raise ConnectorMissingCredentialError(
-                f"Failed to acquire OneDrive access token: {error}"
-            )
+            raise ConnectorMissingCredentialError(f"Failed to acquire OneDrive access token: {error}")
 
         self._access_token = result["access_token"]
         return None
@@ -115,24 +127,15 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
         # Requires Files.Read.All.
         resp = self._get(f"{_GRAPH_BASE}/drives?$top=1")
         if resp.status_code == 401:
-            raise ConnectorMissingCredentialError(
-                "OneDrive access token is invalid or expired."
-            )
+            raise ConnectorMissingCredentialError("OneDrive access token is invalid or expired.")
         if resp.status_code == 403:
-            raise InsufficientPermissionsError(
-                "The service principal lacks the 'Files.Read.All' permission "
-                "required by the OneDrive connector."
-            )
+            raise InsufficientPermissionsError("The service principal lacks the 'Files.Read.All' permission required by the OneDrive connector.")
         if not resp.ok:
-            raise UnexpectedValidationError(
-                f"OneDrive validation failed (HTTP {resp.status_code}): {resp.text[:200]}"
-            )
+            raise UnexpectedValidationError(f"OneDrive validation failed (HTTP {resp.status_code}): {resp.text[:200]}")
 
         data = resp.json()
         if "value" not in data:
-            raise ConnectorValidationError(
-                "Unexpected response format from Microsoft Graph /drives."
-            )
+            raise ConnectorValidationError("Unexpected response format from Microsoft Graph /drives.")
 
     # ------------------------------------------------------------------
     # Checkpoint helpers
@@ -151,9 +154,7 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
     # Core data loading
     # ------------------------------------------------------------------
 
-    def poll_source(
-        self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
-    ) -> Any:
+    def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> Any:
         """Return documents modified at or after *start* (epoch seconds).
 
         Kept for callers that prefer the time-window interface; internally
@@ -252,15 +253,11 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
                 url,
                 body_snippet,
             )
-            raise UnexpectedValidationError(
-                f"OneDrive Graph request failed ({context}): HTTP {resp.status_code} {body_snippet}"
-            )
+            raise UnexpectedValidationError(f"OneDrive Graph request failed ({context}): HTTP {resp.status_code} {body_snippet}")
         try:
             return resp.json()
         except ValueError as exc:
-            raise UnexpectedValidationError(
-                f"OneDrive Graph response is not JSON ({context}): {exc}"
-            )
+            raise UnexpectedValidationError(f"OneDrive Graph response is not JSON ({context}): {exc}")
 
     def _list_drive_ids(self) -> list[str]:
         """Return all drive IDs visible to the service principal."""
@@ -324,9 +321,7 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
                     modified_ts: float | None = None
                     if modified_str:
                         try:
-                            dt = datetime.fromisoformat(
-                                modified_str.replace("Z", "+00:00")
-                            )
+                            dt = datetime.fromisoformat(modified_str.replace("Z", "+00:00"))
                             modified_ts = dt.timestamp()
                         except ValueError:
                             pass
@@ -335,11 +330,7 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
                     if since_epoch and modified_ts and modified_ts < since_epoch:
                         continue
 
-                    doc_updated_at = (
-                        datetime.fromtimestamp(modified_ts, tz=timezone.utc)
-                        if modified_ts
-                        else datetime.now(timezone.utc)
-                    )
+                    doc_updated_at = datetime.fromtimestamp(modified_ts, tz=timezone.utc) if modified_ts else datetime.now(timezone.utc)
                     doc = Document(
                         id=item["id"],
                         source="onedrive",
@@ -351,11 +342,7 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
                         metadata={
                             "drive_id": drive_id,
                             "web_url": item.get("webUrl", ""),
-                            "created_by": (
-                                item.get("createdBy", {})
-                                .get("user", {})
-                                .get("displayName", "")
-                            ),
+                            "created_by": (item.get("createdBy", {}).get("user", {}).get("displayName", "")),
                         },
                     )
                     batch.append(doc)
