@@ -58,7 +58,7 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 	datasetID := "kb-" + suffix
 	defer cleanupChunkStore(t, engine, tableName, "")
 
-	if err := engine.CreateChunkStore(ctx, tableName, datasetID, 2, "naive"); err != nil {
+	if err := engine.CreateChunkStore(ctx, tableName, datasetID, 2, "naive", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := engine.InsertChunks(ctx, []map[string]interface{}{{
@@ -127,7 +127,7 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 	memoryA := "memory-a-" + suffix
 	memoryB := "memory-b-" + suffix
 	defer cleanupChunkStore(t, engine, memoryTable, "")
-	if err := engine.CreateChunkStore(ctx, memoryTable, memoryA, 2, ""); err != nil {
+	if err := engine.CreateChunkStore(ctx, memoryTable, memoryA, 2, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := engine.InsertChunks(ctx, []map[string]interface{}{

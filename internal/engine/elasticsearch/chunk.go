@@ -51,7 +51,7 @@ var jsonIterator = sonic.Config{
 var memoryMessageVectorFieldRE = regexp.MustCompile(`^q_\d+_vec$`)
 
 // CreateChunkStore creates an index
-func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	if baseName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
