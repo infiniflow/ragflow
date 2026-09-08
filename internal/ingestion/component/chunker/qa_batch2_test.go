@@ -53,12 +53,12 @@ func TestQAChunker_DefaultLangIsChinese(t *testing.T) {
 	if len(chunks) == 0 {
 		t.Fatalf("no chunks produced")
 	}
-	cw := chunks[0]["content_with_weight"].(string)
-	if !contains(cw, "问题：") || !contains(cw, "回答：") {
-		t.Errorf("empty lang should default to Chinese prefixes, got %q", cw)
+	text := qaChunkText(t, chunks[0])
+	if !contains(text, "问题：") || !contains(text, "回答：") {
+		t.Errorf("empty lang should default to Chinese prefixes, got %q", text)
 	}
-	if contains(cw, "Question:") || contains(cw, "Answer:") {
-		t.Errorf("empty lang must not use English prefixes, got %q", cw)
+	if contains(text, "Question:") || contains(text, "Answer:") {
+		t.Errorf("empty lang must not use English prefixes, got %q", text)
 	}
 }
 
@@ -131,9 +131,9 @@ func TestQAChunker_CarriesImageAndPositions(t *testing.T) {
 		t.Errorf("QA chunk lost upstream _pdf_positions")
 	}
 	// The prefix-stripped content must still be present.
-	cw, _ := c["content_with_weight"].(string)
-	if !contains(cw, "A") {
-		t.Errorf("QA content missing answer: %q", cw)
+	text := qaChunkText(t, c)
+	if !contains(text, "A") {
+		t.Errorf("QA content missing answer: %q", text)
 	}
 }
 

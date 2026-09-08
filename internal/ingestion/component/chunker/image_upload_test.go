@@ -229,7 +229,7 @@ func TestImageUploadDecorator_EndToEnd(t *testing.T) {
 		"kb_id":  testKBID,
 		"doc_id": testDocID,
 		"chunks": []map[string]any{
-			{"content_with_weight": "a cropped figure", "image": "data:image/png;base64," + pngBase64},
+			{"text": "a cropped figure", "image": "data:image/png;base64," + pngBase64},
 		},
 	}
 	out, err := decorated.Invoke(context.Background(), nil, inputs)
@@ -256,7 +256,7 @@ func TestImageUploadDecorator_EndToEnd(t *testing.T) {
 	}
 }
 
-func TestImageUploadDecorator_UsesContentWithWeightForChunkID(t *testing.T) {
+func TestImageUploadDecorator_UsesQAChunkTextForChunkID(t *testing.T) {
 	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatalf("NewQAChunker: %v", err)
@@ -277,36 +277,19 @@ func TestImageUploadDecorator_UsesContentWithWeightForChunkID(t *testing.T) {
 		t.Fatalf("chunks = %#v, want two Q&A chunks", out["chunks"])
 	}
 
-	want := []string{
-		common.ChunkID(testDocID, "Question: Q1\tAnswer: A1"),
-		common.ChunkID(testDocID, "Question: Q2\tAnswer: A2"),
+	wantText := []string{
+		"Question: Q1\tAnswer: A1",
+		"Question: Q2\tAnswer: A2",
 	}
 	for i, chunk := range chunks {
-		if got, _ := chunk["id"].(string); got != want[i] {
-			t.Errorf("chunk %d id = %q, want %q", i, got, want[i])
+		text := qaChunkText(t, chunk)
+		if text != wantText[i] {
+			t.Errorf("chunk %d text = %q, want %q", i, text, wantText[i])
 		}
-	}
-}
-
-func TestImageUploadDecorator_UsesContentWithWeightWhenTextIsNotString(t *testing.T) {
-	decorated := &imageUploadDecorator{inner: &stubChunker{chunks: []map[string]any{{
-		"text":                []any{"invalid"},
-		"content_with_weight": "Question: Q1\tAnswer: A1",
-	}}}}
-
-	out, err := decorated.Invoke(context.Background(), nil, map[string]any{
-		"doc_id": testDocID,
-	})
-	if err != nil {
-		t.Fatalf("decorated Invoke: %v", err)
-	}
-	chunks, ok := out["chunks"].([]map[string]any)
-	if !ok || len(chunks) != 1 {
-		t.Fatalf("chunks = %#v, want one chunk", out["chunks"])
-	}
-	want := common.ChunkID(testDocID, "Question: Q1\tAnswer: A1")
-	if got, _ := chunks[0]["id"].(string); got != want {
-		t.Errorf("id = %q, want %q", got, want)
+		wantID := common.ChunkID(testDocID, wantText[i])
+		if got, _ := chunk["id"].(string); got != wantID {
+			t.Errorf("chunk %d id = %q, want %q", i, got, wantID)
+		}
 	}
 }
 
@@ -360,7 +343,7 @@ func TestImageUploadDecorator_DebugSkipsUpload(t *testing.T) {
 		"kb_id":  "", // debug mode: no KB -> no upload
 		"doc_id": testDocID,
 		"chunks": []map[string]any{
-			{"content_with_weight": "a cropped figure", "image": "data:image/png;base64," + pngBase64},
+			{"text": "a cropped figure", "image": "data:image/png;base64," + pngBase64},
 		},
 	}
 	out, err := decorated.Invoke(context.Background(), nil, inputs)
@@ -403,7 +386,7 @@ func TestImageUploadDecorator_DebugCapsChunks(t *testing.T) {
 	src := make([]map[string]any, 0, 6)
 	for i := 0; i < 6; i++ {
 		src = append(src, map[string]any{
-			"content_with_weight": fmt.Sprintf("chunk-%d", i),
+			"text": fmt.Sprintf("chunk-%d", i),
 		})
 	}
 	decorated := &imageUploadDecorator{inner: &stubChunker{chunks: src}}
@@ -430,8 +413,8 @@ func TestImageUploadDecorator_DebugCapsChunks(t *testing.T) {
 	}
 	for i, ck := range chunks {
 		want := fmt.Sprintf("chunk-%d", i)
-		if got, _ := ck["content_with_weight"].(string); got != want {
-			t.Errorf("chunks[%d].content_with_weight = %q, want %q (wrong chunk kept after truncation)", i, got, want)
+		if got, _ := ck["text"].(string); got != want {
+			t.Errorf("chunks[%d].text = %q, want %q (wrong chunk kept after truncation)", i, got, want)
 		}
 	}
 }
@@ -443,7 +426,7 @@ func TestImageUploadDecorator_NoCapKeepsAll(t *testing.T) {
 	src := make([]map[string]any, 0, 5)
 	for i := 0; i < 5; i++ {
 		src = append(src, map[string]any{
-			"content_with_weight": fmt.Sprintf("chunk-%d", i),
+			"text": fmt.Sprintf("chunk-%d", i),
 		})
 	}
 	decorated := &imageUploadDecorator{inner: &stubChunker{chunks: src}}

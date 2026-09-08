@@ -22,7 +22,7 @@
 //   - HTML (xls, xlsx) → table-based Q&A (first two columns)
 //   - JSON (pdf, docx, xlsx) → text sections via delimiter; table items via extractQATable
 //
-// Every Q&A pair becomes a single chunk with content_with_weight
+// Every Q&A pair becomes a single chunk with text
 // formatted as "Question: {q}\tAnswer: {a}".
 package chunker
 
@@ -132,10 +132,10 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 			answer = renderMarkdown(answer)
 		}
 		chunk := schema.ChunkDoc{
-			ContentWithWeight: fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
-			DocType:           "text",
-			ContentLtks:       contentLTKS,
-			ContentSmLtks:     contentSMLTKS,
+			Text:          fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
+			DocType:       "text",
+			ContentLtks:   contentLTKS,
+			ContentSmLtks: contentSMLTKS,
 		}
 		//
 		// index), image id + coordinates carried from the source item.
@@ -426,7 +426,7 @@ func detectDelimiter(lines []string) string {
 func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 	var pairs []qaPair
 	for _, item := range items {
-		txt, _ := itemText(item)
+		txt := item.Text
 		if txt == "" {
 			continue
 		}

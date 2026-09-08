@@ -3,8 +3,6 @@ package indexdoc
 import (
 	"testing"
 	"time"
-
-	"ragflow/internal/common"
 )
 
 // =============================================================================
@@ -107,46 +105,6 @@ func TestProcessChunksForPipeline_GeneratesID(t *testing.T) {
 	id, ok := chunks[0]["id"].(string)
 	if !ok || id == "" {
 		t.Errorf("id should be non-empty string, got %v", chunks[0]["id"])
-	}
-}
-
-func TestProcessChunksForPipeline_GeneratesIDFromContentWithWeight(t *testing.T) {
-	chunks := []map[string]any{{"content_with_weight": "Question: Q1\tAnswer: A1"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
-	if err != nil {
-		t.Fatalf("ProcessChunksForPipeline: %v", err)
-	}
-	want := common.ChunkID("doc-1", "Question: Q1\tAnswer: A1")
-	if got, _ := chunks[0]["id"].(string); got != want {
-		t.Errorf("id = %q, want %q", got, want)
-	}
-}
-
-func TestProcessChunksForPipeline_UsesEmptyContentIDWhenNoStringContentAvailable(t *testing.T) {
-	for _, test := range []struct {
-		name  string
-		chunk map[string]any
-	}{
-		{
-			name:  "both fields empty",
-			chunk: map[string]any{"text": "", "content_with_weight": ""},
-		},
-		{
-			name:  "content with weight is not a string",
-			chunk: map[string]any{"content_with_weight": []any{"invalid"}},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			chunks := []map[string]any{test.chunk}
-			_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
-			if err != nil {
-				t.Fatalf("ProcessChunksForPipeline: %v", err)
-			}
-			want := common.ChunkID("doc-1", "")
-			if got, _ := chunks[0]["id"].(string); got != want {
-				t.Errorf("id = %q, want %q", got, want)
-			}
-		})
 	}
 }
 

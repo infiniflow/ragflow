@@ -55,10 +55,9 @@ func TestQAChunker_DelimiterTab(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	chunk := chunks[0]
-	cww, _ := chunk["content_with_weight"].(string)
-	if cww != "Question: What is Go?\tAnswer: Go is a programming language." {
-		t.Fatalf("unexpected content: %q", cww)
+	text := qaChunkText(t, chunks[0])
+	if text != "Question: What is Go?\tAnswer: Go is a programming language." {
+		t.Fatalf("unexpected text: %q", text)
 	}
 }
 
@@ -80,10 +79,9 @@ func TestQAChunker_DelimiterComma(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	chunk := chunks[0]
-	cww, _ := chunk["content_with_weight"].(string)
-	if cww != "Question: What is Rust?\tAnswer: Rust is a systems language." {
-		t.Fatalf("unexpected content: %q", cww)
+	text := qaChunkText(t, chunks[0])
+	if text != "Question: What is Rust?\tAnswer: Rust is a systems language." {
+		t.Fatalf("unexpected text: %q", text)
 	}
 }
 
@@ -165,9 +163,9 @@ func TestQAChunker_CSVStrictPairAcceptsTwoCells(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
-	if cww != "Question: question\tAnswer: answer" {
-		t.Fatalf("unexpected content: %q", cww)
+	text := qaChunkText(t, chunks[0])
+	if text != "Question: question\tAnswer: answer" {
+		t.Fatalf("unexpected text: %q", text)
 	}
 }
 
@@ -192,9 +190,9 @@ func TestQAChunker_NonCSVHTMLThreeCellsKeepsFirstTwo(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
-	if cww != "Question: question\tAnswer: extra" {
-		t.Fatalf("unexpected content: %q", cww)
+	text := qaChunkText(t, chunks[0])
+	if text != "Question: question\tAnswer: extra" {
+		t.Fatalf("unexpected text: %q", text)
 	}
 }
 
@@ -213,9 +211,9 @@ func TestQAChunker_RmQAPrefix(t *testing.T) {
 		t.Fatalf("Invoke failed: %v", err)
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
-	cww, _ := chunks[0]["content_with_weight"].(string)
-	if cww != "Question: What is Go?\tAnswer: Go is a language." {
-		t.Fatalf("prefix not stripped: %q", cww)
+	text := qaChunkText(t, chunks[0])
+	if text != "Question: What is Go?\tAnswer: Go is a language." {
+		t.Fatalf("prefix not stripped: %q", text)
 	}
 }
 
@@ -257,9 +255,9 @@ func TestQAChunker_CaseInsensitivePrefix(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
-	if cww != "Question: Hello\tAnswer: World" {
-		t.Fatalf("case-insensitive prefix not stripped: %q", cww)
+	text := qaChunkText(t, chunks[0])
+	if text != "Question: Hello\tAnswer: World" {
+		t.Fatalf("case-insensitive prefix not stripped: %q", text)
 	}
 }
 
@@ -281,11 +279,11 @@ func TestQAChunker_PrefixSpaceSeparatorStrips(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
+	text := qaChunkText(t, chunks[0])
 	// Python qa.py:241 uses `[\t:： ]+`, so a space is a valid separator:
 	// a leading "A"/"Q" followed by a space is stripped.
-	if cww != "Question: language model is useful\tAnswer: How does it work" {
-		t.Fatalf("space-separator prefix not stripped: %q", cww)
+	if text != "Question: language model is useful\tAnswer: How does it work" {
+		t.Fatalf("space-separator prefix not stripped: %q", text)
 	}
 }
 
@@ -327,9 +325,9 @@ func TestQAChunker_ChineseLang(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
-	if want := "问题：什么是Go？\t回答：Go是一种编程语言。"; cww != want {
-		t.Fatalf("unexpected content: %q, want %q", cww, want)
+	text := qaChunkText(t, chunks[0])
+	if want := "问题：什么是Go？\t回答：Go是一种编程语言。"; text != want {
+		t.Fatalf("unexpected text: %q, want %q", text, want)
 	}
 }
 
@@ -351,9 +349,21 @@ func TestQAChunker_MarkdownRendersHTML(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
-	cww, _ := chunks[0]["content_with_weight"].(string)
-	if !strings.Contains(cww, "<strong>bold</strong>") &&
-		!strings.Contains(cww, "<b>bold</b>") {
-		t.Fatalf("markdown not rendered to HTML: %q", cww)
+	text := qaChunkText(t, chunks[0])
+	if !strings.Contains(text, "<strong>bold</strong>") &&
+		!strings.Contains(text, "<b>bold</b>") {
+		t.Fatalf("markdown not rendered to HTML: %q", text)
 	}
+}
+
+func qaChunkText(t *testing.T, chunk map[string]any) string {
+	t.Helper()
+	text, ok := chunk["text"].(string)
+	if !ok {
+		t.Fatalf("QA chunk text = %T, want string: %#v", chunk["text"], chunk)
+	}
+	if _, exists := chunk["content_with_weight"]; exists {
+		t.Fatalf("QA chunk must not contain content_with_weight before indexing: %#v", chunk)
+	}
+	return text
 }
