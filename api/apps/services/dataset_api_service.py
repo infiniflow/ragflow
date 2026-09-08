@@ -95,6 +95,13 @@ async def create_dataset(tenant_id: str, req: dict):
     :param req: dataset creation request
     :return: (success, result) or (success, error_message)
     """
+    # Drop language when not provided so the model/database default applies
+    # (the create request is parsed with exclude_unset=False, so the key is
+    # always present with a None default when the caller omits it).
+    if req.get("language") is None:
+        req.pop("language", None)
+        logging.debug("create_dataset: 'language' not provided; falling back to the model/database default.")
+
     # Map auto_metadata_config (if provided) into parser_config structure
     auto_meta = req.pop("auto_metadata_config", {})
     if auto_meta:

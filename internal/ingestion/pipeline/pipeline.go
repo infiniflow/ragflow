@@ -742,7 +742,9 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 				zap.String("task_id", p.taskID),
 				zap.String("document_id", p.documentID))
 		}
-		p.sink.OnComponentProgress(ctx, ProgressEvent{
+		sinkCtx, cancel := progressSinkContext(ctx)
+		defer cancel()
+		p.sink.OnComponentProgress(sinkCtx, ProgressEvent{
 			TaskID:     p.taskID,
 			DocumentID: p.documentID,
 			Component:  ev.Component,
@@ -767,6 +769,15 @@ func (p *Pipeline) componentProgressMessageCallback(ctx context.Context) runtime
 			zap.String("task_id", p.taskID),
 			zap.String("document_id", p.documentID),
 			zap.String("message", message))
-		sink.OnComponentMessage(ctx, p.taskID, p.documentID, component, message)
+		sinkCtx, cancel := progressSinkContext(ctx)
+		defer cancel()
+		sink.OnComponentMessage(sinkCtx, p.taskID, p.documentID, component, message)
 	}
+}
+
+func progressSinkContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx.Err() == nil {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 }
