@@ -8,9 +8,9 @@ import {
 
 describe('document-status (python)', () => {
   it('treats RUNNING as processing', () => {
-    expect(
-      isDocumentProcessing({ run: RunningStatus.RUNNING } as any),
-    ).toBe(true);
+    expect(isDocumentProcessing({ run: RunningStatus.RUNNING } as any)).toBe(
+      true,
+    );
   });
 
   it.each([
