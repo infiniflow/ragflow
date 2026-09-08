@@ -25,6 +25,7 @@ import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useSetAgent } from '@/hooks/use-agent-request';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -45,6 +46,7 @@ import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
 import { PublishConfirmDialog } from './components/publish-confirm-dialog';
 import { Operator } from './constant';
+import { OwnerTenantIdContext } from './context';
 import { GlobalParamSheet } from './gobal-variable-sheet';
 import { useBuildDslData } from './hooks/use-build-dsl';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
@@ -61,6 +63,7 @@ import { useRunDataflow } from './hooks/use-run-dataflow';
 import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
+  useValidateNodeForms,
   useWatchAgentChange,
 } from './hooks/use-save-graph';
 import { PipelineLogSheet } from './pipeline-log-sheet';
@@ -70,6 +73,8 @@ import useGraphStore from './store';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
 import WebhookSheet from './webhook-sheet';
+import { RunTooltip } from './flow-tooltip';
+import { debugRunLimitsTooltipKey } from './utils/debug-run-limits';
 
 /**
  * Standardizes dropdown menu item styling for agent management actions.
@@ -101,9 +106,21 @@ export default function Agent() {
   } = useSetModalState();
   const { t } = useTranslation();
   useAgentHistoryManager();
+  const isGoBackend = useIsGoBackend();
+  // Resolves the i18n key for the canvas "Run" tooltip describing the Go-side
+  // debug preview limits. It is shown ONLY for a dataflow (ingestion pipeline)
+  // canvas on the golang backend — an agent canvas runs the agent, not an
+  // ingestion debug preview, so it must never show this tooltip.
+  const runTooltipKey = debugRunLimitsTooltipKey(isGoBackend, isPipeline);
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
+  const { notifyIfInvalid } = useValidateNodeForms();
+  const handleSave = useCallback(() => {
+    if (notifyIfInvalid()) {
+      saveGraph();
+    }
+  }, [notifyIfInvalid, saveGraph]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
   const { buildDslData } = useBuildDslData();
   const { setAgent, loading: savingWidgetSettings } = useSetAgent(false);
@@ -220,6 +237,19 @@ export default function Agent() {
     showWebhookTestSheet,
   ]);
 
+  // Single source for the Run button so the tooltip gating in the JSX below
+  // doesn't duplicate it.
+  const runButton = (
+    <Button
+      data-testid="agent-run"
+      variant={'secondary'}
+      onClick={handleButtonRunClick}
+    >
+      <CirclePlay />
+      {t('flow.run')}
+    </Button>
+  );
+
   const {
     run: runPipeline,
     loading: pipelineRunning,
@@ -281,19 +311,16 @@ export default function Agent() {
         <div className="flex items-center gap-5">
           <ButtonLoading
             variant={'secondary'}
-            onClick={() => saveGraph()}
+            onClick={handleSave}
             loading={loading}
           >
             <LaptopMinimalCheck /> {t('flow.save')}
           </ButtonLoading>
-          <Button
-            data-testid="agent-run"
-            variant={'secondary'}
-            onClick={handleButtonRunClick}
-          >
-            <CirclePlay />
-            {t('flow.run')}
-          </Button>
+          {runTooltipKey ? (
+            <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
+          ) : (
+            runButton
+          )}
           {isConversationMode && (
             <Button
               variant={'secondary'}
@@ -357,14 +384,16 @@ export default function Agent() {
           </DropdownMenu>
         </div>
       </PageHeader>
-      <ReactFlowProvider>
-        <DropdownProvider>
-          <AgentCanvas
-            drawerVisible={chatDrawerVisible}
-            hideDrawer={hideChatDrawer}
-          ></AgentCanvas>
-        </DropdownProvider>
-      </ReactFlowProvider>
+      <OwnerTenantIdContext.Provider value={agentDetail?.user_id}>
+        <ReactFlowProvider>
+          <DropdownProvider>
+            <AgentCanvas
+              drawerVisible={chatDrawerVisible}
+              hideDrawer={hideChatDrawer}
+            ></AgentCanvas>
+          </DropdownProvider>
+        </ReactFlowProvider>
+      </OwnerTenantIdContext.Provider>
       {embedVisible && (
         <EmbedDialog
           visible={embedVisible}

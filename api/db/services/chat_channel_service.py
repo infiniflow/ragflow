@@ -34,7 +34,7 @@ class ChatChannelService(CommonService):
             cls.model.id,
             cls.model.name,
             cls.model.channel,
-            cls.model.dialog_id,
+            cls.model.chat_id,
             cls.model.status,
             Dialog.name.alias("dialog_name"),
         ]
@@ -43,7 +43,7 @@ class ChatChannelService(CommonService):
             .join(
                 Dialog,
                 join_type=JOIN.LEFT_OUTER,
-                on=(Dialog.id == cls.model.dialog_id),
+                on=(Dialog.id == cls.model.chat_id),
             )
             .where(cls.model.tenant_id == tenant_id)
             .order_by(cls.model.create_time.desc())
@@ -54,7 +54,7 @@ class ChatChannelService(CommonService):
     @DB.connection_context()
     def list_active(cls):
         """Return all enabled chat channel bots across tenants (with credentials)."""
-        return list(cls.model.select().where(cls.model.status == "1"))
+        return list(cls.model.select().where(cls.model.status == 1))
 
     @classmethod
     @DB.connection_context()

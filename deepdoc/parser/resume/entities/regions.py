@@ -778,7 +778,6 @@ def get_names(id):
     return nms
 
 
-
 def isName(nm):
     if nm in NM_SET:
         return True

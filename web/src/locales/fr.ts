@@ -14,6 +14,7 @@ export default {
       yes: 'Oui',
       no: 'Non',
       total: 'Total',
+      top: 'Top {{top}}',
       rename: 'Renommer',
       name: 'Nom',
       save: 'Enregistrer',
@@ -59,7 +60,7 @@ export default {
       submit: 'Soumettre',
       clear: 'Effacer',
       embedIntoSite: 'Intégrer dans la page web',
-      openInNewTab: 'Chat dans un nouvel onglet',
+      openInNewTab: 'Ouvrir dans un nouvel onglet',
       previousPage: 'Précédent',
       nextPage: 'Suivant',
       previous: 'Précédent',
@@ -80,6 +81,8 @@ export default {
       selected: 'Sélectionné',
       seeAll: 'Voir tout',
       bulkOperate: 'Opération en masse',
+      owner: 'Propriétaire',
+      running: 'En cours...',
     },
     login: {
       loginTitle: 'Connexion à votre compte',
@@ -393,7 +396,7 @@ export default {
         'Effectuez un test de récupération pour vérifier si RAGFlow peut retrouver le contenu pertinent pour le LLM. Si vous avez modifié les paramètres par défaut, comme le poids de similarité ou le seuil de similarité, ces changements ne seront pas automatiquement sauvegardés. Vous devez les appliquer dans les paramètres de votre assistant de chat ou dans le composant agent de récupération.',
       similarityThreshold: 'Seuil de similarité',
       similarityThresholdTip:
-        'RAGFlow utilise une combinaison de similarité par mots-clés pondérée et de similarité cosinus vectorielle, ou bien un score de réordonnancement pondéré. Ce paramètre fixe le seuil en dessous duquel un segment est exclu. Par défaut, le seuil est 0.2 (soit 20%).',
+        'RAGFlow utilise une combinaison de similarité par mots-clés pondérée et de similarité cosinus vectorielle, ou bien un score de réordonnancement pondéré. Ce paramètre fixe le seuil en dessous duquel un segment est exclu. Par défaut, le seuil est 20 (soit 20%).',
       vectorSimilarityWeight: 'Poids de similarité des mots-clés',
       vectorSimilarityWeightTip:
         "Définit l'importance de la similarité par mots-clés dans le score global. Le total des poids doit être de 1.0.",
@@ -413,6 +416,7 @@ export default {
       runningStatus2: 'ANNULÉ',
       runningStatus3: 'SUCCÈS',
       runningStatus4: 'ÉCHEC',
+      runningStatusQueued: 'En attente',
       pageRanges: 'Plages de pages',
       pageRangesTip:
         'Les pages en dehors de cette plage ne seront pas traitées.',
@@ -467,7 +471,6 @@ export default {
       metadata: {
         fields: 'Champs',
         selectFiles: '{{count}} fichiers sélectionnés',
-        type: 'Type',
         fieldNameInvalid:
           'Le nom du champ ne peut contenir que des lettres ou des underscores.',
         builtIn: 'Intégré',
@@ -499,6 +502,7 @@ export default {
         value: 'Valeur',
         action: 'Action',
         field: 'Champ',
+        type: 'Type',
         description: 'Description',
         fieldName: 'Nom du champ',
         editMetadata: 'Modifier les métadonnées',
@@ -685,6 +689,7 @@ export default {
       theDocumentBeingParsedCannotBeDeleted:
         "Le document en cours d'analyse ne peut pas être supprimé",
       lastWeek: 'de la semaine dernière',
+      top: 'Top',
       paddleocrOptions: 'Options PaddleOCR',
       paddleocrApiUrl: "URL de l'API PaddleOCR",
       paddleocrApiUrlTip:
@@ -704,7 +709,7 @@ export default {
       overlappedPercentTip:
         'Le pourcentage de chevauchement entre deux segments adjacents',
       globalIndexModelTip:
-        'Utilisé pour générer les graphes de connaissances, RAPTOR, les métadonnées automatiques, les mots-clés et questions automatiques. Les performances du modèle affectent la qualité de la génération.',
+        'Utilisé pour générer les métadonnées, mots-clés et questions automatiques. Les performances du modèle affectent la qualité de la génération.',
       globalIndexModel: "Modèle d'indexation",
       settings: 'Paramètres',
       autoMetadataTip:
@@ -734,9 +739,6 @@ export default {
       dataSource: 'Source de données',
       linkSourceSetTip: 'Gérer la liaison de source de données avec cette base',
       linkDataSource: 'Lier une source de données',
-      tocExtraction: 'IndexPage',
-      tocExtractionTip:
-        "Pour les segments existants, génère une table des matières hiérarchique (un répertoire par fichier). Lors des requêtes, avec la Mise en valeur des répertoires activée, le système utilise un grand modèle pour déterminer quels éléments du répertoire sont pertinents à la question de l'utilisateur.",
       deleteGenerateModalContent: `
   <p>La suppression des résultats générés <strong class='text-text-primary'>{{type}}</strong>
   supprimera toutes les entités et relations dérivées de cette base de connaissances.
@@ -796,6 +798,12 @@ export default {
         email: 'E-mail',
         tag: 'Étiquette',
       },
+      audio: `<p>Les formats de fichiers pris en charge sont <b>WAV, MP3, AAC, FLAC, OGG</b> et d'autres formats audio courants.</p>
+<p>Cette méthode transcrit les fichiers audio en texte à l'aide d'un modèle de reconnaissance vocale.</p>`,
+      email: `<p>Les formats de fichiers pris en charge sont <b>EML</b> et <b>MSG</b>.</p>
+<p>Cette méthode analyse les fichiers e-mail et extrait les champs d'en-tête (tels que De, À, CC, Objet et Date), le corps du message et les pièces jointes.</p>`,
+      knowledgeCompiler: `<p>Ce pipeline analyse et découpe les fichiers en chunks, puis compile ces chunks en unités de connaissances structurées (graphe de connaissances, wiki, RAPTOR, carte mentale ou navigation du jeu de données) via le composant Knowledge Compiler.</p>
+<p>Les unités de connaissances compilées sont émises sous forme de chunks fusionnés dans le flux de chunks, ce qui est idéal pour construire une couche de connaissances interrogeable au-dessus des documents découpés.</p>`,
       book: `<p>Les formats de fichiers pris en charge sont <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
 Pour chaque livre au format PDF, veuillez définir les <i>plages de pages</i> afin de supprimer les informations non souhaitées et de réduire le temps d'analyse.</p>`,
       laws: `<p>Les formats de fichiers pris en charge sont <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
@@ -893,6 +901,8 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       size: 'Taille',
       uploadedTime: 'Date de téléversement',
       chunk: 'Segment',
+      createChunk: 'Créer un segment',
+      editChunk: 'Modifier le segment',
       bulk: 'En masse',
       selectAll: 'Tout sélectionner',
       enabledSelected: 'Activer la sélection',
@@ -962,7 +972,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       topNTip: `Tous les segments avec un score de similarité supérieur au 'seuil de similarité' ne seront pas forcément envoyés au LLM. Cela sélectionne les 'Top N' segments parmi ceux récupérés.`,
       variable: 'Variable',
       variableTip: `Utilisé avec les API de gestion d'assistant de chat de RAGFlow, les variables aident à développer des stratégies de prompt système plus flexibles. Les variables définies seront utilisées dans le 'Prompt système' comme partie des prompts pour le LLM. {knowledge
-      } est une variable spéciale réservée représentant les segments récupérés des bases de connaissances spécifiées. Toutes les variables doivent être entourées d'accolades {} dans le 'Prompt système'. Voir https: //ragflow.io/docs/dev/set_chat_variables pour plus de détails.`,
+      } est une variable spéciale réservée représentant les segments récupérés des bases de connaissances spécifiées. Toutes les variables doivent être entourées d'accolades {} dans le 'Prompt système'. Voir https://ragflow.io/docs/chat_configuration#system-prompt pour plus de détails.`,
       add: 'Ajouter',
       key: 'Clé',
       optional: 'Optionnel',
@@ -1020,6 +1030,9 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       created: 'Créé',
       action: 'Action',
       embedModalTitle: 'Intégrer dans une page web',
+      embedUserIdPlaceholder: 'ex. user-001',
+      embedUserIdTooltip:
+        "Chaîne de texte (255 caractères maximum) identifiant l'utilisateur final de la page intégrée. Elle est ajoutée à l'URL d'intégration comme paramètre userId.",
       comingSoon: 'Bientôt disponible',
       fullScreenTitle: 'Intégration complète',
       fullScreenDescription:
@@ -1113,6 +1126,12 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       batchDeleteSessions: 'Suppression en masse',
       deleteSelectedConfirm:
         'Supprimer les {{count}} session(s) sélectionnée(s) ?',
+      showChunkMetadata: 'Afficher les métadonnées du segment',
+      showChunkMetadataTip:
+        "Afficher les métadonnées du document (titre, numéro de page, date d'upload, etc.) à côté des segments de texte récupérés",
+      metadataFields: 'Champs de métadonnées',
+      metadataFieldsTip:
+        'Sélectionnez les champs de métadonnées à afficher pour chaque segment',
     },
     language: {
       english: 'Anglais',
@@ -1153,6 +1172,9 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       api: 'API',
       username: "Nom d'utilisateur",
       usernameMessage: "Veuillez saisir votre nom d'utilisateur !",
+      usernameMaxLength: 'Le nom doit comporter au maximum {{max}} caractères.',
+      usernameInvalidCharacters:
+        "Le nom ne peut contenir que des lettres, chiffres, espaces et . _ ' -",
       photo: 'Votre photo',
       photoDescription: 'Ceci sera affiché sur votre profil.',
       colorSchema: 'Schéma de couleurs',
@@ -1274,7 +1296,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       modelType: 'Type de modèle',
       modelTypeMessage: 'Veuillez saisir le type de votre modèle !',
       addLlmBaseUrl: 'URL de base',
-      baseUrlNameMessage: 'Veuillez saisir votre URL de base !',
+      baseUrlNameMessage: 'Veuillez saisir votre URL de base',
       paddleocr: {
         apiUrl: "URL de l'API PaddleOCR",
         apiUrlPlaceholder:
@@ -1296,13 +1318,13 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       endpointIDMessage: 'Veuillez saisir le Model ID du modèle',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Veuillez saisir votre ARK_API_KEY',
-      bedrockModelNameMessage: 'Veuillez saisir le nom de votre modèle !',
+      bedrockModelNameMessage: 'Veuillez saisir le nom de votre modèle',
       addBedrockEngineAK: "CLÉ D'ACCÈS",
       bedrockAKMessage: "Veuillez saisir votre CLÉ D'ACCÈS",
       addBedrockSK: 'CLÉ SECRÈTE',
       bedrockSKMessage: 'Veuillez saisir votre CLÉ SECRÈTE',
       bedrockRegion: 'Région AWS',
-      bedrockRegionMessage: 'Veuillez sélectionner !',
+      bedrockRegionMessage: 'Veuillez sélectionner',
       'us-east-1': 'US Est (Virginie du Nord)',
       'us-west-2': 'US Ouest (Oregon)',
       'ap-southeast-1': 'Asie Pacifique (Singapour)',
@@ -1310,8 +1332,8 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       'eu-central-1': 'Europe (Francfort)',
       'us-gov-west-1': 'AWS GovCloud (US-Ouest)',
       'ap-southeast-2': 'Asie Pacifique (Sydney)',
-      addTencentCloudSID: 'ID secret TencentCloud',
-      TencentCloudSIDMessage: 'Veuillez saisir votre ID secret',
+      addTencentCloudSID: 'ID SECRET TencentCloud',
+      TencentCloudSIDMessage: 'Veuillez saisir votre ID SECRET',
       addTencentCloudSK: 'Clé secrète TencentCloud',
       TencentCloudSKMessage: 'Veuillez saisir votre clé secrète',
       SparkModelNameMessage: 'Veuillez sélectionner un modèle Spark',
@@ -1319,8 +1341,8 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       SparkAPIPasswordMessage: 'Veuillez saisir votre mot de passe API',
       addSparkAPPID: 'ID application Spark',
       SparkAPPIDMessage: 'Veuillez saisir votre ID application',
-      addSparkAPISecret: 'Secret API Spark',
-      SparkAPISecretMessage: 'Veuillez saisir votre secret API',
+      addSparkAPISecret: 'SECRET API Spark',
+      SparkAPISecretMessage: 'Veuillez saisir votre SECRET API',
       addSparkAPIKey: 'Clé API Spark',
       SparkAPIKeyMessage: 'Veuillez saisir votre clé API',
       yiyanModelNameMessage: 'Veuillez saisir le nom du modèle',
@@ -1483,6 +1505,8 @@ Exemple : Virtual Hosted Style`,
         'Connectez un site SharePoint via Microsoft Graph pour synchroniser ses bibliothèques de documents.',
       sharepointSiteUrlTip:
         'URL complète du site SharePoint à indexer, ex. : https://contoso.sharepoint.com/sites/MonSite. Nécessite une application Azure AD avec les permissions applicatives Sites.Read.All et Files.Read.All (consentement administrateur).',
+      azure_devopsDescription:
+        'Connectez Azure DevOps pour synchroniser les fichiers du dépôt et les pull requests.',
       bitbucketDescription:
         'Connectez Bitbucket pour synchroniser le contenu des PR.',
       bitbucketTopWorkspaceTip:
@@ -1708,6 +1732,47 @@ Exemple : Virtual Hosted Style`,
         'Sélectionner une source de données à ajouter',
       availableSources: 'Sources disponibles',
       datasourceDescription: 'Gérez vos sources de données et connexions',
+      chatChannels: 'Canaux de chat',
+      chatChannelsDescription:
+        'Gérez vos bots de canaux de chat et leurs identifiants',
+      channelEmptyTip:
+        'Aucun canal de chat ajouté. Sélectionnez-en un ci-dessous pour vous connecter.',
+      availableChannels: 'Canaux disponibles',
+      availableChannelsDescription: 'Sélectionner un canal de chat à ajouter',
+      addChannelModalTitle: 'Ajouter un bot {{name}}',
+      editChannelModalTitle: 'Modifier le bot {{name}}',
+      deleteChannelModalTitle: 'Supprimer un canal de chat',
+      deleteChannelModalContent:
+        'Êtes-vous sûr de vouloir supprimer ce bot ? Cette action est irréversible.',
+      connectDialog: 'Connecter un assistant',
+      connectDialogTitle: 'Connecter {{name}} à un assistant',
+      selectDialog: 'Sélectionner un assistant',
+      connectDialogTip:
+        "Les messages reçus par ce canal seront traités par l'assistant connecté. Effacez la sélection pour déconnecter.",
+      notConnected: 'Aucun assistant connecté',
+      chatChannelDesc: {
+        clickclack: 'Connecter un bot ClickClack',
+        discord: 'Connecter un bot Discord',
+        feishu: 'Connecter un bot Feishu / Lark',
+        googlechat: 'Connecter un bot Google Chat',
+        irc: 'Se connecter à un serveur IRC',
+        matrix: 'Connecter un bot Matrix',
+        mattermost: 'Connecter un bot Mattermost',
+        msteams: 'Connecter un bot Microsoft Teams',
+        nextcloud_talk: 'Connecter un bot Nextcloud Talk',
+        nostr: 'Connecter un bot Nostr',
+        qqbot: 'Connecter un bot QQ',
+        slack: 'Connecter un bot Slack',
+        synology_chat: 'Connecter un bot Synology Chat',
+        telegram: 'Connecter un bot Telegram',
+        tlon: 'Connecter un bot Tlon (Urbit)',
+        twitch: 'Connecter un bot Twitch',
+        wecom: 'Connecter un bot WeCom',
+        whatsapp: 'Connecter un bot WhatsApp (appairage QR)',
+        yuanbao: 'Connecter un bot Tencent Yuanbao',
+        zalo: 'Connecter un bot Zalo',
+        zalouser: 'Connecter un compte Zalo personnel',
+      },
       save: 'Enregistrer',
       search: 'Rechercher',
       availableModels: 'Modèles disponibles',
@@ -1742,7 +1807,7 @@ Exemple : Virtual Hosted Style`,
         chat: 'Chat',
         embedding: 'Embedding',
         rerank: 'Rerank',
-        sequence2text: 'sequence2text',
+        sequence2text: 'ASR',
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
@@ -1756,8 +1821,11 @@ Exemple : Virtual Hosted Style`,
       listModelsLoading: 'Chargement des modèles…',
       selectModelBeforeVerify:
         'Veuillez sélectionner au moins un modèle avant la vérification.',
+      selectModelBeforeSave:
+        'Veuillez découvrir et sélectionner au moins un modèle avant l’enregistrement.',
       addCustomModel: 'Ajouter un modèle personnalisé',
       addCustomModelTitle: 'Ajouter un modèle personnalisé',
+      editCustomModelTitle: 'Modifier le modèle',
       modelMaxTokens: 'Tokens maximum',
       modelFeatures: 'Fonctionnalités du modèle',
       modelFeatureToolCall: "Appel d'outil",
@@ -2740,7 +2808,7 @@ Les informations structurées importantes peuvent inclure : noms, dates, lieux, 
         username: "Nom d'utilisateur",
         password: 'Mot de passe',
         algorithm: 'Algorithme',
-        secret: 'Secret',
+        secret: 'SECRET',
         issuer: 'Émetteur',
         audience: 'Audience',
         requiredClaims: 'Claims requis',
@@ -2845,6 +2913,8 @@ Ce processus agrège des variables de plusieurs branches en une seule variable p
       news: 'Actualités',
       text: 'Texte',
       userId: 'ID utilisateur',
+      tags: 'Étiquettes',
+      canvasCategory: 'Catégorie de canvas',
     },
     llmTools: {
       bad_calculator: {
@@ -2931,6 +3001,7 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
       cancelText: 'Annuler',
       chooseDataset:
         'Veuillez sélectionner une base de connaissances en premier',
+      selectLocalePlaceholder: 'Sélectionner une langue',
     },
     pagination: {
       total: 'Total {{total}}',

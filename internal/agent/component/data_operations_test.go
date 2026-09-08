@@ -17,12 +17,39 @@
 package component
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
 	"ragflow/internal/agent/canvas"
 )
+
+func TestDataOperations_GetInputForm(t *testing.T) {
+	c, err := NewDataOperationsComponent(map[string]any{
+		"query": []string{
+			"{{sys.query}}",
+			"{{CodeExec:Run@result}}",
+			"{{sys.query}}",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewDataOperationsComponent: %v", err)
+	}
+
+	got := c.(*DataOperationsComponent).GetInputForm()
+	want := map[string]any{
+		"sys.query": map[string]any{
+			"name": "sys.query",
+			"type": "line",
+		},
+		"CodeExec:Run@result": map[string]any{
+			"name": "CodeExec:Run@result",
+			"type": "line",
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("GetInputForm = %#v, want %#v", got, want)
+	}
+}
 
 // TestDataOperations_SelectKeys: keep only specified keys.
 func TestDataOperations_SelectKeys(t *testing.T) {
@@ -38,9 +65,9 @@ func TestDataOperations_SelectKeys(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"items": []any{
 		map[string]any{"a": 1, "b": 2, "c": 3},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -70,9 +97,9 @@ func TestDataOperations_Combine(t *testing.T) {
 	state := canvas.NewCanvasState("run-2", "task-2")
 	state.Outputs["cpn_0"] = map[string]any{"d1": map[string]any{"k": []any{1}}}
 	state.Outputs["cpn_1"] = map[string]any{"d2": map[string]any{"k": []any{2, 3}}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -100,9 +127,9 @@ func TestDataOperations_RemoveKeys(t *testing.T) {
 			"value":  42,
 		},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -141,9 +168,9 @@ func TestDataOperations_LiteralEval(t *testing.T) {
 			"bool":   "true",
 		},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -182,9 +209,9 @@ func TestDataOperations_FilterValues(t *testing.T) {
 		map[string]any{"k": "2-abc"},
 		map[string]any{"k": "3-1abc"},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -207,9 +234,9 @@ func TestDataOperations_AppendOrUpdate(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"items": []any{
 		map[string]any{"name": "x"},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -234,9 +261,9 @@ func TestDataOperations_RenameKeys(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"items": []any{
 		map[string]any{"k": 1, "other": "x"},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

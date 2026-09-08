@@ -36,6 +36,8 @@ export default {
       preview: 'Pratinjau',
       move: 'Pindahkan',
       warn: 'Peringatan',
+      owner: 'Pemilik',
+      running: 'Berjalan...',
     },
     login: {
       login: 'Masuk',
@@ -111,7 +113,7 @@ export default {
         'Lakukan tes pengambilan untuk memeriksa apakah RAGFlow dapat memulihkan konten yang diinginkan untuk LLM. ',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor. Jika kesamaan antara kueri dan potongan kurang dari ambang ini, potongan akan disaring. Secara default, ambang batas diatur ke 0,2. Itu berarti hanya potongan dengan skor kemiripan hibrida 20 atau lebih tinggi yang akan diambil.',
+        'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor. Jika kesamaan antara kueri dan potongan kurang dari ambang ini, potongan akan disaring. Secara default, ambang batas diatur ke 20. Itu berarti hanya potongan dengan skor kemiripan hibrida 20 atau lebih tinggi yang akan diambil.',
       vectorSimilarityWeight: 'Bobot kesamaan kata kunci',
       vectorSimilarityWeightTip:
         'Kami menggunakan skor kesamaan hibrida untuk mengevaluasi jarak antara dua baris teks. Ini adalah kesamaan kata kunci berbobot dan kesamaan kosinus vektor atau skor rerank (0~1). Jumlah dari kedua bobot adalah 1.0.',
@@ -131,6 +133,7 @@ export default {
       runningStatus2: 'BATAL',
       runningStatus3: 'SUKSES',
       runningStatus4: 'GAGAL',
+      runningStatusQueued: 'Dalam antrean',
       pageRanges: 'Rentang Halaman',
       pageRangesTip:
         'rentang halaman: Tentukan rentang halaman yang perlu diparsing. Halaman yang tidak termasuk dalam rentang ini akan diabaikan.',
@@ -140,7 +143,7 @@ export default {
       toMessage: 'Nomor halaman akhir hilang (tidak termasuk)',
       layoutRecognize: 'Pengenalan tata letak',
       layoutRecognizeTip:
-        'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, and tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dev/select_pdf_parser.',
+        'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, and tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
       taskPageSize: 'Ukuran halaman tugas',
       taskPageSizeMessage: 'Silakan masukkan ukuran halaman tugas Anda!',
       taskPageSizeTip: `Jika menggunakan pengenalan tata letak, file PDF akan dibagi menjadi kelompok berturut-turut. Analisis tata letak akan dilakukan secara paralel antar kelompok untuk meningkatkan kecepatan pemrosesan. 'Ukuran halaman tugas' menentukan ukuran kelompok. Semakin besar ukuran halaman, semakin kecil kemungkinan teks berkelanjutan antara halaman dibagi menjadi potongan yang berbeda.`,
@@ -162,7 +165,7 @@ export default {
       topKTip: `Digunakan bersama dengan Rerank model, pengaturan ini menentukan jumlah potongan teks yang akan dikirim ke model reranking yang ditentukan.`,
       delimiter: `Pemisah untuk segmentasi teks`,
       html4excel: 'Excel ke HTML',
-      html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel 97-2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dev/enable_excel2html.`,
+      html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel 97-2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
     },
     knowledgeConfiguration: {
       imageTableContextWindow: 'Jendela konteks gambar & tabel',
@@ -204,6 +207,12 @@ export default {
       dialogueExamplesTitle: 'Contoh Dialog',
       methodEmpty:
         'Ini akan menampilkan penjelasan visual dari kategori basis pengetahuan',
+      audio: `<p>Format file yang didukung adalah <b>WAV, MP3, AAC, FLAC, OGG</b> dan format audio umum lainnya.</p>
+<p>Metode ini mentranskripsikan file audio menjadi teks menggunakan model speech-to-text.</p>`,
+      email: `<p>Format file yang didukung adalah <b>EML</b> dan <b>MSG</b>.</p>
+<p>Metode ini mem-parse file email, mengekstrak field header (seperti Dari, Kepada, CC, Subjek, dan Tanggal), isi pesan, dan lampiran.</p>`,
+      knowledgeCompiler: `<p>Pipeline ini mem-parse dan memecah file menjadi chunk, kemudian mengompilasi chunk menjadi unit pengetahuan terstruktur (graf pengetahuan, wiki, RAPTOR, peta pikiran, atau navigasi dataset) melalui komponen Knowledge Compiler.</p>
+<p>Unit pengetahuan yang dikompilasi dikeluarkan sebagai chunk yang digabungkan ke dalam aliran chunk, ideal untuk membangun lapisan pengetahuan yang dapat diambil di atas dokumen yang telah dipecah.</p>`,
       book: `<p>Format file yang didukung adalah <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
           Karena buku panjang dan tidak semua bagian berguna, jika itu adalah PDF,
           silakan atur <i>rentang halaman</i> untuk setiap buku untuk menghilangkan efek negatif dan menghemat waktu komputasi untuk analisis.</p>`,
@@ -288,11 +297,11 @@ export default {
         Jika Anda ingin merangkum sesuatu yang membutuhkan semua konteks dari sebuah artikel and panjang konteks LLM yang dipilih mencakup panjang dokumen, Anda dapat mencoba metode ini.
         </p>`,
       knowledgeGraph: `<p>Format file yang didukung adalah <b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>
- 
+
      <p>Setelah file dipotong, digunakan potongan untuk mengekstrak grafik pengetahuan dan peta pikiran dari seluruh dokumen. Metode ini menerapkan cara naif untuk memotong file:
      Teks berturut-turut akan dipotong menjadi potongan masing-masing yang berjumlah sekitar 512 token.</p>
      <p>Selanjutnya, potongan akan dikirim ke LLM untuk mengekstrak node dan hubungan dari grafik pengetahuan, dan peta pikiran.</p>
- 
+
      Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
       useRaptor: 'Gunakan RAPTOR untuk meningkatkan pengambilan',
       useRaptorTip:
@@ -334,6 +343,8 @@ export default {
     },
     chunk: {
       chunk: 'Potongan',
+      createChunk: 'Buat potongan',
+      editChunk: 'Edit potongan',
       bulk: 'Massal',
       selectAll: 'Pilih Semua',
       enabledSelected: 'Aktifkan yang Dipilih',
@@ -392,7 +403,7 @@ export default {
       topN: 'Top N',
       topNTip: `Tidak semua potongan yang skor kesamaannya di atas 'ambang kesamaan' akan diberikan ke LLM. LLM hanya dapat melihat potongan 'Top N' ini.`,
       variable: 'Variabel',
-      variableTip: `Digunakan bersama dengan API manajemen asisten obrolan RAGFlow, variabel dapat membantu mengembangkan strategi prompt sistem yang lebih fleksibel. Variabel yang didefinisikan akan digunakan oleh 'Prompt Sistem' sebagai bagian dari prompt untuk LLM. {knowledge} adalah variabel khusus yang dicadangkan, mewakili bagian-bagian yang diperoleh dari basis pengetahuan yang ditentukan, dan semua variabel harus dikelilingi oleh kurung kurawal {} dalam 'Prompt Sistem'. Lihat https://ragflow.io/docs/dev/set_chat_variables untuk detail lebih lanjut.`,
+      variableTip: `Digunakan bersama dengan API manajemen asisten obrolan RAGFlow, variabel dapat membantu mengembangkan strategi prompt sistem yang lebih fleksibel. Variabel yang didefinisikan akan digunakan oleh 'Prompt Sistem' sebagai bagian dari prompt untuk LLM. {knowledge} adalah variabel khusus yang dicadangkan, mewakili bagian-bagian yang diperoleh dari basis pengetahuan yang ditentukan, dan semua variabel harus dikelilingi oleh kurung kurawal {} dalam 'Prompt Sistem'. Lihat https://ragflow.io/docs/chat_configuration#system-prompt untuk detail lebih lanjut.`,
       add: 'Tambah',
       key: 'Kunci',
       optional: 'Opsional',
@@ -474,6 +485,12 @@ export default {
         'Dalam percakapan multi-putaran, kueri ke basis pengetahuan dioptimalkan. Model besar akan dipanggil untuk mengonsumsi token tambahan.',
       languageSelectionTip: 'Pilih bahasa yang digunakan dalam percakapan.',
       description: 'Description of assistant',
+      showChunkMetadata: 'Tampilkan metadata chunk',
+      showChunkMetadataTip:
+        'Tampilkan metadata dokumen (mis. judul, nomor halaman, tanggal unggah) bersama potongan teks yang diambil',
+      metadataFields: 'Bidang metadata',
+      metadataFieldsTip:
+        'Pilih bidang metadata yang akan ditampilkan untuk setiap chunk',
     },
     setting: {
       profile: 'Profil',
@@ -529,9 +546,9 @@ export default {
         'Kunci API dapat diperoleh dengan mendaftar ke penyedia LLM yang sesuai.',
       showMoreModels: 'Tampilkan lebih banyak model',
       hideModels: 'Sembunyikan model',
-      baseUrl: 'Base-Url',
+      baseUrl: 'Base URL',
       baseUrlTip:
-        'Jika kunci API Anda berasal dari OpenAI, abaikan saja. Penyedia perantara lainnya akan memberikan base url ini dengan kunci API.',
+        'Jika kunci API Anda berasal dari OpenAI, abaikan saja. Penyedia perantara lainnya akan memberikan Base URL ini dengan kunci API.',
       tongyiBaseUrlTip:
         'Untuk pengguna Tiongkok, tidak perlu diisi atau gunakan https://dashscope.aliyuncs.com/compatible-mode/v1. Untuk pengguna internasional, gunakan https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       siliconBaseUrlTip:
@@ -570,8 +587,8 @@ export default {
       modelNameMessage: 'Silakan masukkan nama model Anda!',
       modelType: 'Jenis Model',
       modelTypeMessage: 'Silakan masukkan jenis model Anda!',
-      addLlmBaseUrl: 'Base url',
-      baseUrlNameMessage: 'Silakan masukkan base url Anda!',
+      addLlmBaseUrl: 'Base URL',
+      baseUrlNameMessage: 'Silakan masukkan Base URL Anda',
       paddleocr: {
         apiUrl: 'URL API PaddleOCR',
         apiUrlPlaceholder:
@@ -593,13 +610,13 @@ export default {
       endpointIDMessage: 'Silakan masukkan Model ID dari model',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Silakan masukkan ARK_API_KEY Anda',
-      bedrockModelNameMessage: 'Silakan masukkan nama model Anda!',
+      bedrockModelNameMessage: 'Silakan masukkan nama model Anda',
       addBedrockEngineAK: 'ACCESS KEY',
       bedrockAKMessage: 'Silakan masukkan ACCESS KEY Anda',
       addBedrockSK: 'SECRET KEY',
       bedrockSKMessage: 'Silakan masukkan SECRET KEY Anda',
       bedrockRegion: 'Wilayah AWS',
-      bedrockRegionMessage: 'Silakan pilih!',
+      bedrockRegionMessage: 'Silakan pilih',
       'us-east-2': 'US East (Ohio)',
       'us-east-1': 'US East (N. Virginia)',
       'us-west-1': 'US West (N. California)',
@@ -637,25 +654,25 @@ export default {
       'us-gov-west-1': 'AWS GovCloud (US-West)',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Silakan masukkan Secret ID Anda',
-      addTencentCloudSK: 'TencentCloud Secret Key',
-      TencentCloudSKMessage: 'Silakan masukkan Secret Key Anda',
+      addTencentCloudSK: 'TencentCloud SECRET KEY',
+      TencentCloudSKMessage: 'Silakan masukkan SECRET KEY Anda',
       SparkModelNameMessage: 'Silakan pilih model Spark',
       addSparkAPIPassword: 'Spark APIPassword',
       SparkAPIPasswordMessage: 'silakan masukkan APIPassword Anda',
       addSparkAPPID: 'Spark APPID',
       SparkAPPIDMessage: 'silakan masukkan APPID Anda',
-      addSparkAPISecret: 'Spark APISecret',
-      SparkAPISecretMessage: 'silakan masukkan APISecret Anda',
+      addSparkAPISecret: 'Spark API SECRET',
+      SparkAPISecretMessage: 'silakan masukkan API SECRET Anda',
       addSparkAPIKey: 'Spark APIKey',
       SparkAPIKeyMessage: 'silakan masukkan APIKey Anda',
       yiyanModelNameMessage: 'Silakan masukkan nama model',
-      addyiyanAK: 'yiyan API KEY',
-      yiyanAKMessage: 'Silakan masukkan API KEY Anda',
-      addyiyanSK: 'yiyan Secret KEY',
-      yiyanSKMessage: 'Silakan masukkan Secret KEY Anda',
+      addyiyanAK: 'yiyan API Key',
+      yiyanAKMessage: 'Silakan masukkan API Key Anda',
+      addyiyanSK: 'yiyan SECRET KEY',
+      yiyanSKMessage: 'Silakan masukkan SECRET KEY Anda',
       FishAudioModelNameMessage: 'Silakan beri nama model sintesis ucapan Anda',
-      addFishAudioAK: 'Fish Audio API KEY',
-      addFishAudioAKMessage: 'Silakan masukkan API KEY Anda',
+      addFishAudioAK: 'Fish Audio API Key',
+      addFishAudioAKMessage: 'Silakan masukkan API Key Anda',
       addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage:
         'Silakan masukkan Reference ID (biarkan kosong untuk menggunakan model default).',
@@ -1136,6 +1153,11 @@ export default {
       promptTip:
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
       promptMessage: 'Prompt diperlukan',
+      tags: 'Tag',
+      canvasCategory: 'Kategori kanvas',
+      created: 'Dibuat',
+      id: 'ID',
+      logTitle: 'Judul',
     },
     footer: {
       profile: 'Semua hak dilindungi @ React',

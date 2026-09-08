@@ -27,23 +27,20 @@ class RAGFlowPptParser:
     def __sort_shapes(self, shapes):
         cache_key = id(shapes)
         if cache_key not in self._shape_cache:
-            self._shape_cache[cache_key] = sorted(
-                shapes, 
-                key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left if x.left is not None else 0)
-            )
+            self._shape_cache[cache_key] = sorted(shapes, key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left if x.left is not None else 0))
         return self._shape_cache[cache_key]
 
     def __get_bulleted_text(self, paragraph):
         is_bulleted = bool(paragraph._p.xpath("./a:pPr/a:buChar")) or bool(paragraph._p.xpath("./a:pPr/a:buAutoNum")) or bool(paragraph._p.xpath("./a:pPr/a:buBlip"))
         if is_bulleted:
-            return f"{'  '* paragraph.level}.{paragraph.text}"
+            return f"{'  ' * paragraph.level}.{paragraph.text}"
         else:
             return paragraph.text
 
     def __extract(self, shape):
         try:
             # First try to get text content
-            if hasattr(shape, 'has_text_frame') and shape.has_text_frame:
+            if hasattr(shape, "has_text_frame") and shape.has_text_frame:
                 text_frame = shape.text_frame
                 texts = []
                 for paragraph in text_frame.paragraphs:
@@ -56,7 +53,7 @@ class RAGFlowPptParser:
                 shape_type = shape.shape_type
             except NotImplementedError:
                 # If shape_type is not available, try to get text content
-                if hasattr(shape, 'text'):
+                if hasattr(shape, "text"):
                     return shape.text.strip()
                 return ""
 
@@ -65,8 +62,7 @@ class RAGFlowPptParser:
                 tb = shape.table
                 rows = []
                 for i in range(1, len(tb.rows)):
-                    rows.append("; ".join([tb.cell(
-                        0, j).text + ": " + tb.cell(i, j).text for j in range(len(tb.columns)) if tb.cell(i, j)]))
+                    rows.append("; ".join([tb.cell(0, j).text + ": " + tb.cell(i, j).text for j in range(len(tb.columns)) if tb.cell(i, j)]))
                 return "\n".join(rows)
 
             # Handle group shape
@@ -85,9 +81,7 @@ class RAGFlowPptParser:
             return ""
 
     def __call__(self, fnm, from_page, to_page, callback=None):
-        ppt = Presentation(fnm) if isinstance(
-            fnm, str) else Presentation(
-            BytesIO(fnm))
+        ppt = Presentation(fnm) if isinstance(fnm, str) else Presentation(BytesIO(fnm))
         txts = []
         self.total_page = len(ppt.slides)
         for i, slide in enumerate(ppt.slides):

@@ -42,14 +42,7 @@ class UserCanvasVersionService(CommonService):
     def list_by_canvas_id(cls, user_canvas_id):
         try:
             user_canvas_version = cls.model.select(
-                *[cls.model.id,
-                  cls.model.create_time,
-                  cls.model.title,
-                  cls.model.create_date,
-                  cls.model.update_date,
-                  cls.model.user_canvas_id,
-                  cls.model.update_time,
-                  cls.model.release]
+                *[cls.model.id, cls.model.create_time, cls.model.title, cls.model.create_date, cls.model.update_date, cls.model.user_canvas_id, cls.model.update_time, cls.model.release]
             ).where(cls.model.user_canvas_id == user_canvas_id)
             return user_canvas_version
         except DoesNotExist:
@@ -62,7 +55,7 @@ class UserCanvasVersionService(CommonService):
     def get_all_canvas_version_by_canvas_ids(cls, canvas_ids):
         fields = [cls.model.id]
         versions = cls.model.select(*fields).where(cls.model.user_canvas_id.in_(canvas_ids))
-        versions.order_by(cls.model.create_time.asc())
+        versions = versions.order_by(cls.model.create_time.asc())
         offset, limit = 0, 100
         res = []
         while True:
@@ -138,12 +131,7 @@ class UserCanvasVersionService(CommonService):
         """
         try:
             normalized_dsl = cls._normalize_dsl(dsl)
-            latest = (
-                cls.model.select()
-                .where(cls.model.user_canvas_id == user_canvas_id)
-                .order_by(cls.model.create_time.desc())
-                .first()
-            )
+            latest = cls.model.select().where(cls.model.user_canvas_id == user_canvas_id).order_by(cls.model.create_time.desc()).first()
 
             # Repeated saves with the same DSL only refresh the latest snapshot.
             if latest and cls._normalize_dsl(latest.dsl) == normalized_dsl:

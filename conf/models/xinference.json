@@ -1,5 +1,5 @@
 {
-  "name": "xinference",
+  "name": "Xinference",
   "url_suffix": {
     "chat": "v1/chat/completions",
     "embedding": "v1/embeddings",
