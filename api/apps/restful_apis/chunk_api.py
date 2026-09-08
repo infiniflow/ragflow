@@ -64,7 +64,7 @@ from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.tag_feature_utils import validate_tag_features
 from rag.app.tag import label_question
 from rag.nlp import search
-from rag.prompts.generator import cross_languages, keyword_extraction
+from rag.prompts.generator import append_keywords, cross_languages, keyword_extraction
 
 
 def _encode_with_request_user(embd_mdl, texts, req):
@@ -486,7 +486,7 @@ async def retrieval_test(tenant_id, dataset_id=None):
             question = await cross_languages(kb.tenant_id, None, question, langs)
         if req.get("keyword", False):
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-            question += await keyword_extraction(LLMBundle(kb.tenant_id, chat_model_config), question)
+            question = append_keywords(question, await keyword_extraction(LLMBundle(kb.tenant_id, chat_model_config), question))
 
         ranks = await settings.retriever.retrieval(
             question,

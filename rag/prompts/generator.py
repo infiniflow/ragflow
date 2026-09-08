@@ -38,6 +38,13 @@ def get_value(d, k1, k2):
     return d.get(k1, d.get(k2))
 
 
+def append_keywords(question, keywords):
+    """Append extracted keywords without changing the question when none exist."""
+    if not keywords:
+        return question
+    return question + "," + keywords
+
+
 def chunks_format(reference):
     if not reference or not isinstance(reference, dict):
         return []
