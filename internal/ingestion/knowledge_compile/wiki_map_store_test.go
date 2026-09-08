@@ -128,7 +128,7 @@ func matchesStoredCompilationRow(row, filter map[string]interface{}) bool {
 	return true
 }
 
-func (e *wikiMapStoreEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName, datasetID string) ([]string, error) {
+func (e *wikiMapStoreEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName, datasetID, _ string) ([]string, error) {
 	e.insertBase = baseName
 	e.insertDataset = datasetID
 	for _, chunk := range chunks {
