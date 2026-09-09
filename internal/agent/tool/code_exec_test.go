@@ -26,9 +26,10 @@ import (
 
 func TestCodeExec_StubsErrorWhenClientMissing(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCodeExecTool()
-	out, err := c.InvokableRun(context.Background(), `{"language":"python","code":"def main(): return {}"}`)
+	out, err := c.InvokableRun(ctx, `{"language":"python","code":"def main(): return {}"}`)
 	if !errors.Is(err, ErrCodeExecSandboxMissing) {
 		t.Fatalf("err = %v, want ErrCodeExecSandboxMissing", err)
 	}
@@ -47,9 +48,10 @@ func TestCodeExec_StubsErrorWhenClientMissing(t *testing.T) {
 
 func TestCodeExec_RejectsEmptyCode(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCodeExecTool()
-	_, err := c.InvokableRun(context.Background(), `{"language":"python","code":""}`)
+	_, err := c.InvokableRun(ctx, `{"language":"python","code":""}`)
 	if err == nil || !strings.Contains(err.Error(), "code") {
 		t.Fatalf("err = %v, want to mention empty code", err)
 	}
@@ -57,9 +59,10 @@ func TestCodeExec_RejectsEmptyCode(t *testing.T) {
 
 func TestCodeExec_RejectsBadLanguage(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCodeExecTool()
-	_, err := c.InvokableRun(context.Background(), `{"language":"brainfuck","code":"x"}`)
+	_, err := c.InvokableRun(ctx, `{"language":"brainfuck","code":"x"}`)
 	if err == nil || !strings.Contains(err.Error(), "language") {
 		t.Fatalf("err = %v, want to reject unsupported language", err)
 	}
@@ -67,21 +70,40 @@ func TestCodeExec_RejectsBadLanguage(t *testing.T) {
 
 func TestCodeExec_AcceptsLangAlias(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCodeExecTool()
 	// Python tool also accepts "lang" as the field name; the Go shell
 	// should still reach the stub branch.
-	_, err := c.InvokableRun(context.Background(), `{"lang":"nodejs","script":"async function main() {}"}`)
+	_, err := c.InvokableRun(ctx, `{"lang":"nodejs","script":"async function main() {}"}`)
 	if !errors.Is(err, ErrCodeExecSandboxMissing) {
 		t.Fatalf("err = %v, want ErrCodeExecSandboxMissing", err)
 	}
 }
 
+func TestCodeExec_ReturnsSandboxFailureAsTerminalError(t *testing.T) {
+	prev := GetSandboxClient()
+	SetSandboxClient(stubSandbox(func(context.Context, SandboxRequest) (*SandboxResponse, error) {
+		return nil, errors.New("provider unavailable")
+	}))
+	t.Cleanup(func() { SetSandboxClient(prev) })
+
+	out, err := NewCodeExecTool().InvokableRun(t.Context(), `{"language":"python","code":"def main(): pass"}`)
+	if err == nil || !strings.Contains(err.Error(), "provider unavailable") {
+		t.Fatalf("InvokableRun error = %v, want provider unavailable", err)
+	}
+	var got codeExecResult
+	if json.Unmarshal([]byte(out), &got) != nil || !strings.Contains(got.Error, "provider unavailable") {
+		t.Fatalf("result = %s, want error envelope", out)
+	}
+}
+
 func TestCodeExec_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	c := NewCodeExecTool()
-	info, err := c.Info(context.Background())
+	info, err := c.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
@@ -91,13 +113,75 @@ func TestCodeExec_Info(t *testing.T) {
 	if !strings.Contains(info.Desc, "Python") {
 		t.Errorf("Desc = %q, want to mention Python", info.Desc)
 	}
+
+	params, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("Info schema: %v", err)
+	}
+	encoded, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal Info schema: %v", err)
+	}
+	var schema map[string]any
+	if err = json.Unmarshal(encoded, &schema); err != nil {
+		t.Fatalf("decode Info schema: %v", err)
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("Info schema properties = %#v, want object", schema["properties"])
+	}
+	for _, name := range []string{"lang", "script"} {
+		if _, ok = properties[name]; !ok {
+			t.Errorf("Info schema missing %q", name)
+		}
+	}
+	for _, name := range []string{"language", "code", "arguments", "outputs"} {
+		if _, ok = properties[name]; ok {
+			t.Errorf("Info schema unexpectedly exposes node field %q", name)
+		}
+	}
+	required, ok := schema["required"].([]any)
+	if !ok {
+		t.Fatalf("Info schema required = %#v, want array", schema["required"])
+	}
+	requiredFields := make(map[string]bool, len(required))
+	for _, field := range required {
+		if name, ok := field.(string); ok {
+			requiredFields[name] = true
+		}
+	}
+	if !requiredFields["lang"] || !requiredFields["script"] {
+		t.Errorf("Info schema required = %#v, want lang and script", required)
+	}
+	langProp, ok := properties["lang"].(map[string]any)
+	if !ok {
+		t.Fatalf("lang property = %#v, want object", properties["lang"])
+	}
+	if typ, _ := langProp["type"].(string); typ != "string" {
+		t.Errorf("lang.type = %q, want string", typ)
+	}
+	enum, ok := langProp["enum"].([]any)
+	if !ok {
+		t.Fatalf("lang.enum = %#v, want array", langProp["enum"])
+	}
+	gotEnum := make([]string, len(enum))
+	for i, e := range enum {
+		s, ok := e.(string)
+		if !ok {
+			t.Fatalf("lang.enum[%d] = %#v, want string", i, e)
+		}
+		gotEnum[i] = s
+	}
+	if len(gotEnum) != 2 || gotEnum[0] != "python" || gotEnum[1] != "javascript" {
+		t.Errorf("lang.enum = %v, want [python javascript]", gotEnum)
+	}
 }
 
 // TestCodeExec_ResultExtractsArtifacts pins the artifact
 // collection: SandboxResponse.Metadata["artifacts"] must be
 // surfaced as `_ARTIFACTS` in the tool's JSON envelope so the
 // Message
-// component's artifact markdown formatter can render them.
+// component's artifact Markdown formatter can render them.
 func TestCodeExec_ResultExtractsArtifacts(t *testing.T) {
 	t.Parallel()
 
@@ -160,7 +244,7 @@ func TestCodeExec_ResultDropsBadArtifactShape(t *testing.T) {
 }
 
 // TestCodeExec_ResultExtractsAttachments pins the attachments
-// (rendered to downstream Message markdown) path. Distinct from
+// (rendered to downstream Message Markdown) path. Distinct from
 // artifacts so renderers can route them differently.
 func TestCodeExec_ResultExtractsAttachments(t *testing.T) {
 	t.Parallel()
@@ -193,8 +277,12 @@ func TestCodeExec_ResultSurfacesActualType(t *testing.T) {
 	t.Parallel()
 
 	resp := &SandboxResponse{
-		Returned:         `{"x": 1}`,
-		StructuredResult: map[string]any{"actual_type": "Object"},
+		StructuredResult: map[string]any{
+			"present": true,
+			"value": map[string]any{
+				"x": float64(1),
+			},
+		},
 	}
 	out, err := codeExecResultJSON(resp)
 	if err != nil {
@@ -207,8 +295,67 @@ func TestCodeExec_ResultSurfacesActualType(t *testing.T) {
 	if got.ActualType != "Object" {
 		t.Errorf("ActualType = %q, want Object", got.ActualType)
 	}
-	if got.Content != `{"x": 1}` {
-		t.Errorf("Content = %q, want %q", got.Content, `{"x": 1}`)
+	if got.Content != "{\n  \"x\": 1\n}" {
+		t.Errorf("Content = %q, want pretty JSON object", got.Content)
+	}
+}
+
+func TestCodeExec_ResultUsesStructuredResultValue(t *testing.T) {
+	t.Parallel()
+
+	resp := &SandboxResponse{
+		Returned: "8",
+		StructuredResult: map[string]any{
+			"present": true,
+			"value":   float64(8),
+		},
+	}
+	out, err := codeExecResultJSON(resp)
+	if err != nil {
+		t.Fatalf("codeExecResultJSON: %v", err)
+	}
+	var got map[string]any
+	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
+		t.Fatalf("output not valid JSON: %v", jerr)
+	}
+	if got["raw_result"] != float64(8) {
+		t.Fatalf("raw_result = %#v, want 8", got["raw_result"])
+	}
+	if got["content"] != "8" {
+		t.Fatalf("content = %#v, want \"8\"", got["content"])
+	}
+	if got["actual_type"] != "Number" {
+		t.Fatalf("actual_type = %#v, want Number", got["actual_type"])
+	}
+}
+
+func TestCodeExec_ResultFallsBackToStdoutJSON(t *testing.T) {
+	t.Parallel()
+
+	resp := &SandboxResponse{
+		Stdout: `{"a":[1,2]}`,
+	}
+	out, err := codeExecResultJSON(resp)
+	if err != nil {
+		t.Fatalf("codeExecResultJSON: %v", err)
+	}
+	var got map[string]any
+	if jerr := json.Unmarshal([]byte(out), &got); jerr != nil {
+		t.Fatalf("output not valid JSON: %v", jerr)
+	}
+	raw, ok := got["raw_result"].(map[string]any)
+	if !ok {
+		t.Fatalf("raw_result type = %T, want map[string]any", got["raw_result"])
+	}
+	arr, ok := raw["a"].([]any)
+	if !ok || len(arr) != 2 || arr[0] != float64(1) || arr[1] != float64(2) {
+		t.Fatalf("raw_result[a] = %#v, want [1 2]", raw["a"])
+	}
+	if got["actual_type"] != "Object" {
+		t.Fatalf("actual_type = %#v, want Object", got["actual_type"])
+	}
+	if got["content"] != "{\n  \"a\": [\n    1,\n    2\n  ]\n}" {
+		t.Fatalf("content = %#v, want pretty JSON", got["content"])
 	}
 }
 
@@ -219,6 +366,7 @@ func TestCodeExec_ResultSurfacesActualType(t *testing.T) {
 // parallel with the other CodeExec tests that depend on the
 // default (loud-fail) stub.
 func TestCodeExec_PassesTimeoutToSandbox(t *testing.T) {
+	ctx := t.Context()
 	var captured SandboxRequest
 	prev := GetSandboxClient()
 	SetSandboxClient(stubSandbox(func(_ context.Context, req SandboxRequest) (*SandboxResponse, error) {
@@ -228,7 +376,7 @@ func TestCodeExec_PassesTimeoutToSandbox(t *testing.T) {
 	t.Cleanup(func() { SetSandboxClient(prev) })
 
 	c := NewCodeExecTool()
-	_, err := c.InvokableRun(context.Background(),
+	_, err := c.InvokableRun(ctx,
 		`{"language":"python","code":"def main(): return {}","timeout":42}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -243,6 +391,7 @@ func TestCodeExec_PassesTimeoutToSandbox(t *testing.T) {
 // timeout test, this mutates the global sandbox client and must
 // not run in parallel with sibling CodeExec tests.
 func TestCodeExec_PassesArgumentsToSandbox(t *testing.T) {
+	ctx := t.Context()
 	var captured SandboxRequest
 	prev := GetSandboxClient()
 	SetSandboxClient(stubSandbox(func(_ context.Context, req SandboxRequest) (*SandboxResponse, error) {
@@ -252,7 +401,7 @@ func TestCodeExec_PassesArgumentsToSandbox(t *testing.T) {
 	t.Cleanup(func() { SetSandboxClient(prev) })
 
 	c := NewCodeExecTool()
-	_, err := c.InvokableRun(context.Background(),
+	_, err := c.InvokableRun(ctx,
 		`{"language":"python","code":"def main(**kw): return kw","arguments":{"x":1,"y":"z"}}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)

@@ -19,7 +19,6 @@ from common.string_utils import remove_redundant_spaces, clean_markdown_block
 
 
 class TestRemoveRedundantSpaces:
-
     # Basic punctuation tests
     @pytest.mark.skip(reason="Failed")
     def test_remove_spaces_before_commas(self):
@@ -244,7 +243,6 @@ class TestRemoveRedundantSpaces:
 
 
 class TestCleanMarkdownBlock:
-
     def test_standard_markdown_block(self):
         """Test standard Markdown code block syntax"""
         input_text = "```markdown\nHello world\n```"
@@ -356,4 +354,3 @@ class TestCleanMarkdownBlock:
         input_text = "```markdown\nFirst line\n```\n```markdown\nSecond line\n```"
         expected = "First line\n```\n```markdown\nSecond line"
         assert clean_markdown_block(input_text) == expected
-

@@ -27,7 +27,9 @@ func (a *turnLoopMockAgent) Description(_ context.Context) string { return "mock
 func (a *turnLoopMockAgent) Run(ctx context.Context, input *AgentInput, opts ...RunOption) *AsyncIterator[*AgentEvent] {
 	m := &mockModel{}
 	response := a.response
-	if response == "" { response = "mock" }
+	if response == "" {
+		response = "mock"
+	}
 	m.addResp(response)
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m})
 	agent.name = a.name
@@ -66,7 +68,9 @@ func (m *turnCancellableModel) Generate(ctx context.Context, msgs []Message, opt
 func (m *turnCancellableModel) Stream(ctx context.Context, msgs []Message, opts ...modelOption) (*schema.StreamReader[Message], error) {
 	return m.inner.Stream(ctx, msgs, opts...)
 }
-func (m *turnCancellableModel) BindTools(tools []*schema.ToolInfo) error { return m.inner.BindTools(tools) }
+func (m *turnCancellableModel) BindTools(tools []*schema.ToolInfo) error {
+	return m.inner.BindTools(tools)
+}
 
 func newTurnCheckpointStore() *memStore { return &memStore{data: make(map[string][]byte)} }
 
@@ -74,14 +78,17 @@ func newTurnCheckpointStore() *memStore { return &memStore{data: make(map[string
 func simpleTurnLoop(onEvents func(context.Context, *TurnContext[string], *AsyncIterator[*AgentEvent]) error) *AgentLoop[string] {
 	return NewAgentLoop(AgentLoopConfig[string]{
 		GenInput: func(ctx context.Context, loop *AgentLoop[string], items []string) (*GenInputResult[string], error) {
-			if len(items) == 0 { return nil, nil }
+			if len(items) == 0 {
+				return nil, nil
+			}
 			return &GenInputResult[string]{
 				Input:    &AgentInput{Messages: []Message{schema.UserMessage(items[0])}},
 				Consumed: items[:1], Remaining: items[1:],
 			}, nil
 		},
 		PrepareAgent: func(ctx context.Context, loop *AgentLoop[string], consumed []string) (Agent, error) {
-			m := &mockModel{}; m.addResp("Echo: " + consumed[0])
+			m := &mockModel{}
+			m.addResp("Echo: " + consumed[0])
 			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}), nil
 		},
 		OnAgentEvents: onEvents,
@@ -97,13 +104,17 @@ func newAndRunTurnLoop[T any](ctx context.Context, cfg AgentLoopConfig[T]) *Agen
 
 // genInputConsumeAll consumes all items at once.
 func genInputConsumeAll(_ context.Context, _ *AgentLoop[string], items []string) (*GenInputResult[string], error) {
-	if len(items) == 0 { return nil, nil }
+	if len(items) == 0 {
+		return nil, nil
+	}
 	return &GenInputResult[string]{Input: &AgentInput{Messages: []Message{schema.UserMessage(items[0])}}, Consumed: items, Remaining: nil}, nil
 }
 
 // genInputConsumeFirst consumes the first item, leaves rest for later.
 func genInputConsumeFirst(_ context.Context, _ *AgentLoop[string], items []string) (*GenInputResult[string], error) {
-	if len(items) == 0 { return nil, nil }
+	if len(items) == 0 {
+		return nil, nil
+	}
 	return &GenInputResult[string]{
 		Input:     &AgentInput{Messages: []Message{schema.UserMessage(items[0])}},
 		Consumed:  []string{items[0]},
@@ -113,7 +124,9 @@ func genInputConsumeFirst(_ context.Context, _ *AgentLoop[string], items []strin
 
 // genInputConsumeAllWithMsg consumes all items and produces a user message.
 func genInputConsumeAllWithMsg(_ context.Context, _ *AgentLoop[string], items []string) (*GenInputResult[string], error) {
-	if len(items) == 0 { return nil, nil }
+	if len(items) == 0 {
+		return nil, nil
+	}
 	return &GenInputResult[string]{
 		Input:    &AgentInput{Messages: []Message{schema.UserMessage(items[0])}},
 		Consumed: items,
@@ -150,11 +163,11 @@ func newTestStore() *memStore {
 
 // turnLoopCancellableMockAgent is a mock Agent that supports cancel observation.
 type turnLoopCancellableMockAgent struct {
-	name    string
-	runFunc func(ctx context.Context, input *AgentInput) (*AgentOutput, error)
+	name     string
+	runFunc  func(ctx context.Context, input *AgentInput) (*AgentOutput, error)
 	onCancel func(cc *cancelContext)
-	cancel  context.CancelFunc
-	mu      sync.Mutex
+	cancel   context.CancelFunc
+	mu       sync.Mutex
 }
 
 func (a *turnLoopCancellableMockAgent) Name(_ context.Context) string        { return a.name }
@@ -227,8 +240,10 @@ type turnLoopInterruptAgent struct {
 	interruptInfo any
 }
 
-func (a *turnLoopInterruptAgent) Name(_ context.Context) string        { return "InterruptAgent" }
-func (a *turnLoopInterruptAgent) Description(_ context.Context) string { return "agent that interrupts" }
+func (a *turnLoopInterruptAgent) Name(_ context.Context) string { return "InterruptAgent" }
+func (a *turnLoopInterruptAgent) Description(_ context.Context) string {
+	return "agent that interrupts"
+}
 func (a *turnLoopInterruptAgent) Run(ctx context.Context, _ *AgentInput, _ ...RunOption) *AsyncIterator[*AgentEvent] {
 	iter, gen := NewAsyncIteratorPair[*AgentEvent]()
 	go func() {
@@ -246,28 +261,37 @@ func containsString(s, substr string) bool {
 
 func TestTurnLoop_NewPanicsWithNilGenInput(t *testing.T) {
 	defer func() {
-		if r := recover(); r == nil { t.Fatal("expected panic") }
+		if r := recover(); r == nil {
+			t.Fatal("expected panic")
+		}
 	}()
 	NewAgentLoop[string](AgentLoopConfig[string]{PrepareAgent: func(_ context.Context, _ *AgentLoop[string], _ []string) (Agent, error) { return nil, nil }})
 }
 
 func TestTurnLoop_NewPanicsWithNilPrepareAgent(t *testing.T) {
 	defer func() {
-		if r := recover(); r == nil { t.Fatal("expected panic") }
+		if r := recover(); r == nil {
+			t.Fatal("expected panic")
+		}
 	}()
-	NewAgentLoop[string](AgentLoopConfig[string]{GenInput: func(_ context.Context, _ *AgentLoop[string], _ []string) (*GenInputResult[string], error) { return nil, nil }})
+	NewAgentLoop[string](AgentLoopConfig[string]{GenInput: func(_ context.Context, _ *AgentLoop[string], _ []string) (*GenInputResult[string], error) {
+		return nil, nil
+	}})
 }
 
 // ======================== Basic Push-Stop-Run ========================
 
 func TestTurnLoop_PushRunAndWait(t *testing.T) {
 	tl := simpleTurnLoop(nil)
-	tl.Push("a"); tl.Push("b")
-	ctx := context.Background()
+	tl.Push("a")
+	tl.Push("b")
+	ctx := t.Context()
 	tl.Stop()
 	tl.Run(ctx)
 	result := tl.Wait()
-	if result == nil { t.Fatal("nil result") }
+	if result == nil {
+		t.Fatal("nil result")
+	}
 	t.Logf("basic: unhandled=%d", len(result.UnhandledItems))
 }
 
@@ -275,32 +299,42 @@ func TestTurnLoop_StopCause(t *testing.T) {
 	tl := simpleTurnLoop(nil)
 	tl.Push("x")
 	tl.Stop(WithStopCause("max_tokens"))
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	result := tl.Wait()
-	if result.StopCause != "max_tokens" { t.Errorf("StopCause = %q", result.StopCause) }
+	if result.StopCause != "max_tokens" {
+		t.Errorf("StopCause = %q", result.StopCause)
+	}
 }
 
 func TestTurnLoop_OnAgentEventsCalled(t *testing.T) {
 	var called atomic.Bool
 	tl := simpleTurnLoop(func(ctx context.Context, tc *TurnContext[string], events *AsyncIterator[*AgentEvent]) error {
 		called.Store(true)
-		for { ev, ok := events.Next(); if !ok { break }; _ = ev }
+		for {
+			ev, ok := events.Next()
+			if !ok {
+				break
+			}
+			_ = ev
+		}
 		return nil
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	tl.Run(ctx)
 	tl.Push("ev")
 	time.Sleep(50 * time.Millisecond)
 	tl.Stop()
 	tl.Wait()
-	if !called.Load() { t.Error("OnAgentEvents not called") }
+	if !called.Load() {
+		t.Error("OnAgentEvents not called")
+	}
 }
 
 func TestTurnLoop_OnAgentEventsReturnsError(t *testing.T) {
 	tl := simpleTurnLoop(func(ctx context.Context, tc *TurnContext[string], events *AsyncIterator[*AgentEvent]) error {
 		return errors.New("custom_events_error")
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	tl.Run(ctx)
 	tl.Push("fail")
 	time.Sleep(50 * time.Millisecond)
@@ -316,7 +350,9 @@ func TestTurnLoop_OnAgentEventsReturnsError(t *testing.T) {
 func TestTurnLoop_GenInputErrors(t *testing.T) {
 	tl := NewAgentLoop(AgentLoopConfig[string]{
 		GenInput: func(ctx context.Context, loop *AgentLoop[string], items []string) (*GenInputResult[string], error) {
-			if len(items) == 0 { return nil, nil }
+			if len(items) == 0 {
+				return nil, nil
+			}
 			return nil, errors.New("gen_input_err")
 		},
 		PrepareAgent: func(ctx context.Context, loop *AgentLoop[string], consumed []string) (Agent, error) {
@@ -325,9 +361,11 @@ func TestTurnLoop_GenInputErrors(t *testing.T) {
 	})
 	tl.Push("bad")
 	tl.Stop()
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	result := tl.Wait()
-	if result.ExitReason == nil { t.Log("no exit error (may not reach GenInput before stop)") }
+	if result.ExitReason == nil {
+		t.Log("no exit error (may not reach GenInput before stop)")
+	}
 }
 
 func TestTurnLoop_PrepareAgentErrors(t *testing.T) {
@@ -341,18 +379,22 @@ func TestTurnLoop_PrepareAgentErrors(t *testing.T) {
 	})
 	tl.Push("bad")
 	tl.Stop()
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	result := tl.Wait()
-	if result.ExitReason == nil { t.Log("no exit error (may not reach PrepareAgent)") }
+	if result.ExitReason == nil {
+		t.Log("no exit error (may not reach PrepareAgent)")
+	}
 }
 
 // ======================== Multiple Items ========================
 
 func TestTurnLoop_MultipleItems(t *testing.T) {
 	tl := simpleTurnLoop(nil)
-	for i := 0; i < 10; i++ { tl.Push(fmt.Sprintf("item-%d", i)) }
+	for i := 0; i < 10; i++ {
+		tl.Push(fmt.Sprintf("item-%d", i))
+	}
 	tl.Stop()
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	result := tl.Wait()
 	t.Logf("10 items: unhandled=%d interrupted=%d", len(result.UnhandledItems), len(result.InterruptedItems))
 }
@@ -361,12 +403,11 @@ func TestTurnLoop_ConcurrentPush(t *testing.T) {
 	tl := simpleTurnLoop(nil)
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() { defer wg.Done(); tl.Push("c") }()
+		wg.Go(func() { tl.Push("c") })
 	}
 	wg.Wait()
 	tl.Stop()
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	result := tl.Wait()
 	t.Logf("50 concurrent: unhandled=%d", len(result.UnhandledItems))
 }
@@ -377,21 +418,24 @@ func TestTurnLoop_WithCheckpoint(t *testing.T) {
 	store := newTurnCheckpointStore()
 	tl := NewAgentLoop(AgentLoopConfig[string]{
 		GenInput: func(ctx context.Context, loop *AgentLoop[string], items []string) (*GenInputResult[string], error) {
-			if len(items) == 0 { return nil, nil }
+			if len(items) == 0 {
+				return nil, nil
+			}
 			return &GenInputResult[string]{
 				Input:    &AgentInput{Messages: []Message{schema.UserMessage(items[0])}},
 				Consumed: items[:1], Remaining: items[1:],
 			}, nil
 		},
 		PrepareAgent: func(ctx context.Context, loop *AgentLoop[string], consumed []string) (Agent, error) {
-			m := &mockModel{}; m.addResp("cp:" + consumed[0])
+			m := &mockModel{}
+			m.addResp("cp:" + consumed[0])
 			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}), nil
 		},
 		Store: store,
 	})
 	tl.Push("cp1")
 	tl.Stop()
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	result := tl.Wait()
 	t.Logf("checkpoint: unhandled=%d", len(result.UnhandledItems))
 }
@@ -401,7 +445,7 @@ func TestTurnLoop_WithCheckpoint(t *testing.T) {
 func TestTurnLoop_ImmediateStop(t *testing.T) {
 	tl := simpleTurnLoop(nil)
 	tl.Push("urgent")
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	tl.Stop(WithImmediateStop(), WithSkipCheckpoint())
 	result := tl.Wait()
 	t.Logf("immediate: err=%v", result.ExitReason)
@@ -410,9 +454,11 @@ func TestTurnLoop_ImmediateStop(t *testing.T) {
 func TestTurnLoop_StopWithNoItems(t *testing.T) {
 	tl := simpleTurnLoop(nil)
 	tl.Stop(WithStopCause("empty"))
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	result := tl.Wait()
-	if result.StopCause != "empty" { t.Errorf("StopCause = %q", result.StopCause) }
+	if result.StopCause != "empty" {
+		t.Errorf("StopCause = %q", result.StopCause)
+	}
 }
 
 func TestTurnLoop_StopMultipleTimes(t *testing.T) {
@@ -420,7 +466,7 @@ func TestTurnLoop_StopMultipleTimes(t *testing.T) {
 	tl.Push("x")
 	tl.Stop(WithStopCause("first"))
 	tl.Stop(WithStopCause("second"))
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	result := tl.Wait()
 	_ = result
 }
@@ -430,7 +476,7 @@ func TestTurnLoop_StopMultipleTimes(t *testing.T) {
 func TestTurnLoop_ContextCancel(t *testing.T) {
 	tl := simpleTurnLoop(nil)
 	tl.Push("task")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	tl.Stop()
 	tl.Run(ctx)
@@ -442,10 +488,11 @@ func TestTurnLoop_ContextCancel(t *testing.T) {
 
 func TestTurnLoop_PushAfterStop(t *testing.T) {
 	tl := simpleTurnLoop(nil)
-	tl.Push("a"); tl.Push("b")
+	tl.Push("a")
+	tl.Push("b")
 	tl.Stop()
 	tl.Push("c")
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	tl.Wait()
 }
 
@@ -455,7 +502,9 @@ func TestTurnLoop_WithToolAgent(t *testing.T) {
 	tool := &mockTool{name: "calc", desc: "calculator"}
 	tl := NewAgentLoop(AgentLoopConfig[string]{
 		GenInput: func(ctx context.Context, loop *AgentLoop[string], items []string) (*GenInputResult[string], error) {
-			if len(items) == 0 { return nil, nil }
+			if len(items) == 0 {
+				return nil, nil
+			}
 			return &GenInputResult[string]{
 				Input:    &AgentInput{Messages: []Message{schema.UserMessage(items[0])}},
 				Consumed: items[:1], Remaining: items[1:],
@@ -473,7 +522,7 @@ func TestTurnLoop_WithToolAgent(t *testing.T) {
 	})
 	tl.Push("use tool")
 	tl.Stop()
-	ctx := context.Background()
+	ctx := t.Context()
 	tl.Run(ctx)
 	result := tl.Wait()
 	t.Logf("tool agent: unhandled=%d", len(result.UnhandledItems))
@@ -484,37 +533,46 @@ func TestTurnLoop_WithToolAgent(t *testing.T) {
 func TestTurnLoop_GenInputAllConsumed(t *testing.T) {
 	tl := NewAgentLoop(AgentLoopConfig[string]{
 		GenInput: func(ctx context.Context, loop *AgentLoop[string], items []string) (*GenInputResult[string], error) {
-			if len(items) == 0 { return nil, nil }
+			if len(items) == 0 {
+				return nil, nil
+			}
 			return &GenInputResult[string]{Input: &AgentInput{Messages: []Message{schema.UserMessage(items[0])}}, Consumed: items, Remaining: nil}, nil
 		},
 		PrepareAgent: func(ctx context.Context, loop *AgentLoop[string], consumed []string) (Agent, error) {
-			m := &mockModel{}; m.addResp("all")
+			m := &mockModel{}
+			m.addResp("all")
 			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}), nil
 		},
 	})
-	tl.Push("1"); tl.Push("2")
+	tl.Push("1")
+	tl.Push("2")
 	tl.Stop()
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	tl.Wait()
 }
 
 func TestTurnLoop_GenInputOneByOne(t *testing.T) {
 	tl := NewAgentLoop(AgentLoopConfig[string]{
 		GenInput: func(ctx context.Context, loop *AgentLoop[string], items []string) (*GenInputResult[string], error) {
-			if len(items) == 0 { return nil, nil }
+			if len(items) == 0 {
+				return nil, nil
+			}
 			return &GenInputResult[string]{
-				Input: &AgentInput{Messages: []Message{schema.UserMessage(items[0])}},
+				Input:    &AgentInput{Messages: []Message{schema.UserMessage(items[0])}},
 				Consumed: items[:1], Remaining: items[1:],
 			}, nil
 		},
 		PrepareAgent: func(ctx context.Context, loop *AgentLoop[string], consumed []string) (Agent, error) {
-			m := &mockModel{}; m.addResp("one:" + consumed[0])
+			m := &mockModel{}
+			m.addResp("one:" + consumed[0])
 			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}), nil
 		},
 	})
-	tl.Push("x"); tl.Push("y"); tl.Push("z")
+	tl.Push("x")
+	tl.Push("y")
+	tl.Push("z")
 	tl.Stop()
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	result := tl.Wait()
 	t.Logf("stream: unhandled=%d", len(result.UnhandledItems))
 }
@@ -530,7 +588,7 @@ func TestTurnLoop_GenInputConsumedNone(t *testing.T) {
 	})
 	tl.Push("x")
 	tl.Stop()
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	result := tl.Wait()
 	t.Logf("none consumed: unhandled=%d", len(result.UnhandledItems))
 }
@@ -540,19 +598,22 @@ func TestTurnLoop_GenInputConsumedNone(t *testing.T) {
 func TestTurnLoop_InterceptedItems(t *testing.T) {
 	tl := NewAgentLoop(AgentLoopConfig[string]{
 		GenInput: func(ctx context.Context, loop *AgentLoop[string], items []string) (*GenInputResult[string], error) {
-			if len(items) == 0 { return nil, nil }
+			if len(items) == 0 {
+				return nil, nil
+			}
 			return &GenInputResult[string]{
 				Input:    &AgentInput{Messages: []Message{schema.UserMessage(items[0])}},
 				Consumed: items[:1], Remaining: items[1:],
 			}, nil
 		},
 		PrepareAgent: func(ctx context.Context, loop *AgentLoop[string], consumed []string) (Agent, error) {
-			m := &mockModel{}; m.addResp("intercepted")
+			m := &mockModel{}
+			m.addResp("intercepted")
 			return NewReActAgent(&ReActConfig[*schema.Message]{Model: m}), nil
 		},
 	})
 	tl.Push("a")
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	tl.Stop(WithImmediateStop(), WithSkipCheckpoint())
 	result := tl.Wait()
 	_ = result
@@ -563,35 +624,39 @@ func TestTurnLoop_InterceptedItems(t *testing.T) {
 func TestTurnLoop_NoPushBeforeRun(t *testing.T) {
 	tl := simpleTurnLoop(nil)
 	tl.Stop()
-	tl.Run(context.Background())
+	tl.Run(t.Context())
 	result := tl.Wait()
-	if result == nil { t.Fatal("nil result") }
+	if result == nil {
+		t.Fatal("nil result")
+	}
 }
 
 func TestTurnLoop_DoubleRunPanics(t *testing.T) {
 	tl := simpleTurnLoop(nil)
 	tl.Push("x")
 	tl.Stop()
-	tl.Run(context.Background())
-	tl.Run(context.Background()) // should be no-op
+	tl.Run(t.Context())
+	tl.Run(t.Context()) // should be no-op
 	tl.Wait()
 }
 
 func TestTurnLoop_RunThenStopThenWait(t *testing.T) {
 	tl := simpleTurnLoop(nil)
 	tl.Push("x")
-	ctx := context.Background()
+	ctx := t.Context()
 	tl.Run(ctx)
 	tl.Stop()
 	result := tl.Wait()
-	if result == nil { t.Fatal("nil result") }
+	if result == nil {
+		t.Fatal("nil result")
+	}
 }
 
 // ======================== edge-case tests ========================
 
 // TestTurnLoop_StopIsIdempotent verifies multiple Stop() calls are safe.
 func TestTurnLoop_StopIsIdempotent(t *testing.T) {
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		GenInput:     genInputConsumeAll,
 		PrepareAgent: prepareTestAgent,
 	})
@@ -608,7 +673,7 @@ func TestTurnLoop_StopIsIdempotent(t *testing.T) {
 
 // TestTurnLoop_WaitMultipleGoroutines verifies Wait() is safe for concurrent callers.
 func TestTurnLoop_WaitMultipleGoroutines(t *testing.T) {
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		GenInput:     genInputConsumeAll,
 		PrepareAgent: prepareTestAgent,
 	})
@@ -620,11 +685,9 @@ func TestTurnLoop_WaitMultipleGoroutines(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			results[i] = loop.Wait()
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -640,7 +703,7 @@ func TestTurnLoop_WaitMultipleGoroutines(t *testing.T) {
 func TestTurnLoop_GetAgentError(t *testing.T) {
 	agentErr := errors.New("get agent error")
 
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		GenInput: genInputConsumeAll,
 		PrepareAgent: func(ctx context.Context, _ *AgentLoop[string], consumed []string) (Agent, error) {
 			return nil, agentErr
@@ -660,7 +723,7 @@ func TestTurnLoop_BatchProcessing(t *testing.T) {
 	var batches [][]string
 	var mu sync.Mutex
 
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		GenInput: func(ctx context.Context, _ *AgentLoop[string], items []string) (*GenInputResult[string], error) {
 			mu.Lock()
 			batches = append(batches, items)
@@ -693,7 +756,7 @@ func TestTurnLoop_BatchProcessing(t *testing.T) {
 
 // TestTurnLoop_StopWithMode verifies Stop with WithGracefulStop works.
 func TestTurnLoop_StopWithMode(t *testing.T) {
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		GenInput:     genInputConsumeAll,
 		PrepareAgent: prepareTestAgent,
 	})
@@ -709,7 +772,7 @@ func TestTurnLoop_StopWithMode(t *testing.T) {
 // ======================== Context Cancel Variants ========================
 
 func TestTurnLoop_ContextDeadlineExceeded(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 
 	loop := newAndRunTurnLoop(ctx, AgentLoopConfig[string]{
@@ -733,7 +796,7 @@ func TestTurnLoop_ContextDeadlineExceeded(t *testing.T) {
 }
 
 func TestTurnLoop_ContextCancelBeforeReceive(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	loop := NewAgentLoop(AgentLoopConfig[string]{
@@ -751,7 +814,7 @@ func TestTurnLoop_ContextCancelBeforeReceive(t *testing.T) {
 }
 
 func TestTurnLoop_ContextCancelDuringBlockingReceive(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	loop := newAndRunTurnLoop(ctx, AgentLoopConfig[string]{
 		GenInput:     genInputConsumeAll,
@@ -768,7 +831,7 @@ func TestTurnLoop_ContextCancelDuringBlockingReceive(t *testing.T) {
 }
 
 func TestTurnLoop_ContextCancelAfterGenInput_RecoverItems(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	genInputCount := 0
 	loop := newAndRunTurnLoop(ctx, AgentLoopConfig[string]{
@@ -810,7 +873,7 @@ func TestTurnLoop_OnAgentEventsReceivesEvents(t *testing.T) {
 	var receivedConsumed []string
 	var mu sync.Mutex
 
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		GenInput:     genInputConsumeAllWithMsg,
 		PrepareAgent: prepareTestAgent,
 		OnAgentEvents: func(ctx context.Context, tc *TurnContext[string], events *AsyncIterator[*AgentEvent]) error {
@@ -819,7 +882,9 @@ func TestTurnLoop_OnAgentEventsReceivesEvents(t *testing.T) {
 			mu.Unlock()
 			for {
 				event, ok := events.Next()
-				if !ok { break }
+				if !ok {
+					break
+				}
 				mu.Lock()
 				receivedEvents = append(receivedEvents, event)
 				mu.Unlock()
@@ -845,16 +910,17 @@ func TestTurnLoop_OnAgentEventsReceivesEvents(t *testing.T) {
 		t.Error("should have received consumed items")
 	}
 }
+
 // ======================== Stop with Checkpoint Cancel ========================
 
 func TestTurnLoop_StopCheckPointIDInCancelError(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	modelStarted := make(chan struct{}, 1)
 	checkpointID := "turn-loop-cancel-ckpt-1"
 	store := newTestStore()
 
 	slowModel := &cancelTestChatModel{
-		delayNs: int64(500 * time.Millisecond),
+		delayNs:     int64(500 * time.Millisecond),
 		startedChan: modelStarted,
 		doneChan:    make(chan struct{}, 1),
 	}
@@ -884,13 +950,13 @@ func TestTurnLoop_StopCheckPointIDInCancelError(t *testing.T) {
 // ======================== CancelError Captured Independently ========================
 
 func TestTurnLoop_CancelError_CapturedIndependentlyOfCallback(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	modelStarted := make(chan struct{}, 1)
 	checkpointID := "cancel-capture-independent-1"
 	store := newTestStore()
 
 	slowModel := &cancelTestChatModel{
-		delayNs: int64(500 * time.Millisecond),
+		delayNs:     int64(500 * time.Millisecond),
 		startedChan: modelStarted,
 		doneChan:    make(chan struct{}, 1),
 	}
@@ -909,7 +975,9 @@ func TestTurnLoop_CancelError_CapturedIndependentlyOfCallback(t *testing.T) {
 		OnAgentEvents: func(ctx context.Context, tc *TurnContext[string], events *AsyncIterator[*AgentEvent]) error {
 			for {
 				_, ok := events.Next()
-				if !ok { break }
+				if !ok {
+					break
+				}
 			}
 			return nil // swallow everything
 		},
@@ -927,12 +995,12 @@ func TestTurnLoop_CancelError_CapturedIndependentlyOfCallback(t *testing.T) {
 // ======================== Stop Without CheckpointID ========================
 
 func TestTurnLoop_StopWithoutCheckpointIDDoesNotPersist(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	modelStarted := make(chan struct{}, 1)
 	store := newTestStore()
 
 	slowModel := &cancelTestChatModel{
-		delayNs: int64(500 * time.Millisecond),
+		delayNs:     int64(500 * time.Millisecond),
 		startedChan: modelStarted,
 		doneChan:    make(chan struct{}, 1),
 	}
@@ -960,7 +1028,7 @@ func TestTurnLoop_StopWithoutCheckpointIDDoesNotPersist(t *testing.T) {
 // ======================== Stop While Idle ========================
 
 func TestTurnLoop_StopWhileIdle_SkipsCheckpoint(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := newTestStore()
 	cpID := "idle-session"
 
@@ -981,7 +1049,7 @@ func TestTurnLoop_StopWhileIdle_SkipsCheckpoint(t *testing.T) {
 // ======================== Stop Call From GenInput ========================
 
 func TestTurnLoop_StopCallFromGenInput(t *testing.T) {
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		GenInput: func(ctx context.Context, loop *AgentLoop[string], items []string) (*GenInputResult[string], error) {
 			loop.Stop()
 			return &GenInputResult[string]{Input: &AgentInput{}, Consumed: items}, nil
@@ -1002,13 +1070,15 @@ func TestTurnLoop_StopCallFromGenInput(t *testing.T) {
 func TestTurnLoop_PushFromOnAgentEvents(t *testing.T) {
 	pushCount := int32(0)
 
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		GenInput:     genInputConsumeFirst,
 		PrepareAgent: prepareTestAgent,
 		OnAgentEvents: func(ctx context.Context, tc *TurnContext[string], events *AsyncIterator[*AgentEvent]) error {
 			for {
 				_, ok := events.Next()
-				if !ok { break }
+				if !ok {
+					break
+				}
 			}
 			count := atomic.AddInt32(&pushCount, 1)
 			if count == 1 {
@@ -1051,11 +1121,15 @@ func TestNewTurnLoop_PushBeforeRun(t *testing.T) {
 	})
 
 	ok, _ := loop.Push("msg1")
-	if !ok { t.Error("Push returned false") }
+	if !ok {
+		t.Error("Push returned false")
+	}
 	ok, _ = loop.Push("msg2")
-	if !ok { t.Error("Push returned false") }
+	if !ok {
+		t.Error("Push returned false")
+	}
 
-	loop.Run(context.Background())
+	loop.Run(t.Context())
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -1094,7 +1168,7 @@ func TestNewTurnLoop_WaitBeforeRun(t *testing.T) {
 
 	loop.Push("msg1")
 	loop.Stop()
-	loop.Run(context.Background())
+	loop.Run(t.Context())
 
 	select {
 	case result := <-waitDone:
@@ -1120,9 +1194,9 @@ func TestNewTurnLoop_RunIsIdempotent(t *testing.T) {
 	})
 
 	loop.Push("msg1")
-	loop.Run(context.Background())
-	loop.Run(context.Background())
-	loop.Run(context.Background())
+	loop.Run(t.Context())
+	loop.Run(t.Context())
+	loop.Run(t.Context())
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -1163,7 +1237,7 @@ func TestNewTurnLoop_ConcurrentPushAndRun(t *testing.T) {
 
 		go func() {
 			defer wg.Done()
-			loop.Run(context.Background())
+			loop.Run(t.Context())
 		}()
 
 		wg.Wait()
@@ -1191,7 +1265,7 @@ func TestTurnLoop_CtxPropagation(t *testing.T) {
 	const traceVal = "trace-123"
 	var prepareCtxVal, eventsCtxVal string
 
-	ctx := context.WithValue(context.Background(), turnCtxKey{}, traceVal)
+	ctx := context.WithValue(t.Context(), turnCtxKey{}, traceVal)
 
 	cfg := AgentLoopConfig[string]{
 		GenInput: func(ctx context.Context, loop *AgentLoop[string], items []string) (*GenInputResult[string], error) {
@@ -1216,7 +1290,9 @@ func TestTurnLoop_CtxPropagation(t *testing.T) {
 				eventsCtxVal = v
 			}
 			for {
-				if _, ok := events.Next(); !ok { break }
+				if _, ok := events.Next(); !ok {
+					break
+				}
 			}
 			tc.Loop.Stop()
 			return nil
@@ -1245,7 +1321,7 @@ func TestTurnLoop_TurnContext_StoppedChannel(t *testing.T) {
 	stoppedSeen := make(chan struct{})
 	agentStarted := make(chan struct{})
 
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		GenInput: genInputConsumeAllWithMsg,
 		PrepareAgent: func(ctx context.Context, _ *AgentLoop[string], consumed []string) (Agent, error) {
 			return &turnLoopCancellableMockAgent{
@@ -1265,7 +1341,9 @@ func TestTurnLoop_TurnContext_StoppedChannel(t *testing.T) {
 				t.Error("timed out waiting for Stopped channel")
 			}
 			for {
-				if _, ok := events.Next(); !ok { break }
+				if _, ok := events.Next(); !ok {
+					break
+				}
 			}
 			return nil
 		},
@@ -1288,7 +1366,7 @@ func TestTurnLoop_TurnContext_StoppedChannel(t *testing.T) {
 // ======================== Stop With Skip Checkpoint ========================
 
 func TestTurnLoop_StopWithSkipCheckpoint(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := newTestStore()
 	cpID := "skip-cp-session"
 
@@ -1313,7 +1391,7 @@ func TestTurnLoop_StopWithSkipCheckpoint(t *testing.T) {
 // ======================== Stop With Stop Cause ========================
 
 func TestTurnLoop_StopWithStopCause(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cause := "user session timeout"
 
 	loop := newAndRunTurnLoop(ctx, AgentLoopConfig[string]{
@@ -1331,7 +1409,7 @@ func TestTurnLoop_StopWithStopCause(t *testing.T) {
 }
 
 func TestTurnLoop_StopCause_EmptyWhenNoStop(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	loop := newAndRunTurnLoop(ctx, AgentLoopConfig[string]{
 		GenInput:     genInputConsumeAll,
@@ -1350,7 +1428,7 @@ func TestTurnLoop_StopCause_InTurnContext(t *testing.T) {
 	gotCause := make(chan string, 1)
 	agentStarted := make(chan struct{})
 
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		GenInput: genInputConsumeAllWithMsg,
 		PrepareAgent: func(ctx context.Context, _ *AgentLoop[string], consumed []string) (Agent, error) {
 			return &turnLoopCancellableMockAgent{
@@ -1370,7 +1448,9 @@ func TestTurnLoop_StopCause_InTurnContext(t *testing.T) {
 				t.Error("timed out waiting for Stopped channel")
 			}
 			for {
-				if _, ok := events.Next(); !ok { break }
+				if _, ok := events.Next(); !ok {
+					break
+				}
 			}
 			return nil
 		},
@@ -1398,7 +1478,7 @@ func TestTurnLoop_StopCause_InTurnContext(t *testing.T) {
 func TestTurnLoop_StopCause_FirstNonEmptyWins(t *testing.T) {
 	agentStarted := make(chan struct{})
 
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		GenInput: genInputConsumeAllWithMsg,
 		PrepareAgent: func(ctx context.Context, _ *AgentLoop[string], consumed []string) (Agent, error) {
 			return &turnLoopCancellableMockAgent{
@@ -1412,7 +1492,9 @@ func TestTurnLoop_StopCause_FirstNonEmptyWins(t *testing.T) {
 		OnAgentEvents: func(ctx context.Context, tc *TurnContext[string], events *AsyncIterator[*AgentEvent]) error {
 			close(agentStarted)
 			for {
-				if _, ok := events.Next(); !ok { break }
+				if _, ok := events.Next(); !ok {
+					break
+				}
 			}
 			return nil
 		},
@@ -1444,12 +1526,16 @@ func TestTurnLoop_StopBeforeRun_PushThenStop(t *testing.T) {
 	})
 
 	ok, _ := loop.Push("item1")
-	if !ok { t.Error("Push returned false") }
+	if !ok {
+		t.Error("Push returned false")
+	}
 	ok, _ = loop.Push("item2")
-	if !ok { t.Error("Push returned false") }
+	if !ok {
+		t.Error("Push returned false")
+	}
 
 	loop.Stop()
-	loop.Run(context.Background())
+	loop.Run(t.Context())
 	result := loop.Wait()
 
 	if result.ExitReason != nil {
@@ -1465,7 +1551,7 @@ func TestTurnLoop_SkipCheckpoint_Sticky(t *testing.T) {
 	store := newTestStore()
 	cpID := "sticky-skip-session"
 
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		Store:        store,
 		CheckpointID: cpID,
 		GenInput:     genInputConsumeAllWithMsg,
@@ -1481,7 +1567,9 @@ func TestTurnLoop_SkipCheckpoint_Sticky(t *testing.T) {
 		OnAgentEvents: func(ctx context.Context, tc *TurnContext[string], events *AsyncIterator[*AgentEvent]) error {
 			close(agentStarted)
 			for {
-				if _, ok := events.Next(); !ok { break }
+				if _, ok := events.Next(); !ok {
+					break
+				}
 			}
 			return nil
 		},
@@ -1497,13 +1585,12 @@ func TestTurnLoop_SkipCheckpoint_Sticky(t *testing.T) {
 	t.Logf("skip checkpoint sticky: exit=%v", exit.ExitReason)
 }
 
-
 // ======================== GenInput Error Recovery ========================
 
 func TestTurnLoop_GenInputError_RecoverItems(t *testing.T) {
 	genErr := errors.New("gen input error")
 
-	loop := newAndRunTurnLoop(context.Background(), AgentLoopConfig[string]{
+	loop := newAndRunTurnLoop(t.Context(), AgentLoopConfig[string]{
 		GenInput: func(ctx context.Context, _ *AgentLoop[string], items []string) (*GenInputResult[string], error) {
 			return nil, genErr
 		},
@@ -1522,7 +1609,7 @@ func TestTurnLoop_GenInputError_RecoverItems(t *testing.T) {
 // ======================== Checkpoint Not Found ========================
 
 func TestTurnLoop_CheckpointNotFound_FreshStart(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := newTestStore()
 	var genInputCalled bool
 	loop := NewAgentLoop(AgentLoopConfig[string]{
@@ -1535,7 +1622,9 @@ func TestTurnLoop_CheckpointNotFound_FreshStart(t *testing.T) {
 		PrepareAgent: prepareTestAgent,
 		OnAgentEvents: func(ctx context.Context, tc *TurnContext[string], events *AsyncIterator[*AgentEvent]) error {
 			for {
-				if _, ok := events.Next(); !ok { break }
+				if _, ok := events.Next(); !ok {
+					break
+				}
 			}
 			tc.Loop.Stop()
 			return nil
@@ -1565,7 +1654,9 @@ func TestAttack_TurnBuffer_WakeupDoesNotLoseItems(t *testing.T) {
 	var got []string
 	for i := 0; i < 3; i++ {
 		val, ok := tb.Receive()
-		if !ok { t.Fatal("expected ok") }
+		if !ok {
+			t.Fatal("expected ok")
+		}
 		got = append(got, val)
 	}
 
@@ -1575,4 +1666,3 @@ func TestAttack_TurnBuffer_WakeupDoesNotLoseItems(t *testing.T) {
 }
 
 // ======================== AgentLoop Preempt During Planning ========================
-

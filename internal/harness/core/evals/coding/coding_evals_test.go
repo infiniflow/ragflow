@@ -94,12 +94,12 @@ type localBackend struct {
 func (b *localBackend) Read(path string) (string, error) {
 	return "", nil
 }
-func (b *localBackend) Write(path, content string) error { return nil }
-func (b *localBackend) Edit(path, old, new string) error { return nil }
-func (b *localBackend) Ls(path string) ([]string, error) { return nil, nil }
-func (b *localBackend) Glob(pattern string) ([]string, error) { return nil, nil }
+func (b *localBackend) Write(path, content string) error          { return nil }
+func (b *localBackend) Edit(path, old, new string) error          { return nil }
+func (b *localBackend) Ls(path string) ([]string, error)          { return nil, nil }
+func (b *localBackend) Glob(pattern string) ([]string, error)     { return nil, nil }
 func (b *localBackend) Grep(pattern, path string) (string, error) { return "", nil }
-func (b *localBackend) Execute(command string) (string, error) { return "", nil }
+func (b *localBackend) Execute(command string) (string, error)    { return "", nil }
 
 // ---- E2E Tests ----
 
@@ -108,7 +108,7 @@ func TestE2E_WriteFile(t *testing.T) {
 	dir := t.TempDir()
 	workDir := dir + "/project"
 	// Use the evals framework.
-	report := evals.Run(context.Background(), &evals.EvalConfig{
+	report := evals.Run(t.Context(), &evals.EvalConfig{
 		Cases: []evals.EvalCase{
 			{
 				Name:  "write_hello",
@@ -147,7 +147,7 @@ func TestE2E_WriteFile(t *testing.T) {
 func TestE2E_WriteAndRead(t *testing.T) {
 	dir := t.TempDir()
 
-	report := evals.Run(context.Background(), &evals.EvalConfig{
+	report := evals.Run(t.Context(), &evals.EvalConfig{
 		Cases: []evals.EvalCase{
 			{
 				Name:  "write_read",
@@ -190,7 +190,7 @@ func TestE2E_WriteAndRead(t *testing.T) {
 func TestE2E_ShellCommand(t *testing.T) {
 	dir := t.TempDir()
 
-	report := evals.Run(context.Background(), &evals.EvalConfig{
+	report := evals.Run(t.Context(), &evals.EvalConfig{
 		Cases: []evals.EvalCase{
 			{
 				Name:  "shell_build",
@@ -229,11 +229,11 @@ func TestE2E_ShellCommand(t *testing.T) {
 func TestE2E_MultipleCases(t *testing.T) {
 	dir := t.TempDir()
 
-	report := evals.Run(context.Background(), &evals.EvalConfig{
+	report := evals.Run(t.Context(), &evals.EvalConfig{
 		MaxConcurrency: 2,
 		Cases: []evals.EvalCase{
 			{
-				Name: "write_main",
+				Name:  "write_main",
 				Query: "create main.go",
 				Agent: coding.New(&coding.Config{
 					Model: newScriptedModel(
@@ -245,7 +245,7 @@ func TestE2E_MultipleCases(t *testing.T) {
 				Scorers: []evals.Scorer{evals.ToolCalled("write_file")},
 			},
 			{
-				Name: "list_files",
+				Name:  "list_files",
 				Query: "show files",
 				Agent: coding.New(&coding.Config{
 					Model: newScriptedModel(
@@ -271,11 +271,11 @@ func TestE2E_MultipleCases(t *testing.T) {
 	}
 }
 
-// TestE2E_MultiStepFlow tests a realistic multi-step coding workflow.
+// TestE2E_MultiStepFlow tests a realistic multistep coding workflow.
 func TestE2E_MultiStepFlow(t *testing.T) {
 	dir := t.TempDir()
 
-	report := evals.Run(context.Background(), &evals.EvalConfig{
+	report := evals.Run(t.Context(), &evals.EvalConfig{
 		Cases: []evals.EvalCase{
 			{
 				Name:  "multi_step",

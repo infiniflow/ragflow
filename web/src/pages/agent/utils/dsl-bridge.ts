@@ -30,7 +30,7 @@
 
 import { Edge } from '@xyflow/react';
 
-import { DataflowOperator, EmptyDsl, Operator } from '@/constants/agent';
+import { EmptyDsl, Operator } from '@/constants/agent';
 import {
   DSL,
   DSLComponents,
@@ -38,9 +38,27 @@ import {
   IOperator,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
-import { DataflowEmptyDsl } from '@/pages/agents/hooks/use-create-agent';
+import { DataflowEmptyDsl } from '@/pages/agent/empty-dsl';
 
 import { buildDslComponentsByGraph, buildDslGlobalVariables } from '../utils';
+
+const LEGACY_ITERATION_NODE_TYPE = 'group';
+const ITERATION_NODE_TYPE = 'iterationNode';
+
+const normalizeGraphNodes = (nodes: RAGFlowNodeType[]): RAGFlowNodeType[] =>
+  nodes.map((node) => {
+    if (
+      node?.data?.label === Operator.Iteration &&
+      node.type === LEGACY_ITERATION_NODE_TYPE
+    ) {
+      return {
+        ...node,
+        type: ITERATION_NODE_TYPE,
+      };
+    }
+
+    return node;
+  });
 
 // ─── Public API ─────────────────────────────────────────────────────────
 
@@ -82,7 +100,10 @@ export const importDsl = (
   if (Array.isArray(rawParsed?.graph?.nodes)) {
     const rawEdges = rawParsed.graph.edges;
     const edges: Edge[] = Array.isArray(rawEdges) ? rawEdges : [];
-    graph = { nodes: rawParsed.graph.nodes as RAGFlowNodeType[], edges };
+    graph = {
+      nodes: normalizeGraphNodes(rawParsed.graph.nodes as RAGFlowNodeType[]),
+      edges,
+    };
     components =
       (rawParsed.components as DSLComponents | undefined) ??
       (buildDslComponentsByGraph(
@@ -127,7 +148,7 @@ export const dslToGraph = (
   if (Array.isArray(graphNodes) && graphNodes.length > 0) {
     const rawEdges = dsl?.graph?.edges;
     return {
-      nodes: graphNodes as RAGFlowNodeType[],
+      nodes: normalizeGraphNodes(graphNodes as RAGFlowNodeType[]),
       edges: (Array.isArray(rawEdges) ? rawEdges : []) as Edge[],
     };
   }
@@ -206,10 +227,7 @@ export const inferIsAgentFromImport = (raw: Record<string, any>): boolean => {
   const graph = raw?.graph;
   if (graph && Array.isArray(graph.nodes)) {
     const labels = (graph.nodes as any[]).map((n: any) => n?.data?.label);
-    if (
-      labels.includes(DataflowOperator.Begin) &&
-      labels.includes(DataflowOperator.Parser)
-    ) {
+    if (labels.includes(Operator.File) && labels.includes(Operator.Parser)) {
       return false;
     }
     return true;

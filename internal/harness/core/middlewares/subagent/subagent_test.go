@@ -99,8 +99,8 @@ type mockTool struct {
 	mu        sync.Mutex
 }
 
-func (t *mockTool) Name() string             { return t.name }
-func (t *mockTool) Description() string       { return t.desc }
+func (t *mockTool) Name() string        { return t.name }
+func (t *mockTool) Description() string { return t.desc }
 func (t *mockTool) Invoke(ctx context.Context, args string, opts ...core.ToolOption) (string, error) {
 	t.mu.Lock()
 	t.executed = true
@@ -161,8 +161,8 @@ type panicTool struct {
 	desc string
 }
 
-func (t *panicTool) Name() string               { return t.name }
-func (t *panicTool) Description() string         { return t.desc }
+func (t *panicTool) Name() string        { return t.name }
+func (t *panicTool) Description() string { return t.desc }
 func (t *panicTool) Invoke(ctx context.Context, args string, opts ...core.ToolOption) (string, error) {
 	panic("unexpected error in tool execution")
 }
@@ -178,8 +178,8 @@ type slowTool struct {
 	delay time.Duration
 }
 
-func (t *slowTool) Name() string               { return t.name }
-func (t *slowTool) Description() string         { return t.desc }
+func (t *slowTool) Name() string        { return t.name }
+func (t *slowTool) Description() string { return t.desc }
 func (t *slowTool) Invoke(ctx context.Context, args string, opts ...core.ToolOption) (string, error) {
 	select {
 	case <-ctx.Done():
@@ -195,15 +195,15 @@ func (t *slowTool) Stream(ctx context.Context, args string, opts ...core.ToolOpt
 // ---- Enhanced Error Tool ----
 
 type enhancedErrorTool struct {
-	name      string
-	desc      string
-	errMsg    string
-	executed  bool
-	mu        sync.Mutex
+	name     string
+	desc     string
+	errMsg   string
+	executed bool
+	mu       sync.Mutex
 }
 
-func (t *enhancedErrorTool) Name() string               { return t.name }
-func (t *enhancedErrorTool) Description() string         { return t.desc }
+func (t *enhancedErrorTool) Name() string        { return t.name }
+func (t *enhancedErrorTool) Description() string { return t.desc }
 func (t *enhancedErrorTool) Invoke(ctx context.Context, args string, opts ...core.ToolOption) (string, error) {
 	return "", nil
 }
@@ -335,10 +335,10 @@ func TestSubAgent_Basic(t *testing.T) {
 		"parent final answer",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "research something")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -373,10 +373,10 @@ func TestSubAgent_DeclarativeConfig(t *testing.T) {
 		"parent ok",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "do work")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -417,10 +417,10 @@ func TestSubAgent_DeclarativeWithOwnTools(t *testing.T) {
 		"parent done",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "do work")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -454,10 +454,10 @@ func TestSubAgent_MultipleSubAgents(t *testing.T) {
 		"parent done",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "do work")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -491,10 +491,10 @@ func TestSubAgent_AgentFactory(t *testing.T) {
 		"parent with factory",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "test factory")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -531,10 +531,10 @@ func TestSubAgent_MiddlewareChain(t *testing.T) {
 		Model:       parentModel,
 		Middlewares: []core.ReActMiddleware{tracker, mw},
 	}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "chain test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -568,7 +568,7 @@ func TestSubAgent_NestedSubAgent(t *testing.T) {
 		),
 		Middlewares: []core.ReActMiddleware{innerMW},
 	}
-	innerMW.BindToConfig(context.Background(), innerCfg)
+	innerMW.BindToConfig(t.Context(), innerCfg)
 	middleAgent := core.NewReActAgent(innerCfg).WithName("middle").WithDescription("Middle sub-agent")
 
 	// Top-level.
@@ -584,10 +584,10 @@ func TestSubAgent_NestedSubAgent(t *testing.T) {
 		),
 		Middlewares: []core.ReActMiddleware{outerMW},
 	}
-	outerMW.BindToConfig(context.Background(), outerCfg)
+	outerMW.BindToConfig(t.Context(), outerCfg)
 	topAgent := core.NewReActAgent(outerCfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, topAgent, "nested call")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -626,7 +626,7 @@ func TestSubAgent_RecursionGuard(t *testing.T) {
 		MaxIterations: 5,
 		Middlewares:   []core.ReActMiddleware{middleMW},
 	}
-	middleMW.BindToConfig(context.Background(), middleCfg)
+	middleMW.BindToConfig(t.Context(), middleCfg)
 	middleAgent := core.NewReActAgent(middleCfg).WithName("middle").WithDescription("Middle sub-agent")
 
 	// Top-level parent agent calls middle.
@@ -643,10 +643,10 @@ func TestSubAgent_RecursionGuard(t *testing.T) {
 		MaxIterations: 5,
 		Middlewares:   []core.ReActMiddleware{topMW},
 	}
-	topMW.BindToConfig(context.Background(), topCfg)
+	topMW.BindToConfig(t.Context(), topCfg)
 	topAgent := core.NewReActAgent(topCfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, topAgent, "start")
 	if err != nil {
 		// Go-level error from inline path is also acceptable.
@@ -688,7 +688,7 @@ func TestSubAgent_NestedWithinLimit(t *testing.T) {
 		MaxIterations: 5,
 		Middlewares:   []core.ReActMiddleware{middleMW},
 	}
-	middleMW.BindToConfig(context.Background(), middleCfg)
+	middleMW.BindToConfig(t.Context(), middleCfg)
 	middleAgent := core.NewReActAgent(middleCfg).WithName("middle").WithDescription("Middle sub-agent")
 
 	// Top-level.
@@ -705,10 +705,10 @@ func TestSubAgent_NestedWithinLimit(t *testing.T) {
 		MaxIterations: 5,
 		Middlewares:   []core.ReActMiddleware{topMW},
 	}
-	topMW.BindToConfig(context.Background(), topCfg)
+	topMW.BindToConfig(t.Context(), topCfg)
 	topAgent := core.NewReActAgent(topCfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, topAgent, "start")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -732,7 +732,7 @@ func TestSubAgent_MiddlewareInheritance(t *testing.T) {
 			AgentConfig: &AgentConfig{
 				Model: func() *mockModel { m := &mockModel{}; m.addResp("inheritor done"); return m }(),
 			},
-			InheritParentMiddlewares: true,
+			InheritParentMiddlewares:      true,
 			ExcludedParentMiddlewareNames: nil,
 		},
 	}, nil)
@@ -747,10 +747,10 @@ func TestSubAgent_MiddlewareInheritance(t *testing.T) {
 		Model:       parentModel,
 		Middlewares: []core.ReActMiddleware{parentTracker, mw},
 	}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "test inheritance")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -780,10 +780,10 @@ func TestSubAgent_NoParentTools(t *testing.T) {
 	parentModel.addResp("no tools needed")
 
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "hello")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -817,10 +817,10 @@ func TestSubAgent_AgentFactoryOnly(t *testing.T) {
 		"parent legacy",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "test legacy")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -848,8 +848,8 @@ func TestSubAgent_BindIdempotent(t *testing.T) {
 		Middlewares: []core.ReActMiddleware{mw},
 	}
 	// Call BindToConfig twice.
-	mw.BindToConfig(context.Background(), cfg)
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 
 	// Should have exactly 1 tool.
 	if len(cfg.Tools) != 1 {
@@ -871,7 +871,7 @@ func TestSubAgent_SubAgentOwnMiddlewares(t *testing.T) {
 			Name:        "tracked",
 			Description: "Tracked sub-agent",
 			AgentConfig: &AgentConfig{
-				Model: func() *mockModel { m := &mockModel{}; m.addResp("tracked done"); return m }(),
+				Model:       func() *mockModel { m := &mockModel{}; m.addResp("tracked done"); return m }(),
 				Middlewares: []core.ReActMiddleware{subTracker},
 			},
 			InheritParentMiddlewares: true,
@@ -885,10 +885,10 @@ func TestSubAgent_SubAgentOwnMiddlewares(t *testing.T) {
 		"parent tracked",
 	)
 	cfg := &core.ReActConfig[*schema.Message]{Model: parentModel, Middlewares: []core.ReActMiddleware{mw}}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "test own middlewares")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -924,7 +924,7 @@ func TestSubAgent_MaxDepthDefault(t *testing.T) {
 		MaxIterations: 5,
 		Middlewares:   []core.ReActMiddleware{middleMW},
 	}
-	middleMW.BindToConfig(context.Background(), middleCfg)
+	middleMW.BindToConfig(t.Context(), middleCfg)
 	middleAgent := core.NewReActAgent(middleCfg).WithName("middle").WithDescription("Middle")
 
 	topMW := New([]SubAgentSpec{
@@ -940,10 +940,10 @@ func TestSubAgent_MaxDepthDefault(t *testing.T) {
 		MaxIterations: 5,
 		Middlewares:   []core.ReActMiddleware{topMW},
 	}
-	topMW.BindToConfig(context.Background(), topCfg)
+	topMW.BindToConfig(t.Context(), topCfg)
 	topAgent := core.NewReActAgent(topCfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, topAgent, "start")
 	if err != nil {
 		t.Fatalf("unexpected error with MaxDepth=0: %v", err)
@@ -997,10 +997,10 @@ func TestSubAgent_ToolInvokeReturnsError(t *testing.T) {
 		Model: parentModel, Middlewares: []core.ReActMiddleware{mw},
 		MaxIterations: 5,
 	}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "research something")
 	if err != nil {
 		t.Fatalf("parent should NOT get Go error: %v", err)
@@ -1051,10 +1051,10 @@ func TestSubAgent_EnhancedToolReturnsError(t *testing.T) {
 		Model: parentModel, Middlewares: []core.ReActMiddleware{mw},
 		MaxIterations: 5,
 	}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "test enhanced error")
 	if err != nil {
 		t.Fatalf("parent should NOT get Go error: %v", err)
@@ -1108,10 +1108,10 @@ func TestSubAgent_MaxIterationsExceeded(t *testing.T) {
 		Model: parentModel, Middlewares: []core.ReActMiddleware{mw},
 		MaxIterations: 5,
 	}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	final, err := runAgent(ctx, t, agent, "work")
 	if err != nil {
 		t.Fatalf("parent should not get Go error: %v", err)
@@ -1152,7 +1152,7 @@ func TestSubAgent_ParentContextCancelled(t *testing.T) {
 		Model: parentModel, Middlewares: []core.ReActMiddleware{mw},
 		MaxIterations: 5,
 	}
-	mw.BindToConfig(context.Background(), cfg)
+	mw.BindToConfig(t.Context(), cfg)
 	agent := core.NewReActAgent(cfg)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1350,7 +1350,7 @@ func TestSubAgent_ParallelToolCallsOneFails(t *testing.T) {
 // sub-agent's internal error events without panicking or deadlocking.
 func TestSubAgent_EmitInternalEventsWithError(t *testing.T) {
 	failTool := &mockTool{
-		name:      "flaky", desc: "Flaky tool",
+		name: "flaky", desc: "Flaky tool",
 		invokeErr: errors.New("internal error"),
 	}
 

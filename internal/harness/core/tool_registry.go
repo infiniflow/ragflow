@@ -11,9 +11,9 @@ import (
 // and filtering. It replaces raw []Tool slices for more flexible tool discovery.
 type ToolRegistry struct {
 	mu       sync.RWMutex
-	tools    map[string]Tool          // name -> tool
-	aliases  map[string]string        // alias -> canonical name
-	category map[string][]string      // category -> tool names
+	tools    map[string]Tool     // name -> tool
+	aliases  map[string]string   // alias -> canonical name
+	category map[string][]string // category -> tool names
 }
 
 // NewToolRegistry creates an empty ToolRegistry.

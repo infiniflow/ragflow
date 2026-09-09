@@ -33,9 +33,9 @@ func TestBegin_InjectsSys(t *testing.T) {
 		t.Fatalf("NewBeginComponent: %v", err)
 	}
 	state := canvas.NewCanvasState("run-1", "task-1")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{"query": "hello"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": "hello"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -52,6 +52,50 @@ func TestBegin_InjectsSys(t *testing.T) {
 	}
 }
 
+func TestBegin_MapsQueryToDeclaredInput(t *testing.T) {
+	c, err := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{
+			"customer_review": map[string]any{"key": "customer_review"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewBeginComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-custom-input", "task-custom-input")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": "The product arrived damaged."})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["customer_review"]; got != "The product arrived damaged." {
+		t.Errorf("outputs[customer_review] = %v, want original review", got)
+	}
+}
+
+func TestBegin_MapsNamedQueryInputs(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{
+			"customer_review": map[string]any{},
+			"language":        map[string]any{},
+		},
+	})
+	state := canvas.NewCanvasState("run-named-inputs", "task-named-inputs")
+	ctx := canvas.WithState(t.Context(), state)
+	query := map[string]any{
+		"customer_review": map[string]any{"value": "Damaged package"},
+		"language":        "English",
+	}
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": query})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["customer_review"] != "Damaged package" || out["language"] != "English" {
+		t.Errorf("named inputs = %#v", out)
+	}
+}
+
 // TestBegin_PassesThroughInputs asserts the full inputs map — including
 // arbitrary keys beyond query / user_id — is returned unchanged as
 // outputs. This is the contract downstream components rely on to access
@@ -59,7 +103,7 @@ func TestBegin_InjectsSys(t *testing.T) {
 func TestBegin_PassesThroughInputs(t *testing.T) {
 	c, _ := NewBeginComponent(nil)
 	state := canvas.NewCanvasState("run-2", "task-2")
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	inputs := map[string]any{
 		"query":   "what is ragflow",
@@ -67,7 +111,7 @@ func TestBegin_PassesThroughInputs(t *testing.T) {
 		"inputs":  map[string]any{"k": "v"},
 		"extra":   42,
 	}
-	out, err := c.Invoke(ctx, inputs)
+	out, err := c.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -85,4 +129,78 @@ func TestBegin_PassesThroughInputs(t *testing.T) {
 // reference the same symbol because Go test files share a package.
 func withStateForTest(ctx context.Context, s *canvas.CanvasState) context.Context {
 	return canvas.WithState(ctx, s)
+}
+
+// TestBegin_InjectsWebhookPayload pins the contract added for the
+// webhook HTTP handler: when inputs["webhook_payload"] is present, Begin
+// must surface it on state.Sys["webhook_payload"] so downstream
+// components (Retrieval, Agent, etc.) can read sys.webhook_payload the
+// same way they read sys.query / sys.user_id.
+//
+// Mirrors python: agent/canvas.py (Begin component) reading
+// `webhook_payload` from inputs and writing to state.Sys in the webhook
+// branch.
+func TestBegin_InjectsWebhookPayload(t *testing.T) {
+	c, _ := NewBeginComponent(nil)
+	state := canvas.NewCanvasState("run-3", "task-3")
+	ctx := canvas.WithState(t.Context(), state)
+
+	payload := map[string]any{
+		"query":   map[string]any{"q": "hello"},
+		"headers": map[string]any{"x-token": "abc"},
+		"body":    map[string]any{"k": "v"},
+	}
+	inputs := map[string]any{
+		"query":           "",
+		"webhook_payload": payload,
+	}
+	out, err := c.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, ok := state.Sys["webhook_payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("state.Sys[webhook_payload] missing or wrong type: %T", state.Sys["webhook_payload"])
+	}
+	if !reflect.DeepEqual(got, payload) {
+		t.Errorf("state.Sys[webhook_payload] mismatch:\n got  %v\n want %v", got, payload)
+	}
+	// Passthrough preserved.
+	if outPayload, _ := out["webhook_payload"].(map[string]any); !reflect.DeepEqual(outPayload, payload) {
+		t.Errorf("outputs[webhook_payload] mismatch:\n got  %v\n want %v", outPayload, payload)
+	}
+}
+
+// TestBegin_AbsentWebhookPayload confirms that the chat path (no
+// webhook_payload key in inputs) leaves state.Sys["webhook_payload"]
+// unset — adding the new branch must NOT pollute existing callers.
+func TestBegin_AbsentWebhookPayload(t *testing.T) {
+	c, _ := NewBeginComponent(nil)
+	state := canvas.NewCanvasState("run-4", "task-4")
+	ctx := canvas.WithState(t.Context(), state)
+
+	if _, err := c.Invoke(ctx, nil, map[string]any{"query": "plain chat"}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if _, ok := state.Sys["webhook_payload"]; ok {
+		t.Errorf("state.Sys[webhook_payload] should not be set when inputs lack it; got %v", state.Sys["webhook_payload"])
+	}
+}
+
+// TestBegin_EmptyWebhookPayload confirms that an explicitly empty map
+// is treated as "not present" — matching the python `if payload:` guard.
+func TestBegin_EmptyWebhookPayload(t *testing.T) {
+	c, _ := NewBeginComponent(nil)
+	state := canvas.NewCanvasState("run-5", "task-5")
+	ctx := canvas.WithState(t.Context(), state)
+
+	if _, err := c.Invoke(ctx, nil, map[string]any{
+		"query":           "",
+		"webhook_payload": map[string]any{},
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if _, ok := state.Sys["webhook_payload"]; ok {
+		t.Errorf("state.Sys[webhook_payload] should not be set for empty payload; got %v", state.Sys["webhook_payload"])
+	}
 }

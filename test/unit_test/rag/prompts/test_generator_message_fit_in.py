@@ -52,6 +52,7 @@ def _load_generator_module(monkeypatch):
 
     token_utils = ModuleType("common.token_utils")
     token_utils.encoder = _CharEncoder()
+    token_utils.get_encoder = lambda: token_utils.encoder
     token_utils.num_tokens_from_string = lambda text: len(text)
     monkeypatch.setitem(sys.modules, "common.token_utils", token_utils)
 
@@ -71,9 +72,7 @@ def _load_generator_module(monkeypatch):
     template_mod.load_prompt = lambda *_args, **_kwargs: ""
     monkeypatch.setitem(sys.modules, "rag.prompts.template", template_mod)
 
-    spec = importlib.util.spec_from_file_location(
-        "rag.prompts.generator", repo_root / "rag" / "prompts" / "generator.py"
-    )
+    spec = importlib.util.spec_from_file_location("rag.prompts.generator", repo_root / "rag" / "prompts" / "generator.py")
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "rag.prompts.generator", module)
     spec.loader.exec_module(module)
@@ -84,7 +83,7 @@ def _load_generator_module(monkeypatch):
 def test_message_fit_in_truncates_user_message_by_system_token_budget(monkeypatch):
     generator = _load_generator_module(monkeypatch)
     monkeypatch.setattr(generator, "num_tokens_from_string", lambda text: len(text))
-    monkeypatch.setattr(generator, "encoder", _CharEncoder())
+    monkeypatch.setattr(generator, "get_encoder", lambda: _CharEncoder())
 
     messages = [
         {"role": "system", "content": "1234"},
@@ -102,7 +101,7 @@ def test_message_fit_in_truncates_user_message_by_system_token_budget(monkeypatc
 def test_message_fit_in_handles_zero_token_messages(monkeypatch):
     generator = _load_generator_module(monkeypatch)
     monkeypatch.setattr(generator, "num_tokens_from_string", lambda _text: 0)
-    monkeypatch.setattr(generator, "encoder", _CharEncoder())
+    monkeypatch.setattr(generator, "get_encoder", lambda: _CharEncoder())
 
     messages = [
         {"role": "system", "content": ""},
@@ -119,7 +118,7 @@ def test_message_fit_in_handles_zero_token_messages(monkeypatch):
 def test_message_fit_in_clamps_negative_slice_lengths(monkeypatch):
     generator = _load_generator_module(monkeypatch)
     monkeypatch.setattr(generator, "num_tokens_from_string", lambda text: len(text))
-    monkeypatch.setattr(generator, "encoder", _CharEncoder())
+    monkeypatch.setattr(generator, "get_encoder", lambda: _CharEncoder())
 
     messages = [
         {"role": "system", "content": "1234"},
@@ -137,7 +136,7 @@ def test_message_fit_in_clamps_negative_slice_lengths(monkeypatch):
 def test_message_fit_in_clamps_dominant_last_message_to_budget(monkeypatch):
     generator = _load_generator_module(monkeypatch)
     monkeypatch.setattr(generator, "num_tokens_from_string", lambda text: len(text))
-    monkeypatch.setattr(generator, "encoder", _CharEncoder())
+    monkeypatch.setattr(generator, "get_encoder", lambda: _CharEncoder())
 
     messages = [
         {"role": "system", "content": "s" * 41},
@@ -149,3 +148,26 @@ def test_message_fit_in_clamps_dominant_last_message_to_budget(monkeypatch):
     assert used_tokens == 8
     assert trimmed[0]["content"] == ""
     assert trimmed[-1]["content"] == "abcdefgh"
+
+
+@pytest.mark.p1
+def test_message_fit_in_zero_budget_preserves_non_empty_messages(monkeypatch):
+    generator = _load_generator_module(monkeypatch)
+    monkeypatch.setattr(generator, "num_tokens_from_string", lambda text: len(text))
+    monkeypatch.setattr(generator, "get_encoder", lambda: _CharEncoder())
+
+    system_len = 8100
+    user_content = "User query: test"
+    messages = [
+        {"role": "system", "content": "s" * system_len},
+        {"role": "user", "content": user_content},
+    ]
+    expected_total = system_len + len(user_content)
+
+    used_tokens, trimmed = generator.message_fit_in(messages, max_length=0)
+
+    assert expected_total > 861
+    assert expected_total < 8192
+    assert used_tokens == expected_total
+    assert trimmed[0]["content"] == "s" * system_len
+    assert trimmed[-1]["content"] == user_content

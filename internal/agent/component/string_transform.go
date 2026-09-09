@@ -34,6 +34,8 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 const componentNameStringTransform = "StringTransform"
@@ -137,7 +139,7 @@ func (s *StringTransformComponent) Name() string { return s.name }
 
 // Invoke runs the configured method (split or merge) and returns
 // outputs["result"] with the transformed payload.
-func (s *StringTransformComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (s *StringTransformComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
 		return nil, fmt.Errorf("StringTransform: %w", err)
@@ -153,8 +155,8 @@ func (s *StringTransformComponent) Invoke(ctx context.Context, inputs map[string
 }
 
 // Stream mirrors Invoke; StringTransform is a single-shot transform.
-func (s *StringTransformComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := s.Invoke(ctx, inputs)
+func (s *StringTransformComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := s.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -179,6 +181,61 @@ func (s *StringTransformComponent) Inputs() map[string]string {
 		out[n] = "Value to substitute for {{" + n + "}} (drawn from inputs or state)."
 	}
 	return out
+}
+
+func (s *StringTransformComponent) GetInputForm() map[string]any {
+	if s.param.Method == "split" {
+		return map[string]any{
+			"line": map[string]any{
+				"name": "String",
+				"type": "line",
+			},
+		}
+	}
+	out := make(map[string]any)
+	for k, o := range getInputElementsFromText(s.param.Script) {
+		name, _ := o["name"].(string)
+		if name == "" {
+			name = k
+		}
+		out[k] = map[string]any{
+			"name": name,
+			"type": "line",
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func getInputElementsFromText(txt string) map[string]map[string]any {
+	res := make(map[string]map[string]any)
+	for _, match := range runtime.VarRefPattern.FindAllStringSubmatch(txt, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		exp := match[1]
+		if _, ok := res[exp]; ok {
+			continue
+		}
+		cpnID, varName := "", exp
+		if at := strings.Index(exp, "@"); at > 0 {
+			cpnID = exp[:at]
+			varName = exp[at+1:]
+		}
+		name := exp
+		if cpnID != "" {
+			name = cpnID + "@" + varName
+		}
+		res[exp] = map[string]any{
+			"name":       name,
+			"value":      nil,
+			"_retrieval": nil,
+			"_cpn_id":    cpnID,
+		}
+	}
+	return res
 }
 
 // Outputs returns the transformed payload.
@@ -244,14 +301,11 @@ func (s *StringTransformComponent) doSplit(_ context.Context, state *runtime.Can
 func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.CanvasState, inputs map[string]any) map[string]any {
 	script := s.param.Script
 
-	// First pass: state-level template resolution for any {{ref}} that
-	// is a valid cpn_id@param / sys.x / env.x reference. The Python
-	// _is_jinjia2 + template.render path is more general; for P1 we
-	// only support the simple state-resolvable form.
-	if strings.Contains(script, "{{") {
-		if resolved, err := runtime.ResolveTemplate(script, state); err == nil {
-			script = resolved
-		}
+	// First pass: state-level template resolution for any runtime ref
+	// syntax the canvas supports, including single-brace legacy refs and
+	// iteration aliases like {item}/{index}.
+	if resolved, err := runtime.ResolveTemplateAuto(script, state); err == nil {
+		script = resolved
 	}
 
 	// Second pass: {{name}} placeholders → values from inputs, then state.

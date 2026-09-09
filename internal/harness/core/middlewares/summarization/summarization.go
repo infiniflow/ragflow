@@ -16,8 +16,8 @@ import (
 
 // TriggerCondition defines when summarization activates.
 type TriggerCondition struct {
-	MaxTokens    int // Trigger when estimated tokens exceed this
-	MaxMessages  int // Trigger when message count exceeds this (0 = no limit)
+	MaxTokens   int // Trigger when estimated tokens exceed this
+	MaxMessages int // Trigger when message count exceeds this (0 = no limit)
 }
 
 // TypedConfig configures the summarization middleware.
@@ -69,7 +69,7 @@ func NewTyped[M core.MessageType](cfg *TypedConfig[M]) core.TypedReActMiddleware
 	}
 	if cfg.CompactionCfg == nil {
 		cfg.CompactionCfg = &CompactionConfig{
-			TriggerTokens: 100000,
+			TriggerTokens:  100000,
 			PreserveRecent: 4,
 		}
 	}
@@ -275,7 +275,13 @@ func truncateText(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+	// Slice on a rune boundary; [:maxLen] indexes bytes and can split a
+	// multi-byte UTF-8 character, producing invalid output in the summary.
+	runes := []rune(s)
+	if maxLen > len(runes) {
+		return s
+	}
+	return string(runes[:maxLen]) + "..."
 }
 
 func buildSummaryPrompt[M core.MessageType](content string) M {

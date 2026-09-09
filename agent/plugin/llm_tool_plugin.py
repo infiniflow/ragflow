@@ -38,14 +38,8 @@ def llm_tool_metadata_to_openai_tool(llm_tool_metadata: LLMToolMetadata) -> dict
             "description": llm_tool_metadata["description"],
             "parameters": {
                 "type": "object",
-                "properties": {
-                    k: {
-                        "type": p["type"],
-                        "description": p["description"]
-                    }
-                    for k, p in llm_tool_metadata["parameters"].items()
-                },
-                "required": [k for k, p in llm_tool_metadata["parameters"].items() if p["required"]]
-            }
-        }
+                "properties": {k: {"type": p["type"], "description": p["description"]} for k, p in llm_tool_metadata["parameters"].items()},
+                "required": [k for k, p in llm_tool_metadata["parameters"].items() if p["required"]],
+            },
+        },
     }

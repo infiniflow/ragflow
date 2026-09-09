@@ -1,0 +1,1374 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package admin
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"mime/multipart"
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+)
+
+func UpdateServer(serverName string, status *common.BaseMessage) (common.ErrorCode, string) {
+	GlobalServerStore.UpdateServerInfo(serverName, status)
+	return CheckLicense()
+}
+
+// Role management methods
+
+// ListRoles list all roles
+func (s *Service) ListRoles(ctx context.Context) ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command": "list_roles",
+			"error":   "'list roles' is not supported",
+		},
+	}
+
+	return result, nil
+}
+
+// CreateRole create a new role
+func (s *Service) CreateRole(ctx context.Context, roleName, description string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":     "create_role",
+		"role_name":   roleName,
+		"description": description,
+		"error":       "'create role' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowRole show role details
+func (s *Service) ShowRole(ctx context.Context, roleName string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":   "show_role",
+		"role_name": roleName,
+		"error":     "'show role' is not supported",
+	}
+
+	return result, nil
+
+}
+
+// UpdateRole update role
+func (s *Service) UpdateRole(ctx context.Context, roleName, description string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":     "update_role",
+		"role_name":   roleName,
+		"description": description,
+		"error":       "'update role' is not supported",
+	}
+
+	return result, nil
+}
+
+// DropRole drop role
+func (s *Service) DropRole(ctx context.Context, roleName string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":   "drop_role",
+		"role_name": roleName,
+		"error":     "'drop role' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowRolePermission get role permissions
+func (s *Service) ShowRolePermission(ctx context.Context, roleName string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":   "show_role_permission",
+		"role_name": roleName,
+		"error":     "'show role permissions' is not supported",
+	}
+
+	return result, nil
+}
+
+// GrantRolePermission grant permission to role
+func (s *Service) GrantRolePermission(ctx context.Context, roleName string, actions []string, resource string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":   "grant_role_permission",
+		"role_name": roleName,
+		"actions":   actions,
+		"resource":  resource,
+		"error":     "'grant role permission' is not supported",
+	}
+
+	return result, nil
+}
+
+// RevokeRolePermission revoke permission from role
+func (s *Service) RevokeRolePermission(ctx context.Context, roleName string, actions []string, resource string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":   "revoke_role_permission",
+		"role_name": roleName,
+		"actions":   actions,
+		"resource":  resource,
+		"error":     "'revoke role permission' is not supported",
+	}
+
+	return result, nil
+}
+
+// ListResources list role resources
+func (s *Service) ListResources(ctx context.Context) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "list_resources",
+		"error":   "'list resources for role' is not supported",
+	}
+
+	return result, nil
+}
+
+// ListRolesWithPermission list roles with permission
+func (s *Service) ListRolesWithPermission(ctx context.Context) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{
+			"command": "list_roles_with_permission",
+			"error":   "'list roles with permission' is not supported",
+		},
+	}, nil
+}
+
+func (s *Service) ShowRoleDefaultModels(ctx context.Context, roleName string) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{
+			"command":   "show_role_default_models",
+			"role_name": roleName,
+			"error":     "'show role default models' is not supported",
+		},
+	}, nil
+}
+
+// SetRoleDefaultModel set role default model
+func (s *Service) SetRoleDefaultModel(ctx context.Context, roleName, modelID, modelType string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":    "set_role_default_model",
+		"role_name":  roleName,
+		"model_id":   modelID,
+		"model_type": modelType,
+		"error":      "'set role default model' is not supported",
+	}, nil
+}
+
+// ResetRoleDefaultModel reset role default model
+func (s *Service) ResetRoleDefaultModel(ctx context.Context, roleName, modelType string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":    "reset_role_default_model",
+		"role_name":  roleName,
+		"model_type": modelType,
+		"error":      "'reset role default model' is not supported",
+	}, nil
+}
+
+// ListModelProviders list model providers
+func (s *Service) ListModelProviders(ctx context.Context) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{
+			"command": "list_model_providers",
+			"error":   "'list model providers' is not supported",
+		},
+	}, nil
+}
+
+// AddModelProvider Add model provider
+func (s *Service) AddModelProvider(ctx context.Context, userID, providerName string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":     "add_model_provider",
+		"user_id":     userID,
+		"provider_id": providerName,
+		"error":       "'add model provider' is not supported",
+	}, nil
+}
+
+// DeleteModelProviders delete model providers
+func (s *Service) DeleteModelProviders(ctx context.Context, userID string, providerNames []string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":        "delete_model_providers",
+		"user_id":        userID,
+		"provider_names": providerNames,
+		"error":          "'delete model providers' is not supported",
+	}, nil
+}
+
+// ListModelInstances list model instances
+func (s *Service) ListModelInstances(ctx context.Context, userID, providerName string) ([]map[string]interface{}, error) {
+
+	return []map[string]interface{}{
+		{
+			"command":     "list_model_instances",
+			"user_id":     userID,
+			"provider_id": providerName,
+			"error":       "'list model instances' is not supported",
+		},
+	}, nil
+}
+
+// ShowProviderInstance show provider instance
+func (s *Service) ShowProviderInstance(ctx context.Context, userID, providerName, instanceName string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":       "show_provider_instance",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"error":         "'show provider instance' is not supported",
+	}, nil
+}
+
+// ShowProviderInstanceBalance show provider instance balance
+func (s *Service) ShowProviderInstanceBalance(ctx context.Context, userID, providerName, instanceName string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":       "show_provider_instance_balance",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"error":         "'show provider instance balance' is not supported",
+	}, nil
+}
+
+// CheckInstanceConnection check instance connection
+func (s *Service) CheckInstanceConnection(ctx context.Context, userID, providerName, instanceName string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":       "check_instance_connection",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"error":         "'check instance connection' is not supported",
+	}, nil
+}
+
+// CheckProviderConnection check provider connection
+func (s *Service) CheckProviderConnection(ctx context.Context, userID, providerName, region, apiKey, baseURL string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":     "check_provider_connection",
+		"user_id":     userID,
+		"provider_id": providerName,
+		"region":      region,
+		"api_key":     apiKey,
+		"base_url":    baseURL,
+	}, nil
+}
+
+// AlterProviderInstance alter provider instance
+func (s *Service) AlterProviderInstance(ctx context.Context, userID, providerName, instanceName, newInstanceName, newAPIKey string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":           "alter_provider_instance",
+		"user_id":           userID,
+		"provider_id":       providerName,
+		"instance_name":     instanceName,
+		"new_instance_name": newInstanceName,
+		"new_api_key":       newAPIKey,
+		"error":             "'alter provider instance' is not supported",
+	}, nil
+}
+
+// AddModelInstance Add model instance
+func (s *Service) AddModelInstance(ctx context.Context, userID, providerName, instanceName string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":       "add_model_instance",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"error":         "'add model instance' is not supported",
+	}, nil
+}
+
+// DeleteModelInstances delete model instances
+func (s *Service) DeleteModelInstances(ctx context.Context, userID, providerName string, instances []string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":     "delete_model_instances",
+		"user_id":     userID,
+		"provider_id": providerName,
+		"instances":   instances,
+		"error":       "'delete model instances' is not supported",
+	}, nil
+}
+
+// ListInstanceModels list models for instance
+func (s *Service) ListInstanceModels(ctx context.Context, userID, providerName, instanceName string) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{
+			"command":       "list_instance_models",
+			"user_id":       userID,
+			"provider_id":   providerName,
+			"instance_name": instanceName,
+			"error":         "'list instance models' is not supported",
+		},
+	}, nil
+}
+
+func (s *Service) EnableOrDisableModel(ctx context.Context, userID, providerName, instanceName, modelName, modelID, status string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":       "enable_or_disable_model",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"model_id":      modelID,
+		"status":        status,
+		"error":         "'enable or disable model' is not supported",
+	}, nil
+}
+
+// AddModel Add model
+
+// AddModels Add models
+func (s *Service) AddModels(ctx context.Context, userID, providerName, instanceName string, modelNames []string) (map[string]interface{}, error) {
+
+	return map[string]interface{}{
+		"command":       "add_model",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"model_names":   modelNames,
+		"error":         "'add model' is not supported",
+	}, nil
+}
+
+// DeleteModels delete models
+func (s *Service) DeleteModels(ctx context.Context, userID, providerName, instanceName string, models []string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command":       "delete_models",
+		"user_id":       userID,
+		"provider_id":   providerName,
+		"instance_name": instanceName,
+		"models":        models,
+		"error":         "'delete models' is not supported",
+	}, nil
+}
+
+func (s *Service) GetSystemFingerprint(ctx context.Context) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "get_system_fingerprint",
+		"error":   "'get system fingerprint' is not supported",
+	}
+
+	return result, nil
+}
+
+func (s *Service) SetSystemLicense(ctx context.Context, license string) error {
+	return errors.New("'set system license' is not supported")
+}
+
+func (s *Service) ShowSystemLicense(ctx context.Context, check bool) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	if check {
+		result = map[string]interface{}{
+			"command": "check_system_license",
+			"error":   "'check system license' is not supported",
+		}
+
+	} else {
+		result = map[string]interface{}{
+			"command": "show_system_license",
+			"error":   "'show system license' is not supported",
+		}
+	}
+
+	return result, nil
+}
+
+func (s *Service) UpdateSystemLicenseConfig(ctx context.Context, timeRecordSaveInterval, timeRecordTaskDuration int64) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":                   "update_system_license_config",
+		"time_record_save_interval": timeRecordSaveInterval,
+		"time_record_task_duration": timeRecordTaskDuration,
+		"error":                     "'update system license config' is not supported",
+	}
+
+	return result, nil
+}
+
+func (s *Service) SetSoftFingerprint(ctx context.Context, softFingerprint string) error {
+	return errors.New("set soft fingerprint is not supported")
+}
+
+func (s *Service) GetSoftFingerprint(ctx context.Context) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "show_soft_fingerprint",
+		"error":   "'show soft fingerprint' is not supported",
+	}
+
+	return result, nil
+}
+
+func (s *Service) DeleteSoftFingerprint(ctx context.Context) error {
+	return errors.New("delete soft fingerprint is not supported")
+}
+
+// ShowUserActivity show user activity for enterprise edition
+func (s *Service) ShowUserActivity(ctx context.Context, email string, days int) (map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := map[string]interface{}{
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"days":     days,
+		"error":    "'show user activity' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowUserDatasetSummary show user dataset summary for enterprise edition
+func (s *Service) ShowUserDatasetSummary(ctx context.Context, email, dataset string) (map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := map[string]interface{}{
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"dataset":  dataset,
+		"error":    "'show user dataset summary' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowUserSummary show user summary for enterprise edition
+func (s *Service) ShowUserSummary(ctx context.Context, email string) (map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.WithContext(ctx).Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := map[string]interface{}{
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"error":    "'show user summary' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowUserStorage show user storage for enterprise edition
+func (s *Service) ShowUserStorage(ctx context.Context, email string) (map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := map[string]interface{}{
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"error":    "'show user storage' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowUserQuota show user quota for enterprise edition
+func (s *Service) ShowUserQuota(ctx context.Context, email string) (map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.WithContext(ctx).Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := map[string]interface{}{
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"error":    "'show user quota' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowUserIndex show user index for enterprise edition
+func (s *Service) ShowUserIndex(ctx context.Context, email string) (map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := map[string]interface{}{
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"error":    "'show user index' is not supported",
+	}
+
+	return result, nil
+}
+
+// UpdateUserRole update user role
+func (s *Service) UpdateUserRole(ctx context.Context, email, roleName string) (map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := map[string]interface{}{
+		"command":  "update_user_role",
+		"role":     roleName,
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"error":    "'update user role' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowUserPermission show user permissions for enterprise edition
+func (s *Service) ShowUserPermission(ctx context.Context, email string) (map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := map[string]interface{}{
+		"command":  "show_user_permission",
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"error":    "'show user permission' is not supported",
+	}
+
+	return result, nil
+}
+
+// ListUserDatasets show user datasets for enterprise edition
+func (s *Service) ListUserDatasets(ctx context.Context, email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_datasets",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user datasets' is not supported",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserAgents show user agents for enterprise edition
+func (s *Service) ListUserAgents(ctx context.Context, email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_agents",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user agents' is not supported",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserChats show user chats for enterprise edition
+func (s *Service) ListUserChats(ctx context.Context, email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_chats",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user chats' is not supported",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserSearches show user searches for enterprise edition
+func (s *Service) ListUserSearches(ctx context.Context, email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_searches",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user searches' is not supported",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserModels show user models for enterprise edition
+func (s *Service) ListUserModels(ctx context.Context, email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_models",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user models' is not supported",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserFiles show user files for enterprise edition
+func (s *Service) ListUserFiles(ctx context.Context, email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_files",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user files' is not supported",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserProviders show user providers for enterprise edition
+func (s *Service) ListUserProviders(ctx context.Context, email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_providers",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user providers' is not supported",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserProviderInstances show user provider instances for enterprise edition
+func (s *Service) ListUserProviderInstances(ctx context.Context, email, providerName string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":       "list_user_provider_instances",
+			"email":         user.Email,
+			"nickname":      user.Nickname,
+			"provider_name": providerName,
+			"error":         "'list user provider instances' is not supported",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserProviderInstanceModels show user provider instance models for enterprise edition
+func (s *Service) ListUserProviderInstanceModels(ctx context.Context, email, providerName, instanceName string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":       "list_user_provider_instance_models",
+			"email":         user.Email,
+			"nickname":      user.Nickname,
+			"provider_name": providerName,
+			"instance_name": instanceName,
+			"error":         "'list user provider instance models' is not supported",
+		},
+	}
+
+	return result, nil
+}
+
+// ListUserDefaultModels show user default models for enterprise edition
+func (s *Service) ListUserDefaultModels(ctx context.Context, email string) ([]map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_default_models",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'list user default models' is not supported",
+		},
+	}
+
+	return result, nil
+}
+
+// ShowUsersSummary show users summary for enterprise edition
+func (s *Service) ShowUsersSummary(ctx context.Context) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "show_users_summary",
+		"error":   "'show users summary' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowUsersActivity show users activity for enterprise edition
+func (s *Service) ShowUsersActivity(ctx context.Context, days, windows *int) (map[string]interface{}, error) {
+	daysInt := 0
+	if days != nil {
+		daysInt = *days
+	}
+	windowsInt := 0
+	if windows != nil {
+		windowsInt = *windows
+	}
+	result := map[string]interface{}{
+		"days":    daysInt,
+		"windows": windowsInt,
+		"command": "show_users_activity",
+		"error":   "'show users activity' is not supported",
+	}
+
+	return result, nil
+}
+
+func (s *Service) ListUsersEE(ctx context.Context, pageIndex, pageSize int, name string, status, role, sort, orderBy, plan string, top, days int, quota *int) ([]map[string]interface{}, error) {
+	item := map[string]interface{}{}
+	item["pageIndex"] = pageIndex
+	item["pageSize"] = pageSize
+	item["name"] = name
+	item["status"] = status
+	item["role"] = role
+	item["sort"] = sort
+	item["order_by"] = orderBy
+	item["plan"] = plan
+	item["top"] = top
+	item["days"] = days
+	quotaInt := 0
+	if quota != nil {
+		quotaInt = *quota
+	}
+	item["quota"] = quotaInt
+
+	var result []map[string]interface{}
+	result = append(result, item)
+	return result, nil
+}
+
+// ListUsersReports list users reports for enterprise edition
+func (s *Service) ListUsersReports(ctx context.Context, pageIndex, pageSize int, status, plan *string, days *int) (map[string]interface{}, error) {
+
+	statusStr := "all"
+	if status != nil {
+		statusStr = *status
+	}
+	planStr := "all"
+	daysInt := 0
+	if days != nil {
+		daysInt = *days
+	}
+	if plan != nil {
+		planStr = *plan
+	}
+
+	result := map[string]interface{}{
+		"page_index": pageIndex,
+		"page_size":  pageSize,
+		"status":     statusStr,
+		"plan":       planStr,
+		"days":       daysInt,
+		"command":    "list_users_reports",
+		"error":      "'List users reports' is not supported",
+	}
+
+	return result, nil
+}
+
+// ListUsersStorage list users storage for enterprise edition
+func (s *Service) ListUsersStorage(ctx context.Context, pageIndex, pageSize, top int) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"page_index": pageIndex,
+		"page_size":  pageSize,
+		"top":        top,
+		"command":    "list_users_storage",
+		"error":      "'List users storage' is not supported",
+	}
+
+	return result, nil
+}
+
+// ListUsersDocuments list users documents for enterprise edition
+func (s *Service) ListUsersDocuments(ctx context.Context, pageIndex, pageSize, top int) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"page_index": pageIndex,
+		"page_size":  pageSize,
+		"top":        top,
+		"command":    "list_users_documents",
+		"error":      "'List users documents' is not supported",
+	}
+
+	return result, nil
+}
+
+// ListUsersIndex list users index for enterprise edition
+func (s *Service) ListUsersIndex(ctx context.Context, pageIndex, pageSize, top int) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"page_index": pageIndex,
+		"page_size":  pageSize,
+		"top":        top,
+		"command":    "list_users_index",
+		"error":      "'List users index' is not supported",
+	}
+
+	return result, nil
+}
+
+// ListUsersQuota list users quota for enterprise edition
+func (s *Service) ListUsersQuota(ctx context.Context, pageIndex, pageSize, top int, quotaThreshold *int, plan *string, days *int) (map[string]interface{}, error) {
+
+	quotaThresholdInt := 0
+	if quotaThreshold != nil {
+		quotaThresholdInt = *quotaThreshold
+	}
+	planStr := "all"
+	daysInt := 0
+	if days != nil {
+		daysInt = *days
+	}
+	if plan != nil {
+		planStr = *plan
+	}
+
+	result := map[string]interface{}{
+		"page_index":      pageIndex,
+		"page_size":       pageSize,
+		"top":             top,
+		"quota_threshold": quotaThresholdInt,
+		"plan":            planStr,
+		"days":            daysInt,
+		"command":         "list_users_quota",
+		"error":           "'List users quota' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowUsersPlanSummary show users plan summary for enterprise edition
+func (s *Service) ShowUsersPlanSummary(ctx context.Context) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"command": "show_users_plan_summary",
+		"error":   "'Show users plan summary' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowUsersPlanQuota show users plan quota for enterprise edition
+func (s *Service) ShowUsersPlanQuota(ctx context.Context, quota int) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"quota":   quota,
+		"command": "show_users_plan_quota",
+		"error":   "'Show users plan quota' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowUsersQuotaSummary show users quota summary for enterprise edition
+func (s *Service) ShowUsersQuotaSummary(ctx context.Context) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"command": "show_users_quota_summary",
+		"error":   "'Show users quota summary' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowIngestionTasksSummary show ingestion tasks summary for enterprise edition
+func (s *Service) ShowIngestionTasksSummary(ctx context.Context) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"command": "show_ingestion_tasks_summary",
+		"error":   "'Show ingestion tasks summary' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowDataSummary show data summary for enterprise edition
+func (s *Service) ShowDataSummary(ctx context.Context) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"command": "show_data_summary",
+		"error":   "'Show data summary' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowDataOrphan show data orphan for enterprise edition
+func (s *Service) ShowDataOrphan(ctx context.Context) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"command": "show_data_orphan",
+		"error":   "'Show data orphan' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowDataStorage show data storage for enterprise edition
+func (s *Service) ShowDataStorage(ctx context.Context) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"command": "show_data_storage",
+		"error":   "'Show data storage' is not supported",
+	}
+
+	return result, nil
+}
+
+// ShowDataIndex show data index for enterprise edition
+func (s *Service) ShowDataIndex(ctx context.Context) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"command": "show_data_index",
+		"error":   "'Show data index' is not supported",
+	}
+
+	return result, nil
+}
+
+// PurgeOrphanData purge orphan data for enterprise edition
+func (s *Service) PurgeOrphanData(ctx context.Context, preview bool) (map[string]interface{}, error) {
+
+	result := map[string]interface{}{
+		"command": "purge_orphan_data",
+		"preview": preview,
+		"error":   "'Purge orphan data' is not supported",
+	}
+
+	return result, nil
+}
+
+// PurgeUserData purge user data for enterprise edition
+func (s *Service) PurgeUserData(ctx context.Context, email string, preview bool) (map[string]interface{}, error) {
+	// Query user by email
+	var user entity.User
+	err := dao.DB.Where("email = ?", email).First(&user).Error
+	if err != nil {
+		return nil, common.ErrUserNotFound
+	}
+
+	result := map[string]interface{}{
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"preview":  preview,
+		"error":    "'Purge user data' is not supported",
+	}
+
+	return result, nil
+}
+
+// PurgeUsersData purge users data for enterprise edition
+func (s *Service) PurgeUsersData(ctx context.Context, preview bool, days int, userPlan *string, userActivity *string) (map[string]interface{}, error) {
+
+	plan := "all"
+	activity := "all"
+	if userPlan != nil {
+		plan = *userPlan
+	}
+	if userActivity != nil {
+		activity = *userActivity
+	}
+
+	result := map[string]interface{}{
+		"command":  "purge_users_data",
+		"preview":  preview,
+		"days":     days,
+		"plan":     plan,
+		"activity": activity,
+		"error":    "'Purge users data' is not supported",
+	}
+
+	return result, nil
+}
+
+// GenerateUserAPIKey create tenant API key for tenant
+func (s *Service) GenerateUserAPIKey(ctx context.Context, username string) (map[string]interface{}, error) {
+
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	result := map[string]interface{}{
+		"command":  "create_user_api_key",
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"error":    "'Create user API key' is not supported",
+	}
+
+	return result, nil
+}
+
+// DeleteUserAPIKey delete user API key
+func (s *Service) DeleteUserAPIKey(ctx context.Context, username, key string) (map[string]interface{}, error) {
+
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	result := map[string]interface{}{
+		"command":  "delete_user_api_key",
+		"email":    user.Email,
+		"nickname": user.Nickname,
+		"api_key":  key,
+		"error":    "'Delete user API key' is not supported",
+	}
+
+	return result, nil
+}
+
+// ListUserAPIKeys list user API keys
+func (s *Service) ListUserAPIKeys(ctx context.Context, username string) ([]map[string]interface{}, error) {
+
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
+
+	result := []map[string]interface{}{
+		{
+			"command":  "list_user_api_keys",
+			"email":    user.Email,
+			"nickname": user.Nickname,
+			"error":    "'List user API keys' is not supported",
+		},
+	}
+
+	return result, nil
+}
+
+func (s *Service) ListIngestionTasksByCondition(ctx context.Context, email, status *string) ([]map[string]interface{}, error) {
+
+	if email == nil && status == nil {
+		return nil, fmt.Errorf("email or status are required")
+	}
+
+	element := map[string]interface{}{
+		"command": "list_ingestion_tasks_by_condition",
+		"error":   "'List ingestion tasks by condition' is not supported",
+	}
+
+	if email != nil {
+		element["email"] = *email
+	}
+	if status != nil {
+		element["status"] = *status
+	}
+
+	return []map[string]interface{}{element}, nil
+}
+
+func (s *Service) StopIngestionTasksByCondition(ctx context.Context, tasks []string, email, status *string) ([]map[string]interface{}, error) {
+
+	if email == nil && status == nil {
+		return nil, fmt.Errorf("email or status are required")
+	}
+
+	element := map[string]interface{}{
+		"command": "stop_ingestion_tasks_by_condition",
+		"tasks":   tasks,
+		"error":   "'Stop ingestion tasks by condition' is not supported",
+	}
+
+	if email != nil {
+		element["email"] = *email
+	}
+	if status != nil {
+		element["status"] = *status
+	}
+
+	return []map[string]interface{}{element}, nil
+}
+
+func (s *Service) RemoveIngestionTasksByCondition(ctx context.Context, tasks []string, email, status *string) ([]map[string]interface{}, error) {
+
+	if email == nil && status == nil {
+		return nil, fmt.Errorf("email or status are required")
+	}
+
+	element := map[string]interface{}{
+		"command": "remove_ingestion_tasks_by_condition",
+		"tasks":   tasks,
+		"error":   "'Remove ingestion tasks by condition' is not supported",
+	}
+
+	if email != nil {
+		element["email"] = *email
+	}
+	if status != nil {
+		element["status"] = *status
+	}
+
+	return []map[string]interface{}{element}, nil
+}
+
+func CheckLicense() (common.ErrorCode, string) {
+	return common.CodeLicenseValid, ""
+}
+
+// DownloadSensitiveWords download sensitive words
+func (s *Service) DownloadSensitiveWords(ctx context.Context) ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command": "download_sensitive_words",
+			"error":   "'Download sensitive words' is not supported",
+		},
+	}
+	return result, nil
+}
+
+// UploadSensitiveWords upload sensitive words
+func (s *Service) UploadSensitiveWords(ctx context.Context, file *multipart.FileHeader) ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command":  "upload_sensitive_words",
+			"filename": file.Filename,
+			"error":    "'Upload sensitive words' is not supported",
+		},
+	}
+	return result, nil
+}
+
+// BindVerificationEmail bind verification email
+func (s *Service) BindVerificationEmail(ctx context.Context, email, host string, port int, username, password string, useTLS, useSSL bool) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":  "bind_verification_email",
+		"email":    email,
+		"host":     host,
+		"port":     port,
+		"username": username,
+		"password": password,
+		"use_tls":  useTLS,
+		"use_ssl":  useSSL,
+		"error":    "'Bind verification email' is not supported",
+	}
+	return result, nil
+}
+
+// ShowVerificationEmail show verification email
+func (s *Service) ShowVerificationEmail(ctx context.Context) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "show_verification_email",
+		"error":   "'Show verification email' is not supported",
+	}
+	return result, nil
+}
+
+// ShowWhiteList show white list
+func (s *Service) ShowWhiteList(ctx context.Context) ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command": "show_white_list",
+			"error":   "'Show white list' is not supported",
+		},
+	}
+	return result, nil
+}
+
+// AddWhiteList add white list
+func (s *Service) AddWhiteList(ctx context.Context, email string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "add_white_list",
+		"email":   email,
+		"error":   "'Add white list' is not supported",
+	}
+	return result, nil
+}
+
+// BatchAddWhiteList batch add white list
+func (s *Service) BatchAddWhiteList(ctx context.Context, file *multipart.FileHeader) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":  "batch_add_white_list",
+		"filename": file.Filename,
+		"error":    "'Batch add white list' is not supported",
+	}
+	return result, nil
+}
+
+// UpdateWhiteList update white list
+func (s *Service) UpdateWhiteList(ctx context.Context, id, email string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "update_white_list",
+		"id":      id,
+		"email":   email,
+		"error":   "'Update white list' is not supported",
+	}
+	return result, nil
+}
+
+// DeleteWhiteList delete white list
+func (s *Service) DeleteWhiteList(ctx context.Context, id int) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "delete_white_list",
+		"id":      id,
+		"error":   "'Delete white list' is not supported",
+	}
+	return result, nil
+}
+
+// BatchDeleteWhiteList batch delete white list
+func (s *Service) BatchDeleteWhiteList(ctx context.Context, ids []int) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command": "batch_delete_white_list",
+		"ids":     ids,
+		"error":   "'Batch delete white list' is not supported",
+	}
+	return result, nil
+}
+
+// GetTokenStats returns API token statistics for the user.
+func (s *Service) GetTokenStats(ctx context.Context, userName, fromDate, toDate, granularity string) ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command":     "get_token_stats",
+			"user_name":   userName,
+			"from_date":   fromDate,
+			"to_date":     toDate,
+			"granularity": granularity,
+			"error":       "'Get API token stats' is not supported",
+		},
+	}
+	return result, nil
+}
+
+// GetTokenUsersStats returns API token statistics for all users.
+func (s *Service) GetTokenUsersStats(ctx context.Context, fromDate, toDate string, top int) ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command":   "get_token_users_stats",
+			"from_date": fromDate,
+			"to_date":   toDate,
+			"top":       top,
+			"error":     "'Get API token users stats' is not supported",
+		},
+	}
+	return result, nil
+}
+
+// GetTokenStatsSummary returns API token statistics summary for all users.
+func (s *Service) GetTokenStatsSummary(ctx context.Context, fromDate, toDate string) (map[string]interface{}, error) {
+	result := map[string]interface{}{
+		"command":   "get_token_stats_summary",
+		"from_date": fromDate,
+		"to_date":   toDate,
+		"error":     "'Get API token stats summary' is not supported",
+	}
+
+	return result, nil
+}
+
+// ListLogs lists operation logs for the user.
+func (s *Service) ListLogs(ctx context.Context, userName string, days int) ([]map[string]interface{}, error) {
+	result := []map[string]interface{}{
+		{
+			"command":   "list_logs",
+			"user_name": userName,
+			"days":      days,
+			"error":     "'List operation logs' is not supported",
+		},
+	}
+	return result, nil
+}
+
+func (s *Service) GetEEServicesStatus(ctx context.Context) []ServiceStatus {
+	return []ServiceStatus{}
+}

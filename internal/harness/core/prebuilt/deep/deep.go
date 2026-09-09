@@ -28,11 +28,11 @@ type Config struct {
 	Model         core.Model[*schema.Message]
 	Tools         []core.Tool
 	MaxIterations int
-	Instruction   string // Custom system prompt (overrides default)
-	EnableShell   bool   // Enable shell command execution tool
-	SubAgents     []SubAgentSpec            // NEW: Sub-agents for task delegation
+	Instruction   string                      // Custom system prompt (overrides default)
+	EnableShell   bool                        // Enable shell command execution tool
+	SubAgents     []SubAgentSpec              // NEW: Sub-agents for task delegation
 	FailoverModel core.Model[*schema.Message] // NEW: Failover model
-	OutputKey     string                    // NEW: Session output storage key
+	OutputKey     string                      // NEW: Session output storage key
 }
 
 func DefaultConfig() *Config {
@@ -46,9 +46,15 @@ func DefaultConfig() *Config {
 
 // NewTyped creates a new DeepAgent as a TypedReActAgent.
 func NewTyped(cfg *Config) *core.ReActAgent[*schema.Message] {
-	if cfg == nil { cfg = DefaultConfig() }
-	if cfg.MaxIterations <= 0 { cfg.MaxIterations = 20 }
-	if cfg.Name == "" { cfg.Name = "deep_agent" }
+	if cfg == nil {
+		cfg = DefaultConfig()
+	}
+	if cfg.MaxIterations <= 0 {
+		cfg.MaxIterations = 20
+	}
+	if cfg.Name == "" {
+		cfg.Name = "deep_agent"
+	}
 
 	instruction := cfg.Instruction
 	if instruction == "" {
@@ -100,7 +106,9 @@ func NewTyped(cfg *Config) *core.ReActAgent[*schema.Message] {
 // The deep agent can transfer tasks to sub-agents and receive results.
 // If no sub-agents are configured, returns the plain deep agent.
 func NewWithSubAgents(ctx context.Context, cfg *Config) (core.ResumableAgent, error) {
-	if cfg == nil { cfg = DefaultConfig() }
+	if cfg == nil {
+		cfg = DefaultConfig()
+	}
 	deep := NewTyped(cfg)
 	if cfg == nil || len(cfg.SubAgents) == 0 {
 		return deep, nil
@@ -127,11 +135,17 @@ func ShellTool(workDir string) core.Tool {
 		"shell",
 		"Execute a shell command and return its output. Args: {\"command\":\"ls -la\"}",
 		func(ctx context.Context, args string) (string, error) {
-			var in struct{ Command string `json:"command"` }
-			if err := json.Unmarshal([]byte(args), &in); err != nil { return "", err }
+			var in struct {
+				Command string `json:"command"`
+			}
+			if err := json.Unmarshal([]byte(args), &in); err != nil {
+				return "", err
+			}
 
 			cmd := exec.CommandContext(ctx, "sh", "-c", in.Command)
-			if workDir != "" { cmd.Dir = workDir }
+			if workDir != "" {
+				cmd.Dir = workDir
+			}
 			output, err := cmd.CombinedOutput()
 			result := shellResult{
 				Command:  in.Command,
@@ -161,15 +175,21 @@ func StreamingShellTool(workDir string) core.Tool {
 		"streaming_shell",
 		"Execute a shell command with streaming output. Args: {\"command\":\"tail -f log.txt\"}",
 		func(ctx context.Context, args string) (string, error) {
-			var in struct{ Command string `json:"command"` }
+			var in struct {
+				Command string `json:"command"`
+			}
 			json.Unmarshal([]byte(args), &in) // ignore error
 
 			cmd := exec.CommandContext(ctx, "sh", "-c", in.Command)
-			if workDir != "" { cmd.Dir = workDir }
+			if workDir != "" {
+				cmd.Dir = workDir
+			}
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				exitCode := -1
-				if ee, ok := err.(*exec.ExitError); ok { exitCode = ee.ExitCode() }
+				if ee, ok := err.(*exec.ExitError); ok {
+					exitCode = ee.ExitCode()
+				}
 				return fmt.Sprintf(`{"exit_code":%d,"error":"%s","output":"%s"}`, exitCode, err, escapeShell(string(output))), nil
 			}
 			return fmt.Sprintf(`{"exit_code":0,"output":%q}`, escapeShell(string(output))), nil
@@ -199,12 +219,12 @@ const (
 
 // Task is a unit of work tracked by the Deep Agent's task manager.
 type Task struct {
-	ID           string         `json:"id"`
-	Description string         `json:"description"`
-	State        TaskState      `json:"state"`
-	Result       string         `json:"result,omitempty"`
-	Error        string         `json:"error,omitempty"`
-	Dependencies []string      `json:"dependencies,omitempty"`
+	ID           string    `json:"id"`
+	Description  string    `json:"description"`
+	State        TaskState `json:"state"`
+	Result       string    `json:"result,omitempty"`
+	Error        string    `json:"error,omitempty"`
+	Dependencies []string  `json:"dependencies,omitempty"`
 }
 
 // TaskManager tracks sub-tasks within a Deep Agent session.
@@ -214,7 +234,7 @@ func NewTaskManager() *TaskManager { return &TaskManager{} }
 
 func (m *TaskManager) Create(desc string, deps ...string) *Task {
 	t := &Task{
-		ID: fmt.Sprintf("task_%d", len(m.tasks)+1),
+		ID:          fmt.Sprintf("task_%d", len(m.tasks)+1),
 		Description: desc, State: TaskPending,
 		Dependencies: deps,
 	}
@@ -224,13 +244,19 @@ func (m *TaskManager) Create(desc string, deps ...string) *Task {
 
 func (m *TaskManager) List() []*Task { return m.tasks }
 func (m *TaskManager) Get(id string) (*Task, error) {
-	for _, t := range m.tasks { if t.ID == id { return t, nil } }
+	for _, t := range m.tasks {
+		if t.ID == id {
+			return t, nil
+		}
+	}
 	return nil, fmt.Errorf("task %q not found", id)
 }
 
 func (m *TaskManager) Update(id, result string, state TaskState) error {
 	t, err := m.Get(id)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	t.Result = result
 	t.State = state
 	return nil
@@ -244,11 +270,13 @@ func TaskCreateTool(m *TaskManager) core.Tool {
 		func(ctx context.Context, args string) (string, error) {
 			var in struct {
 				Todos []struct {
-					Desc     string   `json:"desc"`
-					Depends  []string `json:"deps,omitempty"`
+					Desc    string   `json:"desc"`
+					Depends []string `json:"deps,omitempty"`
 				} `json:"todos"`
 			}
-			if err := json.Unmarshal([]byte(args), &in); err != nil { return "", err }
+			if err := json.Unmarshal([]byte(args), &in); err != nil {
+				return "", err
+			}
 			var created []*Task
 			for _, td := range in.Todos {
 				t := m.Create(td.Desc, td.Depends...)
@@ -283,8 +311,12 @@ func TaskUpdateTool(m *TaskManager) core.Tool {
 				Result string `json:"result,omitempty"`
 				Status string `json:"status"`
 			}
-			if err := json.Unmarshal([]byte(args), &in); err != nil { return "", err }
-			if err := m.Update(in.ID, in.Result, TaskState(in.Status)); err != nil { return "", err }
+			if err := json.Unmarshal([]byte(args), &in); err != nil {
+				return "", err
+			}
+			if err := m.Update(in.ID, in.Result, TaskState(in.Status)); err != nil {
+				return "", err
+			}
 			b, _ := json.Marshal(map[string]string{"updated": in.ID})
 			return string(b), nil
 		},
@@ -310,7 +342,7 @@ Guidelines:
 - Each sub-task should be specific, actionable, ordered logically
 - After completing each sub-task, verify the output is correct`
 
-var prompts = map[string]struct{	System, TaskPrompt, VerifyPrompt, TransferDesc string}{
+var prompts = map[string]struct{ System, TaskPrompt, VerifyPrompt, TransferDesc string }{
 	"en": {systemPrompt, "Each sub-task should be specific, actionable, ordered logically.", "After completing each sub-task, verify the output is correct.", "Transfer the question to another agent."},
 	"zh": {`你是一个深度代理 —— 一个深度优先的任务分解和执行代理。
 
@@ -331,6 +363,8 @@ var prompts = map[string]struct{	System, TaskPrompt, VerifyPrompt, TransferDesc 
 }
 
 func SelectPrompt(lang string) string {
-	if p, ok := prompts[lang]; ok { return p.System }
+	if p, ok := prompts[lang]; ok {
+		return p.System
+	}
 	return systemPrompt
 }

@@ -1,6 +1,21 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { Toaster } from '@/components/ui/toaster';
-import { changeLanguageAsync } from '@/locales/config';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { configResponsive } from 'ahooks';
 import dayjs from 'dayjs';
@@ -13,13 +28,12 @@ import localeData from 'dayjs/plugin/localeData';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
-import React, { useEffect } from 'react';
+import React from 'react';
 import { RouterProvider } from 'react-router';
 import { ThemeProvider } from './components/theme-provider';
 import { TooltipProvider } from './components/ui/tooltip';
 import { ThemeEnum } from './constants/common';
 import { routers } from './routes';
-import storage from './utils/authorization-util';
 
 import 'react-photo-view/dist/react-photo-view.css';
 
@@ -76,13 +90,6 @@ function Root({ children }: React.PropsWithChildren) {
 }
 
 const RootProvider = ({ children }: React.PropsWithChildren) => {
-  useEffect(() => {
-    const lng = storage.getLanguage();
-    if (lng) {
-      void changeLanguageAsync(lng);
-    }
-  }, []);
-
   return (
     <TooltipProvider>
       <QueryClientProvider client={queryClient}>

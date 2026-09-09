@@ -23,6 +23,7 @@ from utils.file_utils import create_txt_file
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+
 @pytest.mark.p1
 @pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
@@ -315,7 +316,6 @@ class TestDocumentsUploadUnit:
         assert "code" in res
 
 
-
 @pytest.mark.p2
 class TestWebCrawlUnit:
     def test_invalid_url(self, document_rest_api_module, monkeypatch):
@@ -355,7 +355,7 @@ class TestWebCrawlUnit:
         )
         res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 109
-        assert res["message"] == "No authorization."
+        assert res["message"] == "no authorization"
 
     def test_download_failure(self, document_rest_api_module, monkeypatch):
         module = document_rest_api_module

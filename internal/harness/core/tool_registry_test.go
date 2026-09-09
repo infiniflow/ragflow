@@ -207,9 +207,11 @@ func TestToolRegistry_LookupPanicsForTool(t *testing.T) {
 
 type testPanicTool struct{ name string }
 
-func (t *testPanicTool) Name() string { return t.name }
+func (t *testPanicTool) Name() string        { return t.name }
 func (t *testPanicTool) Description() string { return "" }
-func (t *testPanicTool) Invoke(ctx context.Context, s string, opts ...ToolOption) (string, error) { return "", nil }
+func (t *testPanicTool) Invoke(ctx context.Context, s string, opts ...ToolOption) (string, error) {
+	return "", nil
+}
 func (t *testPanicTool) Stream(ctx context.Context, s string, opts ...ToolOption) (*schema.StreamReader[string], error) {
 	return schema.StreamReaderFromArray([]string{""}), nil
 }
