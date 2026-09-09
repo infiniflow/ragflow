@@ -15,6 +15,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -22,11 +23,12 @@ import (
 )
 
 const (
-	recH        = 48
-	recW        = 320
-	recSeqLen   = 40
-	recVocab    = 6625
-	recMaxBatch = 1
+	recH         = 48
+	recW         = 320
+	recSeqLen    = 40
+	recVocab     = 6625
+	recMaxBatch  = 1
+	recBatchSize = 16 // matches Python DeepDoc self.rec_batch_num = 16 in deepdoc/vision/ocr.py
 )
 
 // OCRRecResult is the recognized text for one cropped line.
@@ -84,6 +86,48 @@ func RunOCRRecBatchReal(ctx context.Context, modelDir string, imgs []*Image) ([]
 		}
 		return []OCRRecResult{res}, nil
 	}
+
+	// Python DeepDoc parity (deepdoc/vision/ocr.py TextRecognizer.__call__):
+	// 1. Calculate aspect ratio (w/h) of every line crop.
+	// 2. Sort by aspect ratio (argsort) so crops of similar width are batched together.
+	//    This prevents an anomalous full-width line from inflating the padding width
+	//    of all other normal-sized boxes on the page.
+	type indexedRatio struct {
+		idx   int
+		ratio float64
+	}
+	items := make([]indexedRatio, n)
+	for i, img := range imgs {
+		items[i] = indexedRatio{
+			idx:   i,
+			ratio: float64(img.W) / float64(img.H),
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].ratio < items[j].ratio
+	})
+
+	results := make([]OCRRecResult, n)
+	for beg := 0; beg < n; beg += recBatchSize {
+		end := min(n, beg+recBatchSize)
+		chunkLen := end - beg
+		chunkImgs := make([]*Image, chunkLen)
+		for i := 0; i < chunkLen; i++ {
+			chunkImgs[i] = imgs[items[beg+i].idx]
+		}
+		chunkRes, err := runSingleOCRRecChunk(ctx, modelDir, chunkImgs)
+		if err != nil {
+			return nil, err
+		}
+		for i := 0; i < chunkLen; i++ {
+			results[items[beg+i].idx] = chunkRes[i]
+		}
+	}
+	return results, nil
+}
+
+func runSingleOCRRecChunk(ctx context.Context, modelDir string, imgs []*Image) ([]OCRRecResult, error) {
+	n := len(imgs)
 	chars, err := loadCharDict(filepath.Join(modelDir, "ocr.res"))
 	if err != nil {
 		return nil, err
@@ -116,10 +160,9 @@ func RunOCRRecBatchReal(ctx context.Context, modelDir string, imgs []*Image) ([]
 		copy(batch[i*lineStride:(i+1)*lineStride], b)
 	}
 
-	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
-	// parity (no contour extraction in the OCR-rec Run path).
+	// defaultIntraOpThreads() (0 = all cores by default, overridable by DEEPDOC_ORT_NUM_THREADS).
 	sess, release, err := getRecSession(filepath.Join(modelDir, "rec.ort"), "x",
-		[]int64{int64(n), 3, recH, int64(imgW)}, "softmax_11.tmp_0", 0)
+		[]int64{int64(n), 3, recH, int64(imgW)}, "softmax_11.tmp_0", defaultIntraOpThreads())
 	if err != nil {
 		return nil, err
 	}

@@ -144,6 +144,59 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (out *image.RGBA, err 
 	return
 }
 
+var (
+	cachedPDFPtr unsafe.Pointer
+	cachedPDFLen int
+	cachedCData  unsafe.Pointer
+	cachedDoc    C.FPDF_DOCUMENT
+)
+
+// getOrOpenDocument returns the cached FPDF_DOCUMENT if pdfData matches the
+// currently cached document, or opens a new one (closing the previous one).
+// Must be called while holding pdfsync.Mu.
+func getOrOpenDocument(pdfData []byte) (C.FPDF_DOCUMENT, error) {
+	if len(pdfData) == 0 {
+		return nil, fmt.Errorf("pdfium: empty pdf data")
+	}
+	ptr := unsafe.Pointer(&pdfData[0])
+	if cachedDoc != nil && (ptr != cachedPDFPtr || len(pdfData) != cachedPDFLen) {
+		C.FPDF_CloseDocument(cachedDoc)
+		C.free(cachedCData)
+		cachedDoc = nil
+		cachedCData = nil
+		cachedPDFPtr = nil
+		cachedPDFLen = 0
+	}
+	if cachedDoc == nil {
+		cData := C.CBytes(pdfData)
+		doc := C.FPDF_LoadMemDocument(unsafe.Pointer(cData), C.int(len(pdfData)), nil)
+		if doc == nil {
+			C.free(cData)
+			return nil, fmt.Errorf("pdfium: FPDF_LoadMemDocument returned nil")
+		}
+		cachedPDFPtr = ptr
+		cachedPDFLen = len(pdfData)
+		cachedCData = cData
+		cachedDoc = doc
+	}
+	return cachedDoc, nil
+}
+
+// CloseCachedDocument frees the cached PDFium document and its C buffer.
+// Safe to call at any time; serializes on pdfsync.Mu.
+func CloseCachedDocument() {
+	pdfsync.With(func() {
+		if cachedDoc != nil {
+			C.FPDF_CloseDocument(cachedDoc)
+			C.free(cachedCData)
+			cachedDoc = nil
+			cachedCData = nil
+			cachedPDFPtr = nil
+			cachedPDFLen = 0
+		}
+	})
+}
+
 // openPage opens a document and page, returning post-rotation dimensions
 // and a cleanup function.  Callers must call closeAll() to free resources.
 func openPage(pdfData []byte, pageIdx int) (
@@ -153,19 +206,13 @@ func openPage(pdfData []byte, pageIdx int) (
 	closeAll func(),
 	err error,
 ) {
-	cData := C.CBytes(pdfData)
-
-	doc = C.FPDF_LoadMemDocument(unsafe.Pointer(cData), C.int(len(pdfData)), nil)
-	if doc == nil {
-		C.free(cData)
-		err = fmt.Errorf("pdfium: FPDF_LoadMemDocument returned nil")
+	doc, err = getOrOpenDocument(pdfData)
+	if err != nil {
 		return
 	}
 
 	page = C.FPDF_LoadPage(doc, C.int(pageIdx))
 	if page == nil {
-		C.FPDF_CloseDocument(doc)
-		C.free(cData)
 		err = fmt.Errorf("pdfium: FPDF_LoadPage(%d) returned nil", pageIdx)
 		return
 	}
@@ -174,16 +221,12 @@ func openPage(pdfData []byte, pageIdx int) (
 	ph = float64(C.FPDF_GetPageHeight(page))
 	if pw <= 0 || ph <= 0 {
 		C.FPDF_ClosePage(page)
-		C.FPDF_CloseDocument(doc)
-		C.free(cData)
 		err = fmt.Errorf("pdfium: invalid page dimensions %.1fx%.1f", pw, ph)
 		return
 	}
 
 	closeAll = func() {
 		C.FPDF_ClosePage(page)
-		C.FPDF_CloseDocument(doc)
-		C.free(cData)
 	}
 	return
 }
@@ -203,14 +246,10 @@ func ExtractOutlines(pdfData []byte) []Outline {
 	pdfsync.With(func() {
 		Init()
 
-		cData := C.CBytes(pdfData)
-		defer C.free(cData)
-
-		doc := C.FPDF_LoadMemDocument(unsafe.Pointer(cData), C.int(len(pdfData)), nil)
-		if doc == nil {
+		doc, err := getOrOpenDocument(pdfData)
+		if err != nil {
 			return
 		}
-		defer C.FPDF_CloseDocument(doc)
 
 		type frame struct {
 			bm    C.FPDF_BOOKMARK

@@ -17,6 +17,8 @@ package native
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"sync"
 
 	ort "github.com/infiniflow/onnxruntime_go"
@@ -63,6 +65,19 @@ func InitORT() error {
 // been successfully initialized. The in-process DeepDoc backend uses this to
 // decide whether it can serve, degrading to an empty analyzer otherwise.
 func Initialized() bool { return ortReady }
+
+// defaultIntraOpThreads returns the thread count for ORT inference.
+// Defaults to 0 (all cores, matching Python onnxruntime) for bit-stable parity,
+// but can be overridden via the DEEPDOC_ORT_NUM_THREADS environment variable to
+// prevent CPU thread thrashing under concurrent workloads.
+func defaultIntraOpThreads() int {
+	if s := os.Getenv("DEEPDOC_ORT_NUM_THREADS"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v >= 0 {
+			return v
+		}
+	}
+	return 0
+}
 
 // session loads one ONNX model and runs single-input/single-output inference.
 type session struct {
