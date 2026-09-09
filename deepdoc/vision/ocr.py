@@ -35,6 +35,11 @@ from .postprocess import build_post_process
 
 loaded_models = {}
 
+# OpenCV remap (used by cv2.warpPerspective) asserts src/dst width and height
+# are strictly less than SHRT_MAX (32767). Oversized PDF page renders or
+# detector quads can exceed that and crash chunking.
+_OPENCV_REMAP_MAX_DIM = 32766
+
 
 def transform(data, ops=None):
     """transform"""
@@ -570,11 +575,46 @@ class OCR:
         points[:, 1] = points[:, 1] - top
         """
         assert len(points) == 4, "shape of points must be 4*2"
+        points = np.asarray(points, dtype=np.float32).copy()
+        img_h, img_w = img.shape[:2]
+        if img_h <= 0 or img_w <= 0:
+            channels = img.shape[2] if img.ndim == 3 else 1
+            return np.zeros((1, 1, channels), dtype=img.dtype) if img.ndim == 3 else np.zeros((1, 1), dtype=img.dtype)
+
+        # Clamp detector quads to the source image so out-of-range boxes cannot
+        # inflate the warp destination beyond the page itself.
+        points[:, 0] = np.clip(points[:, 0], 0, max(img_w - 1, 0))
+        points[:, 1] = np.clip(points[:, 1], 0, max(img_h - 1, 0))
+
         img_crop_width = int(max(np.linalg.norm(points[0] - points[1]), np.linalg.norm(points[2] - points[3])))
         img_crop_height = int(max(np.linalg.norm(points[0] - points[3]), np.linalg.norm(points[1] - points[2])))
+        img_crop_width = max(img_crop_width, 1)
+        img_crop_height = max(img_crop_height, 1)
+
+        src = img
+        # Downscale the source (and quad) when the rendered page exceeds OpenCV's
+        # remap limit; otherwise warpPerspective asserts inside remap.
+        max_src_side = max(img_w, img_h)
+        if max_src_side > _OPENCV_REMAP_MAX_DIM:
+            scale = _OPENCV_REMAP_MAX_DIM / max_src_side
+            new_w = max(1, int(img_w * scale))
+            new_h = max(1, int(img_h * scale))
+            src = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            points *= scale
+            img_crop_width = max(1, int(img_crop_width * scale))
+            img_crop_height = max(1, int(img_crop_height * scale))
+
+        # Cap the destination independently: a huge quad on a still-legal source
+        # must not request a dst canvas >= SHRT_MAX.
+        max_dst_side = max(img_crop_width, img_crop_height)
+        if max_dst_side > _OPENCV_REMAP_MAX_DIM:
+            scale = _OPENCV_REMAP_MAX_DIM / max_dst_side
+            img_crop_width = max(1, int(img_crop_width * scale))
+            img_crop_height = max(1, int(img_crop_height * scale))
+
         pts_std = np.float32([[0, 0], [img_crop_width, 0], [img_crop_width, img_crop_height], [0, img_crop_height]])
         M = cv2.getPerspectiveTransform(points, pts_std)
-        dst_img = cv2.warpPerspective(img, M, (img_crop_width, img_crop_height), borderMode=cv2.BORDER_REPLICATE, flags=cv2.INTER_CUBIC)
+        dst_img = cv2.warpPerspective(src, M, (img_crop_width, img_crop_height), borderMode=cv2.BORDER_REPLICATE, flags=cv2.INTER_CUBIC)
         dst_img_height, dst_img_width = dst_img.shape[0:2]
         if dst_img_height * 1.0 / dst_img_width >= 1.5:
             # Try original orientation
