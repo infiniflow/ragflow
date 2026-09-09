@@ -2,6 +2,12 @@ kind: knowledge_graph
 display_name: Knowledge graph
 config:
   kind: knowledge_graph
+  rechunk_rules: |
+    - Group only adjacent source chunks into coherent semantic units for this knowledge-compilation task.
+    - Preserve source order: use every source chunk exactly once; do not omit, overlap, duplicate, or reorder chunks.
+    - Split when the topic, section, or semantic focus changes; do not merge unrelated content.
+    - Keep self-contained tables, lists, figures, and code blocks intact; do not split their internal structure.
+    - Do not invent, rewrite, or return source text; return only chunk grouping metadata.
   entity:
     description: >-
       You are a robust graph entity extractor for knowledge graphs.

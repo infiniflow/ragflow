@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import list_all_sessions
-from configs import SESSION_WITH_CHAT_NAME_LIMIT
+from configs import HOST_ADDRESS, SESSION_WITH_CHAT_NAME_LIMIT
 from ragflow_sdk import RAGFlow
 from ragflow_sdk.modules.session import Session
 
@@ -34,14 +34,14 @@ class _DummyStreamResponse:
 
 @pytest.mark.usefixtures("clear_session_with_chat_assistants")
 class TestSessionWithChatAssistantCreate:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, expected_message",
         [
             ("valid_name", ""),
             pytest.param("a" * (SESSION_WITH_CHAT_NAME_LIMIT + 1), "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param(1, "", marks=pytest.mark.skip(reason="issues/")),
-            ("", "`name` can not be empty."),
+            ("", "`name` can not be empty"),
             ("duplicated_name", ""),
             ("case insensitive", ""),
         ],
@@ -86,12 +86,12 @@ class TestSessionWithChatAssistantCreate:
         client.delete_chats(ids=[chat_assistant.id])
         with pytest.raises(Exception) as exception_info:
             chat_assistant.create_session(name="valid_name")
-        assert "No authorization." in str(exception_info.value)
+        assert "no authorization" in str(exception_info.value)
 
 
 @pytest.mark.p2
 def test_session_module_streaming_and_helper_paths_unit(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
     chat_session = Session(client, {"id": "session-chat", "chat_id": "chat-1"})
     chat_done_session = Session(client, {"id": "session-chat-done", "chat_id": "chat-1"})
     agent_session = Session(client, {"id": "session-agent", "agent_id": "agent-1"})

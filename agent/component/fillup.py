@@ -14,14 +14,10 @@
 #  limitations under the License.
 #
 import json
-import re
 from functools import partial
 
 from agent.component.base import ComponentParamBase, ComponentBase
 from api.db.services.file_service import FileService
-
-
-_INITIAL_USER_INPUT_CONSUMED_KEY = "sys.__initial_user_input_consumed__"
 
 
 class UserFillUpParam(ComponentParamBase):
@@ -39,32 +35,7 @@ class UserFillUp(ComponentBase):
     component_name = "UserFillUp"
 
     def _merge_runtime_inputs(self, runtime_inputs):
-        if runtime_inputs:
-            return runtime_inputs
-
-        fields = self.get_input_elements()
-        if not fields:
-            return {}
-
-        if self._canvas.globals.get(_INITIAL_USER_INPUT_CONSUMED_KEY):
-            return {}
-
-        query = self._canvas.globals.get("sys.query")
-        if query is None or query == "":
-            return {}
-
-        if isinstance(query, dict):
-            matched = {key: value if isinstance(value, dict) else {"value": value} for key, value in query.items() if key in fields}
-            if matched:
-                self._canvas.globals[_INITIAL_USER_INPUT_CONSUMED_KEY] = True
-            return matched
-
-        if len(fields) == 1:
-            field_name = next(iter(fields))
-            self._canvas.globals[_INITIAL_USER_INPUT_CONSUMED_KEY] = True
-            return {field_name: {"value": query}}
-
-        return {}
+        return runtime_inputs or {}
 
     def _resolve_input_value(self, value, layout_recognize):
         if isinstance(value, dict) and value.get("type", "").lower().find("file") >= 0:
@@ -109,17 +80,37 @@ class UserFillUp(ComponentBase):
                     ans = v
                 if not ans:
                     ans = ""
-                content = re.sub(r"\{%s\}" % k, ans, content)
+                content = content.replace("{%s}" % k, ans)
 
             self.set_output("tips", content)
         layout_recognize = self._param.layout_recognize or None
         merged_inputs = self._merge_runtime_inputs(kwargs.get("inputs", {}))
+        if not merged_inputs:
+            # No fresh user answer was supplied on this entry. Clear any values
+            # retained from a previous response so the canvas wait-check treats
+            # the form as unsatisfied and pauses for input again. Without this,
+            # an Await Response node inside a Loop would only pause on the first
+            # iteration and silently reuse the earlier answer afterwards.
+            self._clear_form_values()
         for k, v in merged_inputs.items():
             if self.check_if_canceled("UserFillUp processing"):
                 return
             resolved = self._resolve_input_value(v, layout_recognize)
             self.set_output(k, resolved)
             self.set_input_value(k, resolved)
+
+    def _clear_form_values(self):
+        for field in self.get_input_elements().values():
+            if not isinstance(field, dict):
+                continue
+            field_type = str(field.get("type", "")).lower()
+            # An optional file input is already treated as satisfied when empty
+            # (see Canvas._is_input_field_satisfied), so clearing it would not
+            # force a re-prompt and would only drop a previously uploaded file.
+            # Leave it untouched to avoid unexpected data loss.
+            if "file" in field_type and field.get("optional"):
+                continue
+            field["value"] = None
 
     def thoughts(self) -> str:
         return "Waiting for your input..."

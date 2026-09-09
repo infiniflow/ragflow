@@ -22,12 +22,31 @@ def get_model_type_human(model_type: int) -> List[str]:
     return [mt.name.lower() for mt in ModelTypeBinary if model_type & mt.value]
 
 
-def calculate_model_type(model_type_name_list: List[str]|str) -> int:
-    model_type = 0
+_LEGACY_MODEL_TYPE_ALIASES = {
+    "speech2text": "asr",
+    "image2text": "vision",
+}
+
+
+def normalize_model_types(model_type_name_list: List[str] | str) -> List[str]:
+    """Return model type names using the canonical API/runtime identifiers."""
     if isinstance(model_type_name_list, str):
         model_type_name_list = [model_type_name_list]
+    elif not isinstance(model_type_name_list, list):
+        return []
+
+    normalized = []
+    for model_type in model_type_name_list:
+        canonical = _LEGACY_MODEL_TYPE_ALIASES.get(model_type, model_type)
+        if canonical not in normalized:
+            normalized.append(canonical)
+    return normalized
+
+
+def calculate_model_type(model_type_name_list: List[str] | str) -> int:
+    model_type = 0
     type_value_map = {mt.name.lower(): mt.value for mt in ModelTypeBinary}
-    for mt in model_type_name_list:
+    for mt in normalize_model_types(model_type_name_list):
         if mt in type_value_map:
             model_type |= type_value_map[mt]
     return model_type

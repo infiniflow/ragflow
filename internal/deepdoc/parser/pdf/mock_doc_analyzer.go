@@ -2,7 +2,6 @@ package pdf
 
 import (
 	"context"
-	"fmt"
 	"image"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -14,11 +13,6 @@ type MockDocAnalyzer struct {
 	TSRCells   []pdf.TSRCell
 	OCRBoxes   []pdf.OCRBox
 	OCRTexts   []pdf.OCRText
-	// OCRBatchTexts returns per-image texts for OCRRecognizeBatch.
-	// If nil, OCRTexts is returned for every image.
-	OCRBatchTexts [][]pdf.OCRText
-	// OCRBatchErr makes OCRRecognizeBatch return an error for image i.
-	OCRBatchErr func(i int) error
 	// Per-method error injection for testing failure paths.
 	DLAErr          error
 	TSRErr          error
@@ -51,24 +45,5 @@ func (m *MockDocAnalyzer) OCRRecognize(_ context.Context, _ image.Image) ([]pdf.
 		return nil, m.OCRRecognizeErr
 	}
 	return m.OCRTexts, nil
-}
-func (m *MockDocAnalyzer) OCRRecognizeBatch(_ context.Context, cropped []image.Image) ([][]pdf.OCRText, []error) {
-	results := make([][]pdf.OCRText, len(cropped))
-	errs := make([]error, len(cropped))
-	for i, img := range cropped {
-		if img == nil {
-			errs[i] = fmt.Errorf("image[%d] is nil", i)
-			continue
-		}
-		if m.OCRBatchErr != nil {
-			errs[i] = m.OCRBatchErr(i)
-		}
-		if m.OCRBatchTexts != nil && i < len(m.OCRBatchTexts) {
-			results[i] = m.OCRBatchTexts[i]
-		} else {
-			results[i] = m.OCRTexts
-		}
-	}
-	return results, errs
 }
 func (m *MockDocAnalyzer) Health() bool { return m.Healthy }

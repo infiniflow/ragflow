@@ -454,3 +454,91 @@ class TestLayoutRecognizerIsGarbage:
 
     def test_cid_with_large_number(self):
         assert _is_garbage({"text": "(cid:99999)"}) is True
+
+
+# ---------------------------------------------------------------------------
+# Tests for _ocr_can_represent
+# ---------------------------------------------------------------------------
+
+
+class TestOcrCanRepresent:
+    """The OCR fallback is skipped for a script the recogniser cannot spell.
+
+    ocr.res is CJK+Latin, so it covers ~100% of an English page but only ~6% of a
+    Cyrillic one; re-OCRing a script it cannot spell only produces garbage.
+    """
+
+    _LATIN = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,-"
+
+    def test_english_is_representable(self, monkeypatch):
+        monkeypatch.setattr(_Parser, "_OCR_ALPHABET", set(self._LATIN))
+        assert _Parser._ocr_can_represent("Minimum edit distance") is True
+
+    def test_russian_is_not_representable(self, monkeypatch):
+        monkeypatch.setattr(_Parser, "_OCR_ALPHABET", set(self._LATIN))
+        assert _Parser._ocr_can_represent("О книге как-то иначе") is False
+
+    def test_empty_text_is_representable(self, monkeypatch):
+        monkeypatch.setattr(_Parser, "_OCR_ALPHABET", set(self._LATIN))
+        assert _Parser._ocr_can_represent("") is True
+        assert _Parser._ocr_can_represent("   ") is True
+
+    def test_unknown_alphabet_is_representable(self, monkeypatch):
+        monkeypatch.setattr(_Parser, "_OCR_ALPHABET", set())
+        assert _Parser._ocr_can_represent("О книге") is True
+
+    def test_coverage_threshold_boundary(self, monkeypatch):
+        monkeypatch.setattr(_Parser, "_OCR_ALPHABET", set("abcd"))
+        assert _Parser._ocr_can_represent("abcdx", min_coverage=0.8) is True  # 4/5
+        assert _Parser._ocr_can_represent("abcxx", min_coverage=0.8) is False  # 3/5
+
+
+# ---------------------------------------------------------------------------
+# Tests for _insert_word_spaces (geometric word-boundary recovery)
+# ---------------------------------------------------------------------------
+
+
+def _line(words, char_w=5.0, word_gap=2.0, kern=0.0, x0=0.0):
+    """Build a spaceless pdfplumber-style char stream: fixed-width glyphs,
+    ``word_gap`` pt between words, ``kern`` pt between glyphs inside a word."""
+    chars = []
+    x = x0
+    for wi, w in enumerate(words):
+        if wi:
+            x += word_gap
+        for ci, ch in enumerate(w):
+            if ci:
+                x += kern
+            chars.append({"text": ch, "x0": x, "x1": x + char_w, "width": char_w})
+            x += char_w
+    return chars
+
+
+def _spaced(chars):
+    _Parser._insert_word_spaces(chars)
+    return "".join(c["text"] for c in chars)
+
+
+class TestInsertWordSpaces:
+    def test_cyrillic_words_are_split(self):
+        # mean width 5 -> threshold 0.25*5 = 1.25pt; the 2.0pt word gap exceeds it.
+        assert _spaced(_line(["Окниге", "както"])).split() == ["Окниге", "както"]
+
+    def test_latin_word_gap_becomes_a_space(self):
+        assert _spaced(_line(["Hello", "World"])) == "Hello World"
+
+    def test_intra_word_kern_is_not_a_space(self):
+        # A 0.3pt kern inside a word is well below the threshold.
+        assert _spaced(_line(["Large"], kern=0.3)) == "Large"
+
+    def test_cjk_gap_is_not_a_word_boundary(self):
+        # CJK does not separate words with spaces: a wide gap between CJK glyphs
+        # is ordinary tracking, not a boundary.
+        assert _spaced(_line(["乙", "丙"])) == "乙丙"
+
+    def test_cjk_adjacent_to_latin_gets_no_invented_space(self):
+        assert _spaced(_line(["乙", "A"])) == "乙A"
+
+    def test_japanese_and_korean_gaps_are_not_boundaries(self):
+        assert _spaced(_line(["ア", "イ"])) == "アイ"
+        assert _spaced(_line(["한", "글"])) == "한글"

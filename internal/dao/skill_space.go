@@ -17,7 +17,10 @@
 package dao
 
 import (
+	"context"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // SkillSpaceDAO data access object for skills space
@@ -29,14 +32,14 @@ func NewSkillSpaceDAO() *SkillSpaceDAO {
 }
 
 // Create creates a new skills space
-func (dao *SkillSpaceDAO) Create(space *entity.SkillSpace) error {
-	return DB.Create(space).Error
+func (dao *SkillSpaceDAO) Create(ctx context.Context, db *gorm.DB, space *entity.SkillSpace) error {
+	return db.WithContext(ctx).Create(space).Error
 }
 
 // GetByID retrieves a skills space by ID (active only)
-func (dao *SkillSpaceDAO) GetByID(id string) (*entity.SkillSpace, error) {
+func (dao *SkillSpaceDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.SkillSpace, error) {
 	var space entity.SkillSpace
-	err := DB.Where("id = ? AND status = ?", id, entity.SpaceStatusActive).First(&space).Error
+	err := db.WithContext(ctx).Where("id = ? AND status = ?", id, entity.SpaceStatusActive).First(&space).Error
 	if err != nil {
 		return nil, err
 	}
@@ -44,16 +47,16 @@ func (dao *SkillSpaceDAO) GetByID(id string) (*entity.SkillSpace, error) {
 }
 
 // GetByTenantID retrieves all skills spaces by tenant ID (active only)
-func (dao *SkillSpaceDAO) GetByTenantID(tenantID string) ([]*entity.SkillSpace, error) {
+func (dao *SkillSpaceDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]*entity.SkillSpace, error) {
 	var spaces []*entity.SkillSpace
-	err := DB.Where("tenant_id = ? AND status = ?", tenantID, entity.SpaceStatusActive).Order("create_time DESC").Find(&spaces).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND status = ?", tenantID, entity.SpaceStatusActive).Order("create_time DESC").Find(&spaces).Error
 	return spaces, err
 }
 
 // GetByTenantAndName retrieves a skills space by tenant ID and name (active only)
-func (dao *SkillSpaceDAO) GetByTenantAndName(tenantID, name string) (*entity.SkillSpace, error) {
+func (dao *SkillSpaceDAO) GetByTenantAndName(ctx context.Context, db *gorm.DB, tenantID, name string) (*entity.SkillSpace, error) {
 	var space entity.SkillSpace
-	err := DB.Where("tenant_id = ? AND name = ? AND status = ?", tenantID, name, entity.SpaceStatusActive).First(&space).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND name = ? AND status = ?", tenantID, name, entity.SpaceStatusActive).First(&space).Error
 	if err != nil {
 		return nil, err
 	}
@@ -61,9 +64,9 @@ func (dao *SkillSpaceDAO) GetByTenantAndName(tenantID, name string) (*entity.Ski
 }
 
 // GetByTenantAndNameAnyStatus retrieves a skills space by tenant ID and name regardless of status
-func (dao *SkillSpaceDAO) GetByTenantAndNameAnyStatus(tenantID, name string) (*entity.SkillSpace, error) {
+func (dao *SkillSpaceDAO) GetByTenantAndNameAnyStatus(ctx context.Context, db *gorm.DB, tenantID, name string) (*entity.SkillSpace, error) {
 	var space entity.SkillSpace
-	err := DB.Where("tenant_id = ? AND name = ?", tenantID, name).First(&space).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND name = ?", tenantID, name).First(&space).Error
 	if err != nil {
 		return nil, err
 	}
@@ -71,9 +74,9 @@ func (dao *SkillSpaceDAO) GetByTenantAndNameAnyStatus(tenantID, name string) (*e
 }
 
 // GetByIDAnyStatus retrieves a skills space by ID regardless of status
-func (dao *SkillSpaceDAO) GetByIDAnyStatus(id string) (*entity.SkillSpace, error) {
+func (dao *SkillSpaceDAO) GetByIDAnyStatus(ctx context.Context, db *gorm.DB, id string) (*entity.SkillSpace, error) {
 	var space entity.SkillSpace
-	err := DB.Where("id = ?", id).First(&space).Error
+	err := db.WithContext(ctx).Where("id = ?", id).First(&space).Error
 	if err != nil {
 		return nil, err
 	}
@@ -81,9 +84,9 @@ func (dao *SkillSpaceDAO) GetByIDAnyStatus(id string) (*entity.SkillSpace, error
 }
 
 // GetByFolderID retrieves a skills space by folder ID (active only)
-func (dao *SkillSpaceDAO) GetByFolderID(folderID string) (*entity.SkillSpace, error) {
+func (dao *SkillSpaceDAO) GetByFolderID(ctx context.Context, db *gorm.DB, folderID string) (*entity.SkillSpace, error) {
 	var space entity.SkillSpace
-	err := DB.Where("folder_id = ? AND status = ?", folderID, entity.SpaceStatusActive).First(&space).Error
+	err := db.WithContext(ctx).Where("folder_id = ? AND status = ?", folderID, entity.SpaceStatusActive).First(&space).Error
 	if err != nil {
 		return nil, err
 	}
@@ -91,24 +94,24 @@ func (dao *SkillSpaceDAO) GetByFolderID(folderID string) (*entity.SkillSpace, er
 }
 
 // Update updates a skills space
-func (dao *SkillSpaceDAO) Update(space *entity.SkillSpace) error {
-	return DB.Save(space).Error
+func (dao *SkillSpaceDAO) Update(ctx context.Context, db *gorm.DB, space *entity.SkillSpace) error {
+	return db.WithContext(ctx).Save(space).Error
 }
 
 // UpdateByID updates skills space by ID
-func (dao *SkillSpaceDAO) UpdateByID(id string, updates map[string]interface{}) error {
-	return DB.Model(&entity.SkillSpace{}).Where("id = ?", id).Updates(updates).Error
+func (dao *SkillSpaceDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
+	return db.WithContext(ctx).Model(&entity.SkillSpace{}).Where("id = ?", id).Updates(updates).Error
 }
 
 // Delete deletes a skills space by ID (soft delete)
-func (dao *SkillSpaceDAO) Delete(id string) error {
-	return DB.Model(&entity.SkillSpace{}).Where("id = ?", id).Update("status", entity.SpaceStatusDeleted).Error
+func (dao *SkillSpaceDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
+	return db.WithContext(ctx).Model(&entity.SkillSpace{}).Where("id = ?", id).Update("status", entity.SpaceStatusDeleted).Error
 }
 
 // CASStatus performs a compare-and-swap on the space status atomically
 // Returns true if the update was applied, false if the current status didn't match expected
-func (dao *SkillSpaceDAO) CASStatus(id string, expectedStatus, newStatus string) (bool, error) {
-	result := DB.Model(&entity.SkillSpace{}).
+func (dao *SkillSpaceDAO) CASStatus(ctx context.Context, db *gorm.DB, id string, expectedStatus, newStatus string) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.SkillSpace{}).
 		Where("id = ? AND status = ?", id, expectedStatus).
 		Update("status", newStatus)
 	if result.Error != nil {
@@ -119,13 +122,13 @@ func (dao *SkillSpaceDAO) CASStatus(id string, expectedStatus, newStatus string)
 
 // DeletePermanentByName permanently deletes a skills space by tenant ID and name
 // This is used to clean up previously deleted spaces (only deletes status='0' deleted spaces, NOT deleting spaces)
-func (dao *SkillSpaceDAO) DeletePermanentByName(tenantID, name string) error {
-	return DB.Unscoped().Where("tenant_id = ? AND name = ? AND status = ?", tenantID, name, entity.SpaceStatusDeleted).Delete(&entity.SkillSpace{}).Error
+func (dao *SkillSpaceDAO) DeletePermanentByName(ctx context.Context, db *gorm.DB, tenantID, name string) error {
+	return db.WithContext(ctx).Unscoped().Where("tenant_id = ? AND name = ? AND status = ?", tenantID, name, entity.SpaceStatusDeleted).Delete(&entity.SkillSpace{}).Error
 }
 
 // CountByTenant counts skills spaces by tenant ID
-func (dao *SkillSpaceDAO) CountByTenant(tenantID string) (int64, error) {
+func (dao *SkillSpaceDAO) CountByTenant(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
 	var count int64
-	err := DB.Model(&entity.SkillSpace{}).Where("tenant_id = ? AND status = ?", tenantID, entity.SpaceStatusActive).Count(&count).Error
+	err := db.WithContext(ctx).Model(&entity.SkillSpace{}).Where("tenant_id = ? AND status = ?", tenantID, entity.SpaceStatusActive).Count(&count).Error
 	return count, err
 }

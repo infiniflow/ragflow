@@ -18,14 +18,11 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/service"
 )
 
@@ -42,12 +39,13 @@ type BotHandler struct {
 // is interface-typed so the test suite can inject a stub.
 type botService interface {
 	ChatbotInfo(ctx context.Context, tenantID, dialogID string) (
-		title, avatar, prologue, llmID string, hasTavilyKey bool, ec common.ErrorCode, err error)
+		title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error)
 	AgentbotInputs(ctx context.Context, tenantID, agentID string) (
 		title, avatar, prologue, mode string, inputs map[string]any,
 		ec common.ErrorCode, err error)
 	AgentbotCompletion(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (
 		<-chan canvas.RunEvent, common.ErrorCode, error)
+	AgentbotLogs(ctx context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error)
 	ChatbotCompletion(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (
 		<-chan service.ChatbotSSEFrame, common.ErrorCode, error)
 }
@@ -60,7 +58,7 @@ func NewBotHandler(svc *service.BotService) *BotHandler {
 // ChatbotInfo GET /api/v1/chatbots/<dialog_id>/info
 //
 // Mirrors python bot_api.py:126-154. Returns the public metadata of
-// a chatbot dialog (title, avatar, prologue, tavily key flag, llm_id).
+// a chatbot dialog (title, avatar, prologue, web search flag, llm_id).
 func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -72,23 +70,20 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`dialog_id` is required.")
 		return
 	}
-	title, avatar, prologue, llmID, hasTavily, ec, err := h.botService.ChatbotInfo(
+	title, avatar, prologue, llmID, hasWebSearch, ec, err := h.botService.ChatbotInfo(
 		c.Request.Context(), user.ID, dialogID)
 	if err != nil {
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
-	c.JSON(200, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"title":          title,
-			"avatar":         avatar,
-			"prologue":       prologue,
-			"has_tavily_key": hasTavily,
-			"llm_id":         llmID,
-		},
-		"message": "success",
-	})
+	common.SuccessWithData(c, gin.H{
+		"title":                   title,
+		"avatar":                  avatar,
+		"prologue":                prologue,
+		"has_tavily_key":          hasWebSearch,
+		"has_web_search_provider": hasWebSearch,
+		"llm_id":                  llmID,
+	}, "success")
 }
 
 // AgentbotInputs GET /api/v1/agentbots/<agent_id>/inputs
@@ -112,29 +107,30 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
-	c.JSON(200, gin.H{
-		"code": common.CodeSuccess,
-		"data": gin.H{
-			"title":    title,
-			"avatar":   avatar,
-			"inputs":   inputs,
-			"prologue": prologue,
-			"mode":     mode,
-		},
-		"message": "success",
-	})
+	common.SuccessWithData(c, gin.H{
+		"title":    title,
+		"avatar":   avatar,
+		"inputs":   inputs,
+		"prologue": prologue,
+		"mode":     mode,
+	}, "success")
 }
 
 // AgentbotCompletion POST /api/v1/agentbots/<agent_id>/completions
 //
 // Mirrors python bot_api.py:157 (canvas_service.completion wrapper).
-// Streams SSE frames in the Python envelope shape. The URL-bound
-// agent_id is authoritative — the body must NOT override it.
+// The URL-bound agent_id is authoritative — the body must NOT
+// override it.
 //
-// Each canvas.RunEvent is re-formatted into the Python
-// {code, message, data} envelope: a "message" event's Data string is
-// treated as the assistant text, "message_end" terminates the
-// stream with the python completion marker.
+// The shared/embedded agent chat page (web/src/pages/agent/share)
+// parses the stream with the same use-send-message.ts parser as the
+// in-app agent chat, so frames must carry the agent canvas envelope
+// — {event, message_id, session_id, task_id, created_at, data} —
+// terminated by `data:[DONE]`. Forwarding raw canvas.RunEvent via
+// WriteChatbotRunEvent keeps this endpoint byte-compatible with the
+// python canvas_service.completion output (which yields every
+// canvas event, including node_* telemetry used by the "Thinking"
+// log panel).
 func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -167,50 +163,17 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	doneSent := false
 	for ev := range events {
-		switch ev.Type {
-		case "message":
-			// The python iframe_completion wrapper flattens each
-			// message chunk into a {code:0, data:{answer:...}}
-			// frame. We forward the message Data as the assistant
-			// text payload so the iframe SDK's `data.answer`
-			// parser keeps working. The agentbot path uses
-			// WriteAgentbotFrame (a thin alias for
-			// WriteChatbotFrame) to keep the two paths visually
-			// distinct in the handler.
-			frame := service.ChatbotSSEFrame{
-				Data:      ev.Data,
-				Reference: map[string]any{},
-				SessionID: ev.SessionID,
-			}
-			if err := service.WriteAgentbotFrame(c.Writer, frame); err != nil {
-				return
-			}
-		case "message_end", "done":
-			// Terminator events. message_end occasionally carries
-			// a final payload (e.g. structured output); forward
-			// it as a final answer frame when present, then close
-			// the stream with the standard python completion
-			// marker. A bare `done` event closes the stream
-			// directly.
-			if ev.Data != "" {
-				frame := service.ChatbotSSEFrame{
-					Data:      ev.Data,
-					Reference: map[string]any{},
-					SessionID: ev.SessionID,
-				}
-				_ = service.WriteAgentbotFrame(c.Writer, frame)
-			}
-			_ = service.WriteDoneFrame(c.Writer)
-			return
-		default:
-			// Non-message events (node_started, node_finished, …)
-			// are silently dropped on the agentbot path. The
-			// python canvas_service.completion wrapper only
-			// forwards the assistant text frames, not the run
-			// telemetry; we mirror that behaviour so external
-			// widgets see the same wire shape.
+		if ev.Type == "done" {
+			doneSent = true
 		}
+		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
+			return
+		}
+	}
+	if !doneSent {
+		_ = service.WriteChatbotRunEvent(c.Writer, canvas.RunEvent{Type: "done"})
 	}
 }
 
@@ -264,32 +227,20 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	}
 }
 
-// GetAgentbotLogs GET /api/v1/agentbots/<shared_id>/logs/<message_id>
+// GetAgentbotLogs GET /api/v1/agentbots/<agent_id>/logs/<message_id>
 //
-// Beta-token sibling of GetAgentLogs. The shared/embedded chat
-// page's "Thinking" button hits this endpoint because the share
-// flow authenticates with a beta APIToken (no session JWT) and
-// the regular /api/v1/agents/<id>/logs/<msg> requires @login_required.
-// Mirrors python bot_api.py:agent_bot_logs (PR #15238).
-//
-// The <shared_id> path segment is the value the client passed in
-// the URL (typically the beta token in the share flow); the real
-// agent_id used to build the Redis key
-// (`<agent_id>-<message_id>-logs`) is read from the APIToken
-// looked up by the beta middleware and stashed in the gin
-// context as "agent_id". The endpoint never trusts the URL
-// segment for the data lookup — using the middleware-resolved
-// agent_id prevents a probe that swaps a victim's shared_id to
-// read another agent's logs.
+// Beta-token sibling of GetAgentLogs. The shared/embedded chat page's
+// "Thinking" button hits this endpoint because the share flow authenticates
+// with a beta APIToken (no session JWT). Mirrors python bot_api.py:agent_bot_logs.
 func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
-	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
 		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
-	agentID, _ := c.Get("agent_id")
-	agentIDStr, _ := agentID.(string)
+	agentIDStr := c.Param("agent_id")
 	if agentIDStr == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "API token is not bound to an agent.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "agent_id is required")
 		return
 	}
 	messageID := c.Param("message_id")
@@ -297,27 +248,20 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "message_id is required")
 		return
 	}
-	key := fmt.Sprintf("%s-%s-logs", agentIDStr, messageID)
-	payload, rerr := redis.Get().Get(key)
-	// Surface Redis / decode failures instead of silently returning
-	// `{code: 0, data: {}}` — the previous form made the endpoint
-	// indistinguishable from "logs not yet written", which masked
-	// real outages and corrupted payloads from operators (PR review
-	// round 5, Major #6).
-	if rerr != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "failed to read agent logs")
-		return
-	}
-	data := map[string]interface{}{}
-	if payload != "" {
-		if uerr := json.Unmarshal([]byte(payload), &data); uerr != nil {
-			common.ResponseWithCodeData(c, common.CodeServerError, nil, "failed to decode agent logs")
+	// A beta token with DialogID is restricted to that agent. Tokens without
+	// DialogID remain tenant-scoped and are checked by AgentbotLogs through
+	// the existing Canvas access guard.
+	if boundAgentID, ok := c.Get("agent_id"); ok {
+		boundAgentIDStr, ok := boundAgentID.(string)
+		if ok && boundAgentIDStr != "" && boundAgentIDStr != agentIDStr {
+			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "API token is not authorized for this agent.")
 			return
 		}
 	}
-	c.JSON(200, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    data,
-		"message": "success",
-	})
+	data, ec, err := h.botService.AgentbotLogs(c.Request.Context(), user.ID, agentIDStr, messageID)
+	if err != nil {
+		common.ResponseWithCodeData(c, ec, nil, err.Error())
+		return
+	}
+	common.SuccessWithData(c, data, "success")
 }

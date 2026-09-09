@@ -16,7 +16,12 @@
 
 package schema
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
+)
 
 // ChunkerFromUpstream is the shared upstream payload consumed by all four
 // chunker variants (TokenChunker, TitleChunker, GroupTitleChunker,
@@ -50,6 +55,17 @@ type ChunkerFromUpstream struct {
 	// Name is the source document name. Required.
 	Name string `json:"name"`
 
+	// DocID is the originating document ID. When set, the chunker can
+	// re-resolve the source PDF from storage to crop section images on
+	// demand, instead of carrying the binary across the component
+	// boundary.
+	DocID string `json:"doc_id,omitempty"`
+
+	// Bucket and Path are the explicit storage location of the source
+	// PDF. They take precedence over DocID-driven resolution.
+	Bucket string `json:"bucket,omitempty"`
+	Path   string `json:"path,omitempty"`
+
 	// File is the optional upstream file descriptor.
 	File *ChunkerFileMeta `json:"file,omitempty"`
 
@@ -69,7 +85,7 @@ type ChunkerFromUpstream struct {
 	// Python). Set when OutputFormat == "json".
 	JSONResult []ChunkDoc `json:"json,omitempty"`
 
-	// MarkdownResult is the upstream markdown payload (alias "markdown").
+	// MarkdownResult is the upstream Markdown payload (alias "markdown").
 	// Set when OutputFormat == "markdown".
 	MarkdownResult *string `json:"markdown,omitempty"`
 
@@ -125,6 +141,15 @@ func (c *ChunkerFromUpstream) Validate() error {
 //
 //	self.set_output("output_format", "chunks")
 //	self.set_output("chunks", chunks)
+//
+// Unlike the Python runtime (which auto-merges every input kwarg into the
+// output via ProcessBase.invoke), the Go runtime only forwards the explicit
+// component output to the next node. The run-level metadata that downstream
+// consumers still need (e.g. Tokenizer reads `name` for title embedding, and
+// tenant_id/kb_id for embedding-model resolution) therefore lives in the
+// workflow-wide CanvasState.Globals bag — seeded at pipeline start and
+// published by the File component — and is read directly from ctx, not
+// re-emitted by each chunker. The fields below are the chunker-owned outputs.
 type ChunkerOutputs struct {
 	// OutputFormat is always "chunks" on success.
 	OutputFormat PayloadFormat `json:"output_format,omitempty"`
@@ -148,7 +173,10 @@ type ChunkerOutputs struct {
 
 type TokenChunkerParam struct {
 	// DelimiterMode selects the chunking strategy.
-	// Allowed values: "token_size", "delimiter", "one".
+	// Allowed value: "delimiter". The legacy "token_size" value is accepted for
+	// backward compatibility and normalized to "delimiter" (it is behaviorally
+	// identical at runtime; see Validate). The single-chunk "one" behavior is
+	// provided by the separate OneChunker component.
 	DelimiterMode string `json:"delimiter_mode"`
 
 	// ChunkTokenSize is the target chunk size in tokens.
@@ -158,7 +186,12 @@ type TokenChunkerParam struct {
 	// backticks (e.g., "`\\n`") denote user-defined regex split points.
 	Delimiters []string `json:"delimiters"`
 
-	// OverlappedPercent is the chunk-overlap ratio in [0, 100).
+	// OverlappedPercent is the overlap percentage in [0, 90]. Mirrors
+	// Python common/float_utils.py:50-58 — an integer-like float in the
+	// same range so DSL templates written for the Python pipeline work
+	// out of the box  A [0,1) fraction input is also
+	// accepted and normalized to this scale by tokenChunkerParam.Update
+	// (via normalizeOverlappedPercent).
 	OverlappedPercent float64 `json:"overlapped_percent"`
 
 	// ChildrenDelimiters is the secondary split applied to text chunks.
@@ -176,7 +209,7 @@ type TokenChunkerParam struct {
 // Defaults returns the Python default TokenChunkerParam.
 func (TokenChunkerParam) Defaults() TokenChunkerParam {
 	return TokenChunkerParam{
-		DelimiterMode:      "token_size",
+		DelimiterMode:      "delimiter",
 		ChunkTokenSize:     512,
 		Delimiters:         []string{"\n"},
 		OverlappedPercent:  0,
@@ -186,18 +219,124 @@ func (TokenChunkerParam) Defaults() TokenChunkerParam {
 	}
 }
 
+// NumericFromAny normalises JSON-decoded ints to float64 so the
+// schema-defaults-vs-Param-Update convention doesn't depend on the
+// encoding source (yaml/toml/json all behave the same). It is shared by
+// the chunker config decoders and NormalizeOverlappedPercent.
+func NumericFromAny(v any) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case float32:
+		return float64(x), true
+	case int:
+		return float64(x), true
+	case int32:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	case uint:
+		return float64(x), true
+	case uint32:
+		return float64(x), true
+	case uint64:
+		return float64(x), true
+	}
+	return 0, false
+}
+
+// NormalizeOverlappedPercent mirrors Python common/float_utils.py:50-58
+// (normalize_overlapped_percent). Python's user-facing input is a [0,1)
+// fraction (token_chunker.py validates "[0, 1)"); this converts it to the
+// [0,90] integer-percentage scale that the merge math (token.go:705,
+// `(100-x)/100`) expects, matching Python's canonical norm. Diff Chunker-2.6.
+//
+// Behaviour matches Python exactly:
+//   - parse like float(): numbers, or numeric strings (Python also accepts
+//     strings via float()); on any failure / NaN / Inf, return 0
+//     (Python: except (TypeError, ValueError, OverflowError) -> 0).
+//   - 0 < v < 1 -> v *= 100   (fraction -> percentage)
+//   - v = int(v)             (truncation toward zero, matches Python for
+//     non-negatives)
+//   - clamp to [0, 90]        (Python: max(0, min(v, 90)))
+//
+// Exported so TokenChunkerParam.Validate can normalize directly-constructed
+// structs (not just the config-path Update), keeping both paths identical.
+func NormalizeOverlappedPercent(v any) float64 {
+	value, ok := NumericFromAny(v)
+	if !ok {
+		if s, isStr := v.(string); isStr {
+			if f, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
+				value, ok = f, true
+			}
+		}
+	}
+	if !ok || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0
+	}
+	return clampOverlappedPercent(value)
+}
+
+// clampOverlappedPercent applies the [0,1) fraction -> [0,90] percent
+// conversion, clamps to [0,90], then truncates to an integer (Python
+// faithfulness). Clamping MUST happen before the int conversion: Go's
+// float->int is implementation-defined when the value is out of int's range
+// (e.g. 1e300), whereas Python's int() is arbitrary-precision, so clamping
+// first keeps us aligned with Python's max(0, min(int(v), 90)). Used by the
+// lenient config path (NormalizeOverlappedPercent).
+func clampOverlappedPercent(value float64) float64 {
+	if 0 < value && value < 1 {
+		value *= 100
+	}
+	if value < 0 {
+		value = 0
+	}
+	if value > 90 {
+		value = 90
+	}
+	// Round rather than truncate so fraction inputs like 0.29 normalize
+	// to 29 (user expectation) rather than 28. Mirrors Python's
+	// common/float_utils.py:50-58 fix for #17418. We still clamp
+	// before rounding so out-of-int-range values (e.g. 1e300) land on
+	// 90, not an implementation-defined int.
+	value = math.Round(value)
+	return value
+}
+
 // Validate enforces the same enum/range checks the runtime component expects
 // at construction time, keeping the schema and component decoder aligned.
-func (p TokenChunkerParam) Validate() error {
+func (p *TokenChunkerParam) Validate() error {
+	// Strict overlap normalization for directly-constructed structs: scale a
+	// [0,1) fraction to a [0,90] percent (matching the config path's
+	// semantics) and truncate toward zero, then REJECT anything still outside
+	// [0,90]. The config path (Update) clamps instead, so a fraction like 0.3
+	// means 30% here too, while an out-of-range value like 95 or -5 is caught
+	// rather than silently clamped — eliminating the latent footgun where a
+	// fraction passed to a struct bypassed normalization.
+	if v := p.OverlappedPercent; 0 < v && v < 1 {
+		// Round rather than truncate so fraction inputs like 0.29 normalize
+		// to 29 (user expectation) rather than 28. Mirrors Python's
+		// common/float_utils.py:50-58 fix for #17418.
+		p.OverlappedPercent = math.Round(v * 100)
+	}
+	// Backward-compat: Python removed the standalone "token_size" mode and
+	// treats it as identical to "delimiter" at runtime, normalizing it in
+	// check() (rag/flow/chunker/token_chunker.py). A dataset configured under
+	// the old scheme may still carry delimiter_mode="token_size"; normalize it
+	// here instead of rejecting it so those pipelines keep working (mirrors
+	// the Python behaviour exactly).
+	if p.DelimiterMode == "token_size" {
+		p.DelimiterMode = "delimiter"
+	}
 	switch p.DelimiterMode {
-	case "token_size", "delimiter", "one":
+	case "delimiter":
 	default:
 		return errInvalidValue{Field: "delimiter_mode", Value: p.DelimiterMode}
 	}
 	if p.ChunkTokenSize <= 0 {
 		return errInvalidValue{Field: "chunk_token_size", Value: fmt.Sprintf("%d", p.ChunkTokenSize)}
 	}
-	if p.OverlappedPercent < 0 || p.OverlappedPercent >= 1 {
+	if p.OverlappedPercent < 0 || p.OverlappedPercent > 90 {
 		return errInvalidValue{Field: "overlapped_percent", Value: fmt.Sprintf("%v", p.OverlappedPercent)}
 	}
 	if p.TableContextSize < 0 {
@@ -240,17 +379,26 @@ type TitleChunkerParam struct {
 	// RootChunkAsHeading, when true, prepends the root chunk's text
 	// to every emitted chunk (and drops the root chunk itself).
 	RootChunkAsHeading bool `json:"root_chunk_as_heading"`
+
+	// ChunkTokenCap is the hard ceiling on each emitted text chunk's token
+	// count (mirrors Python title_chunker/common.py chunk_token_cap, added in
+	// #18455). A built text chunk exceeding it is re-split on sentence
+	// boundaries into <= cap sub-chunks. 0 disables the ceiling. The Python
+	// default is 512; valid range when non-zero is 128..8000.
+	ChunkTokenCap int `json:"chunk_token_cap"`
 }
 
 // Defaults returns the Python default TitleChunkerParam. `Method` is
 // not initialized in the Python `__init__` (it is set externally); the
 // default is left as the empty string and the component must supply it.
+// `ChunkTokenCap` defaults to 512, matching Python #18455.
 func (TitleChunkerParam) Defaults() TitleChunkerParam {
 	return TitleChunkerParam{
 		Levels:                [][]string{},
 		Hierarchy:             nil,
 		IncludeHeadingContent: false,
 		RootChunkAsHeading:    false,
+		ChunkTokenCap:         512,
 	}
 }
 
@@ -258,6 +406,14 @@ func (TitleChunkerParam) Defaults() TitleChunkerParam {
 // expressible in pure-data terms: when Method == "hierarchy" the
 // hierarchy depth and level config must be present.
 func (p *TitleChunkerParam) Validate() error {
+	// chunk_token_cap: 0 disables the ceiling; when set it must be a positive
+	// integer in [128, 8000] (mirrors Python title_chunker #18455). Checked
+	// BEFORE the method switch so an unset method cannot bypass the range.
+	if p.ChunkTokenCap != 0 {
+		if p.ChunkTokenCap < 128 || p.ChunkTokenCap > 8000 {
+			return errInvalidValue{Field: "chunk_token_cap", Value: fmt.Sprintf("%d", p.ChunkTokenCap)}
+		}
+	}
 	switch p.Method {
 	case "hierarchy", "group":
 	case "":

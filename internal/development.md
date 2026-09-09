@@ -30,7 +30,7 @@ sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
 ```shell
 wget https://go.dev/dl/go1.25.4.linux-amd64.tar.gz
 sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.23.4.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.25.4.linux-amd64.tar.gz
 echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
 source ~/.bashrc
 go version
@@ -39,14 +39,41 @@ go version
 ### 1.4 Install dependent library
 ```shell
 sudo apt install libpcre2-dev
+# Native libs for the Go build (office_oxide, pdfium, pdf_oxide, onnxruntime).
+# download_go_deps.py is the Go-end script: it now fetches the ONNX Runtime
+# static lib too, so this single command covers every native dependency the
+# Go server binary needs (incl. the in-process DeepDoc backend).
 python3 ragflow_deps/download_go_deps.py
+# Shared (Go + Python) deps. Retains ONNX Runtime for the ragflow_deps image /
+# backward-compat; also pulls Python-side artifacts (models, nltk, tika, ...).
+uv run python3 ragflow_deps/download_deps.py
 ```
 
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash
-> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by uv run ragflow_deps/download_deps.py
+> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_go_deps.py + download_deps.py
 > PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
+> # NOTE: the ONNX Runtime static lib fetched by download_go_deps.py is
+> # linux-x64 ONLY (onnxruntime-linux-x64-static_lib-*). On darwin_* / non-amd64
+> # PLATFORM values the production DeepDoc backend cannot be linked, so those
+> # PLATFORM examples cover office_oxide/pdfium/pdf_oxide only — ORT is a
+> # Linux-amd64 link dependency here.
+>
+> # Resolve the version-stamped ORT archive path FIRST, in its own unquoted
+> # assignment: the shell does not expand `*` inside the double-quoted
+> # CGO_LDFLAGS below. If this lists more than one match, delete the stale
+> # version dir — build.sh refuses to link two ORT versions.
+> ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/*/lib/libonnxruntime.a)"
+>
+> # The binding reaches ORT with dlopen(NULL)+dlsym("OrtGetApiBase"), so
+> # OrtGetApiBase is the only symbol that must be visible process-wide. Export
+> # just it — not via a "local: *" version script, which hides Go's runtime type
+> # symbols and breaks PIE absolute relocations. There is deliberately no
+> # --whole-archive, so unreferenced kernels are dropped. Write the dynamic
+> # list to .cache/ (gitignored), matching build.sh.
+> mkdir -p .cache
+> printf '{\n  OrtGetApiBase;\n};\n' > .cache/ort_dynamic_list.txt
 >
 > export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
 > export CGO_LDFLAGS="\
@@ -55,11 +82,32 @@ python3 ragflow_deps/download_go_deps.py
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
 >     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
+>     -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=.cache/ort_dynamic_list.txt ${ORT_A} -lstdc++ \
 >     -fuse-ld=lld \
 >     -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 > ```
 >
-> All three native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
+> All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
+>
+> **ONNX Runtime is mandatory for the production binary.** The in-process (Go)
+> DeepDoc backend is statically linked against `libonnxruntime.a` (no
+> `--whole-archive`; `OrtGetApiBase` is force-pulled with
+> `-Wl,--undefined=OrtGetApiBase` and exported via `--dynamic-list`), and
+> `OrtGetApiBase` is resolved at runtime through `dlopen(NULL)`. The org
+> `onnxruntime_go` binding
+> (github.com/infiniflow/onnxruntime_go, the mirror of yalue/onnxruntime_go) only
+> needs `-ldl` to *compile*, so a binary built **without** ORT links
+> successfully but dies at startup with:
+> `Error looking up OrtGetApiBase in statically-linked ONNX Runtime` → fatal
+> `no in-process DeepDoc backend serving`.
+> Since `build.sh` (`build_go`) now **fails fast** when ORT is absent from
+> `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
+> you see `Error: ONNX Runtime static libraries are not linked`, run
+> `uv run python3 ragflow_deps/download_go_deps.py` (or pre-seed
+> `/opt/ragflow-native-libs/onnxruntime` as the CI runner image does). There is
+> no ORT-free production build path — if ORT is absent the binary fails at
+> startup, so the remedy is always to seed the static lib above, never to build
+> without it.
 
 
 ### 1.5 Build RAGFlow
@@ -77,6 +125,35 @@ python3 ragflow_deps/download_go_deps.py
 ./build.sh -s --go
 ```
 
+### 1.6 In-process (Go) DeepDoc backend
+
+The in-process DeepDoc backend is statically linked against ONNX Runtime
+(see §1.4). After a successful `./build.sh -s --go`, the `ragflow_server`
+binary carries it and registers the backend at startup.
+
+- **Confirm it is serving** — the server logs, at startup:
+  `in-process DeepDoc backend registered (production backend)`
+  If you instead see a fatal `no in-process DeepDoc backend serving`, ORT was
+  not linked into the binary. Re-run `uv run python3 ragflow_deps/download_go_deps.py`
+  and rebuild (§1.4 explains why; `build.sh` fails fast with
+  `Error: ONNX Runtime static libraries are not linked` before this happens).
+
+- **Run the binary directly (local dev)** — `./bin/ragflow_server --api`
+  (start `--admin` first, see §2) launches the Go server and registers the
+  backend. No extra environment variable is required.
+
+- **Run the Go Docker image** — the container entrypoint only starts the Go
+  server (`bin/ragflow_server --api/--ingestor/--admin`) when
+  `API_PROXY_SCHEME` is `go` or `hybrid`. With the variable unset (or `python`)
+  the Go server does NOT start, so the in-process backend is absent and the
+  image looks like a Python-only build. Start it with:
+  ```bash
+  docker run -e API_PROXY_SCHEME=go infiniflow/ragflow:go-test-1
+  ```
+
+- ORT is resolved via `dlopen(NULL)` at runtime, so no `LD_LIBRARY_PATH` /
+  `-rpath` is needed and no `libonnxruntime.so` ships with the image.
+
 ## 2. Start RAGFlow
 
 - Start dependencies
@@ -91,6 +168,11 @@ Note: admin server must be started first; otherwise, api server will encounter e
 ```bash
 # Start admin server
 ./bin/ragflow_server --admin
+```
+
+```bash
+# Start admin server and migrate database
+./bin/ragflow_server --admin --migrate
 ```
 
 ```bash
@@ -126,11 +208,11 @@ After updating or implementing an API, update the frontend development environme
 
 ### 4.1 Proxy Schemes
 
-| Scheme | Description |
-|--------|-------------|
-| `python` | All API requests from the frontend are routed to the Python server |
+| Scheme   | Description                                                                           |
+|----------|---------------------------------------------------------------------------------------|
+| `python` | All API requests from the frontend are routed to the Python server                    |
 | `hybrid` | API requests are partially routed to the Go server and partially to the Python server |
-| `go` | All API requests from the frontend are routed to the Go server |
+| `go`     | All API requests from the frontend are routed to the Go server                        |
 
 
 ## 5. RAGFlow commands

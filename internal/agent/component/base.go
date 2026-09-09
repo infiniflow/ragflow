@@ -19,6 +19,8 @@ import (
 	"context"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 // Component is the runtime contract every RAGFlow component implements.
@@ -42,13 +44,13 @@ type Component interface {
 	// parameter map (variable references already substituted by the canvas
 	// engine). Returns the output map; components should put their public
 	// outputs at top-level keys.
-	Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error)
+	Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error)
 
 	// Stream is the streaming variant. The default implementation may
 	// return a buffered channel that emits the same payload as Invoke, then
 	// closes — components that natively stream (LLM, Message) override.
 	// May return (nil, nil) for non-streaming components.
-	Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error)
+	Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error)
 
 	// Inputs returns parameter metadata: param_name → description.
 	Inputs() map[string]string

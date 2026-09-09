@@ -16,7 +16,7 @@
 
 package service
 
-import "ragflow/internal/storage"
+import "context"
 
 // ──────────────────────────────────────────────────────────
 // Ingestor Test Helpers
@@ -32,27 +32,12 @@ func NewTestIngestor() *Ingestor {
 // IngestorOption configures a test Ingestor.
 type IngestorOption func(*Ingestor)
 
-// WithMockStorage sets the storageImpl to the given mock.
-func WithMockStorage(mock storage.Storage) IngestorOption {
-	return func(i *Ingestor) {
-		i.storageImpl = mock
+func newUnitIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
+	ingestor := NewIngestor(name, maxConcurrency, supportedTypes)
+	ingestor.checkpointExists = func(context.Context, string) (bool, error) {
+		return false, nil
 	}
-}
-
-// WithMockPDFParser sets the pdfParser to the given mock.
-func WithMockPDFParser(mock pdfParser) IngestorOption {
-	return func(i *Ingestor) {
-		i.pdfParser = mock
-	}
-}
-
-// WithMockDAOs sets the documentDAO, f2dDAO, and fileDAO.
-func WithMockDAOs(docDAO docGetter, f2dDAO f2dGetter, fileDAO fileGetter) IngestorOption {
-	return func(i *Ingestor) {
-		i.documentDAO = docDAO
-		i.f2dDAO = f2dDAO
-		i.fileDAO = fileDAO
-	}
+	return ingestor
 }
 
 // SetupTestIngestor creates a new test Ingestor with the given options.

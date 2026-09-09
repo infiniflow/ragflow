@@ -11,18 +11,22 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/deepdoc/parser/pdf"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	componentpkg "ragflow/internal/ingestion/component"
+	_ "ragflow/internal/ingestion/component/chunker"
 	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"ragflow/internal/storage"
 
-	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -30,7 +34,17 @@ import (
 
 func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	prepareTokenizerResourceForIntegration(t)
-	requireTokenizerPool(t)
+	RequireTokenizerPool(t)
+
+	// The production parse path must never degrade to a mock; install a
+	// test-only MockDocAnalyzer as the in-process DeepDoc backend via the
+	// public factory seam so the pipeline runs without a real DeepDoc
+	// service or ONNX Runtime models. Reset to nil on cleanup (this test
+	// binary registers no real backend).
+	t.Cleanup(func() { doctype.SetNativeDocAnalyzerFactory(nil) })
+	doctype.SetNativeDocAnalyzerFactory(func() (doctype.DocAnalyzer, bool) {
+		return &pdf.MockDocAnalyzer{Healthy: true}, true
+	})
 
 	cfg := mustLoadRealIntegrationConfig(t)
 	realDB := mustOpenRealMySQL(t, cfg)
@@ -44,7 +58,7 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 		t.Fatalf("auto-migrate real mysql tables: %v", err)
 	}
 
-	realStorage, err := storage.NewMinioStorage(cfg.StorageEngine.Minio)
+	realStorage, err := storage.NewMinioStorage(cfg.GetMinioConfig())
 	if err != nil {
 		t.Fatalf("connect real minio: %v", err)
 	}
@@ -61,7 +75,7 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 		componentpkg.ResolveDocumentStorageOverride = origDocResolver
 	})
 
-	templatePath := filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "ingestion_pipeline_general.json")
+	templatePath := filepath.Join(repoRootFromPipelineTest(t), "internal", "ingestion", "pipeline", "template", "ingestion_pipeline_general.json")
 	templateBytes, err := os.ReadFile(templatePath)
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -91,9 +105,9 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -107,7 +121,13 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}
-	wantChunkTexts := []string{"Alpha paragraph.", "Beta paragraph."}
+	// The TokenChunker merges the two short paragraphs into one chunk under
+	// the global token-size budget (chunk_token_size=512, no backtick
+	// delimiter): this matches Python's _merge_text_chunks_by_token_size and
+	// is the intended behaviour. The parser still emits two json items
+	// (see the Parser state assertion below); only the downstream chunker
+	// collapses them.
+	wantChunkTexts := []string{"Alpha paragraph.\nBeta paragraph."}
 	if len(chunks) != len(wantChunkTexts) {
 		t.Fatalf("len(chunks) = %d, want %d", len(chunks), len(wantChunkTexts))
 	}
@@ -152,7 +172,10 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	if !ok || len(jsonItems) != 2 {
 		t.Fatalf("parser json = %T/%v, want 2 items", parserState["json"], parserState["json"])
 	}
-	for i, wantText := range wantChunkTexts {
+	// The parser emits one json item per paragraph (two items), which the
+	// downstream TokenChunker later merges into a single chunk.
+	wantParserTexts := []string{"Alpha paragraph.", "Beta paragraph."}
+	for i, wantText := range wantParserTexts {
 		if got := jsonItems[i]["text"]; got != wantText {
 			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
 		}
@@ -179,15 +202,17 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	}
 }
 
-func mustLoadRealIntegrationConfig(t *testing.T) *server.Config {
+func mustLoadRealIntegrationConfig(t *testing.T) *config.Config {
 	t.Helper()
-	server.SetLogger(zap.NewNop())
+	if err := common.InitLogger("info", common.FileOutput{}, ""); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
 	configPath := filepath.Join(repoRootFromPipelineTest(t), "conf", "service_conf.yaml")
 	if err := server.Init(configPath); err != nil {
 		t.Fatalf("init service config from %s: %v", configPath, err)
 	}
 	cfg := server.GetConfig()
-	if cfg == nil || cfg.Database.Host == "" || cfg.StorageEngine.Minio == nil || cfg.StorageEngine.Minio.Host == "" {
+	if cfg == nil || cfg.GetMySQLConfig().Host == "" || cfg.GetMinioConfig().Host == "" {
 		t.Fatal("real integration config is incomplete")
 	}
 	return cfg
@@ -195,31 +220,18 @@ func mustLoadRealIntegrationConfig(t *testing.T) *server.Config {
 
 func prepareTokenizerResourceForIntegration(t *testing.T) {
 	t.Helper()
-	if os.Getenv("RAGFLOW_DICT_PATH") != "" {
+	if common.GetEnv(common.EnvRAGFlowDictPath) != "" {
 		return
 	}
-	srcDir := filepath.Join(repoRootFromPipelineTest(t), ".venv", "lib", "python3.13", "site-packages", "infinity")
-	if _, err := os.Stat(filepath.Join(srcDir, "huqie.txt")); err != nil {
-		t.Skipf("tokenizer resource source not found at %s: %v", srcDir, err)
+	const systemDictPath = "/usr/share/infinity/resource"
+	if _, err := os.Stat(filepath.Join(systemDictPath, "rag", "huqie.txt")); err != nil {
+		t.Skipf("system tokenizer resource not found at %s: %v", systemDictPath, err)
 	}
-	if _, err := os.Stat(filepath.Join(srcDir, "huqie.txt.trie")); err != nil {
-		t.Skipf("tokenizer trie source not found at %s: %v", srcDir, err)
-	}
-	root := t.TempDir()
-	ragDir := filepath.Join(root, "rag")
-	if err := os.MkdirAll(ragDir, 0o755); err != nil {
-		t.Fatalf("mkdir rag tokenizer dir: %v", err)
-	}
-	mustSymlink(t, filepath.Join(srcDir, "huqie.txt"), filepath.Join(ragDir, "huqie.txt"))
-	mustSymlink(t, filepath.Join(srcDir, "huqie.txt.trie"), filepath.Join(ragDir, "huqie.trie"))
-	mustWriteTokenizerPOSDef(t, filepath.Join(srcDir, "huqie.txt"), filepath.Join(ragDir, "pos-id.def"))
-	mustPrepareTokenizerWordNet(t, root)
-	mustPrepareTokenizerOpenCC(t, root)
-	if err := os.Setenv("RAGFLOW_DICT_PATH", root); err != nil {
-		t.Fatalf("set RAGFLOW_DICT_PATH: %v", err)
+	if err := os.Setenv(common.EnvRAGFlowDictPath, systemDictPath); err != nil {
+		t.Fatalf("set RAGFLOW_DICT_PATH=%s: %v", systemDictPath, err)
 	}
 	t.Cleanup(func() {
-		_ = os.Unsetenv("RAGFLOW_DICT_PATH")
+		_ = os.Unsetenv(common.EnvRAGFlowDictPath)
 	})
 }
 
@@ -311,15 +323,16 @@ func mustPrepareTokenizerOpenCC(t *testing.T, root string) {
 	mustSymlink(t, systemOpenCC, filepath.Join(root, "opencc"))
 }
 
-func mustOpenRealMySQL(t *testing.T, cfg *server.Config) *gorm.DB {
+func mustOpenRealMySQL(t *testing.T, cfg *config.Config) *gorm.DB {
 	t.Helper()
+	mc := cfg.GetMySQLConfig()
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-		cfg.Database.Username,
-		cfg.Database.Password,
-		cfg.Database.Host,
-		cfg.Database.Port,
-		cfg.Database.Database,
-		cfg.Database.Charset,
+		mc.User,
+		mc.Password,
+		mc.Host,
+		mc.Port,
+		mc.DatabaseName,
+		mc.Charset,
 	)
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
@@ -397,7 +410,7 @@ func mustSeedRealPipelineDocument(
 	}).Error; err != nil {
 		t.Fatalf("create kb: %v", err)
 	}
-	if err := stg.Put(bucket, objectPath, []byte(content)); err != nil {
+	if err := stg.Put(t.Context(), bucket, objectPath, []byte(content)); err != nil {
 		t.Fatalf("put real minio object: %v", err)
 	}
 	if err := db.Create(&entity.File{
@@ -442,7 +455,7 @@ func cleanupRealPipelineDocument(db *gorm.DB, stg storage.Storage, tenantID, kbI
 	_ = db.Where("id = ?", fileID).Delete(&entity.File{}).Error
 	_ = db.Where("id = ?", kbID).Delete(&entity.Knowledgebase{}).Error
 	_ = db.Where("id = ?", tenantID).Delete(&entity.Tenant{}).Error
-	_ = stg.Remove(bucket, objectPath)
+	_ = stg.Remove(context.Background(), bucket, objectPath)
 }
 
 func strPtr(s string) *string {

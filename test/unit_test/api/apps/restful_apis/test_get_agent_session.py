@@ -44,7 +44,16 @@ def _load_agent_api(monkeypatch, get_by_id_result, delete_calls=None):
         delete_calls.append(session_id)
         return True
 
-    _stub(monkeypatch, "api.apps", current_user=SimpleNamespace(id="tenant-1"), login_required=lambda func: func)
+    _stub(
+        monkeypatch,
+        "api.apps",
+        AUTH_JWT="jwt",
+        AUTH_API="api",
+        AUTH_BETA="beta",
+        QuartAuthUnauthorized=Exception,
+        current_user=SimpleNamespace(id="tenant-1", is_superuser=True),
+        login_required=lambda func=None, **_kwargs: (lambda f: f) if func is None else func,
+    )
     _stub(monkeypatch, "api.apps.services.canvas_replica_service", CanvasReplicaService=SimpleNamespace())
     _stub(monkeypatch, "api.db", CanvasCategory=SimpleNamespace())
     _stub(monkeypatch, "api.db.db_models", Task=SimpleNamespace())

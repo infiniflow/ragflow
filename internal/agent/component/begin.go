@@ -27,8 +27,11 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"sort"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 // mapsCopy is a thin alias for the stdlib maps.Copy to keep the call
@@ -45,13 +48,17 @@ const componentNameBegin = "Begin"
 // ParamBase surface is intentionally omitted for P0 — Begin is trivial
 // and needs no validation beyond what the State writes perform.
 type BeginComponent struct {
-	name string
+	name        string
+	inputFields []string
 }
 
 // NewBeginComponent constructs a Begin component. It accepts the DSL params
 // map but does not retain it (Begin has no per-instance configuration).
-func NewBeginComponent(_ map[string]any) (Component, error) {
-	return &BeginComponent{name: componentNameBegin}, nil
+func NewBeginComponent(params map[string]any) (Component, error) {
+	return &BeginComponent{
+		name:        componentNameBegin,
+		inputFields: beginInputFields(params),
+	}, nil
 }
 
 // Name returns the registered component name. Used by the registry and
@@ -62,13 +69,13 @@ func (b *BeginComponent) Name() string { return b.name }
 // the shared *CanvasState.Sys namespace, then returns the input map as
 // outputs unchanged. The input map is shallow-copied to avoid aliasing
 // surprises across concurrent goroutines that share an inputs map.
-func (b *BeginComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Begin: %w", err)
+		return nil, fmt.Errorf("begin: %w", err)
 	}
 	if state == nil {
-		return nil, fmt.Errorf("Begin: nil canvas state")
+		return nil, fmt.Errorf("begin: nil canvas state")
 	}
 
 	// Query: required to drive downstream components.
@@ -95,14 +102,71 @@ func (b *BeginComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	// Passthrough: a shallow copy keeps the caller's map un-aliased.
 	out := make(map[string]any, len(inputs))
 	mapsCopy(out, inputs)
+	for _, field := range b.inputFields {
+		if value, ok := beginInputValue(inputs, field); ok {
+			out[field] = value
+		}
+	}
 	return out, nil
+}
+
+// beginInputFields returns the custom input names declared by the Begin DSL
+// node. The frontend stores one entry per user-facing input under
+// params.inputs. Sorting keeps the single-field fallback deterministic.
+func beginInputFields(params map[string]any) []string {
+	if params == nil {
+		return nil
+	}
+	declared, ok := params["inputs"].(map[string]any)
+	if !ok || len(declared) == 0 {
+		return nil
+	}
+	fields := make([]string, 0, len(declared))
+	for field := range declared {
+		if field != "" {
+			fields = append(fields, field)
+		}
+	}
+	sort.Strings(fields)
+	return fields
+}
+
+// beginInputValue maps the workflow's canonical query input to a Begin DSL
+// field. A scalar query is valid when the Begin node has one declared field;
+// a map query can populate several named fields. Directly supplied named
+// inputs are also accepted for webhook and programmatic callers.
+func beginInputValue(inputs map[string]any, field string) (any, bool) {
+	if value, ok := inputs[field]; ok {
+		return unwrapBeginInputValue(value), true
+	}
+	query, ok := inputs["query"]
+	if !ok {
+		return nil, false
+	}
+	if values, ok := query.(map[string]any); ok {
+		value, exists := values[field]
+		if !exists {
+			return nil, false
+		}
+		return unwrapBeginInputValue(value), true
+	}
+	return query, true
+}
+
+func unwrapBeginInputValue(value any) any {
+	if wrapper, ok := value.(map[string]any); ok {
+		if unwrapped, exists := wrapper["value"]; exists {
+			return unwrapped
+		}
+	}
+	return value
 }
 
 // Stream is a synchronous facade over Invoke for P0. SSE streaming of
 // Begin output is not meaningful (Begin has no I/O), so the channel
 // receives a single payload and closes — same shape as Invoke's return.
-func (b *BeginComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := b.Invoke(ctx, inputs)
+func (b *BeginComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := b.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

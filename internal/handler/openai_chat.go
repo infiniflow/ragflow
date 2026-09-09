@@ -92,7 +92,7 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 					return
 				} else {
 					for _, item := range rawArr {
-						if _, ok := item.(string); !ok {
+						if _, ok = item.(string); !ok {
 							common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
 								"reference_metadata.fields must be an array.")
 							return

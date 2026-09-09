@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import batch_create_datasets
-from configs import HOST_ADDRESS, INVALID_API_TOKEN
+from configs import HOST_ADDRESS, INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE
 from ragflow_sdk import RAGFlow
 
 
@@ -27,8 +27,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, "<Unauthorized '401: Unauthorized'>"),
-            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
+            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
+            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
         ],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):

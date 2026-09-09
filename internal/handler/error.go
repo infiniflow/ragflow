@@ -17,9 +17,11 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"ragflow/internal/common"
+	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -65,4 +67,21 @@ func HandleNoRoute(c *gin.Context) {
 		"data":    nil,
 		"error":   "Not Found",
 	})
+}
+
+// IngestionTaskErrorCode maps ingestion-task service errors to common.ErrorCode
+// for HTTP responses.
+func IngestionTaskErrorCode(err error) common.ErrorCode {
+	var transitionErr *service.InvalidTaskTransitionError
+	if errors.As(err, &transitionErr) {
+		return common.CodeConflict
+	}
+	var conflictErr *service.TaskStatusConflictError
+	if errors.As(err, &conflictErr) {
+		return common.CodeConflict
+	}
+	if errors.Is(err, common.ErrTaskNotFound) {
+		return common.CodeNotFound
+	}
+	return common.CodeExceptionError
 }

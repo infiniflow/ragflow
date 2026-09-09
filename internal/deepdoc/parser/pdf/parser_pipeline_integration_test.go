@@ -1,16 +1,16 @@
-//go:build cgo && integration
+//go:build cgo && manual
 
 package pdf
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"image"
 	_ "image/png"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 
@@ -66,7 +66,7 @@ func writeGolden(t *testing.T, path string, v any) {
 }
 
 func updateGolden() bool {
-	return os.Getenv("UPDATE_GOLDEN") == "1"
+	return common.GetEnv(common.EnvUpdateGolden) == "1"
 }
 
 // sectionsToGolden converts []pdf.Section to the snapshot format.
@@ -94,12 +94,12 @@ func tablesToGolden(tables []pdf.TableItem) []tableGolden {
 
 // TestIntegration_SectionsText verifies section text output matches golden.
 func TestIntegration_SectionsText(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "01_english_simple.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -137,12 +137,12 @@ func TestIntegration_SectionsText(t *testing.T) {
 
 // TestIntegration_SectionsCount verifies section count is stable.
 func TestIntegration_SectionsCount(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "01_english_simple.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -163,12 +163,12 @@ func TestIntegration_SectionsCount(t *testing.T) {
 
 // TestIntegration_TableStructure verifies table rows and cell text match golden.
 func TestIntegration_TableStructure(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "06_table_content.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -217,12 +217,12 @@ func TestIntegration_TableStructure(t *testing.T) {
 
 // TestIntegration_TableImageB64 verifies table ImageB64 is valid base64 PNG.
 func TestIntegration_TableImageB64(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "06_table_content.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -256,12 +256,12 @@ func TestIntegration_TableImageB64(t *testing.T) {
 
 // TestIntegration_LayoutTypes verifies DLA labels boxes with expected types.
 func TestIntegration_LayoutTypes(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "06_table_content.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestIntegration_LayoutTypes(t *testing.T) {
 // results when called multiple times with the same image. This validates
 // that the ML inference is deterministic (or at least semantically stable).
 func TestIntegration_Idempotency(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	// Render a fixture page as the stable input image.
 	eng := mustOpenEngine(t, "06_table_content.pdf")
@@ -321,7 +321,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 	t.Run("DLA", func(t *testing.T) {
 		var all [][]pdf.DLARegion
 		for i := 0; i < N; i++ {
-			regions, err := client.DLA(context.Background(), pageImg)
+			regions, err := client.DLA(t.Context(), pageImg)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -336,7 +336,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 		cropped := cropImageRect(pageImg, 50, 200, 550, 400)
 		var all [][]pdf.TSRCell
 		for i := 0; i < N; i++ {
-			cells, err := client.TSR(context.Background(), cropped)
+			cells, err := client.TSR(t.Context(), cropped)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -348,7 +348,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 	t.Run("OCRDetect", func(t *testing.T) {
 		var all [][]pdf.OCRBox
 		for i := 0; i < N; i++ {
-			boxes, err := client.OCRDetect(context.Background(), pageImg)
+			boxes, err := client.OCRDetect(t.Context(), pageImg)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -361,7 +361,7 @@ func TestIntegration_Idempotency(t *testing.T) {
 		cropped := cropImageRect(pageImg, 50, 100, 400, 130)
 		var all [][]pdf.OCRText
 		for i := 0; i < N; i++ {
-			texts, err := client.OCRRecognize(context.Background(), cropped)
+			texts, err := client.OCRRecognize(t.Context(), cropped)
 			if err != nil {
 				t.Fatalf("run %d: %v", i, err)
 			}
@@ -369,30 +369,6 @@ func TestIntegration_Idempotency(t *testing.T) {
 		}
 		checkOCRRecognizeIdempotent(t, all)
 	})
-}
-
-// cropImageRect crops a rectangular region from an image.
-func cropImageRect(img image.Image, x0, y0, x1, y1 int) image.Image {
-	b := img.Bounds()
-	if x0 < b.Min.X {
-		x0 = b.Min.X
-	}
-	if y0 < b.Min.Y {
-		y0 = b.Min.Y
-	}
-	if x1 > b.Max.X {
-		x1 = b.Max.X
-	}
-	if y1 > b.Max.Y {
-		y1 = b.Max.Y
-	}
-	out := image.NewRGBA(image.Rect(0, 0, x1-x0, y1-y0))
-	for y := y0; y < y1; y++ {
-		for x := x0; x < x1; x++ {
-			out.Set(x-x0, y-y0, img.At(x, y))
-		}
-	}
-	return out
 }
 
 const coordEpsilon = 1.0 // pixels
@@ -524,12 +500,12 @@ func floatClose(a, b, eps float64) bool {
 // suppression inside table regions, and caption removal — the key alignment
 // fixes from the Python→Go migration.
 func TestIntegration_TableAlign(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "18_table_caption.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -564,12 +540,12 @@ func TestIntegration_TableAlign(t *testing.T) {
 // TestIntegration_GarbageLayout verifies CID-garbled and garbage-layout
 // (header/footer/reference) boxes are popped from output.
 func TestIntegration_GarbageLayout(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "17_garbage_layout.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -592,32 +568,31 @@ func TestIntegration_GarbageLayout(t *testing.T) {
 	t.Logf("Sections: %d", len(result.Sections))
 }
 
-// TestIntegration_MultiChunk verifies chunked processing for large documents.
+// TestIntegration_MultiChunk verifies parsing for large documents.
 func TestIntegration_MultiChunk(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "19_multipage_chunk.pdf")
 
 	cfg := pdf.DefaultParserConfig()
-	cfg.BatchSize = 10 // small batches to force multi-batch path
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
+	defer result.Close()
 
-	// 52 pages with 10-page batches → >= 6 batches.
 	if len(result.Sections) == 0 {
-		t.Error("multi-batch should produce sections")
+		t.Error("large document should produce sections")
 	}
 
-	t.Logf("52 pages × batchSize=10: %d sections, %d tables",
+	t.Logf("52 pages: %d sections, %d tables",
 		len(result.Sections), len(result.Tables))
 }
 
 // TestIntegration_NoRegression runs a few snapshot PDFs and checks basic
 // invariants — no panic, sections produced, no CID garbage.
 func TestIntegration_NoRegression(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	for _, name := range []string{
 		"01_english_simple.pdf",
@@ -629,7 +604,7 @@ func TestIntegration_NoRegression(t *testing.T) {
 			data := mustReadPDF(t, name)
 			cfg := pdf.DefaultParserConfig()
 			p := NewParser(cfg)
-			result, err := p.Parse(context.Background(), data, client)
+			result, err := p.Parse(t.Context(), data, client)
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
@@ -649,13 +624,13 @@ func TestIntegration_NoRegression(t *testing.T) {
 // TestIntegration_TableRotation verifies that evaluateTableOrientation
 // correctly detects rotation using region-count scoring.
 func TestIntegration_TableRotation(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 
 	t.Run("upright_table", func(t *testing.T) {
 		data := mustReadPDF(t, "rotate_0.pdf")
 		cfg := pdf.DefaultParserConfig()
 		p := NewParser(cfg)
-		result, err := p.Parse(context.Background(), data, client)
+		result, err := p.Parse(t.Context(), data, client)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -672,9 +647,8 @@ func TestIntegration_TableRotation(t *testing.T) {
 		// pages (regions and characters are in different coordinate
 		// spaces post-rotation).  Character extraction and rotation are
 		// verified via the lyt.CharsToBoxes path.
-		cfg.SkipOCR = true
 		p := NewParser(cfg)
-		result, err := p.Parse(context.Background(), data, client)
+		result, err := p.Parse(t.Context(), data, client)
 		if err != nil {
 			t.Fatalf("Parse: %v", err)
 		}
@@ -688,12 +662,12 @@ func TestIntegration_TableRotation(t *testing.T) {
 // TestIntegration_WordSpacing verifies space insertion between ASCII word
 // characters with a visible gap (Python __img_ocr space insertion).
 func TestIntegration_WordSpacing(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	client := mustConnectInProcessAnalyzer(t)
 	data := mustReadPDF(t, "01_english_simple.pdf")
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(context.Background(), data, client)
+	result, err := p.Parse(t.Context(), data, client)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -726,7 +700,7 @@ func TestE2E_ParseAndPostProcess(t *testing.T) {
 	mock := &MockDocAnalyzer{Healthy: true}
 	p := NewParser(pdf.DefaultParserConfig())
 
-	result, err := p.Parse(context.Background(), data, mock)
+	result, err := p.Parse(t.Context(), data, mock)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -744,11 +718,4 @@ func TestE2E_ParseAndPostProcess(t *testing.T) {
 
 	figs := result.Figures()
 	t.Logf("figures: %d", len(figs))
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }

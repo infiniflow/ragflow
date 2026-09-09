@@ -93,8 +93,7 @@ class LayoutRecognizer(Recognizer):
                     "bottom": b["bbox"][-1] / scale_factor,
                     "page_number": pn,
                 }
-                for b in lts
-                if float(b["score"]) >= 0.4 or b["type"] not in self.garbage_layouts
+                for b in self._filter_garbage_layouts(lts)
             ]
             lts = self.sort_Y_firstly(lts, np.mean([lt["bottom"] - lt["top"] for lt in lts]) / 2)
             lts = self.layouts_cleanup(bxs, lts)
@@ -136,16 +135,23 @@ class LayoutRecognizer(Recognizer):
             for lt in ["footer", "header", "reference", "figure caption", "table caption", "title", "table", "text", "figure", "equation"]:
                 findLayout(lt)
 
-            # add box to figure layouts which has not text box
-            for i, lt in enumerate([lt for lt in lts if lt["type"] in ["figure", "equation"]]):
-                if lt.get("visited"):
-                    continue
-                lt = deepcopy(lt)
-                del lt["type"]
-                lt["text"] = ""
-                lt["layout_type"] = "figure"
-                lt["layoutno"] = f"figure-{i}"
-                bxs.append(lt)
+            # add box to figure/equation layouts which have no text box.
+            # Index within each type's own list and keep the type as the layoutno
+            # prefix so these match the namespace findLayout() assigns to
+            # text-overlapping boxes (figure-N vs equation-N). Using a combined
+            # figure+equation index with a fixed "figure" prefix would collide
+            # with figure-N tags from findLayout and merge unrelated regions.
+            for ty in ["figure", "equation"]:
+                for i, lt in enumerate([lt for lt in lts if lt["type"] == ty]):
+                    if lt.get("visited"):
+                        continue
+                    lt = deepcopy(lt)
+                    lt.pop("type", None)
+                    lt["text"] = ""
+                    lt["layout_type"] = "figure"
+                    lt["layoutno"] = f"{ty}-{i}"
+                    logging.debug(f"Created placeholder box {lt['layoutno']} for textless {ty} region")
+                    bxs.append(lt)
 
             boxes.extend(bxs)
 
@@ -161,8 +167,23 @@ class LayoutRecognizer(Recognizer):
         ocr_res = [b for b in ocr_res if b["text"].strip() not in garbag_set]
         return ocr_res, page_layout
 
+    def _filter_garbage_layouts(self, boxes, score_thr=0.4):
+        """Drop garbage-layout boxes (footer/header/reference) below ``score_thr``.
+
+        Mirrors the gate applied in ``__call__`` (layout_recognizer.py:97 and
+        :379) so that every consumer of ``forward`` — notably the
+        ``/predict/dla`` HTTP endpoint served by ``DLAAdapter`` — receives
+        Python-production-aligned output instead of raw low-confidence garbage
+        boxes. Non-garbage boxes are always kept regardless of score.
+        """
+        return [b for b in boxes if float(b["score"]) >= score_thr or b["type"] not in self.garbage_layouts]
+
     def forward(self, image_list, thr=0.7, batch_size=16):
-        return super().__call__(image_list, thr, batch_size)
+        layouts = super().__call__(image_list, thr, batch_size)
+        # Apply the 0.4 garbage gate so forward output matches __call__; the
+        # /predict/dla endpoint otherwise returns unfiltered low-confidence
+        # garbage (see _filter_garbage_layouts).
+        return [self._filter_garbage_layouts(page_boxes) for page_boxes in layouts]
 
 
 class LayoutRecognizer4YOLOv10(LayoutRecognizer):
@@ -437,16 +458,22 @@ class AscendLayoutRecognizer(Recognizer):
             for ty in ["footer", "header", "reference", "figure caption", "table caption", "title", "table", "text", "figure", "equation"]:
                 _tag_layout(ty)
 
-            figs = [lt for lt in lts if lt["type"] in ["figure", "equation"]]
-            for i, lt in enumerate(figs):
-                if lt.get("visited"):
-                    continue
-                lt = deepcopy(lt)
-                lt.pop("type", None)
-                lt["text"] = ""
-                lt["layout_type"] = "figure"
-                lt["layoutno"] = f"figure-{i}"
-                bxs.append(lt)
+            # Index within each type's own list and keep the type as the layoutno
+            # prefix so these match the namespace _tag_layout() assigns to
+            # text-overlapping boxes (figure-N vs equation-N). Using a combined
+            # figure+equation index with a fixed "figure" prefix would collide
+            # with figure-N tags from _tag_layout and merge unrelated regions.
+            for ty in ["figure", "equation"]:
+                for i, lt in enumerate([lt for lt in lts if lt["type"] == ty]):
+                    if lt.get("visited"):
+                        continue
+                    lt = deepcopy(lt)
+                    lt.pop("type", None)
+                    lt["text"] = ""
+                    lt["layout_type"] = "figure"
+                    lt["layoutno"] = f"{ty}-{i}"
+                    logging.debug(f"Created placeholder box {lt['layoutno']} for textless {ty} region")
+                    bxs.append(lt)
 
             boxes_out.extend(bxs)
 

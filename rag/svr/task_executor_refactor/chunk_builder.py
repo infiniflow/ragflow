@@ -27,6 +27,7 @@ from timeit import default_timer as timer
 from typing import Dict, List
 
 from common.constants import ParserType
+from common.exceptions import TaskCanceledException
 from common.misc_utils import thread_pool_exec
 from rag.svr.task_executor_refactor.task_context import TaskContext
 
@@ -71,6 +72,7 @@ async def run_chunking(
     chunker,
     binary: bytes,
     ctx: TaskContext,
+    on_chunking_start=None,
 ) -> List[Dict]:
     """Run document chunking via parser.
 
@@ -87,7 +89,10 @@ async def run_chunking(
         # Merge table parser config
         parser_config = merge_table_parser_config_from_kb(ctx.raw_task)
 
+        chunking_wait_started_at = timer()
         async with ctx.chunk_limiter:
+            if on_chunking_start:
+                on_chunking_start(timer() - chunking_wait_started_at)
             cks = await thread_pool_exec(
                 chunker.chunk,
                 ctx.name,
@@ -103,6 +108,8 @@ async def run_chunking(
         logging.info("Chunking({}) {}/{} done".format(timer() - st, ctx.location, ctx.name))
         ctx.recording_context.record("parser_config_after_merge", parser_config)
         return cks
+    except TaskCanceledException:
+        raise
     except Exception as e:
         ctx.progress_cb(-1, msg="Internal server error while chunking: %s" % str(e).replace("'", ""))
         logging.exception("Chunking {}/{} got exception".format(ctx.location, ctx.name))

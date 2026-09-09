@@ -59,3 +59,13 @@ def test_fit_messages_uses_default_context_when_max_length_zero():
     )
     assert err is None
     assert msg_fit[-1]["content"] == "User query: test"
+
+
+@pytest.mark.p1
+def test_gen_conf_includes_zero_temperature_when_enabled():
+    """Include an explicitly enabled zero temperature in the model configuration."""
+    param = LLMParam()
+    param.temperature = 0
+    param.temperatureEnabled = True
+
+    assert param.gen_conf()["temperature"] == 0

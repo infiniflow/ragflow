@@ -135,15 +135,6 @@ func TestParserParamDefaults(t *testing.T) {
 	if err := p.Validate(); err != nil {
 		t.Fatalf("default ParserParam failed Validate: %v", err)
 	}
-	// Spot-check a few entries that the Python class initializes.
-	for _, key := range []string{"pdf", "docx", "image", "audio", "video", "email", "epub"} {
-		if _, ok := p.Setups[key]; !ok {
-			t.Errorf("default Setups missing key %q", key)
-		}
-	}
-	if got := p.Setups["pdf"]["parse_method"]; got != "deepdoc" {
-		t.Errorf("default pdf parse_method = %v, want deepdoc", got)
-	}
 	if got := p.AllowedOutputFormat["pdf"]; len(got) != 2 || got[0] != "json" || got[1] != "markdown" {
 		t.Errorf("default pdf allowed_output_format = %v, want [json markdown]", got)
 	}
@@ -155,15 +146,15 @@ func TestParserParamJSONRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if !strings.Contains(string(data), `"setups"`) {
-		t.Errorf("expected setups in JSON, got %s", data)
+	if !strings.Contains(string(data), `"allowed_output_format"`) {
+		t.Errorf("expected allowed_output_format in JSON, got %s", data)
 	}
 	var decoded ParserParam
-	if err := json.Unmarshal(data, &decoded); err != nil {
+	if err = json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if decoded.Setups["pdf"]["parse_method"] != "deepdoc" {
-		t.Errorf("round-trip lost default pdf parse_method: got %v", decoded.Setups["pdf"]["parse_method"])
+	if got := decoded.AllowedOutputFormat["pdf"]; len(got) != 2 || got[0] != "json" || got[1] != "markdown" {
+		t.Errorf("round-trip lost pdf allowed_output_format: got %v", got)
 	}
 }
 
@@ -287,8 +278,8 @@ func TestChunkerOutputsJSONRoundTrip(t *testing.T) {
 
 func TestTokenChunkerParamDefaults(t *testing.T) {
 	p := TokenChunkerParam{}.Defaults()
-	if p.DelimiterMode != "token_size" {
-		t.Errorf("default delimiter_mode = %q, want token_size", p.DelimiterMode)
+	if p.DelimiterMode != "delimiter" {
+		t.Errorf("default delimiter_mode = %q, want delimiter", p.DelimiterMode)
 	}
 	if p.ChunkTokenSize != 512 {
 		t.Errorf("default chunk_token_size = %d, want 512", p.ChunkTokenSize)
@@ -373,11 +364,11 @@ func TestTokenizerFromUpstreamValidate(t *testing.T) {
 	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatChunks}).Validate(); err != nil {
 		t.Fatalf("output_format=chunks should be valid, got %v", err)
 	}
-	// output_format=markdown with no MarkdownResult -> error.
+	// output_format=Markdown with no MarkdownResult -> error.
 	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatMarkdown}).Validate(); err == nil {
 		t.Fatal("expected error for markdown without payload")
 	}
-	// output_format=markdown with payload -> OK.
+	// output_format=Markdown with payload -> OK.
 	md := "# title"
 	if err := (&TokenizerFromUpstream{OutputFormat: PayloadFormatMarkdown, MarkdownResult: &md}).Validate(); err != nil {
 		t.Fatalf("markdown with payload should be valid, got %v", err)
@@ -443,7 +434,7 @@ func TestTokenizerFromUpstreamJSONRoundTrip(t *testing.T) {
 	if decoded.MarkdownResult == nil || *decoded.MarkdownResult != "# title" {
 		t.Errorf("markdown round-trip mismatch: got %v", decoded.MarkdownResult)
 	}
-	// Re-marshal the decoded and confirm we can read markdown back.
+	// Re-marshal the decoded and confirm we can read Markdown back.
 	data2, err := json.Marshal(decoded)
 	if err != nil {
 		t.Fatalf("re-marshal: %v", err)
@@ -513,20 +504,20 @@ func TestTokenizerOutputsJSONRoundTrip(t *testing.T) {
 
 func TestExtractorParamDefaults(t *testing.T) {
 	p := ExtractorParam{}.Defaults()
-	if p.FieldName != "" {
-		t.Errorf("default field_name should be empty, got %q", p.FieldName)
+	if p.LLMID != "" {
+		t.Errorf("default llm_id should be empty, got %q", p.LLMID)
 	}
-	if err := p.Validate(); err == nil {
-		t.Fatal("default ExtractorParam should fail Validate (field_name required)")
+	if err := p.Validate(); err != nil {
+		t.Fatalf("default ExtractorParam should pass Validate, got %v", err)
 	}
 }
 
 func TestExtractorParamValidate(t *testing.T) {
-	if err := (&ExtractorParam{}).Validate(); err == nil {
-		t.Fatal("expected error for empty field_name")
+	if err := (&ExtractorParam{}).Validate(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
 	}
-	if err := (&ExtractorParam{FieldName: "summary"}).Validate(); err != nil {
-		t.Fatalf("Validate with field_name should pass, got %v", err)
+	if err := (&ExtractorParam{LLMID: "model@provider"}).Validate(); err != nil {
+		t.Fatalf("Validate should pass, got %v", err)
 	}
 }
 

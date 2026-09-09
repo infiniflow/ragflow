@@ -207,11 +207,11 @@ func TestPageSize(t *testing.T) {
 	}
 }
 
-// TestPdfiumConcurrentSafety verifies that the pdfiumMu mutex prevents
-// SIGSEGV from concurrent pdfium access. Without the mutex, 10 goroutines
-// calling PageSize/RenderPage simultaneously causes heap corruption within
-// milliseconds (empirically proven). If this test completes without
-// crashing, the mutex is working.
+// TestPdfiumConcurrentSafety verifies that the shared pdfsync.Mu mutex
+// prevents SIGSEGV from concurrent pdfium access. Without the mutex, 10
+// goroutines calling PageSize/RenderPage simultaneously cause heap
+// corruption within milliseconds (empirically proven). If this test
+// completes without crashing, the mutex is working.
 func TestPdfiumConcurrentSafety(t *testing.T) {
 	data := readPDF(t, "01_english_simple.pdf")
 

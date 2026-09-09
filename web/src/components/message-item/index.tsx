@@ -1,18 +1,33 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { MessageType } from '@/constants/chat';
+import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import {
   IMessage,
   IReference,
   IReferenceChunk,
   UploadResponseDataType,
 } from '@/interfaces/database/chat';
-import classNames from 'classnames';
-import { memo, useCallback, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-
-import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
+import classNames from 'classnames';
 import { isEmpty } from 'lodash';
+import { memo, useCallback, useMemo } from 'react';
 import { DocumentDownloadButton } from '../document-download-button';
+import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
 import { ReferenceImageList } from '../next-message-item/reference-image-list';
@@ -36,6 +51,7 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   index: number;
   showLikeButton?: boolean;
   showLoudspeaker?: boolean;
+  isLast?: boolean;
 }
 
 const MessageItem = ({
@@ -53,8 +69,8 @@ const MessageItem = ({
   showLoudspeaker = true,
   visibleAvatar = true,
   nickname,
+  isLast = false,
 }: IProps) => {
-  const { t } = useTranslation();
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -150,8 +166,8 @@ const MessageItem = ({
                   { '!bg-bg-card': !isAssistant },
                 )}
               >
-                {sendLoading && isEmpty(messageContent) ? (
-                  t('common.running')
+                {sendLoading && isLast && isEmpty(messageContent) ? (
+                  <LoadingDots className="text-text-secondary" />
                 ) : (
                   <MarkdownContent
                     loading={loading}

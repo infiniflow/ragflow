@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// File ingestion component (Phase 2.1) — port of python `rag/flow/file.py`.
+// Package component implements File ingestion component (Phase 2.1) — port of python `rag/flow/file.py`.
 //
 // SCOPE (honest):
 //
@@ -43,8 +43,11 @@ import (
 	"fmt"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/storage"
+
+	"gorm.io/gorm"
 )
 
 const ComponentNameFile = "File"
@@ -119,9 +122,6 @@ func (c *FileComponent) Outputs() map[string]string {
 	}
 }
 
-// Parallelism is fixed at 1 — File is metadata-only.
-func (c *FileComponent) Parallelism() int { return 1 }
-
 // Invoke resolves document/file metadata for downstream Parser use.
 //
 // The implementation mirrors the python flow's two paths:
@@ -130,11 +130,10 @@ func (c *FileComponent) Parallelism() int { return 1 }
 //     the document name and emit metadata only.
 //  2. doc_id is empty — pull the first file descriptor out of
 //     `file` and use its `name`/`id` directly.
-func (c *FileComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	_ = ctx
+func (c *FileComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// Parse the wire input through the schema type so the
 	// validation errors match the package convention.
-	in, err := parseFileInputs(inputs)
+	in, err := parseFileInputs(ctx, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -152,9 +151,21 @@ func (c *FileComponent) Invoke(ctx context.Context, inputs map[string]any) (map[
 	if in.fileDesc != nil {
 		out["file"] = in.fileDesc
 	}
-	return runtime.TrackElapsed("File", func() (map[string]any, error) {
-		return out, nil
-	})
+	// Pass through in-memory bytes when present (debug / dataflow dry-run
+	// where no doc row exists in storage). The downstream Parser reads
+	// `binary` first and skips the doc_id → storage lookup, so a debug run
+	// can parse the uploaded file without a persisted document. Persist
+	// runs set no `binary` here, so they keep resolving from storage.
+	if len(in.binary) > 0 {
+		out["binary"] = in.binary
+	}
+	// Publish the resolved run-level metadata into the workflow-wide
+	// CanvasState.Globals bag so downstream components (Tokenizer,
+	// Chunker, ...) read it from ctx instead of relying on this output
+	// re-emitting it. The Go runtime forwards only this explicit output
+	// to the next node, so shared fields must live in Globals.
+	globals.PublishGlobals(ctx, out)
+	return out, nil
 }
 
 // fileInputs is the post-Validation view of the upstream input
@@ -166,16 +177,30 @@ type fileInputs struct {
 	bucket   string
 	path     string
 	fileDesc map[string]any
+	binary   []byte
 }
 
 // parseFileInputs parses and validates the upstream input map.
 // Mirrors python's branching on `self._canvas._doc_id` vs.
 // `kwargs.get("file")[0]`.
-func parseFileInputs(inputs map[string]any) (fileInputs, error) {
+func parseFileInputs(ctx context.Context, inputs map[string]any) (fileInputs, error) {
 	if inputs == nil {
 		return fileInputs{}, fmt.Errorf("file: inputs map is nil")
 	}
 	out := fileInputs{}
+
+	// Debug / dataflow dry-run fast path: in-memory bytes were supplied
+	// via the graph input `binary` (no persisted document exists). Use
+	// them directly and skip the doc_id → storage resolution so a debug
+	// run parses the uploaded file without a DB/storage round-trip. The
+	// executor only sets `binary` for the non-persist (debug) marker doc.
+	if b, ok := inputs["binary"].([]byte); ok && len(b) > 0 {
+		out.binary = b
+		if n, ok := getString(inputs, "name"); ok && n != "" {
+			out.name = n
+		}
+		return out, nil
+	}
 
 	if v, ok := getString(inputs, "doc_id"); ok && v != "" {
 		out.docID = v
@@ -228,7 +253,7 @@ func parseFileInputs(inputs map[string]any) (fileInputs, error) {
 		out.path = v
 	}
 	if out.docID != "" {
-		name, err := resolveDocumentName(out.docID)
+		name, err := resolveDocumentName(ctx, out.docID)
 		if err != nil {
 			return fileInputs{}, fmt.Errorf("file: resolve doc_id %q: %w", out.docID, err)
 		}

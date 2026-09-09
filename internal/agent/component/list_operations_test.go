@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"reflect"
 	"sort"
 	"strings"
@@ -38,9 +37,9 @@ func TestListOperations_Head(t *testing.T) {
 	}
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3, 4, 5}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -71,9 +70,9 @@ func TestListOperations_TopNLegacyAlias(t *testing.T) {
 	}
 	state := canvas.NewCanvasState("run-topn", "task-topn")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3, 4}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -94,9 +93,9 @@ func TestListOperations_Filter(t *testing.T) {
 	})
 	state := canvas.NewCanvasState("run-2", "task-2")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{"foo", "bar", "foobar"}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -119,9 +118,9 @@ func TestListOperations_DropDuplicates(t *testing.T) {
 		map[string]any{"k": 1},
 		map[string]any{"k": 2},
 	}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -146,9 +145,9 @@ func TestListOperations_Tail(t *testing.T) {
 	})
 	state := canvas.NewCanvasState("run-4", "task-4")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3, 4, 5}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -168,9 +167,9 @@ func TestListOperations_NthPositive(t *testing.T) {
 	})
 	state := canvas.NewCanvasState("run-5", "task-5")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{"a", "b", "c", "d"}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -190,9 +189,9 @@ func TestListOperations_SortDesc(t *testing.T) {
 	})
 	state := canvas.NewCanvasState("run-6", "task-6")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{3, 1, 4, 1, 5, 9, 2, 6}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -227,7 +226,7 @@ func TestListOperations_SortByFieldList(t *testing.T) {
 			map[string]any{"id": 3, "score": 0.76, "title": "Gamma"},
 		},
 	}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	// sort_by="score", desc → Alpha(0.91), Beta(0.88), Gamma(0.76)
 	cSortDesc, err := NewListOperationsComponent(map[string]any{
@@ -239,7 +238,7 @@ func TestListOperations_SortByFieldList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewListOperationsComponent: %v", err)
 	}
-	out, err := cSortDesc.Invoke(ctx, nil)
+	out, err := cSortDesc.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke sort_by=score desc: %v", err)
 	}
@@ -264,7 +263,7 @@ func TestListOperations_SortByFieldList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewListOperationsComponent (legacy): %v", err)
 	}
-	out, err = cLegacy.Invoke(ctx, nil)
+	out, err = cLegacy.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke sort_by=\"\" desc: %v", err)
 	}
@@ -288,7 +287,7 @@ func TestListOperations_SortByFieldList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewListOperationsComponent (tiebreak): %v", err)
 	}
-	out, err = cTiebreak.Invoke(ctx, nil)
+	out, err = cTiebreak.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke sort_by=score,title asc: %v", err)
 	}
@@ -312,9 +311,9 @@ func TestListOperations_NotAList(t *testing.T) {
 	})
 	state := canvas.NewCanvasState("run-7", "task-7")
 	state.Outputs["cpn_0"] = map[string]any{"x": "not-a-list"}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	_, err := c.Invoke(ctx, nil)
+	_, err := c.Invoke(ctx, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for non-list input, got nil")
 	}
@@ -362,9 +361,9 @@ func TestListOperations_StrictMode_ReturnsError(t *testing.T) {
 	}
 	state := canvas.NewCanvasState("run-strict", "task-strict")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	_, err = c.Invoke(ctx, nil)
+	_, err = c.Invoke(ctx, nil, nil)
 	if err == nil {
 		t.Fatal("expected error from strict-mode nth with n=0, got nil")
 	}
@@ -389,9 +388,9 @@ func TestListOperations_StrictStringCoercion(t *testing.T) {
 		}
 		state := canvas.NewCanvasState("run-str-"+v, "task-str-"+v)
 		state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3}}
-		ctx := canvas.WithState(context.Background(), state)
+		ctx := canvas.WithState(t.Context(), state)
 
-		_, err = c.Invoke(ctx, nil)
+		_, err = c.Invoke(ctx, nil, nil)
 		if err == nil {
 			t.Errorf("[strict=%q] expected error from strict-mode nth with n=0, got nil", v)
 		}
@@ -414,9 +413,9 @@ func TestListOperations_StrictFalseStringsIgnored(t *testing.T) {
 		}
 		state := canvas.NewCanvasState("run-strf-"+v, "task-strf-"+v)
 		state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3}}
-		ctx := canvas.WithState(context.Background(), state)
+		ctx := canvas.WithState(t.Context(), state)
 
-		out, err := c.Invoke(ctx, nil)
+		out, err := c.Invoke(ctx, nil, nil)
 		if err != nil {
 			t.Errorf("[strict=%q] expected non-error (coerced to false), got %v", v, err)
 		}
@@ -452,9 +451,9 @@ func TestListOperations_FilterEqBool(t *testing.T) {
 	}
 	state := canvas.NewCanvasState("run-feq", "task-feq")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{true, false, true, "True"}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -480,9 +479,9 @@ func TestListOperations_UnknownOp_ReturnsError(t *testing.T) {
 	}
 	state := canvas.NewCanvasState("run-bogus", "task-bogus")
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3}}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
-	_, err := c.Invoke(ctx, nil)
+	_, err := c.Invoke(ctx, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for unknown operation, got nil")
 	}
@@ -516,5 +515,100 @@ func TestListOperations_InputsDocMatchesAllowlist(t *testing.T) {
 		if !strings.Contains(doc["operations"], op) {
 			t.Errorf("Inputs()[operations] doc must mention %q: %q", op, doc["operations"])
 		}
+	}
+}
+
+// TestListOperations_MissingInputOperatesOnEmptyList pins the fix for
+// "ListOperations errors when no variable is passed in": when the query
+// variable resolves to nil (the referenced upstream node never ran, e.g.
+// it was routed around by a conditional branch), the component must
+// operate on an empty list instead of failing the whole canvas run.
+func TestListOperations_MissingInputOperatesOnEmptyList(t *testing.T) {
+	for _, op := range []string{"nth", "head", "tail", "filter", "sort", "drop_duplicates"} {
+		c, err := NewListOperationsComponent(map[string]any{
+			"query":      "cpn_never_ran@result",
+			"operations": op,
+			"n":          1,
+		})
+		if err != nil {
+			t.Fatalf("op %s: NewListOperationsComponent: %v", op, err)
+		}
+		state := canvas.NewCanvasState("run-1", "task-1")
+		ctx := canvas.WithState(t.Context(), state)
+
+		out, err := c.Invoke(ctx, nil, nil)
+		if err != nil {
+			t.Fatalf("op %s: Invoke: %v", op, err)
+		}
+		got, ok := out["result"].([]any)
+		if !ok || got == nil {
+			t.Fatalf("op %s: result should be a non-nil empty list, got %#v", op, out["result"])
+		}
+		if len(got) != 0 {
+			t.Errorf("op %s: result should be empty, got %v", op, got)
+		}
+		if out["first"] != nil || out["last"] != nil {
+			t.Errorf("op %s: first/last should be nil for empty result, got %v/%v", op, out["first"], out["last"])
+		}
+	}
+}
+
+// TestListOperations_TypedNilSliceInputOperatesOnEmptyList pins the second
+// nil form: a typed nil []any written into state (e.g. an upstream
+// component's never-appended `var out []any`) satisfies the []any assertion
+// and bypasses the unset-variable branch. Invoke must normalize it to the
+// same non-nil empty list and keep first/last nil.
+func TestListOperations_TypedNilSliceInputOperatesOnEmptyList(t *testing.T) {
+	for _, op := range []string{"nth", "head", "tail", "filter", "sort", "drop_duplicates"} {
+		c, err := NewListOperationsComponent(map[string]any{
+			"query":      "cpn_nil@xs",
+			"operations": op,
+			"n":          1,
+		})
+		if err != nil {
+			t.Fatalf("op %s: NewListOperationsComponent: %v", op, err)
+		}
+		state := canvas.NewCanvasState("run-tnil", "task-tnil")
+		state.Outputs["cpn_nil"] = map[string]any{"xs": []any(nil)}
+		ctx := canvas.WithState(t.Context(), state)
+
+		out, err := c.Invoke(ctx, nil, nil)
+		if err != nil {
+			t.Fatalf("op %s: Invoke: %v", op, err)
+		}
+		got, ok := out["result"].([]any)
+		if !ok || got == nil {
+			t.Fatalf("op %s: result should be a non-nil empty list, got %#v", op, out["result"])
+		}
+		if len(got) != 0 {
+			t.Errorf("op %s: result should be empty, got %v", op, got)
+		}
+		if out["first"] != nil || out["last"] != nil {
+			t.Errorf("op %s: first/last should be nil for empty result, got %v/%v", op, out["first"], out["last"])
+		}
+	}
+}
+
+// TestListOperations_NonListInputStillErrors: a non-nil, non-list value is
+// a real misconfiguration and must keep failing loudly (#11364 contract).
+func TestListOperations_NonListInputStillErrors(t *testing.T) {
+	c, err := NewListOperationsComponent(map[string]any{
+		"query":      "cpn_0@xs",
+		"operations": "head",
+		"n":          1,
+	})
+	if err != nil {
+		t.Fatalf("NewListOperationsComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-1", "task-1")
+	state.Outputs["cpn_0"] = map[string]any{"xs": "not-a-list"}
+	ctx := canvas.WithState(t.Context(), state)
+
+	_, err = c.Invoke(ctx, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for non-list input")
+	}
+	if !strings.Contains(err.Error(), "input is not a list") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

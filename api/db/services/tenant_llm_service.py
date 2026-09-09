@@ -135,9 +135,9 @@ class TenantLLMService(CommonService):
 
         if llm_type == LLMType.EMBEDDING.value:
             mdlnm = tenant.embd_id if not llm_name else llm_name
-        elif llm_type == LLMType.SPEECH2TEXT.value:
+        elif llm_type == LLMType.ASR.value:
             mdlnm = tenant.asr_id if not llm_name else llm_name
-        elif llm_type == LLMType.IMAGE2TEXT.value:
+        elif llm_type == LLMType.VISION.value:
             mdlnm = tenant.img2txt_id if not llm_name else llm_name
         elif llm_type == LLMType.CHAT.value:
             mdlnm = tenant.llm_id if not llm_name else llm_name
@@ -196,9 +196,9 @@ class TenantLLMService(CommonService):
             if model_config["llm_factory"] not in RerankModel:
                 logging.error("Factory not in rerank model. Supported factories: %s", list(RerankModel.keys()))
                 return None
-            return RerankModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"])
+            return RerankModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"], max_token=model_config.get("max_tokens"))
 
-        elif model_config["model_type"] == LLMType.IMAGE2TEXT.value:
+        elif model_config["model_type"] == LLMType.VISION.value:
             if model_config["llm_factory"] not in CvModel:
                 logging.error("Factory not in cv model. Supported factories: %s", list(CvModel.keys()))
                 return None
@@ -210,9 +210,9 @@ class TenantLLMService(CommonService):
                 return None
             return ChatModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"], **kwargs)
 
-        elif model_config["model_type"] == LLMType.SPEECH2TEXT.value:
+        elif model_config["model_type"] == LLMType.ASR.value:
             if model_config["llm_factory"] not in Seq2txtModel:
-                logging.error("Factory not in speech2text model. Supported factories: %s", list(Seq2txtModel.keys()))
+                logging.error("Factory not in asr model. Supported factories: %s", list(Seq2txtModel.keys()))
                 return None
             return Seq2txtModel[model_config["llm_factory"]](key=api_key, model_name=model_config["llm_name"], lang=lang, base_url=model_config["api_base"])
         elif model_config["model_type"] == LLMType.TTS.value:
@@ -248,8 +248,8 @@ class TenantLLMService(CommonService):
 
         llm_map = {
             LLMType.EMBEDDING.value: tenant.embd_id if not llm_name else llm_name,
-            LLMType.SPEECH2TEXT.value: tenant.asr_id,
-            LLMType.IMAGE2TEXT.value: tenant.img2txt_id,
+            LLMType.ASR.value: tenant.asr_id,
+            LLMType.VISION.value: tenant.img2txt_id,
             LLMType.CHAT.value: tenant.llm_id if not llm_name else llm_name,
             LLMType.RERANK.value: tenant.rerank_id if not llm_name else llm_name,
             LLMType.TTS.value: tenant.tts_id if not llm_name else llm_name,
@@ -508,6 +508,7 @@ class LLM4Tenant:
         self.trace_context = kwargs.pop("trace_context", None) or {}
         self.langfuse_session_id = kwargs.pop("langfuse_session_id", None)
         self.tenant_id = tenant_id
+        self.lang = lang
         self.llm_name = model_config["llm_name"]
         self.model_config = model_config
         self.mdl = TenantLLMService.model_instance(model_config, lang=lang, **kwargs)
@@ -555,12 +556,16 @@ class LLM4Tenant:
         Langfuse already exports spans from its own background processor and
         flushes at process exit, so releasing the reference is sufficient here.
         """
-        # Drop the Langfuse reference WITHOUT flushing/shutting down the shared
-        # client (see the docstring above for why this would deadlock).
+        # Release the Langfuse client reference. ``Langfuse.flush()`` waits on
+        # ``Queue.join()`` with no timeout, so we never call it here: the shared
+        # ``LangfuseResourceManager`` flushes its queues at process exit, and
+        # a per-task ``flush()`` would block the task executor indefinitely
+        # if a consumer is wedged. ``self.langfuse = None`` drops our handle so
+        # the next ``LLM4Tenant`` reuses the same shared client.
         self.langfuse = None
 
         # Release underlying model instance if it has a close method
-        if self.mdl and callable(getattr(self.mdl, "close", None)):
+        if self.mdl and hasattr(self.mdl, "close") and callable(getattr(self.mdl, "close")):
             try:
                 self.mdl.close()
             except Exception:

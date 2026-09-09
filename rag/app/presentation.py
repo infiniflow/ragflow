@@ -25,6 +25,7 @@ from pypdf import PdfReader as pdf2_read
 from deepdoc.parser import PdfParser, PlainParser
 from deepdoc.parser.ppt_parser import RAGFlowPptParser
 from rag.app.naive import by_plaintext, PARSERS
+from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
 from common.constants import MAXIMUM_PAGE_NUMBER
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import rag_tokenizer
@@ -39,7 +40,7 @@ class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None, **kwargs):
         # 1. OCR
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
 
         # 2. Layout Analysis
         callback(msg="Layout Analysis")
@@ -86,7 +87,7 @@ class Pdf(PdfParser):
                 # pn_index in tbls is absolute page number
                 current_page_num = int(pn_index) + 1
             except Exception as e:
-                print(f"Error parsing position: {e}")
+                logging.warning(f"Error parsing position in {filename}: {e}")
                 continue
 
             if not (from_page < current_page_num <= to_page + from_page):
@@ -117,7 +118,7 @@ class Pdf(PdfParser):
 
 class PlainPdf(PlainParser):
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None, **kwargs):
-        self.pdf = pdf2_read(filename if not binary else BytesIO(binary))
+        self.pdf = pdf2_read(filename if binary is None else BytesIO(binary))
         page_txt = []
         for page in self.pdf.pages[from_page:to_page]:
             page_txt.append(page.extract_text())
@@ -140,7 +141,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     if re.search(r"\.pptx?$", filename, re.IGNORECASE):
         try:
             ppt_parser = RAGFlowPptParser()
-            for pn, txt in enumerate(ppt_parser(filename if not binary else binary, from_page, MAXIMUM_PAGE_NUMBER, callback)):
+            for pn, txt in enumerate(ppt_parser(filename if binary is None else binary, from_page, MAXIMUM_PAGE_NUMBER, callback)):
                 d = copy.deepcopy(doc)
                 pn += from_page
                 d["doc_type_kwd"] = "image"
@@ -164,7 +165,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 logging.warning(f"{error_msg} for {filename}.")
                 raise NotImplementedError(error_msg)
 
-            if binary:
+            if binary is not None:
                 binary_data = binary
             else:
                 with open(filename, "rb") as f:
@@ -195,7 +196,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 logging.warning(error_msg)
                 raise NotImplementedError(error_msg)
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
+        tenant_id = kwargs.get("tenant_id")
+        if tenant_id and isinstance(layout_recognize_raw, str):
+            try:
+                layout_recognize_raw = get_composite_model_name_by_id(layout_recognize_raw)
+            except LookupError:
+                pass
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize_raw)
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
@@ -214,6 +222,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             pdf_cls=Pdf,
             layout_recognizer=layout_recognizer,
             mineru_llm_name=parser_model_name,
+            mistral_ocr_llm_name=parser_model_name,
             paddleocr_llm_name=parser_model_name,
             **kwargs,
         )

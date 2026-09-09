@@ -46,7 +46,7 @@ func invokeAsTokenChunker(t *testing.T, items []map[string]any) map[string]any {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := comp.Invoke(context.Background(), map[string]any{
+	out, err := comp.Invoke(context.Background(), nil, map[string]any{
 		"name":          "test",
 		"output_format": "json",
 		"json":          items,

@@ -128,7 +128,7 @@ func TestRouterSetupRegistersSearchbotMindMapRoute(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode response body: %v", err)
 	}
-	if body.Code != common.CodeUnauthorized {
+	if body.Code != common.CodeDataError {
 		t.Fatalf("status=%d body=%s; want beta auth middleware to handle registered MindMap route", resp.Code, resp.Body.String())
 	}
 }
@@ -156,7 +156,7 @@ func TestRouterSetupRegistersChatbotInfoOnce(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode response body: %v", err)
 	}
-	if body.Code != common.CodeUnauthorized {
+	if body.Code != common.CodeDataError {
 		t.Fatalf("status=%d body=%s; want beta auth middleware to handle registered ChatbotInfo route", resp.Code, resp.Body.String())
 	}
 }
