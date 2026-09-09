@@ -2200,17 +2200,27 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
 
-        # Outer-model estimate plus every LLM call the inner ``rag`` graph made
-        # (recorded per phase by RAGTools' CountingChatModel).
+        # Usage of the whole agentic turn, counted once: the outer model
+        # (reasoning + tool call) reports its own usage through the provider,
+        # and every inner ``rag`` graph call is recorded per phase by RAGTools'
+        # CountingChatModel. The final answer is the inner graph's terminal
+        # output, so it is only estimated from text when nothing was recorded.
         llm_stats = getattr(rag_tools, "llm_stats", None)
-        prompt_tk = _prompt_tokens(rag_tools.sys_prompt(), agent_messages) + (sum(llm_stats.prompt_tokens.values()) if llm_stats else 0)
-        completion_tk = num_tokens_from_string(think + answer) + (sum(llm_stats.completion_tokens.values()) if llm_stats else 0)
+        inner_prompt_tk = sum(llm_stats.prompt_tokens.values()) if llm_stats else 0
+        inner_completion_tk = sum(llm_stats.completion_tokens.values()) if llm_stats else 0
+        outer_usage = getattr(getattr(chat_mdl, "mdl", None), "last_usage", None) or {}
+        if outer_usage.get("total_tokens"):
+            outer_prompt_tk = int(outer_usage.get("prompt_tokens") or 0)
+            outer_completion_tk = int(outer_usage.get("completion_tokens") or 0)
+        else:
+            outer_prompt_tk = _prompt_tokens(rag_tools.sys_prompt(), agent_messages)
+            outer_completion_tk = 0 if inner_completion_tk else num_tokens_from_string(think + answer)
         return {
             "answer": think + answer,
             "reference": refs,
             "prompt": "",
             "created_at": time.time(),
-            "usage": _usage_dict(prompt_tk, completion_tk, agent_start_ts),
+            "usage": _usage_dict(outer_prompt_tk + inner_prompt_tk, outer_completion_tk + inner_completion_tk, agent_start_ts),
         }
 
     # The agentic-search graph composes the final cited answer itself, so we

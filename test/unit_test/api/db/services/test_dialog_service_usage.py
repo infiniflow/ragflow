@@ -25,6 +25,9 @@ from types import SimpleNamespace
 import pytest
 
 from test_dialog_service_final_answer import _KB, _LLM_CONFIG, _StreamingChatModel, _StubRetriever, _collect, _make_dialog
+from test_dialog_service_rag_agent_messages import _DIALOG as _AGENT_DIALOG
+from test_dialog_service_rag_agent_messages import _KB as _AGENT_KB
+from test_dialog_service_rag_agent_messages import _RecordingChatModel
 
 from api.db.services import dialog_service
 
@@ -156,6 +159,77 @@ def test_async_chat_solo_usage_counts_multimodal_prompt(monkeypatch):
     usage = events[-1]["usage"]
     assert usage["prompt_tokens"] == dialog_service._prompt_tokens("You are helpful.", [{"role": "user", "content": "What is on this picture?"}])
     assert usage["prompt_tokens"] > 0
+
+
+# ---------------------------------------------------------------------------
+# rag_agent (agentic path): outer model + inner graph, each counted once
+# ---------------------------------------------------------------------------
+
+_AGENT_ANSWER = "RAGFlow is a RAG engine."
+_AGENT_QUESTION = [{"role": "user", "content": "What is RAGFlow?"}]
+
+
+def _make_stub_rag_tools(inner_prompt: dict | None, inner_completion: dict | None):
+    class _StubRAGTools:
+        def __init__(self, *_args, **_kwargs):
+            self.kbinfos = {"chunks": [], "doc_aggs": []}
+            self.tools = []
+            if inner_prompt is not None:
+                self.llm_stats = SimpleNamespace(prompt_tokens=dict(inner_prompt), completion_tokens=dict(inner_completion))
+
+        def sys_prompt(self):
+            return "You are a helpful assistant."
+
+    return _StubRAGTools
+
+
+def _drive_rag_agent_usage(monkeypatch, chat_mdl, rag_tools_cls):
+    monkeypatch.setattr(dialog_service, "get_models", lambda _dialog, **_kw: ([_AGENT_KB], None, None, chat_mdl, None))
+    monkeypatch.setattr(dialog_service, "RAGTools", rag_tools_cls)
+    monkeypatch.setattr(dialog_service, "tts", lambda _mdl, _text: None)
+    events = _collect(dialog_service.rag_agent(_AGENT_DIALOG, list(_AGENT_QUESTION), False, reasoning="2"))
+    assert len(events) == 1, events
+    return events[0]["usage"]
+
+
+@pytest.mark.p2
+def test_rag_agent_usage_does_not_count_inner_answer_twice(monkeypatch):
+    """Inner graph recorded usage, outer model did not: the answer text is NOT re-estimated."""
+    chat_mdl = _RecordingChatModel()
+    rag_tools_cls = _make_stub_rag_tools({"planner": 100, "agent": 250}, {"planner": 20, "agent": 80})
+
+    usage = _drive_rag_agent_usage(monkeypatch, chat_mdl, rag_tools_cls)
+
+    expected_outer_prompt = dialog_service._prompt_tokens("You are a helpful assistant.", _AGENT_QUESTION)
+    assert usage["prompt_tokens"] == expected_outer_prompt + 350
+    assert usage["completion_tokens"] == 100
+    assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"]
+
+
+@pytest.mark.p2
+def test_rag_agent_usage_adds_outer_provider_usage_to_inner_counters(monkeypatch):
+    """Both sides reported usage: exact sum, no tokenizer estimate involved."""
+    chat_mdl = _RecordingChatModel()
+    chat_mdl.mdl = SimpleNamespace(last_usage={"prompt_tokens": 40, "completion_tokens": 15, "total_tokens": 55})
+    rag_tools_cls = _make_stub_rag_tools({"agent": 300}, {"agent": 60})
+
+    usage = _drive_rag_agent_usage(monkeypatch, chat_mdl, rag_tools_cls)
+
+    assert usage == {"prompt_tokens": 340, "completion_tokens": 75, "total_tokens": 415, "duration_ms": usage["duration_ms"]}
+    assert chat_mdl.mdl.terminal_tools == {"rag"}
+
+
+@pytest.mark.p2
+def test_rag_agent_usage_falls_back_to_estimates_when_nothing_recorded(monkeypatch):
+    """No provider usage anywhere (or no llm_stats at all): estimate prompt and answer from text."""
+    chat_mdl = _RecordingChatModel()
+    rag_tools_cls = _make_stub_rag_tools(None, None)
+
+    usage = _drive_rag_agent_usage(monkeypatch, chat_mdl, rag_tools_cls)
+
+    assert usage["prompt_tokens"] == dialog_service._prompt_tokens("You are a helpful assistant.", _AGENT_QUESTION)
+    assert usage["completion_tokens"] == dialog_service.num_tokens_from_string(_AGENT_ANSWER)
+    assert usage["completion_tokens"] > 0
 
 
 def test_usage_dict_shape():
