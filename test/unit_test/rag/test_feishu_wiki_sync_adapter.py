@@ -63,7 +63,7 @@ adapter_module = _load_adapter_module()
 
 def _build_generator():
     assert adapter_module is not None, "Feishu Wiki sync adapter is not implemented"
-    return adapter_module.build_feishu_wiki_generator
+    return adapter_module._build_feishu_wiki_generator
 
 
 def setup_function():

@@ -28,6 +28,10 @@ import { IDataSourceInfoMap } from '../interface';
 import { azureDevOpsConstant } from './azure-devops-constant';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
+import {
+  feishuWikiConstant,
+  feishuWikiDefaultValues,
+} from './feishu-wiki-constant';
 import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
@@ -494,79 +498,7 @@ export const getCommonExtraDefaultValues = () => ({
 });
 
 const generateDataSourceFormFields = (t: TFunction) => ({
-  [DataSourceKey.FEISHU_WIKI]: [
-    {
-      label: t('setting.dataSourceFieldFeishuAppId'),
-      name: 'config.credentials.app_id',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'cli_xxxxxxxxxxxxxxxx',
-    },
-    {
-      label: t('setting.dataSourceFieldFeishuAppSecret'),
-      name: 'config.credentials.app_secret',
-      type: FormFieldType.Password,
-      required: true,
-    },
-    {
-      label: t('setting.dataSourceFieldWikiSpaceId'),
-      name: 'config.space_id',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: '1234567890123456789',
-    },
-    {
-      label: t('setting.dataSourceFieldRootNodeToken'),
-      name: 'config.root_node_token',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'wikcnExampleRootNodeToken',
-    },
-    {
-      label: t('setting.dataSourceFieldIncludeExtensions'),
-      name: 'config.include_extensions',
-      type: FormFieldType.Tag,
-      required: false,
-      placeholder: 'pdf, docx, xlsx, pptx, jpg, png',
-    },
-    {
-      label: t('setting.dataSourceFieldIncludeKeywords'),
-      name: 'config.include_keywords',
-      type: FormFieldType.Tag,
-      required: false,
-      placeholder: 'project, handbook',
-    },
-    {
-      label: t('setting.dataSourceFieldExcludeKeywords'),
-      name: 'config.exclude_keywords',
-      type: FormFieldType.Tag,
-      required: false,
-      placeholder: 'draft, archived',
-    },
-    {
-      label: t('setting.dataSourceFieldMaxFileSizeBytes'),
-      name: 'config.max_file_size_bytes',
-      type: FormFieldType.Number,
-      required: false,
-      validation: {
-        min: 1,
-        message: t('setting.dataSourceValidationMinOne', {
-          label: t('setting.dataSourceFieldMaxFileSizeBytes'),
-        }),
-      },
-    },
-    {
-      label: t('setting.dataSourceFieldBatchSize'),
-      name: 'config.batch_size',
-      type: FormFieldType.Number,
-      required: false,
-      validation: {
-        min: 1,
-        max: 10,
-        message: t('setting.dataSourceValidationFeishuBatchSize'),
-      },
-    },
-  ],
+  [DataSourceKey.FEISHU_WIKI]: feishuWikiConstant(t),
   [DataSourceKey.ONEDRIVE]: [
     {
       label: t('setting.dataSourceFieldTenantId'),
@@ -2157,23 +2089,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
 });
 
 export const DataSourceFormDefaultValues = {
-  [DataSourceKey.FEISHU_WIKI]: {
-    name: '',
-    source: DataSourceKey.FEISHU_WIKI,
-    config: {
-      space_id: '',
-      root_node_token: '',
-      include_extensions: [],
-      include_keywords: [],
-      exclude_keywords: [],
-      max_file_size_bytes: 50 * 1024 * 1024,
-      batch_size: 2,
-      credentials: {
-        app_id: '',
-        app_secret: '',
-      },
-    },
-  },
+  [DataSourceKey.FEISHU_WIKI]: feishuWikiDefaultValues,
   [DataSourceKey.RSS]: {
     name: '',
     source: DataSourceKey.RSS,

@@ -87,7 +87,7 @@ from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
-from rag.svr.feishu_wiki_sync import build_feishu_wiki_generator
+from rag.svr.feishu_wiki_sync import _build_feishu_wiki_generator
 from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
@@ -1415,7 +1415,7 @@ class FeishuWiki(SyncBase):
 
     async def _generate(self, task: dict):
         self._poll_window_end = datetime.now(UTC)
-        self.connector, document_generator = build_feishu_wiki_generator(
+        self.connector, document_generator = _build_feishu_wiki_generator(
             self.conf,
             task,
             window_end=self._poll_window_end,

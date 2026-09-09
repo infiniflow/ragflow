@@ -8,7 +8,7 @@ from typing import Any
 from common.data_source import FeishuWikiConnector
 
 
-def build_feishu_wiki_generator(
+def _build_feishu_wiki_generator(
     conf: dict[str, Any],
     task: dict[str, Any],
     *,
