@@ -714,9 +714,14 @@ async def _claim_prefetch(tools, query: str, kbinfos: dict, kb_seen: set) -> tup
     try:
         from rag.advanced_rag.harness.tools.navigation import (
             _STRUCT_CLAIM_EVIDENCE_CHARS,
+            dataset_has_compilation,
             recall_dataset_claims,
         )
 
+        # No compiled rows at all -> no claim rows can exist.  Skip the recall
+        # instead of issuing legs that come back empty on every single turn.
+        if not await dataset_has_compilation(tools):
+            return [], []
         claims = await recall_dataset_claims(tools, query)
     except Exception:  # noqa: BLE001
         _LOG.warning("[Action Session] claim prefetch failed", exc_info=True)
@@ -952,9 +957,17 @@ async def _exec_navigate_tree(tools, args: dict) -> ToolOutcome:
     routing falls through at ``_NAV_MIN_DOC_SCORE``, which is query-dependent,
     not a statement about the dataset.
     """
-    from rag.advanced_rag.harness.tools.navigation import _navigate_tree_impl
+    from rag.advanced_rag.harness.tools.navigation import _navigate_tree_impl, dataset_has_compilation
 
     _inject_nav_tools_ref(tools)
+    # Dataset-level fact, not a per-query miss: with no compiled rows every
+    # navigation leg comes back empty, so short-circuit instead of paying for it.
+    if not await dataset_has_compilation(tools):
+        return ToolOutcome(
+            payload=[{"kind": "navigate_tree", "note": "This dataset has no compiled document-navigation structure; use search_chunks / retrieve instead."}],
+            status=EMPTY,
+            reason="no_structure",
+        )
     query = str(args.get("query") or "")
     res = await _navigate_tree_impl(query, keywords=str(args.get("keywords") or ""))
     if res.empty_reason:
@@ -979,9 +992,19 @@ async def _exec_navigate_structure(tools, args: dict) -> ToolOutcome:
     As with navigate_tree, classification only — ``_tool_node`` decides whether
     to disable.
     """
-    from rag.advanced_rag.harness.tools.navigation import _navigate_structure_impl
+    from rag.advanced_rag.harness.tools.navigation import _navigate_structure_impl, dataset_has_compilation
 
     _inject_nav_tools_ref(tools)
+    # Same dataset-level gate as navigate_tree: without compiled rows the
+    # in-document drill has nothing to walk.
+    if not await dataset_has_compilation(tools):
+        return ToolOutcome(
+            payload=[
+                {"kind": "navigate_structure", "doc_id": str(args.get("doc_id") or ""), "note": "This dataset has no compiled document structure; use search_chunks / retrieve / list_chunks instead."}
+            ],
+            status=EMPTY,
+            reason="no_structure",
+        )
     doc_id = str(args.get("doc_id") or "")
     query = str(args.get("query") or "")
     kind = str(args.get("kind") or "catalog")

@@ -99,11 +99,20 @@ class NavResult:
 
 
 def _normalize_kind(kind) -> str:
-    """Mirror the API's kind normalization (page_index/knowledge_graph -> timeline)."""
+    """Normalize a compile-template kind.
+
+    ``page_index`` keeps its own identity.  It used to fold into ``timeline``,
+    which made tree and page_index indistinguishable at the read sites even
+    though they carry different row shapes (graph blob vs per-entity rows).
+    ``knowledge_graph`` still folds into ``timeline`` — that is the legacy
+    marker the catalog kind set is built around.
+    """
     if not isinstance(kind, str):
         return ""
     normalized = kind.strip().lower().replace("-", "_")
-    if normalized in {"pageindex", "page_index", "knowledge_graph"}:
+    if normalized in {"pageindex", "page_index"}:
+        return "page_index"
+    if normalized == "knowledge_graph":
         return "timeline"
     return normalized
 
@@ -659,10 +668,10 @@ _NAV_MIN_DOC_SCORE = 0.2  # drop docs below this score
 async def _nav_search_titled(tools, topic: str, keywords: str = "", doc_scope: list[str] | None = None) -> list[tuple[str, str]]:
     """Descend the compiled nav TREE and return ``(doc_id, summary)`` pairs.
 
-    Uses ``mode="navigation_tree"``, which currently resolves to a FLAT hybrid
-    sweep over every ``nav_doc`` row (``_NAV_TREE_ROUTER = "nav_doc"``) rather
-    than a descent through the cluster levels. The strategy lives server-side, so
-    this function is agnostic to which one is active.
+    Uses ``mode="navigation_tree"``, which routes through the dataset's claim
+    rows when the compiler produced any and falls back to raw-chunk aggregation
+    otherwise. The choice lives server-side and is driven by what the dataset
+    actually contains, so this function is agnostic to which leg ran.
 
     Flat routing is deliberate. A BFS beam descent narrows the field level by
     level, and a wrong pick at the first level cannot be undone — the correct
@@ -748,10 +757,10 @@ async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_s
     descending the dataset's compiled navigation tree.
 
     Routes through :func:`_nav_search_titled`, which runs
-    ``search_dataset_layers`` with ``mode="navigation_tree"``: a hybrid
-    (vector + BM25) sweep over the ``nav_doc`` rows, with the ``_text_score``
-    gates armed. Which router runs is decided server-side by
-    ``_NAV_TREE_ROUTER``, so this function does not depend on the strategy.
+    ``search_dataset_layers`` with ``mode="navigation_tree"``: claim rows first
+    (hybrid vector + BM25), falling back to raw-chunk aggregation when the
+    dataset has no claim rows. Which leg runs is decided server-side by what the
+    dataset contains, so this function does not depend on it.
 
     Returns the routed ``doc_id`` list (capped at ``_NAV_SEARCH_MAX_DOCS``), or
     ``[]`` when no question/keywords are given or the search returns nothing.
@@ -1592,7 +1601,9 @@ async def _recall_claim_hits(
         "entity_type_kwd",
         "compile_kwd",
     ]
-    condition: dict = {"doc_id": [doc_id], "entity_type_kwd": ["claim"]}
+    # page_index carries its evidence rows as fact/conclusion, not claim.
+    row_types = _evidence_row_types(kinds) if kinds else ("claim", "fact", "conclusion")
+    condition: dict = {"doc_id": [doc_id], "entity_type_kwd": list(row_types)}
     if kinds:
         condition["compile_kwd"] = sorted(str(k) for k in kinds if k)
     limit = max(top_n, 32)
@@ -1661,6 +1672,95 @@ _CLAIM_PREFETCH_CACHE_TTL = 300.0
 _CLAIM_PREFETCH_CACHE_CAP = 64
 
 
+# ``compile_kwd`` values the knowledge-compilation paths write.  A dataset whose
+# rows carry none of these has no compiled structure at all, so navigation
+# (claim recall, tree routing, in-document drill) can only come back empty.
+_COMPILATION_KWDS = ("tree", "page_index", "pageindex", "timeline", "dataset_nav", "raptor_graph")
+_COMPILATION_PROBE_TTL = 300.0
+
+
+# "Evidence rows" — atomic propositions carrying verbatim evidence.  Which row
+# type plays that role depends on the compiler: tree writes ``claim`` rows
+# (raptor claim extraction), while page_index folds the same role into
+# ``fact`` / ``conclusion`` — structure.py has page_index fact/conclusion
+# payloads carrying gate-verified verbatim evidence.  Filtering every leg on
+# ``claim`` alone therefore silently disables all of it on a page_index KB.
+_EVIDENCE_ROW_TYPES_BY_COMPILE = {
+    "tree": ("claim",),
+    "raptor": ("claim",),
+    "raptor_graph": ("claim",),
+    "page_index": ("fact", "conclusion"),
+}
+
+
+def _evidence_row_types(compile_kinds) -> tuple:
+    """Row types carrying evidence for the given compile kinds."""
+    types: list = []
+    for kind in compile_kinds or ():
+        for t in _EVIDENCE_ROW_TYPES_BY_COMPILE.get(kind, ()):
+            if t not in types:
+                types.append(t)
+    return tuple(types)
+
+
+async def dataset_compilation_kinds(tools) -> tuple:
+    """Return the compile kinds present in the in-scope KBs.
+
+    One cheap probe per KB (limit=16, id + compile_kwd only), cached on the
+    session's ``tools`` object.  Best effort: a probe failure falls back to a
+    non-empty result so a glitch never silently disables navigation.
+    """
+    import time
+
+    now = time.time()
+    cached = getattr(tools, "_compilation_probe", None)
+    if isinstance(cached, tuple) and len(cached) == 2 and now - cached[0] < _COMPILATION_PROBE_TTL:
+        return cached[1]
+
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+    from common.misc_utils import thread_pool_exec
+    from rag.nlp import search
+
+    kbs = getattr(tools, "kbs", None) or []
+    kinds: list = []
+    failed = False
+    for kb in kbs:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["doc_id", "compile_kwd"],
+                [],
+                {"compile_kwd": list(_COMPILATION_KWDS)},
+                [],
+                OrderByExpr(),
+                0,
+                16,
+                [search.index_name(kb.tenant_id)],
+                [kb.id],
+            )
+            rows = settings.docStoreConn.get_fields(res, ["doc_id", "compile_kwd"]) or {}
+            for row in rows.values():
+                kind = _normalize_kind(row.get("compile_kwd") or "")
+                if kind and kind not in kinds:
+                    kinds.append(kind)
+        except Exception:  # noqa: BLE001
+            _LOG.exception("[compilation probe] failed for kb=%s", getattr(kb, "id", "?"))
+            failed = True
+
+    result = tuple(kinds) if kinds else (("tree",) if failed else ())
+    try:
+        tools._compilation_probe = (now, result)
+    except Exception:  # noqa: BLE001
+        pass
+    return result
+
+
+async def dataset_has_compilation(tools) -> bool:
+    """True when any in-scope KB carries compiled rows (see above)."""
+    return bool(await dataset_compilation_kinds(tools))
+
+
 async def recall_dataset_claims(tools, query: str, top_n: int = _CLAIM_PREFETCH_TOP_N) -> list[dict]:
     """KB-wide FLAT claim recall — the dataset-level mirror of
     ``_recall_claim_hits``.  HYBRID: a BM25 leg and a KNN leg per KB over
@@ -1693,9 +1793,10 @@ async def recall_dataset_claims(tools, query: str, top_n: int = _CLAIM_PREFETCH_
     limit = max(top_n, 32)
     fields = ["content_with_weight", "source_chunk_ids", "doc_id"]
     kbs = getattr(tools, "kbs", None) or []
+    row_types = _evidence_row_types(await dataset_compilation_kinds(tools)) or ("claim",)
 
     async def _run(kb, exprs: list) -> list[dict]:
-        condition = {"entity_type_kwd": ["claim"], "scope_kwd": ["doc"]}
+        condition = {"entity_type_kwd": list(row_types), "scope_kwd": ["doc"]}
         res = await thread_pool_exec(
             settings.docStoreConn.search,
             fields,

@@ -256,31 +256,32 @@ async def test_delete_nav_returns_zero_when_index_missing(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Document routing via compiled page_index rows
+# Document routing via compiled claim rows
 # ---------------------------------------------------------------------------
 
 
-def _compiled_row(doc_id, rtype, similarity, name="n", payload=None):
-    body = payload if payload is not None else {"type": rtype, "name": name, "description": "d"}
+def _claim_row(doc_id, similarity, name="n"):
+    body = {"type": "claim", "name": name, "description": "d"}
     return {"doc_id": doc_id, "similarity": similarity, "content_with_weight": json.dumps(body)}
 
 
-def test_nav_bucket_compiled_rows_splits_title_and_fact(monkeypatch):
+def test_nav_bucket_compiled_rows_bins_claims_per_document(monkeypatch):
     module, _, _ = _load_nav_module(monkeypatch)
     buckets = module._nav_bucket_compiled_rows(
         {
-            "r1": _compiled_row("doc-a", "title", 0.9),
-            "r2": _compiled_row("doc-a", "fact", 0.5),
-            "r3": _compiled_row("doc-a", "conclusion", 0.4),
-            "r4": _compiled_row("doc-b", "title", 0.7),
-            "r5": _compiled_row("doc-c", "relation", 0.6),  # non-entity type — dropped
+            "r1": _claim_row("doc-a", 0.9),
+            "r2": _claim_row("doc-a", 0.5),
+            "r3": _claim_row("doc-b", 0.7),
+            # A title row is never an evidence row, so it drops.  (fact /
+            # conclusion DO count as evidence rows on page_index, so they cannot
+            # be used here to exercise the drop path.)
+            "r4": {"doc_id": "doc-c", "similarity": 0.6, "content_with_weight": json.dumps({"type": "title"})},
         }
     )
-    assert set(buckets["title"]) == {"doc-a", "doc-b"}
-    assert set(buckets["fact"]) == {"doc-a"}
-    # conclusion shares the fact bucket, so doc-a has two fact-class hits.
-    assert buckets["fact"]["doc-a"]["hits"] == 2
-    assert buckets["fact"]["doc-a"]["best"] == pytest.approx(0.5)
+    assert set(buckets["claim"]) == {"doc-a", "doc-b"}
+    assert buckets["claim"]["doc-a"]["hits"] == 2
+    assert buckets["claim"]["doc-a"]["best"] == pytest.approx(0.9)
+    assert buckets["claim"]["doc-a"]["total"] == pytest.approx(1.4)
 
 
 def test_nav_bucket_compiled_rows_skips_unparseable_payloads(monkeypatch):
@@ -288,81 +289,33 @@ def test_nav_bucket_compiled_rows_skips_unparseable_payloads(monkeypatch):
     buckets = module._nav_bucket_compiled_rows(
         {
             "r1": {"doc_id": "doc-a", "similarity": 0.9, "content_with_weight": "{not json"},
-            "r2": {"doc_id": "", "similarity": 0.9, "content_with_weight": json.dumps({"type": "title"})},
+            "r2": {"doc_id": "", "similarity": 0.9, "content_with_weight": json.dumps({"type": "claim"})},
             "r3": {"doc_id": "doc-b", "similarity": 0.9, "content_with_weight": json.dumps([1, 2])},
         }
     )
-    # A claim bucket is always present now that claim rows feed claim_agg; the
-    # unparseable input above has no claim rows, so it stays empty.
-    assert buckets == {"title": {}, "fact": {}, "claim": {}, "fact_names": {}}
+    assert buckets == {"claim": {}}
 
 
-def test_nav_bucket_compiled_rows_tracks_fact_names_per_document(monkeypatch):
-    """Fact names must stay per-document or the bridge labels the wrong document."""
+def test_nav_rank_compiled_buckets_orders_by_claim_score(monkeypatch):
+    """Claims are the only compiled leg, so ranking is a straight DocScore order."""
     module, _, _ = _load_nav_module(monkeypatch)
     buckets = module._nav_bucket_compiled_rows(
         {
-            "r1": _compiled_row("doc-a", "fact", 0.9, name="A1"),
-            "r2": _compiled_row("doc-a", "fact", 0.8, name="A2"),
-            "r3": _compiled_row("doc-b", "fact", 0.7, name="B1"),
-        }
-    )
-    assert buckets["fact_names"] == {"doc-a": ["A1", "A2"], "doc-b": ["B1"]}
-
-
-def test_nav_matched_sections_dedups_and_keeps_hit_order(monkeypatch):
-    module, _, _ = _load_nav_module(monkeypatch)
-    bridge = {"b1": "Discussion", "a1": "Methods", "a2": "Methods"}
-    out = module._nav_matched_sections(bridge, ["a1", "b1", "a2"])
-    assert out == ["Methods", "Discussion"]
-
-
-def test_nav_matched_sections_omits_unbridged_facts(monkeypatch):
-    module, _, _ = _load_nav_module(monkeypatch)
-    assert module._nav_matched_sections({}, ["a1"]) == []
-
-
-@pytest.mark.asyncio
-async def test_compiled_agg_attaches_matched_sections(monkeypatch):
-    """Routing must hand back a document-internal entry point, not just a doc_id."""
-    module, _, doc_store = _load_nav_module(
-        monkeypatch,
-        field_map={"r1": _compiled_row("doc-a", "fact", 0.9, name="F1")},
-    )
-    doc_store.get_fields = MagicMock(return_value={"r1": _compiled_row("doc-a", "fact", 0.9, name="F1")})
-    monkeypatch.setattr(module, "_nav_bridge_sections", AsyncMock(return_value={"f1": "Methods"}))
-    module.settings.retriever = SimpleNamespace(
-        get_vector=AsyncMock(return_value=SimpleNamespace()),
-        _existing_doc_ids=AsyncMock(return_value={"doc-a"}),
-    )
-    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1")
-
-    ok, payload = await module._search_layers_compiled_agg("tenant-1", "kb-1", "q", 5, SimpleNamespace(), kb)
-    assert ok is True
-    assert payload["items"][0]["_nav"]["matched_sections"] == ["Methods"]
-
-
-def test_nav_rank_compiled_buckets_rewards_both_legs(monkeypatch):
-    """A document hit by title AND fact outranks one hit by only one leg."""
-    module, _, _ = _load_nav_module(monkeypatch)
-    buckets = module._nav_bucket_compiled_rows(
-        {
-            "r1": _compiled_row("both", "title", 0.8),
-            "r2": _compiled_row("both", "fact", 0.8),
-            "r3": _compiled_row("titleonly", "title", 0.9),
+            "r1": _claim_row("weak", 0.5),
+            "r2": _claim_row("strong", 0.9),
         }
     )
     ranked = module._nav_rank_compiled_buckets(buckets, 10)
-    assert [d for d, _ in ranked] == ["both", "titleonly"]
-    assert ranked[0][1]["legs"] == {"title", "fact"}
+    assert [d for d, _ in ranked] == ["strong", "weak"]
+    assert ranked[0][1]["legs"] == {"claim"}
     # best stays on the 0..1 cosine scale callers threshold on.
-    assert ranked[0][1]["best"] == pytest.approx(0.8)
+    assert ranked[0][1]["best"] == pytest.approx(0.9)
 
 
 def test_nav_rank_compiled_buckets_does_not_mutate_input(monkeypatch):
     """Regression: ranking used to attach 'legs' onto the caller's bucket entries."""
     module, _, _ = _load_nav_module(monkeypatch)
-    buckets = module._nav_bucket_compiled_rows({"r1": _compiled_row("doc-a", "title", 0.8)})
+    buckets = module._nav_bucket_compiled_rows({"r1": _claim_row("doc-a", 0.8)})
     before = json.dumps(buckets, sort_keys=True, default=str)
     module._nav_rank_compiled_buckets(buckets, 10)
     assert json.dumps(buckets, sort_keys=True, default=str) == before
@@ -370,137 +323,11 @@ def test_nav_rank_compiled_buckets_does_not_mutate_input(monkeypatch):
 
 def test_nav_rank_compiled_buckets_respects_top_k(monkeypatch):
     module, _, _ = _load_nav_module(monkeypatch)
-    buckets = module._nav_bucket_compiled_rows({f"r{i}": _compiled_row(f"doc-{i}", "fact", 0.9 - i * 0.1) for i in range(5)})
+    buckets = module._nav_bucket_compiled_rows({f"r{i}": _claim_row(f"doc-{i}", 0.9 - i * 0.1) for i in range(5)})
     assert len(module._nav_rank_compiled_buckets(buckets, 2)) == 2
 
 
 @pytest.mark.asyncio
-async def test_compiled_agg_router_uses_keyword_fallback_without_embedding(monkeypatch):
-    """No embedding model: the leg degrades to a keyword match, it does not drop out."""
-    module, _, doc_store = _load_nav_module(
-        monkeypatch,
-        field_map={"r1": _compiled_row("doc-a", "fact", 0.5)},
-    )
-    doc_store.get_fields = MagicMock(return_value={"r1": _compiled_row("doc-a", "fact", 0.5)})
-    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1")
-
-    ok, payload = await module._search_layers_compiled_agg("tenant-1", "kb-1", "q", 5, None, kb)
-    assert ok is True
-    assert [i["doc_id"] for i in payload["items"]] == ["doc-a"]
-    # _nav_doc_summaries issues a second search, so read the first one.
-    exprs = doc_store.search.call_args_list[0].kwargs["match_expressions"]
-    # A keyword-match expr, not a dense one.
-    assert len(exprs) == 1
-    assert isinstance(exprs[0], _StubMatchTextExpr)
-    assert exprs[0].fields == ["content_ltks", "content_sm_ltks"]
-
-
-@pytest.mark.asyncio
-async def test_compiled_agg_router_filters_deleted_documents(monkeypatch):
-    """Compiled rows can outlive deleted docs; the leg must check existence itself."""
-    module, _, doc_store = _load_nav_module(
-        monkeypatch,
-        field_map={"r1": _compiled_row("doc-gone", "fact", 0.9)},
-    )
-    doc_store.get_fields = MagicMock(return_value={"r1": _compiled_row("doc-gone", "fact", 0.9)})
-    retriever = SimpleNamespace(
-        get_vector=AsyncMock(return_value=SimpleNamespace()),
-        _existing_doc_ids=AsyncMock(return_value=set()),  # nothing survives
-    )
-    module, _, _ = _load_nav_module(monkeypatch, field_map={"r1": _compiled_row("doc-gone", "fact", 0.9)}, retriever=retriever)
-    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1")
-
-    ok, payload = await module._search_layers_compiled_agg("tenant-1", "kb-1", "q", 5, SimpleNamespace(), kb)
-    assert ok is True
-    assert payload["total"] == 0
-
-
-@pytest.mark.asyncio
-async def test_compiled_agg_router_builds_vector_with_named_candidates(monkeypatch):
-    """Regression: positional passing put the similarity threshold into num_candidates."""
-    get_vector = AsyncMock(return_value=SimpleNamespace())
-    module, _, doc_store = _load_nav_module(
-        monkeypatch,
-        field_map={"r1": _compiled_row("doc-a", "fact", 0.9)},
-        retriever=SimpleNamespace(get_vector=get_vector, _existing_doc_ids=AsyncMock(return_value={"doc-a"})),
-    )
-    doc_store.get_fields = MagicMock(return_value={"r1": _compiled_row("doc-a", "fact", 0.9)})
-    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1")
-
-    await module._search_layers_compiled_agg("tenant-1", "kb-1", "q", 5, SimpleNamespace(), kb)
-    kw = get_vector.call_args.kwargs
-    assert kw["top_k"] == module._NAV_COMPILED_POOL
-    # HNSW ef_search must be >= top_k, and must not receive the similarity value.
-    assert kw["num_candidates"] == module._NAV_COMPILED_POOL
-    assert kw["similarity"] == module._NAV_COMPILED_SIMILARITY
-    # _nav_doc_summaries issues a second search, so read the first one.
-    cond = doc_store.search.call_args_list[0].kwargs["condition"]
-    # Compiled rows carry no available_int, so it must NOT be used as a filter.
-    assert "available_int" not in cond
-    assert cond["scope_kwd"] == ["doc"]
-    assert cond["knowledge_graph_kwd"] == ["entity"]
-
-
-# ---------------------------------------------------------------------------
-# Fusion of the chunk leg and the compiled leg
-# ---------------------------------------------------------------------------
-
-
-def test_nav_fuse_legs_normalizes_each_leg(monkeypatch):
-    """Each leg is normalized by its own peak so raw cosine cannot dominate."""
-    module, _, _ = _load_nav_module(monkeypatch)
-    ranked = module._nav_fuse_legs(
-        [
-            ("chunk", [{"doc_id": "a", "score": 0.9}, {"doc_id": "b", "score": 0.45}], 1.0),
-            ("compiled", [{"doc_id": "c", "score": 0.6}], 1.0),
-        ],
-        10,
-    )
-    scores = {d: info["fused"] for d, info in ranked}
-    # Peak of each leg becomes 1.0, so a document top-ranked by either leg ties.
-    assert scores["a"] == pytest.approx(1.0)
-    assert scores["c"] == pytest.approx(1.0)
-    assert scores["b"] == pytest.approx(0.5)
-
-
-def test_nav_fuse_legs_prefers_documents_hit_by_both(monkeypatch):
-    module, _, _ = _load_nav_module(monkeypatch)
-    ranked = module._nav_fuse_legs(
-        [
-            ("chunk", [{"doc_id": "both", "score": 0.5}, {"doc_id": "chunkonly", "score": 1.0}], 1.0),
-            ("compiled", [{"doc_id": "both", "score": 1.0}], 1.0),
-        ],
-        10,
-    )
-    assert [d for d, _ in ranked] == ["both", "chunkonly"]
-    assert ranked[0][1]["legs"] == {"chunk", "compiled"}
-
-
-def test_nav_fuse_legs_survives_empty_leg(monkeypatch):
-    module, _, _ = _load_nav_module(monkeypatch)
-    ranked = module._nav_fuse_legs([("chunk", [], 1.0), ("compiled", [], 1.0)], 10)
-    assert ranked == []
-
-
-@pytest.mark.asyncio
-async def test_fusion_router_falls_back_to_chunk_leg_without_compiled(monkeypatch):
-    """A raptor KB has no page_index rows; the chunk leg must decide alone."""
-    retrieval = AsyncMock(return_value={"chunks": [{"doc_id": "doc-a", "similarity": 0.5}]})
-    module, _, _ = _load_nav_module(monkeypatch, retriever=SimpleNamespace(retrieval=retrieval))
-    kb = SimpleNamespace(tenant_id="tenant-1", id="kb-1")
-
-    ok, payload = await module._search_layers_fusion("tenant-1", "kb-1", "q", 5, None, kb, compiled={"items": []})
-    assert ok is True
-    assert [i["doc_id"] for i in payload["items"]] == ["doc-a"]
-    # No compiled hits means no section bridge lookup either.
-    assert payload["items"][0]["_agg"]["legs"] == ["chunk"]
-
-
-# ---------------------------------------------------------------------------
-# Document routing via chunk aggregation (PageIndex semantics recipe)
-# ---------------------------------------------------------------------------
-
-
 def test_nav_aggregate_chunks_rolls_up_per_document(monkeypatch):
     module, _, _ = _load_nav_module(monkeypatch)
     chunks = [
@@ -609,70 +436,6 @@ async def test_chunk_agg_router_can_include_compiled_rows(monkeypatch):
     assert retrieval.call_args.kwargs["must_not"] is None
 
 
-def test_nav_label_items_wraps_flat_row_for_the_caller(monkeypatch):
-    """navigation.py reads the route label from item["_nav"]["description"].
-
-    search_dataset_nav returns the leaf row flat, so without wrapping the route
-    comes back unlabelled.
-    """
-    module, _, _ = _load_nav_module(monkeypatch)
-    out = module._nav_label_items([{"doc_id": "doc-a", "name": "Leaf A", "description": "Summary A"}])
-    assert out[0]["_nav"] == {"doc_id": "doc-a", "description": "Summary A"}
-
-
-def test_nav_label_items_falls_back_to_name(monkeypatch):
-    module, _, _ = _load_nav_module(monkeypatch)
-    out = module._nav_label_items([{"doc_id": "doc-a", "name": "Leaf A", "description": ""}])
-    assert out[0]["_nav"]["description"] == "Leaf A"
-
-
-def test_nav_label_items_preserves_existing_nav(monkeypatch):
-    """A row that already carries _nav must not be overwritten."""
-    module, _, _ = _load_nav_module(monkeypatch)
-    out = module._nav_label_items([{"doc_id": "doc-a", "description": "flat", "_nav": {"description": "nested"}}])
-    assert out[0]["_nav"]["description"] == "nested"
-
-
-def test_nav_label_items_tolerates_non_dicts(monkeypatch):
-    module, _, _ = _load_nav_module(monkeypatch)
-    assert module._nav_label_items(["junk", None]) == ["junk", None]
-
-
-def test_nav_focus_items_sorts_and_truncates_to_limit(monkeypatch):
-    """Regression: the flat sweep returned every row above the 0.2 floor.
-
-    Main's cluster descent routes ~2 documents; the flat sweep returned 6-12,
-    and routing to 3x the documents made the RAGAgent carry 3x the evidence in
-    every round — each dynamic LLM call grew ~33% and per-question time ~25%.
-    """
-    module, _, _ = _load_nav_module(monkeypatch)
-    monkeypatch.setattr(module, "_NAV_DOC_FOCUS_LIMIT", 3)
-    # Not sorted — must sort by score before truncating.
-    items = [{"doc_id": f"doc-{i}", "score": s} for i, s in [(6, 0.1), (1, 0.9), (3, 0.4), (2, 0.6)]]
-    out = module._nav_focus_items(items)
-    assert [i["doc_id"] for i in out] == ["doc-1", "doc-2", "doc-3"]
-    # The input list is truncated in place.
-    assert [i["doc_id"] for i in items] == ["doc-1", "doc-2", "doc-3"]
-
-
-def test_nav_focus_items_keeps_fewer_than_limit_untouched(monkeypatch):
-    """When few docs are relevant, do not pad — routing stays honest."""
-    module, _, _ = _load_nav_module(monkeypatch)
-    monkeypatch.setattr(module, "_NAV_DOC_FOCUS_LIMIT", 3)
-    items = [{"doc_id": "doc-1", "score": 0.9}]
-    out = module._nav_focus_items(items)
-    assert len(out) == 1
-
-
-def test_nav_focus_items_disabled_when_limit_is_zero(monkeypatch):
-    module, _, _ = _load_nav_module(monkeypatch)
-    monkeypatch.setattr(module, "_NAV_DOC_FOCUS_LIMIT", 0)
-    items = [{"doc_id": f"doc-{i}", "score": s} for i, s in [(1, 0.9), (2, 0.6), (3, 0.4)]]
-    out = module._nav_focus_items(items)
-    assert len(out) == 3
-
-
-@pytest.mark.asyncio
 async def test_chunk_agg_router_focuses_to_limit(monkeypatch):
     """chunk_agg must cap the returned documents like nav_doc does.
 
