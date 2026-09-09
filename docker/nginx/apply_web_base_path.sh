@@ -21,6 +21,7 @@ import re
 import sys
 
 base, src, dest = sys.argv[1:4]
+base_re = re.escape(base)
 text = open(src, encoding="utf-8").read()
 
 if f"location {base}/" in text:
@@ -28,11 +29,11 @@ if f"location {base}/" in text:
     sys.exit(0)
 
 replacements = [
-    ("location ~ ^/(v1|api)", f"location ~ ^{base}/(v1|api)"),
-    ("location ~ ^/(api|v1)", f"location ~ ^{base}/(api|v1)"),
-    ("location ~ ^/api", f"location ~ ^{base}/api"),
-    ("location ~ ^/v1", f"location ~ ^{base}/v1"),
-    ("location ~ ^/static/", f"location ~ ^{base}/static/"),
+    ("location ~ ^/(v1|api)", f"location ~ ^{base_re}/(v1|api)"),
+    ("location ~ ^/(api|v1)", f"location ~ ^{base_re}/(api|v1)"),
+    ("location ~ ^/api", f"location ~ ^{base_re}/api"),
+    ("location ~ ^/v1", f"location ~ ^{base_re}/v1"),
+    ("location ~ ^/static/", f"location ~ ^{base_re}/static/"),
 ]
 for old, new in replacements:
     text = text.replace(old, new)
@@ -48,7 +49,7 @@ spa_new = f"""    location {base}/ {{
     }}"""
 text = text.replace(spa_old, spa_new)
 
-rewrite_line = f"        rewrite ^{base}/(.*)$ /$1 break;"
+rewrite_line = f"        rewrite ^{base_re}/(.*)$ /$1 break;"
 
 def patch_prefixed_regex_blocks(content: str) -> str:
     lines = content.splitlines(keepends=True)
@@ -56,7 +57,7 @@ def patch_prefixed_regex_blocks(content: str) -> str:
     in_block = False
     block_has_rewrite = False
     brace_depth = 0
-    block_prefix = f"location ~ ^{base}/"
+    block_prefix = f"location ~ ^{base_re}/"
 
     for line in lines:
         if line.lstrip().startswith(block_prefix):
@@ -74,7 +75,7 @@ def patch_prefixed_regex_blocks(content: str) -> str:
                 "proxy_pass" in line or "expires 10y" in line
             ):
                 indent = re.match(r"^(\s*)", line).group(1)
-                result.append(f"{indent}rewrite ^{base}/(.*)$ /$1 break;\n")
+                result.append(f"{indent}rewrite ^{base_re}/(.*)$ /$1 break;\n")
                 block_has_rewrite = True
             result.append(line)
             if brace_depth <= 0:

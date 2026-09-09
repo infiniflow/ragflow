@@ -25,4 +25,14 @@ COUNT_AFTER="$(grep -c 'rewrite ^/ragflow/(.*)\$ /\$1 break;' "$TMP_CONF" || tru
 test "$COUNT_BEFORE" -eq "$COUNT_AFTER"
 test "$COUNT_AFTER" -eq 3
 
+# Regex locations must escape metacharacters in the base path (e.g. '.').
+DOT_CONF="$(mktemp)"
+cp "${SCRIPT_DIR}/ragflow.conf.python" "$DOT_CONF"
+RAGFLOW_NGINX_CONF="$DOT_CONF" RAGFLOW_WEB_BASE_PATH="/rag.flow" \
+  bash "${SCRIPT_DIR}/apply_web_base_path.sh"
+grep -F 'location ~ ^/rag\.flow/(v1|api)' "$DOT_CONF"
+grep -F 'rewrite ^/rag\.flow/(.*)$ /$1 break;' "$DOT_CONF"
+grep -F 'location /rag.flow/ {' "$DOT_CONF"
+rm -f "$DOT_CONF"
+
 echo "apply_web_base_path.sh: ok"
