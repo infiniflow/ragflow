@@ -1003,9 +1003,9 @@ func TestFilterPDFTOCFragmentPages_EmptyPageNumbersDoNotCollide(t *testing.T) {
 }
 
 // TestFilterPDFTOCFragmentPages_RepeatedBoilerplateDoesNotVeto pins the
-// frequency exemption: a long line repeating verbatim on >=3 pages is
-// boilerplate, not prose, so it neither vetoes classification nor survives
-// on a classified page.
+// frequency exemption: a long line repeating verbatim at the same height on
+// every page is boilerplate, not prose, so it neither vetoes classification
+// nor survives on a classified page.
 func TestFilterPDFTOCFragmentPages_RepeatedBoilerplateDoesNotVeto(t *testing.T) {
 	promo := "Free ebook download from the reader forum, enjoy reading daily"
 	var sections []deepdoctype.Section
@@ -1016,6 +1016,50 @@ func TestFilterPDFTOCFragmentPages_RepeatedBoilerplateDoesNotVeto(t *testing.T) 
 	got := filterPDFTOCFragmentPages(sections)
 	if len(got) != 0 {
 		t.Fatalf("sections = %v, want empty", sectionTexts(got))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_DriftingRepeatStillVetoes pins that same
+// text drifting vertically never gathers: body prose at different heights
+// stays body even when the text repeats.
+func TestFilterPDFTOCFragmentPages_DriftingRepeatStillVetoes(t *testing.T) {
+	promo := "Free ebook download from the reader forum, enjoy reading daily"
+	var sections []deepdoctype.Section
+	for page := 0; page < 3; page++ {
+		parts := []string{"Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "1", "3", "4", promo}
+		batch := fragmentedTOCPage(parts, page, "text")
+		batch[len(batch)-1].Positions[0].Top = float64(100 + page*100)
+		batch[len(batch)-1].Positions[0].Bottom = float64(118 + page*100)
+		sections = append(sections, batch...)
+	}
+	got := filterPDFTOCFragmentPages(sections)
+	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
+		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_PartialRepeatStillVetoes pins the full
+// coverage verdict: the same promo missing from one page is ordinary long
+// text and still vetoes on the pages carrying it. The promo-free page has
+// no veto but carries no surviving signal either once the shared titles
+// and page fragments classify it: it is cleared as a genuine TOC page.
+func TestFilterPDFTOCFragmentPages_PartialRepeatStillVetoes(t *testing.T) {
+	promo := "Free ebook download from the reader forum, enjoy reading daily"
+	var sections []deepdoctype.Section
+	for page := 0; page < 3; page++ {
+		parts := []string{"Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "1", "3", "4"}
+		if page < 2 {
+			parts = append(parts, promo)
+		}
+		sections = append(sections, fragmentedTOCPage(parts, page, "text")...)
+	}
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{
+		"Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "1", "3", "4", promo,
+		"Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "1", "3", "4", promo,
+	}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
 	}
 }
 
