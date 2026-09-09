@@ -133,15 +133,14 @@ def _install_unrelated_provider_stubs() -> None:
             sys.modules[package_name] = package
 
 
-_install_unrelated_provider_stubs()
-
 import common
 from common.constants import ConnectorTaskType, FileSource, TaskStatus
-from common.data_source import CONNECTOR_BY_SOURCE, FeishuWikiConnector
-from common.data_source.models import Document
+
+rag_svr = importlib.import_module("rag.svr")
+_MISSING = object()
 
 
-def _load_sync_module():
+def _load_sync_stack() -> SimpleNamespace:
     stubs = {
         "flask": _module("flask", json=stdlib_json),
         "api": _module("api"),
@@ -169,25 +168,69 @@ def _load_sync_module():
             AccessToken=_DummyConnector,
         ),
     }
-    saved_modules = {name: sys.modules.get(name) for name in stubs}
-    previous_settings = getattr(common, "settings", None)
+    exact_names = {*stubs, "rag.svr.feishu_wiki_sync", "rag.svr.sync_data_source"}
+    saved_exact = {name: sys.modules[name] for name in exact_names if name in sys.modules}
+    saved_data_source = {name: module for name, module in sys.modules.items() if name == "common.data_source" or name.startswith("common.data_source.")}
+    saved_attrs = {
+        (common, "config_utils"): getattr(common, "config_utils", _MISSING),
+        (common, "data_source"): getattr(common, "data_source", _MISSING),
+        (common, "settings"): getattr(common, "settings", _MISSING),
+        (rag_svr, "feishu_wiki_sync"): getattr(rag_svr, "feishu_wiki_sync", _MISSING),
+        (rag_svr, "sync_data_source"): getattr(rag_svr, "sync_data_source", _MISSING),
+    }
+    for name in list(sys.modules):
+        if name in exact_names or name == "common.data_source" or name.startswith("common.data_source."):
+            sys.modules.pop(name, None)
+    for parent, attribute in saved_attrs:
+        if hasattr(parent, attribute):
+            delattr(parent, attribute)
+
+    _install_unrelated_provider_stubs()
     common.settings = SimpleNamespace()
     sys.modules.update(stubs)
     try:
-        return importlib.import_module("rag.svr.sync_data_source")
+        registry = importlib.import_module("common.data_source")
+        models = importlib.import_module("common.data_source.models")
+        sync_owner = importlib.import_module("rag.svr.sync_data_source")
+        return SimpleNamespace(registry=registry, Document=models.Document, sync_owner=sync_owner)
     finally:
-        for name, saved in saved_modules.items():
-            if saved is None:
+        for name in list(sys.modules):
+            if name in exact_names or name == "common.data_source" or name.startswith("common.data_source."):
                 sys.modules.pop(name, None)
+        sys.modules.update(saved_data_source)
+        sys.modules.update(saved_exact)
+        for (parent, attribute), value in saved_attrs.items():
+            if value is _MISSING:
+                if hasattr(parent, attribute):
+                    delattr(parent, attribute)
             else:
-                sys.modules[name] = saved
-        if previous_settings is None:
-            delattr(common, "settings")
-        else:
-            common.settings = previous_settings
+                setattr(parent, attribute, value)
 
 
-sync_data_source = _load_sync_module()
+def _import_state() -> tuple[dict[str, ModuleType], tuple[object, ...]]:
+    tracked_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "common.data_source" or name.startswith("common.data_source.") or name in {"rag.svr.feishu_wiki_sync", "rag.svr.sync_data_source"}
+    }
+    tracked_attrs = (
+        getattr(common, "config_utils", _MISSING),
+        getattr(common, "data_source", _MISSING),
+        getattr(common, "settings", _MISSING),
+        getattr(rag_svr, "feishu_wiki_sync", _MISSING),
+        getattr(rag_svr, "sync_data_source", _MISSING),
+    )
+    return tracked_modules, tracked_attrs
+
+
+_IMPORT_STATE_BEFORE = _import_state()
+_stack = _load_sync_stack()
+_IMPORT_STATE_AFTER = _import_state()
+
+CONNECTOR_BY_SOURCE = _stack.registry.CONNECTOR_BY_SOURCE
+FeishuWikiConnector = _stack.registry.FeishuWikiConnector
+Document = _stack.Document
+sync_data_source = _stack.sync_owner
 
 
 class _FakeSync(sync_data_source.SyncBase):
@@ -242,12 +285,41 @@ def _task(*, poll_range_start=None):
 
 
 def test_real_registries_and_models_reach_the_sync_owner():
+    assert _IMPORT_STATE_AFTER[0] == _IMPORT_STATE_BEFORE[0]
+    assert all(after is before for after, before in zip(_IMPORT_STATE_AFTER[1], _IMPORT_STATE_BEFORE[1]))
     assert CONNECTOR_BY_SOURCE[FileSource.FEISHU_WIKI] is FeishuWikiConnector
     assert sync_data_source.func_factory[FileSource.FEISHU_WIKI] is sync_data_source.FeishuWiki
     assert sync_data_source.FileSource is FileSource
     assert sync_data_source.ConnectorTaskType is ConnectorTaskType
     assert sync_data_source.TaskStatus is TaskStatus
     assert isinstance(_doc(datetime(2026, 1, 2, tzinfo=UTC)), Document)
+
+    sentinel_data_source = ModuleType("common.data_source")
+    sentinel_sync_owner = ModuleType("rag.svr.sync_data_source")
+    sys.modules["common.data_source"] = sentinel_data_source
+    sys.modules["rag.svr.sync_data_source"] = sentinel_sync_owner
+    common.data_source = sentinel_data_source
+    rag_svr.sync_data_source = sentinel_sync_owner
+    try:
+        isolated = _load_sync_stack()
+        assert isolated.registry.CONNECTOR_BY_SOURCE[FileSource.FEISHU_WIKI] is isolated.registry.FeishuWikiConnector
+        assert isolated.sync_owner.func_factory[FileSource.FEISHU_WIKI] is isolated.sync_owner.FeishuWiki
+        assert sys.modules["common.data_source"] is sentinel_data_source
+        assert sys.modules["rag.svr.sync_data_source"] is sentinel_sync_owner
+        assert common.data_source is sentinel_data_source
+        assert rag_svr.sync_data_source is sentinel_sync_owner
+    finally:
+        sys.modules.pop("common.data_source", None)
+        sys.modules.pop("rag.svr.sync_data_source", None)
+        if _IMPORT_STATE_BEFORE[1][1] is _MISSING:
+            del common.data_source
+        else:
+            common.data_source = _IMPORT_STATE_BEFORE[1][1]
+        if _IMPORT_STATE_BEFORE[1][4] is _MISSING:
+            del rag_svr.sync_data_source
+        else:
+            rag_svr.sync_data_source = _IMPORT_STATE_BEFORE[1][4]
+        sys.modules.update(_IMPORT_STATE_BEFORE[0])
 
 
 @pytest.fixture(autouse=True)

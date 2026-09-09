@@ -1,11 +1,19 @@
 import hashlib
+import importlib
 import sys
 from datetime import UTC, datetime
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
+import common
 from common.constants import FileSource
+
+_MISSING = object()
+
+
+def _data_source_modules() -> dict[str, ModuleType]:
+    return {name: module for name, module in sys.modules.items() if name == "common.data_source" or name.startswith("common.data_source.")}
 
 
 def _install_unrelated_provider_stubs() -> None:
@@ -59,14 +67,56 @@ def _install_unrelated_provider_stubs() -> None:
             sys.modules[package_name] = package
 
 
-_install_unrelated_provider_stubs()
+def _load_real_data_source_stack() -> SimpleNamespace:
+    saved_modules = _data_source_modules()
+    saved_parent_attr = getattr(common, "data_source", _MISSING)
+    for name in list(_data_source_modules()):
+        sys.modules.pop(name, None)
+    if hasattr(common, "data_source"):
+        del common.data_source
 
-from common.data_source import CONNECTOR_BY_SOURCE, FeishuWikiConnector
-from common.data_source.config import DocumentSource
-from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
-from common.data_source.interfaces import LoadConnector, PollConnector
-from common.data_source.models import Document
-from common.data_source.utils import get_file_ext
+    _install_unrelated_provider_stubs()
+    try:
+        registry = importlib.import_module("common.data_source")
+        config = importlib.import_module("common.data_source.config")
+        exceptions = importlib.import_module("common.data_source.exceptions")
+        interfaces = importlib.import_module("common.data_source.interfaces")
+        models = importlib.import_module("common.data_source.models")
+        utils = importlib.import_module("common.data_source.utils")
+        return SimpleNamespace(
+            registry=registry,
+            DocumentSource=config.DocumentSource,
+            ConnectorMissingCredentialError=exceptions.ConnectorMissingCredentialError,
+            ConnectorValidationError=exceptions.ConnectorValidationError,
+            LoadConnector=interfaces.LoadConnector,
+            PollConnector=interfaces.PollConnector,
+            Document=models.Document,
+            get_file_ext=utils.get_file_ext,
+        )
+    finally:
+        for name in list(_data_source_modules()):
+            sys.modules.pop(name, None)
+        sys.modules.update(saved_modules)
+        if saved_parent_attr is _MISSING:
+            if hasattr(common, "data_source"):
+                del common.data_source
+        else:
+            common.data_source = saved_parent_attr
+
+
+_DATA_SOURCE_STATE_BEFORE = (_data_source_modules(), getattr(common, "data_source", _MISSING))
+_real = _load_real_data_source_stack()
+_DATA_SOURCE_STATE_AFTER = (_data_source_modules(), getattr(common, "data_source", _MISSING))
+
+CONNECTOR_BY_SOURCE = _real.registry.CONNECTOR_BY_SOURCE
+FeishuWikiConnector = _real.registry.FeishuWikiConnector
+DocumentSource = _real.DocumentSource
+ConnectorMissingCredentialError = _real.ConnectorMissingCredentialError
+ConnectorValidationError = _real.ConnectorValidationError
+LoadConnector = _real.LoadConnector
+PollConnector = _real.PollConnector
+Document = _real.Document
+get_file_ext = _real.get_file_ext
 
 
 class FakeResponse:
@@ -144,11 +194,34 @@ def _build_connector(session, **overrides):
 
 
 def test_real_registry_and_connector_contracts_are_wired():
+    assert _DATA_SOURCE_STATE_AFTER[0] == _DATA_SOURCE_STATE_BEFORE[0]
+    assert _DATA_SOURCE_STATE_AFTER[1] is _DATA_SOURCE_STATE_BEFORE[1]
     assert CONNECTOR_BY_SOURCE[FileSource.FEISHU_WIKI] is FeishuWikiConnector
     assert issubclass(FeishuWikiConnector, (LoadConnector, PollConnector))
     assert DocumentSource.FEISHU_WIKI.value == FileSource.FEISHU_WIKI.value
     assert get_file_ext("guide.PDF") == ".pdf"
     assert "fingerprint" in Document.model_fields
+
+    saved_modules = _data_source_modules()
+    saved_parent_attr = getattr(common, "data_source", _MISSING)
+    sentinel = ModuleType("common.data_source")
+    for name in list(saved_modules):
+        sys.modules.pop(name, None)
+    sys.modules["common.data_source"] = sentinel
+    common.data_source = sentinel
+    try:
+        isolated = _load_real_data_source_stack()
+        assert isolated.registry.CONNECTOR_BY_SOURCE[FileSource.FEISHU_WIKI] is isolated.registry.FeishuWikiConnector
+        assert sys.modules["common.data_source"] is sentinel
+        assert common.data_source is sentinel
+    finally:
+        for name in list(_data_source_modules()):
+            sys.modules.pop(name, None)
+        sys.modules.update(saved_modules)
+        if saved_parent_attr is _MISSING:
+            del common.data_source
+        else:
+            common.data_source = saved_parent_attr
 
 
 def test_build_connector_requires_app_credentials():
