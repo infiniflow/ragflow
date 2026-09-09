@@ -105,6 +105,8 @@ def _parse_retrieval_options(retrieval_setting):
         top = int(retrieval_setting.get("top_k", 1024))
     except (TypeError, ValueError):
         raise ValueError("top_k must be integer and score_threshold must be numeric")
+    if top < 1 or top > 1024:
+        raise ValueError("top_k must be between 1 and 1024")
     return retrieval_setting, similarity_threshold, top
 
 
