@@ -519,7 +519,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       general: 'General',
       chunkMethodTab: 'Chunk method',
       testResults: 'Results',
-      openChunkInDocument: 'Open this chunk in the document',
+      openChunkInDocument: 'Open this chunk in the document (new tab)',
       testSetting: 'Setting',
       retrievalTesting: 'Retrieval testing',
       retrievalTestingDescription:
