@@ -806,4 +806,4 @@ def test_list_mcp_page_size_above_max_returns_argument_error(monkeypatch):
     res = _run(module.list_mcp())
 
     assert res["code"] == 101
-    assert "page_size" in res["message"]
+    assert res["message"] == "page_size must be less than or equal to 100"
