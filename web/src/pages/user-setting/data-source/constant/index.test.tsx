@@ -69,3 +69,53 @@ describe('Xquik data source', () => {
     expect(maxPages?.validation).toMatchObject({ min: 1, max: 1000 });
   });
 });
+
+describe('Sitemap data source', () => {
+  it('registers its catalog entry and defaults', () => {
+    const info = generateDataSourceInfo(translate)[DataSourceKey.SITEMAP];
+    const defaults = DataSourceFormDefaultValues[DataSourceKey.SITEMAP];
+
+    expect(info.name).toBe('Sitemap');
+    expect(info.description).toBe('setting.sitemapDescription');
+    expect(defaults).toEqual({
+      name: '',
+      source: 'sitemap',
+      config: {
+        sitemap_url: '',
+        url_filter: '',
+        follow_pdf_links: false,
+        restrict_pdf_to_domain: true,
+        user_agent: '',
+        batch_size: 10,
+      },
+    });
+  });
+
+  it('requires the sitemap URL and only shows the domain restriction when following PDFs', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.SITEMAP,
+    ) as Array<{
+      name: string;
+      type?: FormFieldType;
+      required?: boolean;
+      validation?: { min?: number };
+      shouldRender?: (values: any) => boolean;
+    }>;
+    const sitemapUrl = fields.find((f) => f.name === 'config.sitemap_url');
+    const restrict = fields.find(
+      (f) => f.name === 'config.restrict_pdf_to_domain',
+    );
+    const batchSize = fields.find((f) => f.name === 'config.batch_size');
+
+    expect(sitemapUrl?.required).toBe(true);
+    expect(restrict?.type).toBe(FormFieldType.Switch);
+    expect(
+      restrict?.shouldRender?.({ config: { follow_pdf_links: false } }),
+    ).toBe(false);
+    expect(
+      restrict?.shouldRender?.({ config: { follow_pdf_links: true } }),
+    ).toBe(true);
+    expect(batchSize?.validation?.min).toBe(1);
+  });
+});
