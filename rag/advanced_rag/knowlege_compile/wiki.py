@@ -1063,6 +1063,9 @@ async def _wiki_extract_one_batch(
     language: str,
     llm_timeout: int,
     parser_config: Optional[dict] = None,
+    callback: Optional[Callable] = None,
+    batch_idx: int = 0,
+    total_batches: int = 1,
 ) -> Optional[dict]:
     """Single LLM call for one packed batch. Returns the raw (label-tagged)
     extract dict, or ``None`` on a transient LLM timeout/error so the caller
@@ -1094,9 +1097,25 @@ async def _wiki_extract_one_batch(
         )
     except asyncio.TimeoutError:
         logging.warning("wiki_map: batch extraction timed out after %ds (%d chunks)", llm_timeout, len(packed))
+        if callback:
+            try:
+                callback(
+                    (batch_idx + 1) / max(1, total_batches),
+                    f"[ERROR] Wiki MAP batch {batch_idx + 1}/{total_batches} timed out after {llm_timeout}s ({len(packed)} chunks).",
+                )
+            except Exception:
+                logging.debug("wiki_map: timeout progress callback failed", exc_info=True)
         return None
     except Exception:
         logging.exception("wiki_map: batch extraction failed (%d chunks)", len(packed))
+        if callback:
+            try:
+                callback(
+                    (batch_idx + 1) / max(1, total_batches),
+                    f"[ERROR] Wiki MAP batch {batch_idx + 1}/{total_batches} failed ({len(packed)} chunks).",
+                )
+            except Exception:
+                logging.debug("wiki_map: failure progress callback failed", exc_info=True)
         return None
     _ = language  # reserved for future localization
     return _wiki_unwrap_extract(res)
@@ -1144,6 +1163,9 @@ async def _wiki_process_batch(
             language,
             llm_timeout,
             parser_config=parser_config,
+            callback=callback,
+            batch_idx=batch_idx,
+            total_batches=total_batches,
         )
         if raw_extract is None:
             # LLM call failed/timed out: leave no resume hash so the next run

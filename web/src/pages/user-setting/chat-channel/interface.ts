@@ -30,7 +30,6 @@ export interface IChatChannelBase {
   // Connected assistant (chat), joined in by the list endpoint.
   chat_id?: string | null;
   dialog_name?: string | null;
-  // Connected flow agent, joined in by the list endpoint.
   agent_id?: string | null;
   agent_name?: string | null;
 }

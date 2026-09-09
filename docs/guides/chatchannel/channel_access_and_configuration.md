@@ -191,14 +191,13 @@ Prerequisites:
 
 Configuration parameters:
 
-- **Target type**: Decides how inbound messages are answered. Select **Chat assistant** to bind a Chat, or **Agent** to bind a custom Flow Agent. A channel can be bound to exactly one target at a time: switching the target clears the previous binding, and clearing the selection disconnects the channel.
-- **Agent**: When **Target type** is `Agent`, select the Flow Agent that should answer the messages. The dropdown lists the Flow Agents (canvas category `agent_canvas`) accessible to the current tenant; the list is loaded from the tenant's agents, so no external credential is required. If the selected agent has components without a configured model, the runtime replies with an error message.
+- **Target**: The connect dialog shows a single dropdown whose entries are prefixed with their type. Entries labeled `[Chat assistant]` are the Chats of the current tenant; entries labeled `[Agent]` are the Flow Agents (canvas category `agent_canvas`) accessible to the current tenant. The stored value is the selected Chat id or Agent id, which is filled in automatically when you pick an entry, so no external credential is required. If you need the Agent id explicitly, open the Agent in **Agent > Flow agents** and copy the id from the browser URL. A channel can be bound to exactly one target at a time: picking another target replaces the previous binding, and clearing the selection disconnects the channel. If the selected agent has components without a configured model, the runtime replies with an error message.
 
 Usage:
 
 1. Open **User settings > Chat channels**, find the WeCom channel, and click the link icon to open the connect dialog.
-2. In the connect dialog, set **Target type** to `Agent`.
-3. Select the Flow Agent from the **Agent** dropdown and click confirm.
+2. In the connect dialog, pick the `[Agent]` entry of the Flow Agent (or a `[Chat assistant]` entry to bind a Chat) from the **Select an assistant or Agent** dropdown.
+3. Click confirm; reopening the dialog shows the currently bound target.
 4. Send a test message to the bot in WeCom and verify the reply.
 
 ### Thinking placeholder

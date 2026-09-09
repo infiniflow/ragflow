@@ -90,6 +90,7 @@ def test_normalize_layout_recognizer_passes_through_known_keywords():
 
 
 def test_normalize_layout_recognizer_strips_known_provider_suffix():
+    assert normalize_layout_recognizer("my-llm@my-instance@my-provider@monkeyocrv2") == ("MonkeyOCRv2", "my-llm@my-instance@my-provider@monkeyocrv2")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@mineru") == ("MinerU", "my-llm@my-instance@my-provider@mineru")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@paddleocr") == ("PaddleOCR", "my-llm@my-instance@my-provider@paddleocr")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@opendataloader") == ("OpenDataLoader", "my-llm@my-instance@my-provider@opendataloader")
@@ -146,6 +147,10 @@ class _ByMineru(_Parser):
     pass
 
 
+class _ByMonkeyOCRv2(_Parser):
+    pass
+
+
 class _ByDocling(_Parser):
     pass
 
@@ -195,6 +200,7 @@ def naive_module():
         _stub("deepdoc.parser.figure_parser", VisionFigureParser=_Parser, vision_figure_parser_docx_wrapper_naive=lambda *a, **k: None, vision_figure_parser_pdf_wrapper=lambda *a, **k: None)
         _stub("deepdoc.parser.pdf_parser", PlainParser=_ByPlaintext, VisionParser=_Parser, RAGFlowPdfParser=_Parser)
         _stub("deepdoc.parser.docling_parser", DoclingParser=_ByDocling)
+        _stub("deepdoc.parser.monkeyocrv2_parser", MonkeyOCRv2Parser=_Parser)
         _stub("deepdoc.parser.tcadp_parser", TCADPParser=_Parser)
         _stub("deepdoc.parser.utils", extract_pdf_outlines=lambda *a, **k: [])
 
@@ -269,6 +275,7 @@ def naive_module():
         # so assertions can identify which parser the dispatch selected.
         module.PARSERS["deepdoc"] = _ByDeepdoc
         module.PARSERS["mineru"] = _ByMineru
+        module.PARSERS["monkeyocrv2"] = _ByMonkeyOCRv2
         module.PARSERS["docling"] = _ByDocling
         module.PARSERS["opendataloader"] = _ByOpenDataLoader
         module.PARSERS["plaintext"] = _ByPlaintext
@@ -290,6 +297,14 @@ def _dispatch(naive_module, layout_recognize, parser_config=None):
     cfg = dict(parser_config or {})
     cfg["layout_recognize"] = layout_recognize
     return naive_module._dispatch_pdf_parser(cfg)
+
+
+def test_dispatch_uses_single_monkeyocrv2_name(naive_module):
+    parser, name, layout_recognizer, _op, model = _dispatch(naive_module, "MonkeyOCRv2")
+    assert parser is _ByMonkeyOCRv2
+    assert name == "monkeyocrv2"
+    assert layout_recognizer == "MonkeyOCRv2"
+    assert model is None
 
 
 # CodeRabbit review #3: don't fall back to MinerU for known keywords.

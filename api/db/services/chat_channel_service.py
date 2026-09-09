@@ -29,7 +29,7 @@ class ChatChannelService(CommonService):
     @classmethod
     @DB.connection_context()
     def list(cls, tenant_id):
-        """List a tenant's chat channel bots with their connected dialog/agent (no credentials)."""
+        """List a tenant's chat channel bots with their connected dialog (no credentials)."""
         fields = [
             cls.model.id,
             cls.model.name,
@@ -47,6 +47,7 @@ class ChatChannelService(CommonService):
                 join_type=JOIN.LEFT_OUTER,
                 on=(Dialog.id == cls.model.chat_id),
             )
+            .switch(cls.model)
             .join(
                 UserCanvas,
                 join_type=JOIN.LEFT_OUTER,

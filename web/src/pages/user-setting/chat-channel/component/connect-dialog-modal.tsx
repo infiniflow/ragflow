@@ -16,17 +16,16 @@
 
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
-import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { RAGFlowSelect } from '@/components/ui/select';
+import { useFetchAllAgentList } from '@/hooks/use-agent-request';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  useChatChannelAgentList,
   useChatChannelDialogList,
-  useConnectChatChannelTarget,
+  useConnectChatChannelDialog,
 } from '../hooks';
 import { IChatChannelBase } from '../interface';
-
-type TargetType = 'dialog' | 'agent';
+import { toChatChannelTargetValue } from '../connect-target';
 
 const ConnectDialogModal = ({
   visible,
@@ -38,64 +37,48 @@ const ConnectDialogModal = ({
   channel?: IChatChannelBase;
 }) => {
   const { t } = useTranslation();
-  const { targets: dialogs } = useChatChannelDialogList();
-  const { targets: agents } = useChatChannelAgentList();
-  const { connect, connecting } = useConnectChatChannelTarget();
-  const [targetType, setTargetType] = useState<TargetType>('dialog');
-  const [dialogId, setDialogId] = useState<string | undefined>(
-    channel?.chat_id ?? undefined,
-  );
-  const [agentId, setAgentId] = useState<string | undefined>(
-    channel?.agent_id ?? undefined,
+  const { dialogs } = useChatChannelDialogList();
+  const { data: agents } = useFetchAllAgentList();
+  const { connect, connecting } = useConnectChatChannelDialog();
+  const [targetValue, setTargetValue] = useState<string | undefined>(
+    channel?.agent_id
+      ? toChatChannelTargetValue('agent', channel.agent_id)
+      : toChatChannelTargetValue('chat', channel?.chat_id),
   );
 
   useEffect(() => {
-    setDialogId(channel?.chat_id ?? undefined);
-    setAgentId(channel?.agent_id ?? undefined);
-    setTargetType(channel?.agent_id ? 'agent' : 'dialog');
+    setTargetValue(
+      channel?.agent_id
+        ? toChatChannelTargetValue('agent', channel.agent_id)
+        : toChatChannelTargetValue('chat', channel?.chat_id),
+    );
   }, [channel?.id, channel?.chat_id, channel?.agent_id]);
 
-  const dialogOptions = useMemo(
-    () => dialogs.map((d) => ({ label: d.name, value: d.id })),
-    [dialogs],
+  const options = useMemo(
+    () => [
+      ...(dialogs || []).map((d) => ({
+        label: `[${t('setting.chatChannelAssistant')}] ${d.name}`,
+        value: toChatChannelTargetValue('chat', d.id)!,
+      })),
+      ...(agents || [])
+        .filter((agent) => 'title' in agent)
+        .map((agent) => ({
+          label: `[${t('setting.chatChannelAgent')}] ${agent.title}`,
+          value: toChatChannelTargetValue('agent', agent.id)!,
+        })),
+    ],
+    [agents, dialogs, t],
   );
-  const agentOptions = useMemo(
-    () => agents.map((a) => ({ label: a.name, value: a.id })),
-    [agents],
-  );
-
-  const handleTargetTypeChange = (type: TargetType) => {
-    setTargetType(type);
-  };
-
-  const handleDialogChange = (value: string) => {
-    setDialogId(value || undefined);
-  };
-
-  const handleAgentChange = (value: string) => {
-    setAgentId(value || undefined);
-  };
 
   const handleConfirm = async () => {
     if (!channel) {
       return;
     }
-    const result = await connect({
-      channelId: channel.id,
-      dialogId: targetType === 'dialog' ? dialogId || null : null,
-      agentId: targetType === 'agent' ? agentId || null : null,
-    });
+    const result = await connect({ channelId: channel.id, targetValue });
     if (result.code === 0) {
       hideModal();
     }
   };
-
-  const targetTypeButtonClass = (active: boolean) =>
-    `flex-1 px-2 py-1.5 text-sm rounded-md border transition-colors ${
-      active
-        ? 'bg-bg-card text-text-primary border-border-button'
-        : 'text-text-secondary border-transparent hover:bg-bg-card'
-    }`;
 
   return (
     <Modal
@@ -116,59 +99,18 @@ const ConnectDialogModal = ({
     >
       <div className="px-2 py-4 flex flex-col gap-1.5">
         <label className="text-sm text-text-secondary">
-          {t('setting.connectTargetType')}
+          {t('setting.selectDialog')}
         </label>
-        <div className="flex gap-2 bg-bg-card rounded-md p-1">
-          <Button
-            type={'button'}
-            variant={'ghost'}
-            className={targetTypeButtonClass(targetType === 'dialog')}
-            onClick={() => handleTargetTypeChange('dialog')}
-          >
-            {t('setting.targetAssistant')}
-          </Button>
-          <Button
-            type={'button'}
-            variant={'ghost'}
-            className={targetTypeButtonClass(targetType === 'agent')}
-            onClick={() => handleTargetTypeChange('agent')}
-          >
-            {t('setting.targetAgent')}
-          </Button>
-        </div>
-        {targetType === 'dialog' ? (
-          <>
-            <label className="text-sm text-text-secondary">
-              {t('setting.selectDialog')}
-            </label>
-            <SelectWithSearch
-              value={dialogId}
-              onChange={handleDialogChange}
-              options={dialogOptions}
-              allowClear
-              placeholder={t('setting.selectDialog')}
-            />
-            <p className="text-xs text-text-secondary/70 mt-1">
-              {t('setting.connectDialogTip')}
-            </p>
-          </>
-        ) : (
-          <>
-            <label className="text-sm text-text-secondary">
-              {t('setting.selectAgent')}
-            </label>
-            <SelectWithSearch
-              value={agentId}
-              onChange={handleAgentChange}
-              options={agentOptions}
-              allowClear
-              placeholder={t('setting.selectAgent')}
-            />
-            <p className="text-xs text-text-secondary/70 mt-1">
-              {t('setting.connectAgentTip')}
-            </p>
-          </>
-        )}
+        <RAGFlowSelect
+          value={targetValue}
+          onChange={(val: string) => setTargetValue(val || undefined)}
+          options={options}
+          allowClear
+          placeholder={t('setting.selectDialog')}
+        />
+        <p className="text-xs text-text-secondary/70 mt-1">
+          {t('setting.connectDialogTip')}
+        </p>
       </div>
     </Modal>
   );
