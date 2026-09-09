@@ -157,3 +157,13 @@ def test_string_comparison_still_matches(monkeypatch):
     cpn._invoke()
 
     assert cpn.output("_next") == ["case_target"]
+
+
+def test_numeric_variable_mixed_type_ordering_is_non_match(monkeypatch):
+    mod = _load_switch_module(monkeypatch)
+    for op in (">", "<", "≥", "≤"):
+        cpn = _switch(mod, {"score": 5}, [{"cpn_id": "score", "operator": op, "value": "abc"}])
+
+        cpn._invoke()
+
+        assert cpn.output("_next") == ["else_target"], op

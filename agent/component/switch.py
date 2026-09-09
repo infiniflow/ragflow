@@ -123,9 +123,9 @@ class Switch(ComponentBase, ABC):
                 try:
                     return True if input > value else False
                 except TypeError:
-                    # Mixed types (e.g. number vs. string): compare
-                    # lexicographically instead of crashing the run.
-                    return True if str(input) > str(value) else False
+                    # Mixed types (e.g. number vs. unparseable string) are
+                    # unordered: treat as a non-match instead of crashing.
+                    return False
         elif operator == "<":
             try:
                 return True if float(input) < float(value) else False
@@ -133,9 +133,9 @@ class Switch(ComponentBase, ABC):
                 try:
                     return True if input < value else False
                 except TypeError:
-                    # Mixed types (e.g. number vs. string): compare
-                    # lexicographically instead of crashing the run.
-                    return True if str(input) < str(value) else False
+                    # Mixed types (e.g. number vs. unparseable string) are
+                    # unordered: treat as a non-match instead of crashing.
+                    return False
         elif operator == "≥":
             try:
                 return True if float(input) >= float(value) else False
@@ -143,9 +143,9 @@ class Switch(ComponentBase, ABC):
                 try:
                     return True if input >= value else False
                 except TypeError:
-                    # Mixed types (e.g. number vs. string): compare
-                    # lexicographically instead of crashing the run.
-                    return True if str(input) >= str(value) else False
+                    # Mixed types (e.g. number vs. unparseable string) are
+                    # unordered: treat as a non-match instead of crashing.
+                    return False
         elif operator == "≤":
             try:
                 return True if float(input) <= float(value) else False
@@ -153,9 +153,9 @@ class Switch(ComponentBase, ABC):
                 try:
                     return True if input <= value else False
                 except TypeError:
-                    # Mixed types (e.g. number vs. string): compare
-                    # lexicographically instead of crashing the run.
-                    return True if str(input) <= str(value) else False
+                    # Mixed types (e.g. number vs. unparseable string) are
+                    # unordered: treat as a non-match instead of crashing.
+                    return False
 
         raise ValueError(f"Not supported operator: {operator}")
 
