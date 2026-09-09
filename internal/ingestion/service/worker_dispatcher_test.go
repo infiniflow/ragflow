@@ -44,6 +44,12 @@ type dispatcherTestQueue struct {
 
 func (q *dispatcherTestQueue) PullMessage(ctx context.Context) (common.TaskHandle, error) {
 	q.mu.Lock()
+	if q.next == len(q.pulls) {
+		q.mu.Unlock()
+		q.calls <- struct{}{}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	pull := q.pulls[q.next]
 	q.next++
 	q.mu.Unlock()
@@ -66,70 +72,45 @@ func closedChannel() <-chan struct{} {
 	return ready
 }
 
-// TestWorkerDispatcherStartsNewPullWhileEarlierPullWaits prevents a pending
-// PullMessages(1) from delaying a newly-idle worker until its one-second
-// expiry.
-func TestWorkerDispatcherStartsNewPullWhileEarlierPullWaits(t *testing.T) {
+// TestWorkerDispatcherLimitsPendingPullsToOne ensures an empty pull does not
+// cause the dispatcher to create another outstanding broker request.
+func TestWorkerDispatcherLimitsPendingPullsToOne(t *testing.T) {
+	firstReady := make(chan struct{})
 	queue := &dispatcherTestQueue{
-		pulls: []dispatcherPullResult{{}, {}},
+		pulls: []dispatcherPullResult{{ready: firstReady}, {}},
 		calls: make(chan struct{}, 2),
 	}
 	previousQueue := engine.GetMessageQueueEngine()
 	engine.SetMessageQueueEngine(queue)
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousQueue) })
 
-	ingestor := newUnitIngestor("test-independent-pulls", 2, nil)
+	ingestor := newUnitIngestor("test-single-pull", 2, nil)
 	ingestor.dispatcherWg.Add(1)
 	go ingestor.consumeLoop()
 	t.Cleanup(func() {
 		ingestor.dispatchCancel()
 		ingestor.dispatcherWg.Wait()
-		ingestor.pullWg.Wait()
 	})
 
 	ingestor.workerQueue <- &worker{id: 1, inbox: make(chan common.TaskHandle)}
 	select {
 	case <-queue.calls:
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("first idle worker did not start PullMessages(1)")
+		t.Fatal("first idle worker did not start PullMessage")
 	}
 
 	ingestor.workerQueue <- &worker{id: 2, inbox: make(chan common.TaskHandle)}
 	select {
 	case <-queue.calls:
+		t.Fatal("dispatcher started a second PullMessage before the first completed")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(firstReady)
+	select {
+	case <-queue.calls:
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("new idle worker waited for the earlier pull to expire")
-	}
-}
-
-// TestWorkerDispatcherStartsPullForEachAvailableWorker ensures each idle
-// worker gets an independent single-message pull request.
-func TestWorkerDispatcherStartsPullForEachAvailableWorker(t *testing.T) {
-	queue := &dispatcherTestQueue{
-		pulls: []dispatcherPullResult{{}, {}},
-		calls: make(chan struct{}, 2),
-	}
-	previousQueue := engine.GetMessageQueueEngine()
-	engine.SetMessageQueueEngine(queue)
-	t.Cleanup(func() { engine.SetMessageQueueEngine(previousQueue) })
-
-	ingestor := newUnitIngestor("test-visible-workers", 2, nil)
-	ingestor.workerQueue <- &worker{id: 1, inbox: make(chan common.TaskHandle)}
-	ingestor.workerQueue <- &worker{id: 2, inbox: make(chan common.TaskHandle)}
-	ingestor.dispatcherWg.Add(1)
-	go ingestor.consumeLoop()
-	t.Cleanup(func() {
-		ingestor.dispatchCancel()
-		ingestor.dispatcherWg.Wait()
-		ingestor.pullWg.Wait()
-	})
-
-	for range 2 {
-		select {
-		case <-queue.calls:
-		case <-time.After(250 * time.Millisecond):
-			t.Fatal("each visible worker did not start PullMessages(1)")
-		}
+		t.Fatal("dispatcher did not start the next pull after the empty result")
 	}
 }
 
@@ -152,7 +133,6 @@ func TestWorkerDispatcherHandsOffPulledMessageImmediately(t *testing.T) {
 	t.Cleanup(func() {
 		ingestor.dispatchCancel()
 		ingestor.dispatcherWg.Wait()
-		ingestor.pullWg.Wait()
 	})
 
 	select {
@@ -172,85 +152,25 @@ func TestWorkerDispatcherHandsOffPulledMessageImmediately(t *testing.T) {
 	}
 }
 
-func TestPullReturnsWorkerWhenQueueIsEmpty(t *testing.T) {
-	queue := &dispatcherTestQueue{
-		pulls: []dispatcherPullResult{{ready: closedChannel()}},
-		calls: make(chan struct{}, 1),
-	}
-	ingestor := newUnitIngestor("test-empty-pull", 1, nil)
-	worker := &worker{id: 1, inbox: make(chan common.TaskHandle)}
-
-	ingestor.pullWg.Add(1)
-	go ingestor.consumePull(queue, worker)
-	t.Cleanup(func() {
-		ingestor.dispatchCancel()
-		ingestor.pullWg.Wait()
-	})
-
-	select {
-	case <-queue.calls:
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("pull did not start")
-	}
-	ingestor.pullWg.Wait()
-
-	select {
-	case returned := <-ingestor.workerQueue:
-		if returned != worker {
-			t.Fatalf("returned worker = %d, want worker %d", returned.id, worker.id)
-		}
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("empty pull did not return its worker")
-	}
-}
-
-func TestPullReturnsWorkerImmediatelyAfterDeadline(t *testing.T) {
-	queue := &dispatcherTestQueue{
-		pulls: []dispatcherPullResult{{err: context.DeadlineExceeded, ready: closedChannel()}},
-		calls: make(chan struct{}, 1),
-	}
-	ingestor := newUnitIngestor("test-empty-deadline-pull", 1, nil)
-	worker := &worker{id: 1, inbox: make(chan common.TaskHandle)}
-
-	ingestor.pullWg.Add(1)
-	go ingestor.consumePull(queue, worker)
-	t.Cleanup(func() {
-		ingestor.dispatchCancel()
-		ingestor.pullWg.Wait()
-	})
-
-	select {
-	case <-queue.calls:
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("pull did not start")
-	}
-	select {
-	case returned := <-ingestor.workerQueue:
-		if returned != worker {
-			t.Fatalf("returned worker = %d, want worker %d", returned.id, worker.id)
-		}
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("empty pull deadline delayed the worker with failed-pull backoff")
-	}
-	ingestor.pullWg.Wait()
-}
-
-func TestPullCancellationLeavesReservedHandleUnsettled(t *testing.T) {
+func TestWorkerDispatcherNacksReservedHandleOnShutdown(t *testing.T) {
 	returned := make(chan struct{})
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "reserved-on-stop"}}
 	queue := &dispatcherTestQueue{
 		pulls: []dispatcherPullResult{{handle: handle, ready: closedChannel(), returned: returned}},
 		calls: make(chan struct{}, 1),
 	}
-	ingestor := newUnitIngestor("test-cancel-reserved-handle", 1, nil)
+	previousQueue := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(queue)
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previousQueue) })
+	ingestor := newUnitIngestor("test-nack-reserved-handle", 1, nil)
 	worker := &worker{id: 1, inbox: make(chan common.TaskHandle)}
-
-	ingestor.pullWg.Add(1)
-	go ingestor.consumePull(queue, worker)
 	t.Cleanup(func() {
 		ingestor.dispatchCancel()
-		ingestor.pullWg.Wait()
+		ingestor.dispatcherWg.Wait()
 	})
+	ingestor.workerQueue <- worker
+	ingestor.dispatcherWg.Add(1)
+	go ingestor.consumeLoop()
 
 	select {
 	case <-queue.calls:
@@ -266,15 +186,15 @@ func TestPullCancellationLeavesReservedHandleUnsettled(t *testing.T) {
 	ingestor.dispatchCancel()
 	waitDone := make(chan struct{})
 	go func() {
-		ingestor.pullWg.Wait()
+		ingestor.dispatcherWg.Wait()
 		close(waitDone)
 	}()
 	select {
 	case <-waitDone:
 	case <-time.After(250 * time.Millisecond):
-		t.Fatal("cancelled hand-off blocked pull shutdown")
+		t.Fatal("cancelled hand-off blocked dispatcher shutdown")
 	}
-	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
-		t.Fatalf("reserved handle settlement = %d Ack / %d Nack, want none", handle.acks.Load(), handle.nacks.Load())
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 1 {
+		t.Fatalf("reserved handle settlement = %d Ack / %d Nack, want 0 Ack / 1 Nack", handle.acks.Load(), handle.nacks.Load())
 	}
 }

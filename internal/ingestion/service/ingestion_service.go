@@ -82,7 +82,6 @@ type Ingestor struct {
 
 	// Worker pool
 	workerQueue  chan *worker
-	pullWg       sync.WaitGroup
 	dispatcherWg sync.WaitGroup
 	workerWg     sync.WaitGroup
 	startOnce    sync.Once
@@ -222,17 +221,16 @@ func (e *Ingestor) start() error {
 	e.startDatasetKnowledgeCompile()
 
 	// Run the main tasks.RAGFLOW dispatcher off the caller's goroutine so Start
-	// returns promptly. It is joined before pullWg in Stop, preventing a
-	// WaitGroup Add/Wait race.
+	// returns promptly. Stop joins it before cancelling task execution.
 	e.dispatcherWg.Add(1)
 	go e.consumeLoop()
 
 	return nil
 }
 
-// consumeLoop is the worker dispatcher for tasks.RAGFLOW. It starts a Pull only
-// for concrete workers that are waiting in workerQueue. An executing worker
-// cannot register in workerQueue until its task completes, preventing work prefetch.
+// consumeLoop is the worker dispatcher for tasks.RAGFLOW. It waits for an
+// available worker before synchronously pulling one task, preventing prefetch
+// and limiting this ingestor to one outstanding broker request.
 func (e *Ingestor) consumeLoop() {
 	defer e.dispatcherWg.Done()
 	msgQueueEngine := engine.GetMessageQueueEngine()
@@ -244,48 +242,45 @@ func (e *Ingestor) consumeLoop() {
 		case w = <-e.workerQueue:
 		}
 		if e.dispatchCtx.Err() != nil {
-			e.returnWorkers([]*worker{w})
+			e.returnWorker(w)
 			return
 		}
-		e.pullWg.Add(1)
-		go e.consumePull(msgQueueEngine, w)
-	}
-}
 
-func (e *Ingestor) consumePull(messageQueueEngine engine.MessageQueue, w *worker) {
-	defer e.pullWg.Done()
-
-	pullStart := time.Now()
-	pullCtx, cancel := context.WithTimeout(e.dispatchCtx, taskPullRequestTimeout)
-	defer cancel()
-	handle, err := messageQueueEngine.PullMessage(pullCtx)
-	if err != nil {
-		e.logPullError(err)
-		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			e.waitAfterPullError()
+		pullStart := time.Now()
+		pullCtx, cancel := context.WithTimeout(e.dispatchCtx, taskPullRequestTimeout)
+		handle, err := msgQueueEngine.PullMessage(pullCtx)
+		cancel()
+		if err != nil {
+			e.returnWorker(w)
+			e.logPullError(err)
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				e.waitAfterPullError()
+			}
+			continue
 		}
-		e.returnWorkers([]*worker{w})
-		return
-	}
-	if handle == nil {
-		e.returnWorkers([]*worker{w})
-		return
-	}
+		if handle == nil {
+			e.returnWorker(w)
+			continue
+		}
 
-	recvTime := time.Now()
-	latency := time.Since(pullStart)
-	common.Debug(fmt.Sprintf("Pull delivered handle in %v", latency),
-		zap.Duration("pull_first_handle_latency", latency),
-	)
-	select {
-	case w.inbox <- handle:
-		handoffDuration := time.Since(recvTime)
-		common.Debug(fmt.Sprintf("Handed off handle to worker %d in %v", w.id, handoffDuration),
-			zap.Int32("worker_id", w.id),
-			zap.Duration("handoff_duration", handoffDuration),
+		recvTime := time.Now()
+		latency := time.Since(pullStart)
+		common.Debug(fmt.Sprintf("Pull delivered handle in %v", latency),
+			zap.Duration("pull_first_handle_latency", latency),
 		)
-	case <-e.dispatchCtx.Done():
-		e.returnWorkers([]*worker{w})
+		select {
+		case w.inbox <- handle:
+			handoffDuration := time.Since(recvTime)
+			common.Debug(fmt.Sprintf("Handed off handle to worker %d in %v", w.id, handoffDuration),
+				zap.Int32("worker_id", w.id),
+				zap.Duration("handoff_duration", handoffDuration),
+			)
+		case <-e.dispatchCtx.Done():
+			if err := handle.Nack(); err != nil {
+				common.Error("nack task after shutdown interrupted handoff", err)
+			}
+			return
+		}
 	}
 }
 
@@ -303,13 +298,10 @@ func (e *Ingestor) waitAfterPullError() {
 	}
 }
 
-func (e *Ingestor) returnWorkers(workers []*worker) {
-	for _, w := range workers {
-		select {
-		case e.workerQueue <- w:
-		case <-e.dispatchCtx.Done():
-			return
-		}
+func (e *Ingestor) returnWorker(w *worker) {
+	select {
+	case e.workerQueue <- w:
+	case <-e.dispatchCtx.Done():
 	}
 }
 
@@ -1174,9 +1166,8 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 	}
 }
 
-// Stop first stops worker registration and Pull batches, then cancels execution
-// after no goroutine can add another Pull to pullWg. The caller's deadline
-// bounds the wait for non-cooperative task execution.
+// Stop first stops worker registration and the dispatcher's Pull, then cancels
+// execution. The caller's deadline bounds the wait for non-cooperative tasks.
 func (e *Ingestor) Stop(ctx context.Context) {
 	common.Info(fmt.Sprintf("Stopping ingestor %s", e.id))
 	e.dispatchCancel()
@@ -1184,7 +1175,6 @@ func (e *Ingestor) Stop(ctx context.Context) {
 	waitDone := make(chan struct{})
 	go func() {
 		e.dispatcherWg.Wait()
-		e.pullWg.Wait()
 		e.cancel()
 		e.workerWg.Wait()
 		e.compileWg.Wait()
