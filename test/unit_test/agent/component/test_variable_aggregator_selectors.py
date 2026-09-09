@@ -146,3 +146,12 @@ def test_mixed_selectors_pick_first_available(monkeypatch):
     cpn._invoke()
 
     assert cpn.output("G") == "fallback"
+
+
+def test_whitespace_only_selector_is_skipped(monkeypatch):
+    mod = _load_variable_aggregator_module(monkeypatch)
+    cpn = _component(mod, _Canvas({"b@y": "fallback"}), [{"group_name": "G", "variables": [" ", "b@y"]}])
+
+    cpn._invoke()
+
+    assert cpn.output("G") == "fallback"

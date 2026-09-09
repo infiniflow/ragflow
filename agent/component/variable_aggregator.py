@@ -70,6 +70,9 @@ class VariableAggregator(ComponentBase):
                 # reference strings (SDK/API-built canvases); param_refs
                 # already accepts both, so resolve them the same way here.
                 ref = selector.get("value") if isinstance(selector, dict) else selector
+                if not isinstance(ref, str):
+                    continue
+                ref = ref.strip("{}").strip()
                 if not ref:
                     continue
                 val = self._canvas.get_variable_value(ref)
