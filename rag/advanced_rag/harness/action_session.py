@@ -2192,12 +2192,26 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
     if fanout_hint:
         user += "\n\nCandidate aspects already identified:\n" + "\n".join(f"- {h}" for h in fanout_hint)
     tmo = min(_INIT_TIMEOUT_S, deadline_left or _INIT_TIMEOUT_S)
+
+    # ``_init_chat`` runs on the raw model (it bypasses CountingChatModel like
+    # ``_base_chat_mdl`` does), so the slot-table decomposition call would be
+    # invisible to the phase accounting.  Count it explicitly.
+    def _book_raw_call() -> None:
+        try:
+            from rag.advanced_rag.harness.stats import record_external_call
+
+            record_external_call(None)
+        except Exception:  # noqa: BLE001
+            pass
+
     raw = await _init_chat(tools, system, user, tmo)
+    _book_raw_call()
     data = extract_json(raw) or {}
     if not data:
         # one quick retry — transient provider stalls were observed (45s with
         # zero bytes); a second attempt succeeded in production logs.
         raw = await _init_chat(tools, system, user, tmo)
+        _book_raw_call()
         data = extract_json(raw) or {}
     slots = []
     for i, s in enumerate(data.get("slots") or []):
