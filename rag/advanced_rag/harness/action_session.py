@@ -54,6 +54,15 @@ _EMPTY_STRIKES = 2
 _NEAR_DUP_JACCARD = 0.8
 _RETRIEVAL_TOOLS = ("search_chunks", "grep_chunks", "grep_search")
 
+# Hard cap on the shared evidence pool (tools.kbinfos["chunks"]). Mirrors
+# _MAX_SNIPPET_POOL / _SCA_VIEW_CAP (=60) in agentic_rag_graph.py: once the pool
+# is saturated, further admits cannot reach the SCA view or improve the answer,
+# so the action session stops admitting (observed pools otherwise grew to ~106).
+_EVIDENCE_POOL_CAP = 60
+# Per-process flag so the "pool FULL" log line is emitted once per fill, not once
+# per rejected chunk. The pool never shrinks mid-session, so no reset is needed.
+_EVIDENCE_POOL_STATE = {"full_logged": False}
+
 
 def _search_tokens(q: str) -> set[str]:
     """Lowercased alphanumeric tokens of a query for near-duplicate detection."""
@@ -189,10 +198,11 @@ _RETRIEVE_TOOL_SPEC = {
     "function": {
         "name": "retrieve",
         "description": (
-            "Keyword-first search of the fixed document corpus. Pass natural-"
-            "language queries; returns SHORT snippets of the most relevant "
-            "passages (exact-term matched where possible). Use multiple queries "
-            "to cover different aspects. Supports 1-3 queries per call."
+            "WHEN TO CALL: Use when you know or suspect exact surface terms or keywords in the corpus (names, titles, codes, phrases). Best as the first recall pass; send 1-3 queries covering different facets."
+            "DO NOT CALL: When you already hold a doc_id and need to read it (use list_chunks); when the answer shares no surface words with any query (use search_chunks); for counting or enumerating a whole document."
+            "ARGUMENTS: query — array of 1-3 strings (natural-language queries). Note: doc_scope exists inside the executor but is NOT a declared parameter; do not pass it."
+            "OUTPUT: Short exact-term-matched snippets, each carrying its doc_id and chunk id. Status ok means new evidence entered the pool; redundant means everything was already there."
+            "IF IT FAILS: miss (empty payload) means this query matched nothing — rephrase or switch to search_chunks; do not conclude the corpus lacks the fact. redundant means stop re-searching and emit a state patch."
         ),
         "parameters": {
             "type": "object",
@@ -214,10 +224,11 @@ _LIST_CHUNKS_TOOL_SPEC = {
     "function": {
         "name": "list_chunks",
         "description": (
-            "Deep-read the FULL text of one document by doc_id (returned in "
-            "retrieve snippets). Use for enumeration / count / arithmetic answers "
-            "when snippets are insufficient. Returns all chunks of the document "
-            "in reading order. One doc_id per call."
+            "WHEN TO CALL: You need the FULL text of one document (enumeration, counts, arithmetic over many passages) and you already have its doc_id from a prior tool result."
+            "DO NOT CALL: When you only need a single passage (use search_chunks or retrieve first); when you have no doc_id yet (locate it via navigate_tree or search_chunks first)."
+            "ARGUMENTS: doc_id — string, the document id seen in a retrieve / search_chunks / navigate result. ONLY doc_id is accepted; there is no chunk_ids argument, and the tool returns the whole document (capped at 30 chunks)."
+            "OUTPUT: All chunks of the document in reading order. ok = new evidence; redundant = already in pool."
+            "IF IT FAILS: An unknown or blank doc_id yields an empty result (query-level miss, not a dataset fact) — pick a different doc_id or locate one first. Do not treat this as a reason to disable the tool."
         ),
         "parameters": {
             "type": "object",
@@ -237,18 +248,11 @@ _SEARCH_CHUNKS_TOOL_SPEC = {
     "function": {
         "name": "search_chunks",
         "description": (
-            "SEMANTIC retrieval (hybrid vector+BM25) with COMPILED-STRUCTURE "
-            "EXPANSION. Use as the PRIMARY recall tool when exact-term "
-            "``retrieve`` returns nothing useful, or when the dataset is large and "
-            "you are unsure which document holds the answer — the answer passage "
-            "may share NO surface words with the query. "
-            "Compiled expansion: automatically appends related chunks from the "
-            "dataset's compiled structure (page index, tree/heading hierarchy, "
-            "knowledge graph, wiki pages when present) so a semantic hit carries "
-            "its structural neighbours (parent/child headings, sibling pages). "
-            "If the dataset has NO compiled structure (incl. no wiki), expansion "
-            "is a no-op — no error, just semantic hits. "
-            "Returns snippet chunks ranked by relevance. 1-2 queries per call."
+            "WHEN TO CALL: Primary semantic recall. Use when exact retrieve returns nothing useful, when the corpus is large and you are unsure which document holds the answer, or when the answer passage shares no surface words with your query. Send 1-2 queries."
+            "DO NOT CALL: When you already have a doc_id and want to read that document (use list_chunks); when a single exact passage would be found faster by grep-style retrieve."
+            "ARGUMENTS: query — array of 1-2 strings. Compiled-structure expansion is automatic and a no-op on datasets without compiled structure, so no extra argument is needed."
+            "OUTPUT: Relevance-ranked snippet chunks, possibly with structural neighbours (parent/child headings, sibling pages) appended. ok = new evidence; redundant = already seen."
+            "IF IT FAILS: miss means this query matched nothing — change the angle or fall back to retrieve or navigate_tree. Re-issuing a near-duplicate query is skipped as redundant, so vary the query instead of paraphrasing it."
         ),
         "parameters": {
             "type": "object",
@@ -272,11 +276,11 @@ _WEB_SEARCH_TOOL_SPEC = {
     "function": {
         "name": "web_search",
         "description": (
-            "Search the open WEB. Use ONLY when the needed fact is world "
-            "knowledge / recent event / not covered by the fixed corpus — e.g. "
-            "a current event, a person's alive-now status, or a statistic newer "
-            "than the corpus. If the fact plausibly lives in the documents, "
-            "prefer corpus tools (retrieve/search_chunks) first. 1-2 queries per call."
+            "WHEN TO CALL: The needed fact is world knowledge, a recent event, or newer than the corpus (a current event, a person's alive-now status, a fresh statistic). This tool only appears when a web provider is configured."
+            "DO NOT CALL: When the fact plausibly lives in the fixed corpus — prefer retrieve or search_chunks first. For corpus-only questions this tool is unavailable."
+            "ARGUMENTS: query — array of 1-2 strings."
+            "OUTPUT: Web results shaped like corpus chunks, merged into the same evidence pool."
+            "IF IT FAILS: error (no provider) — it will not appear at all this session; if it does appear and fails, switch to corpus tools permanently and do not retry it."
         ),
         "parameters": {
             "type": "object",
@@ -298,23 +302,11 @@ _NAVIGATE_TREE_TOOL_SPEC = {
     "function": {
         "name": "navigate_tree",
         "description": (
-            "LOCATE the RIGHT DOCUMENT among MANY before deep-reading. Use it "
-            "BEFORE search_chunks when the dataset is large and you have no "
-            "doc_id yet — it routes by TOPIC/CLUSTERING similarity over the "
-            "compiled document-navigation tree (not exact surface words), so it "
-            "finds the document even when your query words differ from its text. "
-            "Returns candidate doc_ids + a first-chunk summary of each. "
-            "This is the FIRST hop of a navigation chain: "
-            "navigate_tree(query) -> doc_id -> navigate_structure(doc_id, ...) "
-            "-> list_chunks(doc_id, chunk_ids). "
-            "Use when: the question names a topic/entity/alias but you do not "
-            "know which document discusses it; search_chunks returned scattered "
-            "hits across many docs and you must pick the source. "
-            "Do NOT use if you already hold a doc_id (go straight to "
-            "navigate_structure) or if the answer is likely a single exact "
-            "passage (prefer retrieve/search_chunks). "
-            "If the dataset has no compiled document navigation tree, it returns "
-            "empty — fall back to search_chunks."
+            "WHEN TO CALL: The question names a topic, entity, or alias but you do NOT know which document discusses it, especially on a large corpus. Routes by topic or cluster similarity over the compiled navigation tree."
+            "DO NOT CALL: When you already hold a doc_id (go straight to navigate_structure); when the answer is likely a single exact passage (use retrieve or search_chunks)."
+            "ARGUMENTS: query — string, the topic / entity / alias whose document(s) to locate. Note: keywords is read by the executor but is NOT a declared parameter; do not pass it."
+            "OUTPUT: Candidate doc_ids plus a first-chunk summary of each; these become your known-docs set for the next step."
+            "IF IT FAILS: empty (no_structure) means the dataset has no compiled navigation tree — immediately switch to search_chunks. A second such empty disables this tool for the rest of the session, so do not retry it."
         ),
         "parameters": {
             "type": "object",
@@ -334,18 +326,11 @@ _NAVIGATE_STRUCTURE_TOOL_SPEC = {
     "function": {
         "name": "navigate_structure",
         "description": (
-            "PINPOINT A PASSAGE inside ONE document using its compiled structure "
-            "(heading/catalog tree, concept mindmap, or entity graph) — the "
-            "in-document counterpart of navigate_tree. "
-            "Use AFTER you know the doc_id (from navigate_tree / search_chunks / "
-            "retrieve) and need to find where the answer lives WITHOUT reading "
-            "every chunk. Returns the structure outline annotated with matching "
-            "chunk_ids (reading-order aware). Then call list_chunks(doc_id, "
-            "chunk_ids) to read exactly those. "
-            "kind: 'catalog' (default) for page-index/heading/timeline trees, "
-            "'mindmap' for concept maps, 'graph' for entity-relation graphs. "
-            "If the document has NO compiled structure, an empty <doc/> is "
-            "returned — fall back to list_chunks to read the full document."
+            "WHEN TO CALL: You know the doc_id and need to PINPOINT where the answer lives inside that one document, without reading every chunk. The in-document counterpart of navigate_tree."
+            "DO NOT CALL: When you have no doc_id yet; when the document has no compiled structure (use list_chunks to read the full document)."
+            "ARGUMENTS: doc_id — string, required. query — string, what to locate within the document. kind — enum catalog / mindmap / graph, default catalog (compiled-structure kind)."
+            "OUTPUT: The structure outline annotated with matching chunk_ids, reading-order aware. ok = useful hits; poor (chunk_ptrs = 0) means it drilled to nothing usable."
+            "IF IT FAILS: empty (no_structure) — try another doc_id or kind, or fall back to list_chunks / search_chunks. poor — read the full document via list_chunks(doc_id). A second empty disables the tool for the session."
         ),
         "parameters": {
             "type": "object",
@@ -364,19 +349,11 @@ _CALCULATE_TOOL_SPEC = {
     "function": {
         "name": "calculate",
         "description": (
-            "COMPUTE a numeric answer by generating and safely running code. "
-            "MANDATORY whenever the question asks you to DERIVE a number by "
-            "combining facts you found (sum/difference/percentage/ratio/sort/"
-            "compare/difference in length/age, price, area, growth, etc.) — do "
-            "NOT do arithmetic mentally. Language-neutral: the question and "
-            "facts may be in ANY language (English, Chinese, ...); pass the "
-            "numbers verbatim as written in the evidence regardless of language. "
-            "Steps: (1) collect every needed number first (retrieve / "
-            "search_chunks / navigate_* / list_chunks); (2) call calculate with "
-            "the question + ALL those numbers; (3) report the computed result "
-            "verbatim. If a needed number is missing, search for it first — do "
-            "not estimate. If the answer IS one of the stated numbers (no "
-            "combination needed), answer directly without this tool."
+            "WHEN TO CALL: The question asks you to DERIVE a number by combining facts you found (sum / difference / percentage / ratio / sort / compare / length / age / price / area / growth). NEVER do arithmetic mentally."
+            "DO NOT CALL: When the answer IS one of the stated numbers (no combination needed) — answer directly. When a needed number is still missing — retrieve it first; do not estimate."
+            "ARGUMENTS: question — string, the user question verbatim. facts — array of strings, the numbers or facts found in evidence, verbatim (keep the original language; pass them exactly as written)."
+            "OUTPUT: an object with expression and result — report the computed result verbatim."
+            "IF IT FAILS: poor (no numeric answer derivable) — retrieve more numbers, or answer directly if the answer is already stated. Never fabricate a computation."
         ),
         "parameters": {
             "type": "object",
@@ -652,6 +629,22 @@ def _admit_evidence(kbinfos, kb_seen, c, out, ids, seen, include_doc_id=True) ->
     Imports the chunk helpers locally to keep ``tools.search`` (and its heavy
     deepdoc dependency chain) out of module-import time.
     """
+    # Early-stop: the shared evidence pool is hard-capped. Once it reaches the
+    # cap, admit no further chunk — the SCA view and compose can only consume the
+    # first 60 anyway (see _MAX_SNIPPET_POOL / _SCA_VIEW_CAP in agentic_rag_graph),
+    # so extra admits only bloat the pool (observed growth up to ~106) without
+    # improving the answer.
+    _pool = kbinfos.get("chunks", []) if isinstance(kbinfos, dict) else (getattr(kbinfos, "chunks", []) or [])
+    if len(_pool) >= _EVIDENCE_POOL_CAP:
+        if not _EVIDENCE_POOL_STATE["full_logged"]:
+            _EVIDENCE_POOL_STATE["full_logged"] = True
+            _LOG.info(
+                "[Action Session] evidence pool FULL (%d chunks >= cap %d); early-stopping admit of further chunks.",
+                len(_pool),
+                _EVIDENCE_POOL_CAP,
+            )
+        return False
+
     from rag.advanced_rag.harness.tools.search import _chunk_id, _chunk_text, _doc_id, _is_table_chunk
 
     cid = _chunk_id(c)
@@ -752,10 +745,10 @@ async def _exec_search_chunks(tools, queries: list, use_compiled: bool = False) 
     """Semantic retrieval (hybrid vector+BM25, narrow bypass) — the react-style
     channel that finds passages sharing NO surface words with the query.
 
-    ``use_compiled=True`` (high mode) turns on hybrid_search's COMPILED
-    expansion: page-index / tree / knowledge-graph / wiki pages (when the
-    dataset has them) are appended to a semantic hit so its structural
-    neighbours (parent/child headings, sibling wiki pages) come along.
+    ``use_compiled=True`` (enabled in ALL modes, not just high) turns on
+    hybrid_search's COMPILED expansion: page-index / tree / knowledge-graph /
+    wiki pages (when the dataset has them) are appended to a semantic hit so its
+    structural neighbours (parent/child headings, sibling wiki pages) come along.
     Datasets with NO compiled structure are unaffected — expansion is a no-op.
     """
     from rag.advanced_rag.harness.tools.search import hybrid_search
