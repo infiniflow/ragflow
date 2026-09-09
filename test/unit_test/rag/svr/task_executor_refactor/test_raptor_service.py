@@ -188,12 +188,11 @@ class TestRaptorServiceRunRaptorForKb:
         """RAPTOR config with file-level scope."""
         return {
             "raptor": {
-                "tree_builder": "raptor",
-                "clustering_method": "gmm",
                 "scope": "file",
                 "prompt": "summarize",
                 "max_token": 512,
-                "threshold": 0.5,
+                "clustering_threshold": 0.5,
+                "clustering_ratio": 0.5,
                 "max_cluster": 64,
                 "random_seed": 42,
             }
@@ -204,12 +203,11 @@ class TestRaptorServiceRunRaptorForKb:
         """RAPTOR config with dataset-level scope."""
         return {
             "raptor": {
-                "tree_builder": "raptor",
-                "clustering_method": "gmm",
                 "scope": "dataset",
                 "prompt": "summarize",
                 "max_token": 512,
-                "threshold": 0.5,
+                "clustering_threshold": 0.5,
+                "clustering_ratio": 0.5,
                 "max_cluster": 64,
                 "random_seed": 42,
             }
@@ -218,9 +216,7 @@ class TestRaptorServiceRunRaptorForKb:
     # ---- Basic dispatch (file-level scope) ----
 
     @pytest.mark.asyncio
-    async def test_run_raptor_for_kb_file_scope_delegates_to_file_level(
-        self, mock_raptor_context, sample_chunks, raptor_config_file_scope
-    ):
+    async def test_run_raptor_for_kb_file_scope_delegates_to_file_level(self, mock_raptor_context, sample_chunks, raptor_config_file_scope):
         """When scope='file', _run_file_level_raptor is called."""
         svc = RaptorService(mock_raptor_context)
         doc_ids = ["doc_1", "doc_2"]
@@ -228,12 +224,18 @@ class TestRaptorServiceRunRaptorForKb:
         embd_mdl = MagicMock()
         vector_size = 128
 
-        with patch.object(svc, "_collect_doc_info", return_value={
-            "doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}},
-            "doc_2": {"name": "b.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}},
-        }), patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file, \
-           patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock) as mock_dataset:
-
+        with (
+            patch.object(
+                svc,
+                "_collect_doc_info",
+                return_value={
+                    "doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}},
+                    "doc_2": {"name": "b.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}},
+                },
+            ),
+            patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file,
+            patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock) as mock_dataset,
+        ):
             mock_file.return_value = (sample_chunks, 42)
             chunks, tk_count, cleanup = await svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
 
@@ -245,9 +247,7 @@ class TestRaptorServiceRunRaptorForKb:
     # ---- Basic dispatch (dataset-level scope) ----
 
     @pytest.mark.asyncio
-    async def test_run_raptor_for_kb_dataset_scope_delegates_to_dataset_level(
-        self, mock_raptor_context, sample_chunks, raptor_config_dataset_scope
-    ):
+    async def test_run_raptor_for_kb_dataset_scope_delegates_to_dataset_level(self, mock_raptor_context, sample_chunks, raptor_config_dataset_scope):
         """When scope='dataset', _run_dataset_level_raptor is called."""
         svc = RaptorService(mock_raptor_context)
         doc_ids = ["doc_1"]
@@ -255,11 +255,17 @@ class TestRaptorServiceRunRaptorForKb:
         embd_mdl = MagicMock()
         vector_size = 128
 
-        with patch.object(svc, "_collect_doc_info", return_value={
-            "doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}},
-        }), patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file, \
-           patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock) as mock_dataset:
-
+        with (
+            patch.object(
+                svc,
+                "_collect_doc_info",
+                return_value={
+                    "doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}},
+                },
+            ),
+            patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file,
+            patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock) as mock_dataset,
+        ):
             mock_dataset.return_value = (sample_chunks, 99)
             chunks, tk_count, cleanup = await svc.run_raptor_for_kb(raptor_config_dataset_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
 
@@ -277,10 +283,11 @@ class TestRaptorServiceRunRaptorForKb:
         chat_mdl = MagicMock()
         embd_mdl = MagicMock()
 
-        with patch.object(svc, "_collect_doc_info", return_value={}), \
-           patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file, \
-           patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock):
-
+        with (
+            patch.object(svc, "_collect_doc_info", return_value={}),
+            patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file,
+            patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock),
+        ):
             mock_file.return_value = ([], 0)
             chunks, tk_count, cleanup = await svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, [])
 
@@ -291,9 +298,7 @@ class TestRaptorServiceRunRaptorForKb:
     # ---- Cleanup scheduling through the public API ----
 
     @pytest.mark.asyncio
-    async def test_run_raptor_for_kb_returns_cleanup_list(
-        self, mock_raptor_context, raptor_config_file_scope
-    ):
+    async def test_run_raptor_for_kb_returns_cleanup_list(self, mock_raptor_context, raptor_config_file_scope):
         """Cleanup list from internal method is propagated to caller."""
         svc = RaptorService(mock_raptor_context)
         doc_ids = ["doc_1"]
@@ -302,12 +307,19 @@ class TestRaptorServiceRunRaptorForKb:
 
         expected_cleanup = [("doc_1", "tree_builder_a")]
 
-        with patch.object(svc, "_collect_doc_info", return_value={
-            "doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}},
-        }), patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file:
+        with (
+            patch.object(
+                svc,
+                "_collect_doc_info",
+                return_value={
+                    "doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}},
+                },
+            ),
+            patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file,
+        ):
 
             async def mock_run_file(*args, **kwargs):
-                cleanup_list = args[11]
+                cleanup_list = args[9]
                 cleanup_list.append(("doc_1", "tree_builder_a"))
                 return [{"id": "c1"}], 10
 
@@ -319,9 +331,7 @@ class TestRaptorServiceRunRaptorForKb:
     # ---- Dispatch with missing raptor config key ----
 
     @pytest.mark.asyncio
-    async def test_run_raptor_for_kb_defaults_to_file_scope_when_no_raptor_key(
-        self, mock_raptor_context
-    ):
+    async def test_run_raptor_for_kb_defaults_to_file_scope_when_no_raptor_key(self, mock_raptor_context):
         """When kb_parser_config has no 'raptor' key, defaults to file scope."""
         svc = RaptorService(mock_raptor_context)
         doc_ids = ["doc_1"]
@@ -329,11 +339,17 @@ class TestRaptorServiceRunRaptorForKb:
         embd_mdl = MagicMock()
         config = {}  # No raptor key at all
 
-        with patch.object(svc, "_collect_doc_info", return_value={
-            "doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}},
-        }), patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file, \
-           patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock) as mock_dataset:
-
+        with (
+            patch.object(
+                svc,
+                "_collect_doc_info",
+                return_value={
+                    "doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}},
+                },
+            ),
+            patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file,
+            patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock) as mock_dataset,
+        ):
             mock_file.return_value = ([], 0)
             await svc.run_raptor_for_kb(config, chat_mdl, embd_mdl, 128, doc_ids)
 
@@ -343,9 +359,7 @@ class TestRaptorServiceRunRaptorForKb:
     # ---- Vector dimension name construction ----
 
     @pytest.mark.asyncio
-    async def test_run_raptor_for_kb_passes_vector_size_to_file_level(
-        self, mock_raptor_context, sample_chunks, raptor_config_file_scope
-    ):
+    async def test_run_raptor_for_kb_passes_vector_size_to_file_level(self, mock_raptor_context, sample_chunks, raptor_config_file_scope):
         """Vector size is used to construct vctr_nm and passed to internal method."""
         svc = RaptorService(mock_raptor_context)
         doc_ids = ["doc_1"]
@@ -353,25 +367,29 @@ class TestRaptorServiceRunRaptorForKb:
         embd_mdl = MagicMock()
         vector_size = 256
 
-        with patch.object(svc, "_collect_doc_info", return_value={
-            "doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}},
-        }), patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file:
-
+        with (
+            patch.object(
+                svc,
+                "_collect_doc_info",
+                return_value={
+                    "doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}},
+                },
+            ),
+            patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file,
+        ):
             mock_file.return_value = (sample_chunks, 10)
             await svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
 
         # Verify _run_file_level_raptor received vctr_nm with the correct vector size
-        # Positional args: 0=raptor_config, 1=tree_builder, 2=clustering_method,
-        #   3=chat_mdl, 4=embd_mdl, 5=vctr_nm
+        # Positional args: 0=raptor_config, 1=chat_mdl, 2=embd_mdl,
+        #   3=vctr_nm, 4=doc_ids, 5=doc_info_by_id
         positional_args = mock_file.call_args[0]
-        assert positional_args[5] == "q_256_vec"
+        assert positional_args[3] == "q_256_vec"
 
     # ---- Document info collection through public API ----
 
     @pytest.mark.asyncio
-    async def test_run_raptor_for_kb_collects_doc_info(
-        self, mock_raptor_context, raptor_config_file_scope
-    ):
+    async def test_run_raptor_for_kb_collects_doc_info(self, mock_raptor_context, raptor_config_file_scope):
         """Document info is collected before dispatching to internal methods."""
         svc = RaptorService(mock_raptor_context)
         doc_ids = ["doc_a"]
@@ -380,16 +398,14 @@ class TestRaptorServiceRunRaptorForKb:
 
         expected_info = {"doc_a": {"name": "file.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}}}
 
-        with patch.object(svc, "_collect_doc_info", return_value=expected_info) as mock_collect, \
-           patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file:
-
+        with patch.object(svc, "_collect_doc_info", return_value=expected_info) as mock_collect, patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file:
             mock_file.return_value = ([], 0)
             await svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, doc_ids)
 
         mock_collect.assert_called_once_with(doc_ids)
-        # Verify doc_info_by_id was passed as positional arg[7] to _run_file_level_raptor
+        # Verify doc_info_by_id was passed as positional arg[5] to _run_file_level_raptor
         positional_args = mock_file.call_args[0]
-        assert positional_args[7] == expected_info
+        assert positional_args[5] == expected_info
 
 
 class TestRaptorServiceFileLevelRaptorCheckpoint:
@@ -406,44 +422,36 @@ class TestRaptorServiceFileLevelRaptorCheckpoint:
         svc = RaptorService(ctx)
 
         doc_ids = ["doc_1"]
-        doc_info_by_id = {
-            "doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}}
-        }
+        doc_info_by_id = {"doc_1": {"name": "a.pdf", "type": "pdf", "parser_id": "naive", "parser_config": {}}}
         raptor_config = {
             "scope": "file",
-            "max_cluster": 64, "prompt": "test prompt",
-            "max_token": 256, "threshold": 0.1, "random_seed": 0,
-            "clustering_method": "gmm", "tree_builder": "raptor",
-            "ext": {},
+            "max_cluster": 64,
+            "prompt": "test prompt",
+            "max_token": 512,
+            "clustering_threshold": 0.3,
+            "clustering_ratio": 0.5,
+            "random_seed": 0,
         }
 
-        with patch.object(svc, "_get_raptor_chunk_methods", new_callable=AsyncMock) as mock_methods, \
-             patch.object(svc, "_should_skip_raptor", return_value=False):
-
+        with patch.object(svc, "_get_raptor_chunk_methods", new_callable=AsyncMock) as mock_methods, patch.object(svc, "_should_skip_raptor", return_value=False):
             mock_methods.return_value = {"raptor"}
 
             result = await svc._run_file_level_raptor(
-                raptor_config=raptor_config, tree_builder="raptor",
-                clustering_method="gmm", chat_mdl=MagicMock(),
-                embd_mdl=MagicMock(), vctr_nm="q_128_vec",
-                doc_ids=doc_ids, doc_info_by_id=doc_info_by_id,
-                max_errors=3, res=[], tk_count=0,
+                raptor_config=raptor_config,
+                chat_mdl=MagicMock(),
+                embd_mdl=MagicMock(),
+                vctr_nm="q_128_vec",
+                doc_ids=doc_ids,
+                doc_info_by_id=doc_info_by_id,
+                max_errors=3,
+                res=[],
+                tk_count=0,
                 cleanup_raptor_chunks=[],
             )
 
-            msg_calls = [
-                call.kwargs.get("msg", "")
-                for call in ctx.progress_cb.call_args_list
-                if call.kwargs.get("msg") is not None
-            ]
-            assert any("already has" in m for m in msg_calls), \
-                f"Expected 'already has' progress message, got: {msg_calls}"
+            msg_calls = [call.kwargs.get("msg", "") for call in ctx.progress_cb.call_args_list if call.kwargs.get("msg") is not None]
+            assert any("already has" in m for m in msg_calls), f"Expected 'already has' progress message, got: {msg_calls}"
 
-            prog_calls = [
-                call.kwargs.get("prog")
-                for call in ctx.progress_cb.call_args_list
-                if call.kwargs.get("prog") is not None
-            ]
-            assert len(prog_calls) > 0, \
-                "Expected progress_cb to be called with prog update"
+            prog_calls = [call.kwargs.get("prog") for call in ctx.progress_cb.call_args_list if call.kwargs.get("prog") is not None]
+            assert len(prog_calls) > 0, "Expected progress_cb to be called with prog update"
             assert result[0] == []

@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/harness/core/schema"
@@ -17,7 +16,7 @@ func TestAgentTool_BasicInvocation(t *testing.T) {
 		Model: innerM,
 	}).WithName("inner").WithDescription("inner echo agent")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, innerAgent)
 
 	// Parent agent: uses the agent tool.
@@ -28,9 +27,9 @@ func TestAgentTool_BasicInvocation(t *testing.T) {
 		firstCall: true,
 	}
 	parent := NewReActAgent(&ReActConfig[*schema.Message]{
-		Model:       parentM,
-		Tools:       []Tool{agentTool},
-		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{agentTool}},
+		Model:         parentM,
+		Tools:         []Tool{agentTool},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{agentTool}},
 		MaxIterations: 3,
 	}).WithName("parent")
 
@@ -68,7 +67,7 @@ func TestAgentTool_NestedWithCheckpoint(t *testing.T) {
 		Model: innerM,
 	}).WithName("nested").WithDescription("nested agent for checkpoint test")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, innerAgent)
 
 	parentM := &forcedToolModel{
@@ -78,9 +77,9 @@ func TestAgentTool_NestedWithCheckpoint(t *testing.T) {
 		firstCall: true,
 	}
 	parent := NewReActAgent(&ReActConfig[*schema.Message]{
-		Model:       parentM,
-		Tools:       []Tool{agentTool},
-		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{agentTool}},
+		Model:         parentM,
+		Tools:         []Tool{agentTool},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{agentTool}},
 		MaxIterations: 3,
 	}).WithName("parent_cp")
 
@@ -114,7 +113,7 @@ func TestAgentTool_EventForwarding(t *testing.T) {
 		Model: innerM,
 	}).WithName("forward_inner").WithDescription("inner with event forwarding")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, innerAgent, WithEmitInternalEvents())
 
 	parentM := &forcedToolModel{
@@ -124,9 +123,9 @@ func TestAgentTool_EventForwarding(t *testing.T) {
 		firstCall: true,
 	}
 	parent := NewReActAgent(&ReActConfig[*schema.Message]{
-		Model:       parentM,
-		Tools:       []Tool{agentTool},
-		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{agentTool}},
+		Model:         parentM,
+		Tools:         []Tool{agentTool},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{agentTool}},
 		MaxIterations: 3,
 	}).WithName("forward_parent")
 
@@ -159,13 +158,13 @@ func TestAgentTool_ResumeAfterInterrupt(t *testing.T) {
 	}
 	tool := &mockTool{name: "resume_inner_tool", desc: "tool for resume test"}
 	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{
-		Model:       innerM,
-		Tools:       []Tool{tool},
-		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
+		Model:         innerM,
+		Tools:         []Tool{tool},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{tool}},
 		MaxIterations: 3,
 	}).WithName("resume_inner").WithDescription("interruptible inner agent")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, innerAgent)
 
 	parentM := &forcedToolModel{
@@ -175,9 +174,9 @@ func TestAgentTool_ResumeAfterInterrupt(t *testing.T) {
 		firstCall: true,
 	}
 	parent := NewReActAgent(&ReActConfig[*schema.Message]{
-		Model:       parentM,
-		Tools:       []Tool{agentTool},
-		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{agentTool}},
+		Model:         parentM,
+		Tools:         []Tool{agentTool},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{agentTool}},
 		MaxIterations: 3,
 	}).WithName("resume_parent")
 

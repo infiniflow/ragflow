@@ -1,7 +1,6 @@
 package patchtoolcalls
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/harness/core"
@@ -23,8 +22,10 @@ func TestBeforeModelRewrite_InsertsPlaceholders(t *testing.T) {
 		schema.UserMessage("Tell me more"),
 	}
 	state := core.NewReActAgentState(msgs, nil, 10)
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
-	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
+	_, newState, err := mw.BeforeModelRewrite(t.Context(), state, nil)
+	if err != nil {
+		t.Fatalf("BeforeModelRewrite: %v", err)
+	}
 
 	// Should have inserted a placeholder for the missing tool result
 	foundPlaceholder := false
@@ -53,8 +54,10 @@ func TestBeforeModelRewrite_CompleteToolCall(t *testing.T) {
 		schema.ToolMessage("Search result", "call_1"),
 	}
 	state := core.NewReActAgentState(msgs, nil, 10)
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
-	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
+	_, newState, err := mw.BeforeModelRewrite(t.Context(), state, nil)
+	if err != nil {
+		t.Fatalf("BeforeModelRewrite: %v", err)
+	}
 
 	// Should NOT insert a placeholder since the tool result exists
 	placeholderCount := 0
@@ -75,8 +78,10 @@ func TestBeforeModelRewrite_NoToolCalls(t *testing.T) {
 		{Role: schema.RoleAssistant, Content: "Just a response"},
 	}
 	state := core.NewReActAgentState(msgs, nil, 10)
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
-	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
+	_, newState, err := mw.BeforeModelRewrite(t.Context(), state, nil)
+	if err != nil {
+		t.Fatalf("BeforeModelRewrite: %v", err)
+	}
 	if len(newState.Messages) != 2 {
 		t.Errorf("expected no changes, got %d messages", len(newState.Messages))
 	}
@@ -98,16 +103,22 @@ func TestBeforeModelRewrite_MultipleMissingCalls(t *testing.T) {
 		schema.UserMessage("User follow-up"),
 	}
 	state := core.NewReActAgentState(msgs, nil, 10)
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
-	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
+	_, newState, err := mw.BeforeModelRewrite(t.Context(), state, nil)
+	if err != nil {
+		t.Fatalf("BeforeModelRewrite: %v", err)
+	}
 
 	// Should have inserted placeholders for both missing calls
 	foundA := false
 	foundB := false
 	for _, m := range newState.Messages {
 		if m.Role == schema.RoleTool {
-			if m.Name == "call_a" { foundA = true }
-			if m.Name == "call_b" { foundB = true }
+			if m.Name == "call_a" {
+				foundA = true
+			}
+			if m.Name == "call_b" {
+				foundB = true
+			}
 		}
 	}
 	if !foundA || !foundB {
@@ -118,7 +129,9 @@ func TestBeforeModelRewrite_MultipleMissingCalls(t *testing.T) {
 func TestBeforeModelRewrite_EmptyState(t *testing.T) {
 	mw := New[*schema.Message](nil)
 	state := core.NewReActAgentState[*schema.Message](nil, nil, 10)
-	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
-	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
+	_, newState, err := mw.BeforeModelRewrite(t.Context(), state, nil)
+	if err != nil {
+		t.Fatalf("BeforeModelRewrite: %v", err)
+	}
 	_ = newState
 }

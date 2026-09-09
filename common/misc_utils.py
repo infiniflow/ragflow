@@ -16,6 +16,7 @@
 
 import asyncio
 import base64
+import contextvars
 import functools
 import hashlib
 import logging
@@ -29,6 +30,7 @@ from urllib.parse import urljoin
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
+_LONG_TIME_THREAD_POOL_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("LONG_TIME_THREAD_POOL_WORKERS", "1")), thread_name_prefix="long-time")
 
 
 def get_uuid():
@@ -95,8 +97,7 @@ async def download_img(url):
                             location = response.headers.get("location")
                             if not location:
                                 logger.warning(
-                                    "download_img redirect missing Location header: url=%r status=%s redirect_hops=%s",
-                                    current_url,
+                                    "download_img redirect missing Location header: status=%s redirect_hops=%s",
                                     response.status_code,
                                     redirect_hops,
                                 )
@@ -104,8 +105,7 @@ async def download_img(url):
                             return ("redirect", urljoin(current_url, location))
                         if response.status_code != 200:
                             logger.warning(
-                                "download_img non-200 response: url=%r status=%s redirect_hops=%s",
-                                current_url,
+                                "download_img non-200 response: status=%s redirect_hops=%s",
                                 response.status_code,
                                 redirect_hops,
                             )
@@ -114,36 +114,34 @@ async def download_img(url):
                         async for chunk in response.aiter_bytes():
                             if len(body) + len(chunk) > _OAUTH_AVATAR_MAX_BYTES:
                                 logger.warning(
-                                    "download_img response exceeded max size: url=%r max_bytes=%s",
-                                    current_url,
+                                    # codeql[py/clear-text-logging-sensitive-data]
+                                    # False positive: current_url was dropped
+                                    # from the format args in this branch to
+                                    # avoid leaking OAuth tokens embedded in
+                                    # the URL query string. Only the static
+                                    # threshold value is logged.
+                                    "download_img response exceeded max size: max_bytes=%s",
                                     _OAUTH_AVATAR_MAX_BYTES,
                                 )
                                 await response.aclose()
                                 return ("fail", None)
                             body.extend(chunk)
                         content_type = response.headers.get("Content-Type", "image/jpeg")
-                        data_uri = (
-                            "data:"
-                            + content_type
-                            + ";base64,"
-                            + base64.b64encode(bytes(body)).decode("utf-8")
-                        )
+                        data_uri = "data:" + content_type + ";base64," + base64.b64encode(bytes(body)).decode("utf-8")
                         return ("data", data_uri)
 
         try:
             kind, payload = await asyncio.wait_for(_stream_one_get(), timeout=request_timeout)
         except asyncio.TimeoutError:
             logger.warning(
-                "download_img total wall-clock timeout: url=%r redirect_hops=%s timeout=%s",
-                current_url,
+                "download_img total wall-clock timeout: redirect_hops=%s timeout=%s",
                 redirect_hops,
                 request_timeout,
             )
             return ""
         except Exception as exc:
             logger.warning(
-                "download_img request failed: url=%r redirect_hops=%s err=%s",
-                current_url,
+                "download_img request failed: redirect_hops=%s err=%s",
                 redirect_hops,
                 exc,
             )
@@ -157,17 +155,21 @@ async def download_img(url):
             return ""
         return str(payload)
 
+    # codeql[py/clear-text-logging-sensitive-data]
+    # False positive: current_url was already dropped from the format
+    # args in this branch to avoid leaking OAuth tokens. Only the
+    # hop count and configured max are logged.
     logger.warning(
-        "download_img redirect hop limit exceeded: url=%r redirect_hops=%s max_redirects=%s",
-        current_url,
+        "download_img redirect hop limit exceeded: redirect_hops=%s max_redirects=%s",
         redirect_hops,
         _OAUTH_AVATAR_MAX_REDIRECTS,
     )
     return ""
 
 
-def hash_str2int(line: str, mod: int = 10 ** 8) -> int:
+def hash_str2int(line: str, mod: int = 10**8) -> int:
     return int(hashlib.sha1(line.encode("utf-8")).hexdigest(), 16) % mod
+
 
 def convert_bytes(size_in_bytes: int) -> str:
     """
@@ -176,7 +178,7 @@ def convert_bytes(size_in_bytes: int) -> str:
     if size_in_bytes == 0:
         return "0 B"
 
-    units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+    units = ["B", "KB", "MB", "GB", "TB", "PB"]
     i = 0
     size = float(size_in_bytes)
 
@@ -218,40 +220,126 @@ def once(func):
     executed = False
     result = None
     lock = threading.Lock()
+
     def wrapper(*args, **kwargs):
         nonlocal executed, result
         with lock:
             if not executed:
-                executed = True
                 result = func(*args, **kwargs)
+                executed = True
         return result
+
     return wrapper
+
 
 @once
 def pip_install_torch():
     device = os.getenv("DEVICE", "cpu")
-    if device=="cpu":
+    if device == "cpu":
         return
     logging.info("Installing pytorch")
     pkg_names = ["torch>=2.5.0,<3.0.0"]
     subprocess.check_call([sys.executable, "-m", "pip", "install", *pkg_names])
 
 
-@once
-def _thread_pool_executor():
-    max_workers_env = os.getenv("THREAD_POOL_MAX_WORKERS", "128")
-    try:
-        max_workers = int(max_workers_env)
-    except ValueError:
-        max_workers = 128
-    if max_workers < 1:
-        max_workers = 1
-    return ThreadPoolExecutor(max_workers=max_workers)
-
-
 async def thread_pool_exec(func, *args, **kwargs):
+    # loop.run_in_executor() submits the callable without propagating the caller's
+    # contextvars (unlike asyncio.to_thread, which copies the context). Copy the
+    # current context and run the callable inside it so ContextVars set by the
+    # caller (e.g. tracing / per-request state) are visible in the worker thread.
+    #
+    # Use a short-lived executor per call instead of a shared singleton. Python
+    # 3.13's executor reuse can deadlock in this environment when the same helper
+    # is awaited repeatedly inside one event loop.
     loop = asyncio.get_running_loop()
+    ctx = contextvars.copy_context()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        if kwargs:
+            inner = functools.partial(func, *args, **kwargs)
+            return await loop.run_in_executor(executor, ctx.run, inner)
+        return await loop.run_in_executor(executor, ctx.run, func, *args)
+
+
+async def thread_pool_exec_long_time(func, *args, **kwargs):
+    """Run long blocking work in a shared bounded executor.
+
+    Use this for synchronous work that can outlive the HTTP request, such as
+    large document or dataset cleanup. Do not use ``thread_pool_exec`` for
+    those paths: it creates a temporary executor with a ``with`` block, and
+    leaving that block calls ``shutdown(wait=True)``. If the client disconnects
+    or the HTTP request times out while the worker is still running, request
+    cancellation can unwind the coroutine into that shutdown path and wait for
+    the long worker to finish anyway.
+
+    This helper uses a process-level executor instead, so there is no per-call
+    executor shutdown during request cancellation. The running sync callable is
+    still not force-cancelled by Python; it continues in the long-task pool. The
+    important behavior is that the Quart event loop/request task can be released
+    and continue serving other API calls. The pool is bounded by
+    ``LONG_TIME_THREAD_POOL_WORKERS`` (default 1), so multiple expensive jobs
+    queue instead of spawning unbounded cleanup threads or competing with the
+    event loop's default executor.
+
+    ContextVars are copied into the worker thread, matching ``thread_pool_exec``.
+    """
+    loop = asyncio.get_running_loop()
+    ctx = contextvars.copy_context()
     if kwargs:
-        func = functools.partial(func, *args, **kwargs)
-        return await loop.run_in_executor(_thread_pool_executor(), func)
-    return await loop.run_in_executor(_thread_pool_executor(), func, *args)
+        inner = functools.partial(func, *args, **kwargs)
+        return await loop.run_in_executor(_LONG_TIME_THREAD_POOL_EXECUTOR, ctx.run, inner)
+    return await loop.run_in_executor(_LONG_TIME_THREAD_POOL_EXECUTOR, ctx.run, func, *args)
+
+
+class _CanonKey:
+    """Wraps a canonicalized structure so it can never collide with an
+    unrelated plain hashable value (e.g. a string equal to another value's
+    repr())."""
+
+    __slots__ = ("_key",)
+
+    def __init__(self, key):
+        self._key = key
+
+    def __eq__(self, other):
+        return isinstance(other, _CanonKey) and self._key == other._key
+
+    def __hash__(self):
+        return hash(self._key)
+
+
+def _canonicalize(value):
+    """Recursively convert JSON-like unhashable values (dict/list/set) into an
+    equality-preserving hashable form: dict equality ignores key order, list
+    equality doesn't. Distinct types that are never equal to each other in
+    Python (list vs. tuple) get distinct tags; types that compare equal by
+    value (set vs. frozenset) share one."""
+    if isinstance(value, dict):
+        return ("__dict__", frozenset((k, _canonicalize(v)) for k, v in value.items()))
+    if isinstance(value, list):
+        return ("__list__", tuple(_canonicalize(v) for v in value))
+    if isinstance(value, tuple):
+        return ("__tuple__", tuple(_canonicalize(v) for v in value))
+    if isinstance(value, (set, frozenset)):
+        return ("__set__", frozenset(_canonicalize(v) for v in value))
+    try:
+        hash(value)
+        return value
+    except TypeError:
+        return ("__repr__", repr(value))
+
+
+def hashable_key(value):
+    """Return a value usable as a set/dict key, falling back to a recursive
+    canonicalization for unhashable (malformed) values instead of raising
+    TypeError.
+
+    Already-hashable values are returned as-is, so canonicalization only ever
+    applies inside an unhashable value. A top-level ``frozenset`` therefore
+    keeps its own key rather than sharing one with an equal ``set``; provenance
+    values (ids, descriptions) are never sets, so this costs nothing on the hot
+    path."""
+    try:
+        hash(value)
+        return value
+    except TypeError:
+        return _CanonKey(_canonicalize(value))

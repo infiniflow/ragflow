@@ -19,9 +19,15 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -67,5 +73,30 @@ func TestNewMCPServerResponsePreservesNullDescriptionAndFormatsDates(t *testing.
 	}
 	if bytes.Contains(payload, []byte(`+08:00`)) {
 		t.Fatalf("payload %s includes timezone in date fields", payload)
+	}
+}
+
+func TestMCPDetailDataErrorOmitsDataFieldLikePython(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	mcpDetailError(c, common.CodeDataError, errors.New("Cannot find MCP server mcp-id for user user-id"))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if body["code"] != float64(common.CodeDataError) {
+		t.Fatalf("code = %v, want %d", body["code"], common.CodeDataError)
+	}
+	if body["message"] != "Cannot find MCP server mcp-id for user user-id" {
+		t.Fatalf("message = %v", body["message"])
+	}
+	if _, ok := body["data"]; ok {
+		t.Fatalf("body unexpectedly contains data field: %s", recorder.Body.String())
 	}
 }

@@ -17,7 +17,7 @@ import logging
 
 from peewee import JOIN
 
-from api.db.db_models import DB, ChatChannel, Dialog
+from api.db.db_models import DB, ChatChannel, Dialog, UserCanvas
 from api.db.services.common_service import CommonService
 
 LOGGER = logging.getLogger(__name__)
@@ -34,16 +34,24 @@ class ChatChannelService(CommonService):
             cls.model.id,
             cls.model.name,
             cls.model.channel,
-            cls.model.dialog_id,
+            cls.model.chat_id,
+            cls.model.agent_id,
             cls.model.status,
             Dialog.name.alias("dialog_name"),
+            UserCanvas.title.alias("agent_name"),
         ]
         return list(
             cls.model.select(*fields)
             .join(
                 Dialog,
                 join_type=JOIN.LEFT_OUTER,
-                on=(Dialog.id == cls.model.dialog_id),
+                on=(Dialog.id == cls.model.chat_id),
+            )
+            .switch(cls.model)
+            .join(
+                UserCanvas,
+                join_type=JOIN.LEFT_OUTER,
+                on=(UserCanvas.id == cls.model.agent_id),
             )
             .where(cls.model.tenant_id == tenant_id)
             .order_by(cls.model.create_time.desc())
