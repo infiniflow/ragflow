@@ -30,11 +30,7 @@ def _load_slack_connector_module():
     """
     repo_root = Path(__file__).resolve().parents[3]
     package_name = "common.data_source"
-    saved_modules = {
-        name: module
-        for name, module in sys.modules.items()
-        if name == package_name or name.startswith(f"{package_name}.")
-    }
+    saved_modules = {name: module for name, module in sys.modules.items() if name == package_name or name.startswith(f"{package_name}.")}
     package_stub = ModuleType(package_name)
     package_stub.__path__ = [str(repo_root / "common" / "data_source")]
     sys.modules[package_name] = package_stub

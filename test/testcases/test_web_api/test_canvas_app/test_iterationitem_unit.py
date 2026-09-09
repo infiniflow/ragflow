@@ -44,16 +44,12 @@ def _load_iterationitem_module(monkeypatch):
     constants.RetCode = _RetCode
     monkeypatch.setitem(sys.modules, "common.constants", constants)
 
-    conn_spec = importlib.util.spec_from_file_location(
-        "common.connection_utils", repo_root / "common" / "connection_utils.py"
-    )
+    conn_spec = importlib.util.spec_from_file_location("common.connection_utils", repo_root / "common" / "connection_utils.py")
     conn_mod = importlib.util.module_from_spec(conn_spec)
     monkeypatch.setitem(sys.modules, "common.connection_utils", conn_mod)
     conn_spec.loader.exec_module(conn_mod)
 
-    misc_spec = importlib.util.spec_from_file_location(
-        "common.misc_utils", repo_root / "common" / "misc_utils.py"
-    )
+    misc_spec = importlib.util.spec_from_file_location("common.misc_utils", repo_root / "common" / "misc_utils.py")
     misc_mod = importlib.util.module_from_spec(misc_spec)
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_mod)
     misc_spec.loader.exec_module(misc_mod)
@@ -79,9 +75,7 @@ def _load_iterationitem_module(monkeypatch):
     canvas_mod.Graph = Graph
     monkeypatch.setitem(sys.modules, "agent.canvas", canvas_mod)
 
-    base_spec = importlib.util.spec_from_file_location(
-        "agent.component.base", repo_root / "agent" / "component" / "base.py"
-    )
+    base_spec = importlib.util.spec_from_file_location("agent.component.base", repo_root / "agent" / "component" / "base.py")
     base_mod = importlib.util.module_from_spec(base_spec)
     monkeypatch.setitem(sys.modules, "agent.component.base", base_mod)
     base_spec.loader.exec_module(base_mod)
@@ -91,9 +85,7 @@ def _load_iterationitem_module(monkeypatch):
         repo_root / "agent" / "component" / "iterationitem.py",
     )
     iterationitem_mod = importlib.util.module_from_spec(iterationitem_spec)
-    monkeypatch.setitem(
-        sys.modules, "agent.component.iterationitem", iterationitem_mod
-    )
+    monkeypatch.setitem(sys.modules, "agent.component.iterationitem", iterationitem_mod)
     iterationitem_spec.loader.exec_module(iterationitem_mod)
 
     return iterationitem_mod

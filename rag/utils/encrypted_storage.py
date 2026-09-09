@@ -20,13 +20,14 @@ from common.crypto_utils import CryptoUtil
 
 # from common.decorator import singleton
 
+
 class EncryptedStorageWrapper:
     """Encrypted storage wrapper that wraps existing storage implementations to provide transparent encryption"""
 
     def __init__(self, storage_impl, algorithm="aes-256-cbc", key=None, iv=None):
         """
         Initialize encrypted storage wrapper
-        
+
         Args:
             storage_impl: Original storage implementation instance
             algorithm: Encryption algorithm, default is aes-256-cbc
@@ -49,13 +50,13 @@ class EncryptedStorageWrapper:
     def put(self, bucket, fnm, binary, tenant_id=None):
         """
         Encrypt and store data
-        
+
         Args:
             bucket: Bucket name
             fnm: File name
             binary: Original binary data
             tenant_id: Tenant ID (optional)
-            
+
         Returns:
             Storage result
         """
@@ -73,12 +74,12 @@ class EncryptedStorageWrapper:
     def get(self, bucket, fnm, tenant_id=None):
         """
         Retrieve and decrypt data
-        
+
         Args:
             bucket: Bucket name
             fnm: File name
             tenant_id: Tenant ID (optional)
-            
+
         Returns:
             Decrypted binary data
         """
@@ -103,12 +104,12 @@ class EncryptedStorageWrapper:
     def rm(self, bucket, fnm, tenant_id=None):
         """
         Delete data (same as original storage implementation, no decryption needed)
-        
+
         Args:
             bucket: Bucket name
             fnm: File name
             tenant_id: Tenant ID (optional)
-            
+
         Returns:
             Deletion result
         """
@@ -117,12 +118,12 @@ class EncryptedStorageWrapper:
     def obj_exist(self, bucket, fnm, tenant_id=None):
         """
         Check if object exists (same as original storage implementation, no decryption needed)
-        
+
         Args:
             bucket: Bucket name
             fnm: File name
             tenant_id: Tenant ID (optional)
-            
+
         Returns:
             Whether the object exists
         """
@@ -131,7 +132,7 @@ class EncryptedStorageWrapper:
     def health(self):
         """
         Health check (uses the original storage implementation's method)
-        
+
         Returns:
             Health check result
         """
@@ -140,10 +141,10 @@ class EncryptedStorageWrapper:
     def bucket_exists(self, bucket):
         """
         Check if bucket exists (if the original storage implementation has this method)
-        
+
         Args:
             bucket: Bucket name
-            
+
         Returns:
             Whether the bucket exists
         """
@@ -154,13 +155,13 @@ class EncryptedStorageWrapper:
     def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
         """
         Get presigned URL (if the original storage implementation has this method)
-        
+
         Args:
             bucket: Bucket name
             fnm: File name
             expires: Expiration time
             tenant_id: Tenant ID (optional)
-            
+
         Returns:
             Presigned URL
         """
@@ -171,12 +172,12 @@ class EncryptedStorageWrapper:
     def scan(self, bucket, fnm, tenant_id=None):
         """
         Scan objects (if the original storage implementation has this method)
-        
+
         Args:
             bucket: Bucket name
             fnm: File name prefix
             tenant_id: Tenant ID (optional)
-            
+
         Returns:
             Scan results
         """
@@ -187,13 +188,13 @@ class EncryptedStorageWrapper:
     def copy(self, src_bucket, src_path, dest_bucket, dest_path):
         """
         Copy object (if the original storage implementation has this method)
-        
+
         Args:
             src_bucket: Source bucket name
             src_path: Source file path
             dest_bucket: Destination bucket name
             dest_path: Destination file path
-            
+
         Returns:
             Copy result
         """
@@ -204,13 +205,13 @@ class EncryptedStorageWrapper:
     def move(self, src_bucket, src_path, dest_bucket, dest_path):
         """
         Move object (if the original storage implementation has this method)
-        
+
         Args:
             src_bucket: Source bucket name
             src_path: Source file path
             dest_bucket: Destination bucket name
             dest_path: Destination file path
-            
+
         Returns:
             Move result
         """
@@ -221,10 +222,10 @@ class EncryptedStorageWrapper:
     def remove_bucket(self, bucket):
         """
         Remove bucket (if the original storage implementation has this method)
-        
+
         Args:
             bucket: Bucket name
-            
+
         Returns:
             Remove result
         """
@@ -247,13 +248,13 @@ class EncryptedStorageWrapper:
 def create_encrypted_storage(storage_impl, algorithm=None, key=None, encryption_enabled=True):
     """
     Create singleton instance of encrypted storage wrapper
-    
+
     Args:
         storage_impl: Original storage implementation instance
         algorithm: Encryption algorithm, uses environment variable RAGFLOW_CRYPTO_ALGORITHM or default if None
         key: Encryption key, uses environment variable RAGFLOW_CRYPTO_KEY if None
         encryption_enabled: Whether to enable encryption functionality
-        
+
     Returns:
         Encrypted storage wrapper instance
     """

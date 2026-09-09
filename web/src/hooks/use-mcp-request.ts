@@ -1,4 +1,21 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { ResponseType } from '@/interfaces/database/base';
 import {
   IExportedMcpServers,
@@ -14,6 +31,7 @@ import i18n from '@/locales/config';
 import mcpServerService, {
   listMcpServers,
 } from '@/services/mcp-server-service';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import {
@@ -35,7 +53,8 @@ export const enum McpApiAction {
 }
 
 export const useListMcpServer = () => {
-  const { searchString, handleInputChange } = useHandleSearchChange();
+  const { searchString, setSearchString, handleInputChange } =
+    useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
@@ -65,6 +84,7 @@ export const useListMcpServer = () => {
     handleInputChange,
     setPagination,
     searchString,
+    setSearchString,
     pagination: { ...pagination, total: data?.total },
   };
 };
@@ -152,6 +172,7 @@ export const useDeleteMcpServer = () => {
         queryClient.invalidateQueries({
           queryKey: [McpApiAction.ListMcpServer],
         });
+        markListItemsDeleted(ListDeletionKey.McpServerList);
       }
       return data;
     },

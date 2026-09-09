@@ -11,7 +11,7 @@ import {
   Operator,
 } from '../../constant';
 import { BeginQuery } from '../../interface';
-import OperatorIcon from '../../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import { CommonHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
 import styles from './index.module.less';
