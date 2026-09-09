@@ -1325,6 +1325,19 @@ def list_thumbnails():
 
     try:
         docs = DocumentService.get_thumbnails(doc_ids)
+        # get_thumbnails has no tenant scope of its own: without filtering,
+        # any document id yields its thumbnail (or its image URL) to any
+        # authenticated caller. Keep only documents in datasets the caller
+        # may read, and silently drop the rest so existence is not leaked.
+        accessible_kb_ids = set()
+        checked_kb_ids = set()
+        for doc_item in docs:
+            kb_id = doc_item["kb_id"]
+            if kb_id not in checked_kb_ids:
+                checked_kb_ids.add(kb_id)
+                if KnowledgebaseService.accessible(kb_id=kb_id, user_id=current_user.id):
+                    accessible_kb_ids.add(kb_id)
+        docs = [doc_item for doc_item in docs if doc_item["kb_id"] in accessible_kb_ids]
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
                 doc_item["thumbnail"] = f"/api/v1/documents/images/{doc_item['kb_id']}-{doc_item['thumbnail']}"
@@ -1857,6 +1870,11 @@ async def get_document_image(image_id):
         if not parsed:
             return get_data_error_result(message="Image not found.")
         bkt, nm = parsed
+        # The bucket is the dataset (kb) id, so the composite id alone is
+        # enough to fetch another tenant's images. Require dataset access,
+        # and answer exactly like an unknown id to avoid leaking existence.
+        if not await thread_pool_exec(KnowledgebaseService.accessible, bkt, current_user.id):
+            return get_data_error_result(message="Image not found.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         if not data:
             return get_data_error_result(message="Image not found.")
