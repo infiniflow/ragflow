@@ -21,6 +21,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import openpyxl
+import pytest
 
 
 def _load_excel_processor(monkeypatch):
@@ -63,6 +64,7 @@ def _load_excel_processor(monkeypatch):
     return module
 
 
+@pytest.mark.p3
 def test_output_excel_sanitizes_and_deduplicates_sheet_names(monkeypatch):
     module = _load_excel_processor(monkeypatch)
     stored = {}
