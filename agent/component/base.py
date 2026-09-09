@@ -618,7 +618,7 @@ class ComponentBase(ABC):
     @staticmethod
     def normalize_param_ref(ref: str) -> str:
         """Strip outer braces and surrounding whitespace from a parameter reference."""
-        return ref.strip("{").strip("}").strip()
+        return ref.strip().removeprefix("{").removesuffix("}").strip()
 
     def param_refs(self) -> list[str]:
         """Return variable references resolved from component parameters."""

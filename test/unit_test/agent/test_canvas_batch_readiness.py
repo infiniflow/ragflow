@@ -788,10 +788,10 @@ def test_dependency_ids_handles_braced_param_refs(canvas_stack):
 
         def param_refs(self):
             """Return test parameter references with braces and whitespace."""
-            return ["{producer_1@output}", "producer_2@output", "{ sys.query }", "invalid_no_at"]
+            return ["{producer_1@output}", "producer_2@output", " {producer_3@output} ", " { producer_4@output } ", "{ sys.query }", "invalid_no_at"]
 
     c = DummyComponent.__new__(DummyComponent)
     param = base.ComponentParamBase.__new__(base.ComponentParamBase)
     param.inputs = {}
     c._param = param
-    assert c.get_dependency_ids() == ["producer_1", "producer_2"]
+    assert c.get_dependency_ids() == ["producer_1", "producer_2", "producer_3", "producer_4"]
