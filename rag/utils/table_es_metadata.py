@@ -63,6 +63,10 @@ def _field_map_typed_key_for_column(field_map: dict, col: str) -> str | None:
     col_norm = col_s.replace("_", " ").strip().lower()
     for tk, disp in field_map.items():
         disp_s = str(disp).strip()
+        if disp_s == col_s or disp_s == col_s.replace("_", " ").strip():
+            return tk
+    for tk, disp in field_map.items():
+        disp_s = str(disp).strip()
         if disp_s.lower() == col_norm or disp_s.lower() == col_s.lower():
             return tk
     return None
@@ -164,25 +168,30 @@ def aggregate_table_doc_metadata(chunks: list, task: dict) -> dict:
         return {}
     roles = eff.get("table_column_roles") or {}
     table_column_names = eff.get("table_column_names") or []
-    # Reload table_column_names from KB if empty (chunk() writes them during parse,
-    # but the task snapshot may be stale)
-    if not table_column_names:
-        kb_id = task.get("kb_id")
-        if kb_id:
-            try:
-                KBS = _knowledgebase_service_cls()
-                ok, kb = KBS.get_by_id(kb_id)
-                if ok and kb:
-                    fresh_names = (kb.parser_config or {}).get("table_column_names") or []
-                    if fresh_names:
-                        table_column_names = fresh_names
-                        logging.debug(f"[TABLE_META_DEBUG] reloaded table_column_names from DB: {fresh_names}")
-            except Exception as e:
-                logging.debug(
-                    "[TABLE_META_DEBUG] failed to reload table_column_names from DB: %s",
-                    e,
-                    exc_info=True,
-                )
+    fm = (task.get("kb_parser_config") or {}).get("field_map") or {}
+    # chunk() writes the parsed columns to the KB after the task snapshot was created,
+    # so always prefer that fresh schema even when the snapshot is non-empty but stale.
+    kb_id = task.get("kb_id")
+    if kb_id:
+        try:
+            KBS = _knowledgebase_service_cls()
+            ok, kb = KBS.get_by_id(kb_id)
+            if ok and kb:
+                fresh_pc = kb.parser_config or {}
+                fresh_names = fresh_pc.get("table_column_names") or []
+                if fresh_names:
+                    table_column_names = fresh_names
+                    logging.debug(f"[TABLE_META_DEBUG] reloaded table_column_names from DB: {fresh_names}")
+                fresh_fm = fresh_pc.get("field_map") or {}
+                if fresh_fm:
+                    fm = fresh_fm
+                    logging.debug(f"[TABLE_META_DEBUG] reloaded field_map from DB: {len(fm)} entries")
+        except Exception as e:
+            logging.debug(
+                "[TABLE_META_DEBUG] failed to reload table schema from DB: %s",
+                e,
+                exc_info=True,
+            )
     if table_column_names:
         meta_cols = [col for col in table_column_names if roles.get(col, "both") in ("metadata", "both")]
     else:
@@ -190,26 +199,6 @@ def aggregate_table_doc_metadata(chunks: list, task: dict) -> dict:
     if not meta_cols:
         logging.debug(f"[TABLE_META_DEBUG] skip aggregate: no metadata/both columns (table_column_names_present={bool(table_column_names)})")
         return {}
-    fm = (task.get("kb_parser_config") or {}).get("field_map") or {}
-    kb_id = task.get("kb_id")
-    if not fm and kb_id:
-        try:
-            KBS = _knowledgebase_service_cls()
-            ok, kb = KBS.get_by_id(kb_id)
-            if ok and kb:
-                fresh_pc = kb.parser_config or {}
-                reloaded = fresh_pc.get("field_map") or {}
-                if reloaded:
-                    fm = reloaded
-                    logging.debug(f"[TABLE_META_DEBUG] reloaded field_map from DB: {len(fm)} entries")
-                else:
-                    logging.debug("[TABLE_META_DEBUG] KB reload: parser_config has no field_map yet; will use ES key probe on chunk dicts if applicable")
-        except Exception as e:
-            logging.debug(
-                "[TABLE_META_DEBUG] failed to reload field_map from DB: %s",
-                e,
-                exc_info=True,
-            )
     sql_doc_engine = settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB
     if not fm and not sql_doc_engine:
         logging.debug(f"[TABLE_META_DEBUG] field_map empty on task snapshot — will use ES key probe on chunk dicts; kb_parser_config keys={list((task.get('kb_parser_config') or {}).keys())}")
