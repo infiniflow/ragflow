@@ -1749,7 +1749,7 @@ Example: Virtual Hosted Style`,
       mysqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
       mysqlFileExtensionTip:
-        'The file extension to save the content column into files. default: .txt',
+        'The extension used for documents synced from this source (default: .txt). Since each row is saved as one file, when set to .html or .md, select only content columns that are purely HTML or Markdown.',
       postgresqlDescription:
         'Connect to PostgreSQL database to sync data from tables using SQL queries.',
       postgresqlQueryTip:
@@ -1763,7 +1763,7 @@ Example: Virtual Hosted Style`,
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
       postgresqlFileExtensionTip:
-        'The file extension to save the content column into files. default: .txt',
+        'The extension used for documents synced from this source (default: .txt). Since each row is saved as one file, when set to .html or .md, select only content columns that are purely HTML or Markdown.',
       bigqueryDescription:
         'Connect to Google BigQuery to sync rows from a table or a custom GoogleSQL query.',
       bigqueryProjectIdTip:
