@@ -931,3 +931,74 @@ func TestFilterPDFTOCFragmentPages_KeepsFullRomanMarkers(t *testing.T) {
 		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
 	}
 }
+
+// TestFilterPDFTOCFragmentPages_URLBoilerplateDoesNotVeto pins the URL
+// exemption: a long storefront promo line bearing a URL or domain must not
+// veto page classification, and is deleted with the page.
+func TestFilterPDFTOCFragmentPages_URLBoilerplateDoesNotVeto(t *testing.T) {
+	promo := "Free ebook download from the reader forum http://forum.example.com/?from=381879"
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+		promo,
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	if len(got) != 0 {
+		t.Fatalf("sections = %v, want empty", sectionTexts(got))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_URLReferenceInBodyStillVetoes pins that the
+// exemption is scoped to classification only: a body page carrying a URL
+// reference plus genuine long prose still vetoes via the prose.
+func TestFilterPDFTOCFragmentPages_URLReferenceInBodyStillVetoes(t *testing.T) {
+	prose := "The way that can be told of is not the eternal way; the name " +
+		"that can be named is not the eternal name. The nameless is the origin."
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+		"See the reader forum http://forum.example.com for more texts.",
+		prose,
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
+		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_DeletesTitleLayoutURLBoilerplate pins that
+// the delete switch drops URL promo lines even when DLA types them as
+// title: the title-layout gate only keeps non-URL titles.
+func TestFilterPDFTOCFragmentPages_DeletesTitleLayoutURLBoilerplate(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	sections = append(sections, deepdoctype.Section{
+		Text:       "Reader forum http://forum.example.com",
+		LayoutType: "title",
+		Positions:  sections[0].Positions,
+	})
+	got := filterPDFTOCFragmentPages(sections)
+	if len(got) != 0 {
+		t.Fatalf("sections = %v, want empty", sectionTexts(got))
+	}
+}

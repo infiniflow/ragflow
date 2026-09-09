@@ -398,6 +398,12 @@ const (
 // matching the existing entry-filter behavior.
 var pdfTOCRomanMarkerPattern = regexp.MustCompile(`(?i)^[mdclxvi]+$`)
 
+// pdfURLBoilerplatePattern matches generic network signatures of ebook
+// storefront boilerplate (protocols, www, common domain suffixes, forum
+// hosts). It carries no per-file keywords: any long line bearing a URL or
+// domain is storefront promo, never book prose.
+var pdfURLBoilerplatePattern = regexp.MustCompile(`(?i)(https?://|www\.|\.(com|cn|net|org|cc|me)\b|bbs\.|forum\.)`)
+
 // filterPDFTOCFragmentPages drops fragmented table-of-contents pages from the
 // stream. DeepDoc layout splits one TOC line (chapter title + subtitle +
 // leader dots + page number) into unadjacent sections — a bare chapter title,
@@ -430,6 +436,11 @@ func filterPDFTOCFragmentPages(sections []deepdoctype.Section) []deepdoctype.Sec
 				refs++
 			}
 			if entry || len([]rune(text)) < pdfTOCBodyTextRunesMin {
+				continue
+			}
+			// Storefront promo lines bear a URL or domain: ebook boilerplate,
+			// never book prose, so they must not veto the page.
+			if pdfURLBoilerplatePattern.MatchString(text) {
 				continue
 			}
 			if strings.TrimSpace(sections[i].LayoutType) == deepdoctype.LayoutTypeTitle {
@@ -480,16 +491,17 @@ func pdfTOCFragmentPage(s deepdoctype.Section) (int, bool) {
 
 // pdfTOCFragmentDeletable reports whether the section at idx on a classified
 // TOC page is TOC debris: a title candidate, an entry line, a bare page
-// reference, a page-number-like title, or short text (subtitles and debris)
-// anchored by a neighboring TOC signal. Book titles (non-title headings),
-// roman-numeral page markers, long prose and non-text layouts are kept.
+// reference, a page-number-like title, a URL boilerplate line, or short
+// text (subtitles and debris) anchored by a neighboring TOC signal. Book
+// titles (non-title headings), roman-numeral page markers, long prose and
+// non-text layouts are kept.
 func pdfTOCFragmentDeletable(sections []deepdoctype.Section, idx int) bool {
 	s := sections[idx]
 	switch strings.TrimSpace(s.LayoutType) {
 	case "", deepdoctype.LayoutTypeText:
 	case deepdoctype.LayoutTypeTitle:
 		t := sectionText(s)
-		if !isPDFTOCTitleCandidate(t) && !isPDFTOCEntrySection(t) && !pdfTOCBarePageRefPattern.MatchString(t) {
+		if !isPDFTOCTitleCandidate(t) && !isPDFTOCEntrySection(t) && !pdfTOCBarePageRefPattern.MatchString(t) && !pdfURLBoilerplatePattern.MatchString(t) {
 			return false
 		}
 	default:
@@ -501,6 +513,8 @@ func pdfTOCFragmentDeletable(sections []deepdoctype.Section, idx int) bool {
 		return true
 	case pdfTOCRomanMarkerPattern.MatchString(text), strings.Contains(text, "《"):
 		return false
+	case pdfURLBoilerplatePattern.MatchString(text):
+		return true
 	case pdfTOCBarePageRefPattern.MatchString(text):
 		return true
 	case len([]rune(text)) < pdfTOCShortTextRunesMax && pdfTOCFragmentAnchorText(sections, idx):
