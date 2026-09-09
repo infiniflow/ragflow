@@ -1769,6 +1769,26 @@ jobs:
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
 
+      - name: Assert pre-seeded DeepDoc testdata
+        # Only the self-hosted ragflow-test runners bake infiniflow/ragflow-testdata
+        # into /opt/ragflow-testdata — the same image-level contract as
+        # MODEL_DIR=/opt/ragflow-deepdoc-models, which has no fallback either.
+        # Fail here rather than letting the fetch script silently fall back to
+        # cloning: a missing mount is an environment defect, and a silent
+        # fallback only makes the job slower while hiding it.
+        #
+        # Assert the `deepdoc` level, not a per-package subtree, so adding a
+        # package later does not invalidate the check.
+        run: |
+          set -euo pipefail
+          if [ ! -d /opt/ragflow-testdata/deepdoc ]; then
+            echo "ERROR: /opt/ragflow-testdata/deepdoc missing on this runner." >&2
+            echo "       Native backend tests expect the asset repo pre-seeded there." >&2
+            exit 1
+          fi
+          echo "✓ pre-seeded testdata found at /opt/ragflow-testdata/deepdoc:"
+          ls -l /opt/ragflow-testdata/deepdoc
+
       - name: Run in-process DeepDoc backend integration tests (correctness + race)
         # Doc-engine-independent: the same native backend (det/layout/tsr/rec
         # ONNX models + onnxruntime) is exercised regardless of DOC_ENGINE, so
@@ -1778,10 +1798,12 @@ jobs:
         # race-detection value, ~10x memory tax) and only the concurrency
         # correctness tests run WITH -race (see run_native_integration_tests).
         #
-        # Testdata is pre-seeded on the runner at /opt/ragflow-testdata;
-        # RAGFLOW_TESTDATA_DIR points the fetch script at it so the network
-        # clone is skipped (see scripts/fetch_deepdoc_testdata.sh). Runners
-        # without that mount fall back to cloning into XDG_CACHE_HOME.
+        # Testdata is pre-seeded on the runner at /opt/ragflow-testdata
+        # (asserted by the previous step). RAGFLOW_TESTDATA_DIR points the fetch
+        # script at it so the network clone is skipped (see
+        # scripts/fetch_deepdoc_testdata.sh) — which is why no actions/cache step
+        # is needed here. XDG_CACHE_HOME remains the location the script falls
+        # back to when it runs outside this job (local dev, no mount).
         env:
           MODEL_DIR: /opt/ragflow-deepdoc-models
           RAGFLOW_TESTDATA_DIR: /opt/ragflow-testdata
