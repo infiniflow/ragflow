@@ -1604,6 +1604,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         "Bu kuruluşta token'ın görebildiği her depo dizinlenecektir.",
       azureDevOpsContentTypesTip:
         'Neyin dizinleneceğini seçin: kaynak dosyalar, çekme istekleri veya her ikisi.',
+      sitemapDescription:
+        'Listelenen web sayfalarını ve PDF belgelerini bilgi tabanınıza eşitlemek için herkese açık bir sitemap.xml bağlayın.',
       azure_devopsDescription:
         "Depo dosyalarını ve pull request'leri senkronize etmek için Azure DevOps'u bağlayın.",
       bitbucketDescription:
