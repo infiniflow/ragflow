@@ -500,6 +500,21 @@ func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
 	}
 }
 
+func TestMaxTokensFromModelInfo(t *testing.T) {
+	maxTokens := 4096
+	maxOutput := 1024
+	modelInfo := &modelModule.Model{MaxTokens: &maxTokens, MaxOutput: &maxOutput}
+	if got := maxTokensFromModelInfo(modelInfo, entity.ModelTypeRerank); got != maxTokens {
+		t.Fatalf("rerank max tokens = %d, want %d", got, maxTokens)
+	}
+	if got := maxTokensFromModelInfo(modelInfo, entity.ModelTypeEmbedding); got != maxTokens {
+		t.Fatalf("embedding max tokens = %d, want %d", got, maxTokens)
+	}
+	if got := maxTokensFromModelInfo(modelInfo, entity.ModelTypeChat); got != maxOutput {
+		t.Fatalf("chat max tokens = %d, want max output %d", got, maxOutput)
+	}
+}
+
 func TestModelProviderServiceResolveModelContextLength(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
