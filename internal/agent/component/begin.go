@@ -103,7 +103,21 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	out := make(map[string]any, len(inputs))
 	mapsCopy(out, inputs)
 	for _, field := range b.inputFields {
+		if _, direct := inputs[field]; !direct {
+			if query, scalar := inputs["query"].(string); scalar {
+				if value, initialized := state.Globals["begin@"+field]; initialized {
+					out[field] = value
+					continue
+				}
+				out[field] = query
+				state.Globals["begin@"+field] = query
+				continue
+			}
+		}
 		if value, ok := beginInputValue(inputs, field); ok {
+			out[field] = value
+			state.Globals["begin@"+field] = value
+		} else if value, ok := state.Globals["begin@"+field]; ok {
 			out[field] = value
 		}
 	}
@@ -150,6 +164,9 @@ func beginInputValue(inputs map[string]any, field string) (any, bool) {
 		}
 		return unwrapBeginInputValue(value), true
 	}
+	// A scalar query is the legacy way to submit a single Starter field.
+	// Once that field has been initialized, later conversational queries must
+	// not overwrite it.
 	return query, true
 }
 
