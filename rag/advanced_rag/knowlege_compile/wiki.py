@@ -49,7 +49,6 @@ import xxhash as _xxhash
 
 from ._common import (
     build_chunk_batches as _build_chunk_batches,
-    bulk_dedup_items as _bulk_dedup_items,
     ensure_llm_bundle as _ensure_llm_bundle,
     knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
     run_chunked_pipeline as _run_chunked_pipeline,
@@ -1369,99 +1368,9 @@ async def wiki_map_from_chunks(
     return merged
 
 
-# ---------------------------------------------------------------------------
-# REDUCE phase (KB-scoped)
-# ---------------------------------------------------------------------------
-#
+# PLAN input cache
 
 WIKI_REDUCE_COMPILE_KWD = "wiki_reduce_result"
-DEFAULT_WIKI_REDUCE_MERGE_THRESHOLD = 0.95
-DEFAULT_WIKI_REDUCE_AMBIGUOUS_LOW = 0.75
-DEFAULT_WIKI_REDUCE_AMBIGUOUS_BATCH = 50
-DEFAULT_WIKI_REDUCE_TIMEOUT = _env_int("WIKI_REDUCE_TIMEOUT", 60, minimum=1)
-
-
-# System prompt for the LLM disambiguation batch. The shared engine
-# (``_common.bulk_dedup_items``) defaults to the same wording via
-# ``_common.DEFAULT_DISAMBIGUATE_SYSTEM``; we keep the local alias so the
-# constant name stays usable by call sites and external imports.
-WIKI_REDUCE_DISAMBIGUATE_SYSTEM = "You are a named-entity resolution assistant. Return only JSON."
-
-
-# --- ES I/O ----------------------------------------------------------------
-
-
-async def _wiki_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
-    """Aggregate every wiki_map_extract row in this KB into one merged dict.
-
-    Pages through ES if the KB has more than the per-call cap. Returns a dict
-    in the same shape as wiki_map_from_chunks' return value.
-    """
-    from common import settings
-    from common.doc_store.doc_store_base import OrderByExpr
-    from rag.nlp import search as _rag_search
-
-    index = _rag_search.index_name(tenant_id)
-    disabled_doc_ids = await _wiki_disabled_doc_ids(kb_id)
-    condition = {"compile_kwd": [WIKI_MAP_COMPILE_KWD]}
-    select_fields = ["id", "content_with_weight", "doc_id"]
-
-    PAGE_SIZE = 1000
-    offset = 0
-    merged = _wiki_empty_extract()
-    seen_topics: set[str] = set()
-
-    while True:
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                select_fields,
-                [],
-                condition,
-                [],
-                OrderByExpr(),
-                offset,
-                PAGE_SIZE,
-                index,
-                [kb_id],
-            )
-            field_map = settings.docStoreConn.get_fields(res, select_fields)
-        except Exception:
-            logging.exception("wiki_reduce: failed to page wiki_map_extract rows")
-            break
-
-        if not field_map:
-            break
-
-        for row in field_map.values():
-            if _wiki_doc_ids(row.get("doc_id")) & disabled_doc_ids:
-                continue
-            content = row.get("content_with_weight")
-            if not isinstance(content, str) or not content:
-                continue
-            try:
-                payload = json.loads(content)
-            except Exception:
-                logging.debug("wiki_reduce: skipping unparseable extract row")
-                continue
-            if not isinstance(payload, dict):
-                continue
-            for key in _EXTRACT_LIST_KEYS:
-                items = payload.get(key)
-                if isinstance(items, list):
-                    merged[key].extend(item for item in items if isinstance(item, dict))
-            topics = payload.get("topics")
-            if isinstance(topics, list):
-                for t in topics:
-                    if isinstance(t, str) and t and t not in seen_topics:
-                        seen_topics.add(t)
-                        merged["topics"].append(t)
-
-        if len(field_map) < PAGE_SIZE:
-            break
-        offset += PAGE_SIZE
-
-    return merged
 
 
 async def _wiki_all_map_doc_ids(tenant_id: str, kb_id: str) -> list[str]:
@@ -1516,84 +1425,6 @@ async def _wiki_all_map_doc_ids(tenant_id: str, kb_id: str) -> list[str]:
     return doc_ids
 
 
-async def _wiki_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
-    """xxh64 fingerprint of the **current** ``wiki_map_extract`` rows for
-    this KB — used by REDUCE / PLAN to cache-bust when MAP changed.
-
-    Built from ``sorted((chunk_id, chunk_hash))`` so:
-      * adding a new chunk → new pair appears → hash flips.
-      * editing a chunk → MAP row deleted + re-inserted with new hash → flips.
-      * deleting a chunk → MAP row gone → its pair drops → flips.
-      * everything stable → identical hash.
-
-    Empty / missing ``chunk_hash_kwd`` (legacy rows) defaults to '' so a
-    legacy KB still produces a stable hash; once those rows are touched
-    by an incremental MAP run, the hash naturally upgrades.
-
-    Pages through ES in windows of ``PAGE_SIZE`` rows — single-shot
-    "give me everything" reads hit doc-store limits on KBs with many
-    chunks. The accumulated ``pairs`` are sorted once at the end so the
-    fingerprint is independent of page order.
-    """
-    from common import settings
-    from common.doc_store.doc_store_base import OrderByExpr
-    from rag.nlp import search as _rag_search
-
-    index = _rag_search.index_name(tenant_id)
-    disabled_doc_ids = await _wiki_disabled_doc_ids(kb_id)
-    condition = {"compile_kwd": [WIKI_MAP_COMPILE_KWD]}
-    select_fields = ["id", "doc_id", "source_chunk_ids", "chunk_hash_kwd"]
-
-    PAGE_SIZE = 128
-    offset = 0
-    pairs: list[tuple[str, str]] = []
-    while True:
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                select_fields,
-                [],
-                condition,
-                [],
-                OrderByExpr(),
-                offset,
-                PAGE_SIZE,
-                index,
-                [kb_id],
-            )
-            field_map = settings.docStoreConn.get_fields(res, select_fields)
-        except Exception:
-            logging.exception(
-                "wiki: failed to compute MAP input hash for kb=%s (offset=%d)",
-                kb_id,
-                offset,
-            )
-            # Partial scan → cannot trust the resulting hash; return ""
-            # so REDUCE / PLAN fall through to a full re-run rather than
-            # cache-hitting against an incomplete fingerprint.
-            return ""
-        if not field_map:
-            break
-        for row in field_map.values():
-            if _wiki_doc_ids(row.get("doc_id")) & disabled_doc_ids:
-                continue
-            hh = row.get("chunk_hash_kwd")
-            if not isinstance(hh, str):
-                hh = ""
-            src = row.get("source_chunk_ids") or []
-            if isinstance(src, list):
-                for cid in src:
-                    if isinstance(cid, str) and cid:
-                        pairs.append((cid, hh))
-        if len(field_map) < PAGE_SIZE:
-            break
-        offset += PAGE_SIZE
-
-    pairs.sort()
-    body = "|".join(f"{cid}:{hh}" for cid, hh in pairs) + "|" + _WIKI_PIPELINE_REV
-    return _xxhash.xxh64(body.encode("utf-8", "surrogatepass")).hexdigest()
-
-
 async def _wiki_load_reduce_resume(
     tenant_id: str,
     kb_id: str,
@@ -1640,232 +1471,6 @@ async def _wiki_load_reduce_resume(
     if not isinstance(stored_hash, str):
         stored_hash = ""
     return cached, stored_hash
-
-
-async def _wiki_persist_reduce(
-    reduced: dict,
-    tenant_id: str,
-    kb_id: str,
-    input_hash: str = "",
-    source_doc_ids: Optional[list[str]] = None,
-) -> None:
-    """Upsert the single non-searchable wiki_reduce_result row for this KB.
-
-    ``input_hash`` records the MAP-state fingerprint this reduction was
-    computed from; the next call compares it before re-running.
-    ``source_doc_ids`` is the set of documents that fed this reduction, used
-    for delete-time reference counting.
-    """
-    from common import settings
-    from rag.nlp import search as _rag_search
-
-    index = _rag_search.index_name(tenant_id)
-    kb_id_str = str(kb_id)
-    content_with_weight = json.dumps(reduced, ensure_ascii=False)
-    # Stable id per KB so a re-run upserts the same row.
-    row_id = _stable_row_id(WIKI_REDUCE_COMPILE_KWD, kb_id_str)
-    doc = {
-        "id": row_id,
-        "doc_id": kb_id_str,  # sentinel — KB-scoped row, not a real document
-        "compile_kwd": WIKI_REDUCE_COMPILE_KWD,
-        "source_id": [kb_id_str],
-        "source_doc_ids": list(source_doc_ids or []),
-        "input_hash_kwd": input_hash,
-        "content_with_weight": content_with_weight,
-        "available_int": 0,
-    }
-    try:
-        # Best-effort delete then insert so re-runs replace cleanly.
-        try:
-            await thread_pool_exec(
-                settings.docStoreConn.delete,
-                {"compile_kwd": WIKI_REDUCE_COMPILE_KWD},
-                index,
-                kb_id,
-            )
-        except Exception:
-            logging.debug("wiki_reduce: prior result delete failed; will overwrite by id")
-        await thread_pool_exec(settings.docStoreConn.insert, [doc], index, kb_id)
-    except Exception:
-        logging.exception("wiki_reduce: failed to persist result row")
-
-
-# --- public entry ----------------------------------------------------------
-
-
-async def wiki_reduce_from_extracts(
-    chat_mdl,
-    embd_mdl,
-    tenant_id: str,
-    kb_id: str,
-    merge_threshold: float = DEFAULT_WIKI_REDUCE_MERGE_THRESHOLD,
-    ambiguous_low: float = DEFAULT_WIKI_REDUCE_AMBIGUOUS_LOW,
-    ambiguous_batch_size: int = DEFAULT_WIKI_REDUCE_AMBIGUOUS_BATCH,
-    llm_timeout: int = DEFAULT_WIKI_REDUCE_TIMEOUT,
-    force_rerun: bool = False,
-    callback: Optional[Callable] = None,
-) -> dict:
-    """Phase 2 (REDUCE/Dedup) — KB-scoped.
-
-    Loads every ``wiki_map_extract`` row in this KB (across all documents) and
-    produces a single canonical dict of entities/concepts via:
-        1. Exact dedup by ``(normalize(name), type)`` for entities and by
-           ``normalize(term)`` for concepts.
-        2. Embedding dedup of entity names: vectorized pairwise cosine over
-           ``embd_mdl.encode(...)`` output. Pairs of the same type with
-           similarity ≥ ``merge_threshold`` auto-merge; pairs in
-           ``[ambiguous_low, merge_threshold)`` go to step 3.
-        3. LLM disambiguation: batches of ambiguous pairs are sent to
-           ``chat_mdl`` via ``gen_json``; true verdicts collapse via union-find.
-        4. Apply merges: sum ``mention_count``, union ``aliases`` and
-           ``chunk_ids`` per canonical entity.
-
-    The result is persisted to ES as a single non-searchable
-    ``wiki_reduce_result`` row per KB. Subsequent calls with
-    ``force_rerun=False`` (default) return the cached row immediately; pass
-    ``force_rerun=True`` after new ``wiki_map_extract`` rows have been added.
-
-    Args:
-        chat_mdl, embd_mdl: ragflow LLMBundle instances.
-        tenant_id, kb_id: address the doc-store index.
-        merge_threshold: cosine ≥ this auto-merges. Default 0.90.
-        ambiguous_low: cosine in [ambiguous_low, merge_threshold) goes to LLM.
-        ambiguous_batch_size: max pairs per LLM disambiguation call.
-        llm_timeout: seconds per LLM disambiguation batch.
-        force_rerun: bypass the cached wiki_reduce_result.
-        callback: optional ``(progress: float, msg: str)`` callback.
-
-    Returns the canonical extract dict::
-
-        {
-          "entities":  [{"name","type","aliases","mention_count","chunk_ids"}, ...],
-          "concepts":  [{"term","definition_excerpt","mention_count","chunk_ids"}, ...],
-          "claims":    [...],   # pass-through from MAP
-          "relations": [...],   # pass-through from MAP
-          "topics":    [...],   # pass-through from MAP
-        }
-    """
-    # Incremental gate: the current MAP-state fingerprint is the union
-    # of every MAP row's (chunk_id, chunk_hash). If a cached REDUCE row
-    # exists AND its stored input_hash equals the current fingerprint,
-    # the upstream chunks haven't changed → cached output is still
-    # correct. ``force_rerun=True`` bypasses both checks for the
-    # legacy / admin "rebuild from scratch" path.
-    current_input_hash = await _wiki_compute_map_input_hash(tenant_id, kb_id)
-    reduce_source_doc_ids = await _wiki_all_map_doc_ids(tenant_id, kb_id)
-    if not force_rerun:
-        cached_pair = await _wiki_load_reduce_resume(tenant_id, kb_id)
-        if cached_pair is not None:
-            cached, stored_hash = cached_pair
-            if stored_hash and stored_hash == current_input_hash:
-                if callback:
-                    try:
-                        callback(1.0, "wiki REDUCE: cache hit (input unchanged)")
-                    except Exception:
-                        pass
-                return cached
-            # Cache present but stale (no hash, or hash mismatch). Fall
-            # through to a full re-reduce and write a fresh stamp.
-
-    if callback:
-        try:
-            callback(0.05, "wiki REDUCE: loading MAP extracts")
-        except Exception:
-            pass
-
-    raw = await _wiki_load_all_map_extracts(tenant_id, kb_id)
-    raw_entities = raw.get("entities") or []
-    raw_concepts = raw.get("concepts") or []
-    logging.info(
-        "wiki_reduce: kb=%s loaded raw entities=%d concepts=%d claims=%d relations=%d",
-        kb_id,
-        len(raw_entities),
-        len(raw_concepts),
-        len(raw.get("claims") or []),
-        len(raw.get("relations") or []),
-    )
-
-    if not raw_entities and not raw_concepts:
-        # Nothing to reduce; persist an empty result so resume can short-circuit.
-        empty = _wiki_empty_extract()
-        await _wiki_persist_reduce(empty, tenant_id, kb_id, input_hash=current_input_hash, source_doc_ids=reduce_source_doc_ids)
-        return empty
-
-    if callback:
-        try:
-            callback(0.25, "wiki REDUCE: dedup (exact + embedding + LLM)")
-        except Exception:
-            pass
-
-    # Entities: full three-phase dedup keyed by (normalized name, type).
-    canonical_entities = await _bulk_dedup_items(
-        raw_entities,
-        name_key="name",
-        type_key="type",
-        chat_mdl=chat_mdl,
-        embd_mdl=embd_mdl,
-        merge_threshold=merge_threshold,
-        ambiguous_low=ambiguous_low,
-        ambiguous_batch_size=ambiguous_batch_size,
-        disambiguate_system_prompt=WIKI_REDUCE_DISAMBIGUATE_SYSTEM,
-        llm_timeout=llm_timeout,
-    )
-
-    # Concepts: exact-dedup only (current behaviour); keep the longest
-    # definition_excerpt across the group via aggregate_extra.
-    def _concept_extras(group: list[dict]) -> dict:
-        best_def = max(
-            ((c.get("definition_excerpt") or "") for c in group if isinstance(c, dict)),
-            key=lambda s: len(s) if isinstance(s, str) else 0,
-            default="",
-        )
-        return {"definition_excerpt": best_def}
-
-    canonical_concepts = await _bulk_dedup_items(
-        raw_concepts,
-        name_key="term",
-        type_key=None,
-        aggregate_extra=_concept_extras,
-    )
-
-    logging.info(
-        "wiki_reduce: after dedup entities=%d concepts=%d",
-        len(canonical_entities),
-        len(canonical_concepts),
-    )
-
-    reduced = {
-        "entities": canonical_entities,
-        "concepts": canonical_concepts,
-        "claims": list(raw.get("claims") or []),
-        "relations": list(raw.get("relations") or []),
-        "topics": list(raw.get("topics") or []),
-    }
-
-    if callback:
-        try:
-            callback(0.9, "wiki REDUCE: persisting result")
-        except Exception:
-            pass
-    await _wiki_persist_reduce(reduced, tenant_id, kb_id, input_hash=current_input_hash, source_doc_ids=reduce_source_doc_ids)
-
-    logging.info(
-        "wiki_reduce: kb=%s done — entities=%d concepts=%d claims=%d relations=%d topics=%d",
-        kb_id,
-        len(reduced["entities"]),
-        len(reduced["concepts"]),
-        len(reduced["claims"]),
-        len(reduced["relations"]),
-        len(reduced["topics"]),
-    )
-
-    if callback:
-        try:
-            callback(1.0, "wiki REDUCE: done")
-        except Exception:
-            pass
-
-    return reduced
 
 
 # ---------------------------------------------------------------------------
@@ -2844,9 +2449,7 @@ WIKI_TEMPLATE_EXAMPLE = (
 # placeholder is filled in at request time so each artifact compilation
 # template can override the page-structure section without touching the
 # rest of the writer's guidance. Use ``_build_refine_writer_system`` to
-# materialize a concrete prompt; ``WIKI_REFINE_WRITER_SYSTEM`` is
-# kept as the default-filled value for back-compat with any code that
-# still imports it.
+# materialize a concrete prompt.
 WIKI_REFINE_WRITER_SYSTEM_TEMPLATE = (
     "You are an enterprise knowledge compilation writer. Your job is to write a single, "
     "high-quality wiki page by reading the SOURCE TEXT provided and using the "
@@ -2897,9 +2500,6 @@ def _build_refine_writer_system(instruction: str | None = None, example: str | N
     """Return the writer system prompt with separate instruction and page
     example overrides. Empty values use the built-in defaults.
 
-    The default-filled form is also exposed as
-    ``WIKI_REFINE_WRITER_SYSTEM`` for callers that don't have an
-    override to apply.
     """
     instruction_body = (instruction or "").strip() or "Follow the page structure and writing requirements below."
     example_body = (example or "").strip() or WIKI_TEMPLATE_EXAMPLE
@@ -2907,9 +2507,6 @@ def _build_refine_writer_system(instruction: str | None = None, example: str | N
         template_instruction=instruction_body,
         template_example=example_body,
     )
-
-
-WIKI_REFINE_WRITER_SYSTEM = _build_refine_writer_system(None)
 
 
 WIKI_REFINE_WRITER_USER_TEMPLATE = """\
@@ -4148,7 +3745,6 @@ __all__ = [
     "WIKI_PAGE_COMPILE_KWD",
     "WIKI_DRAFT_COMPILE_KWD",
     "wiki_map_from_chunks",
-    "wiki_reduce_from_extracts",
     "wiki_plan_from_reduction",
     "wiki_refine_from_plan",
 ]
