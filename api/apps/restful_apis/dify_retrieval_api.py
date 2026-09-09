@@ -100,6 +100,8 @@ def _parse_retrieval_options(retrieval_setting):
         retrieval_setting = {}
     if not isinstance(retrieval_setting, dict):
         raise ValueError("retrieval_setting must be an object")
+    if isinstance(retrieval_setting.get("top_k"), bool):
+        raise ValueError("top_k must be an integer, not a boolean")
     try:
         similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
         top = int(retrieval_setting.get("top_k", 1024))

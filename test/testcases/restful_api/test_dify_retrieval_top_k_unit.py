@@ -88,7 +88,7 @@ def dify_module(monkeypatch):
 
 
 @pytest.mark.p2
-@pytest.mark.parametrize("bad_top_k", [0, -1, -1024, 1025, 10**6])
+@pytest.mark.parametrize("bad_top_k", [0, -1, -1024, 1025, 10**6, True, False])
 def test_out_of_range_top_k_rejected(dify_module, bad_top_k):
     with pytest.raises(ValueError):
         dify_module._parse_retrieval_options({"top_k": bad_top_k})
