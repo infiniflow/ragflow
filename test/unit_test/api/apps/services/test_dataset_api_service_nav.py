@@ -152,7 +152,10 @@ def _load_nav_module(monkeypatch, *, accessible=True, index_pack=("idx-1", None)
         thread_pool_exec_long_time=AsyncMock(side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs)),
     )
     _stub(monkeypatch, "rag.advanced_rag.knowlege_compile.wiki", WIKI_PAGE_COMPILE_KWD="wiki")
-    _stub(monkeypatch, "common.doc_store.doc_store_base", OrderByExpr=MagicMock)
+    # The navigation legs build keyword/dense expressions from these doc-store
+    # base classes; the compiled-agg keyword fallback and claim-agg vector leg
+    # both import MatchTextExpr from here (not rag.nlp.search).
+    _stub(monkeypatch, "common.doc_store.doc_store_base", OrderByExpr=MagicMock, MatchTextExpr=_StubMatchTextExpr)
 
     repo_root = Path(__file__).resolve().parents[5]
     module_path = repo_root / "api" / "apps" / "services" / "dataset_api_service.py"
@@ -289,7 +292,9 @@ def test_nav_bucket_compiled_rows_skips_unparseable_payloads(monkeypatch):
             "r3": {"doc_id": "doc-b", "similarity": 0.9, "content_with_weight": json.dumps([1, 2])},
         }
     )
-    assert buckets == {"title": {}, "fact": {}, "fact_names": {}}
+    # A claim bucket is always present now that claim rows feed claim_agg; the
+    # unparseable input above has no claim rows, so it stays empty.
+    assert buckets == {"title": {}, "fact": {}, "claim": {}, "fact_names": {}}
 
 
 def test_nav_bucket_compiled_rows_tracks_fact_names_per_document(monkeypatch):
