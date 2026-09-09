@@ -81,8 +81,7 @@ class ElasticSearchConnectionPool:
             logging.info("Connecting to Elasticsearch using basic authentication")
             self.es_conn = Elasticsearch(
                 self.ES_CONFIG["hosts"].split(","),
-                basic_auth=(self.ES_CONFIG["username"], self.ES_CONFIG[
-                    "password"]) if "username" in self.ES_CONFIG and "password" in self.ES_CONFIG else None,
+                basic_auth=(self.ES_CONFIG["username"], self.ES_CONFIG["password"]) if "username" in self.ES_CONFIG and "password" in self.ES_CONFIG else None,
                 verify_certs=self.ES_CONFIG.get("verify_certs", False),
                 timeout=600,
             )
