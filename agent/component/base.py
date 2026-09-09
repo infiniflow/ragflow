@@ -623,8 +623,10 @@ class ComponentBase(ABC):
     def get_dependency_ids(self) -> list[str]:
         ids = [ele["_cpn_id"] for ele in self.get_input_elements().values() if isinstance(ele, dict) and ele.get("_cpn_id")]
         for ref in self.param_refs():
-            if isinstance(ref, str) and ref.find("@") > 0:
-                ids.append(ref.split("@", 1)[0])
+            if isinstance(ref, str):
+                cleaned = ref.strip("{").strip("}").strip()
+                if cleaned.find("@") > 0:
+                    ids.append(cleaned.split("@", 1)[0])
         return ids
 
     def get_input_form(self) -> dict[str, dict]:

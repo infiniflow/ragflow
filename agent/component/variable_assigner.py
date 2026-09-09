@@ -40,6 +40,34 @@ class VariableAssigner(ComponentBase, ABC):
     component_name = "VariableAssigner"
     _NO_PARAMETER_OPERATORS = {"clear", "remove_first", "remove_last"}
 
+    def param_refs(self) -> list[str]:
+        refs = []
+        variables = getattr(self._param, "variables", []) or []
+        if isinstance(variables, list):
+            for item in variables:
+                if not isinstance(item, dict):
+                    continue
+                variable = item.get("variable")
+                if isinstance(variable, str) and "@" in variable:
+                    refs.append(variable.strip("{").strip("}").strip())
+
+                operator = item.get("operator")
+                parameter = item.get("parameter")
+                if isinstance(parameter, str) and "@" in parameter:
+                    if operator == "set":
+                        refs.extend([m.group(1) for m in self.variable_ref_patt_re.finditer(parameter)])
+                    elif operator in ("overwrite", "append", "extend"):
+                        matches = [m.group(1) for m in self.variable_ref_patt_re.finditer(parameter)]
+                        if matches:
+                            refs.extend(matches)
+                        else:
+                            refs.append(parameter.strip("{").strip("}").strip())
+                    else:
+                        matches = [m.group(1) for m in self.variable_ref_patt_re.finditer(parameter)]
+                        if matches:
+                            refs.extend(matches)
+        return refs
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         if not isinstance(self._param.variables, list):

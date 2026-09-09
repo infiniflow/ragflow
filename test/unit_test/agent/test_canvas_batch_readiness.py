@@ -87,6 +87,7 @@ def _load_canvas_stack(monkeypatch):
     _real("agent.settings", "agent/settings.py")
     _real("agent.dsl_migration", "agent/dsl_migration.py")
 
+    _stub("api.utils.api_utils", timeout=lambda *a, **kw: lambda fn: fn)
     base = _real("agent.component.base", "agent/component/base.py")
     component_pkg.base = base
 
@@ -95,6 +96,10 @@ def _load_canvas_stack(monkeypatch):
 
     canvas = _real("agent.canvas", "agent/canvas.py")
     aggregator = _real("agent.component.variable_aggregator", "agent/component/variable_aggregator.py")
+    switch = _real("agent.component.switch", "agent/component/switch.py")
+    assigner = _real("agent.component.variable_assigner", "agent/component/variable_assigner.py")
+    iteration = _real("agent.component.iteration", "agent/component/iteration.py")
+    list_operations = _real("agent.component.list_operations", "agent/component/list_operations.py")
 
     _pkg("agent.tools", REPO_ROOT / "agent" / "tools")
     _stub("common.mcp_tool_call_conn", MCPToolBinding=MagicMock(), MCPToolCallSession=MagicMock(), ToolCallSession=MagicMock())
@@ -104,7 +109,7 @@ def _load_canvas_stack(monkeypatch):
     sys.modules["rag.prompts.generator"].kb_prompt = MagicMock()
     _real("agent.tools.base", "agent/tools/base.py")
     code_exec = _real("agent.tools.code_exec", "agent/tools/code_exec.py")
-    return canvas, base, aggregator, code_exec, registry
+    return canvas, base, aggregator, code_exec, switch, assigner, iteration, list_operations, registry
 
 
 class _Trace:
@@ -127,7 +132,7 @@ class _Trace:
         return self.runs(cpn_id) > 0
 
 
-def _make_components(base, aggregator, trace):
+def _make_components(base, aggregator, trace, switch=None, assigner=None, iteration=None, list_operations=None):
     class BeginParam(base.ComponentParamBase):
         def __init__(self):
             super().__init__()
@@ -182,7 +187,7 @@ def _make_components(base, aggregator, trace):
             super()._invoke(**kwargs)
             trace.record("end", self._id)
 
-    return {
+    components = {
         "Begin": Begin,
         "BeginParam": BeginParam,
         "Echo": Echo,
@@ -190,6 +195,56 @@ def _make_components(base, aggregator, trace):
         "VariableAggregator": TracedAggregator,
         "VariableAggregatorParam": aggregator.VariableAggregatorParam,
     }
+
+    if switch:
+        class TracedSwitch(switch.Switch):
+            component_name = "Switch"
+
+            def _invoke(self, **kwargs):
+                trace.record("start", self._id)
+                super()._invoke(**kwargs)
+                trace.record("end", self._id)
+
+        components["Switch"] = TracedSwitch
+        components["SwitchParam"] = switch.SwitchParam
+
+    if assigner:
+        class TracedVariableAssigner(assigner.VariableAssigner):
+            component_name = "VariableAssigner"
+
+            def _invoke(self, **kwargs):
+                trace.record("start", self._id)
+                super()._invoke(**kwargs)
+                trace.record("end", self._id)
+
+        components["VariableAssigner"] = TracedVariableAssigner
+        components["VariableAssignerParam"] = assigner.VariableAssignerParam
+
+    if iteration:
+        class TracedIteration(iteration.Iteration):
+            component_name = "Iteration"
+
+            def _invoke(self, **kwargs):
+                trace.record("start", self._id)
+                super()._invoke(**kwargs)
+                trace.record("end", self._id)
+
+        components["Iteration"] = TracedIteration
+        components["IterationParam"] = iteration.IterationParam
+
+    if list_operations:
+        class TracedListOperations(list_operations.ListOperations):
+            component_name = "ListOperations"
+
+            def _invoke(self, **kwargs):
+                trace.record("start", self._id)
+                super()._invoke(**kwargs)
+                trace.record("end", self._id)
+
+        components["ListOperations"] = TracedListOperations
+        components["ListOperationsParam"] = list_operations.ListOperationsParam
+
+    return components
 
 
 def _node(name, params, downstream, upstream):
@@ -292,12 +347,111 @@ def _mutually_referencing_graph():
     )
 
 
+def _switch_sibling_graph():
+    return _dsl(
+        {
+            "begin": _node("Begin", {}, ["producer", "sw"], []),
+            "producer": _node("Echo", {"text": "ready", "delay": 0.20}, [], ["begin"]),
+            "sw": _node(
+                "Switch",
+                {
+                    "conditions": [
+                        {
+                            "logical_operator": "and",
+                            "items": [{"cpn_id": "producer@result", "operator": "=", "value": "ready"}],
+                            "to": ["matched"],
+                        }
+                    ],
+                    "end_cpn_ids": ["else_sink"],
+                },
+                ["matched", "else_sink"],
+                ["begin"],
+            ),
+            "matched": _node("Echo", {"text": "matched_path"}, [], ["sw"]),
+            "else_sink": _node("Echo", {"text": "else_path"}, [], ["sw"]),
+        }
+    )
+
+
+def _assigner_sibling_graph():
+    return json.dumps(
+        {
+            "components": {
+                "begin": _node("Begin", {}, ["producer", "assigner"], []),
+                "producer": _node("Echo", {"text": "computed_val", "delay": 0.20}, [], ["begin"]),
+                "assigner": _node(
+                    "VariableAssigner",
+                    {
+                        "variables": [
+                            {
+                                "variable": "assigned_res",
+                                "operator": "set",
+                                "parameter": "{producer@result}",
+                            }
+                        ]
+                    },
+                    [],
+                    ["begin"],
+                ),
+            },
+            "history": [],
+            "retrieval": [],
+            "memory": [],
+            "path": [],
+            "globals": {"sys.query": "", "sys.user_id": "u", "sys.conversation_turns": 0, "sys.files": [], "sys.history": [], "assigned_res": ""},
+        }
+    )
+
+
+def _iteration_sibling_graph():
+    return _dsl(
+        {
+            "begin": _node("Begin", {}, ["producer", "iter_node"], []),
+            "producer": _node("Echo", {"text": "ready", "delay": 0.20}, [], ["begin"]),
+            "iter_node": _node(
+                "Iteration",
+                {"items_ref": "producer@result"},
+                [],
+                ["begin"],
+            ),
+        }
+    )
+
+
+def _list_operations_sibling_graph():
+    return _dsl(
+        {
+            "begin": _node("Begin", {}, ["producer", "list_ops"], []),
+            "producer": _node("Echo", {"text": "ready", "delay": 0.20}, [], ["begin"]),
+            "list_ops": _node(
+                "ListOperations",
+                {"query": "producer@result", "operations": "nth", "n": 1},
+                [],
+                ["begin"],
+            ),
+        }
+    )
+
+
+class _CanvasStack(tuple):
+    def __new__(cls, canvas, trace, code_exec, switch=None, assigner=None, iteration=None, list_operations=None):
+        instance = super().__new__(cls, (canvas, trace, code_exec))
+        instance.canvas = canvas
+        instance.trace = trace
+        instance.code_exec = code_exec
+        instance.switch = switch
+        instance.assigner = assigner
+        instance.iteration = iteration
+        instance.list_operations = list_operations
+        return instance
+
+
 @pytest.fixture
 def canvas_stack(monkeypatch):
-    canvas, base, aggregator, code_exec, registry = _load_canvas_stack(monkeypatch)
+    canvas, base, aggregator, code_exec, switch, assigner, iteration, list_operations, registry = _load_canvas_stack(monkeypatch)
     trace = _Trace()
-    registry.update(_make_components(base, aggregator, trace))
-    return canvas, trace, code_exec
+    registry.update(_make_components(base, aggregator, trace, switch, assigner, iteration, list_operations))
+    return _CanvasStack(canvas, trace, code_exec, switch, assigner, iteration, list_operations)
 
 
 def _run(canvas_module, dsl):
@@ -432,3 +586,130 @@ def test_code_node_dependencies_come_from_its_arguments(canvas_stack):
     cpn._param = param
 
     assert cpn.get_dependency_ids() == ["code_1"]
+
+
+@pytest.mark.p1
+def test_switch_param_refs_and_dependency_ids(canvas_stack):
+    switch_mod = canvas_stack.switch
+    param = switch_mod.SwitchParam()
+    param.conditions = [
+        {
+            "logical_operator": "and",
+            "items": [
+                {"cpn_id": "producer_1@output", "operator": "=", "value": "1"},
+                {"cpn_id": "producer_2@output", "operator": "contains", "value": "2"},
+                {"cpn_id": "", "operator": "=", "value": "3"},
+            ],
+            "to": ["dest"],
+        }
+    ]
+    param.end_cpn_ids = ["else_dest"]
+    cpn = switch_mod.Switch.__new__(switch_mod.Switch)
+    cpn._param = param
+
+    assert cpn.param_refs() == ["producer_1@output", "producer_2@output"]
+    assert cpn.get_dependency_ids() == ["producer_1", "producer_2"]
+
+
+@pytest.mark.p1
+def test_switch_waits_for_producer_in_same_batch(canvas_stack):
+    canvas_module, trace, _ = canvas_stack
+    graph = _run(canvas_module, _switch_sibling_graph())
+    sw = graph.get_component_obj("sw")
+
+    assert sw.output("_next") == ["matched"]
+    assert trace.at("start", "sw") >= trace.at("end", "producer")
+
+
+@pytest.mark.p1
+def test_variable_assigner_param_refs_and_dependency_ids(canvas_stack):
+    assigner_mod = canvas_stack.assigner
+    param = assigner_mod.VariableAssignerParam()
+    param.variables = [
+        {"variable": "sys.query", "operator": "set", "parameter": "{node_a@result}"},
+        {"variable": "node_b@var", "operator": "overwrite", "parameter": "node_c@result"},
+        {"variable": "global_val", "operator": "set", "parameter": "plain {node_d@out1} and {node_e@out2}"},
+        {"variable": "email_literal", "operator": "set", "parameter": "support@example.com"},
+        {"variable": "mixed_email", "operator": "set", "parameter": "email support@example.com or {node_f@email}"},
+        {"variable": "sys.count", "operator": "+=", "parameter": 1},
+        {"variable": "sys.list", "operator": "clear", "parameter": None},
+    ]
+    cpn = assigner_mod.VariableAssigner.__new__(assigner_mod.VariableAssigner)
+    cpn._param = param
+
+    refs = cpn.param_refs()
+    assert "node_a@result" in refs
+    assert "node_b@var" in refs
+    assert "node_c@result" in refs
+    assert "node_d@out1" in refs
+    assert "node_e@out2" in refs
+    assert "node_f@email" in refs
+    assert "support@example.com" not in refs
+    dep_ids = cpn.get_dependency_ids()
+    assert dep_ids == ["node_a", "node_b", "node_c", "node_d", "node_e", "node_f"]
+
+
+@pytest.mark.p1
+def test_variable_assigner_waits_for_producer_in_same_batch(canvas_stack):
+    canvas_module, trace, _ = canvas_stack
+    graph = _run(canvas_module, _assigner_sibling_graph())
+
+    assert graph.get_variable_value("assigned_res") == "computed_val"
+    assert trace.at("start", "assigner") >= trace.at("end", "producer")
+
+
+@pytest.mark.p1
+def test_iteration_param_refs_and_dependency_ids(canvas_stack):
+    iteration_mod = canvas_stack.iteration
+    param = iteration_mod.IterationParam()
+    param.items_ref = "generator@items"
+    cpn = iteration_mod.Iteration.__new__(iteration_mod.Iteration)
+    cpn._param = param
+
+    assert cpn.param_refs() == ["generator@items"]
+    assert cpn.get_dependency_ids() == ["generator"]
+
+
+@pytest.mark.p1
+def test_iteration_waits_for_producer_in_same_batch(canvas_stack):
+    canvas_module, trace, _ = canvas_stack
+    _run(canvas_module, _iteration_sibling_graph())
+
+    assert trace.at("start", "iter_node") >= trace.at("end", "producer")
+
+
+@pytest.mark.p1
+def test_list_operations_param_refs_and_dependency_ids(canvas_stack):
+    list_ops_mod = canvas_stack.list_operations
+    param = list_ops_mod.ListOperationsParam()
+    param.query = "retrieval@chunks"
+    cpn = list_ops_mod.ListOperations.__new__(list_ops_mod.ListOperations)
+    cpn._param = param
+
+    assert cpn.param_refs() == ["retrieval@chunks"]
+    assert cpn.get_dependency_ids() == ["retrieval"]
+
+
+@pytest.mark.p1
+def test_list_operations_waits_for_producer_in_same_batch(canvas_stack):
+    canvas_module, trace, _ = canvas_stack
+    _run(canvas_module, _list_operations_sibling_graph())
+
+    assert trace.at("start", "list_ops") >= trace.at("end", "producer")
+
+
+@pytest.mark.p1
+def test_dependency_ids_handles_braced_param_refs(canvas_stack):
+    base = sys.modules["agent.component.base"]
+
+    class DummyComponent(base.ComponentBase):
+        component_name = "Dummy"
+
+        def param_refs(self):
+            return ["{producer_1@output}", "producer_2@output", "{ sys.query }", "invalid_no_at"]
+
+    c = DummyComponent.__new__(DummyComponent)
+    param = base.ComponentParamBase.__new__(base.ComponentParamBase)
+    param.inputs = {}
+    c._param = param
+    assert c.get_dependency_ids() == ["producer_1", "producer_2"]
