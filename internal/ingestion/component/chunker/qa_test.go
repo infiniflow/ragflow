@@ -381,4 +381,15 @@ func TestQAChunker_XLSXJSONRegression(t *testing.T) {
 	if len(chunks) != 3 {
 		t.Fatalf("expected 3 chunks, got %d", len(chunks))
 	}
+	expected := []string{
+		"Question: question\tAnswer: answer",
+		"Question: What is RAGFlow?\tAnswer: A RAG engine.",
+		"Question: Where are the docs?\tAnswer: On the website.",
+	}
+	for i, want := range expected {
+		cww, _ := chunks[i]["content_with_weight"].(string)
+		if cww != want {
+			t.Fatalf("chunk[%d] content_with_weight = %q, want %q", i, cww, want)
+		}
+	}
 }

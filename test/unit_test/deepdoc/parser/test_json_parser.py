@@ -26,27 +26,15 @@ chunk directly.
 """
 
 import importlib.util
+import json
 import os
 import sys
 import types
 
 # Load json_parser by file path so we don't trigger deepdoc/parser/__init__.py
 # (which pulls in heavy parsers). json_parser imports ``decode_text`` from
-# rag.nlp; stub rag.nlp with a minimal decoder so the module imports.
-
-
-def _decode_text(blob, document_type="text"):
-    if blob.startswith(b"\xef\xbb\xbf"):
-        return blob.decode("utf-8-sig"), "utf-8-sig"
-    return blob.decode("utf-8"), "utf-8"
-
-
-_rag_nlp = types.ModuleType("rag.nlp")
-_rag_nlp.decode_text = _decode_text
-sys.modules["rag.nlp"] = _rag_nlp
-_rag = types.ModuleType("rag")
-_rag.nlp = _rag_nlp
-sys.modules["rag"] = _rag
+# rag.nlp; stub rag.nlp only while loading, then restore sys.modules so later
+# tests resolve the real package regardless of collection order.
 
 
 def _find_project_root(marker="pyproject.toml"):
@@ -58,17 +46,42 @@ def _find_project_root(marker="pyproject.toml"):
     return None
 
 
-_PROJECT_ROOT = _find_project_root()
+def _load_json_parser():
+    try:
+        from rag.nlp import decode_text as production_decode_text
+    except ImportError:
+        def production_decode_text(blob, document_type="text"):
+            if blob.startswith(b"\xef\xbb\xbf"):
+                return blob.decode("utf-8-sig"), "utf-8-sig"
+            return blob.decode("utf-8"), "utf-8"
 
-_json_spec = importlib.util.spec_from_file_location(
-    "deepdoc.parser.json_parser",
-    os.path.join(_PROJECT_ROOT, "deepdoc", "parser", "json_parser.py"),
-)
-_json_mod = importlib.util.module_from_spec(_json_spec)
-sys.modules["deepdoc.parser.json_parser"] = _json_mod
-_json_spec.loader.exec_module(_json_mod)
+    rag_nlp = types.ModuleType("rag.nlp")
+    rag_nlp.decode_text = production_decode_text
+    sys.modules["rag.nlp"] = rag_nlp
+    rag = types.ModuleType("rag")
+    rag.nlp = rag_nlp
+    sys.modules["rag"] = rag
 
-RAGFlowJsonParser = _json_mod.RAGFlowJsonParser
+    project_root = _find_project_root()
+    json_spec = importlib.util.spec_from_file_location(
+        "deepdoc.parser.json_parser",
+        os.path.join(project_root, "deepdoc", "parser", "json_parser.py"),
+    )
+    json_mod = importlib.util.module_from_spec(json_spec)
+    sys.modules["deepdoc.parser.json_parser"] = json_mod
+    json_spec.loader.exec_module(json_mod)
+    return json_mod.RAGFlowJsonParser
+
+
+_saved_modules = {name: sys.modules.get(name) for name in ("rag", "rag.nlp")}
+try:
+    RAGFlowJsonParser = _load_json_parser()
+finally:
+    for name, module in _saved_modules.items():
+        if module is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = module
 
 
 def test_top_level_scalars_do_not_crash():
@@ -99,13 +112,19 @@ def test_objects_and_arrays_still_chunk():
 def test_utf8_bom_json_parses_same_as_without_bom():
     parser = RAGFlowJsonParser()
     doc = '{"title": "Quarterly report", "body": "Revenue grew 12 percent."}'
-    assert parser(b"\xef\xbb\xbf" + doc.encode("utf-8")) == parser(doc.encode("utf-8"))
+    expected = parser(doc.encode("utf-8"))
+    assert expected == ['{"title": "Quarterly report", "body": "Revenue grew 12 percent."}']
+    assert parser(b"\xef\xbb\xbf" + doc.encode("utf-8")) == expected
 
 
 def test_utf8_bom_jsonl_keeps_all_records():
-    import json
-
     parser = RAGFlowJsonParser()
     lines = [json.dumps({"id": i}) for i in range(1, 21)]
     jsonl = "\n".join(lines).encode("utf-8")
-    assert len(parser(b"\xef\xbb\xbf" + jsonl)) == len(parser(jsonl))
+    with_bom = parser(b"\xef\xbb\xbf" + jsonl)
+    without_bom = parser(jsonl)
+    assert len(with_bom) == 20
+    assert len(without_bom) == 20
+    assert with_bom == without_bom
+    ids = [json.loads(chunk)["id"] for chunk in with_bom]
+    assert ids == list(range(1, 21))
