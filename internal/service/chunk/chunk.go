@@ -398,18 +398,18 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	// Get rerank model if RerankID is specified
 	var rerankModel *models.RerankModel
 	if req.TenantRerankID != nil && *req.TenantRerankID != "" {
-		driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigByID(ctx, tenantIDs[0], entity.ModelTypeRerank, *req.TenantRerankID)
+		driver, mdlName, apiConfig, maxTokens, getErr := modelProviderSvc.GetModelConfigByID(ctx, tenantIDs[0], entity.ModelTypeRerank, *req.TenantRerankID)
 		if getErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by tenant_rerank_id: %w", getErr)
 		}
-		rerankModel = models.NewRerankModel(driver, &mdlName, apiConfig)
+		rerankModel = models.NewRerankModel(driver, &mdlName, apiConfig, maxTokens)
 	} else if req.RerankID != nil && *req.RerankID != "" {
 		rerankCompositeName := *req.RerankID
-		driver, mdlName, apiConfig, _, getErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankCompositeName)
+		driver, mdlName, apiConfig, maxTokens, getErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankCompositeName)
 		if getErr != nil {
 			rerankModel = nil
 		} else {
-			rerankModel = models.NewRerankModel(driver, &mdlName, apiConfig)
+			rerankModel = models.NewRerankModel(driver, &mdlName, apiConfig, maxTokens)
 		}
 	}
 

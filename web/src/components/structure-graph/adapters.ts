@@ -37,6 +37,29 @@ export function getEntityDisplayName(entity: IStructureGraphEntity) {
   return trim(entity.name ?? entity.id ?? '');
 }
 
+// Exact (case-insensitive) entity name/alias hit for a typed search keyword.
+// Returns the canonical display name so callers can treat the keyword like a
+// dropdown selection (highlight + dim); '' when the keyword only partially
+// matches or names nothing, in which case the server-side keyword subgraph
+// search stays the right fallback.
+export function findEntityDisplayNameByKeyword(
+  entities: IStructureGraphEntity[],
+  keyword: string,
+) {
+  const query = keyword.trim().toLowerCase();
+  if (!query) {
+    return '';
+  }
+  const entity = (entities ?? []).find(
+    (item) =>
+      getEntityDisplayName(item).toLowerCase() === query ||
+      (item.aliases ?? []).some(
+        (alias) => (alias ?? '').trim().toLowerCase() === query,
+      ),
+  );
+  return entity ? getEntityDisplayName(entity) : '';
+}
+
 function normalizeEntity(entity: IStructureGraphEntity) {
   const id = entity.id ?? entity.name ?? '';
   const name = getEntityDisplayName(entity);

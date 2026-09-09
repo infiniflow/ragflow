@@ -2184,6 +2184,25 @@ async def _init_chat(tools, system: str, user: str, tmo: float) -> str:
     return ""
 
 
+def _init_retry_timeout(first_tmo: float, deadline_left: float | None) -> float:
+    """Budget for the slot-table decomposition retry.
+
+    The first attempt uses the official ``_INIT_TIMEOUT_S`` (45s) bound. If the
+    model is slower than that (deepseek-v4-flash: 40-80s/turn), the retry needs a
+    longer window to actually produce a slot table — otherwise both attempts
+    time out and the table degrades to one answer slot. Never exceed the first
+    bound's cap plus a 2x ceiling, and never overrun the session deadline:
+
+    - floor: the first attempt's budget (never shrink below what already failed),
+    - ceiling: 2x the first attempt, capped at a generous 90s absolute upper
+      bound,
+    - deadline: leave at least 5s of the round budget for the rest of the session.
+    """
+    if not deadline_left or deadline_left <= 0:
+        return min(2 * first_tmo, 90.0)
+    return max(first_tmo, min(2 * first_tmo, 90.0, deadline_left - 5.0))
+
+
 async def initialize_state(tools, question, fanout_hint, deadline_left=None):
     from rag.prompts.template import load_prompt
 
@@ -2210,7 +2229,13 @@ async def initialize_state(tools, question, fanout_hint, deadline_left=None):
     if not data:
         # one quick retry — transient provider stalls were observed (45s with
         # zero bytes); a second attempt succeeded in production logs.
-        raw = await _init_chat(tools, system, user, tmo)
+        # Give the retry a longer budget than the first attempt: on slow models
+        # (deepseek-v4-flash, 40-80s/turn) a 45s bound times out both times and
+        # the slot table degrades to a single answer slot — losing the second
+        # hop of a multi-hop question (observed: Q86 170526). Still clamped by
+        # the session deadline so the retry cannot overrun the round budget.
+        retry_tmo = _init_retry_timeout(tmo, deadline_left)
+        raw = await _init_chat(tools, system, user, retry_tmo)
         _book_raw_call()
         data = extract_json(raw) or {}
     slots = []
