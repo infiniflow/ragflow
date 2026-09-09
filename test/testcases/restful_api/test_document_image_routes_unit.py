@@ -232,8 +232,10 @@ def test_document_image_serves_own_dataset(monkeypatch):
     module = _load_document_api(monkeypatch, accessible_kb_ids={"kb_own"}, storage_store=storage, thumbnail_docs=[])
 
     res = _run(module.get_document_image("kb_own-thumb-1.png"))
-    # make_response stub returns an awaitable wrapping the raw bytes
-    assert asyncio.run(res).data == payload if asyncio.iscoroutine(res) else getattr(res, "data", payload) == payload
+    # The route awaits the make_response stub, so a served image comes back as
+    # the response object; an error envelope would be a dict instead.
+    assert not isinstance(res, dict), f"expected an image response, got {res!r}"
+    assert res.data == payload
 
 
 @pytest.mark.p2
