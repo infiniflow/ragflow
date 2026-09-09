@@ -113,6 +113,19 @@ uv run python3 ragflow_deps/download_deps.py
 > startup, so the remedy is always to seed the static lib above, never to build
 > without it.
 
+> **Note**: The ONNX Runtime native version is pinned in several Go-side places
+> that must stay in sync. Bumping it in one spot and not the others fails the
+> build with `Error: ONNX Runtime version is inconsistent`:
+> - `internal/common/environments.go` — `DeepDocORTVersion`
+> - `Dockerfile_go` — `ARG ORT_VERSION`
+> - `ragflow_deps/download_go_deps.py` and `ragflow_deps/download_deps.py` — `ORT_VERSION`
+>
+> `build.sh` runs this consistency check automatically before the Go build
+> (through `check_go_deps`) and fails fast on any mismatch. Run it on demand
+> with `./build.sh --check-ort-version`. To upgrade ORT, edit every entry above
+> to the same version, then run the check. The Python pip `onnxruntime==` pin in
+> `pyproject.toml` is versioned independently and is intentionally not part of
+> this check.
 
 ### 1.5 Build RAGFlow
 

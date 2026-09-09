@@ -169,7 +169,7 @@ COPY build.sh ./
 # silently skipped and the binary fails at startup with
 # "no in-process DeepDoc backend serving" (dlopen(NULL)/dlsym can't find OrtGetApiBase).
 # ${HOME} (not hard-coded /root) keeps the path consistent with build.sh regardless of HOME.
-ARG ORT_VERSION=1.23.2
+ARG ORT_VERSION=1.29.0
 RUN set -eux; \
     mkdir -p "${HOME}/ragflow-native-libs/onnxruntime"; \
     cp -rn /opt/ragflow-native-libs/onnxruntime/* "${HOME}/ragflow-native-libs/onnxruntime/"; \

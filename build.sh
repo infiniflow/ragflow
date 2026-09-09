@@ -150,6 +150,38 @@ check_go_deps() {
     command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
 
     echo "✓ Required tools are available"
+    check_ort_version_consistency
+}
+
+# Fail fast when the ONNX Runtime native version is declared inconsistently.
+# The in-process (Go) DeepDoc backend statically links libonnxruntime.a built
+# from ONE exact ORT release; a mismatch links a wrong/missing .a and only fails
+# at runtime (dlopen(NULL) can't find OrtGetApiBase). The version is pinned in
+# four Go-side locations that must all agree.
+check_ort_version_consistency() {
+    print_section "Checking ONNX Runtime version consistency"
+
+    local env_go d1 d2 dockerfile
+    env_go="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/internal/common/environments.go" | sed -E 's/.*"([^"]+)".*/\1/')"
+    d1="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_go_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
+    d2="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
+    dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile_go" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
+
+    if [ -z "$env_go" ] || [ -z "$d1" ] || [ -z "$d2" ] || [ -z "$dockerfile" ]; then
+        echo -e "${RED}Error: could not parse the ONNX Runtime version from one of the pinned locations${NC}" >&2
+        exit 1
+    fi
+
+    if [ "$env_go" != "$d1" ] || [ "$env_go" != "$d2" ] || [ "$env_go" != "$dockerfile" ]; then
+        echo -e "${RED}Error: ONNX Runtime version is inconsistent — fix before building:${NC}" >&2
+        printf '  %-10s  %s\n' "$env_go" "internal/common/environments.go:DeepDocORTVersion"
+        printf '  %-10s  %s\n' "$d1" "ragflow_deps/download_go_deps.py:ORT_VERSION"
+        printf '  %-10s  %s\n' "$d2" "ragflow_deps/download_deps.py:ORT_VERSION"
+        printf '  %-10s  %s\n' "$dockerfile" "Dockerfile_go:ARG ORT_VERSION"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ ONNX Runtime native version consistent: ${env_go}${NC}"
 }
 
 # Check office_oxide native library
@@ -807,6 +839,8 @@ OPTIONS:
                     InfiniFlow/deepdoc model snapshot; self-skip otherwise).
                     e.g. `$0 --test-native`
     --clean, -C     Clean all build artifacts
+    --check-ort-version  Verify the ONNX Runtime native version is declared
+                    consistently across all sources (exit 1 on mismatch).
     --run, -r       Build and run the server
     --strip, -s     Strip debug symbols from Go binaries (-ldflags="-s -w")
                     (disabled by default, useful for smaller production binaries)
@@ -924,6 +958,9 @@ main() {
             ;;
         --clean|-C)
             clean
+            ;;
+        --check-ort-version)
+            check_ort_version_consistency
             ;;
         --run|-r)
             check_cpp_deps
