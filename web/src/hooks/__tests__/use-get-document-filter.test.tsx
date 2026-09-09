@@ -77,6 +77,20 @@ describe('useGetDocumentFilter', () => {
     expect(mockDocumentFilter).toHaveBeenCalledWith('dataset-id');
   });
 
+  it('reports loading only while the first fetch is in flight', async () => {
+    const { result } = renderHook(() => useGetDocumentFilter(), { wrapper });
+
+    expect(result.current.loading).toBe(false);
+
+    act(() => {
+      result.current.onOpenChange(true);
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(true));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.filter).toEqual({ suffix: { pdf: 1 } });
+  });
+
   it('reuses the cached counts while they are still fresh', async () => {
     const { result } = renderHook(() => useGetDocumentFilter(), { wrapper });
 

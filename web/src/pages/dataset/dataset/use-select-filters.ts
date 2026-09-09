@@ -10,7 +10,7 @@ export const EMPTY_METADATA_FIELD = 'empty_metadata';
 
 export function useSelectDatasetFilters() {
   const { t } = useTranslate('knowledgeDetails');
-  const { filter, onOpenChange } = useGetDocumentFilter();
+  const { filter, loading, onOpenChange } = useGetDocumentFilter();
 
   const fileTypes = useMemo(() => {
     if (filter.suffix) {
@@ -85,5 +85,5 @@ export function useSelectDatasetFilters() {
     [t('systemAttribute')]: ['type', 'run'],
     // [t('metadataField')]: ['metadata'],
   };
-  return { filters, onOpenChange, filterGroup };
+  return { filters, loading, onOpenChange, filterGroup };
 }
