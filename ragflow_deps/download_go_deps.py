@@ -43,9 +43,6 @@
 # to be set:
 #
 #   bash build.sh --test-native          # or: cd internal/deepdoc/native && bash run.sh
-#
-# (The same files are also mirrored into huggingface.co/InfiniFlow/deepdoc/ for the
-# ragflow_deps Docker image build context.)
 
 import argparse
 import os
@@ -209,8 +206,7 @@ def download_go_models(use_china_mirrors=False):
     script). The Go server auto-discovers that directory via
     resolveDeepDocModelDir(), and build.sh --test-native / run.sh default
     MODEL_DIR there too — so after this script runs, no MODEL_DIR env needs to
-    be set. The same files are also mirrored into the ragflow_deps build context
-    (huggingface.co/InfiniFlow/deepdoc/) used when building the Docker image.
+    be set.
 
     Uses hf_hub_download per-file (not snapshot_download) to fetch only the
     five Go model files; the `.onnx` siblings are Python-only and skipped.
@@ -225,32 +221,38 @@ def download_go_models(use_china_mirrors=False):
     # Canonical local-dev model dir the Go backend auto-discovers.
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     target_dir = os.path.join(repo_root, "rag", "res", "deepdoc")
-    # Build-context mirror for the ragflow_deps Docker image.
-    ctx_dir = os.path.abspath(os.path.join("huggingface.co", DEEPDOC_REPO))
-    for d in (target_dir, ctx_dir):
-        os.makedirs(d, exist_ok=True)
+    os.makedirs(target_dir, exist_ok=True)
 
     missing = []
     for fname in DEEPDOC_MODEL_FILES:
         dest = os.path.join(target_dir, fname)
-        if os.path.exists(dest):
+        if os.path.isfile(dest):
             print(f"  ✓ {fname} already present")
-            # Keep the build-context mirror in sync if it lags behind.
-            ctx_dest = os.path.join(ctx_dir, fname)
-            if not os.path.exists(ctx_dest):
-                shutil.copyfile(dest, ctx_dest)
             continue
         print(f"Downloading deepdoc model {fname}...")
         try:
             hf_hub_download(repo_id=DEEPDOC_REPO, filename=fname, local_dir=target_dir)
-            # Mirror into the build context for the Docker image.
-            shutil.copyfile(dest, os.path.join(ctx_dir, fname))
         except Exception as e:  # noqa: BLE001 - collected and surfaced below
             missing.append((fname, e))
 
     if missing:
         for fname, e in missing:
             print(f"  ERROR: failed to download {fname}: {e}", file=sys.stderr)
+        print(
+            "\n"
+            "The Go in-process DeepDoc backend loads ONLY the .ort weights listed in\n"
+            "internal/common.DeepDocModelFiles. They are fetched from "
+            f"{DEEPDOC_REPO} into:\n"
+            f"  {target_dir}\n"
+            "Without them the backend cannot serve — the server exits with a fatal\n"
+            '"no in-process DeepDoc backend serving". To recover:\n'
+            "  - re-run this script (a transient HF/network error usually clears);\n"
+            "  - behind the GFW, re-run with --china-mirrors (routes via hf-mirror.com);\n"
+            "  - or run `uv run python3 ragflow_deps/download_deps.py`, which snapshots\n"
+            f"    all of {DEEPDOC_REPO} (it also provides the Python-side .onnx);\n"
+            "  - or copy the missing files into that directory by hand.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     print(f"  ✓ Go DeepDoc models ready under {target_dir}")
