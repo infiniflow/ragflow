@@ -17,10 +17,37 @@
 package dao
 
 import (
+	"context"
 	"strings"
 
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
+
+var legacyPipelineOperationStatuses = map[string]string{
+	"0": "UNSTART",
+	"1": "RUNNING",
+	"2": "CANCEL",
+	"3": "DONE",
+	"4": "FAIL",
+	"5": "SCHEDULE",
+}
+
+func normalizePipelineOperationStatuses(statuses []string) []string {
+	if len(statuses) == 0 {
+		return statuses
+	}
+	normalized := make([]string, len(statuses))
+	for i, status := range statuses {
+		if canonical, ok := legacyPipelineOperationStatuses[status]; ok {
+			normalized[i] = canonical
+		} else {
+			normalized[i] = status
+		}
+	}
+	return normalized
+}
 
 // graphRaptorFakeDocID is the placeholder document_id used for dataset-level
 // (graph/raptor/mindmap) pipeline logs, mirroring GRAPH_RAPTOR_FAKE_DOC_ID in
@@ -74,16 +101,16 @@ func NewPipelineOperationLogDAO() *PipelineOperationLogDAO {
 
 // GetDatasetLogsByKBID lists dataset-level (graph/raptor/mindmap) ingestion
 // logs for a knowledge base. Pagination is only applied when both page and
-// pageSize are positive, matching peewee's paginate behaviour.
-func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(kbID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, keywords string) ([]*entity.PipelineOperationLog, int64, error) {
-	query := DB.Model(&entity.PipelineOperationLog{}).
+// pageSize are positive, matching peewee's paginate behavior.
+func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, keywords string) ([]*entity.PipelineOperationLog, int64, error) {
+	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("kb_id = ? AND document_id = ?", kbID, graphRaptorFakeDocID)
 
 	if keywords != "" {
 		query = query.Where("LOWER(document_name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
 	}
 	if len(operationStatus) > 0 {
-		query = query.Where("operation_status IN ?", operationStatus)
+		query = query.Where("operation_status IN ?", normalizePipelineOperationStatuses(operationStatus))
 	}
 	if createDateFrom != "" {
 		query = query.Where("create_date >= ?", createDateFrom)
@@ -97,6 +124,11 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(kbID string, page, page
 		return nil, 0, err
 	}
 
+	// above validates `orderby` against pipelineLogOrderableColumns
+	// (a closed allowlist of column names) and defaults to a safe value
+	// if no match is found. The only string that flows into Order() is
+	// the whitelisted column name + " ASC"/" DESC" suffix.
+	// codeql[go/sql-injection] False positive: pipelineLogOrderClause
 	query = query.Order(pipelineLogOrderClause(orderby, desc))
 	if page > 0 && pageSize > 0 {
 		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
@@ -110,8 +142,8 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(kbID string, page, page
 }
 
 // GetFileLogsByKBID lists per-file ingestion logs for a knowledge base.
-func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(kbID string, page, pageSize int, orderby string, desc bool, keywords string, operationStatus []string, createDateFrom, createDateTo string) ([]*entity.PipelineOperationLog, int64, error) {
-	query := DB.Model(&entity.PipelineOperationLog{}).
+func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, orderby string, desc bool, keywords string, operationStatus []string, createDateFrom, createDateTo string) ([]*entity.PipelineOperationLog, int64, error) {
+	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("kb_id = ?", kbID)
 
 	if keywords != "" {
@@ -134,6 +166,11 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(kbID string, page, pageSiz
 		return nil, 0, err
 	}
 
+	// above validates `orderby` against pipelineLogOrderableColumns
+	// (a closed allowlist of column names) and defaults to a safe value
+	// if no match is found. The only string that flows into Order() is
+	// the whitelisted column name + " ASC"/" DESC" suffix.
+	// codeql[go/sql-injection] False positive: pipelineLogOrderClause
 	query = query.Order(pipelineLogOrderClause(orderby, desc))
 	if page > 0 && pageSize > 0 {
 		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
@@ -147,10 +184,36 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(kbID string, page, pageSiz
 }
 
 // GetByIDAndKBID fetches a single ingestion log scoped to its knowledge base.
-func (dao *PipelineOperationLogDAO) GetByIDAndKBID(logID, kbID string) (*entity.PipelineOperationLog, error) {
+func (dao *PipelineOperationLogDAO) GetByIDAndKBID(ctx context.Context, db *gorm.DB, logID, kbID string) (*entity.PipelineOperationLog, error) {
 	var log entity.PipelineOperationLog
-	if err := DB.Where("id = ? AND kb_id = ?", logID, kbID).First(&log).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ? AND kb_id = ?", logID, kbID).First(&log).Error; err != nil {
 		return nil, err
 	}
 	return &log, nil
+}
+
+// GetByID fetches a single pipeline operation log by id, regardless of
+// knowledge base. Callers that must scope to a dataset use
+// GetByIDAndKBID instead.
+func (dao *PipelineOperationLogDAO) GetByID(ctx context.Context, db *gorm.DB, logID string) (*entity.PipelineOperationLog, error) {
+	var log entity.PipelineOperationLog
+	if err := db.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
+		return nil, err
+	}
+	return &log, nil
+}
+
+// UpdateDSL replaces the DSL stored on a pipeline operation log. Used by the
+// dataflow rerun endpoint to persist the front-end's edited component
+// configuration plus the rerun entry point (dsl.path = [component_id]),
+// mirroring Python's PipelineOperationLogService.update_by_id(id, {"dsl": dsl}).
+func (dao *PipelineOperationLogDAO) UpdateDSL(ctx context.Context, db *gorm.DB, logID string, dsl entity.JSONMap) error {
+	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
+		Where("id = ?", logID).
+		Update("dsl", dsl).Error
+}
+
+// Create inserts a new pipeline operation log.
+func (dao *PipelineOperationLogDAO) Create(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
+	return db.WithContext(ctx).Create(log).Error
 }

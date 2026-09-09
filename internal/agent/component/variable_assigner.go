@@ -43,6 +43,8 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 const componentNameVariableAssigner = "VariableAssigner"
@@ -129,12 +131,22 @@ func NewVariableAssignerComponent(params map[string]any) (Component, error) {
 // Name returns the registered component name.
 func (v *VariableAssignerComponent) Name() string { return v.name }
 
+// GetInputForm returns the runtime input form consumed by the Agent UI.
+func (v *VariableAssignerComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"items": map[string]any{
+			"type": "line",
+			"name": "Items",
+		},
+	}
+}
+
 // Invoke walks the param.variables list, evaluates each tuple against
 // the canvas state, and writes the result back unless the operator
 // returned an "ERROR:..." sentinel. The list of refs that were
 // assigned is returned at outputs["assignments"]; per-item errors (if
 // any) are returned at outputs["errors"].
-func (v *VariableAssignerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (v *VariableAssignerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
 		return nil, fmt.Errorf("VariableAssigner: %w", err)
@@ -190,8 +202,8 @@ func (v *VariableAssignerComponent) Invoke(ctx context.Context, inputs map[strin
 }
 
 // Stream mirrors Invoke; VariableAssigner is a single-shot apply.
-func (v *VariableAssignerComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := v.Invoke(ctx, inputs)
+func (v *VariableAssignerComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := v.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

@@ -99,7 +99,7 @@ func TestNewPlan(t *testing.T) {
 // ============================================================
 
 func TestNew_NilConfig(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := New(ctx, nil)
 	if err == nil {
 		t.Error("expected error for nil config")
@@ -107,7 +107,7 @@ func TestNew_NilConfig(t *testing.T) {
 }
 
 func TestNew_MissingPlanner(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := New(ctx, &Config{})
 	if err == nil {
 		t.Error("expected error for missing Planner")
@@ -115,7 +115,7 @@ func TestNew_MissingPlanner(t *testing.T) {
 }
 
 func TestNew_MissingExecutor(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := New(ctx, &Config{
 		Planner: &PlannerConfig{Model: &mockPlanModel{}},
 	})
@@ -125,7 +125,7 @@ func TestNew_MissingExecutor(t *testing.T) {
 }
 
 func TestNew_MissingReplanner(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := New(ctx, &Config{
 		Planner:  &PlannerConfig{Model: &mockPlanModel{}},
 		Executor: &ExecutorConfig{Model: &mockPlanModel{}},
@@ -140,7 +140,7 @@ func TestNew_MissingReplanner(t *testing.T) {
 // ============================================================
 
 func TestNew_DefaultConfig(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockPlanModel{}
 
 	flow, err := New(ctx, &Config{
@@ -162,7 +162,7 @@ func TestNew_DefaultConfig(t *testing.T) {
 }
 
 func TestNew_DefaultName(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockPlanModel{}
 
 	flow, err := New(ctx, &Config{
@@ -179,7 +179,7 @@ func TestNew_DefaultName(t *testing.T) {
 }
 
 func TestNew_DefaultMaxLoopIterations(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockPlanModel{}
 
 	// This should use default MaxLoopIterations (10) — just verify no error
@@ -199,7 +199,7 @@ func TestNew_DefaultMaxLoopIterations(t *testing.T) {
 // ============================================================
 
 func TestNew_CustomPlannerPrompt(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockPlanModel{}
 
 	flow, err := New(ctx, &Config{
@@ -217,7 +217,7 @@ func TestNew_CustomPlannerPrompt(t *testing.T) {
 }
 
 func TestNew_CustomExecutorPrompt(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockPlanModel{}
 
 	flow, err := New(ctx, &Config{
@@ -235,7 +235,7 @@ func TestNew_CustomExecutorPrompt(t *testing.T) {
 }
 
 func TestNew_CustomReplannerPrompt(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockPlanModel{}
 
 	flow, err := New(ctx, &Config{
@@ -256,14 +256,12 @@ func TestNew_CustomReplannerPrompt(t *testing.T) {
 // Test custom NewPlan factory
 // ============================================================
 
-
-
 // ============================================================
 // Test Executor with tools
 // ============================================================
 
 func TestNew_ExecutorWithTools(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockPlanModel{}
 
 	tool := core.NewBaseTool(
@@ -275,8 +273,8 @@ func TestNew_ExecutorWithTools(t *testing.T) {
 	)
 
 	flow, err := New(ctx, &Config{
-		Planner:  &PlannerConfig{Model: model},
-		Executor: &ExecutorConfig{Model: model, Tools: []core.Tool{tool}},
+		Planner:   &PlannerConfig{Model: model},
+		Executor:  &ExecutorConfig{Model: model, Tools: []core.Tool{tool}},
 		Replanner: &ReplannerConfig{Model: model},
 	})
 	if err != nil {
@@ -290,7 +288,7 @@ func TestNew_ExecutorWithTools(t *testing.T) {
 // ============================================================
 
 func TestPlanExecute_Integration(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Planner: plan_tool → creates a plan
 	plannerModel := &mockPlanModel{responses: []mockResponse{
@@ -346,6 +344,7 @@ func TestPlanExecute_Integration(t *testing.T) {
 	}
 	t.Logf("integration test: final content=%q", lastContent)
 }
+
 // ============================================================
 
 func TestPlanJSON_Marshal(t *testing.T) {
@@ -487,5 +486,3 @@ func TestReplannerPrompt(t *testing.T) {
 		t.Error("ReplannerPrompt should mention respond_tool")
 	}
 }
-
-

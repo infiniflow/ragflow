@@ -9,7 +9,7 @@ import (
 )
 
 func TestMemoryCache(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cache := NewMemoryCache(100, EvictLRU)
 
 	// Test Set and Get
@@ -54,7 +54,7 @@ func TestMemoryCache(t *testing.T) {
 }
 
 func TestMemoryCacheEviction(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cache := NewMemoryCache(3, EvictLRU)
 
 	// Fill cache
@@ -81,9 +81,9 @@ func TestMemoryCacheEviction(t *testing.T) {
 }
 
 func TestGenerateCacheKey(t *testing.T) {
-	key1 := GenerateCacheKey("node1", map[string]interface{}{"input": "test"})
-	key2 := GenerateCacheKey("node1", map[string]interface{}{"input": "test"})
-	key3 := GenerateCacheKey("node2", map[string]interface{}{"input": "test"})
+	key1 := GenerateCacheKey("node1", map[string]any{"input": "test"})
+	key2 := GenerateCacheKey("node1", map[string]any{"input": "test"})
+	key3 := GenerateCacheKey("node2", map[string]any{"input": "test"})
 
 	if key1 != key2 {
 		t.Error("expected same input to generate same key")
@@ -94,11 +94,11 @@ func TestGenerateCacheKey(t *testing.T) {
 }
 
 func TestCachedExecutor(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cache := NewMemoryCache(100, EvictLRU)
 
 	callCount := 0
-	fn := func(ctx context.Context, input interface{}) (interface{}, error) {
+	fn := func(ctx context.Context, input any) (any, error) {
 		callCount++
 		return input.(int) * 2, nil
 	}
@@ -146,7 +146,7 @@ func TestCachedExecutor(t *testing.T) {
 }
 
 func TestNoopCache(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cache := &NoopCache{}
 
 	cache.Set(ctx, "key", "value", 0)

@@ -36,8 +36,8 @@ type Finding struct {
 type ScanResult struct {
 	SkillName  string
 	Source     string
-	TrustLevel string   // builtin | trusted | community
-	Verdict    string   // safe | caution | dangerous
+	TrustLevel string // builtin | trusted | community
+	Verdict    string // safe | caution | dangerous
 	Findings   []Finding
 }
 

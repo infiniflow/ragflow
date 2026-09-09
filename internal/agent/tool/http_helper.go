@@ -16,10 +16,7 @@
 
 // Package tool implements RAGFlow agent canvas tool adapters in Go.
 //
-// See plan: .claude/plans/agent-go-port.md §2.11.4 (Tool 移植矩阵, 21 tools)
-// and §5 Phase 3 (Tool 库, 3-4 周, 按使用频率分 4 批). Phase 3 batch 1 ships
-// the HTTP底座 (http_helper.go) and 4 必装 tools: Retrieval, CodeExec, ExeSQL,
-// Crawler. All tools implement eino's tool.InvokableTool interface and are
+// All tools implement eino's tool.InvokableTool interface and are
 // intended to be registered with the agent canvas via a factory function
 // (see .claude/plans/agent-go-port.md §2.11.4 "Tool 关键统一模式").
 package tool
@@ -39,10 +36,10 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-// RetryConfig controls the HTTPHelper retry policy. The defaults match the
-// values fixed in plan §5 Phase 3 (3 attempts, 200ms base, 3s max backoff).
-// Zero values fall back to the defaults so callers can use HTTPHelper{}
-// or NewHTTPHelper() interchangeably.
+// RetryConfig controls the HTTPHelper retry policy. The defaults
+// (3 attempts, 200ms base, 3s max backoff) apply when the
+// corresponding field is zero. HTTPHelper{} and NewHTTPHelper()
+// are interchangeable.
 type RetryConfig struct {
 	// MaxAttempts is the total number of attempts (including the first one).
 	// Values < 1 are clamped to 1 (no retry). Default 3.
@@ -66,11 +63,11 @@ func (c RetryConfig) withDefaults() RetryConfig {
 	return c
 }
 
-// HTTPHelper is a context-aware HTTP client shared by all Phase 3 HTTP tools
-// (Crawler, plus the Phase 3 batch 2-4 HTTP tools). It wraps http.Client with
-// otelhttp.NewTransport for OTel span propagation (plan §2.10), enforces a
-// 30s default timeout, and retries idempotent failures (5xx + network errors)
-// per the policy in plan §5 Phase 3.
+// HTTPHelper is a context-aware HTTP client shared by the HTTP
+// tools. It wraps http.Client with otelhttp.NewTransport for
+// OTel span propagation, enforces a 30s default timeout, and
+// retries idempotent failures (5xx + network errors) per the
+// RetryConfig.
 //
 // HTTPHelper is safe for concurrent use by multiple goroutines.
 type HTTPHelper struct {

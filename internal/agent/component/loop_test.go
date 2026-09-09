@@ -14,19 +14,19 @@
 //  limitations under the License.
 //
 
-// Package component — Loop unit tests (Phase 2 P2, plan §2.11.3 row 11).
+// Package component — Loop unit tests.
 //
-// LoopComponent is a no-op marker in the new architecture: real loop
-// execution is driven by workflowx.AddLoopNode, installed by
-// canvas.BuildWorkflow when it sees a Loop cpn in the DSL. The tests
-// in this file exercise the contract LoopComponent DOES expose —
-// registry / factory / param parsing / Name / Inputs / Outputs /
-// no-op Invoke / no-op Stream — and confirm the LoopItem / ExitLoop
-// names are gone from the registry.
+// LoopComponent is a no-op marker in the current architecture:
+// real loop execution is driven by workflowx.AddLoopNode,
+// installed by canvas.BuildWorkflow when it sees a Loop cpn in
+// the DSL. The tests in this file exercise the contract
+// LoopComponent DOES expose — registry / factory / param parsing
+// / Name / Inputs / Outputs / no-op Invoke / no-op Stream — and
+// confirm the LoopItem / ExitLoop names are gone from the
+// registry.
 package component
 
 import (
-	"context"
 	"testing"
 )
 
@@ -83,7 +83,8 @@ func TestLoop_InvokeIsNoOp(t *testing.T) {
 			{"variable": "counter", "input_mode": "constant", "value": 7, "type": "number"},
 		},
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{"in": 1})
+	ctx := t.Context()
+	out, err := c.Invoke(ctx, nil, map[string]any{"in": 1})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -96,7 +97,8 @@ func TestLoop_InvokeIsNoOp(t *testing.T) {
 // empty-map chunk and closes.
 func TestLoop_StreamMirrorsInvoke(t *testing.T) {
 	c := NewLoopComponent(loopParam{})
-	ch, err := c.Stream(context.Background(), nil)
+	ctx := t.Context()
+	ch, err := c.Stream(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -153,7 +155,7 @@ func TestLoop_ParamAsDict(t *testing.T) {
 		LoopVariables: []map[string]any{
 			{"variable": "x", "input_mode": "constant", "value": 0, "type": "number"},
 		},
-		LogicalOperator:   "and",
+		LogicalOperator:  "and",
 		MaximumLoopCount: 0,
 	}
 	d := p.AsDict()

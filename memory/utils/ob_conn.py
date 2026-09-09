@@ -75,7 +75,7 @@ class SearchResult(BaseModel):
 @singleton
 class OBConnection(OBConnectionBase):
     def __init__(self):
-        super().__init__(logger_name='ragflow.memory_ob_conn')
+        super().__init__(logger_name="ragflow.memory_ob_conn")
         self._fulltext_search_columns = FTS_COLUMNS
 
     """
@@ -101,10 +101,10 @@ class OBConnection(OBConnectionBase):
     def _get_vector_column_name_from_table(self, table_name: str) -> Optional[str]:
         """Get the vector column name from the table (q_{size}_vec pattern)."""
         sql = f"""
-            SELECT COLUMN_NAME 
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_SCHEMA = '{self.db_name}' 
-              AND TABLE_NAME = '{table_name}' 
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = '{self.db_name}'
+              AND TABLE_NAME = '{table_name}'
               AND COLUMN_NAME REGEXP '^q_[0-9]+_vec$'
             LIMIT 1
         """
@@ -204,7 +204,7 @@ class OBConnection(OBConnectionBase):
         memory_ids: list[str],
         agg_fields: list[str] | None = None,
         rank_feature: dict | None = None,
-        hide_forgotten: bool = True
+        hide_forgotten: bool = True,
     ):
         """Search messages in memory storage."""
         if isinstance(index_names, str):
@@ -273,9 +273,7 @@ class OBConnection(OBConnectionBase):
                 fulltext_query = escape_string(fulltext_query.strip())
                 fulltext_topn = m.topn
 
-                fulltext_search_expr, fulltext_search_weight = self._parse_fulltext_columns(
-                    fulltext_query, self._fulltext_search_columns
-                )
+                fulltext_search_expr, fulltext_search_weight = self._parse_fulltext_columns(fulltext_query, self._fulltext_search_columns)
             elif isinstance(m, MatchDenseExpr):
                 vector_column_name = m.vector_column_name
                 vector_data = m.embedding_data
@@ -339,39 +337,27 @@ class OBConnection(OBConnectionBase):
                 )
                 self.logger.debug("OBConnection.search with fusion sql: %s", fusion_sql)
                 rows, elapsed_time = self._execute_search_sql(fusion_sql)
-                self.logger.info(
-                    f"OBConnection.search table {table_name}, search type: fusion, elapsed time: {elapsed_time:.3f}s, rows: {len(rows)}"
-                )
+                self.logger.info(f"OBConnection.search table {table_name}, search type: fusion, elapsed time: {elapsed_time:.3f}s, rows: {len(rows)}")
 
                 for row in rows:
                     result.messages.append(self._row_to_entity(row, db_output_fields + ["_score"]))
                     result.total += 1
 
             elif search_type == "vector":
-                vector_sql = self._build_vector_search_sql(
-                    table_name, fields_expr, vector_search_score_expr, filters_expr,
-                    vector_search_filter, vector_search_expr, limit, vector_topn, offset
-                )
+                vector_sql = self._build_vector_search_sql(table_name, fields_expr, vector_search_score_expr, filters_expr, vector_search_filter, vector_search_expr, limit, vector_topn, offset)
                 self.logger.debug("OBConnection.search with vector sql: %s", vector_sql)
                 rows, elapsed_time = self._execute_search_sql(vector_sql)
-                self.logger.info(
-                    f"OBConnection.search table {table_name}, search type: vector, elapsed time: {elapsed_time:.3f}s, rows: {len(rows)}"
-                )
+                self.logger.info(f"OBConnection.search table {table_name}, search type: vector, elapsed time: {elapsed_time:.3f}s, rows: {len(rows)}")
 
                 for row in rows:
                     result.messages.append(self._row_to_entity(row, db_output_fields + ["_score"]))
                     result.total += 1
 
             elif search_type == "fulltext":
-                fulltext_sql = self._build_fulltext_search_sql(
-                    table_name, fields_expr, fulltext_search_score_expr, filters_expr,
-                    fulltext_search_filter, offset, limit, fulltext_topn
-                )
+                fulltext_sql = self._build_fulltext_search_sql(table_name, fields_expr, fulltext_search_score_expr, filters_expr, fulltext_search_filter, offset, limit, fulltext_topn)
                 self.logger.debug("OBConnection.search with fulltext sql: %s", fulltext_sql)
                 rows, elapsed_time = self._execute_search_sql(fulltext_sql)
-                self.logger.info(
-                    f"OBConnection.search table {table_name}, search type: fulltext, elapsed time: {elapsed_time:.3f}s, rows: {len(rows)}"
-                )
+                self.logger.info(f"OBConnection.search table {table_name}, search type: fulltext, elapsed time: {elapsed_time:.3f}s, rows: {len(rows)}")
 
                 for row in rows:
                     result.messages.append(self._row_to_entity(row, db_output_fields + ["_score"]))
@@ -387,14 +373,10 @@ class OBConnection(OBConnectionBase):
 
                 order_by_expr = ("ORDER BY " + ", ".join(orders)) if orders else ""
                 limit_expr = f"LIMIT {offset}, {limit}" if limit != 0 else ""
-                filter_sql = self._build_filter_search_sql(
-                    table_name, fields_expr, filters_expr, order_by_expr, limit_expr
-                )
+                filter_sql = self._build_filter_search_sql(table_name, fields_expr, filters_expr, order_by_expr, limit_expr)
                 self.logger.debug("OBConnection.search with filter sql: %s", filter_sql)
                 rows, elapsed_time = self._execute_search_sql(filter_sql)
-                self.logger.info(
-                    f"OBConnection.search table {table_name}, search type: filter, elapsed time: {elapsed_time:.3f}s, rows: {len(rows)}"
-                )
+                self.logger.info(f"OBConnection.search table {table_name}, search type: filter, elapsed time: {elapsed_time:.3f}s, rows: {len(rows)}")
 
                 for row in rows:
                     result.messages.append(self._row_to_entity(row, db_output_fields))
@@ -413,13 +395,7 @@ class OBConnection(OBConnectionBase):
         db_output_fields = [self.convert_field_name(f) for f in select_fields]
         fields_expr = ", ".join(db_output_fields)
 
-        sql = (
-            f"SELECT {fields_expr}"
-            f"  FROM {index_name}"
-            f"  WHERE memory_id = {get_value_str(memory_id)} AND forget_at IS NOT NULL"
-            f"  ORDER BY forget_at ASC"
-            f"  LIMIT {limit}"
-        )
+        sql = f"SELECT {fields_expr}  FROM {index_name}  WHERE memory_id = {get_value_str(memory_id)} AND forget_at IS NOT NULL  ORDER BY forget_at ASC  LIMIT {limit}"
         self.logger.debug("OBConnection.get_forgotten_messages sql: %s", sql)
 
         res = self.client.perform_raw_text_sql(sql)
@@ -431,8 +407,7 @@ class OBConnection(OBConnectionBase):
 
         return result
 
-    def get_missing_field_message(self, select_fields: list[str], index_name: str, memory_id: str, field_name: str,
-                                  limit: int = 512):
+    def get_missing_field_message(self, select_fields: list[str], index_name: str, memory_id: str, field_name: str, limit: int = 512):
         """Get messages missing a specific field."""
         if not self._check_table_exists_cached(index_name):
             return None
@@ -441,13 +416,7 @@ class OBConnection(OBConnectionBase):
         db_output_fields = [self.convert_field_name(f) for f in select_fields]
         fields_expr = ", ".join(db_output_fields)
 
-        sql = (
-            f"SELECT {fields_expr}"
-            f"  FROM {index_name}"
-            f"  WHERE memory_id = {get_value_str(memory_id)} AND {db_field_name} IS NULL"
-            f"  ORDER BY valid_at ASC"
-            f"  LIMIT {limit}"
-        )
+        sql = f"SELECT {fields_expr}  FROM {index_name}  WHERE memory_id = {get_value_str(memory_id)} AND {db_field_name} IS NULL  ORDER BY valid_at ASC  LIMIT {limit}"
         self.logger.debug("OBConnection.get_missing_field_message sql: %s", sql)
 
         res = self.client.perform_raw_text_sql(sql)
@@ -531,11 +500,7 @@ class OBConnection(OBConnectionBase):
         if not set_values:
             return True
 
-        update_sql = (
-            f"UPDATE {index_name}"
-            f" SET {', '.join(set_values)}"
-            f" WHERE {' AND '.join(filters)}"
-        )
+        update_sql = f"UPDATE {index_name} SET {', '.join(set_values)} WHERE {' AND '.join(filters)}"
         self.logger.debug("OBConnection.update sql: %s", update_sql)
 
         try:
@@ -557,14 +522,14 @@ class OBConnection(OBConnectionBase):
     def get_total(self, res) -> int:
         if isinstance(res, tuple):
             return res[1]
-        if hasattr(res, 'total'):
+        if hasattr(res, "total"):
             return res.total
         return 0
 
     def get_doc_ids(self, res) -> list[str]:
         if isinstance(res, tuple):
             res = res[0]
-        if hasattr(res, 'messages'):
+        if hasattr(res, "messages"):
             return [row.get("id") for row in res.messages if row.get("id")]
         return []
 
@@ -577,7 +542,7 @@ class OBConnection(OBConnectionBase):
         if not fields:
             return {}
 
-        messages = res.messages if hasattr(res, 'messages') else []
+        messages = res.messages if hasattr(res, "messages") else []
 
         for doc in messages:
             message = self.get_message_from_ob_doc(doc)
@@ -588,10 +553,7 @@ class OBConnection(OBConnectionBase):
                 if isinstance(v, list):
                     m[n] = v
                     continue
-                if n in ["message_id", "source_id", "valid_at", "invalid_at", "forget_at", "status"] and isinstance(v,
-                                                                                                                    (int,
-                                                                                                                     float,
-                                                                                                                     bool)):
+                if n in ["message_id", "source_id", "valid_at", "invalid_at", "forget_at", "status"] and isinstance(v, (int, float, bool)):
                     m[n] = v
                     continue
                 if not isinstance(v, str):
@@ -610,9 +572,7 @@ class OBConnection(OBConnectionBase):
         if isinstance(res, tuple):
             res = res[0]
         messages = getattr(res, "messages", None)
-        return get_highlight_from_messages(
-            messages, keywords, field_name, is_english_fn=lambda s: is_english([s])
-        )
+        return get_highlight_from_messages(messages, keywords, field_name, is_english_fn=lambda s: is_english([s]))
 
     def get_aggregation(self, res, field_name: str):
         """Get aggregation for search results."""

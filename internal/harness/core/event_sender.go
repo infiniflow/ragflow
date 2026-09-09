@@ -6,7 +6,7 @@ import (
 	"ragflow/internal/harness/core/schema"
 )
 
-// ---- NewEventSenderModelWrapper creates a handler that sends model output events.
+// NewEventSenderModelWrapper creates a handler that sends model output events.
 // Place this in the Handlers chain to control WHERE events are emitted:
 // - Innermost position (last in Handlers list): events contain original (unmodified) model output
 // - Outermost position (first in Handlers list): events contain fully processed output
@@ -20,15 +20,25 @@ type eventSenderModelHandler[M MessageType] struct{}
 
 func (h *eventSenderModelHandler[M]) WrapModel(ctx context.Context, m Model[M], mc *TypedModelContext[M]) (Model[M], error) {
 	ec := getReActExecCtx[M](ctx)
-	if ec == nil { return m, nil }
+	if ec == nil {
+		return m, nil
+	}
 	return wrapModelWithEventSender(m, ec), nil
 }
 
 // All other middleware methods are no-op
-func (h *eventSenderModelHandler[M]) BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) { return ctx, rc, nil }
-func (h *eventSenderModelHandler[M]) AfterAgent(ctx context.Context, state *TypedReActAgentState[M]) (context.Context, error) { return ctx, nil }
-func (h *eventSenderModelHandler[M]) BeforeModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) { return ctx, state, nil }
-func (h *eventSenderModelHandler[M]) AfterModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) { return ctx, state, nil }
+func (h *eventSenderModelHandler[M]) BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) {
+	return ctx, rc, nil
+}
+func (h *eventSenderModelHandler[M]) AfterAgent(ctx context.Context, state *TypedReActAgentState[M]) (context.Context, error) {
+	return ctx, nil
+}
+func (h *eventSenderModelHandler[M]) BeforeModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) {
+	return ctx, state, nil
+}
+func (h *eventSenderModelHandler[M]) AfterModelRewrite(ctx context.Context, state *TypedReActAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedReActAgentState[M], error) {
+	return ctx, state, nil
+}
 
 // HasUserEventSenderModelWrapper checks if the handlers list contains a user-provided
 // NewEventSenderModelWrapper. When present, the framework skips its internal default
