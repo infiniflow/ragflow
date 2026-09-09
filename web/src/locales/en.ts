@@ -2234,7 +2234,7 @@ Example: Virtual Hosted Style`,
         modelNameRequired: 'Model name is required',
         apiServerRequired: 'MinerU API Server Configuration is required',
         serverUrlBackendLimit:
-          'MinerU Server URL Address is only available for the HTTP client backend',
+          'MinerU server URL is only available for vlm-http-client and hybrid-http-client backends',
         apiserver: 'MinerU API Server Configuration',
         outputDir: 'MinerU Output Directory Path',
         backend: 'MinerU Processing Backend Type',
