@@ -214,9 +214,9 @@ The chunking method of the dataset to create. Available options:
 
 The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
-- `chunk_method`=`"naive"`:
-  `{"chunk_token_num":512,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\\n"}}`.
-- `chunk_method`=`"qa"`:
+- `chunk_method`=`"naive"`:  
+  `{"chunk_token_num":512,"delimiter":"\n","html4excel":False,"layout_recognize":"DeepDOC","raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\n"}}`.
+- `chunk_method`=`"qa"`:  
   `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"manual"`:
   `{"raptor": {"use_raptor": False}}`
@@ -511,9 +511,9 @@ A dictionary representing the attributes to update, with the following keys:
   - `"one"`: One
   - `"email"`: Email
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
-  - `"chunk_method"`=`"naive"`:
-    `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\\n"}}`.
-  - `chunk_method`=`"qa"`:
+  - `"chunk_method"`=`"naive"`:  
+    `{"chunk_token_num":128,"delimiter":"\n","html4excel":False,"layout_recognize":"DeepDOC","raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\n"}}`.
+  - `chunk_method`=`"qa"`:  
     `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"manual"`:
     `{"raptor": {"use_raptor": False}}`
@@ -681,9 +681,9 @@ A `Document` object contains the following attributes:
   - `"FAIL"`
 - `status`: `string` Reserved for future use.
 - `parser_config`: `ParserConfig` Configuration object for the parser. Its attributes vary based on the selected `chunk_method`:
-  - `chunk_method`=`"naive"`:
-    `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
-  - `chunk_method`=`"qa"`:
+  - `chunk_method`=`"naive"`:  
+    `{"chunk_token_num":128,"delimiter":"\n","html4excel":False,"layout_recognize":"DeepDOC","raptor":{"use_raptor":False}}`.
+  - `chunk_method`=`"qa"`:  
     `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"manual"`:
     `{"raptor": {"use_raptor": False}}`
