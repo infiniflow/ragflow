@@ -134,20 +134,27 @@ class Categorize(LLM, ABC):
         if self.check_if_canceled("Categorize processing"):
             return
 
-        # Count the number of times each category appears in the answer.
-        category_counts = {}
-        for c in self._param.category_description.keys():
-            count = ans.lower().count(c.lower())
-            category_counts[c] = count
-
         cpn_ids = list(self._param.category_description.items())[-1][1]["to"]
         max_category = list(self._param.category_description.keys())[-1]
-        if any(category_counts.values()):
-            max_category = max(category_counts.items(), key=lambda x: x[1])[0]
+        selected = self._select_category(ans, self._param.category_description.keys())
+        if selected is not None:
+            max_category = selected
             cpn_ids = self._param.category_description[max_category]["to"]
 
         self.set_output("category_name", max_category)
         self.set_output("_next", cpn_ids)
+
+    @staticmethod
+    def _select_category(ans, categories):
+        # Count how often each category name appears in the answer.
+        counts = {c: ans.lower().count(c.lower()) for c in categories}
+        top = max(counts.values(), default=0)
+        if not top:
+            return None
+        # Overlapping names tie on substring counts: "Billing" also
+        # matches the answer "Billing Dispute". Prefer the longest, most
+        # specific name among the top counts.
+        return max((c for c, n in counts.items() if n == top), key=len)
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
