@@ -282,12 +282,18 @@ if __name__ == "__main__":
     # (internal/common.DeepDocModelFiles is the authoritative list.)
     deepdoc_local = os.path.abspath(os.path.join("huggingface.co", "InfiniFlow", "deepdoc"))
     go_model_files = ["det.ort", "layout.ort", "tsr.ort", "rec.ort", "ocr.res"]
-    if os.path.isdir(deepdoc_local):
-        for f in go_model_files:
-            if not os.path.exists(os.path.join(deepdoc_local, f)):
-                print(
-                    f"  ERROR: expected Go model file {f} missing from {deepdoc_local}; the InfiniFlow/deepdoc snapshot no longer ships .ort weights.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-        print(f"  ✓ Go .ort model files present under {deepdoc_local}")
+    if not os.path.isdir(deepdoc_local):
+        print(
+            f"  ERROR: {deepdoc_local} does not exist; the InfiniFlow/deepdoc snapshot did not materialize.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    missing_models = [f for f in go_model_files if not os.path.isfile(os.path.join(deepdoc_local, f))]
+    if missing_models:
+        for f in missing_models:
+            print(
+                f"  ERROR: expected Go model file {f} missing from {deepdoc_local}; the InfiniFlow/deepdoc snapshot no longer ships .ort weights.",
+                file=sys.stderr,
+            )
+        sys.exit(1)
+    print(f"  ✓ Go .ort model files present under {deepdoc_local}")
