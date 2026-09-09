@@ -219,7 +219,7 @@ func TestSitemapConnectorURLFilter(t *testing.T) {
 }
 
 // TestSitemapConnectorFollowPDFLinks verifies PDF discovery, domain restriction,
-// deduplication, and the parent-anchored checkpoint of the PDF pass.
+// deduplication, and the PDF-anchored checkpoint of the PDF pass.
 func TestSitemapConnectorFollowPDFLinks(t *testing.T) {
 	restricted := newSitemapTestConnector(t, map[string]any{"follow_pdf_links": true, "url_filter": "/new$"}, defaultSitemapFixture())
 	session, err := restricted.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
@@ -235,9 +235,12 @@ func TestSitemapConnectorFollowPDFLinks(t *testing.T) {
 	if guide.Extension != ".pdf" || guide.Metadata["parent_url"] != "https://example.com/new" {
 		t.Fatalf("discovered pdf = %+v", guide)
 	}
+	// The PDF-pass checkpoint anchors on the PDF itself, not on the parent
+	// page, so a retry cannot skip the parent and drop uncommitted PDFs.
 	last := batches[len(batches)-1]
-	if last.Checkpoint == nil || last.Checkpoint.SourceID != expectedSitemapSourceID("https://example.com/new") {
-		t.Fatalf("pdf pass checkpoint = %+v, want parent page anchor", last.Checkpoint)
+	wantPDFAnchor := expectedSitemapSourceID("https://example.com/docs/manual.pdf?download=1#page=2")
+	if last.Checkpoint == nil || last.Checkpoint.SourceID != wantPDFAnchor {
+		t.Fatalf("pdf pass checkpoint = %+v, want pdf anchor %q", last.Checkpoint, wantPDFAnchor)
 	}
 
 	open := newSitemapTestConnector(t, map[string]any{"follow_pdf_links": "true", "restrict_pdf_to_domain": false, "url_filter": "/new$"}, defaultSitemapFixture())
@@ -311,6 +314,43 @@ func TestSitemapConnectorResume(t *testing.T) {
 	}
 	if _, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{SourceID: "sitemap:gone"}}); !errors.Is(err, ErrSyncResumeInvalid) {
 		t.Fatalf("unknown resume anchor error = %v", err)
+	}
+}
+
+// TestSitemapConnectorResumeAfterPDFPass verifies that a checkpoint taken during
+// the PDF pass anchors on the PDF itself and cannot resume past it: the anchor is
+// not a sitemap-listed URL, so OpenSync reports ErrSyncResumeInvalid and the
+// runner restarts the window. Anchoring on the parent page instead would skip the
+// parent and silently drop any of its PDFs that had not been committed yet.
+func TestSitemapConnectorResumeAfterPDFPass(t *testing.T) {
+	connector := newSitemapTestConnector(t, map[string]any{
+		"batch_size":       1,
+		"follow_pdf_links": true,
+		"url_filter":       "/new$",
+	}, defaultSitemapFixture())
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	batches, documents := drainSitemapSession(t, session)
+	if len(documents) != 3 { // new page + guide.pdf + manual.pdf
+		t.Fatalf("documents = %d, want 3", len(documents))
+	}
+
+	// batches: [new], [guide.pdf], [manual.pdf]. The first PDF-pass batch
+	// checkpoint must anchor on the PDF itself.
+	pdfBatch := batches[1]
+	if pdfBatch.Checkpoint == nil {
+		t.Fatalf("pdf pass batch has no checkpoint")
+	}
+	if got, want := pdfBatch.Checkpoint.SourceID, expectedSitemapSourceID("https://example.com/docs/guide.pdf"); got != want {
+		t.Fatalf("pdf pass checkpoint = %q, want %q", got, want)
+	}
+
+	// Resuming from a PDF anchor must be rejected so the runner restarts the
+	// window instead of skipping the parent page and losing manual.pdf.
+	if _, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: pdfBatch.Checkpoint}); !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume from pdf anchor error = %v, want ErrSyncResumeInvalid", err)
 	}
 }
 
