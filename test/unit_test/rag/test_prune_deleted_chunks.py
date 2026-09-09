@@ -15,11 +15,12 @@
 #
 """KB-scoped wiki/compilation rows must survive deleted-document pruning."""
 
-import asyncio
 import importlib.util
 import sys
 import types
 from pathlib import Path
+
+import pytest
 
 _ROOT = Path(__file__).parents[3]
 
@@ -103,7 +104,8 @@ def _result(ids, field):
     return Dealer.SearchResult(total=len(ids), ids=list(ids), field=field)
 
 
-def test_prune_keeps_wiki_pages_when_mixed_with_source_chunks():
+@pytest.mark.asyncio
+async def test_prune_keeps_wiki_pages_when_mixed_with_source_chunks():
     dealer = Dealer(dataStore=None)
 
     async def existing(doc_ids):
@@ -118,13 +120,14 @@ def test_prune_keeps_wiki_pages_when_mixed_with_source_chunks():
             "wiki-page": {"doc_id": "kb1", "kb_id": "kb1", "compile_kwd": "wiki_page"},
         },
     )
-    out = asyncio.run(dealer._prune_deleted_chunks(sres))
+    out = await dealer._prune_deleted_chunks(sres)
     assert out.ids == ["src-live", "wiki-page"]
     assert "src-dead" not in out.field
     assert "wiki-page" in out.field
 
 
-def test_prune_keeps_wiki_pages_that_omit_doc_id():
+@pytest.mark.asyncio
+async def test_prune_keeps_wiki_pages_that_omit_doc_id():
     dealer = Dealer(dataStore=None)
 
     async def existing(doc_ids):
@@ -138,11 +141,12 @@ def test_prune_keeps_wiki_pages_that_omit_doc_id():
             "wiki-page": {"kb_id": "kb1", "compile_kwd": "wiki_page"},
         },
     )
-    out = asyncio.run(dealer._prune_deleted_chunks(sres))
+    out = await dealer._prune_deleted_chunks(sres)
     assert out.ids == ["src-live", "wiki-page"]
 
 
-def test_prune_drops_ordinary_chunks_that_omit_doc_id():
+@pytest.mark.asyncio
+async def test_prune_drops_ordinary_chunks_that_omit_doc_id():
     dealer = Dealer(dataStore=None)
     called = []
 
@@ -159,13 +163,14 @@ def test_prune_drops_ordinary_chunks_that_omit_doc_id():
             "wiki-page": {"kb_id": "kb1", "compile_kwd": "wiki_page"},
         },
     )
-    out = asyncio.run(dealer._prune_deleted_chunks(sres))
+    out = await dealer._prune_deleted_chunks(sres)
     assert out.ids == ["src-live", "wiki-page"]
     assert "src-orphan" not in out.field
     assert called == [["doc-live"]]
 
 
-def test_prune_drops_orphan_chunks_when_every_hit_omits_doc_id():
+@pytest.mark.asyncio
+async def test_prune_drops_orphan_chunks_when_every_hit_omits_doc_id():
     dealer = Dealer(dataStore=None)
     called = []
 
@@ -181,13 +186,14 @@ def test_prune_drops_orphan_chunks_when_every_hit_omits_doc_id():
             "wiki-page": {"kb_id": "kb1", "compile_kwd": "wiki_page"},
         },
     )
-    out = asyncio.run(dealer._prune_deleted_chunks(sres))
+    out = await dealer._prune_deleted_chunks(sres)
     assert out.ids == ["wiki-page"]
     assert "src-orphan" not in out.field
     assert called == []
 
 
-def test_prune_drops_all_ordinary_chunks_without_doc_id():
+@pytest.mark.asyncio
+async def test_prune_drops_all_ordinary_chunks_without_doc_id():
     dealer = Dealer(dataStore=None)
     called = []
 
@@ -197,13 +203,14 @@ def test_prune_drops_all_ordinary_chunks_without_doc_id():
 
     dealer._existing_doc_ids = existing
     sres = _result(["src-orphan"], {"src-orphan": {"kb_id": "kb1"}})
-    out = asyncio.run(dealer._prune_deleted_chunks(sres))
+    out = await dealer._prune_deleted_chunks(sres)
     assert out.ids == []
     assert out.field == {}
     assert called == []
 
 
-def test_prune_skips_lookup_when_all_hits_are_kb_scoped():
+@pytest.mark.asyncio
+async def test_prune_skips_lookup_when_all_hits_are_kb_scoped():
     dealer = Dealer(dataStore=None)
     called = []
 
@@ -213,12 +220,13 @@ def test_prune_skips_lookup_when_all_hits_are_kb_scoped():
 
     dealer._existing_doc_ids = existing
     sres = _result(["wiki"], {"wiki": {"doc_id": "kb1", "kb_id": "kb1"}})
-    out = asyncio.run(dealer._prune_deleted_chunks(sres))
+    out = await dealer._prune_deleted_chunks(sres)
     assert out.ids == ["wiki"]
     assert called == []
 
 
-def test_prune_drops_ids_missing_from_fields_when_all_hits_are_kb_scoped():
+@pytest.mark.asyncio
+async def test_prune_drops_ids_missing_from_fields_when_all_hits_are_kb_scoped():
     dealer = Dealer(dataStore=None)
     called = []
 
@@ -228,7 +236,7 @@ def test_prune_drops_ids_missing_from_fields_when_all_hits_are_kb_scoped():
 
     dealer._existing_doc_ids = existing
     sres = _result(["wiki", "ghost"], {"wiki": {"doc_id": "kb1", "kb_id": "kb1"}})
-    out = asyncio.run(dealer._prune_deleted_chunks(sres))
+    out = await dealer._prune_deleted_chunks(sres)
     assert out.ids == ["wiki"]
     assert "ghost" not in out.field
     assert called == []
