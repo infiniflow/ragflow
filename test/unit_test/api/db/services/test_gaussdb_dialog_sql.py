@@ -232,7 +232,11 @@ def _install_settings_import_stubs(monkeypatch):
         get_model_config_by_id=lambda *_args, **_kwargs: {},
     )
     install_module("api.db.db_models", DB=_DummyDB, Dialog=_Dummy)
-    install_module("common.metadata_utils", apply_meta_data_filter=lambda *_args, **_kwargs: None)
+    # ``normalize_doc_id_filter`` is pure and is what keeps an empty doc filter
+    # from reaching the retriever, so use the real one rather than a double.
+    from common.metadata_utils import normalize_doc_id_filter
+
+    install_module("common.metadata_utils", apply_meta_data_filter=lambda *_args, **_kwargs: None, normalize_doc_id_filter=normalize_doc_id_filter)
     install_module(
         "api.utils.reference_metadata_utils",
         enrich_chunks_with_document_metadata=lambda chunks, *_args, **_kwargs: chunks,
