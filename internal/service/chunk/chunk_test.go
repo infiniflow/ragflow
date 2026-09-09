@@ -383,6 +383,7 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	resp, err := svc.List(ctx, &service.ListChunksRequest{
 		DatasetID: datasetID,
 		DocID:     documentID,
+		ChunkIDs:  []string{"chunk-1", "chunk-2"},
 		Page:      &page,
 		Size:      &size,
 		Keywords:  "  invoice terms  ",
@@ -404,6 +405,9 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	}
 	if got := engine.searchReq.Filter["doc_id"]; got != documentID {
 		t.Fatalf("doc_id filter = %#v, want %q", got, documentID)
+	}
+	if got := engine.searchReq.Filter["id"]; !reflect.DeepEqual(got, []string{"chunk-1", "chunk-2"}) {
+		t.Fatalf("id filter = %#v, want %#v", got, []string{"chunk-1", "chunk-2"})
 	}
 	mustNot, ok := engine.searchReq.Filter["must_not"].(map[string]interface{})
 	if !ok || mustNot["exists"] != "compile_kwd" {

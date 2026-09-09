@@ -251,15 +251,15 @@ export default function SearchingView({
                       <div key={index}>
                         <div className="w-full flex flex-col">
                           <div className="w-full">
-                            {(chunk.image_id || chunk.img_id) && (
+                            {chunk.image_id && (
                               <ImageWithPopover
-                                id={chunk.image_id || chunk.img_id}
+                                id={chunk.image_id}
                               ></ImageWithPopover>
                             )}
                             <div
                               dangerouslySetInnerHTML={{
                                 __html: sanitizeHtmlWithImagesAsText(
-                                  chunk.highlight || chunk.content_with_weight,
+                                  chunk.highlight || chunk.content,
                                 ).trim(),
                               }}
                               className={classNames(
@@ -292,11 +292,14 @@ export default function SearchingView({
                           <div
                             className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit mt-3"
                             onClick={() =>
-                              clickDocumentButton(chunk.doc_id, chunk as any)
+                              clickDocumentButton(
+                                chunk.document_id,
+                                chunk as any,
+                              )
                             }
                           >
-                            <FileIcon name={chunk.docnm_kwd}></FileIcon>
-                            {chunk.docnm_kwd}
+                            <FileIcon name={chunk.document_keyword}></FileIcon>
+                            {chunk.document_keyword}
                           </div>
                         </div>
                         {index < chunks.length - 1 && (

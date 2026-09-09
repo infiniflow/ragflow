@@ -36,13 +36,13 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/tokenizer"
 
+	"github.com/bytedance/sonic"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
-	jsoniter "github.com/json-iterator/go"
 
 	"go.uber.org/zap"
 )
 
-var jsonIterator = jsoniter.Config{
+var jsonIterator = sonic.Config{
 	SortMapKeys: false,
 }.Froze()
 
@@ -1864,6 +1864,11 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 				shouldClauses = append(shouldClauses,
 					map[string]interface{}{"terms": map[string]interface{}{"id": listVal}},
 					map[string]interface{}{"terms": map[string]interface{}{"_id": listVal}},
+				)
+			} else if strListVal, ok := v.([]string); ok && len(strListVal) > 0 {
+				shouldClauses = append(shouldClauses,
+					map[string]interface{}{"terms": map[string]interface{}{"id": strListVal}},
+					map[string]interface{}{"terms": map[string]interface{}{"_id": strListVal}},
 				)
 			} else if strVal, ok := v.(string); ok && strVal != "" {
 				shouldClauses = append(shouldClauses,

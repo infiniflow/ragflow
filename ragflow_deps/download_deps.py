@@ -35,6 +35,10 @@ import os
 import shutil
 import urllib.request
 
+# NLTK >=3.10 refuses proxied downloads (SSRF guard) unless opted in; the
+# runners sit behind a proxy, so allow proxied fetches before importing nltk.
+os.environ.setdefault("NLTK_ALLOW_PROXIED_URLOPEN", "1")
+
 import nltk
 from huggingface_hub import snapshot_download
 
@@ -82,9 +86,12 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             # ONNX Runtime static archives for the Go in-process (DeepDoc)
             # backend. Statically linked into the server binary (see build.sh:
-            # ONNX_RUNTIME_STATIC_DIR, --whole-archive + --export-dynamic), so
-            # no libonnxruntime.so is needed at runtime — OrtGetApiBase is
-            # resolved via dlopen(self). csukuangfj's static_lib build is
+            # ONNXRUNTIME_STATIC_PREFIX — no --whole-archive, so unreferenced
+            # kernels are dropped; only OrtGetApiBase is exported, via
+            # --dynamic-list), so no libonnxruntime.so is needed at runtime —
+            # OrtGetApiBase is resolved via dlopen(NULL) (the process-global
+            # symbol table, not the executable's own path). csukuangfj's
+            # static_lib build is
             # CPU-only and glibc2_28-based, matching ORT_VERSION's C-API line
             # (ABI-compatible with onnxruntime_go) and the onnxruntime the
             # Python goldens were generated with.
@@ -128,9 +135,12 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             # ONNX Runtime static archives for the Go in-process (DeepDoc)
             # backend. Statically linked into the server binary (see build.sh:
-            # ONNX_RUNTIME_STATIC_DIR, --whole-archive + --export-dynamic), so
-            # no libonnxruntime.so is needed at runtime — OrtGetApiBase is
-            # resolved via dlopen(self). csukuangfj's static_lib build is
+            # ONNXRUNTIME_STATIC_PREFIX — no --whole-archive, so unreferenced
+            # kernels are dropped; only OrtGetApiBase is exported, via
+            # --dynamic-list), so no libonnxruntime.so is needed at runtime —
+            # OrtGetApiBase is resolved via dlopen(NULL) (the process-global
+            # symbol table, not the executable's own path). csukuangfj's
+            # static_lib build is
             # CPU-only and glibc2_28-based, matching ORT_VERSION's C-API line
             # (ABI-compatible with onnxruntime_go) and the onnxruntime the
             # Python goldens were generated with.
@@ -254,7 +264,9 @@ if __name__ == "__main__":
         print(f"  Skipping onnxruntime static check: no .a found under {ort_static_dir}")
 
     local_dir = os.path.abspath("nltk_data")
-    for data in ["wordnet", "punkt", "punkt_tab"]:
+    # NLTK >=3.8.2 gates `wordnet` behind `omw-1.4`; both must be provisioned
+    # or tokenization-backed paths raise LookupError at runtime.
+    for data in ["omw-1.4", "wordnet", "punkt", "punkt_tab"]:
         print(f"Downloading nltk {data}...")
         nltk.download(data, download_dir=local_dir)
 

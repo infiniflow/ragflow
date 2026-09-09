@@ -2641,7 +2641,15 @@ def _attachment_request_metadata():
 async def _stream_agent_attachment(tenant_id, attachment_id, *, inline: bool):
     attachment_id = attachment_id or request.view_args.get("attachment_id")
     content_type, ext, filename = _attachment_request_metadata()
-    data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+    # Chat uploads are written to the per-user downloads bucket (FileService.put_blob),
+    # while agent-generated attachments are written under the bare tenant id. Probe
+    # both so this endpoint serves either; attachment ids are UUIDs, so the two
+    # buckets cannot both hold a given id.
+    data = None
+    for bucket in (f"{tenant_id}-downloads", tenant_id):
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, attachment_id)
+        if data:
+            break
     if not data:
         return get_data_error_result(message="document not found")
     response = await make_response(data)
