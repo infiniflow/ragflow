@@ -24,7 +24,7 @@ minio:
   bucket: ''
   prefix_path: ''
 es:
-  hosts: 'http://localhost:1200'
+  hosts: 'http://127.0.0.1:1200'
   username: 'elastic'
   password: 'infini_rag_flow'
 os:
