@@ -66,14 +66,17 @@ async def _cancel_task(task_id):
     # graph/raptor) carry no resolvable document and are cancelled through the
     # kb-scoped flows instead.
     doc_id = task.doc_id
+    doc = None
     if doc_id and doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
         from api.db.services.document_service import DocumentService
-        from api.db.services.knowledgebase_service import KnowledgebaseService
 
-        _, doc = DocumentService.get_by_id(doc_id)
-        if doc and not KnowledgebaseService.accessible(doc.kb_id, current_user.id):
+        # DocumentService.accessible fails closed when the document no longer
+        # resolves, so a task whose document is gone cannot be cancelled cross
+        # tenant.
+        if not DocumentService.accessible(doc_id, current_user.id):
             logging.warning("task cancel denied: task_id=%s user_id=%s", task_id, current_user.id)
             return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="no authorization")
+        _, doc = DocumentService.get_by_id(doc_id)
 
     try:
         REDIS_CONN.set(f"{task_id}-cancel", "x")
@@ -97,20 +100,16 @@ async def _cancel_task(task_id):
         logging.warning("Failed to update task %s progress after cancellation: %s", task_id, str(e))
 
     # If the task belongs to a document, also mark the document's run status as
-    # cancelled so that the UI reflects the state correctly.
+    # cancelled so that the UI reflects the state correctly. Reuses the document
+    # resolved during the authorization check above.
     try:
-        from api.db.services.document_service import DocumentService
-
-        doc_id = task.doc_id
-        if doc_id and doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
-            _, doc = DocumentService.get_by_id(doc_id)
-            if doc and str(doc.run) in (TaskStatus.RUNNING.value, TaskStatus.SCHEDULE.value):
-                cancel_doc_msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task stopped by user."
-                DocumentService.update_by_id(
-                    doc_id,
-                    {"run": TaskStatus.CANCEL.value, "progress": 0, "progress_msg": (doc.progress_msg or "") + cancel_doc_msg},
-                )
-                logging.debug("Appended cancellation marker to progress_msg on task cancel: task_id=%s doc_id=%s", task_id, doc_id)
+        if doc is not None and str(doc.run) in (TaskStatus.RUNNING.value, TaskStatus.SCHEDULE.value):
+            cancel_doc_msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task stopped by user."
+            DocumentService.update_by_id(
+                doc_id,
+                {"run": TaskStatus.CANCEL.value, "progress": 0, "progress_msg": (doc.progress_msg or "") + cancel_doc_msg},
+            )
+            logging.debug("Appended cancellation marker to progress_msg on task cancel: task_id=%s doc_id=%s", task_id, doc_id)
     except Exception as e:
         logging.warning("Failed to update document run status for task %s: %s", task_id, str(e))
 

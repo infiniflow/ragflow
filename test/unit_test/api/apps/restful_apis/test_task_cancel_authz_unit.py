@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Authorization tests for POST /tasks/<task_id>/cancel.
+"""Authorization tests for POST /tasks/<task_id>/cancel and PATCH /tasks/<task_id>.
 
 Cancelling a task flips its document to CANCEL and sets the Redis cancel
 flag, so the route must verify the caller can access the dataset that owns
@@ -43,10 +43,11 @@ def _run(coro):
 
 
 REDIS_SETS: list = []
+REQUEST_JSON: dict = {"action": "stop"}
 
 
 def _load_module(monkeypatch, *, accessible_kb_ids):
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(__file__).resolve().parents[5]
 
     quart_mod = ModuleType("quart")
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
@@ -68,7 +69,7 @@ def _load_module(monkeypatch, *, accessible_kb_ids):
         return {"code": code, "data": data, "message": message}
 
     async def get_request_json():
-        return {}
+        return REQUEST_JSON
 
     def validate_request(*_keys):
         def _decorator(func):
@@ -143,6 +144,10 @@ def _load_module(monkeypatch, *, accessible_kb_ids):
                 return True, SimpleNamespace(id="task-1", doc_id="doc-1")
             if task_id == "task-2":
                 return True, SimpleNamespace(id="task-2", doc_id="doc-2")
+            if task_id == "task-3":
+                return True, SimpleNamespace(id="task-3", doc_id="dataflow_x")
+            if task_id == "task-4":
+                return True, SimpleNamespace(id="task-4", doc_id="doc-gone")
             return False, None
 
     task_svc_mod.TaskService = _TaskService
@@ -160,6 +165,13 @@ def _load_module(monkeypatch, *, accessible_kb_ids):
             if doc_id == "doc-2":
                 return True, SimpleNamespace(id="doc-2", kb_id="kb-theirs", run="1", progress_msg="")
             return False, None
+
+        @staticmethod
+        def accessible(doc_id, user_id):
+            ok, doc = _DocumentService.get_by_id(doc_id)
+            if not ok:
+                return False
+            return doc.kb_id in accessible_kb_ids
 
         @staticmethod
         def update_by_id(_id, _data):
@@ -192,16 +204,6 @@ def _load_module(monkeypatch, *, accessible_kb_ids):
     return module
 
 
-@pytest.fixture(scope="session")
-def auth():
-    return "test-auth"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def set_tenant_info():
-    return None
-
-
 @pytest.fixture(autouse=True)
 def _clean_redis_log():
     REDIS_SETS.clear()
@@ -221,3 +223,44 @@ def test_cancel_other_tenants_task_denied(monkeypatch):
     res = _run(module.cancel_task("task-2"))
     assert res["code"] != 0, f"cross-tenant cancel must be denied, got {res}"
     assert "task-2-cancel" not in REDIS_SETS, "cancel flag was set for another tenant's task"
+
+
+@pytest.mark.p2
+def test_patch_stop_entry_point_enforces_same_authz(monkeypatch):
+    module = _load_module(monkeypatch, accessible_kb_ids={"kb-mine"})
+    REQUEST_JSON["action"] = "stop"
+    res = _run(module.patch_task("task-2"))
+    assert res["code"] != 0, f"cross-tenant PATCH stop must be denied, got {res}"
+    assert "task-2-cancel" not in REDIS_SETS
+    res = _run(module.patch_task("task-1"))
+    assert res["code"] == 0, res
+    assert "task-1-cancel" in REDIS_SETS
+
+
+@pytest.mark.p2
+def test_patch_rejects_unknown_action(monkeypatch):
+    module = _load_module(monkeypatch, accessible_kb_ids={"kb-mine"})
+    REQUEST_JSON["action"] = "restart"
+    res = _run(module.patch_task("task-1"))
+    assert res["code"] != 0
+    assert "task-1-cancel" not in REDIS_SETS
+
+
+@pytest.mark.p2
+def test_fake_doc_id_tasks_still_cancel(monkeypatch):
+    # Canvas-debug / graph-raptor tasks carry fake doc ids and are cancelled
+    # through the kb-scoped flows; the authz change must not break them.
+    module = _load_module(monkeypatch, accessible_kb_ids=set())
+    res = _run(module.cancel_task("task-3"))
+    assert res["code"] == 0, res
+    assert "task-3-cancel" in REDIS_SETS
+
+
+@pytest.mark.p2
+def test_task_with_unresolved_document_is_denied(monkeypatch):
+    # accessible() fails closed: a task whose document no longer resolves
+    # cannot be cancelled cross tenant.
+    module = _load_module(monkeypatch, accessible_kb_ids={"kb-mine"})
+    res = _run(module.cancel_task("task-4"))
+    assert res["code"] != 0, f"unresolved document must fail closed, got {res}"
+    assert "task-4-cancel" not in REDIS_SETS
