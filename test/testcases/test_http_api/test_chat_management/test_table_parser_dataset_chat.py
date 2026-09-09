@@ -90,11 +90,7 @@ TEST_EXCEL_DATA_2 = [
     ["Keyboard", "79", "Electronics"],
 ]
 
-DEFAULT_CHAT_PROMPT = (
-    "You are a helpful assistant that answers questions about table data using SQL queries.\n\n"
-    "Here is the knowledge base:\n{knowledge}\n\n"
-    "Use this information to answer questions."
-)
+DEFAULT_CHAT_PROMPT = "You are a helpful assistant that answers questions about table data using SQL queries.\n\nHere is the knowledge base:\n{knowledge}\n\nUse this information to answer questions."
 
 
 @pytest.mark.usefixtures("add_table_parser_dataset")
@@ -171,12 +167,7 @@ class TestTableParserDatasetChat:
         Test that table parser dataset chat works correctly.
         """
         # Use class-level attributes (set by setup fixture)
-        answer = self._ask_question(
-            self.__class__.auth,
-            self.__class__.chat_id,
-            self.__class__.session_id,
-            question
-        )
+        answer = self._ask_question(self.__class__.auth, self.__class__.chat_id, self.__class__.session_id, question)
 
         # Verify answer matches expected pattern if provided
         if expected_answer_pattern:
@@ -315,7 +306,4 @@ class TestTableParserDatasetChat:
             answer: The actual answer from the chat assistant
             pattern: Regular expression pattern to match
         """
-        assert re.search(pattern, answer, re.IGNORECASE), (
-            f"Answer does not match expected pattern '{pattern}'.\n"
-            f"Answer: {answer}"
-        )
+        assert re.search(pattern, answer, re.IGNORECASE), f"Answer does not match expected pattern '{pattern}'.\nAnswer: {answer}"

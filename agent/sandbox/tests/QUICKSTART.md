@@ -174,5 +174,5 @@ pytest agent/sandbox/tests/test_aliyun_integration.py -v --timeout=60
 ## Need Help?
 
 - See the [full documentation](README.md)
-- Check the [sandbox specification](../../../../../docs/develop/sandbox_spec.md)
+- Check the [sandbox specification](../sandbox_spec.md)
 - Contact the RAGFlow team

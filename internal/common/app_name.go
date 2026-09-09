@@ -21,8 +21,6 @@ import (
 	"path"
 	"regexp"
 	"strings"
-
-	"github.com/google/uuid"
 )
 
 // splitNameCounter splits a filename into base name and counter
@@ -104,7 +102,7 @@ func ValidateName(name string) error {
 	// Validate name is not empty after trimming
 	trimmedName := strings.TrimSpace(name)
 	if trimmedName == "" {
-		return fmt.Errorf("name can't be empty")
+		return fmt.Errorf("name cannot be empty or whitespace")
 	}
 
 	// Validate name length in bytes (not characters) - same as Python len(search_name.encode("utf-8"))
@@ -113,13 +111,4 @@ func ValidateName(name string) error {
 	}
 
 	return nil
-}
-
-// GenerateUUID generates a UUID without dashes
-func GenerateUUID() string {
-	newID := strings.ReplaceAll(uuid.New().String(), "-", "")
-	if len(newID) > 32 {
-		newID = newID[:32]
-	}
-	return newID
 }

@@ -210,16 +210,20 @@ def aggregate_table_doc_metadata(chunks: list, task: dict) -> dict:
                 e,
                 exc_info=True,
             )
-    if not fm and not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE):
+    sql_doc_engine = settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_GAUSSDB or settings.DOC_ENGINE_SERENEDB
+    if not fm and not sql_doc_engine:
         logging.debug(f"[TABLE_META_DEBUG] field_map empty on task snapshot — will use ES key probe on chunk dicts; kb_parser_config keys={list((task.get('kb_parser_config') or {}).keys())}")
-    logging.debug(f"[TABLE_META_DEBUG] meta_cols={meta_cols}, field_map entries={len(fm)}, infinity={settings.DOC_ENGINE_INFINITY}, oceanbase={settings.DOC_ENGINE_OCEANBASE}")
+    logging.debug(
+        f"[TABLE_META_DEBUG] meta_cols={meta_cols}, field_map entries={len(fm)}, infinity={settings.DOC_ENGINE_INFINITY}, "
+        f"oceanbase={settings.DOC_ENGINE_OCEANBASE}, gaussdb={settings.DOC_ENGINE_GAUSSDB}, serenedb={settings.DOC_ENGINE_SERENEDB}"
+    )
     sample_ck = next((c for c in chunks if isinstance(c, dict)), None)
     if sample_ck:
         sk = [k for k in sample_ck.keys() if not (str(k).startswith("q_") and str(k).endswith("_vec"))][:50]
         logging.debug(f"[TABLE_META_DEBUG] first chunk non-vector keys (sample): {sk}")
 
     es_col_keys: dict[str, tuple[str | None, str]] = {}
-    if not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE):
+    if not sql_doc_engine:
         for col in meta_cols:
             tk, src = _resolve_es_chunk_field_key(col, fm, sample_ck)
             es_col_keys[col] = (tk, src)
@@ -230,7 +234,7 @@ def aggregate_table_doc_metadata(chunks: list, task: dict) -> dict:
     for i, ck in enumerate(chunks):
         if not isinstance(ck, dict):
             continue
-        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+        if sql_doc_engine:
             cd = ck.get("chunk_data")
             if not isinstance(cd, dict):
                 continue
@@ -244,9 +248,14 @@ def aggregate_table_doc_metadata(chunks: list, task: dict) -> dict:
             for col in meta_cols:
                 tk, _src = es_col_keys.get(col, (None, "none"))
                 if not tk:
-                    if i == 0:
-                        logging.debug(f"[TABLE_META_DEBUG] no resolved ES key for column '{col}'")
-                    continue
+                    tk, src = _resolve_es_chunk_field_key(col, fm, ck)
+                    if tk:
+                        es_col_keys[col] = (tk, src)
+                        logging.debug(f"[TABLE_META_DEBUG] column '{col}' -> ES key {tk!r} (source={src}, chunk={i})")
+                    else:
+                        if i == 0:
+                            logging.debug(f"[TABLE_META_DEBUG] no resolved ES key for column '{col}'")
+                        continue
                 raw_k = _es_raw_field_key_from_typed(tk)
                 val = None
                 from_tks = False

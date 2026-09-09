@@ -93,9 +93,7 @@ def retrieval_report(
         lines.append(f"{key}: {value}")
     lines.extend(
         [
-            "Latency: "
-            f"avg={_fmt_ms(stats['avg'])}, min={_fmt_ms(stats['min'])}, "
-            f"p50={_fmt_ms(stats['p50'])}, p90={_fmt_ms(stats['p90'])}, p95={_fmt_ms(stats['p95'])}",
+            f"Latency: avg={_fmt_ms(stats['avg'])}, min={_fmt_ms(stats['min'])}, p50={_fmt_ms(stats['p50'])}, p90={_fmt_ms(stats['p90'])}, p95={_fmt_ms(stats['p95'])}",
             f"Total Duration: {_fmt_seconds(total_duration_s)}",
             f"QPS (requests / total duration): {_fmt_qps(_calc_qps(total_duration_s, iterations))}",
         ]

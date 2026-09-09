@@ -8,7 +8,7 @@
 //      http://www.apache.org/licenses/LICENSE-2.0
 //
 
-// exesql_trino_stub.go — minimal implementations of the Trino DSN
+// Package tool implements minimal implementations of the Trino DSN
 // helpers referenced by exesql_trino_test.go. The real
 // implementation lands when the trino driver integration moves
 // from "registered via self-register" to "explicit DSN
@@ -43,7 +43,7 @@ package tool
 import (
 	"fmt"
 	"net/url"
-	"os"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 )
@@ -71,7 +71,7 @@ func splitTrinoCatalogSchema(db string) (catalog, schema string) {
 // design doc §10.1 + gap analysis §11.4.1 row 5c.
 func trinoDSN(p exesqlConnParams) string {
 	scheme := "http"
-	if os.Getenv("TRINO_USE_TLS") != "" {
+	if common.GetEnv(common.EnvTrinoUseTls) != "" {
 		scheme = "https"
 	}
 	port := p.Port

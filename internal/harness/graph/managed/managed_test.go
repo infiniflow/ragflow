@@ -268,10 +268,10 @@ func TestManagedValueGetValue(t *testing.T) {
 }
 
 type TestStruct struct {
-	ManagedField   ManagedValue
-	SpecField      *ManagedValueSpec
-	NormalField    string
-	NilField       interface{}
+	ManagedField ManagedValue
+	SpecField    *ManagedValueSpec
+	NormalField  string
+	NilField     interface{}
 }
 
 func TestExtractManagedValues(t *testing.T) {

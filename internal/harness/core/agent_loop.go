@@ -147,6 +147,7 @@ func (l *AgentLoop[T]) Wait() *AgentLoopState[T] {
 //  1. A stop was committed AND exit was caused by stop (runErr==nil, CancelError, or capturedCancelErr).
 //  2. A business interrupt occurred (InterruptError or interruptContexts).
 //  3. Checkpoint is not skipped (skipCheckpoint not set), not idle, and store is available.
+//
 // On normal completion (runErr==nil, no stop committed), no checkpoint is saved.
 func (l *AgentLoop[T]) shouldSaveCheckpoint() bool {
 	if l.config.Store == nil || l.config.CheckpointID == "" {

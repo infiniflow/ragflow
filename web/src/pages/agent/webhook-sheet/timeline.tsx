@@ -28,7 +28,7 @@ import { Operator } from '../constant';
 import { JsonViewer } from '../form/components/json-viewer';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import ToolTimelineItem from '../log-sheet/tool-timeline-item';
-import OperatorIcon from '../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 type LogFlowTimelineProps = Pick<
   ReturnType<typeof useCacheChatLog>,
   'currentEventListWithoutMessage' | 'currentMessageId'
@@ -51,6 +51,7 @@ export const typeMap = {
   textProcessing: t('flow.logTimeline.textProcessing'),
   tavilySearch: t('flow.logTimeline.tavilySearch'),
   tavilyExtract: t('flow.logTimeline.tavilyExtract'),
+  queritSearch: t('flow.logTimeline.queritSearch'),
   exeSQL: t('flow.logTimeline.exeSQL'),
   google: t('flow.logTimeline.google'),
   duckDuckGo: t('flow.logTimeline.google'),

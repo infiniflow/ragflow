@@ -17,8 +17,8 @@ type Config struct {
 	Name        string
 	Description string
 	Model       core.Model[*schema.Message]
-	Agents      []AgentSpec  // Available sub-agents
-	OutputKey   string       // Store final answer to session under this key
+	Agents      []AgentSpec // Available sub-agents
+	OutputKey   string      // Store final answer to session under this key
 }
 
 // AgentSpec defines a sub-agent available to the supervisor.
@@ -30,15 +30,19 @@ type AgentSpec struct {
 
 func DefaultConfig() *Config {
 	return &Config{
-		Name: "supervisor",
+		Name:        "supervisor",
 		Description: "A supervisor agent that routes tasks to specialized sub-agents",
 	}
 }
 
 // New creates a new Supervisor as a flow agent with transfer capability.
 func New(ctx context.Context, cfg *Config) (core.ResumableAgent, error) {
-	if cfg == nil { cfg = DefaultConfig() }
-	if cfg.Model == nil { return nil, fmt.Errorf("supervisor requires a Model") }
+	if cfg == nil {
+		cfg = DefaultConfig()
+	}
+	if cfg.Model == nil {
+		return nil, fmt.Errorf("supervisor requires a Model")
+	}
 
 	// Build agent descriptions for the prompt
 	agentDescs := buildAgentDescriptions(cfg.Agents)
@@ -69,13 +73,17 @@ func New(ctx context.Context, cfg *Config) (core.ResumableAgent, error) {
 	// easily add a GetType() method to identify the supervisor.
 
 	flow, err := core.SetSubAgents(ctx, supAgent, wrappedSubs)
-	if err != nil { return nil, fmt.Errorf("set sub-agents: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("set sub-agents: %w", err)
+	}
 
 	return flow, nil
 }
 
 func buildAgentDescriptions(agents []AgentSpec) string {
-	if len(agents) == 0 { return "" }
+	if len(agents) == 0 {
+		return ""
+	}
 	var sb strings.Builder
 	for _, a := range agents {
 		sb.WriteString(fmt.Sprintf("- %s: %s\n", a.Name, a.Description))

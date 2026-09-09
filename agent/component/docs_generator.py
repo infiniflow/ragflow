@@ -13,6 +13,7 @@ from xml.sax.saxutils import escape
 
 from agent.component.base import ComponentParamBase
 from api.utils.api_utils import timeout
+from api.utils.file_response import agent_attachment_preview_path
 from common import settings
 from common.misc_utils import get_uuid
 from .message import Message
@@ -136,6 +137,7 @@ class DocGenerator(Message, ABC):
                     "mime_type": mime_type,
                     "size": file_size,
                     "base64": file_base64,
+                    "preview_url": agent_attachment_preview_path(doc_id, ext=output_format, mime_type=mime_type),
                     "include_download_info_in_content": self._param.include_download_info_in_content,
                 }
                 self.set_output("doc_id", doc_id)
@@ -163,6 +165,7 @@ class DocGenerator(Message, ABC):
         logging.info("Starting document generation, content length: %s chars", len(content))
 
         if content:
+
             def _replace_variable(match_obj: re.Match[str]) -> str:
                 match = match_obj.group(1)
                 try:
@@ -179,14 +182,13 @@ class DocGenerator(Message, ABC):
                     logging.warning("Error resolving variable %s: %s", match, str(e))
                     return f"[ERROR: {str(e)}]"
 
-            content = re.sub(
-                self.variable_ref_patt,
-                _replace_variable,
+            content = self._replace_template_matches(
+                re.compile(self.variable_ref_patt, flags=re.DOTALL),
                 content,
-                flags=re.DOTALL,
+                _replace_variable,
             )
 
-        return content
+        return self._strip_thinking(content)
 
     def _get_output_directory(self) -> str:
         os.makedirs(self._default_output_directory, exist_ok=True)

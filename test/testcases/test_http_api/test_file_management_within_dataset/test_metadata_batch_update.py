@@ -19,6 +19,7 @@ End-to-end tests for metadata batch update API.
 This test file converts the unit test test_metadata_batch_update from test_doc_sdk_routes_unit.py
 to end-to-end tests that call the actual HTTP API.
 """
+
 import pytest
 from common import (
     update_documents_metadata,
@@ -376,7 +377,7 @@ class TestMetadataBatchUpdateSuccess:
             {
                 "selector": {
                     "document_ids": document_ids,
-                    "metadata_condition": {"conditions": [{"comparison_operator":"is", "name": "nonexistent_key", "value": "nonexistent_value"}]},
+                    "metadata_condition": {"conditions": [{"comparison_operator": "is", "name": "nonexistent_key", "value": "nonexistent_value"}]},
                 },
                 "updates": [{"key": "author", "value": "test"}],
                 "deletes": [],

@@ -72,7 +72,10 @@ func Preprocess(sql string) string {
 		}
 		replaces = append(replaces, replacement{
 			old: match,
-			new: fmt.Sprintf(" MATCH(%s, '%s', 'operator=OR;minimum_should_match=30%%') ", fld, fine),
+			// fine comes from tokenizer.FineGrainedTokenize, which strips
+			// non-alphanumerics; defense-in-depth escape just in case a
+			// future tokenizer change reintroduces a quote.
+			new: fmt.Sprintf(" MATCH(%s, '%s', 'operator=OR;minimum_should_match=30%%') ", fld, strings.ReplaceAll(fine, "'", "''")),
 		})
 	}
 	for _, r := range replaces {
@@ -83,7 +86,7 @@ func Preprocess(sql string) string {
 
 // RunSQL posts SQL to `/_sql`, translates the response into chunk-shaped maps.
 // Returns (nil, nil) on empty rows; (nil, error) when retries exhausted.
-func (e *elasticsearchEngine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error) {
+func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error) {
 	if e == nil || e.client == nil {
 		return nil, fmt.Errorf("Elasticsearch RunSQL: client not initialized")
 	}
@@ -124,7 +127,7 @@ func (e *elasticsearchEngine) RunSQL(ctx context.Context, tableName string, sqlT
 	return nil, fmt.Errorf("Elasticsearch RunSQL: timeout after %d attempts: %w", esSQLRetryAttempts, lastErr)
 }
 
-func (e *elasticsearchEngine) runSQLOnce(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
+func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
 	ctx, cancel := context.WithTimeout(ctx, esSQLRequestTimeout)
 	defer cancel()
 
