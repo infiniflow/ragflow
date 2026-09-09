@@ -237,6 +237,9 @@ const (
 // do set-membership checks); keep it stable so logs and diffs stay readable.
 //
 // External consumers that re-list these names must stay in sync:
+//   - ragflow_deps/download_go_deps.py re-lists them as DEEPDOC_MODEL_FILES
+//     (it fetches the files one by one, so it MUST be edited by hand when this
+//     slice changes);
 //   - ragflow_deps/download_deps.py snapshots the whole InfiniFlow/deepdoc repo
 //     (so .ort lands in the model dir automatically — no FILES edit needed);
 //   - deepdoc/server/download_deps.py (the Python-only Dockerfile_deepdoc_oss
