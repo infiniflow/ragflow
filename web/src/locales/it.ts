@@ -542,6 +542,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       runningStatus2: 'Annullato',
       runningStatus3: 'Successo',
       runningStatus4: 'Fallito',
+      runningStatusQueued: 'In coda',
       pageRanges: 'Intervallo pagine',
       pageRangesTip:
         'Intervallo di pagine da analizzare; le pagine al di fuori di questo intervallo non saranno elaborate.',
@@ -1283,6 +1284,8 @@ Esempio: Virtual Hosted Style`,
         'Connetti un sito SharePoint tramite Microsoft Graph per sincronizzare le sue librerie documenti.',
       sharepointSiteUrlTip:
         "URL completo del sito SharePoint da indicizzare, es. https://contoso.sharepoint.com/sites/MySite. Richiede un'app Azure AD con permessi applicativi Sites.Read.All e Files.Read.All (consenso admin).",
+      sitemapDescription:
+        'Collega una sitemap.xml pubblica per sincronizzare nella tua knowledge base le pagine web e i documenti PDF che elenca.',
       azure_devopsDescription:
         'Collega Azure DevOps per sincronizzare i file del repository e le pull request.',
       bitbucketDescription:

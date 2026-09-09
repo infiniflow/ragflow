@@ -16,7 +16,7 @@
 
 import { useCallback } from 'react';
 
-const hideAutoKeywords = ['qa', 'table', 'resume', 'knowledge_graph', 'tag'];
+const hideAutoKeywords = ['qa', 'table', 'resume', 'tag'];
 
 export const useShowAutoKeywords = () => {
   const showAutoKeywords = useCallback((selectedTag: string | undefined) => {

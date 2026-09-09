@@ -487,6 +487,69 @@ func TestRecordPipelineLog_CustomCanvasMissingFallsBackToParserID(t *testing.T) 
 	}
 }
 
+func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "tenant-1",
+		Title:  strPtr("My Pipeline"),
+		Avatar: strPtr("a.png"),
+	}).Error; err != nil {
+		t.Fatalf("seed canvas: %v", err)
+	}
+	if err := dao.DB.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatalf("migrate knowledgebase: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Knowledgebase{
+		ID:       "kb-1",
+		TenantID: "tenant-1",
+	}).Error; err != nil {
+		t.Fatalf("seed knowledgebase: %v", err)
+	}
+	docName := "sample.avi"
+	run := "1"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		PipelineID:   strPtr("canvas-1"),
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		Name:         &docName,
+		Run:          &run,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	// Mirrors Ingestor.recordTerminalPipelineLog: only the terminal status is
+	// known; pipeline_id and DSL are absent and must come from the document.
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "3",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "document_id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if log.OperationStatus != "3" {
+		t.Fatalf("OperationStatus = %q, want terminal status", log.OperationStatus)
+	}
+	if log.PipelineID == nil || *log.PipelineID != "canvas-1" {
+		t.Fatalf("PipelineID = %v, want \"canvas-1\"", log.PipelineID)
+	}
+	if log.PipelineTitle == nil || *log.PipelineTitle != "My Pipeline" {
+		t.Fatalf("PipelineTitle = %v, want \"My Pipeline\"", log.PipelineTitle)
+	}
+	if log.Avatar == nil || *log.Avatar != "a.png" {
+		t.Fatalf("Avatar = %v, want \"a.png\"", log.Avatar)
+	}
+}
+
 func TestRecordPipelineLog_SourceFrom(t *testing.T) {
 	cases := []struct {
 		name       string

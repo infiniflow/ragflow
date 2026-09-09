@@ -177,6 +177,9 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		for _, tenant := range tenants {
 			kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenant.TenantID)
 			if err == nil && kb != nil {
+				if kb.TenantID != userID && kb.Permission != string(entity.TenantPermissionTeam) {
+					continue
+				}
 				common.Debug("Found knowledge base in database",
 					zap.String("datasetID", datasetID),
 					zap.String("tenantID", tenant.TenantID),
@@ -897,6 +900,9 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			"doc_id":   req.DocID,
 			"must_not": map[string]interface{}{"exists": "compile_kwd"},
 		},
+	}
+	if len(req.ChunkIDs) > 0 {
+		searchReq.Filter["id"] = req.ChunkIDs
 	}
 
 	// Add available_int filter if specified

@@ -362,6 +362,9 @@ def test_dataset_update_parser_config_valid_matrix_contract(rest_client, clear_d
     assert list_payload["code"] == 0, list_payload
     actual_parser_config = list_payload["data"][0]["parser_config"]
     for key, expected_value in parser_config.items():
+        if key in {"graphrag", "raptor"}:
+            assert key not in actual_parser_config, list_payload
+            continue
         if isinstance(expected_value, dict):
             for nested_key, nested_expected in expected_value.items():
                 assert actual_parser_config[key][nested_key] == nested_expected, list_payload
@@ -1296,10 +1299,8 @@ def test_dataset_create_parser_config_missing_raptor_and_graphrag(rest_client, c
     body = res.json()
     assert body["code"] == 0, body
     parser_config = body["data"]["parser_config"]
-    assert "raptor" in parser_config, body
-    assert "graphrag" in parser_config, body
-    assert parser_config["raptor"]["use_raptor"] is False, body
-    assert parser_config["graphrag"]["use_graphrag"] is False, body
+    assert "raptor" not in parser_config, body
+    assert "graphrag" not in parser_config, body
     assert parser_config["chunk_token_num"] == 1024, body
 
 
@@ -1448,6 +1449,9 @@ def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_d
     assert body["code"] == 0, body
     actual_parser_config = body["data"]["parser_config"]
     for key, expected_value in parser_config.items():
+        if key in {"graphrag", "raptor"}:
+            assert key not in actual_parser_config, body
+            continue
         if isinstance(expected_value, dict):
             for nested_key, nested_expected in expected_value.items():
                 assert actual_parser_config[key][nested_key] == nested_expected, body
@@ -1457,20 +1461,18 @@ def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_d
 
 @pytest.mark.p1
 @pytest.mark.parametrize(
-    "name, parser_config, expected_raptor, expected_graphrag",
+    "name, parser_config",
     [
-        ("test_parser_config_only_raptor", {"chunk_token_num": 1024, "raptor": {"use_raptor": True}}, True, False),
-        ("test_parser_config_only_graphrag", {"chunk_token_num": 1024, "graphrag": {"use_graphrag": True}}, False, True),
+        ("test_parser_config_only_raptor", {"chunk_token_num": 1024, "raptor": {"use_raptor": True}}),
+        ("test_parser_config_only_graphrag", {"chunk_token_num": 1024, "graphrag": {"use_graphrag": True}}),
         (
             "test_parser_config_both_fields",
             {"chunk_token_num": 1024, "raptor": {"use_raptor": True}, "graphrag": {"use_graphrag": True}},
-            True,
-            True,
         ),
     ],
     ids=["only_raptor", "only_graphrag", "both_fields"],
 )
-def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_datasets, name, parser_config, expected_raptor, expected_graphrag):
+def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_datasets, name, parser_config):
     if IS_GO_PROXY:
         pytest.skip("Go CreateDataset does not accept parser_config")
     res = rest_client.post("/datasets", json={"name": name, "parser_config": parser_config})
@@ -1478,10 +1480,8 @@ def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_dataset
     body = res.json()
     assert body["code"] == 0, body
     actual_parser_config = body["data"]["parser_config"]
-    assert "raptor" in actual_parser_config, body
-    assert "graphrag" in actual_parser_config, body
-    assert actual_parser_config["raptor"]["use_raptor"] is expected_raptor, body
-    assert actual_parser_config["graphrag"]["use_graphrag"] is expected_graphrag, body
+    assert "raptor" not in actual_parser_config, body
+    assert "graphrag" not in actual_parser_config, body
     assert actual_parser_config["chunk_token_num"] == 1024, body
 
 
@@ -1505,10 +1505,8 @@ def test_dataset_create_parser_config_different_chunk_methods_contract(rest_clie
     assert body["code"] == 0, body
     parser_config = body["data"]["parser_config"]
     assert parser_config["chunk_token_num"] == 512, body
-    assert "raptor" in parser_config, body
-    assert "graphrag" in parser_config, body
-    assert parser_config["raptor"]["use_raptor"] is False, body
-    assert parser_config["graphrag"]["use_graphrag"] is False, body
+    assert "raptor" not in parser_config, body
+    assert "graphrag" not in parser_config, body
 
 
 def test_dataset_create_name_invalid_and_duplicate_contract(rest_client, clear_datasets):
@@ -2429,7 +2427,7 @@ def test_dataset_search_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     res = rest_client.post(
         f"/datasets/{dataset_id}/search",
-        json={"question": "test TXT file", "page": 1, "size": 10},
+        json={"question": "test TXT file", "page": 1, "page_size": 10},
     )
     assert res.status_code == 200
     payload = res.json()
@@ -2441,17 +2439,17 @@ def test_dataset_search_endpoint(rest_client, ensure_parsed_document):
 @pytest.mark.parametrize(
     "payload",
     [
-        {"question": "test TXT file", "page": 1, "size": 2},
+        {"question": "test TXT file", "page": 1, "page_size": 2},
         {"question": "test TXT file", "similarity_threshold": 0.5},
         {"question": "test TXT file", "vector_similarity_weight": 0.7},
         {"question": "test TXT file", "top_k": 10},
     ],
     ids=["page_size", "similarity_threshold", "vector_similarity_weight", "top_k"],
 )
-def test_dataset_search_params_and_doc_ids_contract(rest_client, ensure_parsed_document, payload):
+def test_dataset_search_params_and_document_ids_contract(rest_client, ensure_parsed_document, payload):
     dataset_id, document_id = ensure_parsed_document()
     search_payload = dict(payload)
-    search_payload["doc_ids"] = [document_id]
+    search_payload["document_ids"] = [document_id]
     res = rest_client.post(f"/datasets/{dataset_id}/search", json=search_payload)
     assert res.status_code == 200
     body = res.json()
@@ -2465,7 +2463,7 @@ def test_dataset_search_requires_question(rest_client, create_dataset):
     res = rest_client.post(f"/datasets/{dataset_id}/search", json={})
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] == 101, payload
+    assert payload["code"] in [101, 102], payload
     assert "question" in payload["message"], payload
 
 

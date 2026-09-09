@@ -350,6 +350,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       runningStatus2: 'ABGEBROCHEN',
       runningStatus3: 'ERFOLGREICH',
       runningStatus4: 'FEHLGESCHLAGEN',
+      runningStatusQueued: 'In Warteschlange',
       pageRanges: 'Seitenbereiche',
       pageRangesTip:
         'Bereich der zu analysierenden Seiten; Seiten außerhalb dieses Bereichs werden nicht verarbeitet.',
@@ -1014,7 +1015,10 @@ Beispiel: Virtual Hosted Style`,
         'Laden Sie das OAuth-JSON hoch, das von der Google Console generiert wurde. Wenn es nur Client-Anmeldeinformationen enthält, führen Sie die browserbasierte Überprüfung einmal durch, um langlebige Refresh-Token zu erstellen.',
       dropboxDescription:
         'Verbinden Sie Ihre Dropbox, um Dateien und Ordner von einem ausgewählten Konto zu synchronisieren.',
-      azure_devopsDescription: 'Verbinden Sie Azure DevOps, um Repository-Dateien und Pull Requests zu synchronisieren.',
+      sitemapDescription:
+        'Verbinden Sie eine öffentliche sitemap.xml, um die aufgeführten Webseiten und PDF-Dokumente mit Ihrer Wissensdatenbank zu synchronisieren.',
+      azure_devopsDescription:
+        'Verbinden Sie Azure DevOps, um Repository-Dateien und Pull Requests zu synchronisieren.',
       bitbucketDescription:
         'Bitbucket verbinden, um PR-Inhalte zu synchronisieren.',
       zendeskDescription:

@@ -139,12 +139,16 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 		t.Fatalf("legacy stream info: %v", err)
 	}
 	// Precondition: the legacy stream differs from the wanted config (server
-	// fills a 2m default Duplicates when unspecified).
+	// fills a 2m default Duplicates when unspecified, and Discard defaults to
+	// DiscardOld).
 	if legacyInfo.Config.MaxBytes != int64(1024*1024) {
 		t.Fatalf("precondition: legacy MaxBytes = %d, want 1MB", legacyInfo.Config.MaxBytes)
 	}
 	if legacyInfo.Config.Duplicates == 10*time.Minute {
 		t.Fatalf("precondition: legacy Duplicates already migrated (%v)", legacyInfo.Config.Duplicates)
+	}
+	if legacyInfo.Config.Discard != jetstream.DiscardOld {
+		t.Fatalf("precondition: legacy Discard = %v, want DiscardOld", legacyInfo.Config.Discard)
 	}
 
 	engine := NewNatsEngine(host, port)
@@ -161,6 +165,9 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	}
 	if got := info.Config.Duplicates; got != 10*time.Minute {
 		t.Fatalf("Duplicates after migration = %v, want 10m", got)
+	}
+	if got := info.Config.Discard; got != jetstream.DiscardNew {
+		t.Fatalf("Discard after migration = %v, want DiscardNew", got)
 	}
 	// Non-owned fields must not be reset by the partial update.
 	if got := info.Config.Retention; got != jetstream.WorkQueuePolicy {

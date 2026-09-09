@@ -416,6 +416,7 @@ export default {
       runningStatus2: 'ANNULÉ',
       runningStatus3: 'SUCCÈS',
       runningStatus4: 'ÉCHEC',
+      runningStatusQueued: 'En attente',
       pageRanges: 'Plages de pages',
       pageRangesTip:
         'Les pages en dehors de cette plage ne seront pas traitées.',
@@ -1504,6 +1505,26 @@ Exemple : Virtual Hosted Style`,
         'Connectez un site SharePoint via Microsoft Graph pour synchroniser ses bibliothèques de documents.',
       sharepointSiteUrlTip:
         'URL complète du site SharePoint à indexer, ex. : https://contoso.sharepoint.com/sites/MonSite. Nécessite une application Azure AD avec les permissions applicatives Sites.Read.All et Files.Read.All (consentement administrateur).',
+      dataSourceFieldSitemapUrl: 'URL du sitemap',
+      dataSourceFieldUrlFilter: 'Filtre d’URL (regex)',
+      dataSourceFieldFollowPdfLinks: 'Suivre les liens PDF',
+      dataSourceFieldRestrictPdfToDomain:
+        'Limiter les PDF au domaine du sitemap',
+      dataSourceFieldUserAgent: 'User-Agent',
+      sitemapDescription:
+        'Connectez un sitemap.xml public pour synchroniser dans votre base de connaissances les pages web et les documents PDF qu’il répertorie.',
+      sitemapUrlTip:
+        'URL du sitemap.xml ou de l’index de sitemaps à parcourir, ex. : https://example.com/sitemap.xml. Les index de sitemaps sont suivis récursivement (5 niveaux maximum).',
+      sitemapUrlFilterTip:
+        'Expression régulière facultative. Seules les URL correspondantes sont indexées, ex. : ^https://example\\.com/docs/ pour limiter la synchronisation à une section du site.',
+      sitemapFollowPdfLinksTip:
+        'Indexer également les fichiers PDF liés depuis les pages HTML parcourues.',
+      sitemapRestrictPdfToDomainTip:
+        'Ne suivre que les liens PDF hébergés sur le même domaine que le sitemap.',
+      sitemapUserAgentTip:
+        'En-tête User-Agent envoyé avec chaque requête. Laissez vide pour utiliser RAGFlow-SitemapConnector/1.0.',
+      sitemapBatchSizeTip:
+        'Nombre de pages récupérées et envoyées à RAGFlow par lot.',
       azure_devopsDescription:
         'Connectez Azure DevOps pour synchroniser les fichiers du dépôt et les pull requests.',
       bitbucketDescription:
