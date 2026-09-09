@@ -31,6 +31,8 @@ import json
 import logging
 import threading
 
+from api.channels.targets import validate_agent_target
+
 LOGGER = logging.getLogger(__name__)
 
 # Channel packages bundled under api/channels that self-register on import.
@@ -47,6 +49,43 @@ _BUNDLED_CHANNELS = (
 
 # How often (seconds) to reconcile running channels against the database.
 _RECONCILE_INTERVAL_SECS = 10
+
+
+def _canvas_state(dsl) -> dict:
+    """Normalize a persisted canvas DSL into a dictionary."""
+    value = dsl
+    for _ in range(2):
+        if not isinstance(value, str):
+            break
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError):
+            return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _prepare_agent_turn(text: str, session_dsl) -> tuple[str, dict]:
+    """Turn a channel message into either a question or a pending form reply."""
+    state = _canvas_state(session_dsl)
+    path = state.get("path") or []
+    if not path or "userfillup" not in str(path[0]).lower():
+        return text, {}
+
+    component = (state.get("components") or {}).get(path[0]) or {}
+    params = (component.get("obj") or {}).get("params") or {}
+    fields = params.get("inputs") or {}
+    if not isinstance(fields, dict) or not fields:
+        return text, {}
+
+    field_name, field = next(iter(fields.items()))
+    value = dict(field) if isinstance(field, dict) else {}
+    value["value"] = text
+    return "", {field_name: value}
+
+
+def _channel_agent_user_id(channel_id: str, chat_id: str, sender_id: str) -> str:
+    """Build a stable Agent user id without sharing context across group members."""
+    return f"channel:{channel_id}:{chat_id}:{sender_id}"
 
 
 def _register_channels() -> None:
@@ -93,7 +132,7 @@ def _build_one(account_id: str, channel: str, credential: dict):
 
 
 def _make_chat_handler(ch):
-    """Build the inbound-message handler bound to a single channel.
+    """Build the inbound-message handler bound to a chat assistant or Agent.
 
     Mirrors the non-streaming path of ``session_completion``: the message is
     appended to a per-end-user conversation under the dialog connected to the
@@ -103,7 +142,8 @@ def _make_chat_handler(ch):
     connected dialog ignore inbound messages.
     """
     from api.channels.core.base import IncomingMessage, OutgoingMessage
-
+    from api.db.services.api_service import API4ConversationService
+    from api.db.services.canvas_service import completion as agent_completion
     from api.db.services.chat_channel_service import ChatChannelService
     from api.db.services.conversation_service import ConversationService, structure_answer
     from api.db.services.dialog_service import DialogService, async_chat
@@ -113,14 +153,62 @@ def _make_chat_handler(ch):
         if not (msg.text or "").strip():
             return
 
-        # account_id == chat_channel.id; re-read so a re-connected dialog applies live.
+        # account_id == chat_channel.id; re-read so target changes apply live.
         e, cc = ChatChannelService.get_by_id(ch.account_id)
-        if not e or not cc.chat_id:
+        if not e or (not cc.chat_id and not cc.agent_id):
             LOGGER.info(
-                "[%s:%s] no dialog connected; ignoring message",
+                "[%s:%s] no assistant connected; ignoring message",
                 ch.channel_id,
                 ch.account_id,
             )
+            return
+
+        if cc.agent_id:
+            target_error = validate_agent_target(cc.agent_id, cc.tenant_id)
+            if target_error:
+                LOGGER.warning(
+                    "[%s:%s] connected Agent is unavailable or inaccessible: %s",
+                    ch.channel_id,
+                    ch.account_id,
+                    cc.agent_id,
+                )
+                return
+            user_id = _channel_agent_user_id(ch.account_id, msg.chat_id, msg.sender_id)
+            session = API4ConversationService.get_latest_agent_channel_session(cc.agent_id, user_id)
+            query, inputs = _prepare_agent_turn(msg.text, session.dsl if session else None)
+            answer_text = ""
+            try:
+                async for raw in agent_completion(
+                    tenant_id=cc.tenant_id,
+                    agent_id=cc.agent_id,
+                    session_id=session.id if session else None,
+                    query=query,
+                    inputs=inputs,
+                    user_id=user_id,
+                ):
+                    if not isinstance(raw, str):
+                        continue
+                    for line in raw.splitlines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[len("data:") :].strip()
+                        if not payload:
+                            continue
+                        event = json.loads(payload)
+                        if event.get("event") == "message":
+                            answer_text += event.get("data", {}).get("content", "") or ""
+            except Exception:
+                LOGGER.exception("[%s:%s] Agent completion failed", ch.channel_id, ch.account_id)
+                answer_text = "抱歉，当前无法处理这条消息，请稍后重试。"
+
+            if answer_text:
+                await ch.send(
+                    OutgoingMessage(
+                        chat_id=msg.chat_id,
+                        text=answer_text,
+                        reply_to_message_id=msg.message_id or None,
+                    )
+                )
             return
 
         e, dia = DialogService.get_by_id(cc.chat_id)

@@ -281,6 +281,84 @@ jobs:
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
+      - name: Provision NLTK data for unit tests
+        if: steps.detect_changes.outputs.has_python_changes == 'true'
+        run: |
+          set -euo pipefail
+
+          # The self-hosted runner stores NLTK packages as root-owned zip files.
+          # Reading them directly as the runner user fails with EACCES, while
+          # downloading replacements is blocked by the runner's SSRF policy.
+          # Copy the three required archives into the workspace with sudo, then
+          # unpack and validate them as the runner user.
+          NLTK_TARGET="${GITHUB_WORKSPACE}/nltk_data"
+          rm -rf "${NLTK_TARGET}"
+          mkdir -p "${NLTK_TARGET}/tokenizers" "${NLTK_TARGET}/corpora"
+
+          copy_nltk_archive() {
+            local relative_path="$1"
+            local source=""
+            for root in /usr/share/nltk_data /usr/local/share/nltk_data; do
+              if sudo test -f "${root}/${relative_path}"; then
+                source="${root}/${relative_path}"
+                break
+              fi
+            done
+            if [ -z "${source}" ]; then
+              echo "Missing required NLTK archive: ${relative_path}" >&2
+              return 1
+            fi
+            echo "Copying ${source}"
+            sudo cp "${source}" "${NLTK_TARGET}/${relative_path}"
+            sudo chown "$(id -u):$(id -g)" "${NLTK_TARGET}/${relative_path}"
+            chmod 0644 "${NLTK_TARGET}/${relative_path}"
+          }
+
+          copy_nltk_archive tokenizers/punkt_tab.zip
+          copy_nltk_archive tokenizers/punkt.zip
+          copy_nltk_archive corpora/wordnet.zip
+
+          NLTK_DATA="${NLTK_TARGET}" uv run python - <<'PYEOF'
+          import os
+          import zipfile
+
+          root = os.environ["NLTK_DATA"]
+          archives = (
+              ("tokenizers", "punkt_tab"),
+              ("tokenizers", "punkt"),
+              ("corpora", "wordnet"),
+          )
+          for category, package in archives:
+              archive = os.path.join(root, category, f"{package}.zip")
+              destination = os.path.join(root, category)
+              with zipfile.ZipFile(archive) as package_zip:
+                  bad_member = package_zip.testzip()
+                  if bad_member is not None:
+                      raise RuntimeError(f"Corrupt NLTK archive {archive}: {bad_member}")
+                  members = [name for name in package_zip.namelist() if not name.startswith("__MACOSX/")]
+                  prefix = f"{package}/"
+                  if not members or not all(name == package or name.startswith(prefix) for name in members):
+                      raise RuntimeError(f"Unexpected layout in {archive}: expected entries below {prefix}")
+                  package_zip.extractall(destination)
+              print(f"Unpacked {archive} -> {os.path.join(destination, package)}")
+          PYEOF
+
+          echo "NLTK_DATA=${NLTK_TARGET}" >> "${GITHUB_ENV}"
+
+          # Validate real tokenizer/lemmatizer calls, not only directory names.
+          # The command exits non-zero if any resource is absent or malformed.
+          NLTK_DATA="${NLTK_TARGET}" uv run python - <<'PYEOF'
+          import nltk
+          from nltk.corpus import wordnet
+          from nltk.tokenize import word_tokenize
+
+          for resource in ("tokenizers/punkt_tab", "tokenizers/punkt", "corpora/wordnet"):
+              print(f"[OK] {resource} -> {nltk.data.find(resource)}")
+          assert word_tokenize("NLTK data is ready.")
+          assert wordnet.synsets("document")
+          print("NLTK tokenizer and WordNet smoke checks passed")
+          PYEOF
+
       - name: Run unit test
         if: steps.detect_changes.outputs.has_python_changes == 'true'
         run: |
@@ -1653,6 +1731,10 @@ jobs:
     # Skip unless DeepDoc native backend code/build/testdata actually changed.
     if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_native_deepdoc_changes == 'true' }}
     runs-on: [ "self-hosted", "ragflow-test" ]
+    # Shared by the assert step and the test step below so the mount path is
+    # declared once.
+    env:
+      RAGFLOW_TESTDATA_DIR: /opt/ragflow-testdata
     steps:
       - name: Ensure workspace ownership
         run: |
@@ -1691,15 +1773,25 @@ jobs:
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
 
-      - name: Cache external DeepDoc testdata
-        # The native backend tests fetch pinned test assets from
-        # infiniflow/ragflow-testdata (see scripts/fetch_deepdoc_testdata.sh).
-        # Cache them across runs, keyed by the pinned ref recorded in
-        # internal/deepdoc/native/testdata.ref so a ref bump invalidates the cache.
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/.cache/ragflow-testdata
-          key: deepdoc-testdata-${{ hashFiles('internal/deepdoc/native/testdata.ref') }}
+      - name: Assert pre-seeded DeepDoc testdata
+        # Only the self-hosted ragflow-test runners bake infiniflow/ragflow-testdata
+        # into /opt/ragflow-testdata — the same image-level contract as
+        # MODEL_DIR=/opt/ragflow-deepdoc-models, which has no fallback either.
+        # Fail here rather than letting the fetch script silently fall back to
+        # cloning: a missing mount is an environment defect, and a silent
+        # fallback only makes the job slower while hiding it.
+        #
+        # Assert the `deepdoc` level, not a per-package subtree, so adding a
+        # package later does not invalidate the check.
+        run: |
+          set -euo pipefail
+          if [ ! -d "${RAGFLOW_TESTDATA_DIR}/deepdoc" ]; then
+            echo "ERROR: ${RAGFLOW_TESTDATA_DIR}/deepdoc missing on this runner." >&2
+            echo "       Native backend tests expect the asset repo pre-seeded there." >&2
+            exit 1
+          fi
+          echo "✓ pre-seeded testdata found at ${RAGFLOW_TESTDATA_DIR}/deepdoc:"
+          ls -l "${RAGFLOW_TESTDATA_DIR}/deepdoc"
 
       - name: Run in-process DeepDoc backend integration tests (correctness + race)
         # Doc-engine-independent: the same native backend (det/layout/tsr/rec
@@ -1710,9 +1802,12 @@ jobs:
         # race-detection value, ~10x memory tax) and only the concurrency
         # correctness tests run WITH -race (see run_native_integration_tests).
         #
-        # XDG_CACHE_HOME is pinned to a workspace path so the test fetch script
-        # and this job's actions/cache step agree on a single, deterministic
-        # location (the self-hosted runner's $HOME is not stable across steps).
+        # Testdata is pre-seeded on the runner at /opt/ragflow-testdata
+        # (asserted by the previous step). RAGFLOW_TESTDATA_DIR points the fetch
+        # script at it so the network clone is skipped (see
+        # scripts/fetch_deepdoc_testdata.sh) — which is why no actions/cache step
+        # is needed here. XDG_CACHE_HOME remains the location the script falls
+        # back to when it runs outside this job (local dev, no mount).
         env:
           MODEL_DIR: /opt/ragflow-deepdoc-models
           CGO_ENABLED: '1'

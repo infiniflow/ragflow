@@ -1169,6 +1169,28 @@ class LlmmanChat(Base):
         super().__init__("llmman", model_name, base_url, **kwargs)
 
 
+class HubrisChat(Base):
+    """Hubris OpenAI-compatible chat adapter.
+
+    The endpoint is fixed rather than configurable. Hubris is a hosted gateway
+    on one known host, so a tenant-supplied ``base_url`` would have no
+    legitimate use and would send the Hubris API key to whatever host was
+    configured.
+    """
+
+    _FACTORY_NAME = "Hubris"
+
+    _BASE_URL = "https://api.hubris.pw/v1"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        """Build the client against the fixed Hubris endpoint.
+
+        ``base_url`` is accepted for signature compatibility with the other
+        chat adapters and deliberately ignored.
+        """
+        super().__init__(key, model_name, self._BASE_URL, **kwargs)
+
+
 class OpenAI_APIChat(Base):
     _FACTORY_NAME = ["VLLM", "OpenAI-API-Compatible"]
 

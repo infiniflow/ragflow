@@ -118,7 +118,7 @@ func RunOCRRecBatchReal(ctx context.Context, modelDir string, imgs []*Image) ([]
 
 	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
 	// parity (no contour extraction in the OCR-rec Run path).
-	sess, release, err := getRecSession(filepath.Join(modelDir, "rec.onnx"), "x",
+	sess, release, err := getRecSession(filepath.Join(modelDir, "rec.ort"), "x",
 		[]int64{int64(n), 3, recH, int64(imgW)}, "softmax_11.tmp_0", 0)
 	if err != nil {
 		return nil, err
@@ -161,7 +161,7 @@ func recognizeLine(ctx context.Context, modelDir string, img *Image, maxWhRatio 
 	blob := ocrRecPreprocess(img, resizedW, imgW)
 	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
 	// parity (no contour extraction in the OCR-rec Run path).
-	sess, release, err := getRecSession(filepath.Join(modelDir, "rec.onnx"), "x",
+	sess, release, err := getRecSession(filepath.Join(modelDir, "rec.ort"), "x",
 		[]int64{recMaxBatch, 3, recH, int64(imgW)}, "softmax_11.tmp_0", 0)
 	if err != nil {
 		return OCRRecResult{}, err
@@ -289,7 +289,7 @@ func (r OCRRecResult) Wire() string {
 	return string(out)
 }
 
-// recSession runs rec.onnx, whose output sequence length is dynamic: it scales
+// recSession runs rec.ort, whose output sequence length is dynamic: it scales
 // with the input width (≈ width/8), so a fixed-shape AdvancedSession cannot be
 // pre-sized per width and even a width-matched session would still emit a
 // varying seq length. Instead we use a DynamicAdvancedSession and pass a nil
