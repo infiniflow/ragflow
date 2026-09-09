@@ -178,9 +178,11 @@ var (
 	// "caller may not read this document" so the preview endpoint cannot be
 	// used to probe foreign document IDs. Mirrors the Python preview route.
 	ErrPreviewDocumentNotFound = errors.New("document not found")
-	// ErrPreviewFileEmpty mirrors Python's "This file is empty." preview
-	// response for a document whose backing object has zero bytes.
-	ErrPreviewFileEmpty = errors.New("This file is empty.")
+	// ErrPreviewFileEmpty marks a document whose backing object has zero
+	// bytes; the handler maps it to Python's "This file is empty."
+	// preview response, so the sentinel text itself is never sent to
+	// clients.
+	ErrPreviewFileEmpty = errors.New("preview file empty")
 )
 
 var artifactContentTypes = map[string]string{

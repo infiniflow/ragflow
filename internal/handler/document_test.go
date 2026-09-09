@@ -1792,7 +1792,7 @@ func TestGetDocumentPreview_EmptyFile(t *testing.T) {
 	}
 }
 
-func TestGetDocumentPreview_StorageErrorSurfacesRealMessage(t *testing.T) {
+func TestGetDocumentPreview_StorageErrorGenericMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := &DocumentHandler{
 		documentService: &fakeDocumentService{},
@@ -1811,8 +1811,13 @@ func TestGetDocumentPreview_StorageErrorSurfacesRealMessage(t *testing.T) {
 		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
 	}
 	msg, _ := resp["message"].(string)
-	if !strings.Contains(msg, "connection refused") {
-		t.Fatalf("expected real storage error in message, got %v", resp["message"])
+	if msg != "Failed to load document preview" {
+		t.Fatalf("expected generic message, got %v", resp["message"])
+	}
+	// The storage detail (bucket/key, transport error) must stay in the
+	// server log, not in the client-visible message.
+	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "b/k") {
+		t.Fatalf("storage detail leaked to client: %v", resp["message"])
 	}
 }
 

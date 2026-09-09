@@ -277,13 +277,14 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 		case errors.Is(err, document.ErrPreviewFileEmpty):
 			common.ErrorWithCode(c, common.CodeDataError, "This file is empty.")
 		default:
-			// Surface the real failure (storage unreachable, missing
-			// object, bad address) instead of masking it as a missing
-			// document, mirroring Python's server_error_response. The
-			// details also land in the server log for diagnosis.
+			// Surface the failure as a distinct server error (storage
+			// unreachable, missing object, bad address) instead of masking
+			// it as a missing document, while keeping the raw detail --
+			// which names the object-store bucket/key -- in the server
+			// log only.
 			common.Error("GetDocumentPreview failed", err,
 				zap.String("doc_id", docID), zap.String("user_id", user.ID))
-			common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to load document preview")
 		}
 		return
 	}
