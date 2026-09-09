@@ -931,9 +931,10 @@ async def run_tree_templates(
 ) -> None:
     """Run the ``tree``-kind compilation templates for the current
     doc. Each pair runs RAPTOR with ``is_tree=True`` via
-    ``RaptorService.build_doc_tree`` and persists a single graph row
-    via ``_struct_upsert_graph_json``."""
-    from rag.advanced_rag.knowlege_compile.structure import _struct_upsert_graph_json
+    ``RaptorService.build_doc_tree`` and persists the projected graph twice:
+    raw entity/relation rows via ``_struct_upsert_tree_graph_rows`` plus the
+    compact discovery blob via ``_struct_upsert_graph_json``."""
+    from rag.advanced_rag.knowlege_compile.structure import _struct_upsert_graph_json, _struct_upsert_tree_graph_rows
     from rag.svr.task_executor_refactor.raptor_service import RaptorService
 
     ctx = handler._task_context
@@ -1014,6 +1015,20 @@ async def run_tree_templates(
         await rewrite_duplicate_tree_names(tree, chat_mdl_by_tid[template_id])
         graph = raptor_tree_to_graph(tree)
         try:
+            # The structure-graph read path renders a template bucket purely
+            # from the raw ``knowledge_graph_kwd=entity/relation`` rows; the
+            # compact graph blob below only serves bucket discovery. Persist
+            # both, exactly like the pipeline Compiler does, so a parsed
+            # document's tree is visible in the Artifact panel.
+            await _struct_upsert_tree_graph_rows(
+                graph,
+                ctx.tenant_id,
+                ctx.kb_id,
+                doc_id,
+                doc_name,
+                embedding_model,
+                compilation_template_id=template_id,
+            )
             await _struct_upsert_graph_json(
                 graph,
                 ctx.tenant_id,
