@@ -932,11 +932,82 @@ func TestFilterPDFTOCFragmentPages_KeepsFullRomanMarkers(t *testing.T) {
 	}
 }
 
-// TestFilterPDFTOCFragmentPages_URLBoilerplateDoesNotVeto pins the URL
-// exemption: a long storefront promo line bearing a URL or domain must not
-// veto page classification, and is deleted with the page.
-func TestFilterPDFTOCFragmentPages_URLBoilerplateDoesNotVeto(t *testing.T) {
-	promo := "Free ebook download from the reader forum http://forum.example.com/?from=381879"
+// TestFilterPDFTOCFragmentPages_LongTextTitlesDoNotVeto pins that long
+// chapter titles in the default text layout are TOC signals, not body
+// prose: five >=40-rune text titles plus three page fragments classify.
+func TestFilterPDFTOCFragmentPages_LongTextTitlesDoNotVeto(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1 Introduction to the fundamental principles of the way",
+		"Chapter 2 The sage abides by non-action and wordless teaching",
+		"Chapter 3 On governing through non-interference and simplicity",
+		"Chapter 4 On the emptiness of the way and its endless efficacy",
+		"Chapter 5 On holding to the center and the use of emptiness",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	if len(got) != 0 {
+		t.Fatalf("sections = %v, want empty", sectionTexts(got))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_LegitimateURLProseIsKept pins that a URL
+// reference line is ordinary text: it neither vetoes on its own merits
+// beyond its length nor is deleted, and genuine prose still vetoes.
+func TestFilterPDFTOCFragmentPages_LegitimateURLProseIsKept(t *testing.T) {
+	prose := "The way that can be told of is not the eternal way; the name " +
+		"that can be named is not the eternal name. The nameless is the origin."
+	sections := fragmentedTOCPage([]string{
+		"Section 1 Introduction",
+		"Section 2 Method",
+		"See the project page http://example.com/project for the dataset.",
+		prose,
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
+		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_EmptyPageNumbersDoNotCollide pins the page-0
+// guard: a section whose Positions carry no PageNumbers takes no part in
+// classification and cannot anchor, even on the real page 0.
+func TestFilterPDFTOCFragmentPages_EmptyPageNumbersDoNotCollide(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	sections = append(sections,
+		deepdoctype.Section{
+			Text:      "Chapter 9",
+			Positions: []deepdoctype.Position{{PageNumbers: nil, Left: 50, Right: 550, Top: 300, Bottom: 318}},
+		},
+		deepdoctype.Section{
+			Text:       "lone line",
+			LayoutType: "text",
+			Positions:  sections[0].Positions,
+		},
+	)
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{"Chapter 9", "lone line"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_WatermarkedTOCPageStaysNegative pins the
+// known limitation: a TOC page carrying a long watermark line without URL
+// signature still vetoes via body. Watermark handling belongs to a future
+// cross-page frequency pass, not to this classifier.
+func TestFilterPDFTOCFragmentPages_WatermarkedTOCPageStaysNegative(t *testing.T) {
+	promo := "Free ebook download from the reader forum, enjoy reading daily"
 	sections := fragmentedTOCPage([]string{
 		"Chapter 1",
 		"Chapter 2",
@@ -949,56 +1020,7 @@ func TestFilterPDFTOCFragmentPages_URLBoilerplateDoesNotVeto(t *testing.T) {
 		promo,
 	}, 0, "text")
 	got := filterPDFTOCFragmentPages(sections)
-	if len(got) != 0 {
-		t.Fatalf("sections = %v, want empty", sectionTexts(got))
-	}
-}
-
-// TestFilterPDFTOCFragmentPages_URLReferenceInBodyStillVetoes pins that the
-// exemption is scoped to classification only: a body page carrying a URL
-// reference plus genuine long prose still vetoes via the prose.
-func TestFilterPDFTOCFragmentPages_URLReferenceInBodyStillVetoes(t *testing.T) {
-	prose := "The way that can be told of is not the eternal way; the name " +
-		"that can be named is not the eternal name. The nameless is the origin."
-	sections := fragmentedTOCPage([]string{
-		"Chapter 1",
-		"Chapter 2",
-		"Chapter 3",
-		"Chapter 4",
-		"Chapter 5",
-		"1",
-		"3",
-		"4",
-		"See the reader forum http://forum.example.com for more texts.",
-		prose,
-	}, 0, "text")
-	got := filterPDFTOCFragmentPages(sections)
 	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
 		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
-	}
-}
-
-// TestFilterPDFTOCFragmentPages_DeletesTitleLayoutURLBoilerplate pins that
-// the delete switch drops URL promo lines even when DLA types them as
-// title: the title-layout gate only keeps non-URL titles.
-func TestFilterPDFTOCFragmentPages_DeletesTitleLayoutURLBoilerplate(t *testing.T) {
-	sections := fragmentedTOCPage([]string{
-		"Chapter 1",
-		"Chapter 2",
-		"Chapter 3",
-		"Chapter 4",
-		"Chapter 5",
-		"1",
-		"3",
-		"4",
-	}, 0, "text")
-	sections = append(sections, deepdoctype.Section{
-		Text:       "Reader forum http://forum.example.com",
-		LayoutType: "title",
-		Positions:  sections[0].Positions,
-	})
-	got := filterPDFTOCFragmentPages(sections)
-	if len(got) != 0 {
-		t.Fatalf("sections = %v, want empty", sectionTexts(got))
 	}
 }
