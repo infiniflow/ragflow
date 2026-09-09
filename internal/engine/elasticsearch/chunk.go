@@ -1865,6 +1865,11 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 					map[string]interface{}{"terms": map[string]interface{}{"id": listVal}},
 					map[string]interface{}{"terms": map[string]interface{}{"_id": listVal}},
 				)
+			} else if strListVal, ok := v.([]string); ok && len(strListVal) > 0 {
+				shouldClauses = append(shouldClauses,
+					map[string]interface{}{"terms": map[string]interface{}{"id": strListVal}},
+					map[string]interface{}{"terms": map[string]interface{}{"_id": strListVal}},
+				)
 			} else if strVal, ok := v.(string); ok && strVal != "" {
 				shouldClauses = append(shouldClauses,
 					map[string]interface{}{"term": map[string]interface{}{"id": strVal}},
