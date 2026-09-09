@@ -165,7 +165,19 @@ func (c *FeishuWikiConnector) Validate(ctx context.Context) error {
 func (c *FeishuWikiConnector) ValidateConnectorSetting(ctx context.Context, request map[string]any) error {
 	ctx, cancel := context.WithTimeout(ctx, connectorSettingValidationTimeout)
 	defer cancel()
-	return c.Validate(ctx)
+	candidate, err := NewFeishuWikiConnector(request)
+	if err != nil {
+		return err
+	}
+	if c != nil {
+		if c.httpClient != nil {
+			candidate.httpClient = c.httpClient
+		}
+		if c.baseURL != "" {
+			candidate.baseURL = c.baseURL
+		}
+	}
+	return candidate.Validate(ctx)
 }
 
 // OpenSync opens one Feishu Wiki synchronization session.
