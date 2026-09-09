@@ -290,6 +290,20 @@ class DialogService(CommonService):
         return list(objs)
 
 
+def _usage_dict(prompt_tokens: int, completion_tokens: int, start_ts: float) -> dict:
+    """Build the ``usage`` block attached to a final chat answer.
+
+    Token counts are tokenizer estimates (``num_tokens_from_string``), not
+    provider-reported values; ``duration_ms`` is wall-clock since ``start_ts``.
+    """
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+        "duration_ms": round((timer() - start_ts) * 1000, 1),
+    }
+
+
 async def async_chat_solo(dialog, messages, stream=True, session_id=None):
     if dialog.llm_id:
         if dialog.tenant_llm_id:
@@ -331,17 +345,31 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
     sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     system_prompt = prompt_config.get("system", "").replace("{date}", sys_date)
+    prompt_tk = num_tokens_from_string(system_prompt) + sum(num_tokens_from_string(m["content"]) for m in msg if isinstance(m.get("content"), str))
+    start_ts = timer()
     if stream:
         if model_config["model_type"] == "chat":
             stream_iter = chat_mdl.async_chat_streamly_delta(system_prompt, msg, dialog.llm_setting)
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(system_prompt, msg, dialog.llm_setting, images=image_files)
+        last_state = None
         async for kind, value, state in _stream_with_think_delta(stream_iter):
+            last_state = state
             if kind == "marker":
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
                 yield {"answer": "", "reference": {}, "audio_binary": None, "prompt": "", "created_at": time.time(), "final": False, **flags}
                 continue
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
+        full_answer = last_state.full_text if last_state else ""
+        yield {
+            "answer": "",
+            "reference": {},
+            "audio_binary": None,
+            "prompt": "",
+            "created_at": time.time(),
+            "final": True,
+            "usage": _usage_dict(prompt_tk, num_tokens_from_string(full_answer), start_ts),
+        }
     else:
         if model_config["model_type"] == "chat":
             answer = await chat_mdl.async_chat(system_prompt, msg, dialog.llm_setting)
@@ -349,7 +377,14 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
             answer = await chat_mdl.async_chat(system_prompt, msg, dialog.llm_setting, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
-        yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
+        yield {
+            "answer": answer,
+            "reference": {},
+            "audio_binary": tts(tts_mdl, answer),
+            "prompt": "",
+            "created_at": time.time(),
+            "usage": _usage_dict(prompt_tk, num_tokens_from_string(answer), start_ts),
+        }
 
 
 def get_models(dialog, trace_context=None, langfuse_session_id=None):
@@ -813,7 +848,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         # stripping in clean_tts_text).
         escaped_answer = html.escape(empty_res)
         yield {"answer": escaped_answer, "reference": {}, "prompt": "", "audio_binary": None, "final": False}
-        yield {"answer": escaped_answer, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
+        yield {
+            "answer": escaped_answer,
+            "reference": kbinfos,
+            "prompt": "\n\n### Query:\n%s" % " ".join(questions),
+            "audio_binary": tts(tts_mdl, empty_res),
+            "final": True,
+            "usage": _usage_dict(0, 0, chat_start_ts),
+        }
         return
 
     # Only overwrite kwargs["knowledge"] when retrieval produced something;
@@ -939,7 +981,18 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             )
             langfuse_generation.end()
 
-        return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
+        return {
+            "answer": think + answer,
+            "reference": refs,
+            "prompt": re.sub(r"\n", "  \n", prompt),
+            "created_at": time.time(),
+            "usage": {
+                "prompt_tokens": used_token_count,
+                "completion_tokens": tk_num,
+                "total_tokens": used_token_count + tk_num,
+                "duration_ms": round(total_time_cost, 1),
+            },
+        }
 
     if langfuse_tracer:
         try:
@@ -2005,6 +2058,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         async for ans in async_chat(dialog, messages, stream, **kwargs):
             yield ans
         return
+    agent_start_ts = timer()
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
 
     # Agentic RAG depends on the outer model being able to call the bound
@@ -2134,7 +2188,14 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
 
-        return {"answer": think + answer, "reference": refs, "prompt": "", "created_at": time.time()}
+        prompt_tk = num_tokens_from_string(rag_tools.sys_prompt()) + sum(num_tokens_from_string(m["content"]) for m in agent_messages if isinstance(m.get("content"), str))
+        return {
+            "answer": think + answer,
+            "reference": refs,
+            "prompt": "",
+            "created_at": time.time(),
+            "usage": _usage_dict(prompt_tk, num_tokens_from_string(think + answer), agent_start_ts),
+        }
 
     # The agentic-search graph composes the final cited answer itself, so we
     # stream its tokens straight to the client instead of relaying a tool
