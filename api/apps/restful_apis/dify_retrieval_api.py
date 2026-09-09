@@ -100,11 +100,14 @@ def _parse_retrieval_options(retrieval_setting):
         retrieval_setting = {}
     if not isinstance(retrieval_setting, dict):
         raise ValueError("retrieval_setting must be an object")
-    if isinstance(retrieval_setting.get("top_k"), bool):
+    raw_top = retrieval_setting.get("top_k", 1024)
+    if isinstance(raw_top, bool):
         raise ValueError("top_k must be an integer, not a boolean")
+    if isinstance(raw_top, float) and not raw_top.is_integer():
+        raise ValueError("top_k must be a whole number")
     try:
         similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
-        top = int(retrieval_setting.get("top_k", 1024))
+        top = int(raw_top)
     except (TypeError, ValueError):
         raise ValueError("top_k must be integer and score_threshold must be numeric")
     if top < 1 or top > 1024:
