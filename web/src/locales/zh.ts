@@ -468,7 +468,7 @@ export default {
       chunkMethod: '切片方法',
       enabled: '启用',
       disabled: '禁用',
-      action: '动作',
+      action: '操作',
       parsingStatus: '解析状态',
       parsingStatusTip:
         '文本解析的时间取决于诸多因素。如果开启了 Graph、RAPTOR、自动问题提取、自动关键词提取等功能，时间会更长。如果解析进度条长时间不更新，也可以参考这两条 FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
@@ -1570,12 +1570,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       deleteChannelModalTitle: '删除聊天渠道',
       deleteChannelModalContent:
         '确定要删除此聊天渠道机器人吗？此操作无法撤销。',
-      connectDialog: '关联助手',
-      connectDialogTitle: '将 {{name}} 关联到助手',
-      selectDialog: '选择助手',
+      connectDialog: '关联助手或智能体',
+      connectDialogTitle: '将 {{name}} 关联到助手或智能体',
+      selectDialog: '选择助手或智能体',
       connectDialogTip:
-        '该渠道收到的消息将由关联的助手回复。清空选择即可解除关联。',
-      notConnected: '未关联助手',
+        '该渠道收到的消息将由关联的助手或智能体回复。清空选择即可解除关联。',
+      notConnected: '未关联助手或智能体',
+      chatChannelAssistant: '聊天助手',
+      chatChannelAgent: '智能体',
       chatChannelDesc: {
         clickclack: '连接 ClickClack 机器人',
         discord: '连接 Discord 机器人',
