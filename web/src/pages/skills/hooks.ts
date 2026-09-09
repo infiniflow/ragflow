@@ -946,27 +946,30 @@ export const useSkills = () => {
           // Index the skill with embd_id from config (if available)
           // Use user-specified name (skillNameNormalized) as skill ID and name
           // This ensures consistency between folder name, skill ID, and display name
-          const indexResponse = await fetch(withAppBasePath('/api/v1/skills/index'), {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: getAuthorization(),
+          const indexResponse = await fetch(
+            withAppBasePath('/api/v1/skills/index'),
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: getAuthorization(),
+              },
+              body: JSON.stringify({
+                space_id: normalizedSpaceId,
+                embd_id: embdId,
+                skills: [
+                  {
+                    id: skillNameNormalized,
+                    folder_id: skillFolderId,
+                    name: skillNameNormalized,
+                    description: skillDescription,
+                    tags: skillMetadata.tags || [],
+                    content: concatenatedContent,
+                  },
+                ],
+              }),
             },
-            body: JSON.stringify({
-              space_id: normalizedSpaceId,
-              embd_id: embdId,
-              skills: [
-                {
-                  id: skillNameNormalized,
-                  folder_id: skillFolderId,
-                  name: skillNameNormalized,
-                  description: skillDescription,
-                  tags: skillMetadata.tags || [],
-                  content: concatenatedContent,
-                },
-              ],
-            }),
-          });
+          );
 
           if (!indexResponse.ok) {
             console.warn(
