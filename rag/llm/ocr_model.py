@@ -19,7 +19,7 @@ import os
 from typing import Any, Optional
 
 from deepdoc.parser.mineru_parser import MinerUParser
-from deepdoc.parser.monkeyocr_parser import MonkeyOCRParser
+from deepdoc.parser.monkeyocr_parser import MonkeyOCRParser, normalize_monkeyocr_backend
 from deepdoc.parser.mistral_parser import MistralParser
 from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.paddleocr_parser import PaddleOCRParser
@@ -121,7 +121,9 @@ class MonkeyOCROcrModel(Base, MonkeyOCRParser):
         self.monkeyocr_api = _resolve_config("monkeyocr_apiserver", "MONKEYOCR_APISERVER", "")
         self.monkeyocr_output_dir = _resolve_config("monkeyocr_output_dir", "MONKEYOCR_OUTPUT_DIR", "")
         self.monkeyocr_server_url = _resolve_config("monkeyocr_server_url", "MONKEYOCR_SERVER_URL", "")
-        self.monkeyocr_backend = _resolve_config("monkeyocr_backend", "MONKEYOCR_BACKEND", "vlm-transformers")
+        self.monkeyocr_backend = normalize_monkeyocr_backend(
+            _resolve_config("monkeyocr_backend", "MONKEYOCR_BACKEND", "vlm-engine")
+        )
         self.monkeyocr_delete_output = bool(int(_resolve_config("monkeyocr_delete_output", "MONKEYOCR_DELETE_OUTPUT", 1)))
 
         redacted_config = {}

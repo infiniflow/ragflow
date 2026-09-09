@@ -1910,7 +1910,7 @@ var (
 		common.EnvMonkeyOCRAPIServer:    "",
 		common.EnvMonkeyOCROutputDir:    "",
 		common.EnvMonkeyOCRServerURL:    "",
-		common.EnvMonkeyOCRBackend:      "vlm-transformers",
+		common.EnvMonkeyOCRBackend:      "vlm-engine",
 		common.EnvMonkeyOCRDeleteOutput: 1,
 	}
 )

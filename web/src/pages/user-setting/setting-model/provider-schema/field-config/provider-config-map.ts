@@ -526,18 +526,23 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         type: FormFieldType.Text,
         required: false,
         placeholder: 'monkeyocrServerUrlPlaceholder',
+        shouldRender: (values: any) =>
+          values?.monkeyocr_backend === 'vlm-http-client' ||
+          values?.monkeyocr_backend === 'hybrid-http-client',
       },
       {
         name: 'monkeyocr_backend',
         label: 'monkeyocrBackend',
         type: FormFieldType.Select,
         required: true,
-        defaultValue: 'vlm-transformers',
+        defaultValue: 'vlm-engine',
         placeholder: 'monkeyocrSelectBackend',
         options: [
-          { label: 'vlm-transformers', value: 'vlm-transformers' },
-          { label: 'vlm-vllm-engine', value: 'vlm-vllm-engine' },
+          { label: 'pipeline', value: 'pipeline' },
+          { label: 'vlm-engine', value: 'vlm-engine' },
+          { label: 'hybrid-engine', value: 'hybrid-engine' },
           { label: 'vlm-http-client', value: 'vlm-http-client' },
+          { label: 'hybrid-http-client', value: 'hybrid-http-client' },
         ],
         validation: { message: 'monkeyocrBackendMessage' },
       },
@@ -583,7 +588,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       return {
         monkeyocr_apiserver: obj.monkeyocr_apiserver ?? '',
         monkeyocr_server_url: obj.monkeyocr_server_url ?? '',
-        monkeyocr_backend: obj.monkeyocr_backend ?? 'vlm-transformers',
+        monkeyocr_backend: obj.monkeyocr_backend ?? 'vlm-engine',
         monkeyocr_output_dir: obj.monkeyocr_output_dir ?? '',
         monkeyocr_delete_output: String(obj.monkeyocr_delete_output ?? '1') !== '0',
       };

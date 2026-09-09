@@ -18,7 +18,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from common.constants import MAXIMUM_PAGE_NUMBER
-from deepdoc.parser.monkeyocr_parser import MonkeyOCRParser
+from deepdoc.parser.monkeyocr_parser import MonkeyOCRParser, normalize_monkeyocr_backend
 
 
 @pytest.mark.p1
@@ -39,3 +39,9 @@ def test_parse_pdf_defaults_page_to_maximum_when_omitted(tmp_path):
 
     assert parent_parse.call_args.kwargs["page_to"] == MAXIMUM_PAGE_NUMBER
     assert parent_parse.call_args.kwargs["page_from"] == 0
+
+
+@pytest.mark.p1
+def test_normalize_monkeyocr_backend_maps_legacy_names():
+    assert normalize_monkeyocr_backend("vlm-transformers") == "vlm-engine"
+    assert normalize_monkeyocr_backend("vlm-http-client") == "vlm-http-client"

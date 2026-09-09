@@ -21,6 +21,19 @@ from typing import Callable, Optional
 from common.constants import MAXIMUM_PAGE_NUMBER
 from deepdoc.parser.mineru_parser import MinerUParser
 
+_LEGACY_MONKEYOCR_BACKENDS = {
+    "vlm-transformers": "vlm-engine",
+    "vlm-vllm-engine": "vlm-engine",
+    "vlm-mlx-engine": "vlm-engine",
+    "vlm-vllm-async-engine": "vlm-engine",
+    "vlm-lmdeploy-engine": "vlm-engine",
+}
+
+
+def normalize_monkeyocr_backend(backend: str) -> str:
+    backend = (backend or "vlm-engine").strip()
+    return _LEGACY_MONKEYOCR_BACKENDS.get(backend, backend)
+
 
 class MonkeyOCRParser(MinerUParser):
     """MonkeyOCRv2 PDF parser using a dedicated MinerU-compatible HTTP adapter.
@@ -34,13 +47,13 @@ class MonkeyOCRParser(MinerUParser):
         self,
         monkeyocr_api: str = "",
         monkeyocr_server_url: str = "",
-        monkeyocr_backend: str = "vlm-transformers",
+        monkeyocr_backend: str = "vlm-engine",
     ):
         super().__init__(
             mineru_api=(monkeyocr_api or "").rstrip("/"),
             mineru_server_url=(monkeyocr_server_url or "").rstrip("/"),
         )
-        self.monkeyocr_backend = monkeyocr_backend or "vlm-transformers"
+        self.monkeyocr_backend = normalize_monkeyocr_backend(monkeyocr_backend)
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @property
@@ -59,7 +72,7 @@ class MonkeyOCRParser(MinerUParser):
     def monkeyocr_server_url(self, value: str) -> None:
         self.mineru_server_url = (value or "").rstrip("/")
 
-    def check_installation(self, backend: str = "vlm-transformers", server_url: Optional[str] = None) -> tuple[bool, str]:
+    def check_installation(self, backend: str = "vlm-engine", server_url: Optional[str] = None) -> tuple[bool, str]:
         if not self.monkeyocr_api:
             reason = "[MonkeyOCR] MONKEYOCR_APISERVER not configured."
             self.logger.warning(reason)
@@ -103,7 +116,7 @@ class MonkeyOCRParser(MinerUParser):
     ) -> tuple:
         if callback:
             callback(0.1, "[MonkeyOCR] Parsing PDF via MonkeyOCR adapter...")
-        resolved_backend = backend or self.monkeyocr_backend
+        resolved_backend = normalize_monkeyocr_backend(backend or self.monkeyocr_backend)
         return super().parse_pdf(
             filepath,
             binary,

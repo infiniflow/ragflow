@@ -560,7 +560,12 @@ func dispatchMonkeyOCRPDF(
 		lang = getStringOr(setup, "monkeyocr_lang", "Chinese")
 	}
 	mineruLang := mineruLangCode(lang)
-	backend := getStringOr(setup, "monkeyocr_backend", "vlm-transformers")
+	backend := normalizeMonkeyOCRBackend(getStringOr(setup, "monkeyocr_backend", "vlm-engine"))
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		if configured := monkeyOCRConfigValue(*apiConfig.ApiKey, "monkeyocr_backend", common.EnvMonkeyOCRBackend); configured != "" {
+			backend = normalizeMonkeyOCRBackend(configured)
+		}
+	}
 
 	// Tenant MonkeyOCR api_key is usually a JSON config blob (URLs), not a
 	// bearer token. Only forward a non-JSON key as Authorization.
@@ -618,6 +623,10 @@ func monkeyOCRAPIServer(apiConfig *modelModule.APIConfig) string {
 }
 
 func monkeyOCRAPIServerFromKey(raw string) string {
+	return monkeyOCRConfigValue(raw, "monkeyocr_apiserver", "MONKEYOCR_APISERVER")
+}
+
+func monkeyOCRConfigValue(raw string, keys ...string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
@@ -633,14 +642,25 @@ func monkeyOCRAPIServerFromKey(raw string) string {
 	if nested, ok := cfg["api_key"].(map[string]any); ok {
 		cfg = nested
 	}
-	for _, key := range []string{"monkeyocr_apiserver", "MONKEYOCR_APISERVER"} {
-		if v, ok := cfg[key].(string); ok {
-			if s := strings.TrimSpace(v); s != "" {
+	for _, key := range keys {
+		if v, ok := cfg[key]; ok && v != nil {
+			if s := strings.TrimSpace(fmt.Sprint(v)); s != "" {
 				return s
 			}
 		}
 	}
 	return ""
+}
+
+func normalizeMonkeyOCRBackend(backend string) string {
+	switch strings.TrimSpace(backend) {
+	case "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine":
+		return "vlm-engine"
+	case "":
+		return "vlm-engine"
+	default:
+		return strings.TrimSpace(backend)
+	}
 }
 
 // resolvePaddleOCRModelForDispatch resolves the OCR model used by the
