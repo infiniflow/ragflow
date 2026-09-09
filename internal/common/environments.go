@@ -34,6 +34,7 @@ func GetEnvSmall(key string) string {
 const (
 	EnvTensorrtDLAServer                 = "TENSORRT_DLA_SVR"
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
+	EnvRerankTokenLimitMode              = "RERANK_TOKEN_LIMIT_MODE"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
 	EnvDocEngine                         = "DOC_ENGINE"
 	EnvMaxFileNumPerUser                 = "MAX_FILE_NUM_PER_USER"
