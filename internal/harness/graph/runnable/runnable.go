@@ -24,9 +24,9 @@ type Runnable[Input, Output any] interface {
 
 // RunnableSchema describes the schema of a runnable.
 type RunnableSchema struct {
-	InputType  string
-	OutputType string
-	Name       string
+	InputType   string
+	OutputType  string
+	Name        string
 	Description string
 }
 
@@ -240,9 +240,9 @@ func NewRunnableParallel(runnables map[string]Runnable[any, any]) *RunnableParal
 // Invoke executes all runnables in parallel with the same input.
 func (p *RunnableParallel) Invoke(ctx context.Context, input interface{}) (interface{}, error) {
 	type result struct {
-		name   string
-		value  interface{}
-		err    error
+		name  string
+		value interface{}
+		err   error
 	}
 
 	resultCh := make(chan result, len(p.runnables))
@@ -395,12 +395,12 @@ func CoerceToRunnable(value interface{}) (Runnable[any, any], error) {
 				Message: "cannot coerce nil to Runnable",
 			}
 		}
-		
+
 		if valType.Kind() == reflect.Func {
 			// Try to wrap it as a RunnableFunc
 			return coerceFuncToRunnable(value, valType)
 		}
-		
+
 		return nil, &RunnableError{
 			Message: fmt.Sprintf("cannot coerce %T to Runnable", value),
 		}
@@ -412,31 +412,31 @@ func coerceFuncToRunnable(fn interface{}, fnType reflect.Type) (Runnable[any, an
 	// Check function signature
 	numIn := fnType.NumIn()
 	numOut := fnType.NumOut()
-	
+
 	// Supported signatures:
 	// 1. func(context.Context, T) (U, error)
 	// 2. func(T) U
 	// 3. func(T) (U, error)
 	// 4. func() U
 	// 5. func() (U, error)
-	
+
 	// We'll create a wrapper that adapts the function to Runnable[any, any]
 	wrapper := func(ctx context.Context, input interface{}) (interface{}, error) {
 		// Prepare arguments
 		args := make([]reflect.Value, 0, numIn)
-		
+
 		argIndex := 0
 		// Check if first argument is context.Context
 		if numIn > 0 && fnType.In(0).AssignableTo(reflect.TypeOf((*context.Context)(nil)).Elem()) {
 			args = append(args, reflect.ValueOf(ctx))
 			argIndex++
 		}
-		
+
 		// Add input argument if needed
 		if argIndex < numIn {
 			inputVal := reflect.ValueOf(input)
 			paramType := fnType.In(argIndex)
-			
+
 			// Try to convert input to expected type
 			if input != nil && inputVal.Type().AssignableTo(paramType) {
 				args = append(args, inputVal)
@@ -448,15 +448,15 @@ func coerceFuncToRunnable(fn interface{}, fnType reflect.Type) (Runnable[any, an
 			}
 			argIndex++
 		}
-		
+
 		// Fill remaining parameters with zero values
 		for ; argIndex < numIn; argIndex++ {
 			args = append(args, reflect.Zero(fnType.In(argIndex)))
 		}
-		
+
 		// Call function
 		results := reflect.ValueOf(fn).Call(args)
-		
+
 		// Process results
 		if numOut == 0 {
 			return nil, nil
@@ -480,12 +480,12 @@ func coerceFuncToRunnable(fn interface{}, fnType reflect.Type) (Runnable[any, an
 			}
 			return result, nil
 		}
-		
+
 		return nil, &RunnableError{
 			Message: fmt.Sprintf("unsupported number of return values: %d", numOut),
 		}
 	}
-	
+
 	return NewRunnableFunc(wrapper), nil
 }
 

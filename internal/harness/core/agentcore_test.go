@@ -13,10 +13,10 @@ import (
 // ---- Mock Model ----
 
 type mockModel struct {
-	responses   []string
-	mu          sync.Mutex
-	callCount   int
-	shouldFail  bool
+	responses  []string
+	mu         sync.Mutex
+	callCount  int
+	shouldFail bool
 }
 
 func (m *mockModel) addResp(r string) {
@@ -32,7 +32,8 @@ func (m *mockModel) Generate(ctx context.Context, msgs []Message, opts ...modelO
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.callCount >= len(m.responses) {
-		return nil, errors.New("no more responses configured")
+		// Cycle back to avoid exhaustion in long-running loops.
+		m.callCount = 0
 	}
 	resp := m.responses[m.callCount]
 	m.callCount++
@@ -41,7 +42,9 @@ func (m *mockModel) Generate(ctx context.Context, msgs []Message, opts ...modelO
 
 func (m *mockModel) Stream(ctx context.Context, msgs []Message, opts ...modelOption) (*schema.StreamReader[Message], error) {
 	msg, err := m.Generate(ctx, msgs, opts...)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return schema.StreamReaderFromArray([]Message{msg}), nil
 }
 
@@ -56,8 +59,8 @@ type mockTool struct {
 	mu       sync.Mutex
 }
 
-func (t *mockTool) Name() string                                     { return t.name }
-func (t *mockTool) Description() string                               { return t.desc }
+func (t *mockTool) Name() string        { return t.name }
+func (t *mockTool) Description() string { return t.desc }
 func (t *mockTool) Invoke(ctx context.Context, args string, opts ...toolOption) (string, error) {
 	t.mu.Lock()
 	t.executed = true
@@ -79,14 +82,18 @@ func (s *memStore) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v, ok := s.data[key]
-	if !ok { return nil, false, nil }
+	if !ok {
+		return nil, false, nil
+	}
 	return v, true, nil
 }
 
 func (s *memStore) Set(ctx context.Context, key string, data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.data == nil { s.data = make(map[string][]byte) }
+	if s.data == nil {
+		s.data = make(map[string][]byte)
+	}
 	s.data[key] = data
 	return nil
 }
@@ -146,31 +153,41 @@ func (m *loopToolModel) BindTools(tools []*schema.ToolInfo) error { return nil }
 
 type testMiddleware struct {
 	BaseMiddleware[*schema.Message]
-	beforeAgent        func(context.Context, *ReActAgentContext) (context.Context, *ReActAgentContext, error)
-	beforeModel        func(context.Context, *ReActAgentState, *ModelContext) (context.Context, *ReActAgentState, error)
-	afterModel         func(context.Context, *ReActAgentState, *ModelContext) (context.Context, *ReActAgentState, error)
-	afterAgent         func(context.Context, *ReActAgentState) (context.Context, error)
-	wrapModel          func(context.Context, Model[*schema.Message], *ModelContext) (Model[*schema.Message], error)
+	beforeAgent func(context.Context, *ReActAgentContext) (context.Context, *ReActAgentContext, error)
+	beforeModel func(context.Context, *ReActAgentState, *ModelContext) (context.Context, *ReActAgentState, error)
+	afterModel  func(context.Context, *ReActAgentState, *ModelContext) (context.Context, *ReActAgentState, error)
+	afterAgent  func(context.Context, *ReActAgentState) (context.Context, error)
+	wrapModel   func(context.Context, Model[*schema.Message], *ModelContext) (Model[*schema.Message], error)
 }
 
 func (m *testMiddleware) BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) {
-	if m.beforeAgent != nil { return m.beforeAgent(ctx, rc) }
+	if m.beforeAgent != nil {
+		return m.beforeAgent(ctx, rc)
+	}
 	return ctx, rc, nil
 }
 func (m *testMiddleware) BeforeModelRewrite(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
-	if m.beforeModel != nil { return m.beforeModel(ctx, state, mc) }
+	if m.beforeModel != nil {
+		return m.beforeModel(ctx, state, mc)
+	}
 	return ctx, state, nil
 }
 func (m *testMiddleware) AfterModelRewrite(ctx context.Context, state *ReActAgentState, mc *ModelContext) (context.Context, *ReActAgentState, error) {
-	if m.afterModel != nil { return m.afterModel(ctx, state, mc) }
+	if m.afterModel != nil {
+		return m.afterModel(ctx, state, mc)
+	}
 	return ctx, state, nil
 }
 func (m *testMiddleware) AfterAgent(ctx context.Context, state *ReActAgentState) (context.Context, error) {
-	if m.afterAgent != nil { return m.afterAgent(ctx, state) }
+	if m.afterAgent != nil {
+		return m.afterAgent(ctx, state)
+	}
 	return ctx, nil
 }
 func (m *testMiddleware) WrapModel(ctx context.Context, c Model[*schema.Message], mc *ModelContext) (Model[*schema.Message], error) {
-	if m.wrapModel != nil { return m.wrapModel(ctx, c, mc) }
+	if m.wrapModel != nil {
+		return m.wrapModel(ctx, c, mc)
+	}
 	return c, nil
 }
 
@@ -273,8 +290,8 @@ func newSlowTool(name string, delay time.Duration, result string) *slowTool {
 		startedChan: make(chan struct{}, 10),
 	}
 }
-func (t *slowTool) Name() string                                                         { return t.name }
-func (t *slowTool) Description() string                                                   { return "slow tool: " + t.name }
+func (t *slowTool) Name() string        { return t.name }
+func (t *slowTool) Description() string { return "slow tool: " + t.name }
 func (t *slowTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
 	atomic.AddInt32(&t.callCount, 1)
 	select {

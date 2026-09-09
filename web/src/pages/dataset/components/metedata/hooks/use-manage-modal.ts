@@ -289,6 +289,7 @@ export const useManageMetaDataModal = (
   type: MetadataType = MetadataType.Manage,
   otherData?: Record<string, any>,
   documentIds?: string[],
+  isLocalSave = false,
 ) => {
   const { id } = useParams();
   const { t } = useTranslation();
@@ -415,21 +416,24 @@ export const useManageMetaDataModal = (
   const handleSaveSettings = useCallback(
     async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      const { data: res } = await kbUpdateMetaData(id || '', {
-        metadata: data,
-        builtInMetadata: builtInMetadata || [],
-      });
-      if (res.code === 0) {
-        message.success(t('message.operated'));
+      if (isLocalSave) {
         callback?.();
+      } else {
+        const { data: res } = await kbUpdateMetaData(id || '', {
+          metadata: data,
+          builtInMetadata: builtInMetadata || [],
+        });
+        if (res.code === 0) {
+          message.success(t('message.operated'));
+          callback?.();
+        }
       }
-      // callback?.();
       return {
         metadata: data,
         builtInMetadata: builtInMetadata || [],
       };
     },
-    [tableData, t, id],
+    [tableData, t, id, isLocalSave],
   );
 
   const handleSaveSingleFileSettings = useCallback(

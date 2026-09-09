@@ -5,6 +5,10 @@ import { DatasetMetadata } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchChat, useUpdateChat } from '@/hooks/use-chat-request';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
+import {
+  useRevalidateStaleDatasetIds,
+  useStaleDatasetFormSchema,
+} from '@/hooks/use-stale-dataset-validation';
 import { cn } from '@/lib/utils';
 import {
   removeUselessFieldsFromValues,
@@ -22,12 +26,19 @@ import ChatBasicSetting from './chat-basic-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
 import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
+import { useRevealSubmitErrors } from './use-reveal-submit-errors';
+import { getWebSearchProvider } from '../web-search-api-key';
 
 type ChatSettingsProps = { hasSingleChatBox: boolean };
 
 export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
-  const formSchema = useChatSettingSchema();
   const { data } = useFetchChat();
+
+  const chatSettingSchema = useChatSettingSchema();
+  const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
+    chatSettingSchema,
+    data?.dataset_ids,
+  );
   const { updateChat, loading } = useUpdateChat();
   const findLlmByUuid = useFindLlmByUuid();
   const { id } = useParams();
@@ -36,11 +47,21 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   const { visible: settingVisible, switchVisible: switchSettingVisible } =
     useSetModalState(false);
 
+  const {
+    formContainerRef,
+    handleInvalidSubmit,
+    modelSettingOpen,
+    onModelSettingOpenChange,
+    advancedSettingOpen,
+    onAdvancedSettingOpenChange,
+  } = useRevealSubmitErrors();
+
   type FormSchemaType = z.infer<typeof formSchema>;
 
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
     shouldUnregister: false,
+    mode: 'onChange',
     defaultValues: {
       name: '',
       icon: '',
@@ -50,22 +71,20 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         quote: true,
         keyword: false,
         tts: false,
-        use_kg: false,
         refine_multiturn: true,
         system: '',
         parameters: [],
         reasoning: false,
         cross_languages: [],
-        toc_enhance: false,
         reference_metadata: {
           include: false,
           fields: undefined,
         },
       },
       top_n: 8,
+      rerank_candidates_count: 64,
       similarity_threshold: 0.2,
       vector_similarity_weight: 0.2,
-      top_k: 1024,
       meta_data_filter: {
         method: DatasetMetadata.Disabled,
         manual: [],
@@ -101,20 +120,19 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         ...omit(data, [
           'operator_permission',
           'tenant_id',
+          'tenant_llm_id',
+          'tenant_rerank_id',
           'created_by',
           'create_time',
           'create_date',
           'update_time',
           'update_date',
           'id',
+          'top_k',
         ]),
         ...nextValues,
       },
     });
-  }
-
-  function onInvalid(errors: any) {
-    void errors;
   }
 
   useEffect(() => {
@@ -130,9 +148,11 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         : referenceMetadata;
 
     const nextData = {
-      ...data,
+      ...omit(data, 'top_k'),
       prompt_config: {
         ...data.prompt_config,
+        // reset() skips undefined values, so fall back to '' to clear the field
+        web_search_provider: getWebSearchProvider(data.prompt_config) ?? '',
         reference_metadata: normalizedReferenceMetadata,
       },
       ...llmSettingEnabledValues,
@@ -142,6 +162,8 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       form.reset(nextData as FormSchemaType);
     }
   }, [data, form]);
+
+  useRevalidateStaleDatasetIds(form, datasetsFetched);
 
   return (
     <>
@@ -187,13 +209,20 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
 
             <Form {...form}>
               <form
-                onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+                ref={formContainerRef}
+                onSubmit={form.handleSubmit(onSubmit, handleInvalidSubmit)}
                 className="flex-1 flex flex-col min-h-0"
               >
                 <ScrollArea viewportClassName="[&>div]:!block">
                   <section className="p-5 space-y-6 overflow-auto flex-1 min-h-0">
-                    <ChatBasicSetting></ChatBasicSetting>
-                    <ChatPromptEngine></ChatPromptEngine>
+                    <ChatBasicSetting
+                      collapseOpen={modelSettingOpen}
+                      onCollapseOpenChange={onModelSettingOpenChange}
+                    ></ChatBasicSetting>
+                    <ChatPromptEngine
+                      collapseOpen={advancedSettingOpen}
+                      onCollapseOpenChange={onAdvancedSettingOpenChange}
+                    ></ChatPromptEngine>
                   </section>
                 </ScrollArea>
 

@@ -31,9 +31,20 @@ const (
 // task status
 const (
 	CREATED   = "CREATED"
+	SCHEDULED = "SCHEDULED"
 	RUNNING   = "RUNNING"
 	COMPLETED = "COMPLETED"
 	FAILED    = "FAILED"
 	STOPPED   = "STOPPED"
 	STOPPING  = "STOPPING"
 )
+
+// StatusDialogValid is the dialog.status value that gates public bot
+// access. Mirrors Python's StatusEnum.VALID.value at
+// api/common/constants.py (the string "1"). All chatbot/agentbot
+// authorization paths must use this constant instead of the literal.
+const StatusDialogValid = "1"
+
+// DialogStatus is a typed alias for dialog.status to avoid raw string
+// comparisons in call sites.
+type DialogStatus string

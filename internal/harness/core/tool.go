@@ -56,9 +56,13 @@ func WithMaxDepth(d int) AgentToolOption {
 //   - Interrupted actions are propagated via CompositeInterrupt for proper interrupt/resume
 func NewAgentTool(ctx context.Context, agent Agent, options ...AgentToolOption) Tool {
 	opts := &AgentToolOptions{}
-	for _, o := range options { o(opts) }
+	for _, o := range options {
+		o(opts)
+	}
 	name := agent.Name(ctx)
-	if name == "" { name = "agent_tool" }
+	if name == "" {
+		name = "agent_tool"
+	}
 	desc := agent.Description(ctx)
 	return &agentTool{
 		name: name, desc: desc, agent: agent,
@@ -75,7 +79,7 @@ type agentTool struct {
 }
 
 func (t *agentTool) Name() string        { return t.name }
-func (t *agentTool) Description() string  { return t.desc }
+func (t *agentTool) Description() string { return t.desc }
 
 func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (result string, err error) {
 	// Panic recovery: runner.Run or iter.Next may panic; catch and convert to Go error.
@@ -127,8 +131,12 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 	var interrupted bool
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
-		if ev.Err != nil { return "", fmt.Errorf("agent tool '%s': %w", t.name, ev.Err) }
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			return "", fmt.Errorf("agent tool '%s': %w", t.name, ev.Err)
+		}
 
 		// EmitInternalEvents: forward events to parent stream
 		if parentEC != nil && t.opts.EmitInternalEvents {
@@ -161,6 +169,8 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 
 func (t *agentTool) Stream(ctx context.Context, args string, opts ...ToolOption) (*schema.StreamReader[string], error) {
 	r, err := t.Invoke(ctx, args, opts...)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return schema.StreamReaderFromArray([]string{r}), nil
 }

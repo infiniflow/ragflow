@@ -29,6 +29,7 @@ export const BeginFormSchema = z.object({
         per: z.string().optional(),
       }),
       max_body_size: z.string(),
+      allow_anonymous: z.boolean().optional(),
       jwt: z
         .object({
           algorithm: z.string().default(WebhookJWTAlgorithmList[0]).optional(),

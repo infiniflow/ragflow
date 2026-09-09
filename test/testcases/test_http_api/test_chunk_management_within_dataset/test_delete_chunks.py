@@ -54,7 +54,7 @@ class TestChunksDeletion:
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
-            (INVALID_ID_32, 102, f"You don't own the document {INVALID_ID_32}."),
+            (INVALID_ID_32, 102, f"you don't own the document {INVALID_ID_32}"),
         ],
     )
     def test_invalid_document_id(self, HttpApiAuth, add_chunks_func, document_id, expected_code, expected_message):

@@ -1,0 +1,305 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package document
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"ragflow/internal/service"
+	"strings"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	"ragflow/internal/utility"
+)
+
+// Sentinel errors returned by File2DocumentService. Handlers map these to
+// Python-compatible response codes/messages. Returning sentinels (instead of
+// wrapped DAO/runtime errors) prevents internal DB details from leaking through
+// the API response path.
+var (
+	// ErrLinkFileNotFound mirrors Python "File not found!".
+	ErrLinkFileNotFound = errors.New("File not found!")
+	// ErrLinkDatasetNotFound mirrors Python "Can't find this dataset!".
+	ErrLinkDatasetNotFound = errors.New("Can't find this dataset!")
+	// ErrLinkNoAuthorization mirrors Python "no authorization".
+	ErrLinkNoAuthorization = errors.New("no authorization")
+	// ErrLinkInternal is a generic, safe-to-expose internal failure.
+	ErrLinkInternal = errors.New("Internal server error.")
+)
+
+// File2DocumentService handles linking files to datasets.
+type File2DocumentService struct {
+	fileDAO          *dao.FileDAO
+	file2DocumentDAO *dao.File2DocumentDAO
+	kbDAO            *dao.KnowledgebaseDAO
+	userTenantDAO    *dao.UserTenantDAO
+	documentSvc      *DocumentService
+	documentDAO      *dao.DocumentDAO
+}
+
+// NewFile2DocumentService creates a File2DocumentService.
+func NewFile2DocumentService() *File2DocumentService {
+	return &File2DocumentService{
+		fileDAO:          dao.NewFileDAO(),
+		file2DocumentDAO: dao.NewFile2DocumentDAO(),
+		kbDAO:            dao.NewKnowledgebaseDAO(),
+		userTenantDAO:    dao.NewUserTenantDAO(),
+		documentSvc:      NewDocumentService(),
+		documentDAO:      dao.NewDocumentDAO(),
+	}
+}
+
+// LinkToDatasetsRequest is the body for POST /files/link-to-datasets.
+type LinkToDatasetsRequest struct {
+	FileIDs []string `json:"file_ids"`
+	KbIDs   []string `json:"kb_ids"`
+}
+
+// LinkToDatasets validates inputs, expands folders, checks permissions, and
+// schedules convertFiles in a goroutine — mirroring Python convert().
+//
+// On validation failure it returns a sentinel error (see ErrLink* above) so the
+// handler can map it to a Python-compatible response without leaking internals.
+func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string, req *LinkToDatasetsRequest, mode string) error {
+	// ── 1. Validate files exist ───────────────────────────────────────────────
+	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, req.FileIDs)
+	if err != nil {
+		common.Warn("LinkToDatasets: GetByIDs failed", zap.Error(err))
+		return ErrLinkInternal
+	}
+	filesSet := make(map[string]*entity.File, len(files))
+	for _, f := range files {
+		filesSet[f.ID] = f
+	}
+	for _, id := range req.FileIDs {
+		if filesSet[id] == nil {
+			return ErrLinkFileNotFound
+		}
+	}
+
+	// ── 2. Validate KBs exist ────────────────────────────────────────────────
+	kbMap := make(map[string]*entity.Knowledgebase, len(req.KbIDs))
+	for _, kbID := range req.KbIDs {
+		kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
+		if err != nil || kb == nil {
+			return ErrLinkDatasetNotFound
+		}
+		kbMap[kbID] = kb
+	}
+
+	// ── 3. Expand folders to leaf files, then deduplicate ─────────────────────
+	// Mixed folder + direct file inputs (or overlapping folders) can yield the
+	// same leaf file more than once; dedupe so each file is converted exactly
+	// once.
+	expanded := make([]string, 0, len(req.FileIDs))
+	for _, id := range req.FileIDs {
+		file := filesSet[id]
+		if file.Type == "folder" {
+			inner, err := s.getAllInnermostFileIDs(ctx, id)
+			if err != nil {
+				common.Warn("LinkToDatasets: folder expansion failed", zap.String("fileID", id), zap.Error(err))
+				return ErrLinkInternal
+			}
+			expanded = append(expanded, inner...)
+		} else {
+			expanded = append(expanded, id)
+		}
+	}
+	allFileIDs := dedupeStrings(expanded)
+
+	// ── 4. Validate expanded file permissions ─────────────────────────────────
+	for _, id := range allFileIDs {
+		file, err := s.fileDAO.GetByID(ctx, dao.DB, id)
+		if err != nil || file == nil {
+			return ErrLinkFileNotFound
+		}
+		if !service.CheckFileTeamPermission(ctx, s.fileDAO, file, userID) {
+			return ErrLinkNoAuthorization
+		}
+	}
+
+	// ── 5. Validate KB permissions ────────────────────────────────────────────
+	for _, kb := range kbMap {
+		if !service.HasKBTeamPermission(ctx, kb, userID, dao.NewTenantDAO()) {
+			return ErrLinkNoAuthorization
+		}
+	}
+
+	// ── 6. Run conversion in background (fire-and-forget) ────────────────────
+	kbIDs := req.KbIDs
+	go func() {
+		newCtx := context.Background()
+		if err = s.convertFiles(newCtx, allFileIDs, kbIDs, userID, mode); err != nil {
+			common.Warn("file2document.convertFiles failed",
+				zap.Strings("file_ids", allFileIDs),
+				zap.Strings("kb_ids", kbIDs),
+				zap.Error(err))
+		}
+	}()
+
+	return nil
+}
+
+// convertFiles mirrors Python _convert_files: keep existing links, remove links
+// outside the requested KBs in replace mode, then add any missing links.
+func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs []string, userID, mode string) error {
+	replaceExisting := mode != "add"
+	kbIDs = dedupeStrings(kbIDs)
+	requestedKBIDs := make(map[string]struct{}, len(kbIDs))
+	for _, kbID := range kbIDs {
+		requestedKBIDs[kbID] = struct{}{}
+	}
+	for _, fileID := range fileIDs {
+		mappings, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
+		if err != nil {
+			common.Warn("convertFiles: GetByFileID failed", zap.String("fileID", fileID), zap.Error(err))
+		}
+
+		existingKBIDs := make(map[string]struct{})
+		for _, m := range mappings {
+			if m.DocumentID == nil {
+				continue
+			}
+			doc, getErr := s.documentDAO.GetByID(ctx, dao.DB, *m.DocumentID)
+			if getErr != nil || doc == nil {
+				continue
+			}
+			existingKBIDs[doc.KbID] = struct{}{}
+			if replaceExisting {
+				if _, exists := requestedKBIDs[doc.KbID]; exists {
+					continue
+				}
+				if err = s.documentSvc.RemoveDocumentKeepFile(ctx, doc.ID); err != nil {
+					common.Warn("convertFiles: RemoveDocumentKeepFile failed", zap.String("docID", doc.ID), zap.Error(err))
+					continue
+				}
+				if err = s.file2DocumentDAO.DeleteByDocumentID(ctx, dao.DB, doc.ID); err != nil {
+					common.Warn("convertFiles: DeleteByDocumentID failed", zap.String("docID", doc.ID), zap.Error(err))
+				}
+			}
+		}
+
+		// Reload the source file.
+		file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
+		if err != nil || file == nil {
+			continue
+		}
+
+		// Create a document + mapping in each target KB.
+		for _, kbID := range kbIDs {
+			if _, exists := existingKBIDs[kbID]; exists {
+				continue
+			}
+			kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
+			if err != nil || kb == nil {
+				continue
+			}
+
+			// Mirror Python duplicate_name: generate a non-colliding document
+			// name within the dataset so that linking does not silently create
+			// duplicate-name documents in the same KB.
+			docName, err := s.documentSvc.UniqueDocumentName(ctx, kbID, file.Name)
+			if err != nil {
+				common.Warn("convertFiles: UniqueDocumentName failed",
+					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
+				continue
+			}
+
+			parserID := kb.ParserID
+			suffix := strings.TrimPrefix(filepath.Ext(docName), ".")
+			doc := &entity.Document{
+				ID:           utility.GenerateUUID(),
+				KbID:         kb.ID,
+				ParserID:     parserID,
+				ParserConfig: kb.ParserConfig,
+				CreatedBy:    userID,
+				Type:         file.Type,
+				Name:         &docName,
+				Suffix:       suffix,
+				Size:         file.Size,
+			}
+			if file.Location != nil {
+				doc.Location = file.Location
+			}
+			if kb.PipelineID != nil {
+				doc.PipelineID = kb.PipelineID
+				doc.ParserID = "" // canvas pipeline mode — parser_id not applicable
+			}
+
+			// InsertDocument creates the row and increments KB doc_num in one
+			// transaction, so a failed insert never leaves a stale counter.
+			if err = s.documentSvc.InsertDocument(doc); err != nil {
+				common.Warn("convertFiles: InsertDocument failed",
+					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
+				continue
+			}
+
+			mapping := &entity.File2Document{
+				ID:         utility.GenerateUUID(),
+				FileID:     &fileID,
+				DocumentID: &doc.ID,
+			}
+			if err = s.file2DocumentDAO.Create(ctx, dao.DB, mapping); err != nil {
+				common.Warn("convertFiles: Create file2document mapping failed",
+					zap.String("fileID", fileID), zap.String("docID", doc.ID), zap.Error(err))
+			}
+		}
+	}
+	return nil
+}
+
+// getAllInnermostFileIDs recursively collects all non-folder file IDs under a folder.
+// Mirrors Python FileService.get_all_innermost_file_ids.
+func (s *File2DocumentService) getAllInnermostFileIDs(ctx context.Context, folderID string) ([]string, error) {
+	children, err := s.fileDAO.ListByParentID(ctx, dao.DB, folderID)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, child := range children {
+		if child.Type == "folder" {
+			sub, err := s.getAllInnermostFileIDs(ctx, child.ID)
+			if err != nil {
+				return nil, err
+			}
+			ids = append(ids, sub...)
+		} else {
+			ids = append(ids, child.ID)
+		}
+	}
+	return ids, nil
+}
+
+// dedupeStrings returns the input slice with duplicates removed, preserving the
+// first-seen order.
+func dedupeStrings(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}

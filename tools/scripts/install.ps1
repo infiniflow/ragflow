@@ -18,7 +18,7 @@ param(
     [string]$Version = "latest",
     [string]$InstallDir = "$env:LOCALAPPDATA\Programs\RAGFlow",
     [string]$GitHubRepo = "infiniflow/ragflow",
-    [string]$CliName = "ragflow_cli"
+    [string]$CliName = "ragflow-cli"
 )
 
 $ErrorActionPreference = "Stop"

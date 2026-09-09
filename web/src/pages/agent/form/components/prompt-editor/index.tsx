@@ -25,7 +25,15 @@ import { cn } from '@/lib/utils';
 import { JsonSchemaDataType } from '@/pages/agent/constant';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { Variable } from 'lucide-react';
-import { forwardRef, ReactNode, useCallback, useEffect, useState } from 'react';
+import {
+  forwardRef,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { EnterKeyPlugin } from './enter-key-plugin';
 import { PasteHandlerPlugin } from './paste-handler-plugin';
@@ -54,6 +62,7 @@ const Nodes: Array<Klass<LexicalNode>> = [
 type PromptContentProps = {
   enablePathQueryAutoMerge: boolean;
   showToolbar?: boolean;
+  showMergePath?: boolean;
   multiLine?: boolean;
   onBlur?: () => void;
   onEnablePathQueryAutoMergeChange: (checked: boolean) => void;
@@ -62,6 +71,7 @@ type PromptContentProps = {
 type IProps = {
   enablePathQueryAutoMerge?: boolean;
   showToolbar?: boolean;
+  showMergePath?: boolean;
   multiLine?: boolean;
   value?: string;
   onChange?: (value?: string) => void;
@@ -73,6 +83,7 @@ type IProps = {
 function PromptContent({
   enablePathQueryAutoMerge,
   showToolbar = true,
+  showMergePath = true,
   multiLine = true,
   onBlur,
   onEnablePathQueryAutoMergeChange,
@@ -120,32 +131,34 @@ function PromptContent({
               <p>{t('flow.insertVariableTip')}</p>
             </TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <label className="flex cursor-pointer items-center rounded-sm border border-border bg-bg-base/95 px-1 py-0.5 shadow-sm backdrop-blur-sm">
-                <span className="sr-only">{t('flow.mergePath')}</span>
-                <div className="origin-right scale-75">
-                  <Switch
-                    checked={enablePathQueryAutoMerge}
-                    onCheckedChange={onEnablePathQueryAutoMergeChange}
-                    aria-label={t('flow.mergePath')}
-                  />
-                </div>
-              </label>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{t('flow.mergePath')}</p>
-              <p>{t('flow.mergePathTip')}</p>
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      )}
-      <div className="relative">
-        {!showToolbar && (
-          <div className="absolute inset-y-0 right-2 z-10 flex items-center">
+          {showMergePath && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <label className="flex cursor-pointer items-center rounded-sm border border-border bg-bg-base/95 px-1 py-0.5 shadow-sm backdrop-blur-sm">
+                  <span className="sr-only">{t('flow.mergePath')}</span>
+                  <div className="origin-right scale-75">
+                    <Switch
+                      checked={enablePathQueryAutoMerge}
+                      onCheckedChange={onEnablePathQueryAutoMergeChange}
+                      aria-label={t('flow.mergePath')}
+                    />
+                  </div>
+                </label>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('flow.mergePath')}</p>
+                <p>{t('flow.mergePathTip')}</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      )}
+      <div className="relative">
+        {!showToolbar && showMergePath && (
+          <div className="absolute inset-y-0 right-2 z-10 flex items-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <label className="flex cursor-pointer items-center rounded-sm px-1 py-0.5 shadow-sm backdrop-blur-sm">
                   <span className="sr-only">{t('flow.mergePath')}</span>
                   <div className="origin-right scale-75">
                     <Switch
@@ -165,8 +178,9 @@ function PromptContent({
         )}
         <ContentEditable
           className={cn(
-            'relative px-2 py-1 pr-14 focus-visible:outline-none max-h-[50vh] overflow-auto text-sm',
+            'relative px-2 py-1 focus-visible:outline-none max-h-[50vh] overflow-auto text-sm',
             {
+              'pr-14': !showToolbar && showMergePath,
               'min-h-40': multiLine,
             },
           )}
@@ -185,6 +199,7 @@ export const PromptEditor = forwardRef(function PromptEditor(
     onBlur,
     placeholder,
     showToolbar = true,
+    showMergePath = true,
     multiLine = true,
     enablePathQueryAutoMerge = true,
     extraOptions,
@@ -194,14 +209,18 @@ export const PromptEditor = forwardRef(function PromptEditor(
   ref: React.Ref<HTMLDivElement>,
 ) {
   const { t } = useTranslation();
+  const id = useId();
   const [isPathQueryAutoMergeEnabled, setIsPathQueryAutoMergeEnabled] =
     useState(enablePathQueryAutoMerge);
-  const initialConfig: InitialConfigType = {
-    namespace: 'PromptEditor',
-    theme,
-    onError,
-    nodes: Nodes,
-  };
+  const initialConfig: InitialConfigType = useMemo(
+    () => ({
+      namespace: `PromptEditor-${id}`,
+      theme,
+      onError,
+      nodes: Nodes,
+    }),
+    [id],
+  );
 
   useEffect(() => {
     setIsPathQueryAutoMergeEnabled(enablePathQueryAutoMerge);
@@ -210,11 +229,7 @@ export const PromptEditor = forwardRef(function PromptEditor(
   const onValueChange = useCallback(
     (editorState: EditorState) => {
       editorState?.read(() => {
-        // const listNodes = $nodesOfType(VariableNode); // to be removed
-        // const allNodes = $dfs();
-
         const text = $getRoot().getTextContent();
-
         onChange?.(text);
       });
     },
@@ -229,6 +244,7 @@ export const PromptEditor = forwardRef(function PromptEditor(
             <PromptContent
               enablePathQueryAutoMerge={isPathQueryAutoMergeEnabled}
               showToolbar={showToolbar}
+              showMergePath={showMergePath}
               multiLine={multiLine}
               onBlur={onBlur}
               onEnablePathQueryAutoMergeChange={setIsPathQueryAutoMergeEnabled}

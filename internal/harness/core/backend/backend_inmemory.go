@@ -11,14 +11,14 @@ import (
 // InMemoryBackend implements Backend using in-memory storage.
 // Useful for testing and sandboxed environments.
 type InMemoryBackend struct {
-	mu     sync.RWMutex
-	files  map[string]*memFile
+	mu    sync.RWMutex
+	files map[string]*memFile
 }
 
 type memFile struct {
-	content  string
-	modTime  time.Time
-	isDir    bool
+	content string
+	modTime time.Time
+	isDir   bool
 }
 
 func NewInMemoryBackend() *InMemoryBackend {
@@ -30,8 +30,12 @@ func (b *InMemoryBackend) Read(path string) (string, error) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	f, ok := b.files[filepath.Clean(path)]
-	if !ok { return "", fmt.Errorf("file not found: %s", path) }
-	if f.isDir { return "", fmt.Errorf("is a directory: %s", path) }
+	if !ok {
+		return "", fmt.Errorf("file not found: %s", path)
+	}
+	if f.isDir {
+		return "", fmt.Errorf("is a directory: %s", path)
+	}
 	return f.content, nil
 }
 
@@ -44,9 +48,13 @@ func (b *InMemoryBackend) Write(path, content string) error {
 
 func (b *InMemoryBackend) Edit(path, old, new string) error {
 	content, err := b.Read(path)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	updated := strings.Replace(content, old, new, 1)
-	if updated == content { return fmt.Errorf("text not found in %s", path) }
+	if updated == content {
+		return fmt.Errorf("text not found in %s", path)
+	}
 	return b.Write(path, updated)
 }
 
@@ -55,17 +63,23 @@ func (b *InMemoryBackend) Glob(pattern string) ([]string, error) {
 	defer b.mu.RUnlock()
 	var matches []string
 	for p := range b.files {
-		if matched, _ := filepath.Match(pattern, p); matched { matches = append(matches, p) }
+		if matched, _ := filepath.Match(pattern, p); matched {
+			matches = append(matches, p)
+		}
 	}
 	return matches, nil
 }
 
 func (b *InMemoryBackend) Grep(pattern, path string) (string, error) {
 	content, err := b.Read(path)
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	var results []string
 	for i, line := range strings.Split(content, "\n") {
-		if strings.Contains(line, pattern) { results = append(results, fmt.Sprintf("%s:%d: %s", path, i+1, line)) }
+		if strings.Contains(line, pattern) {
+			results = append(results, fmt.Sprintf("%s:%d: %s", path, i+1, line))
+		}
 	}
 	return strings.Join(results, "\n"), nil
 }
@@ -74,7 +88,9 @@ func (b *InMemoryBackend) Stat(path string) (*FileInfo, error) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	f, ok := b.files[filepath.Clean(path)]
-	if !ok { return nil, fmt.Errorf("not found: %s", path) }
+	if !ok {
+		return nil, fmt.Errorf("not found: %s", path)
+	}
 	return &FileInfo{Name: path, Size: int64(len(f.content)), IsDir: f.isDir, ModTime: f.modTime.Format(time.RFC3339)}, nil
 }
 
