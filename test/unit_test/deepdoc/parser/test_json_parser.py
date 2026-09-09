@@ -50,6 +50,7 @@ def _load_json_parser():
     try:
         from rag.nlp import decode_text as production_decode_text
     except ImportError:
+
         def production_decode_text(blob, document_type="text"):
             if blob.startswith(b"\xef\xbb\xbf"):
                 return blob.decode("utf-8-sig"), "utf-8-sig"
