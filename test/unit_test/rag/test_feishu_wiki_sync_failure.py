@@ -1,21 +1,11 @@
-import importlib.util
+import importlib
 import json as stdlib_json
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import ClassVar
 
 import pytest
-
-
-class _DynamicValuesMeta(type):
-    def __getattr__(cls, name):
-        return name.lower()
-
-
-class _DynamicValues(metaclass=_DynamicValuesMeta):
-    pass
 
 
 class _DummyConnector:
@@ -89,40 +79,69 @@ def _module(name, **attributes):
     return module
 
 
-def _load_sync_module():
-    connector_names = [
-        "BlobStorageConnector",
-        "RSSConnector",
-        "SitemapConnector",
-        "NotionConnector",
-        "DiscordConnector",
-        "GoogleDriveConnector",
-        "MoodleConnector",
-        "JiraConnector",
-        "DropboxConnector",
-        "AirtableConnector",
-        "AsanaConnector",
-        "ImapConnector",
-        "ZendeskConnector",
-        "SeaFileConnector",
-        "RDBMSConnector",
-        "BigQueryConnector",
-        "DingTalkAITableConnector",
-        "RestAPIConnector",
-        "XquikConnector",
-        "OneDriveConnector",
-        "OutlookConnector",
-        "AzureBlobConnector",
-        "SalesforceConnector",
-        "TeamsConnector",
-        "SlackConnector",
-        "SharePointConnector",
-    ]
-    data_source_module = _module(
-        "common.data_source",
-        **{name: _DummyConnector for name in connector_names},
-    )
+def _install_unrelated_provider_stubs() -> None:
+    """Mock optional providers while retaining the real data-source package."""
+    providers = {
+        "airtable_connector": "AirtableConnector",
+        "asana_connector": "AsanaConnector",
+        "azure_blob_connector": "AzureBlobConnector",
+        "bigquery_connector": "BigQueryConnector",
+        "blob_connector": "BlobStorageConnector",
+        "box_connector": "BoxConnector",
+        "confluence_connector": "ConfluenceConnector",
+        "dingtalk_ai_table_connector": "DingTalkAITableConnector",
+        "discord_connector": "DiscordConnector",
+        "dropbox_connector": "DropboxConnector",
+        "gitlab_connector": "GitlabConnector",
+        "gmail_connector": "GmailConnector",
+        "imap_connector": "ImapConnector",
+        "moodle_connector": "MoodleConnector",
+        "notion_connector": "NotionConnector",
+        "onedrive_connector": "OneDriveConnector",
+        "outlook_connector": "OutlookConnector",
+        "rdbms_connector": "RDBMSConnector",
+        "rest_api_connector": "RestAPIConnector",
+        "rss_connector": "RSSConnector",
+        "salesforce_connector": "SalesforceConnector",
+        "seafile_connector": "SeaFileConnector",
+        "sharepoint_connector": "SharePointConnector",
+        "sitemap_connector": "SitemapConnector",
+        "slack_connector": "SlackConnector",
+        "teams_connector": "TeamsConnector",
+        "webdav_connector": "WebDAVConnector",
+        "xquik_connector": "XquikConnector",
+        "zendesk_connector": "ZendeskConnector",
+        "azure_devops.connector": "AzureDevOpsConnector",
+        "bitbucket.connector": "BitbucketConnector",
+        "github.connector": "GithubConnector",
+        "google_drive.connector": "GoogleDriveConnector",
+        "jira.connector": "JiraConnector",
+    }
+    for relative_name, class_name in providers.items():
+        module_name = f"common.data_source.{relative_name}"
+        module = ModuleType(module_name)
+        setattr(module, class_name, type(class_name, (), {}))
+        if relative_name == "sitemap_connector":
+            module.iter_in_worker_thread = lambda value, **_kwargs: value
+            module.validate_connector_in_thread = lambda *_args, **_kwargs: None
+        sys.modules[module_name] = module
 
+        if "." in relative_name:
+            package_name = module_name.rsplit(".", 1)[0]
+            package = ModuleType(package_name)
+            package.__path__ = []
+            sys.modules[package_name] = package
+
+
+_install_unrelated_provider_stubs()
+
+import common
+from common.constants import ConnectorTaskType, FileSource, TaskStatus
+from common.data_source import CONNECTOR_BY_SOURCE, FeishuWikiConnector
+from common.data_source.models import Document
+
+
+def _load_sync_module():
     stubs = {
         "flask": _module("flask", json=stdlib_json),
         "api": _module("api"),
@@ -142,56 +161,7 @@ def _load_sync_module():
             "api.db.services.knowledgebase_service",
             KnowledgebaseService=_KnowledgebaseService,
         ),
-        "common": _module("common", settings=SimpleNamespace()),
-        "common.constants": _module(
-            "common.constants",
-            ConnectorTaskType=_DynamicValues,
-            FileSource=_DynamicValues,
-            TaskStatus=_DynamicValues,
-        ),
         "common.config_utils": _module("common.config_utils", show_configs=lambda: None),
-        "common.data_source": data_source_module,
-        "common.data_source.config": _module("common.data_source.config", INDEX_BATCH_SIZE=2),
-        "common.data_source.models": _module(
-            "common.data_source.models",
-            ConnectorFailure=type("ConnectorFailure", (), {}),
-            SeafileSyncScope=_DynamicValues,
-        ),
-        "common.data_source.webdav_connector": _module("common.data_source.webdav_connector", WebDAVConnector=_DummyConnector),
-        "common.data_source.confluence_connector": _module("common.data_source.confluence_connector", ConfluenceConnector=_DummyConnector),
-        "common.data_source.gmail_connector": _module("common.data_source.gmail_connector", GmailConnector=_DummyConnector),
-        "common.data_source.box_connector": _module("common.data_source.box_connector", BoxConnector=_DummyConnector),
-        "common.data_source.github": _module("common.data_source.github"),
-        "common.data_source.github.connector": _module("common.data_source.github.connector", GithubConnector=_DummyConnector),
-        "common.data_source.gitlab_connector": _module("common.data_source.gitlab_connector", GitlabConnector=_DummyConnector),
-        "common.data_source.bitbucket": _module("common.data_source.bitbucket"),
-        "common.data_source.bitbucket.connector": _module("common.data_source.bitbucket.connector", BitbucketConnector=_DummyConnector),
-        "common.data_source.azure_devops": _module("common.data_source.azure_devops"),
-        "common.data_source.azure_devops.connector": _module("common.data_source.azure_devops.connector", AzureDevOpsConnector=_DummyConnector),
-        "common.data_source.interfaces": _module(
-            "common.data_source.interfaces",
-            CheckpointOutputWrapper=type("CheckpointOutputWrapper", (), {}),
-        ),
-        "common.data_source.sitemap_connector": _module(
-            "common.data_source.sitemap_connector",
-            iter_in_worker_thread=lambda value, **_kwargs: value,
-            validate_connector_in_thread=lambda *_args, **_kwargs: None,
-        ),
-        "common.data_source.exceptions": _module(
-            "common.data_source.exceptions",
-            ConnectorValidationError=type("ConnectorValidationError", (Exception,), {}),
-        ),
-        "common.log_utils": _module("common.log_utils", init_root_logger=lambda *_args: None),
-        "common.signal_utils": _module(
-            "common.signal_utils",
-            start_tracemalloc_and_snapshot=lambda *_args: None,
-            stop_tracemalloc=lambda *_args: None,
-        ),
-        "common.versions": _module("common.versions", get_ragflow_version=lambda: "test"),
-        "rag.svr.feishu_wiki_sync": _module(
-            "rag.svr.feishu_wiki_sync",
-            build_feishu_wiki_generator=lambda *_args, **_kwargs: (_DummyConnector(), iter(())),
-        ),
         "box_sdk_gen": _module(
             "box_sdk_gen",
             BoxOAuth=_DummyConnector,
@@ -200,20 +170,21 @@ def _load_sync_module():
         ),
     }
     saved_modules = {name: sys.modules.get(name) for name in stubs}
+    previous_settings = getattr(common, "settings", None)
+    common.settings = SimpleNamespace()
     sys.modules.update(stubs)
     try:
-        path = Path(__file__).resolve().parents[3] / "rag" / "svr" / "sync_data_source.py"
-        spec = importlib.util.spec_from_file_location("_feishu_sync_owner_under_test", path)
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
-        return module
+        return importlib.import_module("rag.svr.sync_data_source")
     finally:
         for name, saved in saved_modules.items():
             if saved is None:
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = saved
+        if previous_settings is None:
+            delattr(common, "settings")
+        else:
+            common.settings = previous_settings
 
 
 sync_data_source = _load_sync_module()
@@ -243,8 +214,9 @@ class _FakeFeishuSync(sync_data_source.FeishuWiki):
 
 
 def _doc(updated_at):
-    return SimpleNamespace(
+    return Document(
         id="external-doc-id",
+        source=FileSource.FEISHU_WIKI,
         semantic_identifier="guide.pdf",
         extension=".pdf",
         size_bytes=4,
@@ -267,6 +239,15 @@ def _task(*, poll_range_start=None):
         "timeout_secs": 10,
         "task_type": sync_data_source.ConnectorTaskType.SYNC,
     }
+
+
+def test_real_registries_and_models_reach_the_sync_owner():
+    assert CONNECTOR_BY_SOURCE[FileSource.FEISHU_WIKI] is FeishuWikiConnector
+    assert sync_data_source.func_factory[FileSource.FEISHU_WIKI] is sync_data_source.FeishuWiki
+    assert sync_data_source.FileSource is FileSource
+    assert sync_data_source.ConnectorTaskType is ConnectorTaskType
+    assert sync_data_source.TaskStatus is TaskStatus
+    assert isinstance(_doc(datetime(2026, 1, 2, tzinfo=UTC)), Document)
 
 
 @pytest.fixture(autouse=True)

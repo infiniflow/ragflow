@@ -1,121 +1,72 @@
 import hashlib
-import importlib.util
-import os
 import sys
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import Enum
-from pathlib import Path
 from types import ModuleType
-from typing import Any
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+from common.constants import FileSource
 
 
-def _load_exception_definitions():
-    spec = importlib.util.spec_from_file_location(
-        "_real_data_source_exceptions",
-        REPO_ROOT / "common" / "data_source" / "exceptions.py",
-    )
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+def _install_unrelated_provider_stubs() -> None:
+    """Isolate optional providers while executing the real data-source registry."""
+    providers = {
+        "airtable_connector": "AirtableConnector",
+        "asana_connector": "AsanaConnector",
+        "azure_blob_connector": "AzureBlobConnector",
+        "bigquery_connector": "BigQueryConnector",
+        "blob_connector": "BlobStorageConnector",
+        "box_connector": "BoxConnector",
+        "confluence_connector": "ConfluenceConnector",
+        "dingtalk_ai_table_connector": "DingTalkAITableConnector",
+        "discord_connector": "DiscordConnector",
+        "dropbox_connector": "DropboxConnector",
+        "gitlab_connector": "GitlabConnector",
+        "gmail_connector": "GmailConnector",
+        "imap_connector": "ImapConnector",
+        "moodle_connector": "MoodleConnector",
+        "notion_connector": "NotionConnector",
+        "onedrive_connector": "OneDriveConnector",
+        "outlook_connector": "OutlookConnector",
+        "rdbms_connector": "RDBMSConnector",
+        "rest_api_connector": "RestAPIConnector",
+        "rss_connector": "RSSConnector",
+        "salesforce_connector": "SalesforceConnector",
+        "seafile_connector": "SeaFileConnector",
+        "sharepoint_connector": "SharePointConnector",
+        "sitemap_connector": "SitemapConnector",
+        "slack_connector": "SlackConnector",
+        "teams_connector": "TeamsConnector",
+        "webdav_connector": "WebDAVConnector",
+        "xquik_connector": "XquikConnector",
+        "zendesk_connector": "ZendeskConnector",
+        "azure_devops.connector": "AzureDevOpsConnector",
+        "bitbucket.connector": "BitbucketConnector",
+        "github.connector": "GithubConnector",
+        "google_drive.connector": "GoogleDriveConnector",
+        "jira.connector": "JiraConnector",
+    }
+    for relative_name, class_name in providers.items():
+        module_name = f"common.data_source.{relative_name}"
+        module = ModuleType(module_name)
+        setattr(module, class_name, type(class_name, (), {}))
+        sys.modules[module_name] = module
+
+        if "." in relative_name:
+            package_name = module_name.rsplit(".", 1)[0]
+            package = ModuleType(package_name)
+            package.__path__ = []
+            sys.modules[package_name] = package
 
 
-exception_definitions = _load_exception_definitions()
-ConnectorMissingCredentialError = exception_definitions.ConnectorMissingCredentialError
-ConnectorValidationError = exception_definitions.ConnectorValidationError
-InsufficientPermissionsError = exception_definitions.InsufficientPermissionsError
+_install_unrelated_provider_stubs()
 
-
-class DocumentSource(str, Enum):
-    FEISHU_WIKI = "feishu_wiki"
-
-
-@dataclass
-class Document:
-    id: str
-    source: str
-    semantic_identifier: str
-    extension: str
-    blob: bytes
-    doc_updated_at: datetime
-    size_bytes: int
-    metadata: dict[str, Any] | None = None
-    fingerprint: str | None = None
-
-
-def _install_dependency_stubs() -> None:
-    config_module = ModuleType("common.data_source.config")
-    config_module.DocumentSource = DocumentSource
-    config_module.INDEX_BATCH_SIZE = 2
-
-    interfaces_module = ModuleType("common.data_source.interfaces")
-
-    class LoadConnector:
-        pass
-
-    class PollConnector:
-        pass
-
-    interfaces_module.LoadConnector = LoadConnector
-    interfaces_module.PollConnector = PollConnector
-    interfaces_module.SecondsSinceUnixEpoch = float
-
-    models_module = ModuleType("common.data_source.models")
-    models_module.Document = Document
-    models_module.GenerateDocumentsOutput = Any
-
-    utils_module = ModuleType("common.data_source.utils")
-    utils_module.get_file_ext = lambda name: os.path.splitext(name)[1]
-
-    sys.modules["common.data_source.config"] = config_module
-    sys.modules["common.data_source.exceptions"] = exception_definitions
-    sys.modules["common.data_source.interfaces"] = interfaces_module
-    sys.modules["common.data_source.models"] = models_module
-    sys.modules["common.data_source.utils"] = utils_module
-
-
-def _load_connector_module():
-    connector_path = REPO_ROOT / "common" / "data_source" / "feishu_wiki_connector.py"
-    if not connector_path.exists():
-        return None
-
-    package_name = "common.data_source"
-    saved_modules = {name: module for name, module in sys.modules.items() if name == package_name or name.startswith(f"{package_name}.")}
-    package_stub = ModuleType(package_name)
-    package_stub.__path__ = [str(REPO_ROOT / "common" / "data_source")]
-    sys.modules[package_name] = package_stub
-    _install_dependency_stubs()
-
-    try:
-        spec = importlib.util.spec_from_file_location(
-            "_feishu_wiki_connector_under_test",
-            connector_path,
-        )
-        module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
-        return module
-    finally:
-        for name in list(sys.modules):
-            if name == package_name or name.startswith(f"{package_name}."):
-                if name in saved_modules:
-                    sys.modules[name] = saved_modules[name]
-                else:
-                    sys.modules.pop(name, None)
-
-
-feishu_wiki_connector = _load_connector_module()
-FeishuWikiConnector = feishu_wiki_connector.FeishuWikiConnector if feishu_wiki_connector else None
-
-
-def _connector_class():
-    assert FeishuWikiConnector is not None, "Feishu Wiki connector is not implemented"
-    return FeishuWikiConnector
+from common.data_source import CONNECTOR_BY_SOURCE, FeishuWikiConnector
+from common.data_source.config import DocumentSource
+from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
+from common.data_source.interfaces import LoadConnector, PollConnector
+from common.data_source.models import Document
+from common.data_source.utils import get_file_ext
 
 
 class FakeResponse:
@@ -187,15 +138,22 @@ def _build_connector(session, **overrides):
         "credentials": {"app_id": "cli_test", "app_secret": "secret"},
         **overrides,
     }
-    connector = _connector_class().build_connector(config)
+    connector = FeishuWikiConnector.build_connector(config)
     connector.session = session
     return connector
 
 
+def test_real_registry_and_connector_contracts_are_wired():
+    assert CONNECTOR_BY_SOURCE[FileSource.FEISHU_WIKI] is FeishuWikiConnector
+    assert issubclass(FeishuWikiConnector, (LoadConnector, PollConnector))
+    assert DocumentSource.FEISHU_WIKI.value == FileSource.FEISHU_WIKI.value
+    assert get_file_ext("guide.PDF") == ".pdf"
+    assert "fingerprint" in Document.model_fields
+
+
 def test_build_connector_requires_app_credentials():
-    connector_class = _connector_class()
     with pytest.raises(ConnectorMissingCredentialError):
-        connector_class.build_connector({"space_id": "space-1", "root_node_token": "root-node"})
+        FeishuWikiConnector.build_connector({"space_id": "space-1", "root_node_token": "root-node"})
 
 
 def test_screening_happens_before_download_and_nested_files_are_discovered():
@@ -456,7 +414,7 @@ def test_http_permission_failure_is_a_connector_validation_error():
     response = FakeResponse(status_code=403, payload={"code": 99991663, "msg": "forbidden"})
 
     with pytest.raises(ConnectorValidationError, match="permission"):
-        _connector_class()._decode_api_payload(response, "list Wiki nodes")
+        FeishuWikiConnector._decode_api_payload(response, "list Wiki nodes")
 
 
 @pytest.mark.parametrize("batch_size", [0, 11])
