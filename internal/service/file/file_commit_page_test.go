@@ -324,6 +324,22 @@ func TestListPageCommits_ReturnsRecordedEdits(t *testing.T) {
 		t.Fatalf("second RecordPageEdit: %v", err)
 	}
 
+	// Pin both commit items to one timestamp so the newest-first assertions
+	// below can only hold through the seq DESC tie-break, mirroring
+	// same-millisecond edits in production.
+	var firstItem entity.FileCommitItem
+	if err := db.Where("commit_id = ?", firstCommit.ID).First(&firstItem).Error; err != nil {
+		t.Fatalf("load first commit item: %v", err)
+	}
+	if firstItem.CreateTime == nil {
+		t.Fatal("expected commit item create_time to be set")
+	}
+	if err := db.Model(&entity.FileCommitItem{}).
+		Where("commit_id IN ?", []string{firstCommit.ID, secondCommit.ID}).
+		UpdateColumn("create_time", *firstItem.CreateTime).Error; err != nil {
+		t.Fatalf("pin equal create_time: %v", err)
+	}
+
 	rows, total, err := svc.ListPageCommits(ctx, "kb1", "topic", "fireworks display", 1, 15)
 	if err != nil {
 		t.Fatalf("ListPageCommits: %v", err)
@@ -348,6 +364,90 @@ func TestListPageCommits_ReturnsRecordedEdits(t *testing.T) {
 	}
 	if rows[0].CreateTime == nil {
 		t.Error("expected create_time to be set")
+	}
+}
+
+func TestListPageCommits_NestedSlugMatchesRecordPageEditKey(t *testing.T) {
+	db := newPageCommitTestDB(t)
+	if err := db.AutoMigrate(&entity.User{}); err != nil {
+		t.Fatalf("migrate user: %v", err)
+	}
+	if err := db.Create(&entity.User{
+		ID:              "u1",
+		Nickname:        "Tester",
+		Email:           "u1@example.com",
+		IsAuthenticated: "1",
+		IsActive:        "1",
+		IsAnonymous:     "0",
+	}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	svc := NewFileCommitService()
+	ctx := context.Background()
+
+	// UpdateArtifact routes PUT /artifacts/topic/People/Writers with
+	// pageType="topic" and the full nested tail as the slug.
+	nested := PageEditCommitInput{
+		DatasetID:  "kb1",
+		DocID:      "topic/People/Writers",
+		Slug:       "People/Writers",
+		PageType:   "topic",
+		AuthorID:   "u1",
+		OldContent: "one",
+		NewContent: "two",
+	}
+	first := nested
+	first.Title = "nested first"
+	firstCommit, err := svc.RecordPageEdit(ctx, first)
+	if err != nil {
+		t.Fatalf("first RecordPageEdit: %v", err)
+	}
+	second := nested
+	second.Title = "nested second"
+	second.OldContent = "two"
+	second.NewContent = "three"
+	secondCommit, err := svc.RecordPageEdit(ctx, second)
+	if err != nil {
+		t.Fatalf("second RecordPageEdit: %v", err)
+	}
+	if secondCommit.ParentID == nil || *secondCommit.ParentID != firstCommit.ID {
+		t.Fatalf("expected nested page edits to chain via the same file key, got parent %v", secondCommit.ParentID)
+	}
+
+	// The write side must scope the page file key exactly as the read side
+	// recomputes it after the handler's first-segment split.
+	var items []entity.FileCommitItem
+	if err := dao.DB.Where("commit_id = ?", secondCommit.ID).Find(&items).Error; err != nil {
+		t.Fatalf("load nested items: %v", err)
+	}
+	if len(items) != 1 || items[0].FileID != "kb1/topic/People/Writers" {
+		t.Fatalf("expected file_id kb1/topic/People/Writers, got %+v", items)
+	}
+
+	// A page that only shares the first nested segment has its own history.
+	sibling := nested
+	sibling.DocID = "topic/People/Editors"
+	sibling.Slug = "People/Editors"
+	sibling.Title = "sibling page"
+	siblingCommit, err := svc.RecordPageEdit(ctx, sibling)
+	if err != nil {
+		t.Fatalf("sibling RecordPageEdit: %v", err)
+	}
+
+	rows, total, err := svc.ListPageCommits(ctx, "kb1", "topic", "People/Writers", 1, 15)
+	if err != nil {
+		t.Fatalf("ListPageCommits: %v", err)
+	}
+	if total != 2 || len(rows) != 2 {
+		t.Fatalf("expected 2 commits, got total=%d len=%d", total, len(rows))
+	}
+	if rows[0].ID != secondCommit.ID || rows[1].ID != firstCommit.ID {
+		t.Errorf("expected newest-first %s, %s; got %s, %s", secondCommit.ID, firstCommit.ID, rows[0].ID, rows[1].ID)
+	}
+	for _, row := range rows {
+		if row.ID == siblingCommit.ID {
+			t.Errorf("sibling page history leaked into nested slug listing: %s", row.ID)
+		}
 	}
 }
 
