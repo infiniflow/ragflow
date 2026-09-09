@@ -41,12 +41,12 @@ type ToolCall struct {
 
 // Message represents a conversation message with typed role and content.
 type Message struct {
-	Role      RoleType           `json:"role"`
-	Content   string             `json:"content"`
-	Name      string             `json:"name,omitempty"`
-	ToolCalls []ToolCall         `json:"tool_calls,omitempty"`
-	ToolName  string             `json:"tool_name,omitempty"`
-	Extra     map[string]any     `json:"extra,omitempty"`
+	Role      RoleType       `json:"role"`
+	Content   string         `json:"content"`
+	Name      string         `json:"name,omitempty"`
+	ToolCalls []ToolCall     `json:"tool_calls,omitempty"`
+	ToolName  string         `json:"tool_name,omitempty"`
+	Extra     map[string]any `json:"extra,omitempty"`
 }
 
 // ToolCallInfo represents information about a tool call for agentic messages.
@@ -68,8 +68,8 @@ type ToolResult struct {
 
 // ContentBlock represents a structured content element within an AgenticMessage.
 type ContentBlock struct {
-	Type       string       `json:"type"`
-	Text       string       `json:"text,omitempty"`
+	Type       string        `json:"type"`
+	Text       string        `json:"text,omitempty"`
 	ToolCall   *ToolCallInfo `json:"tool_call,omitempty"`
 	ToolResult *ToolResult   `json:"tool_result,omitempty"`
 }
@@ -95,9 +95,9 @@ const (
 	// ToolChoiceForbidden instructs the model not to call any tools.
 	ToolChoiceForbidden ToolChoice = "forbidden"
 	// ToolChoiceAllowed lets the model decide whether to call tools.
-	ToolChoiceAllowed   ToolChoice = "allowed"
+	ToolChoiceAllowed ToolChoice = "allowed"
 	// ToolChoiceForced requires the model to call at least one tool.
-	ToolChoiceForced    ToolChoice = "forced"
+	ToolChoiceForced ToolChoice = "forced"
 )
 
 // AllowedTool specifies a tool that the model is permitted or required to call.

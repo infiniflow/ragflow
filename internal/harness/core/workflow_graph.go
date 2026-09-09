@@ -19,6 +19,7 @@ import (
 	"sync"
 
 	"ragflow/internal/harness/core/schema"
+	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/graph"
 	"ragflow/internal/harness/graph/types"
@@ -32,10 +33,10 @@ func init() {
 // It carries messages between sub-agents and tracks the current position.
 type WorkflowGraphState struct {
 	Messages      []*schema.Message
-	SubAgentNames []string   // names of sub-agents in order
-	CurrentStep   int        // current sub-agent index
-	LoopIter      int        // for loop mode
-	MaxLoopIter   int        // for loop mode
+	SubAgentNames []string // names of sub-agents in order
+	CurrentStep   int      // current sub-agent index
+	LoopIter      int      // for loop mode
+	MaxLoopIter   int      // for loop mode
 	Done          bool
 
 	mu sync.Mutex // protects Messages from concurrent access in inline execution
@@ -64,7 +65,7 @@ func (s *WorkflowGraphState) MessagesLen() int {
 
 // WorkflowGraph wraps a CompiledGraph that runs sub-agents as graph nodes.
 type WorkflowGraph struct {
-	compiled *graph.CompiledGraph
+	compiled types.CompiledGraph
 }
 
 // ---- Sequential ----
@@ -75,7 +76,7 @@ type WorkflowGraph struct {
 //
 // Each sub-agent boundary is a checkpoint point. Interrupt can be enabled
 // before any sub-agent via WithInterrupts.
-func NewSequentialGraph(ctx context.Context, cfg *SequentialConfig, cptr graph.Checkpointer, interrupts ...string) (*WorkflowGraph, error) {
+func NewSequentialGraph(ctx context.Context, cfg *SequentialConfig, cptr checkpoint.BaseCheckpointer, interrupts ...string) (*WorkflowGraph, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("SequentialConfig is nil")
 	}
@@ -126,8 +127,8 @@ func NewSequentialGraph(ctx context.Context, cfg *SequentialConfig, cptr graph.C
 	}
 	sg.AddEdge(fmt.Sprintf("sub_%d", len(cfg.SubAgents)-1), constants.End)
 
-	compileOpts := []graph.CompileOption{
-		graph.WithRecursionLimit(len(cfg.SubAgents) + 2),
+	compileOpts := []interface{}{
+		graph.WithRecursionLimit(len(cfg.SubAgents)*10 + 5),
 	}
 	if cptr != nil {
 		compileOpts = append(compileOpts, graph.WithCheckpointer(cptr))
@@ -152,7 +153,7 @@ func NewSequentialGraph(ctx context.Context, cfg *SequentialConfig, cptr graph.C
 //	start → __wf_split__ ─┬→ sub_0 ─┬→ end
 //	                      ├→ sub_1 ─┤
 //	                      └→ sub_n ─┘
-func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Checkpointer, interrupts ...string) (*WorkflowGraph, error) {
+func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr checkpoint.BaseCheckpointer, interrupts ...string) (*WorkflowGraph, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("ParallelConfig is nil")
 	}
@@ -203,8 +204,8 @@ func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Check
 		sg.AddEdge(nodeName, constants.End)
 	}
 
-	compileOpts := []graph.CompileOption{
-		graph.WithRecursionLimit(len(cfg.SubAgents) * 2),
+	compileOpts := []interface{}{
+		graph.WithRecursionLimit(len(cfg.SubAgents)*10 + 5),
 	}
 	if cptr != nil {
 		compileOpts = append(compileOpts, graph.WithCheckpointer(cptr))
@@ -228,7 +229,7 @@ func NewParallelGraph(ctx context.Context, cfg *ParallelConfig, cptr graph.Check
 //
 //	start → sub_0 → sub_1 → ... → sub_n → [iter < max?] → back to sub_0
 //	                                        ↘ end
-func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr graph.Checkpointer, interrupts ...string) (*WorkflowGraph, error) {
+func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr checkpoint.BaseCheckpointer, interrupts ...string) (*WorkflowGraph, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("LoopConfig is nil")
 	}
@@ -273,6 +274,11 @@ func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr graph.Checkpointer,
 				}
 			}
 			s.CurrentStep = idx + 1
+			// Increment LoopIter in the last node so it persists to channels.
+			// (The conditional edge only reads LoopIter for routing.)
+			if idx == len(cfg.SubAgents)-1 {
+				s.LoopIter++
+			}
 			return s, nil
 		})
 	}
@@ -288,12 +294,10 @@ func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr graph.Checkpointer,
 	sg.AddConditionalEdges(lastNode,
 		func(ctx context.Context, state interface{}) (interface{}, error) {
 			s := state.(*WorkflowGraphState)
-			s.LoopIter++
 			if s.LoopIter >= maxIter {
 				s.Done = true
 				return constants.End, nil
 			}
-			s.CurrentStep = 0 // Reset for next iteration.
 			return "sub_0", nil
 		},
 		map[string]string{
@@ -305,8 +309,12 @@ func NewLoopGraph(ctx context.Context, cfg *LoopConfig, cptr graph.Checkpointer,
 	// conditional edge to End is the actual runtime termination path.
 	sg.SetFinishPoint(lastNode)
 
-	compileOpts := []graph.CompileOption{
-		graph.WithRecursionLimit(maxIter*len(cfg.SubAgents) + 5),
+	// Use a generous recursion limit. The sub-agent execution within each
+	// loop iteration can consume multiple steps internally; the parent graph
+	// recursion limit must account for this.
+	recLimit := maxIter*len(cfg.SubAgents)*50 + 50
+	compileOpts := []interface{}{
+		graph.WithRecursionLimit(recLimit),
 	}
 	if cptr != nil {
 		compileOpts = append(compileOpts, graph.WithCheckpointer(cptr))
@@ -420,6 +428,6 @@ func (wg *WorkflowGraph) Resume(ctx context.Context) (*WorkflowGraphState, error
 }
 
 // Compile returns the underlying CompiledGraph.
-func (wg *WorkflowGraph) Compile() *graph.CompiledGraph { return wg.compiled }
+func (wg *WorkflowGraph) Compile() types.CompiledGraph { return wg.compiled }
 
 // ---- helpers ----

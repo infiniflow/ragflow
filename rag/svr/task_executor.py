@@ -46,10 +46,9 @@ from common.connection_utils import timeout
 from common.metadata_utils import turn2jsonschema, update_metadata_to
 from rag.utils.base64_image import image2id
 from rag.utils.raptor_utils import (
+    RAPTOR_TREE_BUILDER,
     collect_raptor_chunk_ids,
     collect_raptor_methods,
-    get_raptor_clustering_method,
-    get_raptor_tree_builder,
     get_skip_reason,
     make_raptor_summary_chunk_id,
     should_skip_raptor,
@@ -79,14 +78,12 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.file2document_service import File2DocumentService
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config, get_model_config_by_id
 from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, email, tag
-from rag.nlp import search, rag_tokenizer, add_positions
-from rag.raptor import (
-    RAPTOR_TREE_BUILDER,
-)
+from rag.nlp import search, rag_tokenizer, add_positions, DEFAULT_DELIMITER
+
 from common.token_utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.graphrag.utils import chat_limiter
@@ -101,6 +98,7 @@ from rag.svr.task_executor_limiter import (
 )
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
+from common.llm_request_context import normalize_llm_user_id, reset_llm_request_context, set_llm_request_context
 from rag.utils.table_es_metadata import (
     aggregate_table_doc_metadata,
     merge_table_parser_config_from_kb,
@@ -136,7 +134,31 @@ TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
     "graphrag": PipelineTaskType.GRAPH_RAG,
     "mindmap": PipelineTaskType.MINDMAP,
     "memory": PipelineTaskType.MEMORY,
+    "wiki": PipelineTaskType.ARTIFACT,
+    "skill": PipelineTaskType.SKILL,
+    "structure_graph": PipelineTaskType.STRUCTURE_GRAPH,
+    "structure_mindmap": PipelineTaskType.STRUCTURE_MINDMAP,
+    "timeline": PipelineTaskType.TIMELINE,
+    "session_graph": PipelineTaskType.SESSION_GRAPH,
+    "session_essence": PipelineTaskType.SESSION_ESSENCE,
+    "structure": PipelineTaskType.STRUCTURE,
 }
+
+# KB-wide fan-out task types: their task row's ``doc_id`` is a fake sentinel and
+# the participating documents live in ``task["doc_ids"]``.
+_KB_FANOUT_TASK_TYPES = [
+    "graphrag",
+    "raptor",
+    "mindmap",
+    "wiki",
+    "skill",
+    "structure_graph",
+    "structure_mindmap",
+    "timeline",
+    "session_graph",
+    "session_essence",
+    "structure",
+]
 
 UNACKED_ITERATOR = None
 # Task type and executor index (consistent with SAAS version)
@@ -151,7 +173,33 @@ FAILED_TASKS = 0
 
 CURRENT_TASKS = {}
 
+
+def _redact_task_user(task: dict) -> dict:
+    """Copy a task dict for logs/heartbeat without the raw end-user identifier."""
+    payload = dict(task)
+    if "user_id" in payload:
+        payload["user_id"] = True
+    return payload
+
+
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get("WORKER_HEARTBEAT_TIMEOUT", "120"))
+# Recycle the worker process after this many completed tasks to release memory
+# that long-lived libraries cannot reclaim on their own -- notably ONNX
+# Runtime's BFCArena, which holds every chunk it allocates until the
+# InferenceSession is destroyed. The supervisor loop in `docker/entrypoint.sh`
+# (`while true; do ... task_executor.py & wait; sleep 1; done`) restarts the
+# process automatically after a clean exit.
+# 0 disables recycling and preserves the existing behaviour. A small value such
+# as 20 helps on lower-VRAM consumer GPUs where cumulative arena fragmentation
+# eventually surfaces as "Available memory of 0" allocation failures.
+# The threshold is a soft one: tasks already in flight when it is reached are
+# allowed to finish, so a worker may complete up to MAX_CONCURRENT_TASKS - 1
+# extra tasks before it exits.
+MAX_TASKS_PER_WORKER = int(os.environ.get("MAX_TASKS_PER_WORKER", "0"))
+# Only used when recycling is enabled: how long to let in-flight task_managers
+# finish before cancelling them, so a single hung task cannot block the exit.
+RECYCLE_SHUTDOWN_TIMEOUT = float(os.environ.get("RECYCLE_SHUTDOWN_TIMEOUT", "300"))
+_completed_task_count = 0
 stop_event = threading.Event()
 
 
@@ -175,7 +223,7 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
         if to_page > 0:
             if msg:
                 if from_page < to_page:
-                    msg = f"Page({from_page + 1}~{to_page + 1}): " + msg
+                    msg = f"Page({from_page + 1}~{to_page}): " + msg
         if msg:
             msg = datetime.now().strftime("%H:%M:%S") + " " + msg
         d = {"progress_msg": msg}
@@ -250,6 +298,13 @@ async def collect():
 
     task_type = msg.get("task_type", "")
     task["task_type"] = task_type
+    # Per-doc fan-out task types (today: doc-scoped raptor) carry their
+    # participating doc id list on the Redis message but not on the DB
+    # row. The KB-scoped branch above already does this for FAKE doc
+    # tasks; mirror here so ``ctx.doc_ids`` is populated for the
+    # per-doc path too.
+    if "doc_ids" in msg and not task.get("doc_ids"):
+        task["doc_ids"] = msg.get("doc_ids", []) or []
     if task_type[:8] == "dataflow":
         task["tenant_id"] = msg["tenant_id"]
         task["dataflow_id"] = msg["dataflow_id"]
@@ -260,6 +315,10 @@ async def collect():
             task["tenant_id"] = msg["tenant_id"]
         task["source_id"] = msg["source_id"]
         task["message_dict"] = msg["message_dict"]
+    # Redis-only: Task rows have no user_id column. Copy it onto the in-memory
+    # task so handle_task can install LLM request context for embedding calls.
+    if msg.get("user_id"):
+        task["user_id"] = msg["user_id"]
     return redis_msg, task
 
 
@@ -269,7 +328,7 @@ async def get_storage_binary(bucket, name):
 
 @timed_with_recording
 @timeout(60 * 80, 1)
-async def build_chunks(task, progress_callback):
+async def build_chunks(task, progress_callback, on_chunking_start=None):
     if task["size"] > settings.DOC_MAXIMUM_SIZE:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" % (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
         get_recording_context().record("file_size_exceeded", True)
@@ -314,7 +373,7 @@ async def build_chunks(task, progress_callback):
         "parser_id": task["parser_id"],
         "chunk_token_num": parser_config_for_chunk.get("chunk_token_num", 128),
         "overlapped_percent": normalize_overlapped_percent(parser_config_for_chunk.get("overlapped_percent", 0)),
-        "delimiter": parser_config_for_chunk.get("delimiter", "\n!?。；！？"),
+        "delimiter": parser_config_for_chunk.get("delimiter", DEFAULT_DELIMITER),
         "from_page": task["from_page"],
         "to_page": task["to_page"],
         "language": task["language"],
@@ -324,7 +383,10 @@ async def build_chunks(task, progress_callback):
     get_recording_context().record("parser_config_after_merge", parser_config_for_chunk)
 
     try:
+        chunking_wait_started_at = timer()
         async with chunk_limiter:
+            if on_chunking_start:
+                on_chunking_start(timer() - chunking_wait_started_at)
             task_language = task.get("language") or "Chinese"
             cks = await thread_pool_exec(
                 chunker.chunk,
@@ -410,10 +472,12 @@ async def build_chunks(task, progress_callback):
     # Record docs after MinIO upload
     get_recording_context().record("docs_after_prep", docs)
 
+    rag_tokenizer.tokenizer.set_language(task["language"])
+
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
         progress_callback(msg="Start to generate keywords for every chunk ...")
-        chat_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+        chat_model_config = resolve_model_config(task["tenant_id"], LLMType.CHAT, task["llm_id"])
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         async def doc_keyword_extraction(chat_mdl, d, topn):
@@ -450,7 +514,7 @@ async def build_chunks(task, progress_callback):
     if task["parser_config"].get("auto_questions", 0):
         st = timer()
         progress_callback(msg="Start to generate questions for every chunk ...")
-        chat_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+        chat_model_config = resolve_model_config(task["tenant_id"], LLMType.CHAT, task["llm_id"])
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         async def doc_question_proposal(chat_mdl, d, topn):
@@ -486,7 +550,7 @@ async def build_chunks(task, progress_callback):
     if task["parser_config"].get("enable_metadata", False) and (task["parser_config"].get("metadata") or task["parser_config"].get("built_in_metadata")):
         st = timer()
         progress_callback(msg="Start to generate meta-data for every chunk ...")
-        chat_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+        chat_model_config = resolve_model_config(task["tenant_id"], LLMType.CHAT, task["llm_id"])
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         async def gen_metadata_task(chat_mdl, d):
@@ -559,7 +623,7 @@ async def build_chunks(task, progress_callback):
             set_tags_to_cache(kb_ids, all_tags)
         else:
             all_tags = json.loads(all_tags)
-        chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, task["llm_id"])
+        chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, task["llm_id"])
         chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
 
         docs_to_tag = []
@@ -624,7 +688,7 @@ async def build_chunks(task, progress_callback):
 @timed_with_recording
 def build_TOC(task, docs, progress_callback):
     progress_callback(msg="Start to generate table of content ...")
-    chat_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+    chat_model_config = resolve_model_config(task["tenant_id"], LLMType.CHAT, task["llm_id"])
     chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
     docs = sorted(
         docs,
@@ -749,7 +813,15 @@ async def run_dataflow(task: dict):
         assert e, "Pipeline log not found."
         dsl = pipeline_log.dsl
         dataflow_id = pipeline_log.pipeline_id
-    pipeline = Pipeline(dsl, tenant_id=task["tenant_id"], doc_id=doc_id, task_id=task_id, flow_id=dataflow_id)
+    pipeline = Pipeline(
+        dsl,
+        tenant_id=task["tenant_id"],
+        doc_id=doc_id,
+        task_id=task_id,
+        flow_id=dataflow_id,
+        language=task.get("language"),
+    )
+    rag_tokenizer.tokenizer.set_language(task.get("language", "English"))
     chunks = await pipeline.run(file=task["file"]) if task.get("file") else await pipeline.run()
     if doc_id == CANVAS_DEBUG_DOC_ID:
         get_recording_context().record("dataflow_debug_result", "canvas_debug_mode")
@@ -799,7 +871,13 @@ async def run_dataflow(task: dict):
             set_progress(task_id, prog=0.82, msg="\n-------------------------------------\nStart to embedding...")
             e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
             embedding_id = kb.embd_id
-            embd_model_config = get_model_config_from_provider_instance(task["tenant_id"], LLMType.EMBEDDING, embedding_id)
+            if kb.tenant_embd_id:
+                try:
+                    embd_model_config = get_model_config_by_id(task["tenant_id"], LLMType.EMBEDDING, kb.tenant_embd_id)
+                except LookupError:
+                    embd_model_config = resolve_model_config(task["tenant_id"], LLMType.EMBEDDING, embedding_id)
+            else:
+                embd_model_config = resolve_model_config(task["tenant_id"], LLMType.EMBEDDING, embedding_id)
             embedding_model = LLMBundle(task["tenant_id"], embd_model_config)
 
             @timeout(60)
@@ -887,8 +965,12 @@ async def run_dataflow(task: dict):
 
     time_cost = timer() - start_ts
     task_time_cost = timer() - task_start_ts
+    try:
+        ret = DocumentService.increment_chunk_num(doc_id, task_dataset_id, embedding_token_consumption, len(chunks), task_time_cost)
+    except Exception:
+        logging.exception("increment_chunk_num failed for doc %s", doc_id)
+        ret = None
     set_progress(task_id, prog=1.0, msg="Indexing done ({:.2f}s). Task done ({:.2f}s)".format(time_cost, task_time_cost))
-    ret = DocumentService.increment_chunk_num(doc_id, task_dataset_id, embedding_token_consumption, len(chunks), task_time_cost)
     get_recording_context().save_func_return_value("DocumentService.increment_chunk_num", ret)
     logging.info("[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks), embedding_token_consumption, task_time_cost))
     get_recording_context().record("dataflow_chunks", chunks)
@@ -1011,13 +1093,14 @@ async def delete_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str, keep_met
 
 @timeout(3600)
 async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_size, callback=None, doc_ids=[]):
+    tree_builder = "raptor"
+    clustering_method = "watershed"
     """Generate RAPTOR summaries for selected documents in a knowledge base."""
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
 
+    rag_tokenizer.tokenizer.set_language(row.get("language", "English"))
+
     raptor_config = kb_parser_config.get("raptor", {})
-    raptor_ext_config = raptor_config.get("ext") or {}
-    tree_builder = get_raptor_tree_builder(raptor_config)
-    clustering_method = get_raptor_clustering_method(raptor_config)
     vctr_nm = "q_%d_vec" % vector_size
 
     res = []
@@ -1060,7 +1143,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         """Run RAPTOR and append generated summary chunks for one doc id."""
         nonlocal tk_count, res
         logging.info("RAPTOR: using tree_builder=%s clustering_method=%s for doc %s", tree_builder, clustering_method, did)
-        from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor  # Lazy load, save around 8s
+        from rag.advanced_rag.knowlege_compile.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor  # Lazy load, save around 8s
 
         raptor = Raptor(
             raptor_config.get("max_cluster", 64),
@@ -1068,12 +1151,9 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             embd_mdl,
             raptor_config["prompt"],
             raptor_config["max_token"],
-            raptor_config["threshold"],
             max_errors=max_errors,
-            tree_builder=tree_builder,
-            clustering_method=clustering_method,
-            psi_exact_max_leaves=raptor_ext_config.get("psi_exact_max_leaves", 4096),
-            psi_bucket_size=raptor_ext_config.get("psi_bucket_size", 1024),
+            clustering_threshold=float(raptor_config.get("clustering_threshold", 0.3)),
+            clustering_ratio=float(raptor_config.get("clustering_ratio", 0.5)),
         )
         original_length = len(chunks)
         chunks, layers = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
@@ -1251,6 +1331,10 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
         chunks: List of chunk dictionaries to insert
         progress_callback: Callback function for progress updates
     """
+    from rag.svr.task_executor_refactor.chunk_service import apply_source_chunks_document_availability
+
+    apply_source_chunks_document_availability(chunks)
+
     mothers = []
     mother_ids = set([])
     for ck in chunks:
@@ -1376,6 +1460,7 @@ async def do_handle_task(task):
     task_language = task.get("language") or "Chinese"
     if not task.get("language"):
         logging.warning("Task %s has no language set, falling back to Chinese", task_id)
+    rag_tokenizer.tokenizer.set_language(task_language)
     doc_task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
     kb_task_llm_id = task["kb_parser_config"].get("llm_id") or task["llm_id"]
     task["llm_id"] = kb_task_llm_id
@@ -1398,7 +1483,7 @@ async def do_handle_task(task):
     try:
         # bind embedding model
         if task_embedding_id:
-            embd_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
+            embd_model_config = resolve_model_config(task_tenant_id, LLMType.EMBEDDING, task_embedding_id)
         else:
             embd_model_config = get_tenant_default_model_by_type(task_tenant_id, LLMType.EMBEDDING)
         embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language)
@@ -1428,14 +1513,13 @@ async def do_handle_task(task):
                 {
                     "raptor": {
                         "use_raptor": True,
-                        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                        "max_token": 256,
-                        "threshold": 0.1,
+                        "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+                        "max_token": 512,
+                        "clustering_threshold": 0.3,
+                        "clustering_ratio": 0.5,
                         "max_cluster": 64,
                         "random_seed": 0,
                         "scope": "file",
-                        "clustering_method": "gmm",
-                        "tree_builder": "raptor",
                     },
                 }
             )
@@ -1446,7 +1530,7 @@ async def do_handle_task(task):
                 return
 
         # bind LLM for raptor
-        chat_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model_config = resolve_model_config(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
         chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
         # run RAPTOR
         async with kg_limiter:
@@ -1505,7 +1589,7 @@ async def do_handle_task(task):
 
         graphrag_conf = kb_parser_config.get("graphrag", {})
         start_ts = timer()
-        chat_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model_config = resolve_model_config(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
         chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
         with_resolution = graphrag_conf.get("resolution", False)
         with_community = graphrag_conf.get("community", False)
@@ -1532,11 +1616,19 @@ async def do_handle_task(task):
         progress_callback(1, "place holder")
         pass
         return
+    elif task_type == "skill":
+        progress_callback(-1, "Skill generation requires the refactored task executor (TE_RUN_MODE=0).")
+        return
     else:
         # Standard chunking methods
         task["llm_id"] = doc_task_llm_id
+
+        def on_chunking_start(wait_time):
+            nonlocal task_start_ts
+            task_start_ts += wait_time
+
         start_ts = timer()
-        chunks = await build_chunks(task, progress_callback)
+        chunks = await build_chunks(task, progress_callback, on_chunking_start)
         get_recording_context().record("chunks", chunks)
         # Record chunk_ids_count for comparison
         chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and "id" in c]
@@ -1563,6 +1655,7 @@ async def do_handle_task(task):
         progress_message = "Embedding chunks ({:.2f}s)".format(timer() - start_ts)
         logging.info(progress_message)
         progress_callback(msg=progress_message)
+
         if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
             toc_thread = asyncio.create_task(asyncio.to_thread(build_TOC, task, chunks, progress_callback))
 
@@ -1684,18 +1777,27 @@ async def do_handle_task(task):
                 logging.exception(f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled, exception: {e}")
 
 
-async def handle_task():
+async def handle_task() -> bool:
+    """Pull one task off the queue and process it.
+
+    Returns True if a real task was processed (success or failure), False if the
+    queue was empty and the call was an idle poll, so callers can tell work apart
+    from idling and e.g. avoid advancing the recycle counter during quiet periods.
+    """
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
         await asyncio.sleep(5)
-        return
+        return False
+
+    logging.info(f"handle_task begin for task {json.dumps(task)}")
 
     task_type = task["task_type"]
     pipeline_task_type = TASK_TYPE_TO_PIPELINE_TASK_TYPE.get(task_type, PipelineTaskType.PARSE) or PipelineTaskType.PARSE
     task_id = task["id"]
+    ctx_token = set_llm_request_context(user_id=normalize_llm_user_id(task.get("user_id")))
     try:
-        CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
+        CURRENT_TASKS[task["id"]] = _redact_task_user(copy.deepcopy(task))
         run_mode = os.environ.get("TE_RUN_MODE", "0")
         logging.info(f"TE_RUN_MODE is {run_mode}")
 
@@ -1718,7 +1820,7 @@ async def handle_task():
 
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)
-        logging.info(f"handle_task done for task {json.dumps(task)}")
+        logging.info(f"handle_task done for task {json.dumps(_redact_task_user(task))}")
     except TaskCanceledException as e:
         DONE_TASKS += 1
         CURRENT_TASKS.pop(task_id, None)
@@ -1735,18 +1837,23 @@ async def handle_task():
         except Exception as e:
             logging.exception(f"[Exception]: {str(e)}")
             pass
-        logging.exception(f"handle_task got exception for task {json.dumps(task)}")
+        logging.exception(f"handle_task got exception for task {json.dumps(_redact_task_user(task))}")
     finally:
+        reset_llm_request_context(ctx_token)
         if not task.get("dataflow_id", ""):
             referred_document_id = None
-            if task_type in ["graphrag", "raptor", "mindmap"]:
-                referred_document_id = task["doc_ids"][0]
+            if task_type in _KB_FANOUT_TASK_TYPES:
+                # KB-level fan-out tasks store the participating doc list in
+                # task["doc_ids"]; the first entry is used as a referent so
+                # the pipeline operation log has something to anchor to.
+                referred_document_id = (task.get("doc_ids") or [None])[0]
             ret = PipelineOperationLogService.record_pipeline_operation(
                 document_id=task["doc_id"], pipeline_id="", task_type=pipeline_task_type, task_id=task_id, referred_document_id=referred_document_id
             )
             get_recording_context().save_func_return_value("PipelineOperationLogService.record_pipeline_operation", ret)
 
     redis_msg.ack()
+    return True
 
 
 async def get_server_ip() -> str:
@@ -1842,9 +1949,16 @@ async def report_status():
 
 
 async def task_manager():
+    global _completed_task_count
+    processed = False
     try:
-        await handle_task()
+        processed = await handle_task()
     finally:
+        if processed and MAX_TASKS_PER_WORKER > 0:
+            _completed_task_count += 1
+            if _completed_task_count >= MAX_TASKS_PER_WORKER:
+                logging.warning(f"[recycle] reached MAX_TASKS_PER_WORKER={MAX_TASKS_PER_WORKER}; signalling a clean exit so the supervisor can restart the worker.")
+                stop_event.set()
         task_limiter.release()
 
 
@@ -1871,7 +1985,6 @@ async def main():
           /____/
     """)
     logging.info(f"RAGFlow ingestion version: {get_ragflow_version()}")
-    logging.info(f"ENABLE_DRY_RUN_COMPARISON: {os.environ.get('ENABLE_DRY_RUN_COMPARISON', '0')}")
     show_configs()
     settings.init_settings()
     settings.check_and_install_torch()
@@ -1894,9 +2007,24 @@ async def main():
     try:
         while not stop_event.is_set():
             await task_limiter.acquire()
+            if stop_event.is_set():
+                # Another task_manager signalled shutdown while we were blocked
+                # on the semaphore; bail out cleanly instead of picking up one
+                # more task, so the supervisor can restart the worker.
+                logging.info("[recycle] stop_event observed after acquiring task_limiter; releasing the semaphore and exiting the main loop.")
+                task_limiter.release()
+                break
             t = asyncio.create_task(task_manager())
             tasks.append(t)
     finally:
+        if MAX_TASKS_PER_WORKER > 0 and tasks:
+            # Recycling is a planned exit, so let in-flight task_managers finish
+            # instead of discarding their work -- but bound the wait so a single
+            # hung task cannot keep the worker alive forever.
+            _, pending = await asyncio.wait(tasks, timeout=RECYCLE_SHUTDOWN_TIMEOUT)
+            if pending:
+                logging.warning(f"[recycle] {len(pending)} task(s) still running after {RECYCLE_SHUTDOWN_TIMEOUT}s grace; cancelling them.")
+            tasks = list(pending)
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

@@ -50,7 +50,7 @@ func TestWorkflow_ErrorInSubAgent_ShouldStopNotContinue(t *testing.T) {
 		}
 	}
 
-	wf, err := NewSequential(context.Background(), &SequentialConfig{
+	wf, err := NewSequential(t.Context(), &SequentialConfig{
 		Name: "error_stop_test", Description: "5 nodes with middle failure",
 		SubAgents: agents,
 	})
@@ -58,7 +58,7 @@ func TestWorkflow_ErrorInSubAgent_ShouldStopNotContinue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}})
 
 	var gotError bool
@@ -101,9 +101,9 @@ func newErrorAgent(name string) Agent {
 	return &errorAgent{name: name}
 }
 
-func (a *errorAgent) Name(_ context.Context) string                                    { return a.name }
-func (a *errorAgent) Description(_ context.Context) string                             { return a.name + " error" }
-func (a *errorAgent) GetType() string                                                  { return "ErrorAgent" }
+func (a *errorAgent) Name(_ context.Context) string        { return a.name }
+func (a *errorAgent) Description(_ context.Context) string { return a.name + " error" }
+func (a *errorAgent) GetType() string                      { return "ErrorAgent" }
 func (a *errorAgent) Run(_ context.Context, _ *AgentInput, _ ...RunOption) *AsyncIterator[*AgentEvent] {
 	it, gen := NewAsyncIteratorPair[*AgentEvent]()
 	gen.Send(&AgentEvent{Err: errors.New("intentional agent failure")})
@@ -128,7 +128,7 @@ func TestWorkflow_SequentialCancel_ShouldNotTriggerInterruptCheckpoint(t *testin
 	}
 
 	store := newConcurrentStore()
-	ctx := context.Background()
+	ctx := t.Context()
 	opt, cancel := WithCancel()
 	cpID := "cancel_no_checkpoint_test"
 
@@ -172,9 +172,9 @@ func TestWorkflow_SequentialCancel_ShouldNotTriggerInterruptCheckpoint(t *testin
 	// This assertion exposes the bug: if found == true, the cancel was incorrectly
 	// treated as an interrupt, saving an unnecessary checkpoint.
 	if found {
-		t.Errorf("BUG: cancel in sequential workflow saved a checkpoint. "+
-			"cancelTransition uses Interrupted action instead of CancelError, "+
-			"so the upper AgentLoop treats cancel as a business interrupt and saves checkpoint. "+
+		t.Errorf("BUG: cancel in sequential workflow saved a checkpoint. " +
+			"cancelTransition uses Interrupted action instead of CancelError, " +
+			"so the upper AgentLoop treats cancel as a business interrupt and saves checkpoint. " +
 			"Cancel should NOT produce an interrupt checkpoint.")
 	}
 	t.Logf("Cancel checkpoint found=%v (expected false if cancel is clean)", found)
@@ -257,7 +257,7 @@ func TestFlow_TransferLoop_ContextCancel(t *testing.T) {
 	case <-done:
 		// Agent terminated cleanly
 	case <-time.After(time.Second * 5):
-		t.Errorf("BUG: agent did not terminate within 5s after context cancel. "+
+		t.Errorf("BUG: agent did not terminate within 5s after context cancel. " +
 			"flow.go runLoop may not check context cancellation, causing goroutine leak")
 	}
 }
@@ -335,7 +335,7 @@ func TestRunner_HandleIter_PanicSafety(t *testing.T) {
 	go func() {
 		defer close(done)
 		// This should NOT panic — handleIter has recover()
-		handleIter(false, nil, context.Background(), ai, gen, nil, nil)
+		handleIter(false, nil, t.Context(), ai, gen, nil, nil)
 	}()
 
 	select {
@@ -429,7 +429,7 @@ func TestReAct_MaxIterationExceeded_SkipsAfterAgent(t *testing.T) {
 		Middlewares:   []TypedReActMiddleware[*schema.Message]{afterAgentMW},
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("loop test")}})
 
 	var gotMaxIterError bool
@@ -449,8 +449,8 @@ func TestReAct_MaxIterationExceeded_SkipsAfterAgent(t *testing.T) {
 	}
 
 	if !afterAgentCalled.Load() {
-		t.Errorf("BUG: AfterAgent middleware not called after max iteration exceeded. "+
-			"buildReActRunFunc returns early on line 94, skipping runAfterAgent. "+
+		t.Errorf("BUG: AfterAgent middleware not called after max iteration exceeded. " +
+			"buildReActRunFunc returns early on line 94, skipping runAfterAgent. " +
 			"Middleware cleanup/hooks are missed.")
 	} else {
 		t.Log("AfterAgent middleware was called (pass)")
@@ -497,7 +497,7 @@ func TestWorkflow_SequentialCancel_StateConsistency(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	opt, cancel := WithCancel()
 
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("consistency")}}, opt)
@@ -541,7 +541,7 @@ func TestDrainEventsChan_GoroutineLeak(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ctx := context.Background()
+		ctx := t.Context()
 		iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("leak test")}})
 
 		ch := drainEventsChan(iter)
@@ -579,7 +579,7 @@ func TestWorkflow_Sequential_LastEventWithoutActionIsDropped(t *testing.T) {
 	// Create an agent that returns a message event without any action
 	plainMsgAgent := &plainMessageAgent{name: "plain_msg_agent"}
 
-	wf, err := NewSequential(context.Background(), &SequentialConfig{
+	wf, err := NewSequential(t.Context(), &SequentialConfig{
 		Name: "drop_test", Description: "test last event dropping",
 		SubAgents: []Agent{plainMsgAgent},
 	})
@@ -587,7 +587,7 @@ func TestWorkflow_Sequential_LastEventWithoutActionIsDropped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 
 	var events []*AgentEvent
@@ -600,8 +600,8 @@ func TestWorkflow_Sequential_LastEventWithoutActionIsDropped(t *testing.T) {
 	}
 
 	if len(events) == 0 {
-		t.Errorf("BUG: no events received from sequential workflow. "+
-			"drainEvents in runSeq returns nil when the last event has no Action, "+
+		t.Errorf("BUG: no events received from sequential workflow. " +
+			"drainEvents in runSeq returns nil when the last event has no Action, " +
 			"so the final message output is dropped by runSeq (it's not forwarded to gen).")
 	} else {
 		t.Logf("Received %d events (first is probably the dropped one)", len(events))
@@ -650,7 +650,7 @@ func TestWorkflow_Parallel_SharedSessionValuesRace(t *testing.T) {
 		}).WithName(nodeID)
 	}
 
-	wf, err := NewParallel(context.Background(), &ParallelConfig{
+	wf, err := NewParallel(t.Context(), &ParallelConfig{
 		Name: "parallel_race", Description: "test session value race",
 		SubAgents: agents,
 	})
@@ -658,7 +658,7 @@ func TestWorkflow_Parallel_SharedSessionValuesRace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("race test")}})
 	for range drainEventsChan(iter) {
 	}
@@ -721,7 +721,7 @@ func TestCheckpoint_ConcurrentResumeRace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	cpID := "concurrent_resume_test"
 
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{
@@ -753,7 +753,7 @@ func TestCheckpoint_ConcurrentResumeRace(t *testing.T) {
 				Agent:           wf,
 				CheckPointStore: store,
 			})
-			it, err := r.Resume(context.Background(), cpID)
+			it, err := r.Resume(t.Context(), cpID)
 			if err != nil {
 				t.Logf("Tenant %d resume error: %v", id, err)
 				return
@@ -785,7 +785,7 @@ func TestFlow_SetSubAgents_DoesNotPopulateSubAgents(t *testing.T) {
 		Model: &mockModel{},
 	}).WithName("sub1")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	fa := toFlowAgent(ctx, agent)
 	_, err := SetSubAgents(ctx, fa, []Agent{sub1})
 	if err != nil {
@@ -797,9 +797,9 @@ func TestFlow_SetSubAgents_DoesNotPopulateSubAgents(t *testing.T) {
 	if len(fa.subAgents) > 0 {
 		t.Logf("subAgents populated: %d (unexpected but OK)", len(fa.subAgents))
 	} else {
-		t.Errorf("BUG: SetSubAgents does not populate flowAgent.subAgents. "+
-			"The sub-agents are set on the returned ResumableAgent but not on "+
-			"the original flowAgent. This causes inconsistency when flowAgent.Run() "+
+		t.Errorf("BUG: SetSubAgents does not populate flowAgent.subAgents. " +
+			"The sub-agents are set on the returned ResumableAgent but not on " +
+			"the original flowAgent. This causes inconsistency when flowAgent.Run() " +
 			"tries to find sub-agents via getAgent().")
 	}
 }
@@ -833,7 +833,7 @@ func TestWorkflow_Sequential_CancelRaceInRunSeq(t *testing.T) {
 		agents[i] = NewReActAgent(&ReActConfig[*schema.Message]{Model: model, Tools: []Tool{delayedTool}}).WithName(nodeID)
 	}
 
-	wf, err := NewSequential(context.Background(), &SequentialConfig{
+	wf, err := NewSequential(t.Context(), &SequentialConfig{
 		Name: "cancel_race", Description: "cancel race in runSeq",
 		SubAgents: agents,
 	})
@@ -841,7 +841,7 @@ func TestWorkflow_Sequential_CancelRaceInRunSeq(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	opt, cancel := WithCancel()
 
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("race")}}, opt)
@@ -875,7 +875,7 @@ type delayedTool struct {
 	mu    *sync.Mutex
 }
 
-func (t *delayedTool) Name() string       { return t.inner.Name() }
+func (t *delayedTool) Name() string        { return t.inner.Name() }
 func (t *delayedTool) Description() string { return t.inner.Description() }
 func (t *delayedTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
 	time.Sleep(t.delay)

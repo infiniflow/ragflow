@@ -19,11 +19,11 @@ func (m *missingSentinel) String() string {
 }
 
 // IsMissing checks if a value is the Missing sentinel.
-func IsMissing(v interface{}) bool {
-	if v == nil {
+func IsMissing(val any) bool {
+	if val == nil {
 		return false
 	}
-	_, ok := v.(*missingSentinel)
+	_, ok := val.(*missingSentinel)
 	return ok
 }
 

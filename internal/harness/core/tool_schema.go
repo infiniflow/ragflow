@@ -212,8 +212,8 @@ type ReflectToolImpl[T any] struct {
 	info *schema.ToolInfo
 }
 
-func (t *ReflectToolImpl[T]) Name() string        { return t.name }
-func (t *ReflectToolImpl[T]) Description() string  { return t.desc }
+func (t *ReflectToolImpl[T]) Name() string               { return t.name }
+func (t *ReflectToolImpl[T]) Description() string        { return t.desc }
 func (t *ReflectToolImpl[T]) ToolInfo() *schema.ToolInfo { return t.info }
 
 func (t *ReflectToolImpl[T]) Invoke(ctx context.Context, argsJSON string, opts ...ToolOption) (string, error) {
@@ -272,8 +272,8 @@ type toolWithInfo[T any] struct {
 	fn   func(context.Context, *T) (string, error)
 }
 
-func (t *toolWithInfo[T]) Name() string { return t.info.Name }
-func (t *toolWithInfo[T]) Description() string { return t.info.Description }
+func (t *toolWithInfo[T]) Name() string               { return t.info.Name }
+func (t *toolWithInfo[T]) Description() string        { return t.info.Description }
 func (t *toolWithInfo[T]) ToolInfo() *schema.ToolInfo { return t.info }
 
 func (t *toolWithInfo[T]) Invoke(ctx context.Context, argsJSON string, opts ...ToolOption) (string, error) {

@@ -20,6 +20,7 @@
 
 
 import time
+
 start_ts = time.perf_counter()
 
 import asyncio
@@ -31,13 +32,12 @@ import signal
 import sys
 import threading
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 
 from flask import json
 
-from api.utils.common import hash128
-from api.db.services.connector_service import ConnectorService, SyncLogsService
+from api.db.services.connector_service import ConnectorService, SyncLogsService, resolve_connector_doc_id
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
@@ -47,6 +47,7 @@ from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source import (
     BlobStorageConnector,
     RSSConnector,
+    SitemapConnector,
     NotionConnector,
     DiscordConnector,
     GoogleDriveConnector,
@@ -59,8 +60,10 @@ from common.data_source import (
     ZendeskConnector,
     SeaFileConnector,
     RDBMSConnector,
+    BigQueryConnector,
     DingTalkAITableConnector,
     RestAPIConnector,
+    XquikConnector,
     OneDriveConnector,
     OutlookConnector,
     AzureBlobConnector,
@@ -77,12 +80,15 @@ from common.data_source.box_connector import BoxConnector
 from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
+from common.data_source.azure_devops.connector import AzureDevOpsConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
+from common.data_source.sitemap_connector import iter_in_worker_thread, validate_connector_in_thread
 from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
 from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
+
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 
@@ -104,13 +110,42 @@ def _redact_mailbox(value: str) -> str:
     return f"{value[:4]}***" if len(value) > 4 else "***"
 
 
+async def _iterate_document_batches(generator):
+    """Yield connector batches, advancing thread-bridged iterators off the event loop.
+
+    Connectors that return an iterator flagged ``offload_next`` (see
+    ``common.data_source.sitemap_connector.iter_in_worker_thread``) may block in
+    ``next()`` while a batch is being fetched; that call is awaited through
+    ``asyncio.to_thread`` so ``asyncio.wait_for`` keeps enforcing the task timeout and
+    cancellation closes the source. Every other connector keeps its synchronous
+    iteration unchanged.
+    """
+    if not getattr(generator, "offload_next", False):
+        for item in generator:
+            yield item
+        return
+
+    sentinel = object()
+    try:
+        while True:
+            item = await asyncio.to_thread(next, generator, sentinel)
+            if item is sentinel:
+                return
+            yield item
+    finally:
+        close = getattr(generator, "close", None)
+        if close is not None:
+            close()
+
+
 class SyncBase:
     """
     Base class for all data source synchronization connectors.
-    
-    Defines the standard interface for connecting to external APIs, polling for 
+
+    Defines the standard interface for connecting to external APIs, polling for
     new or updated documents, and managing synchronization state intervals.
     """
+
     SOURCE_NAME: str = None
 
     def __init__(self, conf: dict) -> None:
@@ -128,10 +163,7 @@ class SyncBase:
         if task.get("reindex") != "1" and task.get("poll_range_start"):
             window_start = task["poll_range_start"]
         window_end = datetime.now(timezone.utc)
-        return (
-            f"sync window: {cls._format_window_boundary(window_start)}"
-            f" -> {cls._format_window_boundary(window_end)}"
-        )
+        return f"sync window: {cls._format_window_boundary(window_start)} -> {cls._format_window_boundary(window_end)}"
 
     @classmethod
     def log_connection(
@@ -151,9 +183,9 @@ class SyncBase:
     async def __call__(self, task: dict):
         """
         Entry point for executing a synchronization task worker.
-        
-        Manages task execution boundaries including status logging, asynchronous 
-        timeouts, and top-level exception handling, while delegating the core 
+
+        Manages task execution boundaries including status logging, asynchronous
+        timeouts, and top-level exception handling, while delegating the core
         ingestion logic to `_run_task_logic`.
         """
         SyncLogsService.start(task["id"], task["connector_id"])
@@ -168,15 +200,13 @@ class SyncBase:
                 return
 
             except Exception as ex:
-                msg = "\n".join([
-                    "".join(traceback.format_exception_only(None, ex)).strip(),
-                    "".join(traceback.format_exception(None, ex, ex.__traceback__)).strip(),
-                ])
-                SyncLogsService.update_by_id(task["id"], {
-                    "status": TaskStatus.FAIL,
-                    "full_exception_trace": msg,
-                    "error_msg": str(ex)
-                })
+                msg = "\n".join(
+                    [
+                        "".join(traceback.format_exception_only(None, ex)).strip(),
+                        "".join(traceback.format_exception(None, ex, ex.__traceback__)).strip(),
+                    ]
+                )
+                SyncLogsService.update_by_id(task["id"], {"status": TaskStatus.FAIL, "full_exception_trace": msg, "error_msg": str(ex)})
                 return
 
         task_type = task.get("task_type", ConnectorTaskType.SYNC)
@@ -208,6 +238,7 @@ class SyncBase:
         document_batch_generator = await self._generate(task)
 
         failed_docs = 0
+        had_parse_errors = False
         added_docs = 0
         updated_docs = 0
         next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -223,7 +254,7 @@ class SyncBase:
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
 
-        for document_batch in document_batch_generator:
+        async for document_batch in _iterate_document_batches(document_batch_generator):
             if not document_batch:
                 continue
 
@@ -232,10 +263,8 @@ class SyncBase:
 
             docs = []
             for doc in document_batch:
-                legacy_doc_id = hash128(f"{task['connector_id']}:{doc.id}")
-                new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{doc.id}")
                 d = {
-                    "id": legacy_doc_id if legacy_doc_id in existing_doc_ids else new_doc_id,
+                    "id": resolve_connector_doc_id(task["kb_id"], task["connector_id"], doc.id, existing_doc_ids),
                     "connector_id": task["connector_id"],
                     "source": self.SOURCE_NAME,
                     "semantic_identifier": doc.semantic_identifier,
@@ -252,15 +281,10 @@ class SyncBase:
 
             try:
                 e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-                err, dids = SyncLogsService.duplicate_and_parse(
-                    kb, docs, task["tenant_id"],
-                    f"{self.SOURCE_NAME}/{task['connector_id']}",
-                    task["auto_parse"]
-                )
-                SyncLogsService.increase_docs(
-                    task["id"], max_update,
-                    len(docs), "\n".join(err), len(err)
-                )
+                err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
+                if err:
+                    had_parse_errors = True
+                SyncLogsService.increase_docs(task["id"], max_update, len(docs), "\n".join(err), len(err))
                 changed_doc_ids = set(dids)
                 updated_in_batch = len(changed_doc_ids & existing_doc_ids)
                 added_in_batch = len(changed_doc_ids) - updated_in_batch
@@ -285,19 +309,12 @@ class SyncBase:
         next_update_info = self._format_window_boundary(next_update)
 
         total_changed_docs = added_docs + updated_docs
-        summary = (
-            f"{prefix}sync summary till {next_update_info}: "
-            f"total={total_changed_docs}, added={added_docs}, "
-            f"updated={updated_docs}"
-        )
+        summary = f"{prefix}sync summary till {next_update_info}: total={total_changed_docs}, added={added_docs}, updated={updated_docs}"
         if failed_docs > 0:
             summary = f"{summary}, skipped={failed_docs}"
         logging.info(summary)
 
-        if (
-            isinstance(self, _RDBMSBase)
-            and failed_docs == 0
-        ):
+        if isinstance(self, _CursorPersistingSyncBase) and failed_docs == 0 and not had_parse_errors:
             self.connector.persist_sync_state()
         SyncLogsService.done(task["id"], task["connector_id"])
         task["poll_range_start"] = next_update
@@ -392,7 +409,8 @@ class _BlobLikeBase(SyncBase):
         """
         source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
         existing_fingerprints = DocumentService.list_id_content_hash_map_by_kb_and_source_type(
-            task["kb_id"], source_type,
+            task["kb_id"],
+            source_type,
         )
 
         bypass_count = 0
@@ -403,9 +421,8 @@ class _BlobLikeBase(SyncBase):
             if key_record.deleted:
                 continue
 
-            legacy_doc_id = hash128(f"{task['connector_id']}:{key_record.key}")
-            new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{key_record.key}")
-            stored = existing_fingerprints.get(legacy_doc_id, "") or existing_fingerprints.get(new_doc_id, "")
+            doc_id = resolve_connector_doc_id(task["kb_id"], task["connector_id"], key_record.key, existing_fingerprints)
+            stored = existing_fingerprints.get(doc_id, "")
             if key_record.fingerprint and stored and key_record.fingerprint == stored:
                 bypass_count += 1
                 continue
@@ -431,10 +448,7 @@ class _BlobLikeBase(SyncBase):
         if batch:
             yield batch
 
-        log_msg = (
-            "[%s] fingerprint sync: %d bypassed, %d fetched, %d failed "
-            "(connector_id=%s, kb_id=%s)"
-        )
+        log_msg = "[%s] fingerprint sync: %d bypassed, %d fetched, %d failed (connector_id=%s, kb_id=%s)"
         log_args = (
             self.SOURCE_NAME,
             bypass_count,
@@ -470,11 +484,7 @@ class _BlobLikeBase(SyncBase):
         else:
             document_batch_generator = self.connector.load_from_state()
 
-        _begin_info = (
-            "fingerprint-bypass"
-            if use_fingerprint_path
-            else "full reindex"
-        )
+        _begin_info = "fingerprint-bypass" if use_fingerprint_path else "full reindex"
 
         logging.info(
             "Connect to {}: {}(prefix/{}) {}".format(
@@ -530,6 +540,63 @@ class RSS(SyncBase):
         return document_generator
 
 
+class Sitemap(SyncBase):
+    SOURCE_NAME: str = FileSource.SITEMAP
+
+    @staticmethod
+    def _sanitize_docs(gen):
+        """Strip URL scheme from semantic_identifier so object storage accepts it as a key."""
+        from urllib.parse import urlparse
+
+        for batch in gen:
+            sanitized = []
+            for doc in batch:
+                si = doc.semantic_identifier
+                if si.startswith(("http://", "https://")):
+                    parsed = urlparse(si)
+                    si = f"{parsed.netloc}{parsed.path}"
+                    if parsed.query:
+                        si += f"?{parsed.query}"
+                    if parsed.fragment:
+                        si += f"#{parsed.fragment}"
+                    si = si.strip("/")
+                    doc = doc.model_copy(update={"semantic_identifier": si})
+                sanitized.append(doc)
+            yield sanitized
+
+    async def _prepare_connector(self, task: dict):
+        """Build and validate the connector without starting any document traversal."""
+        self.connector = SitemapConnector.build_connector(self.conf)
+        # validate_connector_settings fetches the sitemap synchronously: keep it off the event
+        # loop, and tell the connector to stop if the task is cancelled meanwhile.
+        await validate_connector_in_thread(self.connector)
+        self.log_connection("Sitemap", self.conf["sitemap_url"], task)
+
+    async def _initialize_for_prune(self, task: dict):
+        # Prune only needs the connector (for retrieve_all_slim_docs_perm_sync); do not start
+        # the batch producer thread that _generate() would create and the base class discard.
+        await self._prepare_connector(task)
+
+    async def _generate(self, task: dict):
+        await self._prepare_connector(task)
+
+        # Batches are produced in a worker thread (network I/O off the event-loop thread)
+        # and handed over through a bounded queue.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            return iter_in_worker_thread(self._sanitize_docs(self.connector.load_from_state()), on_close=self.connector.cancel)
+
+        end_time = datetime.now(UTC).timestamp()
+        return iter_in_worker_thread(
+            self._sanitize_docs(
+                self.connector.poll_source(
+                    task["poll_range_start"].timestamp(),
+                    end_time,
+                )
+            ),
+            on_close=self.connector.cancel,
+        )
+
+
 class Confluence(SyncBase):
     SOURCE_NAME: str = FileSource.CONFLUENCE
 
@@ -561,12 +628,9 @@ class Confluence(SyncBase):
             space=space,
             page_id=page_id,
             index_recursively=index_recursively,
-            
         )
 
-        credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"],
-                                                         connector_name=DocumentSource.CONFLUENCE,
-                                                         credential_json=self.conf["credentials"])
+        credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"], connector_name=DocumentSource.CONFLUENCE, credential_json=self.conf["credentials"])
         self.connector.set_credentials_provider(credentials_provider)
 
         # Determine the time range for synchronization based on reindex or poll_range_start
@@ -574,7 +638,7 @@ class Confluence(SyncBase):
             start_time = 0.0
         else:
             start_time = task["poll_range_start"].timestamp()
-            
+
         end_time = datetime.now(timezone.utc).timestamp()
 
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
@@ -596,8 +660,7 @@ class Confluence(SyncBase):
                 doc_generator = wrapper(self.connector.load_from_checkpoint(start_time, end_time, checkpoint))
                 for document, failure, next_checkpoint in doc_generator:
                     if failure is not None:
-                        logging.warning("Confluence connector failure: %s",
-                                        getattr(failure, "failure_message", failure))
+                        logging.warning("Confluence connector failure: %s", getattr(failure, "failure_message", failure))
                         continue
                     if document is not None:
                         pending_docs.append(document)
@@ -631,12 +694,10 @@ class Notion(SyncBase):
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(task["poll_range_start"].timestamp(),
-                                            datetime.now(timezone.utc).timestamp())
+            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
         )
 
-        _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
-            task["poll_range_start"])
+        _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
         self.log_connection("Notion", f"root({self.conf['root_page_id']})", task)
         return document_generator
 
@@ -706,12 +767,10 @@ class Discord(SyncBase):
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(task["poll_range_start"].timestamp(),
-                                            datetime.now(timezone.utc).timestamp())
+            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
         )
 
-        _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
-            task["poll_range_start"])
+        _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
         self.log_connection("Discord", f"servers({server_ids}), channel({channel_names})", task)
         return document_generator
 
@@ -805,6 +864,7 @@ class GoogleDrive(SyncBase):
     Handles both full re-indexing and incremental polling, including the capability
     to synchronize deleted files by retrieving a lightweight snapshot of current files.
     """
+
     SOURCE_NAME: str = FileSource.GOOGLE_DRIVE
 
     async def _generate(self, task: dict):
@@ -839,7 +899,7 @@ class GoogleDrive(SyncBase):
         else:
             start_time = task["poll_range_start"].timestamp()
             _begin_info = f"from {task['poll_range_start']}"
-                
+
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
         try:
             batch_size = int(raw_batch_size)
@@ -860,8 +920,7 @@ class GoogleDrive(SyncBase):
                 doc_generator = wrapper(self.connector.load_from_checkpoint(start_time, end_time, checkpoint))
                 for document, failure, next_checkpoint in doc_generator:
                     if failure is not None:
-                        logging.warning("Google Drive connector failure: %s",
-                                        getattr(failure, "failure_message", failure))
+                        logging.warning("Google Drive connector failure: %s", getattr(failure, "failure_message", failure))
                         continue
                     if document is not None:
                         pending_docs.append(document)
@@ -883,7 +942,7 @@ class GoogleDrive(SyncBase):
         except RuntimeError:
             admin_email = "unknown"
         self.log_connection("Google Drive", f"as {admin_email}", task)
-        
+
         return document_batches()
 
     def _persist_rotated_credentials(self, connector_id: str, credentials: dict[str, Any]) -> None:
@@ -896,7 +955,8 @@ class GoogleDrive(SyncBase):
             logging.info("Persisted refreshed Google Drive credentials for connector %s", connector_id)
         except Exception:
             logging.exception("Failed to persist refreshed Google Drive credentials for connector %s", connector_id)
-            
+
+
 class Jira(SyncBase):
     SOURCE_NAME: str = FileSource.JIRA
 
@@ -962,9 +1022,7 @@ class Jira(SyncBase):
                 )
                 for document, failure, next_checkpoint in generator:
                     if failure is not None:
-                        logging.warning(
-                            f"[Jira] Jira connector failure: {getattr(failure, 'failure_message', failure)}"
-                        )
+                        logging.warning(f"[Jira] Jira connector failure: {getattr(failure, 'failure_message', failure)}")
                         continue
                     if document is not None:
                         pending_docs.append(document)
@@ -986,10 +1044,7 @@ class Jira(SyncBase):
             "Jira",
             connector_kwargs["jira_base_url"],
             task,
-            (
-                f"sync_batch_size={batch_size}, "
-                f"overlap_buffer_s={getattr(self.connector, 'time_buffer_seconds', connector_kwargs.get('time_buffer_seconds'))}"
-            ),
+            (f"sync_batch_size={batch_size}, overlap_buffer_s={getattr(self.connector, 'time_buffer_seconds', connector_kwargs.get('time_buffer_seconds'))}"),
         )
         return document_batches()
 
@@ -1039,9 +1094,7 @@ class SharePoint(SyncBase):
 
             while checkpoint.has_more:
                 wrapper = CheckpointOutputWrapper()
-                doc_generator = wrapper(
-                    self.connector.load_from_checkpoint(start_time, end_time, checkpoint)
-                )
+                doc_generator = wrapper(self.connector.load_from_checkpoint(start_time, end_time, checkpoint))
                 for document, failure, next_checkpoint in doc_generator:
                     if failure is not None:
                         logging.warning(
@@ -1097,9 +1150,7 @@ class OneDrive(SyncBase):
             start_ts = task["poll_range_start"].timestamp()
         end_ts = datetime.now(timezone.utc).timestamp()
         checkpoint = self.connector.build_dummy_checkpoint()
-        document_batch_generator = self.connector.load_from_checkpoint(
-            start_ts, end_ts, checkpoint
-        )
+        document_batch_generator = self.connector.load_from_checkpoint(start_ts, end_ts, checkpoint)
 
         self.log_connection(
             "OneDrive",
@@ -1152,9 +1203,7 @@ class Outlook(SyncBase):
             start_ts = task["poll_range_start"].timestamp()
         end_ts = datetime.now(timezone.utc).timestamp()
         checkpoint = self.connector.build_dummy_checkpoint()
-        document_batch_generator = self.connector.load_from_checkpoint(
-            start_ts, end_ts, checkpoint
-        )
+        document_batch_generator = self.connector.load_from_checkpoint(start_ts, end_ts, checkpoint)
 
         # Redact mailbox identifiers — full UPN / email lists in connector
         # logs leak PII (the entire org's mail directory ends up in
@@ -1223,9 +1272,7 @@ class Salesforce(SyncBase):
             start_ts = task["poll_range_start"].timestamp()
         end_ts = datetime.now(timezone.utc).timestamp()
         checkpoint = self.connector.build_dummy_checkpoint()
-        document_batch_generator = self.connector.load_from_checkpoint(
-            start_ts, end_ts, checkpoint
-        )
+        document_batch_generator = self.connector.load_from_checkpoint(start_ts, end_ts, checkpoint)
 
         instance_url = (self.conf.get("credentials") or {}).get("instance_url", "")
         self.log_connection(
@@ -1271,15 +1318,9 @@ class AzureBlob(SyncBase):
             start_ts = task["poll_range_start"].timestamp()
         end_ts = datetime.now(timezone.utc).timestamp()
         checkpoint = self.connector.build_dummy_checkpoint()
-        document_batch_generator = self.connector.load_from_checkpoint(
-            start_ts, end_ts, checkpoint
-        )
+        document_batch_generator = self.connector.load_from_checkpoint(start_ts, end_ts, checkpoint)
 
-        container_hint = (
-            credentials.get("container_name")
-            or credentials.get("container_url", "").rstrip("/").rsplit("/", 1)[-1]
-            or "<container>"
-        )
+        container_hint = credentials.get("container_name") or credentials.get("container_url", "").rstrip("/").rsplit("/", 1)[-1] or "<container>"
         self.log_connection(
             "Azure Blob",
             f"{container_hint}/{self.conf.get('prefix', '') or ''}",
@@ -1388,9 +1429,7 @@ class Teams(SyncBase):
 
             while checkpoint.has_more:
                 wrapper = CheckpointOutputWrapper()
-                doc_generator = wrapper(
-                    self.connector.load_from_checkpoint(start_time, end_time, checkpoint)
-                )
+                doc_generator = wrapper(self.connector.load_from_checkpoint(start_time, end_time, checkpoint))
                 for document, failure, next_checkpoint in doc_generator:
                     if failure is not None:
                         logging.warning(
@@ -1433,6 +1472,7 @@ class WebDAV(SyncBase):
             base_url=self.conf["base_url"],
             remote_path=self.conf.get("remote_path", "/"),
             batch_size=batch_size,
+            ca_cert_path=self.conf.get("ca_cert_path"),
         )
         self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
@@ -1461,10 +1501,7 @@ class Moodle(SyncBase):
     SOURCE_NAME: str = FileSource.MOODLE
 
     async def _generate(self, task: dict):
-        self.connector = MoodleConnector(
-            moodle_url=self.conf["moodle_url"],
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE)
-        )
+        self.connector = MoodleConnector(moodle_url=self.conf["moodle_url"], batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE))
 
         self.connector.load_credentials(self.conf["credentials"])
 
@@ -1499,18 +1536,18 @@ class BOX(SyncBase):
             folder_id=self.conf.get("folder_id", "0"),
         )
 
-        credential = json.loads(self.conf['credentials']['box_tokens'])
+        credential = json.loads(self.conf["credentials"]["box_tokens"])
 
         auth = BoxOAuth(
             OAuthConfig(
-                client_id=credential['client_id'],
-                client_secret=credential['client_secret'],
+                client_id=credential["client_id"],
+                client_secret=credential["client_secret"],
             )
         )
 
         token = AccessToken(
-            access_token=credential['access_token'],
-            refresh_token=credential['refresh_token'],
+            access_token=credential["access_token"],
+            refresh_token=credential["refresh_token"],
         )
         auth.token_storage.store(token)
 
@@ -1547,9 +1584,7 @@ class Airtable(SyncBase):
         if "airtable_access_token" not in credentials:
             raise ValueError("Missing airtable_access_token in credentials")
 
-        self.connector.load_credentials(
-            {"airtable_access_token": credentials["airtable_access_token"]}
-        )
+        self.connector.load_credentials({"airtable_access_token": credentials["airtable_access_token"]})
 
         poll_start = task.get("poll_range_start")
 
@@ -1571,6 +1606,7 @@ class Airtable(SyncBase):
 
         return document_generator
 
+
 class Asana(SyncBase):
     SOURCE_NAME: str = FileSource.ASANA
 
@@ -1584,9 +1620,7 @@ class Asana(SyncBase):
         if "asana_api_token_secret" not in credentials:
             raise ValueError("Missing asana_api_token_secret in credentials")
 
-        self.connector.load_credentials(
-            {"asana_api_token_secret": credentials["asana_api_token_secret"]}
-        )
+        self.connector.load_credentials({"asana_api_token_secret": credentials["asana_api_token_secret"]})
 
         poll_start = task.get("poll_range_start")
 
@@ -1609,6 +1643,7 @@ class Asana(SyncBase):
 
         return document_generator
 
+
 class Github(SyncBase):
     SOURCE_NAME: str = FileSource.GITHUB
 
@@ -1629,9 +1664,7 @@ class Github(SyncBase):
         if "github_access_token" not in credentials:
             raise ValueError("Missing github_access_token in credentials")
 
-        self.connector.load_credentials(
-            {"github_access_token": credentials["github_access_token"]}
-        )
+        self.connector.load_credentials({"github_access_token": credentials["github_access_token"]})
 
         if task.get("reindex") == "1" or not task.get("poll_range_start"):
             start_time = datetime.fromtimestamp(0, tz=timezone.utc)
@@ -1640,12 +1673,7 @@ class Github(SyncBase):
 
         end_time = datetime.now(timezone.utc)
 
-        runner = ConnectorRunner(
-            connector=self.connector,
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
-            include_permissions=False,
-            time_range=(start_time, end_time)
-        )
+        runner = ConnectorRunner(connector=self.connector, batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE), include_permissions=False, time_range=(start_time, end_time))
 
         def document_batches():
             checkpoint = self.connector.build_dummy_checkpoint()
@@ -1675,12 +1703,14 @@ class Github(SyncBase):
 
         return wrapper()
 
+
 class IMAP(SyncBase):
     SOURCE_NAME: str = FileSource.IMAP
 
     async def _generate(self, task):
         from common.data_source.config import DocumentSource
         from common.data_source.interfaces import StaticCredentialsProvider
+
         self.connector = ImapConnector(
             host=self.conf.get("imap_host"),
             port=self.conf.get("imap_port"),
@@ -1710,18 +1740,14 @@ class IMAP(SyncBase):
             try:
                 initial_sync_start = float(initial_sync_start)
             except (TypeError, ValueError):
-                initial_sync_start = (
-                    0 if task["poll_range_start"] else default_initial_sync_start
-                )
+                initial_sync_start = 0 if task["poll_range_start"] else default_initial_sync_start
                 should_persist_initial_start = True
 
         if should_persist_initial_start:
             updated_conf = copy.deepcopy(self.conf)
             updated_conf["imap_initial_sync_start"] = initial_sync_start
             try:
-                ConnectorService.update_by_id(
-                    task["connector_id"], {"config": updated_conf}
-                )
+                ConnectorService.update_by_id(task["connector_id"], {"config": updated_conf})
                 self.conf = updated_conf
             except Exception:
                 logging.exception(
@@ -1783,9 +1809,10 @@ class IMAP(SyncBase):
     def _get_prune_snapshot_kwargs(self, task: dict) -> dict[str, Any]:
         return getattr(self, "_prune_snapshot_kwargs", {})
 
-class Zendesk(SyncBase):
 
+class Zendesk(SyncBase):
     SOURCE_NAME: str = FileSource.ZENDESK
+
     async def _generate(self, task: dict):
         self.connector = ZendeskConnector(content_type=self.conf.get("zendesk_content_type"))
         self.connector.load_credentials(self.conf["credentials"])
@@ -1798,11 +1825,7 @@ class Zendesk(SyncBase):
             start_time = task["poll_range_start"].timestamp()
             _begin_info = f"from {task['poll_range_start']}"
 
-        raw_batch_size = (
-            self.conf.get("sync_batch_size")
-            or self.conf.get("batch_size")
-            or INDEX_BATCH_SIZE
-        )
+        raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
         try:
             batch_size = int(raw_batch_size)
         except (TypeError, ValueError):
@@ -1819,11 +1842,7 @@ class Zendesk(SyncBase):
 
             while checkpoint.has_more:
                 wrapper = CheckpointOutputWrapper()
-                doc_generator = wrapper(
-                    self.connector.load_from_checkpoint(
-                        start_time, end_time, checkpoint
-                    )
-                )
+                doc_generator = wrapper(self.connector.load_from_checkpoint(start_time, end_time, checkpoint))
 
                 for document, failure, next_checkpoint in doc_generator:
                     if failure is not None:
@@ -1844,9 +1863,7 @@ class Zendesk(SyncBase):
 
                 iterations += 1
                 if iterations > iteration_limit:
-                    raise RuntimeError(
-                        "Too many iterations while loading Zendesk documents."
-                    )
+                    raise RuntimeError("Too many iterations while loading Zendesk documents.")
 
             if pending_docs:
                 yield pending_docs
@@ -1868,11 +1885,11 @@ class Gitlab(SyncBase):
         """
 
         self.connector = GitlabConnector(
-            project_owner= self.conf.get("project_owner"),
-            project_name= self.conf.get("project_name"),
-            include_mrs = self.conf.get("include_mrs", False),
-            include_issues = self.conf.get("include_issues", False),
-            include_code_files=  self.conf.get("include_code_files", False),
+            project_owner=self.conf.get("project_owner"),
+            project_name=self.conf.get("project_name"),
+            include_mrs=self.conf.get("include_mrs", False),
+            include_issues=self.conf.get("include_issues", False),
+            include_code_files=self.conf.get("include_code_files", False),
         )
 
         self.connector.load_credentials(
@@ -1891,10 +1908,7 @@ class Gitlab(SyncBase):
                 document_generator = self.connector.load_from_state()
                 _begin_info = "totally"
             else:
-                document_generator = self.connector.poll_source(
-                    poll_start.timestamp(),
-                    datetime.now(timezone.utc).timestamp()
-                )
+                document_generator = self.connector.poll_source(poll_start.timestamp(), datetime.now(timezone.utc).timestamp())
                 _begin_info = "from {}".format(poll_start)
         self.log_connection("Gitlab", f"({self.conf['project_name']})", task)
         return document_generator
@@ -1912,8 +1926,8 @@ class Bitbucket(SyncBase):
 
         self.connector.load_credentials(
             {
-            "bitbucket_email": self.conf["credentials"].get("bitbucket_account_email"),
-            "bitbucket_api_token": self.conf["credentials"].get("bitbucket_api_token"),
+                "bitbucket_email": self.conf["credentials"].get("bitbucket_account_email"),
+                "bitbucket_api_token": self.conf["credentials"].get("bitbucket_api_token"),
             }
         )
 
@@ -1923,36 +1937,95 @@ class Bitbucket(SyncBase):
         else:
             start_time = task.get("poll_range_start")
             _begin_info = f"from {start_time}"
-        
+
         end_time = datetime.now(timezone.utc)
 
         def document_batches():
             checkpoint = self.connector.build_dummy_checkpoint()
 
             while checkpoint.has_more:
-                gen = self.connector.load_from_checkpoint(
-                    start=start_time.timestamp(), 
-                    end=end_time.timestamp(), 
-                    checkpoint=checkpoint)
-                
+                gen = self.connector.load_from_checkpoint(start=start_time.timestamp(), end=end_time.timestamp(), checkpoint=checkpoint)
+
                 while True:
                     try:
                         item = next(gen)
                         if isinstance(item, ConnectorFailure):
-                            logging.exception(
-                                "Bitbucket connector failure: %s",
-                                item.failure_message)
+                            logging.exception("Bitbucket connector failure: %s", item.failure_message)
                             break
                         yield [item]
                     except StopIteration as e:
                         checkpoint = e.value
                         break
-        
+
         def wrapper():
             for batch in document_batches():
                 yield batch
 
         self.log_connection("Bitbucket", f"workspace({self.conf.get('workspace')})", task)
+        return wrapper()
+
+
+class AzureDevOps(SyncBase):
+    SOURCE_NAME: str = FileSource.AZURE_DEVOPS
+
+    async def _generate(self, task: dict):
+        self.connector = AzureDevOpsConnector(
+            organization=self.conf.get("organization"),
+            index_mode=self.conf.get("index_mode") or "organization",
+            projects=self.conf.get("projects"),
+            repositories=self.conf.get("repositories"),
+            content_types=self.conf.get("content_types") or "both",
+        )
+
+        self.connector.load_credentials(
+            {
+                "azure_devops_pat": self.conf["credentials"].get("azure_devops_pat"),
+            }
+        )
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = datetime.fromtimestamp(0, tz=timezone.utc)
+            _begin_info = "totally"
+        else:
+            start_time = task.get("poll_range_start")
+            _begin_info = f"from {start_time}"
+
+        end_time = datetime.now(timezone.utc)
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            iterations = 0
+            iteration_limit = 100_000
+
+            while checkpoint.has_more:
+                iterations += 1
+                if iterations > iteration_limit:
+                    logging.error("Azure DevOps sync exceeded %d iterations; aborting to avoid an endless loop.", iteration_limit)
+                    # Breaking here would end the generator normally and the task
+                    # would be recorded as a successful, complete sync.
+                    raise RuntimeError(f"Azure DevOps sync exceeded {iteration_limit} iterations before completing.")
+
+                gen = self.connector.load_from_checkpoint(start=start_time.timestamp(), end=end_time.timestamp(), checkpoint=checkpoint)
+
+                while True:
+                    try:
+                        item = next(gen)
+                        if isinstance(item, ConnectorFailure):
+                            # A failed document must not cost the checkpoint: keep consuming
+                            # so the generator returns its updated resume position, otherwise
+                            # a deterministic failure replays the same offset forever.
+                            logging.error("Azure DevOps connector failure: %s", item.failure_message)
+                            continue
+                        yield [item]
+                    except StopIteration as e:
+                        checkpoint = e.value
+                        break
+
+        def wrapper():
+            for batch in document_batches():
+                yield batch
+
+        self.log_connection("AzureDevOps", f"organization({self.conf.get('organization')})", task)
         return wrapper()
 
 
@@ -2027,9 +2100,7 @@ class DingTalkAITable(SyncBase):
         if "access_token" not in credentials:
             raise ValueError("Missing access_token in credentials")
 
-        self.connector.load_credentials(
-            {"access_token": credentials["access_token"]}
-        )
+        self.connector.load_credentials({"access_token": credentials["access_token"]})
 
         poll_start = task.get("poll_range_start")
 
@@ -2053,7 +2124,17 @@ class DingTalkAITable(SyncBase):
         return document_generator
 
 
-class _RDBMSBase(SyncBase):
+class _CursorPersistingSyncBase(SyncBase):
+    """Base for connectors that persist a sync cursor only after a fully successful sync.
+
+    ``_run_sync_task_logic`` calls ``self.connector.persist_sync_state()`` for any
+    subclass of this base when no document batch failed. Sources whose connector
+    exposes ``prepare_sync_state``/``persist_sync_state`` (RDBMS, BigQuery) extend
+    this instead of being matched by an ``isinstance(self, _RDBMSBase)`` check.
+    """
+
+
+class _RDBMSBase(_CursorPersistingSyncBase):
     DB_TYPE: str = ""
     LOG_NAME: str = ""
     DEFAULT_PORT: int = 0
@@ -2089,9 +2170,11 @@ class _RDBMSBase(SyncBase):
         else:
             poll_start = task["poll_range_start"]
             start_cursor_value = self.connector.get_saved_sync_cursor_value()
+            start_cursor_id = self.connector.get_saved_sync_cursor_id() if hasattr(self.connector, "get_saved_sync_cursor_id") else None
             document_generator = self.connector.load_from_cursor_range(
                 start_cursor_value,
                 self.connector._pending_sync_cursor_value,
+                start_cursor_id,
             )
             _begin_info = f"from {poll_start}"
 
@@ -2111,6 +2194,69 @@ class PostgreSQL(_RDBMSBase):
     DB_TYPE: str = "postgresql"
     LOG_NAME: str = "PostgreSQL"
     DEFAULT_PORT: int = 5432
+
+
+class BigQuery(_CursorPersistingSyncBase):
+    SOURCE_NAME: str = FileSource.BIGQUERY
+
+    def _get_source_prefix(self):
+        return "[BigQuery]"
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        connector_kwargs = {
+            "project_id": self.conf.get("project_id", ""),
+            "dataset_id": self.conf.get("dataset_id") or None,
+            "table_id": self.conf.get("table_id") or None,
+            "location": self.conf.get("location") or None,
+            "query": self.conf.get("query", ""),
+            "content_columns": self.conf.get("content_columns", ""),
+            "metadata_columns": self.conf.get("metadata_columns", ""),
+            "id_column": self.conf.get("id_column") or None,
+            "timestamp_column": self.conf.get("timestamp_column") or None,
+            "batch_size": batch_size,
+            "use_query_cache": self.conf.get("use_query_cache", True),
+        }
+        if self.conf.get("page_size") is not None:
+            connector_kwargs["page_size"] = int(self.conf["page_size"])
+        if self.conf.get("maximum_bytes_billed") is not None:
+            connector_kwargs["maximum_bytes_billed"] = int(self.conf["maximum_bytes_billed"])
+        if self.conf.get("job_timeout_ms") is not None:
+            connector_kwargs["job_timeout_ms"] = int(self.conf["job_timeout_ms"])
+
+        self.connector = BigQueryConnector(**connector_kwargs)
+
+        credentials = self.conf.get("credentials")
+        if not credentials:
+            raise ValueError("BigQuery connector is missing credentials.")
+
+        self.connector.load_credentials(credentials)
+        self.connector.validate_connector_settings()
+        self.connector.prepare_sync_state(task["connector_id"], self.conf)
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+        elif not self.connector.timestamp_column:
+            document_generator = self.connector.load_from_state()
+        else:
+            start_cursor_value = self.connector.get_saved_sync_cursor_value()
+            start_cursor_id = self.connector.get_saved_sync_cursor_id() if hasattr(self.connector, "get_saved_sync_cursor_id") else None
+            document_generator = self.connector.load_from_cursor_range(
+                start_cursor_value,
+                self.connector._pending_sync_cursor_value,
+                start_cursor_id,
+            )
+
+        target = f"{self.conf.get('dataset_id')}.{self.conf.get('table_id')}" if not self.conf.get("query") else "custom query"
+        self.log_connection("BigQuery", f"{self.conf.get('project_id')}:{target}", task)
+        return document_generator
 
 
 class REST_API(SyncBase):
@@ -2140,8 +2286,27 @@ class REST_API(SyncBase):
         return document_generator
 
 
+class Xquik(SyncBase):
+    SOURCE_NAME: str = FileSource.XQUIK
+
+    async def _generate(self, task: dict):
+        poll_start = task.get("poll_range_start")
+        end_time = datetime.now(timezone.utc)
+        incremental = task.get("reindex") != "1" and poll_start is not None
+
+        self.connector = XquikConnector.from_config(
+            self.conf,
+            since_time=poll_start if incremental else None,
+            until_time=end_time,
+        )
+        document_generator = self.connector.poll_source(poll_start.timestamp(), end_time.timestamp()) if incremental else self.connector.load_from_state()
+        self.log_connection("Xquik", "X search", task)
+        return document_generator
+
+
 func_factory = {
     FileSource.RSS: RSS,
+    FileSource.SITEMAP: Sitemap,
     FileSource.S3: S3,
     FileSource.R2: R2,
     FileSource.OCI_STORAGE: OCI_STORAGE,
@@ -2170,11 +2335,14 @@ func_factory = {
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
     FileSource.BITBUCKET: Bitbucket,
+    FileSource.AZURE_DEVOPS: AzureDevOps,
     FileSource.SEAFILE: SeaFile,
     FileSource.MYSQL: MySQL,
     FileSource.POSTGRESQL: PostgreSQL,
+    FileSource.BIGQUERY: BigQuery,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
     FileSource.REST_API: REST_API,
+    FileSource.XQUIK: Xquik,
 }
 
 

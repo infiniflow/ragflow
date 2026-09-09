@@ -1,17 +1,15 @@
-// Package canvas — HARD GATE benchmark (Worker A, Phase 1).
+// Package canvas — HARD GATE benchmark for CanvasState.
 //
-// Per plan §5 (Phase 1) + §6 验收:
+// Scenario: 100 nodes, 1000 concurrent goroutines, each goroutine
+// does 100 GetVar/SetVar mixed ops.
+// THRESHOLD: ns/op < 500µs (500_000 ns). Fail the gate otherwise.
 //
-//	Scenario: 100 nodes, 1000 concurrent goroutines, each goroutine
-//	          does 100 GetVar/SetVar mixed ops.
-//	THRESHOLD: ns/op < 500µs (500_000 ns). Fail the gate otherwise.
+// Implementation uses the simple sync.RWMutex (not sharded) initially.
+// If the benchmark fails, the sharded RWMutex fallback is the
+// planned mitigation (see design doc §13 risks).
 //
-// Implementation MUST use the simple sync.RWMutex (not sharded) initially.
-// If the benchmark fails, the orchestrator is forbidden from entering Phase
-// 2 until the sharded RWMutex fallback (plan §2.5) is implemented.
-//
-// Verdict is printed via t.Logf inside the b.Run; the orchestrator scrapes
-// the output for "HARD GATE: PASS" / "HARD GATE: FAIL" markers.
+// Verdict is printed via t.Logf inside the b.Run; CI scrapes the
+// output for "HARD GATE: PASS" / "HARD GATE: FAIL" markers.
 package canvas
 
 import (
@@ -96,7 +94,7 @@ func BenchmarkStateMutex(b *testing.B) {
 		// marker. The error is non-fatal to the benchmark process itself
 		// because we want the timing numbers to print; the orchestrator
 		// should grep for the marker.
-		b.Logf("plan §2.5: benchmark not passing → forbid entering Phase 2 (implement sharded RWMutex)")
+		b.Logf("design §13: benchmark not passing → implement sharded RWMutex")
 		fmt.Printf("HARD GATE: FAIL ns/op=%.1f\n", nsPerOp)
 	}
 }
