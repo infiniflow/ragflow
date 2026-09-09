@@ -46,8 +46,12 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 		merged[k] = v
 	}
 	for k, v := range parserConfigOverride {
+		if k == "table_column_names_by_file" {
+			continue
+		}
 		merged[k] = v
 	}
+	columnNamesByFile, _ := parserConfigOverride["table_column_names_by_file"].([]interface{})
 
 	safeParent := utility.SanitizeFilename(parentPath)
 
@@ -65,7 +69,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 	var results []map[string]interface{}
 	var errMsgs []string
 
-	for _, fh := range files {
+	for fileIndex, fh := range files {
 		var blob []byte
 		blob, err = readFileHeaderBytes(fh)
 		if err != nil {
@@ -93,7 +97,8 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			continue
 		}
 
-		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), merged, "local", int64(len(blob)), blob)
+		docConfig := tableDocumentConfigForFile(merged, columnNamesByFile, fileIndex)
+		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), docConfig, "local", int64(len(blob)), blob)
 		if err = s.InsertDocument(doc); err != nil {
 			// Roll back the orphaned blob so a failed insert doesn't leak storage.
 			rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
@@ -120,6 +125,43 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 	}
 
 	return results, errMsgs
+}
+
+func tableDocumentConfigForFile(base entity.JSONMap, namesByFile []interface{}, fileIndex int) entity.JSONMap {
+	config := make(entity.JSONMap, len(base)+1)
+	for key, value := range base {
+		config[key] = value
+	}
+	if fileIndex >= len(namesByFile) {
+		return config
+	}
+	rawNames, ok := namesByFile[fileIndex].([]interface{})
+	if !ok {
+		return config
+	}
+	columns := make(map[string]struct{}, len(rawNames))
+	names := make([]string, 0, len(rawNames))
+	for _, rawName := range rawNames {
+		name, ok := rawName.(string)
+		if !ok || name == "" {
+			continue
+		}
+		if _, exists := columns[name]; !exists {
+			columns[name] = struct{}{}
+			names = append(names, name)
+		}
+	}
+	config["table_column_names"] = names
+	if roles, ok := config["table_column_roles"].(map[string]interface{}); ok {
+		filtered := make(map[string]interface{}, len(roles))
+		for column, role := range roles {
+			if _, exists := columns[column]; exists {
+				filtered[column] = role
+			}
+		}
+		config["table_column_roles"] = filtered
+	}
+	return config
 }
 
 // UploadEmptyDocument inserts a zero-byte "virtual" document into the dataset.
