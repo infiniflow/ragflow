@@ -257,10 +257,11 @@ func sortSectionsByPosition(result *deepdoctype.ParseResult) {
 
 // applyRemoveTOC mirrors Python parser.py:663-681 three-way dispatch:
 //   - No outlines → pattern-based remove_toc on all sections
-//   - First outline on page 1 → outline-based remove_toc_pdf, then the entry
-//     filter: the outline pass only drops pages when an outline title names
-//     the TOC ("目录"/"contents"), so a headingless TOC must still run
-//     through filterPDFTOCEntries instead of being left in place
+//   - First outline on page 1 → outline-based remove_toc_pdf, then the
+//     fragment-page pass and the entry filter: the outline pass only drops
+//     pages when an outline title names the TOC ("目录"/"contents"), so a
+//     headingless TOC must still run through both instead of being left
+//     in place
 //   - First outline after page 1 → pattern-based on pages before the first outline
 func applyRemoveTOC(result *deepdoctype.ParseResult) {
 	if result == nil {
@@ -274,6 +275,7 @@ func applyRemoveTOC(result *deepdoctype.ParseResult) {
 	firstOutlinePage := outlines[0].PageNumber
 	if firstOutlinePage <= 1 {
 		removePDFTOCByOutlines(result, outlines)
+		result.Sections = filterPDFTOCFragmentPages(result.Sections)
 		result.Sections = filterPDFTOCEntries(result.Sections)
 		return
 	}
@@ -392,9 +394,9 @@ const (
 )
 
 // pdfTOCRomanMarkerPattern matches standalone roman-numeral page markers
-// ("I", "II", "V"). They carry no content but are kept as page anchors,
+// ("I", "II", "D", "M"). They carry no content but are kept as page anchors,
 // matching the existing entry-filter behavior.
-var pdfTOCRomanMarkerPattern = regexp.MustCompile(`^[IVXLCivxlc]+$`)
+var pdfTOCRomanMarkerPattern = regexp.MustCompile(`(?i)^[mdclxvi]+$`)
 
 // filterPDFTOCFragmentPages drops fragmented table-of-contents pages from the
 // stream. DeepDoc layout splits one TOC line (chapter title + subtitle +
@@ -511,13 +513,21 @@ func pdfTOCFragmentDeletable(sections []deepdoctype.Section, idx int) bool {
 // pdfTOCFragmentAnchorText reports whether the short text at idx sits next
 // to a TOC signal (a title candidate, entry line or page reference within
 // one neighbor on each side). It gates short-text deletion so a classified
-// page keeps short lines that read as standalone content.
+// page keeps short lines that read as standalone content. Both sides go
+// through pdfTOCFragmentPage so positionless sections and table/figure
+// sections can neither be anchored nor anchor: firstSectionPage alone
+// returns 0 for them, which collides with the real page 0.
 func pdfTOCFragmentAnchorText(sections []deepdoctype.Section, idx int) bool {
+	page, ok := pdfTOCFragmentPage(sections[idx])
+	if !ok {
+		return false
+	}
 	for _, j := range []int{idx - 1, idx + 1} {
 		if j < 0 || j >= len(sections) {
 			continue
 		}
-		if firstSectionPage(sections[j]) != firstSectionPage(sections[idx]) {
+		neighborPage, ok := pdfTOCFragmentPage(sections[j])
+		if !ok || neighborPage != page {
 			continue
 		}
 		t := sectionText(sections[j])

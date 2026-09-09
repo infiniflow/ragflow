@@ -463,6 +463,39 @@ func TestApplyPDFPostProcess_RemoveTOCEntryLinesWithPageOneOutlines(t *testing.T
 	}
 }
 
+// TestApplyPDFPostProcess_RemoveTOCFragmentPagesWithPageOneOutlines covers
+// the outlined book-PDF shape with fragmented TOC sections: the first
+// outline sits on page 1 but no outline title names the TOC, so
+// removePDFTOCByOutlines is a no-op and the fragment-page pass must still
+// clear the bare titles and page fragments on this dispatch branch.
+func TestApplyPDFPostProcess_RemoveTOCFragmentPagesWithPageOneOutlines(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 1, "text")
+	sections = append(sections,
+		makePDFSection("Body prose that must survive.", "text", 3, 50, 550, 100, 120),
+	)
+	result := &deepdoctype.ParseResult{
+		Sections: sections,
+		Outlines: []deepdoctype.Outline{
+			{Title: "Preface", Level: 0, PageNumber: 1},
+			{Title: "Chapter 1", Level: 1, PageNumber: 3},
+		},
+	}
+	applyPDFPostProcess(result, pdfPostProcessOptions{removeTOC: true})
+	want := []string{"Body prose that must survive."}
+	if !slices.Equal(sectionTexts(result.Sections), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(result.Sections), want)
+	}
+}
+
 func sectionTexts(sections []deepdoctype.Section) []string {
 	texts := make([]string, 0, len(sections))
 	for _, s := range sections {
@@ -847,5 +880,54 @@ func TestFilterPDFTOCFragmentPages_KeepsBracketedTitle(t *testing.T) {
 	got := filterPDFTOCFragmentPages(sections)
 	if got, want := sectionTexts(got), []string{"《Test Book》"}; !slices.Equal(got, want) {
 		t.Fatalf("sections = %v, want %v", got, want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_AnchorIgnoresPositionlessNeighbor pins the
+// page-0 cross-talk guard: a positionless title-like section and a table
+// section carrying "1" must not anchor adjacent short text, even when the
+// classified page is the real page 0.
+func TestFilterPDFTOCFragmentPages_AnchorIgnoresPositionlessNeighbor(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+	}, 0, "text")
+	sections = append(sections,
+		deepdoctype.Section{Text: "Chapter 9"},
+		deepdoctype.Section{Text: "1", LayoutType: "table", Positions: sections[0].Positions},
+		deepdoctype.Section{Text: "lone line", LayoutType: "text", Positions: sections[0].Positions},
+	)
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{"Chapter 9", "1", "lone line"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_KeepsFullRomanMarkers pins the marker guard
+// on the full roman set: M/D/C markers survive on a classified page.
+func TestFilterPDFTOCFragmentPages_KeepsFullRomanMarkers(t *testing.T) {
+	sections := fragmentedTOCPage([]string{
+		"Chapter 1",
+		"Chapter 2",
+		"Chapter 3",
+		"Chapter 4",
+		"Chapter 5",
+		"1",
+		"3",
+		"4",
+		"M",
+		"D",
+	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	want := []string{"M", "D"}
+	if !slices.Equal(sectionTexts(got), want) {
+		t.Fatalf("sections = %v, want %v", sectionTexts(got), want)
 	}
 }
