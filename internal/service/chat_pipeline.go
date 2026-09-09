@@ -2024,11 +2024,11 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		rerankDriver, rerankName, rerankConfig, _, err := s.ModelProviderSvc.ResolveModelConfig(
+		rerankDriver, rerankName, rerankConfig, maxTokens, err := s.ModelProviderSvc.ResolveModelConfig(
 			ctx, chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
 		)
 		if err == nil {
-			rerankModel = modelModule.NewRerankModel(rerankDriver, &rerankName, rerankConfig)
+			rerankModel = modelModule.NewRerankModel(rerankDriver, &rerankName, rerankConfig, maxTokens)
 		}
 	}
 
