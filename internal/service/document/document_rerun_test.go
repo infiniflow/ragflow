@@ -136,8 +136,9 @@ func TestRerunDocument_RerunsAndPersistsDSL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load ingestion task: %v", err)
 	}
-	// CreateAndEnqueue leaves the task CREATED once its queue message has
-	// been published (the publisher here records instead of failing).
+	// CreateAndEnqueue marks the task SCHEDULED once its queue message has
+	// been published (the publisher here records instead of failing), so the
+	// persisted row is already past CREATED by the time we reload it.
 	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.Status != common.SCHEDULED {
 		t.Fatalf("ingestion task = %+v", task)
 	}

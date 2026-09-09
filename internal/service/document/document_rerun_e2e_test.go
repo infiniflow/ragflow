@@ -99,12 +99,12 @@ func TestRerunDocument_E2E_EnqueuesThroughRealMessageQueue(t *testing.T) {
 		t.Fatalf("message task type = %s, want %s", taskMsg.TaskType, common.TaskTypeIngestionTask)
 	}
 
-	// ...and the referenced task row exists in CREATED state.
+	// ...and the referenced task row exists, already SCHEDULED.
 	task, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, taskMsg.TaskID)
 	if err != nil {
 		t.Fatalf("load enqueued ingestion task %s: %v", taskMsg.TaskID, err)
 	}
-	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.Status != common.CREATED {
+	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.Status != common.SCHEDULED {
 		t.Fatalf("ingestion task = %+v", task)
 	}
 	rerun, ok := task.RerunInfo()
@@ -114,8 +114,7 @@ func TestRerunDocument_E2E_EnqueuesThroughRealMessageQueue(t *testing.T) {
 	if rerun.LogID != "log-1" || rerun.ComponentID != "c1" {
 		t.Fatalf("rerun info = %+v", rerun)
 	}
-	path, _ = rerun.DSL["path"].([]interface{})
-	if len(path) != 1 || path[0] != "c1" {
-		t.Fatalf("task rerun dsl path = %v, want [c1]", rerun.DSL["path"])
+	if _, ok := rerun.DSL["path"]; ok {
+		t.Fatalf("task rerun dsl should not include path (audit-only on log row): %v", rerun.DSL)
 	}
 }
