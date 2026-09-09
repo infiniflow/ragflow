@@ -3,10 +3,12 @@
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import memoryService, { updateMemoryById } from '@/services/memory-service';
+import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import {
   buildOwnersFilter,
   groupListByArray,
@@ -18,6 +20,7 @@ import { omit } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router';
+import { MemoryApiAction } from '../memory/constant';
 import {
   CreateMemoryResponse,
   DeleteMemoryProps,
@@ -50,9 +53,15 @@ export const useCreateMemory = () => {
 };
 
 export const useFetchMemoryList = () => {
-  const { handleInputChange, searchString, pagination, setPagination } =
-    useHandleSearchChange();
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const {
+    handleInputChange,
+    searchString,
+    setSearchString,
+    pagination,
+    setPagination,
+  } = useHandleSearchChange();
+  const { filterValue, setFilterValue, handleFilterSubmit } =
+    useHandleFilterSubmit();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
   const memoryType = Array.isArray(filterValue.memoryType)
@@ -114,10 +123,12 @@ export const useFetchMemoryList = () => {
     isError,
     pagination,
     searchString,
+    setSearchString,
     handleInputChange,
     setPagination,
     refetch,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   };
 };
@@ -174,6 +185,7 @@ export const useDeleteMemory = () => {
       }
 
       queryClient.invalidateQueries({ queryKey: ['memoryList'] });
+      markListItemsDeleted(ListDeletionKey.MemoryList);
       return response;
     },
     onSuccess: () => {
@@ -217,9 +229,9 @@ export const useUpdateMemory = () => {
       queryClient.invalidateQueries({
         queryKey: ['memoryDetail', variables.id],
       });
-    },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
+      queryClient.invalidateQueries({
+        queryKey: [MemoryApiAction.FetchMemoryDetail],
+      });
     },
   });
 
@@ -303,6 +315,7 @@ export const useRenameMemory = () => {
 };
 
 export function useSelectFilters() {
+  const { t } = useTranslation();
   const { data: res } = useFetchMemoryList();
   const data = res?.data;
 
@@ -318,16 +331,16 @@ export function useSelectFilters() {
   }, [data?.memory_list]);
 
   const filters: FilterCollection[] = [
-    buildOwnersFilter(data?.memory_list ?? [], 'owner_name'),
+    buildOwnersFilter(data?.memory_list ?? [], 'owner_name', t('common.owner')),
     {
       field: 'memoryType',
       list: memoryType,
-      label: 'Memory Type',
+      label: t('memories.memoryType'),
     },
     {
       field: 'storageType',
       list: storageType,
-      label: 'Storage Type',
+      label: t('memory.config.storageType'),
     },
   ];
 

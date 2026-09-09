@@ -413,5 +413,5 @@ class TestTaskContextProgressCallback:
         task = {"id": "task_1", "tenant_id": "tenant_1"}
         ctx = _make_ctx(task=task)
         # _progress_cb should be set in __init__
-        assert hasattr(ctx, '_progress_cb')
+        assert hasattr(ctx, "_progress_cb")
         assert ctx._progress_cb is not None

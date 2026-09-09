@@ -91,6 +91,20 @@ class TestAggregateTableManualDocMetadata:
         out = aggregate_table_doc_metadata(chunks, task)
         assert out == {"country": ["Brazil"]}
 
+    def test_aggregate_auto_mode_probes_later_sparse_chunks(self, es_engine):
+        task = {
+            "parser_id": "table",
+            "parser_config": {},
+            "kb_parser_config": {
+                "table_column_mode": "auto",
+                "table_column_names": ["notes"],
+                "table_column_roles": {"notes": "both"},
+            },
+        }
+        chunks = [{}, {"notes_raw": "Handle with care"}]
+
+        assert aggregate_table_doc_metadata(chunks, task) == {"notes": ["Handle with care"]}
+
     def test_aggregate_auto_mode_all_columns_both(self, es_engine):
         task = {
             "parser_id": "table",

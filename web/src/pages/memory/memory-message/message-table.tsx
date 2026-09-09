@@ -51,7 +51,7 @@ import {
   TextSelect,
 } from 'lucide-react';
 import * as React from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 import { useMessageAction } from './hook';
 import { IMessageInfo } from './interface';
@@ -70,9 +70,53 @@ function getTaskStatus(progress: number) {
     return RunningStatus.DONE;
   } else if (progress > 0 && progress < 1) {
     return RunningStatus.RUNNING;
-  } else {
+  } else if (progress < 0) {
     return RunningStatus.FAIL;
+  } else {
+    return RunningStatus.UNSTART;
   }
+}
+
+type UpdateMessageStateFn = (
+  message: IMessageInfo,
+  enable: boolean,
+) => Promise<boolean>;
+
+function StatusSwitch({
+  row,
+  disabled,
+  onUpdate,
+}: {
+  row: Row<IMessageInfo>;
+  disabled: boolean;
+  onUpdate: UpdateMessageStateFn;
+}) {
+  const serverStatus = row.original.status;
+  const [optimisticStatus, setOptimisticStatus] = useState(serverStatus);
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    setOptimisticStatus(serverStatus);
+  }, [serverStatus]);
+
+  return (
+    <div className="flex items-center">
+      <Switch
+        disabled={disabled || pending}
+        checked={optimisticStatus}
+        onCheckedChange={(val) => {
+          setOptimisticStatus(val);
+          setPending(true);
+          onUpdate(row.original, val).then((success) => {
+            setPending(false);
+            if (!success) {
+              setOptimisticStatus(serverStatus);
+            }
+          });
+        }}
+      />
+    </div>
+  );
 }
 
 export function MemoryTable({
@@ -216,20 +260,13 @@ export function MemoryTable({
       {
         accessorKey: 'status',
         header: () => <span>{t('memory.messages.enable')}</span>,
-        cell: ({ row }) => {
-          const isEnabled = row.getValue('status') as boolean;
-          return (
-            <div className="flex items-center">
-              <Switch
-                disabled={disabledRowFunc(row)}
-                defaultChecked={isEnabled}
-                onCheckedChange={(val) => {
-                  handleClickUpdateMessageState(row.original, val);
-                }}
-              />
-            </div>
-          );
-        },
+        cell: ({ row }) => (
+          <StatusSwitch
+            row={row}
+            disabled={disabledRowFunc(row)}
+            onUpdate={handleClickUpdateMessageState}
+          />
+        ),
       },
       columnHelper.display({
         id: 'task_progress',
@@ -256,6 +293,7 @@ export function MemoryTable({
                   'bg-state-success': taskStatus === RunningStatus.DONE,
                   'bg-state-error': taskStatus === RunningStatus.FAIL,
                   'bg-state-warning': taskStatus === RunningStatus.RUNNING,
+                  'bg-text-secondary': taskStatus === RunningStatus.UNSTART,
                 })}
               />
             </Button>

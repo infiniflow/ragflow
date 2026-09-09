@@ -1,0 +1,267 @@
+{
+  "globals": {
+    "sys.conversation_turns": 0,
+    "sys.date": "",
+    "sys.files": [],
+    "sys.history": [],
+    "sys.query": "",
+    "sys.user_id": ""
+  },
+  "graph": {
+    "edges": [
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__beginstart-Switch:EmptySquidsJudgeend",
+        "source": "begin",
+        "sourceHandle": "start",
+        "target": "Switch:EmptySquidsJudge",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:EmptySquidsJudgeCase 2-Message:RedHousesStartend",
+        "source": "Switch:EmptySquidsJudge",
+        "sourceHandle": "Case 2",
+        "target": "Message:RedHousesStart",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:EmptySquidsJudgeCase 3-Message:ShakyRingsInviteend",
+        "source": "Switch:EmptySquidsJudge",
+        "sourceHandle": "Case 3",
+        "target": "Message:ShakyRingsInvite",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:EmptySquidsJudgeend_cpn_ids-Message:WeakPlumsMoveend",
+        "source": "Switch:EmptySquidsJudge",
+        "sourceHandle": "end_cpn_ids",
+        "target": "Message:WeakPlumsMove",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Switch:EmptySquidsJudgeCase 1-Message:HappyLandsFlyend",
+        "markerEnd": "logo",
+        "source": "Switch:EmptySquidsJudge",
+        "sourceHandle": "Case 1",
+        "target": "Message:HappyLandsFly",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      }
+    ],
+    "nodes": [
+      {
+        "data": {
+          "form": {
+            "enablePrologue": true,
+            "inputs": {},
+            "mode": "conversational",
+            "outputs": {},
+            "prologue": "你好！ 我是你的助理，有什么可以帮到你的吗？"
+          },
+          "label": "Begin",
+          "name": "begin"
+        },
+        "dragging": false,
+        "id": "begin",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": -219.5,
+          "y": 259.5
+        },
+        "selected": false,
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "type": "beginNode"
+      },
+      {
+        "data": {
+          "form": {
+            "conditions": [
+              {
+                "items": [
+                  {
+                    "cpn_id": "sys.query",
+                    "operator": "=",
+                    "value": "上海"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "Message:HappyLandsFly"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "sys.query",
+                    "operator": "=",
+                    "value": "北京"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "Message:RedHousesStart"
+                ]
+              },
+              {
+                "items": [
+                  {
+                    "cpn_id": "sys.query",
+                    "operator": "=",
+                    "value": "深圳"
+                  }
+                ],
+                "logical_operator": "and",
+                "to": [
+                  "Message:ShakyRingsInvite"
+                ]
+              }
+            ],
+            "end_cpn_ids": [
+              "Message:WeakPlumsMove"
+            ]
+          },
+          "label": "Switch",
+          "name": "条件_0"
+        },
+        "dragging": false,
+        "id": "Switch:EmptySquidsJudge",
+        "measured": {
+          "height": 315,
+          "width": 200
+        },
+        "position": {
+          "x": 109.5,
+          "y": 121.5
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "switchNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "{sys.query}shanghai"
+            ],
+            "output_format": "html"
+          },
+          "label": "Message",
+          "name": "回复消息_0"
+        },
+        "dragging": false,
+        "id": "Message:HappyLandsFly",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 434.7156197400356,
+          "y": 107.72304753249554
+        },
+        "selected": true,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "{sys.query}beijing"
+            ],
+            "output_format": "html"
+          },
+          "label": "Message",
+          "name": "回复消息_1"
+        },
+        "dragging": false,
+        "id": "Message:RedHousesStart",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 438.19885376732657,
+          "y": 208.4516837225608
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "{sys.query}shenzhen"
+            ],
+            "output_format": "html"
+          },
+          "label": "Message",
+          "name": "回复消息_2"
+        },
+        "dragging": false,
+        "id": "Message:ShakyRingsInvite",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 435.28063073728504,
+          "y": 316.73422484763495
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "{sys.query}不知道\n\n"
+            ],
+            "output_format": "html"
+          },
+          "label": "Message",
+          "name": "回复消息_3"
+        },
+        "dragging": false,
+        "id": "Message:WeakPlumsMove",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 436.1263437247183,
+          "y": 423.72863619006523
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      }
+    ]
+  },
+  "variables": []
+}
