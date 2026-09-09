@@ -44,7 +44,7 @@ import (
 func TestInitCL100KEncoder_FailFast(t *testing.T) {
 	// fail-fast: an empty scoped dir must surface a hard error, not a silent 0.
 	t.Run("absent", func(t *testing.T) {
-		resetCL100KEncoderForTest()
+		ResetCL100KEncoderForTest()
 		dir := t.TempDir()
 		t.Setenv("TIKTOKEN_CACHE_DIR", "")
 		t.Setenv("DATA_GYM_CACHE_DIR", "")
@@ -68,7 +68,7 @@ func TestInitCL100KEncoder_FailFast(t *testing.T) {
 		if src == "" {
 			t.Skip("no cl100k_base.tiktoken on disk to exercise the present branch")
 		}
-		resetCL100KEncoderForTest()
+		ResetCL100KEncoderForTest()
 		dir := t.TempDir()
 		t.Setenv("TIKTOKEN_CACHE_DIR", dir)
 		t.Setenv("DATA_GYM_CACHE_DIR", "")
