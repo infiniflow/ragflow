@@ -42,16 +42,21 @@ type Engine struct {
 // NewEngine creates an Elasticsearch engine
 func NewEngine(ctx context.Context, esConfig config.ElasticsearchConfig) (*Engine, error) {
 	// Create ES client
-	client, err := elasticsearch.NewClient(elasticsearch.Config{
+	esCfg := elasticsearch.Config{
 		Addresses: []string{esConfig.Hosts},
-		Username:  esConfig.Username,
-		Password:  esConfig.Password,
 		Transport: &http.Transport{
 			MaxIdleConnsPerHost:   10,
 			ResponseHeaderTimeout: 30 * time.Second,
 			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 		},
-	})
+	}
+	if esConfig.APIKey != "" {
+		esCfg.APIKey = esConfig.APIKey
+	} else {
+		esCfg.Username = esConfig.Username
+		esCfg.Password = esConfig.Password
+	}
+	client, err := elasticsearch.NewClient(esCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Elasticsearch client: %w", err)
 	}
