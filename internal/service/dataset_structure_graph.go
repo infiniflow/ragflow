@@ -791,7 +791,25 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 
 	bucketMetas := map[string]map[string]interface{}{}
 	bucketScopes := map[string]map[string]interface{}{}
+	templateDAO := dao.NewCompilationTemplateDAO()
 	for _, row := range metaRows {
+		// Pipeline-produced rows may contain a template id even when the
+		// document parser config does not contain the corresponding template
+		// group. Resolve that id directly so template_name is the user-visible
+		// name instead of the opaque id.
+		templateID := rowTemplateID(row)
+		if templateID != "" {
+			if _, known := templateMeta[templateID]; !known {
+				template, loadErr := templateDAO.GetTemplate(ctx, dao.DB, in.TenantID, templateID)
+				if loadErr == nil && template != nil {
+					templateMeta[templateID] = map[string]interface{}{
+						"template_id":   templateID,
+						"template_name": template.Name,
+						"kind":          template.Kind,
+					}
+				}
+			}
+		}
 		meta, scope := resolveGraphBucket(row, templateMeta, in.DocumentID)
 		bid := graphStr(meta["template_id"])
 		if _, ok := bucketMetas[bid]; !ok {
@@ -1075,24 +1093,24 @@ func resolveGraphBucket(row map[string]interface{}, templateMeta map[string]map[
 			bucketKind = kindVal
 		}
 		return map[string]interface{}{
-				"template_id":   tid,
-				"template_name": bucketName,
-				"kind":          bucketKind,
-			}, map[string]interface{}{
-				"doc_id":                   []string{documentID},
-				"compilation_template_ids": []string{tid},
-			}
+			"template_id":   tid,
+			"template_name": bucketName,
+			"kind":          bucketKind,
+		}, map[string]interface{}{
+			"doc_id":                   []string{documentID},
+			"compilation_template_ids": []string{tid},
+		}
 	}
 	bucketID := "legacy:" + compileKwd
 	return map[string]interface{}{
-			"template_id":   bucketID,
-			"template_name": "Legacy (" + compileKwd + ")",
-			"kind":          kindVal,
-		}, map[string]interface{}{
-			"doc_id":      []string{documentID},
-			"compile_kwd": []string{compileKwd},
-			"must_not":    map[string]interface{}{"exists": "compilation_template_ids"},
-		}
+		"template_id":   bucketID,
+		"template_name": "Legacy (" + compileKwd + ")",
+		"kind":          kindVal,
+	}, map[string]interface{}{
+		"doc_id":      []string{documentID},
+		"compile_kwd": []string{compileKwd},
+		"must_not":    map[string]interface{}{"exists": "compilation_template_ids"},
+	}
 }
 
 func rowTemplateID(row map[string]interface{}) string {

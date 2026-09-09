@@ -482,7 +482,7 @@ export default {
       chunkMethod: '切片方法',
       enabled: '启用',
       disabled: '禁用',
-      action: '动作',
+      action: '操作',
       parsingStatus: '解析状态',
       parsingStatusTip:
         '文本解析的时间取决于诸多因素。如果开启了 Graph、RAPTOR、自动问题提取、自动关键词提取等功能，时间会更长。如果解析进度条长时间不更新，也可以参考这两条 FAQ：https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent。',
@@ -1584,12 +1584,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       deleteChannelModalTitle: '删除聊天渠道',
       deleteChannelModalContent:
         '确定要删除此聊天渠道机器人吗？此操作无法撤销。',
-      connectDialog: '关联助手',
-      connectDialogTitle: '将 {{name}} 关联到助手',
-      selectDialog: '选择助手',
+      connectDialog: '关联助手或智能体',
+      connectDialogTitle: '将 {{name}} 关联到助手或智能体',
+      selectDialog: '选择助手或智能体',
       connectDialogTip:
-        '该渠道收到的消息将由关联的助手回复。清空选择即可解除关联。',
-      notConnected: '未关联助手',
+        '该渠道收到的消息将由关联的助手或智能体回复。清空选择即可解除关联。',
+      notConnected: '未关联助手或智能体',
+      chatChannelAssistant: '聊天助手',
+      chatChannelAgent: '智能体',
       chatChannelDesc: {
         clickclack: '连接 ClickClack 机器人',
         discord: '连接 Discord 机器人',
@@ -1863,7 +1865,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       mineru: {
         modelNameRequired: '模型名称为必填项',
         apiServerRequired: 'MinerU API服务器配置为必填项',
-        serverUrlBackendLimit: '仅在 backend 为 vlm-http-client 时可填写',
+        serverUrlBackendLimit:
+          '仅在 backend 为 vlm-http-client 或 hybrid-http-client 时可填写',
         apiserver: 'MinerU API 服务器配置',
         outputDir: 'MinerU 输出目录路径',
         backend: 'MinerU 处理后端类型',
@@ -2028,7 +2031,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       noStructureTimeline: '暂无 Timeline',
       contents: '导航',
       topics: 'Topic',
-      selectArtifact: '从目录中选择一个条目以查看详情',
       searchEntity: '搜索 Entity',
       graphEntityCount: '实体 {{returned}} / {{total}}',
       sourceDocuments: '来源文档',

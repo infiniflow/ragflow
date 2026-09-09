@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	redis2 "ragflow/internal/engine/redis"
+	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/utility"
 
@@ -229,7 +230,10 @@ func cloneMapOrEmpty(m map[string]any) map[string]any {
 // defaultCheckpointTTL is the expiry applied to the eino checkpoint payload
 // and the RunTracker hash. A finished run's checkpoint is deleted on success;
 // the TTL only guards against leaks from crashed runs that never clean up.
-var defaultCheckpointTTL = 24 * time.Hour
+//
+// It matches the per-chunk cache TTL (chunkcache.TTL) so a crashed run leaves
+// both its checkpoint and the chunk cache entries to expire on the same horizon.
+var defaultCheckpointTTL = 7 * 24 * time.Hour
 
 // dslKeySuffix / ovfKeySuffix derive the two DSL-fingerprint keys from a
 // checkpoint id. Both live in the same CheckPointStore as the eino payload
@@ -437,8 +441,18 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 		compileOpts = append(compileOpts,
 			canvas.WithCheckPointStore(store),
 			canvas.WithCheckPointID(p.taskID),
-			canvas.WithInterruptAfterNonTerminalCpn(),
 		)
+		// Single interrupt point: immediately after the Parser component. The
+		// Extractor / Tokenizer stages do NOT take a checkpoint of their own —
+		// a resume re-runs them, but the per-chunk cache (chunkcache) absorbs
+		// the cost by serving prior LLM/embedding results. Interruption after
+		// every non-terminal component was dropped on purpose to avoid one
+		// needless ResumeWithData round per stage.
+		if parserCpnID := ExtractParserCpnID(p.rawDSL, component.ComponentNameParser); parserCpnID != "" {
+			compileOpts = append(compileOpts, canvas.WithInterruptAfter([]string{parserCpnID}))
+		} else {
+			compileOpts = append(compileOpts, canvas.WithInterruptAfterNonTerminalCpn())
+		}
 	}
 	// Run-level setups (keyed by cpnID) override the DSL-baked component
 	// setups at compile time (higher priority; see canvas.WithOverrideParams).
@@ -478,6 +492,11 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	// component re-publishes `name` (and storage refs) as it derives
 	// them mid-run.
 	globals.SeedIngestionGlobals(runCtx, current)
+	// Expose the task id on the run context so every component can register the
+	// per-chunk cache keys it writes into the task manifest (chunkcache). Without
+	// this the manifest is never populated and PurgeTask on success becomes a
+	// no-op, leaving orphaned cache entries until TTL expiry.
+	globals.SetTaskID(runCtx, p.taskID)
 
 	if !resumable {
 		return p.runPlain(runCtx, current, compiled, tracker, runState)
