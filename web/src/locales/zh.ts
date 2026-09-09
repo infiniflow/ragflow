@@ -1851,7 +1851,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       mineru: {
         modelNameRequired: '模型名称为必填项',
         apiServerRequired: 'MinerU API服务器配置为必填项',
-        serverUrlBackendLimit: '仅在 backend 为 vlm-http-client 时可填写',
+        serverUrlBackendLimit:
+          '仅在 backend 为 vlm-http-client 或 hybrid-http-client 时可填写',
         apiserver: 'MinerU API 服务器配置',
         outputDir: 'MinerU 输出目录路径',
         backend: 'MinerU 处理后端类型',
