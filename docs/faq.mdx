@@ -201,12 +201,6 @@ To resolve this, either download the missing file from the corresponding tag on 
 
 ---
 
-### `WARNING: can't find /ragflow/rag/res/borker.tm`
-
-Ignore this warning and continue. All system warnings can be ignored.
-
----
-
 ### `network anomaly There is an abnormality in your network and you cannot connect to the server.`
 
 ![anomaly](https://github.com/infiniflow/ragflow/assets/93570324/beb7ad10-92e4-4a58-8886-bfb7cbd09e5d)
@@ -260,7 +254,7 @@ FLUSHDB
 
 ```bash
 # Option 1: Restart specific container
-docekr restart docker-redis-1 docker-ragflow-cpu-1
+docker restart docker-redis-1 docker-ragflow-cpu-1
 
 # Option 2: Recreate containers via Docker Compose
 docker compose -f docker/docker-compose.yml down
@@ -282,17 +276,18 @@ $ docker exec -it ragflow-redis /bin/bash
 $ redis-cli -a infini_rag_flow
 # In redis-cli
 select 1
-XGROUP DESTROY te.0.common_queue te.0.common_task_broker
-XGROUP CREATE te.0.common_queue te.0.common_task_broker $ MKSTREAM
-# When CREATE raises and error:
-FLUSHDB
+XGROUP DESTROY te.0.common rag_flow_svr_task_broker
+XGROUP CREATE te.0.common rag_flow_svr_task_broker $ MKSTREAM
+
+XGROUP DESTROY te.1.common rag_flow_svr_task_broker
+XGROUP CREATE te.1.common rag_flow_svr_task_broker $ MKSTREAM
 ```
 
 2. If the parser remains stuck at 0%, restart the RAGFlow containers using one of the following methods:
 
 ```bash
 # Option 1: Restart specific container
-docekr restart docker-redis-1 docker-ragflow-cpu-1
+docker restart docker-redis-1 docker-ragflow-cpu-1
 
 # Option 2: Recreate containers via Docker Compose
 docker compose -f docker/docker-compose.yml down
