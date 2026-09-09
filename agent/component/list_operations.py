@@ -186,19 +186,35 @@ class ListOperations(ComponentBase, ABC):
             if sort_by:
                 outputs = sorted(
                     items,
-                    key=lambda x: tuple(x.get(k) for k in sort_by),
+                    key=lambda x: tuple(self._scalar_sort_key(x.get(k) if isinstance(x, dict) else x) for k in sort_by),
                     reverse=reverse,
                 )
             else:
                 outputs = sorted(
                     items,
-                    key=lambda x: self._hashable(x),
+                    key=lambda x: self._comparable_sort_key(self._hashable(x)),
                     reverse=reverse,
                 )
         else:
-            outputs = sorted(items, reverse=reverse)
+            outputs = sorted(items, key=self._scalar_sort_key, reverse=reverse)
 
         self._set_outputs(outputs)
+
+    @staticmethod
+    def _scalar_sort_key(v):
+        # A total order that never raises on mixed content: real numbers sort
+        # numerically ahead of everything else, and all other values (strings,
+        # None, booleans, containers) order by their string form. This mirrors
+        # the Go port's lessScalar, which compares numbers numerically and
+        # every other value textually (internal/agent/component/list_operations.go).
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            return (1, str(v))
+        return (0, v)
+
+    def _comparable_sort_key(self, v):
+        if isinstance(v, tuple):
+            return tuple(self._comparable_sort_key(i) for i in v)
+        return self._scalar_sort_key(v)
 
     def _drop_duplicates(self):
         seen = set()
