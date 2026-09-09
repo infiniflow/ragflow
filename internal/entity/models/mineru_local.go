@@ -25,6 +25,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"ragflow/internal/common"
+	"strings"
 )
 
 type MinerULocalModel struct {
@@ -129,6 +130,12 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 		_ = writer.WriteField("backend", *modelName)
 	} else {
 		_ = writer.WriteField("backend", "pipeline")
+	}
+
+	if parseFileConfig != nil {
+		if serverURL := strings.TrimSpace(parseFileConfig.ServerURL); serverURL != "" {
+			_ = writer.WriteField("server_url", strings.TrimRight(serverURL, "/"))
+		}
 	}
 
 	if err = writer.Close(); err != nil {
