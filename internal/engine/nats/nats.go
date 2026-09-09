@@ -291,9 +291,9 @@ func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]comm
 	return resultMessages, nil
 }
 
-// PullMessagesStream returns one task handle from PullMessages. A nil handle
+// PullMessage returns one task handle from PullMessages. A nil handle
 // with a nil error means the pull expired without an available task.
-func (n *NatsEngine) PullMessagesStream(ctx context.Context) (common.TaskHandle, error) {
+func (n *NatsEngine) PullMessage(ctx context.Context) (common.TaskHandle, error) {
 	messages, err := n.PullMessages(ctx, 1)
 	if err != nil {
 		return nil, err

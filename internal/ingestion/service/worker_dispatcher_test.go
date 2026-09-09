@@ -42,7 +42,7 @@ type dispatcherTestQueue struct {
 	calls chan struct{}
 }
 
-func (q *dispatcherTestQueue) PullMessagesStream(ctx context.Context) (common.TaskHandle, error) {
+func (q *dispatcherTestQueue) PullMessage(ctx context.Context) (common.TaskHandle, error) {
 	q.mu.Lock()
 	pull := q.pulls[q.next]
 	q.next++

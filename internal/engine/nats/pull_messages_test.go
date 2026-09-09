@@ -61,16 +61,16 @@ func publishTask(t *testing.T, queue *NatsEngine, taskID string) {
 	}
 }
 
-func TestPullMessagesStreamFetchesOneMessage(t *testing.T) {
+func TestPullMessageFetchesOneMessage(t *testing.T) {
 	queue := newTaskQueue(t)
 	publishTask(t, queue, "stream-one")
 	publishTask(t, queue, "stream-two")
 
 	ctx, cancel := taskPullContext(t)
 	defer cancel()
-	handle, err := queue.PullMessagesStream(ctx)
+	handle, err := queue.PullMessage(ctx)
 	if err != nil {
-		t.Fatalf("PullMessagesStream: %v", err)
+		t.Fatalf("PullMessage: %v", err)
 	}
 	if handle == nil || handle.GetMessage().TaskID != "stream-one" {
 		t.Fatalf("stream handle = %v, want stream-one", handle)
@@ -85,43 +85,43 @@ func TestPullMessagesStreamFetchesOneMessage(t *testing.T) {
 	}
 }
 
-func TestPullMessagesStreamRequiresDeadline(t *testing.T) {
+func TestPullMessageRequiresDeadline(t *testing.T) {
 	queue := newTaskQueue(t)
-	_, err := queue.PullMessagesStream(t.Context())
+	_, err := queue.PullMessage(t.Context())
 	if err == nil {
-		t.Fatal("PullMessagesStream without a deadline succeeded")
+		t.Fatal("PullMessage without a deadline succeeded")
 	}
 	if !strings.Contains(err.Error(), "deadline") {
-		t.Fatalf("PullMessagesStream error = %v, want deadline error", err)
+		t.Fatalf("PullMessage error = %v, want deadline error", err)
 	}
 }
 
-func TestPullMessagesStreamReturnsNilForEmptyQueue(t *testing.T) {
+func TestPullMessageReturnsNilForEmptyQueue(t *testing.T) {
 	queue := newTaskQueue(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
-	handle, err := queue.PullMessagesStream(ctx)
+	handle, err := queue.PullMessage(ctx)
 	if err != nil {
-		t.Fatalf("PullMessagesStream: %v", err)
+		t.Fatalf("PullMessage: %v", err)
 	}
 	if handle != nil {
 		t.Fatalf("empty pull handle = %v, want nil", handle)
 	}
 }
 
-func TestPullMessagesStreamReturnsCancellation(t *testing.T) {
+func TestPullMessageReturnsCancellation(t *testing.T) {
 	queue := newTaskQueue(t)
 	ctx, cancel := taskPullContext(t)
 	cancel()
 
-	_, err := queue.PullMessagesStream(ctx)
+	_, err := queue.PullMessage(ctx)
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("PullMessagesStream error = %v, want cancellation", err)
+		t.Fatalf("PullMessage error = %v, want cancellation", err)
 	}
 }
 
-func TestPullMessagesStreamReportsMaxWaiting(t *testing.T) {
+func TestPullMessageReportsMaxWaiting(t *testing.T) {
 	queue := newTaskQueue(t)
 	ctx, cancel := taskPullContext(t)
 	defer cancel()
@@ -143,7 +143,7 @@ func TestPullMessagesStreamReportsMaxWaiting(t *testing.T) {
 	defer cancelFirst()
 	firstResult := make(chan error, 1)
 	go func() {
-		_, err := queue.PullMessagesStream(firstCtx)
+		_, err := queue.PullMessage(firstCtx)
 		firstResult <- err
 	}()
 
@@ -168,7 +168,7 @@ func TestPullMessagesStreamReportsMaxWaiting(t *testing.T) {
 
 	secondCtx, cancelSecond := taskPullContext(t)
 	defer cancelSecond()
-	_, err = queue.PullMessagesStream(secondCtx)
+	_, err = queue.PullMessage(secondCtx)
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("MaxWaiting error = %v, want capacity rejection", err)
 	}
@@ -261,7 +261,7 @@ func TestPullMessagesReportsBatchError(t *testing.T) {
 	defer cancelOccupied()
 	occupied := make(chan error, 1)
 	go func() {
-		_, err := queue.PullMessagesStream(occupiedCtx)
+		_, err := queue.PullMessage(occupiedCtx)
 		occupied <- err
 	}()
 

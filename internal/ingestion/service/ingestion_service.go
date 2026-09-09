@@ -258,7 +258,7 @@ func (e *Ingestor) consumePull(messageQueueEngine engine.MessageQueue, w *worker
 	pullStart := time.Now()
 	pullCtx, cancel := context.WithTimeout(e.dispatchCtx, taskPullRequestTimeout)
 	defer cancel()
-	handle, err := messageQueueEngine.PullMessagesStream(pullCtx)
+	handle, err := messageQueueEngine.PullMessage(pullCtx)
 	if err != nil {
 		e.logPullError(err)
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
