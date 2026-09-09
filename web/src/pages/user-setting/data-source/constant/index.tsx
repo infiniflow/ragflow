@@ -18,7 +18,7 @@ import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { Globe, Mail, Rss, Search } from 'lucide-react';
+import { BookOpen, Globe, Mail, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -37,6 +37,7 @@ export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   NOTION = 'notion',
   GOOGLE_DRIVE = 'google_drive',
+  FEISHU_WIKI = 'feishu_wiki',
   GMAIL = 'gmail',
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   OCI_STORAGE = 'oci_storage',
@@ -263,6 +264,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.GOOGLE_DRIVE}Description`),
       icon: <SvgIcon name={'data-source/google-drive'} width={38} />,
     },
+    [DataSourceKey.FEISHU_WIKI]: {
+      name: 'Feishu Wiki',
+      description: t(`setting.${DataSourceKey.FEISHU_WIKI}Description`),
+      icon: <BookOpen className="text-text-primary" size={22} />,
+    },
     [DataSourceKey.GMAIL]: {
       name: 'Gmail',
       description: t(`setting.${DataSourceKey.GMAIL}Description`),
@@ -488,6 +494,79 @@ export const getCommonExtraDefaultValues = () => ({
 });
 
 const generateDataSourceFormFields = (t: TFunction) => ({
+  [DataSourceKey.FEISHU_WIKI]: [
+    {
+      label: t('setting.dataSourceFieldFeishuAppId'),
+      name: 'config.credentials.app_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'cli_xxxxxxxxxxxxxxxx',
+    },
+    {
+      label: t('setting.dataSourceFieldFeishuAppSecret'),
+      name: 'config.credentials.app_secret',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: t('setting.dataSourceFieldWikiSpaceId'),
+      name: 'config.space_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: '1234567890123456789',
+    },
+    {
+      label: t('setting.dataSourceFieldRootNodeToken'),
+      name: 'config.root_node_token',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'wikcnExampleRootNodeToken',
+    },
+    {
+      label: t('setting.dataSourceFieldIncludeExtensions'),
+      name: 'config.include_extensions',
+      type: FormFieldType.Tag,
+      required: false,
+      placeholder: 'pdf, docx, xlsx, pptx, jpg, png',
+    },
+    {
+      label: t('setting.dataSourceFieldIncludeKeywords'),
+      name: 'config.include_keywords',
+      type: FormFieldType.Tag,
+      required: false,
+      placeholder: 'project, handbook',
+    },
+    {
+      label: t('setting.dataSourceFieldExcludeKeywords'),
+      name: 'config.exclude_keywords',
+      type: FormFieldType.Tag,
+      required: false,
+      placeholder: 'draft, archived',
+    },
+    {
+      label: t('setting.dataSourceFieldMaxFileSizeBytes'),
+      name: 'config.max_file_size_bytes',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldMaxFileSizeBytes'),
+        }),
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        max: 10,
+        message: t('setting.dataSourceValidationFeishuBatchSize'),
+      },
+    },
+  ],
   [DataSourceKey.ONEDRIVE]: [
     {
       label: t('setting.dataSourceFieldTenantId'),
@@ -2078,6 +2157,23 @@ const generateDataSourceFormFields = (t: TFunction) => ({
 });
 
 export const DataSourceFormDefaultValues = {
+  [DataSourceKey.FEISHU_WIKI]: {
+    name: '',
+    source: DataSourceKey.FEISHU_WIKI,
+    config: {
+      space_id: '',
+      root_node_token: '',
+      include_extensions: [],
+      include_keywords: [],
+      exclude_keywords: [],
+      max_file_size_bytes: 50 * 1024 * 1024,
+      batch_size: 2,
+      credentials: {
+        app_id: '',
+        app_secret: '',
+      },
+    },
+  },
   [DataSourceKey.RSS]: {
     name: '',
     source: DataSourceKey.RSS,

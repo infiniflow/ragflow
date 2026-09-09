@@ -1185,6 +1185,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '连接你的 Oracle Cloud Object Storage 存储桶以导入和同步文件。',
       google_driveDescription:
         '通过 OAuth 连接 Google Drive，并同步指定的文件夹或云端硬盘。',
+      feishu_wikiDescription:
+        '使用 Python 后端同步飞书知识库中的可下载文件节点。',
       gmailDescription: '通过 OAuth 连接 Gmail，用于同步邮件。',
       google_driveTokenTip:
         '请上传由 OAuth helper 或 Google Cloud Console 导出的 OAuth token JSON。也支持上传 “installed” 或 “web” 类型的 client_secret JSON。若为首次同步，将自动弹出浏览器完成 OAuth 授权流程；如果该 JSON 已包含 refresh token，将会被自动复用。',
@@ -1306,6 +1308,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceFieldClientSecret: '客户端密钥',
       dataSourceFieldFolderPathOptional: '文件夹路径（可选）',
       dataSourceFieldBatchSize: '批量大小',
+      dataSourceFieldFeishuAppId: '飞书应用 App ID',
+      dataSourceFieldFeishuAppSecret: '飞书应用 App Secret',
+      dataSourceFieldWikiSpaceId: '知识库 Space ID',
+      dataSourceFieldRootNodeToken: '知识库根节点 Token',
+      dataSourceFieldIncludeExtensions: '允许的文件扩展名',
+      dataSourceFieldIncludeKeywords: '文件名必须包含的关键词',
+      dataSourceFieldExcludeKeywords: '文件名排除关键词',
+      dataSourceFieldMaxFileSizeBytes: '最大文件大小（字节）',
+      dataSourceValidationFeishuBatchSize: '批量大小必须介于 1 和 10 之间',
       dataSourceFieldMailFolder: '邮件文件夹',
       dataSourceFieldMailboxUserIds: '邮箱用户 ID（可选）',
       dataSourceFieldInstanceUrl: '实例 URL',

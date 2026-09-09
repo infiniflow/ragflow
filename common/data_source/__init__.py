@@ -46,6 +46,7 @@ from .exceptions import (
     InsufficientPermissionsError,
     UnexpectedValidationError,
 )
+from .feishu_wiki_connector import FeishuWikiConnector
 from .github.connector import GithubConnector
 from .gitlab_connector import GitlabConnector
 from .gmail_connector import GmailConnector
@@ -82,6 +83,7 @@ CONNECTOR_BY_SOURCE: dict[str, type] = {
     FileSource.GMAIL: GmailConnector,
     FileSource.DROPBOX: DropboxConnector,
     FileSource.GOOGLE_DRIVE: GoogleDriveConnector,
+    FileSource.FEISHU_WIKI: FeishuWikiConnector,
     FileSource.JIRA: JiraConnector,
     FileSource.SHAREPOINT: SharePointConnector,
     FileSource.SITEMAP: SitemapConnector,
@@ -144,6 +146,7 @@ __all__ = [
     "Document",
     "DocumentSource",
     "DropboxConnector",
+    "FeishuWikiConnector",
     "GithubConnector",
     "GitlabConnector",
     "GmailConnector",

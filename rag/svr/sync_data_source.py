@@ -87,6 +87,7 @@ from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
+from rag.svr.feishu_wiki_sync import build_feishu_wiki_generator
 from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
@@ -147,6 +148,7 @@ class SyncBase:
     """
 
     SOURCE_NAME: str = None
+    RAISE_ON_BATCH_ERROR = False
 
     def __init__(self, conf: dict) -> None:
         self.conf = conf
@@ -242,6 +244,7 @@ class SyncBase:
         added_docs = 0
         updated_docs = 0
         next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        saw_documents = False
         source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
         existing_doc_ids = {
             doc["id"]
@@ -258,6 +261,7 @@ class SyncBase:
             if not document_batch:
                 continue
 
+            saw_documents = True
             max_update = max(doc.doc_updated_at for doc in document_batch)
             next_update = max(next_update, max_update)
 
@@ -284,6 +288,8 @@ class SyncBase:
                 err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
                 if err:
                     had_parse_errors = True
+                    if self.RAISE_ON_BATCH_ERROR:
+                        raise RuntimeError(f"{self.SOURCE_NAME} failed to process {len(err)} document(s)")
                 SyncLogsService.increase_docs(task["id"], max_update, len(docs), "\n".join(err), len(err))
                 changed_doc_ids = set(dids)
                 updated_in_batch = len(changed_doc_ids & existing_doc_ids)
@@ -301,8 +307,13 @@ class SyncBase:
                 else:
                     logging.error(f"Error processing batch: {msg}")
 
+                if self.RAISE_ON_BATCH_ERROR:
+                    raise
                 failed_docs += len(docs)
                 continue
+
+        if not saw_documents:
+            next_update = self._get_empty_sync_cursor(task, next_update)
 
         prefix = self._get_source_prefix()
         prefix = f"{prefix} " if prefix else ""
@@ -318,6 +329,10 @@ class SyncBase:
             self.connector.persist_sync_state()
         SyncLogsService.done(task["id"], task["connector_id"])
         task["poll_range_start"] = next_update
+
+    def _get_empty_sync_cursor(self, task: dict, current_cursor: datetime) -> datetime:
+        del task
+        return current_cursor
 
     async def _run_prune_task_logic(self, task: dict):
         if not self.conf.get("sync_deleted_files"):
@@ -1392,6 +1407,32 @@ class Slack(SyncBase):
         return document_generator
 
 
+class FeishuWiki(SyncBase):
+    """Synchronize downloadable files from a Feishu Wiki subtree."""
+
+    SOURCE_NAME: str = FileSource.FEISHU_WIKI
+    RAISE_ON_BATCH_ERROR = True
+
+    async def _generate(self, task: dict):
+        self._poll_window_end = datetime.now(UTC)
+        self.connector, document_generator = build_feishu_wiki_generator(
+            self.conf,
+            task,
+            window_end=self._poll_window_end,
+        )
+        self.log_connection(
+            "Feishu Wiki",
+            f"space={self.conf.get('space_id', '<missing>')}",
+            task,
+        )
+        return document_generator
+
+    def _get_empty_sync_cursor(self, task: dict, current_cursor: datetime) -> datetime:
+        if task.get("reindex") != "1" and task.get("poll_range_start") is not None:
+            return self._poll_window_end
+        return current_cursor
+
+
 class Teams(SyncBase):
     SOURCE_NAME: str = FileSource.TEAMS
 
@@ -2316,6 +2357,7 @@ func_factory = {
     FileSource.CONFLUENCE: Confluence,
     FileSource.GMAIL: Gmail,
     FileSource.GOOGLE_DRIVE: GoogleDrive,
+    FileSource.FEISHU_WIKI: FeishuWiki,
     FileSource.JIRA: Jira,
     FileSource.SHAREPOINT: SharePoint,
     FileSource.ONEDRIVE: OneDrive,
