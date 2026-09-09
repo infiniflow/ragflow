@@ -106,7 +106,7 @@ class RAGFlowAzureSpnBlob:
             client = self.conn.get_blob_client(f"{blob}")
             return client.exists()
         except Exception:
-            logging.exception(f"Fail put {blob}")
+            logging.exception(f"Fail obj_exist {blob}")
         return False
 
     def get_presigned_url(self, bucket, fnm, expires):
