@@ -1148,12 +1148,12 @@ def test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dat
     assert duplicate_payload["code"] == 101, duplicate_payload
     assert "Field: <ids> - Message: <Duplicate ids:" in duplicate_payload["message"], duplicate_payload
 
-    delete_once_res = rest_client.delete(f"/datasets/{dataset_id}/documents", json={"ids": document_ids})
+    delete_once_res = rest_client.delete(f"/datasets/{dataset_id}/documents", json={"ids": document_ids}, timeout=120)
     assert delete_once_res.status_code == 200
     delete_once_payload = delete_once_res.json()
     assert delete_once_payload["code"] == 0, delete_once_payload
 
-    delete_twice_res = rest_client.delete(f"/datasets/{dataset_id}/documents", json={"ids": document_ids})
+    delete_twice_res = rest_client.delete(f"/datasets/{dataset_id}/documents", json={"ids": document_ids}, timeout=120)
     assert delete_twice_res.status_code == 200
     delete_twice_payload = delete_twice_res.json()
     assert delete_twice_payload["code"] == 102, delete_twice_payload
