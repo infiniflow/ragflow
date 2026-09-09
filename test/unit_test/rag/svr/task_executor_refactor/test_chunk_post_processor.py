@@ -15,6 +15,7 @@
 
 """Unit tests for chunk_post_processor keyword sanitization and tree templates."""
 
+import inspect
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -196,12 +197,19 @@ class TestRunTreeTemplates:
                 new_callable=AsyncMock,
             ),
         ):
+            # main added a required llm_pool argument to run_tree_templates
+            # after this branch diverged; pass it only when present so the test
+            # works against both this branch and the PR-merged tree.
+            call_kwargs = {}
+            if "llm_pool" in inspect.signature(run_tree_templates).parameters:
+                call_kwargs["llm_pool"] = MagicMock()
             await run_tree_templates(
                 handler,
                 [("tpl_tree_1", {"kind": "tree"})],
                 {"tpl_tree_1": MagicMock()},
                 embedding_model,
                 "test.pdf",
+                **call_kwargs,
             )
 
         mock_rows.assert_awaited_once()
