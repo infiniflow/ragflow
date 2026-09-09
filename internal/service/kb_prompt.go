@@ -19,7 +19,6 @@ package service
 import (
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"ragflow/internal/tokenizer"
 )
@@ -34,20 +33,20 @@ func ChunksFormat(chunks []SourcedChunk) []map[string]interface{} {
 	out := make([]map[string]interface{}, len(chunks))
 	for i, ck := range chunks {
 		out[i] = map[string]interface{}{
-			"id":                 ck.ID,
-			"content":            ck.Content,
-			"document_id":        ck.DocID,
-			"document_name":      ck.DocName,
-			"dataset_id":         ck.DatasetID,
-			"image_id":           ck.ImageID,
-			"positions":          ck.Positions,
-			"url":                ck.URL,
-			"similarity":         ck.Similarity,
-			"vector_similarity":  ck.VectorSimilarity,
-			"term_similarity":    ck.TermSimilarity,
-			"row_id":             ck.ID, // row_id == ID for consistency with Python
-			"doc_type":           ck.DocType,
-			"document_metadata":  ck.DocumentMetadata,
+			"id":                ck.ID,
+			"content":           ck.Content,
+			"document_id":       ck.DocID,
+			"document_name":     ck.DocName,
+			"dataset_id":        ck.DatasetID,
+			"image_id":          ck.ImageID,
+			"positions":         ck.Positions,
+			"url":               ck.URL,
+			"similarity":        ck.Similarity,
+			"vector_similarity": ck.VectorSimilarity,
+			"term_similarity":   ck.TermSimilarity,
+			"row_id":            ck.ID, // row_id == ID for consistency with Python
+			"doc_type":          ck.DocType,
+			"document_metadata": ck.DocumentMetadata,
 		}
 	}
 	return out
@@ -70,7 +69,7 @@ func KbPrompt(chunks []SourcedChunk, maxTokens int) string {
 	used := 0
 	for _, ck := range chunks {
 		entry := formatChunkEntry(ck)
-		tokens := NumTokensFromString(entry)
+		tokens := tokenizer.NumTokensFromString(entry)
 		if used+tokens > limit {
 			break
 		}
@@ -78,21 +77,6 @@ func KbPrompt(chunks []SourcedChunk, maxTokens int) string {
 		used += tokens
 	}
 	return b.String()
-}
-
-// NumTokensFromString returns the number of tokens in s using the C++ tokenizer.
-// Falls back to a rune-based estimate (~2 chars per token) when the tokenizer
-// is not available (e.g. CI, development without Infinity dictionaries).
-func NumTokensFromString(s string) int {
-	if s == "" {
-		return 0
-	}
-	result, err := tokenizer.Tokenize(s)
-	if err != nil {
-		// Fallback: ~2 chars per token for mixed language text.
-		return utf8.RuneCountInString(s) / 2
-	}
-	return len(strings.Fields(result))
 }
 
 // formatChunkEntry renders a single chunk as a tree-structured entry for the

@@ -254,13 +254,15 @@ func TestAttachDocMetaToChunks_EmptyMeta(t *testing.T) {
 // --- EnrichChunksWithDocMetadata (integration) ---
 
 func TestEnrichChunksWithDocMetadata_NoChunks(t *testing.T) {
+	ctx := t.Context()
 	svc := NewMetadataService()
-	svc.EnrichChunksWithDocMetadata(nil, "tenant-1", nil)
+	svc.EnrichChunksWithDocMetadata(ctx, nil, "tenant-1", nil)
 	// Should not panic
 }
 
 func TestEnrichChunksWithDocMetadata_EmptyChunks(t *testing.T) {
+	ctx := t.Context()
 	svc := NewMetadataService()
-	svc.EnrichChunksWithDocMetadata([]map[string]interface{}{}, "tenant-1", nil)
+	svc.EnrichChunksWithDocMetadata(ctx, []map[string]interface{}{}, "tenant-1", nil)
 	// Should not panic
 }

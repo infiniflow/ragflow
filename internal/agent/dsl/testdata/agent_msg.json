@@ -1,0 +1,228 @@
+{
+  "components": {
+    "Agent:TenderSpidersStick": {
+      "downstream": [
+        "Message:MajorNumbersPlay"
+      ],
+      "obj": {
+        "component_name": "Agent",
+        "params": {
+          "cite": true,
+          "delay_after_error": 1,
+          "description": "",
+          "exception_default_value": "",
+          "exception_goto": [],
+          "exception_method": "",
+          "frequencyPenaltyEnabled": true,
+          "frequency_penalty": 0.7,
+          "llm_id": "glm-4.7-flashx@zz@ZHIPU-AI",
+          "maxTokensEnabled": false,
+          "max_retries": 3,
+          "max_rounds": 1,
+          "max_tokens": 256,
+          "mcp": [],
+          "message_history_window_size": 12,
+          "outputs": {
+            "content": {
+              "type": "string",
+              "value": ""
+            }
+          },
+          "presencePenaltyEnabled": true,
+          "presence_penalty": 0.4,
+          "prompts": [
+            {
+              "content": "{sys.query}",
+              "role": "user"
+            }
+          ],
+          "showStructuredOutput": false,
+          "sys_prompt": "\n      <role>\n        You are a helpful assistant, an AI assistant specialized in problem-solving for the user.\n        If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.\n      </role>\n      <instructions>\n        1. Understand the user’s request.\n        2. Decompose it into logical subtasks.\n        3. Execute each subtask step by step, reasoning transparently.\n        4. Validate accuracy and consistency.\n        5. Summarize the final result clearly.\n      </instructions>",
+          "temperature": 0.1,
+          "temperatureEnabled": true,
+          "tools": [],
+          "topPEnabled": true,
+          "top_p": 0.3,
+          "user_prompt": "",
+          "visual_files_var": ""
+        }
+      },
+      "upstream": [
+        "begin"
+      ]
+    },
+    "Message:MajorNumbersPlay": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": [
+            "{Agent:TenderSpidersStick@content}"
+          ]
+        }
+      },
+      "upstream": [
+        "Agent:TenderSpidersStick"
+      ]
+    },
+    "begin": {
+      "downstream": [
+        "Agent:TenderSpidersStick"
+      ],
+      "obj": {
+        "component_name": "Begin",
+        "params": {
+          "mode": "conversational",
+          "prologue": "Hi! I'm your assistant. What can I do for you?"
+        }
+      },
+      "upstream": []
+    }
+  },
+  "globals": {
+    "sys.conversation_turns": 0,
+    "sys.date": "",
+    "sys.files": [],
+    "sys.history": [],
+    "sys.query": "",
+    "sys.user_id": ""
+  },
+  "graph": {
+    "edges": [
+      {
+        "id": "xy-edge__beginstart-Agent:TenderSpidersStickend",
+        "source": "begin",
+        "sourceHandle": "start",
+        "target": "Agent:TenderSpidersStick",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Agent:TenderSpidersStickstart-Message:MajorNumbersPlayend",
+        "source": "Agent:TenderSpidersStick",
+        "sourceHandle": "start",
+        "target": "Message:MajorNumbersPlay",
+        "targetHandle": "end"
+      }
+    ],
+    "nodes": [
+      {
+        "data": {
+          "form": {
+            "mode": "conversational",
+            "prologue": "Hi! I'm your assistant. What can I do for you?"
+          },
+          "label": "Begin",
+          "name": "begin"
+        },
+        "dragging": false,
+        "id": "begin",
+        "measured": {
+          "height": 81,
+          "width": 200
+        },
+        "position": {
+          "x": -173.77599999999995,
+          "y": -145.59999999999994
+        },
+        "selected": false,
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "type": "beginNode"
+      },
+      {
+        "data": {
+          "form": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "glm-4.7-flashx@zz@ZHIPU-AI",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 1,
+            "max_tokens": 256,
+            "mcp": [],
+            "message_history_window_size": 12,
+            "outputs": {
+              "content": {
+                "type": "string",
+                "value": ""
+              }
+            },
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompts": [
+              {
+                "content": "{sys.query}",
+                "role": "user"
+              }
+            ],
+            "showStructuredOutput": false,
+            "sys_prompt": "\n      <role>\n        You are a helpful assistant, an AI assistant specialized in problem-solving for the user.\n        If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.\n      </role>\n      <instructions>\n        1. Understand the user’s request.\n        2. Decompose it into logical subtasks.\n        3. Execute each subtask step by step, reasoning transparently.\n        4. Validate accuracy and consistency.\n        5. Summarize the final result clearly.\n      </instructions>",
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "tools": [],
+            "topPEnabled": true,
+            "top_p": 0.3,
+            "user_prompt": "",
+            "visual_files_var": ""
+          },
+          "label": "Agent",
+          "name": "Agent_0"
+        },
+        "dragging": false,
+        "id": "Agent:TenderSpidersStick",
+        "measured": {
+          "height": 79,
+          "width": 200
+        },
+        "position": {
+          "x": 92.03339543909598,
+          "y": -132.31937403691842
+        },
+        "selected": true,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "agentNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "{Agent:TenderSpidersStick@content}"
+            ]
+          },
+          "label": "Message",
+          "name": "Message_0"
+        },
+        "dragging": false,
+        "id": "Message:MajorNumbersPlay",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 336.5453954390959,
+          "y": -120.22337403691841
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      }
+    ]
+  },
+  "history": [],
+  "memory": [],
+  "messages": [],
+  "path": [],
+  "retrieval": [],
+  "variables": []
+}

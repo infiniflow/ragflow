@@ -20,6 +20,7 @@ from test_common import get_message_content, get_recent_message
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
+
 class TestAuthorization:
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -37,7 +38,6 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_multiple_type_message_func")
 class TestGetMessageContent:
-
     @pytest.mark.p1
     def test_get_message_content(self, WebApiAuth):
         memory_id = self.memory_id

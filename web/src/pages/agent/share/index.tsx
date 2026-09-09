@@ -87,7 +87,7 @@ const ChatContainer = () => {
 
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
-      changeLanguageAsync(locale);
+      changeLanguageAsync(locale, { persist: false });
     }
   }, [locale, visibleAvatar]);
 
@@ -121,6 +121,7 @@ const ChatContainer = () => {
         title={inputsData.title}
         avatar={inputsData.avatar}
         handleReset={handleReset}
+        hideReset={sendLoading}
       >
         <div className="flex flex-1 flex-col p-2.5  h-[90vh] m-3">
           <div

@@ -306,11 +306,11 @@ class TestRecordingContextManager:
         """Test context manager restores previous context after exit."""
         outer_ctx = RecordingContext()
         set_recording_context(outer_ctx)
-        
+
         inner_ctx = RecordingContext()
         with recording_context_manager(inner_ctx):
             assert get_recording_context() is inner_ctx
-        
+
         # After exiting, should restore outer_ctx
         assert get_recording_context() is outer_ctx
 
@@ -322,24 +322,24 @@ class TestTimedWithRecordingDecorator:
         """Test decorator used without parentheses."""
         ctx = RecordingContext()
         set_recording_context(ctx)
-        
+
         @timed_with_recording
         def test_func():
             time.sleep(0.01)
             return 42
-        
+
         result = test_func()
         assert result == 42
 
     def test_decorator_with_parentheses_and_context(self):
         """Test decorator with explicit context."""
         ctx = RecordingContext()
-        
+
         @timed_with_recording(recording_context=ctx)
         def test_func():
             time.sleep(0.01)
             return "hello"
-        
+
         result = test_func()
         assert result == "hello"
 
@@ -347,11 +347,11 @@ class TestTimedWithRecordingDecorator:
         """Test decorator raises RuntimeError when no context is available."""
         # Ensure no context is set
         set_recording_context(None)
-        
+
         @timed_with_recording
         def test_func():
             return 123
-        
+
         # Should raise RuntimeError because no context is available
         with pytest.raises(RuntimeError, match="no context"):
             test_func()
