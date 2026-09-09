@@ -378,6 +378,7 @@ const DocumentFilterStaleTimeMs = 30_000;
 
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
+  loading: boolean;
   onOpenChange: (open: boolean) => void;
 } => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
@@ -390,7 +391,7 @@ export const useGetDocumentFilter = (): {
   // opens, instead of on every visit to the file list.
   const [filterOpened, setFilterOpened] = useState(false);
   const datasetId = knowledgeId || id;
-  const { data, dataUpdatedAt, isFetching, refetch } = useQuery({
+  const { data, dataUpdatedAt, isLoading, isFetching, refetch } = useQuery({
     queryKey: DocumentKeys.filter(debouncedSearchString, datasetId),
     enabled: !!datasetId && filterOpened,
     staleTime: DocumentFilterStaleTimeMs,
@@ -431,6 +432,9 @@ export const useGetDocumentFilter = (): {
   );
   return {
     filter,
+    // Only the very first fetch has nothing to render; later refreshes keep
+    // showing the cached counts.
+    loading: isLoading,
     onOpenChange: handleOpenChange,
   };
 };

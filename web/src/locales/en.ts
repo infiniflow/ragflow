@@ -93,6 +93,7 @@ export default {
       bulkOperate: 'Bulk operate',
       owner: 'Owner',
       running: 'Running...',
+      loading: 'Loading...',
     },
     login: {
       loginTitle: 'Sign in to your account',
