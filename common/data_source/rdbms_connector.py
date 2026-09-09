@@ -87,8 +87,8 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.id_column = id_column.strip() if id_column else None
         self.timestamp_column = timestamp_column.strip() if timestamp_column else None
         self.batch_size = batch_size
-        self.file_extension = file_extension if file_extension else '.txt'
-        
+        self.file_extension = file_extension if file_extension else ".txt"
+
         self._connection = None
         self._credentials: Dict[str, Any] = {}
         self._sync_connector_id: str | None = None
