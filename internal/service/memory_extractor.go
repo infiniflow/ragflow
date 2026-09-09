@@ -25,7 +25,7 @@
 // QueueSaveToMemoryTask persists the raw message and publishes a
 // task_type="memory" TaskMessage on the NATS tasks.RAGFLOW subject. The
 // Ingestor's shared consumer + worker pool dispatches it by TaskType to
-// HandleSaveToMemoryTask (see internal/ingestion/service/processMessage and
+// HandleSaveToMemoryTask (see internal/ingestion/service/handleAndExecute and
 // executeMemoryTask), which runs LLM extraction for the non-raw memory types
 // configured on the memory and persists the extracted messages with source_id
 // pointing at the raw message so listMemoryMessages can aggregate them under

@@ -385,7 +385,7 @@ func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
 	// Inject an embedder that returns the wrong number of vectors
 	// regardless of input.
 	wrong := &countMismatchedEmbedder{want: 1}
-	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) { return wrong, nil })
+	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) { return wrong, "", nil })
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
@@ -525,13 +525,13 @@ func TestTokenizerComponent_Embedding_UsesFilenameWeight(t *testing.T) {
 	requireTokenizerPool(t)
 	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
 		"filename_embd_weight": 0.25,
-	}, func(_ context.Context, _, _, _ string) (Embedder, error) {
+	}, func(_ context.Context, _, _ string) (Embedder, string, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{
 			{vectors: [][]float64{{8, 8}}, tokenCount: 3},
 			{vectors: [][]float64{{2, 2}}, tokenCount: 5},
 		}
-		return stub, nil
+		return stub, "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
@@ -735,18 +735,18 @@ func floatSliceClose(got, want []float64) bool {
 
 func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testing.T) {
 	requireTokenizerPool(t)
-	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) {
+	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{10, 10}}, tokenCount: 1}, {vectors: [][]float64{{1, 1}}, tokenCount: 1}}
-		return stub, nil
+		return stub, "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver(A): %v", err)
 	}
-	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) {
+	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{20, 20}}, tokenCount: 1}, {vectors: [][]float64{{2, 2}}, tokenCount: 1}}
-		return stub, nil
+		return stub, "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver(B): %v", err)
