@@ -17,7 +17,10 @@
 package dao
 
 import (
+	"context"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // TenantModelProviderDAO tenant model provider data access object
@@ -28,14 +31,14 @@ func NewTenantModelProviderDAO() *TenantModelProviderDAO {
 	return &TenantModelProviderDAO{}
 }
 
-func (dao *TenantModelProviderDAO) Create(provider *entity.TenantModelProvider) error {
-	return DB.Create(provider).Error
+func (dao *TenantModelProviderDAO) Create(ctx context.Context, db *gorm.DB, provider *entity.TenantModelProvider) error {
+	return db.WithContext(ctx).Create(provider).Error
 }
 
 // GetByID get tenant model provider by primary key (id)
-func (dao *TenantModelProviderDAO) GetByID(id string) (*entity.TenantModelProvider, error) {
+func (dao *TenantModelProviderDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.TenantModelProvider, error) {
 	var provider entity.TenantModelProvider
-	err := DB.Where("id = ?", id).First(&provider).Error
+	err := db.WithContext(ctx).Where("id = ?", id).First(&provider).Error
 	if err != nil {
 		return nil, err
 	}
@@ -43,9 +46,9 @@ func (dao *TenantModelProviderDAO) GetByID(id string) (*entity.TenantModelProvid
 }
 
 // GetByTenantIDAndProviderName get the providers by tenant ID and provider name
-func (dao *TenantModelProviderDAO) GetByTenantIDAndProviderName(tenantID, providerName string) (*entity.TenantModelProvider, error) {
+func (dao *TenantModelProviderDAO) GetByTenantIDAndProviderName(ctx context.Context, db *gorm.DB, tenantID, providerName string) (*entity.TenantModelProvider, error) {
 	var provider entity.TenantModelProvider
-	err := DB.Where("tenant_id = ? AND provider_name = ?", tenantID, providerName).First(&provider).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND provider_name = ?", tenantID, providerName).First(&provider).Error
 	if err != nil {
 		return nil, err
 	}
@@ -53,21 +56,21 @@ func (dao *TenantModelProviderDAO) GetByTenantIDAndProviderName(tenantID, provid
 }
 
 // DeleteByTenantID deletes all model providers by tenant ID (hard delete)
-func (dao *TenantModelProviderDAO) DeleteByTenantID(tenantID string) (int64, error) {
-	result := DB.Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.TenantModelProvider{})
+func (dao *TenantModelProviderDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.TenantModelProvider{})
 	return result.RowsAffected, result.Error
 }
 
-// DeleteByTenantID deletes all providers by tenant ID (hard delete)
-func (dao *TenantModelProviderDAO) DeleteByTenantIDAndProviderName(tenantID, providerName string) (int64, error) {
-	result := DB.Unscoped().Where("tenant_id = ? AND provider_name = ?", tenantID, providerName).Delete(&entity.TenantModelProvider{})
+// DeleteByTenantIDAndProviderName DeleteByTenantID deletes all providers by tenant ID (hard delete)
+func (dao *TenantModelProviderDAO) DeleteByTenantIDAndProviderName(ctx context.Context, db *gorm.DB, tenantID, providerName string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ? AND provider_name = ?", tenantID, providerName).Delete(&entity.TenantModelProvider{})
 	return result.RowsAffected, result.Error
 }
 
 // ListByID list tenant model providers by ID
-func (dao *TenantModelProviderDAO) ListByID(id string) ([]string, error) {
+func (dao *TenantModelProviderDAO) ListByID(ctx context.Context, db *gorm.DB, id string) ([]string, error) {
 	var providerNames []string
-	err := DB.Model(&entity.TenantModelProvider{}).
+	err := db.WithContext(ctx).Model(&entity.TenantModelProvider{}).
 		Where("tenant_id = ?", id).
 		Pluck("provider_name", &providerNames).Error
 	return providerNames, err
@@ -79,9 +82,9 @@ func (dao *TenantModelProviderDAO) ListByID(id string) ([]string, error) {
 // uses this to enumerate which providers a tenant has linked before
 // fanning out to TenantModelInstanceDAO / TenantModelDAO for the joined
 // result.
-func (dao *TenantModelProviderDAO) GetByTenantID(tenantID string) ([]*entity.TenantModelProvider, error) {
+func (dao *TenantModelProviderDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]*entity.TenantModelProvider, error) {
 	var providers []*entity.TenantModelProvider
-	err := DB.Where("tenant_id = ?", tenantID).Find(&providers).Error
+	err := db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&providers).Error
 	if err != nil {
 		return nil, err
 	}

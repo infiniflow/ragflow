@@ -76,9 +76,7 @@ def test_python_builtins_import_is_rejected():
     assert is_safe is False
     # Pin the specific reason: rejection must come from the new ``builtins``
     # entry in ``DANGEROUS_IMPORTS``, not from some unrelated parse error.
-    assert any("builtins" in issue for issue, _ in issues), (
-        f"expected an issue mentioning 'builtins', got {issues!r}"
-    )
+    assert any("builtins" in issue for issue, _ in issues), f"expected an issue mentioning 'builtins', got {issues!r}"
 
 
 def test_python_attribute_eval_call_is_rejected():
@@ -94,9 +92,7 @@ def test_python_attribute_eval_call_is_rejected():
     # not from the ``import builtins`` line above. We assert ``exec`` is in at
     # least one finding so the test fails if visit_Call's attribute branch is
     # ever reverted.
-    assert any("exec" in issue for issue, _ in issues), (
-        f"expected an issue mentioning 'exec', got {issues!r}"
-    )
+    assert any("exec" in issue for issue, _ in issues), f"expected an issue mentioning 'exec', got {issues!r}"
 
 
 def test_javascript_safe_code_still_passes():

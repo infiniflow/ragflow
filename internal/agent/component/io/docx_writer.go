@@ -14,12 +14,12 @@
 //  limitations under the License.
 //
 
-// Package io — DOCX writer (self-implemented OOXML, plan §2.11.5.3).
+// Package io — DOCX writer (self-implemented OOXML).
 //
-// All candidate Go DOCX libraries are either AGPL-3 (unipdf, unioffice,
-// fumiama-go-docx, baliance-gooxml) or unmaintained (tealeg, lytdev).
-// RAGFlow is Apache-2.0, so AGPL-3 is a hard "no". We therefore build
-// the DOCX writer from stdlib only:
+// All candidate Go DOCX libraries are either AGPL-3 (unipdf,
+// unioffice, fumiama-go-docx, baliance-gooxml) or unmaintained
+// (tealeg, lytdev). RAGFlow is Apache-2.0, so AGPL-3 is a hard
+// "no". We therefore build the DOCX writer from stdlib only:
 //
 //   - archive/zip    — the DOCX container
 //   - text/template  — the dynamic XML parts (document, header, footer)
@@ -27,8 +27,8 @@
 //
 // The output is a Word-compatible .docx. The XML is intentionally
 // minimal: a single font, a single style, and a flat list of
-// paragraphs. Tables / images / lists are Phase 5 polish items; the
-// P4 test suite (see docx_writer_test.go) verifies the ZIP magic, the
+// paragraphs. Tables / images / lists are future polish items; the
+// test suite (see docx_writer_test.go) verifies the ZIP magic, the
 // embedded document.xml content, and the XML-escape contract.
 package io
 
@@ -68,8 +68,8 @@ type DOCXOptions struct {
 
 // docModel is the internal render input. It's a small struct so the
 // templates can refer to a stable set of fields. The exported
-// DOCXOptions and Document (Phase 5 polish) will both flatten into
-// this when the writer is invoked.
+// DOCXOptions and Document flatten into this when the writer is
+// invoked.
 type docModel struct {
 	Paragraphs     []string
 	HeaderText     string
@@ -239,6 +239,6 @@ func splitParagraphs(content string) []string {
 }
 
 // nowUTC returns a stable timestamp string for footer / watermark
-// metadata. Format: "2026-06-03T14:45:06Z" (RFC3339 in UTC). Kept
-// here so tests can substitute it via time.Now override in Phase 5.
+// metadata. Format: "2026-06-03T14:45:06Z" (RFC3339 in UTC).
+// The var is package-scoped so tests can override it.
 var nowUTC = func() string { return "2026-06-03T00:00:00Z" }

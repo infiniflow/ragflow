@@ -1,24 +1,43 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import React, { useEffect, useState } from 'react';
 import Anchor, { AnchorItem } from './anchor';
 
 interface MarkdownTocProps {
-  content: string;
+  // A ref to the container that wraps the markdown preview this TOC tracks.
+  // Headings are queried only inside this element so the TOC can never pick up
+  // headings rendered by another markdown instance.
+  container: React.RefObject<HTMLElement>;
 }
 
-const MarkdownToc: React.FC<MarkdownTocProps> = ({ content }) => {
+const MarkdownToc: React.FC<MarkdownTocProps> = ({ container }) => {
   const [items, setItems] = useState<AnchorItem[]>([]);
 
   useEffect(() => {
-    const generateTocItems = () => {
-      const headings = document.querySelectorAll(
+    const root = container.current;
+    if (!root) return;
+
+    let active = true;
+
+    const buildToc = () => {
+      const headings = root.querySelectorAll(
         '.wmde-markdown h2, .wmde-markdown h3',
       );
-
-      // If headings haven't rendered yet, wait for next frame
-      if (headings.length === 0) {
-        requestAnimationFrame(generateTocItems);
-        return;
-      }
+      if (headings.length === 0) return false;
 
       const tocItems: AnchorItem[] = [];
       let currentH2Item: AnchorItem | null = null;
@@ -51,14 +70,26 @@ const MarkdownToc: React.FC<MarkdownTocProps> = ({ content }) => {
         }
       });
 
-      setItems(tocItems.slice(1));
+      if (active) setItems(tocItems.slice(1));
+      return true;
     };
 
-    // Use requestAnimationFrame to ensure execution after DOM rendering
-    requestAnimationFrame(() => {
-      requestAnimationFrame(generateTocItems);
+    // Build immediately if the preview already rendered its headings.
+    if (buildToc()) return;
+
+    // Otherwise wait for the lazy preview to inject its DOM, then build once.
+    // This replaces the previous per-frame requestAnimationFrame loop, which
+    // polled forever when the lazy chunk failed to load and leaked on unmount.
+    const observer = new MutationObserver(() => {
+      if (buildToc()) observer.disconnect();
     });
-  }, [content]);
+    observer.observe(root, { childList: true, subtree: true });
+
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [container]);
 
   return (
     <div

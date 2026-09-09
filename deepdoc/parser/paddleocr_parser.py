@@ -15,14 +15,18 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import re
+import tempfile
+import time
 from dataclasses import asdict, dataclass, field, fields
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Literal, Optional, Union, Tuple, List
+from urllib.parse import urlparse
 
 import numpy as np
 import pdfplumber
@@ -38,16 +42,19 @@ except Exception:
     class RAGFlowPdfParser:
         pass
 
+
 from deepdoc.parser.utils import extract_pdf_outlines
 
 
-AlgorithmType = Literal["PaddleOCR-VL", "PP-OCRv5", "PP-StructureV3", "PaddleOCR-VL-1.5"]
+AlgorithmType = Literal["PaddleOCR-VL", "PaddleOCR-VL-1.6", "PP-OCRv5", "PP-OCRv6", "PP-StructureV3", "PaddleOCR-VL-1.5"]
 SectionTuple = tuple[str, ...]
 TableTuple = tuple[str, ...]
 ParseResult = tuple[list[SectionTuple], list[TableTuple]]
 SUPPORTED_PADDLEOCR_ALGORITHMS: tuple[AlgorithmType, ...] = (
     "PaddleOCR-VL",
+    "PaddleOCR-VL-1.6",
     "PP-OCRv5",
+    "PP-OCRv6",
     "PP-StructureV3",
     "PaddleOCR-VL-1.5",
 )
@@ -67,6 +74,26 @@ _MARKDOWN_IMAGE_PATTERN = re.compile(
 
 def _remove_images_from_markdown(markdown: str) -> str:
     return _MARKDOWN_IMAGE_PATTERN.sub("", markdown)
+
+
+_DEFAULT_BASE_URL = "https://paddleocr.aistudio-app.com"
+# Derived so the address and the host that selects the protocol cannot drift apart.
+_HOSTED_HOSTNAME = urlparse(_DEFAULT_BASE_URL).hostname
+
+
+def _is_hosted_service(base_url: str) -> bool:
+    """Tell the hosted service apart from a self-hosted PaddleX deployment.
+
+    The two speak different wire protocols — an asynchronous job API versus a
+    single synchronous pipeline call — and share nothing but the result schema.
+    Only the hosted address serves the job API, so the configured host decides
+    which protocol to use. An unset address falls back to the hosted default.
+    """
+    if not base_url:
+        return True
+    # A bare "host:port" would otherwise parse its host as the URL scheme.
+    parsed = urlparse(base_url if "//" in base_url else f"//{base_url}")
+    return (parsed.hostname or "").lower() == _HOSTED_HOSTNAME
 
 
 def _normalize_bbox(bbox: list[Any] | tuple[Any, ...]) -> tuple[float, float, float, float]:
@@ -116,7 +143,7 @@ class PaddleOCRVLConfig:
 class PaddleOCRConfig:
     """Main configuration for PaddleOCR parser."""
 
-    api_url: str = ""
+    base_url: str = _DEFAULT_BASE_URL
     access_token: Optional[str] = None
     algorithm: AlgorithmType = "PaddleOCR-VL"
     request_timeout: int = 600
@@ -125,6 +152,11 @@ class PaddleOCRConfig:
     visualize: bool = False
     additional_params: dict[str, Any] = field(default_factory=dict)
     algorithm_config: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def local(self) -> bool:
+        """Whether the address points at a self-hosted, synchronous deployment."""
+        return not _is_hosted_service(self.base_url)
 
     @classmethod
     def from_dict(cls, config: Optional[dict[str, Any]]) -> "PaddleOCRConfig":
@@ -173,6 +205,10 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
     _ZOOMIN = 2
 
+    # Path the self-hosted PaddleX pipeline serves; the hosted service instead
+    # exposes the asynchronous job API under /api/v2/ocr/jobs.
+    _LOCAL_ENDPOINT_PATH = "layout-parsing"
+
     _COMMON_FIELD_MAPPING: ClassVar[dict[str, str]] = {
         "prettify_markdown": "prettifyMarkdown",
         "show_formula_number": "showFormulaNumber",
@@ -207,16 +243,9 @@ class PaddleOCRParser(RAGFlowPdfParser):
         "relevel_titles": "relevelTitles",
     }
 
-    _ALGORITHM_FIELD_MAPPINGS: ClassVar[dict[str, dict[str, str]]] = {
-        "PaddleOCR-VL": _VL_FIELD_MAPPING,
-        "PP-OCRv5": _VL_FIELD_MAPPING,
-        "PP-StructureV3": _VL_FIELD_MAPPING,
-        "PaddleOCR-VL-1.5": _VL_FIELD_MAPPING,
-    }
-
     def __init__(
         self,
-        api_url: Optional[str] = None,
+        base_url: Optional[str] = None,
         access_token: Optional[str] = None,
         algorithm: AlgorithmType = "PaddleOCR-VL",
         *,
@@ -224,26 +253,31 @@ class PaddleOCRParser(RAGFlowPdfParser):
     ):
         """Initialize PaddleOCR parser."""
         self.outlines = []
-        self.api_url = api_url.rstrip("/") if api_url else os.getenv("PADDLEOCR_API_URL", "")
+        self.base_url = base_url.rstrip("/") if base_url else os.getenv("PADDLEOCR_BASE_URL", _DEFAULT_BASE_URL)
         self.access_token = access_token or os.getenv("PADDLEOCR_ACCESS_TOKEN")
         self.algorithm = algorithm
         self.request_timeout = request_timeout
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        # Force PDF file type
-        self.file_type = 0
-
         # Initialize page images for cropping
         self.page_images: list[Image.Image] = []
         self.page_from = 0
 
+    @property
+    def local(self) -> bool:
+        """Whether the address points at a self-hosted, synchronous deployment."""
+        return not _is_hosted_service(self.base_url)
+
     # Public methods
     def check_installation(self) -> tuple[bool, str]:
         """Check if the parser is properly installed and configured."""
-        if not self.api_url:
-            return False, "[PaddleOCR] API URL not configured"
+        if not self.base_url:
+            return False, "[PaddleOCR] Base URL not configured"
 
-        # TODO [@Bobholamovic]: Check URL availability and token validity
+        # A self-hosted deployment usually runs unauthenticated, so requiring a
+        # token there would reject valid configurations.
+        if not self.local and not self.access_token:
+            return False, "[PaddleOCR] Access token not configured"
 
         return True, ""
 
@@ -254,7 +288,7 @@ class PaddleOCRParser(RAGFlowPdfParser):
         callback: Optional[Callable[[float, str], None]] = None,
         *,
         parse_method: str = "raw",
-        api_url: Optional[str] = None,
+        base_url: Optional[str] = None,
         access_token: Optional[str] = None,
         algorithm: Optional[AlgorithmType] = None,
         request_timeout: Optional[int] = None,
@@ -267,9 +301,8 @@ class PaddleOCRParser(RAGFlowPdfParser):
     ) -> ParseResult:
         """Parse PDF document using PaddleOCR API."""
         self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
-        # Create configuration - pass all kwargs to capture VL config parameters
         config_dict = {
-            "api_url": api_url if api_url is not None else self.api_url,
+            "base_url": base_url if base_url is not None else self.base_url,
             "access_token": access_token if access_token is not None else self.access_token,
             "algorithm": algorithm if algorithm is not None else self.algorithm,
             "request_timeout": request_timeout if request_timeout is not None else self.request_timeout,
@@ -285,10 +318,14 @@ class PaddleOCRParser(RAGFlowPdfParser):
         if algorithm_config is not None:
             config_dict["algorithm_config"] = algorithm_config
 
+        # Forward any extra kwargs that match PaddleOCRConfig fields
+        config_field_names = {f.name for f in fields(PaddleOCRConfig)}
+        config_dict.update({k: v for k, v in kwargs.items() if k in config_field_names and v is not None})
+
         cfg = PaddleOCRConfig.from_dict(config_dict)
 
-        if not cfg.api_url:
-            raise RuntimeError("[PaddleOCR] API URL missing")
+        if not cfg.base_url:
+            raise RuntimeError("[PaddleOCR] Base URL missing")
 
         # Prepare file data and generate page images for cropping
         data_bytes = self._prepare_file_data(filepath, binary)
@@ -314,6 +351,77 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
         return sections, tables
 
+    def parse_image(
+        self,
+        filepath: str | PathLike[str],
+        binary: BytesIO | bytes | None = None,
+        callback: Optional[Callable[[float, str], None]] = None,
+        *,
+        base_url: Optional[str] = None,
+        access_token: Optional[str] = None,
+        algorithm: Optional[AlgorithmType] = None,
+        request_timeout: Optional[int] = None,
+        prettify_markdown: Optional[bool] = None,
+        show_formula_number: Optional[bool] = None,
+        visualize: Optional[bool] = None,
+        additional_params: Optional[dict[str, Any]] = None,
+        algorithm_config: Optional[dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> str:
+        """Parse image using PaddleOCR API. Returns extracted text."""
+        self.logger.info(f"[PaddleOCR] parse_image start: {filepath}")
+
+        config_dict = {
+            "base_url": base_url if base_url is not None else self.base_url,
+            "access_token": access_token if access_token is not None else self.access_token,
+            "algorithm": algorithm if algorithm is not None else self.algorithm,
+            "request_timeout": request_timeout if request_timeout is not None else self.request_timeout,
+        }
+        if prettify_markdown is not None:
+            config_dict["prettify_markdown"] = prettify_markdown
+        if show_formula_number is not None:
+            config_dict["show_formula_number"] = show_formula_number
+        if visualize is not None:
+            config_dict["visualize"] = visualize
+        if additional_params is not None:
+            config_dict["additional_params"] = additional_params
+        if algorithm_config is not None:
+            config_dict["algorithm_config"] = algorithm_config
+
+        cfg = PaddleOCRConfig.from_dict(config_dict)
+        data_bytes = self._prepare_file_data(filepath, binary)
+
+        if callback:
+            callback(0.1, "[PaddleOCR] submitting image request")
+
+        result = self._send_request(data_bytes, cfg, callback)
+
+        texts: list[str] = []
+        layout_parsing_results = result.get("layoutParsingResults", [])
+        for layout_result in layout_parsing_results:
+            pruned_result = layout_result.get("prunedResult", {})
+            parsing_res_list = pruned_result.get("parsing_res_list", [])
+            for block in parsing_res_list:
+                block_content = block.get("block_content", "").strip()
+                if block_content:
+                    block_content = _remove_images_from_markdown(block_content)
+                    if block_content.strip():
+                        texts.append(block_content.strip())
+
+        # Fallback to ocrResults for models like PP-OCRv6
+        if not texts:
+            ocr_results = result.get("ocrResults", [])
+            for ocr_result in ocr_results:
+                pruned = ocr_result.get("prunedResult", {})
+                rec_texts = pruned.get("rec_texts", [])
+                texts.extend(t.strip() for t in rec_texts if t.strip())
+
+        if callback:
+            callback(0.9, f"[PaddleOCR] image done, blocks: {len(texts)}")
+
+        self.logger.info(f"[PaddleOCR] parse_image done: {filepath}, blocks: {len(texts)}")
+        return "\n".join(texts)
+
     def _prepare_file_data(self, filepath: str | PathLike[str], binary: BytesIO | bytes | None) -> bytes:
         """Prepare file data for API request."""
         source_path = Path(filepath)
@@ -328,12 +436,9 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
         return source_path.read_bytes()
 
-    def _build_payload(self, data: bytes, file_type: int, config: PaddleOCRConfig) -> dict[str, Any]:
-        """Build payload for API request."""
-        payload: dict[str, Any] = {
-            "file": base64.b64encode(data).decode("ascii"),
-            "fileType": file_type,
-        }
+    def _build_payload(self, config: PaddleOCRConfig) -> dict[str, Any]:
+        """Build the camelCase pipeline parameters shared by both wire protocols."""
+        payload: dict[str, Any] = {}
 
         # Add common parameters
         for param_key, param_value in [
@@ -346,10 +451,9 @@ class PaddleOCRParser(RAGFlowPdfParser):
                 payload[api_param] = param_value
 
         # Add algorithm-specific parameters
-        algorithm_mapping = self._ALGORITHM_FIELD_MAPPINGS.get(config.algorithm, {})
         for param_key, param_value in config.algorithm_config.items():
-            if param_value is not None and param_key in algorithm_mapping:
-                api_param = algorithm_mapping[param_key]
+            if param_value is not None and param_key in self._VL_FIELD_MAPPING:
+                api_param = self._VL_FIELD_MAPPING[param_key]
                 payload[api_param] = param_value
 
         # Add any additional parameters
@@ -358,45 +462,235 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
         return payload
 
-    def _send_request(self, data: bytes, config: PaddleOCRConfig, callback: Optional[Callable[[float, str], None]]) -> dict[str, Any]:
-        """Send request to PaddleOCR API and parse response."""
-        # Build payload
-        payload = self._build_payload(data, self.file_type, config)
+    @staticmethod
+    def _detect_file_type(data: bytes) -> int:
+        """Map the payload to the fileType the PaddleX pipeline expects: 0 = PDF, 1 = image."""
+        return 0 if data[:4] == b"%PDF" else 1
 
-        # Prepare headers
-        headers = {"Content-Type": "application/json", "Client-Platform": "ragflow"}
+    @classmethod
+    def _local_endpoint(cls, base_url: str) -> str:
+        """Append the pipeline path unless the configured address already carries it.
+
+        The address is meant to be the deployment root, but the endpoint is the
+        only URL PaddleX documents, so pasting it whole is the likelier mistake.
+        """
+        root = base_url.strip().rstrip("/")
+        if root.rsplit("/", 1)[-1] == cls._LOCAL_ENDPOINT_PATH:
+            return root
+        return f"{root}/{cls._LOCAL_ENDPOINT_PATH}"
+
+    def _send_local_request(self, data: bytes, config: PaddleOCRConfig, callback: Optional[Callable[[float, str], None]]) -> dict[str, Any]:
+        """Send request to a self-hosted PaddleX layout-parsing endpoint (single synchronous call).
+
+        Unlike the hosted service there is no job to submit and poll: the
+        pipeline answers with the parsed result directly, and the algorithm is
+        fixed by the server's startup arguments rather than chosen per request.
+        """
+        payload: dict[str, Any] = {
+            "file": base64.b64encode(data).decode("ascii"),
+            "fileType": self._detect_file_type(data),
+            # Markdown images are stripped from every section anyway, so asking
+            # the server to inline them as base64 would only inflate the response.
+            "returnMarkdownImages": False,
+        }
+        payload.update(self._build_payload(config))
+
+        url = self._local_endpoint(config.base_url)
+        headers: dict[str, str] = {"Content-Type": "application/json", "Client-Platform": "ragflow"}
         if config.access_token:
-            headers["Authorization"] = f"token {config.access_token}"
+            # A bearer token on a plaintext connection is readable by anyone on
+            # the path, so drop it instead of leaking it.
+            if url.lower().startswith("https://"):
+                headers["Authorization"] = f"Bearer {config.access_token}"
+            else:
+                self.logger.warning("[PaddleOCR] access token not sent: the endpoint is not HTTPS")
 
-        self.logger.info("[PaddleOCR] invoking API")
+        self.logger.info(f"[PaddleOCR] local request: {url}")
         if callback:
             callback(0.1, "[PaddleOCR] submitting request")
 
-        # Send request
-        try:
-            resp = requests.post(config.api_url, json=payload, headers=headers, timeout=self.request_timeout)
-            resp.raise_for_status()
-        except Exception as exc:
+        def _fail(reason: str) -> RuntimeError:
+            # by_paddleocr() only logs the raised error, so a failure that never
+            # reaches the callback leaves the document at zero chunks with no
+            # visible cause.
             if callback:
-                callback(-1, f"[PaddleOCR] request failed: {exc}")
-            raise RuntimeError(f"[PaddleOCR] request failed: {exc}")
+                callback(-1, reason)
+            return RuntimeError(reason)
 
-        # Parse response
         try:
-            response_data = resp.json()
+            resp = requests.post(url, json=payload, headers=headers, timeout=config.request_timeout)
         except Exception as exc:
-            raise RuntimeError(f"[PaddleOCR] response is not JSON: {exc}") from exc
+            raise _fail(f"[PaddleOCR] request failed: {exc}")
+
+        if resp.status_code != 200:
+            raise _fail(f"[PaddleOCR] request failed: HTTP {resp.status_code} {resp.text[:500]}")
+
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise _fail(f"[PaddleOCR] response is not JSON: {exc}")
+
+        error_code = body.get("errorCode")
+        if error_code:
+            raise _fail(f"[PaddleOCR] request failed: {body.get('errorMsg', 'Unknown error')} (errorCode: {error_code})")
 
         if callback:
-            callback(0.8, "[PaddleOCR] response received")
+            callback(0.8, "[PaddleOCR] result received")
 
-        # Validate response format
-        if response_data.get("errorCode") != 0 or not isinstance(response_data.get("result"), dict):
+        result = body.get("result", {})
+        return {
+            "layoutParsingResults": result.get("layoutParsingResults", []),
+            "ocrResults": result.get("ocrResults", []),
+        }
+
+    def _send_request(self, data: bytes, config: PaddleOCRConfig, callback: Optional[Callable[[float, str], None]]) -> dict[str, Any]:
+        """Send the parse request and return the result in a shape both protocols share.
+
+        Self-hosted deployments answer synchronously; the hosted service runs an
+        asynchronous job (submit → poll → fetch).
+        """
+        if config.local:
+            return self._send_local_request(data, config, callback)
+
+        optional_payload = self._build_payload(config)
+
+        # Prepare headers
+        headers: dict[str, str] = {"Client-Platform": "ragflow"}
+        if config.access_token:
+            if config.base_url.strip().lower().startswith("https://"):
+                headers["Authorization"] = f"Bearer {config.access_token}"
+            else:
+                self.logger.warning("[PaddleOCR] access token not sent: the endpoint is not HTTPS")
+
+        jobs_url = f"{config.base_url.rstrip('/')}/api/v2/ocr/jobs"
+        deadline = time.monotonic() + config.request_timeout
+
+        def _remaining() -> float:
+            r = deadline - time.monotonic()
+            if r <= 0:
+                raise RuntimeError(f"[PaddleOCR] timed out after {config.request_timeout}s")
+            return r
+
+        self.logger.info("[PaddleOCR] submitting job")
+        if callback:
+            callback(0.1, "[PaddleOCR] submitting request")
+
+        # Step 1: Submit job with file upload
+        tmp_file = None
+        try:
+            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+            tmp_file.write(data)
+            tmp_file.close()
+
+            form_data = {
+                "model": config.algorithm,
+                "optionalPayload": json.dumps(optional_payload),
+            }
+            with open(tmp_file.name, "rb") as f:
+                resp = requests.post(
+                    jobs_url,
+                    data=form_data,
+                    files={"file": ("document.pdf", f)},
+                    headers=headers,
+                    timeout=_remaining(),
+                )
+        except Exception as exc:
             if callback:
-                callback(-1, "[PaddleOCR] invalid response format")
-            raise RuntimeError("[PaddleOCR] invalid response format")
+                callback(-1, f"[PaddleOCR] submit failed: {exc}")
+            raise RuntimeError(f"[PaddleOCR] submit failed: {exc}")
+        finally:
+            if tmp_file and os.path.exists(tmp_file.name):
+                os.unlink(tmp_file.name)
 
-        return response_data["result"]
+        if resp.status_code != 200:
+            raise RuntimeError(f"[PaddleOCR] submit failed: HTTP {resp.status_code} {resp.text}")
+
+        try:
+            submit_data = resp.json()
+        except ValueError as exc:
+            raise RuntimeError(f"[PaddleOCR] submit response is not JSON: {exc}")
+        job_id = submit_data.get("data", {}).get("jobId") or submit_data.get("jobId")
+        if not job_id:
+            raise RuntimeError(f"[PaddleOCR] job ID not found in response: {submit_data}")
+
+        if callback:
+            callback(0.2, f"[PaddleOCR] job submitted: {job_id}")
+
+        # Step 2: Poll until done (exponential backoff)
+        poll_url = f"{jobs_url}/{job_id}"
+        interval = 3.0
+        multiplier = 1.5
+        max_interval = 15.0
+        self.logger.info(f"[PaddleOCR] polling job {job_id}")
+
+        while True:
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"[PaddleOCR] job {job_id} timed out after {config.request_timeout}s")
+
+            try:
+                poll_resp = requests.get(poll_url, headers=headers, timeout=_remaining())
+            except Exception as exc:
+                raise RuntimeError(f"[PaddleOCR] poll failed: {exc}")
+
+            if poll_resp.status_code != 200:
+                raise RuntimeError(f"[PaddleOCR] poll failed: HTTP {poll_resp.status_code} {poll_resp.text[:200]}")
+
+            try:
+                poll_data = poll_resp.json()
+            except ValueError as exc:
+                raise RuntimeError(f"[PaddleOCR] poll response is not JSON: {exc}")
+            state = poll_data.get("data", {}).get("state") or poll_data.get("state")
+
+            if state == "done":
+                self.logger.info(f"[PaddleOCR] job {job_id} done")
+                if callback:
+                    callback(0.7, "[PaddleOCR] job done, fetching result")
+                break
+            elif state == "failed":
+                error_msg = poll_data.get("data", {}).get("errorMsg", "Unknown error")
+                self.logger.error(f"[PaddleOCR] job {job_id} failed: {error_msg}")
+                raise RuntimeError(f"[PaddleOCR] job failed: {error_msg}")
+
+            sleep_time = min(interval, max(0, deadline - time.monotonic()))
+            time.sleep(sleep_time)
+            interval = min(interval * multiplier, max_interval)
+
+        # Step 3: Fetch result
+        result_data = poll_data.get("data", {})
+        result_json_url = result_data.get("resultJsonUrl") or (result_data.get("resultUrl") or {}).get("jsonUrl")
+        if not result_json_url:
+            raise RuntimeError(f"[PaddleOCR] result URL not found: {poll_data}")
+
+        try:
+            result_resp = requests.get(result_json_url, timeout=_remaining())
+            result_resp.raise_for_status()
+        except Exception as exc:
+            raise RuntimeError(f"[PaddleOCR] failed to fetch result: {exc}")
+
+        # Parse JSONL result
+        jsonl_lines = result_resp.text.strip().split("\n")
+        jsonl_data = []
+        for line in jsonl_lines:
+            line = line.strip()
+            if line:
+                try:
+                    jsonl_data.append(json.loads(line))
+                except ValueError as exc:
+                    raise RuntimeError(f"[PaddleOCR] result JSONL parse error: {exc}")
+
+        if callback:
+            callback(0.8, "[PaddleOCR] result received")
+
+        # Extract raw result (preserving prunedResult with bbox info)
+        combined_result: dict[str, Any] = {"layoutParsingResults": [], "ocrResults": []}
+        for line_obj in jsonl_data:
+            result = line_obj.get("result", {})
+            layout_results = result.get("layoutParsingResults", [])
+            combined_result["layoutParsingResults"].extend(layout_results)
+            ocr_results = result.get("ocrResults", [])
+            combined_result["ocrResults"].extend(ocr_results)
+
+        return combined_result
 
     def _transfer_to_sections(self, result: dict[str, Any], algorithm: AlgorithmType, parse_method: str) -> list[SectionTuple]:
         """Convert API response to section tuples."""
@@ -405,17 +699,37 @@ class PaddleOCRParser(RAGFlowPdfParser):
         if algorithm in SUPPORTED_PADDLEOCR_ALGORITHMS:
             layout_parsing_results = result.get("layoutParsingResults", [])
 
+            # Fallback to ocrResults for models like PP-OCRv6 that only return text recognition
+            if not layout_parsing_results:
+                ocr_results = result.get("ocrResults", [])
+                for page_idx, ocr_result in enumerate(ocr_results):
+                    pruned = ocr_result.get("prunedResult", {})
+                    rec_texts = pruned.get("rec_texts", [])
+                    rec_boxes = pruned.get("rec_boxes", [])
+                    for i, text in enumerate(rec_texts):
+                        text = text.strip()
+                        if not text:
+                            continue
+                        if i < len(rec_boxes):
+                            box = rec_boxes[i]
+                            left, top, right, bottom = box[0], box[1], box[2], box[3]
+                        else:
+                            left, top, right, bottom = 0, 0, 0, 0
+                        tag = f"@@{page_idx + 1}\t{left // self._ZOOMIN}\t{right // self._ZOOMIN}\t{top // self._ZOOMIN}\t{bottom // self._ZOOMIN}##"
+                        sections.append((text, tag))
+                return sections
+
             for page_idx, layout_result in enumerate(layout_parsing_results):
                 pruned_result = layout_result.get("prunedResult", {})
                 parsing_res_list = pruned_result.get("parsing_res_list", [])
 
                 for block in parsing_res_list:
-                    block_content = block.get("block_content", "").strip()
+                    # Strip images before testing for emptiness: a pure-image
+                    # block is all markup, so it would otherwise land in the
+                    # sections as an empty string carrying a position tag.
+                    block_content = _remove_images_from_markdown(block.get("block_content", "")).strip()
                     if not block_content:
                         continue
-
-                    # Remove images
-                    block_content = _remove_images_from_markdown(block_content)
 
                     label = block.get("block_label", "")
                     block_bbox = block.get("block_bbox", [0, 0, 0, 0])
@@ -607,6 +921,9 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    parser = PaddleOCRParser(api_url=os.getenv("PADDLEOCR_API_URL", ""), algorithm=os.getenv("PADDLEOCR_ALGORITHM", "PaddleOCR-VL"))
+    parser = PaddleOCRParser(
+        base_url=os.getenv("PADDLEOCR_BASE_URL") or None,
+        algorithm=os.getenv("PADDLEOCR_ALGORITHM", "PaddleOCR-VL"),
+    )
     ok, reason = parser.check_installation()
     print("PaddleOCR available:", ok, reason)
