@@ -500,9 +500,17 @@ func toExtractorEinoMessages(msgs []eschema.Message) []*eschema.Message {
 // input map. Computed once at the top of Invoke so the rest of
 // the function reads as straight-line code.
 type extractorInputs struct {
-	llmID  string
-	lang   string
-	chunks []map[string]any
+	llmID string
+	// modelID is the resolved cache-key model identity (the llm_id, or — when
+	// that is empty — the tenant-default chat model resolved once per run in
+	// Invoke). Carrying it on the struct lets the per-chunk cache-key builders
+	// reuse the single run-level resolution instead of re-resolving the default
+	// model for every chunk (review finding #3). Empty means "not yet resolved"
+	// and triggers a per-call fallback so direct unit-test construction of
+	// extractorInputs keeps working.
+	modelID string
+	lang    string
+	chunks  []map[string]any
 	// temperature overrides the LLM temperature for this call. A
 	// nil value leaves the request's Temperature unset so the model
 	// (or the chat-model default) decides. The keyword/question helpers set it to
@@ -599,6 +607,10 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
 	in := c.resolveInputs(inputs)
+	// Resolve the cache-key model identity once for the whole run and reuse it
+	// across every chunk, rather than re-resolving the (most common) default
+	// model per chunk when keying the per-chunk cache. See review finding #3.
+	in.modelID = extractorCacheModelID(ctx, db, in.llmID)
 	common.Debug("extractor stage",
 		zap.String("component", "Extractor"),
 		zap.Int("input_chunks", len(in.chunks)),
@@ -678,7 +690,13 @@ func extractorCacheModelID(ctx context.Context, db *gorm.DB, llmID string) strin
 
 // callTextCached wraps callText with the per-chunk result cache.
 func (c *ExtractorComponent) callTextCached(ctx context.Context, db *gorm.DB, in extractorInputs, taskType, systemPrompt, chunkText, chunkID string) (string, error) {
-	key := extractorLLMCacheKey(taskType, extractorCacheModelID(ctx, db, in.llmID), systemPrompt, chunkID)
+	// Prefer the run-level resolved identity; fall back only for callers that
+	// build extractorInputs directly in unit tests without pre-resolving it.
+	modelID := in.modelID
+	if modelID == "" {
+		modelID = extractorCacheModelID(ctx, db, in.llmID)
+	}
+	key := extractorLLMCacheKey(taskType, modelID, systemPrompt, chunkID)
 	if cached, hit := chunkcache.Get(ctx, in.cache, key); hit {
 		return cached, nil
 	}
@@ -712,6 +730,7 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	kwTemp := extractorTemperature
 	kwIn := extractorInputs{
 		llmID:       in.llmID,
+		modelID:     in.modelID,
 		temperature: &kwTemp,
 		cache:       in.cache,
 	}
@@ -753,6 +772,7 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	qTemp := extractorTemperature
 	qIn := extractorInputs{
 		llmID:       in.llmID,
+		modelID:     in.modelID,
 		temperature: &qTemp,
 		cache:       in.cache,
 	}
@@ -800,6 +820,7 @@ func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in
 	sumTemp := extractorTemperature
 	sumIn := extractorInputs{
 		llmID:       in.llmID,
+		modelID:     in.modelID,
 		temperature: &sumTemp,
 		cache:       in.cache,
 	}
@@ -936,7 +957,12 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	// Best-effort: a missing client or any cache error falls through to a live
 	// call instead of failing the extraction.
 	chunkID := chunkCacheID(ck)
-	modelID := extractorCacheModelID(ctx, db, in.llmID)
+	// Prefer the run-level resolved identity; fall back only for direct unit
+	// callers that did not pre-resolve it.
+	modelID := in.modelID
+	if modelID == "" {
+		modelID = extractorCacheModelID(ctx, db, in.llmID)
+	}
 	var parsed map[string]any
 	if cached, hit := getMetadataLLMCache(ctx, in.cache, modelID, schemaStr, chunkID); hit {
 		parsed = cached
@@ -944,6 +970,7 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 		metaTemp := extractorTemperature
 		metaIn := extractorInputs{
 			llmID:       in.llmID,
+			modelID:     in.modelID,
 			temperature: &metaTemp,
 			cache:       in.cache,
 		}

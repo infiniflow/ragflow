@@ -611,7 +611,7 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 					case <-ctx.Done():
 						return
 					}
-					llmTagChunk(ctx, db, inv, docsToTag[idx], indexed.allTags, examples, in.cache, in.llmID, driver, model, apiKey, baseURL, topN, indexed)
+					llmTagChunk(ctx, db, inv, docsToTag[idx], indexed.allTags, examples, in.cache, in.llmID, in.modelID, driver, model, apiKey, baseURL, topN, indexed)
 				}(i)
 			}
 			wg.Wait()
@@ -1116,7 +1116,7 @@ func llmTagChunk(
 	allTags map[string]float64,
 	examples []schema.TaggedChunk,
 	cache chunkcache.Store,
-	llmID, driver, model, apiKey, baseURL string,
+	llmID, modelID, driver, model, apiKey, baseURL string,
 	topN int,
 	idx *MemoryTagIndex,
 ) {
@@ -1125,7 +1125,11 @@ func llmTagChunk(
 		return
 	}
 	chunkID := chunkCacheID(chunk)
-	modelID := extractorCacheModelID(ctx, db, llmID)
+	// Prefer the run-level resolved identity passed from runAutoTags; fall back
+	// only for direct unit callers that did not pre-resolve it.
+	if modelID == "" {
+		modelID = extractorCacheModelID(ctx, db, llmID)
+	}
 
 	textHash := int64(xxhash.Sum64String(text))
 	var picked []schema.TaggedChunk

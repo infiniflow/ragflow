@@ -20,7 +20,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -253,6 +255,62 @@ func TestCallTextCached_NoStoreStillCalls(t *testing.T) {
 	}
 	if got != "generated" || stub.Calls() != 1 {
 		t.Errorf("result = %q, calls = %d; want (%q, 1)", got, stub.Calls(), "generated")
+	}
+}
+
+// TestExtractor_ResolvesDefaultModelOncePerRun is the regression test for
+// review finding #3: on the default-model path (empty llm_id) the model
+// identity used to key the per-chunk cache must be resolved exactly ONCE per
+// run and reused across every chunk — not re-resolved per chunk. The per-chunk
+// re-resolution was a real performance regression introduced by this PR's
+// correctness fix (the cache key now derives from the resolved default model,
+// not the empty override), and is most visible when there is no cache at all
+// (every call reaches the resolver for nothing).
+//
+// The invariant: the chat-target resolver override is consulted once for each
+// real LLM call (callRaw resolves its target) and exactly once more for the
+// whole run (the run-level cache-key model resolution). So
+// resolverCalls == stub.Calls()+1. Before the fix the cache-key build
+// re-resolved the model per chunk, giving 2*stub.Calls().
+func TestExtractor_ResolvesDefaultModelOncePerRun(t *testing.T) {
+	var resolverCalls atomic.Int32
+	SetExtractorChatTargetResolverOverride(func(llmID string) (string, string, string, string, bool) {
+		resolverCalls.Add(1)
+		return "openai", "gpt-4o", "ak", "http://x", true
+	})
+	t.Cleanup(func() { SetExtractorChatTargetResolverOverride(nil) })
+
+	stub := withStubChatInvoker(t, stubResponse{Content: `{"category":"x"}`})
+
+	const nChunks = 5
+	chunks := make([]map[string]any, nChunks)
+	for i := range chunks {
+		chunks[i] = map[string]any{"text": fmt.Sprintf("chunk body %d", i)}
+	}
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		LLMID:    "", // default-model path — the one #3 is about
+		Keywords: schema.KeywordExtractConfig{TopN: 3},
+		Metadata: schema.MetadataExtractConfig{
+			Enabled:  true,
+			Metadata: []common.MetadataFieldDef{{Key: "category", Type: "string"}},
+		},
+	}}
+
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{"chunks": chunks}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	// Sanity: the run actually exercised the LLM so the assertion below is
+	// not vacuously true.
+	if n := stub.Calls(); n == 0 {
+		t.Fatal("no LLM calls happened; test did not exercise the extraction path")
+	}
+
+	want := stub.Calls() + 1
+	if got := resolverCalls.Load(); got != want {
+		t.Errorf("resolver calls = %d, want %d (== stub.Calls()+1: one run-level model resolution, reused across all chunks)",
+			got, want)
 	}
 }
 
