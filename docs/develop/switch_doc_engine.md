@@ -1,11 +1,13 @@
 ---
 sidebar_position: 3
+title: Switch Document Engine
+sidebar_label: Switch Document Engine
 slug: /switch_doc_engine
 sidebar_custom_props: {
   categoryIcon: LucideShuffle
 }
 ---
-# Switch document engine
+# Switch Document Engine
 
 Switch your doc engine from Elasticsearch to Infinity.
 

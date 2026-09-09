@@ -138,7 +138,6 @@ type TypedAgent[M MessageType] interface {
 
 type Agent = TypedAgent[*schema.Message]
 
-
 type TypedResumableAgent[M MessageType] interface {
 	TypedAgent[M]
 	Resume(ctx context.Context, info *ResumeInfo, opts ...RunOption) *AsyncIterator[*TypedAgentEvent[M]]
@@ -231,6 +230,7 @@ func concatMessageStream[M MessageType](stream *schema.StreamReader[M]) (M, erro
 type typedModelOption[M MessageType] struct {
 	f func(o *modelOptions[M])
 }
+
 func (o *typedModelOption[M]) applyModel() {}
 
 // modelOptions holds all model call options.

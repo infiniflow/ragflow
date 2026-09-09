@@ -21,10 +21,8 @@ export interface Iknowledge {
   chunk_method?: string;
   parseType?: ParseType;
   pipeline_id?: string | null;
-  ext?: {
-    language?: string;
-    [key: string]: any;
-  };
+  language?: string;
+  [key: string]: any;
 }
 export const useSaveKnowledge = () => {
   const { visible: visible, hideModal, showModal } = useSetModalState();

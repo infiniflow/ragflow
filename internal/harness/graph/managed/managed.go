@@ -346,16 +346,16 @@ func GetManagedValueName(val interface{}) string {
 // ExtractManagedValues extracts managed values from a struct.
 func ExtractManagedValues(obj interface{}) []ManagedValue {
 	result := []ManagedValue{}
-	
+
 	v := reflect.ValueOf(obj)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
-	
+
 	if v.Kind() != reflect.Struct {
 		return result
 	}
-	
+
 	for i := 0; i < v.NumField(); i++ {
 		if !v.Type().Field(i).IsExported() {
 			continue
@@ -367,23 +367,23 @@ func ExtractManagedValues(obj interface{}) []ManagedValue {
 			}
 		}
 	}
-	
+
 	return result
 }
 
 // ExtractManagedValueSpecs extracts managed value specs from a struct.
 func ExtractManagedValueSpecs(obj interface{}) []*ManagedValueSpec {
 	result := []*ManagedValueSpec{}
-	
+
 	v := reflect.ValueOf(obj)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
-	
+
 	if v.Kind() != reflect.Struct {
 		return result
 	}
-	
+
 	for i := 0; i < v.NumField(); i++ {
 		if !v.Type().Field(i).IsExported() {
 			continue
@@ -395,7 +395,7 @@ func ExtractManagedValueSpecs(obj interface{}) []*ManagedValueSpec {
 			}
 		}
 	}
-	
+
 	return result
 }
 
@@ -485,13 +485,13 @@ func (p PregelScratchpad) Clone() PregelScratchpad {
 
 // ConfigKey represents keys used in runtime configuration.
 const (
-	ManagedConfigKeyTaskID      = "__task_id__"
-	ManagedConfigKeyRuntime     = "__runtime__"
-	ManagedConfigKeyRead        = "__read__"
-	ManagedConfigKeySend        = "__send__"
-	ManagedConfigKeyWriter      = "__writer__"
-	ManagedConfigKeyStore       = "__store__"
-	ManagedConfigKeyPrevious    = "__previous__"
+	ManagedConfigKeyTaskID       = "__task_id__"
+	ManagedConfigKeyRuntime      = "__runtime__"
+	ManagedConfigKeyRead         = "__read__"
+	ManagedConfigKeySend         = "__send__"
+	ManagedConfigKeyWriter       = "__writer__"
+	ManagedConfigKeyStore        = "__store__"
+	ManagedConfigKeyPrevious     = "__previous__"
 	ManagedConfigKeyCheckpointNS = "__checkpoint_ns__"
 	ManagedConfigKeyConfigurable = "__configurable__"
 )
@@ -651,13 +651,13 @@ func (r *Runtime) Override(overrides map[string]interface{}) *Runtime {
 	return newRuntime
 }
 
-func cloneMap(m map[string]interface{}) map[string]interface{} {
-	if m == nil {
+func cloneMap(src map[string]any) map[string]any {
+	if src == nil {
 		return nil
 	}
-	clone := make(map[string]interface{}, len(m))
-	for k, v := range m {
-		clone[k] = v
+	clone := make(map[string]any, len(src))
+	for key, val := range src {
+		clone[key] = val
 	}
 	return clone
 }
@@ -677,18 +677,6 @@ var DEFAULT_RUNTIME = &Runtime{
 	Store:        nil,
 	StreamWriter: nil,
 	Previous:     nil,
-}
-
-// get_runtime returns the runtime for the current graph run.
-// This corresponds to Python's get_runtime() function in runtime.py
-func get_runtime(config map[string]interface{}) *Runtime {
-	if config == nil {
-		return DEFAULT_RUNTIME.Clone()
-	}
-	if runtime, ok := config[ManagedConfigKeyRuntime].(*Runtime); ok {
-		return runtime
-	}
-	return DEFAULT_RUNTIME.Clone()
 }
 
 // GetTaskID returns the task ID from config.
@@ -774,10 +762,6 @@ func SetWriter(config map[string]interface{}, writer interface{}) {
 	config[ManagedConfigKeyWriter] = writer
 }
 
-
-
-
-
 // PatchConfig patches a config with new values.
 func PatchConfig(base map[string]interface{}, updates map[string]interface{}) map[string]interface{} {
 	if base == nil {
@@ -786,7 +770,7 @@ func PatchConfig(base map[string]interface{}, updates map[string]interface{}) ma
 	if updates == nil {
 		return base
 	}
-	
+
 	result := make(map[string]interface{}, len(base))
 	for k, v := range base {
 		result[k] = v
@@ -805,7 +789,7 @@ func PatchConfigurable(base map[string]interface{}, updates map[string]interface
 	if updates == nil {
 		return base
 	}
-	
+
 	// Get or create configurable section — deep copy to avoid mutating the original.
 	configurable := make(map[string]interface{})
 	if cfg, ok := base[ManagedConfigKeyConfigurable]; ok {
@@ -815,19 +799,19 @@ func PatchConfigurable(base map[string]interface{}, updates map[string]interface
 			}
 		}
 	}
-	
+
 	// Merge updates
 	for k, v := range updates {
 		configurable[k] = v
 	}
-	
+
 	// Update base config
 	result := make(map[string]interface{}, len(base)+1)
 	for k, v := range base {
 		result[k] = v
 	}
 	result[ManagedConfigKeyConfigurable] = configurable
-	
+
 	return result
 }
 
@@ -877,13 +861,13 @@ func RecastCheckpointNS(ns string) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	
+
 	// Remove task ID if present (usually the last part)
 	lastPart := parts[len(parts)-1]
 	if isTaskID(lastPart) {
 		return joinCheckpointNS(parts[:len(parts)-1])
 	}
-	
+
 	return ns
 }
 
@@ -928,7 +912,7 @@ func FormatCheckpoint(checkpoint map[string]interface{}) string {
 	if checkpoint == nil {
 		return "{}"
 	}
-	
+
 	result := "{"
 	first := true
 	for k, v := range checkpoint {
@@ -966,7 +950,7 @@ func FormatDuration(d int64) string {
 		return fmt.Sprintf("%.1fs", float64(d)/1000)
 	} else if d < 3600000 {
 		return fmt.Sprintf("%.1fm", float64(d)/60000)
-	} else {
-		return fmt.Sprintf("%.1fh", float64(d)/3600000)
 	}
+
+	return fmt.Sprintf("%.1fh", float64(d)/3600000)
 }

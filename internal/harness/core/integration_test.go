@@ -25,7 +25,7 @@ func TestIntegration_ReActToolResumeComplete(t *testing.T) {
 	})
 	agent.name = "react_tool"
 	store := newCancelTestStore()
-	ctx := context.Background()
+	ctx := t.Context()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("compute")})
 	var lastContent string
@@ -56,7 +56,7 @@ func TestIntegration_SequentialAgent(t *testing.T) {
 	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("agent_a").WithDescription("first agent")
 	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("agent_b").WithDescription("second agent")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	seq, err := NewSequential(ctx, &SequentialConfig{
 		Name: "seq_test", Description: "sequential test",
 		SubAgents: []Agent{a1, a2},
@@ -96,7 +96,7 @@ func TestIntegration_ParallelAgent(t *testing.T) {
 	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("par_a").WithDescription("parallel agent A")
 	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("par_b").WithDescription("parallel agent B")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	par, err := NewParallel(ctx, &ParallelConfig{
 		Name: "par_test", Description: "parallel test",
 		SubAgents: []Agent{a1, a2},
@@ -136,7 +136,7 @@ func TestIntegration_LoopAgent(t *testing.T) {
 
 	a := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("loop_body").WithDescription("loop body agent")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	loop, err := NewLoop(ctx, &LoopConfig{
 		Name: "loop_test", Description: "loop test",
 		SubAgents:     []Agent{a},
@@ -175,7 +175,7 @@ func TestIntegration_SupervisorTransfer(t *testing.T) {
 	sub := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("worker").WithDescription("worker agent")
 
 	// Use AgentWithOptions with disallow transfer to parent and the sub-agent
-	ctx := context.Background()
+	ctx := t.Context()
 	wrappedSub := AgentWithOptions(ctx, sub, WithDisallowTransferToParent())
 
 	sup := NewReActAgent(&ReActConfig[*schema.Message]{
@@ -211,7 +211,7 @@ func TestIntegration_PlanExecute(t *testing.T) {
 	replannerM := &mockModel{}
 	replannerM.addResp("replanning")
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	planner := NewReActAgent(&ReActConfig[*schema.Message]{Model: plannerM}).WithName("planner").WithDescription("planner agent")
 	executor := NewReActAgent(&ReActConfig[*schema.Message]{Model: execM}).WithName("executor").WithDescription("executor agent")
@@ -255,7 +255,7 @@ func TestIntegration_PlanExecute(t *testing.T) {
 }
 
 func TestIntegration_TurnLoopPushStop(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	loop := NewAgentLoop[*schema.Message](AgentLoopConfig[*schema.Message]{
 		GenInput: func(_ context.Context, l *AgentLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {
@@ -314,7 +314,7 @@ func TestIntegration_MiddlewareStack(t *testing.T) {
 		Middlewares: []ReActMiddleware{mw},
 	})
 	agent.name = "mw_test"
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test middleware")}})
 	for {
 		ev, ok := iter.Next()
@@ -347,7 +347,7 @@ func TestIntegration_AgentToolNested(t *testing.T) {
 	innerM.addResp("inner agent result")
 	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{Model: innerM}).WithName("inner_agent").WithDescription("inner agent for testing")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, innerAgent)
 
 	// Now create a parent agent that "has" this tool and executes it
@@ -400,7 +400,7 @@ func TestIntegration_CheckpointResume(t *testing.T) {
 	})
 	agent.name = "cp_agent"
 	store := newCancelTestStore()
-	ctx := context.Background()
+	ctx := t.Context()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
 
 	// Run with a checkpoint ID
@@ -441,7 +441,7 @@ func TestIntegration_SequentialCancelResume(t *testing.T) {
 	m2.setDelay(50 * time.Millisecond)
 	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("seq_b").WithDescription("second in sequence")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	seq, err := NewSequential(ctx, &SequentialConfig{
 		Name: "seq_cancel", Description: "sequential cancel test",
 		SubAgents: []Agent{a1, a2},
@@ -489,15 +489,30 @@ func TestIntegration_LoopAgentSimple(t *testing.T) {
 	// 2 iterations * 1 call each = 2 calls
 	m2.addResp("loop_a2")
 	m2.addResp("loop_a2")
-	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "la1"
-	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "la2"
-	ctx := context.Background()
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1})
+	a1.name = "la1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2})
+	a2.name = "la2"
+	ctx := t.Context()
 	wf, err := NewLoop(ctx, &LoopConfig{Name: "loop_simple", Description: "test", SubAgents: []Agent{a1, a2}, MaxIterations: 2})
-	if err != nil { t.Fatalf("NewLoop: %v", err) }
+	if err != nil {
+		t.Fatalf("NewLoop: %v", err)
+	}
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("go")}})
 	var count int
-	for { ev, ok := iter.Next(); if !ok { break }; if ev.Err != nil { t.Fatalf("err: %v", ev.Err) }; count++ }
-	if count == 0 { t.Error("expected events from loop") }
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("err: %v", ev.Err)
+		}
+		count++
+	}
+	if count == 0 {
+		t.Error("expected events from loop")
+	}
 }
 
 func TestIntegration_PlanExecuteSimple(t *testing.T) {
@@ -507,9 +522,17 @@ func TestIntegration_PlanExecuteSimple(t *testing.T) {
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("pe_test")
 	store := newCancelTestStore()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("test")})
-	for { ev, ok := iter.Next(); if !ok { break }; if ev.Err != nil { t.Fatalf("err: %v", ev.Err) } }
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("err: %v", ev.Err)
+		}
+	}
 }
 
 // ---- Runner-level integration tests ----
@@ -531,13 +554,17 @@ func TestIntegration_RunnerToolCall(t *testing.T) {
 	agent.name = "calc_agent"
 	store := newCancelTestStore()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("what is 6*7?")})
 	var lastContent string
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
-		if ev.Err != nil { t.Fatalf("err: %v", ev.Err) }
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("err: %v", ev.Err)
+		}
 		if ev.Output != nil && ev.Output.MessageOutput != nil && !ev.Output.MessageOutput.IsStreaming && ev.Output.MessageOutput.Message != nil {
 			lastContent = ev.Output.MessageOutput.Message.Content
 		}
@@ -555,18 +582,26 @@ func TestIntegration_RunnerSimple(t *testing.T) {
 	agent.name = "runner_test"
 	store := newCancelTestStore()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("say hi")})
 	var found bool
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
-		if ev.Err != nil { t.Fatalf("err: %v", ev.Err) }
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("err: %v", ev.Err)
+		}
 		if ev.Output != nil && ev.Output.MessageOutput != nil && !ev.Output.MessageOutput.IsStreaming && ev.Output.MessageOutput.Message != nil {
-			if ev.Output.MessageOutput.Message.Content == "hello world" { found = true }
+			if ev.Output.MessageOutput.Message.Content == "hello world" {
+				found = true
+			}
 		}
 	}
-	if !found { t.Error("expected 'hello world' in output") }
+	if !found {
+		t.Error("expected 'hello world' in output")
+	}
 }
 
 // TestIntegration_RunnerResume verifies the full cancel-then-resume cycle.
@@ -581,13 +616,18 @@ func TestIntegration_RunnerResume(t *testing.T) {
 	cid := "resume-cid-001"
 	cancelOpt, cancelFunc := WithCancel()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("run me")},
 		WithCheckPointID(cid), cancelOpt)
 
 	time.Sleep(10 * time.Millisecond)
 	cancelFunc(WithCancelMode(CancelImmediate))
-	for { _, ok := iter.Next(); if !ok { break } }
+	for {
+		_, ok := iter.Next()
+		if !ok {
+			break
+		}
+	}
 
 	// Resume from the known checkpoint ID.
 	resumedIter, err := runner.Resume(ctx, cid)
@@ -598,8 +638,12 @@ func TestIntegration_RunnerResume(t *testing.T) {
 	var outputs []string
 	for {
 		ev, ok := resumedIter.Next()
-		if !ok { break }
-		if ev.Err != nil { break }
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			break
+		}
 		if ev.Output != nil && ev.Output.MessageOutput != nil && ev.Output.MessageOutput.Message != nil {
 			outputs = append(outputs, ev.Output.MessageOutput.Message.Content)
 		}
@@ -617,7 +661,7 @@ func TestIntegration_RunnerCancel(t *testing.T) {
 	cancelOpt, cancelFunc := WithCancel()
 	store := newCancelTestStore()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("cancel me")}, cancelOpt)
 
 	time.Sleep(50 * time.Millisecond)
@@ -626,14 +670,20 @@ func TestIntegration_RunnerCancel(t *testing.T) {
 	var gotCancel bool
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
+		if !ok {
+			break
+		}
 		if ev.Err != nil {
 			var ce *CancelError
-			if errors.As(ev.Err, &ce) { gotCancel = true }
+			if errors.As(ev.Err, &ce) {
+				gotCancel = true
+			}
 			break
 		}
 	}
-	if !gotCancel { t.Log("cancel may not have been delivered (expected with non-graceful cancel)") }
+	if !gotCancel {
+		t.Log("cancel may not have been delivered (expected with non-graceful cancel)")
+	}
 }
 
 // TestIntegration_RunnerStreamMode verifies that streaming events are received.
@@ -644,13 +694,17 @@ func TestIntegration_RunnerStreamMode(t *testing.T) {
 
 	store := newCancelTestStore()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store, EnableStreaming: true})
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("stream")})
 	var streamingEvents int
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
-		if ev.Err != nil { t.Fatalf("err: %v", ev.Err) }
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("err: %v", ev.Err)
+		}
 		if ev.Output != nil && ev.Output.MessageOutput != nil && ev.Output.MessageOutput.IsStreaming {
 			streamingEvents++
 		}
@@ -663,7 +717,7 @@ func TestIntegration_AgentToolViaRunner(t *testing.T) {
 	innerM := &mockModel{}
 	innerM.addResp("inner tool result")
 	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{Model: innerM}).WithName("inner").WithDescription("inner")
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, innerAgent)
 
 	parentM := &forcedToolModel{
@@ -682,8 +736,12 @@ func TestIntegration_AgentToolViaRunner(t *testing.T) {
 	var lastContent string
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
-		if ev.Err != nil { t.Fatalf("err: %v", ev.Err) }
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("err: %v", ev.Err)
+		}
 		if ev.Output != nil && ev.Output.MessageOutput != nil && !ev.Output.MessageOutput.IsStreaming && ev.Output.MessageOutput.Message != nil {
 			lastContent = ev.Output.MessageOutput.Message.Content
 		}

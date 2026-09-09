@@ -90,7 +90,9 @@ func WithToolOptions(opts []ToolOption) RunOption {
 // WithAgentToolOptions passes agent-level options to a specific sub-agent identified by name.
 func WithAgentToolOptions(agentName string, opts []RunOption) RunOption {
 	return WrapImplSpecificOptFn(func(o *runOptions) {
-		if o.agentToolOptions == nil { o.agentToolOptions = make(map[string][]RunOption) }
+		if o.agentToolOptions == nil {
+			o.agentToolOptions = make(map[string][]RunOption)
+		}
 		o.agentToolOptions[agentName] = opts
 	})
 }

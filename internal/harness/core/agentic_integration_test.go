@@ -11,12 +11,16 @@ import (
 // ======================== Tests: Sequential Workflow ========================
 
 func TestWorkflow_SequentialAgent(t *testing.T) {
-	m1 := &mockModel{}; m1.addResp("A1")
-	m2 := &mockModel{}; m2.addResp("A2")
-	a1 := reActAgentSetup(m1, nil); a1.name = "seq_a1"
-	a2 := reActAgentSetup(m2, nil); a2.name = "seq_a2"
+	m1 := &mockModel{}
+	m1.addResp("A1")
+	m2 := &mockModel{}
+	m2.addResp("A2")
+	a1 := reActAgentSetup(m1, nil)
+	a1.name = "seq_a1"
+	a2 := reActAgentSetup(m2, nil)
+	a2.name = "seq_a2"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	wf, err := NewSequential(ctx, &SequentialConfig{
 		Name: "seq", Description: "test", SubAgents: []Agent{a1, a2},
 	})
@@ -32,12 +36,16 @@ func TestWorkflow_SequentialAgent(t *testing.T) {
 }
 
 func TestWorkflow_ParallelAgent(t *testing.T) {
-	m1 := &mockModel{}; m1.addResp("P1")
-	m2 := &mockModel{}; m2.addResp("P2")
-	a1 := reActAgentSetup(m1, nil); a1.name = "par_a1"
-	a2 := reActAgentSetup(m2, nil); a2.name = "par_a2"
+	m1 := &mockModel{}
+	m1.addResp("P1")
+	m2 := &mockModel{}
+	m2.addResp("P2")
+	a1 := reActAgentSetup(m1, nil)
+	a1.name = "par_a1"
+	a2 := reActAgentSetup(m2, nil)
+	a2.name = "par_a2"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	wf, err := NewParallel(ctx, &ParallelConfig{
 		Name: "par", Description: "test", SubAgents: []Agent{a1, a2},
 	})
@@ -53,29 +61,35 @@ func TestWorkflow_ParallelAgent(t *testing.T) {
 }
 
 func TestWorkflow_NestedParallel(t *testing.T) {
-	m1 := &mockModel{}; m1.addResp("inner1")
-	m2 := &mockModel{}; m2.addResp("inner2")
-	m3 := &mockModel{}; m3.addResp("outer")
+	m1 := &mockModel{}
+	m1.addResp("inner1")
+	m2 := &mockModel{}
+	m2.addResp("inner2")
+	m3 := &mockModel{}
+	m3.addResp("outer")
 
-	a1 := reActAgentSetup(m1, nil); a1.name = "inner_a"
-	a2 := reActAgentSetup(m2, nil); a2.name = "inner_b"
+	a1 := reActAgentSetup(m1, nil)
+	a1.name = "inner_a"
+	a2 := reActAgentSetup(m2, nil)
+	a2.name = "inner_b"
 
-	innerPar, err := NewParallel(context.Background(), &ParallelConfig{
+	innerPar, err := NewParallel(t.Context(), &ParallelConfig{
 		Name: "inner-par", Description: "inner parallel", SubAgents: []Agent{a1, a2},
 	})
 	if err != nil {
 		t.Fatalf("NewParallel: %v", err)
 	}
 
-	a3 := reActAgentSetup(m3, nil); a3.name = "outer"
-	wf, err := NewSequential(context.Background(), &SequentialConfig{
+	a3 := reActAgentSetup(m3, nil)
+	a3.name = "outer"
+	wf, err := NewSequential(t.Context(), &SequentialConfig{
 		Name: "nested", Description: "nested parallel", SubAgents: []Agent{innerPar, a3},
 	})
 	if err != nil {
 		t.Fatalf("NewSequential: %v", err)
 	}
 
-	iter := wf.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("nested")}})
+	iter := wf.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("nested")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Error("expected events from nested workflow")
@@ -84,10 +98,12 @@ func TestWorkflow_NestedParallel(t *testing.T) {
 }
 
 func TestWorkflow_LoopAgent(t *testing.T) {
-	m := &mockModel{}; m.addResp("loop body")
-	body := reActAgentSetup(m, nil); body.name = "loop_body"
+	m := &mockModel{}
+	m.addResp("loop body")
+	body := reActAgentSetup(m, nil)
+	body.name = "loop_body"
 
-	ctx := context.Background()
+	ctx := t.Context()
 	wf, err := NewLoop(ctx, &LoopConfig{
 		Name: "loop", Description: "test", SubAgents: []Agent{body}, MaxIterations: 3,
 	})
@@ -104,14 +120,14 @@ func TestWorkflow_LoopAgent(t *testing.T) {
 
 func TestWorkflow_UnsupportedMode(t *testing.T) {
 	wf := &workflowAgent{name: "bad", mode: workflowModeUnknown}
-	iter := wf.Run(context.Background(), &AgentInput{})
+	iter := wf.Run(t.Context(), &AgentInput{})
 	ev, ok := iter.Next()
 	if !ok {
 		t.Fatal("expected an event")
 	}
 	if ev.Err == nil {
 		t.Error("expected error for unsupported mode")
-	} else 	if ev.Err.Error() != "unsupported mode 0" {
+	} else if ev.Err.Error() != "unsupported mode 0" {
 		t.Errorf("expected 'unsupported mode 0', got %v", ev.Err)
 	}
 }
@@ -119,10 +135,11 @@ func TestWorkflow_UnsupportedMode(t *testing.T) {
 // ======================== Tests: Agentic Integration ========================
 
 func TestAgenticIntegration_BasicGenerate(t *testing.T) {
-	model := &mockModel{}; model.addResp("Hello!")
+	model := &mockModel{}
+	model.addResp("Hello!")
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("e2e")
 
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("Hi")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("Hi")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Fatal("expected events")
@@ -139,7 +156,7 @@ func TestAgenticIntegration_ToolInvocation(t *testing.T) {
 		Model: model, Tools: []Tool{tool},
 	}).WithName("tool_e2e")
 
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("search something")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("search something")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Error("expected events")
@@ -153,7 +170,7 @@ func TestAgenticIntegration_StreamingOutput(t *testing.T) {
 
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("stream_e2e")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("stream test")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
@@ -162,10 +179,11 @@ func TestAgenticIntegration_StreamingOutput(t *testing.T) {
 }
 
 func TestAgenticIntegration_EmptyInput(t *testing.T) {
-	model := &mockModel{}; model.addResp("response")
+	model := &mockModel{}
+	model.addResp("response")
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("empty")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
@@ -192,7 +210,7 @@ func TestAgenticIntegration_ToolInvokeMiddlewareChain(t *testing.T) {
 		},
 	}).WithName("mw_chain_e2e")
 
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("search")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("search")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Error("expected events")
@@ -218,7 +236,7 @@ func TestAgenticIntegration_ReflectToolAgent(t *testing.T) {
 		Tools: []Tool{weatherTool},
 	}).WithName("reflect_e2e")
 
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("weather in Tokyo")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("weather in Tokyo")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Error("expected events")
@@ -243,7 +261,7 @@ func TestAgenticIntegration_ToolRegistryAgent(t *testing.T) {
 		Tools: r.ToSlice(),
 	}).WithName("registry_e2e")
 
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("search for London")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("search for London")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Error("expected events")
@@ -271,7 +289,7 @@ func TestAgenticIntegration_RetryToolMiddleware(t *testing.T) {
 		},
 	}).WithName("retry_tool_e2e")
 
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("run")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("run")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Error("expected events")
@@ -298,7 +316,7 @@ func TestAgenticIntegration_ToolFallback(t *testing.T) {
 		},
 	}).WithName("fallback_e2e")
 
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("run")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("run")}})
 	events := drainAgentEvents(t, iter)
 	if len(events) == 0 {
 		t.Error("expected events")
@@ -313,6 +331,6 @@ func TestAgenticIntegration_ModelErrorRecovery(t *testing.T) {
 
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: wrapped}).WithName("retry_e2e")
 
-	iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("retry test")}})
+	iter := agent.Run(t.Context(), &AgentInput{Messages: []Message{schema.UserMessage("retry test")}})
 	_ = drainAgentEvents(t, iter)
 }
