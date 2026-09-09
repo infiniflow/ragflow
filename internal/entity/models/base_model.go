@@ -30,6 +30,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 type BaseModel struct {
@@ -185,6 +187,7 @@ func (b *BaseModel) newJSONPostRequest(ctx context.Context, url string, apiConfi
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
+	common.Info("LLM request payload", zap.String("url", url), zap.ByteString("payload", jsonData))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {

@@ -29,6 +29,8 @@ import (
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 // SiliconflowModel implements ModelDriver for Siliconflow
@@ -184,6 +186,7 @@ func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, request
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
+	common.Info("Embedding request payload", zap.String("url", url), zap.ByteString("payload", jsonData))
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()

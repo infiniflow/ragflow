@@ -848,6 +848,7 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 		if cw, ok := m["content_with_weight"].(string); ok {
 			ch.Content = cw
 		}
+		log.Printf("knowledge_compiler: chunk: %+v", ch)
 		// Reuse the embedding the upstream pipeline already computed on the
 		// chunk (stored under q_<dim>_vec); variants fall back to embedding
 		// on demand when it is absent. A chunk must carry exactly one vector.
