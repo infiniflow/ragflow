@@ -327,7 +327,6 @@ def test_nav_rank_compiled_buckets_respects_top_k(monkeypatch):
     assert len(module._nav_rank_compiled_buckets(buckets, 2)) == 2
 
 
-@pytest.mark.asyncio
 def test_nav_aggregate_chunks_rolls_up_per_document(monkeypatch):
     module, _, _ = _load_nav_module(monkeypatch)
     chunks = [
