@@ -1,0 +1,7 @@
+# base.yaml
+admin_ip: 0.0.0.0
+admin_port: 9383
+
+api_ip: 0.0.0.0
+api_port: 9384
+

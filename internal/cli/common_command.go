@@ -245,6 +245,8 @@ func (c *CLI) Logout() (ResponseIf, error) {
 		return nil, fmt.Errorf("login failed: %s", result.Message)
 	}
 
+	fmt.Printf("Logout successfully\n")
+
 	switch c.Config.CLIMode {
 	case AdminMode:
 		c.AdminServerClient.LoginToken = nil
