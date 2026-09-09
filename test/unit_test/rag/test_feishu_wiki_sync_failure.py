@@ -223,6 +223,29 @@ def _import_state() -> tuple[dict[str, ModuleType], tuple[object, ...]]:
     return tracked_modules, tracked_attrs
 
 
+def _restore_import_state(state: tuple[dict[str, ModuleType], tuple[object, ...]]) -> None:
+    modules, attrs = state
+    for name in list(sys.modules):
+        if name == "common.data_source" or name.startswith("common.data_source.") or name in {"rag.svr.feishu_wiki_sync", "rag.svr.sync_data_source"}:
+            sys.modules.pop(name, None)
+    sys.modules.update(modules)
+    for (parent, attribute), value in zip(
+        (
+            (common, "config_utils"),
+            (common, "data_source"),
+            (common, "settings"),
+            (rag_svr, "feishu_wiki_sync"),
+            (rag_svr, "sync_data_source"),
+        ),
+        attrs,
+    ):
+        if value is _MISSING:
+            if hasattr(parent, attribute):
+                delattr(parent, attribute)
+        else:
+            setattr(parent, attribute, value)
+
+
 _IMPORT_STATE_BEFORE = _import_state()
 _stack = _load_sync_stack()
 _IMPORT_STATE_AFTER = _import_state()
@@ -294,32 +317,31 @@ def test_real_registries_and_models_reach_the_sync_owner():
     assert sync_data_source.TaskStatus is TaskStatus
     assert isinstance(_doc(datetime(2026, 1, 2, tzinfo=UTC)), Document)
 
-    sentinel_data_source = ModuleType("common.data_source")
-    sentinel_sync_owner = ModuleType("rag.svr.sync_data_source")
-    sys.modules["common.data_source"] = sentinel_data_source
-    sys.modules["rag.svr.sync_data_source"] = sentinel_sync_owner
-    common.data_source = sentinel_data_source
-    rag_svr.sync_data_source = sentinel_sync_owner
+    entry_state = _import_state()
+    late_child = ModuleType("common.data_source.imported_after_collection")
+    sys.modules[late_child.__name__] = late_child
     try:
-        isolated = _load_sync_stack()
-        assert isolated.registry.CONNECTOR_BY_SOURCE[FileSource.FEISHU_WIKI] is isolated.registry.FeishuWikiConnector
-        assert isolated.sync_owner.func_factory[FileSource.FEISHU_WIKI] is isolated.sync_owner.FeishuWiki
-        assert sys.modules["common.data_source"] is sentinel_data_source
-        assert sys.modules["rag.svr.sync_data_source"] is sentinel_sync_owner
-        assert common.data_source is sentinel_data_source
-        assert rag_svr.sync_data_source is sentinel_sync_owner
+        execution_state = _import_state()
+        sentinel_data_source = ModuleType("common.data_source")
+        sentinel_sync_owner = ModuleType("rag.svr.sync_data_source")
+        sys.modules["common.data_source"] = sentinel_data_source
+        sys.modules["rag.svr.sync_data_source"] = sentinel_sync_owner
+        common.data_source = sentinel_data_source
+        rag_svr.sync_data_source = sentinel_sync_owner
+        try:
+            isolated = _load_sync_stack()
+            assert isolated.registry.CONNECTOR_BY_SOURCE[FileSource.FEISHU_WIKI] is isolated.registry.FeishuWikiConnector
+            assert isolated.sync_owner.func_factory[FileSource.FEISHU_WIKI] is isolated.sync_owner.FeishuWiki
+            assert sys.modules["common.data_source"] is sentinel_data_source
+            assert sys.modules["rag.svr.sync_data_source"] is sentinel_sync_owner
+            assert common.data_source is sentinel_data_source
+            assert rag_svr.sync_data_source is sentinel_sync_owner
+        finally:
+            _restore_import_state(execution_state)
+
+        assert sys.modules[late_child.__name__] is late_child
     finally:
-        sys.modules.pop("common.data_source", None)
-        sys.modules.pop("rag.svr.sync_data_source", None)
-        if _IMPORT_STATE_BEFORE[1][1] is _MISSING:
-            del common.data_source
-        else:
-            common.data_source = _IMPORT_STATE_BEFORE[1][1]
-        if _IMPORT_STATE_BEFORE[1][4] is _MISSING:
-            del rag_svr.sync_data_source
-        else:
-            rag_svr.sync_data_source = _IMPORT_STATE_BEFORE[1][4]
-        sys.modules.update(_IMPORT_STATE_BEFORE[0])
+        _restore_import_state(entry_state)
 
 
 @pytest.fixture(autouse=True)
