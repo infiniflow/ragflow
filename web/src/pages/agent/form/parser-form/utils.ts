@@ -11,17 +11,9 @@ export function buildFieldNameWithPrefix(name: string, prefix: string) {
   return `${prefix}.${name}`;
 }
 
-export function getInitialParseMethod(fileType: FileType): string {
-  const setup = initialParserValues.setups.find(
-    (x) => x.fileFormat === fileType,
-  );
-  return setup?.parse_method ?? '';
-}
-
-// Static parse-method values across all file types. Forms saved while the
-// file type was still switchable can hold another file type's static value on
-// parse_method. LLM model ids from the model tree are never in this set, so a
-// user-picked model is never treated as foreign.
+// Static parse-method values across all file types. LLM model ids from the
+// model tree are never in this set, so `isStaticParseMethod` can tell a
+// built-in method apart from a user-picked model.
 // Note: ParseDocumentType is a const enum — list members explicitly instead of
 // Object.values, which is not allowed on const enums (TS2475).
 const KnownStaticParseMethods = new Set<string>([
@@ -32,17 +24,6 @@ const KnownStaticParseMethods = new Set<string>([
   ParseDocumentType.TCADPParser,
   ImageParseMethod.OCR,
 ]);
-
-export function isForeignParseMethod(
-  fileType: FileType,
-  value: unknown,
-): value is string {
-  return (
-    typeof value === 'string' &&
-    KnownStaticParseMethods.has(value) &&
-    value !== getInitialParseMethod(fileType)
-  );
-}
 
 export function isStaticParseMethod(value: unknown): value is string {
   return typeof value === 'string' && KnownStaticParseMethods.has(value);
