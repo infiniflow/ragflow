@@ -78,8 +78,11 @@ async def create():
 @login_required
 def list_searches():
     keywords = request.args.get("keywords", "")
-    page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
-    items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    try:
+        page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    except ValueError as e:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", "true").lower() != "false"
     owner_ids = request.args.getlist("owner_ids")

@@ -141,10 +141,15 @@ def list_logs(connector_id):
         return _connector_auth_error(connector_id, current_user.id)
 
     req = request.args.to_dict(flat=True)
+    try:
+        page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
+        page_size = validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE))
+    except ValueError as exc:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(exc))
     arr, total = SyncLogsService.list_sync_tasks(
         connector_id,
-        validate_rest_api_page(req.get("page", DEFAULT_PAGE)),
-        validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE)),
+        page,
+        page_size,
     )
     return get_json_result(data={"total": total, "logs": arr})
 

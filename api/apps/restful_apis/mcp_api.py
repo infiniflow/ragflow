@@ -71,8 +71,13 @@ def _assert_mcp_url_is_safe(url, invalid_message: str = "Invalid url.") -> tuple
 @login_required
 async def list_mcp() -> Response:
     keywords = request.args.get("keywords", "")
-    page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
-    items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    try:
+        page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    except ValueError as e:
+        from api.utils.api_utils import get_error_argument_result
+
+        return get_error_argument_result(str(e))
     orderby = request.args.get("orderby", "create_time")
     if request.args.get("desc", "true").lower() == "false":
         desc = False

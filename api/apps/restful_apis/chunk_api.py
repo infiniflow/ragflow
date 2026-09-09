@@ -371,8 +371,11 @@ async def retrieval_test(tenant_id, dataset_id=None):
         return get_result(message=embd_err, code=RetCode.DATA_ERROR)
     if "question" not in req:
         return get_error_data_result("`question` is required.")
-    page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
-    size = validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE))
+    try:
+        page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
+        size = validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE))
+    except ValueError as e:
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     question = req["question"].strip() if isinstance(req["question"], str) else req["question"]
     if not question:
         return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
@@ -558,8 +561,11 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"you don't own the document {document_id}")
     doc = doc[0]
     req = request.args
-    page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
-    size = validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE))
+    try:
+        page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
+        size = validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE))
+    except ValueError as e:
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     question = req.get("keywords", "")
     chunk_ids = _get_query_id_list(req, "chunk_ids")
     try:
