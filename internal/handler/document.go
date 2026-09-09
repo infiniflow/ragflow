@@ -964,7 +964,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		var parsed map[string]interface{}
 		if err = json.Unmarshal([]byte(raw), &parsed); err == nil && parsed != nil {
 			override = map[string]interface{}{}
-			for _, k := range []string{"table_column_mode", "table_column_roles"} {
+			for _, k := range []string{"table_column_mode", "table_column_roles", "table_column_names", "table_column_names_by_file"} {
 				if v, ok := parsed[k]; ok {
 					override[k] = v
 				}

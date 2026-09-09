@@ -706,6 +706,96 @@ func TestRunPipeline_ContextCanceled(t *testing.T) {
 	}
 }
 
+func TestInjectTableColumnOverride_DoesNotInventDocumentColumns(t *testing.T) {
+	docConfig := map[string]interface{}{}
+	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
+
+	got := injectTableColumnOverride(docConfig, dsl)
+	if _, exists := got["Parser:Table"]; exists {
+		t.Fatalf("dataset table columns must not be injected into a document: %#v", got)
+	}
+}
+
+func TestInjectTableColumnOverride_DocumentConfigOverridesPipelineDefaults(t *testing.T) {
+	docConfig := map[string]interface{}{
+		"table_column_mode":  "manual",
+		"table_column_names": []interface{}{"Name"},
+		"table_column_roles": map[string]interface{}{"Name": "metadata"},
+		"Parser:Table": map[string]interface{}{
+			"spreadsheet": map[string]interface{}{
+				"column_mode":  "auto",
+				"column_names": []interface{}{},
+				"column_roles": map[string]interface{}{},
+			},
+		},
+	}
+	dsl := []byte(`{"components":{"Parser:Table":{"obj":{"component_name":"Parser","params":{}}}}}`)
+
+	got := injectTableColumnOverride(docConfig, dsl)
+	spreadsheet := got["Parser:Table"].(map[string]interface{})["spreadsheet"].(map[string]interface{})
+	if spreadsheet["column_mode"] != "manual" {
+		t.Fatalf("column_mode = %#v, want manual", spreadsheet["column_mode"])
+	}
+	wantRoles := map[string]interface{}{"Name": "metadata"}
+	if !reflect.DeepEqual(spreadsheet["column_roles"], wantRoles) {
+		t.Fatalf("column_roles = %#v, want %#v", spreadsheet["column_roles"], wantRoles)
+	}
+}
+
+func TestSyncTableColumnNames_PersistsOnlyOnDocument(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+	if err := dao.DB.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatalf("migrate knowledgebase: %v", err)
+	}
+	kb := &entity.Knowledgebase{
+		ID:           "kb-1",
+		TenantID:     "tenant-1",
+		Name:         "kb-1",
+		ParserConfig: entity.JSONMap{"dataset_setting": "preserved"},
+	}
+	if err := dao.DB.Create(kb).Error; err != nil {
+		t.Fatalf("seed knowledgebase: %v", err)
+	}
+	doc := &entity.Document{
+		ID:           "doc-1",
+		KbID:         kb.ID,
+		ParserID:     "table",
+		ParserConfig: entity.JSONMap{"table_column_mode": "manual", "table_column_roles": map[string]interface{}{"Name": "metadata", "Stale": "both"}},
+		CreatedBy:    "tenant-1",
+		Type:         "csv",
+		Suffix:       "csv",
+	}
+	if err := dao.DB.Create(doc).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := saveDocumentTableColumns(t.Context(), doc.ID, []string{"Name", "City"}); err != nil {
+		t.Fatalf("sync discovered columns: %v", err)
+	}
+
+	persistedDoc, err := dao.NewDocumentDAO().GetByID(t.Context(), dao.DB, doc.ID)
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	wantNames := []interface{}{"Name", "City"}
+	if !reflect.DeepEqual(persistedDoc.ParserConfig["table_column_names"], wantNames) {
+		t.Fatalf("document column names = %#v, want %#v", persistedDoc.ParserConfig["table_column_names"], wantNames)
+	}
+	wantRoles := map[string]interface{}{"Name": "metadata"}
+	if !reflect.DeepEqual(persistedDoc.ParserConfig["table_column_roles"], wantRoles) {
+		t.Fatalf("document column roles = %#v, want %#v", persistedDoc.ParserConfig["table_column_roles"], wantRoles)
+	}
+
+	persistedKB, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), dao.DB, kb.ID)
+	if err != nil {
+		t.Fatalf("load knowledgebase: %v", err)
+	}
+	if !reflect.DeepEqual(persistedKB.ParserConfig, entity.JSONMap{"dataset_setting": "preserved"}) {
+		t.Fatalf("dataset parser config was mutated: %#v", persistedKB.ParserConfig)
+	}
+}
+
 func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 	logged := false
 	inserted := false

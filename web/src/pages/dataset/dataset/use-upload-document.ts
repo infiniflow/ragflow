@@ -21,20 +21,22 @@ export const useHandleUploadDocument = () => {
       fileList,
       parseOnCreation,
       tableColumnMode,
+      tableColumnNames,
+      tableColumnNamesByFile,
       tableColumnRoles,
     }: UploadFormSchemaType) => {
       if (fileList.length > 0) {
         // Build parser_config if column roles are configured
         let parserConfig: Record<string, any> | undefined;
-        if (
-          tableColumnMode === 'manual' &&
-          tableColumnRoles &&
-          Object.keys(tableColumnRoles).length > 0
-        ) {
+        if (tableColumnMode && tableColumnNames?.length) {
           parserConfig = {
-            table_column_mode: 'manual',
-            table_column_roles: tableColumnRoles,
+            table_column_mode: tableColumnMode,
+            table_column_names: tableColumnNames,
+            table_column_names_by_file: tableColumnNamesByFile,
           };
+          if (tableColumnMode === 'manual' && tableColumnRoles) {
+            parserConfig.table_column_roles = tableColumnRoles;
+          }
         }
 
         const ret = await uploadDocument(fileList as File[], parserConfig);

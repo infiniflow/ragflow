@@ -25,6 +25,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -669,6 +670,29 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	}
 	if fake.uploadOverride != nil {
 		t.Fatalf("bad parser_config should be ignored, got %v", fake.uploadOverride)
+	}
+}
+
+func TestUploadDocumentsHandler_AllowsDocumentTableColumnsBeforeParsing(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{uploadLocalData: []map[string]interface{}{{"id": "doc-1", "name": "table.csv"}}}
+	h := &DocumentHandler{documentService: fake, datasetService: dataset.NewDatasetService()}
+	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", map[string]string{
+		"parser_config": `{"table_column_mode":"manual","table_column_names":["Name","City"],"table_column_roles":{"Name":"indexing","City":"metadata"}}`,
+	}, "table.csv", []byte("Name,City\nAlice,Beijing\n"))
+
+	h.UploadDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	wantNames := []interface{}{"Name", "City"}
+	if !reflect.DeepEqual(fake.uploadOverride["table_column_names"], wantNames) {
+		t.Fatalf("table_column_names = %#v, want %#v", fake.uploadOverride["table_column_names"], wantNames)
 	}
 }
 

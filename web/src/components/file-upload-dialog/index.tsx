@@ -73,6 +73,8 @@ function buildUploadFormSchema(t: TFunction) {
       )
       .min(1, { message: t('fileManager.pleaseUploadAtLeastOneFile') }),
     tableColumnMode: z.enum(['auto', 'manual']).optional(),
+    tableColumnNames: z.array(z.string()).optional(),
+    tableColumnNamesByFile: z.array(z.array(z.string())).optional(),
     tableColumnRoles: z
       .record(z.enum(['indexing', 'metadata', 'both']))
       .optional(),
@@ -107,6 +109,8 @@ function UploadForm({
       parseOnCreation: false,
       fileList: [],
       tableColumnMode: 'auto',
+      tableColumnNames: [],
+      tableColumnNamesByFile: [],
       tableColumnRoles: {},
     },
   });
@@ -119,21 +123,29 @@ function UploadForm({
     async (files: any[]) => {
       if (!isTableParser || !files || files.length === 0) {
         setExtractedColumns([]);
+        form.setValue('tableColumnNames', []);
+        form.setValue('tableColumnNamesByFile', []);
         return;
       }
 
-      // Extract columns from the first table file
       const allColumns = new Set<string>();
+      const columnsByFile: string[][] = [];
       for (const f of files) {
         const file = f instanceof File ? f : f.file;
         if (file && isTableFile(file)) {
           const cols = await extractTableColumns(file);
           cols.forEach((c) => allColumns.add(c));
+          columnsByFile.push(cols);
+        } else {
+          columnsByFile.push([]);
         }
       }
-      setExtractedColumns(Array.from(allColumns));
+      const columns = Array.from(allColumns);
+      setExtractedColumns(columns);
+      form.setValue('tableColumnNames', columns);
+      form.setValue('tableColumnNamesByFile', columnsByFile);
     },
-    [isTableParser],
+    [form, isTableParser],
   );
 
   const handleModeChange = (value: 'auto' | 'manual') => {

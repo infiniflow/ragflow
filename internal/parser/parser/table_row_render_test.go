@@ -64,7 +64,7 @@ func TestRenderRowsToJSONChunks(t *testing.T) {
 		{"", "", "", ""}, // empty row, should be skipped
 	}
 
-	t.Run("auto mode defaults to both", func(t *testing.T) {
+	t.Run("auto mode indexes without creating metadata", func(t *testing.T) {
 		items, headers := RenderRowsToJSONChunks(rows, "Sheet1", "auto", nil)
 		if len(headers) != 4 {
 			t.Fatalf("expected 4 headers, got %d", len(headers))
@@ -78,12 +78,8 @@ func TestRenderRowsToJSONChunks(t *testing.T) {
 		if item0["text"] != expectedText {
 			t.Errorf("item0 text = %q, want %q", item0["text"], expectedText)
 		}
-		cd, ok := item0["chunk_data"].(map[string]any)
-		if !ok {
-			t.Fatalf("item0 chunk_data missing or not map[string]any: %v", item0["chunk_data"])
-		}
-		if cd["Title"] != "Doc A" || cd["Category"] != "Tech" {
-			t.Errorf("item0 chunk_data = %v", cd)
+		if got, exists := item0["chunk_data"]; exists {
+			t.Fatalf("auto mode must not implicitly create metadata, got %#v", got)
 		}
 		if item0["sheet"] != "Sheet1" {
 			t.Errorf("item0 sheet = %v, want Sheet1", item0["sheet"])

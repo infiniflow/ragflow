@@ -263,8 +263,10 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 
 	if fileVal, ok := globals.GetGlobal(ctx, "file"); ok {
 		if fileMap, ok := fileVal.(map[string]any); ok {
-			if names, ok := fileMap["table_column_names"].([]string); ok && len(names) > 0 && s.taskCtx.Doc.KbID != "" && dao.DB != nil {
-				_ = s.syncTableColumnNamesToKB(ctx, s.taskCtx.Doc.KbID, names)
+			if names, ok := fileMap["table_column_names"].([]string); ok && len(names) > 0 && s.taskCtx.Doc.ID != "" && dao.DB != nil {
+				if err := saveDocumentTableColumns(ctx, s.taskCtx.Doc.ID, names); err != nil {
+					common.Warn(fmt.Sprintf("failed to save table columns for document %s: %v", s.taskCtx.Doc.ID, err))
+				}
 			}
 		}
 	}
@@ -918,14 +920,11 @@ func warnUnknownComponentParams(dsl string, parserConfig map[string]any) {
 	}
 }
 
-func injectTableColumnOverride(docConfig, kbConfig map[string]interface{}, dsl []byte) map[string]interface{} {
+func injectTableColumnOverride(docConfig map[string]interface{}, dsl []byte) map[string]interface{} {
 	if docConfig == nil {
 		docConfig = map[string]interface{}{}
 	}
 	mode, roles, names := indexdoc.ResolveTableColumnConfig(docConfig)
-	if mode == "" && len(roles) == 0 && len(names) == 0 && kbConfig != nil {
-		mode, roles, names = indexdoc.ResolveTableColumnConfig(kbConfig)
-	}
 	if mode == "" && len(roles) == 0 && len(names) == 0 {
 		return docConfig
 	}
@@ -943,13 +942,13 @@ func injectTableColumnOverride(docConfig, kbConfig map[string]interface{}, dsl [
 		ssEntry = map[string]any{}
 		cpnEntry["spreadsheet"] = ssEntry
 	}
-	if mode != "" && ssEntry["column_mode"] == nil {
+	if mode != "" {
 		ssEntry["column_mode"] = mode
 	}
-	if len(roles) > 0 && ssEntry["column_roles"] == nil {
+	if len(roles) > 0 {
 		ssEntry["column_roles"] = roles
 	}
-	if len(names) > 0 && ssEntry["column_names"] == nil {
+	if len(names) > 0 {
 		ssEntry["column_names"] = names
 	}
 	return docConfig
@@ -968,11 +967,7 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		parserConfig = map[string]interface{}{}
 	}
 
-	var kbConfig map[string]interface{}
-	if s.taskCtx.KB.ParserConfig != nil {
-		kbConfig = map[string]interface{}(s.taskCtx.KB.ParserConfig)
-	}
-	parserConfig = injectTableColumnOverride(parserConfig, kbConfig, []byte(dsl))
+	parserConfig = injectTableColumnOverride(parserConfig, []byte(dsl))
 	s.taskCtx.Doc.ParserConfig = parserConfig
 
 	// Surface component params whose cpnID is absent from the DSL. The
@@ -1128,80 +1123,71 @@ func injectDebugChunkCap(inputs map[string]any) map[string]any {
 	return inputs
 }
 
-func (s *PipelineExecutor) syncTableColumnNamesToKB(ctx context.Context, kbID string, newNames []string) error {
-	if len(newNames) == 0 || kbID == "" || dao.DB == nil {
+func saveDocumentTableColumns(ctx context.Context, docID string, newNames []string) error {
+	if len(newNames) == 0 || docID == "" || dao.DB == nil {
 		return nil
 	}
 
 	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var kb entity.Knowledgebase
+		var doc entity.Document
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND status = ?", kbID, string(entity.StatusValid)).
-			First(&kb).Error; err != nil {
+			Where("id = ?", docID).
+			First(&doc).Error; err != nil {
 			return err
 		}
 
-		existingNames := make([]string, 0)
-		if kb.ParserConfig != nil {
-			if raw, ok := kb.ParserConfig["table_column_names"].([]any); ok {
-				for _, item := range raw {
-					if str, ok := item.(string); ok && str != "" {
-						existingNames = append(existingNames, str)
-					}
-				}
-			} else if raw, ok := kb.ParserConfig["table_column_names"].([]string); ok {
-				existingNames = raw
-			}
-			for k, v := range kb.ParserConfig {
-				if strings.HasPrefix(k, "Parser:") {
-					if compMap, ok := v.(map[string]interface{}); ok {
-						if ssMap, ok := compMap["spreadsheet"].(map[string]interface{}); ok {
-							if names, ok := ssMap["column_names"].([]any); ok {
-								for _, item := range names {
-									if str, ok := item.(string); ok && str != "" {
-										existingNames = append(existingNames, str)
-									}
-								}
-							} else if names, ok := ssMap["column_names"].([]string); ok {
-								existingNames = append(existingNames, names...)
-							}
-						}
-					}
-				}
-			}
+		if doc.ParserConfig == nil {
+			doc.ParserConfig = entity.JSONMap{}
 		}
-		seen := make(map[string]struct{}, len(existingNames)+len(newNames))
-		merged := make([]string, 0, len(existingNames)+len(newNames))
-		for _, n := range existingNames {
-			if _, ok := seen[n]; !ok {
-				seen[n] = struct{}{}
-				merged = append(merged, n)
-			}
-		}
-		existingCount := len(merged)
+		seen := make(map[string]struct{}, len(newNames))
+		names := make([]string, 0, len(newNames))
 		for _, n := range newNames {
+			n = strings.TrimSpace(n)
+			if n == "" {
+				continue
+			}
 			if _, ok := seen[n]; !ok {
 				seen[n] = struct{}{}
-				merged = append(merged, n)
+				names = append(names, n)
 			}
-		}
-		if len(merged) == existingCount {
-			return nil
 		}
 
-		updateMap := map[string]interface{}{
-			"table_column_names": merged,
+		doc.ParserConfig["table_column_names"] = names
+		doc.ParserConfig["table_column_roles"] = filterTableColumnRoles(doc.ParserConfig["table_column_roles"], seen)
+		for key, value := range doc.ParserConfig {
+			if !strings.HasPrefix(key, "Parser:") {
+				continue
+			}
+			componentConfig, ok := value.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			spreadsheet, ok := componentConfig["spreadsheet"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			spreadsheet["column_names"] = names
+			spreadsheet["column_roles"] = filterTableColumnRoles(spreadsheet["column_roles"], seen)
 		}
-		for k, v := range kb.ParserConfig {
-			if strings.HasPrefix(k, "Parser:") {
-				if compMap, ok := v.(map[string]interface{}); ok {
-					if ssMap, ok := compMap["spreadsheet"].(map[string]interface{}); ok {
-						ssMap["column_names"] = merged
-						updateMap[k] = compMap
-					}
-				}
+		return tx.Model(&entity.Document{}).Where("id = ?", docID).Update("parser_config", doc.ParserConfig).Error
+	})
+}
+
+func filterTableColumnRoles(raw any, columns map[string]struct{}) map[string]interface{} {
+	filtered := make(map[string]interface{})
+	switch roles := raw.(type) {
+	case map[string]interface{}:
+		for column, role := range roles {
+			if _, exists := columns[column]; exists {
+				filtered[column] = role
 			}
 		}
-		return dao.NewKnowledgebaseDAO().UpdateParserConfig(ctx, tx, kbID, updateMap)
-	})
+	case map[string]string:
+		for column, role := range roles {
+			if _, exists := columns[column]; exists {
+				filtered[column] = role
+			}
+		}
+	}
+	return filtered
 }

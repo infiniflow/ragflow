@@ -116,7 +116,7 @@ func RenderRowsToJSONChunks(rows [][]string, sheetName string, columnMode string
 				continue
 			}
 
-			role := "both"
+			role := "indexing"
 			if isManual && columnRoles != nil {
 				if rVal, ok := columnRoles[col]; ok && strings.TrimSpace(rVal) != "" {
 					role = strings.ToLower(strings.TrimSpace(rVal))
