@@ -156,7 +156,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 
 	// ---- GRAPH ----
-	graphProduct, err := buildGraphProduct(ctx, deps, cfg, prods)
+	graphProduct, err := buildGraphProduct(deps, cfg, prods)
 	if err != nil {
 		return common.Outputs{}, err
 	}
@@ -178,19 +178,19 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 // entity/relation rows and wraps it as a single "graph" product so the
 // downstream writer has a ready structure to persist. The row id mirrors
 // Python's _struct_graph_row_id (doc : structure_graph : compile : template).
-func buildGraphProduct(ctx context.Context, deps common.Deps, cfg CompileConfig, prods []common.Product) (common.Product, error) {
+func buildGraphProduct(deps common.Deps, cfg CompileConfig, prods []common.Product) (common.Product, error) {
 	if deps.Embed == nil {
 		return common.Product{}, fmt.Errorf("knowledge_compiler: embedding model is required to build the graph product")
 	}
 	graph := RebuildStructureGraph(prods)
 	graphContent := payloadJSON(graph)
-	vecs, err := deps.Embed.Encode(ctx, []string{graphContent})
-	if err != nil {
-		return common.Product{}, err
-	}
-	if len(vecs) == 0 {
-		return common.Product{}, fmt.Errorf("knowledge_compiler: embedding the graph summary returned no vector")
-	}
+	// vecs, err := deps.Embed.Encode(ctx, []string{graphContent})
+	// if err != nil {
+	// 	return common.Product{}, err
+	// }
+	// if len(vecs) == 0 {
+	// 	return common.Product{}, fmt.Errorf("knowledge_compiler: embedding the graph summary returned no vector")
+	// }
 	idParts := []string{cfg.DocID, "structure_graph", string(cfg.Type)}
 	if cfg.TemplateID != "" {
 		idParts = append(idParts, cfg.TemplateID)
@@ -201,7 +201,7 @@ func buildGraphProduct(ctx context.Context, deps common.Deps, cfg CompileConfig,
 		TenantID: cfg.TenantID,
 		Variant:  cfg.Variant,
 		Content:  graphContent,
-		Vector:   vecs[0],
+		Vector:   []float32{},
 		Meta: map[string]any{
 			"kind":           "graph",
 			"compile_kwd":    string(cfg.Type),
