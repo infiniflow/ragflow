@@ -49,9 +49,10 @@ class ListOperations(ComponentBase, ABC):
     component_name = "ListOperations"
 
     def param_refs(self) -> list[str]:
+        """Return parameter references resolved by the ListOperations component."""
         query = getattr(self._param, "query", None)
         if isinstance(query, str) and query:
-            return [query.strip("{").strip("}").strip()]
+            return [self.normalize_param_ref(query)]
         return []
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))

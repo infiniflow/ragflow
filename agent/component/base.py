@@ -615,16 +615,21 @@ class ComponentBase(ABC):
     def get_input_elements(self) -> dict[str, Any]:
         return self._param.inputs
 
+    @staticmethod
+    def normalize_param_ref(ref: str) -> str:
+        """Strip outer braces and surrounding whitespace from a parameter reference."""
+        return ref.strip("{").strip("}").strip()
+
     def param_refs(self) -> list[str]:
-        # Variable references a component resolves from its own params instead
-        # of from `inputs`. Override where `_invoke` calls get_variable_value.
+        """Return variable references resolved from component parameters."""
         return []
 
     def get_dependency_ids(self) -> list[str]:
+        """Collect upstream component IDs from input elements and parameter references."""
         ids = [ele["_cpn_id"] for ele in self.get_input_elements().values() if isinstance(ele, dict) and ele.get("_cpn_id")]
         for ref in self.param_refs():
             if isinstance(ref, str):
-                cleaned = ref.strip("{").strip("}").strip()
+                cleaned = self.normalize_param_ref(ref)
                 if cleaned.find("@") > 0:
                     ids.append(cleaned.split("@", 1)[0])
         return ids

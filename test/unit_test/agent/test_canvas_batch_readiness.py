@@ -44,13 +44,16 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _load_canvas_stack(monkeypatch):
+    """Load the agent canvas stack with lightweight stubs for isolated batch testing."""
     def _pkg(name, path):
+        """Register an isolated mock package module in sys.modules."""
         mod = ModuleType(name)
         mod.__path__ = [str(path)]
         monkeypatch.setitem(sys.modules, name, mod)
         return mod
 
     def _stub(name, **attrs):
+        """Register an isolated stub module with mocked attributes in sys.modules."""
         mod = ModuleType(name)
         for key, value in attrs.items():
             setattr(mod, key, value)
@@ -58,6 +61,7 @@ def _load_canvas_stack(monkeypatch):
         return mod
 
     def _real(name, relpath):
+        """Load a real module from disk into sys.modules."""
         spec = importlib.util.spec_from_file_location(name, REPO_ROOT / relpath)
         mod = importlib.util.module_from_spec(spec)
         monkeypatch.setitem(sys.modules, name, mod)
@@ -113,65 +117,90 @@ def _load_canvas_stack(monkeypatch):
 
 
 class _Trace:
+    """Thread-safe event logger tracking component start and completion times."""
+
     def __init__(self):
+        """Initialize trace event container and start time."""
         self.events: list[tuple[str, str, float]] = []
         self._lock = threading.Lock()
         self._t0 = time.perf_counter()
 
     def record(self, kind, cpn_id):
+        """Record execution timestamp for a component event."""
         with self._lock:
             self.events.append((kind, cpn_id, time.perf_counter() - self._t0))
 
     def at(self, kind, cpn_id):
+        """Return the recorded timestamp for a component event."""
         return next(t for k, c, t in self.events if k == kind and c == cpn_id)
 
     def runs(self, cpn_id):
+        """Return the number of completed runs for a component."""
         return sum(1 for k, c, _ in self.events if k == "end" and c == cpn_id)
 
     def ran(self, cpn_id):
+        """Check if a component completed at least one run."""
         return self.runs(cpn_id) > 0
 
 
 def _make_components(base, aggregator, trace, switch=None, assigner=None, iteration=None, list_operations=None):
+    """Create instrumented test component classes wired to trace recording."""
     class BeginParam(base.ComponentParamBase):
+        """Parameter specification for test Begin component."""
+
         def __init__(self):
+            """Initialize Begin component parameters."""
             super().__init__()
             self.mode = "conversational"
             self.prologue = ""
 
         def check(self):
+            """Validate Begin parameters."""
             pass
 
     class Begin(base.ComponentBase):
+        """Test Begin component logging start and end events."""
+
         component_name = "Begin"
 
         def thoughts(self) -> str:
+            """Return thoughts trace for Begin."""
             return ""
 
         def _invoke(self, **kwargs):
+            """Record execution events for Begin component."""
             trace.record("start", self._id)
             trace.record("end", self._id)
 
     class EchoParam(base.ComponentParamBase):
+        """Parameter specification for test Echo component."""
+
         def __init__(self):
+            """Initialize Echo component parameters."""
             super().__init__()
             self.text = ""
             self.delay = 0.0
             self.outputs = {"result": {"value": "", "type": "string"}}
 
         def check(self):
+            """Validate Echo parameters."""
             pass
 
     class Echo(base.ComponentBase):
+        """Test Echo component outputting interpolated text with optional delay."""
+
         component_name = "Echo"
 
         def thoughts(self) -> str:
+            """Return thoughts trace for Echo."""
             return ""
 
         def get_input_elements(self):
+            """Extract input element dependencies from text template."""
             return self.get_input_elements_from_text(self._param.text)
 
         def _invoke(self, **kwargs):
+            """Execute Echo component with optional delay and record trace."""
             trace.record("start", self._id)
             value = self._canvas.get_value_with_variable(self._param.text)
             if self._param.delay:
@@ -180,9 +209,12 @@ def _make_components(base, aggregator, trace, switch=None, assigner=None, iterat
             trace.record("end", self._id)
 
     class TracedAggregator(aggregator.VariableAggregator):
+        """Traced subclass of VariableAggregator recording execution timestamps."""
+
         component_name = "VariableAggregator"
 
         def _invoke(self, **kwargs):
+            """Execute VariableAggregator and record trace."""
             trace.record("start", self._id)
             super()._invoke(**kwargs)
             trace.record("end", self._id)
@@ -198,9 +230,12 @@ def _make_components(base, aggregator, trace, switch=None, assigner=None, iterat
 
     if switch:
         class TracedSwitch(switch.Switch):
+            """Traced subclass of Switch recording execution timestamps."""
+
             component_name = "Switch"
 
             def _invoke(self, **kwargs):
+                """Execute Switch component and record trace."""
                 trace.record("start", self._id)
                 super()._invoke(**kwargs)
                 trace.record("end", self._id)
@@ -210,9 +245,12 @@ def _make_components(base, aggregator, trace, switch=None, assigner=None, iterat
 
     if assigner:
         class TracedVariableAssigner(assigner.VariableAssigner):
+            """Traced subclass of VariableAssigner recording execution timestamps."""
+
             component_name = "VariableAssigner"
 
             def _invoke(self, **kwargs):
+                """Execute VariableAssigner component and record trace."""
                 trace.record("start", self._id)
                 super()._invoke(**kwargs)
                 trace.record("end", self._id)
@@ -222,9 +260,12 @@ def _make_components(base, aggregator, trace, switch=None, assigner=None, iterat
 
     if iteration:
         class TracedIteration(iteration.Iteration):
+            """Traced subclass of Iteration recording execution timestamps."""
+
             component_name = "Iteration"
 
             def _invoke(self, **kwargs):
+                """Execute Iteration component and record trace."""
                 trace.record("start", self._id)
                 super()._invoke(**kwargs)
                 trace.record("end", self._id)
@@ -234,9 +275,12 @@ def _make_components(base, aggregator, trace, switch=None, assigner=None, iterat
 
     if list_operations:
         class TracedListOperations(list_operations.ListOperations):
+            """Traced subclass of ListOperations recording execution timestamps."""
+
             component_name = "ListOperations"
 
             def _invoke(self, **kwargs):
+                """Execute ListOperations component and record trace."""
                 trace.record("start", self._id)
                 super()._invoke(**kwargs)
                 trace.record("end", self._id)
@@ -248,10 +292,12 @@ def _make_components(base, aggregator, trace, switch=None, assigner=None, iterat
 
 
 def _node(name, params, downstream, upstream):
+    """Create a DSL component node dictionary."""
     return {"obj": {"component_name": name, "params": params}, "downstream": downstream, "upstream": upstream}
 
 
 def _dsl(components):
+    """Serialize component graph definitions to Canvas DSL JSON."""
     return json.dumps(
         {
             "components": components,
@@ -289,6 +335,7 @@ def _aggregator_graph(deep_branches):
 
 
 def _echo_join_graph():
+    """Create a graph where an Echo join node depends on two unbalanced branches."""
     return _dsl(
         {
             "begin": _node("Begin", {}, ["a", "b"], []),
@@ -301,6 +348,7 @@ def _echo_join_graph():
 
 
 def _unreachable_dependency_graph():
+    """Create a graph where a sink node depends on an unscheduled ghost node."""
     return _dsl(
         {
             "begin": _node("Begin", {}, ["a"], []),
@@ -338,6 +386,7 @@ def _two_join_graph():
 
 
 def _mutually_referencing_graph():
+    """Create a graph with mutually referencing sibling nodes."""
     return _dsl(
         {
             "begin": _node("Begin", {}, ["x", "y"], []),
@@ -348,6 +397,7 @@ def _mutually_referencing_graph():
 
 
 def _switch_sibling_graph():
+    """Create a graph where Switch condition references a slow sibling producer."""
     return _dsl(
         {
             "begin": _node("Begin", {}, ["producer", "sw"], []),
@@ -374,6 +424,7 @@ def _switch_sibling_graph():
 
 
 def _assigner_sibling_graph():
+    """Create a graph where VariableAssigner copies output from a slow sibling producer."""
     return json.dumps(
         {
             "components": {
@@ -404,6 +455,7 @@ def _assigner_sibling_graph():
 
 
 def _iteration_sibling_graph():
+    """Create a graph where Iteration items_ref references a slow sibling producer."""
     return _dsl(
         {
             "begin": _node("Begin", {}, ["producer", "iter_node"], []),
@@ -419,6 +471,7 @@ def _iteration_sibling_graph():
 
 
 def _list_operations_sibling_graph():
+    """Create a graph where ListOperations query references a slow sibling producer."""
     return _dsl(
         {
             "begin": _node("Begin", {}, ["producer", "list_ops"], []),
@@ -434,7 +487,10 @@ def _list_operations_sibling_graph():
 
 
 class _CanvasStack(tuple):
+    """Container tuple providing test access to canvas and components."""
+
     def __new__(cls, canvas, trace, code_exec, switch=None, assigner=None, iteration=None, list_operations=None):
+        """Construct a named tuple holding loaded canvas modules and helpers."""
         instance = super().__new__(cls, (canvas, trace, code_exec))
         instance.canvas = canvas
         instance.trace = trace
@@ -448,6 +504,7 @@ class _CanvasStack(tuple):
 
 @pytest.fixture
 def canvas_stack(monkeypatch):
+    """Fixture providing isolated Canvas test environment and traced components."""
     canvas, base, aggregator, code_exec, switch, assigner, iteration, list_operations, registry = _load_canvas_stack(monkeypatch)
     trace = _Trace()
     registry.update(_make_components(base, aggregator, trace, switch, assigner, iteration, list_operations))
@@ -455,7 +512,9 @@ def canvas_stack(monkeypatch):
 
 
 def _run(canvas_module, dsl):
+    """Execute Canvas workflow synchronously and return the graph."""
     async def _drain():
+        """Drain the asynchronous Canvas generator to completion."""
         graph = canvas_module.Canvas(dsl, tenant_id="t", task_id="task")
         async for _ in graph.run(query="Ragflow"):
             pass
@@ -466,6 +525,7 @@ def _run(canvas_module, dsl):
 
 @pytest.mark.p1
 def test_aggregator_waits_for_the_deeper_branch(canvas_stack):
+    """Verify VariableAggregator waits until slower upstream branch finishes."""
     canvas_module, trace, _ = canvas_stack
     graph = _run(canvas_module, _aggregator_graph(deep_branches=1))
     agg = graph.get_component_obj("agg")
@@ -477,6 +537,7 @@ def test_aggregator_waits_for_the_deeper_branch(canvas_stack):
 
 @pytest.mark.p1
 def test_join_node_waits_for_the_deeper_branch(canvas_stack):
+    """Verify an Echo join node waits until slower upstream branch finishes."""
     canvas_module, trace, _ = canvas_stack
     graph = _run(canvas_module, _echo_join_graph())
 
@@ -486,6 +547,7 @@ def test_join_node_waits_for_the_deeper_branch(canvas_stack):
 
 @pytest.mark.p1
 def test_balanced_branches_still_run_concurrently(canvas_stack):
+    """Verify balanced branches are dispatched concurrently in the same batch."""
     canvas_module, trace, _ = canvas_stack
     graph = _run(canvas_module, _aggregator_graph(deep_branches=2))
     agg = graph.get_component_obj("agg")
@@ -499,6 +561,7 @@ def test_balanced_branches_still_run_concurrently(canvas_stack):
 
 @pytest.mark.p1
 def test_node_whose_upstream_was_never_scheduled_is_dropped(canvas_stack):
+    """Verify nodes depending on unscheduled nodes are dropped instead of stalled."""
     canvas_module, trace, _ = canvas_stack
     _run(canvas_module, _unreachable_dependency_graph())
 
@@ -508,6 +571,7 @@ def test_node_whose_upstream_was_never_scheduled_is_dropped(canvas_stack):
 
 @pytest.mark.p1
 def test_a_drop_carries_to_the_node_reading_it(canvas_stack):
+    """Verify dropped status cascades to downstream dependent nodes."""
     canvas_module, trace, _ = canvas_stack
     _run(canvas_module, _dropped_upstream_graph())
 
@@ -519,6 +583,7 @@ def test_a_drop_carries_to_the_node_reading_it(canvas_stack):
 
 @pytest.mark.p1
 def test_two_joins_held_back_together_each_run_once(canvas_stack):
+    """Verify multiple join nodes held back in the same batch each execute once."""
     canvas_module, trace, _ = canvas_stack
     graph = _run(canvas_module, _two_join_graph())
 
@@ -530,6 +595,7 @@ def test_two_joins_held_back_together_each_run_once(canvas_stack):
 
 @pytest.mark.p1
 def test_nodes_that_reference_each_other_fail_instead_of_running(canvas_stack):
+    """Verify mutually referencing nodes abort with error instead of deadlock."""
     canvas_module, trace, _ = canvas_stack
     graph = _run(canvas_module, _mutually_referencing_graph())
 
@@ -542,6 +608,7 @@ def test_nodes_that_reference_each_other_fail_instead_of_running(canvas_stack):
 
 @pytest.mark.p1
 def test_a_cycle_still_terminates_the_run(canvas_stack):
+    """Verify cyclic node references terminate execution without hanging."""
     canvas_module, _, _ = canvas_stack
     graph = canvas_module.Canvas(_mutually_referencing_graph(), tenant_id="t", task_id="task")
     graph.path = ["begin", "x", "y"]
@@ -552,6 +619,7 @@ def test_a_cycle_still_terminates_the_run(canvas_stack):
 
 @pytest.mark.p1
 def test_being_unrunnable_once_does_not_disable_the_node(canvas_stack):
+    """Verify temporary unrunnable flag does not permanently disable node across loops."""
     canvas_module, trace, _ = canvas_stack
     graph = canvas_module.Canvas(_echo_join_graph(), tenant_id="t", task_id="task")
     cpn = graph.get_component_obj("b")
@@ -569,6 +637,7 @@ def test_being_unrunnable_once_does_not_disable_the_node(canvas_stack):
 
 @pytest.mark.p1
 def test_resumed_run_keeps_its_stored_order(canvas_stack):
+    """Verify resumed workflow run preserves its persisted execution order."""
     canvas_module, _, _ = canvas_stack
     graph = canvas_module.Canvas(_echo_join_graph(), tenant_id="t", task_id="task")
     graph.path = ["userfillup_0", "c", "b"]
@@ -579,6 +648,7 @@ def test_resumed_run_keeps_its_stored_order(canvas_stack):
 
 @pytest.mark.p1
 def test_code_node_dependencies_come_from_its_arguments(canvas_stack):
+    """Verify CodeExec derives upstream dependencies from its argument bindings."""
     _, _, code_exec = canvas_stack
     param = code_exec.CodeExecParam()
     param.arguments = {"arg1": "code_1@result", "arg2": "sys.query", "arg3": ""}
@@ -590,6 +660,7 @@ def test_code_node_dependencies_come_from_its_arguments(canvas_stack):
 
 @pytest.mark.p1
 def test_switch_param_refs_and_dependency_ids(canvas_stack):
+    """Verify Switch extracts condition cpn_id references as dependency IDs."""
     switch_mod = canvas_stack.switch
     param = switch_mod.SwitchParam()
     param.conditions = [
@@ -613,6 +684,7 @@ def test_switch_param_refs_and_dependency_ids(canvas_stack):
 
 @pytest.mark.p1
 def test_switch_waits_for_producer_in_same_batch(canvas_stack):
+    """Verify Switch sibling is deferred behind producer in the same batch window."""
     canvas_module, trace, _ = canvas_stack
     graph = _run(canvas_module, _switch_sibling_graph())
     sw = graph.get_component_obj("sw")
@@ -623,6 +695,7 @@ def test_switch_waits_for_producer_in_same_batch(canvas_stack):
 
 @pytest.mark.p1
 def test_variable_assigner_param_refs_and_dependency_ids(canvas_stack):
+    """Verify VariableAssigner extracts variable and parameter references correctly."""
     assigner_mod = canvas_stack.assigner
     param = assigner_mod.VariableAssignerParam()
     param.variables = [
@@ -651,6 +724,7 @@ def test_variable_assigner_param_refs_and_dependency_ids(canvas_stack):
 
 @pytest.mark.p1
 def test_variable_assigner_waits_for_producer_in_same_batch(canvas_stack):
+    """Verify VariableAssigner sibling waits for producer in the same batch window."""
     canvas_module, trace, _ = canvas_stack
     graph = _run(canvas_module, _assigner_sibling_graph())
 
@@ -660,6 +734,7 @@ def test_variable_assigner_waits_for_producer_in_same_batch(canvas_stack):
 
 @pytest.mark.p1
 def test_iteration_param_refs_and_dependency_ids(canvas_stack):
+    """Verify Iteration extracts items_ref as parameter reference and dependency ID."""
     iteration_mod = canvas_stack.iteration
     param = iteration_mod.IterationParam()
     param.items_ref = "generator@items"
@@ -672,6 +747,7 @@ def test_iteration_param_refs_and_dependency_ids(canvas_stack):
 
 @pytest.mark.p1
 def test_iteration_waits_for_producer_in_same_batch(canvas_stack):
+    """Verify Iteration sibling waits for producer in the same batch window."""
     canvas_module, trace, _ = canvas_stack
     _run(canvas_module, _iteration_sibling_graph())
 
@@ -680,6 +756,7 @@ def test_iteration_waits_for_producer_in_same_batch(canvas_stack):
 
 @pytest.mark.p1
 def test_list_operations_param_refs_and_dependency_ids(canvas_stack):
+    """Verify ListOperations extracts query as parameter reference and dependency ID."""
     list_ops_mod = canvas_stack.list_operations
     param = list_ops_mod.ListOperationsParam()
     param.query = "retrieval@chunks"
@@ -692,6 +769,7 @@ def test_list_operations_param_refs_and_dependency_ids(canvas_stack):
 
 @pytest.mark.p1
 def test_list_operations_waits_for_producer_in_same_batch(canvas_stack):
+    """Verify ListOperations sibling waits for producer in the same batch window."""
     canvas_module, trace, _ = canvas_stack
     _run(canvas_module, _list_operations_sibling_graph())
 
@@ -700,12 +778,16 @@ def test_list_operations_waits_for_producer_in_same_batch(canvas_stack):
 
 @pytest.mark.p1
 def test_dependency_ids_handles_braced_param_refs(canvas_stack):
+    """Verify ComponentBase.get_dependency_ids strips outer braces from references."""
     base = sys.modules["agent.component.base"]
 
     class DummyComponent(base.ComponentBase):
+        """Dummy component returning braced and whitespace-padded parameter references."""
+
         component_name = "Dummy"
 
         def param_refs(self):
+            """Return test parameter references with braces and whitespace."""
             return ["{producer_1@output}", "producer_2@output", "{ sys.query }", "invalid_no_at"]
 
     c = DummyComponent.__new__(DummyComponent)

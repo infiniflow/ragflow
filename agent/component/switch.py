@@ -57,6 +57,7 @@ class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
     def param_refs(self) -> list[str]:
+        """Return parameter references resolved in Switch condition items."""
         refs = []
         conditions = getattr(self._param, "conditions", []) or []
         if isinstance(conditions, list):
@@ -67,7 +68,7 @@ class Switch(ComponentBase, ABC):
                     if isinstance(item, dict):
                         ref = item.get("cpn_id")
                         if isinstance(ref, str) and ref:
-                            refs.append(ref.strip("{").strip("}").strip())
+                            refs.append(self.normalize_param_ref(ref))
         return refs
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))

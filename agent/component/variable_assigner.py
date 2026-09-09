@@ -41,6 +41,7 @@ class VariableAssigner(ComponentBase, ABC):
     _NO_PARAMETER_OPERATORS = {"clear", "remove_first", "remove_last"}
 
     def param_refs(self) -> list[str]:
+        """Return variable references resolved in VariableAssigner operations."""
         refs = []
         variables = getattr(self._param, "variables", []) or []
         if isinstance(variables, list):
@@ -49,23 +50,16 @@ class VariableAssigner(ComponentBase, ABC):
                     continue
                 variable = item.get("variable")
                 if isinstance(variable, str) and "@" in variable:
-                    refs.append(variable.strip("{").strip("}").strip())
+                    refs.append(self.normalize_param_ref(variable))
 
                 operator = item.get("operator")
                 parameter = item.get("parameter")
                 if isinstance(parameter, str) and "@" in parameter:
-                    if operator == "set":
-                        refs.extend([m.group(1) for m in self.variable_ref_patt_re.finditer(parameter)])
+                    matches = [m.group(1) for m in self.variable_ref_patt_re.finditer(parameter)]
+                    if matches:
+                        refs.extend(matches)
                     elif operator in ("overwrite", "append", "extend"):
-                        matches = [m.group(1) for m in self.variable_ref_patt_re.finditer(parameter)]
-                        if matches:
-                            refs.extend(matches)
-                        else:
-                            refs.append(parameter.strip("{").strip("}").strip())
-                    else:
-                        matches = [m.group(1) for m in self.variable_ref_patt_re.finditer(parameter)]
-                        if matches:
-                            refs.extend(matches)
+                        refs.append(self.normalize_param_ref(parameter))
         return refs
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
