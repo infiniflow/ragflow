@@ -43,8 +43,7 @@ class BaseType:
                     data[_k] = _dict(vv)
             else:
                 data = obj
-            return {"type": obj.__class__.__name__,
-                    "data": data, "module": module}
+            return {"type": obj.__class__.__name__, "data": data, "module": module}
 
         return _dict(self)
 
@@ -56,9 +55,9 @@ class CustomJSONEncoder(json.JSONEncoder):
 
     def default(self, obj):
         if isinstance(obj, datetime.datetime):
-            return obj.strftime('%Y-%m-%d %H:%M:%S')
+            return obj.strftime("%Y-%m-%d %H:%M:%S")
         elif isinstance(obj, datetime.date):
-            return obj.strftime('%Y-%m-%d')
+            return obj.strftime("%Y-%m-%d")
         elif isinstance(obj, datetime.timedelta):
             return str(obj)
         elif issubclass(type(obj), Enum) or issubclass(type(obj), IntEnum):
@@ -77,11 +76,7 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 
 def json_dumps(src, byte=False, indent=None, with_type=False):
-    dest = json.dumps(
-        src,
-        indent=indent,
-        cls=CustomJSONEncoder,
-        with_type=with_type)
+    dest = json.dumps(src, indent=indent, cls=CustomJSONEncoder, with_type=with_type)
     if byte:
         dest = string_to_bytes(dest)
     return dest
@@ -90,5 +85,4 @@ def json_dumps(src, byte=False, indent=None, with_type=False):
 def json_loads(src, object_hook=None, object_pairs_hook=None):
     if isinstance(src, bytes):
         src = bytes_to_string(src)
-    return json.loads(src, object_hook=object_hook,
-                      object_pairs_hook=object_pairs_hook)
+    return json.loads(src, object_hook=object_hook, object_pairs_hook=object_pairs_hook)

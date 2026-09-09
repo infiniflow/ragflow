@@ -74,10 +74,7 @@ def step_01_open_login(
         lowered = seeded_email.lower()
         example_domain = "infiniflow.io"
         if lowered.endswith(f"@{example_domain}"):
-            raise AssertionError(
-                "SEEDED_USER_EMAIL must be a real account (not *@example.com). "
-                "Set valid credentials or use DEMO_CREDS=1 for demo mode."
-            )
+            raise AssertionError("SEEDED_USER_EMAIL must be a real account (not *@example.com). Set valid credentials or use DEMO_CREDS=1 for demo mode.")
     print(f"[AUTH] using email: {seeded_email} (source={source})", flush=True)
     flow_state["seeded_email"] = seeded_email
     flow_state["seeded_password"] = seeded_password
@@ -162,9 +159,9 @@ def step_03_verify_login(
           return false;
         }}
         """.format(
-            post_login_path=post_login_path_js,
-            auth_status_selector=auth_status_selector,
-        )
+        post_login_path=post_login_path_js,
+        auth_status_selector=auth_status_selector,
+    )
 
     with step("wait for success or error"):
         try:
@@ -175,9 +172,7 @@ def step_03_verify_login(
         except PlaywrightTimeoutError as exc:
             snap("failure")
             _debug_login_state(page, "wait_for_outcome_timeout")
-            raise AssertionError(
-                f"Login result did not resolve in time. url={page.url}"
-            ) from exc
+            raise AssertionError(f"Login result did not resolve in time. url={page.url}") from exc
 
     with step("verify authenticated UI marker"):
         outcome = result.json_value()
@@ -185,18 +180,13 @@ def step_03_verify_login(
             snap("error")
             snap("failure")
             _debug_login_state(page, "login_error")
-            raise AssertionError(
-                "Login error detected. "
-                f"url={page.url}"
-            )
+            raise AssertionError(f"Login error detected. url={page.url}")
         path = urlparse(page.url).path
         if post_login_path:
             if not path.startswith(post_login_path):
                 snap("failure")
                 _debug_login_state(page, "post_login_path_mismatch")
-                raise AssertionError(
-                    f"Post-login path mismatch. expected_prefix={post_login_path} url={page.url}"
-                )
+                raise AssertionError(f"Post-login path mismatch. expected_prefix={post_login_path} url={page.url}")
         elif "/login" in path:
             snap("failure")
             _debug_login_state(page, "still_on_login_path")
@@ -209,9 +199,7 @@ def step_03_verify_login(
         except AssertionError as exc:
             snap("failure")
             _debug_login_state(page, "login_form_still_visible")
-            raise AssertionError(
-                f"Login form still visible after login. url={page.url}"
-            ) from exc
+            raise AssertionError(f"Login form still visible after login. url={page.url}") from exc
     snap("success")
 
 

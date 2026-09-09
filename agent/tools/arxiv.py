@@ -28,7 +28,7 @@ class ArXivParam(ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
+        self.meta: ToolMeta = {
             "name": "arxiv_search",
             "description": """arXiv is a free distribution service and an open-access archive for nearly 2.4 million scholarly articles in the fields of physics, mathematics, computer science, quantitative biology, quantitative finance, statistics, electrical engineering and systems science, and economics. Materials on this site are not peer-reviewed by arXiv.""",
             "parameters": {
@@ -36,26 +36,20 @@ class ArXivParam(ToolParamBase):
                     "type": "string",
                     "description": "The search keywords to execute with arXiv. The keywords should be the most important words/terms(includes synonyms) from the original request.",
                     "default": "{sys.query}",
-                    "required": True
+                    "required": True,
                 }
-            }
+            },
         }
         super().__init__()
         self.top_n = 12
-        self.sort_by = 'submittedDate'
+        self.sort_by = "submittedDate"
 
     def check(self):
         self.check_positive_integer(self.top_n, "Top N")
-        self.check_valid_value(self.sort_by, "ArXiv Search Sort_by",
-                               ['submittedDate', 'lastUpdatedDate', 'relevance'])
+        self.check_valid_value(self.sort_by, "ArXiv Search Sort_by", ["submittedDate", "lastUpdatedDate", "relevance"])
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "query": {
-                "name": "Query",
-                "type": "line"
-            }
-        }
+        return {"query": {"name": "Query", "type": "line"}}
 
 
 class ArXiv(ToolBase, ABC):
@@ -71,29 +65,20 @@ class ArXiv(ToolBase, ABC):
             return ""
 
         last_e = ""
-        for _ in range(self._param.max_retries+1):
+        for _ in range(self._param.max_retries + 1):
             if self.check_if_canceled("ArXiv processing"):
                 return
 
             try:
-                sort_choices = {"relevance": arxiv.SortCriterion.Relevance,
-                                "lastUpdatedDate": arxiv.SortCriterion.LastUpdatedDate,
-                                'submittedDate': arxiv.SortCriterion.SubmittedDate}
+                sort_choices = {"relevance": arxiv.SortCriterion.Relevance, "lastUpdatedDate": arxiv.SortCriterion.LastUpdatedDate, "submittedDate": arxiv.SortCriterion.SubmittedDate}
                 arxiv_client = arxiv.Client()
-                search = arxiv.Search(
-                    query=kwargs["query"],
-                    max_results=self._param.top_n,
-                    sort_by=sort_choices[self._param.sort_by]
-                )
+                search = arxiv.Search(query=kwargs["query"], max_results=self._param.top_n, sort_by=sort_choices[self._param.sort_by])
                 results = list(arxiv_client.results(search))
 
                 if self.check_if_canceled("ArXiv processing"):
                     return
 
-                self._retrieve_chunks(results,
-                                      get_title=lambda r: r.title,
-                                      get_url=lambda r: r.pdf_url,
-                                      get_content=lambda r: r.summary)
+                self._retrieve_chunks(results, get_title=lambda r: r.title, get_url=lambda r: r.pdf_url, get_content=lambda r: r.summary)
                 return self.output("formalized_content")
             except Exception as e:
                 if self.check_if_canceled("ArXiv processing"):
