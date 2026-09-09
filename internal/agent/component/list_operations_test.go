@@ -553,6 +553,42 @@ func TestListOperations_MissingInputOperatesOnEmptyList(t *testing.T) {
 	}
 }
 
+// TestListOperations_TypedNilSliceInputOperatesOnEmptyList pins the second
+// nil form: a typed nil []any written into state (e.g. an upstream
+// component's never-appended `var out []any`) satisfies the []any assertion
+// and bypasses the unset-variable branch. Invoke must normalize it to the
+// same non-nil empty list and keep first/last nil.
+func TestListOperations_TypedNilSliceInputOperatesOnEmptyList(t *testing.T) {
+	for _, op := range []string{"nth", "head", "tail", "filter", "sort", "drop_duplicates"} {
+		c, err := NewListOperationsComponent(map[string]any{
+			"query":      "cpn_nil@xs",
+			"operations": op,
+			"n":          1,
+		})
+		if err != nil {
+			t.Fatalf("op %s: NewListOperationsComponent: %v", op, err)
+		}
+		state := canvas.NewCanvasState("run-tnil", "task-tnil")
+		state.Outputs["cpn_nil"] = map[string]any{"xs": []any(nil)}
+		ctx := canvas.WithState(t.Context(), state)
+
+		out, err := c.Invoke(ctx, nil, nil)
+		if err != nil {
+			t.Fatalf("op %s: Invoke: %v", op, err)
+		}
+		got, ok := out["result"].([]any)
+		if !ok || got == nil {
+			t.Fatalf("op %s: result should be a non-nil empty list, got %#v", op, out["result"])
+		}
+		if len(got) != 0 {
+			t.Errorf("op %s: result should be empty, got %v", op, got)
+		}
+		if out["first"] != nil || out["last"] != nil {
+			t.Errorf("op %s: first/last should be nil for empty result, got %v/%v", op, out["first"], out["last"])
+		}
+	}
+}
+
 // TestListOperations_NonListInputStillErrors: a non-nil, non-list value is
 // a real misconfiguration and must keep failing loudly (#11364 contract).
 func TestListOperations_NonListInputStillErrors(t *testing.T) {

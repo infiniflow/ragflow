@@ -309,6 +309,15 @@ func (l *ListOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map
 			return nil, fmt.Errorf("ListOperations: input is not a list (got %T)", raw)
 		}
 	}
+	// A typed nil []any satisfies the assertion above (ok=true, items=nil)
+	// and bypasses the unset-variable branch — e.g. an upstream component
+	// that wrote a never-appended `var out []any` into state. Normalize it
+	// to the same empty list so both nil forms are indistinguishable for
+	// the operators and the non-nil result contract holds structurally,
+	// not by each operator's slice-construction style.
+	if items == nil {
+		items = []any{}
+	}
 
 	var out []any
 	switch l.param.Operations {
