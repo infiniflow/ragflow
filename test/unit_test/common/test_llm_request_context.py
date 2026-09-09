@@ -27,6 +27,8 @@ import pytest
 from common.llm_request_context import (
     current_llm_user,
     llm_request_context,
+    normalize_llm_user_id,
+    openai_user_kwargs,
     reset_llm_request_context,
     set_llm_request_context,
 )
@@ -64,6 +66,13 @@ class TestCurrentLlmUser:
 
     def test_empty_identifiers_return_none(self):
         token = set_llm_request_context(session_id=None, user_id=None)
+        try:
+            assert current_llm_user() is None
+        finally:
+            reset_llm_request_context(token)
+
+    def test_whitespace_user_id_is_ignored(self):
+        token = set_llm_request_context(user_id="   ")
         try:
             assert current_llm_user() is None
         finally:
@@ -137,3 +146,39 @@ class TestCompletionArgsUserPrecedence:
     def test_no_context_leaves_user_unset(self):
         args = self._construct()
         assert "user" not in args
+
+
+@pytest.mark.p2
+class TestNormalizeLlmUserId:
+    def test_rejects_non_strings(self):
+        assert normalize_llm_user_id(None) is None
+        assert normalize_llm_user_id(12) is None
+        assert normalize_llm_user_id(["u"]) is None
+
+    def test_rejects_blank_strings(self):
+        assert normalize_llm_user_id("") is None
+        assert normalize_llm_user_id("   ") is None
+
+    def test_strips_and_truncates(self):
+        assert normalize_llm_user_id("  end-user  ") == "end-user"
+        assert normalize_llm_user_id("u" * 200) == "u" * 128
+
+
+@pytest.mark.p2
+class TestOpenaiUserKwargs:
+    def test_empty_without_context(self):
+        assert openai_user_kwargs() == {}
+
+    def test_forwards_user_id_when_session_absent(self):
+        token = set_llm_request_context(user_id="end-user-1")
+        try:
+            assert openai_user_kwargs() == {"user": "end-user-1"}
+        finally:
+            reset_llm_request_context(token)
+
+    def test_prefers_session_id(self):
+        token = set_llm_request_context(session_id="sess-1", user_id="end-user-1")
+        try:
+            assert openai_user_kwargs() == {"user": "sess-1"}
+        finally:
+            reset_llm_request_context(token)

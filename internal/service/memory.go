@@ -1084,6 +1084,18 @@ func memorySearchEmbeddingKey(memory *entity.Memory) string {
 	return "embedding:" + strings.TrimSpace(memory.EmbdID)
 }
 
+// memoryMessageNotForgottenCondition returns the filter that hides forgotten
+// messages, i.e. records whose forget_at is set. Python's message store
+// connectors apply the same default (hide_forgotten=True), for example
+// memory/utils/es_conn.py and memory/utils/ob_conn.py, so memory retrievals
+// must skip these records regardless of the backing engine. OceanBase's memory
+// handling adds the same must_not when the caller leaves it absent.
+func memoryMessageNotForgottenCondition() map[string]interface{} {
+	return map[string]interface{}{
+		"must_not": map[string]interface{}{"exists": "forget_at"},
+	}
+}
+
 func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Memory, filterDict, params map[string]interface{}) ([]map[string]interface{}, common.ErrorCode, error) {
 	if s.docEngine == nil {
 		return nil, common.CodeServerError, errors.New("message store is not initialized")
@@ -1117,6 +1129,15 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 	if _, ok := conditionDict["status"]; !ok {
 		conditionDict["status"] = 1
 	}
+	// SearchMessage hides forgotten messages by default, matching Python's
+	// MessageService.search_message which relies on hide_forgotten=True in the
+	// store connectors. Without this, non-OceanBase engines return records
+	// whose forget_at is set.
+	for key, value := range memoryMessageNotForgottenCondition() {
+		if _, present := conditionDict[key]; !present {
+			conditionDict[key] = value
+		}
+	}
 
 	matchExprs := make([]interface{}, 0, 3)
 	if question != "" {
@@ -1129,7 +1150,7 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 			Method: "weighted_sum",
 			TopN:   topN,
 			FusionParams: map[string]interface{}{
-				"weights": fmt.Sprintf("%g,%g", 1-keywordsSimilarityWeight, keywordsSimilarityWeight),
+				"weights": memoryFusionWeights(keywordsSimilarityWeight),
 			},
 		}
 		matchExprs = append(matchExprs, matchText, matchDense, fusionExpr)
@@ -1365,6 +1386,21 @@ func memoryMessageTextExpr(question string, similarityThreshold float64) *engine
 	return matchText
 }
 
+// memoryFusionWeights formats FusionExpr weights, whose slot order is [text, vector]:
+// the Elasticsearch, OceanBase and SereneDB adapters all read slot 1 as the vector
+// weight, and Elasticsearch then boosts the text query by 1 - that value. The keyword
+// weight is the text weight, so it belongs in slot 0. Sending it to slot 1 gave every
+// memory search the inverse of the requested hybrid balance.
+//
+// Six significant digits rather than %g for the same reason serenedb's formatWeight
+// rounds: 1 - 0.7 would otherwise render as 0.30000000000000004, which is also what the
+// Python side deliberately formats away.
+func memoryFusionWeights(keywordsSimilarityWeight float64) string {
+	textWeight := keywordsSimilarityWeight
+	vectorWeight := 1 - keywordsSimilarityWeight
+	return fmt.Sprintf("%.6g,%.6g", textWeight, vectorWeight)
+}
+
 func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
 	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(ctx, memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
 	if err != nil {
@@ -1425,6 +1461,15 @@ func (s *MemoryService) getRecentMessage(ctx context.Context, memories []*entity
 	}
 	if sessionID = strings.TrimSpace(sessionID); sessionID != "" {
 		conditionDict["session_id"] = sessionID
+	}
+	// Hide forgotten messages by default, matching Python's
+	// MessageService.get_recent_messages which relies on hide_forgotten=True in
+	// the store connectors. Without this, non-OceanBase engines return records
+	// whose forget_at is set.
+	for key, value := range memoryMessageNotForgottenCondition() {
+		if _, present := conditionDict[key]; !present {
+			conditionDict[key] = value
+		}
 	}
 	req := &enginetypes.SearchRequest{
 		IndexNames:   indexNames,

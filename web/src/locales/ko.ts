@@ -531,6 +531,7 @@ export default {
       runningStatus2: '취소됨',
       runningStatus3: '성공',
       runningStatus4: '실패',
+      runningStatusQueued: '대기 중',
       pageRanges: '페이지 범위',
       pageRangesTip:
         '파싱할 페이지 범위를 지정합니다. 범위 밖의 페이지는 처리되지 않습니다.',
@@ -1255,6 +1256,8 @@ export default {
         'Microsoft Graph를 통해 SharePoint 사이트를 연결하여 문서 라이브러리를 동기화합니다.',
       sharepointSiteUrlTip:
         '인덱싱할 SharePoint 사이트의 전체 URL (예: https://contoso.sharepoint.com/sites/MySite). Sites.Read.All 및 Files.Read.All 애플리케이션 권한이 있는 Azure AD 앱이 필요합니다 (관리자 동의).',
+      sitemapDescription:
+        '공개 sitemap.xml을 연결하여 나열된 웹 페이지와 PDF 문서를 지식 베이스에 동기화합니다.',
       azure_devopsDescription:
         'Azure DevOps를 연결하여 리포지토리 파일과 풀 리퀘스트를 동기화합니다.',
       bitbucketDescription: 'Bitbucket을 연결하여 PR 콘텐츠를 동기화합니다.',

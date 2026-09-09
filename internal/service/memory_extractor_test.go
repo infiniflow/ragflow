@@ -23,6 +23,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/testutil"
 )
 
 // pinMemoryNow fixes the memory wall clock at the given instant for the
@@ -92,6 +96,36 @@ func TestBuildExtractedMessageValidAtSemantics(t *testing.T) {
 	}, now)
 	if got := fallbackOnly["valid_at"]; got != now.Format(memoryTimeLayout) {
 		t.Fatalf("valid_at = %v, want fallback %q", got, now.Format(memoryTimeLayout))
+	}
+}
+
+// TestBuildExtractedMessageUsesStandardDocumentID ensures extracted items
+// use the standard memoryID_messageID identity expected by GetMessageContent.
+func TestBuildExtractedMessageUsesStandardDocumentID(t *testing.T) {
+	msg := MemoryMessage{UserID: "u1", AgentID: "a1", SessionID: "s1"}
+	now := time.Date(2026, 8, 20, 10, 5, 0, 0, time.Local)
+	item := extractedMemory{
+		MessageType: "fact",
+		Content:     "likes coffee",
+	}
+
+	extracted := buildExtractedMessage(8, 42, "mem-1", msg, item, now)
+	gotID, ok := extracted["id"].(string)
+	if !ok || gotID != "mem-1_8" {
+		t.Fatalf("extracted message id = %#v, want %q", extracted["id"], "mem-1_8")
+	}
+}
+
+// TestUpdateTaskProgressReturnsPersistenceError ensures callers can keep the
+// broker message retryable when they cannot persist the terminal task state.
+func TestUpdateTaskProgressReturnsPersistenceError(t *testing.T) {
+	db := testutil.SetupTestDB(t, &entity.IngestionTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	svc := &MemoryMessageService{taskDAO: dao.NewTaskDAO()}
+	if err := svc.updateTaskProgress(t.Context(), "mem-task-1", 1.0, "completed"); err == nil {
+		t.Fatal("updateTaskProgress() error = nil, want persistence error")
 	}
 }
 

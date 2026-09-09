@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { Operator } from '../constant';
 import { FormSchema as ParserFormSchema } from '../form/parser-form';
+import { FormSchema as RetrievalFormSchema } from '../form/retrieval-form/next';
 import useGraphStore from '../store';
 import { getEmptyMessageNodeNames } from '../utils';
 import { findAgentNodeWithoutModel } from '../utils/agent-node-model';
@@ -39,6 +40,67 @@ function findInvalidNode(
   );
   if (invalidParserNode) {
     return { node: invalidParserNode, messageKey: 'flow.nodeFormInvalid' };
+  }
+  // A Retrieval node sourcing from datasets must name at least one dataset,
+  // and one sourcing from memories must name at least one memory; the backend
+  // otherwise rejects the run with a `dataset_ids`/`memory_ids is required`
+  // error that only surfaces at runtime. The same applies to Retrieval tools
+  // embedded in an Agent node, which is how template-built agents usually
+  // bind retrieval. Only forms/tools carrying the canonical `dataset_ids`/
+  // `memory_ids` field are checked, so legacy DSLs still keyed on `kb_ids`
+  // cannot wedge saving. The warning follows the field that actually failed,
+  // so a memory-mode retrieval never reports a missing dataset.
+  const toInvalidRetrieval = (
+    params: Record<string, any>,
+  ): { memoryMissing: boolean } | undefined => {
+    if (
+      !Array.isArray(params?.dataset_ids) &&
+      !Array.isArray(params?.memory_ids)
+    ) {
+      return undefined;
+    }
+    const parsed = RetrievalFormSchema.safeParse(params);
+    if (parsed.success) {
+      return undefined;
+    }
+    return {
+      memoryMissing: parsed.error.issues.some(
+        (issue) => issue.path[0] === 'memory_ids',
+      ),
+    };
+  };
+
+  for (const node of nodes) {
+    if (node.data?.label === Operator.Retrieval) {
+      const invalid = toInvalidRetrieval(node.data?.form);
+      if (invalid) {
+        return {
+          node,
+          messageKey: invalid.memoryMissing
+            ? 'flow.retrievalMemoryMissing'
+            : 'flow.retrievalDatasetMissing',
+        };
+      }
+    }
+    if (node.data?.label === Operator.Agent) {
+      const tools = node.data?.form?.tools;
+      if (Array.isArray(tools)) {
+        for (const tool of tools) {
+          if (tool?.component_name !== 'Retrieval') {
+            continue;
+          }
+          const invalid = toInvalidRetrieval(tool?.params);
+          if (invalid) {
+            return {
+              node,
+              messageKey: invalid.memoryMissing
+                ? 'flow.retrievalMemoryMissing'
+                : 'flow.retrievalDatasetMissing',
+            };
+          }
+        }
+      }
+    }
   }
   // Unlike the schema re-check above, the missing-model check is not gated on
   // editedNodeIds: a canvas loaded from storage with an empty model must warn
@@ -119,6 +181,7 @@ export const useSaveGraph = (
           message.warning(
             `${emptyMessageNodeNames.join(', ')}: ${t('flow.messageMsg')}`,
           );
+          return;
         }
       }
 

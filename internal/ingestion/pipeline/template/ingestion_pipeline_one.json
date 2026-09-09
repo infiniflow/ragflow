@@ -335,7 +335,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
@@ -363,7 +363,7 @@
                             }
                         },
                         "label": "OneChunker",
-                        "name": "One Chunker_0"
+                        "name": "One Chunker"
                     },
                     "id": "OneChunker:DryDrinksVisit",
                     "measured": {
@@ -391,7 +391,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_0"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:FrankWeeksListen",
                     "measured": {
@@ -415,7 +415,7 @@
                     },
                     "data": {
                         "label": "Extractor",
-                        "name": "Extractor_0"
+                        "name": "Extractor"
                     }
                 }
             ]

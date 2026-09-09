@@ -33,8 +33,16 @@ python_version_validation()
 
 # Download nltk data
 def download_nltk_data():
+    import os
+
+    # NLTK >=3.10 refuses proxied downloads (SSRF guard) unless opted in.
+    os.environ.setdefault("NLTK_ALLOW_PROXIED_URLOPEN", "1")
+
     import nltk
 
+    # NLTK >=3.8.2 gates the `wordnet` corpus behind the `omw-1.4` package, so
+    # both must be present or tokenization-backed paths raise LookupError.
+    nltk.download("omw-1.4", halt_on_error=False, quiet=True)
     nltk.download("wordnet", halt_on_error=False, quiet=True)
     nltk.download("punkt_tab", halt_on_error=False, quiet=True)
 

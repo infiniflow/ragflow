@@ -359,6 +359,7 @@ export default {
       runningStatus2: 'تم الإلغاء',
       runningStatus3: 'نجاح',
       runningStatus4: 'يفشل',
+      runningStatusQueued: 'في الانتظار',
       pageRanges: 'نطاقات الصفحات',
       pageRangesTip:
         'نطاق الصفحات التي سيتم تحليلها؛ لن تتم معالجة الصفحات التي تقع خارج هذا النطاق.',
@@ -923,7 +924,10 @@ export default {
         'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
-      azure_devopsDescription: 'اربط Azure DevOps لمزامنة ملفات المستودع وطلبات السحب.',
+      sitemapDescription:
+        'اربط ملف sitemap.xml عامًا لمزامنة صفحات الويب ومستندات PDF المدرجة فيه مع قاعدة المعرفة.',
+      azure_devopsDescription:
+        'اربط Azure DevOps لمزامنة ملفات المستودع وطلبات السحب.',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
       bitbucketTopWorkspaceTip:
         'The Bitbucket workspace to index (e.g., "atlassian" from https://bitbucket.org/atlassian/workspace ).',

@@ -352,6 +352,7 @@ export default {
       runningStatus2: 'ОТМЕНЕНО',
       runningStatus3: 'УСПЕХ',
       runningStatus4: 'НЕУСПЕХ',
+      runningStatusQueued: 'На опашка',
       pageRanges: 'Диапазон на страници',
       pageRangesTip:
         'Диапазон от страници за обработка; страниците извън този диапазон няма да бъдат обработени.',
@@ -1000,7 +1001,10 @@ The above is the content you need to summarize.`,
       gmailTokenTip: 'Качете OAuth JSON, генериран от Google Console.',
       dropboxDescription:
         'Свържете вашия Dropbox за синхронизиране на файлове и папки от избран акаунт.',
-      azure_devopsDescription: 'Свържете Azure DevOps, за да синхронизирате файловете на хранилището и заявките за изтегляне (pull requests).',
+      sitemapDescription:
+        'Свържете публичен sitemap.xml, за да синхронизирате изброените уеб страници и PDF документи с базата от знания.',
+      azure_devopsDescription:
+        'Свържете Azure DevOps, за да синхронизирате файловете на хранилището и заявките за изтегляне (pull requests).',
       bitbucketDescription:
         'Свържете Bitbucket за синхронизиране на PR съдържание.',
       bitbucketTopWorkspaceTip:
