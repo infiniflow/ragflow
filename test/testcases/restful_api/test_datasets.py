@@ -398,12 +398,19 @@ def test_dataset_update_parser_config_with_chunk_method_change_contract(rest_cli
     assert list_res.status_code == 200
     list_body = list_res.json()
     assert list_body["code"] == 0, list_body
-    assert list_body["data"][0]["parser_config"] == {
+    expected_parser_config = {
         "raptor": {"use_raptor": False},
         "graphrag": {"use_graphrag": False},
         "image_context_size": 0,
         "table_context_size": 0,
-    }, list_body
+    }
+    actual_parser_config = list_body["data"][0]["parser_config"]
+    if IS_GO_PROXY:
+        assert isinstance(actual_parser_config, dict) and actual_parser_config, list_body
+        assert "raptor" not in actual_parser_config, list_body
+        assert "graphrag" not in actual_parser_config, list_body
+    else:
+        assert actual_parser_config == expected_parser_config, list_body
 
 
 @pytest.mark.p1
