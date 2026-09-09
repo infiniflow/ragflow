@@ -305,6 +305,9 @@ def _usage_dict(prompt_tokens: int, completion_tokens: int, start_ts: float) -> 
 
 
 async def async_chat_solo(dialog, messages, stream=True, session_id=None):
+    # Same timing boundary as async_chat: model resolution and prompt setup
+    # count towards the persisted duration.
+    start_ts = timer()
     if dialog.llm_id:
         if dialog.tenant_llm_id:
             try:
@@ -346,7 +349,6 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
     sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     system_prompt = prompt_config.get("system", "").replace("{date}", sys_date)
     prompt_tk = num_tokens_from_string(system_prompt) + sum(num_tokens_from_string(m["content"]) for m in msg if isinstance(m.get("content"), str))
-    start_ts = timer()
     if stream:
         if model_config["model_type"] == "chat":
             stream_iter = chat_mdl.async_chat_streamly_delta(system_prompt, msg, dialog.llm_setting)
