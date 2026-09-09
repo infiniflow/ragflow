@@ -1002,11 +1002,27 @@ func TestFilterPDFTOCFragmentPages_EmptyPageNumbersDoNotCollide(t *testing.T) {
 	}
 }
 
-// TestFilterPDFTOCFragmentPages_WatermarkedTOCPageStaysNegative pins the
-// known limitation: a TOC page carrying a long watermark line without URL
-// signature still vetoes via body. Watermark handling belongs to a future
-// cross-page frequency pass, not to this classifier.
-func TestFilterPDFTOCFragmentPages_WatermarkedTOCPageStaysNegative(t *testing.T) {
+// TestFilterPDFTOCFragmentPages_RepeatedBoilerplateDoesNotVeto pins the
+// frequency exemption: a long line repeating verbatim on >=3 pages is
+// boilerplate, not prose, so it neither vetoes classification nor survives
+// on a classified page.
+func TestFilterPDFTOCFragmentPages_RepeatedBoilerplateDoesNotVeto(t *testing.T) {
+	promo := "Free ebook download from the reader forum, enjoy reading daily"
+	var sections []deepdoctype.Section
+	for page := 0; page < 3; page++ {
+		parts := []string{"Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4", "Chapter 5", "1", "3", "4", promo}
+		sections = append(sections, fragmentedTOCPage(parts, page, "text")...)
+	}
+	got := filterPDFTOCFragmentPages(sections)
+	if len(got) != 0 {
+		t.Fatalf("sections = %v, want empty", sectionTexts(got))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_UnrepeatedLongLineStillVetoes pins that the
+// exemption needs repetition: the same promo on a single page is ordinary
+// long text and still vetoes.
+func TestFilterPDFTOCFragmentPages_UnrepeatedLongLineStillVetoes(t *testing.T) {
 	promo := "Free ebook download from the reader forum, enjoy reading daily"
 	sections := fragmentedTOCPage([]string{
 		"Chapter 1",
@@ -1019,6 +1035,20 @@ func TestFilterPDFTOCFragmentPages_WatermarkedTOCPageStaysNegative(t *testing.T)
 		"4",
 		promo,
 	}, 0, "text")
+	got := filterPDFTOCFragmentPages(sections)
+	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
+		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
+	}
+}
+
+// TestFilterPDFTOCFragmentPages_TitleCandidatesNeverBoilerplate pins the
+// priority: chapter headings repeating across pages still count as TOC
+// signals and are never misread as boilerplate.
+func TestFilterPDFTOCFragmentPages_TitleCandidatesNeverBoilerplate(t *testing.T) {
+	var sections []deepdoctype.Section
+	for page := 0; page < 3; page++ {
+		sections = append(sections, fragmentedTOCPage([]string{"Chapter 1", "Preface"}, page, "text")...)
+	}
 	got := filterPDFTOCFragmentPages(sections)
 	if !slices.Equal(sectionTexts(got), sectionTexts(sections)) {
 		t.Fatalf("sections = %v, want untouched %v", sectionTexts(got), sectionTexts(sections))
