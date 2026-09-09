@@ -758,6 +758,8 @@ class BedrockEmbed(Base):
                 body = {"inputText": text}
             elif self.is_cohere:
                 body = {"texts": [text], "input_type": "search_document"}
+            else:
+                raise EmbeddingError(f"BedrockEmbed: unsupported embedding model '{self.model_name}' (expected an 'amazon.' or 'cohere.' model)")
             response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
             model_response = json.loads(response["body"].read())
             # Bedrock does not report token usage; count locally.
@@ -772,6 +774,8 @@ class BedrockEmbed(Base):
             body = {"inputText": text}
         elif self.is_cohere:
             body = {"texts": [text], "input_type": "search_query"}
+        else:
+            raise EmbeddingError(f"BedrockEmbed: unsupported embedding model '{self.model_name}' (expected an 'amazon.' or 'cohere.' model)")
         try:
             response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
             model_response = json.loads(response["body"].read())
@@ -1126,8 +1130,8 @@ class ReplicateEmbed(Base):
         return np.array(ress), token_count
 
     def encode_queries(self, text):
-        res = self.client.embed(self.model_name, input={"texts": [text]})
-        return np.array(res), num_tokens_from_string(text)
+        vectors, token_count = self.encode([text])
+        return vectors[0], token_count
 
 
 class BaiduYiyanEmbed(Base):
