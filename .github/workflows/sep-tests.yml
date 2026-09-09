@@ -1731,6 +1731,10 @@ jobs:
     # Skip unless DeepDoc native backend code/build/testdata actually changed.
     if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_native_deepdoc_changes == 'true' }}
     runs-on: [ "self-hosted", "ragflow-test" ]
+    # Shared by the assert step and the test step below so the mount path is
+    # declared once.
+    env:
+      RAGFLOW_TESTDATA_DIR: /opt/ragflow-testdata
     steps:
       - name: Ensure workspace ownership
         run: |
@@ -1781,13 +1785,13 @@ jobs:
         # package later does not invalidate the check.
         run: |
           set -euo pipefail
-          if [ ! -d /opt/ragflow-testdata/deepdoc ]; then
-            echo "ERROR: /opt/ragflow-testdata/deepdoc missing on this runner." >&2
+          if [ ! -d "${RAGFLOW_TESTDATA_DIR}/deepdoc" ]; then
+            echo "ERROR: ${RAGFLOW_TESTDATA_DIR}/deepdoc missing on this runner." >&2
             echo "       Native backend tests expect the asset repo pre-seeded there." >&2
             exit 1
           fi
-          echo "✓ pre-seeded testdata found at /opt/ragflow-testdata/deepdoc:"
-          ls -l /opt/ragflow-testdata/deepdoc
+          echo "✓ pre-seeded testdata found at ${RAGFLOW_TESTDATA_DIR}/deepdoc:"
+          ls -l "${RAGFLOW_TESTDATA_DIR}/deepdoc"
 
       - name: Run in-process DeepDoc backend integration tests (correctness + race)
         # Doc-engine-independent: the same native backend (det/layout/tsr/rec
@@ -1806,7 +1810,6 @@ jobs:
         # back to when it runs outside this job (local dev, no mount).
         env:
           MODEL_DIR: /opt/ragflow-deepdoc-models
-          RAGFLOW_TESTDATA_DIR: /opt/ragflow-testdata
           CGO_ENABLED: '1'
           DEEPDOC_NATIVE_REQUIRED: '1'
           XDG_CACHE_HOME: ${{ github.workspace }}/.cache
