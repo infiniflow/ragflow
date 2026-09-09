@@ -1571,6 +1571,61 @@ async def _batch_fill_slots(tools, slot_table, slot_evidence: dict, answer_conf:
     return filled
 
 
+# Word-level coverage a pooled evidence row must reach before it is allowed to
+# answer a slot on its own.  Deliberately strict: a wrong prefill costs accuracy,
+# while a missed prefill only costs one session (which still runs).
+_EVIDENCE_PREFILL_COVERAGE = 0.6
+
+
+def _prefill_slots_from_evidence(slot_table, kbinfos: dict) -> int:
+    """Answer slots that an already-pooled evidence row directly answers.
+
+    An evidence row is an atomic proposition carrying a verbatim quote, so when
+    it already covers a slot's question there is nothing for an action session
+    to research — skipping it removes a WHOLE session (the dominant cost), not
+    just tokens inside one.  Saves calls, uses real evidence, and a wrong guess
+    is still caught later by the SCA.
+    """
+    from rag.advanced_rag.harness.tools.search import _chunk_id, _query_to_terms
+
+    chunks = [c for c in ((kbinfos or {}).get("chunks") or []) if isinstance(c, dict)]
+    ev_rows = [c for c in chunks if str(_chunk_id(c) or "").startswith(_EVIDENCE_CHUNK_PREFIX)]
+    if not ev_rows:
+        return 0
+
+    filled = 0
+    for v in slot_table.unresolved():
+        clues = [str(x) for x in (getattr(v, "question_clues", None) or []) if str(x).strip()]
+        if not clues:
+            continue
+        terms: set = set()
+        for c in clues:
+            terms |= {t.lower() for t in _query_to_terms(c) if len(t) >= 3}
+        if not terms:
+            continue
+
+        best, best_cov = None, 0.0
+        for e in ev_rows:
+            text = str(e.get("content_with_weight") or "").lower()
+            if not text:
+                continue
+            cov = sum(1 for t in terms if t in text) / len(terms)
+            if cov > best_cov:
+                best, best_cov = e, cov
+        if best is None or best_cov < _EVIDENCE_PREFILL_COVERAGE:
+            continue
+
+        # The row renders as "[evidence] <name> — <desc>\nEvidence (verbatim): ..."
+        head = str(best.get("content_with_weight") or "").split("\n")[0]
+        name = head.replace("[evidence]", "").strip(" —-").strip()
+        if not name:
+            continue
+        v.candidate = name[:400]
+        v.candidate_strength = float(best_cov)
+        filled += 1
+    return filled
+
+
 async def _run_slot_research_pass(tools, question: str, state: AgenticState, answer_conf: dict, deadline_left: float) -> dict:
     """Drive ONE research round with slot-aware action
     sessions.
@@ -1600,6 +1655,16 @@ async def _run_slot_research_pass(tools, question: str, state: AgenticState, ans
     sem = asyncio.Semaphore(2)
     base = getattr(tools, "kbinfos", None) or state.get("kbinfos") or {"chunks": [], "doc_aggs": []}
     tools.kbinfos = dict(base)
+
+    # Evidence-row prefill: slots the pooled evidence already answers cost no
+    # action session at all — this is where whole calls get removed.
+    try:
+        prefill_n = _prefill_slots_from_evidence(slot_table, tools.kbinfos)
+        if prefill_n:
+            _LOG.info("[SlotResearch] evidence prefill answered %d slot(s) with no session", prefill_n)
+            unresolved = slot_table.unresolved()
+    except Exception:  # noqa: BLE001
+        _LOG.warning("[SlotResearch] evidence prefill failed", exc_info=True)
 
     # Shared cache across sessions to avoid duplicate retrievals
     shared_tool_cache = {}
