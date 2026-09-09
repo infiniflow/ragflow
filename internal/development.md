@@ -43,7 +43,7 @@ sudo apt install libpcre2-dev
 # download_go_deps.py is the Go-end script: it now fetches the ONNX Runtime
 # static lib too, so this single command covers every native dependency the
 # Go server binary needs (incl. the in-process DeepDoc backend).
-# It also fetches the .ort model weights into rag/res/deepdoc/ (see §1.6).
+# It also fetches the Go model weights (four .ort + ocr.res) into rag/res/deepdoc/ (see §1.6).
 python3 ragflow_deps/download_go_deps.py
 # Shared (Go + Python) deps. Retains ONNX Runtime for the ragflow_deps image /
 # backward-compat; also pulls Python-side artifacts (models, nltk, tika, ...).
@@ -146,10 +146,16 @@ supersedes the other, so do not delete one to "clean up".
 | Format | `.ort` | `.onnx` |
 | Files | `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` | `det.onnx`, `layout.onnx`, `tsr.onnx`, `rec.onnx`, `ocr.res` |
 
-`rag/res/deepdoc/` is the directory the Go server auto-discovers, so no
-`MODEL_DIR` / `DEEPDOC_MODEL_DIR` export is needed. `download_go_deps.py`
-(§1.4) fetches the five `.ort` files into it; `download_deps.py` snapshots the
-whole `InfiniFlow/deepdoc` repo and therefore carries both formats.
+`download_go_deps.py` (§1.4) fetches the five required files — four `.ort` plus
+`ocr.res` — into `rag/res/deepdoc/`; `download_deps.py` snapshots the whole
+`InfiniFlow/deepdoc` repo and therefore carries both formats.
+
+Auto-discovery is **relative to the server process's working directory**:
+`resolveDeepDocModelDir()` (`cmd/ragflow_server.go`) probes
+`<cwd>/rag/res/deepdoc`, then `<cwd>/huggingface.co/InfiniFlow/deepdoc`.
+Launching `./bin/ragflow_server` from the repo root therefore needs no
+`MODEL_DIR` / `DEEPDOC_MODEL_DIR` export; from any other CWD — or an image with
+a different WORKDIR — set `MODEL_DIR` explicitly.
 
 `common.DeepDocModelFiles` (`internal/common/environments.go`) is the
 authoritative list — `HasModelFiles()` refuses to serve when any file in it is
@@ -162,15 +168,16 @@ missing from the model directory.
 - **Confirm it is serving** — the server logs, at startup:
   `in-process DeepDoc backend registered (production backend)`
   If you instead see a fatal `no in-process DeepDoc backend serving`, it has
-  two possible causes: ORT was not linked into the binary, or the `.ort`
-  weights are missing from the model directory. Check the weights above first,
-  then re-run `uv run python3 ragflow_deps/download_go_deps.py` and rebuild
+  two possible causes: ORT was not linked into the binary, or the model
+  directory is missing one of the five required files listed above. Check the
+  weights first, then re-run `uv run python3 ragflow_deps/download_go_deps.py` and rebuild
   (§1.4 explains the ORT link failure; `build.sh` fails fast with
   `Error: ONNX Runtime static libraries are not linked` before that happens).
 
 - **Run the binary directly (local dev)** — `./bin/ragflow_server --api`
   (start `--admin` first, see §2) launches the Go server and registers the
-  backend. No extra environment variable is required.
+  backend. Run it from the repo root so the weights above are auto-discovered
+  (see the CWD caveat); no environment variable is required there.
 
 - **Run the Go Docker image** — the container entrypoint only starts the Go
   server (`bin/ragflow_server --api/--ingestor/--admin`) when
