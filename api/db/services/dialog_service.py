@@ -290,6 +290,16 @@ class DialogService(CommonService):
         return list(objs)
 
 
+def _prompt_tokens(system_prompt: str, messages: list[dict]) -> int:
+    """Estimate prompt tokens for a system prompt plus a message list.
+
+    Message content may be a plain string or a list of content blocks (after
+    ``convert_last_user_msg_to_multimodal``); only the text blocks are counted,
+    image payloads are ignored.
+    """
+    return num_tokens_from_string(system_prompt) + sum(num_tokens_from_string(_normalize_text_from_content(m.get("content"))) for m in messages)
+
+
 def _usage_dict(prompt_tokens: int, completion_tokens: int, start_ts: float) -> dict:
     """Build the ``usage`` block attached to a final chat answer.
 
@@ -348,7 +358,7 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
     sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     system_prompt = prompt_config.get("system", "").replace("{date}", sys_date)
-    prompt_tk = num_tokens_from_string(system_prompt) + sum(num_tokens_from_string(m["content"]) for m in msg if isinstance(m.get("content"), str))
+    prompt_tk = _prompt_tokens(system_prompt, msg)
     if stream:
         if model_config["model_type"] == "chat":
             stream_iter = chat_mdl.async_chat_streamly_delta(system_prompt, msg, dialog.llm_setting)
@@ -2190,13 +2200,17 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
 
-        prompt_tk = num_tokens_from_string(rag_tools.sys_prompt()) + sum(num_tokens_from_string(m["content"]) for m in agent_messages if isinstance(m.get("content"), str))
+        # Outer-model estimate plus every LLM call the inner ``rag`` graph made
+        # (recorded per phase by RAGTools' CountingChatModel).
+        llm_stats = getattr(rag_tools, "llm_stats", None)
+        prompt_tk = _prompt_tokens(rag_tools.sys_prompt(), agent_messages) + (sum(llm_stats.prompt_tokens.values()) if llm_stats else 0)
+        completion_tk = num_tokens_from_string(think + answer) + (sum(llm_stats.completion_tokens.values()) if llm_stats else 0)
         return {
             "answer": think + answer,
             "reference": refs,
             "prompt": "",
             "created_at": time.time(),
-            "usage": _usage_dict(prompt_tk, num_tokens_from_string(think + answer), agent_start_ts),
+            "usage": _usage_dict(prompt_tk, completion_tk, agent_start_ts),
         }
 
     # The agentic-search graph composes the final cited answer itself, so we

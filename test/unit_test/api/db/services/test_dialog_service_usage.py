@@ -122,6 +122,42 @@ def test_async_chat_final_event_carries_usage(monkeypatch, stream):
     _assert_usage(final_events[0]["usage"])
 
 
+def test_prompt_tokens_counts_text_blocks_in_structured_content():
+    plain = [{"role": "user", "content": "What is RAGFlow?"}]
+    structured = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What is RAGFlow?"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+            ],
+        }
+    ]
+    assert dialog_service._prompt_tokens("sys", plain) > dialog_service._prompt_tokens("sys", [])
+    assert dialog_service._prompt_tokens("sys", structured) == dialog_service._prompt_tokens("sys", plain)
+
+
+@pytest.mark.p2
+def test_async_chat_solo_usage_counts_multimodal_prompt(monkeypatch):
+    chat_mdl = _StreamingChatModel("A picture of the RAGFlow logo.")
+    _stub_solo_dependencies(monkeypatch, chat_mdl)
+    # Turn the last user message into content blocks, as the multimodal path does.
+    monkeypatch.setattr(
+        dialog_service,
+        "convert_last_user_msg_to_multimodal",
+        lambda msg, _uris, _factory: msg.__setitem__(
+            -1, {"role": "user", "content": [{"type": "text", "text": msg[-1]["content"]}, {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}]}
+        ),
+    )
+    monkeypatch.setattr(dialog_service, "get_files_content", lambda _m, _t: ("", ["data:image/png;base64,AAAA"], []))
+
+    events = _collect(dialog_service.async_chat_solo(_make_solo_dialog(), [{"role": "user", "content": "What is on this picture?"}], stream=False))
+
+    usage = events[-1]["usage"]
+    assert usage["prompt_tokens"] == dialog_service._prompt_tokens("You are helpful.", [{"role": "user", "content": "What is on this picture?"}])
+    assert usage["prompt_tokens"] > 0
+
+
 def test_usage_dict_shape():
     usage = dialog_service._usage_dict(3, 4, dialog_service.timer())
     assert usage["total_tokens"] == 7
