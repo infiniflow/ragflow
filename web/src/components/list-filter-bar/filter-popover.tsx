@@ -35,6 +35,7 @@ import { Input, SearchInput } from '@/components/ui/input';
 
 import { Form, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { t } from 'i18next';
+import { Loader2 } from 'lucide-react';
 import { FilterField } from './filter-field';
 import {
   FilterChange,
@@ -48,6 +49,9 @@ export type CheckboxFormMultipleProps = {
   value?: FilterValue;
   onChange?: FilterChange;
   onOpenChange?: (open: boolean) => void;
+  // Set while the filter options are still being fetched, so the popover can
+  // show a loading state instead of an empty form.
+  filtersLoading?: boolean;
   setOpen(open: boolean): void;
   filterGroup?: Record<string, string[]>;
 };
@@ -324,6 +328,7 @@ export function FilterPopover({
   onChange,
   onOpenChange,
   filters,
+  filtersLoading,
   filterGroup,
 }: PropsWithChildren & Omit<CheckboxFormMultipleProps, 'setOpen'>) {
   const [open, setOpen] = useState(false);
@@ -338,13 +343,24 @@ export function FilterPopover({
     <Popover open={open} onOpenChange={onOpenChangeFun}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent className="p-0">
-        <CheckboxFormMultiple
-          onChange={onChange}
-          value={value}
-          filters={filters}
-          setOpen={setOpen}
-          filterGroup={filterGroup}
-        ></CheckboxFormMultiple>
+        {filtersLoading ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex items-center justify-center gap-2 px-5 py-10 text-sm text-text-secondary"
+          >
+            <Loader2 className="size-4 animate-spin" />
+            {t('common.loading')}
+          </div>
+        ) : (
+          <CheckboxFormMultiple
+            onChange={onChange}
+            value={value}
+            filters={filters}
+            setOpen={setOpen}
+            filterGroup={filterGroup}
+          />
+        )}
       </PopoverContent>
     </Popover>
   );
