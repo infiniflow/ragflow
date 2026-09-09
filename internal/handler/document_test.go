@@ -48,6 +48,8 @@ type fakeDocumentService struct {
 	docErr                 error
 	updateCalled           bool
 	updatedID              string
+	updateCode             common.ErrorCode
+	updateErr              error
 	deleteCalled           bool
 	deletedID              string
 	stopResult             map[string]interface{}
@@ -149,10 +151,10 @@ func (f *fakeDocumentService) GetDocumentByID(ctx context.Context, id string) (*
 	}
 	return nil, fmt.Errorf("document not found")
 }
-func (f *fakeDocumentService) UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) error {
+func (f *fakeDocumentService) UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) (common.ErrorCode, error) {
 	f.updateCalled = true
 	f.updatedID = id
-	return nil
+	return f.updateCode, f.updateErr
 }
 func (f *fakeDocumentService) DeleteDocument(ctx context.Context, id string) error {
 	f.deleteCalled = true
@@ -510,6 +512,38 @@ func TestUpdateDocumentHandler_Accessible(t *testing.T) {
 	}
 	if resp["message"] != "updated successfully" {
 		t.Fatalf("unexpected response: %v", resp)
+	}
+}
+
+func TestUpdateDocumentHandler_ValidationError(t *testing.T) {
+	setupDocumentPermissionDB(t, true)
+
+	fake := &fakeDocumentService{
+		doc:        &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+		updateCode: common.CodeDataError,
+		updateErr:  errors.New("can't change `progress`"),
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"progress":0.5}`)
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	h.UpdateDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected data error, got %v", resp)
+	}
+	if resp["message"] != "can't change `progress`" {
+		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 }
 

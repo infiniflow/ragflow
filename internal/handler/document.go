@@ -50,7 +50,7 @@ var IMG_BASE64_PREFIX = "data:image/png;base64,"
 // documentServiceIface defines the DocumentService methods used by DocumentHandler.
 type documentServiceIface interface {
 	GetDocumentByID(ctx context.Context, id string) (*document.DocumentResponse, error)
-	UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) error
+	UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) (common.ErrorCode, error)
 	DeleteDocument(ctx context.Context, id string) error
 	DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error)
 	ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
@@ -324,10 +324,8 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		return
 	}
 
-	if err = h.documentService.UpdateDocument(ctx, id, &req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
+	if errorCode, err = h.documentService.UpdateDocument(ctx, id, &req); err != nil {
+		common.ErrorWithCode(c, errorCode, err.Error())
 		return
 	}
 

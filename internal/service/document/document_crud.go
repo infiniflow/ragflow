@@ -115,32 +115,38 @@ func (s *DocumentService) GetDocumentByID(ctx context.Context, id string) (*Docu
 }
 
 // UpdateDocument update document
-func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *UpdateDocumentRequest) error {
+func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *UpdateDocumentRequest) (common.ErrorCode, error) {
+	if req == nil {
+		return common.CodeDataError, errors.New("invalid request payload")
+	}
+
 	document, err := s.documentDAO.GetByID(ctx, dao.DB, id)
 	if err != nil {
-		return err
+		if dao.IsNotFoundErr(err) {
+			return common.CodeDataError, errors.New("document not found")
+		}
+		return common.CodeServerError, err
 	}
 
-	if req.Name != nil {
-		document.Name = req.Name
-	}
-	if req.Run != nil {
-		document.Run = req.Run
-	}
-	if req.TokenNum != nil {
-		document.TokenNum = *req.TokenNum
-	}
-	if req.ChunkNum != nil {
-		document.ChunkNum = *req.ChunkNum
-	}
-	if req.Progress != nil {
-		document.Progress = *req.Progress
-	}
-	if req.ProgressMsg != nil {
-		document.ProgressMsg = req.ProgressMsg
+	if err = validateImmutableDocumentFields(document, immutableDocumentFields{
+		chunkNum:            req.ChunkNum,
+		chunkNumRequestName: "chunk_num",
+		tokenNum:            req.TokenNum,
+		tokenNumRequestName: "token_num",
+		progress:            req.Progress,
+		run:                 req.Run,
+		progressMsg:         req.ProgressMsg,
+	}); err != nil {
+		return common.CodeDataError, err
 	}
 
-	return s.documentDAO.Update(ctx, dao.DB, document)
+	if req.Name == nil {
+		return common.CodeSuccess, nil
+	}
+	if err = s.documentDAO.UpdateByID(ctx, dao.DB, id, map[string]interface{}{"name": *req.Name}); err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 // ApplyDocCounts records a pipeline run's chunk/token/duration counts on the
