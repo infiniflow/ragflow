@@ -143,7 +143,11 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *Up
 	if req.Name == nil {
 		return common.CodeSuccess, nil
 	}
-	if err = s.documentDAO.UpdateByID(ctx, dao.DB, id, map[string]interface{}{"name": *req.Name}); err != nil {
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, document.KbID)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if err = s.updateDocumentNameOnly(ctx, document, kb.TenantID, *req.Name); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil

@@ -325,7 +325,11 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 	}
 
 	if errorCode, err = h.documentService.UpdateDocument(ctx, id, &req); err != nil {
-		common.ErrorWithCode(c, errorCode, err.Error())
+		if errorCode == common.CodeServerError {
+			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, errorCode, nil, err.Error())
+		} else {
+			common.ErrorWithCode(c, errorCode, err.Error())
+		}
 		return
 	}
 

@@ -547,6 +547,38 @@ func TestUpdateDocumentHandler_ValidationError(t *testing.T) {
 	}
 }
 
+func TestUpdateDocumentHandler_ServerError(t *testing.T) {
+	setupDocumentPermissionDB(t, true)
+
+	fake := &fakeDocumentService{
+		doc:        &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+		updateCode: common.CodeServerError,
+		updateErr:  errors.New("database unavailable"),
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"name":"new.pdf"}`)
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	h.UpdateDocument(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeServerError) {
+		t.Fatalf("expected server error, got %v", resp)
+	}
+	if resp["message"] != "database unavailable" {
+		t.Fatalf("unexpected message: %v", resp["message"])
+	}
+}
+
 func setupUploadHandlerDB(t *testing.T, role string) *gorm.DB {
 	t.Helper()
 
