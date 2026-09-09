@@ -463,7 +463,7 @@ export default {
       general: '通用',
       chunkMethodTab: '切片方法',
       testResults: '测试结果',
-      openChunkInDocument: '在文档中打开该解析块',
+      openChunkInDocument: '在新标签页中打开该解析块',
       testSetting: '测试设置',
       retrievalTesting: '知识检索测试',
       retrievalTestingDescription:

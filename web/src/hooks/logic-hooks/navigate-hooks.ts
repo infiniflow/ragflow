@@ -26,6 +26,25 @@ export enum QueryStringMap {
   id = 'id',
 }
 
+/**
+ * Path of the chunk browser for a document. ``chunkId`` makes the page open on
+ * that specific chunk instead of page 1.
+ */
+export const buildChunkParsedResultPath = (
+  documentId: string,
+  knowledgeId?: string,
+  chunkId?: string,
+) => {
+  const params = new URLSearchParams({
+    [KnowledgeSearchParams.KnowledgeId]: knowledgeId ?? '',
+    [KnowledgeSearchParams.DocumentId]: documentId,
+  });
+  if (chunkId) {
+    params.set(KnowledgeSearchParams.ChunkId, chunkId);
+  }
+  return `${Routes.ParsedResult}/chunks?${params.toString()}`;
+};
+
 export const useNavigatePage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -163,15 +182,7 @@ export const useNavigatePage = () => {
 
   const navigateToChunkParsedResult = useCallback(
     (id: string, knowledgeId?: string, chunkId?: string) => () => {
-      const params = new URLSearchParams({
-        [KnowledgeSearchParams.KnowledgeId]: knowledgeId ?? '',
-        [KnowledgeSearchParams.DocumentId]: id,
-      });
-      if (chunkId) {
-        // Lets the chunk page open on this specific chunk instead of page 1.
-        params.set(KnowledgeSearchParams.ChunkId, chunkId);
-      }
-      navigate(`${Routes.ParsedResult}/chunks?${params.toString()}`);
+      navigate(buildChunkParsedResultPath(id, knowledgeId, chunkId));
     },
     [navigate],
   );

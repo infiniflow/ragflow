@@ -5,7 +5,7 @@ import { FilterPopover } from '@/components/list-filter-bar/filter-popover';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import { Card } from '@/components/ui/card';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { buildChunkParsedResultPath } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useKnowledgeBaseId,
   useTestRetrieval,
@@ -14,8 +14,9 @@ import { ITestingChunk } from '@/interfaces/database/dataset';
 import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
 import { t } from 'i18next';
 import camelCase from 'lodash/camelCase';
-import { KeyboardEvent, useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 
 const similarityList: Array<{ field: keyof ITestingChunk; label: string }> = [
   { field: 'similarity', label: 'Hybrid Similarity' },
@@ -39,52 +40,41 @@ const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
 
 type ChunkResultCardProps = {
   item: ITestingChunk;
-  onOpen: (item: ITestingChunk) => void;
+  knowledgeBaseId: string;
 };
 
-function ChunkResultCard({ item, onOpen }: ChunkResultCardProps) {
+function ChunkResultCard({ item, knowledgeBaseId }: ChunkResultCardProps) {
   const { t } = useTranslation();
-
-  const handleClick = useCallback(() => {
-    // A click that ends a drag-selection leaves a non-collapsed selection
-    // behind; navigating there would make the result text impossible to copy.
-    const selection = window.getSelection();
-    if (selection && !selection.isCollapsed) {
-      return;
-    }
-    onOpen(item);
-  }, [item, onOpen]);
-
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLElement>) => {
-      if (event.key !== 'Enter' && event.key !== ' ') {
-        return;
-      }
-      event.preventDefault();
-      onOpen(item);
-    },
-    [item, onOpen],
-  );
 
   return (
     <article>
-      <Card
-        role="button"
-        tabIndex={0}
-        aria-label={t('knowledgeDetails.openChunkInDocument')}
-        onClick={handleClick}
-        onKeyDown={handleKeyDown}
-        className="px-5 py-2.5 bg-transparent shadow-none cursor-pointer transition-colors hover:bg-bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
-      >
+      <Card className="px-5 py-2.5 bg-transparent shadow-none">
         <ChunkTitle item={item}></ChunkTitle>
         <div
           className="!mt-2.5 whitespace-pre-wrap [&_em]:text-accent-primary [&_em]:not-italic"
           dangerouslySetInnerHTML={{
-            __html: sanitizeHtmlWithImagesAsText(item.highlight || item.content),
+            __html: sanitizeHtmlWithImagesAsText(
+              item.highlight || item.content,
+            ),
           }}
         />
         <div className="mt-2.5 text-right text-xs text-text-sub-title-invert">
-          {item.document_keyword}
+          {/* A real link so the hit can be middle-clicked or opened in the
+              background; it targets a new tab because the retrieval results
+              only live in memory and are lost on a back navigation. */}
+          <Link
+            to={buildChunkParsedResultPath(
+              item.document_id,
+              item.dataset_id || knowledgeBaseId,
+              item.id,
+            )}
+            target="_blank"
+            rel="noreferrer"
+            title={t('knowledgeDetails.openChunkInDocument')}
+            className="rounded-sm underline underline-offset-2 hover:text-accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+          >
+            {item.document_keyword}
+          </Link>
         </div>
       </Card>
     </article>
@@ -103,7 +93,6 @@ export function TestingResult({
   data,
 }: TestingResultProps) {
   const knowledgeBaseId = useKnowledgeBaseId();
-  const { navigateToChunkParsedResult } = useNavigatePage();
 
   const filters: FilterCollection[] = useMemo(() => {
     return [
@@ -119,17 +108,6 @@ export function TestingResult({
       },
     ];
   }, [data.doc_aggs]);
-
-  const openChunkInDocument = useCallback(
-    (item: ITestingChunk) => {
-      navigateToChunkParsedResult(
-        item.document_id,
-        item.dataset_id || knowledgeBaseId,
-        item.id,
-      )();
-    },
-    [knowledgeBaseId, navigateToChunkParsedResult],
-  );
 
   return (
     <article className="size-full flex flex-col">
@@ -158,7 +136,7 @@ export function TestingResult({
                 <ChunkResultCard
                   key={x.id}
                   item={x}
-                  onOpen={openChunkInDocument}
+                  knowledgeBaseId={knowledgeBaseId}
                 ></ChunkResultCard>
               ))}
             </section>
