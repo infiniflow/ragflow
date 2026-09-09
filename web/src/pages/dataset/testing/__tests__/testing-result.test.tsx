@@ -1,6 +1,6 @@
 import '@/locales/config';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { TestingResult } from '../testing-result';
 
 type ITestingChunk = import('@/interfaces/database/dataset').ITestingChunk;
@@ -54,13 +54,6 @@ function chunk(overrides: Partial<ITestingChunk> = {}): ITestingChunk {
   };
 }
 
-function LocationSpy() {
-  const location = useLocation();
-  return (
-    <div data-testid="location">{`${location.pathname}${location.search}`}</div>
-  );
-}
-
 function renderResult(chunks: ITestingChunk[]) {
   return render(
     <MemoryRouter initialEntries={['/dataset/retrieval/kb-1']}>
@@ -78,36 +71,16 @@ function renderResult(chunks: ITestingChunk[]) {
         />
         <Route path="*" element={null} />
       </Routes>
-      <LocationSpy />
     </MemoryRouter>,
   );
 }
 
 describe('TestingResult', () => {
-  beforeEach(() => {
-    window.getSelection()?.removeAllRanges();
-  });
-
-  it('exposes each result as a keyboard reachable button', () => {
+  it('links the document name to the chunk browser with the chunk id', () => {
     renderResult([chunk()]);
 
-    const card = screen.getByRole('button', {
-      name: 'Open this chunk in the document',
-    });
-    expect(card).toHaveAttribute('tabindex', '0');
-    expect(card).toHaveTextContent('Retrieved text');
-  });
-
-  it('navigates to the chunk browser with the document and chunk id', () => {
-    renderResult([chunk()]);
-
-    fireEvent.click(
-      screen.getByRole('button', {
-        name: 'Open this chunk in the document',
-      }),
-    );
-
-    expect(screen.getByTestId('location')).toHaveTextContent(
+    expect(screen.getByRole('link', { name: 'handbook.pdf' })).toHaveAttribute(
+      'href',
       '/chunk/parsed/chunks?id=kb-1&doc_id=doc-1&chunk_id=chunk-1',
     );
   });
@@ -115,44 +88,26 @@ describe('TestingResult', () => {
   it('prefers the dataset id carried by the chunk itself', () => {
     renderResult([chunk({ dataset_id: 'kb-other' })]);
 
-    fireEvent.click(
-      screen.getByRole('button', {
-        name: 'Open this chunk in the document',
-      }),
+    expect(screen.getByRole('link', { name: 'handbook.pdf' })).toHaveAttribute(
+      'href',
+      '/chunk/parsed/chunks?id=kb-other&doc_id=doc-1&chunk_id=chunk-1',
     );
-
-    expect(screen.getByTestId('location')).toHaveTextContent('id=kb-other');
   });
 
-  it.each(['Enter', ' '])('activates on %s', (key) => {
+  // Retrieval results only live in memory, so a same-tab navigation would
+  // throw them away; the link also has to survive a middle click.
+  it('opens the document in a new tab', () => {
     renderResult([chunk()]);
-    const card = screen.getByRole('button', {
-      name: 'Open this chunk in the document',
-    });
+    const link = screen.getByRole('link', { name: 'handbook.pdf' });
 
-    fireEvent.keyDown(card, { key });
-
-    expect(screen.getByTestId('location')).toHaveTextContent('chunk_id=chunk-1');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer');
   });
 
-  it('does not navigate when the click only ends a text selection', () => {
+  it('leaves the result body inert so its text stays selectable', () => {
     renderResult([chunk()]);
-    const card = screen.getByRole('button', {
-      name: 'Open this chunk in the document',
-    });
 
-    const range = document.createRange();
-    range.selectNodeContents(card);
-    const selection = window.getSelection();
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-    // Guards against a vacuous assertion if jsdom ever stops tracking ranges.
-    expect(selection?.isCollapsed).toBe(false);
-
-    fireEvent.click(card);
-
-    expect(screen.getByTestId('location')).toHaveTextContent(
-      '/dataset/retrieval/kb-1',
-    );
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByText('Retrieved text')).toBeInTheDocument();
   });
 });
