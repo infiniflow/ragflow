@@ -2016,7 +2016,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       noStructureTimeline: '暂无 Timeline',
       contents: '导航',
       topics: 'Topic',
-      selectArtifact: '从目录中选择一个条目以查看详情',
       searchEntity: '搜索 Entity',
       graphEntityCount: '实体 {{returned}} / {{total}}',
       sourceDocuments: '来源文档',
