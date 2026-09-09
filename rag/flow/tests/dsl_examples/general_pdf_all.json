@@ -87,7 +87,9 @@
                     "ape"
                   ],
                   "lang": "Chinese",
-                  "llm_id": "SenseVoiceSmall",
+                  "vlm": {
+                    "llm_id": "SenseVoiceSmall"
+                  },
                   "output_format": "json"
                 },
                 "email": {
