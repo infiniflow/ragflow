@@ -182,7 +182,7 @@ const API_WHITELIST = [
   withAppBasePath('/api/v1/users/me/models'),
   withAppBasePath('/v1/canvas/set'),
   withAppBasePath('/v1/canvas/setting'),
-  withAppBasePath('/api/v1/searches/'),
+  withAppBasePath('/api/v1/searches'),
   withAppBasePath('/api/v1/memories'),
   withAppBasePath('/api/v1/datasets'),
   withAppBasePath('/v1/dataflow/set'),

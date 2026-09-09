@@ -151,6 +151,9 @@ To serve the UI from a path prefix instead of the domain root:
 3. **Proxy from your outer nginx** (example):
 
    ```nginx
+   location = /ragflow {
+       return 301 /ragflow/;
+   }
    location /ragflow/ {
        proxy_pass http://<ragflow-host>:80/ragflow/;
    }
