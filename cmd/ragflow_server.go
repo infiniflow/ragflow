@@ -593,7 +593,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	// Search and UpsertDoc can embed queries/summaries automatically.
 	nav.SetNavService(nlp.NewNavService(service.NewNavEmbedder(service.NewModelProviderService(), "")))
 	// Memory extraction runs on the Ingestor's shared NATS consumer + worker
-	// pool (task_type="memory" dispatched by processMessage -> executeMemoryTask),
+	// pool (task_type="memory" dispatched by handleAndExecute -> executeMemoryTask),
 	// so there is no longer a dedicated Redis memory consumer to start.
 	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
 

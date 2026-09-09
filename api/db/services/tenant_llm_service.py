@@ -196,7 +196,7 @@ class TenantLLMService(CommonService):
             if model_config["llm_factory"] not in RerankModel:
                 logging.error("Factory not in rerank model. Supported factories: %s", list(RerankModel.keys()))
                 return None
-            return RerankModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"])
+            return RerankModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"], max_token=model_config.get("max_tokens"))
 
         elif model_config["model_type"] == LLMType.VISION.value:
             if model_config["llm_factory"] not in CvModel:

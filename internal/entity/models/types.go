@@ -185,6 +185,7 @@ type ChatConfig struct {
 	Verbosity       *string
 	Tools           interface{}               `json:"tools,omitempty"`
 	ToolChoice      *string                   `json:"tool_choice,omitempty"`
+	ToolChoiceValue any                       `json:"-"`
 	ToolCallsResult *[]map[string]interface{} `json:"-"`
 	// UsageResult receives the token usage extracted from the final
 	// streaming chunk when stream_options.include_usage is true.

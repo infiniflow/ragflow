@@ -562,7 +562,11 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 			if cfg.ToolChoice != nil {
 				toolChoice = *cfg.ToolChoice
 			}
-			reqBody["tool_choice"] = toolChoice
+			if cfg.ToolChoiceValue != nil {
+				reqBody["tool_choice"] = cfg.ToolChoiceValue
+			} else {
+				reqBody["tool_choice"] = toolChoice
+			}
 		}
 	}
 
@@ -614,7 +618,11 @@ func applyChatToolConfig(reqBody map[string]interface{}, chatConfig *ChatConfig)
 	}
 	reqBody["tools"] = chatConfig.Tools
 	if chatConfig.ToolChoice != nil {
-		reqBody["tool_choice"] = *chatConfig.ToolChoice
+		if chatConfig.ToolChoiceValue != nil {
+			reqBody["tool_choice"] = chatConfig.ToolChoiceValue
+		} else {
+			reqBody["tool_choice"] = *chatConfig.ToolChoice
+		}
 	}
 }
 

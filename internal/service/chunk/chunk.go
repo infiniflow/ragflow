@@ -901,6 +901,9 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			"must_not": map[string]interface{}{"exists": "compile_kwd"},
 		},
 	}
+	if len(req.ChunkIDs) > 0 {
+		searchReq.Filter["id"] = req.ChunkIDs
+	}
 
 	// Add available_int filter if specified
 	if req.AvailableInt != nil {

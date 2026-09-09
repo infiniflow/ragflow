@@ -2380,3 +2380,85 @@ func TestOpenAICompatPriorHistoryPreservesConversation(t *testing.T) {
 		t.Fatalf("prior history = %#v, want %#v", history, want)
 	}
 }
+
+// Shared-agent readonly rule: deleting a session is a write, so only the
+// canvas owner or the session's creator may do it. Team members who can
+// read the shared agent see its sessions readonly.
+func createTeamSharedAgentTestFixtures(t *testing.T, canvasOwner, teammate, sessionID, sessionOwner string) {
+	t.Helper()
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-1",
+		UserID:         canvasOwner,
+		Title:          sptr("Shared Agent"),
+		CanvasCategory: "agent_canvas",
+		Permission:     string(entity.TenantPermissionTeam),
+	}).Error; err != nil {
+		t.Fatalf("failed to create canvas: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:       "ut-" + teammate + "-" + canvasOwner,
+		UserID:   teammate,
+		TenantID: canvasOwner,
+		Role:     "normal",
+		Status:   sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("failed to create user tenant: %v", err)
+	}
+	createAgentSessionTestConversation(t, sessionID, "canvas-1", sessionOwner, 1000)
+}
+
+func TestDeleteAgentSessionItem_SharedSessionReadonlyForTeammate(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	createTeamSharedAgentTestFixtures(t, "owner-1", "user-1", "session-1", "owner-1")
+
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(t.Context(), "user-1", "canvas-1", "session-1")
+	if err == nil || err.Error() != "shared session is readonly" {
+		t.Fatalf("err=%v", err)
+	}
+	if code != common.CodeAuthenticationError {
+		t.Fatalf("code=%v", code)
+	}
+	if deleted {
+		t.Fatal("shared session must not be deleted by a team member")
+	}
+
+	var count int64
+	if err = dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
+		t.Fatalf("failed to count session: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("session should remain, count=%d", count)
+	}
+}
+
+func TestDeleteAgentSessionItem_SessionCreatorCanDeleteOwnSession(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	createTeamSharedAgentTestFixtures(t, "owner-1", "user-1", "session-1", "user-1")
+
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(t.Context(), "user-1", "canvas-1", "session-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if !deleted {
+		t.Fatal("session creator should be able to delete their own session")
+	}
+}
+
+func TestDeleteAgentSessionItem_CanvasOwnerCanDeleteAnySession(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	createTeamSharedAgentTestFixtures(t, "owner-1", "user-1", "session-1", "user-1")
+
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(t.Context(), "owner-1", "canvas-1", "session-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if !deleted {
+		t.Fatal("canvas owner should be able to delete any session of the shared agent")
+	}
+}

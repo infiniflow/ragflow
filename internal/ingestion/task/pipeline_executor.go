@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -322,6 +323,18 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	builtInMetadata, autoMetaEnabled := builtInMetadataFromParserConfig(
 		s.taskCtx.Doc.ParserConfig,
 	)
+
+	// Persist is now fully durable: every failure-capable step above
+	// (index write, compiled-product reconcile, Wiki active-MAP state) has
+	// succeeded. Only now drop the per-chunk cache entries this task produced,
+	// so a failure in any of those steps leaves the cache intact for the retry —
+	// the retry resumes after the Parser checkpoint and would otherwise have to
+	// re-pay every embedding/LLM call, which is exactly the cost this cache
+	// exists to absorb. PurgeTask is best-effort and silent when no manifest
+	// exists (e.g. a Redis-less run, where chunkcache.Client() is nil).
+	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
+		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
+	}
 
 	return &PipelineResult{
 		DocID:                 s.taskCtx.Doc.ID,

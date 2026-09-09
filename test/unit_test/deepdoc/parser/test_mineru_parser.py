@@ -928,3 +928,29 @@ def test_read_output_keeps_original_tag_when_middle_json_has_single_table_positi
     assert module.MinerUParser.extract_positions(line_tag) == [
         ([0], 20.0, 170.0, 40.0, 340.0),
     ]
+
+
+def test_mineru_backend_matches_public_api(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    assert {b.value for b in module.MinerUBackend} == {
+        "pipeline",
+        "vlm-engine",
+        "hybrid-engine",
+        "vlm-http-client",
+        "hybrid-http-client",
+    }
+
+
+def test_check_installation_requires_server_url_for_hybrid_http_client(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser(mineru_api="http://mineru.local")
+    monkeypatch.setattr(
+        module.MinerUParser,
+        "_is_http_endpoint_valid",
+        staticmethod(lambda url, timeout=5: True),
+    )
+
+    ok, reason = parser.check_installation("hybrid-http-client", server_url=None)
+
+    assert ok is False
+    assert "MINERU_SERVER_URL" in reason

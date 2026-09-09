@@ -1130,8 +1130,8 @@ class ReplicateEmbed(Base):
         return np.array(ress), token_count
 
     def encode_queries(self, text):
-        res = self.client.embed(self.model_name, input={"texts": [text]})
-        return np.array(res), num_tokens_from_string(text)
+        vectors, token_count = self.encode([text])
+        return vectors[0], token_count
 
 
 class BaiduYiyanEmbed(Base):

@@ -25,9 +25,12 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 // mockFileCommitSvc implements FileCommitServiceInterface for testing
@@ -137,9 +140,34 @@ func (m *mockFileCommitSvc) ListPageCommits(ctx context.Context, datasetID, page
 }
 
 func setupFileCommitTest(userID string) (*gin.Engine, *mockFileCommitSvc) {
+	r, mock, _ := setupFileCommitTestWithHandler(userID)
+	return r, mock
+}
+
+func setupFileCommitTestWithHandler(userID string) (*gin.Engine, *mockFileCommitSvc, *FileCommitHandler) {
 	mock := &mockFileCommitSvc{}
-	h := &FileCommitHandler{commitService: mock}
+	h := NewFileCommitHandler(mock)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		panic(err)
+	}
+	if err := db.AutoMigrate(&entity.File{}); err != nil {
+		panic(err)
+	}
+	dao.DB = db
+	// Seed the workspace folder and file the tests reference, owned by the
+	// calling user so the tenant authorization passes for them and fails for
+	// anyone else.
+	db.Create(&entity.File{ID: "folder-1", TenantID: userID, Name: "workspace", Type: "folder"})
+	db.Create(&entity.File{ID: "f1", TenantID: userID, Name: "test.txt", Type: "file"})
+
 	gin.SetMode(gin.TestMode)
+	r := fileCommitRouter(h, userID)
+	return r, mock, h
+}
+
+func fileCommitRouter(h *FileCommitHandler, userID string) *gin.Engine {
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: userID})
@@ -153,7 +181,7 @@ func setupFileCommitTest(userID string) (*gin.Engine, *mockFileCommitSvc) {
 	r.GET("/api/v1/folders/:folder_id/commits/:commit_id/tree", h.GetCommitTree)
 	r.GET("/api/v1/folders/:folder_id/commits/:commit_id/files/:file_id/content", h.GetCommitFileContent)
 	r.GET("/api/v1/files/:id/versions", h.GetFileVersionHistory)
-	return r, mock
+	return r
 }
 
 func setupFileCommitTestNoAuth() *gin.Engine {
@@ -418,5 +446,83 @@ func TestFileCommit_GetFileVersionHistory_Success(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp["code"] != float64(common.CodeSuccess) {
 		t.Errorf("expected success, got code %v", resp["code"])
+	}
+}
+
+// ── Tenant authorization tests ───────────────────────────────────────────
+
+func decodeCode(t *testing.T, w *httptest.ResponseRecorder) float64 {
+	t.Helper()
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	code, _ := resp["code"].(float64)
+	return code
+}
+
+func TestFileCommit_ForeignFolderRejected(t *testing.T) {
+	// folder-1 is seeded for user-1; user-2 must not read or write it.
+	_, _, h := setupFileCommitTestWithHandler("user-1")
+	foreign := fileCommitRouter(h, "user-2")
+
+	endpoints := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{"GET", "/api/v1/folders/folder-1/commits", ""},
+		{"GET", "/api/v1/folders/folder-1/changes", ""},
+		{"GET", "/api/v1/folders/folder-1/commits/commit-1", ""},
+		{"GET", "/api/v1/folders/folder-1/commits/commit-1/files", ""},
+		{"GET", "/api/v1/folders/folder-1/commits/commit-1/tree", ""},
+		{"GET", "/api/v1/folders/folder-1/commits/commit-1/files/f1/content", ""},
+		{"GET", "/api/v1/folders/folder-1/commits/diff?from=c1&to=c2", ""},
+		{"POST", "/api/v1/folders/folder-1/commits", `{"message": "x", "files": [{"file_id": "f1", "file_name": "t", "operation": "add", "content": "c"}]}`},
+		{"GET", "/api/v1/files/f1/versions", ""},
+	}
+
+	for _, e := range endpoints {
+		w := httptest.NewRecorder()
+		var req *http.Request
+		if e.body != "" {
+			req, _ = http.NewRequest(e.method, e.path, strings.NewReader(e.body))
+			req.Header.Set("Content-Type", "application/json")
+		} else {
+			req, _ = http.NewRequest(e.method, e.path, nil)
+		}
+		foreign.ServeHTTP(w, req)
+		if code := decodeCode(t, w); code != float64(common.CodeNotFound) {
+			t.Errorf("%s %s: expected code %d for foreign user, got %v: %s", e.method, e.path, common.CodeNotFound, code, w.Body.String())
+		}
+	}
+}
+
+func TestFileCommit_MissingFolderRejected(t *testing.T) {
+	r, _ := setupFileCommitTest("user-1")
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/folders/no-such-folder/commits", nil)
+	r.ServeHTTP(w, req)
+	if code := decodeCode(t, w); code != float64(common.CodeNotFound) {
+		t.Errorf("expected code %d for unknown folder, got %v", common.CodeNotFound, code)
+	}
+}
+
+func TestFileCommit_OwnFolderStillWorks(t *testing.T) {
+	r, _ := setupFileCommitTest("user-1")
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/folders/folder-1/commits", nil)
+	r.ServeHTTP(w, req)
+	if code := decodeCode(t, w); code != float64(common.CodeSuccess) {
+		t.Errorf("expected code %d for owner, got %v: %s", common.CodeSuccess, code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/v1/files/f1/versions", nil)
+	r.ServeHTTP(w, req)
+	if code := decodeCode(t, w); code != float64(common.CodeSuccess) {
+		t.Errorf("expected code %d for owner version history, got %v: %s", common.CodeSuccess, code, w.Body.String())
 	}
 }
