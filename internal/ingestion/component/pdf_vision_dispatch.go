@@ -474,9 +474,13 @@ func dispatchMinerUPDF(
 	parseMethod := getStringOr(setup, "parse_method", "auto")
 	lang := getStringOr(setup, "mineru_lang", "English")
 	mineruLang := mineruLangCode(lang)
-	backend := getStringOr(setup, "mineru_backend", "pipeline")
+	backend := resolveMinerUDispatchBackend(setup, apiConfig)
+	serverURL := resolveMinerUDispatchServerURL(setup, apiConfig)
+	if err := validateMinerUDispatchConfig(backend, serverURL); err != nil {
+		return parserDispatchResult{}, err
+	}
 
-	zipBytes, err := mineruStreamParse(apiURL, apiConfig.ApiKey, binary, parseMethod, mineruLang, backend)
+	zipBytes, err := mineruStreamParse(apiURL, apiConfig.ApiKey, binary, parseMethod, mineruLang, backend, serverURL)
 	if err != nil {
 		return parserDispatchResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
@@ -667,10 +671,60 @@ func mineruLangCode(lang string) string {
 	}
 }
 
+var validMinerUDispatchBackends = map[string]struct{}{
+	"pipeline":           {},
+	"vlm-engine":         {},
+	"hybrid-engine":      {},
+	"vlm-http-client":    {},
+	"hybrid-http-client": {},
+}
+
+func minerUDispatchBackendRequiresServerURL(backend string) bool {
+	return backend == "vlm-http-client" || backend == "hybrid-http-client"
+}
+
+func resolveMinerUDispatchBackend(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) string {
+	backend := strings.TrimSpace(getStringOr(setup, "mineru_backend", ""))
+	if backend == "" {
+		backend = monkeyOCRv2APIConfigValue(apiConfig, "mineru_backend", common.EnvMineruBackend)
+	}
+	if backend == "" {
+		backend = strings.TrimSpace(os.Getenv(common.EnvMineruBackend))
+	}
+	if backend == "" {
+		backend = "pipeline"
+	}
+	return backend
+}
+
+func resolveMinerUDispatchServerURL(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) string {
+	serverURL := strings.TrimSpace(getStringOr(setup, "mineru_server_url", ""))
+	if serverURL == "" {
+		serverURL = monkeyOCRv2APIConfigValue(apiConfig, "mineru_server_url", common.EnvMineruServerURL)
+	}
+	if serverURL == "" {
+		serverURL = strings.TrimSpace(os.Getenv(common.EnvMineruServerURL))
+	}
+	return strings.TrimRight(serverURL, "/")
+}
+
+func validateMinerUDispatchConfig(backend, serverURL string) error {
+	if _, ok := validMinerUDispatchBackends[backend]; !ok {
+		return fmt.Errorf(
+			"parser: MinerU invalid backend %q (valid: pipeline, vlm-engine, hybrid-engine, vlm-http-client, hybrid-http-client)",
+			backend,
+		)
+	}
+	if minerUDispatchBackendRequiresServerURL(backend) && serverURL == "" {
+		return fmt.Errorf("parser: MinerU requires mineru_server_url or MINERU_SERVER_URL for backend %q", backend)
+	}
+	return nil
+}
+
 // mineruStreamParse POSTs the PDF binary to the MinerU /file_parse
 // endpoint with streaming and returns the zip response body.
 // Mirrors Python's mineru_parser.py._run_mineru_api with stream=True.
-func mineruStreamParse(apiURL string, apiKey *string, binary []byte, parseMethod, lang, backend string) ([]byte, error) {
+func mineruStreamParse(apiURL string, apiKey *string, binary []byte, parseMethod, lang, backend, serverURL string) ([]byte, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -695,6 +749,9 @@ func mineruStreamParse(apiURL string, apiKey *string, binary []byte, parseMethod
 	_ = writer.WriteField("return_model_output", "true")
 	_ = writer.WriteField("formula_enable", "true")
 	_ = writer.WriteField("table_enable", "true")
+	if strings.TrimSpace(serverURL) != "" {
+		_ = writer.WriteField("server_url", strings.TrimRight(strings.TrimSpace(serverURL), "/"))
+	}
 
 	if err := writer.Close(); err != nil {
 		return nil, fmt.Errorf("finalize form: %w", err)
