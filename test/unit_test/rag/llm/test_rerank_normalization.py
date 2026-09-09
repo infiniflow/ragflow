@@ -49,6 +49,7 @@ class _RawRerank(Base):
     """Minimal provider that emits arbitrary raw scores via ``_compute_rank``."""
 
     def __init__(self, raw):
+        super().__init__(None, None)
         self._raw = np.asarray(raw, dtype=float)
 
     def _compute_rank(self, query, texts):
