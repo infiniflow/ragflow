@@ -9,15 +9,15 @@ import (
 // AsyncCache extends the Cache interface with asynchronous operations.
 type AsyncCache interface {
 	Cache
-	
+
 	// AGet asynchronously retrieves a value from the cache.
 	// Returns a channel that will receive the result.
 	AGet(ctx context.Context, key string) <-chan CacheResult
-	
+
 	// ASet asynchronously stores a value in the cache.
 	// Returns a channel that will be closed when the operation completes.
-	ASet(ctx context.Context, key string, value interface{}, ttl time.Duration) <-chan error
-	
+	ASet(ctx context.Context, key string, value any, ttl time.Duration) <-chan error
+
 	// ADelete asynchronously removes a value from the cache.
 	// Returns a channel that will be closed when the operation completes.
 	ADelete(ctx context.Context, key string) <-chan error
@@ -25,7 +25,7 @@ type AsyncCache interface {
 
 // CacheResult represents the result of an asynchronous cache get operation.
 type CacheResult struct {
-	Value interface{}
+	Value any
 	Found bool
 	Error error
 }
@@ -42,7 +42,7 @@ type asyncCacheOp struct {
 	ctx    context.Context
 	opType string // "get", "set", "delete"
 	key    string
-	value  interface{}
+	value  any
 	ttl    time.Duration
 	result chan<- CacheResult
 	done   chan<- error
@@ -53,18 +53,18 @@ func NewAsyncMemoryCache(maxSize int, eviction EvictionPolicy, numWorkers int) *
 	if numWorkers <= 0 {
 		numWorkers = 4
 	}
-	
+
 	cache := &AsyncMemoryCache{
 		MemoryCache: NewMemoryCache(maxSize, eviction),
 		workerCh:    make(chan asyncCacheOp, 1000),
 		stopCh:      make(chan struct{}),
 	}
-	
+
 	// Start worker goroutines
 	for i := 0; i < numWorkers; i++ {
 		go cache.worker()
 	}
-	
+
 	return cache
 }
 
@@ -104,7 +104,7 @@ func (c *AsyncMemoryCache) processOp(op asyncCacheOp) {
 // AGet asynchronously retrieves a value from the cache.
 func (c *AsyncMemoryCache) AGet(ctx context.Context, key string) <-chan CacheResult {
 	resultCh := make(chan CacheResult, 1)
-	
+
 	select {
 	case c.workerCh <- asyncCacheOp{
 		ctx:    ctx,
@@ -116,14 +116,14 @@ func (c *AsyncMemoryCache) AGet(ctx context.Context, key string) <-chan CacheRes
 		resultCh <- CacheResult{Error: ctx.Err()}
 		close(resultCh)
 	}
-	
+
 	return resultCh
 }
 
 // ASet asynchronously stores a value in the cache.
-func (c *AsyncMemoryCache) ASet(ctx context.Context, key string, value interface{}, ttl time.Duration) <-chan error {
+func (c *AsyncMemoryCache) ASet(ctx context.Context, key string, value any, ttl time.Duration) <-chan error {
 	doneCh := make(chan error, 1)
-	
+
 	select {
 	case c.workerCh <- asyncCacheOp{
 		ctx:    ctx,
@@ -137,14 +137,14 @@ func (c *AsyncMemoryCache) ASet(ctx context.Context, key string, value interface
 		doneCh <- ctx.Err()
 		close(doneCh)
 	}
-	
+
 	return doneCh
 }
 
 // ADelete asynchronously removes a value from the cache.
 func (c *AsyncMemoryCache) ADelete(ctx context.Context, key string) <-chan error {
 	doneCh := make(chan error, 1)
-	
+
 	select {
 	case c.workerCh <- asyncCacheOp{
 		ctx:    ctx,
@@ -156,7 +156,7 @@ func (c *AsyncMemoryCache) ADelete(ctx context.Context, key string) <-chan error
 		doneCh <- ctx.Err()
 		close(doneCh)
 	}
-	
+
 	return doneCh
 }
 
@@ -168,11 +168,11 @@ func (c *AsyncMemoryCache) Stop() {
 // AsyncCachePolicy configures async cache behavior.
 type AsyncCachePolicy struct {
 	// KeyFunc generates the cache key.
-	KeyFunc func(context.Context, interface{}) string
-	
+	KeyFunc func(context.Context, any) string
+
 	// TTL is the time-to-live for cached values.
 	TTL *time.Duration
-	
+
 	// Async determines if operations should be async.
 	Async bool
 }
@@ -195,9 +195,9 @@ func NewAsyncCachedExecutor(cache AsyncCache, policy *AsyncCachePolicy) *AsyncCa
 func (e *AsyncCachedExecutor) Execute(
 	ctx context.Context,
 	nodeName string,
-	input interface{},
-	fn func(context.Context, interface{}) (interface{}, error),
-) (interface{}, error) {
+	input any,
+	fn func(context.Context, any) (any, error),
+) (any, error) {
 	// Generate cache key
 	var key string
 	if e.cachePolicy != nil && e.cachePolicy.KeyFunc != nil {
@@ -205,11 +205,11 @@ func (e *AsyncCachedExecutor) Execute(
 	} else {
 		key = GenerateCacheKey(nodeName, input)
 	}
-	
+
 	// Check cache asynchronously
 	if e.cachePolicy != nil && e.cachePolicy.Async {
 		resultCh := e.cache.AGet(ctx, key)
-		
+
 		select {
 		case result := <-resultCh:
 			if result.Error != nil {
@@ -227,26 +227,26 @@ func (e *AsyncCachedExecutor) Execute(
 			return cached, nil
 		}
 	}
-	
+
 	// Execute function
 	result, err := fn(ctx, input)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Cache result asynchronously
 	var ttl time.Duration
 	if e.cachePolicy != nil && e.cachePolicy.TTL != nil {
 		ttl = *e.cachePolicy.TTL
 	}
-	
+
 	if e.cachePolicy != nil && e.cachePolicy.Async {
 		// Fire and forget async set
 		e.cache.ASet(context.Background(), key, result, ttl)
 	} else {
 		e.cache.Set(ctx, key, result, ttl)
 	}
-	
+
 	return result, nil
 }
 

@@ -31,8 +31,15 @@ These tests pin the whitelisting behaviour for both backends so the leak
 cannot reappear.
 """
 
+import sys
+from unittest.mock import MagicMock
+
 import pytest
 
+if isinstance(sys.modules.get("rag.llm.chat_model"), MagicMock):
+    del sys.modules["rag.llm.chat_model"]
+
+from rag.llm import SupportedLiteLLMProvider
 from rag.llm.chat_model import (
     ALLOWED_GEN_CONF_KEYS,
     LITELLM_ALLOWED_GEN_CONF_KEYS,
@@ -78,6 +85,13 @@ def test_base_drops_model_type():
     assert cleaned["temperature"] == 0.5
 
 
+def test_base_drops_litellm_reasoning_controls():
+    cleaned = _make_base()._clean_conf({"temperature": 0.5, "thinking": {"type": "enabled"}, "enable_thinking": True})
+    assert "thinking" not in cleaned
+    assert "enable_thinking" not in cleaned
+    assert cleaned["temperature"] == 0.5
+
+
 @pytest.mark.parametrize("stray_key", ["model_type", "llm_id", "parameter", "icon", "foo"])
 def test_litellm_drops_arbitrary_internal_keys(stray_key):
     cleaned = _make_litellm()._clean_conf({stray_key: "x", "top_p": 0.9})
@@ -100,9 +114,17 @@ def test_litellm_preserves_known_generation_params():
 
 
 def test_litellm_preserves_thinking_param():
-    """``thinking`` is injected by the model-family policy for reasoning
-    models and must survive the whitelist (it is a valid LiteLLM param)."""
+    """``thinking`` is a valid LiteLLM parameter even without a provider policy."""
     cleaned = _make_litellm()._clean_conf({"thinking": {"type": "enabled"}, "temperature": 1.0})
+    assert cleaned["thinking"] == {"type": "enabled"}
+
+
+def test_litellm_preserves_provider_mapped_thinking_param():
+    """Provider-mapped ``thinking`` must survive the LiteLLM whitelist."""
+    cleaned = _make_litellm(
+        "kimi-k2.6-preview",
+        SupportedLiteLLMProvider.Moonshot,
+    )._clean_conf({"thinking": {"type": "enabled"}, "temperature": 1.0})
     assert cleaned["thinking"] == {"type": "enabled"}
 
 

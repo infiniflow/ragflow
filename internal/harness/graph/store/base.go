@@ -111,9 +111,9 @@ type MatchCondition struct {
 
 // TTLConfig configures TTL behavior.
 type TTLConfig struct {
-	RefreshOnRead      bool
-	DefaultTTL         *time.Duration
-	SweepInterval      *time.Duration
+	RefreshOnRead bool
+	DefaultTTL    *time.Duration
+	SweepInterval *time.Duration
 }
 
 // IndexConfig configures semantic search indexing.

@@ -24,8 +24,11 @@ import (
 	"os"
 	"strings"
 
+	"ragflow/internal/common"
+
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 )
 
 // ErrCodeExecSandboxMissing is returned when no sandbox client is
@@ -40,7 +43,9 @@ var ErrCodeExecSandboxMissing = errors.New(
 const codeExecToolName = "execute_code"
 
 const codeExecToolDescription = "This tool has a sandbox that can execute code written in 'Python'/'Javascript'. " +
-	"It receives a piece of code and returns a JSON string."
+	"It receives a piece of code and returns a JSON string. " +
+	"The code must define a main function (Python) or export main (JavaScript); " +
+	"the return value of main is returned as the tool result."
 
 // codeExecArgs is the JSON shape the model sends in. The Python
 // tool accepts "lang" + "script"; we also accept "code" as a
@@ -65,10 +70,11 @@ type codeExecArgs struct {
 // shape mirrors the Python tool's `content` / `_ERROR` / `actual_type`
 // fields so downstream nodes can pattern-match unchanged. Artifacts and
 // Attachments are surfaced for the model and downstream component
-// consumption (e.g. Message component's artifact markdown formatter).
+// consumption (e.g. Message component's artifact Markdown formatter).
 type codeExecResult struct {
 	Content     string           `json:"content,omitempty"`
 	ActualType  string           `json:"actual_type,omitempty"`
+	RawResult   any              `json:"raw_result,omitempty"`
 	Stub        bool             `json:"stub,omitempty"`
 	Error       string           `json:"_ERROR,omitempty"`
 	ExitCode    int              `json:"exit_code,omitempty"`
@@ -90,21 +96,21 @@ func NewCodeExecTool() *CodeExecTool {
 }
 
 // Info returns the tool's metadata for the chat model. The schema mirrors
-// the Python CodeExecParam ToolMeta (plan , 字段对齐).
+// the Python CodeExecParam ToolMeta (plan, field alignment).
 func (c *CodeExecTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: codeExecToolName,
 		Desc: codeExecToolDescription,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"language": {
+			"lang": {
 				Type:     schema.String,
-				Desc:     "The programming language of the code. Allowed: 'python' (or 'python3'), 'javascript' (or 'nodejs').",
-				Enum:     []string{"python", "python3", "javascript", "nodejs"},
+				Desc:     "The programming language of this piece of code.",
+				Enum:     []string{"python", "javascript"},
 				Required: true,
 			},
-			"code": {
+			"script": {
 				Type:     schema.String,
-				Desc:     "The code to execute. Must define a `main` function (Python) or export `main` (JavaScript).",
+				Desc:     "A piece of code in the correct format. It must define main(...).",
 				Required: true,
 			},
 		}),
@@ -142,13 +148,22 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 	// ErrCodeExecSandboxMissing; once a real client is
 	// installed via SetSandboxClient at boot, the script runs.
 	client := GetSandboxClient()
-	resp, err := client.ExecuteCode(ctx, SandboxRequest{
+	req := SandboxRequest{
 		Lang:      lang,
 		Script:    script,
 		Arguments: args.Args,
 		Timeout:   args.Timeout,
-	})
+	}
+	common.Debug("CodeExec tool invoke",
+		zap.String("lang", req.Lang),
+		zap.Int("timeout", req.Timeout),
+		zap.Int("arguments_keys", len(req.Arguments)),
+		zap.Int("script_len", len(req.Script)))
+	resp, err := client.ExecuteCode(ctx, req)
 	if err != nil {
+		// Providers return user-code failures as non-zero SandboxResponses.
+		// An error here is a sandbox or transport failure and must stop the
+		// ReAct loop instead of prompting retries against broken infrastructure.
 		return codeExecStubResult(err.Error()), err
 	}
 	out, mErr := codeExecResultJSON(resp)
@@ -172,7 +187,7 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 //     surface it as `_ARTIFACTS` to match the Python envelope).
 //   - Metadata["attachments"] → Attachments (rendered into
 //     downstream Markdown by Message via the same path the Agent
-//     tool artifact markdown uses).
+//     tool artifact Markdown uses).
 //
 // Artifacts / Attachments with the wrong element type (anything
 // other than map[string]any) are silently dropped with a log
@@ -183,20 +198,41 @@ func codeExecResultJSON(r *SandboxResponse) (string, error) {
 		return codeExecStubResult("empty response"), nil
 	}
 	out := codeExecResult{
-		Content:  r.Returned,
 		ExitCode: r.ExitCode,
 		Stdout:   r.Stdout,
 		Stderr:   r.Stderr,
-	}
-	if r.StructuredResult != nil {
-		if v, ok := r.StructuredResult["actual_type"].(string); ok {
-			out.ActualType = v
-		}
 	}
 	if r.Metadata != nil {
 		out.Artifacts = extractArtifactList(r.Metadata, "artifacts")
 		out.Attachments = extractArtifactList(r.Metadata, "attachments")
 	}
+	hasStructuredResult := false
+	resolvedValue, usedStdoutFallback := resolveCodeExecResultValue(r)
+	if r.StructuredResult != nil {
+		hasStructuredResult, _ = r.StructuredResult["present"].(bool)
+	}
+	if strings.TrimSpace(r.Stderr) != "" &&
+		!hasStructuredResult &&
+		len(out.Artifacts) == 0 &&
+		strings.TrimSpace(r.Stdout) == "" {
+		out.Error = r.Stderr
+	} else {
+		if usedStdoutFallback && strings.TrimSpace(r.Stdout) != "" {
+			fmt.Fprintln(os.Stderr, "code_exec: falling back to stdout deserialization because no structured result metadata was provided")
+		}
+		out.RawResult = NormalizeCodeExecOutputValue(resolvedValue)
+		out.ActualType = InferCodeExecActualType(out.RawResult)
+		out.Content = RenderCodeExecCanonicalContent(out.RawResult)
+	}
+	common.Debug("CodeExec tool",
+		zap.Any("structured_result", r.StructuredResult),
+		zap.Any("resolved_value", resolvedValue),
+		zap.Any("raw_result", out.RawResult),
+		zap.String("content", out.Content),
+		zap.String("actual_type", out.ActualType),
+		zap.Bool("stderr_present", r.Stderr != ""),
+		zap.Int("stderr_len", len(r.Stderr)),
+		zap.Int("stdout_len", len(r.Stdout)))
 	b, err := json.Marshal(out)
 	if err != nil {
 		return "", fmt.Errorf("code_exec: marshal result: %w", err)
@@ -238,6 +274,27 @@ func codeExecStubResult(msg string) string {
 		return fmt.Sprintf(`{"_ERROR":"code_exec: marshal stub: %s","stub":true}`, err)
 	}
 	return string(b)
+}
+
+func resolveCodeExecResultValue(r *SandboxResponse) (any, bool) {
+	if r != nil && r.StructuredResult != nil {
+		if present, _ := r.StructuredResult["present"].(bool); present {
+			return r.StructuredResult["value"], false
+		}
+	}
+	return deserializeCodeExecStdout(r.Stdout), true
+}
+
+func deserializeCodeExecStdout(stdout string) any {
+	text := strings.TrimSpace(stdout)
+	if text == "" {
+		return ""
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(text), &decoded); err == nil {
+		return decoded
+	}
+	return text
 }
 
 // normalizeCodeExecLang accepts the model's literal "language" or the

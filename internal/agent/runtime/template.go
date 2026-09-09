@@ -23,30 +23,28 @@
 package runtime
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
-// VarRefPattern matches the RAGFlow v1 variable reference syntax.
-// Mirrors agent/component/base.py:368 in spirit with one deviation: the
-// cpn_id part includes '_' (real RAGFlow cpn_ids are like "begin_0",
-// "llm_0", "cpn_0"). The Python regex as documented in the plan
-// (`[a-zA-Z:0-9]+`) would not match those — this looks like a
-// documentation bug in the plan; the Python source likely has
-// the underscore too. The pattern uses underscore-friendly
-// matching; a future cross-check against the live Python source
-// can confirm the exact behavior.
+// VarRefPattern matches the RAGFlow variable reference syntax.
+// Matches agent/component/base.py variable_ref_patt exactly after
+// PR #16792 (which widened cpn_id from [a-zA-Z:0-9]+ to
+// [a-zA-Z0-9_:]+ to accept underscores in frontend-emitted ids as
+// well as colons in legacy DSL ids).
 //
 // Pattern:
 //
-//	\{* *\{(<ref>)\} *\}*
-//	where <ref> = cpn_id@param | sys.x | env.x
-//	cpn_id = [a-zA-Z:0-9_]+   (note: underscore added; see deviation note)
+//	\{+\s*(<ref>)\s*\}+
+//	where <ref> = cpn_id@param | sys.x | env.x | item | index
+//	cpn_id = [a-zA-Z:0-9_]+   (character classes match Python's [a-zA-Z0-9_:]+)
 //	param  = [A-Za-z0-9_.-]+
 //
 // Capture group 1 holds the bare ref without braces (e.g. "cpn_0@content",
-// "sys.query", "env.max_tokens").
-var VarRefPattern = regexp.MustCompile(`\{* *\{([a-zA-Z:0-9_]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*`)
+// "sys.query", "env.max_tokens", "item", "index").
+var VarRefPattern = regexp.MustCompile(`\{+\s*([a-zA-Z:0-9_]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+|item|index)\s*\}+`)
 
 // ExtractRefs returns the unique ref strings (without the surrounding
 // braces) appearing in s, in first-occurrence order. Pure regex — does not
@@ -110,4 +108,49 @@ func ResolveTemplate(s string, state *CanvasState) (string, error) {
 		return fmt.Sprintf("%v", v)
 	})
 	return out, firstErr
+}
+
+// ResolveTemplateForDisplay is the display-only variant of
+// ResolveTemplate. Unresolvable refs (GetVar returns nil or an
+// error) render as empty string instead of failing the call.
+// Intended for Message-style template rendering where the partial
+// output is what the user ultimately sees; parameter binding
+// call sites should keep using ResolveTemplate so a misconfigured
+// ref surfaces as an error early.
+//
+// Mirrors the Python canvas.py:177-178 soft-fail ("unresolved ref
+// → empty string") for display rendering.
+func ResolveTemplateForDisplay(s string, state *CanvasState) string {
+	if state == nil || !VarRefPattern.MatchString(s) {
+		return s
+	}
+	return VarRefPattern.ReplaceAllStringFunc(s, func(match string) string {
+		sub := VarRefPattern.FindStringSubmatch(match)
+		if len(sub) < 2 {
+			return match
+		}
+		v, _ := state.GetVar(sub[1])
+		if v == nil {
+			return ""
+		}
+		return stringifyDisplayValue(v)
+	})
+}
+
+// stringifyDisplayValue mirrors Message._stringify_message_value in Python:
+// strings pass through unchanged, while lists, maps, numbers, and booleans
+// use JSON syntax. In particular, a []string{"user: 1"} reference must render
+// as ["user: 1"], not Go's fmt representation [user: 1].
+func stringifyDisplayValue(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+
+	var buf strings.Builder
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err == nil {
+		return strings.TrimSuffix(buf.String(), "\n")
+	}
+	return fmt.Sprintf("%v", value)
 }

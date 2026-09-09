@@ -21,6 +21,7 @@ table: newly added bots are started, deleted ones are stopped, and edited ones
 messages are answered with a RAG completion routed through the conversation
 wired to that bot. Replaces the standalone ``server.py`` entrypoint.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,13 +31,61 @@ import json
 import logging
 import threading
 
+from api.channels.targets import validate_agent_target
+
 LOGGER = logging.getLogger(__name__)
 
 # Channel packages bundled under api/channels that self-register on import.
-_BUNDLED_CHANNELS = ("feishu", "discord", "telegram", "line", "wecom", "qqbot")
+_BUNDLED_CHANNELS = (
+    "feishu",
+    "discord",
+    "telegram",
+    "line",
+    "wecom",
+    "qqbot",
+    "dingtalk",
+    "whatsapp",
+)
 
 # How often (seconds) to reconcile running channels against the database.
 _RECONCILE_INTERVAL_SECS = 10
+
+
+def _canvas_state(dsl) -> dict:
+    """Normalize a persisted canvas DSL into a dictionary."""
+    value = dsl
+    for _ in range(2):
+        if not isinstance(value, str):
+            break
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError):
+            return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _prepare_agent_turn(text: str, session_dsl) -> tuple[str, dict]:
+    """Turn a channel message into either a question or a pending form reply."""
+    state = _canvas_state(session_dsl)
+    path = state.get("path") or []
+    if not path or "userfillup" not in str(path[0]).lower():
+        return text, {}
+
+    component = (state.get("components") or {}).get(path[0]) or {}
+    params = (component.get("obj") or {}).get("params") or {}
+    fields = params.get("inputs") or {}
+    if not isinstance(fields, dict) or not fields:
+        return text, {}
+
+    field_name, field = next(iter(fields.items()))
+    value = dict(field) if isinstance(field, dict) else {}
+    value["value"] = text
+    return "", {field_name: value}
+
+
+def _channel_agent_user_id(channel_id: str, chat_id: str, sender_id: str) -> str:
+    """Build a stable Agent user id without sharing context across group members."""
+    return f"channel:{channel_id}:{chat_id}:{sender_id}"
 
 
 def _register_channels() -> None:
@@ -78,14 +127,12 @@ def _build_one(account_id: str, channel: str, credential: dict):
     from api.channels.core.registry import build_channels
 
     # account_id == chat_channel.id.
-    instances = build_channels(
-        {"channels": {channel: {"accounts": {account_id: credential}}}}
-    )
+    instances = build_channels({"channels": {channel: {"accounts": {account_id: credential}}}})
     return instances[0] if instances else None
 
 
 def _make_chat_handler(ch):
-    """Build the inbound-message handler bound to a single channel.
+    """Build the inbound-message handler bound to a chat assistant or Agent.
 
     Mirrors the non-streaming path of ``session_completion``: the message is
     appended to a per-end-user conversation under the dialog connected to the
@@ -95,7 +142,8 @@ def _make_chat_handler(ch):
     connected dialog ignore inbound messages.
     """
     from api.channels.core.base import IncomingMessage, OutgoingMessage
-
+    from api.db.services.api_service import API4ConversationService
+    from api.db.services.canvas_service import completion as agent_completion
     from api.db.services.chat_channel_service import ChatChannelService
     from api.db.services.conversation_service import ConversationService, structure_answer
     from api.db.services.dialog_service import DialogService, async_chat
@@ -105,14 +153,62 @@ def _make_chat_handler(ch):
         if not (msg.text or "").strip():
             return
 
-        # account_id == chat_channel.id; re-read so a re-connected dialog applies live.
+        # account_id == chat_channel.id; re-read so target changes apply live.
         e, cc = ChatChannelService.get_by_id(ch.account_id)
-        if not e or not cc.chat_id:
+        if not e or (not cc.chat_id and not cc.agent_id):
             LOGGER.info(
-                "[%s:%s] no dialog connected; ignoring message",
+                "[%s:%s] no assistant connected; ignoring message",
                 ch.channel_id,
                 ch.account_id,
             )
+            return
+
+        if cc.agent_id:
+            target_error = validate_agent_target(cc.agent_id, cc.tenant_id)
+            if target_error:
+                LOGGER.warning(
+                    "[%s:%s] connected Agent is unavailable or inaccessible: %s",
+                    ch.channel_id,
+                    ch.account_id,
+                    cc.agent_id,
+                )
+                return
+            user_id = _channel_agent_user_id(ch.account_id, msg.chat_id, msg.sender_id)
+            session = API4ConversationService.get_latest_agent_channel_session(cc.agent_id, user_id)
+            query, inputs = _prepare_agent_turn(msg.text, session.dsl if session else None)
+            answer_text = ""
+            try:
+                async for raw in agent_completion(
+                    tenant_id=cc.tenant_id,
+                    agent_id=cc.agent_id,
+                    session_id=session.id if session else None,
+                    query=query,
+                    inputs=inputs,
+                    user_id=user_id,
+                ):
+                    if not isinstance(raw, str):
+                        continue
+                    for line in raw.splitlines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[len("data:") :].strip()
+                        if not payload:
+                            continue
+                        event = json.loads(payload)
+                        if event.get("event") == "message":
+                            answer_text += event.get("data", {}).get("content", "") or ""
+            except Exception:
+                LOGGER.exception("[%s:%s] Agent completion failed", ch.channel_id, ch.account_id)
+                answer_text = "抱歉，当前无法处理这条消息，请稍后重试。"
+
+            if answer_text:
+                await ch.send(
+                    OutgoingMessage(
+                        chat_id=msg.chat_id,
+                        text=answer_text,
+                        reply_to_message_id=msg.message_id or None,
+                    )
+                )
             return
 
         e, dia = DialogService.get_by_id(cc.chat_id)
@@ -144,7 +240,10 @@ def _make_chat_handler(ch):
 
         answer_text = ""
         try:
-            async for ans in async_chat(dia, history, False, quote=False):
+            chat_kwargs = {"quote": False}
+            if "{knowledge}" in (dia.prompt_config or {}).get("system", ""):
+                chat_kwargs["knowledge"] = ""
+            async for ans in async_chat(dia, history, False, **chat_kwargs):
                 structure_answer(conv, ans, message_id, conv.id)
                 answer_text = (ans or {}).get("answer", "") or ""
                 ConversationService.update_by_id(conv.id, conv.to_dict())
@@ -208,13 +307,17 @@ async def _start_channel(running: dict, account_id: str, channel: str, credentia
     return True
 
 
-async def _reconcile(running: dict, failed: dict) -> None:
+async def _reconcile(running: dict, failed: dict, stop_event: threading.Event) -> None:
     """Diff desired (DB) vs running channels and apply start/stop/restart.
 
     ``failed`` remembers configs that could not be started so they are not
     retried (and re-logged) every tick until their credentials change.
     """
+    if stop_event.is_set():
+        return
     desired = await asyncio.to_thread(_desired_channels)
+    if stop_event.is_set():
+        return
 
     # Stop channels that were removed or whose credentials/type changed.
     for account_id in list(running.keys()):
@@ -227,6 +330,16 @@ async def _reconcile(running: dict, failed: dict) -> None:
     for account_id in list(failed.keys()):
         if account_id not in desired or desired[account_id][2] != failed[account_id]:
             failed.pop(account_id, None)
+
+    active_whatsapp = any(channel == "whatsapp" for channel, _, _ in desired.values())
+    if not active_whatsapp:
+        active_whatsapp = any(entry["ch"].channel_id == "whatsapp" for entry in running.values())
+    from api.channels.whatsapp.gateway import sync_whatsapp_gateway
+
+    try:
+        await sync_whatsapp_gateway(active_whatsapp)
+    except Exception:
+        LOGGER.exception("failed to sync WhatsApp gateway enabled=%s", active_whatsapp)
 
     # Start channels that are new (skip ones already known to fail with this config).
     for account_id, (channel, credential, fp) in desired.items():
@@ -245,7 +358,12 @@ async def run_channels(stop_event: threading.Event) -> None:
     try:
         while not stop_event.is_set():
             try:
-                await _reconcile(running, failed)
+                await _reconcile(running, failed, stop_event)
+            except RuntimeError as ex:
+                if stop_event.is_set():
+                    LOGGER.info("chat channel reconcile stopped")
+                    break
+                LOGGER.error("chat channel reconcile failed: %s", ex)
             except Exception as ex:
                 LOGGER.error("chat channel reconcile failed: %s", ex)
 

@@ -1,0 +1,23 @@
+{
+ "id": "token__json_children_delim",
+ "component": "TokenChunker",
+ "param": {
+  "delimiters": [
+   "`\n`"
+  ],
+  "children_delimiters": [
+   "。"
+  ]
+ },
+ "input": {
+  "name": "ch.json",
+  "output_format": "json",
+  "json": [
+   {
+    "text": "第一句内容。第二句内容。第三句内容。",
+    "doc_type_kwd": "text"
+   }
+  ]
+ },
+ "notes": "children_delimiters custom pattern secondary split."
+}

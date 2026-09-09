@@ -449,8 +449,27 @@ function AdminUserManagement() {
     ],
   );
 
+  // Pin the current user to the top of the list
+  const orderedUsersList = useMemo(() => {
+    if (!usersList) {
+      return EMPTY_DATA;
+    }
+
+    const currentUserIndex = usersList.findIndex(
+      (user) => user.email === userInfo?.email,
+    );
+
+    if (currentUserIndex <= 0) {
+      return usersList;
+    }
+
+    const rest = usersList.filter((_, index) => index !== currentUserIndex);
+
+    return [usersList[currentUserIndex], ...rest];
+  }, [usersList, userInfo?.email]);
+
   const table = useReactTable({
-    data: usersList ?? EMPTY_DATA,
+    data: orderedUsersList,
     columns: columnDefs,
 
     globalFilterFn,

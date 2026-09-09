@@ -16,7 +16,7 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestNew_RequiresModel(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := New(ctx, &Config{})
 	if err == nil {
 		t.Error("expected error when Model is nil")
@@ -24,7 +24,7 @@ func TestNew_RequiresModel(t *testing.T) {
 }
 
 func TestNew_WithModelAndAgents(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockSupervisorModel{}
 
 	subAgent := core.NewReActAgent(&core.ReActConfig[*schema.Message]{
@@ -72,7 +72,7 @@ func TestSystemPrompt(t *testing.T) {
 }
 
 func TestNewWithRouter(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockSupervisorModel{}
 	subAgent := core.NewReActAgent(&core.ReActConfig[*schema.Message]{Model: model}).WithName("sub")
 
@@ -86,7 +86,7 @@ func TestNewWithRouter(t *testing.T) {
 }
 
 func TestDeterministicTransfer(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockSupervisorModel{}
 	subAgent := core.NewReActAgent(&core.ReActConfig[*schema.Message]{Model: model}).WithName("coder")
 
@@ -111,7 +111,9 @@ func TestDeterministicTransfer(t *testing.T) {
 	var events []*core.AgentEvent
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
+		if !ok {
+			break
+		}
 		events = append(events, ev)
 	}
 	if len(events) == 0 {
@@ -145,19 +147,21 @@ func (m *mockSupervisorModel) BindTools(tools []*schema.ToolInfo) error { return
 
 func contains(s, sub string) bool {
 	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub { return true }
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
 	}
 	return false
 }
 
 func TestDeterministicTransferConstraint(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockSupervisorModel{}
 	subAgent := core.NewReActAgent(&core.ReActConfig[*schema.Message]{
-		Model: model,
+		Model:       model,
 		Instruction: "You are a coder.",
 	}).WithName("coder")
-	
+
 	// Verify that the sub-agent can be wrapped with deterministic transfer
 	wrapped := core.AgentWithDeterministicTransfer(ctx, &core.DeterministicTransferConfig{
 		Agent:        subAgent,
