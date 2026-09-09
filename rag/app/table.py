@@ -545,7 +545,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
             clmns = df.columns.values
 
         txts = list(copy.deepcopy(clmns))
-        py_clmns = _deduplicate_column_names([PY.get_pinyins(re.sub(r"(/.*|（[^（）]+?）|\([^()]+?\))", "", str(n)), "_")[0].lower() for n in clmns])
+        py_clmns = [PY.get_pinyins(re.sub(r"(/.*|（[^（）]+?）|\([^()]+?\))", "", str(n)), "_")[0] for n in clmns]
         clmn_tys = []
         for j in range(len(clmns)):
             cln, ty = column_data_type(df[clmns[j]])
@@ -635,10 +635,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                         fld = clmns_map[j][0]
                         if clmn_tys[j] != "text":
                             val = row[col_name]
-                            # Valid datetime and bool conversions are strings;
-                            # other strings in typed columns are failed conversions.
-                            valid_typed_string = isinstance(val, str) and (clmn_tys[j] == "datetime" and trans_datatime(val) or clmn_tys[j] == "bool" and trans_bool(val))
-                            if not isinstance(val, str) or valid_typed_string:
+                            # If a string value ended up in a non-text column,
+                            # it was preserved from a failed conversion in
+                            # column_data_type. Skip storing in the typed ES
+                            # field to avoid type mapping errors; the value is
+                            # already in text_fields for chunk content.
+                            if isinstance(val, str):
+                                pass
+                            else:
                                 stored[fld] = val
                         else:
                             cell = row[col_name]
