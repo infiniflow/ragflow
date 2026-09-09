@@ -1,4 +1,5 @@
 from abc import ABC
+import functools
 import os
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
@@ -184,37 +185,63 @@ class ListOperations(ComponentBase, ABC):
             sort_by_raw = getattr(self._param, "sort_by", "") or ""
             sort_by = [k.strip() for k in sort_by_raw.split(",") if k.strip()]
             if sort_by:
-                outputs = sorted(
-                    items,
-                    key=lambda x: tuple(self._scalar_sort_key(x.get(k) if isinstance(x, dict) else x) for k in sort_by),
-                    reverse=reverse,
-                )
+                def _cmp_items(a, b):
+                    for k in sort_by:
+                        c = self._cmp_scalar(a.get(k) if isinstance(a, dict) else a,
+                                             b.get(k) if isinstance(b, dict) else b)
+                        if c:
+                            return c
+                    return 0
+
+                outputs = sorted(items, key=functools.cmp_to_key(_cmp_items), reverse=reverse)
             else:
                 outputs = sorted(
                     items,
-                    key=lambda x: self._comparable_sort_key(self._hashable(x)),
+                    key=functools.cmp_to_key(lambda a, b: self._cmp_key(self._hashable(a), self._hashable(b))),
                     reverse=reverse,
                 )
         else:
-            outputs = sorted(items, key=self._scalar_sort_key, reverse=reverse)
+            outputs = sorted(items, key=functools.cmp_to_key(self._cmp_scalar), reverse=reverse)
 
         self._set_outputs(outputs)
 
     @staticmethod
-    def _scalar_sort_key(v):
-        # A total order that never raises on mixed content: real numbers sort
-        # numerically ahead of everything else, and all other values (strings,
-        # None, booleans, containers) order by their string form. This mirrors
-        # the Go port's lessScalar, which compares numbers numerically and
-        # every other value textually (internal/agent/component/list_operations.go).
-        if isinstance(v, bool) or not isinstance(v, (int, float)):
-            return (1, str(v))
-        return (0, v)
+    def _cmp_scalar(a, b):
+        # Three-way comparison that never raises on mixed content and mirrors
+        # the Go port's lessScalar (internal/agent/component/list_operations.go):
+        # two real numbers compare numerically, every other pair compares by
+        # its Go %v text form.
+        a_num = isinstance(a, (int, float)) and not isinstance(a, bool)
+        b_num = isinstance(b, (int, float)) and not isinstance(b, bool)
+        if a_num and b_num:
+            return (a > b) - (a < b)
+        ta, tb = ListOperations._go_text(a), ListOperations._go_text(b)
+        return (ta > tb) - (ta < tb)
 
-    def _comparable_sort_key(self, v):
-        if isinstance(v, tuple):
-            return tuple(self._comparable_sort_key(i) for i in v)
-        return self._scalar_sort_key(v)
+    @staticmethod
+    def _go_text(v):
+        # Mirror Go's fmt.Sprintf("%v", v) for JSON-shaped scalars.
+        if v is None:
+            return "<nil>"
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if isinstance(v, float) and v.is_integer():
+            return str(int(v))
+        if isinstance(v, (list, tuple)):
+            # Go renders slices as "[a b c]" (no quotes on string members).
+            return "[" + " ".join(ListOperations._go_text(i) for i in v) + "]"
+        return str(v)
+
+    def _cmp_key(self, a, b):
+        # Mirror the Go port's lessKey: element-wise on canonical tuples,
+        # shorter tuple first on a shared prefix.
+        if isinstance(a, tuple) and isinstance(b, tuple):
+            for x, y in zip(a, b):
+                c = self._cmp_scalar(x, y)
+                if c:
+                    return c
+            return (len(a) > len(b)) - (len(a) < len(b))
+        return self._cmp_scalar(a, b)
 
     def _drop_duplicates(self):
         seen = set()
@@ -228,12 +255,15 @@ class ListOperations(ComponentBase, ABC):
         self._set_outputs(outs)
 
     def _hashable(self, x):
+        # Canonicalize with the comparison helpers instead of raw sorted() so
+        # mixed-type dict keys and set members never raise TypeError.
         if isinstance(x, dict):
-            return tuple(sorted((k, self._hashable(v)) for k, v in x.items()))
+            entries = sorted(x.items(), key=functools.cmp_to_key(lambda a, b: self._cmp_scalar(a[0], b[0])))
+            return tuple((k, self._hashable(v)) for k, v in entries)
         if isinstance(x, (list, tuple)):
             return tuple(self._hashable(v) for v in x)
         if isinstance(x, set):
-            return tuple(sorted(self._hashable(v) for v in x))
+            return tuple(sorted((self._hashable(v) for v in x), key=functools.cmp_to_key(self._cmp_scalar)))
         return x
 
     def thoughts(self) -> str:

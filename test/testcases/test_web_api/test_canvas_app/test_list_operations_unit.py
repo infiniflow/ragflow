@@ -297,3 +297,51 @@ def test_sort_by_multi_key_still_applies_tiebreak(monkeypatch):
     component = _make_sort_component(module, inputs=items, sort_by="a,b")
     component._sort()
     assert [(i["a"], i["b"]) for i in component._param.outputs["result"]["value"]] == [(0, 9), (1, 1), (1, 2)]
+
+
+@pytest.mark.p2
+def test_sort_matches_go_text_order_for_mixed_number_and_string(monkeypatch):
+    # Go lessScalar compares a number/string pair by text, so "10" sorts
+    # before 2 (internal/agent/component/list_operations.go).
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[2, "10"])
+    component._sort()
+    assert component._param.outputs["result"]["value"] == ["10", 2]
+
+
+@pytest.mark.p2
+def test_sort_orders_none_by_go_nil_text_form(monkeypatch):
+    # Go renders nil as "<nil>", which sorts after digit text and before
+    # letters.
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[None, "a", "10"])
+    component._sort()
+    assert component._param.outputs["result"]["value"] == ["10", None, "a"]
+
+
+@pytest.mark.p2
+def test_sort_treats_bool_as_text_not_number(monkeypatch):
+    # Mirrors Go's toFloat64OK, which excludes booleans from numeric ordering.
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[True, 1])
+    component._sort()
+    assert component._param.outputs["result"]["value"] == [1, True]
+
+
+@pytest.mark.p2
+def test_sort_legacy_path_tolerates_nested_mixed_set(monkeypatch):
+    # Raw sorted() inside the legacy canonicalization raised TypeError on
+    # mixed set members; the comparator-based canonical form never raises.
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[{"tags": {1, "x"}}, {"tags": {2}}])
+    component._sort()
+    assert component._param.outputs["result"]["value"] == [{"tags": {1, "x"}}, {"tags": {2}}]
+
+
+@pytest.mark.p2
+def test_sort_legacy_path_tolerates_mixed_dict_keys(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_sort_component(module, inputs=[{1: "v", "k": "w"}, {"a": 1}])
+    component._sort()
+    # Deterministic, no TypeError: the nested canonical form compares first.
+    assert component._param.outputs["result"]["value"] == [{1: "v", "k": "w"}, {"a": 1}]
