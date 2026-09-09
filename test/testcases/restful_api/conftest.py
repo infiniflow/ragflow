@@ -56,10 +56,6 @@ GO_ONLY_SKIPS = {
         "test_dataset_update_parser_config_defaults_contract",
         # Go CreateDataset does not accept parser_config in the request body.
         "test_dataset_create_parser_config_different_chunk_methods_contract",
-        "test_dataset_create_parser_config_missing_raptor_and_graphrag",
-        "test_dataset_create_parser_config_bugfix_contract",
-        "test_dataset_create_parser_config_invalid_contract",
-        "test_dataset_create_parser_config_defaults_and_extra_fields_contract",
         # Empty path (e.g. /chats//sessions) triggers a 405/404 framework
         # response in Go rather than the Python contract's code-100 envelope.
         "test_session_create_validation_and_deleted_chat_contract",

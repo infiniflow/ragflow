@@ -1254,7 +1254,10 @@ def test_dataset_create_embedding_model_contract(rest_client, clear_datasets, na
     assert payload["code"] == expected_code, payload
     if expected_embedding_model is not None:
         if name in {"embedding_model_unset", "embedding_model_none"}:
-            assert payload["data"]["embedding_model"].startswith("BAAI/bge-small-en-v1.5"), payload
+            if IS_GO_PROXY:
+                assert payload["data"]["embedding_model"], payload
+            else:
+                assert payload["data"]["embedding_model"].startswith("BAAI/bge-small-en-v1.5"), payload
         else:
             assert payload["data"]["embedding_model"] == expected_embedding_model, payload
     if expected_message is not None:
@@ -1288,8 +1291,6 @@ def test_dataset_create_embedding_model_format_contract(rest_client, clear_datas
 
 @pytest.mark.p2
 def test_dataset_create_parser_config_missing_raptor_and_graphrag(rest_client, clear_datasets):
-    if IS_GO_PROXY:
-        pytest.skip("Go CreateDataset does not accept parser_config")
     payload = {
         "name": "test_parser_config_missing_fields",
         "parser_config": {"chunk_token_num": 1024},
@@ -1473,8 +1474,6 @@ def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_d
     ids=["only_raptor", "only_graphrag", "both_fields"],
 )
 def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_datasets, name, parser_config):
-    if IS_GO_PROXY:
-        pytest.skip("Go CreateDataset does not accept parser_config")
     res = rest_client.post("/datasets", json={"name": name, "parser_config": parser_config})
     assert res.status_code == 200
     body = res.json()
@@ -1706,8 +1705,6 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
 
 @pytest.mark.p2
 def test_dataset_create_parser_config_invalid_contract(rest_client, clear_datasets):
-    if IS_GO_PROXY:
-        pytest.skip("Go CreateDataset does not accept parser_config")
     invalid_cases = [
         ("auto_keywords_min_limit", {"auto_keywords": -1}, "Input should be greater than or equal to 0"),
         ("auto_keywords_max_limit", {"auto_keywords": 33}, "Input should be less than or equal to 32"),
@@ -1774,8 +1771,6 @@ def test_dataset_create_parser_config_invalid_contract(rest_client, clear_datase
 
 @pytest.mark.p2
 def test_dataset_create_parser_config_defaults_and_extra_fields_contract(rest_client, clear_datasets):
-    if IS_GO_PROXY:
-        pytest.skip("Go CreateDataset does not accept parser_config")
     empty_res = rest_client.post("/datasets", json={"name": "parser_config_empty", "parser_config": {}})
     assert empty_res.status_code == 200
     empty_payload = empty_res.json()

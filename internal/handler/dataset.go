@@ -233,11 +233,20 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Extra inputs are not permitted: ext")
 		return
 	}
+	for field := range raw {
+		if !createDatasetAllowedFields[field] {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Extra inputs are not permitted: %s", field))
+			return
+		}
+	}
 
 	var req service.CreateDatasetRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
+	}
+	if req.ParserConfig == nil && req.PipelineID == nil {
+		req.ParserConfig = map[string]interface{}{}
 	}
 	// Mirror Python's pydantic required validation.
 	if req.Name == "" || (len(bodyBytes) > 0 && jsonNullValue(bodyBytes, "name")) {
@@ -356,6 +365,12 @@ var listDatasetsAllowedParams = map[string]bool{
 	"id": true, "ids": true, "name": true, "page": true, "page_size": true,
 	"orderby": true, "desc": true, "include_parsing_status": true,
 	"keywords": true, "owner_ids": true, "parser_id": true, "type": true,
+}
+
+var createDatasetAllowedFields = map[string]bool{
+	"name": true, "embedding_model": true, "parser_config": true,
+	"language": true, "permission": true, "parser_id": true,
+	"pipeline_id": true, "parse_type": true,
 }
 
 // updateDatasetAllowedFields mirrors the field set of Python's UpdateDatasetReq
