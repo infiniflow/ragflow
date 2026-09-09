@@ -71,7 +71,12 @@ if [ -n "${RAGFLOW_TESTDATA_DIR:-}" ]; then
       echo "fetch_deepdoc_testdata: $PKG testdata already present inline at $TARGET"
       exit 0
     fi
-    rm -f "$TARGET" 2>/dev/null || true
+    # rm -rf, not rm -f: TARGET may be a leftover EMPTY directory (a failed
+    # GEN_* copy, a half-restored cache). rm -f cannot remove it, and ln -s
+    # would then nest the link inside it (<TARGET>/testdata) while this script
+    # still reports success. Both guards above have already returned for a
+    # non-empty real dir, so nothing real is deleted here.
+    rm -rf -- "$TARGET"
     if [ "$NEED_WRITE" -eq 1 ]; then
       echo "fetch_deepdoc_testdata: copying writable pre-seeded testdata for regeneration ($PKG)"
       rm -rf "$TARGET"
@@ -114,7 +119,9 @@ if [ -d "$TARGET" ] && [ ! -L "$TARGET" ] && [ -n "$(ls -A "$TARGET" 2>/dev/null
 fi
 
 # Absent (or stale symlink) -> fetch.
-rm -f "$TARGET" 2>/dev/null || true
+# rm -rf for the same reason as the pre-seeded branch: a leftover empty
+# directory must be removed, not silently turned into a nested symlink.
+rm -rf -- "$TARGET"
 
 if [ ! -e "$SRC" ] || [ -z "$(ls -A "$SRC" 2>/dev/null)" ]; then
   echo "fetch_deepdoc_testdata: cloning $REPO @ $REF (subtree deepdoc/$PKG/testdata)"
