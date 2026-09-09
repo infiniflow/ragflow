@@ -870,11 +870,11 @@ class MinerUParser(RAGFlowPdfParser):
         }
         for output in outputs:
             output_type = output.get("type")
-            # Count every IMAGE block we see — including those routed
-            # through naive/manual/paper's separate _transfer_to_tables
-            # path below — so the image_coverage stamp accurately reports
-            # "detected" regardless of parse_method.
-            if output_type == MinerUContentType.IMAGE:
+            # Count every visual block we see (IMAGE and CHART — MinerU emits
+            # both as visual content) so the image_coverage stamp reports
+            # "detected" symmetrically with "chunked" / "described" (which
+            # both already include CHART via _transfer_to_tables).
+            if output_type in {MinerUContentType.IMAGE, MinerUContentType.CHART}:
                 image_coverage["images_detected"] += 1
             # These chunkers consume tables and images separately, so exclude
             # media from their text sections. Raw consumers keep legacy sections.
@@ -910,6 +910,7 @@ class MinerUParser(RAGFlowPdfParser):
                     section = "".join(output.get("chart_caption", [])) + "\n" + "".join(output.get("chart_footnote", []))
                     vlm_description = (output.get("vlm_description") or "").strip()
                     if vlm_description:
+                        image_coverage["images_described"] += 1
                         section = (section.strip("\n") + "\n" + vlm_description).strip("\n") if section.strip() else vlm_description
                 case MinerUContentType.EQUATION:
                     section = output.get("text", "")
@@ -938,11 +939,15 @@ class MinerUParser(RAGFlowPdfParser):
             if output_type == MinerUContentType.TABLE and not table_enable:
                 section = self._sanitize_section_text(section)
             if not section:
-                if output.get("type") == MinerUContentType.IMAGE:
+                if output.get("type") in {MinerUContentType.IMAGE, MinerUContentType.CHART}:
                     image_coverage["images_dropped_no_text"] += 1
-                    self.logger.warning(
-                        "[MinerU] Dropped embedded image at page_idx=%s with no caption, footnote, or VLM description "
-                        "(img_path=%s). Configure an IMAGE2TEXT vision model to make embedded images retrievable.",
+                    # DEBUG (not WARNING) because PDFs with many decorative
+                    # images would flood the log; the parse_pdf summary
+                    # already reports the aggregate dropped_no_text count.
+                    self.logger.debug(
+                        "[MinerU] Dropped embedded %s at page_idx=%s with no caption, footnote, or VLM description "
+                        "(img_path=%s). Configure an IMAGE2TEXT vision model to make embedded visuals retrievable.",
+                        "chart" if output.get("type") == MinerUContentType.CHART else "image",
                         output.get("page_idx"),
                         output.get("img_path"),
                     )
@@ -959,18 +964,8 @@ class MinerUParser(RAGFlowPdfParser):
                 sections.append((section + self._line_tag(output), output["type"]))
             else:
                 sections.append((section, self._line_tag(output)))
-        # Stash on the instance so callers (and parse_pdf) can inspect coverage
-        # for the most recent parse. The intermediate INFO log that used
-        # to fire from here was misleading for app-media modes: the
-        # per-section chunked/described counts only reflect the text
-        # path, while naive/manual/paper go on to _transfer_to_tables
-        # which increments them again for the table-image path. Two
-        # contradictory image_coverage detected=N lines appeared in the
-        # log for app-media modes. parse_pdf emits one authoritative
-        # `image_coverage final ...` summary after both paths have run,
-        # so the intermediate line loses no actionable info and is
-        # dropped. The per-image `Dropped embedded image` WARNING still
-        # fires from the textless branch so per-image loss stays visible.
+        # Stash on the instance so callers (and parse_pdf) can inspect the
+        # coverage stamp for the most recent parse.
         self.last_image_coverage = image_coverage
         return sections
 
@@ -1008,15 +1003,9 @@ class MinerUParser(RAGFlowPdfParser):
                 texts = [*output.get("chart_caption", []), *output.get("chart_footnote", [])]
             else:
                 texts = [*output.get("image_caption", []), *output.get("image_footnote", [])]
-            # Mirror the chunked/described counters from
-            # _transfer_to_sections so the final image_coverage stamp
-            # reflects what app-media modes actually returned — not just
-            # what the text-section path saw (issue #16978 review).
-            self.last_image_coverage["images_chunked"] += 1
             vlm_description = (output.get("vlm_description") or "").strip()
             if vlm_description:
                 texts.append(vlm_description)
-            has_vlm_description = bool(vlm_description)
             # The text payload was non-empty if any of caption / footnote /
             # vlm_description contributed a non-whitespace string. Use this
             # to disambiguate "text was there but binary was unreadable"
@@ -1035,7 +1024,6 @@ class MinerUParser(RAGFlowPdfParser):
                     self.logger.debug(f"[MinerU] Failed to load image '{image_path}': {e}")
             if image is None:
                 self.logger.debug("[MinerU] Skip image without a readable resource: %s", image_path)
-                # The IMAGE block was detected and counted as chunked, but
                 # Image.open() couldn't read the resource. Route the
                 # observation to whichever counter matches the underlying
                 # failure mode:
@@ -1043,21 +1031,22 @@ class MinerUParser(RAGFlowPdfParser):
                 #     images_unreadable_resource.
                 #   - text was empty → the image never made it into the
                 #     chunk stream at all; route to
-                #     images_dropped_no_text (the _transfer_to_sections
-                #     path skipped this for app-media modes BEFORE the
-                #     textless check could fire).
-                self.last_image_coverage["images_chunked"] -= 1
+                #     images_dropped_no_text.
+                # The IMAGE block was detected (in _transfer_to_sections)
+                # but never produced an image chunk, so we do NOT count
+                # it as chunked/described here.
                 if has_meaningful_text:
                     self.last_image_coverage["images_unreadable_resource"] += 1
                 else:
                     self.last_image_coverage["images_dropped_no_text"] += 1
                 continue
 
-            # Only count this image as "described" when it actually
-            # reaches the tables list. An unreadable resource above
-            # (or a vlm_description that survives image-load failure)
-            # shouldn't inflate the metric.
-            if has_vlm_description:
+            # Count chunked/described only on confirmed emit (image actually
+            # reached the tables list). This avoids the brittle
+            # increment-then-decrement pattern that depends on every branch
+            # taking the right counter.
+            self.last_image_coverage["images_chunked"] += 1
+            if vlm_description:
                 self.last_image_coverage["images_described"] += 1
 
             tables.append(((image, texts or [""]), positions))

@@ -206,7 +206,7 @@ def test_sanitize_section_text_removes_escaped_html_tags(monkeypatch):
 
 
 def test_parse_pdf_emits_image_coverage_final_log_with_vlm_configured_flag(monkeypatch, tmp_path, caplog):
-    """Regression for xugangqiang's review on #16978: parse_pdf must
+    """Regression for issue #16978: parse_pdf must
     emit the final ``[MinerU] image_coverage final ... vlm_configured=...``
     log line so operators can see the image-coverage stamp at the parser
     boundary, including whether a vision model was configured."""
@@ -1061,7 +1061,7 @@ def test_transfer_to_sections_tracks_image_coverage_for_captioned_image(monkeypa
         "images_unreadable_resource": 0,
     }
     # The intermediate INFO log that used to fire from
-    # _transfer_to_sections has been removed (PR #16978 review).
+    # _transfer_to_sections has been removed.
     # The authoritative coverage is now emitted by parse_pdf only,
     # after both transfer paths have run. The per-method counter
     # assertions still cover that final path below.
@@ -1071,7 +1071,9 @@ def test_transfer_to_sections_tracks_image_coverage_for_captioned_image(monkeypa
 def test_transfer_to_sections_warns_when_embedded_image_has_no_text(monkeypatch, caplog):
     """When an embedded PDF image has no caption, no footnote, and no VLM
     description, it must not silently disappear from the chunk stream —
-    the loss must be visible in logs and the coverage stamp."""
+    the loss must be visible in logs (DEBUG level, since a PDF can have
+    many decorative images) and in the coverage stamp.
+    """
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()
     outputs = [
@@ -1085,7 +1087,7 @@ def test_transfer_to_sections_warns_when_embedded_image_has_no_text(monkeypatch,
         }
     ]
 
-    with caplog.at_level(logging.WARNING, logger=parser.logger.name):
+    with caplog.at_level(logging.DEBUG, logger=parser.logger.name):
         sections = parser._transfer_to_sections(outputs, parse_method="raw")
 
     assert sections == []
@@ -1172,7 +1174,7 @@ def test_transfer_to_sections_mixed_image_lifecycle(monkeypatch, caplog):
         },
     ]
 
-    with caplog.at_level(logging.INFO, logger=parser.logger.name):
+    with caplog.at_level(logging.DEBUG, logger=parser.logger.name):
         sections = parser._transfer_to_sections(outputs, parse_method="raw")
 
     assert len(sections) == 3  # captioned + described + text (the dropped image yields no section)
@@ -1184,9 +1186,9 @@ def test_transfer_to_sections_mixed_image_lifecycle(monkeypatch, caplog):
         "images_described": 1,
         "images_unreadable_resource": 0,
     }
-    # The intermediate INFO log was removed (PR #16978 review); the
-    # authoritative coverage summary now lives in parse_pdf. The
-    # per-image Dropped warning still fires from _transfer_to_sections.
+    # The intermediate INFO log was removed; the authoritative coverage
+    # summary now lives in parse_pdf. The per-image Dropped warning
+    # still fires from _transfer_to_sections.
     assert "image_coverage detected=3" not in caplog.text
     assert "Dropped embedded image" in caplog.text
 
@@ -1287,7 +1289,7 @@ def test_transfer_to_sections_app_media_mode_with_image_dropped_after_sanitizati
 
 
 def test_mineruparser_initializes_last_image_coverage_in_constructor(monkeypatch):
-    """Regression for xugangqiang's review on #16978: the attribute
+    """Regression for issue #16978: the attribute
     must exist from construction, independent of whether parse_pdf has
     run yet — no more getattr(self, ..., None) fallback in the
     caller."""
@@ -1340,11 +1342,11 @@ def test_transfer_to_sections_app_media_image_with_only_vlm_description(monkeypa
 
 
 def test_transfer_to_tables_counts_chunked_and_described(monkeypatch, tmp_path):
-    """Regression for the #16978 review follow-up: _transfer_to_tables
-    is the path that emits IMAGE blocks for naive/manual/paper. The
-    final coverage stamp must reflect that emission (chunked += 1,
-    described += 1 when vlm_description is set) so operators can see
-    the full pipeline outcome — not just the section path."""
+    """_transfer_to_tables is the path that emits IMAGE blocks for
+    naive/manual/paper. The final coverage stamp must reflect that
+    emission (chunked += 1, described += 1 when vlm_description is set)
+    so operators can see the full pipeline outcome — not just the
+    section path."""
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()
     # Create real image files on disk so PIL.Image.open succeeds.
@@ -1384,11 +1386,11 @@ def test_transfer_to_tables_counts_chunked_and_described(monkeypatch, tmp_path):
 
 
 def test_transfer_to_tables_counts_unreadable_resource(monkeypatch, tmp_path):
-    """Regression for the #16978 review follow-up: an IMAGE block whose
-    caption/footnote/vlm_description is non-empty but whose binary
-    resource can't be read (e.g. missing file, corrupted bytes) must be
-    counted under images_unreadable_resource — NOT images_dropped_no_text,
-    which is reserved for images that had no textual payload at all."""
+    """An IMAGE block whose caption/footnote/vlm_description is non-empty
+    but whose binary resource can't be read (e.g. missing file, corrupted
+    bytes) must be counted under images_unreadable_resource — NOT
+    images_dropped_no_text, which is reserved for images that had no
+    textual payload at all."""
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()
     # Only the first image exists on disk; the second does not.
@@ -1456,10 +1458,9 @@ def test_transfer_to_tables_counts_unreadable_resource(monkeypatch, tmp_path):
 def test_transfer_to_tables_counts_dropped_no_text_for_unreadable_textless_image(
     monkeypatch, tmp_path,
 ):
-    """Regression for the #16978 review follow-up: an app-media IMAGE
-    block whose caption/footnote/vlm_description are all empty but whose
-    binary resource can't be read must be counted under
-    images_dropped_no_text (text was never going to make it), NOT
+    """An app-media IMAGE block whose caption/footnote/vlm_description are
+    all empty but whose binary resource can't be read must be counted
+    under images_dropped_no_text (text was never going to make it), NOT
     images_unreadable_resource (which is reserved for the case where
     text WAS there but the binary was unreadable).
 
@@ -1507,3 +1508,86 @@ def test_transfer_to_tables_counts_dropped_no_text_for_unreadable_textless_image
     # chunked was incremented then decremented (since the image never
     # reached tables), ending back at 0.
     assert coverage["images_chunked"] == 0
+
+
+def test_images_detected_counts_chart_blocks(monkeypatch):
+    """CHART blocks share the visual pipeline with IMAGE (caption → text
+    section, binary → image chunk via _transfer_to_tables). The detected
+    counter must include them so the detected/chunked/described totals
+    are symmetric — otherwise a chart-only PDF would show detected=0
+    chunked=N which is misleading.
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.CHART,
+            "chart_caption": ["Figure 3"],
+            "chart_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 0, 1, 1),
+        },
+    ]
+
+    parser._transfer_to_sections(outputs, parse_method="raw")
+
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 1, (
+        f"CHART blocks must count toward images_detected; got {coverage!r}"
+    )
+
+
+def test_transfer_to_tables_counts_chart_chunked_and_described(monkeypatch, tmp_path):
+    """CHART blocks that survive _transfer_to_tables must be counted
+    symmetrically with IMAGE in chunked and described. VLM
+    descriptions on chart blocks must count too (raw-mode text path
+    also reads vlm_description for charts and now increments described).
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_from = 0
+    chart_path = tmp_path / "chart.png"
+    module.Image.new("RGB", (2, 2), "blue").save(chart_path)
+    outputs = [
+        {
+            "type": module.MinerUContentType.CHART,
+            "img_path": str(chart_path),
+            "chart_caption": ["Figure 3"],
+            "chart_footnote": [],
+            "vlm_description": "A blue square",
+            "page_idx": 0,
+            "bbox": (1, 2, 3, 4),
+        },
+    ]
+
+    parser._transfer_to_tables(outputs)
+    coverage = parser.last_image_coverage
+    chart_path.unlink()
+    assert coverage["images_chunked"] == 1
+    assert coverage["images_described"] == 1
+
+
+def test_transfer_to_sections_counts_chart_described_in_raw_mode(monkeypatch):
+    """Raw-mode text path: when a chart has a vlm_description it folds
+    into the chunk text. The described counter must reflect that, the
+    same way IMAGE does on the same code path.
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.CHART,
+            "chart_caption": ["Figure 3"],
+            "chart_footnote": [],
+            "vlm_description": "Trend line rising.",
+            "page_idx": 0,
+            "bbox": (0, 0, 1, 1),
+        },
+    ]
+
+    parser._transfer_to_sections(outputs, parse_method="raw")
+    coverage = parser.last_image_coverage
+    assert coverage["images_described"] == 1, (
+        f"CHART with vlm_description must count toward images_described "
+        f"in raw mode; got {coverage!r}"
+    )
