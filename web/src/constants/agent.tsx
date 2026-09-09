@@ -1,5 +1,26 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
-import { Circle, CircleSlash2 } from 'lucide-react';
+import {
+  Circle,
+  CircleDashed,
+  CircleDotDashed,
+  CircleSlash2,
+} from 'lucide-react';
 import { ChatVariableEnabledField, variableEnabledFieldMap } from './chat';
 
 export enum ProgrammingLanguage {
@@ -27,6 +48,8 @@ export enum AgentGlobals {
   SysUserId = 'sys.user_id',
   SysConversationTurns = 'sys.conversation_turns',
   SysFiles = 'sys.files',
+  SysHistory = 'sys.history',
+  SysDate = 'sys.date',
 }
 
 export const AgentGlobalsSysQueryWithBrace = `{${AgentGlobals.SysQuery}}`;
@@ -56,16 +79,6 @@ export enum AgentCategory {
 
 export enum AgentQuery {
   Category = 'category',
-}
-
-export enum DataflowOperator {
-  Begin = 'File',
-  Note = 'Note',
-  Parser = 'Parser',
-  Tokenizer = 'Tokenizer',
-  Splitter = 'Splitter',
-  HierarchicalMerger = 'HierarchicalMerger',
-  Extractor = 'Extractor',
 }
 
 export enum Operator {
@@ -98,10 +111,17 @@ export enum Operator {
   Tool = 'Tool',
   TavilySearch = 'TavilySearch',
   TavilyExtract = 'TavilyExtract',
+  QueritContents = 'QueritContents',
+  QueritSearch = 'QueritSearch',
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
-  PDFGenerator = 'PDFGenerator',
+  BGPT = 'BGPT',
+  KeenableSearch = 'KeenableSearch',
+  YouComSearch = 'YouComSearch',
+  SofyaSearch = 'SofyaSearch',
+  DocGenerator = 'DocGenerator',
+  Browser = 'Browser',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
   ListOperations = 'ListOperations',
@@ -110,9 +130,10 @@ export enum Operator {
   File = 'File', // pipeline
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',
-  Splitter = 'Splitter',
-  HierarchicalMerger = 'HierarchicalMerger',
+  TokenChunker = 'TokenChunker',
+  TitleChunker = 'TitleChunker',
   Extractor = 'Extractor',
+  Compiler = 'Compiler',
   Loop = 'Loop',
   LoopStart = 'LoopItem',
   ExitLoop = 'ExitLoop',
@@ -172,12 +193,12 @@ export const SwitchOperatorOptions = [
   {
     value: ComparisonOperator.In,
     label: 'in',
-    icon: <CircleSlash2 className="size-4" />,
+    icon: <CircleDotDashed className="size-4" />,
   },
   {
     value: ComparisonOperator.NotIn,
     label: 'notIn',
-    icon: <CircleSlash2 className="size-4" />,
+    icon: <CircleDashed className="size-4" />,
   },
 ];
 
@@ -221,4 +242,51 @@ export enum AgentDialogueMode {
 export const initialBeginValues = {
   mode: AgentDialogueMode.Conversational,
   prologue: `Hi! I'm your assistant. What can I do for you?`,
+};
+
+export const BeginId = 'begin';
+
+export const EmptyDsl = {
+  graph: {
+    nodes: [
+      {
+        id: BeginId,
+        type: 'beginNode',
+        position: {
+          x: 50,
+          y: 200,
+        },
+        data: {
+          label: 'Begin',
+          name: 'begin',
+          form: initialBeginValues,
+        },
+        sourcePosition: 'left',
+        targetPosition: 'right',
+      },
+    ],
+    edges: [],
+  },
+  components: {
+    begin: {
+      obj: {
+        component_name: 'Begin',
+        params: {},
+      },
+      downstream: [], // other edge target is downstream, edge source is current node id
+      upstream: [], // edge source is upstream, edge target is current node id
+    },
+  },
+  retrieval: [], // reference
+  history: [],
+  path: [],
+  variables: [],
+  globals: {
+    [AgentGlobals.SysQuery]: '',
+    [AgentGlobals.SysUserId]: '',
+    [AgentGlobals.SysConversationTurns]: 0,
+    [AgentGlobals.SysFiles]: [],
+    [AgentGlobals.SysHistory]: [],
+    [AgentGlobals.SysDate]: '',
+  },
 };

@@ -54,7 +54,7 @@ def conf_realpath(conf_name):
 
 def read_config(conf_name=SERVICE_CONF):
     local_config = {}
-    local_path = conf_realpath(f'local.{conf_name}')
+    local_path = conf_realpath(f"local.{conf_name}")
 
     # load local config file
     if os.path.exists(local_path):
@@ -79,6 +79,9 @@ def show_configs():
     msg = f"Current configs, from {conf_realpath(SERVICE_CONF)}:"
     for k, v in CONFIGS.items():
         if isinstance(v, dict):
+            if k == "gaussdb" and isinstance(v.get("config"), dict) and "password" in v["config"]:
+                v = copy.deepcopy(v)
+                v["config"]["password"] = "*" * 8
             if "password" in v:
                 v = copy.deepcopy(v)
                 v["password"] = "*" * 8
@@ -102,7 +105,7 @@ def show_configs():
             if "authentication" in k:
                 v = copy.deepcopy(v)
                 for key, val in v.items():
-                    if "http_secret_key" in val:
+                    if isinstance(val, dict) and "http_secret_key" in val:
                         val["http_secret_key"] = "*" * 8
         msg += f"\n\t{k}: {v}"
     logging.info(msg)
@@ -128,17 +131,24 @@ def decrypt_database_password(password):
         raise ValueError("No private key")
 
     module_fun = encrypt_module.split("#")
-    pwdecrypt_fun = getattr(
-        importlib.import_module(
-            module_fun[0]),
-        module_fun[1])
+    pwdecrypt_fun = getattr(importlib.import_module(module_fun[0]), module_fun[1])
 
     return pwdecrypt_fun(private_key, password)
 
 
 def decrypt_database_config(database=None, passwd_key="password", name="database"):
-    if not database:
-        database = get_base_config(name, {})
+    # Only fall back to the global config when no `database` argument is passed.
+    # An explicitly supplied (possibly empty) dict must be honoured as-is so that
+    # callers can opt out of the global lookup.
+    if database is None:
+        database = get_base_config(name, {}) or {}
+
+    # Some deployments omit the password field entirely (e.g. externally managed
+    # databases or credentials injected by other means). Skip decryption instead
+    # of raising `KeyError: 'password'`, which previously crashed service start-up
+    # (#11051).
+    if passwd_key not in database:
+        return database
 
     database[passwd_key] = decrypt_database_password(database[passwd_key])
     return database

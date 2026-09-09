@@ -1,0 +1,17 @@
+[
+  {"term": "a", "frequency": 300},
+  {"term": "the", "frequency": 300},
+  {"term": "Café", "frequency": 212},
+  {"term": "maior", "frequency": 150},
+  {"term": "κόσμος", "frequency": 106},
+  {"term": "привет", "frequency": 106},
+  {"term": "largest", "frequency": 75},
+  {"term": "supplier", "frequency": 53},
+  {"term": "equipment", "frequency": 38},
+  {"term": "équipement", "frequency": 27},
+  {"term": "hospital-equipment", "frequency": 10},
+  {"term": "北京", "frequency": null},
+  {"term": "abc123", "frequency": null},
+  {"term": "hello_world", "frequency": null},
+  {"term": "...", "frequency": null}
+]

@@ -14,10 +14,12 @@
 #  limitations under the License.
 #
 
-import json
+import logging
 
 from .base import Base
 from .chunk import Chunk
+
+logger = logging.getLogger(__name__)
 
 
 class Document(Base):
@@ -54,7 +56,7 @@ class Document(Base):
         if "meta_fields" in update_message:
             if not isinstance(update_message["meta_fields"], dict):
                 raise Exception("meta_fields must be a dictionary")
-        res = self.put(f"/datasets/{self.dataset_id}/documents/{self.id}", update_message)
+        res = self.patch(f"/datasets/{self.dataset_id}/documents/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
@@ -64,16 +66,19 @@ class Document(Base):
 
     def download(self):
         res = self.get(f"/datasets/{self.dataset_id}/documents/{self.id}")
-        error_keys = set(["code", "message"])
+        content_disposition = res.headers.get("Content-Disposition", "")
+        if content_disposition.lstrip().lower().startswith("attachment"):
+            logger.debug("Document.download returning attachment content dataset_id=%s document_id=%s", self.dataset_id, self.id)
+            return res.content
+
         try:
             response = res.json()
-            actual_keys = set(response.keys())
-            if actual_keys == error_keys:
+            if isinstance(response, dict) and "code" in response and response["code"] != 0:
                 raise Exception(response.get("message"))
-            else:
-                return res.content
-        except json.JSONDecodeError:
-            return res.content
+        except ValueError:
+            pass
+        logger.debug("Document.download returning non-attachment content dataset_id=%s document_id=%s", self.dataset_id, self.id)
+        return res.content
 
     def list_chunks(self, page=1, page_size=30, keywords="", id=""):
         data = {"keywords": keywords, "page": page, "page_size": page_size, "id": id}
@@ -87,15 +92,18 @@ class Document(Base):
             return chunks
         raise Exception(res.get("message"))
 
-    def add_chunk(self, content: str, important_keywords: list[str] = [], questions: list[str] = []):
-        res = self.post(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", {"content": content, "important_keywords": important_keywords, "questions": questions})
+    def add_chunk(self, content: str, important_keywords: list[str] = [], questions: list[str] = [], image_base64: str | None = None, *, tag_kwd: list[str] = []):
+        body = {"content": content, "important_keywords": important_keywords, "tag_kwd": tag_kwd, "questions": questions}
+        if image_base64 is not None:
+            body["image_base64"] = image_base64
+        res = self.post(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", body)
         res = res.json()
         if res.get("code") == 0:
             return Chunk(self.rag, res["data"].get("chunk"))
         raise Exception(res.get("message"))
 
-    def delete_chunks(self, ids: list[str] | None = None):
-        res = self.rm(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", {"chunk_ids": ids})
+    def delete_chunks(self, ids: list[str] | None = None, delete_all: bool = False):
+        res = self.rm(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", {"chunk_ids": ids, "delete_all": delete_all})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))

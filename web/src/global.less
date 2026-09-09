@@ -1,27 +1,66 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 @import url(./inter.less);
 
-html {
-  height: 100%;
-  overflow: hidden; // The content of the DatasetSettings page is too high, which will cause scroll bars to appear on the html tags. Setting the maximum height in DatasetSettings does not work either. I don't understand.
+:root {
+  --font-sans: 'Inter';
 }
 
-body {
-  font-family: Inter;
-  margin: 0;
-  height: 100%;
+@supports (font-variation-settings: normal) {
+  :root {
+    --font-sans: 'InterVariable';
+  }
 }
 
+html,
+body,
 #root {
-  height: 100%;
-}
+  width: 100vw;
+  width: 100dvw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 
-.ant-app {
-  height: 100%;
-  width: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 .vue-office-excel {
   height: 100%;
+}
+
+/* @js-preview/excel gives the sheet tab bar a fixed 40px height but floats the
+   tabs (`.x-spreadsheet-menu > li { float: left }`) with no horizontal overflow
+   handling. A workbook with several sheets therefore wraps the tabs onto a
+   second row that spills past the bar, which pushes a vertical scrollbar onto
+   the previewer container and steals 10px of its width. Keep the tabs on one
+   scrollable row instead, the way Excel does. */
+.x-spreadsheet-bottombar {
+  overflow-x: auto;
+  overflow-y: hidden;
+
+  .x-spreadsheet-menu {
+    display: flex;
+    flex-wrap: nowrap;
+  }
+
+  &::-webkit-scrollbar {
+    height: 4px;
+  }
 }
 
 /* Scroll bar stylings */
@@ -44,4 +83,17 @@ body {
 /* Handle on hover */
 ::-webkit-scrollbar-thumb:hover {
   background: #888;
+}
+
+.Highlight--scrolledTo .Highlight__part {
+  background: rgb(var(--accent-primary) / 0.5) !important;
+}
+
+.Highlight__part {
+  background: rgb(var(--accent-primary) / 0.1) !important;
+}
+
+.x-spreadsheet-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: initial;
 }

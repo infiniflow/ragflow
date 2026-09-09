@@ -17,7 +17,7 @@ from google.oauth2.service_account import Credentials as ServiceAccountCredentia
 from googleapiclient.errors import HttpError  # type: ignore  # type: ignore
 from typing_extensions import override
 
-from common.data_source.config import GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD, INDEX_BATCH_SIZE, SLIM_BATCH_SIZE, DocumentSource
+from common.data_source.config import GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD, GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS, INDEX_BATCH_SIZE, SLIM_BATCH_SIZE, DocumentSource
 from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError, CredentialExpiredError, InsufficientPermissionsError
 from common.data_source.google_drive.doc_conversion import PermissionSyncContext, build_slim_document, convert_drive_item_to_document, onyx_document_id_from_drive_file
 from common.data_source.google_drive.file_retrieval import (
@@ -120,6 +120,7 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
         shared_folder_urls: str | None = None,
         specific_user_emails: str | None = None,
         batch_size: int = INDEX_BATCH_SIZE,
+        time_buffer_seconds: int = GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS,
     ) -> None:
         if not any(
             (
@@ -158,6 +159,7 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
 
         self._creds: OAuthCredentials | ServiceAccountCredentials | None = None
         self._creds_dict: dict[str, Any] | None = None
+        self._all_drive_ids_cache: set[str] | None = None
 
         # ids of folders and shared drives that have been traversed
         self._retrieved_folder_and_drive_ids: set[str] = set()
@@ -165,6 +167,7 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
         self.allow_images = False
 
         self.size_threshold = GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD
+        self.time_buffer_seconds = max(0, time_buffer_seconds)
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -189,6 +192,23 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
             raise RuntimeError("Creds missing, should not call this property before calling load_credentials")
         return self._creds
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "GoogleDriveConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            include_shared_drives=config.get("include_shared_drives", False),
+            include_my_drives=config.get("include_my_drives", False),
+            include_files_shared_with_me=config.get("include_files_shared_with_me", False),
+            shared_drive_urls=config.get("shared_drive_urls"),
+            my_drive_emails=config.get("my_drive_emails"),
+            shared_folder_urls=config.get("shared_folder_urls"),
+            specific_user_emails=config.get("specific_user_emails"),
+            batch_size=batch_size,
+        )
+        connector.set_allow_images(config.get("allow_images", False))
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     # TODO: ensure returned new_creds_dict is actually persisted when this is called?
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         try:
@@ -209,6 +229,7 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
             self.include_files_shared_with_me = True
 
         self._creds_dict = new_creds_dict
+        self._all_drive_ids_cache = None
 
         return new_creds_dict
 
@@ -247,7 +268,9 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
         return user_emails
 
     def get_all_drive_ids(self) -> set[str]:
-        return self._get_all_drives_for_user(self.primary_admin_email)
+        if self._all_drive_ids_cache is None:
+            self._all_drive_ids_cache = self._get_all_drives_for_user(self.primary_admin_email)
+        return set(self._all_drive_ids_cache)
 
     def _get_all_drives_for_user(self, user_email: str) -> set[str]:
         drive_service = get_drive_service(self.creds, user_email)
@@ -263,7 +286,14 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
             all_drive_ids.add(drive["id"])
 
         if not all_drive_ids:
-            self.logger.warning("No drives found even though indexing shared drives was requested.")
+            if self._requested_shared_drive_ids:
+                self.logger.warning(
+                    "No shared drives found for user %s while resolving requested shared drives.",
+                    user_email,
+                )
+            elif self.include_shared_drives:
+                log_fn = self.logger.warning if is_service_account else self.logger.info
+                log_fn("No shared drives found for user %s.", user_email)
 
         return all_drive_ids
 
@@ -737,6 +767,14 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
         if remaining_folders:
             self.logger.warning(f"Some folders/drives were not retrieved. IDs: {remaining_folders}")
 
+    def _adjust_start_for_query(self, start: SecondsSinceUnixEpoch | None) -> SecondsSinceUnixEpoch | None:
+        """Subtract the configured time buffer from start to create an overlap window for incremental syncs."""
+        if not start or start <= 0:
+            return start
+        if self.time_buffer_seconds <= 0:
+            return start
+        return max(0.0, start - self.time_buffer_seconds)
+
     def _load_from_checkpoint(
         self,
         start: SecondsSinceUnixEpoch,
@@ -750,11 +788,15 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
         if self._creds is None or self._primary_admin_email is None:
             raise RuntimeError("Credentials missing, should not call this method before calling load_credentials")
 
+        adjusted_start = self._adjust_start_for_query(start)
+        if adjusted_start != start:
+            self.logger.info(f"Adjusted start time from {start} to {adjusted_start} (buffer: {self.time_buffer_seconds}s)")
+
         self.logger.info(f"Loading from checkpoint with completion stage: {checkpoint.completion_stage},num retrieved ids: {len(checkpoint.all_retrieved_file_ids)}")
         checkpoint = copy.deepcopy(checkpoint)
         self._retrieved_folder_and_drive_ids = checkpoint.retrieved_folder_and_drive_ids
         try:
-            yield from self._extract_docs_from_google_drive(checkpoint, start, end, include_permissions)
+            yield from self._extract_docs_from_google_drive(checkpoint, adjusted_start, end, include_permissions)
         except Exception as e:
             if MISSING_SCOPES_ERROR_STR in str(e):
                 raise PermissionError() from e
@@ -1071,8 +1113,6 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: IndexingHeartbeatInterface | None = None,
     ) -> GenerateSlimDocumentOutput:
         try:
@@ -1080,8 +1120,6 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
             while checkpoint.completion_stage != DriveRetrievalStage.DONE:
                 yield from self._extract_slim_docs_from_google_drive(
                     checkpoint=checkpoint,
-                    start=start,
-                    end=end,
                 )
             self.logger.info("Drive perm sync: Slim doc retrieval complete")
 
@@ -1202,6 +1240,7 @@ def yield_all_docs_from_checkpoint_connector(
 if __name__ == "__main__":
     import time
     from common.data_source.google_util.util import get_credentials_from_env
+
     logging.basicConfig(level=logging.DEBUG)
 
     try:

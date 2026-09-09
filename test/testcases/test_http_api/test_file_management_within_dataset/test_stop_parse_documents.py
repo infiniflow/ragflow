@@ -48,11 +48,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
     )
@@ -69,8 +69,8 @@ class TestDocumentsParseStop:
         [
             pytest.param(None, 102, """AttributeError("\'NoneType\' object has no attribute \'get\'")""", marks=pytest.mark.skip),
             pytest.param({"document_ids": []}, 102, "`document_ids` is required", marks=pytest.mark.p1),
-            pytest.param({"document_ids": ["invalid_id"]}, 102, "You don't own the document invalid_id.", marks=pytest.mark.p3),
-            pytest.param({"document_ids": ["\n!?。；！？\"'"]}, 102, """You don\'t own the document \n!?。；！？"\'.""", marks=pytest.mark.p3),
+            pytest.param({"document_ids": ["invalid_id"]}, 102, "you don't own the document invalid_id", marks=pytest.mark.p3),
+            pytest.param({"document_ids": ["\n!?。；！？\"'"]}, 102, """you don\'t own the document \n!?。；！？"\'""", marks=pytest.mark.p3),
             pytest.param("not json", 102, "AttributeError(\"'str' object has no attribute 'get'\")", marks=pytest.mark.skip),
             pytest.param(lambda r: {"document_ids": r[:1]}, 0, "", marks=pytest.mark.p1),
             pytest.param(lambda r: {"document_ids": r}, 0, "", marks=pytest.mark.p1),
@@ -105,7 +105,7 @@ class TestDocumentsParseStop:
     @pytest.mark.parametrize(
         "invalid_dataset_id, expected_code, expected_message",
         [
-            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
+            ("", 102, "You don't own the dataset ."),
             (
                 "invalid_dataset_id",
                 102,
@@ -144,7 +144,7 @@ class TestDocumentsParseStop:
             payload = payload(document_ids)
         res = stop_parse_documents(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 102
-        assert res["message"] == "You don't own the document invalid_id."
+        assert res["message"] == "you don't own the document invalid_id"
 
         validate_document_parse_cancel(HttpApiAuth, dataset_id, document_ids)
 
@@ -157,7 +157,7 @@ class TestDocumentsParseStop:
 
         res = stop_parse_documents(HttpApiAuth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 102
-        assert res["message"] == "Can't stop parsing document with progress at 0 or 1"
+        assert res["message"] == "Can't stop parsing document that has not started or already completed"
 
     @pytest.mark.p3
     def test_duplicate_stop_parse(self, HttpApiAuth, add_documents_func):

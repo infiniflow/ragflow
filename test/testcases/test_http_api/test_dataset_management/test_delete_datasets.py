@@ -31,11 +31,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
     )
@@ -116,7 +116,7 @@ class TestDatasetsDelete:
         res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == remaining, res
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
     def test_ids_empty(self, HttpApiAuth):
         payload = {"ids": []}
@@ -126,7 +126,7 @@ class TestDatasetsDelete:
         res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 1, res
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_datasets_func")
     def test_ids_none(self, HttpApiAuth):
         payload = {"ids": None}
@@ -134,7 +134,7 @@ class TestDatasetsDelete:
         assert res["code"] == 0, res
 
         res = list_datasets(HttpApiAuth)
-        assert len(res["data"]) == 0, res
+        assert len(res["data"]) == 3, res
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
@@ -142,7 +142,7 @@ class TestDatasetsDelete:
         payload = {"ids": ["not_uuid"]}
         res = delete_datasets(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert "Invalid UUID format" in res["message"], res
 
         res = list_datasets(HttpApiAuth)
         assert len(res["data"]) == 1, res
@@ -152,15 +152,15 @@ class TestDatasetsDelete:
     def test_id_not_uuid1(self, HttpApiAuth):
         payload = {"ids": [uuid.uuid4().hex]}
         res = delete_datasets(HttpApiAuth, payload)
-        assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert res["code"] == 102, res
+        assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_dataset_func")
     def test_id_wrong_uuid(self, HttpApiAuth):
         payload = {"ids": ["d94a8dc02c9711f0930f7fbc369eab6d"]}
         res = delete_datasets(HttpApiAuth, payload)
-        assert res["code"] == 108, res
+        assert res["code"] == 102, res
         assert "lacks permission for dataset" in res["message"], res
 
         res = list_datasets(HttpApiAuth)
@@ -180,7 +180,7 @@ class TestDatasetsDelete:
         if callable(func):
             payload = func(dataset_ids)
         res = delete_datasets(HttpApiAuth, payload)
-        assert res["code"] == 108, res
+        assert res["code"] == 102, res
         assert "lacks permission for dataset" in res["message"], res
 
         res = list_datasets(HttpApiAuth)
@@ -205,10 +205,10 @@ class TestDatasetsDelete:
         assert res["code"] == 0, res
 
         res = delete_datasets(HttpApiAuth, payload)
-        assert res["code"] == 108, res
+        assert res["code"] == 102, res
         assert "lacks permission for dataset" in res["message"], res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.usefixtures("add_dataset_func")
     def test_field_unsupported(self, HttpApiAuth):
         payload = {"unknown_field": "unknown_field"}

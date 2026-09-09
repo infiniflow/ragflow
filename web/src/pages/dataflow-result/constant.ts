@@ -7,9 +7,10 @@ export enum TimelineNodeType {
   begin = 'file',
   parser = 'parser',
   contextGenerator = 'extractor',
-  titleSplitter = 'hierarchicalMerger',
-  characterSplitter = 'splitter',
+  titleChunker = 'titleChunker',
+  tokenChunker = 'tokenChunker',
   tokenizer = 'tokenizer',
+  compiler = 'compiler',
   end = 'end',
 }
 
@@ -22,4 +23,7 @@ export enum PipelineResultSearchParams {
   AgentTitle = 'agent_title',
   CreatedBy = 'created_by', // Who uploaded the file
   DocumentExtension = 'extension',
+  DocumentName = 'doc_name',
+  DocumentSize = 'doc_size',
+  DocumentCreatedAt = 'doc_created_at',
 }

@@ -1,4 +1,5 @@
 import { Collapse } from '@/components/collapse';
+import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -12,10 +13,12 @@ import { Switch } from '@/components/ui/switch';
 import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus } from 'lucide-react';
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { BeginQueryType } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { BeginQuery, INextOperatorForm } from '../../interface';
 import { ParameterDialog } from '../begin-form/parameter-dialog';
 import { QueryTable } from '../begin-form/query-table';
@@ -27,12 +30,14 @@ import { useWatchFormChange } from './use-watch-change';
 
 function UserFillUpForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
 
   const values = useValues(node);
 
   const FormSchema = z.object({
     enable_tips: z.boolean().optional(),
     tips: z.string().trim().optional(),
+    layout_recognize: z.string().optional(),
     inputs: z
       .array(
         z.object({
@@ -58,6 +63,11 @@ function UserFillUpForm({ node }: INextOperatorForm) {
     control: form.control,
     name: 'inputs',
   });
+
+  const hasFileInput = useMemo(
+    () => inputs?.some((x) => x.type === BeginQueryType.File),
+    [inputs],
+  );
 
   const outputList = inputs?.map((item) => ({
     title: item.name,
@@ -154,6 +164,15 @@ function UserFillUpForm({ node }: INextOperatorForm) {
             otherThanCurrentQuery={otherThanCurrentQuery}
             submit={ok}
           ></ParameterDialog>
+        )}
+        {hasFileInput && (
+          <LayoutRecognizeFormField
+            name="layout_recognize"
+            horizontal={false}
+            showMineruOptions={false}
+            showPaddleocrOptions={false}
+            ownerTenantId={ownerTenantId}
+          ></LayoutRecognizeFormField>
         )}
       </Form>
       <Output list={outputList}></Output>

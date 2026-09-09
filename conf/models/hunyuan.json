@@ -1,0 +1,395 @@
+{
+  "name": "Tencent Hunyuan",
+  "url": {
+    "default": "https://tokenhub.tencentmaas.com/v1",
+    "default-backup": "https://tokenhub.tencentmaas.cn/v1",
+    "intl": "https://tokenhub-intl.tencentmaas.com/v1",
+    "intl-backup": "https://tokenhub-intl.tencentmaas.cn/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "class": "hunyuan",
+  "models": [
+    {
+      "name": "hy3",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "hy3-preview",
+      "context_length": 262144,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k3",
+      "context_length": 1000000,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2.7-code-highspeed",
+      "context_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2.7-code",
+      "context_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5.2",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "minimax-m3",
+      "context_length": 1024000,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v4-flash-202605",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v4-pro-202606",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v4-flash",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "hy-mt2-pro",
+      "context_length": 8192,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "hy-mt2-plus",
+      "context_length": 8192,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "hy-mt2-lite",
+      "context_length": 8192,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "hy-role",
+      "context_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "hunyuan-role-latest",
+      "context_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen3.5-flash",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen3.5-plus",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5.1",
+      "context_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5",
+      "context_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5-turbo",
+      "context_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2.6",
+      "context_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2.5",
+      "context_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "minimax-m2.7",
+      "context_length": 204800,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "minimax-m2.5",
+      "context_length": 204800,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v3.2",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5v-turbo",
+      "context_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "hy-vision-2.0-instruct",
+      "context_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "youtu-vita",
+      "context_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "hunyuan-t1-vision-20250916",
+      "context_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "hunyuan-turbos-vision-video-20250728",
+      "context_length": 32768,
+      "max_output": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kinfra-text-embedding-0.6b",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 50
+    },
+    {
+      "name": "kinfra-text-embedding-4b",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 50
+    },
+    {
+      "name": "kinfra-vl-embedding-2b",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 50
+    },
+    {
+      "name": "kinfra-vl-embedding-8b",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 50
+    }
+  ]
+}

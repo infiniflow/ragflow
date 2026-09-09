@@ -1,4 +1,6 @@
 import MarkdownContent from '@/components/next-markdown-content';
+import JsonEditor from '@/components/json-edit';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Form,
@@ -9,10 +11,10 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { IMessage } from '@/interfaces/database/chat';
+import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import React, { ReactNode, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
@@ -36,6 +38,8 @@ interface IProps {
   loading?: boolean;
   submitButtonDisabled?: boolean;
   btnText?: ReactNode;
+  className?: string;
+  maxHeight?: string;
 }
 
 const DebugContent = ({
@@ -46,6 +50,8 @@ const DebugContent = ({
   loading = false,
   submitButtonDisabled = false,
   btnText,
+  className,
+  maxHeight,
 }: IProps) => {
   const { t } = useTranslation();
 
@@ -65,6 +71,11 @@ const DebugContent = ({
           value = false;
         } else if (type === BeginQueryType.Integer || type === 'float') {
           fieldSchema = z.coerce.number();
+        } else if (type === BeginQueryType.File) {
+          fieldSchema = z.array(z.record(z.any())).min(1);
+        } else if (type === BeginQueryType.Object) {
+          fieldSchema = z.union([z.record(z.any()), z.array(z.any())]);
+          value = {};
         } else {
           fieldSchema = z.record(z.any());
         }
@@ -140,7 +151,7 @@ const DebugContent = ({
               <FormItem className="flex-1">
                 <FormLabel>{props.label}</FormLabel>
                 <FormControl>
-                  <RAGFlowSelect
+                  <SelectWithSearch
                     allowClear
                     options={
                       q.options?.map((x) => ({
@@ -149,7 +160,7 @@ const DebugContent = ({
                       })) ?? []
                     }
                     {...field}
-                  ></RAGFlowSelect>
+                  ></SelectWithSearch>
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -164,7 +175,7 @@ const DebugContent = ({
               render={({ field }) => (
                 <div className="space-y-6">
                   <FormItem className="w-full">
-                    <FormLabel>{t('assistantAvatar')}</FormLabel>
+                    <FormLabel>{props.label}</FormLabel>
                     <FormControl>
                       <FileUploadDirectUpload
                         value={field.value}
@@ -211,6 +222,25 @@ const DebugContent = ({
             )}
           />
         ),
+        [BeginQueryType.Object]: (
+          <FormField
+            control={form.control}
+            name={props.name}
+            render={({ field }) => (
+              <FormItem className="flex-1">
+                <FormLabel>{props.label}</FormLabel>
+                <FormControl>
+                  <JsonEditor
+                    value={field.value ?? {}}
+                    onChange={field.onChange}
+                    height="200px"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ),
       };
 
       return (
@@ -218,7 +248,7 @@ const DebugContent = ({
         BeginQueryTypeMap[BeginQueryType.Paragraph]
       );
     },
-    [form, t],
+    [form],
   );
 
   const onSubmit = useCallback(
@@ -234,7 +264,7 @@ const DebugContent = ({
   );
   return (
     <>
-      <section>
+      <section className={className}>
         {message?.data?.tips && (
           <div className="mb-2">
             <MarkdownContent
@@ -244,11 +274,15 @@ const DebugContent = ({
           </div>
         )}
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {parameters.map((x, idx) => {
-              return <div key={idx}>{renderWidget(x, idx.toString())}</div>;
-            })}
-            <div>
+          <form onSubmit={form.handleSubmit(onSubmit)}>
+            <section
+              className={cn('overflow-auto px-2 space-y-4 pb-4', maxHeight)}
+            >
+              {parameters.map((x, idx) => {
+                return <div key={idx}>{renderWidget(x, idx.toString())}</div>;
+              })}
+            </section>
+            <div className="px-2">
               <ButtonLoading
                 type="submit"
                 loading={loading}

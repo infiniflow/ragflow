@@ -19,7 +19,7 @@
   .categorizeAnchorPointText {
     position: absolute;
     top: -4px;
-    left: 8px;
+    inset-inline-start: 8px;
     white-space: nowrap;
   }
 }
@@ -33,8 +33,8 @@
 
 .selectedIterationNode {
   border-bottom: 1.5px solid rgb(59, 118, 244);
-  border-left: 1.5px solid rgb(59, 118, 244);
-  border-right: 1.5px solid rgb(59, 118, 244);
+  border-inline-start: 1.5px solid rgb(59, 118, 244);
+  border-inline-end: 1.5px solid rgb(59, 118, 244);
 }
 
 .iterationHeader {
@@ -43,8 +43,8 @@
 
 .selectedHeader {
   border-top: 1.9px solid rgb(59, 118, 244);
-  border-left: 1.9px solid rgb(59, 118, 244);
-  border-right: 1.9px solid rgb(59, 118, 244);
+  border-inline-start: 1.9px solid rgb(59, 118, 244);
+  border-inline-end: 1.9px solid rgb(59, 118, 244);
 }
 
 .handle {
@@ -88,7 +88,7 @@
   .categorizeAnchorPointText {
     position: absolute;
     top: -4px;
-    left: 8px;
+    inset-inline-start: 8px;
     white-space: nowrap;
   }
   .relevantSourceLabel {
@@ -108,22 +108,22 @@
     background-color: #edfcff;
     font-size: 12px;
     padding: 6px 6px 4px;
-    border-top-left-radius: 10px;
-    border-top-right-radius: 10px;
+    border-start-start-radius: 10px;
+    border-start-end-radius: 10px;
   }
   .noteTitleDark {
     background-color: #edfcff;
     font-size: 12px;
     padding: 6px 6px 4px;
-    border-top-left-radius: 10px;
-    border-top-right-radius: 10px;
+    border-start-start-radius: 10px;
+    border-start-end-radius: 10px;
   }
   .noteForm {
     margin-top: 4px;
     height: calc(100% - 50px);
   }
   .noteName {
-    padding: 0px 4px;
+    padding-inline: 4px;
   }
   .noteTextarea {
     resize: none;
@@ -139,8 +139,8 @@
 
 .iterationNode {
   .commonNodeShadow();
-  border-bottom-left-radius: 10px;
-  border-bottom-right-radius: 10px;
+  border-end-start-radius: 10px;
+  border-end-end-radius: 10px;
 }
 
 .nodeText {
@@ -183,7 +183,7 @@
 }
 
 .relevantLabel {
-  text-align: right;
+  text-align: end;
 }
 
 .knowledgeNodeName {
@@ -239,13 +239,14 @@
 
       .configValue {
         color: #333;
-        word-break: break-all;
+        word-break: break-word;
+        overflow-wrap: break-word;
       }
     }
 
     .expandIcon {
       position: absolute;
-      right: 8px;
+      inset-inline-end: 8px;
       top: 50%;
       transform: translateY(-50%);
       color: #666;

@@ -1,136 +1,116 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import api from '@/utils/api';
 import { registerNextServer } from '@/utils/register-server';
 
 const {
-  getDialog,
-  setDialog,
-  // listDialog,
-  removeDialog,
-  getConversation,
-  getConversationSSE,
-  setConversation,
-  completeConversation,
-  listConversation,
-  removeConversation,
-  createToken,
-  listToken,
-  removeToken,
-  getStats,
-  createExternalConversation,
-  getExternalConversation,
-  completeExternalConversation,
-  uploadAndParseExternal,
+  createChat,
+  listChats,
+  getChat,
+  updateChat,
+  patchChat,
+  deleteChat,
+  bulkDeleteChats,
+  createSession,
+  listSessions,
+  getSession,
+  updateSession,
+  removeSessions,
   deleteMessage,
   thumbup,
-  tts,
-  ask,
-  mindmap,
-  getRelatedQuestions,
-  listNextDialog,
-  upload_and_parse,
+  chatsTts,
+  chatsMindmap,
+  chatsRelatedQuestions,
+  documentInfoUpload,
   fetchExternalChatInfo,
 } = api;
 
 const methods = {
-  getDialog: {
-    url: getDialog,
+  createChat: {
+    url: createChat,
+    method: 'post',
+  },
+  listChats: {
+    url: listChats,
     method: 'get',
   },
-  setDialog: {
-    url: setDialog,
-    method: 'post',
-  },
-  removeDialog: {
-    url: removeDialog,
-    method: 'post',
-  },
-  listDialog: {
-    url: listNextDialog,
-    method: 'post',
-  },
-  listConversation: {
-    url: listConversation,
+  getChat: {
+    url: getChat,
     method: 'get',
   },
-  getConversation: {
-    url: getConversation,
+  updateChat: {
+    url: updateChat,
+    method: 'put',
+  },
+  patchChat: {
+    url: patchChat,
+    method: 'patch',
+  },
+  deleteChat: {
+    url: deleteChat,
+    method: 'delete',
+  },
+  bulkDeleteChats: {
+    url: bulkDeleteChats,
+    method: 'delete',
+  },
+  createSession: {
+    url: createSession,
+    method: 'post',
+  },
+  listSessions: {
+    url: listSessions,
     method: 'get',
   },
-  getConversationSSE: {
-    url: getConversationSSE,
+  getSession: {
+    url: getSession,
     method: 'get',
   },
-  setConversation: {
-    url: setConversation,
-    method: 'post',
+  updateSession: {
+    url: updateSession,
+    method: 'patch',
   },
-  completeConversation: {
-    url: completeConversation,
-    method: 'post',
-  },
-  removeConversation: {
-    url: removeConversation,
-    method: 'post',
-  },
-  createToken: {
-    url: createToken,
-    method: 'post',
-  },
-  listToken: {
-    url: listToken,
-    method: 'get',
-  },
-  removeToken: {
-    url: removeToken,
-    method: 'post',
-  },
-  getStats: {
-    url: getStats,
-    method: 'get',
-  },
-  createExternalConversation: {
-    url: createExternalConversation,
-    method: 'get',
-  },
-  getExternalConversation: {
-    url: getExternalConversation,
-    method: 'get',
-  },
-  completeExternalConversation: {
-    url: completeExternalConversation,
-    method: 'post',
-  },
-  uploadAndParseExternal: {
-    url: uploadAndParseExternal,
-    method: 'post',
+  removeSessions: {
+    url: removeSessions,
+    method: 'delete',
   },
   deleteMessage: {
     url: deleteMessage,
-    method: 'post',
+    method: 'delete',
   },
   thumbup: {
     url: thumbup,
+    method: 'put',
+  },
+  chatsTts: {
+    url: chatsTts,
     method: 'post',
   },
-  tts: {
-    url: tts,
+  chatsMindmap: {
+    url: chatsMindmap,
     method: 'post',
   },
-  ask: {
-    url: ask,
+  chatsRelatedQuestions: {
+    url: chatsRelatedQuestions,
     method: 'post',
   },
-  getMindMap: {
-    url: mindmap,
+  documentInfoUpload: {
     method: 'post',
-  },
-  getRelatedQuestions: {
-    url: getRelatedQuestions,
-    method: 'post',
-  },
-  uploadAndParse: {
-    method: 'post',
-    url: upload_and_parse,
+    url: documentInfoUpload,
   },
   fetchExternalChatInfo: {
     url: fetchExternalChatInfo,

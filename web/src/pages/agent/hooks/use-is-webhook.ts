@@ -8,3 +8,11 @@ export function useIsWebhookMode() {
 
   return beginNode?.data.form?.mode === AgentDialogueMode.Webhook;
 }
+
+export function useIsConversationMode() {
+  const getNode = useGraphStore((state) => state.getNode);
+
+  const beginNode = getNode(BeginId);
+
+  return beginNode?.data.form?.mode === AgentDialogueMode.Conversational;
+}

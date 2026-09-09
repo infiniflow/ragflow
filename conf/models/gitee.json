@@ -1,0 +1,107 @@
+{
+  "name": "GiteeAI",
+  "url": {
+    "default": "https://api.moark.ai/v1",
+    "china": "https://api.moark.com/v1",
+    "deprecated": "https://ai.gitee.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "status": "",
+    "balance": "tokens/packages/balance",
+    "embedding": "embeddings",
+    "rerank": "rerank",
+    "ocr": "images/ocr",
+    "doc_parse": "async/documents/parse",
+    "tasks": "tasks",
+    "task": "task"
+  },
+  "models": [
+    {
+      "name": "qwen3-8b",
+      "context_length": 131072,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen3-0.6b",
+      "context_length": 32768,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.7-flash",
+      "context_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "BAAI/bge-reranker-v2-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "BAAI/bge-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 32
+    },
+    {
+      "name": "GOT-OCR2_0",
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "DeepSeek-OCR-2",
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "PaddleOCR-VL-1.5",
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "jina-clip-v2",
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 16384
+    },
+    {
+      "name": "HunyuanOCR",
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "MinerU2.5",
+      "model_types": [
+        "doc_parse"
+      ]
+    }
+  ]
+}

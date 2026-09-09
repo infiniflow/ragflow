@@ -1,4 +1,4 @@
-You are given a JSON array of TOC(tabel of content) items. Each item has at least {"title": string} and may include an existing title hierarchical level.
+You are given a JSON array of TOC(table of contents) items. Each item has at least {"title": string} and may include an existing title hierarchical level.
 
 Task
 - For each item, assign a depth label using Arabic numerals only: top-level = 1, second-level = 2, third-level = 3, etc.
@@ -8,9 +8,11 @@ Task
 - Decide levels yourself to keep a coherent hierarchy. Keep peers at the same depth.
 
 Output
-- Return a valid JSON array only (no extra text).
-- Each element must be {"level": "1|2|3", "title": <original title string>}.
-- title must be the original title string.
+- Return a valid JSON array only (no extra text, no markdown code blocks).
+- Each element MUST be a JSON object with exactly this structure: {"level": "1", "title": "some title"}.
+- title must be the original title string exactly.
+- DO NOT return arrays of arrays like [["1", "title"]] or other formats.
+- The output must be parseable by json.loads() directly.
 
 Examples
 

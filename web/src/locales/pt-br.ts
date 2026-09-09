@@ -18,6 +18,8 @@ export default {
       portugueseBr: 'Português (Brasil)',
       chinese: 'Chinês Simplificado',
       traditionalChinese: 'Chinês Tradicional',
+      bulgarian: 'Búlgaro',
+      arabic: 'Árabe',
       language: 'Idioma',
       languageMessage: 'Por favor, insira seu idioma!',
       languagePlaceholder: 'selecione seu idioma',
@@ -35,8 +37,10 @@ export default {
       pleaseInput: 'Por favor, insira',
       submit: 'Enviar',
       embedIntoSite: 'Incorporar no site',
+      openInNewTab: 'Abrir em nova aba',
       previousPage: 'Anterior',
       nextPage: 'Próxima',
+      owner: 'Proprietário',
     },
     login: {
       login: 'Entrar',
@@ -112,7 +116,7 @@ export default {
         'Realize um teste de recuperação para verificar se o RAGFlow pode recuperar o conteúdo pretendido para o LLM. Por favor, note que as alterações feitas aqui não são salvas automaticamente. Se você ajustar as configurações padrão aqui, como o peso de similaridade de palavras-chave, certifique-se de atualizar as configurações relacionadas de forma sincronizada nas configurações do assistente de chat ou nas configurações do operador de recuperação.',
       similarityThreshold: 'Limite de similaridade',
       similarityThresholdTip:
-        'O RAGFlow emprega uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada, ou uma combinação de similaridade de palavras-chave ponderada e pontuação de reranking ponderada durante a recuperação. Este parâmetro define o limite para similaridades entre a consulta do usuário e os fragmentos. Qualquer fragmento com uma pontuação de similaridade abaixo deste limite será excluído dos resultados. Por padrão, o limite é definido como 0,2. Isso significa que apenas os trechos com uma pontuação de similaridade híbrida de 20 ou mais serão recuperados.',
+        'O RAGFlow emprega uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada, ou uma combinação de similaridade de palavras-chave ponderada e pontuação de reranking ponderada durante a recuperação. Este parâmetro define o limite para similaridades entre a consulta do usuário e os fragmentos. Qualquer fragmento com uma pontuação de similaridade abaixo deste limite será excluído dos resultados. Por padrão, o limite é definido como 20. Isso significa que apenas os trechos com uma pontuação de similaridade híbrida de 20 ou mais serão recuperados.',
       vectorSimilarityWeight: 'Peso da similaridade de palavras-chave',
       vectorSimilarityWeightTip:
         'Define o peso da similaridade de palavras-chave na pontuação de similaridade combinada, usada com a similaridade de cosseno vetorial ou com a pontuação de reranking. O total dos dois pesos deve ser igual a 1.0.',
@@ -132,6 +136,7 @@ export default {
       runningStatus2: 'Cancelado',
       runningStatus3: 'Sucesso',
       runningStatus4: 'Falha',
+      runningStatusQueued: 'Na fila',
       pageRanges: 'Intervalos de páginas',
       pageRangesTip:
         'Intervalo de páginas a serem analisadas; páginas fora deste intervalo não serão processadas.',
@@ -141,7 +146,7 @@ export default {
       toMessage: 'Página final ausente (excluída)',
       layoutRecognize: 'Reconhecimento de layout',
       layoutRecognizeTip:
-        'Use modelos visuais para análise de layout para entender melhor a estrutura do documento e localizar efetivamente títulos, blocos de texto, imagens e tabelas. Se desativado, apenas o texto simples no PDF será recuperado. Para mais informações, acesse https://ragflow.io/docs/dev/select_pdf_parser.',
+        'Use modelos visuais para análise de layout para entender melhor a estrutura do documento e localizar efetivamente títulos, blocos de texto, imagens e tabelas. Se desativado, apenas o texto simples no PDF será recuperado. Para mais informações, acesse https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
       taskPageSize: 'Tamanho da página da tarefa',
       taskPageSizeMessage: 'Por favor, insira o tamanho da página da tarefa!',
       taskPageSizeTip:
@@ -170,7 +175,7 @@ export default {
         'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \\n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula. Defina os delimitadores apenas após entender o mecanismo de segmentação e particionamento de texto.',
       html4excel: 'Excel para HTML',
       html4excelTip:
-        'Use em conjunto com o método de fragmentação General. Quando desativado, arquivos de planilhas (XLSX, XLS (Excel 97-2003)) serão analisados linha por linha como pares chave-valor. Quando ativado, os arquivos de planilhas serão convertidos em tabelas HTML. Se a tabela original tiver mais de 12 linhas, o sistema dividirá automaticamente em várias tabelas HTML a cada 12 linhas. Para mais informações, consulte https://ragflow.io/docs/dev/enable_excel2html.',
+        'Use em conjunto com o método de fragmentação General. Quando desativado, arquivos de planilhas (XLSX, XLS (Excel 97-2003)) serão analisados linha por linha como pares chave-valor. Quando ativado, os arquivos de planilhas serão convertidos em tabelas HTML. Se a tabela original tiver mais de 12 linhas, o sistema dividirá automaticamente em várias tabelas HTML a cada 12 linhas. Para mais informações, consulte https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.',
       autoKeywords: 'Palavras-chave automáticas',
       autoKeywordsTip:
         'Extraia automaticamente N palavras-chave de cada bloco para aumentar sua classificação em consultas que contenham essas palavras-chave. Esteja ciente de que o modelo de chat especificado nas "Configurações do modelo do sistema" consumirá tokens adicionais. Você pode verificar ou atualizar as palavras-chave adicionadas a um bloco na lista de blocos. Para mais detalhes, consulte https://ragflow.io/docs/dev/autokeyword_autoquestion.',
@@ -289,7 +294,7 @@ export default {
       entityTypes: 'Tipos de entidades',
       vietnamese: 'Vietnamita',
       pageRank: 'Ranking de páginas',
-      pageRankTip: `Você pode atribuir uma pontuação PageRank mais alta a bases de conhecimento específicas durante a recuperação. A pontuação correspondente é adicionada às pontuações de similaridade híbrida dos fragmentos recuperados dessas bases de conhecimento, aumentando sua classificação. Veja https://ragflow.io/docs/dev/set_page_rank para mais detalhes.`,
+      pageRankTip: `Você pode atribuir uma pontuação PageRank mais alta a bases de conhecimento específicas durante a recuperação. A pontuação correspondente é adicionada às pontuações de similaridade híbrida dos fragmentos recuperados dessas bases de conhecimento, aumentando sua classificação. Veja https://ragflow.io/docs/dataset_configuration#basic-information para mais detalhes.`,
       tagName: 'Etiqueta',
       frequency: 'Frequência',
       searchTags: 'Pesquisar etiquetas',
@@ -306,7 +311,7 @@ export default {
         <li>É necessário enviar conjuntos de etiquetas com exemplos antes de usá-los.</li>
         <li>Palavras-chave são geradas pelo LLM, o que é caro e demorado.</li>
       </ul>
-      <p>Consulte https://ragflow.io/docs/dev/use_tag_sets para obter detalhes.</p>`,
+      <p>Consulte https://ragflow.io/docs/dataset_configuration#basic-information para obter detalhes.</p>`,
       topnTags: 'Top-N Etiquetas',
       tags: 'Etiquetas',
       addTag: 'Adicionar etiqueta',
@@ -315,15 +320,19 @@ export default {
       paddleocrApiUrlTip: 'A URL do endpoint da API para o serviço PaddleOCR',
       paddleocrApiUrlPlaceholder: 'ex: https://servidor-paddleocr.com/api',
       paddleocrAccessToken: 'Token de Acesso do AI Studio',
-      paddleocrAccessTokenTip: 'Token de acesso para a API do PaddleOCR (opcional)',
+      paddleocrAccessTokenTip:
+        'Token de acesso para a API do PaddleOCR (opcional)',
       paddleocrAccessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
       paddleocrAlgorithm: 'Algoritmo do PaddleOCR',
-      paddleocrAlgorithmTip: 'Algoritmo a ser usado para a análise do PaddleOCR',
+      paddleocrAlgorithmTip:
+        'Algoritmo a ser usado para a análise do PaddleOCR',
       paddleocrSelectAlgorithm: 'Selecionar algoritmo',
       paddleocrModelNamePlaceholder: 'ex: paddleocr-do-ambiente-1',
     },
     chunk: {
       chunk: 'Fragmento',
+      createChunk: 'Criar fragmento',
+      editChunk: 'Editar fragmento',
       bulk: 'Em massa',
       selectAll: 'Selecionar tudo',
       enabledSelected: 'Ativar selecionados',
@@ -344,6 +353,9 @@ export default {
       questionTip: `Se houver perguntas fornecidas, a incorporação do fragmento será baseada nelas.`,
     },
     chat: {
+      chatSupport: 'Suporte por chat',
+      replyInstantly: 'Normalmente respondemos instantaneamente',
+      typeYourMessage: 'Digite sua mensagem...',
       newConversation: 'Nova conversa',
       createAssistant: 'Criar um Assistente',
       assistantSetting: 'Configuração do Assistente',
@@ -381,7 +393,7 @@ export default {
       topN: 'Top N',
       topNTip: `Nem todos os fragmentos com pontuação de similaridade acima do 'limiar de similaridade' serão enviados ao LLM. Isso seleciona os 'Top N' fragmentos recuperados.`,
       variable: 'Variável',
-      variableTip: `Usados em conjunto com as APIs de gerenciamento de assistente de bate-papo do RAGFlow, as variáveis podem ajudar a desenvolver estratégias de prompt do sistema mais flexíveis. As variáveis definidas serão usadas pelo 'Prompt do sistema' como parte dos prompts para o LLM. {knowledge} é uma variável especial reservada que representa partes recuperadas de base(s) de conhecimento especificada(s), e todas as variáveis devem ser cercadas por chaves {} no 'Prompt do sistema'. Veja https://ragflow.io/docs/dev/set_chat_variables para mais detalhes.`,
+      variableTip: `Usados em conjunto com as APIs de gerenciamento de assistente de bate-papo do RAGFlow, as variáveis podem ajudar a desenvolver estratégias de prompt do sistema mais flexíveis. As variáveis definidas serão usadas pelo 'Prompt do sistema' como parte dos prompts para o LLM. {knowledge} é uma variável especial reservada que representa partes recuperadas de base(s) de conhecimento especificada(s), e todas as variáveis devem ser cercadas por chaves {} no 'Prompt do sistema'. Veja https://ragflow.io/docs/chat_configuration#system-prompt para mais detalhes.`,
       add: 'Adicionar',
       key: 'Chave',
       optional: 'Opcional',
@@ -411,7 +423,7 @@ export default {
         'Semelhante à penalidade de presença, isso reduz a tendência do modelo de repetir as mesmas palavras frequentemente.',
       maxTokens: 'Máximo de tokens',
       maxTokensMessage: 'O máximo de tokens é obrigatório',
-      maxTokensTip: `Define o comprimento máximo da saída do modelo, medido pelo número de tokens (palavras ou partes de palavras). O padrão é 512. Se desativado, você remove o limite máximo de tokens, permitindo que o modelo determine o número de tokens em suas respostas.`,
+      maxTokensTip: `O tamanho máximo de contexto do modelo; um valor inválido ou incorreto causará um erro. Padrão: 512.`,
       maxTokensInvalidMessage:
         'Por favor, insira um número válido para o máximo de tokens.',
       maxTokensMinMessage: 'O máximo de tokens não pode ser menor que 0.',
@@ -462,6 +474,12 @@ export default {
         'Isso otimiza as consultas dos usuários usando o contexto em uma conversa de múltiplas rodadas. Quando ativado, consumirá tokens adicionais do LLM.',
       howUseId: 'Como usar o ID do chat?',
       description: 'Descrição do assistente',
+      showChunkMetadata: 'Exibir metadados do trecho',
+      showChunkMetadataTip:
+        'Exibir metadados do documento (título, número de página, data de upload, etc.) junto aos trechos de texto recuperados',
+      metadataFields: 'Campos de metadados',
+      metadataFieldsTip:
+        'Selecione os campos de metadados a exibir em cada trecho',
     },
     setting: {
       profile: 'Perfil',
@@ -469,7 +487,7 @@ export default {
       profileDescription: 'Atualize sua foto e detalhes pessoais aqui.',
       maxTokens: 'Máximo de Tokens',
       maxTokensMessage: 'Máximo de Tokens é obrigatório',
-      maxTokensTip: `Isso define o comprimento máximo da saída do modelo, medido em número de tokens (palavras ou partes de palavras). O padrão é 512. Se desativado, você remove o limite máximo de tokens, permitindo que o modelo determine o número de tokens em suas respostas.`,
+      maxTokensTip: `O tamanho máximo de contexto do modelo; um valor inválido ou incorreto causará um erro. Padrão: 512.`,
       maxTokensInvalidMessage:
         'Por favor, insira um número válido para Máximo de Tokens.',
       maxTokensMinMessage: 'O Máximo de Tokens não pode ser menor que 0.',
@@ -515,11 +533,13 @@ export default {
         'A chave da API pode ser obtida registrando-se no fornecedor correspondente do LLM.',
       showMoreModels: 'Mostrar mais modelos',
       hideModels: 'Ocultar modelos',
-      baseUrl: 'URL Base',
+      baseUrl: 'URL BASE',
       baseUrlTip:
         'Se sua chave da API for do OpenAI, ignore isso. Outros provedores intermediários fornecerão essa URL base com a chave da API.',
       tongyiBaseUrlTip:
         'Para usuários chineses, não é necessário preencher ou usar https://dashscope.aliyuncs.com/compatible-mode/v1. Para usuários internacionais, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Para usuários chineses, não é necessário preencher ou usar https://api.siliconflow.cn/v1. Para usuários internacionais, use https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         '(Apenas para usuários internacionais, consulte a dica)',
       minimaxBaseUrlTip:
@@ -556,34 +576,35 @@ export default {
       modelType: 'Tipo de modelo',
       modelTypeMessage: 'Por favor, insira o tipo do seu modelo!',
       addLlmBaseUrl: 'URL base',
-      baseUrlNameMessage: 'Por favor, insira sua URL base!',
+      baseUrlNameMessage: 'Por favor, insira sua URL base',
       paddleocr: {
         apiUrl: 'URL da API do PaddleOCR',
-        apiUrlPlaceholder: 'Por exemplo: https://paddleocr-server.com/layout-parsing',
+        apiUrlPlaceholder:
+          'Por exemplo: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token de acesso do AI Studio',
         accessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
         algorithm: 'Algoritmo do PaddleOCR',
         selectAlgorithm: 'Selecionar algoritmo',
         modelNamePlaceholder: 'Por exemplo: paddleocr-from-env-1',
         modelNameRequired: 'O nome do modelo é obrigatório',
-        apiUrlRequired: 'A URL da API do PaddleOCR é obrigatória'
+        apiUrlRequired: 'A URL da API do PaddleOCR é obrigatória',
       },
       vision: 'Suporta visão?',
       ollamaLink: 'Como integrar {{name}}',
       FishAudioLink: 'Como usar FishAudio',
       TencentCloudLink: 'Como usar TencentCloud ASR',
       volcModelNameMessage: 'Por favor, insira o nome do seu modelo!',
-      addEndpointID: 'EndpointID do modelo',
-      endpointIDMessage: 'Por favor, insira o EndpointID do modelo',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Por favor, insira o Model ID do modelo',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Por favor, insira sua ARK_API_KEY',
-      bedrockModelNameMessage: 'Por favor, insira o nome do seu modelo!',
+      bedrockModelNameMessage: 'Por favor, insira o nome do seu modelo',
       addBedrockEngineAK: 'CHAVE DE ACESSO',
       bedrockAKMessage: 'Por favor, insira sua CHAVE DE ACESSO',
       addBedrockSK: 'CHAVE SECRETA',
       bedrockSKMessage: 'Por favor, insira sua CHAVE SECRETA',
       bedrockRegion: 'Região AWS',
-      bedrockRegionMessage: 'Por favor, selecione!',
+      bedrockRegionMessage: 'Por favor, selecione',
       'us-east-1': 'Leste dos EUA (N. Virgínia)',
       'us-west-2': 'Oeste dos EUA (Oregon)',
       'ap-southeast-1': 'Ásia-Pacífico (Singapura)',
@@ -591,14 +612,10 @@ export default {
       'eu-central-1': 'Europa (Frankfurt)',
       'us-gov-west-1': 'AWS GovCloud (EUA-Oeste)',
       'ap-southeast-2': 'Ásia-Pacífico (Sydney)',
-      addHunyuanSID: 'Hunyuan Secret ID',
-      HunyuanSIDMessage: 'Por favor, insira seu Secret ID',
-      addHunyuanSK: 'Hunyuan Secret Key',
-      HunyuanSKMessage: 'Por favor, insira sua Secret Key',
       addTencentCloudSID: 'TencentCloud Secret ID',
       TencentCloudSIDMessage: 'Por favor, insira seu Secret ID',
-      addTencentCloudSK: 'TencentCloud Secret Key',
-      TencentCloudSKMessage: 'Por favor, insira sua Secret Key',
+      addTencentCloudSK: 'TencentCloud SECRET KEY',
+      TencentCloudSKMessage: 'Por favor, insira sua SECRET KEY',
       SparkModelNameMessage: 'Por favor, selecione o modelo Spark',
       addSparkAPIPassword: 'Senha da API Spark',
       SparkAPIPasswordMessage: 'Por favor, insira sua senha da API',
@@ -636,6 +653,8 @@ export default {
       sureQuit: 'Tem certeza de que deseja sair da equipe que você ingressou?',
       modelsToBeAddedTooltip:
         'Se o seu provedor de modelo não estiver listado, mas afirmar ser compatível com a OpenAI, selecione o card OpenAI-API-compatible para adicionar o(s) modelo(s) relevante(s). ',
+      dingtalkAITableDescription:
+        'Conecte-se ao Dingtalk AI Table e sincronize registros de uma tabela especificada.',
     },
     message: {
       registered: 'Registrado!',
@@ -687,13 +706,13 @@ export default {
       uploadTitle:
         'Clique ou arraste o arquivo para esta área para fazer o upload',
       uploadDescription:
-        'O RAGFlow suporta o upload de arquivos de forma individual ou em lote. Para o RAGFlow implantado localmente: o limite total de tamanho de arquivo por upload é de 1GB, com um limite de upload em lote de 32 arquivos. Não há limite para o número total de arquivos por conta. Para o demo.ragflow.io: o limite total de tamanho de arquivo por upload é de 10MB, com cada arquivo não excedendo 10MB e um máximo de 128 arquivos por conta.',
+        'O RAGFlow suporta o upload de arquivos de forma individual ou em lote. Para o RAGFlow implantado localmente: o limite total de tamanho de arquivo por upload é de 1GB, com um limite de upload em lote de 32 arquivos. Não há limite para o número total de arquivos por conta. Para o cloud.ragflow.io: o limite total de tamanho de arquivo por upload é de 10MB, com cada arquivo não excedendo 10MB e um máximo de 128 arquivos por conta.',
       local: 'Uploads locais',
       s3: 'Uploads S3',
       preview: 'Pré-visualização',
       fileError: 'Erro no arquivo',
       uploadLimit:
-        'O RAGFlow suporta o upload de arquivos de forma individual ou em lote. Para o RAGFlow implantado localmente: o limite total de tamanho de arquivo por upload é de 1GB, com um limite de upload em lote de 32 arquivos. Não há limite para o número total de arquivos por conta. Para o demo.ragflow.io: o limite total de tamanho de arquivo por upload é de 10MB, com cada arquivo não excedendo 10MB e um máximo de 128 arquivos por conta.',
+        'O RAGFlow suporta o upload de arquivos de forma individual ou em lote. Para o RAGFlow implantado localmente: o limite total de tamanho de arquivo por upload é de 1GB, com um limite de upload em lote de 32 arquivos. Não há limite para o número total de arquivos por conta. Para o cloud.ragflow.io: o limite total de tamanho de arquivo por upload é de 10MB, com cada arquivo não excedendo 10MB e um máximo de 128 arquivos por conta.',
       destinationFolder: 'Pasta de destino',
     },
     flow: {
@@ -762,10 +781,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Um componente que realiza buscas via URL da instância SearXNG que você fornece. Especifique TopN e URL da instância.',
-      pdfGenerator: 'Gerador de Documentos',
-      pDFGenerator: 'Gerador de Documentos',
-      pdfGeneratorDescription: `Um componente que gera documentos (PDF, DOCX, TXT) de conteúdo formatado em markdown com estilo personalizável, imagens e tabelas. Suporta: **negrito**, *itálico*, # títulos, - listas, tabelas com sintaxe |.`,
-      pDFGeneratorDescription: `Um componente que gera documentos (PDF, DOCX, TXT) de conteúdo formatado em markdown com estilo personalizável, imagens e tabelas. Suporta: **negrito**, *itálico*, # títulos, - listas, tabelas com sintaxe |.`,
+      docGenerator: 'Gerador de Documentos',
+      docGeneratorDescription: `Gera um arquivo a partir de conteúdo Markdown.`,
       subtitle: 'Subtítulo',
       logoImage: 'Imagem Logo',
       logoPosition: 'Posição Logo',
@@ -1131,11 +1148,12 @@ export default {
 
       emailComponent: 'Email',
       emailDescription: 'Enviar um email para um endereço especificado.',
-      smtpServer: 'Servidor SMTP',
+      smtpServer: 'Host SMTP',
       smtpPort: 'Porta SMTP',
-      senderEmail: 'Email do remetente',
-      authCode: 'Código de autorização',
-      senderName: 'Nome do remetente',
+      senderEmail: 'Endereço do remetente (From)',
+      smtpUsername: 'Usuário de login SMTP',
+      authCode: 'Senha SMTP / senha de app',
+      senderName: 'Nome de exibição do remetente',
       toEmail: 'Email do destinatário',
       ccEmail: 'Email CC',
       emailSubject: 'Assunto',
@@ -1185,6 +1203,11 @@ export default {
         'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
       promptMessage: 'O prompt é obrigatório',
       runningHintText: 'está rodando...🕞',
+      canvasCategory: 'Categoria de canvas',
+      tags: 'Tags',
+      created: 'Criado',
+      id: 'ID',
+      logTitle: 'Título',
     },
     footer: {
       profile: 'Todos os direitos reservados @ React',
@@ -1193,6 +1216,15 @@ export default {
       file: 'arquivo',
       knowledge: 'conhecimento',
       chat: 'bate-papo',
+    },
+    language: {
+      english: 'Inglês',
+      chinese: 'Chinês',
+      russian: 'Russo',
+      bulgarian: 'Búlgaro',
+      arabic: 'Árabe',
+      turkish: 'Turco',
+      korean: 'Coreano',
     },
   },
 };

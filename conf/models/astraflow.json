@@ -1,0 +1,236 @@
+{
+  "name": "Astraflow",
+  "url": {
+    "default": "https://api.modelverse.cn/v1",
+    "us-ca": "https://api-us-ca.umodelverse.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings",
+    "rerank": "rerank",
+    "tts": "audio/speech"
+  },
+  "class": "astraflow",
+  "models": [
+    {
+      "name": "text-embedding-3-large",
+      "max_tokens": 16384,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 512
+    },
+    {
+      "name": "bge-reranker-v2-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "IndexTeam/IndexTTS-2",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "claude-opus-4-7",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "claude-opus-4-6",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "claude-sonnet-4-5-20250929",
+      "context_length": 200000,
+      "max_output": 64000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "claude-haiku-4-5-20251001",
+      "context_length": 200000,
+      "max_output": 64000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.4",
+      "context_length": 1050000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.4-mini",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.4-nano",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4o-mini",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-Max",
+      "context_length": 262144,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-Coder",
+      "context_length": 262144,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-32B",
+      "context_length": 131072,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-VL-235B-A22B-Instruct",
+      "context_length": 262144,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2.6",
+      "context_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5.1",
+      "context_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "MiniMax-M2.7",
+      "context_length": 204800,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "MiniMax-M2",
+      "context_length": 204800,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-2.5-pro",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-2.5-flash",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}

@@ -5,6 +5,7 @@ export const BeginFormSchema = z.object({
   enablePrologue: z.boolean().optional(),
   prologue: z.string().trim().optional(),
   mode: z.string(),
+  layout_recognize: z.string().optional(),
   inputs: z
     .array(
       z.object({
@@ -28,6 +29,7 @@ export const BeginFormSchema = z.object({
         per: z.string().optional(),
       }),
       max_body_size: z.string(),
+      allow_anonymous: z.boolean().optional(),
       jwt: z
         .object({
           algorithm: z.string().default(WebhookJWTAlgorithmList[0]).optional(),

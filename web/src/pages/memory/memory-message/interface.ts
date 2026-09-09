@@ -10,7 +10,17 @@ export interface IMessageInfo {
   invalid_at: string;
   forget_at: string;
   status: boolean;
-  extract?: IMessageInfo[];
+  extract?: Omit<IMessageInfo, 'task'>[];
+  task: {
+    chunk_ids: string;
+    create_time: number;
+    digest: string;
+    doc_id: string;
+    from_page: number;
+    id: string;
+    progress: number;
+    progress_msg: string;
+  };
 }
 
 export interface IMessageTableProps {

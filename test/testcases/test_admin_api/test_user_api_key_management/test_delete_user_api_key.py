@@ -25,7 +25,7 @@ from configs import EMAIL, HOST_ADDRESS, PASSWORD, VERSION
 
 
 class TestDeleteUserApiKey:
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_delete_user_api_key_success(self, admin_session: requests.Session) -> None:
         """Test successfully deleting an API key for a user"""
         user_name: str = EMAIL
@@ -45,7 +45,7 @@ class TestDeleteUserApiKey:
         message: str = delete_response.get("message", "")
         assert message == "API key deleted successfully", f"Message should indicate success, got: {message}"
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     def test_user_api_key_removed_from_list_after_deletion(self, admin_session: requests.Session) -> None:
         """Test that deleted API key is removed from the list"""
         user_name: str = EMAIL
@@ -151,13 +151,13 @@ class TestDeleteUserApiKey:
         user_name: str = EMAIL
 
         # create second user
-        url: str = HOST_ADDRESS + f"/{VERSION}/user/register"
+        url: str = HOST_ADDRESS + f"/api/{VERSION}/users"
         user2_email: str = "qa2@ragflow.io"
         register_data: dict[str, str] = {"email": user2_email, "nickname": "qa2", "password": PASSWORD}
         res: Any = requests.post(url=url, json=register_data)
         res: dict[str, Any] = res.json()
         if res.get("code") != 0 and "has already registered" not in res.get("message"):
-            raise Exception(f"Failed to create second user: {res.get("message")}")
+            raise Exception(f"Failed to create second user: {res.get('message')}")
 
         # Generate a token for the test user
         generate_response: dict[str, Any] = generate_user_api_key(admin_session, user_name)

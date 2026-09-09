@@ -1,29 +1,27 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { IconMap, LLMFactory } from '@/constants/llm';
 import { cn } from '@/lib/utils';
-import Icon, { UserOutlined } from '@ant-design/icons';
+import Icon from '@ant-design/icons';
 import { IconComponentProps } from '@ant-design/icons/lib/components/Icon';
-import { Avatar } from 'antd';
-import { AvatarSize } from 'antd/es/avatar/AvatarContext';
 import { memo, useMemo } from 'react';
 import { IconFontFill } from './icon-font';
+import { RAGFlowAvatar } from './ragflow-avatar';
 import { useIsDarkTheme } from './theme-provider';
-
-// const importAll = (requireContext: __WebpackModuleApi.RequireContext) => {
-//   const list = requireContext.keys().map((key) => {
-//     const name = key.replace(/\.\/(.*)\.\w+$/, '$1');
-//     return { name, value: requireContext(key) };
-//   });
-//   return list;
-// };
-
-// let routeList: { name: string; value: string }[] = [];
-
-// try {
-//   routeList = importAll(require.context('@/assets/svg', true, /\.svg$/));
-// } catch (error) {
-//   console.warn(error);
-//   routeList = [];
-// }
 
 const svgModules = import.meta.glob('@/assets/svg/**/*.svg', {
   eager: true,
@@ -37,6 +35,9 @@ const routeList: { name: string; value: string }[] = Object.entries(
   // @ts-ignore
   return { name, value: module.default || module };
 });
+
+export const hasSvgIcon = (name: string) =>
+  routeList.some((item) => item.name === name);
 
 interface IProps extends IconComponentProps {
   name: string;
@@ -73,6 +74,9 @@ const themeIcons = [
   LLMFactory.Meituan,
   LLMFactory.Longcat,
   LLMFactory.MinerU,
+  LLMFactory.MinerUNet,
+  LLMFactory.JiekouAI,
+  LLMFactory.Perplexity,
 ];
 
 const svgIcons = [
@@ -82,21 +86,45 @@ const svgIcons = [
   LLMFactory.Gemini,
   LLMFactory.StepFun,
   LLMFactory.MinerU,
+  LLMFactory.MinerUNet,
   LLMFactory.PaddleOCR,
+  LLMFactory.PaddleOCRLocal,
+  LLMFactory.N1n,
   // LLMFactory.DeerAPI,
+  LLMFactory.Avian,
+  LLMFactory.RAGcon,
+  LLMFactory.SoMark,
+  LLMFactory.NewAPI,
+  LLMFactory.Astraflow,
+  LLMFactory.AstraflowCN,
+  LLMFactory.FuturMix,
+  LLMFactory.Xiaomi,
+  LLMFactory.YouDao,
+  LLMFactory.BAAI,
+  LLMFactory.NomicAI,
+  LLMFactory.SentenceTransformers,
+  LLMFactory.Grok,
+  LLMFactory.FastEmbed,
+  LLMFactory.HuaweiCloud,
+  LLMFactory.OrcaRouter,
+  LLMFactory.Qiniu,
+  LLMFactory.TokenHub,
+  LLMFactory.FunASR,
+  LLMFactory.AIMLAPI,
+  LLMFactory.GreenPT,
+  LLMFactory.Synthorai,
+  LLMFactory.MWS,
 ];
 
 export const LlmIcon = ({
   name,
   height = 48,
   width = 48,
-  size = 'large',
   imgClass,
 }: {
   name: string;
   height?: number;
   width?: number;
-  size?: AvatarSize;
   imgClass?: string;
 }) => {
   const isDark = useIsDarkTheme();
@@ -133,7 +161,6 @@ export const LlmIcon = ({
       name={'moxing-default'}
       className={cn('size-8 flex items-center justify-center', imgClass)}
     />
-    // <Avatar shape="square" size={size} icon={<UserOutlined />} />
   );
 };
 
@@ -141,13 +168,11 @@ export const HomeIcon = ({
   name,
   height = '32',
   width = '32',
-  size = 'large',
   imgClass,
 }: {
   name: string;
-  height?: string;
-  width?: string;
-  size?: AvatarSize;
+  height?: string | number;
+  width?: string | number;
   imgClass?: string;
 }) => {
   const isDark = useIsDarkTheme();
@@ -161,7 +186,7 @@ export const HomeIcon = ({
       imgClass={imgClass}
     ></SvgIcon>
   ) : (
-    <Avatar shape="square" size={size} icon={<UserOutlined />} />
+    <RAGFlowAvatar avatar={'user'}></RAGFlowAvatar>
   );
 };
 

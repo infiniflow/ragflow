@@ -1,0 +1,50 @@
+{
+  "name": "Gemini",
+  "rank": 997,
+  "url": {
+    "default": "https://generativelanguage.googleapis.com"
+  },
+  "url_suffix": {
+    "models": "v1beta/models"
+  },
+  "class": "gemini",
+  "models": [
+    {
+      "name": "gemini-2.5-flash",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "text-embedding-004",
+      "max_tokens": 2048,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 100
+    }
+  ],
+  "features": {
+    "thinking": {
+      "default_value": true,
+      "supported_models": [
+        "gemini-2.5-flash"
+      ]
+    },
+    "reasoning_effort": {
+      "default_value": "high",
+      "supported_modes": [
+        "gemini-2.5-flash"
+      ]
+    }
+  }
+}

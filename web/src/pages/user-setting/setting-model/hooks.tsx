@@ -1,375 +1,157 @@
-import { LLMFactory } from '@/constants/llm';
-import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import { useSetModalState } from '@/hooks/common-hooks';
 import {
-  IApiKeySavingParams,
-  ISystemModelSettingSavingParams,
-  useAddLlm,
-  useDeleteFactory,
-  useDeleteLlm,
-  useEnableLlm,
-  useSaveApiKey,
-  useSaveTenantInfo,
-  useSelectLlmOptionsByModelType,
+  useAddInstanceModel,
+  useAddProviderInstance,
+  useFetchAddedProviders,
+  useFetchProviderInstances,
+  useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
-import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { getRealModelName } from '@/utils/llm-util';
-import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState } from 'react';
-import { ApiKeyPostBody } from '../interface';
-import { MinerUFormValues } from './modal/mineru-modal';
+import {
+  IAddProviderInstanceRequestBody,
+  IModelInfo,
+} from '@/interfaces/request/llm';
+import { useCallback, useMemo, useState } from 'react';
+import { splitProviderPayload } from './payload-utils';
 
-type SavingParamsState = Omit<IApiKeySavingParams, 'api_key'>;
-
-export const useSubmitApiKey = () => {
-  const [savingParams, setSavingParams] = useState<SavingParamsState>(
-    {} as SavingParamsState,
-  );
-  const [editMode, setEditMode] = useState(false);
-  const { saveApiKey, loading } = useSaveApiKey();
-  const {
-    visible: apiKeyVisible,
-    hideModal: hideApiKeyModal,
-    showModal: showApiKeyModal,
-  } = useSetModalState();
-  const queryClient = useQueryClient();
-  const onApiKeySavingOk = useCallback(
-    async (postBody: ApiKeyPostBody) => {
-      const ret = await saveApiKey({
-        ...savingParams,
-        ...postBody,
-      });
-
-      if (ret === 0) {
-        queryClient.invalidateQueries({ queryKey: ['llmList'] });
-        hideApiKeyModal();
-        setEditMode(false);
-      }
-    },
-    [hideApiKeyModal, saveApiKey, savingParams, queryClient],
-  );
-
-  const onShowApiKeyModal = useCallback(
-    (savingParams: SavingParamsState, isEdit = false) => {
-      setSavingParams(savingParams);
-      setEditMode(isEdit);
-      showApiKeyModal();
-    },
-    [showApiKeyModal, setSavingParams],
-  );
-
-  return {
-    saveApiKeyLoading: loading,
-    initialApiKey: '',
-    llmFactory: savingParams.llm_factory,
-    editMode,
-    onApiKeySavingOk,
-    apiKeyVisible,
-    hideApiKeyModal,
-    showApiKeyModal: onShowApiKeyModal,
-  };
+export type VerifyResult = {
+  isValid: boolean | null;
+  logs: string;
 };
 
-export const useSubmitSystemModelSetting = () => {
-  const { data: systemSetting } = useFetchTenantInfo();
-  const { saveTenantInfo: saveSystemModelSetting, loading } =
-    useSaveTenantInfo();
-  const {
-    visible: systemSettingVisible,
-    hideModal: hideSystemSettingModal,
-    showModal: showSystemSettingModal,
-  } = useSetModalState();
+/**
+ * Unified Provider instance submission hook
+ * Internally handles both verify and save modes
+ */
+const useSubmitProviderInstance = () => {
+  const { addProviderInstance } = useAddProviderInstance();
+  const { addInstanceModel } = useAddInstanceModel();
 
-  const onSystemSettingSavingOk = useCallback(
+  return useCallback(
+    async (payload: IAddProviderInstanceRequestBody, isVerify = false) => {
+      if (isVerify) {
+        return addProviderInstance({ ...payload, verify: true });
+      }
+
+      // Multi-model flow: when model_info is provided as an array, the
+      // backend is expected to create the instance and all listed models
+      // in a single addProviderInstance call. Skip the instance/model split.
+      if (Array.isArray((payload as any).model_info)) {
+        return addProviderInstance(payload as IAddProviderInstanceRequestBody);
+      }
+
+      const { instancePayload, modelPayload } = splitProviderPayload(payload);
+      const hasModelPayload =
+        !!modelPayload.model_name && !!modelPayload.model_type;
+
+      const instanceRet = await addProviderInstance({
+        ...instancePayload,
+        llm_factory: payload.llm_factory,
+        instance_name: payload.instance_name,
+      } as IAddProviderInstanceRequestBody);
+      if (instanceRet.code !== 0 || !hasModelPayload) {
+        return instanceRet;
+      }
+
+      if (!hasModelPayload) {
+        return { code: 0, data: null } as any;
+      }
+
+      return addInstanceModel({
+        provider_name: payload.llm_factory,
+        instance_name: payload.instance_name,
+        ...modelPayload,
+      });
+    },
+    [addProviderInstance, addInstanceModel],
+  );
+};
+
+export const useFetchInstanceNameSet = (providerName: string) => {
+  const { data: addedProviders } = useFetchAddedProviders();
+  const providerExists = useMemo(
+    () => addedProviders.some((p) => p.name === providerName),
+    [addedProviders, providerName],
+  );
+  const { data: instances } = useFetchProviderInstances(
+    providerExists ? providerName : '',
+  );
+  const instanceNameSet = useMemo(
+    () => new Set(instances.map((i) => i.instance_name)),
+    [instances],
+  );
+  return { instanceNameSet, providerExists };
+};
+
+export const useHideWhenInstanceExists = (instanceNameSet: Set<string>) => {
+  return useCallback(
+    (formValues: any) => {
+      const name = ((formValues?.instance_name as string) || '').trim();
+      return !(name && instanceNameSet.has(name));
+    },
+    [instanceNameSet],
+  );
+};
+
+export const useVerifyConnection = () => {
+  const { verifyProviderConnection } = useVerifyProviderConnection();
+
+  return useCallback(
     async (
-      payload: Omit<ISystemModelSettingSavingParams, 'tenant_id' | 'name'>,
+      providerName: string,
+      apiKey: string,
+      baseUrl?: string,
+      region?: string,
+      modelInfo?: IModelInfo[],
     ) => {
-      const ret = await saveSystemModelSetting({
-        tenant_id: systemSetting.tenant_id,
-        name: systemSetting.name,
-        ...payload,
+      const ret = await verifyProviderConnection({
+        provider_name: providerName,
+        api_key: apiKey,
+        base_url: baseUrl,
+        region: region,
+        model_info: modelInfo,
       });
 
-      if (ret === 0) {
-        hideSystemSettingModal();
+      if (ret.code === 0) {
+        return {
+          isValid: true,
+          logs: ret.message,
+        } as VerifyResult;
+      } else {
+        return {
+          isValid: false,
+          logs: ret.message,
+        } as VerifyResult;
       }
     },
-    [hideSystemSettingModal, saveSystemModelSetting, systemSetting],
+    [verifyProviderConnection],
   );
-
-  return {
-    saveSystemModelSettingLoading: loading,
-    onSystemSettingSavingOk,
-    systemSettingVisible,
-    hideSystemSettingModal,
-    showSystemSettingModal,
-  };
 };
 
-export const useFetchSystemModelSettingOnMount = () => {
-  const { data: systemSetting } = useFetchTenantInfo();
-  const allOptions = useSelectLlmOptionsByModelType();
-
-  return { systemSetting, allOptions };
-};
-
-export const useSubmitOllama = () => {
-  const [selectedLlmFactory, setSelectedLlmFactory] = useState<string>('');
-  const [editMode, setEditMode] = useState(false);
-  const [initialValues, setInitialValues] = useState<
-    Partial<IAddLlmRequestBody> & { provider_order?: string }
-  >();
-  const { addLlm, loading } = useAddLlm();
-  const {
-    visible: llmAddingVisible,
-    hideModal: hideLlmAddingModal,
-    showModal: showLlmAddingModal,
-  } = useSetModalState();
-
-  const onLlmAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const cleanedPayload = { ...payload };
-      if (!cleanedPayload.api_key || cleanedPayload.api_key.trim() === '') {
-        delete cleanedPayload.api_key;
-      }
-
-      const ret = await addLlm(cleanedPayload);
-      if (ret === 0) {
-        hideLlmAddingModal();
-        setEditMode(false);
-        setInitialValues(undefined);
-      }
-    },
-    [hideLlmAddingModal, addLlm],
-  );
-
-  const handleShowLlmAddingModal = (
-    llmFactory: string,
-    isEdit = false,
-    modelData?: any,
-    detailedData?: any,
-  ) => {
-    setSelectedLlmFactory(llmFactory);
-    setEditMode(isEdit);
-
-    if (isEdit && detailedData) {
-      const initialVals = {
-        llm_name: getRealModelName(detailedData.name),
-        model_type: detailedData.type,
-        api_base: detailedData.api_base || '',
-        max_tokens: detailedData.max_tokens || 8192,
-        api_key: '',
-      };
-      setInitialValues(initialVals);
-    } else {
-      setInitialValues(undefined);
-    }
-    showLlmAddingModal();
-  };
-
-  return {
-    llmAddingLoading: loading,
-    editMode,
-    initialValues,
-    onLlmAddingOk,
-    llmAddingVisible,
-    hideLlmAddingModal,
-    showLlmAddingModal: handleShowLlmAddingModal,
-    selectedLlmFactory,
-  };
-};
-
-export const useSubmitVolcEngine = () => {
-  const { addLlm, loading } = useAddLlm();
-  const {
-    visible: volcAddingVisible,
-    hideModal: hideVolcAddingModal,
-    showModal: showVolcAddingModal,
-  } = useSetModalState();
-
-  const onVolcAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideVolcAddingModal();
-      }
-    },
-    [hideVolcAddingModal, addLlm],
-  );
-
-  return {
-    volcAddingLoading: loading,
-    onVolcAddingOk,
-    volcAddingVisible,
-    hideVolcAddingModal,
-    showVolcAddingModal,
-  };
-};
-
-export const useSubmitHunyuan = () => {
-  const { addLlm, loading } = useAddLlm();
-  const {
-    visible: HunyuanAddingVisible,
-    hideModal: hideHunyuanAddingModal,
-    showModal: showHunyuanAddingModal,
-  } = useSetModalState();
-
-  const onHunyuanAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideHunyuanAddingModal();
-      }
-    },
-    [hideHunyuanAddingModal, addLlm],
-  );
-
-  return {
-    HunyuanAddingLoading: loading,
-    onHunyuanAddingOk,
-    HunyuanAddingVisible,
-    hideHunyuanAddingModal,
-    showHunyuanAddingModal,
-  };
-};
-
-export const useSubmitTencentCloud = () => {
-  const { addLlm, loading } = useAddLlm();
-  const {
-    visible: TencentCloudAddingVisible,
-    hideModal: hideTencentCloudAddingModal,
-    showModal: showTencentCloudAddingModal,
-  } = useSetModalState();
-
-  const onTencentCloudAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideTencentCloudAddingModal();
-      }
-    },
-    [hideTencentCloudAddingModal, addLlm],
-  );
-
-  return {
-    TencentCloudAddingLoading: loading,
-    onTencentCloudAddingOk,
-    TencentCloudAddingVisible,
-    hideTencentCloudAddingModal,
-    showTencentCloudAddingModal,
-  };
-};
-
-export const useSubmitSpark = () => {
-  const { addLlm, loading } = useAddLlm();
-  const {
-    visible: SparkAddingVisible,
-    hideModal: hideSparkAddingModal,
-    showModal: showSparkAddingModal,
-  } = useSetModalState();
-
-  const onSparkAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideSparkAddingModal();
-      }
-    },
-    [hideSparkAddingModal, addLlm],
-  );
-
-  return {
-    SparkAddingLoading: loading,
-    onSparkAddingOk,
-    SparkAddingVisible,
-    hideSparkAddingModal,
-    showSparkAddingModal,
-  };
-};
-
-export const useSubmityiyan = () => {
-  const { addLlm, loading } = useAddLlm();
-  const {
-    visible: yiyanAddingVisible,
-    hideModal: hideyiyanAddingModal,
-    showModal: showyiyanAddingModal,
-  } = useSetModalState();
-
-  const onyiyanAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideyiyanAddingModal();
-      }
-    },
-    [hideyiyanAddingModal, addLlm],
-  );
-
-  return {
-    yiyanAddingLoading: loading,
-    onyiyanAddingOk,
-    yiyanAddingVisible,
-    hideyiyanAddingModal,
-    showyiyanAddingModal,
-  };
-};
-
-export const useSubmitFishAudio = () => {
-  const { addLlm, loading } = useAddLlm();
-  const {
-    visible: FishAudioAddingVisible,
-    hideModal: hideFishAudioAddingModal,
-    showModal: showFishAudioAddingModal,
-  } = useSetModalState();
-
-  const onFishAudioAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideFishAudioAddingModal();
-      }
-    },
-    [hideFishAudioAddingModal, addLlm],
-  );
-
-  return {
-    FishAudioAddingLoading: loading,
-    onFishAudioAddingOk,
-    FishAudioAddingVisible,
-    hideFishAudioAddingModal,
-    showFishAudioAddingModal,
-  };
-};
-
-export const useSubmitGoogle = () => {
-  const { addLlm, loading } = useAddLlm();
-  const {
-    visible: GoogleAddingVisible,
-    hideModal: hideGoogleAddingModal,
-    showModal: showGoogleAddingModal,
-  } = useSetModalState();
-
-  const onGoogleAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideGoogleAddingModal();
-      }
-    },
-    [hideGoogleAddingModal, addLlm],
-  );
-
-  return {
-    GoogleAddingLoading: loading,
-    onGoogleAddingOk,
-    GoogleAddingVisible,
-    hideGoogleAddingModal,
-    showGoogleAddingModal,
-  };
-};
+// ============ Hooks for retained special modals ============
+// Bedrock has been migrated to an inline instance card
+// (BedrockInstanceCard); these legacy modal hooks are kept only
+// for backward-compat references.
 
 export const useSubmitBedrock = () => {
-  const { addLlm, loading } = useAddLlm();
+  const [saveLoading, setSaveLoading] = useState(false);
+  const submitProviderInstance = useSubmitProviderInstance();
+  const verifyConnection = useVerifyConnection();
   const {
     visible: bedrockAddingVisible,
     hideModal: hideBedrockAddingModal,
@@ -377,170 +159,46 @@ export const useSubmitBedrock = () => {
   } = useSetModalState();
 
   const onBedrockAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
+    async (payload: IAddProviderInstanceRequestBody, isVerify = false) => {
+      if (!isVerify) {
+        setSaveLoading(true);
+      }
+      const { instancePayload, modelPayload } = splitProviderPayload(payload);
+      if (isVerify) {
+        return verifyConnection(
+          payload.llm_factory as string,
+          JSON.stringify(instancePayload.api_key),
+          instancePayload.base_url,
+          instancePayload.region,
+          [modelPayload],
+        );
+      }
+      const ret = await submitProviderInstance(
+        {
+          ...instancePayload,
+          max_tokens: modelPayload.max_tokens,
+          model_info: [modelPayload],
+        },
+        false,
+      );
+      setSaveLoading(false);
+      if (ret.code === 0) {
         hideBedrockAddingModal();
       }
     },
-    [hideBedrockAddingModal, addLlm],
+    [
+      hideBedrockAddingModal,
+      submitProviderInstance,
+      setSaveLoading,
+      verifyConnection,
+    ],
   );
 
   return {
-    bedrockAddingLoading: loading,
+    bedrockAddingLoading: saveLoading,
     onBedrockAddingOk,
     bedrockAddingVisible,
     hideBedrockAddingModal,
     showBedrockAddingModal,
-  };
-};
-
-export const useSubmitAzure = () => {
-  const { addLlm, loading } = useAddLlm();
-  const {
-    visible: AzureAddingVisible,
-    hideModal: hideAzureAddingModal,
-    showModal: showAzureAddingModal,
-  } = useSetModalState();
-
-  const onAzureAddingOk = useCallback(
-    async (payload: IAddLlmRequestBody) => {
-      const ret = await addLlm(payload);
-      if (ret === 0) {
-        hideAzureAddingModal();
-      }
-    },
-    [hideAzureAddingModal, addLlm],
-  );
-
-  return {
-    AzureAddingLoading: loading,
-    onAzureAddingOk,
-    AzureAddingVisible,
-    hideAzureAddingModal,
-    showAzureAddingModal,
-  };
-};
-
-export const useHandleDeleteLlm = (llmFactory: string) => {
-  const { deleteLlm } = useDeleteLlm();
-  const showDeleteConfirm = useShowDeleteConfirm();
-
-  const handleDeleteLlm = (name: string) => {
-    showDeleteConfirm({
-      onOk: async () => {
-        deleteLlm({ llm_factory: llmFactory, llm_name: name });
-      },
-    });
-  };
-
-  return { handleDeleteLlm };
-};
-
-export const useHandleEnableLlm = (llmFactory: string) => {
-  const { enableLlm } = useEnableLlm();
-
-  const handleEnableLlm = (name: string, enable: boolean) => {
-    enableLlm({ llm_factory: llmFactory, llm_name: name, enable });
-  };
-
-  return { handleEnableLlm };
-};
-
-export const useHandleDeleteFactory = (llmFactory: string) => {
-  const { deleteFactory } = useDeleteFactory();
-  const showDeleteConfirm = useShowDeleteConfirm();
-
-  const handleDeleteFactory = () => {
-    showDeleteConfirm({
-      onOk: async () => {
-        deleteFactory({ llm_factory: llmFactory });
-      },
-    });
-  };
-
-  return { handleDeleteFactory, deleteFactory };
-};
-
-export const useSubmitMinerU = () => {
-  const { addLlm, loading } = useAddLlm();
-  const {
-    visible: mineruVisible,
-    hideModal: hideMineruModal,
-    showModal: showMineruModal,
-  } = useSetModalState();
-
-  const onMineruOk = useCallback(
-    async (payload: MinerUFormValues) => {
-      const cfg: any = {
-        ...payload,
-        mineru_delete_output:
-          (payload.mineru_delete_output ?? true) ? '1' : '0',
-      };
-      if (payload.mineru_backend !== 'vlm-http-client') {
-        delete cfg.mineru_server_url;
-      }
-      const req: IAddLlmRequestBody = {
-        llm_factory: LLMFactory.MinerU,
-        llm_name: payload.llm_name,
-        model_type: 'ocr',
-        api_key: cfg,
-        api_base: '',
-        max_tokens: 0,
-      };
-      const ret = await addLlm(req);
-      if (ret === 0) {
-        hideMineruModal();
-      }
-    },
-    [addLlm, hideMineruModal],
-  );
-
-  return {
-    mineruVisible,
-    hideMineruModal,
-    showMineruModal,
-    onMineruOk,
-    mineruLoading: loading,
-  };
-};
-
-export const useSubmitPaddleOCR = () => {
-  const { addLlm, loading } = useAddLlm();
-  const {
-    visible: paddleocrVisible,
-    hideModal: hidePaddleOCRModal,
-    showModal: showPaddleOCRModal,
-  } = useSetModalState();
-
-  const onPaddleOCROk = useCallback(
-    async (payload: any) => {
-      const cfg: any = {
-        ...payload,
-      };
-      const req: IAddLlmRequestBody = {
-        llm_factory: LLMFactory.PaddleOCR,
-        llm_name: payload.llm_name,
-        model_type: 'ocr',
-        api_key: cfg,
-        api_base: '',
-        max_tokens: 0,
-      };
-      const ret = await addLlm(req);
-      if (ret === 0) {
-        hidePaddleOCRModal();
-        return true;
-      }
-      return false;
-    },
-    [addLlm, hidePaddleOCRModal],
-  );
-
-  return {
-    paddleocrVisible,
-    hidePaddleOCRModal,
-    showPaddleOCRModal,
-    onPaddleOCROk,
-    paddleocrLoading: loading,
   };
 };

@@ -1,0 +1,116 @@
+---
+sidebar_position: 3
+title: Model Providers
+sidebar_label: Model Providers
+slug: /supported_models
+sidebar_custom_props: {
+  categoryIcon: LucideBox
+}
+---
+# Model Providers
+
+import APITable from '@site/src/components/APITable';
+
+A complete list of model providers supported by RAGFlow, which will continue to expand.
+
+```mdx-code-block
+<APITable>
+```
+
+| Provider | URL |
+| --- | --- |
+| 302.AI | `https://302.ai` |
+| aimlapi.com | `https://aimlapi.com` |
+| Anthropic | `https://www.anthropic.com` |
+| Astraflow | `https://astraflow.ucloud-global.com/en-us` |
+| Astraflow-CN | `https://astraflow.ucloud.cn/` |
+| Avian | `https://www.avian.io` |
+| Azure-OpenAI | `https://azure.microsoft.com/en-us/products/ai-services/openai-service` |
+| BaiChuan | `https://www.baichuan-ai.com` |
+| BaiduYiyan | `https://yiyan.baidu.com` |
+| Bedrock | `https://aws.amazon.com/bedrock/` |
+| Cohere | `https://cohere.com` |
+| CometAPI | `https://cometapi.com` |
+| DeepInfra | `https://deepinfra.com` |
+| DeepSeek | `https://www.deepseek.com` |
+| DeerAPI | `https://deerapi.com` |
+| Fish Audio | `https://fish.audio` |
+| FunASR | `https://github.com/modelscope/FunASR` |
+| FuturMix | `https://futurmix.ai` |
+| Gemini | `https://gemini.google.com` |
+| GiteeAI | — |
+| Google Cloud | `https://cloud.google.com` |
+| GPUStack | `https://gpustack.ai` |
+| GreenPT | `https://greenpt.ai` |
+| Groq | `https://groq.com` |
+| HuggingFace | `https://huggingface.co` |
+| Jiekou.AI | `https://jiekou.ai` |
+| Jina | `https://jina.ai` |
+| llmman | `https://github.com/llmmanorg/llmman` |
+| LM-Studio | `https://lmstudio.ai` |
+| LocalAI | `https://localai.io` |
+| LongCat | `https://longcat.chat` |
+| MiniMax | `https://www.minimaxi.com` |
+| MinerU | `https://mineru.net/` |
+| Mistral | `https://mistral.ai` |
+| Mistral OCR | — |
+| ModelScope | `https://www.modelscope.cn` |
+| Moonshot | `https://www.moonshot.cn` |
+| MWS | `https://mws.ru/docs/cloud-platform/gpt.html` |
+| n1n | — |
+| New API | — |
+| NVIDIA | `https://www.nvidia.com` |
+| NovitaAI | `https://novita.ai` |
+| Ollama | `https://ollama.com` |
+| OpenAI | `https://openai.com` |
+| OpenAI-API-Compatible | N/A |
+| OpenDataLoader | — |
+| OpenRouter | `https://openrouter.ai` |
+| PaddleOCR | — |
+| Perplexity | `https://www.perplexity.ai` |
+| PPIO | `https://ppio.com` |
+| RAGcon | — |
+| Replicate | `https://replicate.com` |
+| SILICONFLOW | `https://siliconflow.cn` |
+| SoMark | — |
+| StepFun | `https://www.stepfun.com` |
+| Synthorai             | `https://synthorai.io`                         |
+| Tencent Cloud | `https://cloud.tencent.com` |
+| Tencent Hunyuan | `https://hunyuan.tencent.com` |
+| TogetherAI | `https://www.together.ai` |
+| TokenPony | `https://tokenpony.cn` |
+| Tongyi-Qianwen | `https://tongyi.aliyun.com` |
+| Upstage | `https://www.upstage.ai` |
+| VLLM | `https://vllm.ai` |
+| VolcEngine | `https://www.volcengine.com` |
+| Voyage AI | `https://www.voyageai.com` |
+| xAI | `https://x.ai` |
+| Xiaomi | — |
+| Xinference | `https://github.com/xorbitsai/inference` |
+| XunFei Spark | `https://xinghuo.xfyun.cn` |
+| ZHIPU-AI | `https://www.zhipuai.cn` |
+
+```mdx-code-block
+</APITable>
+```
+
+:::danger IMPORTANT
+If your model is not listed here but has APIs compatible with those of OpenAI, click **OpenAI-API-Compatible** on the **Model providers** page to configure your model.
+:::
+
+## Example: AI Badgr (OpenAI-Compatible)
+
+You can use **AI Badgr** with RAGFlow via the existing OpenAI-API-Compatible provider.
+
+To configure AI Badgr:
+
+- **Provider**: `OpenAI-API-Compatible`
+- **Base URL**: `https://aibadgr.com/api/v1`
+- **API Key**: your AI Badgr API key (from the AI Badgr dashboard)
+- **Model**: any AI Badgr chat or embedding model ID, as exposed by AI Badgr's OpenAI-compatible APIs
+
+AI Badgr implements OpenAI-compatible endpoints for `/v1/chat/completions`, `/v1/embeddings`, and `/v1/models`, so no additional code changes in RAGFlow are required.
+
+:::note
+The list of supported models is extracted from [this source](https://github.com/infiniflow/ragflow/blob/main/rag/llm/__init__.py) and may not be the most current. For the latest supported model list, please refer to the Python file.
+:::

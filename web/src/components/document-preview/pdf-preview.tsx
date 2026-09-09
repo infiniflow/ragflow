@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { memo, useEffect, useRef } from 'react';
 import {
   AreaHighlight,
@@ -8,15 +24,16 @@ import {
   Popup,
 } from 'react-pdf-highlighter';
 
-import { useCatchDocumentError } from '@/components/pdf-previewer/hooks';
 import { Spin } from '@/components/ui/spin';
 // import FileError from '@/pages/document-viewer/file-error';
 import { Authorization } from '@/constants/authorization';
+import { cn } from '@/lib/utils';
 import FileError from '@/pages/document-viewer/file-error';
 import { getAuthorization } from '@/utils/authorization-util';
-import styles from './index.module.less';
+import { useCatchDocumentError } from './hooks';
 type PdfLoaderProps = React.ComponentProps<typeof PdfLoader> & {
   httpHeaders?: Record<string, string>;
+  standardFontDataUrl?: string;
 };
 
 const Loader = PdfLoader as React.ComponentType<PdfLoaderProps>;
@@ -52,9 +69,15 @@ const PdfPreview = ({
   const resetHash = () => {};
 
   useEffect(() => {
+    let timer = null;
     if (state?.length && state?.length > 0) {
-      ref?.current(state[0]);
+      timer = setTimeout(() => {
+        ref?.current(state[0]);
+      }, 100);
     }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [state]);
 
   const httpHeaders = {
@@ -63,7 +86,11 @@ const PdfPreview = ({
 
   return (
     <div
-      className={`${styles.documentContainer} rounded-[10px] overflow-hidden	${className}`}
+      className={cn(
+        'relative size-full rounded overflow-hidden',
+        '[&_.pdfViewer.removePageBorders_.page]:last-of-type:mb-0',
+        className,
+      )}
     >
       <Loader
         url={url}
@@ -74,6 +101,9 @@ const PdfPreview = ({
           </div>
         }
         workerSrc="/pdfjs-dist/pdf.worker.min.js"
+        cMapUrl="/pdfjs-dist/cmaps/"
+        cMapPacked={true}
+        standardFontDataUrl="/pdfjs-dist/standard_fonts/"
         errorMessage={<FileError>{error}</FileError>}
       >
         {(pdfDocument) => {
@@ -102,8 +132,8 @@ const PdfPreview = ({
                 screenshot,
                 isScrolledTo,
               ) => {
-                const isTextHighlight = !Boolean(
-                  highlight.content && highlight.content.image,
+                const isTextHighlight = !(
+                  highlight.content && highlight.content.image
                 );
 
                 const component = isTextHighlight ? (
@@ -143,3 +173,4 @@ const PdfPreview = ({
 };
 
 export default memo(PdfPreview);
+export { PdfPreview };

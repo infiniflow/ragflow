@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { Spin } from '@/components/ui/spin';
 import { Authorization } from '@/constants/authorization';
@@ -51,7 +67,7 @@ export const ImagePreviewer: React.FC<ImagePreviewerProps> = ({
   return (
     <div
       className={classNames(
-        'relative w-full h-full p-4 bg-background-paper border border-border-normal rounded-md image-previewer',
+        'relative w-full h-full p-4 bg-background-paper border border-border-normal rounded-md image-previewer max-h-[80vh] overflow-auto',
         className,
       )}
     >
@@ -62,14 +78,12 @@ export const ImagePreviewer: React.FC<ImagePreviewerProps> = ({
       )}
 
       {!isLoading && imageSrc && (
-        <div className="max-h-[80vh] overflow-auto p-2">
-          <img
-            src={imageSrc}
-            alt={'image'}
-            className="w-full h-auto max-w-full object-contain"
-            onLoad={() => URL.revokeObjectURL(imageSrc!)}
-          />
-        </div>
+        <img
+          src={imageSrc}
+          alt={'image'}
+          className="w-full h-auto max-w-full object-contain"
+          onLoad={() => URL.revokeObjectURL(imageSrc!)}
+        />
       )}
     </div>
   );

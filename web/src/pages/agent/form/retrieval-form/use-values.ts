@@ -1,5 +1,5 @@
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { isEmpty } from 'lodash';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { isEmpty, omit } from 'lodash';
 import { useMemo } from 'react';
 import { initialRetrievalValues } from '../../constant';
 
@@ -18,7 +18,17 @@ export function useValues(node?: RAGFlowNodeType) {
       return defaultValues;
     }
 
-    return formData;
+    // `dataset_ids` is the canonical field name today; older DSLs still
+    // persist the dataset list under `kb_ids`, so fold the legacy key in on
+    // load to keep the form and the saved DSL on a single field name.
+    const legacyKbIds = (formData as Record<string, any>)?.kb_ids;
+    const datasetIds =
+      (formData as Record<string, any>)?.dataset_ids ?? legacyKbIds ?? [];
+
+    return omit(
+      { ...(formData as Record<string, any>), dataset_ids: datasetIds },
+      'top_k',
+    );
   }, [defaultValues, node?.data?.form]);
 
   return values;

@@ -175,7 +175,7 @@ class TestChunksRetrieval:
         else:
             assert res["message"] == expected_message
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_code, expected_page_size, expected_message",
         [
@@ -194,20 +194,7 @@ class TestChunksRetrieval:
                 "",
                 marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "opensearch", "elasticsearch"], reason="elasticsearch"),
             ),
-            pytest.param(
-                {"top_k": -1},
-                100,
-                4,
-                "must be greater than 0",
-                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in ["infinity", "opensearch"], reason="Infinity"),
-            ),
-            pytest.param(
-                {"top_k": -1},
-                100,
-                4,
-                "3014",
-                marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "opensearch", "elasticsearch"], reason="elasticsearch"),
-            ),
+            ({"top_k": -1}, 100, 4, "must be greater than 0"),
             pytest.param(
                 {"top_k": "a"},
                 100,
@@ -272,7 +259,7 @@ class TestChunksRetrieval:
         [
             ({"highlight": True}, 0, True, ""),
             ({"highlight": "True"}, 0, True, ""),
-            pytest.param({"highlight": False}, 0, False, "", marks=pytest.mark.skip(reason="issues/6648")),
+            ({"highlight": False}, 0, False, ""),
             ({"highlight": "False"}, 0, False, ""),
             pytest.param({"highlight": None}, 0, False, "", marks=pytest.mark.skip(reason="issues/6648")),
         ],

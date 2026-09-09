@@ -20,6 +20,7 @@ import tempfile
 
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from rag.nlp import rag_tokenizer, tokenize
 
 
@@ -29,27 +30,27 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
 
     # is it English
     is_english = lang.lower() == "english"  # is_english(sections)
+    tmp_path = ""
     try:
         _, ext = os.path.splitext(filename)
         if not ext:
             raise RuntimeError("No extension detected.")
 
-        if ext not in [".da", ".wave", ".wav", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma",
-                       ".realaudio", ".vqf", ".oggvorbis", ".aac", ".ape"]:
+        if ext not in [".da", ".wave", ".wav", ".mp3", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma", ".realaudio", ".vqf", ".oggvorbis", ".ape"]:
             raise RuntimeError(f"Extension {ext} is not supported yet.")
 
-        tmp_path = ""
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmpf:
             tmpf.write(binary)
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
 
         callback(0.1, "USE Sequence2Txt LLM to transcription the audio")
-        seq2txt_mdl = LLMBundle(tenant_id, LLMType.SPEECH2TEXT, lang=lang)
+        seq2txt_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.ASR)
+        seq2txt_mdl = LLMBundle(tenant_id, seq2txt_model_config, lang=lang)
         ans = seq2txt_mdl.transcription(tmp_path)
         callback(0.8, "Sequence2Txt LLM respond: %s ..." % ans[:32])
 
-        tokenize(doc, ans, is_english)
+        tokenize(doc, ans, is_english, language=lang)
         return [doc]
     except Exception as e:
         callback(prog=-1, msg=str(e))

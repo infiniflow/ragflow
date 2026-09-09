@@ -1,0 +1,188 @@
+{
+  "name": "Mistral",
+  "url": {
+    "default": "https://api.mistral.ai"
+  },
+  "url_suffix": {
+    "chat": "v1/chat/completions",
+    "models": "v1/models",
+    "embedding": "v1/embeddings",
+    "asr": "v1/audio/transcriptions",
+    "tts": "v1/audio/speech",
+    "ocr": "v1/ocr"
+  },
+  "class": "mistral",
+  "models": [
+    {
+      "name": "mistral-large-latest",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "voxtral-mini-tts-2603",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "voxtral-mini-transcribe-realtime-2602",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "mistral-medium-latest",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "mistral-small-latest",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "ministral-8b-latest",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "ministral-3b-latest",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "pixtral-large-latest",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "codestral-latest",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "open-mistral-nemo",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "open-mistral-7b",
+      "context_length": 32768,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "open-mixtral-8x7b",
+      "context_length": 32768,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "open-mixtral-8x22b",
+      "context_length": 65536,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "magistral-medium-latest",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "magistral-small-latest",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "mistral-embed",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 16
+    },
+    {
+      "name": "mistral-ocr-2512",
+      "max_tokens": 8192,
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
+}

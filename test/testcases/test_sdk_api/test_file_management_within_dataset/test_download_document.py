@@ -17,7 +17,91 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import bulk_upload_documents
+from ragflow_sdk.modules.document import Document
 from utils import compare_by_hash
+
+
+class _DownloadResponse:
+    def __init__(self, content, payload, headers=None):
+        self.content = content
+        self._payload = payload
+        self.headers = headers or {}
+
+    def json(self):
+        if isinstance(self._payload, Exception):
+            raise self._payload
+        return self._payload
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "content,payload",
+    [
+        (b"[]", []),
+        (b"[1, 2]", [1, 2]),
+        (b"null", None),
+        (b'"hello"', "hello"),
+        (b"42", 42),
+        (
+            b'{"code": 0, "message": "file content"}',
+            {"code": 0, "message": "file content"},
+        ),
+    ],
+)
+def test_download_preserves_attached_json_bytes(monkeypatch, content, payload):
+    response = _DownloadResponse(
+        content,
+        payload,
+        {"Content-Disposition": 'attachment; filename="sample.json"'},
+    )
+    document = Document(None, {"id": "doc", "dataset_id": "dataset"})
+    monkeypatch.setattr(document, "get", lambda *_args, **_kwargs: response)
+
+    assert document.download() == content
+
+
+@pytest.mark.p2
+def test_download_still_raises_api_error_without_attachment(monkeypatch):
+    response = _DownloadResponse(
+        b'{"code": 102, "message": "document not found"}',
+        {"code": 102, "message": "document not found"},
+        {"Content-Type": "application/json"},
+    )
+    document = Document(None, {"id": "doc", "dataset_id": "dataset"})
+    monkeypatch.setattr(document, "get", lambda *_args, **_kwargs: response)
+
+    with pytest.raises(Exception, match="document not found"):
+        document.download()
+
+
+@pytest.mark.p2
+def test_download_raises_api_error_with_extra_response_fields(monkeypatch):
+    response = _DownloadResponse(
+        b'{"code": 102, "message": "document not found", "data": null}',
+        {"code": 102, "message": "document not found", "data": None},
+        {"Content-Type": "application/json"},
+    )
+    document = Document(None, {"id": "doc", "dataset_id": "dataset"})
+    monkeypatch.setattr(document, "get", lambda *_args, **_kwargs: response)
+
+    with pytest.raises(Exception, match="document not found"):
+        document.download()
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "content,payload",
+    [
+        (b'{"code": 0, "message": "success"}', {"code": 0, "message": "success"}),
+        (b"plain text", ValueError("not JSON")),
+    ],
+)
+def test_download_preserves_non_error_content_without_attachment(monkeypatch, content, payload):
+    response = _DownloadResponse(content, payload, {"Content-Type": "application/json"})
+    document = Document(None, {"id": "doc", "dataset_id": "dataset"})
+    monkeypatch.setattr(document, "get", lambda *_args, **_kwargs: response)
+
+    assert document.download() == content
 
 
 @pytest.mark.p1
@@ -63,6 +147,18 @@ class TestDocumentDownload:
             with download_path.open("wb") as f:
                 f.write(documents[0].download())
             assert compare_by_hash(ragflow_tmp_dir / "ragflow_test_upload_0.txt", download_path), f"Downloaded file {i} does not match original"
+
+    @pytest.mark.p2
+    def test_download_error_json_raises(self, add_documents):
+        dataset, documents = add_documents
+        document = documents[0]
+        invalid_document = document.__class__(
+            document.rag,
+            {"id": "missing-document-id-for-download", "dataset_id": dataset.id},
+        )
+        with pytest.raises(Exception) as exception_info:
+            invalid_document.download()
+        assert str(exception_info.value), exception_info
 
 
 @pytest.mark.p3

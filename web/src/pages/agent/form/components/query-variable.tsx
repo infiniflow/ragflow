@@ -8,16 +8,19 @@ import {
 import { ReactNode } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { JsonSchemaDataType } from '../../constant';
+import { JsonSchemaDataType, VariableType } from '../../constant';
 import {
   BuildQueryVariableOptions,
   useFilterQueryVariableOptionsByTypes,
 } from '../../hooks/use-get-begin-query';
 import { GroupedSelectWithSecondaryMenu } from './select-with-secondary-menu';
 
+// Union type to support both JsonSchemaDataType and VariableType for filtering
+type QueryVariableType = JsonSchemaDataType | VariableType;
+
 type QueryVariableProps = {
   name?: string;
-  types?: JsonSchemaDataType[];
+  types?: QueryVariableType[];
   label?: ReactNode;
   hideLabel?: boolean;
   className?: string;
@@ -73,9 +76,9 @@ export function QueryVariable({
       name={name}
       render={({ field }) => (
         <FormItem className={className}>
-          {hideLabel || label || (
-            <FormLabel tooltip={t('flow.queryTip')}>
-              {t('flow.query')}
+          {hideLabel || (
+            <FormLabel tooltip={label ? undefined : t('flow.queryTip')}>
+              {label || t('flow.query')}
             </FormLabel>
           )}
           <FormControl>{renderWidget(field.value, field.onChange)}</FormControl>

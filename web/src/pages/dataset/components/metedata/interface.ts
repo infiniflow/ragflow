@@ -1,6 +1,10 @@
 import { ReactNode } from 'react';
-import { MetadataType } from './hook';
-export type IMetaDataReturnType = Record<string, Array<Array<string | number>>>;
+import { MetadataType } from './constant';
+export type IMetaDataReturnType = Record<
+  string,
+  | { type: string; values: Array<Array<string | number>> }
+  | Array<Array<string | number>>
+>;
 export type IMetaDataReturnJSONType = Record<
   string,
   Array<string | number> | string
@@ -8,6 +12,7 @@ export type IMetaDataReturnJSONType = Record<
 
 export interface IMetaDataReturnJSONSettingItem {
   key: string;
+  type?: string;
   description?: string;
   enum?: string[];
 }
@@ -32,11 +37,11 @@ export type IMetaDataReturnJSONSettings =
 
 export type MetadataValueType =
   | 'string'
-  | 'bool'
-  | 'enum'
+  | 'list'
+  // | 'bool'
+  // | 'enum'
   | 'time'
-  | 'int'
-  | 'float';
+  | 'number';
 
 export type IMetaDataTableData = {
   field: string;
@@ -52,6 +57,7 @@ export type IBuiltInMetadataItem = {
 };
 
 export type IManageModalProps = {
+  documentIds?: string[];
   title: ReactNode;
   isShowDescription?: boolean;
   isDeleteSingleValue?: boolean;
@@ -66,7 +72,16 @@ export type IManageModalProps = {
   isShowValueSwitch?: boolean;
   isVerticalShowValue?: boolean;
   builtInMetadata?: IBuiltInMetadataItem[];
+  // Skip the dataset metadata config API on save; the result is only handed
+  // to the caller via `success` (e.g. syncing into an agent node form).
+  isLocalSave?: boolean;
   success?: (data: any) => void;
+  secondTitle?: ReactNode;
+  testId?: string;
+  okButtonTestId?: string;
+  addButtonTestId?: string;
+  nestedModalTestId?: string;
+  nestedModalOkButtonTestId?: string;
 };
 
 export interface IManageValuesProps {
@@ -79,6 +94,7 @@ export interface IManageValuesProps {
   isShowValueSwitch?: boolean;
   isShowType?: boolean;
   isVerticalShowValue?: boolean;
+  isAddValueMode?: boolean;
   data: IMetaDataTableData;
   type: MetadataType;
   hideModal: () => void;
@@ -86,20 +102,25 @@ export interface IManageValuesProps {
   addUpdateValue: (
     key: string,
     originalValue: string,
-    newValue: string,
+    newValue: string | string[],
+    type?: MetadataValueType,
   ) => void;
   addDeleteValue: (key: string, value: string) => void;
+  testId?: string;
+  okButtonTestId?: string;
+  addValueButtonTestId?: string;
 }
 
-interface DeleteOperation {
+export interface DeleteOperation {
   key: string;
   value?: string;
 }
 
-interface UpdateOperation {
+export interface UpdateOperation {
   key: string;
   match: string;
-  value: string;
+  value: string | string[];
+  valueType?: MetadataValueType;
 }
 
 export interface MetadataOperations {
@@ -118,4 +139,5 @@ export type ShowManageMetadataModalProps = Partial<IManageModalProps> & {
   options?: ShowManageMetadataModalOptions;
   title?: ReactNode | string;
   isDeleteSingleValue?: boolean;
+  documentIds?: string[];
 };

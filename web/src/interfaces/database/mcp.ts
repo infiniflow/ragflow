@@ -43,12 +43,7 @@ interface ISymbol {
 }
 
 export interface IExportedMcpServers {
-  mcpServers: McpServers;
-}
-
-interface McpServers {
-  fetch_2: IExportedMcpServer;
-  github_1: IExportedMcpServer;
+  mcpServers: Record<string, IExportedMcpServer>;
 }
 
 export interface IExportedMcpServer {

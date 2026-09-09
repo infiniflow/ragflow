@@ -13,22 +13,28 @@ import {
   type FileUploadProps,
 } from '@/components/file-upload';
 import { Button } from '@/components/ui/button';
-import { useUploadCanvasFile } from '@/hooks/use-agent-request';
+import { useUploadAgentFile } from '@/hooks/use-agent-request';
 import { Upload, X } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
 
 type FileUploadDirectUploadProps = {
-  value: Record<string, any>;
-  onChange(value: Record<string, any>): void;
+  value: Record<string, any> | Record<string, any>[];
+  onChange(value: Record<string, any>[]): void;
+  maxFiles?: number;
 };
 
 export function FileUploadDirectUpload({
+  value,
   onChange,
+  maxFiles,
 }: FileUploadDirectUploadProps) {
   const [files, setFiles] = React.useState<File[]>([]);
+  const uploadedFilesRef = React.useRef<Record<string, any>[]>(
+    Array.isArray(value) ? value : value ? [value] : [],
+  );
 
-  const { uploadCanvasFile } = useUploadCanvasFile();
+  const { uploadAgentFile } = useUploadAgentFile();
 
   const onUpload: NonNullable<FileUploadProps['onUpload']> = React.useCallback(
     async (files, { onSuccess, onError }) => {
@@ -41,10 +47,14 @@ export function FileUploadDirectUpload({
             );
           };
           try {
-            const ret = await uploadCanvasFile([file]);
+            const ret = await uploadAgentFile([file]);
             if (ret.code === 0) {
               onSuccess(file);
-              onChange(ret.data);
+              uploadedFilesRef.current = [
+                ...uploadedFilesRef.current,
+                ret.data,
+              ];
+              onChange(uploadedFilesRef.current);
             } else {
               handleError();
             }
@@ -60,7 +70,7 @@ export function FileUploadDirectUpload({
         console.error('Unexpected error during upload:', error);
       }
     },
-    [onChange, uploadCanvasFile],
+    [onChange, uploadAgentFile],
   );
 
   const onFileReject = React.useCallback((file: File, message: string) => {
@@ -69,15 +79,32 @@ export function FileUploadDirectUpload({
     });
   }, []);
 
+  const handleFilesChange = React.useCallback(
+    (newFiles: File[]) => {
+      // Find removed files and update uploadedFilesRef
+      const removedFiles = files.filter((f) => !newFiles.includes(f));
+      if (removedFiles.length > 0) {
+        const removedIndices = removedFiles.map((f) => files.indexOf(f));
+        uploadedFilesRef.current = uploadedFilesRef.current.filter(
+          (_, idx) => !removedIndices.includes(idx),
+        );
+        onChange(uploadedFilesRef.current);
+      }
+      setFiles(newFiles);
+    },
+    [files, onChange],
+  );
+
   return (
     <FileUpload
       value={files}
-      onValueChange={setFiles}
+      onValueChange={handleFilesChange}
       onUpload={onUpload}
       onFileReject={onFileReject}
-      maxFiles={1}
+      // TODO： DEFALUT to 5 / 1 for params
+      maxFiles={(maxFiles ?? 5) as number}
       className="w-full"
-      multiple={false}
+      multiple={!maxFiles || !!(maxFiles && maxFiles > 1)}
     >
       <FileUploadDropzone>
         <div className="flex flex-col items-center gap-1 text-center">
@@ -86,7 +113,7 @@ export function FileUploadDirectUpload({
           </div>
           <p className="font-medium text-sm">Drag & drop files here</p>
           <p className="text-muted-foreground text-xs">
-            Or click to browse (max 1 files)
+            Or click to browse (max {(maxFiles ?? 5) as number} files)
           </p>
         </div>
         <FileUploadTrigger asChild>

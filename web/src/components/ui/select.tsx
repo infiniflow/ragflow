@@ -12,7 +12,13 @@ import { forwardRef, useCallback, useEffect } from 'react';
 
 const Select = SelectPrimitive.Root;
 
-const SelectGroup = SelectPrimitive.Group;
+const SelectGroup = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Group>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Group>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Group ref={ref} className={cn(className)} {...props} />
+));
+SelectGroup.displayName = SelectPrimitive.Group.displayName;
 
 const SelectValue = SelectPrimitive.Value;
 
@@ -129,7 +135,7 @@ const SelectLabel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Label
     ref={ref}
-    className={cn('py-1.5 pl-8 pr-2 text-sm font-semibold', className)}
+    className={cn('py-1.5 ps-8 pe-2 text-sm font-semibold', className)}
     {...props}
   />
 ));
@@ -142,13 +148,13 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-2 text-sm outline-none text-text-secondary',
+      'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 ps-2 pe-2 text-sm outline-none text-text-secondary',
       'focus:bg-border-button focus:text-text-primary data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
       className,
     )}
     {...props}
   >
-    <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+    <span className="absolute end-2 flex h-3.5 w-3.5 items-center justify-center">
       <SelectPrimitive.ItemIndicator>
         <Check className="h-4 w-4" />
       </SelectPrimitive.ItemIndicator>
@@ -203,6 +209,8 @@ export type RAGFlowSelectProps = Partial<ControllerRenderProps> & {
   contentProps?: React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>;
   triggerClassName?: string;
   onlyShowSelectedIcon?: boolean;
+  triggerTestId?: string;
+  optionTestIdPrefix?: string;
 } & SelectPrimitive.SelectProps;
 
 /**
@@ -237,6 +245,8 @@ export const RAGFlowSelect = forwardRef<
     // defaultValue,
     triggerClassName,
     onlyShowSelectedIcon = false,
+    triggerTestId,
+    optionTestIdPrefix,
   },
   ref,
 ) {
@@ -301,6 +311,7 @@ export const RAGFlowSelect = forwardRef<
           allowClear={allowClear}
           ref={ref}
           className={triggerClassName}
+          data-testid={triggerTestId}
         >
           <SelectValue placeholder={placeholder}>{label}</SelectValue>
         </SelectTrigger>
@@ -313,6 +324,11 @@ export const RAGFlowSelect = forwardRef<
                 value={o.value as RAGFlowSelectOptionType['value']}
                 key={o.value}
                 disabled={o.disabled}
+                data-testid={
+                  optionTestIdPrefix
+                    ? `${optionTestIdPrefix}-${o.value}`
+                    : undefined
+                }
               >
                 <div className="flex items-center gap-1">
                   {o.icon}
@@ -326,7 +342,16 @@ export const RAGFlowSelect = forwardRef<
             <SelectGroup key={idx}>
               <SelectLabel className="pl-2">{o.label}</SelectLabel>
               {o.options.map((x) => (
-                <SelectItem value={x.value} key={x.value} disabled={x.disabled}>
+                <SelectItem
+                  value={x.value}
+                  key={x.value}
+                  disabled={x.disabled}
+                  data-testid={
+                    optionTestIdPrefix
+                      ? `${optionTestIdPrefix}-${x.value}`
+                      : undefined
+                  }
+                >
                   {x.label}
                 </SelectItem>
               ))}

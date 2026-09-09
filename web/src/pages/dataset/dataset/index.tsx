@@ -1,8 +1,12 @@
-import { BulkOperateBar } from '@/components/bulk-operate-bar';
+import {
+  BulkOperateBar,
+  BulkOperateItemType,
+} from '@/components/bulk-operate-bar';
 import { FileUploadDialog } from '@/components/file-upload-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,20 +14,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
-import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import { Pen, Upload } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
+import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import {
-  MetadataType,
-  useManageMetadata,
-} from '../components/metedata/hooks/use-manage-modal';
+  useRowSelection,
+  useSelectedIds,
+} from '@/hooks/logic-hooks/use-row-selection';
+import { useFetchDocumentList } from '@/hooks/use-document-request';
+import { LucidePlus } from 'lucide-react';
+import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { MetadataType } from '../components/metedata/constant';
+import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal';
 import { ManageMetadataModal } from '../components/metedata/manage-modal';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { DatasetTable } from './dataset-table';
-import Generate from './generate-button/generate';
 import { ReparseDialog } from './reparse-dialog';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
 import { useCreateEmptyDocument } from './use-create-empty-document';
@@ -52,13 +57,8 @@ export default function Dataset() {
     checkValue,
   } = useFetchDocumentList();
 
-  const refreshCount = useMemo(() => {
-    return documents.findIndex((doc) => doc.run === '1') + documents.length;
-  }, [documents]);
+  useGoToPreviousPageOnEmpty(documents?.length, loading);
 
-  const { data: dataSetData } = useFetchKnowledgeBaseConfiguration({
-    refreshCount,
-  });
   const { filters, onOpenChange, filterGroup } = useSelectDatasetFilters();
 
   const {
@@ -81,8 +81,15 @@ export default function Dataset() {
     checkValue(filters);
   }, [filters]);
 
-  const { rowSelection, rowSelectionIsEmpty, setRowSelection, selectedCount } =
-    useRowSelection();
+  const {
+    rowSelection,
+    rowSelectionIsEmpty,
+    setRowSelection,
+    selectedCount,
+    clearRowSelection,
+  } = useRowSelection();
+
+  useClearSelectionOnPageChange(pagination, clearRowSelection);
 
   const {
     chunkNum,
@@ -95,14 +102,54 @@ export default function Dataset() {
     rowSelection,
     setRowSelection,
   });
+
+  const { selectedIds: selectedRowKeys } = useSelectedIds(
+    rowSelection,
+    documents,
+  );
+
+  const handleAddMetadataWithDocuments = () => {
+    showManageMetadataModal({
+      type: MetadataType.Manage,
+      isCanAdd: true,
+      isEditField: false,
+      isDeleteSingleValue: true,
+      isAddValue: true,
+      secondTitle: (
+        <>
+          {t('knowledgeDetails.metadata.selectFiles', {
+            count: selectedCount,
+          })}
+        </>
+      ),
+      title: (
+        <div className="flex flex-col gap-2">
+          <div className="text-base font-normal">
+            {t('knowledgeDetails.metadata.manageMetadata')}
+          </div>
+        </div>
+      ),
+      documentIds: selectedRowKeys,
+    });
+  };
+
+  const updatedList = list.map((item) => {
+    if (item.id === 'batch-metadata') {
+      return {
+        ...item,
+        onClick: handleAddMetadataWithDocuments,
+      };
+    }
+    return item;
+  });
+
   return (
-    <>
-      <div className="absolute top-4 right-5">
-        <Generate disabled={!(dataSetData.chunk_num > 0)} />
-      </div>
-      <section className="p-5 min-w-[880px]">
+    <Card
+      as="article"
+      className="mb-5 mr-5 min-w-[880px] bg-transparent shadow-none"
+    >
+      <CardHeader as="header" className="p-5 space-y-0">
         <ListFilterBar
-          title="Dataset"
           onSearchChange={handleInputChange}
           searchString={searchString}
           value={filterValue}
@@ -110,54 +157,26 @@ export default function Dataset() {
           onChange={handleFilterSubmit}
           onOpenChange={onOpenChange}
           filters={filters}
+          className="items-end"
           leftPanel={
-            <div className="items-start">
-              <div className="pb-1">{t('knowledgeDetails.subbarFiles')}</div>
-              <div className="text-text-secondary text-sm">
+            <div>
+              <h1 className="leading-normal font-medium">
+                {t('knowledgeDetails.subbarFiles')}
+              </h1>
+              <p className="text-text-secondary text-sm font-normal">
                 {t('knowledgeDetails.datasetDescription')}
-              </div>
+              </p>
             </div>
-          }
-          preChildren={
-            <Button
-              variant={'ghost'}
-              className="border border-border-button"
-              onClick={() =>
-                showManageMetadataModal({
-                  type: MetadataType.Manage,
-                  isCanAdd: false,
-                  isEditField: true,
-                  isDeleteSingleValue: true,
-                  title: (
-                    <div className="flex flex-col gap-2">
-                      <div className="text-base font-normal">
-                        {t('knowledgeDetails.metadata.manageMetadata')}
-                      </div>
-                      <div className="text-sm text-text-secondary">
-                        {t(
-                          'knowledgeDetails.metadata.manageMetadataForDataset',
-                        )}
-                      </div>
-                    </div>
-                  ),
-                })
-              }
-            >
-              <div className="flex gap-1 items-center">
-                <Pen size={14} />
-                {t('knowledgeDetails.metadata.metadata')}
-              </div>
-            </Button>
           }
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size={'sm'}>
-                <Upload />
+              <Button size="default">
+                <LucidePlus />
                 {t('knowledgeDetails.addFile')}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56">
+            <DropdownMenuContent className="w-auto min-w-40" align="end">
               <DropdownMenuItem onClick={showDocumentUploadModal}>
                 {t('fileManager.uploadFile')}
               </DropdownMenuItem>
@@ -168,9 +187,17 @@ export default function Dataset() {
             </DropdownMenuContent>
           </DropdownMenu>
         </ListFilterBar>
+
         {rowSelectionIsEmpty || (
-          <BulkOperateBar list={list} count={selectedCount}></BulkOperateBar>
+          <BulkOperateBar
+            className="!mt-2.5 !-mb-2.5"
+            list={updatedList as BulkOperateItemType[]}
+            count={selectedCount}
+          />
         )}
+      </CardHeader>
+
+      <CardContent className="px-5 py-0">
         <DatasetTable
           documents={documents}
           pagination={pagination}
@@ -179,13 +206,16 @@ export default function Dataset() {
           setRowSelection={setRowSelection}
           showManageMetadataModal={showManageMetadataModal}
           loading={loading}
-        ></DatasetTable>
+          bulkOperateBarVisible={!rowSelectionIsEmpty}
+        />
+
         {documentUploadVisible && (
           <FileUploadDialog
             hideModal={hideDocumentUploadModal}
             onOk={onDocumentUploadOk}
             loading={documentUploadLoading}
             showParseOnCreation
+            isTableParser={knowledgeBase?.chunk_method === 'table'}
           ></FileUploadDialog>
         )}
         {createVisible && (
@@ -193,7 +223,7 @@ export default function Dataset() {
             hideModal={hideCreateModal}
             onOk={onCreateOk}
             loading={createLoading}
-            title={'File Name'}
+            title={t('knowledgeDetails.fileName')}
           ></RenameDialog>
         )}
         {manageMetadataVisible && (
@@ -204,20 +234,27 @@ export default function Dataset() {
                   <div className="text-base font-normal">
                     {t('knowledgeDetails.metadata.manageMetadata')}
                   </div>
-                  <div className="text-sm text-text-secondary">
+                  {/* <div className="text-sm text-text-secondary">
                     {t('knowledgeDetails.metadata.manageMetadataForDataset')}
-                  </div>
+                  </div> */}
                 </div>
               )
             }
             visible={manageMetadataVisible}
-            hideModal={hideManageMetadataModal}
+            hideModal={() => {
+              setRowSelection({});
+              hideManageMetadataModal();
+            }}
             // selectedRowKeys={selectedRowKeys}
             tableData={tableData}
             isCanAdd={metadataConfig.isCanAdd}
+            isAddValue={metadataConfig.isAddValue}
+            isVerticalShowValue={metadataConfig.isVerticalShowValue}
             isEditField={metadataConfig.isEditField}
             isDeleteSingleValue={metadataConfig.isDeleteSingleValue}
+            secondTitle={metadataConfig.secondTitle}
             type={metadataConfig.type}
+            documentIds={metadataConfig.documentIds}
             otherData={metadataConfig.record}
           />
         )}
@@ -234,7 +271,7 @@ export default function Dataset() {
             hideModal={hideReparseDialogModal}
           ></ReparseDialog>
         )}
-      </section>
-    </>
+      </CardContent>
+    </Card>
   );
 }

@@ -30,13 +30,13 @@ class File2DocumentService(CommonService):
     @DB.connection_context()
     def get_by_file_id(cls, file_id):
         objs = cls.model.select().where(cls.model.file_id == file_id)
-        return objs
+        return list(objs)
 
     @classmethod
     @DB.connection_context()
     def get_by_document_id(cls, document_id):
         objs = cls.model.select().where(cls.model.document_id == document_id)
-        return objs
+        return list(objs)
 
     @classmethod
     @DB.connection_context()

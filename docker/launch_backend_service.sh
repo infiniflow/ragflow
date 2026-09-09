@@ -3,6 +3,30 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
+usage() {
+    local exit_code=${1:-1}
+    echo "Usage: $0 [OPTIONS] [ragflow|task_executor|admin|data_sync]..."
+    echo
+    echo "Without arguments, starts ragflow and task_executor."
+    echo "Options:"
+    echo "  --debug         Enable debug mode and debug-level logging"
+    echo
+    echo "Available service types:"
+    echo "  ragflow         Start RAGFlow server based on API_PROXY_SCHEME"
+    echo "  task_executor   Start task workers based on API_PROXY_SCHEME"
+    echo "  admin           Start Admin server based on API_PROXY_SCHEME"
+    echo "  data_sync       Start rag/svr/sync_data_source.py"
+    echo
+    echo "Examples:"
+    echo "  $0"
+    echo "  $0 --debug"
+    echo "  $0 ragflow"
+    echo "  $0 task_executor"
+    echo "  $0 admin"
+    echo "  $0 data_sync"
+    exit "$exit_code"
+}
+
 # Function to load environment variables from .env file
 load_env_file() {
     # Get the directory of the current script
@@ -14,7 +38,7 @@ load_env_file() {
         echo "Loading environment variables from: $env_file"
         # Source the .env file
         set -a
-        source "$env_file" 
+        source "$env_file"
         set +a
     else
         echo "Warning: .env file not found at: $env_file"
@@ -48,7 +72,10 @@ STOP=false
 PIDS=()
 
 # Set the path to the NLTK data directory
-export NLTK_DATA="./nltk_data"
+# download_deps.py downloads NLTK data into ragflow_deps/nltk_data (see
+# ragflow_deps/download_deps.py); point NLTK_DATA there directly instead of a
+# stale top-level ./nltk_data so this matches what's actually populated.
+export NLTK_DATA="$(pwd)/ragflow_deps/nltk_data"
 
 # Function to handle termination signals
 cleanup() {
@@ -70,60 +97,248 @@ trap cleanup SIGINT SIGTERM
 # Function to execute task_executor with retry logic
 task_exe(){
     local task_id=$1
+    local task_name="task_executor.py for task $task_id"
+    local -a task_cmd=("$PY" "rag/svr/task_executor.py" "-i" "$task_id")
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        prepare_for_go
+        task_name="ragflow_server --ingestor"
+        task_cmd=("bin/ragflow_server" "--ingestor")
+        if [[ "$DEBUG_MODE" -eq 1 ]]; then
+            task_cmd+=("--debug")
+        fi
+    fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting task_executor.py for task $task_id (Attempt $((retry_count+1)))"
-        LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py "$task_id"
-        EXIT_CODE=$?
+        echo "Starting ${task_cmd[*]} (Attempt $((retry_count+1)))"
+        EXIT_CODE=0
+        if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+            "${task_cmd[@]}" || EXIT_CODE=$?
+        else
+            LD_PRELOAD=$JEMALLOC_PATH "${task_cmd[@]}" || EXIT_CODE=$?
+        fi
         if [ $EXIT_CODE -eq 0 ]; then
-            echo "task_executor.py for task $task_id exited successfully."
+            echo "$task_name exited successfully."
             break
         else
-            echo "task_executor.py for task $task_id failed with exit code $EXIT_CODE. Retrying..." >&2
+            echo "$task_name failed with exit code $EXIT_CODE. Retrying..." >&2
             retry_count=$((retry_count + 1))
             sleep 2
         fi
     done
 
     if [ $retry_count -ge $MAX_RETRIES ]; then
-        echo "task_executor.py for task $task_id failed after $MAX_RETRIES attempts. Exiting..." >&2
+        echo "$task_name failed after $MAX_RETRIES attempts. Exiting..." >&2
         cleanup
     fi
 }
 
 # Function to execute ragflow_server with retry logic
 run_server(){
+    local server_name="ragflow_server.py"
+    local -a server_cmd=("$PY" "api/ragflow_server.py")
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        prepare_for_go
+        server_name="ragflow_server"
+        server_cmd=("bin/ragflow_server" "--api")
+    fi
+    if [[ "$DEBUG_MODE" -eq 1 ]]; then
+        server_cmd+=("--debug")
+    fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting ragflow_server.py (Attempt $((retry_count+1)))"
-        $PY api/ragflow_server.py
-        EXIT_CODE=$?
+        echo "Starting ${server_cmd[*]} (Attempt $((retry_count+1)))"
+        EXIT_CODE=0
+        "${server_cmd[@]}" || EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
-            echo "ragflow_server.py exited successfully."
+            echo "$server_name exited successfully."
             break
         else
-            echo "ragflow_server.py failed with exit code $EXIT_CODE. Retrying..." >&2
+            echo "$server_name failed with exit code $EXIT_CODE. Retrying..." >&2
             retry_count=$((retry_count + 1))
             sleep 2
         fi
     done
 
     if [ $retry_count -ge $MAX_RETRIES ]; then
-        echo "ragflow_server.py failed after $MAX_RETRIES attempts. Exiting..." >&2
+        echo "$server_name failed after $MAX_RETRIES attempts. Exiting..." >&2
         cleanup
     fi
 }
 
-# Start task executors
-for ((i=0;i<WS;i++))
-do
-  task_exe "$i" &
-  PIDS+=($!)
+# Function to execute admin_server with retry logic
+run_admin_server(){
+    local server_name="admin_server.py"
+    local -a server_cmd=("$PY" "admin/server/admin_server.py")
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        prepare_for_go
+        server_name="admin_server"
+        server_cmd=("bin/ragflow_server" "--admin")
+        if [[ "$DEBUG_MODE" -eq 1 ]]; then
+            server_cmd+=("--debug")
+        fi
+    fi
+    local retry_count=0
+    while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
+        echo "Starting ${server_cmd[*]} (Attempt $((retry_count+1)))"
+        EXIT_CODE=0
+        "${server_cmd[@]}" || EXIT_CODE=$?
+        if [ $EXIT_CODE -eq 0 ]; then
+            echo "$server_name exited successfully."
+            break
+        else
+            echo "$server_name failed with exit code $EXIT_CODE. Retrying..." >&2
+            retry_count=$((retry_count + 1))
+            sleep 2
+        fi
+    done
+    if [ $retry_count -ge $MAX_RETRIES ]; then
+        echo "$server_name failed after $MAX_RETRIES attempts. Exiting..." >&2
+        cleanup
+    fi
+}
+
+# Function to execute sync_data_source with retry logic
+run_data_sync(){
+    local retry_count=0
+    while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
+        echo "Starting sync_data_source.py (Attempt $((retry_count+1)))"
+        EXIT_CODE=0
+        $PY rag/svr/sync_data_source.py || EXIT_CODE=$?
+        if [ $EXIT_CODE -eq 0 ]; then
+            echo "sync_data_source.py exited successfully."
+            break
+        else
+            echo "sync_data_source.py failed with exit code $EXIT_CODE. Retrying..." >&2
+            retry_count=$((retry_count + 1))
+            sleep 2
+        fi
+    done
+
+    if [ $retry_count -ge $MAX_RETRIES ]; then
+        echo "sync_data_source.py failed after $MAX_RETRIES attempts. Exiting..." >&2
+        cleanup
+    fi
+}
+
+ensure_db_init() {
+    echo "Initializing database tables..."
+    "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+    echo "Database tables initialized."
+}
+
+run_mysql_migrations() {
+    local db_type="${DB_TYPE:-mysql}"
+    db_type="${db_type,,}"
+    if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then
+        # This migration script contains MySQL-only SQL and cannot run against
+        # a GaussDB metadata database.
+        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        return 0
+    fi
+
+    tools/scripts/run_migrations.sh
+}
+
+prepare_for_go() {
+    if [ -d /usr/share/infinity/resource ]; then
+        echo "Resource directory already exists. Skipping preparation."
+        return
+    fi
+    mkdir -p /usr/share/infinity/resource
+    if [ "$NEED_MIRROR" == "1" ]; then
+        git clone --depth 1 --single-branch https://gitee.com/infiniflow/resource /tmp/resource;
+    else
+        git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource;
+    fi
+    cp -r /tmp/resource/* /usr/share/infinity/resource
+    rm -rf /tmp/resource
+}
+
+START_RAGFLOW=0
+START_TASK_EXECUTOR=0
+START_ADMIN=0
+START_DATA_SYNC=0
+DEBUG_MODE=0
+SERVICE_SELECTED=0
+
+for arg in "$@"; do
+  case $arg in
+    ragflow|server|webserver)
+      START_RAGFLOW=1
+      SERVICE_SELECTED=1
+      ;;
+    task_executor|task-executor|taskexecutor|ingestor)
+      START_TASK_EXECUTOR=1
+      SERVICE_SELECTED=1
+      ;;
+    admin|admin_server|admin-server)
+      START_ADMIN=1
+      SERVICE_SELECTED=1
+      ;;
+    data_sync|data-sync|datasync)
+      START_DATA_SYNC=1
+      SERVICE_SELECTED=1
+      ;;
+    all)
+      START_RAGFLOW=1
+      START_TASK_EXECUTOR=1
+      START_ADMIN=1
+      START_DATA_SYNC=1
+      SERVICE_SELECTED=1
+      ;;
+    --debug)
+      DEBUG_MODE=1
+      ;;
+    -h|--help)
+      usage 0
+      ;;
+    *)
+      echo "Unknown service type: $arg" >&2
+      usage
+      ;;
+  esac
 done
 
-# Start the main server
-run_server &
-PIDS+=($!)
+if [[ "$DEBUG_MODE" -eq 1 && "${API_PROXY_SCHEME}" != "go" ]]; then
+  export LOG_LEVELS="root=DEBUG"
+fi
+
+if [[ "$SERVICE_SELECTED" -eq 0 ]]; then
+  START_RAGFLOW=1
+  START_TASK_EXECUTOR=1
+fi
+
+if [[ "$START_RAGFLOW" -eq 1 ]]; then
+  ensure_db_init
+  run_mysql_migrations
+fi
+
+# Start task executors
+if [[ "$START_TASK_EXECUTOR" -eq 1 ]]; then
+  for ((i=0;i<WS;i++))
+  do
+    task_exe "$i" &
+    PIDS+=($!)
+  done
+fi
+
+# Start the RAGFlow server
+if [[ "$START_RAGFLOW" -eq 1 ]]; then
+  run_server &
+  PIDS+=($!)
+fi
+
+# Start the Admin server
+if [[ "$START_ADMIN" -eq 1 ]]; then
+  run_admin_server &
+  PIDS+=($!)
+fi
+
+# Start the data sync server
+if [[ "$START_DATA_SYNC" -eq 1 ]]; then
+  run_data_sync &
+  PIDS+=($!)
+fi
 
 # Wait for all background processes to finish
 wait

@@ -13,28 +13,60 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-# Although the docs group this under "chunk management," the backend aggregates
-# Document.meta_fields via document_service#get_metadata_summary and the test
-# uses update_document, so it belongs with file/document management tests.
 import pytest
 from common import metadata_summary, update_document
 
 
 def _summary_to_counts(summary):
     counts = {}
-    for key, pairs in summary.items():
+    for key, field_data in summary.items():
+        # New format: {key: {"type": "...", "values": [[value, count], ...]}}
+        pairs = field_data["values"]
         counts[key] = {str(k): v for k, v in pairs}
     return counts
 
 
 class TestMetadataSummary:
     @pytest.mark.p2
+    def test_metadata_summary_nonexistent_kb_id(self, HttpApiAuth, add_document_func):
+        """
+        Call with non-existent dataset
+        """
+        res = metadata_summary(HttpApiAuth, "0" * 32)
+        assert res["code"] == 102, res
+
+    @pytest.mark.p2
+    def test_metadata_summary_invalid_kb_id(self, HttpApiAuth, add_document_func):
+        """Test metadata summary when user doesn't have access to the dataset."""
+        kb_id, doc_id = add_document_func
+        invalid_kb_id = "invalid_" + kb_id
+        # Call with a dataset that the user doesn't have access to
+        res = metadata_summary(HttpApiAuth, invalid_kb_id)
+        assert res["code"] == 102, res
+        assert res["message"] == f"You don't own the dataset {invalid_kb_id}. "
+
+    @pytest.mark.p2
+    def test_metadata_summary_success(self, HttpApiAuth, add_document_func):
+        """Test metadata summary success case"""
+        kb_id, doc_id = add_document_func
+        # Test successful case
+        res = metadata_summary(HttpApiAuth, kb_id)
+        assert res["code"] == 0, res
+        assert "summary" in res["data"], res
+
+    @pytest.mark.p2
     def test_metadata_summary_counts(self, HttpApiAuth, add_documents_func):
+        """
+        test normal cases
+        :param HttpApiAuth:
+        :param add_documents_func:
+        :return:
+        """
         dataset_id, document_ids = add_documents_func
         payloads = [
             {"tags": ["foo", "bar"], "author": "alice"},
             {"tags": ["foo"], "author": "bob"},
-            {"tags": ["bar", "baz"], "author": None},
+            {"tags": ["bar", "baz"], "author": ""},
         ]
         for doc_id, meta_fields in zip(document_ids, payloads):
             res = update_document(HttpApiAuth, dataset_id, doc_id, {"meta_fields": meta_fields})
@@ -42,6 +74,7 @@ class TestMetadataSummary:
 
         res = metadata_summary(HttpApiAuth, dataset_id)
         assert res["code"] == 0, res
+
         summary = res["data"]["summary"]
         counts = _summary_to_counts(summary)
         assert counts["tags"]["foo"] == 2, counts

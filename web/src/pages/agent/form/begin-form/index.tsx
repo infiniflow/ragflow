@@ -1,4 +1,5 @@
 import { Collapse } from '@/components/collapse';
+import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -15,14 +16,15 @@ import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { Plus } from 'lucide-react';
-import { memo, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { AgentDialogueMode } from '../../constant';
+import { AgentDialogueMode, BeginQueryType } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
 import { QueryTable } from './query-table';
-import { BeginFormSchema } from './schema';
+import { BeginFormSchema, BeginFormSchemaType } from './schema';
 import { useEditQueryRecord } from './use-edit-query';
 import { useHandleModeChange } from './use-handle-mode-change';
 import { useValues } from './use-values';
@@ -37,6 +39,7 @@ const ModeOptions = [
 
 function BeginForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
 
   const values = useValues(node);
 
@@ -48,8 +51,16 @@ function BeginForm({ node }: INextOperatorForm) {
 
   useWatchFormChange(node?.id, form);
 
-  const inputs = useWatch({ control: form.control, name: 'inputs' });
+  const inputs = useWatch<BeginFormSchemaType, 'inputs'>({
+    control: form.control,
+    name: 'inputs',
+  });
   const mode = useWatch({ control: form.control, name: 'mode' });
+
+  const hasFileInput = useMemo(
+    () => inputs?.some((x) => x.type === BeginQueryType.File),
+    [inputs],
+  );
 
   const enablePrologue = useWatch({
     control: form.control,
@@ -82,6 +93,10 @@ function BeginForm({ node }: INextOperatorForm) {
     form,
     node,
   });
+
+  const handleAddQuery = useCallback(() => {
+    showModal();
+  }, [showModal]);
 
   return (
     <section className="px-5 space-y-5 pb-4">
@@ -142,6 +157,7 @@ function BeginForm({ node }: INextOperatorForm) {
                   <Textarea
                     rows={5}
                     {...field}
+                    className="overflow-auto"
                     placeholder={t('common.pleaseInput')}
                   ></Textarea>
                 </FormControl>
@@ -160,6 +176,7 @@ function BeginForm({ node }: INextOperatorForm) {
               render={() => <div></div>}
             />
             <Collapse
+              defaultOpen
               title={
                 <div>
                   {t('flow.input')}
@@ -167,19 +184,13 @@ function BeginForm({ node }: INextOperatorForm) {
                 </div>
               }
               rightContent={
-                <Button
-                  variant={'ghost'}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    showModal();
-                  }}
-                >
+                <Button variant={'ghost'} onClick={handleAddQuery}>
                   <Plus />
                 </Button>
               }
             >
               <QueryTable
-                data={inputs}
+                data={inputs ?? []}
                 showModal={showModal}
                 deleteRecord={handleDeleteRecord}
               ></QueryTable>
@@ -191,6 +202,15 @@ function BeginForm({ node }: INextOperatorForm) {
                 otherThanCurrentQuery={otherThanCurrentQuery}
                 submit={ok}
               ></ParameterDialog>
+            )}
+            {hasFileInput && (
+              <LayoutRecognizeFormField
+                name="layout_recognize"
+                horizontal={false}
+                showMineruOptions={false}
+                showPaddleocrOptions={false}
+                ownerTenantId={ownerTenantId}
+              ></LayoutRecognizeFormField>
             )}
           </>
         )}

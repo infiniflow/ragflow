@@ -15,6 +15,7 @@
 #
 
 import secrets
+import logging
 from typing import Any
 
 from common.time_utils import current_timestamp, datetime_format
@@ -22,20 +23,21 @@ from datetime import datetime
 from flask import Blueprint, Response, request
 from flask_login import current_user, login_required, logout_user
 
-from auth import login_verify, login_admin, check_admin_auth
+from auth import login_admin, check_admin_auth
 from responses import success_response, error_response
-from services import UserMgr, ServiceMgr, UserServiceMgr, SettingsMgr, ConfigMgr, EnvironmentsMgr
+from services import UserMgr, ServiceMgr, UserServiceMgr, SettingsMgr, ConfigMgr, EnvironmentsMgr, SandboxMgr
 from roles import RoleMgr
 from api.common.exceptions import AdminException
 from common.versions import get_ragflow_version
 from api.utils.api_utils import generate_confirmation_token
+from common.log_utils import get_log_levels, set_log_level
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/v1/admin")
 
 
 @admin_bp.route("/ping", methods=["GET"])
 def ping():
-    return success_response("PONG")
+    return success_response(message="pong")
 
 
 @admin_bp.route("/login", methods=["POST"])
@@ -50,7 +52,7 @@ def login():
         return error_response(str(e), 500)
 
 
-@admin_bp.route("/logout", methods=["GET"])
+@admin_bp.route("/logout", methods=["POST"])
 @login_required
 def logout():
     try:
@@ -58,15 +60,6 @@ def logout():
         current_user.save()
         logout_user()
         return success_response(True)
-    except Exception as e:
-        return error_response(str(e), 500)
-
-
-@admin_bp.route("/auth", methods=["GET"])
-@login_verify
-def auth_admin():
-    try:
-        return success_response(None, "Admin is authorized", 0)
     except Exception as e:
         return error_response(str(e), 500)
 
@@ -151,6 +144,8 @@ def change_password(username):
 def alter_user_activate_status(username):
     try:
         data = request.get_json()
+        if current_user.email == username:
+            return error_response(f"can't alter current user status: {username}", 409)
         if not data or "activate_status" not in data:
             return error_response("Activation status is required", 400)
         activate_status = data["activate_status"]
@@ -419,7 +414,7 @@ def get_user_permission(user_name: str):
 def set_variable():
     try:
         data = request.get_json()
-        if not data and "var_name" not in data:
+        if not data or "var_name" not in data:
             return error_response("Var name is required", 400)
 
         if "var_value" not in data:
@@ -447,7 +442,7 @@ def get_variable():
 
         # get var
         data = request.get_json()
-        if not data and "var_name" not in data:
+        if not data or "var_name" not in data:
             return error_response("Var name is required", 400)
         var_name: str = data["var_name"]
         res = SettingsMgr.get_by_name(var_name)
@@ -484,7 +479,7 @@ def get_environments():
         return error_response(str(e), 500)
 
 
-@admin_bp.route("/users/<username>/new_token", methods=["POST"])
+@admin_bp.route("/users/<username>/keys", methods=["POST"])
 @login_required
 @check_admin_auth
 def generate_user_api_key(username: str) -> tuple[Response, int]:
@@ -496,10 +491,10 @@ def generate_user_api_key(username: str) -> tuple[Response, int]:
         if not tenants:
             return error_response("Tenant not found!", 404)
         tenant_id: str = tenants[0]["tenant_id"]
-        token: str = generate_confirmation_token()
+        key: str = generate_confirmation_token()
         obj: dict[str, Any] = {
             "tenant_id": tenant_id,
-            "token": token,
+            "token": key,
             "beta": generate_confirmation_token().replace("ragflow-", "")[:32],
             "create_time": current_timestamp(),
             "create_date": datetime_format(datetime.now()),
@@ -507,7 +502,7 @@ def generate_user_api_key(username: str) -> tuple[Response, int]:
             "update_date": None,
         }
 
-        if not UserMgr.save_api_token(obj):
+        if not UserMgr.save_api_key(obj):
             return error_response("Failed to generate API key!", 500)
         return success_response(obj, "API key generated successfully")
     except AdminException as e:
@@ -516,7 +511,7 @@ def generate_user_api_key(username: str) -> tuple[Response, int]:
         return error_response(str(e), 500)
 
 
-@admin_bp.route("/users/<username>/token_list", methods=["GET"])
+@admin_bp.route("/users/<username>/keys", methods=["GET"])
 @login_required
 @check_admin_auth
 def get_user_api_keys(username: str) -> tuple[Response, int]:
@@ -529,12 +524,12 @@ def get_user_api_keys(username: str) -> tuple[Response, int]:
         return error_response(str(e), 500)
 
 
-@admin_bp.route("/users/<username>/token/<token>", methods=["DELETE"])
+@admin_bp.route("/users/<username>/keys/<key>", methods=["DELETE"])
 @login_required
 @check_admin_auth
-def delete_user_api_key(username: str, token: str) -> tuple[Response, int]:
+def delete_user_api_key(username: str, key: str) -> tuple[Response, int]:
     try:
-        deleted = UserMgr.delete_api_token(username, token)
+        deleted = UserMgr.delete_api_key(username, key)
         if deleted:
             return success_response(None, "API key deleted successfully")
         else:
@@ -552,5 +547,138 @@ def show_version():
     try:
         res = {"version": get_ragflow_version()}
         return success_response(res)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route("/sandbox/providers", methods=["GET"])
+@login_required
+@check_admin_auth
+def list_sandbox_providers():
+    """List all available sandbox providers."""
+    try:
+        res = SandboxMgr.list_providers()
+        return success_response(res)
+    except AdminException as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route("/sandbox/providers/<provider_id>/schema", methods=["GET"])
+@login_required
+@check_admin_auth
+def get_sandbox_provider_schema(provider_id: str):
+    """Get configuration schema for a specific provider."""
+    try:
+        res = SandboxMgr.get_provider_config_schema(provider_id)
+        return success_response(res)
+    except AdminException as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route("/sandbox/config", methods=["GET"])
+@login_required
+@check_admin_auth
+def get_sandbox_config():
+    """Get current sandbox configuration."""
+    try:
+        res = SandboxMgr.get_config()
+        return success_response(res)
+    except AdminException as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route("/sandbox/config", methods=["POST"])
+@login_required
+@check_admin_auth
+def set_sandbox_config():
+    """Set sandbox provider configuration."""
+    try:
+        data = request.get_json()
+        if not data:
+            logging.error("set_sandbox_config: Request body is required")
+            return error_response("Request body is required", 400)
+
+        provider_type = data.get("provider_type")
+        if not provider_type:
+            logging.error("set_sandbox_config: provider_type is required")
+            return error_response("provider_type is required", 400)
+
+        config = data.get("config", {})
+        set_active = data.get("set_active", True)  # Default to True for backward compatibility
+
+        logging.info(f"set_sandbox_config: provider_type={provider_type}, set_active={set_active}")
+        logging.info(f"set_sandbox_config: config keys={list(config.keys())}")
+
+        res = SandboxMgr.set_config(provider_type, config, set_active)
+        return success_response(res, "Sandbox configuration updated successfully")
+    except AdminException as e:
+        logging.exception("set_sandbox_config AdminException")
+        return error_response(str(e), 400)
+    except Exception as e:
+        logging.exception("set_sandbox_config unexpected error")
+        return error_response(str(e), 500)
+
+
+@admin_bp.route("/sandbox/test", methods=["POST"])
+@login_required
+@check_admin_auth
+def test_sandbox_connection():
+    """Test connection to sandbox provider."""
+    try:
+        data = request.get_json()
+        if not data:
+            return error_response("Request body is required", 400)
+
+        provider_type = data.get("provider_type")
+        if not provider_type:
+            return error_response("provider_type is required", 400)
+
+        config = data.get("config", {})
+        res = SandboxMgr.test_connection(provider_type, config)
+        return success_response(res)
+    except AdminException as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route("/log_levels", methods=["GET"])
+@login_required
+@check_admin_auth
+def get_logger_levels():
+    """Get current log levels for all packages."""
+    try:
+        res = get_log_levels()
+        return success_response(res, "Get log levels", 0)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route("/log_levels", methods=["PUT"])
+@login_required
+@check_admin_auth
+def set_logger_level():
+    """Set log level for a package."""
+    try:
+        data = request.get_json()
+        if not data or "pkg_name" not in data or "level" not in data:
+            return error_response("pkg_name and level are required", 400)
+
+        pkg_name = data["pkg_name"]
+        level = data["level"]
+        if not isinstance(pkg_name, str) or not isinstance(level, str):
+            return error_response("pkg_name and level must be strings", 400)
+
+        success = set_log_level(pkg_name, level)
+        if success:
+            return success_response({"pkg_name": pkg_name, "level": level}, "Log level updated successfully")
+        else:
+            return error_response(f"Invalid log level: {level}", 400)
     except Exception as e:
         return error_response(str(e), 500)

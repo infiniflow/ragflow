@@ -16,9 +16,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { RunningStatus } from '@/constants/knowledge';
 import { Pagination } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
-import { replaceText } from '@/pages/dataset/process-log-modal';
+import ProcessLogModal, {
+  ILogInfo,
+  replaceText,
+} from '@/pages/dataset/process-log-modal';
 import { MemoryOptions } from '@/pages/memories/constants';
 import {
   ColumnDef,
@@ -27,6 +31,7 @@ import {
   Row,
   SortingState,
   VisibilityState,
+  createColumnHelper,
   flexRender,
   getCoreRowModel,
   getExpandedRowModel,
@@ -35,6 +40,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
+import dayjs from 'dayjs';
 import { t } from 'i18next';
 import { pick } from 'lodash';
 import {
@@ -45,7 +51,7 @@ import {
   TextSelect,
 } from 'lucide-react';
 import * as React from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 import { useMessageAction } from './hook';
 import { IMessageInfo } from './interface';
@@ -56,6 +62,62 @@ export type MemoryTableProps = {
   pagination: Pagination;
   setPagination: (params: { page: number; pageSize: number }) => void;
 };
+
+const columnHelper = createColumnHelper<IMessageInfo>();
+
+function getTaskStatus(progress: number) {
+  if (progress >= 1) {
+    return RunningStatus.DONE;
+  } else if (progress > 0 && progress < 1) {
+    return RunningStatus.RUNNING;
+  } else if (progress < 0) {
+    return RunningStatus.FAIL;
+  } else {
+    return RunningStatus.UNSTART;
+  }
+}
+
+type UpdateMessageStateFn = (
+  message: IMessageInfo,
+  enable: boolean,
+) => Promise<boolean>;
+
+function StatusSwitch({
+  row,
+  disabled,
+  onUpdate,
+}: {
+  row: Row<IMessageInfo>;
+  disabled: boolean;
+  onUpdate: UpdateMessageStateFn;
+}) {
+  const serverStatus = row.original.status;
+  const [optimisticStatus, setOptimisticStatus] = useState(serverStatus);
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    setOptimisticStatus(serverStatus);
+  }, [serverStatus]);
+
+  return (
+    <div className="flex items-center">
+      <Switch
+        disabled={disabled || pending}
+        checked={optimisticStatus}
+        onCheckedChange={(val) => {
+          setOptimisticStatus(val);
+          setPending(true);
+          onUpdate(row.original, val).then((success) => {
+            setPending(false);
+            if (!success) {
+              setOptimisticStatus(serverStatus);
+            }
+          });
+        }}
+      />
+    </div>
+  );
+}
 
 export function MemoryTable({
   messages,
@@ -86,6 +148,21 @@ export function MemoryTable({
 
   const disabledRowFunc = (row: Row<IMessageInfo>) => {
     return row.original.forget_at !== 'None' && !!row.original.forget_at;
+  };
+
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [logInfo, setLogInfo] = useState<ILogInfo>();
+  const showLog = (row: Row<IMessageInfo>) => {
+    const task = row.original.task;
+    const logDetail = {
+      startTime: dayjs(task.create_time)
+        .locale(document.documentElement.lang)
+        .format('MM/DD/YYYY HH:mm:ss'),
+      status: getTaskStatus(task.progress),
+      details: task.progress_msg,
+    } as unknown as ILogInfo;
+    setLogInfo(logDetail);
+    setIsModalVisible(true);
   };
   // Define columns for the memory table
   const columns: ColumnDef<IMessageInfo>[] = useMemo(
@@ -183,21 +260,46 @@ export function MemoryTable({
       {
         accessorKey: 'status',
         header: () => <span>{t('memory.messages.enable')}</span>,
+        cell: ({ row }) => (
+          <StatusSwitch
+            row={row}
+            disabled={disabledRowFunc(row)}
+            onUpdate={handleClickUpdateMessageState}
+          />
+        ),
+      },
+      columnHelper.display({
+        id: 'task_progress',
         cell: ({ row }) => {
-          const isEnabled = row.getValue('status') as boolean;
+          const { task } = row.original;
+
+          if (!task) {
+            return null;
+          }
+
+          const taskStatus = getTaskStatus(task.progress);
+
           return (
-            <div className="flex items-center">
-              <Switch
-                disabled={disabledRowFunc(row)}
-                defaultChecked={isEnabled}
-                onCheckedChange={(val) => {
-                  handleClickUpdateMessageState(row.original, val);
-                }}
+            <Button
+              variant="transparent"
+              size="icon"
+              className="border-0 size-8"
+              onClick={() => {
+                showLog(row);
+              }}
+            >
+              <div
+                className={cn('size-1 rounded-full', {
+                  'bg-state-success': taskStatus === RunningStatus.DONE,
+                  'bg-state-error': taskStatus === RunningStatus.FAIL,
+                  'bg-state-warning': taskStatus === RunningStatus.RUNNING,
+                  'bg-text-secondary': taskStatus === RunningStatus.UNSTART,
+                })}
               />
-            </div>
+            </Button>
           );
         },
-      },
+      }),
       {
         accessorKey: 'action',
         header: () => <span>{t('memory.messages.action')}</span>,
@@ -244,7 +346,7 @@ export function MemoryTable({
     data: messages,
     columns,
     onExpandedChange: setExpanded,
-    getSubRows: (row) => row.extract || undefined,
+    getSubRows: (row) => (row.extract as IMessageInfo[]) || undefined,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
@@ -389,6 +491,16 @@ export function MemoryTable({
             )}
           </div>
         </Modal>
+      )}
+
+      {isModalVisible && (
+        <ProcessLogModal
+          title={t('memory.taskLogDialog.title')}
+          visible={isModalVisible}
+          onCancel={() => setIsModalVisible(false)}
+          translateKey="memory.taskLogDialog"
+          logInfo={logInfo as unknown as ILogInfo}
+        />
       )}
 
       <div className="flex items-center justify-end  absolute bottom-3 right-3">

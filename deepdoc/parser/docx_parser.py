@@ -20,9 +20,55 @@ import pandas as pd
 from collections import Counter
 from rag.nlp import rag_tokenizer
 from io import BytesIO
+import logging
+from common.constants import MAXIMUM_PAGE_NUMBER
+from docx.image.exceptions import (
+    InvalidImageStreamError,
+    UnexpectedEndOfFileError,
+    UnrecognizedImageError,
+)
+from rag.utils.lazy_image import LazyImage
 
 
 class RAGFlowDocxParser:
+    def get_picture(self, document, paragraph):
+        imgs = paragraph._element.xpath(".//pic:pic")
+        if not imgs:
+            return None
+        image_blobs = []
+        for img in imgs:
+            embed = img.xpath(".//a:blip/@r:embed")
+            if not embed:
+                continue
+            embed = embed[0]
+            image_blob = None
+            try:
+                related_part = document.part.related_parts[embed]
+            except Exception as e:
+                logging.warning(f"Skipping image due to unexpected error getting related_part: {e}")
+                continue
+
+            try:
+                image = related_part.image
+                if image is not None:
+                    image_blob = image.blob
+            except (
+                UnrecognizedImageError,
+                UnexpectedEndOfFileError,
+                InvalidImageStreamError,
+                UnicodeDecodeError,
+            ) as e:
+                logging.info(f"Damaged image encountered, attempting blob fallback: {e}")
+            except Exception as e:
+                logging.warning(f"Unexpected error getting image, attempting blob fallback: {e}")
+
+            if image_blob is None:
+                image_blob = getattr(related_part, "blob", None)
+            if image_blob:
+                image_blobs.append(image_blob)
+        if not image_blobs:
+            return None
+        return LazyImage(image_blobs)
 
     def __extract_table_content(self, tb):
         df = []
@@ -45,7 +91,7 @@ class RAGFlowDocxParser:
                 (r"^[0-9A-Z/\._~-]+$", "Ca"),
                 (r"^[A-Z]*[a-z' -]+$", "En"),
                 (r"^[0-9.,+-]+[0-9A-Za-z/$￥%<>（）()' -]+$", "NE"),
-                (r"^.{1}$", "Sg")
+                (r"^.{1}$", "Sg"),
             ]
             for p, n in pattern:
                 if re.search(p, b):
@@ -64,16 +110,14 @@ class RAGFlowDocxParser:
 
         if len(df) < 2:
             return []
-        max_type = Counter([blockType(str(df.iloc[i, j])) for i in range(
-            1, len(df)) for j in range(len(df.iloc[i, :]))])
+        max_type = Counter([blockType(str(df.iloc[i, j])) for i in range(1, len(df)) for j in range(len(df.iloc[i, :]))])
         max_type = max(max_type.items(), key=lambda x: x[1])[0]
 
         colnm = len(df.iloc[0, :])
         hdrows = [0]  # header is not necessarily appear in the first line
         if max_type == "Nu":
             for r in range(1, len(df)):
-                tys = Counter([blockType(str(df.iloc[r, j]))
-                              for j in range(len(df.iloc[r, :]))])
+                tys = Counter([blockType(str(df.iloc[r, j])) for j in range(len(df.iloc[r, :]))])
                 tys = max(tys.items(), key=lambda x: x[1])[0]
                 if tys != max_type:
                     hdrows.append(r)
@@ -113,27 +157,26 @@ class RAGFlowDocxParser:
             return lines
         return ["\n".join(lines)]
 
-    def __call__(self, fnm, from_page=0, to_page=100000000):
-        self.doc = Document(fnm) if isinstance(
-            fnm, str) else Document(BytesIO(fnm))
-        pn = 0 # parsed page
-        secs = [] # parsed contents
+    def __call__(self, fnm, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
+        self.doc = Document(fnm) if isinstance(fnm, str) else Document(BytesIO(fnm))
+        pn = 0  # parsed page
+        secs = []  # parsed contents
         for p in self.doc.paragraphs:
             if pn > to_page:
                 break
 
-            runs_within_single_paragraph = [] # save runs within the range of pages
+            runs_within_single_paragraph = []  # save runs within the range of pages
             for run in p.runs:
                 if pn > to_page:
                     break
                 if from_page <= pn < to_page and p.text.strip():
-                    runs_within_single_paragraph.append(run.text) # append run.text first
+                    runs_within_single_paragraph.append(run.text)  # append run.text first
 
                 # wrap page break checker into a static method
-                if 'lastRenderedPageBreak' in run._element.xml:
+                if "lastRenderedPageBreak" in run._element.xml:
                     pn += 1
 
-            secs.append(("".join(runs_within_single_paragraph), p.style.name if hasattr(p.style, 'name') else '')) # then concat run.text as part of the paragraph
+            secs.append(("".join(runs_within_single_paragraph), p.style.name if hasattr(p.style, "name") else ""))  # then concat run.text as part of the paragraph
 
         tbls = [self.__extract_table_content(tb) for tb in self.doc.tables]
         return secs, tbls

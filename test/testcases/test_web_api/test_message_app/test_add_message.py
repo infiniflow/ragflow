@@ -17,12 +17,13 @@ import time
 import uuid
 import pytest
 
-from test_web_api.common import list_memory_message, add_message
+from test_common import list_memory_message, add_message
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
+
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -38,7 +39,6 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_empty_raw_type_memory")
 class TestAddRawMessage:
-
     @pytest.mark.p1
     def test_add_raw_message(self, WebApiAuth):
         memory_id = self.memory_id
@@ -59,7 +59,7 @@ Uses: Pineapples are eaten fresh, cooked, grilled, juiced, or canned. They are a
 Nutrition: They are a good source of Vitamin C, manganese, and contain an enzyme called bromelain, which aids in digestion and can tenderize meat.
 Symbolism: The pineapple is a traditional symbol of hospitality and welcome in many cultures.
 Are you asking about the fruit itself, or its use in a specific context?
-"""
+""",
         }
         add_res = add_message(WebApiAuth, message_payload)
         assert add_res["code"] == 0, add_res
@@ -71,10 +71,23 @@ Are you asking about the fruit itself, or its use in a specific context?
             assert message["agent_id"] == agent_id, message
             assert message["session_id"] == session_id, message
 
+    @pytest.mark.p2
+    def test_add_message_invalid_memory_id(self, WebApiAuth):
+        message_payload = {
+            "memory_id": ["missing_memory_id"],
+            "agent_id": uuid.uuid4().hex,
+            "session_id": uuid.uuid4().hex,
+            "user_id": "",
+            "user_input": "what is pineapple?",
+            "agent_response": "pineapple response",
+        }
+        res = add_message(WebApiAuth, message_payload)
+        assert res["code"] == 500, res
+        assert "Some messages failed to add" in res["message"], res
+
 
 @pytest.mark.usefixtures("add_empty_multiple_type_memory")
 class TestAddMultipleTypeMessage:
-
     @pytest.mark.p1
     def test_add_multiple_type_message(self, WebApiAuth):
         memory_id = self.memory_id
@@ -95,7 +108,7 @@ Uses: Pineapples are eaten fresh, cooked, grilled, juiced, or canned. They are a
 Nutrition: They are a good source of Vitamin C, manganese, and contain an enzyme called bromelain, which aids in digestion and can tenderize meat.
 Symbolism: The pineapple is a traditional symbol of hospitality and welcome in many cultures.
 Are you asking about the fruit itself, or its use in a specific context?
-"""
+""",
         }
         add_res = add_message(WebApiAuth, message_payload)
         assert add_res["code"] == 0, add_res
@@ -110,7 +123,6 @@ Are you asking about the fruit itself, or its use in a specific context?
 
 @pytest.mark.usefixtures("add_2_multiple_type_memory")
 class TestAddToMultipleMemory:
-
     @pytest.mark.p1
     def test_add_to_multiple_memory(self, WebApiAuth):
         memory_ids = self.memory_ids
@@ -131,7 +143,7 @@ Uses: Pineapples are eaten fresh, cooked, grilled, juiced, or canned. They are a
 Nutrition: They are a good source of Vitamin C, manganese, and contain an enzyme called bromelain, which aids in digestion and can tenderize meat.
 Symbolism: The pineapple is a traditional symbol of hospitality and welcome in many cultures.
 Are you asking about the fruit itself, or its use in a specific context?
-"""
+""",
         }
         add_res = add_message(WebApiAuth, message_payload)
         assert add_res["code"] == 0, add_res

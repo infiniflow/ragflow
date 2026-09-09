@@ -1,4 +1,4 @@
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
 import { initialIterationValues } from '../../constant';
@@ -20,7 +20,11 @@ export function useValues(node?: RAGFlowNodeType) {
       return { ...initialIterationValues, outputs: [] };
     }
 
-    return { ...formData, outputs: convertToArray(formData.outputs) };
+    return {
+      ...initialIterationValues,
+      ...formData,
+      outputs: convertToArray(formData.outputs || {}),
+    };
   }, [node?.data?.form]);
 
   return values;

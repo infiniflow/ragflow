@@ -1,0 +1,170 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package dao
+
+import (
+	"context"
+	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
+)
+
+// TenantModelDAO tenant model data access object
+type TenantModelDAO struct{}
+
+// NewTenantModelDAO create tenant model DAO
+func NewTenantModelDAO() *TenantModelDAO {
+	return &TenantModelDAO{}
+}
+
+func (dao *TenantModelDAO) Create(ctx context.Context, db *gorm.DB, instance *entity.TenantModel) error {
+	return db.WithContext(ctx).Create(instance).Error
+}
+
+func (dao *TenantModelDAO) CreateBatch(ctx context.Context, db *gorm.DB, models []*entity.TenantModel) error {
+	if len(models) == 0 {
+		return nil
+	}
+
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, model := range models {
+			if err := tx.WithContext(ctx).Create(model).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (dao *TenantModelDAO) DeleteByModelID(ctx context.Context, db *gorm.DB, modelID string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("id = ?", modelID).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
+func (dao *TenantModelDAO) DeleteByModelIDAndProviderIDAndInstanceID(ctx context.Context, db *gorm.DB, modelID, providerID, instanceID string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("id = ? AND provider_id = ? AND instance_id = ?", modelID, providerID, instanceID).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
+func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceID(ctx context.Context, db *gorm.DB, provideID, instanceID string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("provider_id = ? AND instance_id = ?", provideID, instanceID).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
+func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceIDAndModelName(ctx context.Context, db *gorm.DB, provideID, instanceID, modelName string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("provider_id = ? AND instance_id = ? AND model_name = ?", provideID, instanceID, modelName).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
+func (dao *TenantModelDAO) UpdateStatusByIDAndScope(ctx context.Context, db *gorm.DB, modelID, providerID, instanceID, status string) (int64, error) {
+	result := db.WithContext(ctx).Model(&entity.TenantModel{}).Where("id = ? AND provider_id = ? AND instance_id = ?", modelID, providerID, instanceID).Update("status", status)
+	return result.RowsAffected, result.Error
+}
+
+// GetByID get tenant model by primary key (id)
+func (dao *TenantModelDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.TenantModel, error) {
+	var model entity.TenantModel
+	err := db.WithContext(ctx).Where("id = ?", id).First(&model).Error
+	if err != nil {
+		return nil, err
+	}
+	return &model, nil
+}
+
+func (dao *TenantModelDAO) GetModelByProviderIDAndInstanceIDAndModelName(ctx context.Context, db *gorm.DB, providerID, instanceID, modelName string) (*entity.TenantModel, error) {
+	var model entity.TenantModel
+	err := db.WithContext(ctx).Where("provider_id = ? AND instance_id = ? AND model_name = ?", providerID, instanceID, modelName).First(&model).Error
+	if err != nil {
+		return nil, err
+	}
+	return &model, nil
+}
+
+func (dao *TenantModelDAO) GetModelsByProviderIDAndInstanceIDAndModelName(ctx context.Context, db *gorm.DB, providerID, instanceID, modelName string) ([]*entity.TenantModel, error) {
+	var models []*entity.TenantModel
+	err := db.WithContext(ctx).Where("provider_id = ? AND instance_id = ? AND model_name = ?", providerID, instanceID, modelName).Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
+func (dao *TenantModelDAO) GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx context.Context, db *gorm.DB, providerID, instanceID string, modelType int, modelName string) (*entity.TenantModel, error) {
+	var model entity.TenantModel
+	// Use bitwise AND to match Python's bin_and(model_type) > 0 pattern.
+	// A model_type value of 0 (unknown type) matches no row.
+	err := db.WithContext(ctx).Where("provider_id = ? AND instance_id = ? AND model_type & ? > 0 AND model_name = ?", providerID, instanceID, modelType, modelName).First(&model).Error
+	if err != nil {
+		return nil, err
+	}
+	return &model, nil
+}
+
+// GetModelsByInstanceID get all models by instance ID
+func (dao *TenantModelDAO) GetModelsByInstanceID(ctx context.Context, db *gorm.DB, instanceID string) ([]*entity.TenantModel, error) {
+	var models []*entity.TenantModel
+	err := db.WithContext(ctx).Where("instance_id = ?", instanceID).Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
+// DeleteByIDs deletes all models whose id is in the given list.
+// Mirrors Python's TenantModelService.delete_by_ids.
+func (dao *TenantModelDAO) DeleteByIDs(ctx context.Context, db *gorm.DB, ids []string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := db.WithContext(ctx).Unscoped().Where("id IN ?", ids).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
+// UpdateByID updates a tenant model's model_type and extra by primary key.
+// Mirrors Python's TenantModelService.update_model.
+func (dao *TenantModelDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
+	return db.WithContext(ctx).Model(&entity.TenantModel{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// DeleteByInstanceIDs deletes all models whose instance_id is in the given list.
+func (dao *TenantModelDAO) DeleteByInstanceIDs(ctx context.Context, db *gorm.DB, instanceIDs []string) (int64, error) {
+	if len(instanceIDs) == 0 {
+		return 0, nil
+	}
+	result := db.WithContext(ctx).Unscoped().Where("instance_id IN ?", instanceIDs).Delete(&entity.TenantModel{})
+	return result.RowsAffected, result.Error
+}
+
+// GetModelsByProviderIDsAndInstanceIDs returns TenantModel rows whose
+// provider_id is in providerIDs and instance_id is in instanceIDs.
+// Mirrors Python's
+// TenantModelService.get_models_by_provider_ids_and_instance_ids and is
+// used to fetch per-tenant enable/disable overrides in bulk during
+// /api/v1/models response assembly. The Go port never WRITES to
+// tenant_model, so callers must treat an empty result as "use factory
+// defaults" — see ModelProviderService.ListTenantAddedModels.
+func (dao *TenantModelDAO) GetModelsByProviderIDsAndInstanceIDs(ctx context.Context, db *gorm.DB, providerIDs, instanceIDs []string) ([]*entity.TenantModel, error) {
+	models := make([]*entity.TenantModel, 0)
+	if len(providerIDs) == 0 || len(instanceIDs) == 0 {
+		return models, nil
+	}
+	err := db.WithContext(ctx).Where("provider_id IN ? AND instance_id IN ?", providerIDs, instanceIDs).Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}

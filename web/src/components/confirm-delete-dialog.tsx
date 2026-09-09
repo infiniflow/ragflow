@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,7 +25,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { AlertDialogOverlay } from '@radix-ui/react-alert-dialog';
+
 import { DialogProps } from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +43,9 @@ interface IProps {
   };
   okButtonText?: string;
   cancelButtonText?: string;
+  testId?: string;
+  confirmButtonTestId?: string;
+  cancelButtonTestId?: string;
 }
 
 export function ConfirmDeleteDialog({
@@ -41,6 +60,9 @@ export function ConfirmDeleteDialog({
   content,
   okButtonText,
   cancelButtonText,
+  testId,
+  confirmButtonTestId,
+  cancelButtonTestId,
 }: IProps & DialogProps) {
   const { t } = useTranslation();
 
@@ -55,53 +77,57 @@ export function ConfirmDeleteDialog({
       defaultOpen={defaultOpen}
     >
       {children && <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>}
-      <AlertDialogOverlay
-        onClick={(e) => {
-          e.stopPropagation();
-        }}
+
+      <AlertDialogContent
+        onSelect={(e) => e.preventDefault()}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-bg-base"
+        data-testid={testId ?? 'confirm-delete-dialog'}
       >
-        <AlertDialogContent
-          onSelect={(e) => e.preventDefault()}
-          onClick={(e) => e.stopPropagation()}
-          className="bg-bg-base "
-        >
-          <AlertDialogHeader className="space-y-5">
-            <AlertDialogTitle>
-              {title ?? t('common.deleteModalTitle')}
-              <AlertDialogCancel
-                onClick={onCancel}
-                className="border-none bg-transparent hover:border-none hover:bg-transparent absolute right-3 top-3 hover:text-text-primary"
-              >
-                <X size={16} />
-              </AlertDialogCancel>
-            </AlertDialogTitle>
-            {content && (
-              <>
-                <Separator className="w-[calc(100%+48px)] -translate-x-6"></Separator>
-                <AlertDialogDescription className="mt-5">
-                  <div className="flex flex-col gap-5  text-base mb-10 px-5">
-                    <div className="text-text-primary">
-                      {content.title || t('common.deleteModalTitle')}
-                    </div>
-                    {content.node}
-                  </div>
-                </AlertDialogDescription>
-              </>
-            )}
-          </AlertDialogHeader>
-          <AlertDialogFooter className="px-5 flex items-center gap-2">
-            <AlertDialogCancel onClick={onCancel}>
-              {cancelButtonText || t('common.cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-state-error text-text-primary hover:text-text-primary hover:bg-state-error"
-              onClick={onOk}
+        <AlertDialogHeader className="space-y-5">
+          <AlertDialogTitle>
+            {title ?? t('common.deleteModalTitle')}
+            <AlertDialogCancel
+              onClick={onCancel}
+              className="border-none bg-transparent hover:border-none hover:bg-transparent absolute right-3 top-3 hover:text-text-primary"
             >
-              {okButtonText || t('common.delete')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialogOverlay>
+              <X size={16} />
+            </AlertDialogCancel>
+          </AlertDialogTitle>
+          {content && (
+            <>
+              <Separator className="w-[calc(100%+48px)] -translate-x-6"></Separator>
+              <AlertDialogDescription className="mt-5">
+                <div className="flex flex-col gap-2 text-base mb-10 px-5 [overflow-wrap:anywhere]">
+                  <div className="text-text-primary">
+                    {content.title || t('common.deleteModalTitle')}
+                  </div>
+                  {content.node}
+                </div>
+              </AlertDialogDescription>
+            </>
+          )}
+        </AlertDialogHeader>
+        <AlertDialogFooter className="px-5 flex items-center">
+          <AlertDialogCancel
+            onClick={onCancel}
+            data-testid={
+              cancelButtonTestId ?? 'confirm-delete-dialog-cancel-btn'
+            }
+          >
+            {cancelButtonText || t('common.cancel')}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-state-error text-text-primary hover:text-text-primary hover:bg-state-error"
+            onClick={onOk}
+            data-testid={
+              confirmButtonTestId ?? 'confirm-delete-dialog-confirm-btn'
+            }
+          >
+            {okButtonText || t('common.delete')}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
     </AlertDialog>
   );
 }
@@ -119,17 +145,19 @@ export const ConfirmDeleteDialogNode = ({
 }) => {
   return (
     <div className="flex flex-col gap-2.5">
-      <div className="flex items-center border-0.5 text-text-secondary border-border-button rounded-lg px-3 py-4">
-        {avatar && (
-          <RAGFlowAvatar
-            className="w-8 h-8"
-            avatar={avatar.avatar}
-            isPerson={avatar.isPerson}
-            name={avatar.name}
-          />
-        )}
-        {name && <div className="ml-3">{name}</div>}
-      </div>
+      {(avatar || name) && (
+        <div className="flex items-center border-0.5 text-text-secondary border-border-button rounded-lg px-3 py-4">
+          {avatar && (
+            <RAGFlowAvatar
+              className="w-8 h-8"
+              avatar={avatar.avatar}
+              isPerson={avatar.isPerson}
+              name={avatar.name}
+            />
+          )}
+          {name && <div className="ml-3">{name}</div>}
+        </div>
+      )}
       {warnText && <div className="text-state-error text-xs">{warnText}</div>}
       {children}
     </div>

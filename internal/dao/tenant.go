@@ -1,0 +1,129 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package dao
+
+import (
+	"context"
+	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
+)
+
+// TenantDAO tenant data access object
+type TenantDAO struct{}
+
+// NewTenantDAO create tenant DAO
+func NewTenantDAO() *TenantDAO {
+	return &TenantDAO{}
+}
+
+// GetJoinedTenantsByUserID get joined tenants by user ID
+func (dao *TenantDAO) GetJoinedTenantsByUserID(ctx context.Context, db *gorm.DB, userID string) ([]*TenantWithRole, error) {
+	var results []*TenantWithRole
+
+	err := db.WithContext(ctx).Model(&entity.Tenant{}).
+		Select("tenant.id as tenant_id, tenant.name, tenant.llm_id, tenant.embd_id, tenant.asr_id, tenant.img2txt_id, user_tenant.role").
+		Joins("INNER JOIN user_tenant ON user_tenant.tenant_id = tenant.id").
+		Where("user_tenant.user_id = ? AND user_tenant.status = ? AND user_tenant.role = ? AND tenant.status = ?", userID, "1", "normal", "1").
+		Scan(&results).Error
+
+	return results, err
+}
+
+// TenantWithRole tenant with role information
+type TenantWithRole struct {
+	TenantID  string `gorm:"column:tenant_id" json:"tenant_id"`
+	Name      string `gorm:"column:name" json:"name"`
+	LLMID     string `gorm:"column:llm_id" json:"llm_id"`
+	EmbDID    string `gorm:"column:embd_id" json:"embd_id"`
+	ASRID     string `gorm:"column:asr_id" json:"asr_id"`
+	Img2TxtID string `gorm:"column:img2txt_id" json:"img2txt_id"`
+	Role      string `gorm:"column:role" json:"role"`
+}
+
+// TenantInfo tenant information with role (for owner tenant)
+type TenantInfo struct {
+	TenantID        string  `gorm:"column:tenant_id" json:"tenant_id"`
+	Name            *string `gorm:"column:name" json:"name,omitempty"`
+	LLMID           string  `gorm:"column:llm_id" json:"llm_id"`
+	TenantLLMID     *string `gorm:"column:tenant_llm_id" json:"tenant_llm_id,omitempty"`
+	EmbDID          string  `gorm:"column:embd_id" json:"embd_id"`
+	TenantEmbdID    *string `gorm:"column:tenant_embd_id" json:"tenant_embd_id,omitempty"`
+	RerankID        string  `gorm:"column:rerank_id" json:"rerank_id"`
+	TenantRerankID  *string `gorm:"column:tenant_rerank_id" json:"tenant_rerank_id,omitempty"`
+	ASRID           string  `gorm:"column:asr_id" json:"asr_id"`
+	TenantASRID     *string `gorm:"column:tenant_asr_id" json:"tenant_asr_id,omitempty"`
+	Img2TxtID       string  `gorm:"column:img2txt_id" json:"img2txt_id"`
+	TenantImg2TxtID *string `gorm:"column:tenant_img2txt_id" json:"tenant_img2txt_id,omitempty"`
+	TTSID           string  `gorm:"column:tts_id" json:"tts_id"`
+	TenantTTSID     *string `gorm:"column:tenant_tts_id" json:"tenant_tts_id,omitempty"`
+	OCRID           string  `gorm:"column:ocr_id" json:"ocr_id,omitempty"`
+	TenantOCRID     *string `gorm:"column:tenant_ocr_id" json:"tenant_ocr_id,omitempty"`
+	ParserIDs       string  `gorm:"column:parser_ids" json:"parser_ids"`
+	Role            string  `gorm:"column:role" json:"role"`
+}
+
+// GetInfoByUserID get tenant information for the owner tenant of a user
+func (dao *TenantDAO) GetInfoByUserID(ctx context.Context, db *gorm.DB, userID string) ([]*TenantInfo, error) {
+	var results []*TenantInfo
+
+	err := db.WithContext(ctx).Model(&entity.Tenant{}).
+		Select("tenant.id as tenant_id, tenant.name, tenant.llm_id, tenant.tenant_llm_id, tenant.embd_id, tenant.tenant_embd_id, tenant.rerank_id, tenant.tenant_rerank_id, tenant.asr_id, tenant.tenant_asr_id, tenant.img2txt_id, tenant.tenant_img2txt_id, tenant.tts_id, tenant.tenant_tts_id, tenant.ocr_id, tenant.tenant_ocr_id, tenant.parser_ids, user_tenant.role").
+		Joins("INNER JOIN user_tenant ON user_tenant.tenant_id = tenant.id").
+		Where("user_tenant.user_id = ? AND user_tenant.status = ? AND user_tenant.role = ? AND tenant.status = ?", userID, "1", "owner", "1").
+		Scan(&results).Error
+
+	return results, err
+}
+
+// GetByID gets tenant by ID
+func (dao *TenantDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Tenant, error) {
+	var tenant entity.Tenant
+	err := db.WithContext(ctx).Where("id = ? AND status = ?", id, "1").First(&tenant).Error
+	if err != nil {
+		return nil, err
+	}
+	return &tenant, nil
+}
+
+// Create creates a new tenant
+func (dao *TenantDAO) Create(ctx context.Context, db *gorm.DB, tenant *entity.Tenant) error {
+	return db.WithContext(ctx).Create(tenant).Error
+}
+
+// GetAllIDs returns the IDs of all active tenants.
+func (dao *TenantDAO) GetAllIDs(ctx context.Context, db *gorm.DB) ([]string, error) {
+	var ids []string
+	err := db.WithContext(ctx).Model(&entity.Tenant{}).Where("status = ?", string(entity.StatusValid)).
+		Pluck("id", &ids).Error
+	return ids, err
+}
+
+// Delete deletes a tenant by ID (soft delete)
+func (dao *TenantDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
+	return db.WithContext(ctx).Model(&entity.Tenant{}).Where("id = ?", id).Update("status", "0").Error
+}
+
+// Update updates a tenant by ID
+func (dao *TenantDAO) Update(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
+	return db.WithContext(ctx).Model(&entity.Tenant{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// HardDelete hard deletes a tenant by ID
+func (dao *TenantDAO) HardDelete(ctx context.Context, db *gorm.DB, id string) error {
+	return db.WithContext(ctx).Unscoped().Where("id = ?", id).Delete(&entity.Tenant{}).Error
+}

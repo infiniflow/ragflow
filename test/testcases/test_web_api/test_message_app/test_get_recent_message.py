@@ -16,13 +16,13 @@
 import random
 
 import pytest
-from test_web_api.common import get_recent_message
+from test_common import get_recent_message
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
 
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
@@ -38,7 +38,6 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestGetRecentMessage:
-
     @pytest.mark.p1
     def test_get_recent_messages(self, WebApiAuth):
         memory_id = self.memory_id
@@ -66,3 +65,15 @@ class TestGetRecentMessage:
         for message in res["data"]:
             assert message["session_id"] == session_id, message
 
+    @pytest.mark.p2
+    def test_get_recent_messages_missing_memory_id(self, WebApiAuth):
+        res = get_recent_message(WebApiAuth, params={})
+        assert res["code"] == 101, res
+        assert "memory_ids is required" in res["message"], res
+
+    @pytest.mark.p2
+    def test_get_recent_messages_csv_memory_ids(self, WebApiAuth):
+        memory_id = self.memory_id
+        res = get_recent_message(WebApiAuth, params={"memory_id": f"{memory_id},{memory_id}"})
+        assert res["code"] == 0, res
+        assert isinstance(res["data"], list), res

@@ -1,0 +1,325 @@
+{
+  "name": "OpenAI",
+  "rank": 999,
+  "url": {
+    "default": "https://api.openai.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings",
+    "asr": "audio/transcriptions",
+    "tts": "audio/speech"
+  },
+  "class": "gpt",
+  "models": [
+    {
+      "name": "gpt-5.5",
+      "context_length": 1050000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.4",
+      "context_length": 1050000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.4-mini",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.4-nano",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.2-pro",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.2",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.1",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.1-chat-latest",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5-mini",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5-nano",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5-chat-latest",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4.1",
+      "context_length": 1047576,
+      "max_output": 32768,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4.1-mini",
+      "context_length": 1047576,
+      "max_output": 32768,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4.1-nano",
+      "context_length": 1047576,
+      "max_output": 32768,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4.5-preview",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4o-mini",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4o",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-3.5-turbo",
+      "context_length": 16385,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-3.5-turbo-16k-0613",
+      "context_length": 16385,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "text-embedding-ada-002",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    },
+    {
+      "name": "text-embedding-3-small",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    },
+    {
+      "name": "text-embedding-3-large",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    },
+    {
+      "name": "whisper-1",
+      "max_tokens": 26214400,
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "gpt-4",
+      "context_length": 8192,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4-turbo",
+      "context_length": 128000,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4-32k",
+      "context_length": 32768,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "tts-1",
+      "max_tokens": 2048,
+      "model_types": [
+        "tts"
+      ]
+    }
+  ]
+}

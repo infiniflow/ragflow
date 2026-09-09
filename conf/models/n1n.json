@@ -1,0 +1,156 @@
+{
+  "name": "n1n",
+  "url": {
+    "default": "https://api.n1n.ai"
+  },
+  "url_suffix": {
+    "chat": "v1/chat/completions",
+    "models": "v1/models",
+    "embedding": "v1/embeddings",
+    "rerank": "v1/rerank"
+  },
+  "class": "n1n",
+  "models": [
+    {
+      "name": "gpt-4o-mini",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-4o",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.2",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v3-0324",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v3-1-250821",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v3-1-think-250821",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2-250905",
+      "context_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen3-coder-plus",
+      "context_length": 262144,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "text-embedding-3-small",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    },
+    {
+      "name": "text-embedding-3-large",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    },
+    {
+      "name": "text-embedding-ada-002",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    },
+    {
+      "name": "BAAI/bge-reranker-v2-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "Qwen/Qwen3-Reranker-0.6B",
+      "max_tokens": 32768,
+      "model_types": [
+        "rerank"
+      ]
+    }
+  ]
+}

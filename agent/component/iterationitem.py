@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from abc import ABC
+
 from agent.component.base import ComponentBase, ComponentParamBase
 
 
@@ -21,6 +22,7 @@ class IterationItemParam(ComponentParamBase):
     """
     Define the IterationItem component parameters.
     """
+
     def check(self):
         return True
 
@@ -40,7 +42,7 @@ class IterationItem(ComponentBase, ABC):
         arr = self._canvas.get_variable_value(parent._param.items_ref)
         if not isinstance(arr, list):
             self._idx = -1
-            raise Exception(parent._param.items_ref + " must be an array, but its type is "+str(type(arr)))
+            raise Exception(parent._param.items_ref + " must be an array, but its type is " + str(type(arr)))
 
         if self._idx > 0:
             if self.check_if_canceled("IterationItem processing"):
@@ -54,7 +56,11 @@ class IterationItem(ComponentBase, ABC):
         if self.check_if_canceled("IterationItem processing"):
             return
 
-        self.set_output("item", arr[self._idx])
+        current_item = arr[self._idx]
+        self.set_output("item", current_item)
+        # Keep `result` as a compatibility alias because existing DSL examples
+        # and downstream references may still consume IterationItem via `@result`.
+        self.set_output("result", current_item)
         self.set_output("index", self._idx)
 
         self._idx += 1
@@ -69,13 +75,17 @@ class IterationItem(ComponentBase, ABC):
             if p._id != pid:
                 continue
 
-            if p.component_name.lower() in ["categorize", "message", "switch", "userfillup", "interationitem"]:
+            if p.component_name.lower() in ["categorize", "message", "switch", "userfillup", "iterationitem"]:
                 continue
 
             for k, o in p._param.outputs.items():
                 if "ref" not in o:
                     continue
-                _cid, var = o["ref"].split("@")
+                # Use maxsplit=1 so an `@` legitimately embedded in `var`
+                # (e.g. a user-defined output key that happens to contain
+                # '@') does not raise `ValueError: too many values to unpack`.
+                # `_cid` is system-generated and never contains '@'.
+                _cid, var = o["ref"].split("@", 1)
                 if _cid != cid:
                     continue
                 res = p.output(k)

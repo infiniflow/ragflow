@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import i18n from '@/locales/config';
@@ -5,9 +21,11 @@ import authorizationUtil, {
   getAuthorization,
   redirectToLogin,
 } from '@/utils/authorization-util';
-import { notification } from 'antd';
+import notification from '@/utils/notification';
 import axios from 'axios';
-import { convertTheKeysOfTheObjectToSnake } from './common-util';
+import { convertTheKeysOfTheObjectToSnake, isFormData } from './common-util';
+import { setCachedLlmList } from './llm-cache';
+import { addTenantParams } from './llm-util';
 
 const FAILED_TO_FETCH = 'Failed to fetch';
 
@@ -71,6 +89,9 @@ const errorHandler = (error: {
   return response ?? { data: { code: 1999 } };
 };
 
+// avoid duplicate 401 redirects
+let isRedirecting = false;
+
 const request = axios.create({
   //   errorHandler,
   timeout: 300000,
@@ -82,9 +103,15 @@ request.interceptors.request.use(
     const data = convertTheKeysOfTheObjectToSnake(config.data);
     const params = convertTheKeysOfTheObjectToSnake(config.params);
 
-    const newConfig = { ...config, data, params };
+    // Add tenant parameters to data
+    const dataWithTenantParams = isFormData(data)
+      ? data
+      : addTenantParams(data, config.url);
 
-    if (!newConfig.skipToken) {
+    const newConfig = { ...config, data: dataWithTenantParams, params };
+
+    // Skip token if explicitly requested
+    if (!(newConfig as any).skipToken) {
       newConfig.headers.set(Authorization, getAuthorization());
     }
 
@@ -105,17 +132,31 @@ request.interceptors.response.use(
       return response;
     }
     const data = response?.data;
-    if (data?.code === 100) {
+
+    // Update LLM list cache when fetching my_llm or llm_list
+    if (data?.code === 0 && data?.data) {
+      const url = response?.config?.url || '';
+      if (url.includes('/v1/llm/my_llms') || url.includes('/v1/llm/list')) {
+        setCachedLlmList(data.data);
+      }
+    }
+
+    const skipErrorNotification = (response.config as any)
+      ?.skipGlobalErrorNotification;
+    if (data?.code === 100 && !skipErrorNotification) {
       message.error(data?.message);
     } else if (data?.code === 401) {
-      notification.error({
-        message: data?.message,
-        description: data?.message,
-        duration: 3,
-      });
-      authorizationUtil.removeAll();
-      redirectToLogin();
-    } else if (data?.code !== 0) {
+      if (!isRedirecting) {
+        isRedirecting = true;
+        notification.error({
+          message: data?.message,
+          description: data?.message,
+          duration: 3,
+        });
+        authorizationUtil.removeAll();
+        redirectToLogin();
+      }
+    } else if (data?.code !== 0 && !skipErrorNotification) {
       notification.error({
         message: `${i18n.t('message.hint')} : ${data?.code}`,
         description: data?.message,
@@ -125,8 +166,28 @@ request.interceptors.response.use(
     return response;
   },
   function (error) {
-    console.log('🚀 ~ error:', error);
-    errorHandler(error);
+    // Handle HTTP 401 (token expired / invalid)
+    const status = error?.response?.status;
+    if (status === 401) {
+      if (!isRedirecting) {
+        isRedirecting = true;
+        const messageText =
+          error?.response?.data?.message || RetcodeMessage[401];
+        notification.error({
+          message: messageText,
+          description: messageText,
+          duration: 3,
+        });
+        authorizationUtil.removeAll();
+        redirectToLogin();
+      }
+
+      return Promise.reject(error);
+    }
+
+    if (!(error?.config as any)?.skipGlobalErrorNotification) {
+      errorHandler(error);
+    }
     return Promise.reject(error);
   },
 );
