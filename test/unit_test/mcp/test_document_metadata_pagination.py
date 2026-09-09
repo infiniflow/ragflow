@@ -62,9 +62,12 @@ def _fresh_connector(mcp_server):
     return connector
 
 
-def _stub_get(monkeypatch, connector, total, *, code=0, page_size=30, guard=100):
+def _stub_get(monkeypatch, connector, total, *, code=0, page_size=30, guard=100, fail_from_page=None):
     """Mock RAGFlowConnector._get: serves the dataset-info call and a paginated
-    documents endpoint backed by ``total`` synthetic documents."""
+    documents endpoint backed by ``total`` synthetic documents.
+
+    ``fail_from_page`` makes the documents endpoint start reporting a non-zero
+    code from that page on, so a run can succeed partway and then fail."""
     all_docs = [{"id": f"doc-{i}", "name": f"name-{i}"} for i in range(total)]
     doc_requests = []
 
@@ -75,6 +78,8 @@ def _stub_get(monkeypatch, connector, total, *, code=0, page_size=30, guard=100)
                 raise _LoopGuard(f"pagination did not terminate after {guard} requests")
             page = int(re.search(r"[?&]page=(\d+)", path).group(1))
             requested_size = int(re.search(r"[?&]page_size=(\d+)", path).group(1))
+            if fail_from_page is not None and page >= fail_from_page:
+                return _FakeResponse({"code": 100, "message": "backend error"})
             start = (page - 1) * requested_size
             return _FakeResponse({"code": code, "data": {"docs": all_docs[start : start + requested_size], "total": total}})
         # dataset-info lookup (/datasets?id=...)
@@ -135,3 +140,22 @@ async def test_documents_request_sends_explicit_page_size(monkeypatch, mcp_serve
 
     assert doc_requests
     assert "page_size=30" in doc_requests[0]
+
+
+@pytest.mark.p2
+@pytest.mark.asyncio
+async def test_partial_pagination_failure_is_not_cached(monkeypatch, mcp_server):
+    """A run that fails midway must not cache the pages it already fetched.
+
+    The cache write is guarded by ``pagination_succeeded`` so a dataset whose
+    first page lands but whose second page errors is not served as a complete
+    document list for the rest of the TTL; the next call re-fetches instead.
+    """
+    connector = _fresh_connector(mcp_server)
+    doc_requests = _stub_get(monkeypatch, connector, total=60, fail_from_page=2)
+
+    document_cache, _ = await connector._get_document_metadata_cache(["ds-partial"], api_key="k")
+
+    assert len(doc_requests) == 2  # page 1 succeeded, page 2 failed
+    assert document_cache == {}
+    assert connector._get_cached_document_metadata_by_dataset("ds-partial") is None
