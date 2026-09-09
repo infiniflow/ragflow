@@ -153,12 +153,14 @@ class CaptureInventoryTests(unittest.TestCase):
         staged_copy = self.repo / "deployment/linux-pg/release-v1.0.0/stage-deadbeef/core.py"
         runtime_result = self.repo / "services/asr-online-service/artifacts/task/result.json"
         cache = self.repo / "services/asr-online-service/.venv/pyvenv.cfg"
+        architecture_cache = self.repo / "services/asr-online-service/.architecture-venv/pyvenv.cfg"
         for target, content in (
             (source, "@startuml\n@enduml\n"),
             (archive, "archive"),
             (staged_copy, "copied"),
             (runtime_result, "{}"),
             (cache, "cache"),
+            (architecture_cache, "architecture cache"),
         ):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")

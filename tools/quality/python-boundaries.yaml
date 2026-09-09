@@ -19,8 +19,8 @@ profiles:
   python_paths:
   - services/asr-online-service/src
   python_executable_candidates:
-  - services/asr-online-service/.venv/Scripts/python.exe
-  - services/asr-online-service/.venv/bin/python
+  - services/asr-online-service/.architecture-venv/Scripts/python.exe
+  - services/asr-online-service/.architecture-venv/bin/python
 boundaries:
 - id: business-documents-domain
   owner_module: business-documents

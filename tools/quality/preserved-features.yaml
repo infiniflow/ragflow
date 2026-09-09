@@ -329,15 +329,19 @@ features:
   - Existing checks remain distinct from future architecture gates
   entrypoints:
   - AGENTS.md
+  - .github/workflows/architecture.yml
   - tools/quality/capture_inventory.py
   - tools/quality/check_architecture.py
+  - tools/quality/check_architecture_policy.py
   - tools/quality/inspect_typescript.py
   - tools/quality/inspect_go.py
   - tools/quality/check_runtime_graph_policy.py
   - tools/quality/probe_python_runtime.py
+  - tools/quality/run_isolated_python.py
   - run_tests.py
   - .github/workflows/tests.yml
   evidence_paths:
+  - test/unit_test/tools/quality/test_architecture_workflow.py
   - test/unit_test/tools/quality/test_capture_inventory.py
   - test/unit_test/tools/hooks/test_check_files.py
   - test/REGRESSION.md
@@ -346,6 +350,7 @@ features:
   - test/integration/live_ragflow/README.md
   - test/unit_test/playwright/test_browser_server.py
   - test/unit_test/tools/quality/test_check_architecture.py
+  - test/unit_test/tools/quality/test_check_architecture_policy.py
   - test/unit_test/tools/quality/test_inspect_python.py
   - test/unit_test/tools/quality/test_inspect_typescript.py
   - test/unit_test/tools/quality/test_inspect_go.py
@@ -353,9 +358,10 @@ features:
   execution_status: PARTIAL_T1
   next_action: T2 report-only observers, runtime contracts and the exact TypeScript/Go
     signal classification are documented in docs/develop/t2-python-analysis-ru.md and
-    docs/develop/t2-runtime-graph-classification-ru.md. Introduce the calibrated
-    selector and fail-closed report-only aggregate are now implemented as a T3
-    bootstrap. Next, execute the trusted base checker, run negative PR probes and
-    verify required branch protection; T1 remains a complete baseline with known
-    failures.
+    docs/develop/t2-runtime-graph-classification-ru.md. The T3 selector, aggregate,
+    base-policy protocol, monotonic coverage comparison and local PR probes are
+    implemented with protected-source materialization and isolated producer imports.
+    Land protocol v1, isolate candidate runtime probes at the OS boundary, verify a
+    subsequent GitHub PR uses the base evaluator, then configure and test the required
+    ruleset; T1 remains a complete baseline with known failures.
   execution_evidence: docs/develop/t1-regression-results.json#KEEP-quality-governance

@@ -20,6 +20,7 @@ IGNORED_DIRECTORY_PATTERNS = [
     "**/__pycache__",
     "**/.pytest_cache",
     "**/.venv",
+    "**/.architecture-venv",
     "services/asr-online-service/artifacts",
     "services/asr-online-service/uploads",
     "deployment/linux-pg/release-*/stage-*",
@@ -244,7 +245,7 @@ def refresh_upstream_evidence(repo: Path, base_config: dict, existing: dict) -> 
 
 def _ignored_directory(path: str) -> bool:
     parts = PurePosixPath(path).parts
-    if any(part in {"__pycache__", ".pytest_cache", ".venv"} for part in parts):
+    if any(part in {"__pycache__", ".pytest_cache", ".venv", ".architecture-venv"} for part in parts):
         return True
     if path.startswith(("services/asr-online-service/artifacts/", "services/asr-online-service/uploads/")):
         return True

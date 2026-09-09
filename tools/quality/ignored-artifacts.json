@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-09-08T21:22:09.538140+00:00",
+  "captured_at": "2026-09-10T06:28:37.192510+00:00",
   "scopes": [
     "deployment/linux-pg",
     "agent/business_requirements",
@@ -11,6 +11,7 @@
     "**/__pycache__",
     "**/.pytest_cache",
     "**/.venv",
+    "**/.architecture-venv",
     "services/asr-online-service/artifacts",
     "services/asr-online-service/uploads",
     "deployment/linux-pg/release-*/stage-*",
