@@ -238,9 +238,7 @@
                     "params": {
                         "cross_languages": [],
                         "empty_response": "",
-                        "dataset_ids": [
-                            "a5aaec4a819b11f095f1047c16ec874f"
-                        ],
+                        "dataset_ids": [],
                         "retrieval_from": "dataset",
                         "keywords_similarity_weight": 0.7,
                         "outputs": {
@@ -270,9 +268,7 @@
                     "params": {
                         "cross_languages": [],
                         "empty_response": "",
-                        "dataset_ids": [
-                            "65cb5150819b11f08347047c16ec874f"
-                        ],
+                        "dataset_ids": [],
                         "retrieval_from": "dataset",
                         "keywords_similarity_weight": 0.7,
                         "meta_data_filter": {},
@@ -592,9 +588,7 @@
                         "form": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "dataset_ids": [
-                                "65cb5150819b11f08347047c16ec874f"
-                            ],
+                            "dataset_ids": [],
                             "retrieval_from": "dataset",
                             "keywords_similarity_weight": 0.7,
                             "meta_data_filter": {},
@@ -693,9 +687,7 @@
                         "form": {
                             "cross_languages": [],
                             "empty_response": "",
-                            "dataset_ids": [
-                                "a5aaec4a819b11f095f1047c16ec874f"
-                            ],
+                            "dataset_ids": [],
                             "retrieval_from": "dataset",
                             "keywords_similarity_weight": 0.7,
                             "outputs": {

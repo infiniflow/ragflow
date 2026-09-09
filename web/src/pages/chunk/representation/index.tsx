@@ -77,13 +77,13 @@ function Representation({ onNodeClick }: RepresentationProps) {
 
   return (
     <section className="p-5 rounded-2xl h-full flex flex-col">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
         <RepresentationSelect
           templates={templates}
           value={selectedTemplateId}
           onChange={handleTemplateChange}
         />
-        <div className="relative flex items-center gap-2">
+        <div className="min-w-0">
           {isGraphKind ? (
             <SelectWithSearch
               options={entityOptions}
@@ -101,21 +101,21 @@ function Representation({ onNodeClick }: RepresentationProps) {
               placeholder={t('common.search')}
             />
           )}
-          {templates.length > 0 && (
-            <ConfirmDeleteDialog onOk={handleDelete}>
-              <Button
-                variant="ghost"
-                size="icon"
-                type="button"
-                disabled={deleting}
-                aria-label={t('common.delete', 'Delete')}
-                className="absolute top-9 right-0"
-              >
-                <Trash2 className="h-5 w-5" />
-              </Button>
-            </ConfirmDeleteDialog>
-          )}
         </div>
+        {templates.length > 0 && (
+          <ConfirmDeleteDialog onOk={handleDelete}>
+            <Button
+              variant="ghost"
+              size="icon"
+              type="button"
+              disabled={deleting}
+              aria-label={t('common.delete', 'Delete')}
+              className="ml-auto shrink-0"
+            >
+              <Trash2 className="h-5 w-5" />
+            </Button>
+          </ConfirmDeleteDialog>
+        )}
       </div>
       {loading && !data && <SkeletonCard className="mt-6" />}
       {!(loading && !data) && templates.length === 0 && (

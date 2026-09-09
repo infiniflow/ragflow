@@ -81,6 +81,23 @@ func TestCodeExec_AcceptsLangAlias(t *testing.T) {
 	}
 }
 
+func TestCodeExec_ReturnsSandboxFailureAsTerminalError(t *testing.T) {
+	prev := GetSandboxClient()
+	SetSandboxClient(stubSandbox(func(context.Context, SandboxRequest) (*SandboxResponse, error) {
+		return nil, errors.New("provider unavailable")
+	}))
+	t.Cleanup(func() { SetSandboxClient(prev) })
+
+	out, err := NewCodeExecTool().InvokableRun(t.Context(), `{"language":"python","code":"def main(): pass"}`)
+	if err == nil || !strings.Contains(err.Error(), "provider unavailable") {
+		t.Fatalf("InvokableRun error = %v, want provider unavailable", err)
+	}
+	var got codeExecResult
+	if json.Unmarshal([]byte(out), &got) != nil || !strings.Contains(got.Error, "provider unavailable") {
+		t.Fatalf("result = %s, want error envelope", out)
+	}
+}
+
 func TestCodeExec_Info(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
