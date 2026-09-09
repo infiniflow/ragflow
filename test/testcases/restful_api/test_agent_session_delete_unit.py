@@ -68,9 +68,15 @@ def _load_agent_api(monkeypatch, *, tenant_id, canvas_owner_id, session_user_id)
     monkeypatch.setitem(sys.modules, "api.db.db_models", _module_stub("api.db.db_models", Task=SimpleNamespace()))
 
     conv = SimpleNamespace(id="sess_1", dialog_id="agent_1", user_id=session_user_id)
+    deleted = []
+
+    def _delete(session_id):
+        deleted.append(session_id)
+        return True
+
     api4 = SimpleNamespace(
         get_by_id=lambda session_id: (True, conv),
-        delete_by_id=lambda session_id: True,
+        delete_by_id=_delete,
     )
     monkeypatch.setitem(sys.modules, "api.db.services.api_service", _module_stub("api.db.services.api_service", API4ConversationService=api4))
 
@@ -138,26 +144,27 @@ def _load_agent_api(monkeypatch, *, tenant_id, canvas_owner_id, session_user_id)
     module.manager = _DummyManager()
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
-    return module
+    return module, deleted
 
 
 @pytest.mark.p2
 def test_team_member_cannot_delete_other_users_session(monkeypatch):
-    module = _load_agent_api(monkeypatch, tenant_id="tenant_member", canvas_owner_id="tenant_owner", session_user_id="tenant_owner")
+    module, deleted = _load_agent_api(monkeypatch, tenant_id="tenant_member", canvas_owner_id="tenant_owner", session_user_id="tenant_owner")
     res = module.delete_agent_session_item(agent_id="agent_1", session_id="sess_1", tenant_id="tenant_member")
     assert res["data"] is False
     assert res["message"] == "shared session is readonly"
+    assert deleted == [], "readonly rejection must not delete the session"
 
 
 @pytest.mark.p2
 def test_owner_can_delete_any_session(monkeypatch):
-    module = _load_agent_api(monkeypatch, tenant_id="tenant_owner", canvas_owner_id="tenant_owner", session_user_id="tenant_member")
+    module, _ = _load_agent_api(monkeypatch, tenant_id="tenant_owner", canvas_owner_id="tenant_owner", session_user_id="tenant_member")
     res = module.delete_agent_session_item(agent_id="agent_1", session_id="sess_1", tenant_id="tenant_owner")
     assert res["data"] is True
 
 
 @pytest.mark.p2
 def test_team_member_can_delete_own_session(monkeypatch):
-    module = _load_agent_api(monkeypatch, tenant_id="tenant_member", canvas_owner_id="tenant_owner", session_user_id="tenant_member")
+    module, _ = _load_agent_api(monkeypatch, tenant_id="tenant_member", canvas_owner_id="tenant_owner", session_user_id="tenant_member")
     res = module.delete_agent_session_item(agent_id="agent_1", session_id="sess_1", tenant_id="tenant_member")
     assert res["data"] is True
