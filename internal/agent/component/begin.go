@@ -105,19 +105,19 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	for _, field := range b.inputFields {
 		if _, direct := inputs[field]; !direct {
 			if query, scalar := inputs["query"].(string); scalar {
-				if value, initialized := state.Globals["begin@"+field]; initialized {
+				if value, initialized := state.GetGlobal("begin@" + field); initialized {
 					out[field] = value
 					continue
 				}
 				out[field] = query
-				state.Globals["begin@"+field] = query
+				state.SetGlobal("begin@"+field, query)
 				continue
 			}
 		}
 		if value, ok := beginInputValue(inputs, field); ok {
 			out[field] = value
-			state.Globals["begin@"+field] = value
-		} else if value, ok := state.Globals["begin@"+field]; ok {
+			state.SetGlobal("begin@"+field, value)
+		} else if value, ok := state.GetGlobal("begin@" + field); ok {
 			out[field] = value
 		}
 	}

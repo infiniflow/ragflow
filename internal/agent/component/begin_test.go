@@ -18,6 +18,7 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -137,6 +138,27 @@ func TestBegin_PreservesStarterInputAcrossQueries(t *testing.T) {
 	}
 	if state.Sys["query"] != "Hello" {
 		t.Fatalf("sys.query = %v, want Hello", state.Sys["query"])
+	}
+}
+
+func TestBegin_InitializesNilGlobalsAfterRestore(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{"name": map[string]any{}},
+	})
+	var state canvas.CanvasState
+	if err := json.Unmarshal([]byte(`{"sys":{}}`), &state); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	out, err := c.Invoke(canvas.WithState(t.Context(), &state), nil, map[string]any{"query": "Alice"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["name"] != "Alice" {
+		t.Fatalf("name = %v, want Alice", out["name"])
+	}
+	if value, ok := state.GetGlobal("begin@name"); !ok || value != "Alice" {
+		t.Fatalf("begin@name = %v, %v; want Alice, true", value, ok)
 	}
 }
 
