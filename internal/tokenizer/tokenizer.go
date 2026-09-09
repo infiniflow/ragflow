@@ -560,15 +560,12 @@ func getCL100KEncoder() (*tiktoken.Tiktoken, error) {
 	return cl100kEncoder.enc, cl100kEncoder.err
 }
 
-// ResetCL100KEncoderForTest clears the cl100k encoder cache so a test can force
-// a fresh load under a different search-root scope. Test-only; it mutates
-// package state. A plain assignment replaces the embedded sync.Once with an
-// un-fired one and wipes any cached result, so the next getCL100KEncoder /
-// InitCL100KEncoder re-runs the loader rather than returning a result cached by
-// a sibling test. Exported for cross-package tests (same pattern as
-// SetBpeSearchRootsForTest); callers should reset again on cleanup so sibling
-// tests reload the real table.
-func ResetCL100KEncoderForTest() {
+// resetCL100KEncoderForTest clears the cl100k encoder cache so a test can force a
+// fresh load under a different search-root scope. Test-only; it mutates package
+// state. A plain assignment replaces the embedded sync.Once with an un-fired one
+// and wipes any cached result, so the next getCL100KEncoder / InitCL100KEncoder
+// re-runs the loader rather than returning a result cached by a sibling test.
+func resetCL100KEncoderForTest() {
 	cl100kEncoder = struct {
 		sync.Once
 		enc *tiktoken.Tiktoken

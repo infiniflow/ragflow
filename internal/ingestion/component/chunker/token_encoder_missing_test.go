@@ -4,37 +4,43 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
-
-	"ragflow/internal/tokenizer"
 )
 
-// TestHardSplitPiece_EncoderMissingFallback pins the encoder-missing fallback
-// path of hardSplitPiece. With no cl100k table on disk, NumTokensFromString
-// returns 0 and TrimContentToTokenLimit falls back to a UTF-8-safe byte-length
-// trim. The pre-optimization loop guard (tokenizeStr(rest) > target) never
-// fired in that state, so the whole over-limit remainder was emitted as ONE
-// piece; the current loop drives off TrimContentToTokenLimit's result and keeps
-// emitting bounded pieces instead — strictly more correct, and the behavior
-// this test locks in so the fallback stays a first-class, tested path.
-func TestHardSplitPiece_EncoderMissingFallback(t *testing.T) {
-	// Scope the BPE loader to an empty directory so the cl100k table is
-	// missing, and reset the encoder cache so the failure actually loads.
-	empty := t.TempDir()
-	t.Setenv("TIKTOKEN_CACHE_DIR", "")
-	t.Setenv("DATA_GYM_CACHE_DIR", "")
-	tokenizer.SetBpeSearchRootsForTest([]string{empty})
-	tokenizer.ResetCL100KEncoderForTest()
-	t.Cleanup(func() {
-		// Restore the default search roots and clear the failed load so
-		// sibling tests reload the real table.
-		tokenizer.SetBpeSearchRootsForTest(nil)
-		tokenizer.ResetCL100KEncoderForTest()
-	})
-
-	// Sanity: the encoder really is unavailable in this scope.
-	if n := tokenizeStr("hello world"); n != 0 {
-		t.Fatalf("tokenizeStr = %d under a missing table; expected the 0-error path", n)
+// byteTrimStub reproduces tokenizer.TrimContentToTokenLimit's encoder-missing
+// fallback (UTF-8-safe byte-length trim) verbatim, minus the global encoder
+// lookup. Swapping it into the trimToTokenLimit seam pins the encoder-missing
+// path of hardSplitPiece deterministically: no global tiktoken state is
+// touched, so the test is order-independent in full-package runs (tiktoken-go
+// caches the loaded encoding in a package-level map that no reset can evict).
+func byteTrimStub(s string, limit int) string {
+	if limit < 0 {
+		limit = 0
 	}
+	if limit <= 0 {
+		return ""
+	}
+	b := []byte(s)
+	if len(b) <= limit {
+		return s
+	}
+	for limit > 0 && !utf8.Valid(b[:limit]) {
+		limit--
+	}
+	return string(b[:limit])
+}
+
+// TestHardSplitPiece_EncoderMissingFallback pins the encoder-missing fallback
+// path of hardSplitPiece. With the encoder unavailable, trimToTokenLimit falls
+// back to a UTF-8-safe byte-length trim. The pre-optimization loop guard
+// (tokenizeStr(rest) > target) never fired in that state, so the whole
+// over-limit remainder was emitted as ONE piece; the current loop drives off
+// the trim result and keeps emitting bounded pieces instead — strictly more
+// correct, and the behavior this test locks in so the fallback stays a
+// first-class, tested path.
+func TestHardSplitPiece_EncoderMissingFallback(t *testing.T) {
+	orig := trimToTokenLimit
+	trimToTokenLimit = byteTrimStub
+	t.Cleanup(func() { trimToTokenLimit = orig })
 
 	// Pure ASCII+CJK text with no @@...## tags: adjustCutPastTag extends a cut
 	// past a tag when tokenizeStr(head) <= target, which a dead encoder makes
