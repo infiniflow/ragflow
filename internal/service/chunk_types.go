@@ -329,12 +329,13 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 
 // ListChunksRequest request for listing chunks
 type ListChunksRequest struct {
-	DatasetID    string `json:"dataset_id,omitempty"`
-	DocID        string `json:"doc_id" binding:"required"`
-	Page         *int   `json:"page,omitempty"`
-	Size         *int   `json:"size,omitempty"`
-	Keywords     string `json:"keywords,omitempty"`
-	AvailableInt *int   `json:"available_int,omitempty"`
+	DatasetID    string   `json:"dataset_id,omitempty"`
+	DocID        string   `json:"doc_id" binding:"required"`
+	ChunkIDs     []string `json:"chunk_ids,omitempty"`
+	Page         *int     `json:"page,omitempty"`
+	Size         *int     `json:"size,omitempty"`
+	Keywords     string   `json:"keywords,omitempty"`
+	AvailableInt *int     `json:"available_int,omitempty"`
 }
 
 // ListChunksResponse response for listing chunks

@@ -1132,6 +1132,23 @@ class Llmman(OpenAIAPICompatible):
     _FACTORY_NAME = "llmman"
 
 
+class Hubris(OpenAIAPICompatible):
+    """Hubris model metadata.
+
+    ``_get_model_list_url`` is pinned for the same reason the chat and
+    embedding classes pin their endpoint: the catalogue must be read from the
+    gateway itself, never from a host supplied by the tenant.
+    """
+
+    _FACTORY_NAME = "Hubris"
+
+    _BASE_URL = "https://api.hubris.pw/v1"
+
+    def _get_model_list_url(self):
+        """Return the catalogue URL, ignoring any tenant-configured base URL."""
+        return f"{self._BASE_URL}/models"
+
+
 class NewAPI(OpenAIAPICompatible):
     _FACTORY_NAME = "New API"
 

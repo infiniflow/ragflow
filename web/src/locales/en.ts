@@ -610,9 +610,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       html4excel: 'Excel to HTML',
       html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration for details.`,
       autoKeywords: 'Auto-keyword',
-      autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Auto-question',
-      autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoTags: 'Auto-tags',
       redo: 'Do you want to clear the existing {{chunkNum}} chunks?',
       setMetaData: 'Set metadata',
@@ -881,7 +881,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
 `,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        'RAPTOR can be used for multi-hop question-answering tasks. Navigate to the Files page, click Generate > RAPTOR to enable it. See https://ragflow.io/docs/dev/enable_raptor for details.',
+        'RAPTOR can be used for multi-hop question-answering tasks. Navigate to the Files page, click Generate > RAPTOR to enable it. See https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree for details.',
       prompt: 'Prompt',
       promptTip:
         'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
@@ -942,7 +942,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addTag: 'Add tag',
       useGraphRag: 'Knowledge graph',
       useGraphRagTip:
-        'Construct a knowledge graph over file chunks of the current dataset to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
+        'Construct a knowledge graph over file chunks of the current dataset to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph for details.',
       graphRagMethod: 'Method',
       graphRagMethodTip: `
       Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
@@ -1307,6 +1307,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldContainerName: 'Container Name',
       dataSourceFieldPrefixOptional: 'Prefix (optional)',
       dataSourceFieldFeedUrl: 'Feed URL',
+      dataSourceFieldSitemapUrl: 'Sitemap URL',
+      dataSourceFieldUrlFilter: 'URL filter (regex)',
+      dataSourceFieldFollowPdfLinks: 'Follow PDF links',
+      dataSourceFieldRestrictPdfToDomain: 'Restrict PDFs to sitemap domain',
+      dataSourceFieldUserAgent: 'User-Agent',
       dataSourceFieldGcsAccessKeyId: 'GCS Access Key ID',
       dataSourceFieldGcsSecretAccessKey: 'GCS Secret Access Key',
       dataSourceFieldBucketName: 'Bucket Name',
@@ -1608,6 +1613,20 @@ Example: Virtual Hosted Style`,
         'Every repository visible to the token in this organization will be indexed.',
       azureDevOpsContentTypesTip:
         'Choose what to index: source files, pull requests, or both.',
+      sitemapDescription:
+        'Connect a public sitemap.xml to sync the listed web pages and PDF documents into your knowledge base.',
+      sitemapUrlTip:
+        'URL of the sitemap.xml or sitemap index to crawl, e.g. https://example.com/sitemap.xml. Sitemap indexes are followed recursively (up to 5 levels).',
+      sitemapUrlFilterTip:
+        'Optional regular expression. Only URLs matching it are indexed, e.g. ^https://example\\.com/docs/ to restrict the sync to a section of the site.',
+      sitemapFollowPdfLinksTip:
+        'Also index the PDF files linked from the crawled HTML pages.',
+      sitemapRestrictPdfToDomainTip:
+        'Only follow PDF links hosted on the same domain as the sitemap.',
+      sitemapUserAgentTip:
+        'User-Agent header sent with every request. Leave empty to use RAGFlow-SitemapConnector/1.0.',
+      sitemapBatchSizeTip:
+        'Number of pages fetched and sent to RAGFlow per batch.',
       azure_devopsDescription:
         'Connect Azure DevOps to sync repository files and pull requests.',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
@@ -1885,12 +1904,14 @@ Example: Virtual Hosted Style`,
       deleteChannelModalTitle: 'Delete chat channel',
       deleteChannelModalContent:
         'Are you sure you want to delete this chat channel bot? This action cannot be undone.',
-      connectDialog: 'Connect assistant',
-      connectDialogTitle: 'Connect {{name}} to an assistant',
-      selectDialog: 'Select an assistant',
+      connectDialog: 'Connect assistant or Agent',
+      connectDialogTitle: 'Connect {{name}} to an assistant or Agent',
+      selectDialog: 'Select an assistant or Agent',
       connectDialogTip:
-        'Messages received by this channel will be answered by the connected assistant. Clear the selection to disconnect.',
-      notConnected: 'No assistant connected',
+        'Messages received by this channel will be answered by the connected assistant or Agent. Clear the selection to disconnect.',
+      notConnected: 'No assistant or Agent connected',
+      chatChannelAssistant: 'Chat assistant',
+      chatChannelAgent: 'Agent',
       chatChannelDesc: {
         clickclack: 'Connect a ClickClack bot',
         discord: 'Connect a Discord bot',
@@ -2213,7 +2234,7 @@ Example: Virtual Hosted Style`,
         modelNameRequired: 'Model name is required',
         apiServerRequired: 'MinerU API Server Configuration is required',
         serverUrlBackendLimit:
-          'MinerU Server URL Address is only available for the HTTP client backend',
+          'MinerU server URL is only available for vlm-http-client and hybrid-http-client backends',
         apiserver: 'MinerU API Server Configuration',
         outputDir: 'MinerU Output Directory Path',
         backend: 'MinerU Processing Backend Type',
@@ -2375,7 +2396,6 @@ Example: Virtual Hosted Style`,
       noStructureTimeline: 'No timeline yet',
       contents: 'Navigation',
       topics: 'Topics',
-      selectArtifact: 'Select an item from the contents to view details',
       searchEntity: 'Search entity',
       graphEntityCount: '{{returned}} / {{total}} entities',
       sourceDocuments: 'Source documents',
@@ -3383,16 +3403,16 @@ This process aggregates variables from multiple branches into a single variable 
         'Cannot save: "{{name}}" has invalid settings. Please fix them first',
       agentModelMissing:
         'Cannot save: "{{name}}" has no model selected. Please choose one first',
-      retrievalDatasetRequired: 'Please select at least one dataset',
       retrievalDatasetMissing:
         'Cannot save: "{{name}}" has no dataset selected. Please choose one first',
-      retrievalTemplateDatasetHint:
-        'This template has {{count}} dataset retrieval step(s) without a dataset. Select a knowledge base below and it will be applied to all of them; you can still fine-tune each retrieval in the canvas afterwards.',
-      retrievalMemoryRequired: 'Please select at least one memory',
       retrievalMemoryMissing:
-        'Cannot save: "{{name}}" has no memory selected. Please choose one first',
+        'Cannot save: "{{name}}" has no memories selected. Please choose them first',
+      retrievalTemplateDatasetHint:
+        'This template contains {{num}} dataset retrieval step(s) without a bound knowledge base. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
       retrievalTemplateMemoryHint:
-        'This template has {{count}} memory retrieval step(s) without a memory. Select one below and it will be applied to all of them; you can still fine-tune each retrieval in the canvas afterwards.',
+        'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+      retrievalDatasetRequired: 'Please select a knowledge base first',
+      retrievalMemoryRequired: 'Please select memories first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
       tokenChunker: 'Token Chunker',
