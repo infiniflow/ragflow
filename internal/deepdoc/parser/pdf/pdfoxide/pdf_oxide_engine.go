@@ -21,8 +21,9 @@ type Char struct {
 
 // Engine wraps pdf_oxide to extract chars and render pages.
 type Engine struct {
-	doc     *Document
-	rawData []byte
+	doc       *Document
+	pdfiumDoc *pdfium.Document
+	rawData   []byte
 }
 
 // NewEngine opens a PDF from bytes and returns an Engine.
@@ -31,7 +32,12 @@ func NewEngine(pdfBytes []byte) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Engine{doc: doc, rawData: pdfBytes}, nil
+	pdfiumDoc, err := pdfium.OpenDocument(pdfBytes)
+	if err != nil {
+		doc.Close()
+		return nil, err
+	}
+	return &Engine{doc: doc, pdfiumDoc: pdfiumDoc, rawData: pdfBytes}, nil
 }
 
 func (e *Engine) RawData() []byte { return e.rawData }
@@ -52,7 +58,7 @@ func (e *Engine) ExtractChars(pageNum int) ([]Char, error) {
 	//    If dimensions are swapped, the page has implicit rotation
 	//    (inherited /Rotate or ContentBox rotation).
 	rawW, rawH, _ := e.doc.PageSize(pageNum)
-	effW, effH, pdfErr := pdfium.PageSize(e.rawData, pageNum)
+	effW, effH, pdfErr := e.pdfiumDoc.PageSize(pageNum)
 	if pdfErr != nil {
 		effW, effH = rawW, rawH
 	}
@@ -223,8 +229,10 @@ func parsePageRotationFromRaw(data []byte, pageIdx int) int {
 // There is no pdf_oxide fallback because pdf_oxide does not apply
 // /Rotate, producing images in a different coordinate space.
 func (e *Engine) RenderPageImage(pageNum int, dpi float64) (image.Image, error) {
-	return pdfium.RenderPage(e.rawData, pageNum, dpi)
+	return e.pdfiumDoc.RenderPage(pageNum, dpi)
 }
+
+func (e *Engine) Outlines() []pdfium.Outline { return e.pdfiumDoc.ExtractOutlines() }
 
 func (e *Engine) RenderPage(pageNum int, dpi float64) ([]byte, error) {
 	result, err := e.doc.RenderPage(pageNum, dpi)
@@ -245,4 +253,8 @@ func (e *Engine) PageSize(pageNum int) (float64, float64, error) {
 	return w, h, nil
 }
 func (e *Engine) PageCount() (int, error) { return e.doc.PageCount() }
-func (e *Engine) Close() error            { e.doc.Close(); return nil }
+func (e *Engine) Close() error {
+	e.doc.Close()
+	e.pdfiumDoc.Close()
+	return nil
+}
