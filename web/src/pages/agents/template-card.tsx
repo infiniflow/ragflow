@@ -21,12 +21,8 @@ export function TemplateCard({ data, showModal }: IProps) {
   }, [data, showModal]);
 
   const language = (
-    i18n.language === LanguageAbbreviation.Zh
-      ? 'zh'
-      : i18n.language === LanguageAbbreviation.De
-        ? 'de'
-        : 'en'
-  ) as 'en' | 'zh' | 'de';
+    i18n.language === LanguageAbbreviation.Zh ? 'zh' : 'en'
+  ) as 'en' | 'zh';
 
   return (
     <Card className="border-colors-outline-neutral-standard group relative min-h-40">

@@ -7,6 +7,10 @@ import { AgentCategory } from '@/constants/agent';
 import { IFlowTemplate } from '@/interfaces/database/agent';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CreateAgentDialog } from './create-agent-dialog';
+import {
+  collectTemplateCategories,
+  templateMatchesCategory,
+} from './template-categories';
 import { TemplateCard } from './template-card';
 import { bindUnboundRetrieval } from './template-retrieval-binding';
 import { MenuItemKey, SideBar } from './template-sidebar';
@@ -85,18 +89,15 @@ export default function AgentTemplates() {
     if (!selectMenuItem) {
       return templateList;
     }
-    const selectedCanvasType = selectMenuItem.toLocaleLowerCase();
-    return templateList.filter((item) => {
-      if (Array.isArray(item.canvas_types) && item.canvas_types.length > 0) {
-        return item.canvas_types.some(
-          (canvasType) =>
-            typeof canvasType === 'string' &&
-            canvasType.toLocaleLowerCase() === selectedCanvasType,
-        );
-      }
-      return item.canvas_type?.toLocaleLowerCase() === selectedCanvasType;
-    });
+    return templateList.filter((item) =>
+      templateMatchesCategory(item, selectMenuItem),
+    );
   }, [selectMenuItem, templateList]);
+
+  const templateCategories = useMemo(
+    () => collectTemplateCategories(templateList),
+    [templateList],
+  );
 
   return (
     <section>
@@ -104,6 +105,7 @@ export default function AgentTemplates() {
         <SideBar
           change={handleSiderBarChange}
           selected={selectMenuItem}
+          categories={templateCategories}
         ></SideBar>
 
         <main className="flex-1 bg-text-title-invert/50 h-dvh">
