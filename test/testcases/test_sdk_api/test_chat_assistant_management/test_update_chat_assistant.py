@@ -72,7 +72,7 @@ class TestChatAssistantUpdate:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            pytest.param({"name": "valid_name"}, "", marks=pytest.mark.p1),
+            pytest.param({"name": "valid_name"}, "", marks=pytest.mark.p3),
             pytest.param({"name": "a" * (CHAT_ASSISTANT_NAME_LIMIT + 1)}, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": ""}, "`name` cannot be empty", marks=pytest.mark.p3),
