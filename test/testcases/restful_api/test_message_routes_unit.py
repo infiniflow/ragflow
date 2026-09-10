@@ -124,7 +124,7 @@ def test_add_message_partial_failure_branch(monkeypatch):
     assert "Some messages failed to add" in res["message"], res
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_get_messages_csv_and_missing_memory_ids(monkeypatch):
     module = _load_memory_routes_module(monkeypatch)
 

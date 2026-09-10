@@ -39,17 +39,7 @@ go version
 ### 1.4 Install dependent library
 ```shell
 sudo apt install libpcre2-dev
-# Native libs for the Go build (office_oxide, pdfium, pdf_oxide, onnxruntime).
-# download_go_deps.py is the Go-end script: it now fetches the ONNX Runtime
-# static lib too, so this single command covers every native dependency the
-# Go server binary needs (incl. the in-process DeepDoc backend).
-# It also fetches the Go model weights (four .ort + ocr.res) into rag/res/deepdoc/ (see §1.6).
 python3 ragflow_deps/download_go_deps.py
-# Shared (Go + Python) deps. Retains ONNX Runtime for the ragflow_deps image /
-# backward-compat; also pulls Python-side artifacts (models, nltk, tika, ...).
-# Its InfiniFlow/deepdoc snapshot carries BOTH weight formats: .ort (Go) and
-# .onnx (Python).
-uv run python3 ragflow_deps/download_deps.py
 ```
 
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
@@ -141,10 +131,10 @@ The Go backend loads **`.ort`** (FlatBuffer) weights; the Python side loads
 **`.onnx`**. Both formats live side by side in `rag/res/deepdoc/` — neither
 supersedes the other, so do not delete one to "clean up".
 
-| | Go (in-process) | Python |
-|---|---|---|
-| Format | `.ort` | `.onnx` |
-| Files | `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` | `det.onnx`, `layout.onnx`, `tsr.onnx`, `rec.onnx`, `ocr.res` |
+|        | Go (in-process)                                          | Python                                                       |
+|--------|----------------------------------------------------------|--------------------------------------------------------------|
+| Format | `.ort`                                                   | `.onnx`                                                      |
+| Files  | `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` | `det.onnx`, `layout.onnx`, `tsr.onnx`, `rec.onnx`, `ocr.res` |
 
 `download_go_deps.py` (§1.4) fetches the five required files — four `.ort` plus
 `ocr.res` — into `rag/res/deepdoc/`; `download_deps.py` snapshots the whole
