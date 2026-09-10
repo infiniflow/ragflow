@@ -22,6 +22,7 @@ import uuid
 
 from peewee import IntegrityError
 from api.db import UserTenantRole
+from api.db.cable_templates import template_scope_directories
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.services import UserService
 from api.db.services.canvas_service import CanvasTemplateService
@@ -107,27 +108,28 @@ def update_document_number_in_init():
 
 
 def add_graph_templates():
-    dir = os.path.join(get_project_base_directory(), "agent", "templates")
     CanvasTemplateService.filter_delete([1 == 1])
-    if not os.path.exists(dir):
-        logging.warning("Missing agent templates!")
-        return
 
-    for fnm in sorted(os.listdir(dir)):
-        if not fnm.endswith(".json"):
-            logging.debug("Skipping non-json template file in %s: %s", dir, fnm)
+    for dir in template_scope_directories():
+        if not os.path.exists(dir):
+            logging.warning("Missing agent templates: %s", dir)
             continue
-        template_path = os.path.join(dir, fnm)
-        try:
-            with open(template_path, "r", encoding="utf-8") as f:
-                cnvs = normalize_canvas_template_categories(json.load(f))
-            logging.info("Loaded and normalized template file: %s", template_path)
+
+        for fnm in sorted(os.listdir(dir)):
+            if not fnm.endswith(".json"):
+                logging.debug("Skipping non-json template file in %s: %s", dir, fnm)
+                continue
+            template_path = os.path.join(dir, fnm)
             try:
-                CanvasTemplateService.save(**cnvs)
-            except Exception:
-                CanvasTemplateService.update_by_id(cnvs["id"], cnvs)
-        except Exception as e:
-            logging.exception("Add agent templates error for %s: %s", template_path, e)
+                with open(template_path, "r", encoding="utf-8") as f:
+                    cnvs = normalize_canvas_template_categories(json.load(f))
+                logging.info("Loaded and normalized template file: %s", template_path)
+                try:
+                    CanvasTemplateService.save(**cnvs)
+                except Exception:
+                    CanvasTemplateService.update_by_id(cnvs["id"], cnvs)
+            except Exception as e:
+                logging.exception("Add agent templates error for %s: %s", template_path, e)
 
 
 def add_compilation_templates():

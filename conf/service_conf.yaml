@@ -1,5 +1,9 @@
 general:
   heartbeat_interval: 3s
+# Cable-domain fork switch. When enabled, only the cable agent templates under
+# agent/templates/cable_templates/ are seeded and served by GET /agents/templates;
+# the official templates stay on disk untouched. Overridable with SHOW_CABLE_ONLY.
+show_cable_only: true
 ragflow:
   host: 0.0.0.0
   http_port: 9380

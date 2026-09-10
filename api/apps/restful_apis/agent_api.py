@@ -38,6 +38,7 @@ from quart import Response, jsonify, request, make_response
 from api.apps import AUTH_JWT, AUTH_API, AUTH_BETA, current_user, login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
+from api.db.cable_templates import filter_scoped_templates
 from api.db.db_models import Task
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import (
@@ -647,7 +648,8 @@ async def _iter_session_completion_events(tenant_id, agent_id, req, return_trace
 @manager.route("/agents/templates", methods=["GET"])  # noqa: F821
 @login_required
 def list_agent_template():
-    return get_json_result(data=[item.to_dict() for item in CanvasTemplateService.get_all()])
+    templates = filter_scoped_templates(CanvasTemplateService.get_all())
+    return get_json_result(data=[item.to_dict() for item in templates])
 
 
 @manager.route("/agents/prompts", methods=["GET"])  # noqa: F821
