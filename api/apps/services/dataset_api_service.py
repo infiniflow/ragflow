@@ -3907,12 +3907,11 @@ _NAV_DOC_FOCUS_LIMIT = 3
 _NAV_CHUNK_AGG_POOL = 256
 _NAV_CHUNK_AGG_VEC_WEIGHT = 0.3
 
-# Evidence rows — atomic propositions carrying verbatim evidence.  Which row type
-# plays that role depends on the compiler: the tree compiler writes ``claim``
-# rows (raptor claim extraction), while page_index folds the same role into
-# ``fact``/``conclusion`` (their payloads carry gate-verified verbatim evidence).
-# Filtering on ``claim`` alone silently disabled this whole leg on a page_index
-# dataset, so both spellings are matched.
+# Evidence rows — atomic propositions carrying verbatim evidence.  Every compiler
+# writes them as ``claim``: tree via raptor claim extraction, page_index via its
+# own atomic claim type.  page_index used to spell that type ``fact`` /
+# ``conclusion``, so both spellings stay matched for rows compiled before the
+# rename.  Filtering on the wrong spelling silently disables this whole leg.
 _NAV_EVIDENCE_ROW_TYPES = ("claim", "fact", "conclusion")
 # Evidence leg (same seam as before: these rows carry their own vector and are
 # invisible to the generic retriever because they carry compile_kwd).  The
@@ -4132,15 +4131,14 @@ async def _search_layers_chunk_agg(tenant_id, dataset_id, query, top_k, embd_mdl
 
 
 async def _search_layers_claim_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, doc_scope=None):
-    """Route to documents through the tree compiler's claim rows.
+    """Route to documents through the compilers' claim rows.
 
     A claim is an atomic
     proposition carrying its own vector, so matching one means the document
     actually asserts that fact — sharper than a chunk that merely mentions the
-    words, and the only way to see claims at all here, since claim rows carry
-    ``entity_type_kwd="claim"`` and no ``knowledge_graph_kwd`` (they are excluded
-    from the chunk index by ``compile_kwd`` and from the artifacts query by the
-    missing graph marker).
+    words. Tree claims live in their own rows with no ``knowledge_graph_kwd``;
+    page_index claims are graph entities that also satisfy this filter, since
+    they carry ``entity_type_kwd="claim"`` and ``scope_kwd="doc"``.
 
     Returns ``ok=True, total=0`` when the KB has no claim rows — a raptor-less or
     pre-claim KB is a legitimate empty leg, not a failure, so the caller can fall
@@ -4215,7 +4213,7 @@ async def _search_layers_claim_agg(tenant_id, dataset_id, query, top_k, embd_mdl
         # benchmark path, so the common case still costs a single pass.
         field_map = await _recall(("tree", "raptor_graph"), ("claim",))
         if not field_map:
-            field_map = await _recall(("page_index", "pageindex"), ("fact", "conclusion"))
+            field_map = await _recall(("page_index", "pageindex"), ("claim", "fact", "conclusion"))
     except Exception:
         logging.exception("dataset_nav: claim-agg retrieval failed for kb=%s", kb.id)
         return False, {"error": "claim retrieval failed", "code": RetCode.SERVER_ERROR}

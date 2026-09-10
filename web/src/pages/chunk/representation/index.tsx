@@ -81,9 +81,17 @@ function Representation({
   const handleCloseClaims = useCallback(() => setClaimsLeaf(null), []);
   const handleCloseEvidence = useCallback(() => setEvidenceDetail(null), []);
 
+  // Wait for the fetch to settle before committing to either panel. Publishing
+  // during the load made the heading flicker: it opened as "Claims · X" and
+  // then, the moment an empty result landed, switched to the node-detail panel
+  // titled just "X". The page stacks both panels in one slot, so the choice is
+  // exclusive — and it can only be made once the claim count is known.
+  const claimsSettled = Boolean(claimsLeaf) && !claimsLoading;
+  const hasClaims = claimsSettled && (claimsData?.claims?.length ?? 0) > 0;
+
   useEffect(() => {
     onClaimsPanelChange?.(
-      claimsLeaf
+      hasClaims && claimsLeaf
         ? {
             clusterName: claimsLeaf.name,
             claims: claimsData?.claims ?? [],
@@ -100,13 +108,15 @@ function Representation({
     claimsLeaf,
     claimsData,
     claimsLoading,
+    claimsSettled,
+    hasClaims,
     handleCloseClaims,
     onClaimsPanelChange,
   ]);
 
   useEffect(() => {
     onEvidencePanelChange?.(
-      evidenceDetail
+      !hasClaims && evidenceDetail
         ? {
             nodeName: evidenceDetail.name,
             description: evidenceDetail.description,
@@ -116,24 +126,19 @@ function Representation({
         : null,
     );
     return () => onEvidencePanelChange?.(null);
-  }, [evidenceDetail, handleCloseEvidence, onEvidencePanelChange]);
+  }, [evidenceDetail, handleCloseEvidence, hasClaims, onEvidencePanelChange]);
 
   const handleNodeClickWithClaims = useCallback(
     (node: ClickableNode) => {
-      // Two leaf kinds share the middle column, so exactly one panel opens:
-      // a leaf cluster with a claim count → its claims; any other node that
-      // has something to say (description and/or verified evidence) → its
-      // detail panel. Gating the detail panel on evidence alone left most
-      // page_index nodes empty: the evidence gate verifies quotes verbatim
-      // against the source chunk and drops the ones it cannot locate, so the
-      // majority carry a description but no evidence. Both also forward to
-      // the usual chunk navigation.
-      const showClaims = node.hasChildren === false && (node.badge ?? 0) > 0;
-      setClaimsLeaf(showClaims ? node : null);
+      // Any node can own claims — a page_index heading covers the chunks of its
+      // whole section, so the claims belonging to it are the ones sourced from
+      // those chunks. Nothing here keys off ``badge``: the structure compiler
+      // never writes ``claim_count``, so gating on it kept the panel shut for
+      // every node. Whether the panel actually opens is decided by the fetch
+      // below, once we know the node has claims.
+      setClaimsLeaf(node);
       setEvidenceDetail(
-        !showClaims && (node.evidence?.length || node.description)
-          ? node
-          : null,
+        node.evidence?.length || node.description ? node : null,
       );
       handleNodeClick(node);
     },

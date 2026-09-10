@@ -1678,7 +1678,14 @@ async def _recall_claim_hits(
     ]
     # page_index carries its evidence rows as fact/conclusion, not claim.
     row_types = _evidence_row_types(kinds) if kinds else ("claim", "fact", "conclusion")
-    condition: dict = {"doc_id": [doc_id], "entity_type_kwd": list(row_types)}
+    condition: dict = {
+        "doc_id": [doc_id],
+        "entity_type_kwd": list(row_types),
+        # Doc-scope rows only: the Build button's KB-wide merged rows carry a
+        # doc_id too, and without this filter they would answer for a single
+        # document. Mirrors the dataset-level claim leg.
+        "scope_kwd": ["doc"],
+    }
     if kinds:
         condition["compile_kwd"] = sorted(str(k) for k in kinds if k)
     limit = max(top_n, 32)
@@ -1756,17 +1763,21 @@ _COMPILATION_KWDS = ("tree", "page_index", "pageindex", "timeline", "dataset_nav
 _COMPILATION_PROBE_TTL = 300.0
 
 
-# "Evidence rows" — atomic propositions carrying verbatim evidence.  Which row
-# type plays that role depends on the compiler: tree writes ``claim`` rows
-# (raptor claim extraction), while page_index folds the same role into
-# ``fact`` / ``conclusion`` — structure.py has page_index fact/conclusion
-# payloads carrying gate-verified verbatim evidence.  Filtering every leg on
-# ``claim`` alone therefore silently disables all of it on a page_index KB.
+# "Evidence rows" — atomic propositions carrying verbatim evidence.  Every
+# compiler now writes them as ``claim``: tree via raptor claim extraction,
+# page_index via its own atomic claim type with gate-verified verbatim
+# evidence.  page_index used to spell that type ``fact`` / ``conclusion``;
+# both spellings stay listed so rows compiled before the rename keep answering
+# queries until the dataset is recompiled.
 _EVIDENCE_ROW_TYPES_BY_COMPILE = {
     "tree": ("claim",),
     "raptor": ("claim",),
     "raptor_graph": ("claim",),
-    "page_index": ("fact", "conclusion"),
+    # page_index writes ``claim`` too, now that its fact/conclusion types were
+    # folded into the one claim type. "fact"/"conclusion" stay listed as the
+    # pre-rename spelling so rows compiled before the rename keep answering
+    # queries until the dataset is recompiled.
+    "page_index": ("claim", "fact", "conclusion"),
 }
 
 

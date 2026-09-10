@@ -45,11 +45,26 @@ func runBatches(ctx context.Context, jobs []func() error) error {
 	return nil
 }
 
-// structureBatchTokenBudget caps one extraction batch's packed chunk tokens.
-// Python derives the budget from chat_mdl.max_length minus the prompt
-// overhead; the Go ChatInvoker seam does not expose the model window, so we
-// use the same conservative constant the wiki variant uses.
-const structureBatchTokenBudget = 4096
+// structureInputBudget mirrors _build_chunk_batches' default mode:
+// input_budget = max(int(max_length * INPUT_UTILIZATION) - prompt_overhead, 1024)
+// with INPUT_UTILIZATION = 0.5 (rag/prompts/generator.py) and prompt_overhead
+// the larger of the two stage prompts. A batch is one LLM call's whole input,
+// so a budget that ignores the model window changes how many calls a document
+// takes — and with it which entities land in which batch.
+func structureInputBudget(modelContextLen, promptOverhead int) int {
+	const (
+		utilization = 0.5
+		floor       = 1024
+	)
+	if modelContextLen <= 0 {
+		return 0
+	}
+	budget := int(float64(modelContextLen)*utilization) - promptOverhead
+	if budget < floor {
+		budget = floor
+	}
+	return budget
+}
 
 // Run executes the structure variant:
 //  1. MAP — per-batch two-stage (node → edge) extraction, parallel across
@@ -84,7 +99,24 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	gateMode := EvidenceGateMode(parserConfig)
 
 	// ---- MAP ----
-	batches := common.PackBatches(inputs.Chunks, structureBatchTokenBudget, deps.Tokenizer)
+	// Prompt overhead is counted the same way Python does: the larger of the
+	// two stage prompts, subtracted from the window-derived input budget. The
+	// tokenizer is optional (offline tests wire none) — without it the
+	// overhead is 0 and PackBatches degrades to per-chunk counting.
+	promptOverhead := 0
+	if deps.Tokenizer != nil {
+		promptOverhead = deps.Tokenizer.NumTokens(nodePrompt)
+		if t := deps.Tokenizer.NumTokens(edgePromptTmpl); t > promptOverhead {
+			promptOverhead = t
+		}
+	}
+	budget := structureInputBudget(deps.ModelContextLen, promptOverhead)
+	if budget <= 0 {
+		// Model window unknown (the wiring did not set it): keep the historic
+		// conservative constant rather than guessing a large window.
+		budget = 4096
+	}
+	batches := common.PackBatches(inputs.Chunks, budget, deps.Tokenizer)
 	perBatch := make([][]common.Product, len(batches))
 	jobs := make([]func() error, 0, len(batches))
 	for i, batch := range batches {
@@ -169,7 +201,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 
 	// ---- GRAPH ----
-	graphProduct, err := buildGraphProduct(ctx, deps, cfg, prods)
+	graphProduct, err := buildGraphProduct(ctx, deps, cfg, prods, string(compileType))
 	if err != nil {
 		return common.Outputs{}, err
 	}
@@ -191,11 +223,11 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 // entity/relation rows and wraps it as a single "graph" product so the
 // downstream writer has a ready structure to persist. The row id mirrors
 // Python's _struct_graph_row_id (doc : structure_graph : compile : template).
-func buildGraphProduct(ctx context.Context, deps common.Deps, cfg CompileConfig, prods []common.Product) (common.Product, error) {
+func buildGraphProduct(ctx context.Context, deps common.Deps, cfg CompileConfig, prods []common.Product, compileType string) (common.Product, error) {
 	if deps.Embed == nil {
 		return common.Product{}, fmt.Errorf("knowledge_compiler: embedding model is required to build the graph product")
 	}
-	graph := RebuildStructureGraph(prods)
+	graph := RebuildStructureGraph(prods, compileType)
 	graphContent := payloadJSON(graph)
 	vecs, err := deps.Embed.Encode(ctx, []string{graphContent})
 	if err != nil {

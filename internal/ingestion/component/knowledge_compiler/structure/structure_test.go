@@ -414,12 +414,16 @@ func TestPayloadDescriptionSortedAndFlattened(t *testing.T) {
 	payload := map[string]any{
 		"name":             "Beta",
 		"type":             "letter",
+		"mention_count":    1,
 		"source_chunk_ids": []any{"c1", "c2"},
 	}
 	got := payloadDescription(payload)
-	// Keys are sorted for determinism: name < source_chunk_ids < type.
-	if got != "Beta c1 c2 letter" {
-		t.Fatalf("payloadDescription = %q, want %q", got, "Beta c1 c2 letter")
+	// Keys are sorted for determinism, and the bookkeeping keys are excluded:
+	// source_chunk_ids are opaque hex that would tokenize into garbage terms
+	// and mention_count is a number every row shares (mirrors Python's
+	// _STRUCT_INDEX_EXCLUDED_KEYS).
+	if got != "Beta letter" {
+		t.Fatalf("payloadDescription = %q, want %q", got, "Beta letter")
 	}
 }
 

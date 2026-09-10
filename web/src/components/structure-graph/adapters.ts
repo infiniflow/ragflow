@@ -190,15 +190,29 @@ function buildUniqueTreeDataItems(
     .filter((item): item is TreeDataItem => item !== undefined);
 }
 
+// Entity types that are never part of the navigation tree. A claim is an
+// atomic, evidence-bearing proposition: it answers "what does this section
+// say", which is the middle column's job, not the outline's. Leaving claims in
+// the tree buried the heading hierarchy under hundreds of flat leaves.
+// ``fact``/``conclusion`` are the pre-rename spellings of the same object, kept
+// so templates compiled before the rename render the same way.
+const PAGE_INDEX_NON_TREE_TYPES = new Set(['claim', 'fact', 'conclusion']);
+
 export function adaptPageIndexToTreeData(
   template: IStructureGraphTemplate,
 ): TreeDataItem[] {
-  return buildTreeDataItems(
-    template.entities,
-    template.relations,
-    ['include'],
-    true,
+  // Filtered before building: relations pointing at a removed entity are
+  // dropped by the builder, so headings whose only children were claims simply
+  // become leaves instead of dangling.
+  const entities = (template.entities ?? []).filter(
+    (entity) =>
+      !PAGE_INDEX_NON_TREE_TYPES.has(
+        String((entity as { type?: string })?.type ?? '')
+          .trim()
+          .toLowerCase(),
+      ),
   );
+  return buildTreeDataItems(entities, template.relations, ['include'], true);
 }
 
 export function adaptTreeToTreeData(

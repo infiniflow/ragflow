@@ -412,7 +412,19 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 		// are ignored (tokenizer pool may be uninitialised in no-CGo tests),
 		// leaving the fields empty — matching the chunker's graceful-degrade
 		// behaviour.
-		if ltks, err := tokenizer.Tokenize(p.Content); err == nil && ltks != "" {
+		//
+		// Structure rows tokenize the FLATTENED PAYLOAD DESCRIPTION, not the
+		// raw JSON: Python indexes
+		// _tokenize_for_search(_struct_payload_description(payload)), so
+		// tokenizing p.Content here would feed JSON keys/brackets and opaque
+		// chunk ids into the inverted index.
+		indexText := p.Content
+		if p.Variant == common.VariantStructure {
+			if d := structure.IndexText(p.Content); strings.TrimSpace(d) != "" {
+				indexText = d
+			}
+		}
+		if ltks, err := tokenizer.Tokenize(indexText); err == nil && ltks != "" {
 			doc.ContentLtks = ltks
 			if sm, err := tokenizer.FineGrainedTokenize(ltks); err == nil && sm != "" {
 				doc.ContentSmLtks = sm

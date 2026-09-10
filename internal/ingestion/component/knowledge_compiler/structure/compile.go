@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -29,15 +30,30 @@ type CompileConfig struct {
 // (_struct_extract_hypergraph uses temperature 0.1).
 var extractionTemperature = 0.1
 
+// disableThinking mirrors knowledge_compile_gen_conf's intent: extraction and
+// judging calls must not spend the budget on chain-of-thought. Python disables
+// it per model family (deepseek-v4/minimax via extra_body.thinking, qwen3 via
+// enable_thinking, everything else via reasoning_effort="none"); the Go chat
+// drivers expose a single normalized switch, so every compile call turns it
+// off. The one Python exception — qwen3 -preview endpoints that REQUIRE
+// thinking enabled — would need a model-name branch in the Go driver.
+func chatRequest(llmID, systemPrompt, userPrompt string) common.ChatRequest {
+	return common.ChatRequest{
+		LLMID:           llmID,
+		SystemPrompt:    systemPrompt,
+		UserPrompt:      userPrompt,
+		Temperature:     &extractionTemperature,
+		DisableThinking: true,
+	}
+}
+
 // extractHypergraph mirrors _struct_extract_hypergraph: stage 1 extracts node
 // (entity) items, stage 2 extracts edge (relation) items constrained to the
 // stage-1 entities via the {known_nodes} placeholder. The two stages within
 // one batch are strictly sequential; batches parallelise at the caller.
 func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, nodePrompt, edgePromptTmpl, packedText string) (nodes, edges []map[string]any, err error) {
 	user := UserPrompt(packedText)
-	nodeRaw, err := common.GenJSON(ctx, deps.Chat, common.ChatRequest{
-		LLMID: cfg.LLMID, SystemPrompt: nodePrompt, UserPrompt: user, Temperature: &extractionTemperature,
-	})
+	nodeRaw, err := common.GenJSON(ctx, deps.Chat, chatRequest(cfg.LLMID, nodePrompt, user))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -58,9 +74,7 @@ func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig,
 	if strings.TrimSpace(edgePromptTmpl) == "" {
 		return nodes, nil, nil
 	}
-	edgeRaw, err := common.GenJSON(ctx, deps.Chat, common.ChatRequest{
-		LLMID: cfg.LLMID, SystemPrompt: fillKnownNodes(edgePromptTmpl, known), UserPrompt: user, Temperature: &extractionTemperature,
-	})
+	edgeRaw, err := common.GenJSON(ctx, deps.Chat, chatRequest(cfg.LLMID, fillKnownNodes(edgePromptTmpl, known), EdgeUserPrompt(packedText)))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -132,6 +146,39 @@ func payloadDescription(payload map[string]any) string {
 	return common.PayloadDescription(payload, nil)
 }
 
+// IndexText returns the flattened payload description for a compiled row's
+// content JSON — the exact text Python tokenizes into content_ltks /
+// content_sm_ltks (“_tokenize_for_search(_struct_payload_description(payload))“).
+// Non-JSON content yields "", so non-structure variants keep tokenizing their
+// raw content.
+func IndexText(content string) string {
+	payload := parsePayload(content)
+	if payload == nil {
+		return ""
+	}
+	return payloadDescription(payload)
+}
+
+// mentionCountOf mirrors _struct_to_doc_storage_doc's mention_count parsing:
+// the payload's own count when it carries a usable one, else 1.
+func mentionCountOf(payload map[string]any) int {
+	switch v := payload["mention_count"].(type) {
+	case float64:
+		if v > 0 {
+			return int(v)
+		}
+	case int:
+		if v > 0 {
+			return v
+		}
+	case string:
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 1
+}
+
 // payloadJSON serialises a payload the way Python's json.dumps(ensure_ascii=
 // False) does: Go's json.Marshal escapes <, > and & to < etc., which
 // would corrupt entity names containing those characters, so HTML escaping is
@@ -201,16 +248,19 @@ func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, 
 		meta := map[string]any{
 			"kind":             s.kind,
 			"source_chunk_ids": payloadChunkIDs(s.payload, batchIDs),
-			"mention_count":    1,
+			// mention_count_int mirrors Python: the payload's own count when it
+			// carries one, else 1 (never a synthesized constant).
+			"mention_count": mentionCountOf(s.payload),
 		}
 		if s.kind == "entity" {
 			if name := entityName(s.payload); name != "" {
 				meta["name"] = name
 			}
+			// entity_type_kwd is only stamped when the payload has a type —
+			// Python omits the column entirely for an untyped entity rather
+			// than writing a synthesized "other".
 			if typ := strings.TrimSpace(stringOf(s.payload["type"])); typ != "" {
 				meta["entity_type"] = typ
-			} else {
-				meta["entity_type"] = "other"
 			}
 			if desc := strings.TrimSpace(stringOf(s.payload["description"])); desc != "" {
 				meta["description"] = desc

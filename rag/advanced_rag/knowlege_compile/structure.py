@@ -18,6 +18,7 @@ import asyncio
 import heapq
 import json
 import logging
+import os
 import re
 import time
 import uuid
@@ -568,6 +569,33 @@ def _struct_render_type_fields(
     return "\n".join(lines), skeleton
 
 
+# Optional ceiling on chunks per extraction call (0/unset = pack by the context
+# window only).
+#
+# This must NOT be left on for structure extraction. A heading's
+# ``source_chunk_ids`` can only cover the chunks the call was shown, so a small
+# ceiling truncates every section at the batch boundary: the hierarchy collapses
+# to two levels, headings fragment into single words, and detail items in later
+# batches share no chunk with their heading at all. Headings need a
+# document-wide view; only claim harvesting wants small batches (raptor uses 4).
+# Overridable for benchmarking.
+_STRUCT_MAX_CHUNKS_PER_BATCH = int(os.environ.get("STRUCT_MAX_CHUNKS_PER_BATCH", "0"))
+
+
+def _struct_type_counts(items: list[dict]) -> dict[str, str]:
+    """``{type: "<count>/<count carrying evidence>"}`` for the extraction log."""
+    out: dict[str, list[int]] = {}
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        t = str(it.get("type") or "?").strip() or "?"
+        row = out.setdefault(t, [0, 0])
+        row[0] += 1
+        if it.get("evidence"):
+            row[1] += 1
+    return {k: f"{v[0]}/{v[1]}" for k, v in sorted(out.items())}
+
+
 def _struct_hypergraph_prompts(parser_config: dict, language: str = "en", rechunk: bool = False) -> Tuple[str, str]:
     autotype = _struct_infer_type(parser_config)
     guideline = _struct_get(parser_config, "guideline", default={}) or {}
@@ -789,8 +817,46 @@ async def _struct_extract_hypergraph(
             if isinstance(raw_ids, list):
                 node["source_chunk_ids"] = [temp_to_uuid.get(str(item).strip(), str(item).strip()) for item in raw_ids if temp_to_uuid.get(str(item).strip())]
 
+    if not edge_prompt_template:
+        return nodes, [], chunk_id_map, rechunked_chunks
+
+    logging.info(
+        "compile_structure_from_text: node pass done -> %d item(s); building relations",
+        len(nodes),
+    )
+    edges = await _struct_extract_relations(
+        relation_text if rechunk else text,
+        parser_config,
+        chat_mdl,
+        language,
+        nodes,
+        rechunk=rechunk,
+        chunk_id_map=chunk_id_map,
+    )
+
+    return nodes, edges, chunk_id_map, rechunked_chunks
+
+
+async def _struct_extract_relations(
+    text: str,
+    parser_config: dict,
+    chat_mdl,
+    language: str,
+    nodes: list[dict],
+    rechunk: bool = False,
+    chunk_id_map: dict[str, str] | None = None,
+) -> list[dict]:
+    """Relation pass over already-extracted nodes.
+
+    The edge prompt's ``{known_nodes}`` placeholder is filled from the nodes
+    extracted in the same batch, so relations are always built after nodes.
+    """
+    _, edge_prompt_template = _struct_hypergraph_prompts(parser_config, language, rechunk=rechunk)
+    if not edge_prompt_template:
+        return []
+
     id_field = _struct_entity_id_field(parser_config)
-    known_keys = []
+    known_keys: list[str] = []
     for n in nodes:
         v = n.get(id_field)
         if v is None:
@@ -800,32 +866,26 @@ async def _struct_extract_hypergraph(
             known_keys.append(v_str)
     known_str = "- " + "\n- ".join(known_keys) if known_keys else "(none)"
 
-    if not edge_prompt_template:
-        return nodes, [], chunk_id_map, rechunked_chunks
-
     edge_prompt = edge_prompt_template.replace("{known_nodes}", known_str)
     edge_user_prompt = (
-        user_prompt
-        if not rechunk
-        else (
-            "## Source Text:\n"
-            "Each source chunk is enclosed by [CHUNK_ID: ...] and [END_CHUNK]. "
-            "For every relation, return source_chunk_ids containing only the IDs of chunks that support that relation.\n"
-            f"{relation_text}\n\n## Output (JSON only):"
-        )
+        "## Source Text:\n"
+        "Each source chunk is enclosed by [CHUNK_ID: ...] and [END_CHUNK]. "
+        "For every relation, return source_chunk_ids containing only the IDs of chunks that support that relation.\n"
+        f"{text}\n\n## Output (JSON only):"
     )
     edge_res = await gen_json(edge_prompt, edge_user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}))
     edges = _struct_unwrap_items(edge_res)
 
-    if rechunk:
+    if rechunk and chunk_id_map:
+        valid = set(chunk_id_map.values())
         for edge in edges:
             raw_ids = edge.get("source_chunk_ids")
             if isinstance(raw_ids, str):
                 raw_ids = [raw_ids]
             if isinstance(raw_ids, list):
-                edge["source_chunk_ids"] = [item for item in raw_ids if isinstance(item, str) and item in set(chunk_id_map.values())]
+                edge["source_chunk_ids"] = [item for item in raw_ids if isinstance(item, str) and item in valid]
 
-    return nodes, edges, chunk_id_map, rechunked_chunks
+    return edges
 
 
 # Claim/evidence compilation (see claim_evidence.md).
@@ -1021,7 +1081,14 @@ _struct_embed = _encode
 # ``list[dict]`` value would stringify to a Python dict repr (``{'quote': ...}``)
 # and pollute the tokens. Kept out of BM25 in the first phase too so the
 # payload change stays isolated from any recall change.
-_STRUCT_INDEX_EXCLUDED_KEYS = frozenset({"evidence"})
+#
+# "source_chunk_ids" and "mention_count" are bookkeeping, not semantics: the
+# ids are opaque hex that tokenizes into garbage terms and drifts the vector,
+# and the count is a number every row shares. Must stay in lockstep with
+# IndexExcludedKeys in
+# internal/ingestion/component/knowledge_compiler/common/indextext.go, or the
+# two runtimes index the same payload into different vectors.
+_STRUCT_INDEX_EXCLUDED_KEYS = frozenset({"evidence", "source_chunk_ids", "mention_count"})
 
 
 def _struct_payload_description(payload: dict, excluded: frozenset[str] | set[str] | None = None) -> str:
@@ -1115,6 +1182,111 @@ def _struct_graph_relation(payload: dict) -> dict | None:
         "to": tgt,
         "type": str(typ).strip() if typ is not None else "related",
     }
+
+
+# Kinds whose templates declare that every detail entity has exactly one
+# container parent. Only these may have orphans re-parented; everywhere else an
+# unattached entity is a legitimate root.
+_STRUCT_ORPHAN_REPARENT_KINDS = {"page_index", "pageindex"}
+
+
+def _struct_attach_orphan_entities(
+    entities: list[dict],
+    relations: list[dict],
+) -> list[dict]:
+    """Re-parent leaf entities the per-batch relation pass could not attach.
+
+    Relations are extracted inside one batch, so a parent living in another
+    batch is invisible to the edge prompt. Packing the whole document into a
+    single batch hid this; capping batches at a few chunks (which the model
+    needs to actually read the text) exposes it — a claim whose heading sits
+    in an earlier batch gets no ``include`` edge and lands at the tree root,
+    which turns a table of contents into a flat list of claims.
+
+    Only types that NEVER act as a container are repaired: an entity of such a
+    type with no incoming edge is missing its parent by definition, whereas a
+    structural type (a heading) may legitimately be a root. No type names are
+    baked in — containers are whatever appears on the ``from`` side.
+
+    The parent is the container sharing the most source chunks with the
+    orphan, preferring the most specific one (fewest chunks of its own),
+    because a title's ``source_chunk_ids`` are meant to cover its whole
+    section.
+    """
+    if not entities or not relations:
+        return relations
+
+    child_names = {str(r.get("to") or "") for r in relations}
+    container_names = {str(r.get("from") or "") for r in relations}
+    if not container_names:
+        return relations
+
+    by_type: dict[str, list[dict]] = {}
+    for ent in entities:
+        by_type.setdefault(str(ent.get("type") or "other"), []).append(ent)
+
+    # Classify by TYPE, not by instance. A heading whose own children all fell
+    # in other batches never appears on a ``from`` side, yet it is still the
+    # right parent — going by instance would leave its whole section orphaned.
+    container_types = {typ for typ, ents in by_type.items() if any(str(e.get("name") or "") in container_names for e in ents)}
+    leaf_types = {typ for typ in by_type if typ not in container_types}
+    if not leaf_types:
+        return relations
+
+    containers = [e for e in entities if str(e.get("type") or "other") in container_types]
+    if not containers:
+        return relations
+
+    dominant_type = "include"
+    counts: dict[str, int] = {}
+    for r in relations:
+        t = str(r.get("type") or "").strip()
+        if t:
+            counts[t] = counts.get(t, 0) + 1
+    if counts:
+        dominant_type = max(counts, key=lambda k: counts[k])
+
+    existing = {(str(r.get("from") or ""), str(r.get("to") or "")) for r in relations}
+    repaired: list[dict] = []
+    for ent in entities:
+        name = str(ent.get("name") or "")
+        if not name or str(ent.get("type") or "other") not in leaf_types:
+            continue
+        if name in child_names:
+            continue
+        chunks = {str(c) for c in (ent.get("source_chunk_ids") or []) if c}
+        if not chunks:
+            continue
+        best = None
+        best_overlap = 0
+        for cand in containers:
+            cand_name = str(cand.get("name") or "")
+            if cand_name == name:
+                continue
+            cand_chunks = {str(c) for c in (cand.get("source_chunk_ids") or []) if c}
+            overlap = len(chunks & cand_chunks)
+            if overlap <= 0:
+                continue
+            # Most overlapping wins; ties go to the narrower container, which
+            # is the deeper (more specific) section.
+            key = (overlap, -len(cand_chunks))
+            if best is None or key > best[0]:
+                best = (key, cand_name)
+                best_overlap = overlap
+        if best is None or best_overlap <= 0:
+            continue
+        parent = best[1]
+        if (parent, name) in existing:
+            continue
+        existing.add((parent, name))
+        repaired.append({"from": parent, "to": name, "type": dominant_type})
+
+    if repaired:
+        logging.info(
+            "structure graph: re-parented %d orphan leaf entity(ies) that the per-batch relation pass could not attach",
+            len(repaired),
+        )
+    return relations + repaired
 
 
 def _struct_merge_graph_entities(entities: list[dict]) -> list[dict]:
@@ -1357,7 +1529,23 @@ async def _struct_process_batch(
     src_field, target_field = _struct_relation_member_fields(parser_config)
     rechunk = bool(parser_config.get("rechunk"))
 
+    def _note(msg: str, prog: float | None = None) -> None:
+        """Write to both the server log and the task progress stream.
+
+        A batch is one long LLM round-trip (two, plus one per detail
+        sub-batch, when the template has a detail pass), and nothing was
+        emitted in between — the task looked hung. Mirrors raptor, which
+        logs its per-batch claim harvest.
+        """
+        logging.info("compile_structure_from_text: doc=%s batch %s/%s: %s", doc_id, batch_idx + 1, total, msg)
+        if callback:
+            try:
+                callback(msg=f"batch {batch_idx + 1}/{total}: {msg}")
+            except TypeError:
+                pass
+
     async def _run() -> _RechunkedDocs:
+        _note(f"start: {len(packed)} chunk(s), extracting entities")
         # For hypergraph, entity extraction MUST complete before edge extraction
         # within the same batch, because the edge prompt's {known_nodes}
         # placeholder is filled from this batch's extracted nodes — see
@@ -1385,7 +1573,25 @@ async def _struct_process_batch(
             gate_mode = _struct_evidence_gate_mode(parser_config)
             verified = rejected = 0
             if items:
+                # Counted BEFORE the gate: it pops ``evidence`` in place, so
+                # afterwards "the model gave a quote" and "the gate rejected
+                # it" are indistinguishable — which is exactly the split this
+                # log exists to expose (mirrors raptor's emitted/verified/
+                # rejected counters).
+                emitted = sum(1 for it in items if it.get("evidence"))
+                emitted_by_type = _struct_type_counts(items)
                 verified, rejected = _struct_apply_evidence_gate(items, text_by_chunk, gate_mode)
+                logging.info(
+                    "compile_structure_from_text: doc=%s batch %s: items=%d emitted_evidence=%d verified=%d rejected=%d emitted_by_type=%s kept_by_type=%s",
+                    doc_id,
+                    batch_idx,
+                    len(items),
+                    emitted,
+                    verified,
+                    rejected,
+                    emitted_by_type,
+                    _struct_type_counts(items),
+                )
             if relations and _struct_relation_expects_evidence(parser_config):
                 rel_verified, rel_rejected = _struct_apply_evidence_gate(relations, text_by_chunk, gate_mode)
                 verified += rel_verified
@@ -1396,6 +1602,7 @@ async def _struct_process_batch(
         payloads = items + relations
         kinds = ["entity"] * len(items) + ["relation"] * len(relations)
         payload_chunk_ids = list(dict.fromkeys(chunk_id_map.values())) if chunk_id_map else batch_ids
+        _note(f"extracted {len(items)} entity/claim(s) and {len(relations)} relation(s); embedding")
         if not payloads:
             if callback:
                 callback((batch_idx + 1) / total, f"{batch_idx + 1}/{total} batches: 0 items")
@@ -1512,9 +1719,32 @@ async def compile_structure_from_text(
         chunks,
         chat_mdl,
         prompt_overhead_tokens=prompt_overhead,
+        # Structure extraction is packed by the context window: a heading has to
+        # see its whole section to own it. Pass a cap only when one is
+        # configured — the greedy mode then cuts on either the chunk count or
+        # the accumulated tokens.
+        batch_size_cap=_STRUCT_MAX_CHUNKS_PER_BATCH or None,
     )
     if not packed_batches:
         return []
+
+    # The runner only reports "compile batch N (M chunks)"; how those M chunks
+    # were split into LLM-sized batches was invisible, so a long compilation
+    # gave no sign of progress.
+    logging.info(
+        "compile_structure_from_text: doc=%s template=%s kind=%s: %d chunk(s) -> %d batch(es) (max %d chunk(s)/call)",
+        doc_id,
+        compilation_template_id,
+        template_kind,
+        len(chunks),
+        len(packed_batches),
+        _STRUCT_MAX_CHUNKS_PER_BATCH,
+    )
+    if callback:
+        try:
+            callback(msg=f"{len(chunks)} chunk(s) -> {len(packed_batches)} batch(es)")
+        except TypeError:
+            pass
 
     async def _process_one(batch: list[dict], bi: int, total: int) -> list[dict]:
         # The engine's semaphore already bounds concurrency.
@@ -1738,7 +1968,9 @@ def _struct_merge_exact_entity_payload(existing: dict, incoming: dict) -> dict |
             merged[key] = value
 
     types = {str(left.get("type") or "").strip().casefold(), str(right.get("type") or "").strip().casefold()}
-    for preferred in ("title", "fact", "conclusion"):
+    # "fact"/"conclusion" are page_index's pre-rename spelling of a claim and
+    # are kept only so rows compiled before the rename still merge correctly.
+    for preferred in ("title", "claim", "fact", "conclusion"):
         if preferred in types:
             merged["type"] = preferred
             break
@@ -2810,6 +3042,13 @@ async def _struct_rebuild_graph_json(
                 if doc_id is None and source_doc_id:
                     entity["doc_ids_kwd"] = [source_doc_id]
                 entities.append(entity)
+
+    # Re-parenting only makes sense where the template's semantics say every
+    # detail item hangs off a container. In a knowledge graph or a timeline an
+    # unattached entity is a legitimate root, and forcing it under whatever
+    # shares a chunk would fabricate relations.
+    if _struct_normalize_kind(compile_kwd) in _STRUCT_ORPHAN_REPARENT_KINDS:
+        relations = _struct_attach_orphan_entities(entities, relations)
 
     return {
         "entities": _struct_merge_graph_entities(entities),

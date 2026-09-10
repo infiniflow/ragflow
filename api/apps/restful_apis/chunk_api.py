@@ -983,6 +983,27 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             ordered_ids.append(bucket_id)
 
     page_index_groups = [group for group in grouped.values() if _compilation_template_kind(group.get("kind")) in {"page_index", "pageindex"}]
+    for group in page_index_groups:
+        # Headings at every level carry a claim badge, not just leaves: the UI
+        # opens a node's claims from any level, and a heading's own chunk span
+        # covers its whole subtree. Failures are logged and the tree renders
+        # without badges.
+        try:
+            await sgc.attach_claim_counts(
+                group.get("entities") or [],
+                group.get("relations") or [],
+                index_name,
+                dataset_id,
+                document_id,
+                _compilation_template_kind(group.get("kind")),
+                leaves_only=False,
+            )
+        except Exception:
+            logging.exception(
+                "structure graph: page_index claim count attach failed for doc=%s template=%s",
+                document_id,
+                group.get("template_id"),
+            )
     if page_index_groups:
         # PageIndex nodes should follow the document's chunk order. Use the
         # current chunk query order directly. Do not derive the order
@@ -1030,6 +1051,41 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
     return get_result(data=_response(templates_out))
 
 
+async def _template_compile_kwd(template_id: str) -> str:
+    """The ``compile_kwd`` rows of this template were stamped with.
+
+    Compiled rows carry the template's ``kind`` (page_index, tree, timeline…),
+    so any query that pins ``compile_kwd`` has to read it from the template
+    rather than assume one. Best-effort: ``None`` means "don't filter on it",
+    which is safe because the template id scopes the query anyway.
+
+    Deliberately defined ABOVE the route it serves: slotting a helper between a
+    decorator stack and its function steals the registration, and the route
+    then calls the helper with the path parameters instead.
+    """
+    from api.db.services.compilation_template_service import (
+        CompilationTemplateService,
+    )
+
+    try:
+        rows = await thread_pool_exec(CompilationTemplateService.query, id=template_id)
+    except Exception:  # pragma: no cover - lookup is best-effort
+        return ""
+    if not rows:
+        return ""
+    first = rows[0]
+    cfg = first.get("config") if isinstance(first, dict) else None
+    if isinstance(cfg, str):
+        try:
+            cfg = json.loads(cfg)
+        except (TypeError, ValueError):
+            cfg = None
+    if isinstance(cfg, dict) and cfg.get("kind"):
+        return _compilation_template_kind(cfg.get("kind"))
+    kind = first.get("kind") if isinstance(first, dict) else None
+    return _compilation_template_kind(kind)
+
+
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/structure/claims", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -1061,6 +1117,13 @@ async def get_document_structure_claims(tenant_id, dataset_id, document_id):
     except ValueError:
         return get_error_data_result(message="offset/limit must be integers")
 
+    # The rows' ``compile_kwd`` is the template's own kind. It used to be
+    # pinned to "tree" here, so a page_index document (compile_kwd="page_index")
+    # matched no rows at all and every node reported zero claims.
+    compile_kwd = None
+    if template_id:
+        compile_kwd = await _template_compile_kwd(template_id) or None
+
     from rag.nlp import search
 
     index_name = search.index_name(dataset_tenant_id)
@@ -1069,7 +1132,7 @@ async def get_document_structure_claims(tenant_id, dataset_id, document_id):
             index_name,
             dataset_id,
             document_id,
-            compile_kwd="tree",
+            compile_kwd=compile_kwd,
             compilation_template_id=template_id,
             chunk_ids=chunk_ids or None,
             offset=offset,

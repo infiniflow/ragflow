@@ -324,12 +324,23 @@ func fillKnownNodes(edgePromptTemplate string, knownKeys []string) string {
 }
 
 // UserPrompt wraps one batch's packed chunk text exactly as
-// _struct_extract_hypergraph does; the same user prompt serves both stages.
+// _struct_extract_hypergraph's node-stage user prompt does.
 func UserPrompt(packedText string) string {
 	return "## Source Text:\n" +
 		"Each source chunk is enclosed by [CHUNK_ID: ...] and [END_CHUNK]. " +
 		"For every entity and relation, return source_chunk_ids containing only " +
 		"the IDs of chunks that support that item.\n" +
+		packedText + "\n\n## Output (JSON only):"
+}
+
+// EdgeUserPrompt wraps one batch's packed chunk text for the relation stage,
+// mirroring _struct_extract_relations' edge_user_prompt. The wording differs
+// from the node stage: this call emits relations only, so asking for "every
+// entity and relation" would be wrong.
+func EdgeUserPrompt(packedText string) string {
+	return "## Source Text:\n" +
+		"Each source chunk is enclosed by [CHUNK_ID: ...] and [END_CHUNK]. " +
+		"For every relation, return source_chunk_ids containing only the IDs of chunks that support that relation.\n" +
 		packedText + "\n\n## Output (JSON only):"
 }
 

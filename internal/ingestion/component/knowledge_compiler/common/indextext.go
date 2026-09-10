@@ -16,7 +16,17 @@ import (
 // stringify to Go map syntax and pollute the tokens. It is kept out of BM25 in
 // the first phase too, so the payload change stays isolated from any recall
 // change.
-var IndexExcludedKeys = map[string]bool{"evidence": true}
+// "source_chunk_ids" and "mention_count" are bookkeeping, not semantics: the
+// ids are opaque hex that tokenizes into garbage terms and drifts the vector,
+// and the count is a number every row shares. They must stay in lockstep with
+// _STRUCT_INDEX_EXCLUDED_KEYS in
+// rag/advanced_rag/knowlege_compile/structure.py, or the two runtimes index
+// the same payload into different vectors.
+var IndexExcludedKeys = map[string]bool{
+	"evidence":         true,
+	"source_chunk_ids": true,
+	"mention_count":    true,
+}
 
 // PayloadDescription is the single source of truth for the text a compiled row
 // is indexed by. It mirrors Python _struct_payload_description in
