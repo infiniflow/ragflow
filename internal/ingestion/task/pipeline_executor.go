@@ -727,11 +727,6 @@ func RecordPipelineLog(ctx context.Context, db *gorm.DB, input PipelineLogInput)
 	return recordPipelineLog(ctx, db, input, dao.NewPipelineOperationLogDAO().Create)
 }
 
-// nonTerminalOperationStatuses mirrors the DAO's open-row predicate so the
-// writer only reuses a row that is still in flight; a retry after a terminal
-// state starts a fresh row.
-var nonTerminalOperationStatuses = []string{"0", "5", "1"}
-
 func recordPipelineLog(
 	ctx context.Context,
 	db *gorm.DB,
@@ -817,7 +812,7 @@ func recordPipelineLog(
 		documentName = *doc.Name
 	}
 	if db != nil {
-		if updated, err := reuseOpenLogRow(ctx, db, input.DocumentID, operationStatus, statusValue, dslMap, doc); err != nil {
+		if updated, err := reuseOpenLogRow(ctx, db, input, operationStatus, statusValue, pipelineID, pipelineTitle, pipelineAvatar, dslMap, doc); err != nil {
 			common.Warn(fmt.Sprintf("failed to advance open pipeline log for document %s: %v", input.DocumentID, err))
 		} else if updated {
 			return nil
@@ -848,27 +843,37 @@ func recordPipelineLog(
 	return createFunc(ctx, db, log)
 }
 
-// reuseOpenLogRow advances the newest in-flight row for a document to its
-// terminal state, filling in the DSL and the final progress snapshot. It
-// reports whether a row was reused; false means the caller must Create a new
-// row. The CAS on operation_status keeps a concurrent retry's fresh queued
-// row from being overwritten by this run's terminal write.
-func reuseOpenLogRow(ctx context.Context, db *gorm.DB, documentID, operationStatus, statusValue string, dslMap entity.JSONMap, doc entity.Document) (bool, error) {
-	var open entity.PipelineOperationLog
-	if err := db.WithContext(ctx).
-		Where("document_id = ? AND operation_status IN ?", documentID, nonTerminalOperationStatuses).
-		Order("create_time DESC").
-		Order("id DESC").
-		First(&open).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
+// reuseOpenLogRow advances the open row belonging to this run to its terminal
+// state, filling in the DSL, the pipeline identity, and the final progress
+// snapshot. It reports whether a row was reused; false means the caller must
+// Create a new row. The create_time lower bound (the ingestion task row for
+// this run, when resolvable) keeps a stale open row left by a deleted task
+// from being adopted by a later run; the CAS on operation_status keeps a
+// concurrent retry's fresh queued row from being overwritten by this run's
+// terminal write.
+func reuseOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, operationStatus, statusValue string, pipelineID *string, pipelineTitle string, pipelineAvatar *string, dslMap entity.JSONMap, doc entity.Document) (bool, error) {
+	var since int64
+	if task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, db, input.DocumentID); err != nil {
+		common.Warn(fmt.Sprintf("reuse open pipeline log: load task for document %s: %v", input.DocumentID, err))
+	} else if task != nil && task.CreateTime != nil {
+		since = *task.CreateTime
+	}
+	var open *entity.PipelineOperationLog
+	openDAO := dao.NewPipelineOperationLogDAO()
+	open, err := openDAO.GetOpenLogByDocumentIDSince(ctx, db, input.DocumentID, since)
+	if err != nil {
 		return false, err
+	}
+	if open == nil {
+		return false, nil
 	}
 	updates := map[string]interface{}{
 		"operation_status": operationStatus,
 		"status":           statusValue,
 		"dsl":              dslMap,
+		"pipeline_id":      pipelineID,
+		"pipeline_title":   pipelineTitle,
+		"avatar":           pipelineAvatar,
 		"progress":         doc.Progress,
 		"progress_msg":     doc.ProgressMsg,
 		"process_begin_at": doc.ProcessBeginAt,
@@ -879,7 +884,7 @@ func reuseOpenLogRow(ctx context.Context, db *gorm.DB, documentID, operationStat
 		updates["document_name"] = *doc.Name
 	}
 	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("id = ? AND operation_status IN ?", open.ID, nonTerminalOperationStatuses).
+		Where("id = ? AND operation_status IN ?", open.ID, dao.OpenPipelineOperationStatuses()).
 		Updates(updates)
 	if result.Error != nil {
 		return false, result.Error

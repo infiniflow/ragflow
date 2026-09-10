@@ -185,20 +185,35 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *g
 	return logs, count, nil
 }
 
-// nonTerminalPipelineOperationStatuses are the operation_status values of a
+// OpenPipelineOperationStatuses are the operation_status values of a
 // pipeline operation log row that a run is still moving through. A run owns
 // exactly one such row from CREATED to its terminal write (DONE/FAIL/CANCEL),
 // so later stages advance the same row instead of inserting a new one.
-var nonTerminalPipelineOperationStatuses = []string{"0", "5", "1"}
+func OpenPipelineOperationStatuses() []string {
+	return []string{"0", "5", "1"}
+}
 
-// GetOpenLogByDocumentID returns the newest non-terminal pipeline operation
-// log for a document, or nil when the document has no in-flight run. A retry
-// after a terminal state therefore starts a fresh row instead of resurrecting
-// the finished one.
+// GetOpenLogByDocumentID returns the newest open pipeline operation log for
+// a document, or nil when the document has no in-flight run. A retry after a
+// terminal state therefore starts a fresh row instead of resurrecting the
+// finished one. Since filters to rows created at or after the current run
+// began; pass the task's create_time so a stale open row left by a deleted
+// task is never mistaken for this run's row.
 func (dao *PipelineOperationLogDAO) GetOpenLogByDocumentID(ctx context.Context, db *gorm.DB, documentID string) (*entity.PipelineOperationLog, error) {
+	return dao.GetOpenLogByDocumentIDSince(ctx, db, documentID, 0)
+}
+
+// GetOpenLogByDocumentIDSince behaves like GetOpenLogByDocumentID but only
+// matches rows created at or after since (milliseconds, create_time). A zero
+// since disables the lower bound.
+func (dao *PipelineOperationLogDAO) GetOpenLogByDocumentIDSince(ctx context.Context, db *gorm.DB, documentID string, since int64) (*entity.PipelineOperationLog, error) {
 	var log entity.PipelineOperationLog
-	err := db.WithContext(ctx).
-		Where("document_id = ? AND operation_status IN ?", documentID, nonTerminalPipelineOperationStatuses).
+	query := db.WithContext(ctx).
+		Where("document_id = ? AND operation_status IN ?", documentID, OpenPipelineOperationStatuses())
+	if since > 0 {
+		query = query.Where("create_time >= ?", since)
+	}
+	err := query.
 		Order("create_time DESC").
 		Order("id DESC").
 		First(&log).Error
@@ -253,7 +268,7 @@ func (dao *PipelineOperationLogDAO) CreateEarlyLog(ctx context.Context, db *gorm
 		ProcessBeginAt:  &now,
 		ProcessDuration: 0,
 		DSL:             entity.JSONMap{},
-		TaskType:        "Parse",
+		TaskType:        string(entity.PipelineTaskTypeParse),
 		OperationStatus: input.OperationStatus,
 		Avatar:          input.Avatar,
 	}
@@ -290,7 +305,7 @@ func (dao *PipelineOperationLogDAO) AdvanceEarlyLog(ctx context.Context, db *gor
 		"progress_msg":     progressMsg,
 	}
 	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("id = ? AND operation_status IN ?", open.ID, nonTerminalPipelineOperationStatuses).
+		Where("id = ? AND operation_status IN ?", open.ID, OpenPipelineOperationStatuses()).
 		Updates(updates)
 	if result.Error != nil {
 		return false, result.Error
@@ -303,7 +318,7 @@ func (dao *PipelineOperationLogDAO) AdvanceEarlyLog(ctx context.Context, db *gor
 // the detail page is not left with a permanently queued entry.
 func (dao *PipelineOperationLogDAO) DeleteOpenLogsByDocumentID(ctx context.Context, db *gorm.DB, documentID string) error {
 	return db.WithContext(ctx).
-		Where("document_id = ? AND operation_status IN ?", documentID, nonTerminalPipelineOperationStatuses).
+		Where("document_id = ? AND operation_status IN ?", documentID, OpenPipelineOperationStatuses()).
 		Delete(&entity.PipelineOperationLog{}).Error
 }
 

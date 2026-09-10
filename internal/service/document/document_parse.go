@@ -141,6 +141,14 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if taskExisted && deleted == 0 {
 		return fmt.Errorf("document %s ingestion task started running; stop it before re-parsing", doc.ID)
 	}
+	// The deleted CREATED/SCHEDULED task (if any) owned an open early
+	// pipeline-operation-log row that no worker will ever close. Drop it so
+	// the new run starts fresh and its terminal write cannot adopt this row.
+	if deleted > 0 {
+		if err := s.pipelineLogDAO.DeleteOpenLogsByDocumentID(ctx, dao.DB, doc.ID); err != nil {
+			common.Error(fmt.Sprintf("clear open pipeline log for document %s", doc.ID), err)
+		}
+	}
 
 	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
 		return err

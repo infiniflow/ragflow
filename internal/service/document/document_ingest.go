@@ -138,6 +138,8 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 					return common.CodeExceptionError, fmt.Errorf("delete ingestion tasks: %w", delErr)
 				}
 				common.Error(fmt.Sprintf("go side, doc %s, DeleteIngestionTasksByDocIDs failed", doc.ID), delErr)
+			} else if err := s.pipelineLogDAO.DeleteOpenLogsByDocumentID(ctx, dao.DB, doc.ID); err != nil {
+				common.Error(fmt.Sprintf("go side, doc %s, delete open pipeline log failed", doc.ID), err)
 			}
 			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 			if s.docEngine != nil {

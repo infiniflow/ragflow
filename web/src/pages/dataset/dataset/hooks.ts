@@ -1,5 +1,6 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { pickByBackend, useIsGoBackend } from '@/utils/backend-variant';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import { formatBytes } from '@/utils/file-util';
@@ -23,7 +24,9 @@ export const DocumentLogKeys = {
 export const useShowLog = (documents: IDocumentInfo[]) => {
   const { showModal, hideModal, visible } = useSetModalState();
   const [record, setRecord] = useState<IDocumentInfo>();
-  const { id: datasetId } = useParams();
+  const { id: routeId } = useParams();
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+  const datasetId = knowledgeId || routeId;
   const isGoBackend = useIsGoBackend();
 
   // When the modal is visible, poll the document directly by ID so progress_msg

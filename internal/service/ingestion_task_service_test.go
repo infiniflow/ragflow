@@ -900,11 +900,28 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackRetriedTaskOnPublishFailur
 func TestIngestionTaskServiceRemoveDeletesOwnedTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 	ctx := t.Context()
 
-	userID := "user-1"
 	svc := NewIngestionTaskService()
+	queuedMsg := "Task is queued..."
+	early := &entity.PipelineOperationLog{
+		ID:              "early-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusUnstart),
+		ProgressMsg:     &queuedMsg,
+	}
+	if err := dao.DB.Create(early).Error; err != nil {
+		t.Fatalf("seed early log: %v", err)
+	}
+
+	userID := "user-1"
 	info, err := svc.Remove(ctx, "task-1", &userID)
 	if err != nil {
 		t.Fatalf("Remove failed: %v", err)
@@ -914,6 +931,13 @@ func TestIngestionTaskServiceRemoveDeletesOwnedTask(t *testing.T) {
 	}
 	if _, err = dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1"); err == nil {
 		t.Fatal("task should be removed")
+	}
+	open, err := dao.NewPipelineOperationLogDAO().GetOpenLogByDocumentID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load open pipeline log: %v", err)
+	}
+	if open != nil {
+		t.Fatalf("expected open early row to be deleted with the task, got %+v", open)
 	}
 }
 

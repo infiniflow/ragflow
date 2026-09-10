@@ -153,6 +153,44 @@ func TestRerunDocument_RerunsAndPersistsDSL(t *testing.T) {
 	}
 }
 
+func TestRerunDocument_ClearsQueuedTaskEarlyLog(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
+		t.Fatalf("set location: %v", err)
+	}
+	insertTestPipelineLog(t, "log-1", "doc-1", "kb-1", "tenant-1", entity.JSONMap{"components": map[string]interface{}{}})
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
+	queuedMsg := "Task is queued..."
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "queued-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusSchedule),
+		ProgressMsg:     &queuedMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed queued log: %v", err)
+	}
+
+	svc, _ := rerunTestService(t)
+	if err := svc.RerunDocument(t.Context(), "tenant-1", "log-1", nil, "c1"); err != nil {
+		t.Fatalf("RerunDocument: %v", err)
+	}
+	open, err := svc.pipelineLogDAO.GetOpenLogByDocumentID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load open pipeline log: %v", err)
+	}
+	if open != nil && open.ID == "queued-log" {
+		t.Fatalf("stale queued row survived the rerun; the new run must start fresh")
+	}
+}
+
 func TestRerunDocument_EmptyDSLPersistsEntryPath(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

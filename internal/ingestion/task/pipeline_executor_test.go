@@ -133,7 +133,7 @@ func setupPipelineExecutorTestDB(t *testing.T) func() {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}, &entity.Document{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.PipelineOperationLog{}, &entity.Document{}, &entity.IngestionTask{}); err != nil {
 		t.Fatalf("auto-migrate sqlite: %v", err)
 	}
 	origDB := dao.DB
@@ -694,6 +694,88 @@ func TestRecordPipelineLog_ReusesOpenEarlyRow(t *testing.T) {
 	}
 	if len(log.DSL) != 0 {
 		t.Fatalf("DSL = %v, want empty object for terminal writer without DSL", log.DSL)
+	}
+}
+
+func TestRecordPipelineLog_IgnoresStaleOpenRowFromDeletedTask(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+
+	staleMsg := "Task is queued..."
+	stale := &entity.PipelineOperationLog{
+		ID:              "stale-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: "5",
+		ProgressMsg:     &staleMsg,
+	}
+	if err := dao.DB.Create(stale).Error; err != nil {
+		t.Fatalf("seed stale log: %v", err)
+	}
+	var staleRow entity.PipelineOperationLog
+	if err := dao.DB.First(&staleRow, "id = ?", "stale-log").Error; err != nil {
+		t.Fatalf("load stale log: %v", err)
+	}
+	staleCreateTime := int64(0)
+	if staleRow.CreateTime != nil {
+		staleCreateTime = *staleRow.CreateTime
+	}
+
+	run := "3"
+	finalMsg := "Parser Done"
+	if err := dao.DB.Create(&entity.Document{
+		ID:           "doc-1",
+		KbID:         "kb-1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		SourceType:   "local",
+		Type:         "pdf",
+		CreatedBy:    "tenant-1",
+		Suffix:       ".pdf",
+		Run:          &run,
+		ProgressMsg:  &finalMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+	// The new run's task row is newer than the orphan left by the deleted
+	// task, so the terminal write must not adopt the stale row.
+	freshCreateTime := staleCreateTime + 1
+	if err := dao.DB.Create(&entity.IngestionTask{
+		ID:         "task-2",
+		UserID:     "user-1",
+		DocumentID: "doc-1",
+		DatasetID:  "kb-1",
+		Status:     "RUNNING",
+		BaseModel:  entity.BaseModel{CreateTime: &freshCreateTime},
+	}).Error; err != nil {
+		t.Fatalf("seed task: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     "3",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var staleReload entity.PipelineOperationLog
+	if err := dao.DB.First(&staleReload, "id = ?", "stale-log").Error; err != nil {
+		t.Fatalf("reload stale log: %v", err)
+	}
+	if staleReload.OperationStatus != "5" {
+		t.Fatalf("stale row OperationStatus = %q, want %q (must not be adopted)", staleReload.OperationStatus, "5")
+	}
+	var count int64
+	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
+		t.Fatalf("count pipeline logs: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("pipeline log rows = %d, want 2 (stale row plus fresh terminal row)", count)
 	}
 }
 

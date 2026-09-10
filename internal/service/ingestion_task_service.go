@@ -325,7 +325,19 @@ func (s *IngestionTaskService) MarkStopped(ctx context.Context, taskID string) e
 }
 
 func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID *string) (*dao.TaskInfo, error) {
-	return s.ingestionTaskDAO.Delete(ctx, dao.DB, taskID, userID)
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	info, err := s.ingestionTaskDAO.Delete(ctx, dao.DB, taskID, userID)
+	if err != nil {
+		return nil, err
+	}
+	// The task row is gone, so no worker will ever reach the terminal writer
+	// for this run. Drop its open early row, otherwise the detail page keeps
+	// a queued entry and a later retry's terminal write could adopt it.
+	s.deleteEarlyLogBestEffort(ctx, task.DocumentID)
+	return info, nil
 }
 
 func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
