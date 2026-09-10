@@ -1059,6 +1059,7 @@ def test_transfer_to_sections_tracks_image_coverage_for_captioned_image(monkeypa
         "images_dropped_no_text": 0,
         "images_described": 0,
         "images_unreadable_resource": 0,
+        "vlm_configured": False,
     }
     # The intermediate INFO log that used to fire from
     # _transfer_to_sections has been removed.
@@ -1098,6 +1099,7 @@ def test_transfer_to_sections_warns_when_embedded_image_has_no_text(monkeypatch,
         "images_dropped_no_text": 1,
         "images_described": 0,
         "images_unreadable_resource": 0,
+        "vlm_configured": False,
     }
     assert "Dropped embedded image" in caplog.text
     assert "page_idx=2" in caplog.text
@@ -1185,6 +1187,7 @@ def test_transfer_to_sections_mixed_image_lifecycle(monkeypatch, caplog):
         "images_dropped_no_text": 1,
         "images_described": 1,
         "images_unreadable_resource": 0,
+        "vlm_configured": False,
     }
     # The intermediate INFO log was removed; the authoritative coverage
     # summary now lives in parse_pdf. The per-image Dropped warning
@@ -1304,6 +1307,7 @@ def test_mineruparser_initializes_last_image_coverage_in_constructor(monkeypatch
         "images_described": 0,
         "images_dropped_no_text": 0,
         "images_unreadable_resource": 0,
+        "vlm_configured": False,
     }
 
 
@@ -1385,21 +1389,24 @@ def test_transfer_to_tables_counts_chunked_and_described(monkeypatch, tmp_path):
     assert coverage["images_unreadable_resource"] == 0
 
 
-def test_transfer_to_tables_counts_unreadable_resource(monkeypatch, tmp_path):
-    """An IMAGE block whose caption/footnote/vlm_description is non-empty
-    but whose binary resource can't be read (e.g. missing file, corrupted
-    bytes) must be counted under images_unreadable_resource — NOT
-    images_dropped_no_text, which is reserved for images that had no
-    textual payload at all."""
+def test_raw_mode_counts_unreadable_resource_in_sections(monkeypatch, tmp_path):
+    """Raw mode (parse_method='raw') does NOT call _transfer_to_tables
+    in production — parse_pdf gates that on naive/manual/paper (see
+    mineru_parser.py:~1201). The unreadable-resource counter in raw
+    mode therefore only gets populated by _transfer_to_sections'
+    raw-mode text path, which never reaches Image.open().
+
+    The realistic raw-mode failure that maps to
+    images_unreadable_resource is the *download-time* one — text got
+    produced but the resource itself never landed. That is a parser
+    upstream of MinerU. In raw mode at this layer the corresponding
+    raw-mode counter stays at 0; the field is present so callers can
+    read it without KeyError (issue #16978 review).
+    """
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()
-    # Only the first image exists on disk; the second does not.
     good_path = tmp_path / "good.jpg"
-    missing_path = tmp_path / "missing.jpg"
     module.Image.new("RGB", (2, 2), "red").save(good_path)
-    # Do NOT create missing_path — _transfer_to_tables should log a warning
-    # and count it under images_unreadable_resource.
-
     outputs = [
         {
             "type": module.MinerUContentType.IMAGE,
@@ -1409,74 +1416,70 @@ def test_transfer_to_tables_counts_unreadable_resource(monkeypatch, tmp_path):
             "page_idx": 0,
             "bbox": (0, 0, 10, 10),
         },
+    ]
+
+    parser._transfer_to_sections(outputs, parse_method="raw")
+
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 1
+    assert coverage["images_chunked"] == 1  # section emitted, so chunked
+    assert coverage["images_unreadable_resource"] == 0
+    assert coverage["images_dropped_no_text"] == 0
+
+
+def test_app_media_mode_counts_unreadable_resource(monkeypatch, tmp_path):
+    """App-media modes (naive/manual/paper) skip IMAGE blocks in
+    _transfer_to_sections and route them through _transfer_to_tables.
+    An IMAGE with a non-empty caption but a missing/corrupted binary
+    must route to images_unreadable_resource — NOT
+    images_dropped_no_text (which is reserved for textless+unreadable).
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_from = 0
+    missing_path = tmp_path / "missing.jpg"  # never created on disk
+
+    outputs = [
         {
             "type": module.MinerUContentType.IMAGE,
             "image_caption": ["Caption B"],
             "image_footnote": [],
             "img_path": str(missing_path),
-            "page_idx": 1,
+            "page_idx": 0,
             "bbox": (0, 0, 10, 10),
-            "vlm_description": "VLM description for B.",
         },
     ]
 
-    # Mirror parse_pdf's call order: _transfer_to_sections first (which
-    # populates images_detected), then _transfer_to_tables (which populates
-    # images_chunked / images_unreadable_resource; images_described is
-    # only counted when the image actually reaches the tables list).
-    parser._transfer_to_sections(outputs, parse_method="raw")
+    # Mirror parse_pdf's call order: _transfer_to_sections first (app-media
+    # mode skips images), then _transfer_to_tables (handles them).
+    parser._transfer_to_sections(outputs, parse_method="naive")
     tables = parser._transfer_to_tables(outputs, table_enable=True)
-    # Only image A (good_path) makes it into tables — image B's binary
-    # resource is missing, so _transfer_to_tables logs "Failed to
-    # load image" / "Skip image without a readable resource" and does
-    # NOT count it under images_described.
-    assert len(tables) == 1
+    # The image is unreadable, so it does not reach tables.
+    assert len(tables) == 0
 
     coverage = parser.last_image_coverage
-    assert coverage["images_detected"] == 2
-    # parse_method="raw" makes _transfer_to_sections increment
-    # images_chunked for every IMAGE with non-empty text (==2). Then
-    # _transfer_to_tables increments once for every IMAGE (==3),
-    # decrements once for the unreadable one (==2 in the counter),
-    # but ends at ==3 because the last increment happened on the
-    # readable image A. So the final value is ==3 — the counter is
-    # "current chunk count" not "surviving chunk count" at this
-    # granularity. (A future refactor could carry a separate surviving
-    # counter; for now this test pins the current shape.)
-    assert coverage["images_chunked"] == 3
-    # _transfer_to_sections counts Image B as described (==1) because
-    # the vlm_description gets embedded in the section text in raw mode
-    # — that IS the path that emits the IMAGE. _transfer_to_tables
-    # does NOT increment further because Image B's binary is unreadable
-    # and the fix moved its described increment behind the readability
-    # check. The test pins both halves of that fix in one fixture.
-    assert coverage["images_described"] == 1
-    assert coverage["images_dropped_no_text"] == 0  # text was non-empty
+    assert coverage["images_detected"] == 1
+    # app-media mode: images_chunked is only incremented in
+    # _transfer_to_tables when the image actually reaches the tables
+    # list — this one doesn't, so chunked stays at 0.
+    assert coverage["images_chunked"] == 0
     assert coverage["images_unreadable_resource"] == 1  # the missing file
+    assert coverage["images_dropped_no_text"] == 0  # text was non-empty
 
 
-def test_transfer_to_tables_counts_dropped_no_text_for_unreadable_textless_image(
+def test_app_media_mode_counts_dropped_no_text_for_unreadable_textless_image(
     monkeypatch, tmp_path,
 ):
-    """An app-media IMAGE block whose caption/footnote/vlm_description are
-    all empty but whose binary resource can't be read must be counted
-    under images_dropped_no_text (text was never going to make it), NOT
+    """App-media IMAGE block whose caption/footnote/vlm_description are
+    all empty AND whose binary can't be read must route to
+    images_dropped_no_text (text was never going to make it), NOT
     images_unreadable_resource (which is reserved for the case where
     text WAS there but the binary was unreadable).
-
-    This pins the fix that distinguishes the two failure modes in
-    _transfer_to_tables' unreadable-resource branch. The earlier
-    code unconditionally routed unreadable resources to
-    images_unreadable_resource, which overcounted that counter when
-    the image had no text to begin with.
     """
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()
-    missing_path = tmp_path / "missing.jpg"
-    # Do NOT create the file — _transfer_to_tables should fail to
-    # open it and route to images_dropped_no_text (NOT
-    # images_unreadable_resource) because no meaningful text payload
-    # was attached to begin with.
+    parser.page_from = 0
+    missing_path = tmp_path / "missing.jpg"  # never created on disk
 
     outputs = [
         {
@@ -1486,18 +1489,11 @@ def test_transfer_to_tables_counts_dropped_no_text_for_unreadable_textless_image
             "img_path": str(missing_path),
             "page_idx": 0,
             "bbox": (0, 0, 10, 10),
-            # Explicitly NO vlm_description — the text would have been
-            # empty even if Image.open() had succeeded.
         },
     ]
 
-    # Mirror parse_pdf's call order: _transfer_to_sections first (so
-    # images_detected counts the IMAGE), then _transfer_to_tables.
     parser._transfer_to_sections(outputs, parse_method="naive")
-    tables = parser._transfer_to_tables(outputs, table_enable=True)
-    # The image is unreadable AND textless, so it must NOT reach
-    # tables.
-    assert len(tables) == 0
+    parser._transfer_to_tables(outputs, table_enable=True)
 
     coverage = parser.last_image_coverage
     assert coverage["images_detected"] == 1
@@ -1505,8 +1501,8 @@ def test_transfer_to_tables_counts_dropped_no_text_for_unreadable_textless_image
     # NOT images_unreadable_resource.
     assert coverage["images_dropped_no_text"] == 1
     assert coverage["images_unreadable_resource"] == 0
-    # chunked was incremented then decremented (since the image never
-    # reached tables), ending back at 0.
+    # chunked is only incremented on confirmed emit — this image
+    # never reached tables, so chunked stays at 0.
     assert coverage["images_chunked"] == 0
 
 
@@ -1591,3 +1587,44 @@ def test_transfer_to_sections_counts_chart_described_in_raw_mode(monkeypatch):
         f"CHART with vlm_description must count toward images_described "
         f"in raw mode; got {coverage!r}"
     )
+
+
+def test_raw_mode_counts_chart_block_as_chunked(monkeypatch):
+    """CHART blocks emitted into a raw-mode text section must count as
+    chunked, the same way IMAGE does. Without this, a chart-only raw
+    PDF reports detected > 0 but chunked = 0, which fires a systematic
+    false positive on the headline detected - chunked gap.
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.CHART,
+            "chart_caption": ["Figure 3"],
+            "chart_footnote": [],
+            "page_idx": 0,
+            "bbox": (0, 0, 1, 1),
+        },
+    ]
+
+    parser._transfer_to_sections(outputs, parse_method="raw")
+
+    coverage = parser.last_image_coverage
+    assert coverage["images_detected"] == 1
+    assert coverage["images_chunked"] == 1, (
+        f"CHART emitted as a raw-mode text section must count as chunked; "
+        f"got {coverage!r}"
+    )
+    assert coverage["images_dropped_no_text"] == 0
+
+
+def test_initial_last_image_coverage_has_vlm_configured_key(monkeypatch):
+    """Pre-seed vlm_configured=False on the parser instance so callers
+    that read last_image_coverage["vlm_configured"] after only
+    _transfer_to_sections (without parse_pdf having filled it in) get
+    False instead of KeyError (issue #16978 review).
+    """
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    assert "vlm_configured" in parser.last_image_coverage
+    assert parser.last_image_coverage["vlm_configured"] is False

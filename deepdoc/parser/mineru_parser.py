@@ -154,12 +154,19 @@ class MinerUParser(RAGFlowPdfParser):
         self.logger = logging.getLogger(self.__class__.__name__)
         # Initialize the coverage stamp so the attribute exists from
         # construction regardless of whether parse_pdf has run yet.
+        # ``vlm_configured`` is pre-seeded with ``False``; parse_pdf
+        # overwrites it with the actual vision-model status once it has
+        # the constructor wiring available. Pre-seeding means any
+        # caller that reads ``last_image_coverage[\"vlm_configured\"]``
+        # after _transfer_to_sections (but before parse_pdf fills it in)
+        # doesn't KeyError.
         self.last_image_coverage: dict = {
             "images_detected": 0,
             "images_chunked": 0,
             "images_described": 0,
             "images_dropped_no_text": 0,
             "images_unreadable_resource": 0,
+            "vlm_configured": False,
         }
 
     @staticmethod
@@ -867,6 +874,10 @@ class MinerUParser(RAGFlowPdfParser):
             "images_dropped_no_text": 0,
             "images_described": 0,
             "images_unreadable_resource": 0,
+            # Pre-seeded so callers can read the key after this method
+            # returns without going through parse_pdf first. parse_pdf
+            # overwrites it with the real vision_model status.
+            "vlm_configured": False,
         }
         for output in outputs:
             output_type = output.get("type")
@@ -955,7 +966,13 @@ class MinerUParser(RAGFlowPdfParser):
                     self.logger.debug("[MinerU] Skip section after sanitization: type=%s", output.get("type"))
                 continue
 
-            if output.get("type") == MinerUContentType.IMAGE:
+            # Mirror the same IMAGE/CHART scope as images_detected at the
+            # top of this loop and as images_chunked in
+            # _transfer_to_tables: a CHART block whose caption/footnote/
+            # vlm_description was emitted into a raw-mode text section is
+            # just as \"chunked\" as a caption-only IMAGE block — not
+            # silently dropped.
+            if output.get("type") in {MinerUContentType.IMAGE, MinerUContentType.CHART}:
                 image_coverage["images_chunked"] += 1
 
             if section and parse_method in {"manual", "pipeline"}:
