@@ -271,7 +271,7 @@ class TestDocumentsUpdated:
             document.update(payload)
         assert expected_message in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
@@ -321,7 +321,7 @@ DEFAULT_PARSER_CONFIG_FOR_TEST = {
 
 
 class TestUpdateDocumentParserConfig:
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "chunk_method, parser_config, expected_message",
         [
