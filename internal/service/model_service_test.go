@@ -500,20 +500,15 @@ func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
 	}
 }
 
-// TestModelProviderServiceAcceptsEmptyInstanceExtra verifies both model
-// resolution paths use the same empty-configuration semantics.
-func TestModelProviderServiceAcceptsEmptyInstanceExtra(t *testing.T) {
+// TestModelProviderServiceDecodesCompatibleInstanceExtra verifies both model
+// resolution paths accept empty configuration and unrelated typed fields.
+func TestModelProviderServiceDecodesCompatibleInstanceExtra(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
-	if err := db.Model(&entity.TenantModelInstance{}).
-		Where("id = ?", "instance-1").
-		Update("extra", "").Error; err != nil {
-		t.Fatalf("clear instance extra: %v", err)
-	}
 
 	svc := NewModelProviderService()
-	tests := []struct {
+	resolvers := []struct {
 		name    string
 		resolve func() (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
 	}{
@@ -530,14 +525,38 @@ func TestModelProviderServiceAcceptsEmptyInstanceExtra(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			driver, _, apiConfig, _, err := tt.resolve()
-			if err != nil {
-				t.Fatalf("resolve model config: %v", err)
+	configs := []struct {
+		name        string
+		raw         string
+		wantRegion  string
+		wantBaseURL string
+	}{
+		{name: "empty", raw: ""},
+		{
+			name:        "unrelated typed fields",
+			raw:         `{"region":"us-east-1","base_url":"https://models.example.com","enabled":true,"retries":3,"options":{"mode":"custom"}}`,
+			wantRegion:  "us-east-1",
+			wantBaseURL: "https://models.example.com",
+		},
+	}
+	for _, config := range configs {
+		t.Run(config.name, func(t *testing.T) {
+			if err := db.Model(&entity.TenantModelInstance{}).
+				Where("id = ?", "instance-1").
+				Update("extra", config.raw).Error; err != nil {
+				t.Fatalf("update instance extra: %v", err)
 			}
-			if driver == nil || apiConfig == nil || apiConfig.Region == nil || *apiConfig.Region != "" || apiConfig.BaseURL == nil || *apiConfig.BaseURL != "" {
-				t.Fatalf("resolved driver/config = %v/%+v, want empty region and base URL", driver, apiConfig)
+
+			for _, resolver := range resolvers {
+				t.Run(resolver.name, func(t *testing.T) {
+					driver, _, apiConfig, _, err := resolver.resolve()
+					if err != nil {
+						t.Fatalf("resolve model config: %v", err)
+					}
+					if driver == nil || apiConfig == nil || apiConfig.Region == nil || *apiConfig.Region != config.wantRegion || apiConfig.BaseURL == nil || *apiConfig.BaseURL != config.wantBaseURL {
+						t.Fatalf("resolved driver/config = %v/%+v, want region %q and base URL %q", driver, apiConfig, config.wantRegion, config.wantBaseURL)
+					}
+				})
 			}
 		})
 	}

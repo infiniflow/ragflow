@@ -39,16 +39,23 @@ import (
 // repaired by retrying the same task.
 var errModelConfigUnavailable = errors.New("model configuration unavailable")
 
-// decodeModelInstanceExtra treats an unset instance configuration as an empty
-// object while preserving JSON errors for malformed persisted values.
-func decodeModelInstanceExtra(raw string) (map[string]string, error) {
-	if raw == "" {
-		return map[string]string{}, nil
+// modelInstanceExtra contains the instance fields consumed during model
+// resolution. Other provider-specific fields remain valid and are ignored.
+type modelInstanceExtra struct {
+	Region  string `json:"region"`
+	BaseURL string `json:"base_url"`
+}
+
+// decodeModelInstanceExtra reads only the endpoint fields used for model
+// resolution, allowing existing rows to retain provider-specific JSON values.
+func decodeModelInstanceExtra(raw string) (modelInstanceExtra, error) {
+	if strings.TrimSpace(raw) == "" {
+		return modelInstanceExtra{}, nil
 	}
 
-	var extra map[string]string
+	var extra modelInstanceExtra
 	if err := json.Unmarshal([]byte(raw), &extra); err != nil {
-		return nil, err
+		return modelInstanceExtra{}, err
 	}
 	return extra, nil
 }
@@ -3601,8 +3608,8 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("%w: decode model instance configuration: %v", errModelConfigUnavailable, err)
 	}
-	region := extra["region"]
-	baseURL := extra["base_url"]
+	region := extra.Region
+	baseURL := extra.BaseURL
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerEntity.ProviderName)
 	if providerInfo == nil {
@@ -4150,8 +4157,8 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("%w: decode model instance configuration: %v", errModelConfigUnavailable, err)
 	}
-	region := extra["region"]
-	baseURL := extra["base_url"]
+	region := extra.Region
+	baseURL := extra.BaseURL
 
 	// Direct model lookup
 	modelObj, modelErr := m.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
