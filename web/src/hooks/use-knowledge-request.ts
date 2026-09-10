@@ -138,7 +138,7 @@ export const useTestRetrieval = () => {
       kb_id: values?.kb_id || knowledgeBaseId,
       page: 1,
       document_ids: filterValue.doc_ids,
-      highlight: false,
+      highlight: true,
       include_knowledge_compilation: false,
     };
   }, [filterValue, knowledgeBaseId, values]);
