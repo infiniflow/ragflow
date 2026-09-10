@@ -248,12 +248,11 @@ _SEARCH_CHUNKS_TOOL_SPEC = {
     "function": {
         "name": "search_chunks",
         "description": (
-            "WHEN TO CALL: Primary semantic recall. Use when exact retrieve returns nothing useful, when the corpus is large and you are unsure which document holds the answer, or when the answer passage shares no surface words with your query. Send 1-2 queries. "
-            "Compiled-structure expansion is automatic and a no-op on datasets without compiled structure, so no extra argument is needed. "
+            "WHEN TO CALL: Primary semantic recall. Use when exact retrieve returns nothing useful, when the corpus is large and you are unsure which document holds the answer, or when the answer passage shares no surface words with your query. Send 1-2 queries; compiled-structure expansion is automatic (a no-op without compiled structure). "
             "DO NOT CALL: When you already have a doc_id and want to read that document (use list_chunks); when a single exact passage would be found faster by grep-style retrieve."
             "ARGUMENTS: query — array of 1-2 strings."
-            "OUTPUT: Relevance-ranked snippet chunks, possibly with structural neighbours (parent/child headings, sibling pages) appended. "
-            "Results may LEAD with [claim score=...] entries — the dataset's compiled atomic facts carrying VERBATIM quotes from the original document (not summaries). If a claim directly answers the query, cite it and answer WITHOUT further searching; deep-read its listed chunk only for missing context or numbers. "
+            "OUTPUT: Relevance-ranked snippet chunks, possibly with structural neighbours appended. "
+            "Results may LEAD with [claim score=...] entries — the dataset's compiled atomic facts carrying VERBATIM source quotes. If a claim directly answers the query, cite it and answer WITHOUT further searching; deep-read its listed chunk only for missing context or numbers. "
             "ok = new evidence; redundant = already seen."
             "IF IT FAILS: miss means this query matched nothing — change the angle or fall back to retrieve or navigate_tree. Re-issuing a near-duplicate query is skipped as redundant, so vary the query instead of paraphrasing it."
         ),
