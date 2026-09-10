@@ -57,6 +57,9 @@ JSON_RESPONSE = True
 
 class RAGFlowConnector:
     _MAX_DATASET_CACHE = 32
+    # Independent from _MAX_DATASET_CACHE: the document cache holds per-dataset
+    # document lists (far heavier payloads), so its bound is tuned separately.
+    _MAX_DOCUMENT_CACHE = 32
     _CACHE_TTL = 300
     # Keep in sync with api.utils.pagination_utils.REST_API_MAX_PAGE_SIZE.
     _REST_API_MAX_PAGE_SIZE = 100
@@ -129,7 +132,7 @@ class RAGFlowConnector:
     def _set_cached_document_metadata_by_dataset(self, dataset_id, doc_id_meta_list):
         self._document_metadata_cache[dataset_id] = (doc_id_meta_list, self._get_expiry_timestamp())
         self._document_metadata_cache.move_to_end(dataset_id)
-        if len(self._document_metadata_cache) > self._MAX_DATASET_CACHE:
+        if len(self._document_metadata_cache) > self._MAX_DOCUMENT_CACHE:
             self._document_metadata_cache.popitem(last=False)
 
     async def _fetch_datasets_page(
