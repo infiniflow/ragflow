@@ -174,13 +174,37 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 			continue
 		}
 		if err = publishMemoryTaskWakeup(s.taskPublisher, task.ID); err != nil {
-			res.Failed = append(res.Failed, MemoryFailure{
-				MemoryID: memoryID,
-				FailMsg:  err.Error(),
-			})
+			common.Warn(fmt.Sprintf("memory: initial task wake-up failed; reconciler will retry: %v", err))
 		}
 	}
 	return res, nil
+}
+
+// ReconcileMemoryTasks publishes wake-ups for due, unleased durable memory
+// tasks. Publishing is idempotent because workers must claim the DB lease
+// before executing any stage.
+func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit int) error {
+	if s == nil {
+		return errors.New("memory: nil MemoryMessageService")
+	}
+	if s.memoryTaskDAO == nil {
+		s.memoryTaskDAO = dao.NewMemoryTaskDAO()
+	}
+	if s.taskPublisher == nil {
+		return errors.New("memory task publisher is not initialized")
+	}
+
+	tasks, err := s.memoryTaskDAO.ListDue(ctx, dao.DB, memoryNow(), limit)
+	if err != nil {
+		return fmt.Errorf("memory: list due tasks: %w", err)
+	}
+	var reconcileErr error
+	for _, task := range tasks {
+		if err = publishMemoryTaskWakeup(s.taskPublisher, task.TaskID); err != nil {
+			reconcileErr = errors.Join(reconcileErr, err)
+		}
+	}
+	return reconcileErr
 }
 
 // generateRawMessageID returns the Redis auto-increment id used by the Python

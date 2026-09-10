@@ -63,10 +63,12 @@ type Ingestor struct {
 	dispatchCancel context.CancelFunc
 
 	// Configuration
-	maxConcurrency    int32
-	supportedDocTypes []string
-	version           string
-	heartbeatInterval time.Duration
+	maxConcurrency           int32
+	supportedDocTypes        []string
+	version                  string
+	heartbeatInterval        time.Duration
+	memoryReconcileInterval  time.Duration
+	memoryReconcileBatchSize int
 
 	// Runtime state
 	currentTasks  map[string]struct{} // set of task IDs currently claimed by a worker
@@ -110,7 +112,8 @@ type Ingestor struct {
 	kcEmbedding      string
 	kcConcurrency    int32 // number of parallel dataset-level compile workers
 
-	compileWg sync.WaitGroup
+	compileWg         sync.WaitGroup
+	memoryReconcileWg sync.WaitGroup
 
 	// runDocumentTask dispatches to the migrated task handler path.
 	// Tests may override this to verify branch routing without invoking
@@ -123,6 +126,10 @@ type Ingestor struct {
 	// memorySvc.HandleSaveToMemoryTask with the envelope task id and a unique
 	// database lease owner.
 	runMemoryTask func(ctx context.Context, taskID, leaseOwner string) (servicepkg.MemoryTaskDisposition, error)
+
+	// reconcileMemoryTasks republishes due durable memory task wake-ups. Tests
+	// may replace it to verify lifecycle behavior without a database or broker.
+	reconcileMemoryTasks func(ctx context.Context) error
 
 	// cancelCheck is polled periodically (every 3s) during task execution.
 	// When it returns true the task's context is cancelled, which causes the
@@ -151,25 +158,28 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 	dispatchCtx, dispatchCancel := context.WithCancel(context.Background())
 	id := utility.GenerateUUID()
 	ingestor := &Ingestor{
-		id:                id,
-		name:              name,
-		ctx:               ctx,
-		cancel:            cancel,
-		dispatchCtx:       dispatchCtx,
-		dispatchCancel:    dispatchCancel,
-		maxConcurrency:    maxConcurrency,
-		supportedDocTypes: supportedTypes,
-		version:           "1.0.0",
-		currentTasks:      make(map[string]struct{}),
-		activeLeases:      make(map[*Heartbeat]*activeLease),
-		workerQueue:       make(chan *worker, maxConcurrency),
-		ShutdownCh:        make(chan struct{}, 1),
-		ingestionTaskSvc:  servicepkg.NewIngestionTaskService(),
-		docState:          newDocStateUpdater(),
-		heartbeatInterval: defaultHeartbeatInterval,
+		id:                       id,
+		name:                     name,
+		ctx:                      ctx,
+		cancel:                   cancel,
+		dispatchCtx:              dispatchCtx,
+		dispatchCancel:           dispatchCancel,
+		maxConcurrency:           maxConcurrency,
+		supportedDocTypes:        supportedTypes,
+		version:                  "1.0.0",
+		currentTasks:             make(map[string]struct{}),
+		activeLeases:             make(map[*Heartbeat]*activeLease),
+		workerQueue:              make(chan *worker, maxConcurrency),
+		ShutdownCh:               make(chan struct{}, 1),
+		ingestionTaskSvc:         servicepkg.NewIngestionTaskService(),
+		docState:                 newDocStateUpdater(),
+		heartbeatInterval:        defaultHeartbeatInterval,
+		memoryReconcileInterval:  defaultMemoryTaskReconcileInterval,
+		memoryReconcileBatchSize: defaultMemoryTaskReconcileBatchSize,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	ingestor.runMemoryTask = ingestor.defaultRunMemoryTask
+	ingestor.reconcileMemoryTasks = ingestor.defaultReconcileMemoryTasks
 	ingestor.cancelCheck = ingestor.defaultCancelCheck
 	ingestor.checkpointExists = canvas.RedisCheckpointExists
 	ingestor.kcConcurrency = maxConcurrency // parallel dataset-level compile workers default to the task width
@@ -186,6 +196,11 @@ func (e *Ingestor) ID() string {
 const consumeErrorBackoff = 1 * time.Second
 
 const taskPullRequestTimeout = 1 * time.Second
+
+const (
+	defaultMemoryTaskReconcileInterval  = 10 * time.Second
+	defaultMemoryTaskReconcileBatchSize = 100
+)
 
 func (e *Ingestor) Start() error {
 	common.Info(fmt.Sprintf("Ingestor %s initialized", e.id))
@@ -213,11 +228,12 @@ func (e *Ingestor) start() error {
 		}
 	}
 
-	// Start the task worker pool and the dataset-level compile consumer as
-	// owned goroutines joined by Stop via workerWg/compileWg. Start follows
+	// Start the task workers, memory reconciler, and dataset compile consumer as
+	// owned goroutines joined by Stop. Start follows
 	// the standard lifecycle contract: it returns immediately after kicking
 	// these off rather than blocking on the consume loop itself.
 	e.startWorkerPool()
+	e.startMemoryTaskReconciler()
 	e.startDatasetKnowledgeCompile()
 
 	// Run the main tasks.RAGFLOW dispatcher off the caller's goroutine so Start
@@ -226,6 +242,52 @@ func (e *Ingestor) start() error {
 	go e.consumeLoop()
 
 	return nil
+}
+
+// startMemoryTaskReconciler starts the owned loop that recovers durable memory
+// tasks whose initial wake-up was lost or whose retry became due.
+func (e *Ingestor) startMemoryTaskReconciler() {
+	if e.memorySvc == nil || dao.DB == nil || e.reconcileMemoryTasks == nil {
+		return
+	}
+	e.memoryReconcileWg.Add(1)
+	go e.memoryTaskReconcileLoop()
+}
+
+// memoryTaskReconcileLoop performs one startup pass and then polls until the
+// ingestor execution context is canceled.
+func (e *Ingestor) memoryTaskReconcileLoop() {
+	defer e.memoryReconcileWg.Done()
+	reconcile := func() {
+		if err := e.reconcileMemoryTasks(e.ctx); err != nil && !errors.Is(err, context.Canceled) {
+			common.Warn(fmt.Sprintf("reconcile durable memory tasks: %v", err))
+		}
+	}
+
+	reconcile()
+	interval := e.memoryReconcileInterval
+	if interval <= 0 {
+		interval = defaultMemoryTaskReconcileInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-e.ctx.Done():
+			return
+		case <-ticker.C:
+			reconcile()
+		}
+	}
+}
+
+// defaultReconcileMemoryTasks publishes one bounded batch of due wake-ups.
+func (e *Ingestor) defaultReconcileMemoryTasks(ctx context.Context) error {
+	batchSize := e.memoryReconcileBatchSize
+	if batchSize <= 0 {
+		batchSize = defaultMemoryTaskReconcileBatchSize
+	}
+	return e.memorySvc.ReconcileMemoryTasks(ctx, batchSize)
 }
 
 // consumeLoop is the worker dispatcher for tasks.RAGFLOW. It waits for an
@@ -1152,6 +1214,7 @@ func (e *Ingestor) Stop(ctx context.Context) {
 		e.cancel()
 		e.workerWg.Wait()
 		e.compileWg.Wait()
+		e.memoryReconcileWg.Wait()
 		close(waitDone)
 	}()
 
