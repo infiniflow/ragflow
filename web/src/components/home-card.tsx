@@ -17,6 +17,7 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { TruncatedText } from '@/components/truncated-text';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { formatDate } from '@/utils/date';
 import { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -39,7 +40,7 @@ interface IProps {
 }
 
 function Time({ time }: { time: string | number | undefined }) {
-  return <p className="text-sm truncate">{formatDate(time)}</p>;
+  return <p className="truncate text-sm text-cable-muted">{formatDate(time)}</p>;
 }
 
 export function HomeCard({
@@ -64,7 +65,13 @@ export function HomeCard({
         onClick?.();
       }}
       tabIndex={0}
-      className="px-2.5 py-4 flex gap-2 items-start group h-full w-full hover:shadow-md"
+      className={cn(
+        'group flex h-full w-full items-start gap-3 rounded-xl px-4 py-4',
+        'border border-cable-border bg-cable-surface shadow-cable-surface',
+        'transition-[transform,box-shadow,border-color] duration-200 ease-out',
+        'hover:-translate-y-0.5 hover:border-cable-border-hover hover:shadow-cable-surface-hover',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cable-accent',
+      )}
     >
       <div>
         <RAGFlowAvatar
