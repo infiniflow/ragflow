@@ -69,6 +69,7 @@ ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
+
 # Generation parameters that are safe to forward to the underlying completion
 # call. `gen_conf` originates from a chat assistant's `llm_setting`, which can
 # also carry RAGFlow-internal metadata (e.g. `model_type`). Anything outside
@@ -110,6 +111,68 @@ LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
         "extra_body",
     }
 )
+
+# Claude models that reject every sampling parameter (temperature / top_p / top_k -> HTTP 400).
+_CLAUDE_NO_SAMPLING_MARKERS = (
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable",
+    "claude-mythos",
+)
+
+# First Claude generation that rejects ``temperature`` and ``top_p`` being set together, on the
+# Anthropic API itself as well as through Bedrock (Anthropic API release notes, 2025-08-05:
+# "Opus 4.1 does not allow both temperature and top_p parameters to be specified"; Haiku 4.5
+# migration guide: "Use only temperature OR top_p, not both. Setting both returns a 400 error").
+# Claude 3.x and Claude 4.0 (Opus 4 / Sonnet 4) still accept the pair.
+_CLAUDE_TEMPERATURE_XOR_TOP_P_SINCE = (4, 1)
+
+# ``claude-sonnet-4-5[-20250929]``, ``eu.anthropic.claude-opus-4-1-20250805-v1:0``, ``claude-fable-5-1``.
+# The minor version is at most two digits so a date suffix (``claude-sonnet-4-20250514``) is not read as one.
+_CLAUDE_VERSION_RE = re.compile(r"claude-(?:opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?!\d)")
+# Legacy naming: ``claude-3-5-sonnet-20241022``, ``anthropic.claude-3-7-sonnet-20250219-v1:0``, ``claude-3-haiku``.
+_CLAUDE_LEGACY_VERSION_RE = re.compile(r"claude-(\d)(?:-(\d))?-(?:opus|sonnet|haiku)")
+
+
+def _claude_version(model_name_lower: str) -> tuple[int, int] | None:
+    """Return the ``(major, minor)`` Claude generation parsed from a model name, or ``None`` when unknown."""
+    match = _CLAUDE_VERSION_RE.search(model_name_lower) or _CLAUDE_LEGACY_VERSION_RE.search(model_name_lower)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2) or 0)
+
+
+def _apply_claude_sampling_policy(model_name_lower: str, *targets: dict) -> None:
+    """Drop, in place on every ``targets`` dict, the sampling parameters a Claude model would reject.
+
+    The rules are properties of the model generation, not of the gateway, so they apply to Claude
+    served by Anthropic directly *and* through Bedrock (``eu.anthropic.claude-sonnet-4-6``):
+
+    * Opus 4.7+, Sonnet 5, Fable/Mythos: no sampling parameter is accepted at all.
+    * Claude 4.1 and later: ``temperature`` and ``top_p`` cannot both be specified (HTTP 400,
+      "temperature and top_p cannot both be specified for this model"). ``temperature`` is the
+      primary UI knob, so ``top_p`` is the one dropped.
+    * Claude 3.x and 4.0 accept the pair and are left untouched. A Claude name whose generation
+      cannot be parsed is treated as recent, since a dropped ``top_p`` beats a failing chat.
+
+    Every drop is logged at WARNING level so the user can find out why a setting is not honoured.
+    """
+    if "claude" not in model_name_lower:
+        return
+    if any(marker in model_name_lower for marker in _CLAUDE_NO_SAMPLING_MARKERS):
+        removed = [key for target in targets for key in ("temperature", "top_p", "top_k") if target.pop(key, None) is not None]
+        if removed:
+            logging.warning("Claude sampling policy: dropped %s for model %s (no sampling parameter accepted)", "/".join(sorted(set(removed))), model_name_lower)
+        return
+    version = _claude_version(model_name_lower)
+    if version is not None and version < _CLAUDE_TEMPERATURE_XOR_TOP_P_SINCE:
+        return
+    if any("temperature" in target for target in targets) and any("top_p" in target for target in targets):
+        for target in targets:
+            target.pop("top_p", None)
+        logging.warning("Claude sampling policy: dropped top_p for model %s (temperature and top_p cannot both be specified)", model_name_lower)
 
 
 def _apply_model_family_policies(
@@ -203,10 +266,8 @@ def _apply_model_family_policies(
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
-        elif provider == SupportedLiteLLMProvider.Anthropic and model_name_lower in {"claude-opus-4-7", "claude-opus-4-8"}:
-            for key in ("temperature", "top_p", "top_k"):
-                sanitized_gen_conf.pop(key, None)
-                sanitized_kwargs.pop(key, None)
+        elif provider in {SupportedLiteLLMProvider.Anthropic, SupportedLiteLLMProvider.Bedrock}:
+            _apply_claude_sampling_policy(model_name_lower, sanitized_gen_conf, sanitized_kwargs)
 
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):
@@ -304,6 +365,8 @@ class Base(ABC):
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
+        answer = ""
+        generated_text = ""
 
         gen_conf, extra_request_kwargs = _apply_model_family_policies(
             self.model_name,
@@ -325,25 +388,46 @@ class Base(ABC):
                 resp.choices[0].delta.content = ""
             _reasoning = getattr(resp.choices[0].delta, "reasoning_content", None) or getattr(resp.choices[0].delta, "reasoning", None)
             if kwargs.get("with_reasoning", True) and _reasoning:
-                ans = ""
                 if not reasoning_start:
                     reasoning_start = True
-                    ans = "<think>"
-                ans += _reasoning + "</think>"
+                    yield "<think>", 0
+                tol = total_token_count_from_response(resp)
+                if not tol:
+                    tol = num_tokens_from_string(resp.choices[0].delta.content)
+                generated_text += _reasoning
+                yield _reasoning, tol
+                if resp.choices[0].delta.content:
+                    reasoning_start = False
+                    yield "</think>", 0
+                    answer += resp.choices[0].delta.content
+                    generated_text += resp.choices[0].delta.content
+                    yield resp.choices[0].delta.content, 0
+                if getattr(resp.choices[0], "finish_reason", "") == "length":
+                    if reasoning_start:
+                        reasoning_start = False
+                        yield "</think>", 0
+                    yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN, 0
+                continue
             else:
-                reasoning_start = False
+                if reasoning_start and resp.choices[0].delta.content:
+                    reasoning_start = False
+                    yield "</think>", 0
                 ans = resp.choices[0].delta.content
+                answer += ans
             tol = total_token_count_from_response(resp)
             if not tol:
                 tol = num_tokens_from_string(resp.choices[0].delta.content)
 
             finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
-            if finish_reason == "length":
-                if is_chinese(ans):
-                    ans += LENGTH_NOTIFICATION_CN
-                else:
-                    ans += LENGTH_NOTIFICATION_EN
             yield ans, tol
+            if finish_reason == "length":
+                if reasoning_start:
+                    reasoning_start = False
+                    yield "</think>", 0
+                yield LENGTH_NOTIFICATION_CN if is_chinese(answer) else LENGTH_NOTIFICATION_EN, 0
+
+        if reasoning_start:
+            yield "</think>", 0
 
     async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
         gen_conf = dict(gen_conf or {})
@@ -670,6 +754,7 @@ class Base(ABC):
 
                     final_tool_calls = {}
                     answer = ""
+                    generated_text = ""
                     round_estimate = 0
                     round_usage = None
 
@@ -699,14 +784,20 @@ class Base(ABC):
 
                         _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                         if _reasoning:
-                            ans = ""
+                            generated_text += _reasoning
                             if not reasoning_start:
                                 reasoning_start = True
-                                ans = "<think>"
-                            ans += _reasoning + "</think>"
-                            yield ans
+                                yield "<think>"
+                            yield _reasoning
+                            if delta.content:
+                                reasoning_start = False
+                                yield "</think>"
+                                answer += delta.content
+                                yield delta.content
                         else:
-                            reasoning_start = False
+                            if reasoning_start and delta.content:
+                                reasoning_start = False
+                                yield "</think>"
                             answer += delta.content
                             yield delta.content
 
@@ -715,7 +806,13 @@ class Base(ABC):
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
-                            yield self._length_stop("")
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
+                            yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN
+
+                    if reasoning_start:
+                        yield "</think>"
 
                     # Commit this round's tokens (each round is a separate provider
                     # request — accumulate, never overwrite).
@@ -748,7 +845,9 @@ class Base(ABC):
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield f"<think>Running the {tc.function.name} tool...</think>"
+                        yield "<think>"
+                        yield f"Running the {tc.function.name} tool..."
+                        yield "</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
 
                     # Terminal-tool short-circuit: stream a terminal tool's
@@ -1118,6 +1217,38 @@ class LmStudioChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
         self.client = OpenAI(api_key="lm-studio", base_url=self.base_url)
         self.model_name = model_name
+
+
+class LlmmanChat(Base):
+    _FACTORY_NAME = "llmman"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("Local llm url cannot be None")
+        # Local server ignores auth; a placeholder key keeps Base's sync and async clients identical.
+        super().__init__("llmman", model_name, base_url, **kwargs)
+
+
+class HubrisChat(Base):
+    """Hubris OpenAI-compatible chat adapter.
+
+    The endpoint is fixed rather than configurable. Hubris is a hosted gateway
+    on one known host, so a tenant-supplied ``base_url`` would have no
+    legitimate use and would send the Hubris API key to whatever host was
+    configured.
+    """
+
+    _FACTORY_NAME = "Hubris"
+
+    _BASE_URL = "https://api.hubris.pw/v1"
+
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        """Build the client against the fixed Hubris endpoint.
+
+        ``base_url`` is accepted for signature compatibility with the other
+        chat adapters and deliberately ignored.
+        """
+        super().__init__(key, model_name, self._BASE_URL, **kwargs)
 
 
 class OpenAI_APIChat(Base):
@@ -1707,6 +1838,102 @@ class GoogleChat(Base):
 
             yield total_tokens
 
+    async def _async_chat(self, history, gen_conf, **kwargs):
+        if "claude" in self.model_name:
+            return await super()._async_chat(history, gen_conf, **kwargs)
+
+        gen_conf = dict(gen_conf or {})
+        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
+        history = [h for h in history if h["role"] != "system"]
+
+        if "thinking_budget" not in gen_conf:
+            gen_conf["thinking_budget"] = 0
+        thinking_budget = gen_conf.pop("thinking_budget", 0)
+        gen_conf = self._clean_conf(gen_conf)
+
+        try:
+            from google.genai.types import Content, GenerateContentConfig, Part, ThinkingConfig
+        except ImportError as e:
+            logging.error(f"[GoogleChat] Failed to import google-genai: {e}. Please install: pip install google-genai>=1.41.0")
+            raise
+
+        config_dict = {}
+        if system:
+            config_dict["system_instruction"] = system
+        if "temperature" in gen_conf:
+            config_dict["temperature"] = gen_conf["temperature"]
+        if "top_p" in gen_conf:
+            config_dict["top_p"] = gen_conf["top_p"]
+        if "max_output_tokens" in gen_conf:
+            config_dict["max_output_tokens"] = gen_conf["max_output_tokens"]
+        config_dict["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+        config = GenerateContentConfig(**config_dict)
+
+        contents = []
+        for item in history:
+            role = "model" if item["role"] == "assistant" else item["role"]
+            contents.append(Content(role=role, parts=[Part(text=item["content"])]))
+
+        response = await self.client.aio.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+            config=config,
+        )
+        ans = response.text or ""
+        try:
+            total_tokens = response.usage_metadata.total_token_count
+        except Exception:
+            total_tokens = num_tokens_from_string(ans)
+        return ans, total_tokens
+
+    async def _async_chat_streamly(self, history, gen_conf, **kwargs):
+        if "claude" in self.model_name:
+            async for delta_ans, tol in super()._async_chat_streamly(history, gen_conf, **kwargs):
+                yield delta_ans, tol
+            return
+
+        gen_conf = dict(gen_conf or {})
+        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
+        history = [h for h in history if h["role"] != "system"]
+
+        if "thinking_budget" not in gen_conf:
+            gen_conf["thinking_budget"] = 0
+        thinking_budget = gen_conf.pop("thinking_budget", 0)
+        gen_conf = self._clean_conf(gen_conf)
+
+        try:
+            from google.genai.types import Content, GenerateContentConfig, Part, ThinkingConfig
+        except ImportError as e:
+            logging.error(f"[GoogleChat] Failed to import google-genai: {e}. Please install: pip install google-genai>=1.41.0")
+            raise
+
+        config_dict = {}
+        if system:
+            config_dict["system_instruction"] = system
+        if "temperature" in gen_conf:
+            config_dict["temperature"] = gen_conf["temperature"]
+        if "top_p" in gen_conf:
+            config_dict["top_p"] = gen_conf["top_p"]
+        if "max_output_tokens" in gen_conf:
+            config_dict["max_output_tokens"] = gen_conf["max_output_tokens"]
+        config_dict["thinking_config"] = ThinkingConfig(thinking_budget=thinking_budget)
+        config = GenerateContentConfig(**config_dict)
+
+        contents = []
+        for item in history:
+            role = "model" if item["role"] == "assistant" else item["role"]
+            contents.append(Content(role=role, parts=[Part(text=item["content"])]))
+
+        stream = await self.client.aio.models.generate_content_stream(
+            model=self.model_name,
+            contents=contents,
+            config=config,
+        )
+        async for chunk in stream:
+            text = chunk.text
+            if text:
+                yield text, num_tokens_from_string(text)
+
 
 class TokenPonyChat(Base):
     _FACTORY_NAME = "TokenPony"
@@ -2039,6 +2266,8 @@ class LiteLLMBase(ABC):
         gen_conf = self._clean_conf(gen_conf)
         reasoning_start = False
         total_tokens = 0
+        answer = ""
+        generated_text = ""
         # Reset so a stale split from a previous call can't leak into this one.
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
@@ -2076,27 +2305,43 @@ class LiteLLMBase(ABC):
 
                     _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                     if kwargs.get("with_reasoning", True) and _reasoning:
-                        ans = ""
                         if not reasoning_start:
                             reasoning_start = True
-                            ans = "<think>"
-                        ans += _reasoning + "</think>"
+                            yield "<think>"
+                        yield _reasoning
+                        generated_text += _reasoning
+                        if delta.content:
+                            reasoning_start = False
+                            yield "</think>"
+                            yield delta.content
+                            answer += delta.content
+                            generated_text += delta.content
+                        if getattr(resp.choices[0], "finish_reason", "") == "length":
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
+                            yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN
+                        continue
                     else:
-                        reasoning_start = False
+                        if reasoning_start and delta.content:
+                            reasoning_start = False
+                            yield "</think>"
                         ans = delta.content
+                        answer += ans
 
                     if not _usage["total_tokens"]:
                         # No authoritative usage yet: keep a running estimate as fallback.
                         total_tokens += num_tokens_from_string(delta.content)
 
                     finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
-                    if finish_reason == "length":
-                        if is_chinese(ans):
-                            ans += LENGTH_NOTIFICATION_CN
-                        else:
-                            ans += LENGTH_NOTIFICATION_EN
-
                     yield ans
+                    if finish_reason == "length":
+                        if reasoning_start:
+                            reasoning_start = False
+                            yield "</think>"
+                        yield LENGTH_NOTIFICATION_CN if is_chinese(answer) else LENGTH_NOTIFICATION_EN
+                if reasoning_start:
+                    yield "</think>"
                 yield total_tokens
                 return
             except Exception as e:
@@ -2381,6 +2626,7 @@ class LiteLLMBase(ABC):
 
                     final_tool_calls = {}
                     answer = ""
+                    generated_text = ""
                     round_usage = None
                     round_estimate = 0
                     # Per-round filter for providers (MiniMax) whose control tokens
@@ -2414,16 +2660,28 @@ class LiteLLMBase(ABC):
 
                         _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                         if _reasoning:
+                            generated_text += _reasoning
                             if self._need_reasoning_content_back():
                                 reasoning_content += _reasoning
-                            ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
-                                ans = "<think>"
-                            ans += _reasoning + "</think>"
-                            yield ans
+                                yield "<think>"
+                            yield _reasoning
+                            if delta.content:
+                                reasoning_start = False
+                                yield "</think>"
+                                answer += delta.content
+                                generated_text += delta.content
+                                if _sanitizer is not None:
+                                    emitted = _sanitizer.feed(delta.content)
+                                    if emitted:
+                                        yield emitted
+                                else:
+                                    yield delta.content
                         else:
-                            reasoning_start = False
+                            if reasoning_start and delta.content:
+                                reasoning_start = False
+                                yield "</think>"
                             answer += delta.content
                             if _sanitizer is not None:
                                 emitted = _sanitizer.feed(delta.content)
@@ -2437,7 +2695,13 @@ class LiteLLMBase(ABC):
 
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
-                            yield self._length_stop("")
+                            if reasoning_start:
+                                reasoning_start = False
+                                yield "</think>"
+                            yield LENGTH_NOTIFICATION_CN if is_chinese(answer or generated_text) else LENGTH_NOTIFICATION_EN
+
+                    if reasoning_start:
+                        yield "</think>"
 
                     # Flush any held-back (sanitized) answer content for this round.
                     if _sanitizer is not None:
@@ -2475,7 +2739,9 @@ class LiteLLMBase(ABC):
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield f"<think>Running the {tc.function.name} tool...</think>"
+                        yield "<think>"
+                        yield f"Running the {tc.function.name} tool..."
+                        yield "</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
 
                     # Terminal-tool short-circuit: a terminal tool already

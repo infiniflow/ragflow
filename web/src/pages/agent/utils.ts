@@ -797,6 +797,11 @@ export const generateNodeNamesWithIncreasingIndex = (
     .filter((x) => {
       const temporaryName = x.data.name;
 
+      // The first node of a type has no numeric suffix and occupies index 0
+      if (temporaryName === name) {
+        return true;
+      }
+
       const { type, index } = splitName(temporaryName);
 
       return (
@@ -810,7 +815,7 @@ export const generateNodeNamesWithIncreasingIndex = (
       const { index } = splitName(temporaryName);
 
       return {
-        idx: index,
+        idx: temporaryName === name ? 0 : index,
         name: temporaryName,
       };
     })
@@ -826,7 +831,7 @@ export const generateNodeNamesWithIncreasingIndex = (
     }
   }
 
-  return `${name}_${index}`;
+  return index === 0 ? name : `${name}_${index}`;
 };
 
 export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
@@ -942,7 +947,8 @@ export function convertToObjectArray<T extends string | number | boolean>(
 export function isEmptyMessageContent(content?: unknown): boolean {
   return (
     !Array.isArray(content) ||
-    !content.some((item) => typeof item === 'string' && item.trim() !== '')
+    content.length === 0 ||
+    content.some((item) => typeof item !== 'string' || item.trim() === '')
   );
 }
 

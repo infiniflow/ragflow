@@ -1593,6 +1593,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 
 	// Mirror Python's ensure_*_from_env calls.
 	_ = m.ensureMineruFromEnv(ctx, tenantID)
+	_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
 	_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
 	_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
 
@@ -1837,8 +1838,13 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
-// env key / default config tables for the three OCR providers.
-// Mirrors common/constants.py MINERU_ENV_KEYS, PADDLEOCR_ENV_KEYS, OPENDATALOADER_ENV_KEYS.
+// ensureMonkeyOCRv2FromEnv mirrors Python's ensure_monkeyocrv2_from_env.
+func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCRv2", "monkeyocrv2-from-env", config)
+}
+
+// Environment-key/default tables mirror the Python OCR provider settings.
 var (
 	mineruEnvKeys = []string{
 		common.EnvMineruAPIServer,
@@ -1871,6 +1877,14 @@ var (
 	}
 	openDataLoaderDefaultConfig = map[string]interface{}{
 		common.EnvOpenDataLoaderAPIServer: "",
+	}
+	monkeyOCRv2EnvKeys = []string{
+		common.EnvMonkeyOCRv2ServerURL,
+		common.EnvMonkeyOCRv2Timeout,
+	}
+	monkeyOCRv2DefaultConfig = map[string]interface{}{
+		common.EnvMonkeyOCRv2ServerURL: "",
+		common.EnvMonkeyOCRv2Timeout:   600,
 	}
 )
 
@@ -2553,6 +2567,7 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 
 	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
 		model.MaxOutput = extra.MaxTokens
+		model.MaxTokens = extra.MaxTokens
 	}
 	if len(extra.ModelTypes) > 0 {
 		model.ModelTypes = append([]string(nil), extra.ModelTypes...)
@@ -2592,6 +2607,19 @@ func maxTokensFromTenantModelExtra(modelEntity *entity.TenantModel, fallback int
 		return *extra.MaxTokens, nil
 	}
 	return fallback, nil
+}
+
+func maxTokensFromModelInfo(modelInfo *modelModule.Model, modelType entity.ModelType) int {
+	if modelInfo == nil {
+		return 0
+	}
+	if (modelType == entity.ModelTypeEmbedding || modelType == entity.ModelTypeRerank) && modelInfo.MaxTokens != nil {
+		return *modelInfo.MaxTokens
+	}
+	if modelInfo.MaxOutput != nil {
+		return *modelInfo.MaxOutput
+	}
+	return 0
 }
 
 func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Context, providerName, instanceName, modelName *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
@@ -3051,7 +3079,8 @@ func (m *ModelProviderService) RerankDocument(ctx context.Context, providerName,
 	}
 
 	var response *modelModule.RerankResponse
-	response, err = modelDriver.Rerank(ctx, &resolvedModelName, rerankRequest, info.APIConfig, modelConfig, nil)
+	rerankModel := modelModule.NewRerankModel(modelDriver, &resolvedModelName, info.APIConfig, maxTokensFromModelInfo(info.ModelInfo, entity.ModelTypeRerank))
+	response, err = rerankModel.Rerank(ctx, rerankRequest, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -3431,11 +3460,11 @@ func (m *ModelProviderService) GetChatModel(ctx context.Context, tenantID, compo
 
 // GetRerankModel returns a RerankModel wrapper for the given tenant
 func (m *ModelProviderService) GetRerankModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
-	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, compositeModelName)
+	driver, modelName, apiConfig, maxTokens, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewRerankModel(driver, &modelName, apiConfig), nil
+	return modelModule.NewRerankModel(driver, &modelName, apiConfig, maxTokens), nil
 }
 
 type AddModelRequest struct {
@@ -3568,9 +3597,7 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 
 	maxTokens := 0
 	if mi, _ := dao.GetModelProviderManager().GetModelByName(providerEntity.ProviderName, modelEntity.ModelName); mi != nil {
-		if mi.MaxOutput != nil {
-			maxTokens = *mi.MaxOutput
-		}
+		maxTokens = maxTokensFromModelInfo(mi, modelType)
 	}
 	maxTokens, err = maxTokensFromTenantModelExtra(modelEntity, maxTokens)
 	if err != nil {
@@ -3982,11 +4009,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 			apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
 			maxTokens := 0
 			if mi, _ := dao.GetModelProviderManager().GetModelByName("Builtin", pureModelName); mi != nil {
-				if mi.MaxOutput == nil {
-					maxTokens = 0
-				} else {
-					maxTokens = *mi.MaxOutput
-				}
+				maxTokens = maxTokensFromModelInfo(mi, modelType)
 			}
 			return builtinDriver, pureModelName, apiConfig, maxTokens, nil
 		}
@@ -4044,11 +4067,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		}
 		maxTokens := 0
 		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
-			if mi.MaxOutput == nil {
-				maxTokens = 0
-			} else {
-				maxTokens = *mi.MaxOutput
-			}
+			maxTokens = maxTokensFromModelInfo(mi, modelType)
 		}
 		maxTokens, driverErr = maxTokensFromTenantModelExtra(modelObj, maxTokens)
 		if driverErr != nil {
@@ -4101,10 +4120,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		return nil, "", nil, 0, driverErr
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	maxTokens := 0
-	if llmInfo.MaxOutput != nil {
-		maxTokens = *llmInfo.MaxOutput
-	}
+	maxTokens := maxTokensFromModelInfo(llmInfo, modelType)
 	return driver, llmInfo.Name, apiConfig, maxTokens, nil
 }
 

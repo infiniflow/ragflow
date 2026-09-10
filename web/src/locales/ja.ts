@@ -207,6 +207,7 @@ export default {
       runningStatus2: 'キャンセル',
       runningStatus3: '成功',
       runningStatus4: '失敗',
+      runningStatusQueued: '待機中',
       pageRanges: 'ページ範囲',
 
       pageRangesTip:
@@ -253,9 +254,9 @@ export default {
       html4excel: 'ExcelをHTMLに変換',
       html4excelTip: `General切片方法と併用してください。無効の場合、表計算ファイル（XLSX、XLS（Excel 97-2003））は行ごとにキーと値のペアとして解析されます。有効の場合、表計算ファイルはHTML表として解析されます。元の表が12行を超える場合、システムは自動的に12行ごとに複数のHTML表に分割します。詳細については、https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration をご覧ください。`,
       autoKeywords: '自動キーワード',
-      autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
+      autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。詳細は https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration をご覧ください。`,
       autoQuestions: '自動質問',
-      autoQuestionsTip: `ランキングスコアを向上させるために、「システムモデル設定」で定義されたチャットモデルを使用して、ナレッジベースのチャンクごとにN個の質問を抽出します。 これにより、追加のトークンが消費されることに注意してください。 結果はチャンクリストで表示および編集できます。 質問抽出エラーはチャンク処理をブロックしません。空の結果が元のチャンクに追加されます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
+      autoQuestionsTip: `ランキングスコアを向上させるために、「システムモデル設定」で定義されたチャットモデルを使用して、ナレッジベースのチャンクごとにN個の質問を抽出します。 これにより、追加のトークンが消費されることに注意してください。 結果はチャンクリストで表示および編集できます。 質問抽出エラーはチャンク処理をブロックしません。空の結果が元のチャンクに追加されます。詳細は https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration をご覧ください。`,
 
       metadata: {
         fields: 'フィールド',
@@ -538,7 +539,7 @@ export default {
       useRaptor: 'RAPTORを使用して検索を強化',
 
       useRaptorTip:
-        'マルチホップ質問応答タスクでRAPTORを有効にしてください。詳細は https://ragflow.io/docs/dev/enable_raptor をご覧ください。',
+        'マルチホップ質問応答タスクでRAPTORを有効にしてください。詳細は https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree をご覧ください。',
 
       prompt: 'プロンプト',
 
@@ -693,7 +694,7 @@ export default {
       addTag: 'タグを追加',
       useGraphRag: 'ナレッジグラフ',
       useGraphRagTip:
-        '現在のデータセットのファイルチャンクに対してナレッジグラフを構築し、入れ子になったロジックを含むマルチホップの質問応答を強化します。詳細は https://ragflow.io/docs/dev/construct_knowledge_graph をご覧ください。',
+        '現在のデータセットのファイルチャンクに対してナレッジグラフを構築し、入れ子になったロジックを含むマルチホップの質問応答を強化します。詳細は https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph をご覧ください。',
       graphRagMethod: '方法',
       graphRagMethodTip:
         '\n      Light: （デフォルト）github.com/HKUDS/LightRAG が提供するプロンプトを使用して、エンティティと関係性を抽出します。このオプションは、トークン・メモリ・計算リソースの消費が少なくて済みます。</br>\n      General: github.com/microsoft/graphrag が提供するプロンプトを使用して、エンティティと関係性を抽出します。</br>\n      NER: spaCyのNERとルールベースのキーワード抽出を使用して、エンティティと関係性を抽出します。抽出自体にLLMを必要としないため、高速でリソース効率に優れています。',
@@ -1338,6 +1339,8 @@ export default {
         'Microsoft Graph経由でSharePointサイトに接続し、ドキュメントライブラリを同期します。',
       sharepointSiteUrlTip:
         'インデックス対象のSharePointサイトの完全なURLです（例: https://contoso.sharepoint.com/sites/MySite）。Sites.Read.AllおよびFiles.Read.Allのアプリケーション権限（管理者の同意）を持つAzure ADアプリが必要です。',
+      sitemapDescription:
+        '公開されている sitemap.xml を接続し、記載されたウェブページと PDF ドキュメントをナレッジベースに同期します。',
       azure_devopsDescription:
         'Azure DevOps に接続し、リポジトリのファイルとプルリクエストを同期します。',
       bitbucketDescription: 'Bitbucketに接続し、PRの内容を同期します。',

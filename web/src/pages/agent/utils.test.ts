@@ -1,5 +1,7 @@
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { Operator } from './constant';
 import {
+  generateNodeNamesWithIncreasingIndex,
   getEmptyMessageNodeNames,
   isEmptyMessageContent,
   transformTokenChunkerParams,
@@ -64,7 +66,7 @@ describe('Message component content validation', () => {
 
     it('accepts content with at least one non-blank string entry', () => {
       expect(isEmptyMessageContent(['hi'])).toBe(false);
-      expect(isEmptyMessageContent(['', '{begin@query}'])).toBe(false);
+      expect(isEmptyMessageContent(['', '{begin@query}'])).toBe(true);
       expect(isEmptyMessageContent(['  text  '])).toBe(false);
     });
   });
@@ -84,5 +86,70 @@ describe('Message component content validation', () => {
 
       expect(getEmptyMessageNodeNames(nodes as any)).toEqual(['回复消息_0']);
     });
+  });
+});
+
+describe('generateNodeNamesWithIncreasingIndex', () => {
+  const createNamedNode = (name: string) =>
+    ({
+      id: `${Operator.Retrieval}:${name}`,
+      type: 'ragNode',
+      position: { x: 0, y: 0 },
+      data: { label: Operator.Retrieval, name, form: {} },
+    }) as RAGFlowNodeType;
+
+  it('uses the bare name for the first operator of a type', () => {
+    expect(generateNodeNamesWithIncreasingIndex('Retrieval', [])).toBe(
+      'Retrieval',
+    );
+  });
+
+  it('appends an index only from the second operator on', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval'),
+      ]),
+    ).toBe('Retrieval_1');
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval'),
+        createNamedNode('Retrieval_1'),
+      ]),
+    ).toBe('Retrieval_2');
+  });
+
+  it('fills the gap between existing indexes', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval'),
+        createNamedNode('Retrieval_2'),
+      ]),
+    ).toBe('Retrieval_1');
+  });
+
+  it('does not backfill index 0 when only suffixed names exist', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval_1'),
+      ]),
+    ).toBe('Retrieval_2');
+  });
+
+  it('treats a legacy _0 name as the first operator', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval_0'),
+      ]),
+    ).toBe('Retrieval_1');
+  });
+
+  it('ignores nodes of other types and non-indexed names', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Message'),
+        createNamedNode('Retrieval_beta'),
+        createNamedNode('Retrieval_1_extra'),
+      ]),
+    ).toBe('Retrieval');
   });
 });

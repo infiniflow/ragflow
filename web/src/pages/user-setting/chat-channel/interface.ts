@@ -30,6 +30,8 @@ export interface IChatChannelBase {
   // Connected assistant (chat), joined in by the list endpoint.
   chat_id?: string | null;
   dialog_name?: string | null;
+  agent_id?: string | null;
+  agent_name?: string | null;
 }
 
 export type IChatChannel = IChatChannelBase & {

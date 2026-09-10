@@ -231,11 +231,7 @@ class Dealer:
             total = self.dataStore.get_total(res)
             logging.debug("Dealer.search TOTAL: {}".format(total))
         else:
-            highlightFields = ["content_ltks", "title_tks"]
-            if not highlight:
-                highlightFields = []
-            elif isinstance(highlight, list):
-                highlightFields = highlight
+            highlightFields = []
             matchText, keywords = self.qryr.question(qst, min_match=(0.3 if min_match else 0))
             if emb_mdl is None:
                 matchExprs = [matchText] if matchText else []
@@ -309,9 +305,9 @@ class Dealer:
         logging.debug(f"TOTAL: {total}")
         ids = self.dataStore.get_doc_ids(res)
         keywords = list(kwds)
-        highlight = self.dataStore.get_highlight(res, keywords, "content_with_weight")
+        highlightDic = self.dataStore.get_highlight(res, keywords, "content_with_weight") if highlight else {}
         aggs = self.dataStore.get_aggregation(res, "docnm_kwd")
-        return self.SearchResult(total=total, ids=ids, query_vector=q_vec, aggregation=aggs, highlight=highlight, field=self.dataStore.get_fields(res, src + ["_score"]), keywords=keywords)
+        return self.SearchResult(total=total, ids=ids, query_vector=q_vec, aggregation=aggs, highlight=highlightDic, field=self.dataStore.get_fields(res, src + ["_score"]), keywords=keywords)
 
     @staticmethod
     def trans2floats(txt):
@@ -513,7 +509,7 @@ class Dealer:
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
-            content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
+            content_ltks = list(OrderedDict.fromkeys(sres.field[i].get(cfield, "").split()))
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
@@ -545,7 +541,7 @@ class Dealer:
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
-            content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
+            content_ltks = list(OrderedDict.fromkeys(sres.field[i].get(cfield, "").split()))
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
@@ -568,7 +564,7 @@ class Dealer:
         ins_tw = []
         for i in sres.ids:
             # content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
-            content_ltks = sres.field[i][cfield].split()
+            content_ltks = sres.field[i].get(cfield, "").split()
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
@@ -578,7 +574,8 @@ class Dealer:
             tks = content_ltks + title_tks + important_kwd + question_tks
             ins_tw.append(tks)
 
-        docs = [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw]
+        # if no content_ltks, use content_with_weight instead to avoid empty docs that might cause the reranker to fail with 400 error
+        docs = [remove_redundant_spaces(" ".join(tks)) or str(sres.field[i].get("content_with_weight") or "") for i, tks in zip(sres.ids, ins_tw)]
 
         tksim = self.qryr.token_similarity(keywords, ins_tw)
         # rerank_mdl.similarity() returns scores normalized to [0, 1] for every
@@ -766,7 +763,7 @@ class Dealer:
             # Dealer.fetch_chunk_vectors when needed.
             d = {
                 "chunk_id": id,
-                "content_ltks": chunk["content_ltks"],
+                "content_ltks": chunk.get("content_ltks", ""),
                 "content_with_weight": chunk.get("content_with_weight", ""),
                 "doc_id": did,
                 "docnm_kwd": dnm,
@@ -783,11 +780,8 @@ class Dealer:
                 "mom_id": chunk.get("mom_id", ""),
                 "row_id": chunk.get("row_id()"),
             }
-            if highlight and sres.highlight:
-                if id in sres.highlight:
-                    d["highlight"] = remove_redundant_spaces(sres.highlight[id])
-                else:
-                    d["highlight"] = d["content_with_weight"]
+            if id in sres.highlight:
+                d["highlight"] = sres.highlight[id]
             ranks["chunks"].append(d)
 
         if aggs:

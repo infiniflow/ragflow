@@ -43,13 +43,14 @@ func buildPPTXJSONSections(irJSON string) ([]map[string]any, error) {
 	for i, sec := range ir.Sections {
 		var lines []string
 		for _, el := range sec.Elements {
-			// Trim each line and drop blank ones: consecutive hard line
-			// breaks collapse to a single newline, so exactly one newline
-			// survives between two non-empty lines.
-			for _, line := range strings.Split(docxElementText(el), "\n") {
-				if line = strings.TrimSpace(line); line != "" {
-					lines = append(lines, line)
-				}
+			// Each element's full text (paragraphs, table cells, list
+			// items, etc.) becomes a single value; the shared IR walker
+			// already inserts newlines between rows/items (cellSep "\n"),
+			// so internal newlines are preserved as-is. Only the
+			// element-level split is collapsed (one element → one value or
+			// none if empty).
+			if text := strings.TrimSpace(docxElementText(el, "\n")); text != "" {
+				lines = append(lines, text)
 			}
 		}
 		items = append(items, map[string]any{
@@ -59,6 +60,19 @@ func buildPPTXJSONSections(irJSON string) ([]map[string]any, error) {
 		})
 	}
 	return items, nil
+}
+
+// itemsAllEmpty reports whether every item carries no extractable text.
+// A deck whose IR sections all flatten to "" (e.g. text the IR walker does
+// not yet cover) must fall back to PlainText instead of emitting empty
+// chunks that the Tokenizer later filters, silently yielding 0 chunks.
+func itemsAllEmpty(items []map[string]any) bool {
+	for _, it := range items {
+		if text, _ := it["text"].(string); strings.TrimSpace(text) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // itemsFromPlainText wraps whole-document plain text as a single JSON

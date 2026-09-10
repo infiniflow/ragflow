@@ -531,6 +531,7 @@ export default {
       runningStatus2: '취소됨',
       runningStatus3: '성공',
       runningStatus4: '실패',
+      runningStatusQueued: '대기 중',
       pageRanges: '페이지 범위',
       pageRangesTip:
         '파싱할 페이지 범위를 지정합니다. 범위 밖의 페이지는 처리되지 않습니다.',
@@ -572,9 +573,9 @@ export default {
       html4excel: 'Excel을 HTML로',
       html4excelTip: `일반 chunking 방법과 함께 사용합니다. 비활성화 시 데이터셋의 스프레드시트(XLSX 또는 XLS(Excel 97-2003))는 키-값 쌍으로 파싱됩니다. 활성화 시 HTML 표로 파싱되며, 원래 표가 12행을 초과하면 12행마다 분리됩니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration 을 참조하세요.`,
       autoKeywords: '자동 키워드',
-      autoKeywordsTip: `각 chunk에서 N개의 키워드를 자동으로 추출하여 해당 키워드가 포함된 쿼리에서의 순위를 높입니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. chunk 목록에서 추가된 키워드를 확인하거나 업데이트할 수 있습니다. 자세한 내용은 https://ragflow.io/docs/dev/autokeyword_autoquestion 을 참조하세요.`,
+      autoKeywordsTip: `각 chunk에서 N개의 키워드를 자동으로 추출하여 해당 키워드가 포함된 쿼리에서의 순위를 높입니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. chunk 목록에서 추가된 키워드를 확인하거나 업데이트할 수 있습니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration 을 참조하세요.`,
       autoQuestions: '자동 질문',
-      autoQuestionsTip: `각 chunk에서 N개의 질문을 자동으로 추출하여 해당 질문이 포함된 쿼리에서의 순위를 높입니다. chunk 목록에서 추가된 질문을 확인하거나 업데이트할 수 있습니다. 오류가 발생해도 chunking 과정에 영향을 주지 않으나, 원래 chunk에 빈 결과가 추가될 수 있습니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. 자세한 내용은 https://ragflow.io/docs/dev/autokeyword_autoquestion 을 참조하세요.`,
+      autoQuestionsTip: `각 chunk에서 N개의 질문을 자동으로 추출하여 해당 질문이 포함된 쿼리에서의 순위를 높입니다. chunk 목록에서 추가된 질문을 확인하거나 업데이트할 수 있습니다. 오류가 발생해도 chunking 과정에 영향을 주지 않으나, 원래 chunk에 빈 결과가 추가될 수 있습니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration 을 참조하세요.`,
       redo: '기존 {{chunkNum}}개의 chunk를 초기화하시겠습니까?',
       setMetaData: '메타데이터 설정',
       pleaseInputJson: 'JSON을 입력해 주세요',
@@ -842,7 +843,7 @@ export default {
 `,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        'RAPTOR는 멀티홉 질의응답 작업에 사용할 수 있습니다. 파일 탭에서 [생성 > RAPTOR]를 클릭하여 활성화하세요. 자세한 내용은 https://ragflow.io/docs/dev/enable_raptor 을 참조하세요.',
+        'RAPTOR는 멀티홉 질의응답 작업에 사용할 수 있습니다. 파일 탭에서 [생성 > RAPTOR]를 클릭하여 활성화하세요. 자세한 내용은 https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree 을 참조하세요.',
       prompt: '프롬프트',
       promptTip:
         'LLM의 역할, 원하는 응답 길이, 톤, 언어 등을 포함한 시스템 프롬프트를 사용하세요. 시스템 프롬프트는 LLM에 대한 다양한 데이터 입력으로 사용되는 키(변수)와 함께 자주 사용됩니다. 사용할 키를 표시하려면 슬래시 `/` 또는 (x) 버튼을 사용하세요.',
@@ -893,7 +894,7 @@ export default {
       addTag: '태그 추가',
       useGraphRag: '지식 그래프',
       useGraphRagTip:
-        '현재 데이터셋의 파일 청크에 대해 지식 그래프를 구성하여, 중첩된 논리가 포함된 멀티홉 질의응답(multi-hop QA) 성능을 향상시킵니다. 자세한 내용은 https://ragflow.io/docs/dev/construct_knowledge_graph 을 참조하세요.',
+        '현재 데이터셋의 파일 청크에 대해 지식 그래프를 구성하여, 중첩된 논리가 포함된 멀티홉 질의응답(multi-hop QA) 성능을 향상시킵니다. 자세한 내용은 https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph 을 참조하세요.',
       graphRagMethod: '방법',
       graphRagMethodTip: `
       Light: (기본값) github.com/HKUDS/LightRAG에서 제공하는 프롬프트를 사용하여 엔티티와 관계를 추출합니다. 더 적은 토큰, 메모리, 연산 리소스를 사용합니다.</br>
@@ -1255,6 +1256,8 @@ export default {
         'Microsoft Graph를 통해 SharePoint 사이트를 연결하여 문서 라이브러리를 동기화합니다.',
       sharepointSiteUrlTip:
         '인덱싱할 SharePoint 사이트의 전체 URL (예: https://contoso.sharepoint.com/sites/MySite). Sites.Read.All 및 Files.Read.All 애플리케이션 권한이 있는 Azure AD 앱이 필요합니다 (관리자 동의).',
+      sitemapDescription:
+        '공개 sitemap.xml을 연결하여 나열된 웹 페이지와 PDF 문서를 지식 베이스에 동기화합니다.',
       azure_devopsDescription:
         'Azure DevOps를 연결하여 리포지토리 파일과 풀 리퀘스트를 동기화합니다.',
       bitbucketDescription: 'Bitbucket을 연결하여 PR 콘텐츠를 동기화합니다.',

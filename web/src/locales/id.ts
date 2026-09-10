@@ -133,6 +133,7 @@ export default {
       runningStatus2: 'BATAL',
       runningStatus3: 'SUKSES',
       runningStatus4: 'GAGAL',
+      runningStatusQueued: 'Dalam antrean',
       pageRanges: 'Rentang Halaman',
       pageRangesTip:
         'rentang halaman: Tentukan rentang halaman yang perlu diparsing. Halaman yang tidak termasuk dalam rentang ini akan diabaikan.',
@@ -304,7 +305,7 @@ export default {
      Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
       useRaptor: 'Gunakan RAPTOR untuk meningkatkan pengambilan',
       useRaptorTip:
-        'Aktifkan RAPTOR untuk tugas tanya jawab multi-langkah. Lihat https://ragflow.io/docs/dev/enable_raptor untuk informasi lebih lanjut.',
+        'Aktifkan RAPTOR untuk tugas tanya jawab multi-langkah. Lihat https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree untuk informasi lebih lanjut.',
       prompt: 'Prompt',
       promptTip:
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
