@@ -103,6 +103,19 @@ func TestParserComponent_Invoke_TextInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
+	if got, want := out["output_format"], "text"; got != want {
+		t.Errorf("output_format = %v, want %v", got, want)
+	}
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok || len(jsonItems) != 1 {
+		t.Fatalf("json: got %T (len %d), want 1 item", out["json"], len(jsonItems))
+	}
+	if got := jsonItems[0]["text"]; got != "hello world" {
+		t.Errorf("json[0][text] = %q, want %q", got, "hello world")
+	}
+	if got := jsonItems[0]["doc_type_kwd"]; got != "text" {
+		t.Errorf("json[0][doc_type_kwd] = %q, want %q", got, "text")
+	}
 	pages, ok := out["pages"].([]schema.Page)
 	if !ok {
 		t.Fatalf("pages: got %T, want []schema.Page", out["pages"])

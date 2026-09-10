@@ -26,27 +26,31 @@ import (
 	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
 
-type DOCParser struct{}
+type DOCParser struct {
+	OutputFormat string
+}
 
 func NewDOCParser() *DOCParser {
-	return &DOCParser{}
+	return &DOCParser{
+		OutputFormat: "json",
+	}
 }
 
 func (p *DOCParser) String() string {
 	return "DOCParser"
 }
 
-// ParseWithResult extracts text for the DOC family. The Go side uses
-// office_oxide, which supports legacy .doc. We prefer the structured IR
-// (flattened to plain text) and fall back to ToMarkdown, then to PlainText.
-//
-// office_oxide recovers table structure from legacy .doc through the IR
-// (office_oxide/go v0.1.9, #116); list structure depends on whether the .doc
-// reader surfaces list elements. Paragraph and heading (heuristically
-// detected) lines are always present. When the IR carries table/list
-// structure it is preferred so that content unique to the IR view is never
-// shadowed by a longer but flatter view. OutputFormat stays "text" to keep
-// the downstream contract unchanged.
+func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["output_format"].(string); ok && v != "" {
+		p.OutputFormat = v
+	}
+}
+
+// ParseWithResult extracts text for the DOC family and converts it to the
+// requested output format (defaulting to "json" to match Python's default).
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	doc, err := officeOxide.OpenFromBytes(data, "doc")
 	if err != nil {
@@ -59,11 +63,43 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
-	return ParseResult{
-		OutputFormat: "text",
+	outFmt := p.OutputFormat
+	if outFmt == "" {
+		outFmt = "json"
+	}
+
+	res := ParseResult{
+		OutputFormat: outFmt,
 		File:         map[string]any{"name": filename, "format": "doc"},
 		Text:         text,
 	}
+
+	if strings.EqualFold(outFmt, "markdown") {
+		res.Markdown = text
+		return res
+	}
+	if strings.EqualFold(outFmt, "text") {
+		return res
+	}
+
+	// Default: "json" payload with canonical text items
+	lines := strings.Split(text, "\n")
+	var items []map[string]any
+	for _, line := range lines {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			items = append(items, NewTextJSONItem(trimmed))
+		}
+	}
+	if len(items) == 0 && strings.TrimSpace(text) != "" {
+		items = append(items, NewTextJSONItem(strings.TrimSpace(text)))
+	}
+	if len(items) == 0 {
+		items = []map[string]any{NewTextJSONItem("")}
+	}
+
+	res.OutputFormat = "json"
+	res.JSON = items
+	return res
 }
 
 // extractDocText returns the best-effort plain text for a legacy .doc

@@ -46,14 +46,27 @@ func (p *PPTXParser) ParseWithResult(_ context.Context, filename string, _ []byt
 	}
 }
 
-type DOCParser struct{}
+type DOCParser struct {
+	OutputFormat string
+}
 
 func NewDOCParser() *DOCParser {
-	return &DOCParser{}
+	return &DOCParser{
+		OutputFormat: "json",
+	}
 }
 
 func (p *DOCParser) String() string {
 	return "DOCParser(no-cgo)"
+}
+
+func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["output_format"].(string); ok && v != "" {
+		p.OutputFormat = v
+	}
 }
 
 type DOCXParser struct{}

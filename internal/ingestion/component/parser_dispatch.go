@@ -465,9 +465,25 @@ func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, n
 		}
 		return out
 	}
-	// Raw-text fallback path: emit output_format = "text" so a
-	// chunker branching on the format key still sees a sane value.
+	// Raw-text fallback path: emit output_format = "json" with structured items,
+	// keeping text for backward compatibility.
+	fallbackItems := make([]map[string]any, 0, len(parsed))
+	var textParts []string
+	for _, p := range parsed {
+		txt, _ := p["text"].(string)
+		docType, _ := p["doc_type_kwd"].(string)
+		if docType == "" {
+			docType = "text"
+		}
+		fallbackItems = append(fallbackItems, map[string]any{
+			"text":         txt,
+			"doc_type_kwd": docType,
+		})
+		textParts = append(textParts, txt)
+	}
 	out["output_format"] = "text"
+	out["json"] = fallbackItems
+	out["text"] = strings.Join(textParts, "\n")
 	return out
 }
 
