@@ -59,6 +59,7 @@ const memoryTimeLayout = "2006-01-02 15:04:05"
 const (
 	memoryTaskLeaseTTL            = 2 * time.Minute
 	memoryTaskLeaseRenewInterval  = 30 * time.Second
+	memoryTaskLeaseRenewTimeout   = 10 * time.Second
 	memoryTaskRetryInitialDelay   = 5 * time.Second
 	memoryTaskRetryMaxDelay       = 5 * time.Minute
 	memoryTaskFailureWriteTimeout = 5 * time.Second
@@ -144,10 +145,12 @@ func (s *MemoryMessageService) runClaimedMemoryTask(ctx context.Context, task *e
 		defer close(renewDone)
 		s.renewMemoryTaskLease(runCtx, cancel, task.TaskID, leaseOwner, renewErr)
 	}()
+	defer func() {
+		cancel()
+		<-renewDone
+	}()
 
 	err := s.resumeMemoryTask(runCtx, task, leaseOwner)
-	cancel()
-	<-renewDone
 	if err == nil {
 		return MemoryTaskAcknowledge, nil
 	}
@@ -213,7 +216,9 @@ func (s *MemoryMessageService) renewMemoryTaskLease(ctx context.Context, cancel 
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			renewed, err := s.memoryTaskDAO.RenewLease(ctx, dao.DB, taskID, leaseOwner, memoryNow(), memoryTaskLeaseTTL)
+			renewCtx, renewCancel := context.WithTimeout(ctx, memoryTaskLeaseRenewTimeout)
+			renewed, err := s.memoryTaskDAO.RenewLease(renewCtx, dao.DB, taskID, leaseOwner, memoryNow(), memoryTaskLeaseTTL)
+			renewCancel()
 			if err == nil && renewed {
 				continue
 			}
