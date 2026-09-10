@@ -615,7 +615,9 @@ def test_import_custom_headers_survive_discovery_persistence_and_export(monkeypa
     module = _load_mcp_api(monkeypatch)
     _stub_url_safety(monkeypatch, module)
     headers = {"User-Agent": "ragflow", "X-Custom-Token": "${custom_token}"}
-    _set_request_json(monkeypatch, module, {"mcpServers": {"research": {"type": "streamable-http", "url": "https://example.com/mcp", "headers": headers, "custom_token": "example-token"}}})
+    _set_request_json(
+        monkeypatch, module, {"mcpServers": {"research": {"type": "streamable-http", "url": "https://example.com/mcp", "headers": headers, "custom_token": "example-token", "name": "header-identity"}}}
+    )
     discovered = []
     stored = []
 
@@ -630,10 +632,12 @@ def test_import_custom_headers_survive_discovery_persistence_and_export(monkeypa
     assert discovered == [headers]
     assert stored[0]["headers"] == headers
     assert stored[0]["variables"]["custom_token"] == "example-token"
+    assert stored[0]["variables"]["name"] == "header-identity"
     saved = _DummyMCPServer(**stored[0])
     monkeypatch.setattr(module.MCPServerService, "get_by_id", lambda _id: (True, saved))
     assert module._export_mcp_servers([saved.id])["mcpServers"]["research"]["headers"] == headers
     assert module._export_mcp_servers([saved.id])["mcpServers"]["research"]["custom_token"] == "example-token"
+    assert module._export_mcp_servers([saved.id])["mcpServers"]["research"]["name"] == "header-identity"
 
 
 @pytest.mark.p2

@@ -47,7 +47,7 @@ def _export_mcp_servers(mcp_ids: list[str]) -> dict | None:
                 **mcp_server.variables,
                 "type": mcp_server.server_type,
                 "url": mcp_server.url,
-                "name": mcp_server.name,
+                "name": mcp_server.variables.get("name", mcp_server.name),
                 "authorization_token": mcp_server.variables.get("authorization_token", ""),
                 "headers": mcp_server.headers or {},
                 "tools": mcp_server.variables.get("tools", {}),
