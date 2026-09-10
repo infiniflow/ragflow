@@ -161,7 +161,7 @@ func (d *MemoryTaskDAO) MarkStored(ctx context.Context, db *gorm.DB, taskID, own
 
 // ScheduleRetry records the next execution time and releases the current
 // lease. The task remains at its last durable checkpoint.
-func (d *MemoryTaskDAO) ScheduleRetry(ctx context.Context, db *gorm.DB, taskID, owner string, nextRetryAt time.Time, lastError string) (bool, error) {
+func (d *MemoryTaskDAO) ScheduleRetry(ctx context.Context, db *gorm.DB, taskID, owner string, now, nextRetryAt time.Time, lastError string) (bool, error) {
 	if db == nil {
 		return false, errors.New("memory task: nil database")
 	}
@@ -169,7 +169,7 @@ func (d *MemoryTaskDAO) ScheduleRetry(ctx context.Context, db *gorm.DB, taskID, 
 		return false, errors.New("memory task: task id and lease owner are required")
 	}
 	result := db.WithContext(ctx).Model(&entity.MemoryTask{}).
-		Where("task_id = ? AND state IN ? AND lease_owner = ?", taskID, activeMemoryTaskStates, owner).
+		Where("task_id = ? AND state IN ? AND lease_owner = ? AND lease_expires_at > ?", taskID, activeMemoryTaskStates, owner, now).
 		Updates(map[string]any{
 			"next_retry_at":    nextRetryAt,
 			"lease_owner":      "",
@@ -181,7 +181,7 @@ func (d *MemoryTaskDAO) ScheduleRetry(ctx context.Context, db *gorm.DB, taskID, 
 
 // MarkFailed records a terminal failure and projects it onto the generic task
 // row when that row still exists.
-func (d *MemoryTaskDAO) MarkFailed(ctx context.Context, db *gorm.DB, taskID, owner, progressMsg string) (bool, error) {
+func (d *MemoryTaskDAO) MarkFailed(ctx context.Context, db *gorm.DB, taskID, owner, progressMsg string, now time.Time) (bool, error) {
 	if db == nil {
 		return false, errors.New("memory task: nil database")
 	}
@@ -191,7 +191,7 @@ func (d *MemoryTaskDAO) MarkFailed(ctx context.Context, db *gorm.DB, taskID, own
 	var updated bool
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.WithContext(ctx).Model(&entity.MemoryTask{}).
-			Where("task_id = ? AND state IN ? AND lease_owner = ?", taskID, activeMemoryTaskStates, owner).
+			Where("task_id = ? AND state IN ? AND lease_owner = ? AND lease_expires_at > ?", taskID, activeMemoryTaskStates, owner, now).
 			Updates(map[string]any{
 				"state":            entity.MemoryTaskStateFailed,
 				"next_retry_at":    nil,

@@ -116,7 +116,7 @@ func TestMemoryTaskDAOClaimRenewAndRetry(t *testing.T) {
 	}
 
 	retryAt := now.Add(2 * time.Minute)
-	if scheduled, scheduleErr := dao.ScheduleRetry(t.Context(), db, task.ID, "worker-1", retryAt, "temporary failure"); scheduleErr != nil || !scheduled {
+	if scheduled, scheduleErr := dao.ScheduleRetry(t.Context(), db, task.ID, "worker-1", now.Add(30*time.Second), retryAt, "temporary failure"); scheduleErr != nil || !scheduled {
 		t.Fatalf("ScheduleRetry scheduled=%v err=%v, want scheduled", scheduled, scheduleErr)
 	}
 	if _, acquired, err = dao.Claim(t.Context(), db, task.ID, "worker-2", retryAt.Add(-time.Second), time.Minute); err != nil || acquired {
@@ -155,6 +155,45 @@ func TestMemoryTaskDAOClaimAfterLeaseExpiry(t *testing.T) {
 	}
 	if claimed.LeaseOwner != "worker-2" || claimed.AttemptCount != 2 {
 		t.Fatalf("reclaimed task owner/attempt = %q/%d, want worker-2/2", claimed.LeaseOwner, claimed.AttemptCount)
+	}
+}
+
+// TestMemoryTaskDAOExpiredLeaseCannotRecordFailure verifies a stale worker
+// cannot schedule a retry or mark a task failed after its lease expires.
+func TestMemoryTaskDAOExpiredLeaseCannotRecordFailure(t *testing.T) {
+	db := setupMemoryTaskTestDB(t)
+	dao := NewMemoryTaskDAO()
+	task, memoryTask := newMemoryTaskPair("task-expired-failure")
+	if err := dao.CreateWithTask(t.Context(), db, task, memoryTask); err != nil {
+		t.Fatalf("CreateWithTask: %v", err)
+	}
+
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	leaseTTL := time.Minute
+	if _, acquired, err := dao.Claim(t.Context(), db, task.ID, "worker-1", now, leaseTTL); err != nil || !acquired {
+		t.Fatalf("Claim acquired=%v err=%v, want acquired", acquired, err)
+	}
+	expiredAt := now.Add(leaseTTL)
+	if scheduled, err := dao.ScheduleRetry(t.Context(), db, task.ID, "worker-1", expiredAt, expiredAt.Add(time.Minute), "temporary failure"); err != nil || scheduled {
+		t.Fatalf("ScheduleRetry scheduled=%v err=%v, want expired lease rejection", scheduled, err)
+	}
+	if failed, err := dao.MarkFailed(t.Context(), db, task.ID, "worker-1", "permanent failure", expiredAt); err != nil || failed {
+		t.Fatalf("MarkFailed failed=%v err=%v, want expired lease rejection", failed, err)
+	}
+
+	stored, err := dao.GetByID(t.Context(), db, task.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if stored.State != entity.MemoryTaskStatePending || stored.LeaseOwner != "worker-1" || stored.NextRetryAt != nil || stored.LastError != "" {
+		t.Fatalf("memory task changed after expired-lease updates: %+v", stored)
+	}
+	var genericTask entity.Task
+	if err = db.First(&genericTask, "id = ?", task.ID).Error; err != nil {
+		t.Fatalf("load generic task: %v", err)
+	}
+	if genericTask.Progress != 0 {
+		t.Fatalf("generic task progress = %v, want unchanged", genericTask.Progress)
 	}
 }
 

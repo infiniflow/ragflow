@@ -170,6 +170,52 @@ func TestMemoryExtractionCheckpointRoundTripPreservesMaterializedFields(t *testi
 	}
 }
 
+// TestExtractMemoryTaskMarksMissingMemoryPermanent verifies a deleted memory
+// terminates its durable task instead of entering the retry schedule forever.
+func TestExtractMemoryTaskMarksMissingMemoryPermanent(t *testing.T) {
+	db := testutil.SetupTestDB(t, &entity.Memory{}, &entity.User{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	svc := NewMemoryMessageService(NewMemoryService())
+	_, err := svc.extractMemoryTask(t.Context(), &entity.MemoryTask{MemoryID: "missing-memory"}, MemoryMessage{})
+	if !errors.Is(err, errPermanentMemoryTask) || !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("extractMemoryTask error = %v, want permanent missing-memory error", err)
+	}
+}
+
+// TestExtractMemoryTaskKeepsLookupFailureRetryable verifies an unexpected
+// database failure is not mistaken for a deleted dependency.
+func TestExtractMemoryTaskKeepsLookupFailureRetryable(t *testing.T) {
+	db := testutil.SetupTestDB(t, &entity.Task{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	svc := NewMemoryMessageService(NewMemoryService())
+	_, err := svc.extractMemoryTask(t.Context(), &entity.MemoryTask{MemoryID: "memory-1"}, MemoryMessage{})
+	if err == nil || errors.Is(err, errPermanentMemoryTask) {
+		t.Fatalf("extractMemoryTask error = %v, want retryable database error", err)
+	}
+}
+
+// TestExtractByLLMMarksMissingModelPermanent verifies a deleted model
+// reference terminates its durable task before any model call is attempted.
+func TestExtractByLLMMarksMissingModelPermanent(t *testing.T) {
+	db := testutil.SetupTestDB(t, &entity.TenantModel{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	svc := NewMemoryMessageService(NewMemoryService())
+	mem := &CreateMemoryResponse{Memory: entity.Memory{
+		TenantID: "tenant-1",
+		LLMID:    "deleted-model-id",
+	}}
+	_, err := svc.extractByLLM(t.Context(), mem, []string{"semantic"}, MemoryMessage{}, "task-missing-model")
+	if !errors.Is(err, errPermanentMemoryTask) || !errors.Is(err, errModelConfigUnavailable) {
+		t.Fatalf("extractByLLM error = %v, want permanent missing-model error", err)
+	}
+}
+
 // TestHandleSaveToMemoryTaskResumesStoredCheckpoint verifies durable state,
 // rather than stale UI progress, determines where execution resumes.
 func TestHandleSaveToMemoryTaskResumesStoredCheckpoint(t *testing.T) {

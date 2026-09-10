@@ -184,7 +184,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	} else {
 		// Ensure Go-exclusive runtime tables exist even if the server starts without --migrate
 		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
-			common.Warn("Failed to auto-migrate runtime models", zap.Error(err))
+			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
 	}
 	// Seed built-in agent templates so the Go backend can serve the

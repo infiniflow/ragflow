@@ -1674,7 +1674,7 @@ func (s *MemoryService) GetMemoryConfig(ctx context.Context, userID, memoryID st
 func (s *MemoryService) getMemoryConfig(ctx context.Context, memoryID string) (*CreateMemoryResponse, error) {
 	memory, err := s.memoryDAO.GetWithOwnerNameByID(ctx, dao.DB, memoryID)
 	if err != nil {
-		return nil, fmt.Errorf("memory '%s' not found", memoryID)
+		return nil, fmt.Errorf("get memory %q: %w", memoryID, err)
 	}
 	return formatRetDataFromMemoryListItem(memory), nil
 }
