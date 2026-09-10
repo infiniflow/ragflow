@@ -55,7 +55,7 @@ echo "Running model provider table migrations..."
     --stages tenant_model_seeding,model_type_merge,tenant_model_id_migration \
     --config "$CONFIG" \
     --execute \
-    --database-version "v0.27.1" \
+    --database-version "v0.27.2" \
     --mark-database-version-on-success
 
 echo "Model provider table migrations completed."
