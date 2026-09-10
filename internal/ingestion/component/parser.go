@@ -82,7 +82,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -105,8 +104,7 @@ const ComponentNameParser = "Parser"
 const pageFormFeed = '\f'
 
 // ParserComponent runs the configured parser branch against the
-// upstream "binary" payload and returns a deterministic, page-
-// sorted slice of schema.Page values.
+// upstream "binary" payload and returns structured parser outputs.
 //
 // The instance is safe for concurrent invocation: each Invoke call
 // builds its own per-batch goroutine tree and merges results in
@@ -352,22 +350,19 @@ func (c *ParserComponent) Inputs() map[string]string {
 // Outputs returns the public surface that downstream ingestion
 // components (Chunker, Tokenizer, Extractor) can wire into.
 //
-//	pages   []schema.Page — sorted by PageNumber. Deterministic
-//	                        merge per plan §8 R8.
-//	name    string        — carried over from the upstream file/document
+//	name          string  — carried over from the upstream file/document
 //	                        name (or doc_id when no name is available).
-//	output_format string  — "text" when emitting text pages,
-//	                        otherwise the parser-selected wire
-//	                        format.
-//	_ERROR  string        — populated when the component short-
+//	file_type     string  — canonical parser-resolved file extension.
+//	output_format string  — wire format (json, markdown, html, text).
+//	lang          string  — language for tokenization.
+//	_ERROR        string  — populated when the component short-
 //	                        circuits with an error message
 //	                        (mirrors Python set_output("_ERROR", ...)).
 func (c *ParserComponent) Outputs() map[string]string {
 	return map[string]string{
-		"pages":         "[]schema.Page: parsed pages sorted by PageNumber.",
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
 		"file_type":     "string: canonical parser-resolved file extension.",
-		"output_format": "string: the active output format (\"text\" when emitting text pages).",
+		"output_format": "string: the active output format (e.g. \"json\", \"markdown\", \"text\", \"html\").",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
 		"_ERROR":        "string: set on short-circuit errors.",
 	}
@@ -378,9 +373,8 @@ func (c *ParserComponent) Outputs() map[string]string {
 // Returns:
 //
 //	{
-//	  "pages":          []schema.Page (sorted by PageNumber),
 //	  "name":           string (from inputs["doc_id"]),
-//	  "output_format": "text",
+//	  "output_format": "json" (or "markdown", "html", "text"),
 //	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
 //	  "_created_time":  RFC3339Nano (via TrackElapsed),
 //	  "_elapsed_time":  float64 seconds (via TrackElapsed),
@@ -498,56 +492,11 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	reportParserWarnings(ctx, dispatched.Warnings)
 
-	// 3. Build the legacy `pages` slice. When the dispatch path
-	//    produced a JSON payload, we re-shape it into the page
-	//    layout the chunker side consumes (`{text, doc_type_kwd,
-	//    page_number?}`); when the dispatch produced a string
-	//    payload we emit a single page carrying the rendered text;
-	//    otherwise we slice the binary on ASCII form-feed and
-	//    treat the input as text pages.
-	var pages [][]byte
-	var dispatchedPages []schema.Page
-	switch {
-	case dispatched.Err == nil && dispatched.OutputFormat == "json":
-		dispatchedPages = jsonItemsToPages(dispatched.JSON)
-		pages = pagesFromDispatch(dispatchedPages)
-	case dispatched.Err == nil && dispatched.OutputFormat != "":
-		var text string
-		switch dispatched.OutputFormat {
-		case "markdown":
-			text = dispatched.Markdown
-		case "html":
-			text = dispatched.HTML
-		case "text":
-			text = dispatched.Text
-		}
-		pages = [][]byte{[]byte(text)}
-	default:
-		pages = splitIntoPages(binary)
-		if len(pages) == 0 {
-			pages = [][]byte{nil}
-		}
-	}
-
-	// 3b. (pages-based page selection is handled upstream via the
-	//     component setup: ParserConfig[cpnID][filetype]["pages"] is a
-	//     list of page ranges delivered through override_params and
-	//     consumed by the deepdoc/pdf parser. No inputs-level handling
-	//     here.)
-
-	// 4. Build the page slice sequentially. Per-page parallelism now
-	//    lives in the parser backends (e.g. internal/deepdoc/parser/pdf
-	//    fans out one worker per page and assembles in page order), so
-	//    this component only reshapes the parser output. The DETERMINISTIC
-	//    MERGE (plan §8 R8) keeps pages sorted by PageNumber so the
-	//    downstream chunker / tokenizer get stable chunk IDs.
-	parsed, err := buildPagesFromBytes(ctx, pages, dispatched.DocType)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
 	}
-	sortPagesByNumber(parsed)
 	lang, _ := getString(inputs, "lang")
-	out := buildParserOutputs(parsed, dispatched, filename, fileTypeExt, lang)
+	out := buildParserOutputs(dispatched, filename, fileTypeExt, binary, lang)
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
 	// instead of carrying the binary across the component boundary.
@@ -589,35 +538,6 @@ func reportParserWarnings(ctx context.Context, warnings []string) {
 	for _, warning := range warnings {
 		runtime.ReportProgressMessage(ctx, "Parser", "WARNING: "+warning)
 	}
-}
-
-// buildPagesFromBytes reshapes already-prepared page bytes into the
-// schema.Page layout the downstream chunker consumes. The per-page
-// parse (including any parallelism) now lives in the parser backends
-// (internal/parser/parser and internal/deepdoc/parser/pdf); this
-// component only wraps the bytes into pages and honors context
-// cancellation so an abandoned run does not keep reshaping pages.
-//
-// The function is format-agnostic: it does not resolve parsers or
-// inspect file families — it only carries the raw bytes under the
-// "text" key with the given doc_type_kwd (defaults to "text" when
-// empty), matching the shape downstream readers expect from the
-// raw-text fallback and dispatch paths.
-func buildPagesFromBytes(ctx context.Context, pages [][]byte, docType string) ([]schema.Page, error) {
-	if docType == "" {
-		docType = "text"
-	}
-	out := make([]schema.Page, 0, len(pages))
-	for _, raw := range pages {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		out = append(out, schema.Page{
-			"text":         string(raw),
-			"doc_type_kwd": docType,
-		})
-	}
-	return out, nil
 }
 
 // --- input helpers ---
@@ -695,57 +615,6 @@ func containsFormFeed(b []byte) bool {
 	}
 	return false
 }
-
-// sortPagesByNumber orders pages by their PageNumber key
-// ascending. Pages without a PageNumber key (or with a non-int
-// value) sort to the END so the deterministic contract is
-// "numbered pages first, then unnumbered" — this matches the
-// Python component's loop order (it processes pages in input
-// order, not in PageNumber order, but the Go merge is
-// intentionally stricter so the test can assert exact byte
-// equality across runs).
-func sortPagesByNumber(pages []schema.Page) {
-	sort.SliceStable(pages, func(i, j int) bool {
-		pi, oki := numericPageNumber(pages[i])
-		pj, okj := numericPageNumber(pages[j])
-		switch {
-		case oki && okj:
-			return pi < pj
-		case oki:
-			return true // i is numbered, j is not
-		case okj:
-			return false
-		default:
-			return false // stable
-		}
-	})
-}
-
-func numericPageNumber(p schema.Page) (int, bool) {
-	if p == nil {
-		return 0, false
-	}
-	v, ok := p["page_number"]
-	if !ok {
-		return 0, false
-	}
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	case float64:
-		return int(n), true
-	}
-	return 0, false
-}
-
-// toAnyPages is a tiny adapter that hands the page slice to
-// the output map as `any`. We use it instead of a direct cast
-// so the type stays `[]schema.Page` in the Go source and the
-// output map value type is `any` — matching the runtime.Component
-// contract.
-func toAnyPages(pages []schema.Page) any { return pages }
 
 // init registers Parser under CategoryIngestion per plan §4
 // Phase 2.2. The factory is a thin closure that decodes the

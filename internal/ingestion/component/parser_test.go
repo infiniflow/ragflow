@@ -84,8 +84,8 @@ func TestParserComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	if _, ok := in["binary"]; !ok {
 		t.Errorf("Inputs() missing key %q", "binary")
 	}
-	if _, ok := out["pages"]; !ok {
-		t.Errorf("Outputs() missing key %q", "pages")
+	if _, ok := out["output_format"]; !ok {
+		t.Errorf("Outputs() missing key %q", "output_format")
 	}
 }
 
@@ -116,16 +116,6 @@ func TestParserComponent_Invoke_TextInput(t *testing.T) {
 	if got := jsonItems[0]["doc_type_kwd"]; got != "text" {
 		t.Errorf("json[0][doc_type_kwd] = %q, want %q", got, "text")
 	}
-	pages, ok := out["pages"].([]schema.Page)
-	if !ok {
-		t.Fatalf("pages: got %T, want []schema.Page", out["pages"])
-	}
-	if len(pages) != 1 {
-		t.Fatalf("pages len = %d, want 1", len(pages))
-	}
-	if got := pages[0]["text"]; got != "hello world" {
-		t.Errorf("pages[0][text] = %q, want %q", got, "hello world")
-	}
 }
 
 func TestParserComponent_EmptyXLSXDoesNotBecomeRawText(t *testing.T) {
@@ -154,18 +144,11 @@ func TestParserComponent_EmptyXLSXDoesNotBecomeRawText(t *testing.T) {
 	if len(items) != 0 {
 		t.Fatalf("empty XLSX JSON = %v, want no raw-binary items", items)
 	}
-	pages, ok := out["pages"].([]schema.Page)
-	if !ok {
-		t.Fatalf("pages = %T, want []schema.Page", out["pages"])
-	}
-	if len(pages) != 0 {
-		t.Fatalf("empty XLSX pages = %v, want none", pages)
-	}
 }
 
 // TestParserComponent_Invoke_PageRangeFilter asserts that
 // form-feed boundaries are honored: "A\fB\fC" yields three
-// pages, in input order, with text intact.
+// items, in input order, with text intact.
 func TestParserComponent_Invoke_PageRangeFilter(t *testing.T) {
 	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -174,17 +157,17 @@ func TestParserComponent_Invoke_PageRangeFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	pages, ok := out["pages"].([]schema.Page)
+	jsonItems, ok := out["json"].([]map[string]any)
 	if !ok {
-		t.Fatalf("pages: got %T, want []schema.Page", out["pages"])
+		t.Fatalf("json: got %T, want []map[string]any", out["json"])
 	}
-	if len(pages) != 3 {
-		t.Fatalf("pages len = %d, want 3", len(pages))
+	if len(jsonItems) != 3 {
+		t.Fatalf("json len = %d, want 3", len(jsonItems))
 	}
 	want := []string{"pageA", "pageB", "pageC"}
-	for i, p := range pages {
-		if got := p["text"]; got != want[i] {
-			t.Errorf("pages[%d][text] = %q, want %q", i, got, want[i])
+	for i, it := range jsonItems {
+		if got := it["text"]; got != want[i] {
+			t.Errorf("json[%d][text] = %q, want %q", i, got, want[i])
 		}
 	}
 }
@@ -213,7 +196,7 @@ func TestParserComponent_Invoke_DeterministicMerge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke (first): %v", err)
 	}
-	canonical, err := json.Marshal(first["pages"])
+	canonical, err := json.Marshal(first["json"])
 	if err != nil {
 		t.Fatalf("Marshal canonical: %v", err)
 	}
@@ -226,7 +209,7 @@ func TestParserComponent_Invoke_DeterministicMerge(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Invoke (run %d): %v", i, err)
 		}
-		encoded, err := json.Marshal(got["pages"])
+		encoded, err := json.Marshal(got["json"])
 		if err != nil {
 			t.Fatalf("Marshal run %d: %v", i, err)
 		}
@@ -329,12 +312,12 @@ func TestParserComponent_Invoke_ResolvesBinaryFromDocID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	pages, ok := out["pages"].([]schema.Page)
-	if !ok || len(pages) != 2 {
-		t.Fatalf("pages = %T/%v, want 2 schema.Page entries", out["pages"], out["pages"])
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok || len(jsonItems) != 2 {
+		t.Fatalf("json = %T/%v, want 2 items", out["json"], out["json"])
 	}
-	if pages[0]["text"] != "alpha" || pages[1]["text"] != "beta" {
-		t.Fatalf("pages = %+v, want [alpha beta]", pages)
+	if jsonItems[0]["text"] != "alpha" || jsonItems[1]["text"] != "beta" {
+		t.Fatalf("json = %+v, want [alpha beta]", jsonItems)
 	}
 	if got, _ := out["name"].(string); got != "doc-parser" {
 		t.Fatalf("name = %q, want %q", got, "doc-parser")
@@ -356,12 +339,12 @@ func TestParserComponent_Invoke_ResolvesBinaryFromBucketPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	pages, ok := out["pages"].([]schema.Page)
-	if !ok || len(pages) != 1 {
-		t.Fatalf("pages = %T/%v, want 1 schema.Page entry", out["pages"], out["pages"])
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok || len(jsonItems) != 1 {
+		t.Fatalf("json = %T/%v, want 1 item", out["json"], out["json"])
 	}
-	if got := pages[0]["text"]; got != "bucket content" {
-		t.Fatalf("pages[0][text] = %q, want %q", got, "bucket content")
+	if got := jsonItems[0]["text"]; got != "bucket content" {
+		t.Fatalf("json[0][text] = %q, want %q", got, "bucket content")
 	}
 }
 
@@ -395,42 +378,14 @@ func TestParserComponent_Invoke_AcceptsBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	pages, ok := out["pages"].([]schema.Page)
+	jsonItems, ok := out["json"].([]map[string]any)
 	if !ok {
-		t.Fatalf("pages: got %T", out["pages"])
+		t.Fatalf("json: got %T", out["json"])
 	}
-	if len(pages) != 2 {
-		t.Fatalf("pages len = %d, want 2", len(pages))
+	if len(jsonItems) != 2 {
+		t.Fatalf("json len = %d, want 2", len(jsonItems))
 	}
-	if pages[0]["text"] != "alpha" || pages[1]["text"] != "beta" {
-		t.Errorf("pages = %+v, want [alpha beta]", pages)
-	}
-}
-
-// TestBuildPagesFromBytes_FormatAgnostic pins the page-builder
-// contract: buildPagesFromBytes does not resolve parsers or inspect
-// file families. It only wraps already-prepared page bytes into
-// schema.Page items.
-func TestBuildPagesFromBytes_FormatAgnostic(t *testing.T) {
-	got, err := buildPagesFromBytes(t.Context(), [][]byte{
-		[]byte("first page from dispatch"),
-		[]byte("<table>second page from html dispatch</table>"),
-	}, "")
-	if err != nil {
-		t.Fatalf("buildPagesFromBytes: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("len(got) = %d, want 2", len(got))
-	}
-	if got[0]["text"] != "first page from dispatch" {
-		t.Fatalf("got[0][text] = %v, want first page from dispatch", got[0]["text"])
-	}
-	if got[1]["text"] != "<table>second page from html dispatch</table>" {
-		t.Fatalf("got[1][text] = %v, want HTML payload preserved verbatim", got[1]["text"])
-	}
-	for i := range got {
-		if got[i]["doc_type_kwd"] != "text" {
-			t.Fatalf("got[%d][doc_type_kwd] = %v, want text", i, got[i]["doc_type_kwd"])
-		}
+	if jsonItems[0]["text"] != "alpha" || jsonItems[1]["text"] != "beta" {
+		t.Errorf("json = %+v, want [alpha beta]", jsonItems)
 	}
 }

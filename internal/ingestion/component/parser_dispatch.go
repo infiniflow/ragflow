@@ -26,7 +26,6 @@ package component
 import (
 	"context"
 	"fmt"
-	"maps"
 	"strings"
 
 	"ragflow/internal/ingestion/component/schema"
@@ -374,73 +373,26 @@ func ParserFileFamily(ext string) string {
 	return pythonFamilyName(ext)
 }
 
-// jsonItemsToPages reshapes a parsed JSON payload into the
-// schema.Page layout the chunker side consumes. Each JSON item
-// becomes one page carrying `text`, `doc_type_kwd`, and any
-// ck_type / image / positions fields the parser attached. The page
-// number is assigned sequentially so the deterministic-merge
-// contract in plan §8 R8 holds.
-func jsonItemsToPages(items []map[string]any) []schema.Page {
-	out := make([]schema.Page, 0, len(items))
-	for i, it := range items {
-		page := schema.Page{}
-		maps.Copy(page, it)
-		// page_number anchors the deterministic-merge sort; the
-		// parser-supplied number (if any) takes precedence so
-		// PDF / DOCX outputs that already carry `page_number`
-		// survive the round-trip.
-		if _, ok := page["page_number"]; !ok {
-			page["page_number"] = i
-		}
-		if _, ok := page["doc_type_kwd"]; !ok {
-			page["doc_type_kwd"] = "text"
-		}
-		out = append(out, page)
-	}
-	return out
-}
-
-// pagesFromDispatch extracts the per-page bytes from a parsed
-// schema.Page slice so the page builder can reshape them into the
-// schema.Page layout the chunker consumes. Pages without a `text`
-// field emit an empty buffer (treated as a zero-length page).
-func pagesFromDispatch(pages []schema.Page) [][]byte {
-	out := make([][]byte, 0, len(pages))
-	for _, p := range pages {
-		var buf []byte
-		if s, ok := p["text"].(string); ok {
-			buf = []byte(s)
-		}
-		out = append(out, buf)
-	}
-	return out
-}
-
 // buildParserOutputs assembles the runtime output map from the
-// merged pages slice AND the dispatch result (when the dispatch
-// succeeded). The output shape:
+// dispatch result (when the dispatch succeeded) or raw binary fallback.
+// The output shape:
 //
-//   - pages          []schema.Page — sorted by PageNumber
 //   - name           string        — from the upstream file/document name
 //     (or doc_id when no filename is available)
+//   - file_type      string        — canonical parser-resolved file extension
 //   - output_format  string        — the dispatch's OutputFormat,
-//     or "text" for the raw-text
-//     fallback
-//   - json | Markdown | text | html — the dispatched payload on
-//     the matching family key (only
-//     populated on a structured
-//     dispatch)
+//     or "text" for the raw-text fallback
+//   - json | markdown | text | html — the dispatched payload on
+//     the matching family key
 //   - file           map[string]any — the parser-enriched file
 //     metadata, when present
 //
 // This mirrors the Python Parser component's `set_output()` calls
 // at rag/flow/parser/parser.py:_invoke — the downstream chunker
-// / tokenizer / extractor components read the matching family
-// key, with "pages" as the universal fallback shape.
-func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, name string, fileType utility.FileType, lang string) map[string]any {
+// / tokenizer / extractor components read the matching family key.
+func buildParserOutputs(dispatched parserDispatchResult, name string, fileType utility.FileType, rawBinary []byte, lang string) map[string]any {
 	out := map[string]any{
-		"pages": toAnyPages(parsed),
-		"name":  name,
+		"name": name,
 	}
 	if fileType != "" && fileType != utility.FileTypeOTHER {
 		out["file_type"] = string(fileType)
@@ -465,19 +417,18 @@ func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, n
 		}
 		return out
 	}
-	// Raw-text fallback path: emit output_format = "json" with structured items,
-	// keeping text for backward compatibility.
-	fallbackItems := make([]map[string]any, 0, len(parsed))
+	// Raw-text fallback path: emit output_format = "text", populating both json items and text.
+	rawPages := splitIntoPages(rawBinary)
+	if len(rawPages) == 0 {
+		rawPages = [][]byte{nil}
+	}
+	fallbackItems := make([]map[string]any, 0, len(rawPages))
 	var textParts []string
-	for _, p := range parsed {
-		txt, _ := p["text"].(string)
-		docType, _ := p["doc_type_kwd"].(string)
-		if docType == "" {
-			docType = "text"
-		}
+	for _, pageBytes := range rawPages {
+		txt := string(pageBytes)
 		fallbackItems = append(fallbackItems, map[string]any{
 			"text":         txt,
-			"doc_type_kwd": docType,
+			"doc_type_kwd": "text",
 		})
 		textParts = append(textParts, txt)
 	}

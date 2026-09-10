@@ -18,7 +18,7 @@
 //
 //   - FileTypeOTHER + missing setups → text-page mode.
 //   - FileTypeMarkdown → JSON payload family on the matching output
-//     key, with the pages slice preserved.
+//     key.
 //   - FileTypePDF + setups["pdf"].output_format set to a value not
 //     in allowed_output_format["pdf"] → component errors with the
 //     format-mismatch message (matches the Python check() behavior).
@@ -105,16 +105,6 @@ func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
 	if len(jsonItems) == 0 {
 		t.Errorf("json payload empty; want at least 1 item")
 	}
-	// Pages must still exist for chunker-side consumers.
-	pages, ok := out["pages"].([]schema.Page)
-	if !ok || len(pages) == 0 {
-		t.Errorf("pages slice missing or empty: %T", out["pages"])
-	}
-	if ok && len(pages) > 0 {
-		if got, _ := pages[0]["text"].(string); !strings.Contains(got, "Title") {
-			t.Errorf("pages[0].text = %q, want content containing Title", got)
-		}
-	}
 	// File metadata is carried through dispatch.
 	if fm, ok := out["file"].(map[string]any); !ok || fm["name"] != "doc.md" {
 		t.Errorf("file metadata missing or wrong: %+v", out["file"])
@@ -177,9 +167,9 @@ func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 	if got, want := out["output_format"], "text"; got != want {
 		t.Errorf("output_format = %v, want %v (text-page mode)", got, want)
 	}
-	pages, ok := out["pages"].([]schema.Page)
-	if !ok || len(pages) == 0 {
-		t.Fatalf("pages slice missing or empty: %T", out["pages"])
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok || len(jsonItems) == 0 {
+		t.Fatalf("json items missing or empty: %T", out["json"])
 	}
 }
 
