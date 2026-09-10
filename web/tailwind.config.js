@@ -108,6 +108,30 @@ module.exports = {
         'team-department': 'var(--team-department)',
         'bg-member': 'var(--bg-member)',
 
+        /* cable industry theme (see tailwind.css :root / .dark) */
+        'cable-page-from': 'var(--cable-page-from)',
+        'cable-page-to': 'var(--cable-page-to)',
+        'cable-surface': {
+          DEFAULT: 'var(--cable-surface)',
+          muted: 'var(--cable-surface-muted)',
+        },
+        'cable-border': {
+          DEFAULT: 'var(--cable-surface-border)',
+          hover: 'var(--cable-surface-border-hover)',
+        },
+        'cable-brand': {
+          DEFAULT: 'var(--cable-brand)',
+          soft: 'var(--cable-brand-soft)',
+        },
+        'cable-accent': 'var(--cable-accent)',
+        'cable-copper': 'var(--cable-copper)',
+        'cable-icon': {
+          DEFAULT: 'var(--cable-icon-surface)',
+          foreground: 'var(--cable-icon-foreground)',
+        },
+        'cable-divider': 'var(--cable-divider)',
+        'cable-muted': 'var(--cable-muted)',
+
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
@@ -155,6 +179,11 @@ module.exports = {
       backgroundImage: {
         'metallic-gradient':
           'linear-gradient(104deg, rgb(var(--text-primary)) 30%, var(--metallic) 50%, rgb(var(--text-primary)) 70%)',
+      },
+      boxShadow: {
+        /* Cable surfaces: soft elevation in light mode, flat in dark mode. */
+        'cable-surface': 'var(--cable-shadow)',
+        'cable-surface-hover': 'var(--cable-shadow-hover)',
       },
       borderRadius: {
         px: '1px',

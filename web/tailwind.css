@@ -115,6 +115,27 @@
     /* --*-inverse: colors in dark mode */
     --text-primary-inverse: 246 246 247;
     --text-secondary-inverse: 178 181 183;
+
+    /* Cable industry theme: page, surfaces, brand and accents.
+       Every value below is resolved per mode, so components never need
+       hardcoded whites/blacks nor `dark:` duplicates for these surfaces. */
+    --cable-page-from: #f8fafc;
+    --cable-page-to: #f1f5f9;
+    --cable-surface: #ffffff;
+    --cable-surface-muted: #f8fafc;
+    --cable-surface-border: rgba(226, 232, 240, 0.8);
+    --cable-surface-border-hover: rgba(2, 132, 199, 0.45);
+    --cable-brand: #1e3a8a;
+    --cable-brand-soft: rgba(30, 58, 138, 0.08);
+    --cable-accent: #0284c7;
+    --cable-copper: #d97706;
+    --cable-icon-surface: #eff6ff;
+    --cable-icon-foreground: #2563eb;
+    --cable-divider: rgba(148, 163, 184, 0.35);
+    --cable-muted: #64748b;
+    --cable-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.06);
+    --cable-shadow-hover: 0 10px 15px -3px rgba(15, 23, 42, 0.1),
+      0 4px 6px -4px rgba(15, 23, 42, 0.1);
   }
 
   .dark {
@@ -213,6 +234,24 @@
     /* *-inverse: colors in light mode */
     --text-primary-inverse: 22 22 24;
     --text-secondary-inverse: 117 120 122;
+
+    /* Cable industry theme in dark mode: industrial black-blue instead of pure black. */
+    --cable-page-from: #0d1117;
+    --cable-page-to: #0f172a;
+    --cable-surface: #161b22;
+    --cable-surface-muted: #1b2129;
+    --cable-surface-border: #1f2937;
+    --cable-surface-border-hover: rgba(59, 130, 246, 0.5);
+    --cable-brand: #60a5fa;
+    --cable-brand-soft: rgba(96, 165, 250, 0.12);
+    --cable-accent: #38bdf8;
+    --cable-copper: #f59e0b;
+    --cable-icon-surface: rgba(23, 37, 84, 0.5);
+    --cable-icon-foreground: #60a5fa;
+    --cable-divider: rgba(148, 163, 184, 0.2);
+    --cable-muted: #94a3b8;
+    --cable-shadow: none;
+    --cable-shadow-hover: none;
   }
 }
 
@@ -258,6 +297,28 @@
 }
 
 @layer utilities {
+  /* Cable industry page canvas. One class, both modes: the gradient stops come
+     from the cable tokens above, so no component repeats a `dark:` variant. */
+  .bg-cable-page {
+    background-color: var(--cable-page-from);
+    background-image: linear-gradient(
+      180deg,
+      var(--cable-page-from) 0%,
+      var(--cable-page-to) 100%
+    );
+  }
+
+  .text-cable-gradient {
+    background-image: linear-gradient(
+      90deg,
+      var(--cable-brand) 0%,
+      var(--cable-accent) 100%
+    );
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+  }
+
   .bg-card-soft {
     /* First line is the fallback for browsers without color-mix() */
     background-color: var(--bg-card);
