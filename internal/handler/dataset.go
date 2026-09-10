@@ -245,7 +245,8 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
-	if req.ParserConfig == nil && req.PipelineID == nil {
+	// Preserve builtin component defaults when parser_id is explicitly selected.
+	if req.ParserConfig == nil && req.PipelineID == nil && req.ParserID == nil {
 		req.ParserConfig = map[string]interface{}{}
 	}
 	// Mirror Python's pydantic required validation.
@@ -370,7 +371,8 @@ var listDatasetsAllowedParams = map[string]bool{
 var createDatasetAllowedFields = map[string]bool{
 	"name": true, "embedding_model": true, "parser_config": true,
 	"language": true, "permission": true, "parser_id": true,
-	"pipeline_id": true, "parse_type": true,
+	"pipeline_id": true, "parse_type": true, "avatar": true,
+	"description": true, "auto_metadata_config": true,
 }
 
 // updateDatasetAllowedFields mirrors the field set of Python's UpdateDatasetReq

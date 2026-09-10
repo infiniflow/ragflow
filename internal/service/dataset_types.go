@@ -142,6 +142,8 @@ type MetadataConfigRequest struct {
 // CreateDatasetRequest represents the request for creating a dataset.
 type CreateDatasetRequest struct {
 	Name           string                 `json:"name" binding:"required"`
+	Avatar         *string                `json:"avatar,omitempty"`
+	Description    *string                `json:"description,omitempty"`
 	EmbeddingModel *string                `json:"embedding_model,omitempty"`
 	ParserConfig   map[string]interface{} `json:"parser_config,omitempty"`
 	Language       *string                `json:"language,omitempty"`
@@ -150,7 +152,8 @@ type CreateDatasetRequest struct {
 	PipelineID     *string                `json:"pipeline_id,omitempty"`
 	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
 	// 2 = Pipeline (pipeline_id). nil means unspecified.
-	ParseType *int `json:"parse_type,omitempty"`
+	ParseType          *int                   `json:"parse_type,omitempty"`
+	AutoMetadataConfig map[string]interface{} `json:"auto_metadata_config,omitempty"`
 }
 
 // DatasetConnectorRequest represents a connector link request.

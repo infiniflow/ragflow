@@ -46,6 +46,24 @@ func TestValidateParserID_RejectsUnknown(t *testing.T) {
 	}
 }
 
+func TestValidateDatasetParserConfigPythonParity(t *testing.T) {
+	if err := validateDatasetParserConfig(map[string]interface{}{
+		"enable_children":               true,
+		"compilation_template_group_id": []interface{}{"x"},
+		"table_column_mode":             "manual",
+		"unknown_python_field":          "kept",
+		"task_page_size":                float64(200000000),
+	}); err != nil {
+		t.Fatalf("valid Python parser config rejected: %v", err)
+	}
+	if err := validateDatasetParserConfig(map[string]interface{}{"raptor": map[string]interface{}{"max_token": float64(511)}}); err == nil {
+		t.Fatal("raptor.max_token below Python lower bound accepted")
+	}
+	if err := validateDatasetParserConfig(map[string]interface{}{"graphrag": map[string]interface{}{"retry_attempts": float64(0)}}); err == nil {
+		t.Fatal("graphrag.retry_attempts below Python lower bound accepted")
+	}
+}
+
 // --- validateDatasetAvatar ---
 
 func TestValidateDatasetAvatar_MissingPrefix(t *testing.T) {

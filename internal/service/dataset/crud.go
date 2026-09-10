@@ -91,6 +91,17 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 		language = &normalized
 	}
+	if req.Avatar != nil {
+		if len(*req.Avatar) > 65535 {
+			return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+		}
+		if err := validateDatasetAvatar(*req.Avatar); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
+	if req.Description != nil && len(*req.Description) > 65535 {
+		return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+	}
 
 	if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
 		if ok, err := canvasAccessibleForUser(ctx, tenantID, strings.TrimSpace(*pipelineID)); err != nil {
@@ -131,6 +142,25 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		flat["children_delimiter"] = ""
 		parserConfig = entity.JSONMap(flat)
 	}
+	if req.AutoMetadataConfig != nil {
+		if parserConfig == nil {
+			parserConfig = entity.JSONMap{}
+		}
+		metadata := map[string]interface{}{"enabled": true}
+		for _, key := range []string{"metadata", "built_in_metadata", "fields", "enabled"} {
+			if value, ok := req.AutoMetadataConfig[key]; ok {
+				if key == "fields" {
+					metadata["metadata"] = value
+				} else {
+					metadata[key] = value
+				}
+			}
+		}
+		parserConfig["metadata"] = metadata
+		if err := validateDatasetParserConfigSize(parserConfig); err != nil {
+			return nil, common.CodeArgumentError, err
+		}
+	}
 
 	var parserConfigMap map[string]interface{} = parserConfig
 
@@ -167,6 +197,8 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	kb := &entity.Knowledgebase{
 		ID:           kbID,
 		Name:         name,
+		Avatar:       req.Avatar,
+		Description:  req.Description,
 		TenantID:     tenantID,
 		CreatedBy:    tenantID,
 		ParserID:     parserID,

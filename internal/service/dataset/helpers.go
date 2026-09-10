@@ -182,13 +182,10 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 }
 
 func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
-	allowed := map[string]bool{"layout_recognize": true, "chunk_token_num": true, "delimiter": true, "auto_keywords": true, "auto_questions": true, "html4excel": true, "image_context_size": true, "table_context_size": true, "topn_tags": true, "llm_id": true, "parent_child": true, "children_delimiter": true, "tag_kb_ids": true, "filename_embd_weight": true, "task_page_size": true, "pages": true, "graphrag": true, "raptor": true}
-	for key := range parserConfig {
-		if !allowed[key] {
-			return fmt.Errorf("Extra inputs are not permitted: %s", key)
-		}
+	if _, exists := parserConfig["ext"]; exists {
+		return errors.New("parser_config.ext is not supported; send parser configuration fields directly")
 	}
-	intBounds := map[string][2]float64{"auto_keywords": {0, 32}, "auto_questions": {0, 10}, "chunk_token_num": {1, 2048}, "topn_tags": {1, 10}, "task_page_size": {1, 100000000}}
+	intBounds := map[string][2]float64{"auto_keywords": {0, 32}, "auto_questions": {0, 10}, "chunk_token_num": {1, 2048}, "topn_tags": {1, 10}}
 	for key, bounds := range intBounds {
 		if value, ok := parserConfig[key]; ok {
 			n, ok := value.(float64)
@@ -292,6 +289,28 @@ func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
 						}
 					}
 				}
+				for name, bounds := range map[string][2]float64{"batch_chunk_token_size": {512, 8196}, "retry_attempts": {1, 10}, "build_subgraph_timeout_per_chunk_seconds": {1, 86400}, "build_subgraph_min_timeout_seconds": {1, 86400}, "merge_timeout_seconds": {0, 86400}, "resolution_timeout_seconds": {0, 86400}, "community_timeout_seconds": {0, 86400}, "lock_acquire_timeout_seconds": {0, 86400}} {
+					if v, exists := obj[name]; exists {
+						n, ok := v.(float64)
+						if !ok || n != float64(int64(n)) {
+							return errors.New("Input should be a valid integer")
+						}
+						if n < bounds[0] || n > bounds[1] {
+							return fmt.Errorf("Input should be between %v and %v", int(bounds[0]), int(bounds[1]))
+						}
+					}
+				}
+				for name, bounds := range map[string][2]float64{"retry_backoff_seconds": {0, 600}, "retry_backoff_max_seconds": {0, 3600}} {
+					if v, exists := obj[name]; exists {
+						n, ok := v.(float64)
+						if !ok {
+							return errors.New("Input should be a valid number")
+						}
+						if n < bounds[0] || n > bounds[1] {
+							return fmt.Errorf("Input should be between %v and %v", bounds[0], bounds[1])
+						}
+					}
+				}
 			}
 			if key == "raptor" {
 				if v, exists := obj["use_raptor"]; exists {
@@ -304,7 +323,7 @@ func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
 						return errors.New("String should have at least 1 character")
 					}
 				}
-				for name, bounds := range map[string][2]float64{"max_token": {1, 2048}, "max_cluster": {1, 1024}, "random_seed": {0, 9223372036854775807}} {
+				for name, bounds := range map[string][2]float64{"max_token": {512, 2048}, "max_cluster": {1, 1024}, "random_seed": {0, 9223372036854775807}} {
 					if v, exists := obj[name]; exists {
 						n, ok := v.(float64)
 						if !ok || n != float64(int64(n)) {
@@ -328,6 +347,26 @@ func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
 					}
 					if n > 1 {
 						return errors.New("Input should be less than or equal to 1")
+					}
+				}
+				if v, exists := obj["clustering_ratio"]; exists {
+					n, ok := v.(float64)
+					if !ok {
+						return errors.New("Input should be a valid number")
+					}
+					if n < 0 || n > 1 {
+						return errors.New("Input should be between 0 and 1")
+					}
+				}
+				if v, exists := obj["scope"]; exists {
+					s, ok := v.(string)
+					if !ok || (s != "file" && s != "dataset") {
+						return errors.New("Input should be 'file' or 'dataset'")
+					}
+				}
+				if v, exists := obj["auto_disable_for_structured_data"]; exists {
+					if _, ok := v.(bool); !ok {
+						return errors.New("Input should be a valid boolean")
 					}
 				}
 			}
