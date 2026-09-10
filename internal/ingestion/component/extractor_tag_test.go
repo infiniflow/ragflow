@@ -279,7 +279,7 @@ func TestLlmtagChunk_MessageFit(t *testing.T) {
 	allTags := map[string]float64{"RAG": 1, "database": 1, "AI": 1}
 	examples := []schema.TaggedChunk{{Content: "example one", TagWeights: map[string]int{"AI": 5}}}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -302,7 +302,7 @@ func TestLlmtagChunk_NoContextLength_SkipsFit(t *testing.T) {
 	allTags := map[string]float64{"RAG": 1}
 	examples := []schema.TaggedChunk{{Content: "example", TagWeights: map[string]int{"AI": 5}}}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -324,7 +324,7 @@ func TestLlmtagChunk_ColdStartFallback(t *testing.T) {
 	}
 
 	chunk := map[string]any{"content_with_weight": "some content"}
-	llmTagChunk(t.Context(), nil, capt, chunk, idx.allTags, nil, "test@test", "test_driver", "test_model", "test_key", "", 3, idx)
+	llmTagChunk(t.Context(), nil, capt, chunk, idx.allTags, nil, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, idx)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -721,7 +721,7 @@ func TestPopulateTagKwd_LLMTagChunk(t *testing.T) {
 	chunk := map[string]any{"content_with_weight": "some content"}
 	allTags := map[string]float64{"RAG": 0.5, "vector database": 0.5}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, nil, "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, nil, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
 	tagKwd, ok := chunk["tag_kwd"].([]string)
 	if !ok {
@@ -1166,10 +1166,10 @@ func TestTaggerCacheKey_IncludesFewShot(t *testing.T) {
 		{Content: "sample one", TagWeights: map[string]int{"TagA": 5}},
 	}
 
-	k1 := taggerCacheKey("llm-1", "test text", allTags, ex1, 3)
-	k2 := taggerCacheKey("llm-1", "test text", allTags, ex2, 3)
-	k3 := taggerCacheKey("llm-1", "test text", allTags, ex3, 3)
-	kEmpty := taggerCacheKey("llm-1", "test text", allTags, nil, 3)
+	k1 := taggerCacheKey("llm-1", "test text", "body", allTags, ex1, 3)
+	k2 := taggerCacheKey("llm-1", "test text", "body", allTags, ex2, 3)
+	k3 := taggerCacheKey("llm-1", "test text", "body", allTags, ex3, 3)
+	kEmpty := taggerCacheKey("llm-1", "test text", "body", allTags, nil, 3)
 
 	if k1 == k2 {
 		t.Fatalf("expected different cache keys for different few-shot examples: %s vs %s", k1, k2)
@@ -1182,7 +1182,7 @@ func TestTaggerCacheKey_IncludesFewShot(t *testing.T) {
 	}
 
 	// Identical few-shot examples produce identical key
-	k1Dup := taggerCacheKey("llm-1", "test text", allTags, ex1, 3)
+	k1Dup := taggerCacheKey("llm-1", "test text", "body", allTags, ex1, 3)
 	if k1 != k1Dup {
 		t.Fatalf("expected identical cache keys for same few-shot examples: %s vs %s", k1, k1Dup)
 	}
