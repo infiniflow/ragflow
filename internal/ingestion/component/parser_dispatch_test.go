@@ -127,6 +127,24 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 			out := buildParserOutputs(t.Context(), tt.dispatched, "sample."+tt.name, utility.FileTypeOTHER, nil, "")
 
 			requireJSONText(t, out, tt.wantText)
+			if tt.name == "markdown" {
+				items, ok := out["json"].([]map[string]any)
+				if !ok {
+					t.Fatalf("json = %T, want []map[string]any", out["json"])
+				}
+				if len(items) != 2 {
+					t.Fatalf("markdown json item count = %d, want 2: %#v", len(items), items)
+				}
+				if got := items[0]["ck_type"]; got != "heading" {
+					t.Errorf("markdown item[0].ck_type = %v, want heading", got)
+				}
+				if got := items[0]["text"]; got != "Title" {
+					t.Errorf("markdown item[0].text = %v, want Title", got)
+				}
+				if got := items[1]["text"]; got != "Body" {
+					t.Errorf("markdown item[1].text = %v, want Body", got)
+				}
+			}
 			for _, key := range []string{"markdown", "html", "text"} {
 				if _, ok := out[key]; ok {
 					t.Errorf("output contains obsolete %q payload: %#v", key, out[key])

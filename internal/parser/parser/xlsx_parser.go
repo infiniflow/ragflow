@@ -155,19 +155,13 @@ func parseXLSXBytes(data []byte, chunkRows int) ([]map[string]any, []string, int
 		}
 		warnings = append(warnings, sheetWarnings...)
 		for _, table := range tables {
-			items = append(items, map[string]any{
-				"text":         table.HTML,
-				"doc_type_kwd": "table",
-				"ck_type":      "table",
-				"sheet":        sheet,
-				"positions": [][]float64{{
-					float64(sheetIdx + 1),
-					float64(table.RowStart),
-					float64(table.RowEnd),
-					float64(table.ColStart),
-					float64(table.ColEnd),
-				}},
-			})
+			items = append(items, NewTableJSONItem(table.HTML, sheet, [][]float64{{
+				float64(sheetIdx + 1),
+				float64(table.RowStart),
+				float64(table.RowEnd),
+				float64(table.ColStart),
+				float64(table.ColEnd),
+			}}))
 		}
 		images, imageWarnings := extractXLSXImages(f, sheet)
 		items = append(items, images...)

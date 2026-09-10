@@ -139,13 +139,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 				"format":   "csv",
 				"sheets":   1,
 			},
-			JSON: []map[string]any{{
-				"text":         emptyHTML,
-				"doc_type_kwd": "table",
-				"ck_type":      "table",
-				"sheet":        csvSheetName,
-				"positions":    [][]float64{{1, 1, 1, 1, 1}},
-			}},
+			JSON: []map[string]any{NewTableJSONItem(emptyHTML, csvSheetName, [][]float64{{1, 1, 1, 1, 1}})},
 			HTML: emptyHTML,
 		}
 	}
@@ -171,19 +165,13 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	chunks := recordsToHTMLTableChunkList(records, chunkRows, csvSheetName, 1)
 	items := make([]map[string]any, 0, len(chunks))
 	for _, ch := range chunks {
-		items = append(items, map[string]any{
-			"text":         ch.HTML,
-			"doc_type_kwd": "table",
-			"ck_type":      "table",
-			"sheet":        csvSheetName,
-			"positions": [][]float64{{
-				1,
-				float64(ch.RowStart),
-				float64(ch.RowEnd),
-				float64(ch.ColStart),
-				float64(ch.ColEnd),
-			}},
-		})
+		items = append(items, NewTableJSONItem(ch.HTML, csvSheetName, [][]float64{{
+			1,
+			float64(ch.RowStart),
+			float64(ch.RowEnd),
+			float64(ch.ColStart),
+			float64(ch.ColEnd),
+		}}))
 	}
 	htmlText := recordsToHTMLTableChunks(records, chunkRows, csvSheetName)
 

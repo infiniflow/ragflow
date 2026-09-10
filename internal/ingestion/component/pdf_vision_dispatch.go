@@ -225,7 +225,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 }
 
 func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []map[string]any {
-	mp, err := parser.NewMarkdownParser("goldmark")
+	mp, err := parser.NewMarkdownParser(parser.GoMarkdown)
 	if err != nil {
 		return []map[string]any{parser.NewTextJSONItem(mdText)}
 	}
