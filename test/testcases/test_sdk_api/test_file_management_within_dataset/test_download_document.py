@@ -148,7 +148,7 @@ class TestDocumentDownload:
                 f.write(documents[0].download())
             assert compare_by_hash(ragflow_tmp_dir / "ragflow_test_upload_0.txt", download_path), f"Downloaded file {i} does not match original"
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_download_error_json_raises(self, add_documents):
         dataset, documents = add_documents
         document = documents[0]

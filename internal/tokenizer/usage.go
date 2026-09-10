@@ -137,9 +137,10 @@ func RecordRunTokenUsage(ctx context.Context, promptTokens, completionTokens, to
 }
 
 // UsageFromMap extracts a token usage split from a raw API response map.
-// Handles OpenAI/OpenRouter-style resp["usage"] dicts. Missing fields
-// default to 0; total_tokens falls back to prompt+completion when absent.
-// Returns nil when no usage found.
+// Handles OpenAI/OpenRouter-style resp["usage"] dicts, including the camelCase
+// spelling (promptTokens/completionTokens/totalTokens) that some providers
+// return. Missing fields default to 0; total_tokens falls back to
+// prompt+completion when absent. Returns zeros when no usage found.
 // Mirrors Python's common.token_utils.usage_from_response().
 func UsageFromMap(raw map[string]interface{}) (promptTokens, completionTokens, totalTokens int) {
 	if raw == nil {
@@ -153,9 +154,9 @@ func UsageFromMap(raw map[string]interface{}) (promptTokens, completionTokens, t
 	if !ok {
 		return 0, 0, 0
 	}
-	pt := getInt(usage, "prompt_tokens", "input_tokens")
-	ct := getInt(usage, "completion_tokens", "output_tokens")
-	tt := getInt(usage, "total_tokens")
+	pt := getInt(usage, "prompt_tokens", "input_tokens", "promptTokens")
+	ct := getInt(usage, "completion_tokens", "output_tokens", "completionTokens")
+	tt := getInt(usage, "total_tokens", "totalTokens")
 	if tt == 0 {
 		tt = pt + ct
 	}

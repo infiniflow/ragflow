@@ -88,7 +88,7 @@ class TestSessionWithChatAssistantDelete:
             pytest.param({"ids": ["invalid_id"]}, "The chat doesn't own the session invalid_id", 5, marks=pytest.mark.p3),
             pytest.param("not json", """AttributeError("\'str\' object has no attribute \'get\'")""", 5, marks=pytest.mark.skip),
             pytest.param(lambda r: {"ids": r[:1]}, "", 4, marks=pytest.mark.p3),
-            pytest.param(lambda r: {"ids": r}, "", 0, marks=pytest.mark.p1),
+            pytest.param(lambda r: {"ids": r}, "", 0, marks=pytest.mark.p3),
             pytest.param({"ids": []}, "", 5, marks=pytest.mark.p3),
         ],
     )
