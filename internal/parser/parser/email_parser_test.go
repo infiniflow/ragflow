@@ -1191,7 +1191,7 @@ func TestReadMailBody_AttachmentPreservesRaw(t *testing.T) {
 	ap.Write([]byte(base64.StdEncoding.EncodeToString(gbk)))
 	mw.Close()
 
-	_, _, attachments := readMailBody(strings.NewReader(buf.String()), "multipart/mixed; boundary="+mw.Boundary(), true)
+	_, _, attachments := readMailBody(strings.NewReader(buf.String()), "multipart/mixed; boundary="+mw.Boundary(), "", true)
 	if len(attachments) != 1 {
 		t.Fatalf("expected 1 attachment, got %d: %#v", len(attachments), attachments)
 	}
@@ -1294,9 +1294,107 @@ func TestReadMailBody_DeclaredBodyCharsets(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			text, _, _ := readMailBody(strings.NewReader(string(tt.body)), "text/plain; charset="+tt.charset, false)
+			text, _, _ := readMailBody(strings.NewReader(string(tt.body)), "text/plain; charset="+tt.charset, "", false)
 			if text != "中文" {
 				t.Errorf("readMailBody(charset=%s) = %q, want 中文", tt.charset, text)
+			}
+		})
+	}
+}
+
+// TestParseEML_SinglePartTransferEncoding verifies that a single-part body
+// is decoded by its Content-Transfer-Encoding, as a multipart part already is.
+func TestParseEML_SinglePartTransferEncoding(t *testing.T) {
+	const plain = "Quarterly revenue was 12.5 million.\n"
+	b64 := base64.StdEncoding.EncodeToString([]byte(plain))
+
+	const html = "<p>Quarterly revenue</p>"
+	htmlB64 := base64.StdEncoding.EncodeToString([]byte(html))
+
+	tests := []struct {
+		name     string
+		headers  string
+		body     string
+		wantText string
+		wantHTML string
+		// encoded is the payload as it appears on the wire. The text output
+		// feeds the chunker, so it must never carry these bytes.
+		encoded string
+		// wantInText is the visible text the flattened output must carry.
+		wantInText string
+	}{
+		{
+			name:       "base64 text/plain",
+			headers:    "Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64",
+			body:       b64,
+			wantText:   plain,
+			encoded:    b64,
+			wantInText: "Quarterly revenue was 12.5 million.",
+		},
+		{
+			name:       "quoted-printable text/plain",
+			headers:    "Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: quoted-printable",
+			body:       "Quarterly revenue was 12=2E5 million=2E",
+			wantText:   "Quarterly revenue was 12.5 million.",
+			encoded:    "12=2E5",
+			wantInText: "Quarterly revenue was 12.5 million.",
+		},
+		{
+			name:       "base64 text/html",
+			headers:    "Content-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64",
+			body:       htmlB64,
+			wantHTML:   html,
+			encoded:    htmlB64,
+			wantInText: "Quarterly revenue",
+		},
+		{
+			// Positive control: the multipart path already decodes the same
+			// body, so the two paths must agree.
+			name:       "base64 in multipart/alternative",
+			headers:    "Content-Type: multipart/alternative; boundary=\"BB\"",
+			body:       "--BB\r\nContent-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" + b64 + "\r\n--BB--",
+			wantText:   plain,
+			encoded:    b64,
+			wantInText: "Quarterly revenue was 12.5 million.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := "From: sender@example.com\r\nTo: recipient@example.com\r\n" +
+				"Subject: Q3\r\n" + tt.headers + "\r\n\r\n" + tt.body + "\r\n"
+
+			p := NewEmailParser()
+			p.ConfigureFromSetup(map[string]any{"output_format": "json"})
+			result := p.ParseWithResult(t.Context(), "test.eml", []byte(raw))
+			if result.Err != nil {
+				t.Fatalf("unexpected error: %v", result.Err)
+			}
+			item := result.JSON[0]
+
+			text, _ := item["text"].(string)
+			if strings.TrimRight(text, "\r\n") != strings.TrimRight(tt.wantText, "\r\n") {
+				t.Errorf("text = %q, want %q", text, tt.wantText)
+			}
+			gotHTML, _ := item["text_html"].(string)
+			if strings.TrimRight(gotHTML, "\r\n") != strings.TrimRight(tt.wantHTML, "\r\n") {
+				t.Errorf("text_html = %q, want %q", gotHTML, tt.wantHTML)
+			}
+
+			// The text output is what reaches the chunker, and the JSON
+			// output returns before it is built, so assert it separately.
+			pt := NewEmailParser()
+			pt.ConfigureFromSetup(map[string]any{"output_format": "text"})
+			textResult := pt.ParseWithResult(t.Context(), "test.eml", []byte(raw))
+			if textResult.Err != nil {
+				t.Fatalf("unexpected error on the text path: %v", textResult.Err)
+			}
+			flat := textResult.Text
+			if !strings.Contains(flat, tt.wantInText) {
+				t.Errorf("text output = %q, want it to contain %q", flat, tt.wantInText)
+			}
+			if strings.Contains(flat, tt.encoded) {
+				t.Errorf("text output still carries the encoded payload %q: %q", tt.encoded, flat)
 			}
 		})
 	}

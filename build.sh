@@ -403,7 +403,8 @@ build_go() {
     local strip_flags=()
     [ -n "$STRIP_SYMBOLS" ] && strip_flags=(-ldflags="-s -w")
 
-    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY and $RAGFLOW_SERVER_BINARY"
+    echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY, $RAGFLOW_SERVER_BINARY"
+    set -x
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
@@ -411,6 +412,7 @@ build_go() {
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
         cmd/ragflow_server.go
+    set +x
 
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
