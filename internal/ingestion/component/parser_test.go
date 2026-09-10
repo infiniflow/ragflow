@@ -77,13 +77,15 @@ func TestParserComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	if len(out) == 0 {
 		t.Errorf("Outputs() returned empty map")
 	}
-	// The contract from the file header: at least "binary" in,
-	// "pages" out. Anything else is informational.
+	// The component catalog must expose its canonical input and payload.
 	if _, ok := in["binary"]; !ok {
 		t.Errorf("Inputs() missing key %q", "binary")
 	}
 	if _, ok := out["output_format"]; !ok {
 		t.Errorf("Outputs() missing key %q", "output_format")
+	}
+	if _, ok := out["json"]; !ok {
+		t.Errorf("Outputs() missing key %q", "json")
 	}
 }
 
@@ -194,18 +196,15 @@ func TestParserComponent_Invoke_PageRangeFilter(t *testing.T) {
 	}
 }
 
-// TestParserComponent_Invoke_DeterministicMerge is the
-// golden-file test for plan §8 R8 (DETERMINISTIC MERGE).
+// TestParserComponent_Invoke_DeterministicMerge verifies stable output order.
 //
 // We invoke the component 5 times with identical input and
 // assert byte-for-byte equality of the JSON-encoded output.
 // The test is expected to pass under `go test -count=10 -race`
 // — that flag is run separately in the verification block.
 //
-// Text-page mode has no page_number key, so the input order is
-// the output order; the deterministic sort keeps that order
-// stable across runs, which is the contract the downstream
-// chunker relies on for stable chunk IDs.
+// Text-page mode preserves input order, which downstream chunkers rely on for
+// stable chunk IDs.
 func TestParserComponent_Invoke_DeterministicMerge(t *testing.T) {
 	c := &ParserComponent{}
 	// 8 form-feed-separated pages.

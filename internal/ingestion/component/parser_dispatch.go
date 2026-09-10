@@ -332,7 +332,7 @@ func buildParserOutputs(ctx context.Context, dispatched parserDispatchResult, na
 }
 
 func normalizeParserJSON(ctx context.Context, filename string, dispatched parserDispatchResult) []map[string]any {
-	if dispatched.JSON != nil {
+	if len(dispatched.JSON) > 0 {
 		return dispatched.JSON
 	}
 	if dispatched.Markdown != "" {

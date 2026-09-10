@@ -135,6 +135,16 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 	}
 }
 
+func TestBuildParserOutputsFallsBackWhenJSONIsEmpty(t *testing.T) {
+	out := buildParserOutputs(t.Context(), parserDispatchResult{
+		OutputFormat: "json",
+		JSON:         []map[string]any{},
+		Markdown:     "# Recovered title",
+	}, "sample.md", utility.FileTypeMarkdown, nil, "")
+
+	requireJSONText(t, out, "Recovered title")
+}
+
 func TestDispatch_JSONOutput(t *testing.T) {
 	setups := defaultSetups()
 	c := &ParserComponent{Setups: setups}

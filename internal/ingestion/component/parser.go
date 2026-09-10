@@ -28,10 +28,8 @@
 //   - Per-page parallelism is delegated to the parser backends
 //     (e.g. internal/deepdoc/parser/pdf fans out one worker per
 //     page and assembles the results in page order). This
-//     component only reshapes the parser output into the
-//     schema.Page layout and keeps the deterministic, page-number
-//     sorted merge contract (plan §8 R8) that the downstream
-//     chunker / tokenizer rely on for stable chunk IDs.
+//     component normalizes the parser output into structured JSON
+//     items while preserving the backend's deterministic item order.
 //
 //   - Progress (start/done callback) and elapsed-time stamping
 //     (_created_time / _elapsed_time) are owned by the canvas
@@ -74,8 +72,8 @@
 //     tenant default models (resolveTenantModelByType) rather than
 //     setup["vlm"]["llm_id"], so that check is intentionally omitted.
 //
-//   - NO PERSISTENCE: parsed pages live only in the per-run
-//     output map, exactly as the schema.Page type is intended.
+//   - NO PERSISTENCE: structured parser items live only in the per-run
+//     output map.
 package component
 
 import (
@@ -352,6 +350,7 @@ func (c *ParserComponent) Inputs() map[string]string {
 //	                        name (or doc_id when no name is available).
 //	file_type     string  — canonical parser-resolved file extension.
 //	output_format string  — always "json".
+//	json          []map[string]any — canonical structured parser items.
 //	lang          string  — language for tokenization.
 //	_ERROR        string  — populated when the component short-
 //	                        circuits with an error message
@@ -361,6 +360,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
 		"file_type":     "string: canonical parser-resolved file extension.",
 		"output_format": "string: always \"json\".",
+		"json":          "[]map[string]any: canonical structured parser items.",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
 		"_ERROR":        "string: set on short-circuit errors.",
 	}
@@ -373,6 +373,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 //	{
 //	  "name":           string (from inputs["doc_id"]),
 //	  "output_format": "json",
+//	  "json":           []map[string]any,
 //	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
 //	  "_created_time":  RFC3339Nano (via TrackElapsed),
 //	  "_elapsed_time":  float64 seconds (via TrackElapsed),
@@ -382,13 +383,6 @@ func (c *ParserComponent) Outputs() map[string]string {
 // backends (e.g. internal/deepdoc/parser/pdf fans out one worker
 // per page and assembles the results in page order), so this
 // component does no goroutine fan-out of its own.
-//
-// DETERMINISTIC MERGE (plan §8 R8): after the page slice is built,
-// it is sorted by PageNumber. This guarantees the same input
-// produces byte-identical output across runs and is the contract
-// that downstream Chunker / Tokenizer rely on for stable chunk
-// IDs (chunks that span pages must reference adjacent PageNumbers
-// in input order).
 func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// 1. Decode the binary input.
 	binary, err := readParserBinary(ctx, db, inputs)
@@ -494,19 +488,12 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// forwards only this explicit output to the next node, so shared
 	// fields must live in Globals.
 	globals.PublishGlobals(ctx, out)
-	// Debug log: summarize parser output for pipeline debugging.
-	if dispatched.OutputFormat == "json" {
-		common.Debug("parser stage output",
-			zap.String("component", "Parser"),
-			zap.String("output_format", "json"),
-			zap.Int("json_items", len(dispatched.JSON)),
-		)
-	} else if dispatched.OutputFormat != "" {
-		common.Debug("parser stage output",
-			zap.String("component", "Parser"),
-			zap.String("output_format", dispatched.OutputFormat),
-		)
-	}
+	items, _ := out["json"].([]map[string]any)
+	common.Debug("parser stage output",
+		zap.String("component", "Parser"),
+		zap.String("output_format", "json"),
+		zap.Int("json_items", len(items)),
+	)
 	// Progress (_created_time / _elapsed_time stamping, start/done
 	// callbacks) is owned by the canvas framework (realComponentBody),
 	// not by this component, so we return the work result directly.

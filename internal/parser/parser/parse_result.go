@@ -21,7 +21,7 @@
 //
 //	output_format
 //	file (enriched metadata)
-//	primary payload with optional rendered companion payloads
+//	backend payload to be normalized by the owning component
 //	err
 //
 // Go parser callers now consume only the structured ParseResult
@@ -34,11 +34,12 @@ package parser
 import "context"
 
 // ParseResult is the structured return value of a parse operation. JSON is the
-// canonical pipeline payload; parsers may also retain rendered companion
-// payloads. On failure, Err is non-nil and OutputFormat is empty.
+// canonical payload. The rendered fields carry non-JSON backend responses to
+// the Parser component's normalization boundary. On failure, Err is non-nil
+// and OutputFormat is empty.
 type ParseResult struct {
-	// OutputFormat is the wire-compatible format the parser
-	// chose. Empty when Err is non-nil.
+	// OutputFormat identifies the backend payload representation. The Parser
+	// component normalizes successful results to JSON. Empty when Err is non-nil.
 	OutputFormat string
 
 	// File is the enriched file metadata the parser emits. In
@@ -57,7 +58,7 @@ type ParseResult struct {
 	// echoed the requested extension.
 	File map[string]any
 
-	// JSON is the structured payload when OutputFormat == "json".
+	// JSON is the structured payload when available.
 	// Shape depends on the parser family: PDF emits
 	// `[]map[string]any` with `text` + `doc_type_kwd` keys (and
 	// optional `image` / `layout` / `positions` fields);
@@ -66,16 +67,13 @@ type ParseResult struct {
 	// items.
 	JSON []map[string]any
 
-	// Markdown is the string payload when OutputFormat ==
-	// "markdown". Empty otherwise.
+	// Markdown is a backend response awaiting normalization.
 	Markdown string
 
-	// Text is the string payload when OutputFormat == "text".
-	// Empty otherwise.
+	// Text is a backend response awaiting normalization.
 	Text string
 
-	// HTML is the string payload when OutputFormat == "html".
-	// Empty otherwise.
+	// HTML is a backend response awaiting normalization.
 	HTML string
 
 	// Err is the failure reason. On non-nil Err, all payload
