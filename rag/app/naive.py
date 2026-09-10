@@ -587,6 +587,7 @@ def _is_toc_paragraph(text: str, style_name: str) -> bool:
 
 class Docx(DocxParser):
     def __init__(self):
+        """Initialize the naive DOCX parser."""
         pass
 
     def __clean(self, line):
@@ -699,6 +700,11 @@ class Docx(DocxParser):
         return ""
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
+        """Parse a DOCX file into ordered (text, image, table) triples.
+
+        Each element is a plain-text paragraph, an image, or an HTML table,
+        preserving document order. Table-of-contents entries are skipped.
+        """
         self.doc = Document(filename) if binary is None else Document(BytesIO(binary))
         pn = 0
         lines = []
