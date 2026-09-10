@@ -51,3 +51,25 @@ it('does not add an authentication placeholder to a new no-key connection', () =
     variables: { authorization_token: '' },
   });
 });
+
+it.each(['authorization_token', 'Authorization_Token'])(
+  'removes the Python-imported %s credential when the token is changed or cleared',
+  (header) => {
+    const saved = {
+      headers: { [header]: 'old-secret', 'User-Agent': 'ragflow' },
+      variables: { authorization_token: 'old-secret' },
+    };
+    expect(connectionFields(TokenMask, saved)).toEqual(saved);
+    expect(connectionFields('', saved)).toEqual({
+      headers: { 'User-Agent': 'ragflow' },
+      variables: { authorization_token: '' },
+    });
+    expect(connectionFields('new-secret', saved)).toEqual({
+      headers: {
+        'User-Agent': 'ragflow',
+        Authorization: 'Bearer ${authorization_token}',
+      },
+      variables: { authorization_token: 'new-secret' },
+    });
+  },
+);

@@ -18,7 +18,11 @@ export function connectionFields(
   const headers = { ...current.headers };
   if (!unchanged) {
     for (const key of Object.keys(headers)) {
-      if (key.toLowerCase() === 'authorization') delete headers[key];
+      if (
+        ['authorization', 'authorization_token'].includes(key.toLowerCase())
+      ) {
+        delete headers[key];
+      }
     }
     if (token) headers.Authorization = 'Bearer ${authorization_token}';
   }
