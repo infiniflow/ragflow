@@ -140,6 +140,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.SyncLogs{},
 		&entity.MCPServer{},
 		&entity.Memory{},
+		&entity.MemoryTask{},
 		&entity.Search{},
 		&entity.PipelineOperationLog{},
 		&entity.EvaluationDataset{},
@@ -301,6 +302,7 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 	goRuntimeModels := []interface{}{
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
+		&entity.MemoryTask{},
 	}
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {

@@ -26,7 +26,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestAutoMigrateRuntimeModelsCreatesIngestionTaskTables(t *testing.T) {
+func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -38,6 +38,9 @@ func TestAutoMigrateRuntimeModelsCreatesIngestionTaskTables(t *testing.T) {
 	}
 	if db.Migrator().HasTable(&entity.IngestionTaskLog{}) {
 		t.Fatal("expected ingestion_task_log to not exist initially")
+	}
+	if db.Migrator().HasTable(&entity.MemoryTask{}) {
+		t.Fatal("expected memory_task to not exist initially")
 	}
 
 	ctx := context.Background()
@@ -51,6 +54,44 @@ func TestAutoMigrateRuntimeModelsCreatesIngestionTaskTables(t *testing.T) {
 	}
 	if !db.Migrator().HasTable(&entity.IngestionTaskLog{}) {
 		t.Fatal("expected ingestion_task_log to exist after autoMigrateRuntimeModels")
+	}
+	if !db.Migrator().HasTable(&entity.MemoryTask{}) {
+		t.Fatal("expected memory_task to exist after autoMigrateRuntimeModels")
+	}
+	if !db.Migrator().HasIndex(&entity.MemoryTask{}, "idx_memory_task_due") {
+		t.Fatal("expected memory_task due index to exist after autoMigrateRuntimeModels")
+	}
+
+	memoryTask := &entity.MemoryTask{
+		TaskID:   "task-1",
+		MemoryID: "memory-1",
+		SourceID: 42,
+		Input: entity.JSONMap{
+			"user_id":    "user-1",
+			"user_input": "remember this",
+		},
+		State: entity.MemoryTaskStatePending,
+		Extraction: entity.JSONSlice{
+			map[string]interface{}{"message_id": float64(7), "content": "remembered"},
+		},
+		LastError: "",
+	}
+	if err = db.Create(memoryTask).Error; err != nil {
+		t.Fatalf("create memory task: %v", err)
+	}
+
+	var stored entity.MemoryTask
+	if err = db.First(&stored, "task_id = ?", memoryTask.TaskID).Error; err != nil {
+		t.Fatalf("load memory task: %v", err)
+	}
+	if stored.State != entity.MemoryTaskStatePending {
+		t.Fatalf("memory task state = %q, want %q", stored.State, entity.MemoryTaskStatePending)
+	}
+	if got := stored.Input["user_input"]; got != "remember this" {
+		t.Fatalf("memory task input user_input = %#v, want %q", got, "remember this")
+	}
+	if len(stored.Extraction) != 1 {
+		t.Fatalf("memory task extraction length = %d, want 1", len(stored.Extraction))
 	}
 
 	// Verify idempotency
