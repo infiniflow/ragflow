@@ -174,9 +174,9 @@ func TestMemoryTaskDAOCheckpointAndComplete(t *testing.T) {
 	}
 }
 
-// TestMemoryTaskDAOCompleteRollsBackWithoutGenericTask verifies completion
-// cannot commit only one side of the final transaction.
-func TestMemoryTaskDAOCompleteRollsBackWithoutGenericTask(t *testing.T) {
+// TestMemoryTaskDAOCompleteWithoutGenericTask verifies a missing optional UI
+// projection does not roll back the authoritative durable completion state.
+func TestMemoryTaskDAOCompleteWithoutGenericTask(t *testing.T) {
 	db := setupMemoryTaskTestDB(t)
 	dao := NewMemoryTaskDAO()
 	_, memoryTask := newMemoryTaskPair("task-1")
@@ -189,15 +189,15 @@ func TestMemoryTaskDAOCompleteRollsBackWithoutGenericTask(t *testing.T) {
 	}
 
 	completed, err := dao.Complete(t.Context(), db, memoryTask.TaskID, "worker-1", "complete", expiresAt.Add(-time.Second))
-	if err == nil || completed {
-		t.Fatalf("Complete completed=%v err=%v, want missing generic task error", completed, err)
+	if err != nil || !completed {
+		t.Fatalf("Complete completed=%v err=%v, want completed", completed, err)
 	}
 	stored, getErr := dao.GetByID(t.Context(), db, memoryTask.TaskID)
 	if getErr != nil {
 		t.Fatalf("GetByID: %v", getErr)
 	}
-	if stored.State != entity.MemoryTaskStateStored || stored.LeaseOwner != "worker-1" {
-		t.Fatalf("memory task after rollback = %+v, want stored with original lease", stored)
+	if stored.State != entity.MemoryTaskStateCompleted || stored.LeaseOwner != "" || stored.LeaseExpiresAt != nil {
+		t.Fatalf("completed memory task = %+v", stored)
 	}
 }
 

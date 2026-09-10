@@ -425,7 +425,8 @@ func materializeMemoryExtraction(ctx context.Context, extracted []extractedMemor
 	for i, item := range extracted {
 		item.MessageID = generateRawMessageID(ctx)
 		item.ValidAt = formatMemoryTime(item.ValidAt, now)
-		if strings.TrimSpace(item.InvalidAt) != "" {
+		item.InvalidAt = strings.TrimSpace(item.InvalidAt)
+		if item.InvalidAt != "" {
 			item.InvalidAt = formatMemoryTime(item.InvalidAt, now)
 		}
 		materialized[i] = item

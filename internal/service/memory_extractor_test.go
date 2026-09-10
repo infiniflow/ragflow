@@ -20,6 +20,7 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -98,6 +99,16 @@ func TestBuildExtractedMessageValidAtSemantics(t *testing.T) {
 	fallbackOnly := buildExtractedMessage(42, "mem-1", msg, materialized[0])
 	if got := fallbackOnly["valid_at"]; got != now.Format(memoryTimeLayout) {
 		t.Fatalf("valid_at = %v, want fallback %q", got, now.Format(memoryTimeLayout))
+	}
+
+	materialized = materializeMemoryExtraction(t.Context(), []extractedMemory{{
+		MessageType: "fact",
+		Content:     "likes coffee",
+		InvalidAt:   "   ",
+	}}, now)
+	blankInvalidAt := buildExtractedMessage(42, "mem-1", msg, materialized[0])
+	if got := blankInvalidAt["invalid_at"]; got != nil {
+		t.Fatalf("invalid_at = %#v, want nil for whitespace-only input", got)
 	}
 }
 
@@ -191,10 +202,9 @@ func TestHandleSaveToMemoryTaskResumesStoredCheckpoint(t *testing.T) {
 	}
 }
 
-// TestHandleSaveToMemoryTaskSchedulesRetryFromStoredCheckpoint verifies a
-// completion write failure preserves the stored checkpoint and is durably
-// scheduled before the current delivery is acknowledged.
-func TestHandleSaveToMemoryTaskSchedulesRetryFromStoredCheckpoint(t *testing.T) {
+// TestPersistMemoryTaskFailureSchedulesRetry verifies a transient execution
+// failure is durably scheduled before the current delivery is acknowledged.
+func TestPersistMemoryTaskFailureSchedulesRetry(t *testing.T) {
 	now := time.Date(2026, 8, 20, 10, 5, 0, 0, time.UTC)
 	pinMemoryNow(t, now)
 	db := testutil.SetupTestDB(t, &entity.Task{}, &entity.MemoryTask{})
@@ -206,22 +216,26 @@ func TestHandleSaveToMemoryTaskSchedulesRetryFromStoredCheckpoint(t *testing.T) 
 		MemoryID: "memory-1",
 		SourceID: 42,
 		Input:    entity.JSONMap{},
-		State:    entity.MemoryTaskStateStored,
+		State:    entity.MemoryTaskStatePending,
 	}).Error; err != nil {
 		t.Fatalf("create memory task: %v", err)
 	}
 
 	svc := NewMemoryMessageService(nil)
-	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "task-retry", "worker-1")
+	claimed, acquired, err := svc.memoryTaskDAO.Claim(t.Context(), db, "task-retry", "worker-1", now, memoryTaskLeaseTTL)
+	if err != nil || !acquired {
+		t.Fatalf("Claim acquired=%v err=%v, want acquired", acquired, err)
+	}
+	disposition, err := svc.persistMemoryTaskFailure(t.Context(), claimed, "worker-1", errors.New("temporary failure"))
 	if err == nil || disposition != MemoryTaskAcknowledge {
-		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v, want acknowledged failure", disposition, err)
+		t.Fatalf("persistMemoryTaskFailure disposition=%v err=%v, want acknowledged failure", disposition, err)
 	}
 	stored, err := svc.memoryTaskDAO.GetByID(t.Context(), db, "task-retry")
 	if err != nil {
 		t.Fatalf("load memory task: %v", err)
 	}
-	if stored.State != entity.MemoryTaskStateStored {
-		t.Fatalf("memory task state = %q, want stored", stored.State)
+	if stored.State != entity.MemoryTaskStatePending {
+		t.Fatalf("memory task state = %q, want pending", stored.State)
 	}
 	wantRetryAt := now.Add(memoryTaskRetryInitialDelay)
 	if stored.NextRetryAt == nil || !stored.NextRetryAt.Equal(wantRetryAt) {

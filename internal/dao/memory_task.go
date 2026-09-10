@@ -19,7 +19,6 @@ package dao
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"ragflow/internal/entity"
@@ -216,7 +215,7 @@ func (d *MemoryTaskDAO) MarkFailed(ctx context.Context, db *gorm.DB, taskID, own
 }
 
 // Complete atomically advances a leased stored task to completed and updates
-// the generic task progress projection.
+// the generic task progress projection when it still exists.
 func (d *MemoryTaskDAO) Complete(ctx context.Context, db *gorm.DB, taskID, owner, progressMsg string, now time.Time) (bool, error) {
 	if db == nil {
 		return false, errors.New("memory task: nil database")
@@ -248,9 +247,6 @@ func (d *MemoryTaskDAO) Complete(ctx context.Context, db *gorm.DB, taskID, owner
 		})
 		if progress.Error != nil {
 			return progress.Error
-		}
-		if progress.RowsAffected != 1 {
-			return fmt.Errorf("memory task: generic task %s not found", taskID)
 		}
 		completed = true
 		return nil
