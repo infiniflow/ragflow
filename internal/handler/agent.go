@@ -1260,11 +1260,15 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		}
 	}
 
-	// Real canvas run — derive userInput from `query` first, then fall
-	// back to the last user message (covers the front-end that posts
-	// running_hint_text without a top-level `query`).
-	var userInput any = req.Query
-	if req.Query == "" {
+	// Real canvas run. The editor sends the conversational query alongside
+	// named Begin inputs; preserve both so a custom Starter field cannot be
+	// replaced by sys.query before it reaches the runtime.
+	var userInput any
+	if req.Query != "" && len(req.Inputs) > 0 {
+		userInput = extractUserInputWithQuery(req.Inputs, req.Query)
+	} else if req.Query != "" {
+		userInput = req.Query
+	} else {
 		if extracted := extractUserInputFromFormInputs(req.Inputs); extracted != nil {
 			userInput = extracted
 		} else if extracted := extractLastUserContent(req.Messages); extracted != "" {
@@ -1473,6 +1477,21 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		"session_id": finalAns.SessionID,
 	}
 	common.SuccessWithData(c, result, "success")
+}
+
+func extractUserInputWithQuery(inputs map[string]interface{}, query string) map[string]any {
+	values := make(map[string]any, len(inputs)+1)
+	for name, raw := range inputs {
+		if field, ok := raw.(map[string]interface{}); ok {
+			if value, exists := field["value"]; exists {
+				values[name] = value
+				continue
+			}
+		}
+		values[name] = raw
+	}
+	values["query"] = query
+	return values
 }
 
 // RerunAgent POST /api/v1/agents/rerun — requires id, dsl, and

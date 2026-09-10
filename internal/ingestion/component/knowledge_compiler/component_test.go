@@ -211,36 +211,22 @@ func TestKnowledgeCompiler_Structure_EndToEnd(t *testing.T) {
 	if !ok {
 		t.Fatalf("chunks = %T, want []any", out["chunks"])
 	}
-	// 2 input chunks + 3 entities + 2 relations + 1 graph = 8 total (the
+	// 2 input chunks + 3 entities + 2 relations = 7 total (the
 	// compiled knowledge units are merged into the upstream input chunks).
-	if len(chunks) != 8 {
-		t.Fatalf("len(chunks) = %d, want 8 (2 input + 3 entities + 2 relations + 1 graph)", len(chunks))
+	if len(chunks) != 7 {
+		t.Fatalf("len(chunks) = %d, want 7 (2 input + 3 entities + 2 relations)", len(chunks))
 	}
 
-	// Exactly one graph product, parseable to {entities, relations} (mirrors
-	// Python's _struct_rebuild_graph_json).
-	var graph map[string]any
+	// Entity and relation products are emitted individually, without an
+	// additional graph-summary chunk.
 	for _, c := range chunks {
 		cm, ok := c.(map[string]any)
 		if !ok {
 			continue
 		}
 		if kind, _ := cm["kc_kind"].(string); kind == "graph" {
-			if err := json.Unmarshal([]byte(cm["text"].(string)), &graph); err != nil {
-				t.Fatalf("unmarshal graph: %v", err)
-			}
+			t.Fatal("graph chunk emitted")
 		}
-	}
-	if graph == nil {
-		t.Fatal("no graph chunk emitted")
-	}
-	entities, _ := graph["entities"].([]any)
-	relations, _ := graph["relations"].([]any)
-	if len(entities) != 3 {
-		t.Fatalf("graph entities = %d, want 3 (Alpha/Beta/Gamma)", len(entities))
-	}
-	if len(relations) != 2 {
-		t.Fatalf("graph relations = %d, want 2", len(relations))
 	}
 }
 
@@ -644,8 +630,8 @@ func TestKnowledgeCompiler_EmitsChunks(t *testing.T) {
 			}
 		}
 	}
-	if compiled != 6 {
-		t.Fatalf("compiled structure chunks = %d, want 6 (3 entities + 2 relations + 1 graph)", compiled)
+	if compiled != 5 {
+		t.Fatalf("compiled structure chunks = %d, want 5 (3 entities + 2 relations)", compiled)
 	}
 }
 
