@@ -14,19 +14,52 @@
 #  limitations under the License.
 #
 import json
+import os
 from abc import ABC
+
 import pandas as pd
 import requests
-from agent.component.base import ComponentBase, ComponentParamBase
+
+from agent.tools.base import ToolBase, ToolMeta, ToolParamBase
+from common.connection_utils import timeout
 from common.http_client import DEFAULT_TIMEOUT
 
 
-class Jin10Param(ComponentParamBase):
+class Jin10Param(ToolParamBase):
     """
     Define the Jin10 component parameters.
     """
 
     def __init__(self):
+        self.meta: ToolMeta = {
+            "name": "jin10_financial_data",
+            "description": (
+                "Jin10 is a real-time financial news and data feed covering flash news, "
+                "economic calendars, commodity / forex / crypto / futures quotes, and curated "
+                "news headlines. Use the 'type' field to choose what to fetch: 'flash' for "
+                "breaking news, 'calendar' for upcoming economic events, 'symbols' for "
+                "commodity / forex / crypto / futures quotes, 'news' for the curated news feed. "
+                "The 'query' argument is the optional user message; the filter / contain fields "
+                "on the tool config are used to narrow the result set."
+            ),
+            "parameters": {
+                "query": {
+                    "type": "string",
+                    "description": "Optional free-form text. Used as the placeholder so the tool "
+                    "shows up in the agent's tool list; the actual filtering is done via the "
+                    "tool's `contain` / `filter` config fields.",
+                    "default": "{sys.query}",
+                    "required": False,
+                },
+                "type": {
+                    "type": "string",
+                    "description": "Which Jin10 data feed to fetch.",
+                    "enum": ["flash", "calendar", "symbols", "news"],
+                    "default": "flash",
+                    "required": False,
+                },
+            },
+        }
         super().__init__()
         self.type = "flash"
         self.secret_key = "xxx"
@@ -46,18 +79,17 @@ class Jin10Param(ComponentParamBase):
         self.check_valid_value(self.symbols_type, "Symbols Type", ["GOODS", "FOREX", "FUTURE", "CRYPTO"])
         self.check_valid_value(self.symbols_datatype, "Symbols DataType", ["symbols", "quotes"])
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {"query": {"name": "Query", "type": "line"}}
 
-class Jin10(ComponentBase, ABC):
+
+class Jin10(ToolBase, ABC):
     component_name = "Jin10"
 
-    def _run(self, history, **kwargs):
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
+    def _invoke(self, **kwargs):
         if self.check_if_canceled("Jin10 processing"):
             return
-
-        ans = self.get_input()
-        ans = " - ".join(ans["content"]) if "content" in ans else ""
-        if not ans:
-            return Jin10.be_output("")
 
         jin10_res = []
         headers = {"secret-key": self._param.secret_key}
@@ -66,8 +98,17 @@ class Jin10(ComponentBase, ABC):
                 return
 
             if self._param.type == "flash":
-                params = {"category": self._param.flash_type, "contain": self._param.contain, "filter": self._param.filter}
-                response = requests.get(url="https://open-data-api.jin10.com/data-api/flash?category=" + self._param.flash_type, headers=headers, data=json.dumps(params), timeout=DEFAULT_TIMEOUT)
+                params = {
+                    "category": self._param.flash_type,
+                    "contain": self._param.contain,
+                    "filter": self._param.filter,
+                }
+                response = requests.get(
+                    url="https://open-data-api.jin10.com/data-api/flash?category=" + self._param.flash_type,
+                    headers=headers,
+                    data=json.dumps(params),
+                    timeout=DEFAULT_TIMEOUT,
+                )
                 response = response.json()
                 for i in response["data"]:
                     if self.check_if_canceled("Jin10 processing"):
@@ -126,7 +167,12 @@ class Jin10(ComponentBase, ABC):
                 jin10_res.append({"content": pd.DataFrame(response["data"]).to_markdown()})
             if self._param.type == "news":
                 params = {"contain": self._param.contain, "filter": self._param.filter}
-                response = requests.get(url="https://open-data-api.jin10.com/data-api/news", headers=headers, data=json.dumps(params), timeout=DEFAULT_TIMEOUT)
+                response = requests.get(
+                    url="https://open-data-api.jin10.com/data-api/news",
+                    headers=headers,
+                    data=json.dumps(params),
+                    timeout=DEFAULT_TIMEOUT,
+                )
                 response = response.json()
                 if self.check_if_canceled("Jin10 processing"):
                     return
@@ -134,9 +180,14 @@ class Jin10(ComponentBase, ABC):
         except Exception as e:
             if self.check_if_canceled("Jin10 processing"):
                 return
-            return Jin10.be_output("**ERROR**: " + str(e))
+            self.set_output("_ERROR", str(e))
+            return "**ERROR**: " + str(e)
 
         if not jin10_res:
-            return Jin10.be_output("")
+            self.set_output("formalized_content", "")
+            return ""
 
-        return pd.DataFrame(jin10_res)
+        df = pd.DataFrame(jin10_res)
+        self.set_output("json", df.to_dict(orient="records"))
+        self.set_output("formalized_content", df.to_markdown())
+        return self.output("formalized_content")
