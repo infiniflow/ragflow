@@ -1,7 +1,7 @@
 import { IngestionTaskStatus, RunningStatus } from './constant';
 import type { IDocumentInfo } from '@/interfaces/database/document';
 
-type DocumentStatus = Pick<IDocumentInfo, 'run' | 'ingestion_status'>;
+export type DocumentStatus = Pick<IDocumentInfo, 'run' | 'ingestion_status'>;
 
 export const isParserRunning = (text: RunningStatus) => {
   const isRunning = text === RunningStatus.RUNNING;

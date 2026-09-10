@@ -1,4 +1,3 @@
-import { IconFontFill } from '@/components/icon-font';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
@@ -6,42 +5,19 @@ import { IDocumentInfo } from '@/interfaces/database/document';
 import { CircleQuestionMark, CircleX, Clock3 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DocumentType, IngestionTaskStatus, RunningStatus } from './constant';
-import { isDocumentProcessing } from './document-status.go';
+import { DocumentType } from './constant';
+import {
+  isDocumentProcessing,
+  isDocumentQueued,
+  isDocumentStopping,
+} from './document-status.go';
 import { ParsingCard } from './parsing-card';
 import { ReparseDialog } from './reparse-dialog';
-import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
-
-const IconMap = {
-  [RunningStatus.UNSTART]: (
-    <IconFontFill name="play" className="text-accent-primary size-[1em]" />
-  ),
-  [RunningStatus.RUNNING]: (
-    <CircleX color="rgba(var(--state-error))" className="size-[1em]" />
-  ),
-  [RunningStatus.CANCEL]: (
-    <IconFontFill name="reparse" className="text-accent-primary" />
-  ),
-  [RunningStatus.DONE]: (
-    <IconFontFill name="reparse" className="text-accent-primary" />
-  ),
-  [RunningStatus.FAIL]: (
-    <IconFontFill name="reparse" className="text-accent-primary" />
-  ),
-  [RunningStatus.SCHEDULE]: (
-    <IconFontFill name="reparse" className="text-accent-primary" />
-  ),
-};
-
-const ParseStatusStateMap = {
-  [RunningStatus.UNSTART]: 'unstart',
-  [RunningStatus.RUNNING]: 'running',
-  [RunningStatus.CANCEL]: 'cancel',
-  [RunningStatus.DONE]: 'success',
-  [RunningStatus.FAIL]: 'fail',
-  [RunningStatus.SCHEDULE]: 'running',
-} as const;
+import {
+  ParseStatusStateMap,
+  StatusOperationIcon,
+} from './parsing-status-icons';
 
 export function ParsingStatusCellGo({
   record,
@@ -49,10 +25,10 @@ export function ParsingStatusCellGo({
 }: {
   record: IDocumentInfo;
   showLog: (record: IDocumentInfo) => void;
-} & UseChangeDocumentParserShowType) {
+}) {
   const { t } = useTranslation();
   const { run, progress, chunk_count, id } = record;
-  const operationIcon = IconMap[run];
+  const operationIcon = StatusOperationIcon[run];
   const p = Number((progress * 100).toFixed(2));
   const {
     handleRunDocumentByIds,
@@ -61,10 +37,8 @@ export function ParsingStatusCellGo({
     hideModal: hideReparseDialogModal,
   } = useHandleRunDocumentByIds(id);
   const isRunning = isDocumentProcessing(record);
-  const isQueued =
-    record.ingestion_status === IngestionTaskStatus.CREATED ||
-    record.ingestion_status === IngestionTaskStatus.SCHEDULED;
-  const isStopping = record.ingestion_status === IngestionTaskStatus.STOPPING;
+  const isQueued = isDocumentQueued(record);
+  const isStopping = isDocumentStopping(record);
   const isZeroChunk = chunk_count === 0;
 
   const handleOperationIconClick = (option?: {

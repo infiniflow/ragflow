@@ -59,7 +59,6 @@ describe('ParsingStatusCellGo', () => {
           ingestion_status: IngestionTaskStatus.RUNNING,
         },
         showLog: jest.fn(),
-        showChangeParserModal: jest.fn(),
       }),
     );
 
@@ -78,7 +77,6 @@ describe('ParsingStatusCellGo', () => {
           ingestion_status: IngestionTaskStatus.SCHEDULED,
         },
         showLog: jest.fn(),
-        showChangeParserModal: jest.fn(),
       }),
     );
 
@@ -99,7 +97,6 @@ describe('ParsingStatusCellGo', () => {
           ingestion_status: IngestionTaskStatus.STOPPING,
         },
         showLog: jest.fn(),
-        showChangeParserModal: jest.fn(),
       }),
     );
 

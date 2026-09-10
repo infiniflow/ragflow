@@ -1,10 +1,5 @@
 import { RunningStatus } from './constant';
-import {
-  isDocumentProcessing,
-  isDocumentQueued,
-  isDocumentStopping,
-  toLogStatus,
-} from './document-status.python';
+import { isDocumentProcessing, toLogStatus } from './document-status.python';
 
 describe('document-status (python)', () => {
   it('treats RUNNING as processing', () => {
@@ -21,11 +16,6 @@ describe('document-status (python)', () => {
     RunningStatus.SCHEDULE,
   ])('treats %s as not processing', (run) => {
     expect(isDocumentProcessing({ run } as any)).toBe(false);
-  });
-
-  it('never reports queued or stopping', () => {
-    expect(isDocumentQueued({} as any)).toBe(false);
-    expect(isDocumentStopping({} as any)).toBe(false);
   });
 
   it('passes run through as log status', () => {

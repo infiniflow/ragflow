@@ -55,7 +55,6 @@ describe('ParsingStatusCellPython', () => {
       React.createElement(ParsingStatusCellPython, {
         record: { ...baseRecord, run: RunningStatus.RUNNING },
         showLog: jest.fn(),
-        showChangeParserModal: jest.fn(),
       }),
     );
 
@@ -70,7 +69,6 @@ describe('ParsingStatusCellPython', () => {
       React.createElement(ParsingStatusCellPython, {
         record: { ...baseRecord, run: RunningStatus.DONE },
         showLog: jest.fn(),
-        showChangeParserModal: jest.fn(),
       }),
     );
 
@@ -88,7 +86,6 @@ describe('ParsingStatusCellPython', () => {
           ingestion_status: IngestionTaskStatus.RUNNING,
         },
         showLog: jest.fn(),
-        showChangeParserModal: jest.fn(),
       }),
     );
 
