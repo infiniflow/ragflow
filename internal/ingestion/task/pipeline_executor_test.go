@@ -697,10 +697,16 @@ func TestRecordPipelineLog_ReusesOpenEarlyRow(t *testing.T) {
 	}
 }
 
-func TestRecordPipelineLog_IgnoresStaleOpenRowFromDeletedTask(t *testing.T) {
+func TestRecordPipelineLog_ReusesOpenRowAfterTaskDeleted(t *testing.T) {
 	cleanup := setupPipelineExecutorTestDB(t)
 	defer cleanup()
 
+	// The task-deleting paths (Remove, rerun clear, delete-only ingest) drop
+	// the open early row, so a stale open row cannot survive to be adopted by
+	// a later run. This locks the other half of that contract: even if one
+	// did survive (e.g. a crash between the task delete and the log delete),
+	// the terminal writer still adopts it by document_id rather than leaving
+	// the run without a terminal entry.
 	staleMsg := "Task is queued..."
 	stale := &entity.PipelineOperationLog{
 		ID:              "stale-log",
@@ -714,14 +720,6 @@ func TestRecordPipelineLog_IgnoresStaleOpenRowFromDeletedTask(t *testing.T) {
 	}
 	if err := dao.DB.Create(stale).Error; err != nil {
 		t.Fatalf("seed stale log: %v", err)
-	}
-	var staleRow entity.PipelineOperationLog
-	if err := dao.DB.First(&staleRow, "id = ?", "stale-log").Error; err != nil {
-		t.Fatalf("load stale log: %v", err)
-	}
-	staleCreateTime := int64(0)
-	if staleRow.CreateTime != nil {
-		staleCreateTime = *staleRow.CreateTime
 	}
 
 	run := "3"
@@ -740,19 +738,6 @@ func TestRecordPipelineLog_IgnoresStaleOpenRowFromDeletedTask(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}
-	// The new run's task row is newer than the orphan left by the deleted
-	// task, so the terminal write must not adopt the stale row.
-	freshCreateTime := staleCreateTime + 1
-	if err := dao.DB.Create(&entity.IngestionTask{
-		ID:         "task-2",
-		UserID:     "user-1",
-		DocumentID: "doc-1",
-		DatasetID:  "kb-1",
-		Status:     "RUNNING",
-		BaseModel:  entity.BaseModel{CreateTime: &freshCreateTime},
-	}).Error; err != nil {
-		t.Fatalf("seed task: %v", err)
-	}
 
 	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
 		TenantID:   "tenant-1",
@@ -767,15 +752,15 @@ func TestRecordPipelineLog_IgnoresStaleOpenRowFromDeletedTask(t *testing.T) {
 	if err := dao.DB.First(&staleReload, "id = ?", "stale-log").Error; err != nil {
 		t.Fatalf("reload stale log: %v", err)
 	}
-	if staleReload.OperationStatus != "5" {
-		t.Fatalf("stale row OperationStatus = %q, want %q (must not be adopted)", staleReload.OperationStatus, "5")
+	if staleReload.OperationStatus != "3" {
+		t.Fatalf("stale row OperationStatus = %q, want %q (adopted as this run's row)", staleReload.OperationStatus, "3")
 	}
 	var count int64
 	if err := dao.DB.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", "doc-1").Count(&count).Error; err != nil {
 		t.Fatalf("count pipeline logs: %v", err)
 	}
-	if count != 2 {
-		t.Fatalf("pipeline log rows = %d, want 2 (stale row plus fresh terminal row)", count)
+	if count != 1 {
+		t.Fatalf("pipeline log rows = %d, want 1 (surviving open row is adopted, not duplicated)", count)
 	}
 }
 

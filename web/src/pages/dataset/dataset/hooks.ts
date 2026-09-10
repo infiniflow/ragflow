@@ -69,17 +69,23 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
   });
   const queuedProgressMsg = useMemo(() => {
     const logs = queuedLog?.logs ?? [];
-    const match =
-      logs.find((item) => item.document_id === sourceDoc?.id) ?? logs[0];
+    // No fallback to logs[0]: the query is a fuzzy name search, so the first
+    // row may belong to another document. A miss falls back to the document
+    // progress_msg below instead of showing someone else's log.
+    const match = logs.find((item) => item.document_id === sourceDoc?.id);
     return match?.progress_msg;
   }, [queuedLog, sourceDoc?.id]);
+  // The queued fallback is only meaningful while the document is still
+  // queued. Once it starts running, the query cache may still hold the stale
+  // "Task is queued..." message and would shadow the live progress below.
+  const effectiveQueuedProgressMsg = queued ? queuedProgressMsg : undefined;
 
   const logInfo = useMemo(() => {
     const source = sourceDoc;
     let log: ILogInfo = {
       taskId: source?.id,
       fileName: source?.name || '-',
-      details: queuedProgressMsg || source?.progress_msg || '-',
+      details: effectiveQueuedProgressMsg || source?.progress_msg || '-',
     };
     if (source) {
       log = {
@@ -99,11 +105,11 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
             : (source.run as RunningStatus),
           python: source.run as RunningStatus,
         }),
-        details: queuedProgressMsg || source.progress_msg,
+        details: effectiveQueuedProgressMsg || source.progress_msg,
       };
     }
     return log;
-  }, [sourceDoc, queuedProgressMsg]);
+  }, [sourceDoc, effectiveQueuedProgressMsg]);
   const showLog = useCallback(
     (data: IDocumentInfo) => {
       setRecord(data);

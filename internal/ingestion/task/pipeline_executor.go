@@ -846,21 +846,10 @@ func recordPipelineLog(
 // reuseOpenLogRow advances the open row belonging to this run to its terminal
 // state, filling in the DSL, the pipeline identity, and the final progress
 // snapshot. It reports whether a row was reused; false means the caller must
-// Create a new row. The create_time lower bound (the ingestion task row for
-// this run, when resolvable) keeps a stale open row left by a deleted task
-// from being adopted by a later run; the CAS on operation_status keeps a
-// concurrent retry's fresh queued row from being overwritten by this run's
-// terminal write.
+// Create a new row. The CAS on operation_status keeps a concurrent retry's
+// fresh queued row from being overwritten by this run's terminal write.
 func reuseOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, operationStatus, statusValue string, pipelineID *string, pipelineTitle string, pipelineAvatar *string, dslMap entity.JSONMap, doc entity.Document) (bool, error) {
-	var since int64
-	if task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, db, input.DocumentID); err != nil {
-		common.Warn(fmt.Sprintf("reuse open pipeline log: load task for document %s: %v", input.DocumentID, err))
-	} else if task != nil && task.CreateTime != nil {
-		since = *task.CreateTime
-	}
-	var open *entity.PipelineOperationLog
-	openDAO := dao.NewPipelineOperationLogDAO()
-	open, err := openDAO.GetOpenLogByDocumentIDSince(ctx, db, input.DocumentID, since)
+	open, err := dao.NewPipelineOperationLogDAO().GetOpenLogByDocumentID(ctx, db, input.DocumentID)
 	if err != nil {
 		return false, err
 	}
@@ -884,7 +873,7 @@ func reuseOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, o
 		updates["document_name"] = *doc.Name
 	}
 	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("id = ? AND operation_status IN ?", open.ID, dao.OpenPipelineOperationStatuses()).
+		Where("id = ? AND operation_status IN ?", open.ID, dao.OpenPipelineOperationStatuses).
 		Updates(updates)
 	if result.Error != nil {
 		return false, result.Error

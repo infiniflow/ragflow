@@ -85,6 +85,18 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 		return nil, fmt.Errorf("no documents to parse")
 	}
 
+	// The knowledge base row is identical for every document in the batch;
+	// resolve it once so the early-log bookkeeping below does not re-read it
+	// per document.
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
+	if err != nil {
+		return nil, fmt.Errorf("get knowledgebase %s: %w", datasetID, err)
+	}
+	if kb == nil {
+		return nil, fmt.Errorf("knowledgebase %s not found", datasetID)
+	}
+	kbCache := map[string]*entity.Knowledgebase{datasetID: kb}
+
 	responses := make([]*ParseDocumentResponse, 0, len(uniqueDocIDs))
 	for _, docID := range uniqueDocIDs {
 		doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
@@ -110,7 +122,7 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 			Schema:     nil,
 			Status:     common.CREATED,
 		}
-		task, err = s.CreateAndEnqueue(ctx, task)
+		task, err = s.createAndEnqueueWithKBCache(ctx, task, kbCache)
 		if err != nil {
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
@@ -414,6 +426,13 @@ func (s *IngestionTaskService) transition(ctx context.Context, taskID string, to
 }
 
 func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entity.IngestionTask) (*entity.IngestionTask, error) {
+	return s.createAndEnqueueWithKBCache(ctx, task, nil)
+}
+
+// createAndEnqueueWithKBCache is CreateAndEnqueue with an optional
+// knowledge-base cache for batch callers (CreateForDocuments resolves one kb
+// for the whole batch). A nil cache behaves exactly like CreateAndEnqueue.
+func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, task *entity.IngestionTask, kbCache map[string]*entity.Knowledgebase) (*entity.IngestionTask, error) {
 	existing, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, task.DocumentID)
 	if err != nil {
 		return nil, err
@@ -424,7 +443,7 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 			// An existing CREATED task may already carry a queued row from
 			// before a crash; ensure one exists without duplicating it, then
 			// advance it through the schedule transition below.
-			s.createEarlyLogBestEffort(ctx, existing)
+			s.createEarlyLogBestEffort(ctx, existing, string(entity.TaskStatusUnstart), "Task is queued...", kbCache)
 			if err = s.enqueueTask(existing.ID); err != nil {
 				return nil, err
 			}
@@ -443,7 +462,7 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 			// A retry starts a fresh pipeline-operation-log row: the prior
 			// run's row is terminal and GetOpenLogByDocumentID no longer
 			// matches it, so this Create always opens a new row.
-			s.createEarlyLogBestEffort(ctx, existing)
+			s.createEarlyLogBestEffort(ctx, existing, string(entity.TaskStatusUnstart), "Task is queued...", kbCache)
 			if err = s.enqueueTask(existing.ID); err != nil {
 				s.deleteEarlyLogBestEffort(ctx, existing.DocumentID)
 				if rollbackErr := s.rollbackRetriedTask(ctx, existing.ID, originalStatus); rollbackErr != nil {
@@ -461,16 +480,23 @@ func (s *IngestionTaskService) CreateAndEnqueue(ctx context.Context, task *entit
 	if err != nil {
 		return nil, err
 	}
-	// Open the pre-terminal row the dataset detail page reads. The prior run
-	// (if any) is terminal, so no open row exists and this never duplicates.
-	s.createEarlyLogBestEffort(ctx, created)
+	// Publish first: the worker (or request stop) can only observe the task
+	// once the message is out, and the early-log write below deliberately
+	// lags so the queued entry never appears before the task is dispatchable.
+	// A worker that wins the race lands the task in RUNNING; the terminal
+	// writer then Creates its row (no open row yet), which the late
+	// markScheduled write must not regress (see below).
 	if err = s.enqueueTask(created.ID); err != nil {
-		s.deleteEarlyLogBestEffort(ctx, created.DocumentID)
 		if rollbackErr := s.rollbackCreatedTask(ctx, created.ID); rollbackErr != nil {
 			return nil, fmt.Errorf("enqueue task %s: %w (rollback failed: %w)", created.ID, err, rollbackErr)
 		}
 		return nil, err
 	}
+	// Open the pre-terminal row the dataset detail page reads. The prior run
+	// (if any) is terminal, so no open row exists and this never duplicates.
+	// Best-effort: on a DB blip the row is simply missing and the
+	// markScheduled fallback below re-opens it at "5".
+	s.createEarlyLogBestEffort(ctx, created, string(entity.TaskStatusUnstart), "Task is queued...", kbCache)
 	return s.markScheduledAfterPublish(ctx, created.ID)
 }
 
@@ -492,7 +518,9 @@ func (s *IngestionTaskService) rollbackCreatedTask(ctx context.Context, taskID s
 
 // markScheduledAfterPublish records a successful NATS publish. A worker can
 // claim the CREATED task before this write and move it to RUNNING, which is
-// also a successful outcome.
+// also a successful outcome. The early-log write below is idempotent in the
+// forward direction only: it advances 0->5 and never regresses a row that is
+// already RUNNING (a worker that won the publish race).
 func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
 	updated, err := s.ingestionTaskDAO.UpdateStatusIfCurrent(ctx, dao.DB, taskID, common.CREATED, common.SCHEDULED)
 	if err != nil {
@@ -503,7 +531,9 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 		if err != nil {
 			return nil, err
 		}
-		s.advanceOrCreateEarlyLogBestEffort(ctx, task.DocumentID, string(entity.TaskStatusSchedule), "Task is queued...")
+		if !s.advanceOrCreateEarlyLogBestEffort(ctx, task.DocumentID, string(entity.TaskStatusSchedule), "Task is queued...") {
+			s.reconcileScheduledEarlyLog(ctx, task)
+		}
 		return task, nil
 	}
 
@@ -517,6 +547,31 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 	default:
 		return nil, s.newTaskStatusConflictError(ctx, taskID, common.CREATED, common.SCHEDULED)
 	}
+}
+
+// reconcileScheduledEarlyLog repairs the early-log row after a
+// CREATED->SCHEDULED transition whose advance/create write did not durably
+// record "5". Advance-returns-false happens in two cases: (a) a worker won
+// the publish race and the task is already RUNNING — in that case the row is
+// either already "1" (nothing to do) or the worker's terminal writer has not
+// run yet (its CAS will pick the row up); or (b) the row is genuinely missing
+// (a DB blip dropped both the CREATED create and the SCHEDULED advance).
+// Case (b) is repaired by re-opening the row at "5"; case (a) must never
+// regress a "1" row back to "5", so the repair only fires when no open row
+// exists at all.
+func (s *IngestionTaskService) reconcileScheduledEarlyLog(ctx context.Context, task *entity.IngestionTask) {
+	if task == nil || s.pipelineLogDAO == nil {
+		return
+	}
+	open, err := s.pipelineLogDAO.GetOpenLogByDocumentID(ctx, dao.DB, task.DocumentID)
+	if err != nil {
+		common.Warn(fmt.Sprintf("reconcile scheduled early log for document %s: %v", task.DocumentID, err))
+		return
+	}
+	if open != nil {
+		return
+	}
+	s.createEarlyLogBestEffort(ctx, task, string(entity.TaskStatusSchedule), "Task is queued...", nil)
 }
 
 // ScheduleCreatedTasks publishes the tasks that were persisted before a
@@ -566,8 +621,11 @@ func (s *IngestionTaskService) enqueueTask(taskID string) error {
 // the dataset detail page reads. All writes here are best-effort: a DB blip
 // must not fail task creation or enqueue and trigger a redelivery loop. When
 // an open row already exists (enqueue retry of an existing CREATED task), it
-// is left untouched so a run never owns two queued rows.
-func (s *IngestionTaskService) createEarlyLogBestEffort(ctx context.Context, task *entity.IngestionTask) {
+// is left untouched so a run never owns two queued rows. The caller passes
+// the status/message the row should carry so a late-created row (e.g. the
+// SCHEDULED fallback, or a DB blip during the CREATED write) does not regress
+// to an older status.
+func (s *IngestionTaskService) createEarlyLogBestEffort(ctx context.Context, task *entity.IngestionTask, operationStatus, progressMsg string, kbCache map[string]*entity.Knowledgebase) {
 	if task == nil || s.pipelineLogDAO == nil {
 		return
 	}
@@ -579,7 +637,7 @@ func (s *IngestionTaskService) createEarlyLogBestEffort(ctx context.Context, tas
 	if open != nil {
 		return
 	}
-	input, err := s.buildEarlyLogInput(ctx, task)
+	input, err := s.buildEarlyLogInput(ctx, task, operationStatus, progressMsg, kbCache)
 	if err != nil {
 		common.Warn(fmt.Sprintf("CreateAndEnqueue: build early pipeline log for document %s: %v", task.DocumentID, err))
 		return
@@ -603,27 +661,31 @@ func (s *IngestionTaskService) advanceEarlyLogBestEffort(ctx context.Context, do
 
 // advanceOrCreateEarlyLogBestEffort advances the open row when one exists and
 // opens a fresh row otherwise. Used by the SCHEDULED transition, which is the
-// funnel for recovered tasks whose queued row may predate the crash.
-func (s *IngestionTaskService) advanceOrCreateEarlyLogBestEffort(ctx context.Context, documentID, operationStatus, progressMsg string) {
+// funnel for recovered tasks whose queued row may predate the crash. The
+// returned bool reports whether the row was advanced in place (true) or a
+// fresh row had to be opened / nothing could be done (false); callers use it
+// to decide whether the status was durably recorded.
+func (s *IngestionTaskService) advanceOrCreateEarlyLogBestEffort(ctx context.Context, documentID, operationStatus, progressMsg string) bool {
 	if documentID == "" || s.pipelineLogDAO == nil {
-		return
+		return false
 	}
 	advanced, err := s.pipelineLogDAO.AdvanceEarlyLog(ctx, dao.DB, documentID, operationStatus, progressMsg)
 	if err != nil {
 		common.Warn(fmt.Sprintf("advance early pipeline log for document %s to %s: %v", documentID, operationStatus, err))
-		return
+		return false
 	}
 	if advanced {
-		return
+		return true
 	}
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, documentID)
 	if err != nil || task == nil {
 		if err != nil {
 			common.Warn(fmt.Sprintf("advance early pipeline log: load task for document %s: %v", documentID, err))
 		}
-		return
+		return false
 	}
-	s.createEarlyLogBestEffort(ctx, task)
+	s.createEarlyLogBestEffort(ctx, task, operationStatus, progressMsg, nil)
+	return false
 }
 
 // deleteEarlyLogBestEffort removes the open rows for a document. Used when
@@ -642,7 +704,9 @@ func (s *IngestionTaskService) deleteEarlyLogBestEffort(ctx context.Context, doc
 // the document and its knowledge base. It mirrors the identity resolution in
 // the terminal writer (parser_id fallback title, canvas title/avatar override,
 // source_from prefix) but leaves DSL and progress for the terminal write.
-func (s *IngestionTaskService) buildEarlyLogInput(ctx context.Context, task *entity.IngestionTask) (dao.EarlyLogInput, error) {
+// The caller supplies the status/message so a row created late (e.g. the
+// SCHEDULED fallback path) carries the current status, not UNSTART.
+func (s *IngestionTaskService) buildEarlyLogInput(ctx context.Context, task *entity.IngestionTask, operationStatus, progressMsg string, kbCache map[string]*entity.Knowledgebase) (dao.EarlyLogInput, error) {
 	var input dao.EarlyLogInput
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, task.DocumentID)
 	if err != nil {
@@ -655,12 +719,18 @@ func (s *IngestionTaskService) buildEarlyLogInput(ctx context.Context, task *ent
 	if kbID == "" {
 		kbID = doc.KbID
 	}
-	kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
-	if err != nil {
-		return input, err
-	}
+	kb := kbCache[kbID]
 	if kb == nil {
-		return input, fmt.Errorf("knowledgebase %s not found", kbID)
+		kb, err = s.kbDAO.GetByID(ctx, dao.DB, kbID)
+		if err != nil {
+			return input, err
+		}
+		if kb == nil {
+			return input, fmt.Errorf("knowledgebase %s not found", kbID)
+		}
+		if kbCache != nil {
+			kbCache[kbID] = kb
+		}
 	}
 	input = dao.EarlyLogInput{
 		DocumentID:      doc.ID,
@@ -669,8 +739,8 @@ func (s *IngestionTaskService) buildEarlyLogInput(ctx context.Context, task *ent
 		ParserID:        doc.ParserID,
 		DocumentSuffix:  doc.Suffix,
 		DocumentType:    doc.Type,
-		OperationStatus: string(entity.TaskStatusUnstart),
-		ProgressMsg:     "Task is queued...",
+		OperationStatus: operationStatus,
+		ProgressMsg:     progressMsg,
 		PipelineTitle:   doc.ParserID,
 		Avatar:          doc.Thumbnail,
 	}
