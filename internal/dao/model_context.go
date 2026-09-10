@@ -28,7 +28,7 @@ import (
 )
 
 // ResolveModelContentLength returns the chat model's effective context window
-// (content_length) in tokens for modelRef — a tenant_model UUID or a
+// (context_length) in tokens for modelRef — a tenant_model UUID or a
 // composite "model@provider" / "model@instance@provider" reference — or 0
 // when it cannot be resolved. tenantID scopes the composite-reference lookup
 // to the tenant's own provider/instance/model rows. driver and modelName are
@@ -41,7 +41,7 @@ import (
 //     carries a positive "max_tokens" override in its extra JSON, that custom
 //     context window wins and no catalog data is read.
 //  2. Only with no override, fall back to the provider catalog's
-//     content_length (via the tenant row, the composite reference parts, or
+//     context_length (via the tenant row, the composite reference parts, or
 //     the resolved driver + model name).
 //
 // This is the shared implementation behind the agent LLM component, the
@@ -63,25 +63,25 @@ func ResolveModelContentLength(ctx context.Context, db *gorm.DB, tenantID, model
 	}
 
 	// 2. Catalog fallbacks (only when there is no custom override).
-	// 2a. Active tenant row → its provider row → catalog content_length.
+	// 2a. Active tenant row → its provider row → catalog context_length.
 	if obj != nil && obj.Status == "active" {
 		if provider, err := NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
-			if mdl, err := GetModelProviderManager().GetModelByName(provider.ProviderName, obj.ModelName); err == nil && mdl.ContentLength != nil {
-				return *mdl.ContentLength
+			if mdl, err := GetModelProviderManager().GetModelByName(provider.ProviderName, obj.ModelName); err == nil && mdl.ContextLength != nil {
+				return *mdl.ContextLength
 			}
 		}
 	}
 	// 2b. Composite reference with no tenant row → catalog by reference parts.
 	if composite {
-		if mdl, err := GetModelProviderManager().GetModelByName(providerName, pureName); err == nil && mdl.ContentLength != nil {
-			return *mdl.ContentLength
+		if mdl, err := GetModelProviderManager().GetModelByName(providerName, pureName); err == nil && mdl.ContextLength != nil {
+			return *mdl.ContextLength
 		}
 	}
 	// 2c. Resolved driver + bare model name: fallback when modelRef is a
 	//     tenant id that could not be resolved without a database.
 	if driver != "" && modelName != "" {
-		if mdl, err := GetModelProviderManager().GetModelByName(driver, modelName); err == nil && mdl.ContentLength != nil {
-			return *mdl.ContentLength
+		if mdl, err := GetModelProviderManager().GetModelByName(driver, modelName); err == nil && mdl.ContextLength != nil {
+			return *mdl.ContextLength
 		}
 	}
 	return 0

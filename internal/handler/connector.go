@@ -36,7 +36,7 @@ import (
 type connectorServiceIface interface {
 	ListConnectors(ctx context.Context, userID string) (*service.ListConnectorsResponse, error)
 	CreateConnector(ctx context.Context, userID string, req *service.CreateConnectorRequest) (*entity.Connector, error)
-	GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, common.ErrorCode, error)
+	GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, error)
 	ListLog(ctx context.Context, connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
 	ListLogs(ctx context.Context, userID, datasetID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
 	DeleteConnector(ctx context.Context, connectorID, userID string) (bool, common.ErrorCode, error)
@@ -100,6 +100,8 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 	switch {
 	case err == nil:
 		return false
+	case errors.Is(err, service.ErrConnectorIDRequired):
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 	case errors.Is(err, service.ErrConnectorNoAuth):
 		common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 	case errors.Is(err, service.ErrConnectorNotFound):
@@ -130,9 +132,8 @@ func (h *ConnectorHandler) GetConnector(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
-	connector, code, err := h.connectorService.GetConnector(ctx, c.Param("connector_id"), user.ID)
-	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+	connector, err := h.connectorService.GetConnector(ctx, c.Param("connector_id"), user.ID)
+	if connectorErrorResponse(c, err) {
 		return
 	}
 

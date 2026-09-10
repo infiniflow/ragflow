@@ -388,7 +388,7 @@ export default {
       action: 'Action',
       parsingStatus: "Statut d'analyse",
       parsingStatusTip:
-        "Le temps d'analyse dépend de plusieurs facteurs. L'activation de fonctions comme le Graphe de connaissances, RAPTOR, l'extraction automatique de mots-clés ou de questions peut considérablement augmenter ce temps. Si la barre de progression reste bloquée, veuillez consulter ces deux FAQ : https: //ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.",
+        "Le temps d'analyse dépend de plusieurs facteurs. L'activation de fonctions comme le Graphe de connaissances, RAPTOR, l'extraction automatique de mots-clés ou de questions peut considérablement augmenter ce temps. Si la barre de progression reste bloquée, veuillez consulter ces deux FAQ : https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.",
       processBeginAt: 'Commencé à',
       processDuration: 'Durée',
       progressMsg: 'Progression',
@@ -396,7 +396,7 @@ export default {
         'Effectuez un test de récupération pour vérifier si RAGFlow peut retrouver le contenu pertinent pour le LLM. Si vous avez modifié les paramètres par défaut, comme le poids de similarité ou le seuil de similarité, ces changements ne seront pas automatiquement sauvegardés. Vous devez les appliquer dans les paramètres de votre assistant de chat ou dans le composant agent de récupération.',
       similarityThreshold: 'Seuil de similarité',
       similarityThresholdTip:
-        'RAGFlow utilise une combinaison de similarité par mots-clés pondérée et de similarité cosinus vectorielle, ou bien un score de réordonnancement pondéré. Ce paramètre fixe le seuil en dessous duquel un segment est exclu. Par défaut, le seuil est 0.2 (soit 20%).',
+        'RAGFlow utilise une combinaison de similarité par mots-clés pondérée et de similarité cosinus vectorielle, ou bien un score de réordonnancement pondéré. Ce paramètre fixe le seuil en dessous duquel un segment est exclu. Par défaut, le seuil est 20 (soit 20%).',
       vectorSimilarityWeight: 'Poids de similarité des mots-clés',
       vectorSimilarityWeightTip:
         "Définit l'importance de la similarité par mots-clés dans le score global. Le total des poids doit être de 1.0.",
@@ -416,6 +416,7 @@ export default {
       runningStatus2: 'ANNULÉ',
       runningStatus3: 'SUCCÈS',
       runningStatus4: 'ÉCHEC',
+      runningStatusQueued: 'En attente',
       pageRanges: 'Plages de pages',
       pageRangesTip:
         'Les pages en dehors de cette plage ne seront pas traitées.',
@@ -455,7 +456,7 @@ export default {
         'Utilisé avec la méthode "générale". Si désactivé, les tableaux sont convertis en paires clé-valeur. Sinon, ils deviennent des tableaux HTML divisés toutes les 12 lignes.',
       autoKeywords: 'Mots-clés automatiques',
       autoKeywordsTip:
-        'Extrait automatiquement N mots-clés par segment. Consomme des tokens. Voir la documentation : https: //ragflow.io/docs/dev/autokeyword_autoquestion.',
+        'Extrait automatiquement N mots-clés par segment. Consomme des tokens. Voir la documentation : https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       autoQuestions: 'Questions automatiques',
       autoQuestionsTip:
         "Extrait automatiquement N questions par segment. N'interrompt pas l'analyse si une erreur survient. Consomme aussi des tokens. Voir la documentation.",
@@ -631,7 +632,7 @@ export default {
       // Les contenus HTML comme "book", "laws", etc. sont laissés en l'état pour ne pas altérer leur structure technique.
       useRaptor: 'Utiliser RAPTOR pour améliorer la récupération',
       useRaptorTip:
-        "Activez RAPTOR pour les questions nécessitant plusieurs étapes. Voir https: //ragflow.io/docs/dev/enable_raptor pour plus d'informations.",
+        "Activez RAPTOR pour les questions nécessitant plusieurs étapes. Voir https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree pour plus d'informations.",
       prompt: 'Prompt',
       promptTip:
         'Décrivez la tâche attendue du LLM, ses réponses, ses exigences, etc. Utilisez `/` pour afficher les variables disponibles.',
@@ -684,7 +685,7 @@ export default {
       resolutionTip:
         'Fusionne des entités similaires comme "2025" et "l\'année 2025".',
       community: 'Génération de rapports communautaires',
-      communityTip: `Un "community" est un groupe d'entités liées. Le LLM peut générer un résumé pour chaque groupe. Voir plus ici : https: //www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/`,
+      communityTip: `Un "community" est un groupe d'entités liées. Le LLM peut générer un résumé pour chaque groupe. Voir plus ici : https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/`,
       theDocumentBeingParsedCannotBeDeleted:
         "Le document en cours d'analyse ne peut pas être supprimé",
       lastWeek: 'de la semaine dernière',
@@ -1010,7 +1011,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       quoteTip: 'Afficher ou non le texte original en référence.',
       selfRag: 'Self-RAG',
       selfRagTip:
-        'Veuillez vous référer à : https: //huggingface.co/papers/2310.11511',
+        'Veuillez vous référer à : https://huggingface.co/papers/2310.11511',
       overview: 'ID de discussion',
       pv: 'Nombre de messages',
       uv: "Nombre d'utilisateurs actifs",
@@ -1504,6 +1505,26 @@ Exemple : Virtual Hosted Style`,
         'Connectez un site SharePoint via Microsoft Graph pour synchroniser ses bibliothèques de documents.',
       sharepointSiteUrlTip:
         'URL complète du site SharePoint à indexer, ex. : https://contoso.sharepoint.com/sites/MonSite. Nécessite une application Azure AD avec les permissions applicatives Sites.Read.All et Files.Read.All (consentement administrateur).',
+      dataSourceFieldSitemapUrl: 'URL du sitemap',
+      dataSourceFieldUrlFilter: 'Filtre d’URL (regex)',
+      dataSourceFieldFollowPdfLinks: 'Suivre les liens PDF',
+      dataSourceFieldRestrictPdfToDomain:
+        'Limiter les PDF au domaine du sitemap',
+      dataSourceFieldUserAgent: 'User-Agent',
+      sitemapDescription:
+        'Connectez un sitemap.xml public pour synchroniser dans votre base de connaissances les pages web et les documents PDF qu’il répertorie.',
+      sitemapUrlTip:
+        'URL du sitemap.xml ou de l’index de sitemaps à parcourir, ex. : https://example.com/sitemap.xml. Les index de sitemaps sont suivis récursivement (5 niveaux maximum).',
+      sitemapUrlFilterTip:
+        'Expression régulière facultative. Seules les URL correspondantes sont indexées, ex. : ^https://example\\.com/docs/ pour limiter la synchronisation à une section du site.',
+      sitemapFollowPdfLinksTip:
+        'Indexer également les fichiers PDF liés depuis les pages HTML parcourues.',
+      sitemapRestrictPdfToDomainTip:
+        'Ne suivre que les liens PDF hébergés sur le même domaine que le sitemap.',
+      sitemapUserAgentTip:
+        'En-tête User-Agent envoyé avec chaque requête. Laissez vide pour utiliser RAGFlow-SitemapConnector/1.0.',
+      sitemapBatchSizeTip:
+        'Nombre de pages récupérées et envoyées à RAGFlow par lot.',
       azure_devopsDescription:
         'Connectez Azure DevOps pour synchroniser les fichiers du dépôt et les pull requests.',
       bitbucketDescription:
@@ -2209,7 +2230,7 @@ Exemple : Virtual Hosted Style`,
       },
       akShare: 'AkShare',
       akShareDescription:
-        'Un composant qui obtient des nouvelles sur les actions depuis https: //www.eastmoney.com/.',
+        'Un composant qui obtient des nouvelles sur les actions depuis https://www.eastmoney.com/.',
       yahooFinance: 'YahooFinance',
       yahooFinanceDescription:
         'Un composant qui interroge des informations sur une société cotée en bourse à partir de son symbole boursier.',

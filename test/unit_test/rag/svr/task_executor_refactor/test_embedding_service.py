@@ -186,7 +186,10 @@ class TestEmbeddingServiceEmbedChunks:
     @patch("rag.svr.task_executor_refactor.embedding_service.thread_pool_exec", new_callable=AsyncMock)
     async def test_embed_chunks_title_weight_zero(self, mock_thread_pool):
         """Test embedding with filename_embd_weight=0.0 — no title contribution."""
-        mock_thread_pool.return_value = (np.array([[1.0, 2.0]]), 5)
+        mock_thread_pool.side_effect = [
+            (np.array([[10.0, 20.0]]), 5),
+            (np.array([[1.0, 2.0]]), 5),
+        ]
         ctx = MagicMock()
         ctx.progress_cb = None
         ctx.embed_limiter = AsyncMockLimiter()
@@ -198,6 +201,7 @@ class TestEmbeddingServiceEmbedChunks:
         _, vector_size = await service.embed_chunks(docs, model, parser_config={"filename_embd_weight": 0.0})
 
         assert vector_size == 2
+        np.testing.assert_array_equal(docs[0]["q_2_vec"], [1.0, 2.0])
 
     @pytest.mark.asyncio
     @patch("rag.svr.task_executor_refactor.embedding_service.thread_pool_exec", new_callable=AsyncMock)
