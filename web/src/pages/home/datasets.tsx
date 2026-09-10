@@ -1,8 +1,6 @@
-import { CardSineLineContainer } from '@/components/card-singleline-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
 import { RenameDialog } from '@/components/rename-dialog';
-import { HomeIcon } from '@/components/svg-icon';
 import { CardSkeleton } from '@/components/ui/skeleton';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
@@ -10,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { DatasetCard } from '../datasets/dataset-card';
 import { useRenameDataset } from '../datasets/use-rename-dataset';
 import { SeeAllAppCard } from './application-card';
+import { HomeCardGrid, SectionHeading } from './home-layout';
 
 export function Datasets() {
   const { t } = useTranslation();
@@ -25,14 +24,8 @@ export function Datasets() {
   const { navigateToDatasetList } = useNavigatePage();
 
   return (
-    <section>
-      <header>
-        <h2 className="leading-8 text-2xl font-semibold mb-2.5">
-          {/* <IconFont name="data" className="size-8"></IconFont> */}
-          <HomeIcon imgClass="me-2.5" name="datasets" width={24} />
-          {t('header.dataset')}
-        </h2>
-      </header>
+    <section className="mt-10">
+      <SectionHeading iconName="datasets" label={t('header.dataset')} />
 
       <div>
         {loading ? (
@@ -42,7 +35,7 @@ export function Datasets() {
         ) : (
           <>
             {kbs?.length > 0 && (
-              <CardSineLineContainer>
+              <HomeCardGrid>
                 {kbs?.slice(0, 6).map((dataset) => (
                   <DatasetCard
                     key={dataset.id}
@@ -55,7 +48,7 @@ export function Datasets() {
                     click={() => navigateToDatasetList({ isCreate: false })}
                   ></SeeAllAppCard>
                 }
-              </CardSineLineContainer>
+              </HomeCardGrid>
             )}
             {!(kbs && kbs?.length > 0) && (
               <div className="w-[210px]">
@@ -66,7 +59,6 @@ export function Datasets() {
               </div>
             )}
           </>
-          // </div>
         )}
       </div>
 
