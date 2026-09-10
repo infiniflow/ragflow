@@ -976,26 +976,39 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 			ids = append(ids, tid)
 		}
 		sort.Strings(ids)
-		bucketMeta, entities, relations, err := s.keywordSubgraph(ctx, in.TenantID, in.DatasetID, "", keywords, nil, map[string]interface{}{
-			"scope_kwd":                []string{"dataset"},
-			"compilation_template_ids": ids,
-			"knowledge_graph_kwd":      []string{"entity"},
-		})
-		if err != nil {
-			return nil, err
+		templateDAO := dao.NewCompilationTemplateDAO()
+		for _, tid := range ids {
+			templateMeta := map[string]map[string]interface{}{}
+			template, loadErr := templateDAO.GetTemplate(ctx, dao.DB, in.TenantID, tid)
+			if loadErr == nil && template != nil {
+				templateMeta[tid] = map[string]interface{}{
+					"template_id":   tid,
+					"template_name": template.Name,
+					"kind":          template.Kind,
+				}
+			}
+			bucketMeta, entities, relations, err := s.keywordSubgraph(ctx, in.TenantID, in.DatasetID, "", keywords, templateMeta, map[string]interface{}{
+				"scope_kwd":                     []string{"dataset"},
+				"compilation_template_ids":      []string{tid},
+				"compilation_template_kind_kwd": []string{resolved},
+				"knowledge_graph_kwd":           []string{"entity"},
+			})
+			if err != nil {
+				return nil, err
+			}
+			if bucketMeta == nil || (len(entities) == 0 && len(relations) == 0) {
+				continue
+			}
+			resp.Templates = append(resp.Templates, DocumentStructureGraphTemplate{
+				TemplateID:   graphStr(bucketMeta["template_id"]),
+				TemplateName: graphStr(bucketMeta["template_name"]),
+				Kind:         graphStr(bucketMeta["kind"]),
+				Entities:     entities,
+				Relations:    relations,
+			})
+			resp.ReturnedEntities += len(entities)
+			resp.ReturnedRelations += len(relations)
 		}
-		if bucketMeta == nil || (len(entities) == 0 && len(relations) == 0) {
-			return resp, nil
-		}
-		resp.Templates = append(resp.Templates, DocumentStructureGraphTemplate{
-			TemplateID:   graphStr(bucketMeta["template_id"]),
-			TemplateName: graphStr(bucketMeta["template_name"]),
-			Kind:         graphStr(bucketMeta["kind"]),
-			Entities:     entities,
-			Relations:    relations,
-		})
-		resp.ReturnedEntities = len(entities)
-		resp.ReturnedRelations = len(relations)
 		return resp, nil
 	}
 
