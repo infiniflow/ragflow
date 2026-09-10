@@ -68,6 +68,10 @@ from rag.flow.parser.utils import (
 from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
 
+# Rows per self-contained spreadsheet <table> chunk. Matches Go's
+# defaultTableChunkRows so both backends emit the same chunk boundaries.
+TABLE_CHUNK_ROWS = 256
+
 
 class ParserParam(ProcessParamBase):
     def __init__(self):
@@ -137,7 +141,7 @@ class ParserParam(ProcessParamBase):
             "spreadsheet": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
                 "flatten_media_to_text": False,
-                "output_format": "html",
+                "output_format": "json",
                 "suffix": [
                     "xls",
                     "xlsx",
@@ -874,18 +878,22 @@ class Parser(ProcessBase):
                 htmls = spreadsheet_parser.html(blob, 1000000000)
                 self.set_output("html", htmls[0][0] if htmls else "")
             elif conf.get("output_format") == "json":
+                # One self-contained <table> item per sheet chunk, each carrying
+                # its own caption and header row, so the downstream TokenChunker
+                # keeps every table whole instead of cutting it on a delimiter.
+                # Mirrors the Go xlsx path (defaultTableChunkRows = 256).
                 self.set_output(
                     "json",
                     [
                         {
-                            "text": txt,
-                            "doc_type_kwd": "text",
+                            "text": tb,
+                            "doc_type_kwd": "text" if flatten_media_to_text else "table",
                             # 0-based sheet. TaskExecutor and dataflow_service
                             # call add_positions, which stores pn+1 (1-based).
                             "positions": [[sheet, r1, r2, c1, c2]],
                         }
-                        for txt, (sheet, r1, r2, c1, c2) in spreadsheet_parser(blob)
-                        if txt
+                        for tb, (sheet, r1, r2, c1, c2) in spreadsheet_parser.html(blob, TABLE_CHUNK_ROWS)
+                        if tb
                     ],
                 )
             elif conf.get("output_format") == "markdown":
