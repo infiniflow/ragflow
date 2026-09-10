@@ -415,7 +415,7 @@ func TestNavService_Search_ReturnsHit(t *testing.T) {
 	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa")); err != nil {
 		t.Fatal(err)
 	}
-	hits, err := ns.Search(t.Context(), "t1", "kb1", "aaa", nil, 5)
+	hits, err := ns.Search(t.Context(), "t1", "kb1", "aaa", nil, nil, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,6 +424,99 @@ func TestNavService_Search_ReturnsHit(t *testing.T) {
 	}
 	if hits[0].Name == "" {
 		t.Error("hit name empty")
+	}
+}
+
+// TestNavService_Search_DocScope pins search_dataset_nav's doc_scope semantics
+// (dataset_nav.py:1364-1387, 1444-1465) on the nav-row read: a nav_doc leaf
+// matches on doc_id, a nav_cluster row on coverage, a cluster's coverage is
+// trimmed to the scope, and the scope is applied BEFORE the top_k truncation —
+// a scoped read must not come back empty (or short) because out-of-scope rows
+// ranked higher.
+func TestNavService_Search_DocScope(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+
+	const dim = 1024
+	vec := func(w float64) []float64 {
+		v := make([]float64, dim)
+		v[0] = w
+		return v
+	}
+	row := func(typ, docID, title string, docIDs []string, w float64) map[string]interface{} {
+		r := map[string]interface{}{
+			"compile_kwd": navCompileKwd,
+			"type_kwd":    typ,
+			"doc_id":      docID,
+			"title_kwd":   title,
+			"q_1024_vec":  vec(w),
+		}
+		if len(docIDs) > 0 {
+			r["doc_ids_kwd"] = docIDs
+		}
+		return r
+	}
+	// Three out-of-scope leaves outrank the single in-scope leaf (cosine 1.0 vs
+	// 0.5), so a scoped read truncated to one row only fills its cap if the
+	// scope is applied over a wide-enough pool.
+	rows := []map[string]interface{}{
+		row(nav.TypeNavDoc, "dx1", "out 1", nil, 1),
+		row(nav.TypeNavDoc, "dx2", "out 2", nil, 1),
+		row(nav.TypeNavDoc, "dx3", "out 3", nil, 1),
+		row(nav.TypeNavDoc, "d1", "in scope", nil, 0.5),
+		row(nav.TypeNavCluster, "kb1", "covering d1+d2", []string{"d1", "d2"}, 0.4),
+		row(nav.TypeNavCluster, "kb1", "covering d2 only", []string{"d2"}, 1),
+	}
+	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1"); err != nil {
+		t.Fatal(err)
+	}
+	q := make([]float32, dim)
+	q[0] = 1
+
+	all, err := ns.Search(t.Context(), "t1", "kb1", "q", q, nil, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != len(rows) {
+		t.Fatalf("unscoped hits = %d, want %d (nil scope must not restrict)", len(all), len(rows))
+	}
+
+	scoped, err := ns.Search(t.Context(), "t1", "kb1", "q", q, []string{" d1 "}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotLeaf, gotCluster bool
+	for _, h := range scoped {
+		switch h.DocID {
+		case "d1":
+			gotLeaf = true
+		case "kb1":
+			gotCluster = true
+			if len(h.DocIDs) != 1 || h.DocIDs[0] != "d1" {
+				t.Errorf("cluster coverage = %v, want [d1] (trimmed to the scope)", h.DocIDs)
+			}
+		default:
+			t.Errorf("out-of-scope hit %q surfaced in a scoped read", h.DocID)
+		}
+	}
+	if !gotLeaf || !gotCluster {
+		t.Fatalf("scoped hits = %+v, want d1 plus the cluster covering it", scoped)
+	}
+	for _, h := range scoped {
+		if h.Name == "covering d2 only" {
+			t.Error("a cluster whose coverage does not intersect the scope must not surface")
+		}
+	}
+
+	// The scope is applied to the pool, not after the engine truncation: the
+	// top-ranked rows here are all out of scope, yet the in-scope leaf still
+	// comes back as the single hit.
+	one, err := ns.Search(t.Context(), "t1", "kb1", "q", q, []string{"d1"}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(one) != 1 || one[0].DocID != "d1" {
+		t.Fatalf("top_k=1 scoped hits = %+v, want exactly the in-scope leaf d1", one)
 	}
 }
 
