@@ -1,32 +1,15 @@
-import {
-  SelectWithSearch,
-  SelectWithSearchFlagOptionType,
-} from '@/components/originui/select-with-search';
+import { Collapse } from '@/components/collapse';
 import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
-import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { BlockButton, Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Form } from '@/components/ui/form';
-import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
+import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import i18n from '@/locales/config';
-import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useHover } from 'ahooks';
-import { Trash2 } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import {
-  useFieldArray,
-  UseFieldArrayRemove,
-  useForm,
-  useFormContext,
-} from 'react-hook-form';
+import { memo, useMemo } from 'react';
+import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import {
-  FileType,
-  InitialOutputFormatMap,
-  initialParserValues,
-} from '../../constant/pipeline';
+import { FileType, initialParserValues } from '../../constant/pipeline';
 import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
@@ -43,7 +26,7 @@ import {
   HtmlFormFields,
   TextMarkdownFormFields,
 } from './text-html-form-fields';
-import { buildFieldNameWithPrefix, getInitialParseMethod } from './utils';
+import { withDefaultParserModels } from './utils';
 import { AudioFormFields, VideoFormFields } from './video-form-fields';
 import { WordFormFields } from './word-form-fields';
 
@@ -66,9 +49,6 @@ const FileFormatWidgetMap = {
 type ParserItemProps = {
   name: string;
   index: number;
-  fieldLength: number;
-  remove: UseFieldArrayRemove;
-  fileFormatOptions: SelectWithSearchFlagOptionType[];
 };
 
 const SetupSchema = z
@@ -138,52 +118,12 @@ export const FormSchema = z.object({
 
 export type ParserFormSchemaType = z.infer<typeof FormSchema>;
 
-function ParserItem({
-  name,
-  index,
-  fieldLength,
-  remove,
-  fileFormatOptions,
-}: ParserItemProps) {
+function ParserItem({ name, index }: ParserItemProps) {
   const { t } = useTranslation();
   const form = useFormContext<ParserFormSchemaType>();
-  const ref = useRef(null);
-  const isHovering = useHover(ref);
 
   const prefix = `${name}.${index}`;
   const fileFormat = form.watch(`setups.${index}.fileFormat`);
-  const prevFileFormatRef = useRef(fileFormat);
-
-  useEffect(() => {
-    if (!fileFormat || prevFileFormatRef.current === fileFormat) {
-      return;
-    }
-    prevFileFormatRef.current = fileFormat;
-
-    form.setValue(
-      `setups.${index}.output_format`,
-      InitialOutputFormatMap[fileFormat as FileType],
-      { shouldDirty: true, shouldValidate: true, shouldTouch: true },
-    );
-    form.setValue(
-      `setups.${index}.parse_method`,
-      getInitialParseMethod(fileFormat as FileType),
-      { shouldDirty: true, shouldValidate: true, shouldTouch: true },
-    );
-  }, [fileFormat, form, index]);
-
-  const values = form.getValues();
-  const parserList = values.setups.slice(); // Adding, deleting, or modifying the parser array will not change the reference.
-
-  const filteredFileFormatOptions = useMemo(() => {
-    const otherFileFormatList = parserList
-      .filter((_, idx) => idx !== index)
-      .map((x) => x.fileFormat);
-
-    return fileFormatOptions.filter((x) => {
-      return !otherFileFormatList.includes(x.value);
-    });
-  }, [fileFormatOptions, index, parserList]);
 
   const Widget =
     typeof fileFormat === 'string' && fileFormat in FileFormatWidgetMap
@@ -191,43 +131,22 @@ function ParserItem({
       : () => <></>;
 
   return (
-    <section
-      className={cn('space-y-5 py-2.5 rounded-md', {
-        'bg-state-error-5': isHovering,
-      })}
-    >
-      <div className="flex justify-between items-center">
-        <span className="text-text-primary text-sm font-medium">
-          Parser {index + 1}
-        </span>
-        {index > 0 && (
-          <Button variant={'ghost'} onClick={() => remove(index)} ref={ref}>
-            <Trash2 />
-          </Button>
-        )}
-      </div>
-      <RAGFlowFormItem
-        name={buildFieldNameWithPrefix(`fileFormat`, prefix)}
-        label={t('flow.fileFormats')}
-      >
-        {(field) => (
-          <SelectWithSearch
-            value={field.value}
-            onChange={field.onChange}
-            options={filteredFileFormatOptions}
-          ></SelectWithSearch>
-        )}
-      </RAGFlowFormItem>
-      <Widget prefix={prefix} fileType={fileFormat as FileType}></Widget>
+    <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
+      {/* The file format is fixed per parser item; keep it registered so it is
+          still submitted with the form. */}
+      <input type="hidden" {...form.register(`setups.${index}.fileFormat`)} />
+      <Collapse title={t(`flow.fileFormatOptions.${fileFormat}`)} defaultOpen>
+        <div className="space-y-5">
+          <Widget prefix={prefix} fileType={fileFormat as FileType}></Widget>
+        </div>
+      </Collapse>
       <div className="hidden">
         <OutputFormatFormField
           prefix={prefix}
           fileType={fileFormat as FileType}
         />
       </div>
-
-      {index < fieldLength - 1 && <Separator />}
-    </section>
+    </Card>
   );
 }
 
@@ -237,64 +156,38 @@ const ParserForm = ({
   hideOutputs,
   externalErrors,
 }: INextOperatorForm) => {
-  const { t } = useTranslation();
-  const defaultValues = useFormValues(initialParserValues, node);
-
-  const FileFormatOptions = buildOptions(FileType, t, 'flow.fileFormatOptions');
+  const defaultModelDictionary = useFetchDefaultModelDictionary();
+  const formValues = useFormValues(initialParserValues, node);
+  const defaultValues = useMemo(
+    () => withDefaultParserModels(formValues, defaultModelDictionary),
+    [formValues, defaultModelDictionary],
+  );
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
     resolver: zodResolver(FormSchema),
     mode: 'onChange',
-    shouldUnregister: true,
   });
 
   useSyncExternalFormErrors(form, externalErrors);
 
   const name = 'setups';
-  const { fields, remove, append } = useFieldArray({
+  const { fields } = useFieldArray({
     name,
     control: form.control,
   });
-
-  const add = useCallback(() => {
-    append({
-      fileFormat: null,
-      output_format: '',
-      parse_method: '',
-      lang: '',
-      fields: [],
-      vlm: { llm_id: '' },
-      table_result_type: '',
-      markdown_image_response_type: '',
-      remove_header_footer: false,
-      // preprocess: [],
-    });
-  }, [append]);
 
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
 
   return (
     <Form {...form}>
-      <form className="px-5">
+      <form className="space-y-5 px-5">
         {fields.map((field, index) => {
           return (
-            <ParserItem
-              key={field.id}
-              name={name}
-              index={index}
-              fieldLength={fields.length}
-              remove={remove}
-              fileFormatOptions={FileFormatOptions}
-            ></ParserItem>
+            <ParserItem key={field.id} name={name} index={index}></ParserItem>
           );
         })}
-        {fields.length < FileFormatOptions.length && (
-          <BlockButton onClick={add} type="button" className="mt-2.5">
-            {t('flow.addParser')}
-          </BlockButton>
-        )}
       </form>
       {!hideOutputs && (
         <div className="p-5">

@@ -519,7 +519,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         'Esegui un test di recupero per verificare se RAGFlow riesce a recuperare il contenuto previsto per il LLM. Se hai modificato le impostazioni predefinite, come il peso della similarità delle parole chiave o la soglia di similarità, per ottenere i risultati ottimali, tieni presente che queste modifiche non saranno salvate automaticamente. Devi applicarle alle impostazioni del tuo assistente chat o alle impostazioni del componente agente Recupero.',
       similarityThreshold: 'Soglia di similarità',
       similarityThresholdTip:
-        'RAGFlow utilizza una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata, o una combinazione di similarità delle parole chiave ponderata e punteggio di reranking ponderato durante il recupero. Questo parametro imposta la soglia per le similarità tra la query utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata a 0.2. Ciò significa che solo i chunk con punteggio di similarità ibrida di 20 o superiore saranno recuperati.',
+        'RAGFlow utilizza una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata, o una combinazione di similarità delle parole chiave ponderata e punteggio di reranking ponderato durante il recupero. Questo parametro imposta la soglia per le similarità tra la query utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata a 20. Ciò significa che solo i chunk con punteggio di similarità ibrida di 20 o superiore saranno recuperati.',
       vectorSimilarityWeight: 'Peso similarità vettoriale',
       vectorSimilarityWeightTip:
         'Imposta il peso della similarità delle parole chiave nel punteggio di similarità combinato, usato con la similarità coseno vettoriale o con il punteggio di reranking. Il totale dei due pesi deve essere uguale a 1.0.',
@@ -542,6 +542,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       runningStatus2: 'Annullato',
       runningStatus3: 'Successo',
       runningStatus4: 'Fallito',
+      runningStatusQueued: 'In coda',
       pageRanges: 'Intervallo pagine',
       pageRangesTip:
         'Intervallo di pagine da analizzare; le pagine al di fuori di questo intervallo non saranno elaborate.',
@@ -1283,6 +1284,8 @@ Esempio: Virtual Hosted Style`,
         'Connetti un sito SharePoint tramite Microsoft Graph per sincronizzare le sue librerie documenti.',
       sharepointSiteUrlTip:
         "URL completo del sito SharePoint da indicizzare, es. https://contoso.sharepoint.com/sites/MySite. Richiede un'app Azure AD con permessi applicativi Sites.Read.All e Files.Read.All (consenso admin).",
+      sitemapDescription:
+        'Collega una sitemap.xml pubblica per sincronizzare nella tua knowledge base le pagine web e i documenti PDF che elenca.',
       azure_devopsDescription:
         'Collega Azure DevOps per sincronizzare i file del repository e le pull request.',
       bitbucketDescription:

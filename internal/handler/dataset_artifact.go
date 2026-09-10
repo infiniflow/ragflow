@@ -105,6 +105,7 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 	datasetID := c.Param("dataset_id")
 	pageType := c.Query("page_type")
 	topic := c.Query("topic")
+	keywords := strings.TrimSpace(c.Query("keywords"))
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "30"))
 	if page < 1 {
@@ -116,7 +117,7 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 	if pageSize > maxArtifactPageSize {
 		pageSize = maxArtifactPageSize
 	}
-	items, total, err := h.svc.ListWikiPages(c.Request.Context(), tenantID, datasetID, pageType, topic, page, pageSize)
+	items, total, err := h.svc.ListWikiPages(c.Request.Context(), tenantID, datasetID, pageType, topic, keywords, page, pageSize)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
@@ -240,7 +241,8 @@ func (h *DatasetArtifactHandler) ListArtifactTopics(c *gin.Context) {
 		return
 	}
 	datasetID := c.Param("dataset_id")
-	items, total, err := h.svc.ListWikiTopics(c.Request.Context(), tenantID, datasetID)
+	keywords := strings.TrimSpace(c.Query("keywords"))
+	items, total, err := h.svc.ListWikiTopics(c.Request.Context(), tenantID, datasetID, keywords)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return

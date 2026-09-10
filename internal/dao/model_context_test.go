@@ -25,7 +25,7 @@ import (
 	"ragflow/internal/entity"
 )
 
-// TestResolveModelContentLength_CompositeReference resolves content_length
+// TestResolveModelContentLength_CompositeReference resolves context_length
 // for a composite "model@provider" reference from the provider catalog.
 func TestResolveModelContentLength_CompositeReference(t *testing.T) {
 	if got := ResolveModelContentLength(t.Context(), nil, "", "gpt-4o@openai", "", ""); got != 128000 {
@@ -34,7 +34,7 @@ func TestResolveModelContentLength_CompositeReference(t *testing.T) {
 }
 
 // TestResolveModelContentLength_CompositeReferenceThreePart resolves
-// content_length for a composite "model@instance@provider" reference — the
+// context_length for a composite "model@instance@provider" reference — the
 // instance-bearing form used by tenant model instances — from the provider
 // catalog.
 func TestResolveModelContentLength_CompositeReferenceThreePart(t *testing.T) {
@@ -62,7 +62,7 @@ func TestResolveModelContentLength_MultiSegmentComposite(t *testing.T) {
 	}
 }
 
-// TestResolveModelContentLength_DriverModelFallback resolves content_length
+// TestResolveModelContentLength_DriverModelFallback resolves context_length
 // from the resolved driver + bare model name, which needs no database.
 func TestResolveModelContentLength_DriverModelFallback(t *testing.T) {
 	if got := ResolveModelContentLength(t.Context(), nil, "", "", "openai", "gpt-4o"); got != 128000 {
@@ -80,7 +80,7 @@ func TestResolveModelContentLength_Unknown(t *testing.T) {
 	}
 }
 
-// TestResolveModelContentLength_TenantModelUUID resolves content_length for a
+// TestResolveModelContentLength_TenantModelUUID resolves context_length for a
 // tenant_model UUID row through the provider catalog.
 func TestResolveModelContentLength_TenantModelUUID(t *testing.T) {
 	db := openModelContextTestDB(t)
@@ -96,7 +96,7 @@ func TestResolveModelContentLength_TenantModelUUID(t *testing.T) {
 
 // TestResolveModelContentLength_ExtraOverrideUUID verifies that a custom
 // "max_tokens" context window in the tenant_model.extra wins over the
-// provider catalog's content_length for a UUID reference.
+// provider catalog's context_length for a UUID reference.
 func TestResolveModelContentLength_ExtraOverrideUUID(t *testing.T) {
 	db := openModelContextTestDB(t)
 	pushDB(t, db)
@@ -222,7 +222,7 @@ func TestResolveModelContentLength_NonNumericStringExtraFallsBackToCatalog(t *te
 
 // TestResolveModelContentLength_InvalidExtraFallsBackToCatalog verifies that
 // an unparsable extra JSON is treated as "no override" and the catalog
-// content_length is used.
+// context_length is used.
 func TestResolveModelContentLength_InvalidExtraFallsBackToCatalog(t *testing.T) {
 	db := openModelContextTestDB(t)
 	pushDB(t, db)
@@ -272,7 +272,7 @@ func TestResolveModelContentLength_InactiveTenantModel(t *testing.T) {
 }
 
 // seedOpenAIChatModel seeds an active OpenAI gpt-4o tenant model (catalog
-// content_length 128000) plus its provider and default instance. extra is the
+// context_length 128000) plus its provider and default instance. extra is the
 // tenant_model.extra JSON ("" for none).
 func seedOpenAIChatModel(t *testing.T, db *gorm.DB, extra string) {
 	t.Helper()

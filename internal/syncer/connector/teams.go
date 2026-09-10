@@ -349,12 +349,13 @@ func (c *TeamsConnector) getJSON(ctx context.Context, apiURL string, out any) er
 
 		client := utility.PinnedHTTPClient(hostname, resolvedIP, teamsRequestTimeout)
 		resp, err := client.Do(req)
-		cancel()
 		if err != nil {
+			cancel()
 			lastErr = err
 		} else {
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024))
 			resp.Body.Close()
+			cancel()
 			if resp.StatusCode < 400 {
 				if readErr != nil {
 					return readErr
