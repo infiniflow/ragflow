@@ -373,7 +373,7 @@ func TestQAChunker_XLSXJSONRegression(t *testing.T) {
 			},
 		},
 	}
-	out, err := comp.Invoke(context.Background(), nil, inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
