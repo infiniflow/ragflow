@@ -612,9 +612,9 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       html4excel: "Excel'i HTML'ye dönüştür",
       html4excelTip: `Genel parçalama yöntemi ile kullanın. Devre dışı bırakıldığında, datasetteki elektronik tablolar (XLSX veya XLS(Excel 97-2003)) anahtar-değer çiftlerine ayrıştırılır. Etkinleştirildiğinde HTML tablolarına ayrıştırılır; orijinal tabloda 12'den fazla satır varsa her 12 satırda bölünür. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
       autoKeywords: 'Otomatik anahtar kelime',
-      autoKeywordsTip: `Her parça için otomatik olarak N anahtar kelime çıkarır ve o anahtar kelimeleri içeren sorgular için sıralamalarını artırır. 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın. Bir parçaya eklenen anahtar kelimeleri parça listesinden kontrol edebilir veya güncelleyebilirsiniz. Ayrıntılar için bkz. https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoKeywordsTip: `Her parça için otomatik olarak N anahtar kelime çıkarır ve o anahtar kelimeleri içeren sorgular için sıralamalarını artırır. 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın. Bir parçaya eklenen anahtar kelimeleri parça listesinden kontrol edebilir veya güncelleyebilirsiniz. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Otomatik soru',
-      autoQuestionsTip: `Her parça için otomatik olarak N soru çıkarır ve o soruları içeren sorgular için sıralamalarını artırır. Bir parçaya eklenen soruları parça listesinden kontrol edebilir veya güncelleyebilirsiniz. Bir hata oluşursa bu özellik parçalama işlemini bozmaz, ancak orijinal parçaya boş bir sonuç ekleyebilir. 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın. Ayrıntılar için bkz. https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoQuestionsTip: `Her parça için otomatik olarak N soru çıkarır ve o soruları içeren sorgular için sıralamalarını artırır. Bir parçaya eklenen soruları parça listesinden kontrol edebilir veya güncelleyebilirsiniz. Bir hata oluşursa bu özellik parçalama işlemini bozmaz, ancak orijinal parçaya boş bir sonuç ekleyebilir. 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoTags: 'Otomatik etiketler',
       redo: 'Mevcut {{chunkNum}} parçayı temizlemek istiyor musunuz?',
       setMetaData: 'Meta veri ayarla',
@@ -885,7 +885,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
 `,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        "RAPTOR çok adımlı soru-cevap görevleri için kullanılabilir. Dosyalar sayfasına gidin, Oluştur > RAPTOR'a tıklayarak etkinleştirin. Ayrıntılar için bkz. https://ragflow.io/docs/dev/enable_raptor.",
+        "RAPTOR çok adımlı soru-cevap görevleri için kullanılabilir. Dosyalar sayfasına gidin, Oluştur > RAPTOR'a tıklayarak etkinleştirin. Ayrıntılar için bkz. https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree.",
       prompt: 'İstem',
       promptTip:
         'Görevi tanımlamak, nasıl yanıt vermesi gerektiğini belirtmek ve diğer çeşitli gereksinimleri belirlemek için sistem istemini kullanın. Sistem istemi genellikle LLM için çeşitli veri girdileri olarak hizmet eden anahtarlarla (değişkenlerle) birlikte kullanılır. Kullanacağınız anahtarları göstermek için eğik çizgi `/` veya (x) düğmesini kullanın.',
@@ -940,7 +940,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       addTag: 'Etiket ekle',
       useGraphRag: 'Bilgi grafiği',
       useGraphRagTip:
-        'İç içe geçmiş mantık içeren çok adımlı soru-cevabı geliştirmek için mevcut dataset dosya parçaları üzerinde bir bilgi grafiği oluşturun. Ayrıntılar için bkz. https://ragflow.io/docs/dev/construct_knowledge_graph.',
+        'İç içe geçmiş mantık içeren çok adımlı soru-cevabı geliştirmek için mevcut dataset dosya parçaları üzerinde bir bilgi grafiği oluşturun. Ayrıntılar için bkz. https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph.',
       graphRagMethod: 'Yöntem',
       graphRagMethodTip: `
       Hafif: (Varsayılan) Varlıkları ve ilişkileri çıkarmak için github.com/HKUDS/LightRAG tarafından sağlanan istemler kullanılır.</br>

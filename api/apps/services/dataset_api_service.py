@@ -3885,46 +3885,31 @@ _LAYERS_HANDLERS: dict[str, str] = {
     "all": "_search_layers_all",
 }
 
-
-# Cap on how many documents a flat router hands back.  The cluster beam descent
-# that main uses returns ~2 by construction (its per-level pruning keeps only
-# the most relevant branches), while the flat nav_doc sweep returns every row
-# above the 0.2 floor — measured 2026-09-02: beam avg 2.0 vs nav_doc avg 6.2.
-# Routing to 3x the documents made the RAGAgent carry 3x the evidence in every
-# round, so each dynamic LLM call grew 14k -> 18.8k tokens and per-question time
-# grew ~25%.  Beam is not capped at 2 either (it occasionally routes 6 for
-# multi-hop), so allow a little headroom above its median rather than a hard 2.
-_NAV_DOC_FOCUS_LIMIT = 3
-
-# Candidate pool for "chunk_agg".  DocScore only means something when a document
-# can collect several hits, so the pool has to be wide enough for that; across a
-# 2400-document corpus a pool of a few dozen chunks yields almost entirely
-# single-hit documents, which collapses DocScore into plain best-chunk ranking.
-# This is ``rerank_candidates_count`` — the pool the fusion actually draws from.
-# ``page_size`` is deliberately the same value so the whole pool is returned for
-# aggregation, and it must stay <= the pool or ``retrieval`` raises
-# (page * page_size > rerank_candidates_count).
 _NAV_CHUNK_AGG_POOL = 256
+
 _NAV_CHUNK_AGG_VEC_WEIGHT = 0.3
 
-# Evidence rows — atomic propositions carrying verbatim evidence.  Every compiler
-# writes them as ``claim``: tree via raptor claim extraction, page_index via its
-# own atomic claim type.  page_index used to spell that type ``fact`` /
-# ``conclusion``, so both spellings stay matched for rows compiled before the
-# rename.  Filtering on the wrong spelling silently disables this whole leg.
-_NAV_EVIDENCE_ROW_TYPES = ("claim", "fact", "conclusion")
-# Evidence leg (same seam as before: these rows carry their own vector and are
-# invisible to the generic retriever because they carry compile_kwd).  The
-# per-compiler pairing (tree -> claim, page_index -> fact/conclusion) is applied
-# at the query site, never as one mixed condition — see _search_layers_claim_agg.
-_NAV_CLAIM_POOL = 256
-# Compiled products (tree/entity/relation rows) are written with
-# available_int=1, so they fall inside the chunk filter and would otherwise
-# inflate a document's hit count.  The project convention is that plain
-# retrieval reads document chunks only and compiled products are served by their
-# own tools, so exclude them here too.  Flip to False to A/B letting compiled
-# rows act as extra per-document entries in the aggregation.
 _NAV_CHUNK_AGG_EXCLUDE_COMPILED = True
+
+_NAV_DOC_FOCUS_LIMIT = 3
+
+_NAV_CLAIM_POOL = 256
+
+_NAV_EVIDENCE_ROW_TYPES = ("claim", "fact", "conclusion")
+
+
+# Router behind the "navigation_tree" mode. Two callers share the entry point:
+#
+#   "tree" — the artifacts UI (main branch's BFS beam descent over the nav
+#       cluster tree). This is the default, preserving upstream behaviour.
+#   "claim_agg" — the agentic rag router: the claim leg runs first and decides
+#       the ranking outright when it hits (a claim is an atomic proposition
+#       carrying its own vector and verbatim evidence), falling back to the
+#       chunk leg when the dataset has no claim rows or the leg comes back
+#       empty.
+#
+# Upstream's other experimental strategies (nav_doc / compiled_agg / fusion)
+# were dropped on this branch together with their implementations.
 
 
 async def search_dataset_layers(
@@ -3935,6 +3920,7 @@ async def search_dataset_layers(
     *,
     top_k: int | None = None,
     doc_scope: list[str] | None = None,
+    router: str | None = None,
 ) -> tuple[bool, dict]:
     """Unified search across different knowledge layers of a dataset.
 
@@ -3943,8 +3929,10 @@ async def search_dataset_layers(
             - chunk: raw document chunks (via the main retrieval pipeline)
             - nav_doc: navigation tree document leaves
             - nav_cluster: navigation tree cluster nodes
-            - navigation_tree: document routing, strategy chosen by
-              claim rows first, falling back to raw-chunk aggregation
+            - navigation_tree: document routing.  ``router`` picks the
+              strategy — the artifacts UI keeps main branch's ``"tree"`` beam
+              descent, while the agentic rag router asks for ``"claim_agg"``
+              (claim rows first, raw-chunk aggregation as the fallback).
             - all: union of all modes, deduplicated by doc_id with best score
         doc_scope: Optional set of documents to restrict the search to.  None or
             empty means all documents of the dataset.  Forwarded to every mode:
@@ -3992,7 +3980,10 @@ async def search_dataset_layers(
     elif mode == "nav_cluster":
         return await _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope)
     elif mode == "navigation_tree":
-        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+        # The artifacts UI keeps main branch's tree descent; the agentic rag
+        # router passes router="claim_agg" explicitly. Defaulting to "tree"
+        # preserves upstream behaviour for every existing caller.
+        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb, router=router or "tree", doc_scope=doc_scope)
     elif mode == "chunk":
         return await _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
     elif mode == "all":
@@ -4029,24 +4020,44 @@ async def _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_
     return True, {"mode": "nav_cluster", "total": len(items), "items": items}
 
 
-async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, doc_scope=None):
-    """Route to documents: claim rows first, raw-chunk aggregation as the fallback.
+async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, router: str = "chunk_agg", doc_scope=None):
+    """Route to documents using the requested navigation-tree strategy.
 
-    There is no strategy switch - the leg is chosen by what the dataset actually
-    contains:
+    Two callers share this entry point with different strategies:
 
-      * the claim leg returning hits -> it decides the ranking outright.  A claim
-        is an atomic proposition carrying its own vector and verbatim evidence,
-        so matching one means the document asserts that fact.
-      * no claim rows, or the claim leg came back empty -> the chunk leg
-        (PageIndex style: hybrid chunk recall rolled up per document).
+      * the artifacts UI asks for ``router="tree"`` (main branch's BFS beam
+        descent over the nav cluster tree) — that stays the human-facing
+        default of ``mode="navigation_tree"``.
+      * the agentic rag router asks for ``router="claim_agg"``: the claim leg
+        runs first and decides the ranking outright when it hits — a claim is
+        an atomic proposition carrying its own vector and verbatim evidence,
+        so matching one means the document asserts that fact.  No claim rows,
+        or an empty claim leg, falls back to the chunk leg (PageIndex style:
+        hybrid chunk recall rolled up per document).
 
-    Both return the same item shape - ``doc_id``, a 0..1 ``score``, and ``_nav``
-    carrying the document summary - so callers stay agnostic to which one ran.
+    All strategies return the same item shape - ``doc_id``, a 0..1 ``score``,
+    and ``_nav`` carrying the document summary - so callers stay agnostic to
+    which one ran.
     """
-    _ok, claim_payload = await _search_layers_claim_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
-    if (claim_payload or {}).get("items"):
-        return _ok, claim_payload
+    if router == "claim_agg":
+        _ok, claim_payload = await _search_layers_claim_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+        if (claim_payload or {}).get("items"):
+            return _ok, claim_payload
+        return await _search_layers_chunk_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+
+    if router == "tree":
+        from rag.advanced_rag.knowlege_compile.dataset_nav import search_nav_tree_descent
+
+        items = await search_nav_tree_descent(
+            tenant_id,
+            dataset_id,
+            query,
+            embd_mdl,
+            top_k=top_k,
+            doc_scope=doc_scope,
+        )
+        return True, {"mode": "navigation_tree", "total": len(items), "items": items}
+
     return await _search_layers_chunk_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
 
 

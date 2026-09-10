@@ -724,6 +724,10 @@ async def _nav_search_titled(tools, topic: str, keywords: str = "", doc_scope: l
                 "navigation_tree",
                 top_k=_NAV_SEARCH_MAX_DOCS,
                 doc_scope=list(allowed_docs) or None,
+                # Agentic rag routes by claims: atomic propositions with
+                # verbatim evidence decide the ranking, raw-chunk aggregation
+                # is the fallback. The artifacts UI keeps main's tree descent.
+                router="claim_agg",
             )
         except Exception:
             _LOG.exception("[Dataset navigation search] search_dataset_layers failed for kb=%s", kb.id)

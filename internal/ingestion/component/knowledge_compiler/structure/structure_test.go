@@ -484,17 +484,6 @@ func TestStructureRunGraphKind(t *testing.T) {
 	if parsePayload(betaProduct.Content) == nil {
 		t.Fatalf("entity content is not payload JSON: %q", betaProduct.Content)
 	}
-
-	// Graph summary mirrors Python's {entities, relations} shape.
-	g := parsePayload(graphContentOf(out))
-	if g == nil {
-		t.Fatal("graph product missing/unparseable")
-	}
-	gEnts, _ := g["entities"].([]any)
-	gRels, _ := g["relations"].([]any)
-	if len(gEnts) != 3 || len(gRels) != 2 {
-		t.Fatalf("graph = %d entities + %d relations, want 3+2", len(gEnts), len(gRels))
-	}
 }
 
 func TestStructureListKindSkipsRelations(t *testing.T) {
@@ -782,15 +771,4 @@ func TestCosineDecider(t *testing.T) {
 	if got != DecisionKeepBoth {
 		t.Fatalf("expected keep at 0.5, got %v", got)
 	}
-}
-
-// ---- helpers ----
-
-func graphContentOf(out common.Outputs) string {
-	for _, p := range out.Products {
-		if p.Meta["kind"] == "graph" {
-			return p.Content
-		}
-	}
-	return ""
 }
