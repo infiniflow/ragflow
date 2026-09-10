@@ -104,7 +104,7 @@ func WithProgressMessageCallback(ctx context.Context, cb ProgressMessageCallback
 
 // ReportProgressMessage forwards a detailed component message when a sink is
 // attached. Components can call this without depending on the persistence
-// layer or changing the lifecycle progress contract.
+// layer or changing the lifecycle progress
 func ReportProgressMessage(ctx context.Context, component, message string) {
 	if cb, ok := ctx.Value(progressMessageCallbackKey{}).(ProgressMessageCallback); ok && cb != nil {
 		cb(component, message)

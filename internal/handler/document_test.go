@@ -120,9 +120,15 @@ func (f *fakeDocumentService) GetDocumentArtifact(ctx context.Context, filename,
 		ForceAttachment: false,
 	}, nil
 }
-func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error) {
+func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error) {
 	if docID == "not-found" {
-		return nil, fmt.Errorf("not found")
+		return nil, document.ErrPreviewDocumentNotFound
+	}
+	if docID == "empty-file" {
+		return nil, document.ErrPreviewFileEmpty
+	}
+	if docID == "storage-error" {
+		return nil, fmt.Errorf("read document object b/k: connection refused")
 	}
 	return &document.DocumentPreview{
 		Data:        []byte("preview content"),
@@ -1757,6 +1763,61 @@ func TestGetDocumentPreview_NotFound(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp["code"] != float64(common.CodeDataError) {
 		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	}
+	if resp["message"] != "document not found" {
+		t.Fatalf("expected message %q, got %v", "document not found", resp["message"])
+	}
+}
+
+func TestGetDocumentPreview_EmptyFile(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/empty-file/preview", "")
+	c.Params = gin.Params{{Key: "id", Value: "empty-file"}}
+
+	h.GetDocumentPreview(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	}
+	if resp["message"] != "This file is empty." {
+		t.Fatalf("expected message %q, got %v", "This file is empty.", resp["message"])
+	}
+}
+
+func TestGetDocumentPreview_StorageErrorGenericMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/storage-error/preview", "")
+	c.Params = gin.Params{{Key: "id", Value: "storage-error"}}
+
+	h.GetDocumentPreview(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeServerError) {
+		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
+	}
+	msg, _ := resp["message"].(string)
+	if msg != "Failed to load document preview" {
+		t.Fatalf("expected generic message, got %v", resp["message"])
+	}
+	// The storage detail (bucket/key, transport error) must stay in the
+	// server log, not in the client-visible message.
+	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "b/k") {
+		t.Fatalf("storage detail leaked to client: %v", resp["message"])
 	}
 }
 
