@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -64,3 +65,24 @@ func TestBaseModelDoStreamRequestAllowsMissingAPIKey(t *testing.T) {
 func modelFamilyTestString(value string) *string {
 	return &value
 }
+
+// captureEmbedBodies serves an embedding endpoint that records every request
+// body and replies with respBody. Drivers that read an OpenAI-shaped response
+// can use `{"data":[{"embedding":[0.1],"index":0}]}`; Cohere needs its own
+// `{"embeddings":{"float":[[0.1]]}}` shape.
+func captureEmbedBodies(t *testing.T, respBody string) (baseURL string, bodies *[]map[string]interface{}) {
+	t.Helper()
+	captured := &[]map[string]interface{}{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]interface{}
+		_ = json.Unmarshal(raw, &body)
+		*captured = append(*captured, body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(respBody))
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL, captured
+}
+
+const openAIShapeEmbeddingBody = `{"data":[{"embedding":[0.1],"index":0}]}`
