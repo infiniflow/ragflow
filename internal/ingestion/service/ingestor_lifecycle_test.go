@@ -473,6 +473,42 @@ func TestStartSchedulesCreatedTasks(t *testing.T) {
 	}
 }
 
+// TestMemoryTaskReconcilerRunsAtStartupAndStopsWithIngestor verifies the
+// recovery loop is owned by the ingestor lifecycle.
+func TestMemoryTaskReconcilerRunsAtStartupAndStopsWithIngestor(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	ingestor := newUnitIngestor("test-memory-reconciler", 1, nil)
+	ingestor.memorySvc = &servicepkg.MemoryMessageService{}
+	ingestor.memoryReconcileInterval = time.Hour
+	called := make(chan struct{}, 1)
+	ingestor.reconcileMemoryTasks = func(context.Context) error {
+		called <- struct{}{}
+		return nil
+	}
+	ingestor.startMemoryTaskReconciler()
+
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("memory task reconciler did not run its startup pass")
+	}
+
+	ingestor.cancel()
+	stopped := make(chan struct{})
+	go func() {
+		ingestor.memoryReconcileWg.Wait()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("memory task reconciler did not stop with the ingestor context")
+	}
+}
+
 // TestWorkerDispatcherDoesNotActivateTaskUntilWorkerReceivesTask prevents a busy
 // worker from prefetching its next task. task-2 must remain SCHEDULED while
 // task-1 still occupies the only worker.
