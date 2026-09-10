@@ -17,12 +17,9 @@
 package parser
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"strings"
-
-	"github.com/xuri/excelize/v2"
 )
 
 type XLSParser struct {
@@ -95,32 +92,32 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	f, err := excelize.OpenReader(bytes.NewReader(data))
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("xls open: %w", err)}
-	}
-	defer f.Close()
-
-	sheets := f.GetSheetList()
 	chunkRows := p.ChunkRows
 	if chunkRows <= 0 {
 		chunkRows = defaultTableChunkRows
 	}
 
+	items, warnings, sheetsCount, err := parseXLSXBytes(data, chunkRows)
+	if err != nil {
+		return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
+	}
+
 	var html strings.Builder
-	var warnings []string
-	for _, sheet := range sheets {
-		rendered, sheetWarnings, err := renderSheetTables(f, sheet, chunkRows)
-		if err != nil {
-			return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
+	for _, it := range items {
+		if t, ok := it["text"].(string); ok {
+			html.WriteString(t)
 		}
-		html.WriteString(rendered)
-		warnings = append(warnings, sheetWarnings...)
+	}
+
+	outFmt := p.OutputFormat
+	if outFmt == "" || strings.EqualFold(outFmt, "html") {
+		outFmt = "json"
 	}
 
 	return ParseResult{
-		OutputFormat: "html",
-		File:         map[string]any{"name": filename, "format": "xls"},
+		OutputFormat: outFmt,
+		File:         map[string]any{"name": filename, "format": "xls", "sheets": sheetsCount},
+		JSON:         items,
 		HTML:         html.String(),
 		Warnings:     warnings,
 	}

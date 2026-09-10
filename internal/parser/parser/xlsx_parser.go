@@ -120,7 +120,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 
 	items, warnings, sheets, err := parseXLSXBytes(data, chunkRows)
 	if err == nil {
-		return xlsxParseResult(filename, items, warnings, sheets)
+		return xlsxParseResult(filename, items, warnings, sheets, p.OutputFormat)
 	}
 
 	normalized, normalizeWarnings, changed, normalizeErr := normalizeXLSXForRead(data)
@@ -135,7 +135,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
 	}
 	warnings = append(normalizeWarnings, warnings...)
-	return xlsxParseResult(filename, items, warnings, sheets)
+	return xlsxParseResult(filename, items, warnings, sheets, p.OutputFormat)
 }
 
 func parseXLSXBytes(data []byte, chunkRows int) ([]map[string]any, []string, int, error) {
@@ -176,11 +176,22 @@ func parseXLSXBytes(data []byte, chunkRows int) ([]map[string]any, []string, int
 	return items, warnings, len(sheets), nil
 }
 
-func xlsxParseResult(filename string, items []map[string]any, warnings []string, sheets int) ParseResult {
+func xlsxParseResult(filename string, items []map[string]any, warnings []string, sheets int, outputFormat string) ParseResult {
+	outFmt := outputFormat
+	if outFmt == "" || strings.EqualFold(outFmt, "html") {
+		outFmt = "json"
+	}
+	var html strings.Builder
+	for _, it := range items {
+		if t, ok := it["text"].(string); ok {
+			html.WriteString(t)
+		}
+	}
 	return ParseResult{
-		OutputFormat: "json",
+		OutputFormat: outFmt,
 		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": sheets},
 		JSON:         items,
+		HTML:         html.String(),
 		Warnings:     warnings,
 	}
 }

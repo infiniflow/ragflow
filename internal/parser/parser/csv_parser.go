@@ -128,14 +128,28 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	decoded, encName := DecodeToUTF8(data, "text/csv")
 	text := string(decoded)
 	if strings.TrimSpace(text) == "" {
+		emptyHTML := "<table><caption>" + csvSheetName + "</caption><tr><td></td></tr></table>"
+		outFmt := p.OutputFormat
+		if outFmt == "" || strings.EqualFold(outFmt, "html") {
+			outFmt = "json"
+		}
 		return ParseResult{
-			OutputFormat: "html",
+			OutputFormat: outFmt,
 			File: map[string]any{
 				"name":     filename,
 				"size":     len(data),
 				"encoding": encName,
+				"format":   "csv",
+				"sheets":   1,
 			},
-			HTML: "<table><caption>" + csvSheetName + "</caption><tr><td></td></tr></table>",
+			JSON: []map[string]any{{
+				"text":         emptyHTML,
+				"doc_type_kwd": "table",
+				"ck_type":      "table",
+				"sheet":        csvSheetName,
+				"positions":    [][]float64{{1, 1, 1, 1, 1}},
+			}},
+			HTML: emptyHTML,
 		}
 	}
 
@@ -157,13 +171,40 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		chunkRows = csvDefaultChunkRows
 	}
 
+	chunks := recordsToHTMLTableChunkList(records, chunkRows, csvSheetName, 1)
+	items := make([]map[string]any, 0, len(chunks))
+	for _, ch := range chunks {
+		items = append(items, map[string]any{
+			"text":         ch.HTML,
+			"doc_type_kwd": "table",
+			"ck_type":      "table",
+			"sheet":        csvSheetName,
+			"positions": [][]float64{{
+				1,
+				float64(ch.RowStart),
+				float64(ch.RowEnd),
+				float64(ch.ColStart),
+				float64(ch.ColEnd),
+			}},
+		})
+	}
+	htmlText := recordsToHTMLTableChunks(records, chunkRows, csvSheetName)
+
+	outFmt := p.OutputFormat
+	if outFmt == "" || strings.EqualFold(outFmt, "html") {
+		outFmt = "json"
+	}
+
 	return ParseResult{
-		OutputFormat: "html",
+		OutputFormat: outFmt,
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),
 			"encoding": encName,
+			"format":   "csv",
+			"sheets":   1,
 		},
-		HTML: recordsToHTMLTableChunks(records, chunkRows, csvSheetName),
+		JSON: items,
+		HTML: htmlText,
 	}
 }

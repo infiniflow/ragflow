@@ -216,8 +216,11 @@ func TestCSVParser_ParseWithResult_DefaultCSVBehavior(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "html"; got != want {
+	if got, want := res.OutputFormat, "json"; got != want {
 		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatal("JSON items is empty; want structured table items")
 	}
 	if res.HTML == "" {
 		t.Fatal("HTML is empty; want rendered table")
