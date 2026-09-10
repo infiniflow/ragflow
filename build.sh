@@ -574,32 +574,34 @@ setup_cgo_env() {
     if [ -d "$ONNXRUNTIME_STATIC_PREFIX" ]; then
         # Collect every .a, but skip GPU-only providers we never build
         # against (would pull in CUDA/cuDNN/TensorRT which we don't ship).
+        #
+        # Select the ORT static lib that matches the Go deepdoc backend's
+        # required version (DeepDocORTVersion in internal/common/environments.go).
+        # Go and Python build/link against independent ORT versions, so the
+        # static_lib prefix legitimately holds more than one
+        # onnxruntime-linux-x64-static_lib-* dir at once (e.g. the Python-side
+        # 1.23.x next to the Go-side 1.29.0). We pick the dir that matches
+        # DeepDocORTVersion rather than failing when a second version dir is
+        # present. This avoids silently linking the wrong version while still
+        # keeping the bake self-documenting.
+        local ort_version
+        ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
+            "${PROJECT_ROOT}/internal/common/environments.go" \
+            | sed -E 's/.*"([^"]+)".*/\1/')"
+        if [ -z "$ort_version" ]; then
+            echo "  Error: cannot parse DeepDocORTVersion from internal/common/environments.go" >&2
+            return 1
+        fi
         local ort_a=""
-        local seen_version_dir=""
         while IFS= read -r f; do
             case "$(basename "$f")" in
                 *cuda*|*tensorrt*|*coreml*|*dml*|*migraphx*) continue ;;
             esac
-            # Guard against coexisting stale version dirs: if .a files span
-            # more than one onnxruntime-linux-x64-static_lib-* dir, fail fast
-            # instead of silently linking two ORT versions (duplicate symbols
-            # / wrong version). Re-run `download_deps.py` to prune stale dirs
-            # after a version bump, or remove the old dir by hand.
             case "$f" in
-                */onnxruntime-linux-x64-static_lib-*/lib/*.a)
-                    local vdir="${f#*/onnxruntime-linux-x64-static_lib-}"
-                    vdir="${vdir%%/*}"
-                    if [ -z "$seen_version_dir" ]; then
-                        seen_version_dir="$vdir"
-                    elif [ "$seen_version_dir" != "$vdir" ]; then
-                        echo "  Error: multiple ONNX Runtime versions found under $ONNXRUNTIME_STATIC_PREFIX" >&2
-                        echo "    $seen_version_dir  AND  $vdir" >&2
-                        echo "  Remove the stale version dir (or re-run download_deps.py to prune it)." >&2
-                        return 1
-                    fi
-                    ;;
+                # Only collect .a from the dir matching the required version.
+                */onnxruntime-linux-x64-static_lib-"${ort_version}"*/lib/*.a)
+                    ort_a="$ort_a $f" ;;
             esac
-            ort_a="$ort_a $f"
         done < <(find "$ONNXRUNTIME_STATIC_PREFIX" -type f -name '*.a' 2>/dev/null)
 
         if [ -n "$ort_a" ]; then
@@ -634,7 +636,13 @@ setup_cgo_env() {
             # dynamic symbol table, which is what the binding's dlopen(NULL)+dlsym
             # lookup needs at runtime (no --export-dynamic required).
         else
-            echo "  onnxruntime static_lib dir has no .a files; the in-process DeepDoc backend cannot link ORT" >&2
+            local avail
+            avail="$(find "$ONNXRUNTIME_STATIC_PREFIX" -maxdepth 1 -type d \
+                -name 'onnxruntime-linux-x64-static_lib-*' -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
+            echo "  Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX" >&2
+            echo "    available: ${avail:-<none>}" >&2
+            echo "    DeepDocORTVersion=${ort_version}; bake/download the matching ORT (or update DeepDocORTVersion)." >&2
+            return 1
         fi
     else
         echo "  onnxruntime static_lib not found ($ONNXRUNTIME_STATIC_PREFIX); the in-process DeepDoc backend cannot link ORT" >&2
