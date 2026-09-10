@@ -570,7 +570,7 @@ PARSERS = {
 #
 # Word marks TOC entries with the built-in styles ``toc 1`` / ``TOC 1`` / ...
 # When a document loses its styles (e.g. converted from PDF), an entry usually
-# still looks like "1.1<TAB>需求背景<TAB>1" — section number, tab, page number.
+# still looks like "1.1<TAB>title<TAB>1" — section number, tab, page number.
 _TOC_STYLE_PREFIXES = ("toc",)
 _TOC_LINE_RE = re.compile(r"^[\d.]+[\s\u3000]*[^\t]*\t\s*\d+\s*$")
 
