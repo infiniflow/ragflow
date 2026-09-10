@@ -28,6 +28,7 @@ def build_payload(
 
 
 def run_retrieval(client: HttpClient, payload: Dict[str, Any]) -> RetrievalSample:
+    """Measure one retrieval, recording transport and API failures as samples."""
     t0 = time.perf_counter()
     response = None
     try:

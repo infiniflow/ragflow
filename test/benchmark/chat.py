@@ -57,6 +57,7 @@ def resolve_model(model: Optional[str], chat_data: Optional[Dict[str, Any]]) -> 
 
 
 def _parse_stream_error(response) -> Optional[str]:
+    """Reject HTTP failures and responses that cannot contain a chat stream."""
     if not 200 <= response.status_code < 300:
         return f"HTTP {response.status_code}"
     content_type = response.headers.get("Content-Type", "")
@@ -78,6 +79,7 @@ def stream_chat_completion(
     messages: List[Dict[str, Any]],
     extra_body: Optional[Dict[str, Any]] = None,
 ) -> ChatSample:
+    """Measure one text completion, retaining partial text when the stream fails."""
     payload: Dict[str, Any] = {"model": model, "messages": messages, "stream": True}
     if extra_body:
         payload["extra_body"] = extra_body
@@ -123,15 +125,18 @@ def stream_chat_completion(
             if chunk.get("error") is not None or chunk.get("code") not in (0, None):
                 stream_error = "Chat stream reported an error"
                 break
-            choices = chunk.get("choices") or []
-            if not isinstance(choices, list) or (choices and not isinstance(choices[0], dict)):
+            choices = chunk.get("choices")
+            if not isinstance(choices, list) or not all(isinstance(item, dict) for item in choices):
                 stream_error = "Invalid stream chunk: expected choices to be a list of objects"
                 break
-            choice = choices[0] if choices else {}
-            delta = choice.get("delta") or {}
-            if not isinstance(delta, dict):
+            # Usage-only chunks can have no choices; they do not complete the stream.
+            if not choices:
+                continue
+            if not all(isinstance(item.get("delta"), dict) for item in choices):
                 stream_error = "Invalid stream chunk: expected delta to be an object"
                 break
+            choice = choices[0]
+            delta = choice["delta"]
             content = delta.get("content")
             if t1 is None and isinstance(content, str) and content != "":
                 t1 = time.perf_counter()

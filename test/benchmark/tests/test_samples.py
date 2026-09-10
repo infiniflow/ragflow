@@ -86,7 +86,22 @@ def test_completed_chat_remains_successful(ending):
     client.request.return_value.close.assert_called_once()
 
 
-@pytest.mark.parametrize("event", ["not-json", [], None, {"choices": [None]}, {"choices": {"delta": {}}}, {"choices": [{"delta": "bad"}]}, {"error": {"message": "unavailable"}}, {"code": 102}])
+@pytest.mark.parametrize(
+    "event",
+    [
+        "not-json",
+        [],
+        None,
+        {},
+        *({"choices": value} for value in [None, False, 0, "", {}, [None], [{}, "invalid"]]),
+        {"choices": {"delta": {}}},
+        *({"choices": [{"delta": value}]} for value in [None, False, 0, "", [], "bad"]),
+        {"choices": [{}]},
+        {"choices": [{"delta": {}}, {"delta": None}]},
+        {"error": {"message": "unavailable"}},
+        {"code": 102},
+    ],
+)
 def test_malformed_or_error_event_after_content_is_failure(event):
     client = Mock(spec=HttpClient)
     client.request.return_value = stream_response([CONTENT, event, "[DONE]"])
@@ -155,3 +170,21 @@ def test_programming_errors_are_not_swallowed():
         stream_chat_completion(client, "chat", "model", [])
     with pytest.raises(RuntimeError, match="unexpected bug"):
         run_retrieval(client, {})
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        {"choices": [], "usage": {"total_tokens": 4}},
+        {"choices": [{"delta": {"role": "assistant", "content": None}}]},
+        {"choices": [{"delta": {}}, {"delta": {}}]},
+    ],
+)
+def test_valid_metadata_chunks_preserve_success(event):
+    """Usage-only and empty deltas must not invalidate completed text streams."""
+    client = Mock(spec=HttpClient)
+    client.request.return_value = stream_response([CONTENT, event, "[DONE]"])
+    sample = stream_chat_completion(client, "chat", "model", [])
+    assert sample.error is None
+    assert sample.response_text == "partial answer"
+    client.request.return_value.close.assert_called_once()
