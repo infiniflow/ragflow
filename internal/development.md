@@ -39,14 +39,7 @@ go version
 ### 1.4 Install dependent library
 ```shell
 sudo apt install libpcre2-dev
-# Native libs for the Go build (office_oxide, pdfium, pdf_oxide, onnxruntime).
-# download_go_deps.py is the Go-end script: it now fetches the ONNX Runtime
-# static lib too, so this single command covers every native dependency the
-# Go server binary needs (incl. the in-process DeepDoc backend).
 python3 ragflow_deps/download_go_deps.py
-# Shared (Go + Python) deps. Retains ONNX Runtime for the ragflow_deps image /
-# backward-compat; also pulls Python-side artifacts (models, nltk, tika, ...).
-uv run python3 ragflow_deps/download_deps.py
 ```
 
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
@@ -70,8 +63,10 @@ uv run python3 ragflow_deps/download_deps.py
 > # OrtGetApiBase is the only symbol that must be visible process-wide. Export
 > # just it — not via a "local: *" version script, which hides Go's runtime type
 > # symbols and breaks PIE absolute relocations. There is deliberately no
-> # --whole-archive, so unreferenced kernels are dropped.
-> printf '{\n  OrtGetApiBase;\n};\n' > /tmp/ort_dynamic.txt
+> # --whole-archive, so unreferenced kernels are dropped. Write the dynamic
+> # list to .cache/ (gitignored), matching build.sh.
+> mkdir -p .cache
+> printf '{\n  OrtGetApiBase;\n};\n' > .cache/ort_dynamic_list.txt
 >
 > export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
 > export CGO_LDFLAGS="\
@@ -80,7 +75,7 @@ uv run python3 ragflow_deps/download_deps.py
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
 >     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
->     -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=/tmp/ort_dynamic.txt ${ORT_A} -lstdc++ \
+>     -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=.cache/ort_dynamic_list.txt ${ORT_A} -lstdc++ \
 >     -fuse-ld=lld \
 >     -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 > ```
@@ -97,7 +92,8 @@ uv run python3 ragflow_deps/download_deps.py
 > needs `-ldl` to *compile*, so a binary built **without** ORT links
 > successfully but dies at startup with:
 > `Error looking up OrtGetApiBase in statically-linked ONNX Runtime` → fatal
-> `no in-process DeepDoc backend serving`.
+> `no in-process DeepDoc backend serving`. The same fatal also fires when the
+> `.ort` weights are missing from the model directory — see §1.6.
 > Since `build.sh` (`build_go`) now **fails fast** when ORT is absent from
 > `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
 > you see `Error: ONNX Runtime static libraries are not linked`, run
@@ -129,16 +125,49 @@ The in-process DeepDoc backend is statically linked against ONNX Runtime
 (see §1.4). After a successful `./build.sh -s --go`, the `ragflow_server`
 binary carries it and registers the backend at startup.
 
+#### Model weights
+
+The Go backend loads **`.ort`** (FlatBuffer) weights; the Python side loads
+**`.onnx`**. Both formats live side by side in `rag/res/deepdoc/` — neither
+supersedes the other, so do not delete one to "clean up".
+
+|        | Go (in-process)                                          | Python                                                       |
+|--------|----------------------------------------------------------|--------------------------------------------------------------|
+| Format | `.ort`                                                   | `.onnx`                                                      |
+| Files  | `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` | `det.onnx`, `layout.onnx`, `tsr.onnx`, `rec.onnx`, `ocr.res` |
+
+`download_go_deps.py` (§1.4) fetches the five required files — four `.ort` plus
+`ocr.res` — into `rag/res/deepdoc/`; `download_deps.py` snapshots the whole
+`InfiniFlow/deepdoc` repo and therefore carries both formats.
+
+Auto-discovery is **relative to the server process's working directory**:
+`resolveDeepDocModelDir()` (`cmd/ragflow_server.go`) probes
+`<cwd>/rag/res/deepdoc`, then `<cwd>/huggingface.co/InfiniFlow/deepdoc`.
+Launching `./bin/ragflow_server` from the repo root therefore needs no
+`MODEL_DIR` / `DEEPDOC_MODEL_DIR` export; from any other CWD — or an image with
+a different WORKDIR — set `MODEL_DIR` explicitly.
+
+`common.DeepDocModelFiles` (`internal/common/environments.go`) is the
+authoritative list — `HasModelFiles()` refuses to serve when any file in it is
+missing from the model directory.
+
+> **Note**: A `rag/res/deepdoc/` populated before the `.ort` switch holds only
+> `.onnx` and will NOT serve the Go backend, even though the directory looks
+> fully populated. Re-run `download_go_deps.py` after updating.
+
 - **Confirm it is serving** — the server logs, at startup:
   `in-process DeepDoc backend registered (production backend)`
-  If you instead see a fatal `no in-process DeepDoc backend serving`, ORT was
-  not linked into the binary. Re-run `uv run python3 ragflow_deps/download_go_deps.py`
-  and rebuild (§1.4 explains why; `build.sh` fails fast with
-  `Error: ONNX Runtime static libraries are not linked` before this happens).
+  If you instead see a fatal `no in-process DeepDoc backend serving`, it has
+  two possible causes: ORT was not linked into the binary, or the model
+  directory is missing one of the five required files listed above. Check the
+  weights first, then re-run `uv run python3 ragflow_deps/download_go_deps.py` and rebuild
+  (§1.4 explains the ORT link failure; `build.sh` fails fast with
+  `Error: ONNX Runtime static libraries are not linked` before that happens).
 
 - **Run the binary directly (local dev)** — `./bin/ragflow_server --api`
   (start `--admin` first, see §2) launches the Go server and registers the
-  backend. No extra environment variable is required.
+  backend. Run it from the repo root so the weights above are auto-discovered
+  (see the CWD caveat); no environment variable is required there.
 
 - **Run the Go Docker image** — the container entrypoint only starts the Go
   server (`bin/ragflow_server --api/--ingestor/--admin`) when

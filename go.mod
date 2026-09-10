@@ -133,7 +133,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.12 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.16 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
-	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
 	github.com/bytedance/sonic v1.15.1
 	github.com/bytedance/sonic/loader v0.5.1 // indirect
@@ -262,7 +262,7 @@ replace github.com/AkmalOt/gomsg => github.com/xugangqiang/gomsg v0.0.0-20260407
 // onnxruntime_go is mirrored to github.com/infiniflow/onnxruntime_go (org-owned
 // fork of yalue/onnxruntime_go at v1.23.0) so the in-process DeepDoc backend no
 // longer depends on a personal fork or the upstream repo directly. ONNX Runtime is
-// linked statically (no --whole-archive, so kernels nothing references are
+// linked statically (no --whole-archive, so unreferenced kernels are
 // dropped; only OrtGetApiBase is exported, via --dynamic-list), and OrtGetApiBase
 // is then resolved at runtime via dlopen(NULL) from the running binary, so no
 // libonnxruntime.so is required. The module path matches the import path, so no

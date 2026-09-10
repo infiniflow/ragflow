@@ -47,6 +47,7 @@ export default function Agents() {
     filterValue,
     setFilterValue,
     handleFilterSubmit,
+    checkValue,
   } = useFetchAgentListByPage();
 
   const { navigateToAgentTemplates } = useNavigatePage();
@@ -79,6 +80,10 @@ export default function Agents() {
   const { deleteGroup } = useDeleteCompilationTemplateGroup();
 
   const filters = useSelectFilters();
+
+  useEffect(() => {
+    checkValue(filters);
+  }, [filters, checkValue]);
 
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {

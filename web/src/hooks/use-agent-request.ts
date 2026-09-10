@@ -176,7 +176,7 @@ export const useFetchAgentListByPage = () => {
     useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, setFilterValue, handleFilterSubmit } =
+  const { filterValue, setFilterValue, handleFilterSubmit, checkValue } =
     useHandleFilterSubmit();
   const canvasCategoryIds = Array.isArray(filterValue.canvasCategory)
     ? (filterValue.canvasCategory as string[])
@@ -240,6 +240,7 @@ export const useFetchAgentListByPage = () => {
     filterValue,
     setFilterValue,
     handleFilterSubmit,
+    checkValue,
   };
 };
 

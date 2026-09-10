@@ -33,6 +33,7 @@
 import argparse
 import os
 import shutil
+import sys
 import urllib.request
 
 # NLTK >=3.10 refuses proxied downloads (SSRF guard) unless opted in; the
@@ -86,8 +87,8 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             # ONNX Runtime static archives for the Go in-process (DeepDoc)
             # backend. Statically linked into the server binary (see build.sh:
-            # ONNXRUNTIME_STATIC_PREFIX — no --whole-archive, so kernels nothing
-            # references are dropped; only OrtGetApiBase is exported, via
+            # ONNXRUNTIME_STATIC_PREFIX — no --whole-archive, so unreferenced
+            # kernels are dropped; only OrtGetApiBase is exported, via
             # --dynamic-list), so no libonnxruntime.so is needed at runtime —
             # OrtGetApiBase is resolved via dlopen(NULL) (the process-global
             # symbol table, not the executable's own path). csukuangfj's
@@ -135,8 +136,8 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             # ONNX Runtime static archives for the Go in-process (DeepDoc)
             # backend. Statically linked into the server binary (see build.sh:
-            # ONNXRUNTIME_STATIC_PREFIX — no --whole-archive, so kernels nothing
-            # references are dropped; only OrtGetApiBase is exported, via
+            # ONNXRUNTIME_STATIC_PREFIX — no --whole-archive, so unreferenced
+            # kernels are dropped; only OrtGetApiBase is exported, via
             # --dynamic-list), so no libonnxruntime.so is needed at runtime —
             # OrtGetApiBase is resolved via dlopen(NULL) (the process-global
             # symbol table, not the executable's own path). csukuangfj's
@@ -273,3 +274,26 @@ if __name__ == "__main__":
     for repo_id in repos:
         print(f"Downloading huggingface repo {repo_id}...")
         download_model(repo_id)
+
+    # Guard: the Go in-process DeepDoc backend loads the .ort weights from the
+    # InfiniFlow/deepdoc snapshot pulled above. snapshot_download fetches the
+    # whole repo, so these must be present; fail loudly if a future repo layout
+    # drops them, so the Go backend can never silently ship without its models.
+    # (internal/common.DeepDocModelFiles is the authoritative list.)
+    deepdoc_local = os.path.abspath(os.path.join("huggingface.co", "InfiniFlow", "deepdoc"))
+    go_model_files = ["det.ort", "layout.ort", "tsr.ort", "rec.ort", "ocr.res"]
+    if not os.path.isdir(deepdoc_local):
+        print(
+            f"  ERROR: {deepdoc_local} does not exist; the InfiniFlow/deepdoc snapshot did not materialize.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    missing_models = [f for f in go_model_files if not os.path.isfile(os.path.join(deepdoc_local, f))]
+    if missing_models:
+        for f in missing_models:
+            print(
+                f"  ERROR: expected Go model file {f} missing from {deepdoc_local}; the InfiniFlow/deepdoc snapshot no longer ships .ort weights.",
+                file=sys.stderr,
+            )
+        sys.exit(1)
+    print(f"  ✓ Go .ort model files present under {deepdoc_local}")

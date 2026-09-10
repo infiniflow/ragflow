@@ -95,6 +95,13 @@ async def create_dataset(tenant_id: str, req: dict):
     :param req: dataset creation request
     :return: (success, result) or (success, error_message)
     """
+    # Drop language when not provided so the model/database default applies
+    # (the create request is parsed with exclude_unset=False, so the key is
+    # always present with a None default when the caller omits it).
+    if req.get("language") is None:
+        req.pop("language", None)
+        logging.debug("create_dataset: 'language' not provided; falling back to the model/database default.")
+
     # Map auto_metadata_config (if provided) into parser_config structure
     auto_meta = req.pop("auto_metadata_config", {})
     if auto_meta:
@@ -2472,6 +2479,26 @@ async def _current_chunk_doc_ids(index_nm, dataset_id: str, doc_ids: set[str]) -
     )
 
 
+async def _current_structure_product_doc_ids(index_nm, dataset_id: str, kind: str, doc_ids: set[str]) -> set[str]:
+    """Return documents that have produced a document-scoped structure graph."""
+    if not doc_ids:
+        return set()
+    stored_kinds = sorted(_ALTERATION_ELIGIBLE_TEMPLATE_KINDS.get(kind) or {kind})
+    return await _involved_doc_ids_paged(
+        index_nm,
+        dataset_id,
+        {
+            "doc_id": sorted(doc_ids),
+            "scope_kwd": ["doc"],
+            "knowledge_graph_kwd": ["entity", "relation"],
+            "compilation_template_kind_kwd": stored_kinds,
+        },
+        "doc_id",
+        from_list=False,
+        raise_on_error=True,
+    )
+
+
 async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str, tenant_id: str, wiki_map_state: dict | None = None) -> set:
     """Gather the doc ids baked into the compiled product for ``kind``."""
     if kind == "wiki":
@@ -2568,11 +2595,14 @@ async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
             eligible_before_chunk_filter = len(eligible_doc_ids)
             chunk_doc_ids = await _current_chunk_doc_ids(index_nm, dataset_id, eligible_doc_ids)
             eligible_doc_ids &= chunk_doc_ids
+            product_doc_ids = await _current_structure_product_doc_ids(index_nm, dataset_id, kind, eligible_doc_ids)
+            eligible_doc_ids &= product_doc_ids
             logging.debug(
-                "alteration: structure chunk eligibility kind=%s kb=%s before=%d after=%d",
+                "alteration: structure eligibility kind=%s kb=%s before=%d after_chunks=%d after_products=%d",
                 kind,
                 dataset_id,
                 eligible_before_chunk_filter,
+                len(chunk_doc_ids),
                 len(eligible_doc_ids),
             )
         wiki_map_state = None
@@ -3876,7 +3906,6 @@ _LAYERS_HANDLERS: dict[str, str] = {
 #   "tree" — BFS beam descent over the nav cluster tree.  This is what main
 #       branch does.  Kept as the A/B baseline; drop it, and
 #       ``search_nav_tree_descent`` with it, once a winner is settled.
-_NAV_TREE_ROUTER = "chunk_agg"
 
 # Cap on how many documents a flat router hands back.  The cluster beam descent
 # that main uses returns ~2 by construction (its per-level pruning keeps only
@@ -3996,7 +4025,7 @@ async def search_dataset_layers(
     elif mode == "nav_cluster":
         return await _search_layers_nav_clusters(tenant_id, dataset_id, query, top_k, embd_mdl, search_dataset_nav, doc_scope=doc_scope)
     elif mode == "navigation_tree":
-        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
+        return await _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb, router="tree", doc_scope=doc_scope)
     elif mode == "chunk":
         return await _search_layers_chunks(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
     elif mode == "all":
@@ -4067,14 +4096,14 @@ def _nav_label_items(items: list) -> list:
     return items
 
 
-async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, doc_scope=None):
-    """Route to documents, dispatched by ``_NAV_TREE_ROUTER``.
+async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, embd_mdl, kb=None, *, router: str = "chunk_agg", doc_scope=None):
+    """Route to documents using the requested navigation-tree strategy.
 
     Every strategy returns the same item shape — ``doc_id``, a 0..1 ``score``,
     and ``_nav`` carrying the document summary — so callers stay agnostic to
     which one is active.
     """
-    if _NAV_TREE_ROUTER == "nav_doc":
+    if router == "nav_doc":
         from rag.advanced_rag.knowlege_compile.dataset_nav import search_dataset_nav
 
         items = await _nav_search_result(
@@ -4091,7 +4120,7 @@ async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, em
         _nav_label_items(items)
         return True, {"mode": "navigation_tree", "total": len(items), "items": items}
 
-    if _NAV_TREE_ROUTER == "tree":
+    if router == "tree":
         from rag.advanced_rag.knowlege_compile.dataset_nav import search_nav_tree_descent
 
         items = await search_nav_tree_descent(
@@ -4104,9 +4133,9 @@ async def _search_layers_navigation_tree(tenant_id, dataset_id, query, top_k, em
         )
         return True, {"mode": "navigation_tree", "total": len(items), "items": items}
 
-    if _NAV_TREE_ROUTER in ("compiled_agg", "fusion"):
+    if router in ("compiled_agg", "fusion"):
         ok, payload = await _search_layers_compiled_agg(tenant_id, dataset_id, query, top_k, embd_mdl, kb, doc_scope=doc_scope)
-        if _NAV_TREE_ROUTER == "compiled_agg":
+        if router == "compiled_agg":
             return ok, payload
         # Fusion keeps going: the compiled leg ranks alongside the chunk leg.
         return await _search_layers_fusion(tenant_id, dataset_id, query, top_k, embd_mdl, kb, compiled=payload, doc_scope=doc_scope)

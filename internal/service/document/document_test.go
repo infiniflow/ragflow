@@ -1823,9 +1823,144 @@ func TestGetDocumentPreview_DocumentNotFound(t *testing.T) {
 	svc := testDocumentService(t)
 
 	ctx := t.Context()
-	_, err := svc.GetDocumentPreview(ctx, "nonexistent")
+	_, err := svc.GetDocumentPreview(ctx, "tenant-1", "nonexistent")
+	if !errors.Is(err, ErrPreviewDocumentNotFound) {
+		t.Errorf("expected ErrPreviewDocumentNotFound, got %v", err)
+	}
+}
+
+// insertTestPreviewDoc creates a doc with a name/location and seeds its blob.
+func insertTestPreviewDoc(t *testing.T, db *gorm.DB, mockStorage *fakeUploadStorage, id, kbID, content string) {
+	t.Helper()
+	name := id + ".txt"
+	loc := id + ".txt"
+	doc := &entity.Document{
+		ID:           id,
+		KbID:         kbID,
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		Name:         &name,
+		Location:     &loc,
+		Suffix:       "txt",
+		Status:       sptr("1"),
+	}
+	if err := db.Create(doc).Error; err != nil {
+		t.Fatalf("insert test doc: %v", err)
+	}
+	if err := mockStorage.Put(context.Background(), kbID, loc, []byte(content)); err != nil {
+		t.Fatalf("seed preview object: %v", err)
+	}
+}
+
+func useFakeStorage(t *testing.T) *fakeUploadStorage {
+	t.Helper()
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	origStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(origStorage) })
+	return mockStorage
+}
+
+func TestGetDocumentPreview_AccessControl(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	mockStorage := useFakeStorage(t)
+	insertTestKB(t, "kb-prev", "tenant-1", 1, 0, 0)
+	insertTestPreviewDoc(t, db, mockStorage, "doc-prev", "kb-prev", "preview body")
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+
+	// Dataset owner reads the original file.
+	p, err := svc.GetDocumentPreview(ctx, "tenant-1", "doc-prev")
+	if err != nil {
+		t.Fatalf("owner preview: %v", err)
+	}
+	if string(p.Data) != "preview body" {
+		t.Fatalf("unexpected body: %q", string(p.Data))
+	}
+
+	// A member of the dataset's tenant reads it too.
+	if err := db.Create(&entity.UserTenant{
+		ID: "ut-prev", UserID: "user-2", TenantID: "tenant-1",
+		Role: "normal", InvitedBy: "tenant-1", Status: sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("insert user_tenant: %v", err)
+	}
+	if _, err = svc.GetDocumentPreview(ctx, "user-2", "doc-prev"); err != nil {
+		t.Fatalf("team member preview: %v", err)
+	}
+
+	// An unrelated user gets the same answer as for a missing document.
+	_, err = svc.GetDocumentPreview(ctx, "tenant-2", "doc-prev")
+	if !errors.Is(err, ErrPreviewDocumentNotFound) {
+		t.Fatalf("stranger preview: expected ErrPreviewDocumentNotFound, got %v", err)
+	}
+
+	// A private (ME) dataset stays owner-only even for tenant members: the
+	// same rule the chunk list applies via KnowledgebaseDAO.Accessible.
+	if err := db.Create(&entity.Knowledgebase{
+		ID: "kb-prev-me", TenantID: "tenant-1", Name: "private-kb", EmbdID: "embd-1",
+		CreatedBy: "user-1", Permission: string(entity.TenantPermissionMe),
+		DocNum: 1, Status: sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert private kb: %v", err)
+	}
+	insertTestPreviewDoc(t, db, mockStorage, "doc-prev-me", "kb-prev-me", "private body")
+
+	if _, err = svc.GetDocumentPreview(ctx, "user-2", "doc-prev-me"); !errors.Is(err, ErrPreviewDocumentNotFound) {
+		t.Fatalf("team member on private dataset: expected ErrPreviewDocumentNotFound, got %v", err)
+	}
+	p, err = svc.GetDocumentPreview(ctx, "tenant-1", "doc-prev-me")
+	if err != nil {
+		t.Fatalf("owner preview private dataset: %v", err)
+	}
+	if string(p.Data) != "private body" {
+		t.Fatalf("unexpected private body: %q", string(p.Data))
+	}
+}
+
+func TestGetDocumentPreview_EmptyObject(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	mockStorage := useFakeStorage(t)
+	insertTestKB(t, "kb-prev-empty", "tenant-1", 1, 0, 0)
+	insertTestPreviewDoc(t, db, mockStorage, "doc-prev-empty", "kb-prev-empty", "")
+
+	svc := testDocumentService(t)
+	_, err := svc.GetDocumentPreview(t.Context(), "tenant-1", "doc-prev-empty")
+	if !errors.Is(err, ErrPreviewFileEmpty) {
+		t.Fatalf("expected ErrPreviewFileEmpty, got %v", err)
+	}
+}
+
+func TestGetDocumentPreview_MissingObjectSurfacesStorageError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	useFakeStorage(t)
+	insertTestKB(t, "kb-prev-miss", "tenant-1", 1, 0, 0)
+	// Document exists but its blob was never seeded.
+	name := "doc.txt"
+	loc := "doc.txt"
+	if err := db.Create(&entity.Document{
+		ID: "doc-prev-miss", KbID: "kb-prev-miss", ParserID: "naive",
+		ParserConfig: entity.JSONMap{}, Name: &name, Location: &loc,
+		Suffix: "txt", Status: sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("insert test doc: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	_, err := svc.GetDocumentPreview(t.Context(), "tenant-1", "doc-prev-miss")
 	if err == nil {
-		t.Error("expected error for nonexistent document")
+		t.Fatal("expected storage read error")
+	}
+	if errors.Is(err, ErrPreviewDocumentNotFound) {
+		t.Fatalf("storage failure must not be masked as document not found, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "kb-prev-miss") {
+		t.Fatalf("error should carry the storage address for diagnosis: %v", err)
 	}
 }
 
