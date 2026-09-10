@@ -1,11 +1,10 @@
 ---
 sidebar_position: 6
-title: Metadata: Metadata Management
-sidebar_label: Metadata: Metadata Management
+title: "Metadata: Metadata Management"
+sidebar_label: "Metadata: Metadata Management"
 slug: /metadata_management
-sidebar_custom_props: {
+sidebar_custom_props:
   categoryIcon: LucideDatabaseZap
-}
 ---
 
 # Metadata: Metadata Management

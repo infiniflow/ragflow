@@ -84,7 +84,7 @@ var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error)
 	allowAny := allowAnyHost()
 	addresses, err := LookupHost(hostname)
 	if err != nil {
-		return "", "", fmt.Errorf("could not resolve hostname '%s': %v", hostname, err)
+		return "", "", fmt.Errorf("could not resolve hostname '%s': %w", hostname, err)
 	}
 	if len(addresses) == 0 {
 		return "", "", fmt.Errorf("hostname '%s' resolved to no addresses", hostname)

@@ -281,11 +281,12 @@ func TestFindOverlappedWithThreshold_BidirectionalGate(t *testing.T) {
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 10, Y1: 20}, // area = 200, entirely inside box
 	}
-	// boxRatio = 200/10000 = 0.02, cellRatio = 200/200 = 1.0
-	// Python: max(0.02, 1.0) = 1.0 ≥ 0.3 → match!
+	// boxRatio = 200/10000 = 0.02, cellRatio = 200/200 = 1.0.
+	// Python gates on the BOX ratio only ((boxRatio, cellRatio) >= (thr, 0)),
+	// so boxRatio=0.02 < 0.3 → NO match, even though cellRatio is 1.0.
 	idx := findOverlappedWithThreshold(box, cells, 0.3)
-	if idx != 0 {
-		t.Errorf("bidirectional gate: cell fully inside large box should match (cellRatio=1.0 ≥ 0.3). got idx=%d, want 0", idx)
+	if idx != -1 {
+		t.Errorf("box-ratio gate: a box that is only 2%% covered by the cell must NOT match (Python gates on boxRatio >= thr). got idx=%d, want -1", idx)
 	}
 }
 

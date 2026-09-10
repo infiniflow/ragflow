@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from models.enums import ResultStatus
@@ -21,12 +23,18 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+# Rate limit applied to POST /run, keyed by remote address (see key_func above).
+# Callers behind a Docker bridge network share a single address, so this acts as
+# a coarse per-deployment throttle; tune via SANDBOX_RUN_RATE_LIMIT if needed.
+RUN_RATE_LIMIT = os.getenv("SANDBOX_RUN_RATE_LIMIT", "120/minute")
+
 limiter = Limiter(key_func=get_remote_address)
 
 
 async def rate_limit_exceeded_handler(request: Request, exc: Exception) -> JSONResponse:
     if isinstance(exc, RateLimitExceeded):
         return JSONResponse(
+            status_code=429,
             content=CodeExecutionResult(
                 status=ResultStatus.PROGRAM_RUNNER_ERROR,
                 stdout="",

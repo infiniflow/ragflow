@@ -32,13 +32,12 @@ import signal
 import sys
 import threading
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 
 from flask import json
 
-from api.utils.common import hash128
-from api.db.services.connector_service import ConnectorService, SyncLogsService
+from api.db.services.connector_service import ConnectorService, SyncLogsService, resolve_connector_doc_id
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
@@ -48,6 +47,7 @@ from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source import (
     BlobStorageConnector,
     RSSConnector,
+    SitemapConnector,
     NotionConnector,
     DiscordConnector,
     GoogleDriveConnector,
@@ -63,6 +63,7 @@ from common.data_source import (
     BigQueryConnector,
     DingTalkAITableConnector,
     RestAPIConnector,
+    XquikConnector,
     OneDriveConnector,
     OutlookConnector,
     AzureBlobConnector,
@@ -79,7 +80,9 @@ from common.data_source.box_connector import BoxConnector
 from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
+from common.data_source.azure_devops.connector import AzureDevOpsConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
+from common.data_source.sitemap_connector import iter_in_worker_thread, validate_connector_in_thread
 from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
@@ -105,6 +108,34 @@ def _redact_mailbox(value: str) -> str:
         local_mask = local if len(local) <= 2 else local[:2] + "***"
         return f"{local_mask}@***"
     return f"{value[:4]}***" if len(value) > 4 else "***"
+
+
+async def _iterate_document_batches(generator):
+    """Yield connector batches, advancing thread-bridged iterators off the event loop.
+
+    Connectors that return an iterator flagged ``offload_next`` (see
+    ``common.data_source.sitemap_connector.iter_in_worker_thread``) may block in
+    ``next()`` while a batch is being fetched; that call is awaited through
+    ``asyncio.to_thread`` so ``asyncio.wait_for`` keeps enforcing the task timeout and
+    cancellation closes the source. Every other connector keeps its synchronous
+    iteration unchanged.
+    """
+    if not getattr(generator, "offload_next", False):
+        for item in generator:
+            yield item
+        return
+
+    sentinel = object()
+    try:
+        while True:
+            item = await asyncio.to_thread(next, generator, sentinel)
+            if item is sentinel:
+                return
+            yield item
+    finally:
+        close = getattr(generator, "close", None)
+        if close is not None:
+            close()
 
 
 class SyncBase:
@@ -223,7 +254,7 @@ class SyncBase:
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
 
-        for document_batch in document_batch_generator:
+        async for document_batch in _iterate_document_batches(document_batch_generator):
             if not document_batch:
                 continue
 
@@ -232,10 +263,8 @@ class SyncBase:
 
             docs = []
             for doc in document_batch:
-                legacy_doc_id = hash128(f"{task['connector_id']}:{doc.id}")
-                new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{doc.id}")
                 d = {
-                    "id": legacy_doc_id if legacy_doc_id in existing_doc_ids else new_doc_id,
+                    "id": resolve_connector_doc_id(task["kb_id"], task["connector_id"], doc.id, existing_doc_ids),
                     "connector_id": task["connector_id"],
                     "source": self.SOURCE_NAME,
                     "semantic_identifier": doc.semantic_identifier,
@@ -392,9 +421,8 @@ class _BlobLikeBase(SyncBase):
             if key_record.deleted:
                 continue
 
-            legacy_doc_id = hash128(f"{task['connector_id']}:{key_record.key}")
-            new_doc_id = hash128(f"{task['kb_id']}:{task['connector_id']}:{key_record.key}")
-            stored = existing_fingerprints.get(legacy_doc_id, "") or existing_fingerprints.get(new_doc_id, "")
+            doc_id = resolve_connector_doc_id(task["kb_id"], task["connector_id"], key_record.key, existing_fingerprints)
+            stored = existing_fingerprints.get(doc_id, "")
             if key_record.fingerprint and stored and key_record.fingerprint == stored:
                 bypass_count += 1
                 continue
@@ -510,6 +538,63 @@ class RSS(SyncBase):
             end_time,
         )
         return document_generator
+
+
+class Sitemap(SyncBase):
+    SOURCE_NAME: str = FileSource.SITEMAP
+
+    @staticmethod
+    def _sanitize_docs(gen):
+        """Strip URL scheme from semantic_identifier so object storage accepts it as a key."""
+        from urllib.parse import urlparse
+
+        for batch in gen:
+            sanitized = []
+            for doc in batch:
+                si = doc.semantic_identifier
+                if si.startswith(("http://", "https://")):
+                    parsed = urlparse(si)
+                    si = f"{parsed.netloc}{parsed.path}"
+                    if parsed.query:
+                        si += f"?{parsed.query}"
+                    if parsed.fragment:
+                        si += f"#{parsed.fragment}"
+                    si = si.strip("/")
+                    doc = doc.model_copy(update={"semantic_identifier": si})
+                sanitized.append(doc)
+            yield sanitized
+
+    async def _prepare_connector(self, task: dict):
+        """Build and validate the connector without starting any document traversal."""
+        self.connector = SitemapConnector.build_connector(self.conf)
+        # validate_connector_settings fetches the sitemap synchronously: keep it off the event
+        # loop, and tell the connector to stop if the task is cancelled meanwhile.
+        await validate_connector_in_thread(self.connector)
+        self.log_connection("Sitemap", self.conf["sitemap_url"], task)
+
+    async def _initialize_for_prune(self, task: dict):
+        # Prune only needs the connector (for retrieve_all_slim_docs_perm_sync); do not start
+        # the batch producer thread that _generate() would create and the base class discard.
+        await self._prepare_connector(task)
+
+    async def _generate(self, task: dict):
+        await self._prepare_connector(task)
+
+        # Batches are produced in a worker thread (network I/O off the event-loop thread)
+        # and handed over through a bounded queue.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            return iter_in_worker_thread(self._sanitize_docs(self.connector.load_from_state()), on_close=self.connector.cancel)
+
+        end_time = datetime.now(UTC).timestamp()
+        return iter_in_worker_thread(
+            self._sanitize_docs(
+                self.connector.poll_source(
+                    task["poll_range_start"].timestamp(),
+                    end_time,
+                )
+            ),
+            on_close=self.connector.cancel,
+        )
 
 
 class Confluence(SyncBase):
@@ -1387,6 +1472,7 @@ class WebDAV(SyncBase):
             base_url=self.conf["base_url"],
             remote_path=self.conf.get("remote_path", "/"),
             batch_size=batch_size,
+            ca_cert_path=self.conf.get("ca_cert_path"),
         )
         self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
@@ -1879,6 +1965,70 @@ class Bitbucket(SyncBase):
         return wrapper()
 
 
+class AzureDevOps(SyncBase):
+    SOURCE_NAME: str = FileSource.AZURE_DEVOPS
+
+    async def _generate(self, task: dict):
+        self.connector = AzureDevOpsConnector(
+            organization=self.conf.get("organization"),
+            index_mode=self.conf.get("index_mode") or "organization",
+            projects=self.conf.get("projects"),
+            repositories=self.conf.get("repositories"),
+            content_types=self.conf.get("content_types") or "both",
+        )
+
+        self.connector.load_credentials(
+            {
+                "azure_devops_pat": self.conf["credentials"].get("azure_devops_pat"),
+            }
+        )
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = datetime.fromtimestamp(0, tz=timezone.utc)
+            _begin_info = "totally"
+        else:
+            start_time = task.get("poll_range_start")
+            _begin_info = f"from {start_time}"
+
+        end_time = datetime.now(timezone.utc)
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            iterations = 0
+            iteration_limit = 100_000
+
+            while checkpoint.has_more:
+                iterations += 1
+                if iterations > iteration_limit:
+                    logging.error("Azure DevOps sync exceeded %d iterations; aborting to avoid an endless loop.", iteration_limit)
+                    # Breaking here would end the generator normally and the task
+                    # would be recorded as a successful, complete sync.
+                    raise RuntimeError(f"Azure DevOps sync exceeded {iteration_limit} iterations before completing.")
+
+                gen = self.connector.load_from_checkpoint(start=start_time.timestamp(), end=end_time.timestamp(), checkpoint=checkpoint)
+
+                while True:
+                    try:
+                        item = next(gen)
+                        if isinstance(item, ConnectorFailure):
+                            # A failed document must not cost the checkpoint: keep consuming
+                            # so the generator returns its updated resume position, otherwise
+                            # a deterministic failure replays the same offset forever.
+                            logging.error("Azure DevOps connector failure: %s", item.failure_message)
+                            continue
+                        yield [item]
+                    except StopIteration as e:
+                        checkpoint = e.value
+                        break
+
+        def wrapper():
+            for batch in document_batches():
+                yield batch
+
+        self.log_connection("AzureDevOps", f"organization({self.conf.get('organization')})", task)
+        return wrapper()
+
+
 class SeaFile(SyncBase):
     SOURCE_NAME: str = FileSource.SEAFILE
 
@@ -2136,8 +2286,27 @@ class REST_API(SyncBase):
         return document_generator
 
 
+class Xquik(SyncBase):
+    SOURCE_NAME: str = FileSource.XQUIK
+
+    async def _generate(self, task: dict):
+        poll_start = task.get("poll_range_start")
+        end_time = datetime.now(timezone.utc)
+        incremental = task.get("reindex") != "1" and poll_start is not None
+
+        self.connector = XquikConnector.from_config(
+            self.conf,
+            since_time=poll_start if incremental else None,
+            until_time=end_time,
+        )
+        document_generator = self.connector.poll_source(poll_start.timestamp(), end_time.timestamp()) if incremental else self.connector.load_from_state()
+        self.log_connection("Xquik", "X search", task)
+        return document_generator
+
+
 func_factory = {
     FileSource.RSS: RSS,
+    FileSource.SITEMAP: Sitemap,
     FileSource.S3: S3,
     FileSource.R2: R2,
     FileSource.OCI_STORAGE: OCI_STORAGE,
@@ -2166,12 +2335,14 @@ func_factory = {
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
     FileSource.BITBUCKET: Bitbucket,
+    FileSource.AZURE_DEVOPS: AzureDevOps,
     FileSource.SEAFILE: SeaFile,
     FileSource.MYSQL: MySQL,
     FileSource.POSTGRESQL: PostgreSQL,
     FileSource.BIGQUERY: BigQuery,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
     FileSource.REST_API: REST_API,
+    FileSource.XQUIK: Xquik,
 }
 
 

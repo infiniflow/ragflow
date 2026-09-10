@@ -23,6 +23,10 @@ type ParityDirs struct {
 	OCR string
 	// Tables is Python's table grid golden.
 	Tables string
+	// TableBoxes is Python's per-char R/C table-cell dump (table_boxes/),
+	// used by the row-segmentation replay to feed authoritative R/C labels
+	// into Go's R/C-based grouping (GroupBoxesByRC).
+	TableBoxes string
 	// GoText is where the harness dumps Go output text for diffing (BATCH_PARITY_DUMP_GO).
 	GoText string
 }
@@ -55,12 +59,13 @@ func ParityDirsFor(variant string) ParityDirs {
 		charspyDir = "charspy_" + variant
 	}
 	return ParityDirs{
-		Charspy: filepath.Join(root, charspyDir),
-		Text:    filepath.Join(root, "output", "py", variant, "text"),
-		DLA:     filepath.Join(root, "output", "py", variant, "dla"),
-		TSRRaw:  filepath.Join(root, "output", "py", variant, "tsr_raw"),
-		OCR:     filepath.Join(root, "output", "py", variant, "ocr"),
-		Tables:  filepath.Join(root, "output", "py", variant, "tables"),
-		GoText:  filepath.Join(root, "output", "go", variant, "text"),
+		Charspy:    filepath.Join(root, charspyDir),
+		Text:       filepath.Join(root, "output", "py", variant, "text"),
+		DLA:        filepath.Join(root, "output", "py", variant, "dla"),
+		TSRRaw:     filepath.Join(root, "output", "py", variant, "tsr_raw"),
+		OCR:        filepath.Join(root, "output", "py", variant, "ocr"),
+		Tables:     filepath.Join(root, "output", "py", variant, "tables"),
+		TableBoxes: filepath.Join(root, "output", "py", variant, "table_boxes"),
+		GoText:     filepath.Join(root, "output", "go", variant, "text"),
 	}
 }

@@ -223,7 +223,7 @@ func TestParallel_Concurrent_UsesSemaphoreFanout(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ch := runParallelFanout(context.Background(), "par", runner, items, indices, opts, bridge)
+		ch := runParallelFanout(t.Context(), "par", runner, items, indices, opts, bridge)
 		for r := range ch {
 			// Each result must carry its original index
 			// (the order-preservation contract under
@@ -248,7 +248,7 @@ func TestParallel_Concurrent_UsesSemaphoreFanout(t *testing.T) {
 }
 
 // TestParallel_SingleItemError_Wrapped asserts the "item %d: %w"
-// wrapping contract. The lambda must return the wrapped error,
+// wrapping  The lambda must return the wrapped error,
 // other items must be drained.
 func TestParallel_SingleItemError_Wrapped(t *testing.T) {
 	ctx := t.Context()

@@ -36,6 +36,13 @@
           }
         ]
       }
+    ],
+    "no-restricted-globals": [
+      "error",
+      {
+        "name": "__API_PROXY_SCHEME__",
+        "message": "Backend identity comes from runtime detection, not the dev-proxy env. Branch only through @/utils/backend-variant (useIsGoBackend / <BackendVariant> / pickByBackend); do not declare or read API_PROXY_SCHEME in app code."
+      }
     ]
   }
 }

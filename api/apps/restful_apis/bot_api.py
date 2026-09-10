@@ -54,6 +54,19 @@ from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate
 logger = logging.getLogger(__name__)
 
 
+async def _accessible_kbs(kb_ids, tenant_id):
+    """Return whether every requested KB is accessible to the caller."""
+    if isinstance(kb_ids, str):
+        kb_ids = [kb_ids]
+    if not kb_ids:
+        return False
+    for kb_id in kb_ids:
+        if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id, tenant_id):
+            logger.warning("Denied KB access: user_id=%s kb_id=%s", tenant_id, kb_id)
+            return False
+    return True
+
+
 @manager.route("/chatbots/<dialog_id>/completions", methods=["POST"])  # noqa: F821
 @login_required(auth_types=AUTH_BETA)
 @add_tenant_id_to_kwargs
@@ -308,6 +321,10 @@ async def ask_about_embedded(tenant_id=None):
         if search_app := await thread_pool_exec(SearchService.get_detail, search_id):
             search_config = search_app.get("search_config", {})
 
+    effective_kb_ids = search_config.get("kb_ids", req["kb_ids"])
+    if not await _accessible_kbs(effective_kb_ids, uid):
+        return get_error_data_result(message="You don't own the requested dataset")
+
     chat_llm_name = ""
     if not search_config or not search_config.get("chat_id"):
         _, tenant_info = TenantService.get_by_id(uid)
@@ -337,7 +354,7 @@ async def ask_about_embedded(tenant_id=None):
 async def retrieval_test_embedded(tenant_id=None):
     req = await get_request_json()
     page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
-    size = validate_rest_api_page_size(req.get("size", DEFAULT_PAGE_SIZE))
+    size = validate_rest_api_page_size(req.get("page_size", req.get("size", DEFAULT_PAGE_SIZE)))
     question = req["question"]
     kb_ids = req["kb_id"]
     if isinstance(kb_ids, str):
@@ -349,6 +366,7 @@ async def retrieval_test_embedded(tenant_id=None):
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
+    rerank_candidates_count = int(req.get("rerank_candidates_count", 64))
     if top <= 0:
         return get_error_data_result("`top_k` must be greater than 0")
     langs = req.get("cross_languages", [])
@@ -358,7 +376,7 @@ async def retrieval_test_embedded(tenant_id=None):
     search_config = {}
 
     async def _retrieval():
-        nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id
+        nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id, rerank_candidates_count
         local_doc_ids = list(doc_ids) if doc_ids else []
         tenant_ids = []
         _question = question
@@ -387,6 +405,8 @@ async def retrieval_test_embedded(tenant_id=None):
                 top = int(search_config.get("top_k", top))
             if not req.get("rerank_id"):
                 rerank_id = search_config.get("rerank_id", "")
+            if not req.get("rerank_candidates_count"):
+                rerank_candidates_count = int(search_config.get("rerank_candidates_count", 100))
         else:
             meta_data_filter = req.get("meta_data_filter") or {}
             if meta_data_filter.get("method") in ["auto", "semi_auto"]:
@@ -404,14 +424,12 @@ async def retrieval_test_embedded(tenant_id=None):
                 metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
             )
 
-        tenants = await thread_pool_exec(UserTenantService.query, user_id=tenant_id)
         for kb_id in kb_ids:
-            for tenant in tenants:
-                if await thread_pool_exec(KnowledgebaseService.query, tenant_id=tenant.tenant_id, id=kb_id):
-                    tenant_ids.append(tenant.tenant_id)
-                    break
-            else:
+            if not await thread_pool_exec(KnowledgebaseService.accessible, kb_id, tenant_id):
                 return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
+            exists, kb = await thread_pool_exec(KnowledgebaseService.get_by_id, kb_id)
+            if exists:
+                tenant_ids.append(kb.tenant_id)
 
         e, kb = await thread_pool_exec(KnowledgebaseService.get_by_id, kb_ids[0])
         if not e:
@@ -442,11 +460,12 @@ async def retrieval_test_embedded(tenant_id=None):
             size,
             similarity_threshold,
             vector_similarity_weight,
-            top,
-            local_doc_ids,
+            doc_ids=local_doc_ids,
+            knn_top_k=top,
             rerank_mdl=rerank_mdl,
             highlight=req.get("highlight"),
             rank_feature=labels,
+            rerank_candidates_count=rerank_candidates_count,
         )
         if use_kg:
             default_chat_model = await thread_pool_exec(get_tenant_default_model_by_type, kb.tenant_id, LLMType.CHAT)
@@ -462,7 +481,6 @@ async def retrieval_test_embedded(tenant_id=None):
             enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
 
         ranks["labels"] = labels
-        ranks["total"] = len(ranks["chunks"])
 
         return get_json_result(data=ranks)
 
@@ -545,6 +563,9 @@ async def detail_share_embedded(tenant_id=None):
 @validate_request("question", "kb_ids")
 async def mindmap(tenant_id=None):
     req = await get_request_json()
+
+    if not await _accessible_kbs(req["kb_ids"], tenant_id):
+        return get_error_data_result(message="You don't own the requested dataset")
 
     search_id = req.get("search_id", "")
     search_app = await thread_pool_exec(SearchService.get_detail, search_id) if search_id else {}

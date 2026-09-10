@@ -160,12 +160,30 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		staticModels = []map[string]interface{}{}
 	}
 
-	// 2. Attempt live API fetch when api_key and base_url are provided
+	// 2. Attempt live API fetch when the provider has enough connection data.
 	apiKey := c.Query("api_key")
 	baseURL := c.Query("base_url")
 	var remoteModels []map[string]interface{}
+	remoteFetched := false
 
-	if apiKey != "" && baseURL != "" {
+	bedrockProvider := strings.EqualFold(providerName, "Bedrock")
+	bedrockAPIKeyAuth := false
+	if bedrockProvider && apiKey != "" {
+		var key struct {
+			AuthMode string `json:"auth_mode"`
+		}
+		if err := json.Unmarshal([]byte(apiKey), &key); err == nil {
+			bedrockAPIKeyAuth = key.AuthMode == "bedrock_api_key"
+		}
+	}
+
+	canFetchRemote := apiKey != "" && baseURL != ""
+	if bedrockProvider {
+		// Bedrock's existing SigV4 modes keep using the static catalog. Only
+		// API-key auth needs a live catalog scoped to the supplied credential.
+		canFetchRemote = bedrockAPIKeyAuth
+	}
+	if canFetchRemote {
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo != nil && providerInfo.ModelDriver != nil {
 			region := "default"
@@ -177,16 +195,45 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 					Region: &region,
 				}
 				if liveModels, err := driver.ListModels(c.Request.Context(), apiConfig); err == nil {
+					remoteFetched = true
 					for _, m := range liveModels {
+						maxTokens := 8192
+						if m.MaxOutput != nil {
+							maxTokens = *m.MaxOutput
+						}
 						remoteModels = append(remoteModels, map[string]interface{}{
 							"name":        m.Name,
 							"model_types": m.ModelTypes,
-							"max_output":  m.MaxOutput,
+							"max_tokens":  maxTokens,
 						})
 					}
+				} else if bedrockAPIKeyAuth {
+					common.ErrorWithCode(c, common.CodeServerError, err.Error())
+					return
 				}
 			}
 		}
+	}
+	if remoteFetched && bedrockAPIKeyAuth {
+		if len(remoteModels) == 0 {
+			common.ErrorWithCode(c, common.CodeDataError, "No Bedrock models were discovered")
+			return
+		}
+		remoteNames := make(map[string]struct{}, len(remoteModels))
+		for _, model := range remoteModels {
+			if name, ok := model["name"].(string); ok {
+				remoteNames[name] = struct{}{}
+			}
+		}
+		filtered := staticModels[:0]
+		for _, model := range staticModels {
+			if name, ok := model["name"].(string); ok {
+				if _, exists := remoteNames[name]; exists {
+					filtered = append(filtered, model)
+				}
+			}
+		}
+		staticModels = filtered
 	}
 
 	// 3. Both empty — return empty success
@@ -198,15 +245,23 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	// 4. Merge: static as base, remote overrides on name conflicts
 	merged := make(map[string]map[string]interface{})
 	for _, m := range staticModels {
+		if maxTokens, ok := m["max_tokens"]; !ok || maxTokens == nil {
+			if maxOutput, ok := m["max_output"]; ok && maxOutput != nil {
+				m["max_tokens"] = maxOutput
+			}
+		}
 		if name, ok := m["name"].(string); ok {
 			merged[name] = m
 		}
 	}
 	for _, m := range remoteModels {
 		if name, ok := m["name"].(string); ok {
-			if len(providerModelMapTypes(m)) == 0 {
-				if existing := merged[name]; len(providerModelMapTypes(existing)) > 0 {
+			if existing, exists := merged[name]; exists {
+				if len(providerModelMapTypes(m)) == 0 && len(providerModelMapTypes(existing)) > 0 {
 					m["model_types"] = existing["model_types"]
+				}
+				if maxTokens, ok := existing["max_tokens"]; ok && maxTokens != nil {
+					m["max_tokens"] = maxTokens
 				}
 			}
 			merged[name] = m
@@ -346,9 +401,9 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 		return
 	}
 
-	_, err := h.modelProviderService.CreateProviderInstance(ctx, providerName, req.InstanceName, apiKey, req.BaseURL, req.Region, userID, req.ModelInfo)
+	code, err := h.modelProviderService.CreateProviderInstance(ctx, providerName, req.InstanceName, apiKey, req.BaseURL, req.Region, userID, req.ModelInfo)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
@@ -543,11 +598,11 @@ func (h *ProviderHandler) ShowTask(c *gin.Context) {
 }
 
 type AlterProviderInstanceRequest struct {
-	InstanceName string                            `json:"instance_name"`
-	APIKey       json.RawMessage                   `json:"api_key"`
-	BaseURL      string                            `json:"base_url"`
-	Region       string                            `json:"region"`
-	ModelInfo    []service.CreateInstanceModelInfo `json:"model_info"`
+	InstanceName string                             `json:"instance_name"`
+	APIKey       json.RawMessage                    `json:"api_key"`
+	BaseURL      string                             `json:"base_url"`
+	Region       string                             `json:"region"`
+	ModelInfo    *[]service.CreateInstanceModelInfo `json:"model_info" binding:"required"`
 }
 
 func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
@@ -576,7 +631,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, normalizeAPIKey(req.APIKey), req.BaseURL, req.Region, req.ModelInfo)
+	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, normalizeAPIKey(req.APIKey), req.BaseURL, req.Region, *req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

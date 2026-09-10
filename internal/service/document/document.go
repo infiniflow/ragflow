@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/ingestion/knowledge_compile"
 )
 
 // DocumentService document service
@@ -34,6 +35,7 @@ type DocumentService struct {
 	kbDAO               *dao.KnowledgebaseDAO
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
+	pipelineLogDAO      *dao.PipelineOperationLogDAO
 	ingestionTaskSvc    *service.IngestionTaskService
 	docEngine           engine.DocEngine
 	metadataSvc         *service.MetadataService
@@ -49,10 +51,15 @@ func NewDocumentService() *DocumentService {
 	publisher := service.NewMessageQueueTaskPublisher()
 	ingestionTaskSvc := service.NewIngestionTaskService()
 	ingestionTaskSvc.SetTaskPublisher(publisher)
+	// Document deletion is handled by the API process, while the dataset-level
+	// consumer is owned by the ingestor. Register the shared publisher here so
+	// knowledge_compile.PublishDeleted is effective in API processes as well.
+	knowledge_compile.InitializePublisher(dao.DB, engine.GetMessageQueueEngine())
 	return &DocumentService{
 		documentDAO:         dao.NewDocumentDAO(),
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
+		pipelineLogDAO:      dao.NewPipelineOperationLogDAO(),
 		ingestionTaskSvc:    ingestionTaskSvc,
 		kbDAO:               dao.NewKnowledgebaseDAO(),
 		docEngine:           engine.Get(),
@@ -166,6 +173,16 @@ var (
 	ErrArtifactInvalidFilename = errors.New("invalid filename")
 	ErrArtifactInvalidFileType = errors.New("invalid file type")
 	ErrArtifactNotFound        = errors.New("artifact not found")
+
+	// ErrPreviewDocumentNotFound covers both "document row missing" and
+	// "caller may not read this document" so the preview endpoint cannot be
+	// used to probe foreign document IDs. Mirrors the Python preview route.
+	ErrPreviewDocumentNotFound = errors.New("document not found")
+	// ErrPreviewFileEmpty marks a document whose backing object has zero
+	// bytes; the handler maps it to Python's "This file is empty."
+	// preview response, so the sentinel text itself is never sent to
+	// clients.
+	ErrPreviewFileEmpty = errors.New("preview file empty")
 )
 
 var artifactContentTypes = map[string]string{

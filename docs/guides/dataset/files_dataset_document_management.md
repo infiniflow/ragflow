@@ -1,11 +1,10 @@
 ---
 sidebar_position: 4
-title: Files: Dataset Document Management
-sidebar_label: Files: Dataset Document Management
+title: "Files: Dataset Document Management"
+sidebar_label: "Files: Dataset Document Management"
 slug: /files_dataset_document_management
-sidebar_custom_props: {
+sidebar_custom_props:
   categoryIcon: LucideDatabaseZap
-}
 ---
 
 # Files: Dataset Document Management

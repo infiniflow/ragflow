@@ -23,8 +23,8 @@ type ChatRequest struct {
 	// knowledge compilation pins extraction at 0.1 and merge judging at 0.0,
 	// so variants set it per call site.
 	Temperature *float64
-	// MaxTokens caps the generated summary length (mirrors Python's
-	// {"max_tokens": max(self._max_token, 512)} config, issue #10235).
+	// MaxTokens is an optional per-call override. Normal knowledge-compilation
+	// calls use the selected model's configured max_output value.
 	MaxTokens *int
 	APIKey    string
 	BaseURL   string
@@ -158,19 +158,21 @@ type RedisClient interface {
 // interfaces so tests inject stubs; production wiring lives in
 // internal/ingestion/task (see PORT_PLAN.md §4 dependency injection seam).
 type Deps struct {
-	Chat            ChatInvoker
-	Embed           Embedder
-	Tokenizer       Tokenizer
-	HistoricalKNN   HistoricalKNN       // optional (wiki)
-	WikiPages       WikiPageStore       // optional (wiki)
+	Chat          ChatInvoker
+	Embed         Embedder
+	Tokenizer     Tokenizer
+	HistoricalKNN HistoricalKNN // optional (wiki)
+	WikiPages     WikiPageStore // optional (wiki)
+	// WikiMapVersions requires BOTH TenantID and DatasetID on every access:
+	// the DocStore-backed store keys its rows ragflow_<tenant_id>/<kb_id> and
+	// fails loudly on an empty scope. Runs missing either scope (canvas debug
+	// dry-runs) take the cache-less MAP path instead of calling the store.
 	WikiMapVersions WikiMapVersionStore // optional (wiki version cache)
 	Redis           RedisClient         // optional (datasetnav)
 	TenantID        string
 	DatasetID       string
 	// ModelContextLen is the chat model's context window in tokens
-	// (content_length). The prompt-budget helpers (wikiMapMaxTokens,
-	// deriveWikiPlanBudget, buildClusterContent) use it to size the input/output
-	// quotas (mirrors Python self._llm_model.max_length).
+	// (content_length). Prompt-packing helpers use it to size input quotas.
 	ModelContextLen int
 	// ModelMaxOutput is the chat model's generation cap (max_output), the most
 	// tokens one LLM response may emit. Cross-document merge judging packs many

@@ -91,7 +91,10 @@ export const buildModelInfo = (items: IProviderModelItem[]): IModelInfo[] =>
  *  field (e.g. VolcEngine, Google Cloud) so the auto-fetch gate can
  *  distinguish "no base_url field" from "base_url field exists but is
  *  empty". */
-export type ResolvedCreds = { apiKey: string; baseUrl: string | undefined };
+export type ResolvedCreds = {
+  apiKey: string | object;
+  baseUrl: string | undefined;
+};
 
 // ---------------------------------------------------------------------------
 // 1. useResolveCreds — resolve api_key / base_url from host form or instance
@@ -107,7 +110,7 @@ export function useResolveCreds(
   const resolveCreds = useCallback((): ResolvedCreds => {
     const fv = getFormValues?.() ?? {};
     return {
-      apiKey: (fv.api_key as string) ?? instance?.api_key ?? '',
+      apiKey: (fv.api_key as string | object) ?? instance?.api_key ?? '',
       baseUrl: (fv.base_url as string) ?? instance?.base_url,
     };
   }, [getFormValues, instance]);
@@ -126,7 +129,7 @@ interface UseModelsCatalogArgs {
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
 
-  apiKeyValue: string;
+  apiKeyValue: ResolvedCreds['apiKey'];
 
   baseUrlValue: string | undefined;
 
@@ -236,25 +239,42 @@ export function useModelsCatalog({
   // to know which server to query. For every other provider we fetch on
   // mount regardless.
   //
-  // The credential check is performed INSIDE the effect (not in the deps)
-  // because for saved cards the form is reset by
-  // `useFormResetOnDetailsLoad` in a parent effect that runs BEFORE this
-  // one. Reading `resolveCreds()` at effect time picks up the freshly
-  // reset `base_url` / `api_key` values, whereas reading them during
-  // render would see the stale (pre-reset) values and defer forever.
-
-  const requiresApiKey = providerName === LLMFactory.VolcEngine;
+  // The credential check is performed INSIDE the effect (not in the deps).
+  // The host restores saved credentials before passive effects run, so this
+  // reads the current form snapshot instead of the previous render's values.
 
   const hasAutoFetchedRef = useRef(false);
   useEffect(() => {
     if (hasAutoFetchedRef.current) return;
     if (hideActions) return;
     if (!providerName) return;
+    if (
+      providerName === LLMFactory.Bedrock &&
+      instanceName === DRAFT_INSTANCE_SENTINEL
+    )
+      return;
 
     const creds = resolveCreds();
+    const apiKeyConfig =
+      typeof creds.apiKey === 'object' && creds.apiKey !== null
+        ? (creds.apiKey as Record<string, unknown>)
+        : undefined;
+    const requiresApiKey =
+      providerName === LLMFactory.VolcEngine ||
+      (providerName === LLMFactory.Bedrock &&
+        apiKeyConfig?.auth_mode === 'bedrock_api_key');
+    const hasApiKey =
+      providerName === LLMFactory.Bedrock && requiresApiKey
+        ? Boolean(apiKeyConfig?.bedrock_api_key && apiKeyConfig?.bedrock_region)
+        : Boolean(creds.apiKey);
+    const waitingForInstanceDetails =
+      providerName === LLMFactory.Bedrock &&
+      instanceName !== DRAFT_INSTANCE_SENTINEL &&
+      !instanceDetailsLoaded;
     const hasBaseUrlField = creds.baseUrl !== undefined;
     const ready =
-      (!requiresApiKey || !!creds.apiKey) &&
+      !waitingForInstanceDetails &&
+      (!requiresApiKey || hasApiKey) &&
       (!hasBaseUrlField || !!creds.baseUrl);
     if (!ready) return;
     hasAutoFetchedRef.current = true;
@@ -295,6 +315,10 @@ export function useModelsCatalog({
 interface UseModelsDerivedArgs {
   catalog: IProviderModelItem[];
   instanceModels: IInstanceModel[] | undefined;
+  /** True while the saved instance model query is fetching. */
+  instanceModelsLoading: boolean;
+  /** True only when the saved instance model query completed successfully. */
+  instanceModelsSucceeded: boolean;
   /**
    * Locally-added models for a draft (unsaved) instance. The hook uses
    * this list as the "instance models" source when `isDraftInstance` is
@@ -316,6 +340,8 @@ interface UseModelsDerivedArgs {
 export function useModelsDerived({
   catalog,
   instanceModels,
+  instanceModelsLoading,
+  instanceModelsSucceeded,
   draftModels,
   isDraftInstance,
   onInstanceModelsChange,
@@ -403,36 +429,28 @@ export function useModelsDerived({
     onEditedRef.current = onInstanceModelsEdited;
   });
 
-  // Track the previous set of instance model names so we can tell
-  // "patch" (same names, different data) apart from "add/remove"
-  // (different names). Only the patch case needs to fire the host-side
-  // baseline-update callback so the next blur auto-save short-circuits.
-  const prevNamesRef = useRef<Set<string>>(new Set());
-
   // Push the latest per-instance model list up to the host so its
-  // auto-save can include `model_info` in the payload. When the change
-  // is purely a patch (same names, different data), also notify the
-  // host via `onInstanceModelsEdited` so it can absorb the model_info
-  // diff into its last-saved baseline — without this signal, the next
-  // blur would signature-mismatch and fire a redundant PUT carrying
-  // the already-PATCH-saved model_info. Adds/removes intentionally
-  // skip this signal so the next blur still carries the updated list
-  // into PUT (the standard sync path for the instance's model_info).
+  // save payload can include `model_info`.
   useEffect(() => {
-    const currentNames = new Set(instanceItems.map((m) => m.name));
-    const prevNames = prevNamesRef.current;
-    const isPatch =
-      currentNames.size > 0 &&
-      currentNames.size === prevNames.size &&
-      Array.from(currentNames).every((n) => prevNames.has(n));
-
     onChangeRef.current?.(buildModelInfo(instanceItems));
-    if (isPatch) {
+  }, [instanceItems]);
+
+  // Saved instance models come from the backend, both after the initial
+  // query and after mutation-driven refetches. Once that authoritative
+  // snapshot is ready, absorb it into the host's saved baseline so an
+  // unchanged card does not look dirty solely because model_info loaded
+  // after the instance details. Draft models remain local and must still
+  // be included in the first save.
+  useEffect(() => {
+    if (!isDraftInstance && !instanceModelsLoading && instanceModelsSucceeded) {
       onEditedRef.current?.();
     }
-
-    prevNamesRef.current = currentNames;
-  }, [instanceItems]);
+  }, [
+    instanceItems,
+    instanceModelsLoading,
+    instanceModelsSucceeded,
+    isDraftInstance,
+  ]);
 
   return { instanceItems, models, addedSet };
 }
@@ -472,26 +490,8 @@ interface UseModelVerifyArgs {
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
   instance?: IProviderInstance;
-  /**
-   * Host card's current form values. Required when `verifyTransform` is
-   * supplied so the transform can map provider-specific field names
-   * (e.g. PaddleOCR's `paddleocr_api_url`) onto the structured `api_key`
-   * object the verify endpoint expects.
-   */
   getFormValues?: () => Record<string, any>;
-  /**
-   * Provider-specific transform that maps form values onto the verify
-   * payload's `api_key` / `base_url` / `region`. When present it takes
-   * precedence over the generic `resolveCreds()` mapping. The
-   * `modelInfo` it returns is ignored - per-model verify always sends
-   * only the single model being verified.
-   */
-  verifyTransform?: (values: Record<string, any>) => {
-    apiKey: string | object | Record<string, any>;
-    baseUrl?: string;
-    region?: string;
-    modelInfo?: IModelInfo[];
-  };
+  verifyTransform?: ModelsSectionProps['verifyTransform'];
 }
 
 /**
@@ -520,8 +520,7 @@ function buildVerifyArgs(
   let region: string | undefined;
 
   if (verifyTransform) {
-    const formValues = getFormValues?.() ?? {};
-    const transformed = verifyTransform(formValues);
+    const transformed = verifyTransform(getFormValues?.() ?? {});
     apiKey = transformed.apiKey;
     baseUrl = transformed.baseUrl;
     region = transformed.region;
@@ -937,9 +936,8 @@ export function useModelEdit({
 
   // Persist edits to an existing model. For drafts the backend has no
   // instance yet, so we update the local `draftModels` list instead of
-  // calling PATCH. For saved cards the instance-models cache is patched
-  // so the UI reflects the new values immediately, before the PATCH's
-  // invalidation refetches.
+  // calling PATCH. For saved cards the cache changes only after the backend
+  // accepts the edit; the PATCH hook then refetches the complete snapshot.
   const handleEditSubmit = async (item: IProviderModelItem) => {
     if (!editingModel) return;
     const targetName = editingModel.name;
@@ -956,29 +954,7 @@ export function useModelEdit({
       return;
     }
 
-    queryClient.setQueryData<IInstanceModel[]>(
-      LlmKeys.instanceModels(providerName, instanceName),
-      (prev) => {
-        if (!prev) return prev;
-        const idx = prev.findIndex((m) => m.name === targetName);
-        if (idx === -1) return prev;
-        const next = [...prev];
-        const existing = next[idx];
-        next[idx] = {
-          ...existing,
-          max_tokens: item.max_tokens ?? 0,
-          model_type: item.model_types ?? [],
-          is_tools: hasToolFeature(item.features),
-          extra: {
-            is_tools: hasToolFeature(item.features),
-            ...(item.extra ?? {}),
-          },
-        };
-        return next;
-      },
-    );
-
-    await patchInstanceModel({
+    const data = await patchInstanceModel({
       provider_name: providerName,
       instance_name: instanceName,
       model_name: targetName,
@@ -986,6 +962,29 @@ export function useModelEdit({
       model_type: item.model_types ?? [],
       extra: { is_tools: hasToolFeature(item.features), ...(item.extra ?? {}) },
     });
+    if (data.code === 0) {
+      queryClient.setQueryData<IInstanceModel[]>(
+        LlmKeys.instanceModels(providerName, instanceName),
+        (prev) => {
+          if (!prev) return prev;
+          const idx = prev.findIndex((m) => m.name === targetName);
+          if (idx === -1) return prev;
+          const next = [...prev];
+          const existing = next[idx];
+          next[idx] = {
+            ...existing,
+            max_tokens: item.max_tokens ?? 0,
+            model_type: item.model_types ?? [],
+            is_tools: hasToolFeature(item.features),
+            extra: {
+              is_tools: hasToolFeature(item.features),
+              ...(item.extra ?? {}),
+            },
+          };
+          return next;
+        },
+      );
+    }
     clearCatalogOverride(targetName);
     setEditingModel(null);
   };

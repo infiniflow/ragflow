@@ -89,7 +89,7 @@ func TestRetrievalComponentForwardsAdvancedNodeParams(t *testing.T) {
 		t.Fatalf("newRetrievalComponent: %v", err)
 	}
 
-	if _, err := component.Invoke(context.Background(), nil, map[string]any{"query": "爱"}); err != nil {
+	if _, err = component.Invoke(t.Context(), nil, map[string]any{"query": "爱"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 
@@ -111,6 +111,37 @@ func TestRetrievalComponentForwardsAdvancedNodeParams(t *testing.T) {
 	}
 	if request.RetrievalFrom != "dataset" {
 		t.Errorf("RetrievalFrom = %q", request.RetrievalFrom)
+	}
+}
+
+func TestRetrievalComponentForwardsUserIDNodeParam(t *testing.T) {
+	previous := agenttool.GetMemoryRetrievalService()
+	recorder := &retrievalRequestRecorder{}
+	agenttool.SetMemoryRetrievalService(recorder)
+	t.Cleanup(func() { agenttool.SetMemoryRetrievalService(previous) })
+
+	component, err := newRetrievalComponent(map[string]any{
+		"memory_ids":     []any{"memory-1"},
+		"retrieval_from": "memory",
+		"user_id":        "user-7",
+	})
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+
+	merged := component.(*retrievalComponent).applyDefaults(nil)
+	if got := merged["user_id"]; got != "user-7" {
+		t.Errorf("user_id = %#v, want user-7", got)
+	}
+
+	if _, err = component.Invoke(t.Context(), nil, map[string]any{"query": "remember"}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if recorder.request.UserID != "user-7" {
+		t.Errorf("UserID = %q, want user-7", recorder.request.UserID)
+	}
+	if recorder.request.RetrievalFrom != "memory" {
+		t.Errorf("RetrievalFrom = %q, want memory", recorder.request.RetrievalFrom)
 	}
 }
 
@@ -137,7 +168,7 @@ func TestRetrievalComponentForwardsExplicitZeroSimilarityParams(t *testing.T) {
 		t.Fatalf("keywords_similarity_weight = %#v, present = %v; want explicit zero", value, ok)
 	}
 
-	if _, err := component.Invoke(context.Background(), nil, map[string]any{"query": "zero"}); err != nil {
+	if _, err := component.Invoke(t.Context(), nil, map[string]any{"query": "zero"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if recorder.request.SimilarityThreshold == nil || *recorder.request.SimilarityThreshold != 0 {

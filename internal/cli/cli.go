@@ -192,7 +192,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					hostVal := args[i+1]
 					h, port, err := parseHostPort(hostVal)
 					if err != nil {
-						return nil, fmt.Errorf("invalid host format: %v", err)
+						return nil, fmt.Errorf("invalid host format: %w", err)
 					}
 					defaultApiServerConfig.IP = h
 					defaultApiServerConfig.Port = port
@@ -243,14 +243,14 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		data, err := os.ReadFile(configFile)
 		if err == nil {
 			if err = yaml.Unmarshal(data, &config); err != nil {
-				return nil, fmt.Errorf("failed to parse rf.yml: %v", err)
+				return nil, fmt.Errorf("failed to parse rf.yml: %w", err)
 			}
 			if config.Host != "" {
 				var h string
 				var port int
 				h, port, err = parseHostPort(config.Host)
 				if err != nil {
-					return nil, fmt.Errorf("invalid host in config file: %v", err)
+					return nil, fmt.Errorf("invalid host in config file: %w", err)
 				}
 				if defaultApiServerConfig.IP == "" {
 					defaultApiServerConfig.IP = h
@@ -277,7 +277,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		} else {
 			if configFile == "rf.yml" && os.IsNotExist(err) {
 			} else {
-				return nil, fmt.Errorf("failed to read %s: %v", configFile, err)
+				return nil, fmt.Errorf("failed to read %s: %w", configFile, err)
 			}
 		}
 
@@ -335,7 +335,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					hostVal := args[i+1]
 					h, port, err := parseHostPort(hostVal)
 					if err != nil {
-						return nil, fmt.Errorf("invalid host format: %v", err)
+						return nil, fmt.Errorf("invalid host format: %w", err)
 					}
 					AdminConfig.AdminHost = h
 					AdminConfig.AdminPort = port
@@ -394,7 +394,7 @@ func LoadDefaultConfigFile() (*ConfigFile, error) {
 
 	var config ConfigFile
 	if err = yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse rf.yml: %v", err)
+		return nil, fmt.Errorf("failed to parse rf.yml: %w", err)
 	}
 
 	return &config, nil
@@ -404,12 +404,12 @@ func LoadDefaultConfigFile() (*ConfigFile, error) {
 func LoadConfigFileFromPath(path string) (*ConfigFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %s: %v", path, err)
+		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
 	var config ConfigFile
 	if err = yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %s: %v", path, err)
+		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 
 	return &config, nil
@@ -983,18 +983,17 @@ Datasets syntax (full filter set):
     keyword                 true|false  Enable keyword extraction via LLM
     use_kg                  true|false  Enable knowledge-graph augmentation
     rerank_id               'id'      Rerank model to apply
-    tenant_rerank_id        'id'      Tenant-scoped rerank model
-    search_id               'id'      Idempotency / search-session id
-    meta_data_filter        '<json>'  Metadata filter (must be valid JSON)
+    search_id               'id'      Apply a saved search configuration
+    metadata_condition      '<json>'  Metadata filter (must be valid JSON)
     cross_languages         ['a','b'] Source languages to translate from
-    doc_ids                 ['d1',...] Restrict to specific document ids
+    document_ids            ['d1',...] Restrict to specific document ids
 
   Examples:
     search 'AI' on datasets 'kb_chinese' with top_k 10;
     search 'AI' on datasets 'kb1' 'kb2' with top_k 20 similarity_threshold 0.3 cross_languages ['Chinese']
-        doc_ids ['d1', 'd2'];
+        document_ids ['d1', 'd2'];
     search 'manual' on datasets 'kb1' with
-        meta_data_filter '{"method":"manual","conditions":[{"key":"author","op":"eq","value":"Luo"}]}';
+        metadata_condition '{"logic":"and","conditions":[{"name":"author","comparison_operator":"=","value":"Luo"}]}';
 `
 	fmt.Println(help)
 }

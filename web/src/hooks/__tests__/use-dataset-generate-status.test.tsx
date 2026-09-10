@@ -9,8 +9,8 @@ jest.mock('react-router', () => ({
   useParams: jest.fn(() => ({ id: 'kb1' })),
 }));
 
-jest.mock('@/utils/api-proxy-scheme', () => ({
-  isGoDatasetBackend: jest.fn(() => true),
+jest.mock('@/utils/backend-variant', () => ({
+  useIsGoBackend: jest.fn(() => true),
 }));
 
 jest.mock('@/services/knowledge-service', () => ({
@@ -30,7 +30,7 @@ jest.mock('react-i18next', () => ({
 }));
 
 import { getDatasetCompilationStatus } from '@/services/knowledge-service';
-import { isGoDatasetBackend } from '@/utils/api-proxy-scheme';
+import { useIsGoBackend } from '@/utils/backend-variant';
 
 const mockStatus = jest.mocked(getDatasetCompilationStatus);
 
@@ -53,10 +53,10 @@ function makeWrapper() {
   return Wrapper;
 }
 
-describe('useTraceRunData (Go/hybrid compile-status contract)', () => {
+describe('useTraceRunData (Go compile-status contract)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (isGoDatasetBackend as jest.Mock).mockReturnValue(true);
+    (useIsGoBackend as jest.Mock).mockReturnValue(true);
   });
 
   it('maps a successful status to the scheduler contract fields', async () => {
