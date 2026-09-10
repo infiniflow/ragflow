@@ -1015,6 +1015,10 @@ async def run_tree_templates(
             "threshold": float(raptor_cfg.get("threshold") or 0.1),
             "random_seed": int(raptor_cfg.get("random_seed") or 0),
             "max_cluster": int(raptor_cfg.get("max_cluster") or 64),
+            # Template-declared claim/evidence extraction contract (tree.yaml's
+            # raptor.claim_prompt). None = built-in defaults. Batch sizing is a
+            # pipeline concern, so it stays out of the template.
+            "claim_prompt": raptor_cfg.get("claim_prompt") or None,
         }
         progress_cb(
             msg=f"tree-template ({idx + 1}/{len(templates)}): building tree for doc={doc_id}",

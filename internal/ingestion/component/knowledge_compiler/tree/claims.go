@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,8 +20,14 @@ import (
 // claimExtractionWorkers bounds how many claim-extraction LLM calls run at once.
 // Batches are independent, so a large document would otherwise open one
 // round-trip per batch and trip the provider's rate limit; this keeps the
-// fan-out predictable and mirrors the Python side's _claim_limiter default.
-const claimExtractionWorkers = 4
+// fan-out predictable. Mirrors Python _claim_limiter (raptor.py): the default is
+// 4 and MAX_CONCURRENT_CLAIM_CHATS overrides it.
+func claimExtractionWorkers() int {
+	if n, err := strconv.Atoi(os.Getenv("MAX_CONCURRENT_CLAIM_CHATS")); err == nil && n > 0 {
+		return n
+	}
+	return 4
+}
 
 // claimBatchSize is how many chunks one extraction call covers, mirroring Python
 // _CLAIM_BATCH_SIZE (raptor.py). Every chunk in the batch is a TARGET and the
@@ -168,16 +176,26 @@ type EvidenceRef struct {
 //
 // The calls are independent, so a bounded worker pool runs several at once —
 // mirroring the Python side, which fans every batch out under _claim_limiter
-// (default 4) instead of extracting serially. claimExtractionWorkers caps
-// in-flight work so a large document cannot open hundreds of concurrent
-// round-trips against the provider's rate limit.
+// (default 4, MAX_CONCURRENT_CLAIM_CHATS override) instead of extracting
+// serially. The worker cap keeps a large document from opening hundreds of
+// concurrent round-trips against the provider's rate limit.
+//
+// claimPrompt is the template-declared extraction contract (Python passes
+// raptor_config["claim_prompt"] from tree.yaml's raptor section into
+// extract_claims_for_chunks); an empty value falls back to the built-in
+// claimExtractionPrompt.
 //
 // Extraction is best-effort: a failing batch is skipped and simply contributes
 // no claims, which makes the tree fall back to raw text for it. A missing LLM
 // client disables extraction entirely.
-func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string, chunks []common.Chunk, mode EvidenceGateMode) map[string][]Claim {
+func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string, chunks []common.Chunk, mode EvidenceGateMode, claimPrompt string) map[string][]Claim {
 	if deps.Chat == nil || len(chunks) == 0 {
 		return nil
+	}
+
+	prompt := strings.TrimSpace(claimPrompt)
+	if prompt == "" {
+		prompt = claimExtractionPrompt
 	}
 
 	var entries []claimEntry
@@ -194,17 +212,22 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 	batches := packClaimBatches(entries)
 	claimsByChunk := make(map[string][]Claim)
 	total := len(entries)
-	workers := claimExtractionWorkers
+	workers := claimExtractionWorkers()
 	if workers > len(batches) {
 		workers = len(batches)
 	}
 
+	// Announce the fan-out shape before the first LLM call: the batches take
+	// model latency, so without this line the log would sit silent on
+	// "building tree" for tens of seconds (mirrors Python's start message).
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: claim extraction start: %d chunk(s) -> %d batch(es)", total, len(batches)))
+
 	var (
 		// mu guards claimsByChunk and serialises the progress callback, which
 		// is supplied by the caller and is not required to be goroutine-safe.
-		mu      sync.Mutex
-		wg      sync.WaitGroup
-		started int
+		mu        sync.Mutex
+		wg        sync.WaitGroup
+		completed int
 	)
 	sem := make(chan struct{}, workers)
 	for i := range batches {
@@ -223,25 +246,21 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 
 			batch := batches[i]
 
+			batchClaims := extractClaimsForBatch(ctx, deps, llmID, prompt, batch, mode)
+
 			mu.Lock()
-			started += len(batch)
-			// Report progress *before* the LLM call so the UI moves during the
-			// extraction loop instead of freezing at "building tree". Progress
-			// counts chunks (the user-visible unit), not batches, and workers
-			// finish out of order, so this is a started count.
-			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: extracting claims for chunk %d/%d", started, total))
+			// Report progress *after* the batch completes, counting the chunks
+			// the user-visible unit covers (mirrors Python's as_completed loop,
+			// which advances the counter only for finished batches; workers
+			// finish out of order, so the figure jumps by batch size).
+			completed += len(batch)
+			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: extracting claims for chunk %d/%d", completed, total))
+			if len(batchClaims) > 0 {
+				for id, claims := range batchClaims {
+					claimsByChunk[id] = append(claimsByChunk[id], claims...)
+				}
+			}
 			mu.Unlock()
-
-			batchClaims := extractClaimsForBatch(ctx, deps, llmID, batch, mode)
-			if len(batchClaims) == 0 {
-				return
-			}
-
-			mu.Lock()
-			defer mu.Unlock()
-			for id, claims := range batchClaims {
-				claimsByChunk[id] = append(claimsByChunk[id], claims...)
-			}
 		}(i)
 	}
 	wg.Wait()
@@ -258,7 +277,7 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 // the results are merged into. A batch that fails after its retries, yields no
 // parseable items, or yields nothing attributable contributes no claims, which
 // makes the tree fall back to raw text for it.
-func extractClaimsForBatch(ctx context.Context, deps common.Deps, llmID string, batch []claimEntry, mode EvidenceGateMode) map[string][]Claim {
+func extractClaimsForBatch(ctx context.Context, deps common.Deps, llmID, claimPrompt string, batch []claimEntry, mode EvidenceGateMode) map[string][]Claim {
 	batchIDs := make(map[string]bool, len(batch))
 	textByID := make(map[string]string, len(batch))
 	for _, t := range batch {
@@ -266,7 +285,7 @@ func extractClaimsForBatch(ctx context.Context, deps common.Deps, llmID string, 
 		textByID[t.id] = t.text
 	}
 
-	raw, err := chatWithClaimRetry(ctx, deps, llmID, renderClaimSource(batch), batch)
+	raw, err := chatWithClaimRetry(ctx, deps, llmID, claimPrompt, renderClaimSource(batch), batch)
 	if err != nil {
 		log.Printf("tree: claim extraction skipped for batch %s: %v", claimBatchLabel(batch), err)
 		return nil
@@ -369,7 +388,7 @@ func claimBatchLabel(batch []claimEntry) string {
 // provider failures (rate limits, 5xx, timeouts) with exponential back-off,
 // mirroring Python raptor._extract_claim_for_chunk. A cancelled context is never
 // retried.
-func chatWithClaimRetry(ctx context.Context, deps common.Deps, llmID, prompt string, batch []claimEntry) (string, error) {
+func chatWithClaimRetry(ctx context.Context, deps common.Deps, llmID, claimPrompt, prompt string, batch []claimEntry) (string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= claimMaxAttempts; attempt++ {
 		if ctx.Err() != nil {
@@ -377,7 +396,7 @@ func chatWithClaimRetry(ctx context.Context, deps common.Deps, llmID, prompt str
 		}
 		resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
 			LLMID:           llmID,
-			SystemPrompt:    claimExtractionPrompt,
+			SystemPrompt:    claimPrompt,
 			UserPrompt:      prompt,
 			JSONMode:        true,
 			DisableThinking: true,
@@ -588,6 +607,26 @@ func normalizeForMatch(text string) (string, []int) {
 		prevSpace = false
 	}
 	return b.String(), idxMap
+}
+
+// ClaimDigest renders one chunk's claims the way Python
+// format_claims_for_summary (raptor.py) does — the text that is embedded as the
+// chunk's claim-view clustering vector. Each claim carries the verbatim quote
+// that backs it, so the embedding sees the facts AND their grounding.
+func ClaimDigest(claims []Claim) string {
+	var lines []string
+	for _, c := range claims {
+		name := strings.TrimSpace(c.Name)
+		if name == "" {
+			continue
+		}
+		if len(c.Evidence) > 0 && strings.TrimSpace(c.Evidence[0].Quote) != "" {
+			lines = append(lines, fmt.Sprintf("- %s\n  Evidence: \"%s\"", name, c.Evidence[0].Quote))
+		} else {
+			lines = append(lines, "- "+name)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // BuildClaimContent renders a cluster's member claims as the summary input.

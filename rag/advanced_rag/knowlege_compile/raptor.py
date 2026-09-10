@@ -142,6 +142,7 @@ async def extract_claims_for_chunks(
     *,
     task_id: str = "",
     callback=None,
+    claim_prompt: str | None = None,
 ) -> dict[str, list[dict]]:
     """Extract claim/evidence pairs for RAPTOR's layer-0 chunks.
 
@@ -149,6 +150,10 @@ async def extract_claims_for_chunks(
     builder. Returns ``{chunk_id: [claim_payload, ...]}`` keyed by the chunk the
     claim came from, so the builder can look up a cluster's claims by its
     members' ids.
+
+    ``claim_prompt`` comes from the tree compilation template's ``raptor``
+    section so the extraction contract is editable per template; ``None`` falls
+    back to the built-in contract.
 
     Chunks are grouped into fixed-size batches (see ``_pack_claim_batches``) and
     all batches run in parallel, gated by the shared ``chat_limiter`` so the
@@ -174,6 +179,8 @@ async def extract_claims_for_chunks(
         return {}
 
     batches = _pack_claim_batches(entries)
+    if callback:
+        callback(msg=f"tree-template: claim extraction start: {len(entries)} chunk(s) -> {len(batches)} batch(es)")
 
     claims_by_chunk: dict[str, list[dict]] = {}
 
@@ -194,7 +201,7 @@ async def extract_claims_for_chunks(
         # happens to contain the same sentence — and would silently attribute
         # the claim to the wrong source.
         batch_text_by_id = {cid: text for cid, text in batch}
-        t = asyncio.create_task(_extract_claim_for_chunk(batch, llm_model, batch_text_by_id))
+        t = asyncio.create_task(_extract_claim_for_chunk(batch, llm_model, batch_text_by_id, claim_prompt))
         tasks.append(t)
         batch_size_of[t] = len(batch)
     processed = 0
@@ -252,13 +259,16 @@ _RETRYABLE_LLM_ERR = (
 )
 
 
-async def _extract_claim_for_chunk(batch, llm_model, text_by_id):
+async def _extract_claim_for_chunk(batch, llm_model, text_by_id, claim_prompt: str | None = None):
     """Run claim extraction for one batch of chunks (``_CLAIM_BATCH_SIZE`` of them).
 
     One LLM call, gated by the shared ``chat_limiter`` so total concurrency stays
     bounded. On a rate-limit / server / timeout error the call backs off with
     exponential delay and retries, then gives up and returns ``None`` so the
     tree falls back to raw text for those chunks.
+
+    ``claim_prompt`` is the template-declared system prompt (tree.yaml's
+    ``raptor.claim_prompt``); ``None`` uses the built-in contract.
 
     Returns ``(label, [claim_payload, ...])`` when the batch yields claims (each
     claim carries its own validated ``source_chunk_ids``), else ``None``.
@@ -275,7 +285,7 @@ async def _extract_claim_for_chunk(batch, llm_model, text_by_id):
         try:
             async with _claim_limiter:
                 ans = await gen_json(
-                    _CLAIM_EXTRACTION_PROMPT,
+                    claim_prompt or _CLAIM_EXTRACTION_PROMPT,
                     user,
                     llm_model,
                     knowledge_compile_gen_conf(llm_model),

@@ -493,14 +493,13 @@ class RaptorService:
             clustering_ratio=float(raptor_config.get("clustering_ratio", 0.5)),
         )
 
-        raptor_input = [(content, vctr, [chunk_id] if chunk_id else []) for content, vctr, chunk_id in chunks]
-
         # Extract claims first so every cluster is summarized from the claims of
         # its member chunks rather than from truncated raw text. Chunks that
         # yield no claims silently fall back to their raw text, so a failed
         # extraction degrades to the previous behavior instead of breaking the
         # build.
         claims_by_chunk: Dict[str, list] = {}
+        raptor_input = [(content, vctr, [chunk_id] if chunk_id else []) for content, vctr, chunk_id in chunks]
         if raptor_config.get("extract_claims", True):
             try:
                 from rag.advanced_rag.knowlege_compile.raptor import extract_claims_for_chunks
@@ -510,6 +509,7 @@ class RaptorService:
                     chat_mdl,
                     task_id=self._task_context.id,
                     callback=self._task_context.progress_cb,
+                    claim_prompt=raptor_config.get("claim_prompt"),
                 )
                 logging.info(
                     "build_doc_tree: claims extracted for %d/%d chunk(s)",
@@ -519,6 +519,46 @@ class RaptorService:
             except Exception:
                 logging.exception("build_doc_tree: claim extraction failed; summarizing from raw text")
                 claims_by_chunk = {}
+
+        # Claim-view clustering vectors: each chunk is represented to the
+        # clustering layer by the merge of its claims + verbatim evidence, not
+        # by its raw-text vector. Claims are the chunk's semantics stripped of
+        # layout noise, so topic clusters form around what the chunks actually
+        # assert, and the cluster labels the summarizer produces are readable.
+        # Chunks without claims keep their raw vector; a claim vector whose
+        # dimension disagrees with the chunk vectors is ignored rather than
+        # fed into AHC.
+        if claims_by_chunk and embd_mdl is not None:
+            try:
+                from rag.advanced_rag.knowlege_compile.raptor import format_claims_for_summary
+
+                keys: List[str] = []
+                digest_texts: List[str] = []
+                for cid, claims in claims_by_chunk.items():
+                    digest = format_claims_for_summary(claims)
+                    if digest.strip():
+                        keys.append(str(cid))
+                        digest_texts.append(digest)
+                if digest_texts:
+                    embds, _ = await thread_pool_exec(embd_mdl.encode, digest_texts)
+                    claim_view = {cid: np.array(vec) for cid, vec in zip(keys, embds) if vec is not None and len(vec) > 0}
+                    replaced = 0
+                    for i, (content, vctr, src) in enumerate(raptor_input):
+                        cid = src[0] if src else ""
+                        view = claim_view.get(cid)
+                        if view is None:
+                            continue
+                        if vctr is not None and len(vctr) > 0 and len(view) != len(vctr):
+                            continue  # mixed-model guard: never feed AHC mixed dimensions
+                        raptor_input[i] = (content, view, src)
+                        replaced += 1
+                    logging.info(
+                        "build_doc_tree: %d/%d chunk(s) clustered on claim-view embeddings",
+                        replaced,
+                        len(raptor_input),
+                    )
+            except Exception:
+                logging.exception("build_doc_tree: claim-view embedding failed; clustering on raw chunk vectors")
 
         try:
             tree, _ = await raptor(

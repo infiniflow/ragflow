@@ -209,7 +209,7 @@ func TestExtractClaimsForChunksRequiresChat(t *testing.T) {
 	// No chat client -> extraction disabled, not an error.
 	deps := common.Deps{TenantID: "t"}
 	chunks := []common.Chunk{{ID: "c1", Text: "some text"}}
-	if got := ExtractClaimsForChunks(context.Background(), deps, "llm", chunks, EvidenceGateSoft); got != nil {
+	if got := ExtractClaimsForChunks(context.Background(), deps, "llm", chunks, EvidenceGateSoft, ""); got != nil {
 		t.Fatalf("expected nil without a chat client, got %v", got)
 	}
 }
@@ -227,7 +227,7 @@ func TestExtractClaimsForChunksValidatesAndKeysByChunk(t *testing.T) {
 	deps := common.Deps{Chat: &fakeChatForClaims{reply: string(reply)}, TenantID: "t"}
 	chunks := []common.Chunk{{ID: "c1", Text: src}}
 
-	got := ExtractClaimsForChunks(context.Background(), deps, "llm", chunks, EvidenceGateSoft)
+	got := ExtractClaimsForChunks(context.Background(), deps, "llm", chunks, EvidenceGateSoft, "")
 	claims := got["c1"]
 	if len(claims) != 1 {
 		t.Fatalf("expected one claim for c1, got %+v", got)
@@ -262,7 +262,7 @@ func TestExtractClaimsForChunksAttribution(t *testing.T) {
 	}
 	run := func(reply string) map[string][]Claim {
 		deps := common.Deps{Chat: &fakeChatForClaims{reply: reply}, TenantID: "t"}
-		return ExtractClaimsForChunks(context.Background(), deps, "llm", []common.Chunk{{ID: "c1", Text: src}}, EvidenceGateSoft)
+		return ExtractClaimsForChunks(context.Background(), deps, "llm", []common.Chunk{{ID: "c1", Text: src}}, EvidenceGateSoft, "")
 	}
 
 	got := run(marshal(map[string]any{
@@ -312,7 +312,7 @@ func TestExtractClaimsForChunksBatchesChunksPerCall(t *testing.T) {
 		{ID: "c3", Text: "gamma text"},
 		{ID: "c4", Text: "delta text"},
 	}
-	ExtractClaimsForChunks(context.Background(), deps, "llm", chunks, EvidenceGateSoft)
+	ExtractClaimsForChunks(context.Background(), deps, "llm", chunks, EvidenceGateSoft, "")
 	if chat.calls != 1 {
 		t.Fatalf("expected 1 call for %d chunks, got %d", len(chunks), chat.calls)
 	}
@@ -333,7 +333,7 @@ func TestExtractClaimsForChunksRetriesTransientErrors(t *testing.T) {
 		},
 	}})
 	deps := common.Deps{Chat: &flakyChatForClaims{reply: string(reply), failures: 1}, TenantID: "t"}
-	got := ExtractClaimsForChunks(context.Background(), deps, "llm", []common.Chunk{{ID: "c1", Text: "alpha text"}}, EvidenceGateSoft)
+	got := ExtractClaimsForChunks(context.Background(), deps, "llm", []common.Chunk{{ID: "c1", Text: "alpha text"}}, EvidenceGateSoft, "")
 	if len(got["c1"]) != 1 {
 		t.Fatalf("a retried call should still yield its claims, got %+v", got)
 	}
