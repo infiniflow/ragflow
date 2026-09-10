@@ -150,12 +150,16 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, taskI
 
 // runClaimedMemoryTask renews the DB lease while the state machine advances.
 func (s *MemoryMessageService) runClaimedMemoryTask(ctx context.Context, task *entity.MemoryTask, leaseOwner string) (MemoryTaskDisposition, error) {
+	if task.LeaseExpiresAt == nil {
+		return MemoryTaskLeaveUnsettled, fmt.Errorf("memory: claimed task %s has no lease expiration", task.TaskID)
+	}
+	leaseExpiresAt := *task.LeaseExpiresAt
 	runCtx, cancel := context.WithCancel(ctx)
 	renewErr := make(chan error, 1)
 	renewDone := make(chan struct{})
 	go func() {
 		defer close(renewDone)
-		s.renewMemoryTaskLease(runCtx, cancel, task.TaskID, leaseOwner, renewErr)
+		s.renewMemoryTaskLease(runCtx, cancel, task.TaskID, leaseOwner, leaseExpiresAt, renewErr)
 	}()
 	defer func() {
 		cancel()
@@ -223,9 +227,10 @@ func memoryTaskRetryDelay(attemptCount int) time.Duration {
 	return delay
 }
 
-// renewMemoryTaskLease cancels execution when the worker can no longer prove
-// ownership of the durable task.
-func (s *MemoryMessageService) renewMemoryTaskLease(ctx context.Context, cancel context.CancelFunc, taskID, leaseOwner string, errCh chan<- error) {
+// renewMemoryTaskLease retries transient renewal failures while the last
+// confirmed lease has time for another attempt, and cancels execution when
+// ownership is lost or the lease is too close to expiry.
+func (s *MemoryMessageService) renewMemoryTaskLease(ctx context.Context, cancel context.CancelFunc, taskID, leaseOwner string, leaseExpiresAt time.Time, errCh chan<- error) {
 	ticker := time.NewTicker(memoryTaskLeaseRenewInterval)
 	defer ticker.Stop()
 	for {
@@ -233,10 +238,16 @@ func (s *MemoryMessageService) renewMemoryTaskLease(ctx context.Context, cancel 
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			renewedAt := memoryNow()
 			renewCtx, renewCancel := context.WithTimeout(ctx, memoryTaskLeaseRenewTimeout)
-			renewed, err := s.memoryTaskDAO.RenewLease(renewCtx, dao.DB, taskID, leaseOwner, memoryNow(), memoryTaskLeaseTTL)
+			renewed, err := s.memoryTaskDAO.RenewLease(renewCtx, dao.DB, taskID, leaseOwner, renewedAt, memoryTaskLeaseTTL)
 			renewCancel()
 			if err == nil && renewed {
+				leaseExpiresAt = renewedAt.Add(memoryTaskLeaseTTL)
+				continue
+			}
+			if err != nil && memoryNow().Add(memoryTaskLeaseRenewInterval).Before(leaseExpiresAt) {
+				common.Warn(fmt.Sprintf("memory: renew task %s lease failed, will retry", taskID), zap.Error(err))
 				continue
 			}
 			if err == nil {

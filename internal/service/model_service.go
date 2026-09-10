@@ -4051,7 +4051,9 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 	// Decode api_key and extra fields from the instance row
 	apiKey := instance.APIKey
 	var extra map[string]string
-	_ = json.Unmarshal([]byte(instance.Extra), &extra)
+	if err = json.Unmarshal([]byte(instance.Extra), &extra); err != nil {
+		return nil, "", nil, 0, fmt.Errorf("%w: decode model instance configuration: %v", errModelConfigUnavailable, err)
+	}
 	region := extra["region"]
 	baseURL := extra["base_url"]
 

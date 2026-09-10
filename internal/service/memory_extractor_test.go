@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -213,6 +214,46 @@ func TestExtractByLLMMarksMissingModelPermanent(t *testing.T) {
 	_, err := svc.extractByLLM(t.Context(), mem, []string{"semantic"}, MemoryMessage{}, "task-missing-model")
 	if !errors.Is(err, errPermanentMemoryTask) || !errors.Is(err, errModelConfigUnavailable) {
 		t.Fatalf("extractByLLM error = %v, want permanent missing-model error", err)
+	}
+}
+
+// TestExtractByLLMMarksInvalidModelConfigPermanent verifies malformed
+// provider-instance configuration terminates the durable task.
+func TestExtractByLLMMarksInvalidModelConfigPermanent(t *testing.T) {
+	db := testutil.SetupTestDB(t,
+		&entity.TenantModel{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+	)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		ProviderName: "OpenAI",
+		TenantID:     "tenant-1",
+	}).Error; err != nil {
+		t.Fatalf("create model provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		InstanceName: "default",
+		ProviderID:   "provider-1",
+		APIKey:       "test-key",
+		Status:       "active",
+		Extra:        "{",
+	}).Error; err != nil {
+		t.Fatalf("create model instance: %v", err)
+	}
+
+	svc := NewMemoryMessageService(NewMemoryService())
+	mem := &CreateMemoryResponse{Memory: entity.Memory{
+		TenantID: "tenant-1",
+		LLMID:    "gpt-4o@default@OpenAI",
+	}}
+	_, err := svc.extractByLLM(t.Context(), mem, []string{"semantic"}, MemoryMessage{}, "task-invalid-model-config")
+	if !errors.Is(err, errPermanentMemoryTask) || !errors.Is(err, errModelConfigUnavailable) {
+		t.Fatalf("extractByLLM error = %v, want permanent invalid-model-config error", err)
 	}
 }
 
@@ -515,9 +556,9 @@ func TestRunClaimedMemoryTaskStopsLeaseRenewalOnPanic(t *testing.T) {
 	}
 }
 
-// TestRenewMemoryTaskLeaseTimesOutBlockedUpdate verifies an unresponsive lease
-// write cancels execution before the durable lease can silently expire.
-func TestRenewMemoryTaskLeaseTimesOutBlockedUpdate(t *testing.T) {
+// TestRenewMemoryTaskLeaseRetriesTransientError verifies one failed renewal
+// does not discard in-flight work while the last confirmed lease is healthy.
+func TestRenewMemoryTaskLeaseRetriesTransientError(t *testing.T) {
 	now := time.Date(2026, 8, 20, 10, 5, 0, 0, time.UTC)
 	pinMemoryNow(t, now)
 	pinMemoryTaskLeaseTimings(t, 5*time.Millisecond, 10*time.Millisecond)
@@ -526,6 +567,83 @@ func TestRenewMemoryTaskLeaseTimesOutBlockedUpdate(t *testing.T) {
 	defer cleanup()
 
 	expiresAt := now.Add(time.Minute)
+	if err := db.Create(&entity.MemoryTask{
+		TaskID:         "task-renew-transient",
+		MemoryID:       "memory-1",
+		SourceID:       42,
+		Input:          entity.JSONMap{},
+		State:          entity.MemoryTaskStatePending,
+		LeaseOwner:     "worker-1",
+		LeaseExpiresAt: &expiresAt,
+	}).Error; err != nil {
+		t.Fatalf("create memory task: %v", err)
+	}
+	var attempts atomic.Int32
+	if err := db.Callback().Update().Before("gorm:update").Register("fail_first_memory_task_lease_renewal", func(tx *gorm.DB) {
+		if attempts.Add(1) == 1 {
+			tx.AddError(errors.New("transient renewal failure"))
+		}
+	}); err != nil {
+		t.Fatalf("register renewal callback: %v", err)
+	}
+
+	svc := NewMemoryMessageService(nil)
+	runCtx, cancel := context.WithCancel(t.Context())
+	renewErr := make(chan error, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		svc.renewMemoryTaskLease(runCtx, cancel, "task-renew-transient", "worker-1", expiresAt, renewErr)
+	}()
+
+	wantExpiresAt := now.Add(memoryTaskLeaseTTL)
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
+	for {
+		select {
+		case <-deadline.C:
+			cancel()
+			<-done
+			t.Fatal("lease was not renewed after a transient failure")
+		case <-poll.C:
+			stored, err := svc.memoryTaskDAO.GetByID(t.Context(), db, "task-renew-transient")
+			if err != nil {
+				t.Fatalf("load memory task: %v", err)
+			}
+			if stored.LeaseExpiresAt == nil || !stored.LeaseExpiresAt.Equal(wantExpiresAt) {
+				continue
+			}
+			if attempts.Load() < 2 {
+				t.Fatalf("renewal attempts = %d, want at least 2", attempts.Load())
+			}
+			if runCtx.Err() != nil {
+				t.Fatalf("run context canceled after recoverable renewal error: %v", runCtx.Err())
+			}
+			select {
+			case err := <-renewErr:
+				t.Fatalf("renewal reported terminal error after recovery: %v", err)
+			default:
+			}
+			cancel()
+			<-done
+			return
+		}
+	}
+}
+
+// TestRenewMemoryTaskLeaseTimesOutNearExpiry verifies an unresponsive renewal
+// cancels execution when no full renewal interval remains on the lease.
+func TestRenewMemoryTaskLeaseTimesOutNearExpiry(t *testing.T) {
+	now := time.Date(2026, 8, 20, 10, 5, 0, 0, time.UTC)
+	pinMemoryNow(t, now)
+	pinMemoryTaskLeaseTimings(t, 5*time.Millisecond, 10*time.Millisecond)
+	db := testutil.SetupTestDB(t, &entity.MemoryTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	expiresAt := now.Add(memoryTaskLeaseRenewInterval)
 	if err := db.Create(&entity.MemoryTask{
 		TaskID:         "task-renew-timeout",
 		MemoryID:       "memory-1",
@@ -551,7 +669,7 @@ func TestRenewMemoryTaskLeaseTimesOutBlockedUpdate(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		svc.renewMemoryTaskLease(runCtx, cancel, "task-renew-timeout", "worker-1", renewErr)
+		svc.renewMemoryTaskLease(runCtx, cancel, "task-renew-timeout", "worker-1", expiresAt, renewErr)
 	}()
 
 	select {
