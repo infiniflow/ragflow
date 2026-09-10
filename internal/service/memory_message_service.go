@@ -106,6 +106,7 @@ type MemoryMessageService struct {
 	taskDAO       *dao.TaskDAO
 	memoryTaskDAO *dao.MemoryTaskDAO
 	taskPublisher TaskPublisher
+	resumeTask    func(context.Context, *entity.MemoryTask, string) error
 }
 
 // NewMemoryMessageService constructs a service bound to the

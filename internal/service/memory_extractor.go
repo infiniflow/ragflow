@@ -58,11 +58,14 @@ const memoryTimeLayout = "2006-01-02 15:04:05"
 
 const (
 	memoryTaskLeaseTTL            = 2 * time.Minute
-	memoryTaskLeaseRenewInterval  = 30 * time.Second
-	memoryTaskLeaseRenewTimeout   = 10 * time.Second
 	memoryTaskRetryInitialDelay   = 5 * time.Second
 	memoryTaskRetryMaxDelay       = 5 * time.Minute
 	memoryTaskFailureWriteTimeout = 5 * time.Second
+)
+
+var (
+	memoryTaskLeaseRenewInterval = 30 * time.Second
+	memoryTaskLeaseRenewTimeout  = 10 * time.Second
 )
 
 var errPermanentMemoryTask = errors.New("memory: permanent task failure")
@@ -150,7 +153,11 @@ func (s *MemoryMessageService) runClaimedMemoryTask(ctx context.Context, task *e
 		<-renewDone
 	}()
 
-	err := s.resumeMemoryTask(runCtx, task, leaseOwner)
+	resumeTask := s.resumeMemoryTask
+	if s.resumeTask != nil {
+		resumeTask = s.resumeTask
+	}
+	err := resumeTask(runCtx, task, leaseOwner)
 	if err == nil {
 		return MemoryTaskAcknowledge, nil
 	}
