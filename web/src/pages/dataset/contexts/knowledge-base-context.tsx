@@ -22,7 +22,7 @@ export const KnowledgeBaseProvider: React.FC<{
   );
 };
 
-// eslint-disable-next-line react-refresh/only-export-components
+// oxlint-disable-next-line react-refresh/only-export-components
 export const useKnowledgeBaseContext = (): KnowledgeBaseContextType => {
   const context = useContext(KnowledgeBaseContext);
   if (context === undefined) {
@@ -31,4 +31,9 @@ export const useKnowledgeBaseContext = (): KnowledgeBaseContextType => {
     );
   }
   return context;
+};
+
+// oxlint-disable-next-line react-refresh/only-export-components
+export const useOwnerTenantId = (): string | undefined => {
+  return useKnowledgeBaseContext().knowledgeBase?.tenant_id;
 };

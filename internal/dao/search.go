@@ -17,8 +17,11 @@
 package dao
 
 import (
+	"context"
 	"ragflow/internal/entity"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 // SearchDAO search data access object
@@ -45,12 +48,12 @@ type SearchDetailRow struct {
 }
 
 // ListByTenantIDs list searches by tenant IDs with pagination and filtering
-func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.SearchListItem, int64, error) {
+func (dao *SearchDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, page, pageSize int, orderby string, desc bool, keywords string) ([]*entity.SearchListItem, int64, error) {
 	var searches []*entity.SearchListItem
 	var total int64
 
 	// Build query with join to user table for nickname and avatar
-	query := DB.Model(&entity.Search{}).
+	query := db.WithContext(ctx).Model(&entity.Search{}).
 		Select(`
 			search.*,
 			user.nickname,
@@ -97,11 +100,11 @@ func (dao *SearchDAO) ListByTenantIDs(tenantIDs []string, userID string, page, p
 }
 
 // ListByOwnerIDs list searches by owner IDs with filtering (manual pagination)
-func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.SearchListItem, int64, error) {
+func (dao *SearchDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, orderby string, desc bool, keywords string) ([]*entity.SearchListItem, int64, error) {
 	var searches []*entity.SearchListItem
 
 	// Build query with join to user table
-	query := DB.Model(&entity.Search{}).
+	query := db.WithContext(ctx).Model(&entity.Search{}).
 		Select(`
 			search.*,
 			user.nickname,
@@ -136,9 +139,9 @@ func (dao *SearchDAO) ListByOwnerIDs(ownerIDs []string, userID string, orderby s
 }
 
 // GetByID gets search by ID
-func (dao *SearchDAO) GetByID(id string) (*entity.Search, error) {
+func (dao *SearchDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Search, error) {
 	var search entity.Search
-	err := DB.Where("id = ?", id).First(&search).Error
+	err := db.WithContext(ctx).Where("id = ?", id).First(&search).Error
 	if err != nil {
 		return nil, err
 	}
@@ -147,9 +150,9 @@ func (dao *SearchDAO) GetByID(id string) (*entity.Search, error) {
 
 // GetDetailByID retrieves the share-detail payload by joining the search app
 // with its owner profile, matching Python SearchService.get_detail.
-func (dao *SearchDAO) GetDetailByID(searchID string) (*SearchDetailRow, error) {
+func (dao *SearchDAO) GetDetailByID(ctx context.Context, db *gorm.DB, searchID string) (*SearchDetailRow, error) {
 	var detail SearchDetailRow
-	err := DB.Table("search").
+	err := db.WithContext(ctx).Table("search").
 		Select(`
 			search.id,
 			search.avatar,
@@ -175,30 +178,30 @@ func (dao *SearchDAO) GetDetailByID(searchID string) (*SearchDetailRow, error) {
 }
 
 // GetByNameAndTenant gets search by name and tenant ID
-func (dao *SearchDAO) GetByNameAndTenant(name string, tenantID string) ([]*entity.Search, error) {
+func (dao *SearchDAO) GetByNameAndTenant(ctx context.Context, db *gorm.DB, name string, tenantID string) ([]*entity.Search, error) {
 	var searches []*entity.Search
-	err := DB.Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, "1").Find(&searches).Error
+	err := db.WithContext(ctx).Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, "1").Find(&searches).Error
 	return searches, err
 }
 
 // Create creates a new search
-func (dao *SearchDAO) Create(search *entity.Search) error {
-	return DB.Create(search).Error
+func (dao *SearchDAO) Create(ctx context.Context, db *gorm.DB, search *entity.Search) error {
+	return db.WithContext(ctx).Create(search).Error
 }
 
 // QueryByTenantIDAndID checks if a search exists with given tenant_id and id
 // Reference: Python SearchService.query(tenant_id=tenant.tenant_id, id=search_id)
 // Used for permission verification in detail API
-func (dao *SearchDAO) QueryByTenantIDAndID(tenantID string, searchID string) ([]*entity.Search, error) {
+func (dao *SearchDAO) QueryByTenantIDAndID(ctx context.Context, db *gorm.DB, tenantID string, searchID string) ([]*entity.Search, error) {
 	var searches []*entity.Search
-	err := DB.Where("tenant_id = ? AND id = ? AND status = ?", tenantID, searchID, "1").Find(&searches).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND id = ? AND status = ?", tenantID, searchID, "1").Find(&searches).Error
 	return searches, err
 }
 
 // DeleteByID deletes a search by ID (soft delete by setting status to "0")
 // Reference: Python common_service.py::delete_by_id
-func (dao *SearchDAO) DeleteByID(tenantID, id string) error {
-	return DB.Model(&entity.Search{}).Where("tenant_id = ? AND id = ?", tenantID, id).Update("status", "0").Error
+func (dao *SearchDAO) DeleteByID(ctx context.Context, db *gorm.DB, tenantID, id string) error {
+	return db.WithContext(ctx).Model(&entity.Search{}).Where("tenant_id = ? AND id = ?", tenantID, id).Update("status", "0").Error
 }
 
 // Accessible4Deletion checks if a search can be deleted by a specific user
@@ -206,9 +209,9 @@ func (dao *SearchDAO) DeleteByID(tenantID, id string) error {
 // Returns true if the search exists, is valid, and was created by the user.
 // A missing or non-owned search returns (false, nil) so callers can distinguish
 // "not authorized" from a genuine database error (which is returned as the error).
-func (dao *SearchDAO) Accessible4Deletion(searchID string, userID string) (bool, error) {
+func (dao *SearchDAO) Accessible4Deletion(ctx context.Context, db *gorm.DB, searchID string, userID string) (bool, error) {
 	var count int64
-	err := DB.Model(&entity.Search{}).
+	err := db.WithContext(ctx).Model(&entity.Search{}).
 		Where("id = ? AND created_by = ? AND status = ?", searchID, userID, "1").
 		Count(&count).Error
 	if err != nil {
@@ -219,9 +222,9 @@ func (dao *SearchDAO) Accessible4Deletion(searchID string, userID string) (bool,
 
 // GetByTenantIDAndID gets search by tenant ID and search ID
 // Reference: Python SearchService.query(tenant_id=tenant_id, id=search_id)
-func (dao *SearchDAO) GetByTenantIDAndID(tenantID string, searchID string) (*entity.Search, error) {
+func (dao *SearchDAO) GetByTenantIDAndID(ctx context.Context, db *gorm.DB, tenantID string, searchID string) (*entity.Search, error) {
 	var search entity.Search
-	err := DB.Where("tenant_id = ? AND id = ? AND status = ?", tenantID, searchID, "1").First(&search).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND id = ? AND status = ?", tenantID, searchID, "1").First(&search).Error
 	if err != nil {
 		return nil, err
 	}
@@ -230,6 +233,6 @@ func (dao *SearchDAO) GetByTenantIDAndID(tenantID string, searchID string) (*ent
 
 // UpdateByID updates search by ID
 // Reference: Python common_service.py::update_by_id
-func (dao *SearchDAO) UpdateByID(id string, updates map[string]interface{}) error {
-	return DB.Model(&entity.Search{}).Where("id = ?", id).Updates(updates).Error
+func (dao *SearchDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
+	return db.WithContext(ctx).Model(&entity.Search{}).Where("id = ?", id).Updates(updates).Error
 }

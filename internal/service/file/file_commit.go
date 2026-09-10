@@ -17,6 +17,7 @@
 package file
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -27,6 +28,9 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"sort"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -50,9 +54,9 @@ func NewFileCommitService() *FileCommitService {
 }
 
 // CreateCommit creates a new commit for a workspace folder
-func (s *FileCommitService) CreateCommit(folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 	// 1. Get the latest commit for this folder
-	latestCommit, _ := s.commitDAO.GetLatestByFolderID(folderID)
+	latestCommit, _ := s.commitDAO.GetLatestByFolderID(ctx, dao.DB, folderID)
 
 	// 2. Build tree state from latest commit
 	treeState := make(map[string]interface{})
@@ -82,7 +86,7 @@ func (s *FileCommitService) CreateCommit(folderID, authorID, message string, cha
 
 	// All DB operations run inside a single transaction.
 	var treeStr string
-	if err := dao.DB.Transaction(func(tx *gorm.DB) error {
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Save commit
 		if err := tx.Create(commit).Error; err != nil {
 			return fmt.Errorf("failed to create commit: %w", err)
@@ -118,7 +122,7 @@ func (s *FileCommitService) CreateCommit(folderID, authorID, message string, cha
 				objKey := ".objects/" + hashHex
 
 				if storageImpl != nil {
-					if err := storageImpl.Put(folderID, objKey, contentBytes); err != nil {
+					if err := storageImpl.Put(ctx, folderID, objKey, contentBytes); err != nil {
 						return fmt.Errorf("failed to store object: %w", err)
 					}
 				}
@@ -216,7 +220,7 @@ func (s *FileCommitService) CreateCommit(folderID, authorID, message string, cha
 		if err != nil {
 			return fmt.Errorf("failed to marshal tree state: %w", err)
 		}
-		if err := tx.Model(&entity.FileCommit{}).Where("id = ?", commitID).Update("tree_state", string(treeJSON)).Error; err != nil {
+		if err = tx.Model(&entity.FileCommit{}).Where("id = ?", commitID).Update("tree_state", string(treeJSON)).Error; err != nil {
 			return fmt.Errorf("failed to update tree state: %w", err)
 		}
 		treeStr = string(treeJSON)
@@ -232,28 +236,235 @@ func (s *FileCommitService) CreateCommit(folderID, authorID, message string, cha
 	return commit, nil
 }
 
+// PageEditCommitInput carries the data needed to record a single wiki/skill
+// page edit as an audit commit.
+type PageEditCommitInput struct {
+	DatasetID  string // knowledgebase scope, stored on the commit for isolation
+	DocID      string // ES doc id of the page content
+	Slug       string
+	PageType   string
+	Title      string
+	AuthorID   string
+	OldContent string
+	NewContent string
+}
+
+// wikiFileID derives the stable file key used to scope page-edit commits to a
+// specific knowledgebase and page, so identical slugs in different
+// knowledgebases never share a commit parent or history.
+func wikiFileID(datasetID, pageType, slug string) string {
+	return datasetID + "/" + pageType + "/" + slug
+}
+
+var pageCommitSeq atomic.Uint64
+
+// RecordPageEdit records a wiki/skill page edit as an audit commit with a
+// git-style parent chain (each edit points at the previous commit for the same
+// page). The new content_after is referenced in ES by doc_id; a unified diff of
+// old vs new content is stored on the commit item. The commit is scoped to the
+// dataset via FolderID and a derived page file key so page histories never cross
+// knowledgebase boundaries.
+//
+// This path is independent of the workspace File tree (it does not require a
+// File record or a tree_state snapshot).
+func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommitInput) (*entity.FileCommit, error) {
+	// Parent chain: previous commit that touched the same page file key.
+	fileID := wikiFileID(in.DatasetID, in.PageType, in.Slug)
+
+	commitID := utility.GenerateUUID()
+
+	diffText := unifiedDiff(in.OldContent, in.NewContent)
+	contentAfterStorage := "es"
+	contentAfterLocation := in.DocID
+	slugKwd := in.Slug
+	pageTypeKwd := in.PageType
+
+	item := &entity.FileCommitItem{
+		ID:                   utility.GenerateUUID(),
+		CommitID:             commitID,
+		FileID:               fileID,
+		Operation:            "modify",
+		Diff:                 &diffText,
+		ContentAfterStorage:  &contentAfterStorage,
+		ContentAfterLocation: &contentAfterLocation,
+		SlugKwd:              &slugKwd,
+		PageTypeKwd:          &pageTypeKwd,
+	}
+
+	var commit *entity.FileCommit
+	// Serialize parent selection with insertion in process so two concurrent
+	// edits on the same page cannot both read the same parent and fork the
+	// chain. This is backend-agnostic (works identically on MySQL and SQLite)
+	// and cheaper than row-level DB locks.
+	mu := pageCommitLock(fileID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	item.Seq = uint(pageCommitSeq.Add(1))
+
+	// Read the parent inside the lock, on the shared connection, so it always
+	// reflects the previously committed edit for this page.
+	parentID, perr := s.commitItemDAO.GetLatestCommitIDByFileID(ctx, dao.DB, fileID)
+	if perr != nil {
+		return nil, fmt.Errorf("failed to resolve page commit parent: %w", perr)
+	}
+
+	commit = &entity.FileCommit{
+		ID:        commitID,
+		FolderID:  in.DatasetID,
+		Message:   in.Title,
+		AuthorID:  in.AuthorID,
+		Title:     &in.Title,
+		FileCount: 1,
+	}
+	if parentID != "" {
+		commit.ParentID = &parentID
+	}
+
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if cerr := tx.Create(commit).Error; cerr != nil {
+			return fmt.Errorf("failed to create page commit: %w", cerr)
+		}
+		if ierr := tx.Create(item).Error; ierr != nil {
+			return fmt.Errorf("failed to create page commit item: %w", ierr)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return commit, nil
+}
+
+// pageCommitLocks is a per-page-file-key mutex registry that serializes
+// RecordPageEdit calls for the same page. Entries are retained for the process
+// lifetime (bounded by the number of distinct pages edited).
+var pageCommitLocks sync.Map // fileID -> *sync.Mutex
+
+func pageCommitLock(fileID string) *sync.Mutex {
+	v, _ := pageCommitLocks.LoadOrStore(fileID, &sync.Mutex{})
+	return v.(*sync.Mutex)
+}
+
+// ListPageCommits lists audit commits for a specific wiki/skill page.
+func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.FileCommit, int64, error) {
+	items, err := s.commitItemDAO.ListByFileID(ctx, dao.DB, wikiFileID(datasetID, pageType, slug))
+	if err != nil {
+		return nil, 0, err
+	}
+	commitIDs := make([]string, 0, len(items))
+	for _, it := range items {
+		commitIDs = append(commitIDs, it.CommitID)
+	}
+	if len(commitIDs) == 0 {
+		return []*entity.FileCommit{}, 0, nil
+	}
+
+	commits, total, err := s.commitDAO.ListByIDs(ctx, dao.DB, commitIDs, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	return commits, total, nil
+}
+
+// unifiedDiff produces a simple line-based unified diff between two texts.
+func unifiedDiff(oldText, newText string) string {
+	oldLines := strings.Split(oldText, "\n")
+	newLines := strings.Split(newText, "\n")
+
+	const maxCtx = 3
+	type hunkLine struct {
+		prefix string
+		text   string
+	}
+	var hunks []hunkLine
+
+	// Longest common subsequence over lines, then render the diff.
+	cur := make([][]int, len(oldLines)+1)
+	for i := range cur {
+		cur[i] = make([]int, len(newLines)+1)
+	}
+	for i := len(oldLines) - 1; i >= 0; i-- {
+		for j := len(newLines) - 1; j >= 0; j-- {
+			if oldLines[i] == newLines[j] {
+				cur[i][j] = cur[i+1][j+1] + 1
+			} else if cur[i+1][j] >= cur[i][j+1] {
+				cur[i][j] = cur[i+1][j]
+			} else {
+				cur[i][j] = cur[i][j+1]
+			}
+		}
+	}
+
+	i, j := 0, 0
+	for i < len(oldLines) && j < len(newLines) {
+		if oldLines[i] == newLines[j] {
+			i++
+			j++
+		} else if cur[i+1][j] >= cur[i][j+1] {
+			hunks = append(hunks, hunkLine{"-", oldLines[i]})
+			i++
+		} else {
+			hunks = append(hunks, hunkLine{"+", newLines[j]})
+			j++
+		}
+	}
+	for ; i < len(oldLines); i++ {
+		hunks = append(hunks, hunkLine{"-", oldLines[i]})
+	}
+	for ; j < len(newLines); j++ {
+		hunks = append(hunks, hunkLine{"+", newLines[j]})
+	}
+
+	if len(hunks) == 0 {
+		return ""
+	}
+	if len(hunks) > maxCtx*2 {
+		var b strings.Builder
+		for k := 0; k < maxCtx; k++ {
+			b.WriteString(hunks[k].prefix)
+			b.WriteString(hunks[k].text)
+			b.WriteString("\n")
+		}
+		b.WriteString("... (" + fmt.Sprintf("%d", len(hunks)-maxCtx*2) + " lines omitted) ...\n")
+		for k := len(hunks) - maxCtx; k < len(hunks); k++ {
+			b.WriteString(hunks[k].prefix)
+			b.WriteString(hunks[k].text)
+			b.WriteString("\n")
+		}
+		return b.String()
+	}
+	var b strings.Builder
+	for _, h := range hunks {
+		b.WriteString(h.prefix)
+		b.WriteString(h.text)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // ListCommits lists commits for a workspace folder with pagination
-func (s *FileCommitService) ListCommits(folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error) {
-	return s.commitDAO.ListByFolderID(folderID, page, pageSize, orderBy, desc)
+func (s *FileCommitService) ListCommits(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error) {
+	return s.commitDAO.ListByFolderID(ctx, dao.DB, folderID, page, pageSize, orderBy, desc)
 }
 
 // GetCommit gets a single commit by ID
-func (s *FileCommitService) GetCommit(commitID string) (*entity.FileCommit, error) {
-	return s.commitDAO.GetByID(commitID)
+func (s *FileCommitService) GetCommit(ctx context.Context, commitID string) (*entity.FileCommit, error) {
+	return s.commitDAO.GetByID(ctx, dao.DB, commitID)
 }
 
 // ListCommitFiles lists all file change items for a commit
-func (s *FileCommitService) ListCommitFiles(commitID string) ([]*entity.FileCommitItem, error) {
-	return s.commitItemDAO.ListByCommitID(commitID)
+func (s *FileCommitService) ListCommitFiles(ctx context.Context, commitID string) ([]*entity.FileCommitItem, error) {
+	return s.commitItemDAO.ListByCommitID(ctx, dao.DB, commitID)
 }
 
 // DiffCommits compares two commits and returns the diff
-func (s *FileCommitService) DiffCommits(fromID, toID string) ([]entity.DiffEntry, error) {
-	fromItems, err := s.commitItemDAO.ListByCommitID(fromID)
+func (s *FileCommitService) DiffCommits(ctx context.Context, fromID, toID string) ([]entity.DiffEntry, error) {
+	fromItems, err := s.commitItemDAO.ListByCommitID(ctx, dao.DB, fromID)
 	if err != nil {
 		return nil, err
 	}
-	toItems, err := s.commitItemDAO.ListByCommitID(toID)
+	toItems, err := s.commitItemDAO.ListByCommitID(ctx, dao.DB, toID)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +479,7 @@ func (s *FileCommitService) DiffCommits(fromID, toID string) ([]entity.DiffEntry
 	}
 
 	// Get tree state for file names (use to commit)
-	toCommit, err := s.commitDAO.GetByID(toID)
+	toCommit, err := s.commitDAO.GetByID(ctx, dao.DB, toID)
 	treeState := make(map[string]interface{})
 	if err == nil && toCommit != nil && toCommit.TreeState != nil {
 		json.Unmarshal([]byte(*toCommit.TreeState), &treeState)
@@ -348,9 +559,9 @@ func (s *FileCommitService) DiffCommits(fromID, toID string) ([]entity.DiffEntry
 
 // GetUncommittedChanges gets uncommitted changes for a workspace folder.
 // Recursively scans all sub-folders.
-func (s *FileCommitService) GetUncommittedChanges(folderID string) ([]entity.DiffEntry, error) {
+func (s *FileCommitService) GetUncommittedChanges(ctx context.Context, folderID string) ([]entity.DiffEntry, error) {
 	// Get latest commit tree state
-	latest, err := s.commitDAO.GetLatestByFolderID(folderID)
+	latest, err := s.commitDAO.GetLatestByFolderID(ctx, dao.DB, folderID)
 	committedFiles := make(map[string]map[string]interface{})
 	if err == nil && latest != nil && latest.TreeState != nil {
 		var treeData map[string]interface{}
@@ -364,7 +575,7 @@ func (s *FileCommitService) GetUncommittedChanges(folderID string) ([]entity.Dif
 	}
 
 	// Get all live files recursively under this folder
-	liveMap := s.collectAllFilesRecursive(folderID)
+	liveMap := s.collectAllFilesRecursive(ctx, folderID)
 
 	var changes []entity.DiffEntry
 	processed := make(map[string]bool)
@@ -377,7 +588,7 @@ func (s *FileCommitService) GetUncommittedChanges(folderID string) ([]entity.Dif
 		}
 
 		if liveFile, ok := liveMap[fid]; ok {
-			liveHash := computeLiveFileHash(folderID, fid, liveFile)
+			liveHash := computeLiveFileHash(ctx, folderID, fid, liveFile)
 			committedHash := ""
 			if h, ok := committedEntry["hash"].(string); ok {
 				committedHash = h
@@ -417,17 +628,17 @@ func (s *FileCommitService) GetUncommittedChanges(folderID string) ([]entity.Dif
 }
 
 // collectAllFilesRecursive recursively collects all non-folder files under a folder.
-func (s *FileCommitService) collectAllFilesRecursive(folderID string) map[string]*entity.File {
+func (s *FileCommitService) collectAllFilesRecursive(ctx context.Context, folderID string) map[string]*entity.File {
 	result := make(map[string]*entity.File)
 	// Direct files (non-folder)
-	files, _ := s.fileDAO.ListNonFolderByParentID(folderID)
+	files, _ := s.fileDAO.ListNonFolderByParentID(ctx, dao.DB, folderID)
 	for _, f := range files {
 		result[f.ID] = f
 	}
 	// Sub-folders — recurse
-	subFolders, _ := s.fileDAO.ListFolderByParentID(folderID)
+	subFolders, _ := s.fileDAO.ListFolderByParentID(ctx, dao.DB, folderID)
 	for _, sf := range subFolders {
-		sub := s.collectAllFilesRecursive(sf.ID)
+		sub := s.collectAllFilesRecursive(ctx, sf.ID)
 		for k, v := range sub {
 			result[k] = v
 		}
@@ -436,8 +647,8 @@ func (s *FileCommitService) collectAllFilesRecursive(folderID string) map[string
 }
 
 // GetCommitTree gets the tree state snapshot for a commit as a hierarchical tree.
-func (s *FileCommitService) GetCommitTree(commitID string) (map[string]interface{}, error) {
-	commit, err := s.commitDAO.GetByID(commitID)
+func (s *FileCommitService) GetCommitTree(ctx context.Context, commitID string) (map[string]interface{}, error) {
+	commit, err := s.commitDAO.GetByID(ctx, dao.DB, commitID)
 	if err != nil {
 		return nil, err
 	}
@@ -445,15 +656,15 @@ func (s *FileCommitService) GetCommitTree(commitID string) (map[string]interface
 		return map[string]interface{}{"id": commit.FolderID, "name": "", "type": "folder", "children": []interface{}{}}, nil
 	}
 	var flat map[string]interface{}
-	if err := json.Unmarshal([]byte(*commit.TreeState), &flat); err != nil {
+	if err = json.Unmarshal([]byte(*commit.TreeState), &flat); err != nil {
 		return nil, err
 	}
-	return s.buildHierarchicalTree(flat, commit.FolderID), nil
+	return s.buildHierarchicalTree(ctx, flat, commit.FolderID), nil
 }
 
 // buildHierarchicalTree builds a recursive tree from a flat tree_state map.
 // Sub-folder hierarchy is resolved from the File table's parent_id.
-func (s *FileCommitService) buildHierarchicalTree(flat map[string]interface{}, rootFolderID string) map[string]interface{} {
+func (s *FileCommitService) buildHierarchicalTree(ctx context.Context, flat map[string]interface{}, rootFolderID string) map[string]interface{} {
 	// Collect all unique folder IDs
 	folderIDs := map[string]bool{rootFolderID: true}
 	for _, v := range flat {
@@ -470,7 +681,7 @@ func (s *FileCommitService) buildHierarchicalTree(flat map[string]interface{}, r
 	folderParentMap := make(map[string]string)
 	for fid := range folderIDs {
 		if fid != rootFolderID {
-			if f, err := s.fileDAO.GetByID(fid); err == nil {
+			if f, err := s.fileDAO.GetByID(ctx, dao.DB, fid); err == nil {
 				folderParentMap[fid] = f.ParentID
 			}
 		}
@@ -501,7 +712,7 @@ func (s *FileCommitService) buildHierarchicalTree(flat map[string]interface{}, r
 	var buildNode func(nodeID string) map[string]interface{}
 	buildNode = func(nodeID string) map[string]interface{} {
 		nodeName := nodeID
-		if f, err := s.fileDAO.GetByID(nodeID); err == nil {
+		if f, err := s.fileDAO.GetByID(ctx, dao.DB, nodeID); err == nil {
 			nodeName = f.Name
 		}
 		node := map[string]interface{}{
@@ -539,13 +750,13 @@ func (s *FileCommitService) buildHierarchicalTree(flat map[string]interface{}, r
 }
 
 // GetCommitFileContent gets file content as it existed in a given commit
-func (s *FileCommitService) GetCommitFileContent(folderID, commitID, fileID string) ([]byte, error) {
-	_, err := s.commitDAO.GetByID(commitID)
+func (s *FileCommitService) GetCommitFileContent(ctx context.Context, folderID, commitID, fileID string) ([]byte, error) {
+	_, err := s.commitDAO.GetByID(ctx, dao.DB, commitID)
 	if err != nil {
 		return nil, fmt.Errorf("commit not found: %w", err)
 	}
 
-	item, err := s.commitItemDAO.GetByCommitIDAndFileID(commitID, fileID)
+	item, err := s.commitItemDAO.GetByCommitIDAndFileID(ctx, dao.DB, commitID, fileID)
 	if err != nil {
 		return nil, fmt.Errorf("file not found in commit: %w", err)
 	}
@@ -568,7 +779,7 @@ func (s *FileCommitService) GetCommitFileContent(folderID, commitID, fileID stri
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	blob, err := storageImpl.Get(folderID, objKey)
+	blob, err := storageImpl.Get(ctx, folderID, objKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file content from storage: %w", err)
 	}
@@ -577,15 +788,16 @@ func (s *FileCommitService) GetCommitFileContent(folderID, commitID, fileID stri
 }
 
 // GetFileVersionHistory gets version history for a specific file
-func (s *FileCommitService) GetFileVersionHistory(fileID string) ([]entity.VersionEntry, error) {
-	items, err := s.commitItemDAO.ListByFileID(fileID)
+func (s *FileCommitService) GetFileVersionHistory(ctx context.Context, fileID string) ([]entity.VersionEntry, error) {
+	items, err := s.commitItemDAO.ListByFileID(ctx, dao.DB, fileID)
 	if err != nil {
 		return nil, err
 	}
 
 	var versions []entity.VersionEntry
 	for _, item := range items {
-		commit, err := s.commitDAO.GetByID(item.CommitID)
+		var commit *entity.FileCommit
+		commit, err = s.commitDAO.GetByID(ctx, dao.DB, item.CommitID)
 		if err != nil {
 			continue
 		}
@@ -610,7 +822,7 @@ func (s *FileCommitService) GetFileVersionHistory(fileID string) ([]entity.Versi
 }
 
 // computeLiveFileHash computes the SHA256 hash of current file content from storage
-func computeLiveFileHash(folderID, fileID string, file *entity.File) string {
+func computeLiveFileHash(ctx context.Context, folderID, fileID string, file *entity.File) string {
 	if file.Location == nil || *file.Location == "" {
 		return ""
 	}
@@ -620,7 +832,7 @@ func computeLiveFileHash(folderID, fileID string, file *entity.File) string {
 		return ""
 	}
 
-	data, err := storageImpl.Get(folderID, *file.Location)
+	data, err := storageImpl.Get(ctx, folderID, *file.Location)
 	if err != nil {
 		return ""
 	}

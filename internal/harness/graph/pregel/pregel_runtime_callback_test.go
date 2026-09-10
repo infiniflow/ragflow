@@ -34,7 +34,7 @@ func TestRuntime_ExecutionInfo(t *testing.T) {
 		WithCheckpointer(ms),
 		WithConfig(cfg),
 	)
-	ctx := context.Background()
+	ctx := t.Context()
 	start := time.Now()
 	result, err := engine.RunSync(ctx, map[string]any{"value": "info"})
 	elapsed := time.Since(start)
@@ -75,13 +75,13 @@ func TestRuntime_MultipleThreads_IndependentCheckpoints(t *testing.T) {
 				WithCheckpointer(ms),
 				WithConfig(cfg),
 			)
-			result, err := engine.RunSync(context.Background(), map[string]any{"value": "t"})
+			result, err := engine.RunSync(t.Context(), map[string]any{"value": "t"})
 			if err != nil {
 				t.Errorf("thread %d: %v", idx, err)
 				return
 			}
 			m := result.(map[string]any)
-			cp, _ := ms.Get(context.Background(), map[string]interface{}{
+			cp, _ := ms.Get(t.Context(), map[string]interface{}{
 				constants.ConfigKeyThreadID: tid,
 			})
 			results <- threadResult{
@@ -122,7 +122,7 @@ func TestCallback_RunLifecycle(t *testing.T) {
 	)
 	te.SetCallbacks(cb)
 
-	outputCh, errCh := te.Run(context.Background(), map[string]any{"value": "cb"}, types.StreamModeValues)
+	outputCh, errCh := te.Run(t.Context(), map[string]any{"value": "cb"}, types.StreamModeValues)
 	for range outputCh {
 	}
 	<-errCh
@@ -152,7 +152,7 @@ func TestCallback_StepTracking(t *testing.T) {
 	)
 	te.SetCallbacks(cb)
 
-	outputCh, errCh := te.Run(context.Background(), map[string]any{"value": "steps"}, types.StreamModeValues)
+	outputCh, errCh := te.Run(t.Context(), map[string]any{"value": "steps"}, types.StreamModeValues)
 	for range outputCh {
 	}
 	<-errCh
@@ -180,7 +180,7 @@ func TestCallback_MultipleCallbacks(t *testing.T) {
 	)
 	te.SetCallbacks(cb)
 
-	outputCh, errCh := te.Run(context.Background(), map[string]any{"value": "multi"}, types.StreamModeValues)
+	outputCh, errCh := te.Run(t.Context(), map[string]any{"value": "multi"}, types.StreamModeValues)
 	for range outputCh {
 	}
 	<-errCh
@@ -221,7 +221,7 @@ func TestCallback_InterruptCallback(t *testing.T) {
 	)
 	te.SetCallbacks(cb)
 
-	outputCh, errCh := te.Run(context.Background(), map[string]any{"value": "int"}, types.StreamModeValues)
+	outputCh, errCh := te.Run(t.Context(), map[string]any{"value": "int"}, types.StreamModeValues)
 	for range outputCh {
 	}
 	<-errCh
@@ -251,7 +251,7 @@ func TestCallback_CheckpointCallback(t *testing.T) {
 	)
 	te.SetCallbacks(cb)
 
-	outputCh, errCh := te.Run(context.Background(), map[string]any{"value": "cp"}, types.StreamModeValues)
+	outputCh, errCh := te.Run(t.Context(), map[string]any{"value": "cp"}, types.StreamModeValues)
 	for range outputCh {
 	}
 	<-errCh
@@ -280,7 +280,7 @@ func TestCallback_NodeLifecycle(t *testing.T) {
 	)
 	te.SetCallbacks(cb)
 
-	outputCh, errCh := te.Run(context.Background(), map[string]any{"value": "node"}, types.StreamModeValues)
+	outputCh, errCh := te.Run(t.Context(), map[string]any{"value": "node"}, types.StreamModeValues)
 	for range outputCh {
 	}
 	<-errCh

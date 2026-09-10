@@ -28,7 +28,7 @@ func TestWorkflow_StreamCheckpointCancelResume(t *testing.T) {
 	cid := "stream-cp-1"
 	cancelOpt, cancelFunc := WithCancel()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store, EnableStreaming: true})
-	ctx := context.Background()
+	ctx := t.Context()
 
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("stream test")},
 		WithCheckPointID(cid), cancelOpt)
@@ -150,7 +150,7 @@ func TestWorkflow_ToolPanic_SemaphoreLeak(t *testing.T) {
 		ToolsConfig: &ToolsNodeConfig{Tools: []Tool{pTool}},
 	}).WithName("panic_tool_test")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
 
 	gotError := false
@@ -186,7 +186,7 @@ func TestWorkflow_SequentialWorkflow_ErrorPropagation(t *testing.T) {
 	// Make agent_a fail by configuring it with shouldFail
 	m1.shouldFail = true
 
-	ctx := context.Background()
+	ctx := t.Context()
 	seq, err := NewSequential(ctx, &SequentialConfig{
 		Name: "seq_err", Description: "error propagation test",
 		SubAgents: []Agent{a1, a2},
@@ -246,7 +246,7 @@ func TestWorkflow_ConcurrentRunner_HighVolume(t *testing.T) {
 			agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName(fmt.Sprintf("high_%d", id))
 			runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 
-			ctx := context.Background()
+			ctx := t.Context()
 			iter := runner.Run(ctx, []*schema.Message{schema.UserMessage(fmt.Sprintf("q%d", id))})
 			gotResponse := false
 			for {
@@ -316,7 +316,7 @@ func TestWorkflow_ModelFailover_TimeoutChain(t *testing.T) {
 	}).WithName("timeout_chain")
 	agent.name = "timeout_chain"
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
@@ -344,7 +344,7 @@ func TestWorkflow_ModelFailover_TimeoutChain(t *testing.T) {
 // ============================================================
 
 func TestWorkflow_AgentLoop_PushInterruptResume(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	loop := NewAgentLoop[*schema.Message](AgentLoopConfig[*schema.Message]{
 		GenInput: func(_ context.Context, l *AgentLoop[*schema.Message], items []*schema.Message) (*GenInputResult[*schema.Message], error) {

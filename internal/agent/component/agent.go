@@ -17,13 +17,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"ragflow/internal/dao"
 	"sort"
 	"strings"
+	"time"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
@@ -35,6 +38,7 @@ import (
 )
 
 const maxSubAgentDepth = 8
+const defaultAgentDeferredTimeout = 10 * time.Minute
 
 // agentPatternless matches `<model>@<provider>` and
 // `<model>@<instance>@<provider>` (the trailing `@<provider>` is
@@ -78,7 +82,9 @@ type AgentParam struct {
 	SystemPrompt             string
 	UserPrompt               string
 	Thinking                 string
+	MaxTokens                *int
 	TopP                     *float64
+	Temperature              *float64
 	Tools                    []string                  // Agent-visible tool names resolved into Eino BaseTool instances
 	ToolParams               map[string]map[string]any // node-level tool constructor params keyed by tool name
 	SubAgents                []SubAgentTool
@@ -157,24 +163,40 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	if err != nil {
 		return nil, fmt.Errorf("build model: %w", err)
 	}
-	tools, err := buildAgentTools(p)
+	tools, err := buildAgentTools(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
 	input := buildAgentInputMessages(ctx, p)
+	// Eino's MaxStep counts graph nodes, not model calls. One ReAct round
+	// consists of a model decision, a tool node, and the following model
+	// decision that consumes the tool result. Reserve one additional step for
+	// the final model response, so max_rounds=1 can complete a tool call and
+	// produce its answer instead of failing with "exceeds max steps".
+	maxSteps := p.MaxRounds*2 + 1
+	if hasCodeExecTool(p.Tools) {
+		// CodeExec user-code failures return a non-zero tool result, allowing
+		// one repair attempt without changing other agents' step budget.
+		maxSteps += 2
+	}
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: chatModel,
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
 		},
+		// Python's streaming tool loop consumes the complete provider
+		// response before deciding whether the round contains a tool call.
+		// Eino's default checker only inspects the first non-empty chunk,
+		// which can miss a ToolCall emitted after explanatory text.
+		StreamToolCallChecker: scanAllStreamForToolCall,
 		MessageModifier: func(_ context.Context, msgs []*schema.Message) []*schema.Message {
 			if p.SystemPrompt != "" {
 				return append([]*schema.Message{schema.SystemMessage(p.SystemPrompt)}, msgs...)
 			}
 			return msgs
 		},
-		MaxStep: p.MaxRounds,
+		MaxStep: maxSteps,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create react agent: %w", err)
@@ -182,12 +204,24 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 
 	opt, future := react.WithMessageFuture()
 	ctx = setArtifactCollector(ctx, future)
+	// Start the model-stream collector BEFORE agent.Stream. The checker
+	// (scanAllStreamForToolCall) must consume the whole round before the
+	// graph releases its output stream, so agent.Stream does not return
+	// until the model finishes. GetMessageStreams blocks on the future's
+	// started signal (closed by the graph onStart callback), so starting
+	// the collector first lets thinking deltas stream out in real time
+	// while the checker runs, instead of buffering the entire round.
+	emitDone := emitAgentModelStreams(ctx, future)
 	stream, err := agent.Stream(ctx, input, opt)
 	if err != nil {
+		// Drain the collector so its goroutine exits before we return.
+		select {
+		case <-emitDone:
+		case <-ctx.Done():
+		}
 		return nil, err
 	}
 	defer stream.Close()
-	emitDone := emitAgentModelStreams(ctx, future)
 
 	chunks := make([]*schema.Message, 0)
 	for {
@@ -196,6 +230,10 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 			break
 		}
 		if err != nil {
+			select {
+			case <-emitDone:
+			case <-ctx.Done():
+			}
 			return nil, err
 		}
 		if chunk == nil {
@@ -216,21 +254,81 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	return msg, nil
 }
 
+// scanAllStreamForToolCall consumes the whole model response, then branches
+// to the Tools node only when any streamed message contains a ToolCall. It
+// must read to EOF because providers append the tool-call message at the end
+// of the stream (see EinoChatModel.Stream), mirroring Python's
+// async_chat_streamly_with_tools, which likewise consumes an entire SSE round
+// before deciding. This keeps tool_choice=auto — a model may still answer
+// directly when it decides no tool is needed.
+//
+// The checker runs synchronously inside the graph's main loop, so
+// runEinoReActAgent starts emitAgentModelStreams before agent.Stream to keep
+// thinking deltas streaming in real time while this function drains the
+// round.
+func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*schema.Message]) (bool, error) {
+	defer stream.Close()
+
+	hasToolCall := false
+	for {
+		msg, err := stream.Recv()
+		if err == io.EOF {
+			return hasToolCall, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if msg != nil && len(msg.ToolCalls) > 0 {
+			hasToolCall = true
+		}
+	}
+}
+
 // buildAgentInputMessages assembles the Python-compatible Agent prompt: the
 // configured history window followed by the current user prompt. The current
 // in-flight user entry is excluded through SnapshotPriorHistory, because the
-// canvas service appends it to state before invoking the workflow.
+// canvas service appends it to state before invoking the workflow. Uploaded
+// files from sys.files are folded into that user prompt (file texts merged,
+// images attached as multi-modal content parts).
 func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Message {
-	current := schema.Message{Role: schema.User, Content: p.UserPrompt}
-	messages := []schema.Message{}
-	if p.MessageHistoryWindowSize > 0 {
-		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
-			// Python takes the last 2*N entries from history, which already
-			// contains the current user input, and then removes that final
-			// entry before formatting the configured prompt.
-			priorLimit := p.MessageHistoryWindowSize*2 - 1
-			messages = prependHistory(messages, state.SnapshotPriorHistory(), priorLimit)
+	var state *runtime.CanvasState
+	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
+		state = s
+	}
+	// Inject sys.files uploads into the current user message, mirroring
+	// the LLM component (llm.go) and Python's Agent._prepare_prompt_variables
+	// delegation to LLMBundle. Uploaded files land in state.Sys["files"]
+	// (service/agent.go) as data:image URIs / parsed text; without this
+	// step a vision agent never sees the attached image. File texts merge
+	// into the user prompt; images become multi-modal content parts.
+	// The {sys.files} placeholder, when present, has already been resolved
+	// by ResolveTemplate upstream in invokeNow, so injection here is
+	// unconditional — same effective behavior as the LLM component.
+	userText := p.UserPrompt
+	var images []string
+	if state != nil {
+		var texts []string
+		texts, images = collectSysFiles(state)
+		if len(texts) > 0 {
+			joined := strings.Join(texts, "\n\n")
+			if userText != "" {
+				userText += "\n\n" + joined
+			} else {
+				userText = joined
+			}
 		}
+	}
+	current := schema.Message{Role: schema.User, Content: userText}
+	if len(images) > 0 {
+		current = userMessageWithImages(userText, images)
+	}
+	messages := []schema.Message{}
+	if p.MessageHistoryWindowSize > 0 && state != nil {
+		// Python takes the last 2*N entries from history, which already
+		// contains the current user input, and then removes that final
+		// entry before formatting the configured prompt.
+		priorLimit := p.MessageHistoryWindowSize*2 - 1
+		messages = prependHistory(messages, state.SnapshotPriorHistory(), priorLimit)
 	}
 	if len(messages) > 0 && messages[len(messages)-1].Role == current.Role {
 		messages[len(messages)-1] = current
@@ -276,13 +374,17 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 				if msg == nil {
 					continue
 				}
+				if msg.Role == schema.Tool {
+					recordArtifactsFromToolMessage(ctx, msg)
+					continue
+				}
 				if msg.Role != "" && msg.Role != schema.Assistant {
 					continue
 				}
 				if msg.Content == "" && msg.ReasoningContent == "" {
 					continue
 				}
-				if runtime.AgentMessageEventsEmitted(ctx) {
+				if runtime.AgentMessageEventsEmitted(ctx) && !runtime.HasDeferredAgentMessageSink(ctx) {
 					continue
 				}
 				runtime.EmitAgentMessage(ctx, msg.Content, msg.ReasoningContent)
@@ -302,7 +404,7 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 //
 // When the LLM call fails or there are no tool calls, the function
 // returns ("", nil) and the caller skips appending to history.
-func addToolCallMemory(ctx context.Context, p AgentParam, msg *schema.Message) (string, error) {
+func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *schema.Message) (string, error) {
 	calls := extractToolCalls(msg)
 	if len(calls) == 0 {
 		return "", nil
@@ -318,7 +420,7 @@ func addToolCallMemory(ctx context.Context, p AgentParam, msg *schema.Message) (
 	system := "You are a memory summarizer. Given a list of tool calls the assistant just made, output ONE short sentence (max 30 words) describing what the assistant did, suitable for a future-turn conversation history. Output ONLY the sentence, no preamble, no quotes."
 	user := "Tool calls: " + callsDesc.String()
 	inv := getDefaultChatInvoker()
-	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
+	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
 		Driver:    p.Driver,
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
@@ -345,7 +447,7 @@ func addToolCallMemory(ctx context.Context, p AgentParam, msg *schema.Message) (
 // Returns the grounded content on success, the original content
 // unchanged when no chunks are available or the call fails. Mirrors
 // Python's `cite_letter` / `generate_with_citation` flow.
-func applyCitationGrounding(ctx context.Context, p AgentParam, content string, chunks []prompts.CitationSource) (string, error) {
+func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, content string, chunks []prompts.CitationSource) (string, error) {
 	if !p.Cite {
 		return content, nil
 	}
@@ -357,7 +459,7 @@ func applyCitationGrounding(ctx context.Context, p AgentParam, content string, c
 	}
 	systemPrompt, _ := prompts.CitationPlusPrompt(chunks)
 	inv := getDefaultChatInvoker()
-	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
+	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
 		Driver:    p.Driver,
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
@@ -416,13 +518,16 @@ func chunksFromState(ctx context.Context) []prompts.CitationSource {
 // are skipped silently.
 func (c *AgentComponent) GetInputForm() map[string]any {
 	out := extractAgentPromptInputForm(c.param.SystemPrompt, c.param.UserPrompt)
-	tools, err := buildAgentTools(c.param)
+	// GetInputForm is metadata introspection outside a Canvas run and its
+	// interface has no context. Runtime tool construction uses the run ctx in
+	// runEinoReActAgent above.
+	metadataCtx := context.Background()
+	tools, err := buildAgentTools(metadataCtx, c.param)
 	if err != nil {
 		return out
 	}
-	ctx := context.Background()
 	for _, t := range tools {
-		info, ierr := t.Info(ctx)
+		info, ierr := t.Info(metadataCtx)
 		name := ""
 		if ierr == nil && info != nil {
 			name = info.Name
@@ -476,7 +581,9 @@ func sortedAgentPromptInputKeys(systemPrompt, userPrompt string) []string {
 // interface. Mirrors Python's per-tool reset() — useful for clearing
 // per-invocation state (caches, scratch buffers) between calls.
 func (c *AgentComponent) Reset() {
-	tools, err := buildAgentTools(c.param)
+	// Reset is a context-free lifecycle hook and does not execute a tool.
+	// Runtime tool construction receives the Canvas run context.
+	tools, err := buildAgentTools(context.Background(), c.param)
 	if err != nil {
 		return
 	}
@@ -497,7 +604,7 @@ func (c *AgentComponent) Reset() {
 //   - the rephrase LLM call fails
 //
 // Window defaults to AgentParam.OptimizeHistoryWindow (3) when zero.
-func optimizeMultiTurnQuestion(ctx context.Context, p AgentParam, history []map[string]any) (string, error) {
+func optimizeMultiTurnQuestion(ctx context.Context, db *gorm.DB, p AgentParam, history []map[string]any) (string, error) {
 	window := p.OptimizeHistoryWindow
 	if window <= 0 {
 		window = 3
@@ -525,7 +632,7 @@ func optimizeMultiTurnQuestion(ctx context.Context, p AgentParam, history []map[
 	system := "You are a question rephraser. Given conversation history and the user's latest input, rewrite the latest input as a self-contained question that does not require the history to understand. Output ONLY the rephrased question, no preamble, no quotes."
 	user := "Conversation history:\n" + histBuf.String() + "\n\nUser's latest input:\n" + p.UserPrompt
 	inv := getDefaultChatInvoker()
-	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
+	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
 		Driver:    p.Driver,
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
@@ -542,14 +649,24 @@ func optimizeMultiTurnQuestion(ctx context.Context, p AgentParam, history []map[
 	return strings.TrimSpace(resp.Content), nil
 }
 
-func buildAgentTools(p AgentParam) ([]einotool.BaseTool, error) {
+func hasCodeExecTool(names []string) bool {
+	for _, name := range names {
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "codeexec", "code_exec", "execute_code":
+			return true
+		}
+	}
+	return false
+}
+
+func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, error) {
 	tools, err := agenttool.BuildAll(p.Tools, p.ToolParams)
 	if err != nil {
 		return nil, err
 	}
 	toolNames := make(map[string]struct{}, len(tools)+len(p.SubAgents))
 	for _, tool := range tools {
-		info, err := tool.Info(context.Background())
+		info, err := tool.Info(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("agent tool info: %w", err)
 		}
@@ -627,7 +744,7 @@ func (t *subAgentTool) InvokableRun(ctx context.Context, argsJSON string, _ ...e
 		}
 	}
 
-	out, err := NewAgentComponent(t.spec.Param).Invoke(ctx, inputs)
+	out, err := NewAgentComponent(t.spec.Param).Invoke(ctx, dao.DB, inputs)
 	if err != nil {
 		return "", fmt.Errorf("sub-agent tool %q: %w", normalizeAgentToolName(t.spec.Name), err)
 	}
@@ -710,9 +827,35 @@ func NewAgentComponent(p AgentParam) *AgentComponent {
 // Name returns the registered component name.
 func (c *AgentComponent) Name() string { return "Agent" }
 
-// Invoke runs the ReAct loop via the configured agentRunner and returns
-// the output map.
-func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+// Invoke either returns a lazy Agent stream for a direct downstream Message,
+// or executes the Agent eagerly for all other graph shapes. The mode is a
+// compile-time canvas decision carried through context, not a DSL parameter.
+func (c *AgentComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	if runtime.ComponentExecutionOptionsFromContext(ctx).DeferAgentToMessage {
+		// Preserve the Agent-class duration installed by the node wrapper, then
+		// start a fresh deadline when Message opens the lazy stream.
+		timeout := defaultAgentDeferredTimeout
+		if deadline, ok := ctx.Deadline(); ok {
+			if remaining := time.Until(deadline); remaining > 0 {
+				timeout = remaining
+			}
+		}
+		deferred := &runtime.DeferredStream{
+			Open: func(openCtx context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
+				agentCtx, cancel := context.WithTimeout(openCtx, timeout)
+				defer cancel()
+				return c.invokeNow(runtime.WithAgentDeltaSink(agentCtx, sink), db, inputs)
+			},
+		}
+		return map[string]any{"content": deferred}, nil
+	}
+	return c.invokeNow(ctx, db, inputs)
+}
+
+// invokeNow contains the original eager Agent execution path. Deferred
+// Message consumption calls this function later with an invocation-local
+// delta sink, so the same ReAct/citation/tool behavior is reused once.
+func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	runtime.ResetAgentMessageEmission(ctx)
 	defer runtime.FinalizeAgentMessage(ctx)
 
@@ -723,7 +866,7 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	}
 
 	var err error
-	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -731,6 +874,9 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	var state *runtime.CanvasState
 	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
 		state = s
+		if inputs["_ERROR"] == "No dataset is selected." {
+			return map[string]any{"content": "No dataset is selected."}, nil
+		}
 		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
 			p.SystemPrompt = resolved
 			if rerr != nil {
@@ -772,12 +918,13 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	// actually consumes.
 	if p.OptimizeMultiTurn {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-			if rephrased, err := optimizeMultiTurnQuestion(ctx, p, state.SnapshotPriorHistory()); err == nil && rephrased != "" {
+			if rephrased, err := optimizeMultiTurnQuestion(ctx, db, p, state.SnapshotPriorHistory()); err == nil && rephrased != "" {
 				p.UserPrompt = rephrased
 			}
 		}
 	}
 
+	ctx = prepareArtifactCollector(ctx)
 	msg, err := agentRunner(ctx, p)
 	// Tool-call memory summarization. After the ReAct loop
 	// completes, summarize the tool calls via an LLM and append to
@@ -785,7 +932,7 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	// actual user/assistant turns maintained by the canvas service.
 	if err == nil && msg != nil {
 		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
-			if summary, sErr2 := addToolCallMemory(ctx, p, msg); sErr2 == nil && summary != "" {
+			if summary, sErr2 := addToolCallMemory(ctx, db, p, msg); sErr2 == nil && summary != "" {
 				state.AppendMemory(p.UserPrompt, msg.Content, summary)
 			}
 		}
@@ -832,7 +979,7 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		if len(chunks) == 0 {
 			groundingStatus = "no_chunks"
 		} else {
-			grounded, gErr := applyCitationGrounding(ctx, p, content, chunks)
+			grounded, gErr := applyCitationGrounding(ctx, db, p, content, chunks)
 			if gErr == nil && grounded != content {
 				content = grounded
 				groundingStatus = "applied"
@@ -852,7 +999,8 @@ func (c *AgentComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
 	}
-	if !runtime.AgentMessageEventsEmitted(ctx) {
+	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
+	if !streamed {
 		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
 	}
 	return out, nil
@@ -872,11 +1020,11 @@ func isAgentGraphRunError(err error) bool {
 
 // Stream implements Component.Stream. Mirrors Invoke then pushes the
 // single payload through the channel.
-func (c *AgentComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
+func (c *AgentComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
 	out := make(chan map[string]any, 1)
 	go func() {
 		defer close(out)
-		result, err := c.Invoke(ctx, inputs)
+		result, err := c.Invoke(ctx, db, inputs)
 		if err != nil {
 			out <- map[string]any{"error": err.Error()}
 			return
@@ -954,15 +1102,14 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	apiKey := p.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
 	cm := models.NewChatModel(d, &modelID, cfg)
-	// ChatConfig construction is conditional on TopP being set, unlike
-	// the LLM path which always builds a ChatConfig (Temperature/MaxTokens
-	// pass-through). The asymmetry is intentional: AgentParam has no
-	// Temperature/MaxTokens yet, so building a zero-config ChatConfig
-	// would be dead weight. When AgentParam grows Temperature/
-	// MaxTokens, switch to always-build.
+	// Build ChatConfig when a generation parameter or Thinking is set.
 	var chatCfg *models.ChatConfig
-	if p.TopP != nil || p.Thinking != "" || runtime.HasAgentMessageEmitter(ctx) {
-		chatCfg = &models.ChatConfig{TopP: p.TopP}
+	if p.TopP != nil || p.Thinking != "" || p.MaxTokens != nil || p.Temperature != nil {
+		chatCfg = &models.ChatConfig{
+			TopP:        p.TopP,
+			MaxTokens:   p.MaxTokens,
+			Temperature: p.Temperature,
+		}
 		switch p.Thinking {
 		case "enabled":
 			t := true
@@ -970,11 +1117,6 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 		case "disabled":
 			f := false
 			chatCfg.Thinking = &f
-		}
-		if runtime.HasAgentMessageEmitter(ctx) {
-			chatCfg.StreamCallback = func(contentDelta, reasoningDelta string) {
-				runtime.EmitAgentMessage(ctx, contentDelta, reasoningDelta)
-			}
 		}
 	}
 	return models.NewEinoChatModel(cm, chatCfg), nil
@@ -987,29 +1129,38 @@ type artifactEntry struct {
 	URL  string `json:"url"`
 }
 
-// artifactCollectorKey is the context key used to stash the
-// MessageFuture from react.WithMessageFuture() so the AgentComponent
-// can collect artifacts after the ReAct loop finishes. The collector
-// is created per-invocation in runEinoReActAgent.
+// artifactCollectorKey is the context key used to share the
+// MessageFuture between Agent.Invoke and runEinoReActAgent.
 type artifactCollectorKey struct{}
 
-// setArtifactCollector registers the MessageFuture for this agent run
-// in the context. It is called from runEinoReActAgent after
-// react.WithMessageFuture() returns a future.
+type artifactCollector struct {
+	future    react.MessageFuture
+	artifacts []artifactEntry
+}
+
+func prepareArtifactCollector(ctx context.Context) context.Context {
+	if _, ok := ctx.Value(artifactCollectorKey{}).(*artifactCollector); ok {
+		return ctx
+	}
+	return context.WithValue(ctx, artifactCollectorKey{}, &artifactCollector{})
+}
+
+// setArtifactCollector registers the MessageFuture for this agent run.
+// Invoke creates the holder before entering the runner so the runner can
+// publish its future without replacing the caller's immutable context.
 func setArtifactCollector(ctx context.Context, future react.MessageFuture) context.Context {
-	return context.WithValue(ctx, artifactCollectorKey{}, future)
+	if collector, ok := ctx.Value(artifactCollectorKey{}).(*artifactCollector); ok {
+		collector.future = future
+		return ctx
+	}
+	return context.WithValue(ctx, artifactCollectorKey{}, &artifactCollector{future: future})
 }
 
 // getArtifactCollector retrieves the MessageFuture registered for the
-// current agent run. Returns nil when no collector was registered
-// (e.g., tests that stub agentRunner).
+// current agent run. Returns nil when no collector was registered.
 func getArtifactCollector(ctx context.Context) react.MessageFuture {
-	v := ctx.Value(artifactCollectorKey{})
-	if v == nil {
-		return nil
-	}
-	if f, ok := v.(react.MessageFuture); ok {
-		return f
+	if collector, ok := ctx.Value(artifactCollectorKey{}).(*artifactCollector); ok {
+		return collector.future
 	}
 	return nil
 }
@@ -1025,6 +1176,10 @@ func getArtifactCollector(ctx context.Context) react.MessageFuture {
 //
 //	{ "_ARTIFACTS": [{ "name": "report.pdf", "url": "https://..." }, ...] }
 func collectArtifactsFromToolCalls(ctx context.Context, _ *schema.Message) []artifactEntry {
+	collector, _ := ctx.Value(artifactCollectorKey{}).(*artifactCollector)
+	if collector != nil && len(collector.artifacts) > 0 {
+		return append([]artifactEntry(nil), collector.artifacts...)
+	}
 	future := getArtifactCollector(ctx)
 	if future == nil {
 		return nil
@@ -1061,6 +1216,28 @@ func collectArtifactsFromToolCalls(ctx context.Context, _ *schema.Message) []art
 	return out
 }
 
+func recordArtifactsFromToolMessage(ctx context.Context, msg *schema.Message) {
+	collector, ok := ctx.Value(artifactCollectorKey{}).(*artifactCollector)
+	if !ok {
+		return
+	}
+	for _, artifact := range extractArtifactsFromToolMessage(msg) {
+		if artifact.Name == "" || artifact.URL == "" {
+			continue
+		}
+		seen := false
+		for _, existing := range collector.artifacts {
+			if existing.URL == artifact.URL {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			collector.artifacts = append(collector.artifacts, artifact)
+		}
+	}
+}
+
 // extractArtifactsFromToolMessage parses the JSON payload of a tool
 // response message and returns the `_ARTIFACTS` list. The payload is
 // read from msg.Content when it is non-empty; otherwise the first text
@@ -1093,6 +1270,15 @@ func extractArtifactsFromToolMessage(msg *schema.Message) []artifactEntry {
 		}
 		name, _ := m["name"].(string)
 		url, _ := m["url"].(string)
+		if url == "" {
+			if content, ok := m["content_b64"].(string); ok && content != "" {
+				mime, _ := m["mime_type"].(string)
+				if mime == "" {
+					mime = "application/octet-stream"
+				}
+				url = "data:" + mime + ";base64," + content
+			}
+		}
 		if name == "" || url == "" {
 			continue
 		}
@@ -1113,7 +1299,7 @@ func toolMessageTextContent(msg *schema.Message) string {
 	return ""
 }
 
-// formatArtifactMarkdown renders a slice of artifacts as markdown
+// formatArtifactMarkdown renders a slice of artifacts as Markdown
 // links, omitting URLs already present in the existing text (Python's
 // `_collect_tool_artifact_markdown` does the same de-duplication).
 //
@@ -1287,6 +1473,14 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := floatFrom(inputs, "top_p"); ok {
 		f := v
 		p.TopP = &f
+	}
+	if v, ok := intFrom(inputs, "max_tokens"); ok {
+		f := v
+		p.MaxTokens = &f
+	}
+	if v, ok := floatFrom(inputs, "temperature"); ok {
+		f := v
+		p.Temperature = &f
 	}
 	if v, ok := stringFrom(inputs, "thinking"); ok && v != "" && v != "default" {
 		p.Thinking = v

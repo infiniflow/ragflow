@@ -1,0 +1,22 @@
+{
+ "id": "token__json_table_context",
+ "component": "TokenChunker",
+ "notes": "A table item followed by a text item: locks whether the neighbouring text is folded into the table chunk or kept separate.",
+ "param": {
+  "chunk_token_size": 128
+ },
+ "input": {
+  "name": "t",
+  "output_format": "json",
+  "json": [
+   {
+    "text": "A table caption.",
+    "doc_type_kwd": "table"
+   },
+   {
+    "text": "The surrounding paragraph that gives the table its context and should stay near it.",
+    "doc_type_kwd": "text"
+   }
+  ]
+ }
+}

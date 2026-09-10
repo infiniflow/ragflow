@@ -17,7 +17,6 @@
 package models
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -45,7 +44,7 @@ func NewRAGconModel(baseURL map[string]string, urlSuffix URLSuffix) *RAGconModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -67,66 +66,6 @@ func (r *RAGconModel) chatURL(apiConfig *APIConfig) (string, error) {
 	return fmt.Sprintf("%s/%s", baseURL, r.baseModel.URLSuffix.Chat), nil
 }
 
-func ragconChatMessages(messages []Message) []map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMsg := map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-		if msg.ToolCallID != "" {
-			apiMsg["tool_call_id"] = msg.ToolCallID
-		}
-		if len(msg.ToolCalls) > 0 {
-			apiMsg["tool_calls"] = msg.ToolCalls
-		}
-		apiMessages[i] = apiMsg
-	}
-	return apiMessages
-}
-
-func ragconChatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": ragconChatMessages(messages),
-		"stream":   stream,
-	}
-	if stream {
-		reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-			tc := "auto"
-			if chatModelConfig.ToolChoice != nil {
-				tc = *chatModelConfig.ToolChoice
-			}
-			reqBody["tool_choice"] = tc
-		}
-	}
-
-	// Qwen3 family: disable thinking by default (mirrors the same policy
-	// applied by the other OpenAI-compatible Go drivers).
-	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
-		reqBody["enable_thinking"] = false
-	}
-
-	return reqBody
-}
-
 func (r *RAGconModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -143,84 +82,17 @@ func (r *RAGconModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, err
 	}
 
-	jsonData, err := json.Marshal(ragconChatPayload(modelName, messages, false, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
+	}
+
+	body, err := r.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := r.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("RAGcon API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	var content string
-	if c, ok := messageMap["content"].(string); ok {
-		content = c
-	}
-
-	var reasonContent string
-	if rc, ok := messageMap["reasoning_content"].(string); ok {
-		reasonContent = rc
-	} else if rc, ok := messageMap["reasoning"].(string); ok {
-		reasonContent = rc
-	}
-
-	var toolCalls []map[string]interface{}
-	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
-		for _, tc := range tcs {
-			if tcMap, ok := tc.(map[string]interface{}); ok {
-				toolCalls = append(toolCalls, tcMap)
-			}
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &TokenUsage{PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt}
-	}
-
-	return chatResponse, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (r *RAGconModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -245,101 +117,15 @@ func (r *RAGconModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return err
 	}
 
-	jsonData, err := json.Marshal(ragconChatPayload(modelName, messages, true, chatModelConfig))
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := r.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("RAGcon API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	sawTerminal := false
-	accumulatedToolCalls := make(map[int]map[string]interface{})
-	var streamUsage *TokenUsage
-
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(line[5:])
-		if data == "" {
-			continue
-		}
-		if data == "[DONE]" {
-			sawTerminal = true
-			break
-		}
-
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
-		if pt, ct, tt := extractUsageFromMap(event); tt > 0 {
-			streamUsage = &TokenUsage{PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt}
-		}
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			continue
-		}
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		if reasoningContent, ok := delta["reasoning_content"].(string); ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-		if content, ok := delta["content"].(string); ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !sawTerminal {
-		return fmt.Errorf("ragcon: stream ended before [DONE] or finish_reason")
-	}
-
-	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
-	if streamUsage != nil && chatModelConfig != nil {
-		chatModelConfig.UsageResult = streamUsage
-	}
-
-	endOfStream := "[DONE]"
-	return sender(&endOfStream, nil)
+	return r.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 type ragconEmbeddingResponse struct {
@@ -349,14 +135,14 @@ type ragconEmbeddingResponse struct {
 	} `json:"data"`
 }
 
-func (r *RAGconModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (r *RAGconModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-	if len(texts) == 0 {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -369,7 +155,7 @@ func (r *RAGconModel) Embed(ctx context.Context, modelName *string, texts []stri
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
-		"input": texts,
+		"input": request.Texts,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["dimensions"] = embeddingConfig.Dimension
@@ -417,13 +203,15 @@ func (r *RAGconModel) Embed(ctx context.Context, modelName *string, texts []stri
 }
 
 // Rerank POSTs to RAGcon's /rerank endpoint (LiteLLM proxy passthrough).
-func (r *RAGconModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (r *RAGconModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
+	documents := request.Documents
+	query := request.Query
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}

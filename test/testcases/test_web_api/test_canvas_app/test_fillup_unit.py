@@ -208,3 +208,26 @@ def test_user_fillup_reentry_keeps_optional_file_value(monkeypatch):
 
     assert component._param.inputs["text"]["value"] is None
     assert component._param.inputs["doc"]["value"] == ["file-id"]
+
+
+@pytest.mark.p2
+def test_user_fillup_tips_substitution_is_literal_for_regex_like_values(monkeypatch):
+    # A form value containing a regex backreference-like sequence (e.g. a Windows
+    # path such as "C:\\1files") must be inserted into the tips template verbatim.
+    # It must not raise "invalid group reference" nor be reinterpreted as a regex
+    # replacement group.
+    module = _load_fillup_module(monkeypatch)
+
+    component = module.UserFillUp.__new__(module.UserFillUp)
+    component._param = SimpleNamespace(
+        enable_tips=True,
+        tips="Path is {path}",
+        layout_recognize="",
+        inputs={},
+        outputs={},
+    )
+    component.get_input_elements_from_text = lambda _text: {"path": {"value": r"C:\1files"}}
+
+    component._invoke(inputs={})
+
+    assert component._param.outputs["tips"]["value"] == r"Path is C:\1files"

@@ -38,13 +38,6 @@ export interface IAddProviderRequestBody {
 export type IAddProviderInstanceRequestBody = IAddLlmRequestBody & {
   instance_name: string;
   region?: string;
-  /**
-   * Optional id of an existing instance. When present the backend
-   * treats the call as an update of that row (rather than a create),
-   * which is what the inline "blur-save" flow on saved instance cards
-   * needs.
-   */
-  id?: string;
 };
 
 export interface IDeleteProviderInstanceRequestBody {
@@ -54,7 +47,7 @@ export interface IDeleteProviderInstanceRequestBody {
 
 export interface IShowProviderInstanceRequestParams {
   provider_name: string;
-  instance_name: string;
+  id: string;
 }
 
 export interface IAddInstanceModelRequestBody {
@@ -104,7 +97,7 @@ export interface IDeleteInstanceModelsRequestBody {
 export interface IUpdateProviderInstanceRequestBody {
   provider_name: string;
   instance_name: string;
-  id?: string;
+  id: string;
   /**
    * Either a plain API-key string, or — for providers that need an
    * extra credential such as MiniMax's `group_id` — an object bundling
@@ -138,6 +131,13 @@ export interface IProviderModelItem {
   max_tokens: number;
   model_types: string[];
   features: string[] | null;
+  /**
+   * Per-model extra config forwarded through `model_info[].extra`
+   * (e.g. SoMark's element-format / feature-config fields).
+   * Catalog models typically omit this; it is populated by the
+   * edit dialog and the `useModelsDerived` echo path.
+   */
+  extra?: Record<string, any>;
 }
 
 /**
@@ -147,7 +147,7 @@ export interface IProviderModelItem {
  */
 export interface IListProviderModelsRequestBody {
   provider_name: string;
-  api_key?: string;
+  api_key?: string | object;
   base_url?: string;
   region?: string;
   model_info?: IModelInfo[];

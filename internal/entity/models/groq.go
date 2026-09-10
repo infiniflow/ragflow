@@ -41,7 +41,7 @@ func NewGroqModel(baseURL map[string]string, urlSuffix URLSuffix) *GroqModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -63,48 +63,16 @@ func (g *GroqModel) endpoint(apiConfig *APIConfig, suffix string) (string, error
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(suffix, "/")), nil
 }
 
-func groqChatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   stream,
-	}
-
+func applyGroqReasoningRequestParams(reqBody map[string]any, modelName string, chatModelConfig *ChatConfig) {
 	modelLower := strings.ToLower(modelName)
 	if strings.Contains(modelLower, "gpt-oss") {
 		reqBody["include_reasoning"] = true
-		if chatModelConfig.Effort != nil {
-			reqBody["reasoning_effort"] = chatModelConfig.Effort
+		if chatModelConfig != nil && chatModelConfig.Effort != nil {
+			reqBody["reasoning_effort"] = *chatModelConfig.Effort
 		}
 	} else if strings.Contains(modelLower, "qwen") || strings.Contains(modelLower, "deepseek") {
 		reqBody["reasoning_format"] = "parsed"
 	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
-	}
-
-	return reqBody
 }
 
 type groqChatMessage struct {
@@ -120,9 +88,21 @@ type groqChatChoice struct {
 }
 
 type groqChatResponse struct {
-	Choices      []groqChatChoice `json:"choices"`
-	Error        interface{}      `json:"error"`
-	FinishReason string           `json:"finish_reason"`
+	ID                string           `json:"id"`
+	Choices           []groqChatChoice `json:"choices"`
+	Error             interface{}      `json:"error"`
+	Usage             *groqChatUsage   `json:"usage"`
+	Created           int64            `json:"created"`
+	Model             string           `json:"model"`
+	Object            string           `json:"object"`
+	SystemFingerprint string           `json:"system_fingerprint"`
+	FinishReason      string           `json:"finish_reason"`
+}
+
+type groqChatUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 func (g *GroqModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -141,56 +121,14 @@ func (g *GroqModel) ChatWithMessages(ctx context.Context, modelName string, mess
 		return nil, err
 	}
 
-	jsonData, err := json.Marshal(groqChatPayload(modelName, messages, false, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	applyGroqReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	body, err := g.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := g.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result groqChatResponse
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-	if result.Error != nil {
-		return nil, fmt.Errorf("groq: upstream error: %v", result.Error)
-	}
-	if len(result.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	content := result.Choices[0].Message.Content
-	reasonContent := result.Choices[0].Message.ReasoningContent
-	if reasonContent == "" {
-		reasonContent = result.Choices[0].Message.Reasoning
-	}
-
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}, nil
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (g *GroqModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -216,71 +154,12 @@ func (g *GroqModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 		return err
 	}
 
-	jsonData, err := json.Marshal(groqChatPayload(modelName, messages, true, chatModelConfig))
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	req.Header.Set("Accept", "text/event-stream")
-
-	resp, err := g.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	sawTerminal := false
-	done, err := ParseSSEStream[groqChatResponse](resp.Body, func(event groqChatResponse) error {
-		if event.Error != nil {
-			return fmt.Errorf("groq: upstream stream error: %v", event.Error)
-		}
-		if len(event.Choices) == 0 {
-			return nil
-		}
-
-		choice := event.Choices[0]
-		reasoning := choice.Delta.ReasoningContent
-		if reasoning == "" {
-			reasoning = choice.Delta.Reasoning
-		}
-		if reasoning != "" {
-			if err := sender(nil, &reasoning); err != nil {
-				return err
-			}
-		}
-		if choice.Delta.Content != "" {
-			if err := sender(&choice.Delta.Content, nil); err != nil {
-				return err
-			}
-		}
-		if choice.FinishReason != "" || event.FinishReason != "" {
-			sawTerminal = true
-		}
-		return nil
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	applyGroqReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
+	return g.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !done && !sawTerminal {
-		return fmt.Errorf("groq: stream ended before [DONE] or finish_reason")
-	}
-
-	endOfStream := "[DONE]"
-	return sender(&endOfStream, nil)
 }
 
 type groqModelInfo struct {
@@ -342,11 +221,11 @@ func (g *GroqModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) e
 	return err
 }
 
-func (g *GroqModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (g *GroqModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GroqModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (g *GroqModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 

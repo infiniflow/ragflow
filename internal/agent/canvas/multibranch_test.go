@@ -39,7 +39,6 @@
 package canvas
 
 import (
-	"context"
 	"testing"
 
 	"github.com/cloudwego/eino/compose"
@@ -51,7 +50,7 @@ import (
 // no chosen end-nodes and skips routing.
 func TestMakeSwitchBranchCondition_MissingField(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true, "b": true})
-	got, err := cond(context.Background(), map[string]any{"other": "x"})
+	got, err := cond(t.Context(), map[string]any{"other": "x"})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -64,7 +63,7 @@ func TestMakeSwitchBranchCondition_MissingField(t *testing.T) {
 // the same as missing.
 func TestMakeSwitchBranchCondition_EmptyString(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true})
-	got, err := cond(context.Background(), map[string]any{"_next": ""})
+	got, err := cond(t.Context(), map[string]any{"_next": ""})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -79,7 +78,7 @@ func TestMakeSwitchBranchCondition_EmptyString(t *testing.T) {
 // a []any (list of strings).
 func TestMakeSwitchBranchCondition_WrongType(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true})
-	got, err := cond(context.Background(), map[string]any{"_next": 42})
+	got, err := cond(t.Context(), map[string]any{"_next": 42})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -95,7 +94,7 @@ func TestMakeSwitchBranchCondition_WrongType(t *testing.T) {
 // end node" at runtime and crash the run.
 func TestMakeSwitchBranchCondition_UnknownKey(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true, "b": true})
-	got, err := cond(context.Background(), map[string]any{"_next": "ghost"})
+	got, err := cond(t.Context(), map[string]any{"_next": "ghost"})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -108,7 +107,7 @@ func TestMakeSwitchBranchCondition_UnknownKey(t *testing.T) {
 // cpn_id is passed through as a single-entry map.
 func TestMakeSwitchBranchCondition_KnownKey(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true, "b": true})
-	got, err := cond(context.Background(), map[string]any{"_next": "b"})
+	got, err := cond(t.Context(), map[string]any{"_next": "b"})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -123,7 +122,7 @@ func TestMakeSwitchBranchCondition_KnownKey(t *testing.T) {
 // dropped.
 func TestMakeSwitchBranchCondition_MultiTargetList(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true, "b": true})
-	got, err := cond(context.Background(), map[string]any{"_next": []any{"a", "b", "ghost"}})
+	got, err := cond(t.Context(), map[string]any{"_next": []any{"a", "b", "ghost"}})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -136,7 +135,7 @@ func TestMakeSwitchBranchCondition_MultiTargetList(t *testing.T) {
 // treated as no branch chosen.
 func TestMakeSwitchBranchCondition_EmptyList(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true})
-	got, err := cond(context.Background(), map[string]any{"_next": []any{}})
+	got, err := cond(t.Context(), map[string]any{"_next": []any{}})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -328,7 +327,7 @@ func TestMultiBranch_CompileSucceeds(t *testing.T) {
 			},
 		},
 	}
-	cc, err := Compile(context.Background(), dsl)
+	cc, err := Compile(t.Context(), dsl)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}

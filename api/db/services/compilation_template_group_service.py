@@ -39,10 +39,10 @@ def _derive_scope(templates: list[dict]) -> str:
     if not templates:
         raise GroupValidationError("A template group must contain at least one template.")
     kinds = [str((t or {}).get("kind") or "").strip() for t in templates]
-    artifact_count = sum(1 for k in kinds if k == "artifacts")
+    artifact_count = sum(1 for k in kinds if k == "wiki")
     if artifact_count > 0:
         if artifact_count != 1 or len(templates) != 1:
-            raise GroupValidationError("An artifacts template cannot be combined with other templates in the same group.")
+            raise GroupValidationError("A wiki template cannot be combined with other templates in the same group.")
         return SCOPE_DATASET
 
     _enforce_single_rechunk_tree(templates)
@@ -327,9 +327,6 @@ class CompilationTemplateGroupService(CommonService):
                         raise GroupValidationError(f"Template name '{name}' is duplicated in this group.")
                     seen_names.add(name)
 
-                    from api.db.services.compilation_template_service import CompilationTemplateService
-
-                    config = CompilationTemplateService.fill_config_default_llm(config, tenant_id)
                     duplicate_query = CompilationTemplate.select().where(
                         CompilationTemplate.tenant_id == tenant_id,
                         CompilationTemplate.group_id == group_id,
@@ -411,9 +408,6 @@ class CompilationTemplateGroupService(CommonService):
         config = (child or {}).get("config") or {}
         if not kind or not name or not isinstance(config, dict):
             raise GroupValidationError("Each template must include a name, kind, and config object.")
-        from api.db.services.compilation_template_service import CompilationTemplateService
-
-        config = CompilationTemplateService.fill_config_default_llm(config, tenant_id)
         duplicate = CompilationTemplate.select().where(
             CompilationTemplate.tenant_id == tenant_id,
             CompilationTemplate.group_id == group_id,

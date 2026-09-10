@@ -57,8 +57,8 @@ func (b *BuiltinModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 }
 
 // Embed sends texts to a TEI (Text Embeddings Inference) server and returns embeddings
-func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
+func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	if len(request.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
@@ -70,7 +70,7 @@ func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, texts []str
 	url := fmt.Sprintf("%s/embed", baseURL)
 
 	reqBody := map[string]interface{}{
-		"inputs": texts,
+		"inputs": request.Texts,
 	}
 
 	// Add dimension if specified
@@ -103,7 +103,7 @@ func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, texts []str
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Builtin embeddings API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("builtin embeddings API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	// TEI returns a simple array of embeddings by default
@@ -123,7 +123,7 @@ func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, texts []str
 	return result, nil
 }
 
-func (b *BuiltinModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (b *BuiltinModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("builtin model does not support rerank")
 }
 
@@ -165,7 +165,7 @@ func (b *BuiltinModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[s
 
 func (b *BuiltinModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
 	// Try to get model info to verify connection
-	_, err := b.Embed(ctx, nil, []string{"test"}, apiConfig, nil, nil)
+	_, err := b.Embed(ctx, nil, EmbedRequest{Texts: []string{"test"}}, apiConfig, nil, nil)
 	return err
 }
 

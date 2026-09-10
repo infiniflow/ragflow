@@ -35,24 +35,24 @@ import (
 // by the MCP server handler.
 type MCPRetrievalService interface {
 	SearchDatasets(req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
-	ListDatasets(id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string) ([]map[string]interface{}, int64, common.ErrorCode, error)
+	ListDatasets(id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error)
 }
 
 // MCPServerHandler handles MCP protocol requests (JSON-RPC over HTTP).
 // It exposes RAGFlow capabilities as MCP tools to external AI clients.
 type MCPServerHandler struct {
-	listDatasetsFunc func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	listChatsFunc    func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	retrievalFunc    func(userID string, req mcp.RetrievalRequest) (string, error)
+	listDatasetsFunc func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	listChatsFunc    func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	retrievalFunc    func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error)
 }
 
 // NewMCPServerHandler creates a new MCPServerHandler.
 // The service functions are passed as closures to avoid importing the service
 // package directly from the handler layer.
 func NewMCPServerHandler(
-	listDatasetsFunc func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
-	listChatsFunc func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
-	retrievalFunc func(userID string, req mcp.RetrievalRequest) (string, error),
+	listDatasetsFunc func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
+	listChatsFunc func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
+	retrievalFunc func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error),
 ) *MCPServerHandler {
 	return &MCPServerHandler{
 		listDatasetsFunc: listDatasetsFunc,
@@ -95,8 +95,9 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 		h.retrievalFunc,
 	)
 
+	ctx := c.Request.Context()
 	server := mcp.NewServer(connector)
-	respBody, hasResponse, err := server.HandleRequest(body)
+	respBody, hasResponse, err := server.HandleRequest(ctx, body)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, "MCP server error: "+err.Error())
 		return
@@ -114,10 +115,10 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 
 // MCPListDatasets wraps DatasetService.ListDatasets for the MCP tool handler,
 // filling in default values for parameters that the MCP tool does not expose.
-func MCPListDatasets(ds *dataset.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-	data, total, _, err := ds.ListDatasets(
+func MCPListDatasets(ctx context.Context, ds *dataset.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+	data, total, _, err := ds.ListDatasets(ctx,
 		"", "", page, pageSize, orderby, desc,
-		"", nil, "", userID,
+		"", nil, "", userID, nil,
 	)
 	return data, total, err
 }
@@ -140,47 +141,61 @@ func MCPListChats(ctx context.Context, chatService *service.ChatService, userID 
 	return chatList, resp.Total, nil
 }
 
+// mcpRerankCandidatesCount is the fixed rerank candidate window sent with every
+// retrieval request, so the ranking cannot shift between pages of one
+// pagination sequence. Requests whose page * page_size exceeds it are rejected
+// up front. Keep in sync with _RERANK_CANDIDATES_COUNT in mcp/server/server.py.
+const mcpRerankCandidatesCount = 512
+
+// validateRetrievalWindow checks that the requested page fits inside the fixed
+// rerank candidate window. page/page_size default to the same values as the
+// Python MCP server (1/30) when unset. The comparison divides instead of
+// multiplying so a hostile page value cannot overflow page * pageSize.
+func validateRetrievalWindow(page, pageSize int) error {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+	if page > mcpRerankCandidatesCount/pageSize {
+		return fmt.Errorf("page (%d) * page_size (%d) exceeds the fixed rerank candidate window (%d); narrow page or page_size", page, pageSize, mcpRerankCandidatesCount)
+	}
+	return nil
+}
+
 // MCPRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
-func MCPRetrieval(ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+	if err := validateRetrievalWindow(req.Page, req.PageSize); err != nil {
+		return "", err
+	}
 	// Resolve dataset IDs: if none provided, fetch ALL accessible datasets
 	// across all pages (matching Python _fetch_all_datasets behaviour).
 	datasetIDs := req.DatasetIDs
 	if len(datasetIDs) == 0 {
 		const maxPageSize = 100
-		page := 1
-		for {
-			data, _, _, err := ds.ListDatasets(
-				"", "", page, maxPageSize, "create_time", true,
-				"", nil, "", userID,
+		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
+			data, total, _, err := ds.ListDatasets(ctx,
+				"", "", page, pageSize, "create_time", true,
+				"", nil, "", userID, nil,
 			)
-			if err != nil {
-				return "", fmt.Errorf("cannot resolve accessible datasets: %w", err)
-			}
-			if len(data) == 0 {
-				break
-			}
-			for _, d := range data {
-				if id, ok := d["id"].(string); ok && id != "" {
-					datasetIDs = append(datasetIDs, id)
-				}
-			}
-			// A page smaller than maxPageSize is the last page.
-			if len(data) < maxPageSize {
-				break
-			}
-			page++
+			return data, total, err
+		}, maxPageSize)
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve accessible datasets: %w", err)
 		}
-		if len(datasetIDs) == 0 {
+		if len(ids) == 0 {
 			return "", fmt.Errorf("no accessible datasets found")
 		}
+		datasetIDs = ids
 	}
 
 	searchReq := &service.SearchDatasetsRequest{
 		DatasetIDs:   datasetIDs,
 		Question:     req.Question,
-		DocIDs:       req.DocumentIDs,
+		DocumentIDs:  req.DocumentIDs,
 		ForceRefresh: req.ForceRefresh,
 	}
 
@@ -190,7 +205,7 @@ func MCPRetrieval(ds *dataset.DatasetService, userID string, req mcp.RetrievalRe
 	}
 	if req.PageSize > 0 {
 		v := req.PageSize
-		searchReq.Size = &v
+		searchReq.PageSize = &v
 	}
 	if req.TopK > 0 {
 		v := req.TopK
@@ -209,11 +224,15 @@ func MCPRetrieval(ds *dataset.DatasetService, userID string, req mcp.RetrievalRe
 		searchReq.RerankID = &v
 	}
 	{
+		v := mcpRerankCandidatesCount
+		searchReq.RerankCandidatesCount = &v
+	}
+	{
 		v := req.Keyword
 		searchReq.Keyword = &v
 	}
 
-	resp, err := ds.SearchDatasets(searchReq, userID)
+	resp, err := ds.SearchDatasets(ctx, searchReq, userID)
 	if err != nil {
 		return "", err
 	}
@@ -223,4 +242,40 @@ func MCPRetrieval(ds *dataset.DatasetService, userID string, req mcp.RetrievalRe
 		return "", fmt.Errorf("failed to serialize retrieval result: %w", err)
 	}
 	return string(result), nil
+}
+
+// fetchAllDatasetIDs pages through listPage collecting dataset IDs until the
+// total reported by the service is reached, or a short or empty page arrives.
+// Stopping at the reported total avoids an extra empty-page request when the
+// dataset count is an exact multiple of pageSize.
+func fetchAllDatasetIDs(listPage func(page, pageSize int) ([]map[string]interface{}, int64, error), pageSize int) ([]string, error) {
+	var ids []string
+	page := 1
+	fetched := 0
+	for {
+		data, total, err := listPage(page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) == 0 {
+			break
+		}
+		fetched += len(data)
+		for _, d := range data {
+			if id, ok := d["id"].(string); ok && id != "" {
+				ids = append(ids, id)
+			}
+		}
+		// Stop once the reported total is reached so exact multiples of
+		// pageSize do not pay an extra empty-page request.
+		if total > 0 && int64(fetched) >= total {
+			break
+		}
+		// A page smaller than pageSize is the last page.
+		if len(data) < pageSize {
+			break
+		}
+		page++
+	}
+	return ids, nil
 }

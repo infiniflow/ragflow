@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { useCallback, useMemo, useState, type ComponentProps } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { renderNodeLabel } from './node-label';
@@ -7,14 +23,14 @@ import {
   HighlightLinkWidth,
 } from './node-style';
 import { type ArtifactGraphLink, type ArtifactGraphNode } from './types';
-import { withAlpha } from './utils';
+import { getBaseLinkColor, withAlpha } from './utils';
 
 type PaintNodeFn = NonNullable<
   ComponentProps<typeof ForceGraph2D>['nodeCanvasObject']
 >;
 
 export const useGraphHighlight = (
-  getBaseLinkColor: () => string,
+  containerRef: React.RefObject<HTMLElement>,
   pinnedNode?: ArtifactGraphNode | null,
 ) => {
   const [hoverNode, setHoverNode] = useState<ArtifactGraphNode | null>(null);
@@ -50,12 +66,12 @@ export const useGraphHighlight = (
 
   const getLinkColor = useCallback(
     (link: ArtifactGraphLink) => {
-      const baseColor = getBaseLinkColor();
+      const baseColor = getBaseLinkColor(containerRef.current);
       return activeNode && !highlightLinks.has(link)
         ? withAlpha(baseColor, DimmedAlpha)
         : baseColor;
     },
-    [getBaseLinkColor, activeNode, highlightLinks],
+    [containerRef, activeNode, highlightLinks],
   );
 
   const getLinkWidth = useCallback(

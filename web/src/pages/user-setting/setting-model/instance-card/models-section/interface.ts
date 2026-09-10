@@ -55,6 +55,25 @@ export interface ModelsSectionProps {
    */
   getFormValues?: () => Record<string, any>;
   /**
+   * Optional provider-specific transform used to build the verify
+   * payload's `api_key` / `base_url` / `region` from the host card's
+   * current form values. Providers whose credential field names don't
+   * map directly onto `api_key` / `base_url` (e.g. PaddleOCR's nested
+   * `paddleocr_api_url` / `paddleocr_access_token` / `paddleocr_algorithm`)
+   * supply this so the per-model verify can forward the structured
+   * `api_key` object the backend expects. When absent the generic
+   * `values.api_key` / `values.base_url` mapping is used.
+   *
+   * `modelInfo` returned by the transform is ignored for per-model
+   * verify - the single model being verified always overrides it.
+   */
+  verifyTransform?: (values: Record<string, any>) => {
+    apiKey: string | object | Record<string, any>;
+    baseUrl?: string;
+    region?: string;
+    modelInfo?: IModelInfo[];
+  };
+  /**
    * Notifies the host that ModelsSection has opened (or closed) a modal
    * dialog whose contents live in a React Portal outside the host's
    * `onBlurCapture` container. The host should temporarily disable its
@@ -74,25 +93,14 @@ export interface ModelsSectionProps {
    */
   onInstanceModelsChange?: (modelInfo: IModelInfo[]) => void;
   /**
-   * Optional callback fired when the per-instance model list changes
-   * in a way that does NOT need the host to re-sync via its own
-   * auto-save — i.e. an existing model was patched (max_tokens /
-   * model_type / features changed via the edit dialog) but the model
-   * set stayed the same.
-   *
-   * The PATCH endpoint already persisted the change server-side, so
-   * the host uses this signal to absorb the resulting model_info diff
-   * into its last-saved baseline. The next blur-driven auto-save will
-   * then short-circuit as a no-op (signature matches), avoiding a
-   * redundant PUT that re-sends the already-saved model_info.
-   *
-   * Pair with `onInstanceModelsChange`: that callback fires for every
-   * change (add/remove/patch) so the host can keep its `modelInfoRef`
-   * current, while `onInstanceModelsEdited` fires ONLY for patches so
-   * the host can suppress its next auto-save for an already-persisted
-   * change.
+   * Optional callback fired after saved-instance model state is confirmed by
+   * the backend, either from a query result or a successful edit. The host
+   * uses it to absorb `model_info` into its last-saved baseline, avoiding a
+   * redundant update for data that the backend has already persisted.
    */
   onInstanceModelsEdited?: () => void;
+  /** Reports whether the saved instance model snapshot is authoritative. */
+  onInstanceModelsStatusChange?: (ready: boolean) => void;
 }
 
 export interface ModelTypeBadgesProps {

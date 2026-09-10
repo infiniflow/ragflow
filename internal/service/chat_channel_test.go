@@ -22,7 +22,7 @@ func setupChatChannelServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -200,7 +200,7 @@ func TestChatChannelServiceUpdateChatChannelRejectsCrossTenantDialog(t *testing.
 	if code != common.CodeAuthenticationError {
 		t.Fatalf("expected authentication error, got %v", code)
 	}
-	if err == nil || !strings.Contains(err.Error(), "No authorization.") {
+	if err == nil || !strings.Contains(err.Error(), "no authorization") {
 		t.Fatalf("expected authorization error, got %v", err)
 	}
 }
@@ -223,7 +223,7 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 	if code != common.CodeAuthenticationError {
 		t.Fatalf("expected authentication error, got %v", code)
 	}
-	if err == nil || !strings.Contains(err.Error(), "No authorization.") {
+	if err == nil || !strings.Contains(err.Error(), "no authorization") {
 		t.Fatalf("expected authorization error, got %v", err)
 	}
 	if deleted {

@@ -82,6 +82,7 @@ func TestRAGconFactory(t *testing.T) {
 }
 
 func TestRAGconChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
@@ -133,6 +134,7 @@ func TestRAGconChatHappyPath(t *testing.T) {
 }
 
 func TestRAGconChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newRAGconForTest("http://unused").ChatWithMessages(
 		ctx,
@@ -147,6 +149,7 @@ func TestRAGconChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestRAGconChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newRAGconForTest("http://unused").ChatWithMessages(
@@ -162,6 +165,7 @@ func TestRAGconChatRequiresMessages(t *testing.T) {
 }
 
 func TestRAGconChatSurfacesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -183,6 +187,7 @@ func TestRAGconChatSurfacesHTTPError(t *testing.T) {
 }
 
 func TestRAGconStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
@@ -239,6 +244,7 @@ func TestRAGconStreamHappyPath(t *testing.T) {
 }
 
 func TestRAGconStreamRejectsNilSender(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	err := newRAGconForTest("http://unused").ChatStreamlyWithSender(
@@ -256,6 +262,7 @@ func TestRAGconStreamRejectsNilSender(t *testing.T) {
 }
 
 func TestRAGconEmbed(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/embeddings" {
@@ -272,7 +279,7 @@ func TestRAGconEmbed(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	embeddings, err := newRAGconForTest(srv.URL).Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	embeddings, err := newRAGconForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -282,6 +289,7 @@ func TestRAGconEmbed(t *testing.T) {
 }
 
 func TestRAGconRerank(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/rerank" {
@@ -301,7 +309,7 @@ func TestRAGconRerank(t *testing.T) {
 
 	apiKey := "test-key"
 	model := "rerank-v1"
-	resp, err := newRAGconForTest(srv.URL).Rerank(ctx, &model, "q", []string{"doc0", "doc1"}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}, nil)
+	resp, err := newRAGconForTest(srv.URL).Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"doc0", "doc1"}}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2}, nil)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
 	}
@@ -311,6 +319,7 @@ func TestRAGconRerank(t *testing.T) {
 }
 
 func TestRAGconListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/models" {
@@ -335,6 +344,7 @@ func TestRAGconListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestRAGconTranscribeAudioPostsMultipart(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/audio/transcriptions" {
@@ -379,6 +389,7 @@ func TestRAGconTranscribeAudioPostsMultipart(t *testing.T) {
 }
 
 func TestRAGconAudioSpeechPostsJSON(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newRAGconServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/audio/speech" {
@@ -404,6 +415,7 @@ func TestRAGconAudioSpeechPostsJSON(t *testing.T) {
 }
 
 func TestRAGconUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	r := newRAGconForTest("http://unused")
 	model := "llama-4-maverick"

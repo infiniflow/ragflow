@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"testing"
 	"time"
 )
@@ -19,7 +18,7 @@ func TestPreemptController_Lifecycle(t *testing.T) {
 	}
 
 	// planning -> active
-	ctx := context.Background()
+	ctx := t.Context()
 	ctrl.beginActiveTurn(ctx, "test-turn-context")
 	if ctrl.turnPhase != preemptTurnActive {
 		t.Error("expected turnPhase = active after beginActiveTurn")
@@ -57,7 +56,7 @@ func TestPreemptController_AbortPlanningTurn(t *testing.T) {
 func TestPreemptController_PushCriticalSection(t *testing.T) {
 	ctrl := newPreemptController()
 	ctrl.beginPlanningTurn()
-	ctrl.beginActiveTurn(context.Background(), nil)
+	ctrl.beginActiveTurn(t.Context(), nil)
 
 	// beginPush captures current turn state
 	snap := ctrl.beginPush()
@@ -85,9 +84,10 @@ func TestPreemptController_PushCriticalSection(t *testing.T) {
 }
 
 func TestPreemptController_StaleTurnPreempt(t *testing.T) {
+	ctx := t.Context()
 	ctrl := newPreemptController()
 	ctrl.beginPlanningTurn()
-	ctrl.beginActiveTurn(context.Background(), nil)
+	ctrl.beginActiveTurn(ctx, nil)
 
 	// Capture snapshot of turn 1
 	snap := ctrl.beginPush()
@@ -98,7 +98,7 @@ func TestPreemptController_StaleTurnPreempt(t *testing.T) {
 
 	// Start turn 2
 	ctrl.beginPlanningTurn()
-	ctrl.beginActiveTurn(context.Background(), nil)
+	ctrl.beginActiveTurn(ctx, nil)
 
 	// Request preempt on stale turn 1 snapshot - should be no-op
 	ack := make(chan struct{})
@@ -153,7 +153,7 @@ func TestPreemptController_WaitForPushes(t *testing.T) {
 func TestPreemptController_CloseForLoopExit(t *testing.T) {
 	ctrl := newPreemptController()
 	ctrl.beginPlanningTurn()
-	ctrl.beginActiveTurn(context.Background(), nil)
+	ctrl.beginActiveTurn(t.Context(), nil)
 
 	ctrl.closeForLoopExit()
 	if !ctrl.closed {
@@ -167,7 +167,7 @@ func TestPreemptController_CloseForLoopExit(t *testing.T) {
 func TestPreemptController_RequestPreemptOnIdleTurn(t *testing.T) {
 	ctrl := newPreemptController()
 	ctrl.beginPlanningTurn()
-	ctrl.beginActiveTurn(context.Background(), nil)
+	ctrl.beginActiveTurn(t.Context(), nil)
 	ctrl.endActiveTurn().ack()
 
 	// Turn is now idle

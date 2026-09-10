@@ -20,6 +20,12 @@ import re
 
 from markdown import markdown
 
+from rag.nlp.delim import (
+    compile_delimiter_pattern,
+    normalize_text_newlines,
+    parse_delimiter_field,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,11 +61,11 @@ class RAGFlowMarkdownParser:
                 table_list.append(raw_table)
                 if separate_tables:
                     # Skip this match (i.e., remove it)
-                    new_text += working_text[last_end : match.start()] + "\n\n"
+                    new_text += working_text[last_end : match.start()] + "\n"
                 else:
                     # Replace with rendered HTML
                     html_table = markdown(raw_table, extensions=["markdown.extensions.tables"]) if render else raw_table
-                    new_text += working_text[last_end : match.start()] + html_table + "\n\n"
+                    new_text += working_text[last_end : match.start()] + html_table + "\n"
                 last_end = match.end()
             new_text += working_text[last_end:]
             return new_text
@@ -75,7 +81,7 @@ class RAGFlowMarkdownParser:
             """,
                 re.VERBOSE,
             )
-            working_text = replace_tables_with_rendered_html(border_table_pattern, tables, render=separate_tables)
+            working_text = replace_tables_with_rendered_html(border_table_pattern, tables)
 
             # Borderless Markdown table
             no_border_table_pattern = re.compile(
@@ -87,7 +93,7 @@ class RAGFlowMarkdownParser:
                 """,
                 re.VERBOSE,
             )
-            working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables, render=separate_tables)
+            working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables)
 
         # Replace any TAGS e.g. <table ...> to <table>
         TAGS = ["table", "td", "tr", "th", "tbody", "thead", "div"]
@@ -139,9 +145,9 @@ class RAGFlowMarkdownParser:
                     raw_table = match.group()
                     tables.append(raw_table)
                     if separate_tables:
-                        new_text += working_text[last_end : match.start()] + "\n\n"
+                        new_text += working_text[last_end : match.start()] + "\n"
                     else:
-                        new_text += working_text[last_end : match.start()] + raw_table + "\n\n"
+                        new_text += working_text[last_end : match.start()] + raw_table + "\n"
                     last_end = match.end()
                 new_text += working_text[last_end:]
                 working_text = new_text
@@ -153,13 +159,19 @@ class RAGFlowMarkdownParser:
 
 class MarkdownElementExtractor:
     def __init__(self, markdown_content):
-        self.markdown_content = markdown_content
-        self.lines = markdown_content.split("\n")
+        # Normalize CRLF/CR so compiled delimiter patterns (which use LF)
+        # match Windows-line-ending source the same as Unix source.
+        self.markdown_content = normalize_text_newlines(markdown_content)
+        self.lines = self.markdown_content.split("\n")
 
     def get_delimiters(self, delimiters):
-        toks = re.findall(r"`([^`]+)`", delimiters)
-        toks = sorted(set(toks), key=lambda x: -len(x))
-        return "|".join(re.escape(t) for t in toks if t)
+        # Delegate to the canonical parser (#17383). The previous
+        # implementation matched only backtick-wrapped tokens and dropped
+        # bare characters, which silently made the shipped default
+        # delimiter field a no-op for the markdown path. The helper honors
+        # both bare chars and wrapped tokens, so the same field produces
+        # the same splits in every file type.
+        return compile_delimiter_pattern(parse_delimiter_field(delimiters))
 
     def _get_fence_marker(self, line):
         match = re.match(r"^[ \t]{0,3}(?P<fence>`{3,}|~{3,})(?:.*)$", line)

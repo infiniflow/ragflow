@@ -49,6 +49,11 @@ class Pipeline(Graph):
         if has_canceled(self.task_id):
             progress = -1
             message += "[CANCEL]"
+        # Progress-only callbacks are used for fine-grained updates during
+        # tokenization and embedding. Do not persist an empty message as a log
+        # entry; otherwise the task log is filled with timestamp-only lines.
+        if not str(message or "").strip():
+            return
         try:
             bin = REDIS_CONN.get(log_key)
             obj = json.loads(bin.encode("utf-8")) if bin else []

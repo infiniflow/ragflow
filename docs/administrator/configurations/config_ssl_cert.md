@@ -1,11 +1,13 @@
 ---
 sidebar_position: 1
+title: Configure SSL Certificates
+sidebar_label: Configure SSL Certificates
 slug: /config_ssl_cert
 sidebar_custom_props: {
   categoryIcon: LucideCog
 }
 ---
-# Configure SSL certificates
+# Configure SSL Certificates
 
 Configure SSL certificates for a RAGFlow instance deployed via Docker.
 
@@ -13,7 +15,7 @@ Configure SSL certificates for a RAGFlow instance deployed via Docker.
 
 This guide details how to configure SSL certificates for a RAGFlow instance deployed via Docker, using the container name `docker-ragflow-cpu-1` as an example.
 
-## 1. Prepare certificate files
+## 1. Prepare Certificate Files
 
 Ensure you have Nginx-formatted certificate files ready:
 
@@ -29,7 +31,7 @@ cp XXXXX_bundle.pem fullchain.pem
 cp XXXXX.key privkey.pem
 ```
 
-## 2. Confirm container status
+## 2. Confirm Container Status
 
 Verify that your container is running:
 
@@ -37,7 +39,7 @@ Verify that your container is running:
 docker ps
 ```
 
-## 3. Copy certificates to the container
+## 3. Copy Certificates to the Container
 
 Transfer the files from your host machine to the container's temporary directory:
 
@@ -46,7 +48,7 @@ docker cp ./fullchain.pem docker-ragflow-cpu-1:/tmp/fullchain.pem
 docker cp ./privkey.pem docker-ragflow-cpu-1:/tmp/privkey.pem
 ```
 
-## 4. Deploy certificates inside the container
+## 4. Deploy Certificates Inside the Container
 
 Enter the container's interactive terminal:
 
@@ -66,7 +68,7 @@ chmod 644 /etc/nginx/ssl/fullchain.pem
 chmod 600 /etc/nginx/ssl/privkey.pem
 ```
 
-## 5. Switch Nginx to HTTPS configuration
+## 5. Switch Nginx to HTTPS Configuration
 
 Replace the default HTTP configuration with the HTTPS template:
 
@@ -74,13 +76,13 @@ Replace the default HTTP configuration with the HTTPS template:
 2. Back up the original configuration: `mv ragflow.conf ragflow.conf.bak`.
 3. Enable the HTTPS template: `cp /etc/nginx/ragflow.https.conf ./ragflow.conf`.
 
-## 6. Edit the HTTPS template
+## 6. Edit the HTTPS Template
 
 1. Open the configuration file: `vi ragflow.conf`.
 2. Ensure `ssl_certificate` and `ssl_certificate_key` paths point to your files in `/etc/nginx/ssl/`.
 3. Verify the Nginx syntax: `nginx -t`.
 
-## 7. Apply the configuration
+## 7. Apply the Configuration
 
 Reload Nginx to apply changes:
 
@@ -95,7 +97,7 @@ exit
 docker restart docker-ragflow-cpu-1
 ```
 
-## Configuration persistence
+## Configuration Persistence
 
 :::tip IMPORTANT
 Changes made via `docker cp` and `docker exec` are lost if the container is removed or stopped via `docker-compose down`.

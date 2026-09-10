@@ -142,9 +142,11 @@ class FileSource(StrEnum):
     LOCAL = ""
     KNOWLEDGEBASE = "knowledgebase"
     RSS = "rss"
+    SITEMAP = "sitemap"
     S3 = "s3"
     NOTION = "notion"
     REST_API = "rest_api"
+    XQUIK = "xquik"
     DISCORD = "discord"
     CONFLUENCE = "confluence"
     GMAIL = "gmail"
@@ -166,6 +168,7 @@ class FileSource(StrEnum):
     GITLAB = "gitlab"
     IMAP = "imap"
     BITBUCKET = "bitbucket"
+    AZURE_DEVOPS = "azure_devops"
     ZENDESK = "zendesk"
     SEAFILE = "seafile"
     MYSQL = "mysql"
@@ -185,7 +188,9 @@ class PipelineTaskType(StrEnum):
     GRAPH_RAG = "GraphRAG"
     MINDMAP = "Mindmap"
     MEMORY = "Memory"
-    ARTIFACT = "Artifact"
+    # Member name kept as ARTIFACT for back-compat; value is "Wiki" so the
+    # runtime task_type (``.lower()`` == "wiki") matches the wiki index/task type.
+    ARTIFACT = "Wiki"
     SKILL = "Skill"
     # KB-wide structure-graph merge tasks (rebuild_dataset_structure_graph_json).
     STRUCTURE_GRAPH = "StructureGraph"
@@ -371,4 +376,16 @@ SOMARK_DEFAULT_CONFIG = {
     "SOMARK_ENABLE_TABLE_IMAGE": 1,
     "SOMARK_ENABLE_IMAGE_UNDERSTANDING": 1,
     "SOMARK_KEEP_HEADER_FOOTER": 0,
+}
+MISTRAL_OCR_ENV_KEYS = [
+    "MISTRAL_OCR_BASE_URL",
+    "MISTRAL_OCR_API_KEY",
+    "MISTRAL_OCR_TABLE_FORMAT",
+    "MISTRAL_OCR_KEEP_HEADER_FOOTER",
+]
+MISTRAL_OCR_DEFAULT_CONFIG = {
+    "MISTRAL_OCR_BASE_URL": "https://api.mistral.ai/v1",
+    "MISTRAL_OCR_API_KEY": "",
+    "MISTRAL_OCR_TABLE_FORMAT": "html",
+    "MISTRAL_OCR_KEEP_HEADER_FOOTER": 0,
 }

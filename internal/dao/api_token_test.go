@@ -46,7 +46,8 @@ func setupAPI4ConversationTestDB(t *testing.T) *gorm.DB {
 
 func createAPI4ConversationForDAOTest(t *testing.T, id, agentID string) {
 	t.Helper()
-	if err := DB.Create(&entity.API4Conversation{
+	ctx := t.Context()
+	if err := DB.WithContext(ctx).Create(&entity.API4Conversation{
 		ID:        id,
 		DialogID:  agentID,
 		UserID:    "user-1",
@@ -64,7 +65,7 @@ func TestAPI4ConversationDAOGetBySessionID(t *testing.T) {
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
 	ctx := t.Context()
-	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, "session-1", "agent-1")
+	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "session-1", "agent-1")
 	if err != nil {
 		t.Fatalf("GetBySessionID failed: %v", err)
 	}
@@ -86,7 +87,7 @@ func TestAPI4ConversationDAOGetBySessionIDWrongAgent(t *testing.T) {
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
 	ctx := t.Context()
-	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, "session-1", "agent-2")
+	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "session-1", "agent-2")
 	if err != nil {
 		t.Fatalf("GetBySessionID failed: %v", err)
 	}
@@ -102,7 +103,7 @@ func TestAPI4ConversationDAOGetBySessionIDNoRows(t *testing.T) {
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
 	ctx := t.Context()
-	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, "missing-session", "agent-1")
+	session, err := NewAPI4ConversationDAO().GetBySessionID(ctx, DB, "missing-session", "agent-1")
 	if err != nil {
 		t.Fatalf("GetBySessionID failed: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestAPI4ConversationDAOListIDsByAgentID(t *testing.T) {
 	createAPI4ConversationForDAOTest(t, "session-other", "agent-2")
 
 	ctx := t.Context()
-	ids, err := NewAPI4ConversationDAO().ListIDsByAgentID(ctx, "agent-1")
+	ids, err := NewAPI4ConversationDAO().ListIDsByAgentID(ctx, DB, "agent-1")
 	if err != nil {
 		t.Fatalf("ListIDsByAgentID failed: %v", err)
 	}
@@ -144,7 +145,7 @@ func TestAPI4ConversationDAOListIDsByAgentIDNoRows(t *testing.T) {
 	createAPI4ConversationForDAOTest(t, "session-1", "agent-1")
 
 	ctx := t.Context()
-	ids, err := NewAPI4ConversationDAO().ListIDsByAgentID(ctx, "agent-2")
+	ids, err := NewAPI4ConversationDAO().ListIDsByAgentID(ctx, DB, "agent-2")
 	if err != nil {
 		t.Fatalf("ListIDsByAgentID failed: %v", err)
 	}

@@ -16,7 +16,10 @@
 
 package utility
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 // SplitKeywords - Python task_executor.run_dataflow:879
 // re.split(r"[,，;；、\r\n]+", keywords) with empty filtering.
@@ -46,6 +49,28 @@ func TestSplitKeywords_FiltersEmptyStrings(t *testing.T) {
 	result := SplitKeywords("kw1,,kw2")
 	if len(result) != 2 {
 		t.Errorf("empty strings should be filtered: got %v", result)
+	}
+}
+
+// Python task_executor.run_dataflow filters split parts with `if k.strip()`,
+// so whitespace-only segments (a lone space between commas, a tab, etc.) must
+// be dropped — not kept as " ". Input "a, ,b" must yield ["a","b"], matching
+// Python, not ["a"," ","b"].
+func TestSplitKeywords_FiltersWhitespaceOnly(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"a, ,b", []string{"a", "b"}},
+		{"a，\t,b", []string{"a", "b"}},
+		{" , , ", nil},
+		{"kw1,  ,kw2", []string{"kw1", "kw2"}},
+	}
+	for _, c := range cases {
+		got := SplitKeywords(c.in)
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("SplitKeywords(%q) = %v, want %v", c.in, got, c.want)
+		}
 	}
 }
 
