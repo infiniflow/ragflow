@@ -494,3 +494,88 @@ func TestDatasetUpdateParserConfigValidMatrixContract(t *testing.T) {
 		})
 	}
 }
+
+func TestDatasetUpdateParserConfigWithChunkMethodChangeContract(t *testing.T) {
+	clearDatasets(t)
+
+	cases := []struct {
+		name          string
+		updatePayload map[string]interface{}
+	}{
+		{
+			name: "parser_config_empty",
+			updatePayload: map[string]interface{}{
+				"parser_id":     "qa",
+				"parse_type":    1,
+				"parser_config": map[string]interface{}{},
+			},
+		},
+		{
+			name: "parser_config_none",
+			updatePayload: map[string]interface{}{
+				"parser_id":     "qa",
+				"parse_type":    1,
+				"parser_config": nil,
+			},
+		},
+		{
+			name: "parser_config_unset",
+			updatePayload: map[string]interface{}{
+				"parser_id":  "qa",
+				"parse_type": 1,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			createResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": fmt.Sprintf("dataset_update_%s", tc.name)}, nil)
+			if err != nil {
+				t.Fatalf("create dataset request failed: %v", err)
+			}
+			createPayload := requireStatusCode(t, createResp, http.StatusOK)
+			requireCodeZero(t, createPayload)
+			createData, ok := createPayload["data"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("create response data is not an object: %v", createPayload)
+			}
+			datasetID, ok := createData["id"].(string)
+			if !ok || datasetID == "" {
+				t.Fatalf("dataset id is invalid: %v", createData)
+			}
+
+			updateResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", datasetID), tc.updatePayload, nil)
+			if err != nil {
+				t.Fatalf("update dataset request failed: %v", err)
+			}
+			updatePayload := requireStatusCode(t, updateResp, http.StatusOK)
+			requireCodeZero(t, updatePayload)
+
+			listResp, err := TestConfig.GetJSON("/datasets", map[string]interface{}{"id": datasetID}, nil)
+			if err != nil {
+				t.Fatalf("list dataset request failed: %v", err)
+			}
+			listPayload := requireStatusCode(t, listResp, http.StatusOK)
+			requireCodeZero(t, listPayload)
+			listData, ok := listPayload["data"].([]interface{})
+			if !ok || len(listData) != 1 {
+				t.Fatalf("expected 1 dataset in list, got %v", listPayload)
+			}
+			firstItem, ok := listData[0].(map[string]interface{})
+			if !ok {
+				t.Fatalf("list data[0] is not an object: %v", listPayload)
+			}
+			actualParserConfig, ok := firstItem["parser_config"].(map[string]interface{})
+			if !ok || len(actualParserConfig) == 0 {
+				t.Fatalf("parser_config should be non-empty map: %v", firstItem)
+			}
+			if _, exists := actualParserConfig["raptor"]; exists {
+				t.Fatalf("raptor should not be in parser_config: %v", actualParserConfig)
+			}
+			if _, exists := actualParserConfig["graphrag"]; exists {
+				t.Fatalf("graphrag should not be in parser_config: %v", actualParserConfig)
+			}
+		})
+	}
+}
