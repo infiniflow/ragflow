@@ -776,7 +776,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         callback(prog=0.7 + 0.2 * (i + 1) / len(cnts), msg="")
     cnts = np.vstack(cnts_batches) if cnts_batches else np.array([])
     filename_embd_weight = parser_config.get("filename_embd_weight", 0.1)  # due to the db support none value
-    if not filename_embd_weight:
+    if filename_embd_weight is None:
         filename_embd_weight = 0.1
     title_w = float(filename_embd_weight)
     if tts.ndim == 2 and cnts.ndim == 2 and tts.shape == cnts.shape:
